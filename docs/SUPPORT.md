@@ -6504,9 +6504,17 @@
   timestamp strings such as `@0` / `@0.123456` and explicit timezone tokens
   retain their own timezone identity. `date_create_from_format()` plus
   `DateTime::createFromFormat()` / `DateTimeImmutable::createFromFormat()`
-  cover the bounded formats `Y-m-d H:i:s.u`, `U.u`, and
-  `Y-m-d\TH:i:s.vP` / `DateTime::RFC3339_EXTENDED`, returning `false` for
-  unsupported formats in the current subset. The supported internal
+  cover the bounded formats `Y-m-d H:i:s.u`, `U.u`,
+  `Y-m-d\TH:i:sP`, `Y-m-d\TH:i:sO`, `X-m-d\TH:i:sP`,
+  `D, d M y H:i:s O`, `D, d M Y H:i:s O`,
+  `l, d-M-y H:i:s T`, `l, d-M-Y H:i:s T`,
+  `Y-m-d\TH:i:s.vP` / `DateTime::RFC3339_EXTENDED`, and
+  `D., M# j, Y g:iA`, returning `false` for unsupported formats in the
+  current subset. `date_parse()` exposes bounded parse-result arrays for
+  numeric `YYYY-MM-DD`, `YYYY-MM`, `YYYY-MM-DD HH:MM:SS.fraction`, and
+  `HH:MM:SS.fraction` forms plus selected malformed numeric timezone/error
+  metadata; `date_parse_from_format()` covers `!m/d/y` and the same bounded
+  single-separator wildcard form `!m*d*y`. The supported internal
   DateTime/DateTimeZone method-signature metadata for `setTime()`,
   `createFromFormat()`, `getTransitions()`, `listIdentifiers()`, and
   `DateTimeInterface::diff()` is also used by the current declaration
@@ -6640,8 +6648,10 @@
   civil-calendar/timestamp model,
   DatePeriod, DateInterval serialization/unserialization and `__set_state()`,
   full timelib relative string grammar and non-relative classification, broad
-  `createFromFormat()` grammar/errors/getLastErrors metadata, fractional or
-  negative ISO interval components, exact
+  `createFromFormat()` / `date_parse()` / `date_parse_from_format()` grammar,
+  parser error metadata, `getLastErrors()` metadata, DateTime object-handle
+  reuse parity during parser loops, fractional or negative ISO interval
+  components, exact
   DateInterval object-dump handler parity for `from_string` intervals, exact
   invalid-modifier
   `DateMalformedStringException` behavior beyond the bounded warning/exception

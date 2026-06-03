@@ -4,6 +4,27 @@
 
 Implemented:
 
+- Added a bounded DateTime parser/format-token lane on the interpreter path.
+  `date_parse()` now returns PHP-shaped metadata arrays for the selected
+  numeric date/time forms and malformed numeric timezone diagnostics;
+  `date_parse_from_format()` covers `!m/d/y` plus the same single-separator
+  wildcard shape; and `date_create_from_format()` /
+  `DateTime::createFromFormat()` now parse the bounded RFC/fixed-offset and
+  textual weekday/month formats reached by the selected rows. Focused proof
+  covers exact-current pre-patch selected PHPT at `0/5` and post-patch
+  selected PHPT at `5/5` for
+  `ext/date/tests/DateTime_fix_createFromFormat.phpt`,
+  `ext/date/tests/date-parse-by-format001.phpt`,
+  `ext/date/tests/date_parse_001.phpt`,
+  `ext/date/tests/date_parse_basic1.phpt`, and
+  `ext/date/tests/date_parse_error.phpt`; Rust parser/format guards, build,
+  and pinned wrapper proof. Unsupported edges remain broad timelib
+  `date_parse()` / `date_parse_from_format()` / `createFromFormat()` grammar,
+  parser error-history and `getLastErrors()` metadata, `DateTime` object
+  handle reuse parity in parser loops such as
+  `ext/date/tests/test-parse-from-format.phpt`, binary format strings,
+  references/COW, and native lowering.
+
 - Added a bounded global `ReflectionConstant` lane on the interpreter path.
   Runtime/user constants and current builtin global constants can now be
   reflected by name; reflected objects expose the public `name` property,

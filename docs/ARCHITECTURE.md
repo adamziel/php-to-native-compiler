@@ -4587,6 +4587,13 @@ type mismatches produce startup deprecations instead of declaration fatals
 when the override parameters are otherwise compatible, while unresolved class
 names in inherited parameter or return types still produce PHP-shaped
 compatibility-check fatals.
+The DateTime parser path is intentionally table-bounded: supported
+`createFromFormat()` and `date_parse_from_format()` rows are recognized through
+small token parsers for the documented numeric/RFC/textual formats, and
+`date_parse()` exposes only the documented numeric date/time plus selected
+malformed numeric timezone metadata arrays. Broad timelib grammar, parser
+error-state history, and object-handle reuse behavior remain outside that
+runtime parser boundary.
 `ReflectionParameter::__construct()` can replace that request-local state on
 an existing object. `ReflectionParameter::getType()` now materializes a
 request-local `ReflectionNamedType` object for a single parsed named type, or a

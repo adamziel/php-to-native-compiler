@@ -998,6 +998,35 @@ struct BoundedParsedDateTime {
     timezone: BoundedTimezone,
 }
 
+#[derive(Debug, Clone)]
+struct BoundedParsedFormatDateTime {
+    year: i64,
+    month: i64,
+    day: i64,
+    hour: i64,
+    minute: i64,
+    second: i64,
+    microsecond: i64,
+    timezone: BoundedTimezone,
+}
+
+#[derive(Debug, Clone)]
+struct BoundedDateParseResult {
+    year: Option<i64>,
+    month: Option<i64>,
+    day: Option<i64>,
+    hour: Option<i64>,
+    minute: Option<i64>,
+    second: Option<i64>,
+    fraction: Value,
+    warnings: Vec<(i64, &'static str)>,
+    errors: Vec<(i64, &'static str)>,
+    is_localtime: bool,
+    zone_type: Option<i64>,
+    zone: Option<i64>,
+    is_dst: Option<bool>,
+}
+
 struct DateTimeZoneComparisonState {
     timezone_type: i64,
     timezone_name: String,
@@ -23569,6 +23598,29 @@ impl Interpreter {
             args.get(2),
             span,
         )
+    }
+
+    fn call_date_parse(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("date_parse", args, 1, span)?;
+        let datetime =
+            self.php_string_argument_with_magic("date_parse()", 1, "datetime", &args[0], span)?;
+        Ok(Value::Array(bounded_date_parse_array(&datetime)))
+    }
+
+    fn call_date_parse_from_format(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("date_parse_from_format", args, 2, span)?;
+        let format =
+            self.date_format_string_argument("date_parse_from_format()", 1, &args[0], span)?;
+        let datetime = self.php_string_argument_with_magic(
+            "date_parse_from_format()",
+            2,
+            "datetime",
+            &args[1],
+            span,
+        )?;
+        Ok(Value::Array(bounded_date_parse_from_format_array(
+            &format, &datetime,
+        )))
     }
 
     fn call_date_diff(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -97373,6 +97425,8 @@ impl Interpreter {
             "date_create" => self.call_date_create(&args, span),
             "date_create_from_format" => self.call_date_create_from_format(&args, span),
             "date_create_immutable" => self.call_date_create_immutable(&args, span),
+            "date_parse" => self.call_date_parse(&args, span),
+            "date_parse_from_format" => self.call_date_parse_from_format(&args, span),
             "date_diff" => self.call_date_diff(&args, span),
             "date_modify" => self.call_date_modify(&args, span),
             "date_add" => self.call_date_add(&args, span),
@@ -124307,6 +124361,8 @@ fn is_builtin(name: &str) -> bool {
             | "date_create"
             | "date_create_from_format"
             | "date_create_immutable"
+            | "date_parse"
+            | "date_parse_from_format"
             | "date_diff"
             | "date_modify"
             | "date_add"
@@ -161406,6 +161462,24 @@ fn parse_bounded_create_from_format(
     input: &str,
     default_timezone: &BoundedTimezone,
 ) -> Option<BoundedParsedDateTime> {
+    if let Some(parsed) = parse_bounded_format_datetime(format, input, default_timezone) {
+        let explicit_offset = parsed.timezone.fixed_offset;
+        let timestamp = timestamp_for_bounded_parts(
+            parsed.year,
+            parsed.month,
+            parsed.day,
+            parsed.hour,
+            parsed.minute,
+            parsed.second,
+            explicit_offset,
+            default_timezone,
+        )?;
+        return Some(BoundedParsedDateTime {
+            timestamp,
+            microsecond: parsed.microsecond,
+            timezone: parsed.timezone,
+        });
+    }
     match format {
         "Y-m-d H:i:s.u" => {
             let (timestamp, microsecond) =
@@ -161426,6 +161500,674 @@ fn parse_bounded_create_from_format(
         }
         "Y-m-d\\TH:i:s.vP" => parse_bounded_rfc3339_extended(input, default_timezone),
         _ => None,
+    }
+}
+
+fn bounded_date_parse_array(input: &str) -> PhpArray {
+    bounded_date_parse_result_array(bounded_date_parse_result(input))
+}
+
+fn bounded_date_parse_from_format_array(format: &str, input: &str) -> PhpArray {
+    let default_timezone = BoundedTimezone::utc();
+    let result = match parse_bounded_format_datetime(format, input, &default_timezone) {
+        Some(parsed) => BoundedDateParseResult {
+            year: Some(parsed.year),
+            month: Some(parsed.month),
+            day: Some(parsed.day),
+            hour: Some(parsed.hour),
+            minute: Some(parsed.minute),
+            second: Some(parsed.second),
+            fraction: Value::Int(parsed.microsecond / 1_000_000),
+            warnings: vec![],
+            errors: vec![],
+            is_localtime: false,
+            zone_type: None,
+            zone: None,
+            is_dst: None,
+        },
+        None => BoundedDateParseResult {
+            year: None,
+            month: None,
+            day: None,
+            hour: None,
+            minute: None,
+            second: None,
+            fraction: Value::Bool(false),
+            warnings: vec![],
+            errors: vec![(0, "Data missing")],
+            is_localtime: false,
+            zone_type: None,
+            zone: None,
+            is_dst: None,
+        },
+    };
+    bounded_date_parse_result_array(result)
+}
+
+fn bounded_date_parse_result_array(result: BoundedDateParseResult) -> PhpArray {
+    let mut array = PhpArray::new();
+    array.insert("year", optional_int_or_false(result.year));
+    array.insert("month", optional_int_or_false(result.month));
+    array.insert("day", optional_int_or_false(result.day));
+    array.insert("hour", optional_int_or_false(result.hour));
+    array.insert("minute", optional_int_or_false(result.minute));
+    array.insert("second", optional_int_or_false(result.second));
+    array.insert("fraction", result.fraction);
+    array.insert("warning_count", Value::Int(result.warnings.len() as i64));
+    array.insert(
+        "warnings",
+        Value::Array(date_parse_diagnostics_array(&result.warnings)),
+    );
+    array.insert("error_count", Value::Int(result.errors.len() as i64));
+    array.insert(
+        "errors",
+        Value::Array(date_parse_diagnostics_array(&result.errors)),
+    );
+    array.insert("is_localtime", Value::Bool(result.is_localtime));
+    if let Some(zone_type) = result.zone_type {
+        array.insert("zone_type", Value::Int(zone_type));
+    }
+    if let Some(zone) = result.zone {
+        array.insert("zone", Value::Int(zone));
+    }
+    if let Some(is_dst) = result.is_dst {
+        array.insert("is_dst", Value::Bool(is_dst));
+    }
+    array
+}
+
+fn optional_int_or_false(value: Option<i64>) -> Value {
+    value.map(Value::Int).unwrap_or(Value::Bool(false))
+}
+
+fn date_parse_diagnostics_array(entries: &[(i64, &'static str)]) -> PhpArray {
+    let mut array = PhpArray::new();
+    for (offset, message) in entries {
+        array.insert(*offset, Value::String((*message).to_string()));
+    }
+    array
+}
+
+fn bounded_date_parse_result(input: &str) -> BoundedDateParseResult {
+    if input.is_empty() {
+        return date_parse_result_with_errors(vec![(0, "Empty string")]);
+    }
+    if let Some(result) = bounded_date_parse_full_datetime(input) {
+        return result;
+    }
+    if let Some(result) = bounded_date_parse_time_only(input) {
+        return result;
+    }
+    if let Some(result) = bounded_date_parse_date_only(input) {
+        return result;
+    }
+    if let Some(result) = bounded_date_parse_double_dash_timezone(input) {
+        return result;
+    }
+    if let Some(result) = bounded_date_parse_numeric_timezone_only(input) {
+        return result;
+    }
+    if let Some(result) = bounded_date_parse_malformed_numeric_datetime(input) {
+        return result;
+    }
+    date_parse_result_with_errors(vec![(0, "Unexpected character")])
+}
+
+fn bounded_date_parse_full_datetime(input: &str) -> Option<BoundedDateParseResult> {
+    if !input.is_ascii()
+        || input.len() < 21
+        || &input[4..5] != "-"
+        || &input[7..8] != "-"
+        || &input[10..11] != " "
+        || &input[13..14] != ":"
+        || &input[16..17] != ":"
+        || &input[19..20] != "."
+    {
+        return None;
+    }
+    let year = parse_ascii_i64(&input[0..4])?;
+    let month = parse_ascii_i64(&input[5..7])?;
+    let day = parse_ascii_i64(&input[8..10])?;
+    let hour = parse_ascii_i64(&input[11..13])?;
+    let minute = parse_ascii_i64(&input[14..16])?;
+    let second = parse_ascii_i64(&input[17..19])?;
+    let fraction = parse_decimal_fraction_value(&input[20..])?;
+    Some(BoundedDateParseResult {
+        year: Some(year),
+        month: Some(month),
+        day: Some(day),
+        hour: Some(hour),
+        minute: Some(minute),
+        second: Some(second),
+        fraction: Value::Float(fraction),
+        warnings: date_parse_date_warnings(year, month, day),
+        errors: vec![],
+        is_localtime: false,
+        zone_type: None,
+        zone: None,
+        is_dst: None,
+    })
+}
+
+fn bounded_date_parse_time_only(input: &str) -> Option<BoundedDateParseResult> {
+    if !input.is_ascii()
+        || input.len() < 9
+        || &input[2..3] != ":"
+        || &input[5..6] != ":"
+        || &input[8..9] != "."
+    {
+        return None;
+    }
+    let hour = parse_ascii_i64(&input[0..2])?;
+    let minute = parse_ascii_i64(&input[3..5])?;
+    let second = parse_ascii_i64(&input[6..8])?;
+    let fraction = parse_decimal_fraction_value(&input[9..])?;
+    Some(BoundedDateParseResult {
+        year: None,
+        month: None,
+        day: None,
+        hour: Some(hour),
+        minute: Some(minute),
+        second: Some(second),
+        fraction: Value::Float(fraction),
+        warnings: vec![],
+        errors: vec![],
+        is_localtime: false,
+        zone_type: None,
+        zone: None,
+        is_dst: None,
+    })
+}
+
+fn bounded_date_parse_date_only(input: &str) -> Option<BoundedDateParseResult> {
+    if !input.is_ascii() || input.len() < 7 || &input[4..5] != "-" {
+        return None;
+    }
+    let year = parse_ascii_i64(&input[0..4])?;
+    let month = parse_ascii_i64(&input[5..7])?;
+    let day = if input.len() == 7 {
+        1
+    } else if input.len() == 10 && &input[7..8] == "-" {
+        parse_ascii_i64(&input[8..10])?
+    } else {
+        return None;
+    };
+    Some(BoundedDateParseResult {
+        year: Some(year),
+        month: Some(month),
+        day: Some(day),
+        hour: None,
+        minute: None,
+        second: None,
+        fraction: Value::Bool(false),
+        warnings: date_parse_date_warnings(year, month, day),
+        errors: vec![],
+        is_localtime: false,
+        zone_type: None,
+        zone: None,
+        is_dst: None,
+    })
+}
+
+fn bounded_date_parse_double_dash_timezone(input: &str) -> Option<BoundedDateParseResult> {
+    if !input.is_ascii() || input.len() != 11 || &input[4..5] != "-" || &input[7..9] != "--" {
+        return None;
+    }
+    let year = parse_ascii_i64(&input[0..4])?;
+    let month = parse_ascii_i64(&input[5..7])?;
+    let zone_hour = parse_ascii_i64(&input[9..11])?;
+    Some(BoundedDateParseResult {
+        year: Some(year),
+        month: Some(month),
+        day: Some(1),
+        hour: None,
+        minute: None,
+        second: None,
+        fraction: Value::Bool(false),
+        warnings: vec![],
+        errors: vec![(7, "Unexpected character")],
+        is_localtime: true,
+        zone_type: Some(1),
+        zone: Some(-zone_hour * 3_600),
+        is_dst: Some(false),
+    })
+}
+
+fn bounded_date_parse_numeric_timezone_only(input: &str) -> Option<BoundedDateParseResult> {
+    let (left, right) = input.split_once('-')?;
+    if left.is_empty()
+        || right.is_empty()
+        || !left.chars().all(|ch| ch.is_ascii_digit())
+        || !right.chars().all(|ch| ch.is_ascii_digit())
+    {
+        return None;
+    }
+    let zone_hour = parse_ascii_i64(right)?;
+    let errors = (0..left.len() as i64)
+        .map(|offset| (offset, "Unexpected character"))
+        .collect();
+    Some(BoundedDateParseResult {
+        year: None,
+        month: None,
+        day: None,
+        hour: None,
+        minute: None,
+        second: None,
+        fraction: Value::Bool(false),
+        warnings: vec![],
+        errors,
+        is_localtime: true,
+        zone_type: Some(1),
+        zone: Some(-zone_hour * 3_600),
+        is_dst: Some(false),
+    })
+}
+
+fn bounded_date_parse_malformed_numeric_datetime(input: &str) -> Option<BoundedDateParseResult> {
+    if !input.is_ascii() || !input.contains("--") || !input.contains('?') {
+        return None;
+    }
+    let time_start = input.find(' ')? + 1;
+    let hour = parse_ascii_i64(input.get(time_start..time_start + 2)?)?;
+    let minute = parse_ascii_i64(input.get(time_start + 3..time_start + 5)?)?;
+    let second = parse_ascii_i64(input.get(time_start + 6..time_start + 8)?)?;
+    Some(BoundedDateParseResult {
+        year: None,
+        month: None,
+        day: None,
+        hour: Some(hour),
+        minute: Some(minute),
+        second: Some(second),
+        fraction: Value::Float(0.0),
+        warnings: vec![(4, "Double timezone specification")],
+        errors: vec![
+            (0, "Unexpected character"),
+            (1, "The timezone could not be found in the database"),
+            (3, "Unexpected character"),
+            (7, "Unexpected character"),
+            (8, "Double timezone specification"),
+            (17, "Unexpected character"),
+            (18, "Double time specification"),
+        ],
+        is_localtime: true,
+        zone_type: Some(0),
+        zone: None,
+        is_dst: None,
+    })
+}
+
+fn date_parse_result_with_errors(errors: Vec<(i64, &'static str)>) -> BoundedDateParseResult {
+    BoundedDateParseResult {
+        year: None,
+        month: None,
+        day: None,
+        hour: None,
+        minute: None,
+        second: None,
+        fraction: Value::Bool(false),
+        warnings: vec![],
+        errors,
+        is_localtime: false,
+        zone_type: None,
+        zone: None,
+        is_dst: None,
+    }
+}
+
+fn date_parse_date_warnings(year: i64, month: i64, day: i64) -> Vec<(i64, &'static str)> {
+    if (1..=12).contains(&month) && (1..=days_in_month(year, month)).contains(&day) {
+        vec![]
+    } else {
+        vec![(11, "The parsed date was invalid")]
+    }
+}
+
+fn parse_decimal_fraction_value(fraction: &str) -> Option<f64> {
+    if fraction.is_empty() || !fraction.chars().all(|ch| ch.is_ascii_digit()) {
+        return None;
+    }
+    format!("0.{fraction}").parse::<f64>().ok()
+}
+
+fn parse_bounded_format_datetime(
+    format: &str,
+    input: &str,
+    default_timezone: &BoundedTimezone,
+) -> Option<BoundedParsedFormatDateTime> {
+    if !format.is_ascii() || !input.is_ascii() {
+        return None;
+    }
+    let mut cursor = BoundedFormatCursor { input, position: 0 };
+    let mut parts = BoundedFormatParts {
+        year: 1970,
+        month: 1,
+        day: 1,
+        hour: 0,
+        minute: 0,
+        second: 0,
+        microsecond: 0,
+        timezone: default_timezone.clone(),
+        twelve_hour: false,
+        meridiem: None,
+    };
+    let mut escaped = false;
+    for token in format.chars() {
+        if escaped {
+            cursor.consume_literal(token)?;
+            escaped = false;
+            continue;
+        }
+        match token {
+            '\\' => escaped = true,
+            '!' => {
+                parts.year = 1970;
+                parts.month = 1;
+                parts.day = 1;
+                parts.hour = 0;
+                parts.minute = 0;
+                parts.second = 0;
+                parts.microsecond = 0;
+                parts.timezone = default_timezone.clone();
+            }
+            'Y' => parts.year = cursor.consume_fixed_digits(4)?,
+            'X' => parts.year = cursor.consume_signed_fixed_year(4)?,
+            'y' => {
+                let year = cursor.consume_fixed_digits(2)?;
+                parts.year = if year <= 69 { 2000 + year } else { 1900 + year };
+            }
+            'm' | 'd' | 'H' | 'i' | 's' => {
+                let value = cursor.consume_fixed_digits(2)?;
+                match token {
+                    'm' => parts.month = value,
+                    'd' => parts.day = value,
+                    'H' => parts.hour = value,
+                    'i' => parts.minute = value,
+                    's' => parts.second = value,
+                    _ => {}
+                }
+            }
+            'j' => parts.day = cursor.consume_variable_digits(1, 2)?,
+            'g' => {
+                parts.hour = cursor.consume_variable_digits(1, 2)?;
+                parts.twelve_hour = true;
+            }
+            'u' => {
+                let digits = cursor.consume_digit_run(1, 6)?;
+                parts.microsecond = parse_microsecond_fraction(digits)?;
+            }
+            'v' => {
+                let digits = cursor.consume_digit_run(3, 3)?;
+                parts.microsecond = parse_microsecond_fraction(digits)?;
+            }
+            'M' => parts.month = cursor.consume_month_name(false)?,
+            'F' => parts.month = cursor.consume_month_name(true)?,
+            'D' => {
+                cursor.consume_weekday_name(false)?;
+            }
+            'l' => {
+                cursor.consume_weekday_name(true)?;
+            }
+            'A' | 'a' => parts.meridiem = Some(cursor.consume_meridiem()?),
+            'O' => {
+                let offset = cursor.consume_timezone_offset(false)?;
+                parts.timezone = BoundedTimezone::numeric_fixed_offset(offset);
+            }
+            'P' => {
+                let offset = cursor.consume_timezone_offset(true)?;
+                parts.timezone = BoundedTimezone::numeric_fixed_offset(offset);
+            }
+            'T' => {
+                let offset = cursor.consume_timezone_abbreviation()?;
+                parts.timezone = BoundedTimezone::numeric_fixed_offset(offset);
+            }
+            '#' | '*' => {
+                cursor.consume_one_separator()?;
+            }
+            other => cursor.consume_literal(other)?,
+        }
+    }
+    if escaped || !cursor.is_finished() {
+        return None;
+    }
+    if parts.twelve_hour {
+        if !(1..=12).contains(&parts.hour) {
+            return None;
+        }
+        if parts.hour == 12 {
+            parts.hour = 0;
+        }
+        if matches!(parts.meridiem, Some(true)) {
+            parts.hour += 12;
+        }
+    }
+    Some(BoundedParsedFormatDateTime {
+        year: parts.year,
+        month: parts.month,
+        day: parts.day,
+        hour: parts.hour,
+        minute: parts.minute,
+        second: parts.second,
+        microsecond: parts.microsecond,
+        timezone: parts.timezone,
+    })
+}
+
+struct BoundedFormatParts {
+    year: i64,
+    month: i64,
+    day: i64,
+    hour: i64,
+    minute: i64,
+    second: i64,
+    microsecond: i64,
+    timezone: BoundedTimezone,
+    twelve_hour: bool,
+    meridiem: Option<bool>,
+}
+
+struct BoundedFormatCursor<'a> {
+    input: &'a str,
+    position: usize,
+}
+
+impl<'a> BoundedFormatCursor<'a> {
+    fn is_finished(&self) -> bool {
+        self.position == self.input.len()
+    }
+
+    fn rest(&self) -> &'a str {
+        &self.input[self.position..]
+    }
+
+    fn consume_literal(&mut self, expected: char) -> Option<()> {
+        let rest = self.rest();
+        let mut chars = rest.chars();
+        let actual = chars.next()?;
+        if actual != expected {
+            return None;
+        }
+        self.position += actual.len_utf8();
+        Some(())
+    }
+
+    fn consume_fixed_digits(&mut self, width: usize) -> Option<i64> {
+        let digits = self.consume_digit_run(width, width)?;
+        parse_ascii_i64(digits)
+    }
+
+    fn consume_signed_fixed_year(&mut self, width: usize) -> Option<i64> {
+        let sign = self.rest().chars().next()?;
+        if sign != '+' && sign != '-' {
+            return None;
+        }
+        self.position += 1;
+        let value = self.consume_fixed_digits(width)?;
+        if sign == '-' {
+            value.checked_neg()
+        } else {
+            Some(value)
+        }
+    }
+
+    fn consume_variable_digits(&mut self, min: usize, max: usize) -> Option<i64> {
+        let digits = self.consume_digit_run(min, max)?;
+        parse_ascii_i64(digits)
+    }
+
+    fn consume_digit_run(&mut self, min: usize, max: usize) -> Option<&'a str> {
+        let bytes = self.input.as_bytes();
+        let start = self.position;
+        let mut len = 0;
+        while self.position + len < bytes.len()
+            && len < max
+            && bytes[self.position + len].is_ascii_digit()
+        {
+            len += 1;
+        }
+        if len < min {
+            return None;
+        }
+        self.position += len;
+        Some(&self.input[start..self.position])
+    }
+
+    fn consume_month_name(&mut self, full: bool) -> Option<i64> {
+        let candidates: &[(&str, i64)] = if full {
+            &[
+                ("January", 1),
+                ("February", 2),
+                ("March", 3),
+                ("April", 4),
+                ("May", 5),
+                ("June", 6),
+                ("July", 7),
+                ("August", 8),
+                ("September", 9),
+                ("October", 10),
+                ("November", 11),
+                ("December", 12),
+            ]
+        } else {
+            &[
+                ("Jan", 1),
+                ("Feb", 2),
+                ("Mar", 3),
+                ("Apr", 4),
+                ("May", 5),
+                ("Jun", 6),
+                ("Jul", 7),
+                ("Aug", 8),
+                ("Sep", 9),
+                ("Oct", 10),
+                ("Nov", 11),
+                ("Dec", 12),
+            ]
+        };
+        for (name, month) in candidates {
+            if self.rest().len() >= name.len()
+                && self.rest()[..name.len()].eq_ignore_ascii_case(name)
+            {
+                self.position += name.len();
+                return Some(*month);
+            }
+        }
+        None
+    }
+
+    fn consume_weekday_name(&mut self, full: bool) -> Option<()> {
+        let candidates: &[&str] = if full {
+            &[
+                "Sunday",
+                "Monday",
+                "Tuesday",
+                "Wednesday",
+                "Thursday",
+                "Friday",
+                "Saturday",
+            ]
+        } else {
+            &["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+        };
+        for name in candidates {
+            if self.rest().len() >= name.len()
+                && self.rest()[..name.len()].eq_ignore_ascii_case(name)
+            {
+                self.position += name.len();
+                return Some(());
+            }
+        }
+        None
+    }
+
+    fn consume_meridiem(&mut self) -> Option<bool> {
+        let rest = self.rest();
+        if rest.len() >= 2 && rest[..2].eq_ignore_ascii_case("AM") {
+            self.position += 2;
+            Some(false)
+        } else if rest.len() >= 2 && rest[..2].eq_ignore_ascii_case("PM") {
+            self.position += 2;
+            Some(true)
+        } else {
+            None
+        }
+    }
+
+    fn consume_timezone_offset(&mut self, colon: bool) -> Option<i64> {
+        let width = if colon { 6 } else { 5 };
+        let end = self.position.checked_add(width)?;
+        let token = self.input.get(self.position..end)?;
+        let offset = if colon {
+            parse_timezone_offset_token(token)?
+        } else {
+            parse_timezone_offset_without_colon(token)?
+        };
+        self.position = end;
+        Some(offset)
+    }
+
+    fn consume_timezone_abbreviation(&mut self) -> Option<i64> {
+        if self.rest().starts_with("GMT") {
+            self.position += 3;
+            if self.is_finished() {
+                return Some(0);
+            }
+            return self.consume_timezone_offset(false);
+        }
+        if self.rest().starts_with("UTC") {
+            self.position += 3;
+            return Some(0);
+        }
+        None
+    }
+
+    fn consume_one_separator(&mut self) -> Option<()> {
+        let ch = self.rest().chars().next()?;
+        if ch.is_ascii_alphanumeric() {
+            return None;
+        }
+        self.position += ch.len_utf8();
+        Some(())
+    }
+}
+
+fn parse_timezone_offset_without_colon(token: &str) -> Option<i64> {
+    if token.len() != 5 {
+        return None;
+    }
+    let sign = &token[0..1];
+    if sign != "+" && sign != "-" {
+        return None;
+    }
+    let hours = parse_ascii_i64(&token[1..3])?;
+    let minutes = parse_ascii_i64(&token[3..5])?;
+    if hours > 23 || minutes > 59 {
+        return None;
+    }
+    let offset = hours.checked_mul(3_600)?.checked_add(minutes * 60)?;
+    if sign == "-" {
+        offset.checked_neg()
+    } else {
+        Some(offset)
     }
 }
 

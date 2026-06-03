@@ -1462,6 +1462,74 @@ try {
 }
 
 #[test]
+fn date_parse_and_parse_from_format_return_bounded_metadata() {
+    let execution = run_source(
+        r#"<?php
+date_default_timezone_set("UTC");
+$full = date_parse("2009-02-27 10:00:00.5");
+echo $full["year"], "-", $full["month"], "-", $full["day"], "|", $full["hour"], ":", $full["minute"], ":", $full["second"], "|", $full["fraction"], "\n";
+$bad = date_parse("2006-02-30");
+echo $bad["warning_count"], "|", $bad["warnings"][11], "\n";
+$zone = date_parse("2006-12--12");
+echo $zone["day"], "|", $zone["error_count"], "|", $zone["zone_type"], "|", $zone["zone"], "\n";
+$time = date_parse("10:00:00.5");
+echo ($time["year"] === false ? "no-year" : "year"), "|", $time["hour"], "|", $time["fraction"], "\n";
+$empty = date_parse("");
+echo $empty["error_count"], "|", $empty["errors"][0], "\n";
+$format = date_parse_from_format("!m*d*y", "06/08/04");
+echo $format["year"], "-", $format["month"], "-", $format["day"], "|", $format["hour"], ":", $format["minute"], ":", $format["second"], "|", ($format["is_localtime"] ? "local" : "not-local"), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "2009-2-27|10:0:0|0.5\n",
+            "1|The parsed date was invalid\n",
+            "1|1|1|-43200\n",
+            "no-year|10|0.5\n",
+            "1|Empty string\n",
+            "2004-6-8|0:0:0|not-local\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn create_from_format_parses_bounded_rfc_and_textual_formats() {
+    let execution = run_source(
+        r#"<?php
+date_default_timezone_set("Europe/Oslo");
+$date = new DateTime("2008-07-08T22:14:12+02:00");
+foreach ([DATE_ATOM, DATE_COOKIE, DATE_ISO8601, DATE_RFC822, DATE_RFC3339_EXTENDED] as $format) {
+    $parsed = date_create_from_format($format, $date->format($format));
+    echo $format, "|", $parsed->format("Y-m-d H:i:s.u e"), "\n";
+}
+date_default_timezone_set("Europe/London");
+$textual = DateTime::createFromFormat("D., M# j, Y g:iA", "Thu., Nov. 29, 2012 5:00PM");
+echo $textual->format("D., M. j, Y g:iA"), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "Y-m-d\\TH:i:sP|2008-07-08 22:14:12.000000 +02:00\n",
+            "l, d-M-Y H:i:s T|2008-07-08 22:14:12.000000 +02:00\n",
+            "Y-m-d\\TH:i:sO|2008-07-08 22:14:12.000000 +02:00\n",
+            "D, d M y H:i:s O|2008-07-08 22:14:12.000000 +02:00\n",
+            "Y-m-d\\TH:i:s.vP|2008-07-08 22:14:12.000000 +02:00\n",
+            "Thu., Nov. 29, 2012 5:00PM\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn datetime_mutable_date_time_setters_normalize_bounded_parts() {
     let execution = run_source(
         r#"<?php
