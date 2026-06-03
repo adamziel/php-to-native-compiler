@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added a bounded `SplFileInfo` local metadata lane on the interpreter path.
+  Core `SplFileInfo` objects now carry a bounded local path state and support
+  `__construct()`, `getGroup()`, `getInode()`, `getOwner()`, and `getPerms()`
+  through the existing filesystem metadata/stat-cache helpers, including
+  SPL-shaped missing-stat `RuntimeException` behavior. Added bounded
+  interpreter-only `shell_exec(string $command)` stdout capture through
+  `sh -c` for PHPT oracle commands. Focused proof covers object-model and
+  process-execution Rust tests, build/fmt/diff checks, and selected public
+  PHPT rows `ext/spl/tests/SplFileInfo_getGroup_basic.phpt`,
+  `SplFileInfo_getGroup_error.phpt`, `SplFileInfo_getInode_basic.phpt`,
+  `SplFileInfo_getInode_error.phpt`, `SplFileInfo_getOwner_basic.phpt`,
+  `SplFileInfo_getOwner_error.phpt`, `SplFileInfo_getPerms_basic.phpt`, and
+  `SplFileInfo_getPerms_error.phpt` at `8/8` PASS. Unsupported edges remain
+  broad `SplFileInfo` path/name/type methods, `SplFileObject` inheritance over
+  `SplFileInfo`, DirectoryIterator inherited metadata, link-target-specific
+  behavior, remote wrappers, and native lowering.
+
 - Added a bounded malformed `unserialize()` diagnostics lane on the interpreter
   path. The serialized parser now preserves reached error offsets while
   parsing malformed object/custom-object payloads, uses checked digit-by-digit

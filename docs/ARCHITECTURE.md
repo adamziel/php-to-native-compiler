@@ -127,10 +127,14 @@ retain an inner `Iterator` plus offset, limit, and logical position. Wrapper
 methods delegate through the same required-iterator method dispatch used by
 `foreach`, so userland overrides on inner iterators and `parent::` calls on
 wrapper subclasses share the normal object method path.
-Core `SplFileObject` instances are modeled as bounded local-file cursor states
-with optional local stream resources; covered CSV controls, default-escape
-diagnostics, method-shaped CSV argument errors, and internal CSV method
-reflection metadata are handled on that interpreter object state.
+Core `SplFileInfo` instances are modeled as bounded local-path states:
+construction records the path without statting it, and covered metadata getters
+share the existing local filesystem metadata helpers while raising SPL-shaped
+`RuntimeException`s for unavailable stat data. Core `SplFileObject` instances
+are modeled as bounded local-file cursor states with optional local stream
+resources; covered CSV controls, default-escape diagnostics, method-shaped CSV
+argument errors, and internal CSV method reflection metadata are handled on that
+interpreter object state.
 Bounded non-direct named and dynamic property holder expressions in
 by-reference `foreach`, such as `$holders["bag"]->items["child"]`,
 `$holders["bag"]->{$name}["child"]`, method-context
@@ -3238,6 +3242,12 @@ runtime state.
 current `phpc run` process id and exposes metadata/folded callable membership
 to native output. Direct native calls reject until generated code has a
 process/runtime identity ABI.
+`shell_exec()` is an interpreter-only local process execution boundary for
+focused PHPT oracle commands. It accepts one string command, runs `sh -c`,
+materializes stdout as a PHP string or `null` for empty output, and deliberately
+leaves stderr, status reporting, streaming, disabled_functions, environment
+isolation, platform shell selection, and native lowering outside the current
+runtime.
 `get_current_user()` is an interpreter-only local script ownership boundary
 for focused CLI compatibility. It returns the current main source file owner
 name when local metadata and the bounded `/etc/passwd` lookup are available,

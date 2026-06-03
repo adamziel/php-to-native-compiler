@@ -33150,9 +33150,26 @@ impl PhpClassTable {
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
                 .expect("SplObjectStorage core metadata should not duplicate methods");
         }
+        let spl_file_info_id = classes
+            .declare_class("SplFileInfo")
+            .expect("core class table should contain SplObjectStorage before SplFileInfo");
+        let spl_file_info = classes
+            .get_mut(spl_file_info_id)
+            .expect("declared SplFileInfo class id should resolve");
+        for method in [
+            "__construct",
+            "getGroup",
+            "getInode",
+            "getOwner",
+            "getPerms",
+        ] {
+            spl_file_info
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("SplFileInfo core metadata should not duplicate methods");
+        }
         let spl_file_object_id = classes
             .declare_class("SplFileObject")
-            .expect("core class table should contain SplObjectStorage before SplFileObject");
+            .expect("core class table should contain SplFileInfo before SplFileObject");
         classes
             .set_interfaces(spl_file_object_id, vec!["Iterator".to_string()])
             .expect("SplFileObject should implement Iterator");
@@ -81582,6 +81599,7 @@ mod tests {
                 "SplQueue",
                 "SplStack",
                 "SplObjectStorage",
+                "SplFileInfo",
                 "SplFileObject",
                 "EmptyIterator",
                 "InfiniteIterator",

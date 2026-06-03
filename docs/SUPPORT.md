@@ -2697,6 +2697,18 @@
   subclass ArrayAccess override cursor side effects, destructor side effects
   during detach/unset, serialization parity, reference/COW mutation of stored
   info values, and native lowering remain unsupported.
+- SPL `SplFileInfo` has a bounded local metadata runtime model for
+  `__construct()`, `getGroup()`, `getInode()`, `getOwner()`, and `getPerms()`.
+  Construction records the provided path without opening or statting it.
+  Covered metadata getters resolve local paths through the same bounded
+  local-path, open_basedir, and stat-cache policy as the adjacent `filegroup()`,
+  `fileinode()`, `fileowner()`, and `fileperms()` helpers, return host-local
+  integer metadata for existing files, and raise the bounded SPL
+  `RuntimeException` shape when stat metadata is unavailable.
+  Broad `SplFileInfo` path/name/type methods, `SplFileObject` inheritance over
+  `SplFileInfo`, DirectoryIterator inherited metadata, link-target-specific
+  metadata, non-local/user stream wrappers, exact open_basedir warning parity,
+  serialization parity, references/COW, and native lowering remain unsupported.
 - SPL `SplFileObject` has a bounded local UTF-8 line-cursor runtime model for
   construction from local paths and local `file://` URLs in supported local
   stream modes, plus `current()`, `getCurrentLine()`, `fgets()`,
@@ -2724,8 +2736,8 @@
   diagnostics. Write-capable local modes are backed by the existing local
   stream resource model and update the bounded line cursor after covered
   writes.
-  Non-local/user stream wrappers, `SplTempFileObject`,
-  `SplFileInfo` inheritance metadata, `fseek()` / `ftruncate()` /
+  Non-local/user stream wrappers, `SplTempFileObject`, `SplFileObject`
+  inheritance over `SplFileInfo`, `fseek()` / `ftruncate()` /
   `fstat()` / `flock()` as `SplFileObject` methods, full max-line chunked
   cursor parity for every mixed read/seek path, full `READ_AHEAD` /
   `SKIP_EMPTY` side effects, broad CSV multiline/default-escape parity beyond
@@ -2971,8 +2983,13 @@
   `escapeshellarg()` supports the bounded Unix argument-quoting shape used by
   the focused standard PHPT row: the interpreter wraps the current string
   argument bytes in single quotes and escapes embedded single quotes as
-  `'\''`. This does not add shell command execution, process I/O, platform
-  quoting variants, or shell-selection behavior.
+  `'\''`. This quoting helper does not model platform quoting variants.
+  `shell_exec($command)` is interpreter-only for a bounded local process
+  execution slice: it accepts a string or UTF-8 binary-string command, runs the
+  host shell with `sh -c`, returns stdout as a PHP string, and returns `null`
+  for empty stdout. Stderr capture, exit-status exposure, disabled_functions,
+  environment isolation, Windows shell behavior, timeout/streaming behavior,
+  command interpolation, and native lowering remain unsupported.
 - `Uri\Rfc3986\Uri` supports bounded construction/parsing, raw string output,
   equivalence, host-type lookup, and URI-type lookup for the current ASCII
   subset. `Uri\WhatWg\Url` supports a bounded WHATWG URL subset for direct

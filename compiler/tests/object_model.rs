@@ -63,6 +63,7 @@ const CORE_CLASS_NAMES: &[&str] = &[
     "SplQueue",
     "SplStack",
     "SplObjectStorage",
+    "SplFileInfo",
     "SplFileObject",
     "EmptyIterator",
     "InfiniteIterator",
@@ -272,6 +273,9 @@ echo "ready\n";
     let spl_file_object = classes.lookup_class("SplFileObject").unwrap();
     assert!(spl_file_object.constant("READ_CSV").is_some());
     assert!(spl_file_object.method("setCsvControl").is_some());
+    let spl_file_info = classes.lookup_class("SplFileInfo").unwrap();
+    assert!(spl_file_info.method("getOwner").is_some());
+    assert!(spl_file_info.method("getPerms").is_some());
 
     let class = classes.lookup_class("box").unwrap();
     assert_eq!(class.name(), "Box");
@@ -16899,6 +16903,47 @@ echo count($counted), "\n";
     assert_eq!(
         execution.stdout,
         "2|2\nNULL\nNULL\n1|first\n0=first;0=second;0=third;\n0\n2=c;1=b;0=a;\n0\n-2\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn spl_file_info_metadata_methods_use_local_stat_helpers() {
+    use std::fs;
+
+    let fixture_dir =
+        std::env::temp_dir().join(format!("phpc-spl-file-info-{}", std::process::id()));
+    fs::create_dir_all(&fixture_dir).unwrap();
+    let fixture = fixture_dir.join("metadata.txt");
+    fs::write(&fixture, "metadata").unwrap();
+    let fixture_path = fixture.display().to_string().replace('\\', "\\\\");
+    let missing = fixture_dir.join("missing.txt");
+    let missing_path = missing.display().to_string().replace('\\', "\\\\");
+
+    let source = format!(
+        r#"<?php
+$file = "{fixture_path}";
+$info = new SplFileInfo($file);
+echo $info->getGroup() == filegroup($file) ? "group\n" : "bad-group\n";
+echo $info->getInode() == fileinode($file) ? "inode\n" : "bad-inode\n";
+echo $info->getOwner() == fileowner($file) ? "owner\n" : "bad-owner\n";
+echo $info->getPerms() == fileperms($file) ? "perms\n" : "bad-perms\n";
+try {{
+    (new SplFileInfo("{missing_path}"))->getOwner();
+}} catch (RuntimeException $e) {{
+    echo $e->getMessage(), "\n";
+}}
+"#
+    );
+
+    let execution = run_source(&source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        format!(
+            "group\ninode\nowner\nperms\nSplFileInfo::getOwner(): stat failed for {}\n",
+            missing.display()
+        )
     );
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);

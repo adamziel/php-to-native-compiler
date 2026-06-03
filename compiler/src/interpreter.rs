@@ -5,6 +5,7 @@ use std::fs::{self, FileTimes};
 use std::io::{Cursor, ErrorKind, Read, Seek, SeekFrom, Write};
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -517,6 +518,7 @@ struct Interpreter {
     spl_object_storages: HashMap<i64, SplObjectStorageState>,
     spl_object_storage_get_hash_depth: usize,
     spl_doubly_linked_lists: HashMap<i64, SplDoublyLinkedListState>,
+    spl_file_infos: HashMap<i64, SplFileInfoState>,
     spl_file_objects: HashMap<i64, SplFileObjectState>,
     spl_iterator_wrappers: HashMap<i64, SplIteratorWrapperState>,
     date_time_objects: HashMap<i64, BoundedDateTimeObjectState>,
@@ -853,6 +855,11 @@ impl SplDoublyLinkedListState {
             active_lifo: iterator_mode & SPL_DLL_IT_MODE_LIFO != 0,
         }
     }
+}
+
+#[derive(Debug, Clone, Default)]
+struct SplFileInfoState {
+    path: String,
 }
 
 #[derive(Debug, Clone)]
@@ -11570,6 +11577,7 @@ impl Interpreter {
             spl_object_storages: HashMap::new(),
             spl_object_storage_get_hash_depth: 0,
             spl_doubly_linked_lists: HashMap::new(),
+            spl_file_infos: HashMap::new(),
             spl_file_objects: HashMap::new(),
             spl_iterator_wrappers: HashMap::new(),
             date_time_objects: HashMap::new(),
@@ -11809,6 +11817,20 @@ impl Interpreter {
             .iter()
             .filter_map(|class_name| self.classes.lookup_class_id(class_name))
             .any(|core_id| class_id == core_id)
+    }
+
+    fn is_spl_file_info_class_id(&self, class_id: ClassId) -> bool {
+        self.classes
+            .lookup_class_id("SplFileInfo")
+            .is_some_and(|file_info_id| {
+                class_id == file_info_id || self.classes.is_subclass_of(class_id, file_info_id)
+            })
+    }
+
+    fn resolved_method_is_core_spl_file_info(&self, class_id: ClassId) -> bool {
+        self.classes
+            .lookup_class_id("SplFileInfo")
+            .is_some_and(|file_info_id| class_id == file_info_id)
     }
 
     fn is_spl_file_object_class_id(&self, class_id: ClassId) -> bool {
@@ -14922,6 +14944,12 @@ impl Interpreter {
                 .map(|value| (value, None));
         }
 
+        if self.resolved_method_is_core_spl_file_info(class_id) {
+            return self
+                .call_spl_file_info_method_with_values(object, method_name, Vec::new(), span)
+                .map(|value| (value, None));
+        }
+
         if self.resolved_method_is_core_spl_file_object(class_id) {
             return self
                 .call_spl_file_object_method_with_values(object, method_name, Vec::new(), span)
@@ -17363,6 +17391,15 @@ impl Interpreter {
             );
         }
 
+        if self.resolved_method_is_core_spl_file_info(class_id) {
+            return self.call_spl_file_info_method_with_values(
+                object,
+                method_name,
+                Vec::new(),
+                span,
+            );
+        }
+
         if self.resolved_method_is_core_spl_file_object(class_id) {
             return self.call_spl_file_object_method_with_values(
                 object,
@@ -17813,6 +17850,155 @@ impl Interpreter {
             span,
             RuntimeError::undefined_function(format!("{}::{method_name}()", object.class_name())),
         ))
+    }
+
+    fn spl_file_info_state(
+        &self,
+        object: &PhpObject,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<&SplFileInfoState> {
+        self.spl_file_infos.get(&object.id()).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("SplFileInfo::{method_name}()"),
+                    "missing SplFileInfo runtime state",
+                ),
+            )
+        })
+    }
+
+    fn spl_file_info_state_mut(
+        &mut self,
+        object: &PhpObject,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<&mut SplFileInfoState> {
+        self.spl_file_infos.get_mut(&object.id()).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("SplFileInfo::{method_name}()"),
+                    "missing SplFileInfo runtime state",
+                ),
+            )
+        })
+    }
+
+    fn spl_file_info_metadata_method_name(method_name: &str) -> Option<&'static str> {
+        match method_name.to_ascii_lowercase().as_str() {
+            "getgroup" => Some("SplFileInfo::getGroup"),
+            "getinode" => Some("SplFileInfo::getInode"),
+            "getowner" => Some("SplFileInfo::getOwner"),
+            "getperms" => Some("SplFileInfo::getPerms"),
+            _ => None,
+        }
+    }
+
+    fn spl_file_info_metadata(
+        &mut self,
+        object: &PhpObject,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<fs::Metadata> {
+        let function = Self::spl_file_info_metadata_method_name(method_name)
+            .expect("metadata method name was already selected");
+        let path = self
+            .spl_file_info_state(object, method_name, span)?
+            .path
+            .clone();
+        if path.contains("://") {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{function}()"),
+                    "stream wrappers are not supported in the current subset",
+                ),
+            ));
+        }
+        let filesystem_path =
+            self.resolve_local_filesystem_operation_path(function, &path, false, span)?;
+        if !self.enforce_bounded_open_basedir(
+            &format!("{function}()"),
+            &path,
+            &filesystem_path,
+            span,
+        )? {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{function}()"),
+                    format!("{function}(): stat failed for {path}"),
+                ),
+            ));
+        }
+        let Some(metadata) = self.cached_filesystem_metadata(&filesystem_path, true) else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{function}()"),
+                    format!("{function}(): stat failed for {path}"),
+                ),
+            ));
+        };
+        if trailing_separator_requires_directory(&path) && !metadata.is_dir() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{function}()"),
+                    format!("{function}(): stat failed for {path}"),
+                ),
+            ));
+        }
+        self.cache_bounded_realpath_entry_for_local_path(&filesystem_path);
+        Ok(metadata)
+    }
+
+    fn call_spl_file_info_method_with_values(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        args: Vec<Value>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        match method_name.to_ascii_lowercase().as_str() {
+            "__construct" => {
+                expect_arity("SplFileInfo::__construct", &args, 1, span)?;
+                let path =
+                    self.filesystem_filename_argument("SplFileInfo::__construct", &args[0], span)?;
+                self.spl_file_info_state_mut(&object, "__construct", span)?
+                    .path = path;
+                Ok(Value::Null)
+            }
+            "getgroup" => {
+                expect_arity("SplFileInfo::getGroup", &args, 0, span)?;
+                let metadata = self.spl_file_info_metadata(&object, method_name, span)?;
+                Ok(Value::Int(filesystem_group_value(&metadata)))
+            }
+            "getinode" => {
+                expect_arity("SplFileInfo::getInode", &args, 0, span)?;
+                let metadata = self.spl_file_info_metadata(&object, method_name, span)?;
+                Ok(Value::Int(filesystem_inode_value(&metadata)))
+            }
+            "getowner" => {
+                expect_arity("SplFileInfo::getOwner", &args, 0, span)?;
+                let metadata = self.spl_file_info_metadata(&object, method_name, span)?;
+                Ok(Value::Int(filesystem_owner_value(&metadata)))
+            }
+            "getperms" => {
+                expect_arity("SplFileInfo::getPerms", &args, 0, span)?;
+                let metadata = self.spl_file_info_metadata(&object, method_name, span)?;
+                Ok(Value::Int(filesystem_mode_bits(&metadata)))
+            }
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!(
+                    "{}::{method_name}()",
+                    object.class_name()
+                )),
+            )),
+        }
     }
 
     fn spl_file_object_state(
@@ -27923,6 +28109,10 @@ impl Interpreter {
             self.spl_doubly_linked_lists
                 .insert(object.id(), SplDoublyLinkedListState::new(iterator_mode));
         }
+        if self.is_spl_file_info_class_id(class_id) {
+            self.spl_file_infos
+                .insert(object.id(), SplFileInfoState::default());
+        }
         if self.is_spl_file_object_class_id(class_id) {
             self.spl_file_objects
                 .insert(object.id(), SplFileObjectState::default());
@@ -28035,6 +28225,21 @@ impl Interpreter {
 
         if self.resolved_method_is_core_spl_doubly_linked_list(constructor_class_id) {
             expect_expr_arity("SplDoublyLinkedList::__construct", args.len(), 0, span)?;
+            self.track_allocated_object(&object);
+            return Ok(Value::Object(object));
+        }
+
+        if self.resolved_method_is_core_spl_file_info(constructor_class_id) {
+            let values = args
+                .iter()
+                .map(|arg| self.evaluate(arg, scope))
+                .collect::<CompileResult<Vec<_>>>()?;
+            self.call_spl_file_info_method_with_values(
+                object.clone(),
+                "__construct",
+                values,
+                span,
+            )?;
             self.track_allocated_object(&object);
             return Ok(Value::Object(object));
         }
@@ -28537,6 +28742,7 @@ impl Interpreter {
         self.array_objects.remove(&object_id);
         self.spl_object_storages.remove(&object_id);
         self.spl_doubly_linked_lists.remove(&object_id);
+        self.spl_file_infos.remove(&object_id);
         self.spl_file_objects.remove(&object_id);
         self.spl_iterator_wrappers.remove(&object_id);
         self.date_time_objects.remove(&object_id);
@@ -28924,6 +29130,9 @@ impl Interpreter {
         if let Some(state) = self.spl_doubly_linked_lists.get(&object.id()).cloned() {
             self.spl_doubly_linked_lists.insert(clone.id(), state);
             self.sync_spl_doubly_linked_list_object_properties(&clone, span)?;
+        }
+        if let Some(state) = self.spl_file_infos.get(&object.id()).cloned() {
+            self.spl_file_infos.insert(clone.id(), state);
         }
         if let Some(state) = self.spl_file_objects.get(&object.id()).cloned() {
             self.spl_file_objects.insert(clone.id(), state);
@@ -52744,6 +52953,12 @@ impl Interpreter {
                 .map(Some);
         }
 
+        if self.resolved_method_is_core_spl_file_info(class_id) {
+            return self
+                .call_spl_file_info_method_with_values(object, method_name, args, span)
+                .map(Some);
+        }
+
         if self.resolved_method_is_core_spl_file_object(class_id) {
             return self
                 .call_spl_file_object_method_with_values(object, method_name, args, span)
@@ -52935,6 +53150,12 @@ impl Interpreter {
         if self.resolved_method_is_core_spl_doubly_linked_list(class_id) {
             return self
                 .call_spl_doubly_linked_list_method_with_values(object, method_name, args, span)
+                .map(Some);
+        }
+
+        if self.resolved_method_is_core_spl_file_info(class_id) {
+            return self
+                .call_spl_file_info_method_with_values(object, method_name, args, span)
                 .map(Some);
         }
 
@@ -53649,6 +53870,24 @@ impl Interpreter {
             )?;
             let callable = format!("{}->{method_name}", object.class_name());
             let result = self.call_spl_file_object_method_with_values(
+                object,
+                method_name,
+                values.clone(),
+                span,
+            );
+            if let Err(error) = &result {
+                self.record_pending_uncaught_internal_call_frame(callable, span, &values, error);
+            }
+            return result.map(|value| (value, None));
+        }
+
+        if self.resolved_method_is_core_spl_file_info(class_id) {
+            let values = args
+                .iter()
+                .map(|arg| self.evaluate(arg, caller_scope))
+                .collect::<CompileResult<Vec<_>>>()?;
+            let callable = format!("{}->{method_name}", object.class_name());
+            let result = self.call_spl_file_info_method_with_values(
                 object,
                 method_name,
                 values.clone(),
@@ -59192,6 +59431,31 @@ impl Interpreter {
                 .map(|arg| self.evaluate(arg, caller_scope))
                 .collect::<CompileResult<Vec<_>>>()?;
             return self.call_spl_file_object_method_with_values(
+                this_object,
+                method_name,
+                values,
+                span,
+            );
+        }
+
+        if self.resolved_method_is_core_spl_file_info(class_id) {
+            let this_object = match caller_scope.read_named("this") {
+                Some(Value::Object(object)) => object.clone(),
+                _ => {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{class_name}::{method_name}()"),
+                            "non-static method dispatch through parent:: requires current $this object context",
+                        ),
+                    ));
+                }
+            };
+            let values = args
+                .iter()
+                .map(|arg| self.evaluate(arg, caller_scope))
+                .collect::<CompileResult<Vec<_>>>()?;
+            return self.call_spl_file_info_method_with_values(
                 this_object,
                 method_name,
                 values,
@@ -84584,6 +84848,56 @@ impl Interpreter {
         Ok(Value::Resource(id))
     }
 
+    fn call_shell_exec(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("shell_exec", args, 1, span)?;
+        let command = match &args[0] {
+            Value::String(command) => command.clone(),
+            Value::BinaryString(bytes) => {
+                tree_walk_binary_string_utf8(bytes, "shell_exec command", span)?.to_string()
+            }
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "shell_exec()",
+                        format!(
+                            "Argument #1 ($command) must be of type string, {} given",
+                            php_type_error_given(other)
+                        ),
+                    ),
+                ));
+            }
+        };
+        if command.contains('\0') {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "shell_exec()",
+                    "Argument #1 ($command) must not contain any null bytes",
+                ),
+            ));
+        }
+
+        let output = Command::new("sh")
+            .arg("-c")
+            .arg(&command)
+            .output()
+            .map_err(|error| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "shell_exec()",
+                        format!("process execution failed: {error}"),
+                    ),
+                )
+            })?;
+        if output.stdout.is_empty() {
+            Ok(Value::Null)
+        } else {
+            Ok(interpreter_value_from_php_string_bytes(output.stdout))
+        }
+    }
+
     fn filesystem_path_argument(
         &mut self,
         function: &str,
@@ -95249,6 +95563,7 @@ impl Interpreter {
             }
             "fopen" => self.call_fopen(&args, span),
             "tmpfile" => self.call_tmpfile(&args, span),
+            "shell_exec" => self.call_shell_exec(&args, span),
             "stream_context_create" => self.call_stream_context_create(&args, span),
             "stream_context_get_options" => self.call_stream_context_get_options(&args, span),
             "stream_context_get_params" => self.call_stream_context_get_params(&args, span),
@@ -115506,6 +115821,20 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             }
         }
 
+        if let Some(message) = error
+            .message
+            .strip_prefix("unsupported call SplFileInfo::")
+            .and_then(|message| message.split_once(": "))
+            .map(|(_, message)| message.to_string())
+        {
+            if message.contains("stat failed for ") {
+                return Some(("RuntimeException", message));
+            }
+            if message.contains(" must be of type ") {
+                return Some(("TypeError", message));
+            }
+        }
+
         for prefix in [
             "unsupported call InfiniteIterator::",
             "unsupported call LimitIterator::",
@@ -117283,6 +117612,7 @@ fn is_builtin(name: &str) -> bool {
             | "highlight_string"
             | "highlight_file"
             | "show_source"
+            | "shell_exec"
             | "php_strip_whitespace"
             | "get_html_translation_table"
             | "strip_tags"
@@ -155746,6 +156076,7 @@ const COMPAT_STANDARD_EXTENSION_FUNCTIONS: &[&str] = &[
     "get_extension_funcs",
     "get_defined_functions",
     "phpcredits",
+    "shell_exec",
     "abs",
     "min",
     "max",
