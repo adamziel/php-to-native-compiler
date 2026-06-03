@@ -88,6 +88,7 @@ const CORE_CLASS_NAMES: &[&str] = &[
     "ErrorException",
     "Reflection",
     "Deprecated",
+    "Random\\IntervalBoundary",
     "Generator",
 ];
 const CORE_INTERFACE_NAMES: &[&str] = &[
@@ -8235,6 +8236,71 @@ try {
     );
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn core_attribute_message_type_errors_use_constructor_trace_args() {
+    let deprecated = run_source_with_source_file(
+        r#"<?php
+declare(strict_types = 1);
+
+#[Deprecated(1234)]
+function deprecated_bad() {}
+
+deprecated_bad();
+"#,
+        "/tmp/core_attribute_deprecated_type.php",
+    )
+    .unwrap();
+
+    assert!(deprecated.stdout.contains(
+        "Fatal error: Uncaught TypeError: Deprecated::__construct(): Argument #1 ($message) must be of type ?string, int given in /tmp/core_attribute_deprecated_type.php:"
+    ));
+    assert!(deprecated.stdout.contains("Deprecated->__construct(1234)"));
+    assert!(!deprecated.stdout.contains(", called in "));
+    assert_eq!(deprecated.stderr, "");
+    assert_eq!(deprecated.exit_code, 255);
+
+    let nodiscard = run_source_with_source_file(
+        r#"<?php
+#[NoDiscard([])]
+function nodiscard_bad(): int {
+    return 0;
+}
+
+nodiscard_bad();
+"#,
+        "/tmp/core_attribute_nodiscard_type.php",
+    )
+    .unwrap();
+
+    assert!(nodiscard.stdout.contains(
+        "Fatal error: Uncaught TypeError: NoDiscard::__construct(): Argument #1 ($message) must be of type ?string, array given in /tmp/core_attribute_nodiscard_type.php:"
+    ));
+    assert!(nodiscard.stdout.contains("NoDiscard->__construct(Array)"));
+    assert!(!nodiscard.stdout.contains(", called in "));
+    assert_eq!(nodiscard.stderr, "");
+    assert_eq!(nodiscard.exit_code, 255);
+
+    let enum_case = run_source_with_source_file(
+        r#"<?php
+#[Deprecated(\Random\IntervalBoundary::ClosedOpen)]
+function enum_message_bad() {}
+
+enum_message_bad();
+"#,
+        "/tmp/core_attribute_enum_type.php",
+    )
+    .unwrap();
+
+    assert!(enum_case.stdout.contains(
+        "Fatal error: Uncaught TypeError: Deprecated::__construct(): Argument #1 ($message) must be of type ?string, Random\\IntervalBoundary given in /tmp/core_attribute_enum_type.php:"
+    ));
+    assert!(enum_case
+        .stdout
+        .contains("Deprecated->__construct(Random\\IntervalBoundary::ClosedOpen)"));
+    assert_eq!(enum_case.stderr, "");
+    assert_eq!(enum_case.exit_code, 255);
 }
 
 #[test]

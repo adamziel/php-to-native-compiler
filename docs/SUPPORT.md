@@ -7214,7 +7214,15 @@
   positional and named `message` / `since` arguments; empty messages;
   NUL-containing strings; runtime constants; protected parent class constants
   in method attributes; and weak scalar-to-string coercion for covered message
-  arguments. Direct built-in target validation covers `#[Attribute]` /
+  arguments. Supported strict scalar, array, and bounded
+  `Random\IntervalBoundary` enum-case message failures report PHP-shaped
+  `Deprecated::__construct()` fatal `TypeError` stack traces. Direct unused
+  calls to user functions annotated with `#[NoDiscard]` /
+  `#[\NoDiscard]` validate/coerce the supported `?string $message`
+  constructor argument before emitting the unused-return diagnostic, including
+  PHP-shaped constructor `TypeError` traces for strict scalar, array, and
+  bounded `Random\IntervalBoundary` enum-case failures. Direct built-in target
+  validation covers `#[Attribute]` /
   `#[\Attribute]` on top-level functions, abstract classes, interfaces,
   traits, and enums plus `#[AllowDynamicProperties]` /
   `#[\AllowDynamicProperties]` on interfaces, traits, and enums, and repeated
@@ -7232,11 +7240,11 @@
   functions/members/parameters/closures, readonly-class
   `AllowDynamicProperties` diagnostics, deprecations on
   classes/interfaces/traits/enums/constants/class constants/properties, exact
-  exception-handler diagnostic call-site rendering, exact
-  `Deprecated::__construct()` `TypeError` fatal stack traces for strict or
-  non-scalar message arguments, references/copy-on-write, and native lowering
-  remain unsupported; ordinary `#` comments, including `# [` with whitespace
-  before the bracket, remain comments
+  exception-handler diagnostic call-site rendering, `NoDiscard` targets beyond
+  direct user-function unused calls, broader core enum APIs/reflection/cases,
+  references/copy-on-write, and native lowering remain unsupported; ordinary
+  `#` comments, including `# [` with whitespace before the bracket, remain
+  comments
 
 ## Partially Supported
 

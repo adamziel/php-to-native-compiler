@@ -26947,6 +26947,13 @@ impl Interpreter {
         if catchable_php_error_message(error).is_none() {
             return;
         }
+        if self
+            .pending_uncaught_call_frames
+            .last()
+            .is_some_and(PendingUncaughtCallFrame::is_core_attribute_constructor)
+        {
+            return;
+        }
         self.pending_uncaught_call_frames
             .push(PendingUncaughtCallFrame {
                 function_name,
@@ -27154,17 +27161,26 @@ impl Interpreter {
         let Some(Callable::User(function)) = self.lookup_direct_function_call(name) else {
             return Ok(());
         };
-        if !attributes_include_no_discard(&function.attributes) {
+        let Some(attribute) = function
+            .attributes
+            .iter()
+            .find(|attribute| attribute_name_is_no_discard(attribute))
+        else {
             return Ok(());
+        };
+
+        let message =
+            self.no_discard_attribute_message(attribute, function.strict_types, function.span)?;
+        let mut diagnostic = format!(
+            "The return value of function {}() should either be used or intentionally ignored by casting it as (void)",
+            function.name
+        );
+        if let Some(message) = message.filter(|value| !value.is_empty()) {
+            diagnostic.push_str(", ");
+            diagnostic.push_str(&message);
         }
 
-        self.emit_display_warning(
-            format!(
-                "The return value of function {}() should either be used or intentionally ignored by casting it as (void)",
-                function.name
-            ),
-            *span,
-        )
+        self.emit_display_warning(diagnostic, *span)
     }
 
     fn execute_file_include(
@@ -29817,7 +29833,7 @@ impl Interpreter {
         scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
         let (message, since) =
-            self.deprecated_attribute_message_parts_from_exprs(args, false, scope)?;
+            self.deprecated_attribute_message_parts_from_exprs(args, false, span, scope)?;
         let class_id = self
             .classes
             .lookup_class_id("Deprecated")
@@ -59790,6 +59806,7 @@ impl Interpreter {
         self.deprecated_attribute_message_parts_from_exprs(
             &argument_exprs,
             strict_types,
+            span,
             &mut scope,
         )
     }
@@ -59798,6 +59815,32 @@ impl Interpreter {
         &mut self,
         argument_exprs: &[Expr],
         strict_types: bool,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<(Option<String>, Option<String>)> {
+        let mut trace_args = Vec::new();
+        let result = self.deprecated_attribute_message_parts_from_exprs_inner(
+            argument_exprs,
+            strict_types,
+            &mut trace_args,
+            scope,
+        );
+        if let Err(error) = &result {
+            self.record_core_attribute_constructor_uncaught_frame(
+                "Deprecated",
+                span,
+                &trace_args,
+                error,
+            );
+        }
+        result
+    }
+
+    fn deprecated_attribute_message_parts_from_exprs_inner(
+        &mut self,
+        argument_exprs: &[Expr],
+        strict_types: bool,
+        trace_args: &mut Vec<Value>,
         scope: &mut SymbolTable,
     ) -> CompileResult<(Option<String>, Option<String>)> {
         let mut message = None;
@@ -59808,9 +59851,11 @@ impl Interpreter {
             match argument {
                 Expr::NamedArgument { name, expr, span } => {
                     let value = self.evaluate(expr, scope)?;
+                    trace_args.push(value.clone());
                     match name.to_ascii_lowercase().as_str() {
                         "message" => {
-                            message = self.deprecated_attribute_nullable_string_argument(
+                            message = self.core_attribute_nullable_string_argument(
+                                "Deprecated::__construct()",
                                 value,
                                 strict_types,
                                 1,
@@ -59819,7 +59864,8 @@ impl Interpreter {
                             )?;
                         }
                         "since" => {
-                            since = self.deprecated_attribute_nullable_string_argument(
+                            since = self.core_attribute_nullable_string_argument(
+                                "Deprecated::__construct()",
                                 value,
                                 strict_types,
                                 2,
@@ -59849,9 +59895,11 @@ impl Interpreter {
                 }
                 expr => {
                     let value = self.evaluate(expr, scope)?;
+                    trace_args.push(value.clone());
                     match positional_index {
                         0 => {
-                            message = self.deprecated_attribute_nullable_string_argument(
+                            message = self.core_attribute_nullable_string_argument(
+                                "Deprecated::__construct()",
                                 value,
                                 strict_types,
                                 1,
@@ -59860,7 +59908,8 @@ impl Interpreter {
                             )?;
                         }
                         1 => {
-                            since = self.deprecated_attribute_nullable_string_argument(
+                            since = self.core_attribute_nullable_string_argument(
+                                "Deprecated::__construct()",
                                 value,
                                 strict_types,
                                 2,
@@ -59886,8 +59935,117 @@ impl Interpreter {
         Ok((message, since))
     }
 
-    fn deprecated_attribute_nullable_string_argument(
+    fn no_discard_attribute_message(
         &mut self,
+        attribute: &AttributeDecl,
+        strict_types: bool,
+        span: Span,
+    ) -> CompileResult<Option<String>> {
+        let argument_exprs = Self::reflection_attribute_argument_exprs(
+            attribute.arguments.as_deref(),
+            span,
+            "NoDiscard::__construct",
+        )?;
+        let mut scope = SymbolTable::new_child(self.global_symbols.clone());
+        self.no_discard_attribute_message_from_exprs(
+            &argument_exprs,
+            strict_types,
+            span,
+            &mut scope,
+        )
+    }
+
+    fn no_discard_attribute_message_from_exprs(
+        &mut self,
+        argument_exprs: &[Expr],
+        strict_types: bool,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Option<String>> {
+        let mut trace_args = Vec::new();
+        let result = self.no_discard_attribute_message_from_exprs_inner(
+            argument_exprs,
+            strict_types,
+            &mut trace_args,
+            scope,
+        );
+        if let Err(error) = &result {
+            self.record_core_attribute_constructor_uncaught_frame(
+                "NoDiscard",
+                span,
+                &trace_args,
+                error,
+            );
+        }
+        result
+    }
+
+    fn no_discard_attribute_message_from_exprs_inner(
+        &mut self,
+        argument_exprs: &[Expr],
+        strict_types: bool,
+        trace_args: &mut Vec<Value>,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Option<String>> {
+        match argument_exprs {
+            [] => Ok(None),
+            [Expr::NamedArgument { name, expr, span }] if name.eq_ignore_ascii_case("message") => {
+                let value = self.evaluate(expr, scope)?;
+                trace_args.push(value.clone());
+                self.core_attribute_nullable_string_argument(
+                    "NoDiscard::__construct()",
+                    value,
+                    strict_types,
+                    1,
+                    "message",
+                    *span,
+                )
+            }
+            [Expr::NamedArgument { name, span, .. }] => Err(runtime_error(
+                *span,
+                RuntimeError::unsupported_call(
+                    "NoDiscard::__construct()",
+                    format!("unknown named argument ${name}"),
+                ),
+            )),
+            [Expr::SpreadArgument { span, .. }] => Err(runtime_error(
+                *span,
+                RuntimeError::unsupported_call(
+                    "NoDiscard::__construct()",
+                    "argument unpacking is not implemented for NoDiscard attributes",
+                ),
+            )),
+            [expr] => {
+                let value = self.evaluate(expr, scope)?;
+                trace_args.push(value.clone());
+                self.core_attribute_nullable_string_argument(
+                    "NoDiscard::__construct()",
+                    value,
+                    strict_types,
+                    1,
+                    "message",
+                    expr.span(),
+                )
+            }
+            _ => {
+                let error_span = argument_exprs
+                    .last()
+                    .map(Expr::span)
+                    .expect("too many NoDiscard attribute arguments are non-empty");
+                Err(runtime_error(
+                    error_span,
+                    RuntimeError::unsupported_call(
+                        "NoDiscard::__construct()",
+                        "expects at most 1 argument",
+                    ),
+                ))
+            }
+        }
+    }
+
+    fn core_attribute_nullable_string_argument(
+        &mut self,
+        constructor: &'static str,
         value: Value,
         strict_types: bool,
         position: usize,
@@ -59906,7 +60064,7 @@ impl Interpreter {
             other => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
-                    "Deprecated::__construct()",
+                    constructor,
                     format!(
                         "Argument #{position} (${name}) must be of type ?string, {} given",
                         php_type_error_given(&other)
@@ -59914,6 +60072,21 @@ impl Interpreter {
                 ),
             )),
         }
+    }
+
+    fn record_core_attribute_constructor_uncaught_frame(
+        &mut self,
+        class_name: &'static str,
+        span: Span,
+        args: &[Value],
+        error: &Diagnostic,
+    ) {
+        self.record_pending_uncaught_internal_call_frame(
+            format!("{class_name}->__construct"),
+            span,
+            args,
+            error,
+        );
     }
 
     fn call_reflection_get_attributes(
@@ -62873,7 +63046,7 @@ impl Interpreter {
                     RuntimeError::undefined_constant(format!("{class_name}::{constant}")),
                 ));
             }
-            return Ok(Value::Object(self.uri_enum_case_object(
+            return Ok(Value::Object(self.core_enum_case_object(
                 "Uri\\UriComparisonMode",
                 constant,
                 span,
@@ -62886,8 +63059,24 @@ impl Interpreter {
                     RuntimeError::undefined_constant(format!("{class_name}::{constant}")),
                 ));
             }
-            return Ok(Value::Object(self.uri_enum_case_object(
+            return Ok(Value::Object(self.core_enum_case_object(
                 "Uri\\WhatWg\\UrlHostType",
+                constant,
+                span,
+            )?));
+        }
+        if class_name.eq_ignore_ascii_case("Random\\IntervalBoundary") {
+            if !matches!(
+                constant,
+                "ClosedOpen" | "ClosedClosed" | "OpenClosed" | "OpenOpen"
+            ) {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::undefined_constant(format!("{class_name}::{constant}")),
+                ));
+            }
+            return Ok(Value::Object(self.core_enum_case_object(
+                "Random\\IntervalBoundary",
                 constant,
                 span,
             )?));
@@ -113394,10 +113583,8 @@ fn class_method_has_return_type_will_change_attribute(method: &ClassMethodDecl) 
         || attributes_include_return_type_will_change(&method.function.attributes)
 }
 
-fn attributes_include_no_discard(attributes: &[AttributeDecl]) -> bool {
-    attributes
-        .iter()
-        .any(|attribute| normalized_attribute_name(&attribute.name) == "nodiscard")
+fn attribute_name_is_no_discard(attribute: &AttributeDecl) -> bool {
+    normalized_attribute_name(&attribute.name) == "nodiscard"
 }
 
 fn attribute_name_is_attribute(attribute: &AttributeDecl) -> bool {
@@ -116639,7 +116826,9 @@ fn reflection_value_export_short(value: &Value) -> String {
             .map(|value| format!("'{}'", reflection_quote_string(&value)))
             .unwrap_or_else(|_| "''".to_string()),
         Value::Array(_) => "Array".to_string(),
-        Value::Object(object) => format!("Object({})", object.class_name()),
+        Value::Object(object) => enum_like_case_name(object)
+            .map(|case_name| format!("{}::{case_name}", object.class_name()))
+            .unwrap_or_else(|| format!("Object({})", object.class_name())),
         Value::Closure(_) => "Closure".to_string(),
         Value::Resource(id) => format!("Resource id #{id}"),
     }
@@ -117937,6 +118126,13 @@ impl PendingUncaughtCallFrame {
             self.function_name.clone()
         }
     }
+
+    fn is_core_attribute_constructor(&self) -> bool {
+        matches!(
+            self.function_name.as_str(),
+            "Deprecated->__construct" | "NoDiscard->__construct"
+        )
+    }
 }
 
 fn format_stack_trace_args(args: &[Value]) -> String {
@@ -117961,7 +118157,9 @@ fn format_stack_trace_arg(value: &Value) -> String {
         Value::String(value) => format!("'{}'", value),
         Value::BinaryString(value) => format!("'{}'", String::from_utf8_lossy(value)),
         Value::Array(_) => "Array".to_string(),
-        Value::Object(object) => format!("Object({})", object.class_name()),
+        Value::Object(object) => enum_like_case_name(object)
+            .map(|case_name| format!("{}::{case_name}", object.class_name()))
+            .unwrap_or_else(|| format!("Object({})", object.class_name())),
         Value::Closure(_) => "Object(Closure)".to_string(),
         Value::Resource(id) => format!("Resource id #{id}"),
     }
@@ -154374,14 +154572,14 @@ impl Interpreter {
                     return Ok(Value::Null);
                 }
                 let case = parts.host_type_case();
-                self.uri_enum_case_object("Uri\\Rfc3986\\UriHostType", case, span)
+                self.core_enum_case_object("Uri\\Rfc3986\\UriHostType", case, span)
                     .map(Value::Object)
             }
             "geturitype" => {
                 expect_arity("Uri\\Rfc3986\\Uri::getUriType", &values, 0, span)?;
                 let parts = self.uri_rfc3986_parts_from_object(&object, span)?;
                 let case = parts.uri_type_case();
-                self.uri_enum_case_object("Uri\\Rfc3986\\UriType", case, span)
+                self.core_enum_case_object("Uri\\Rfc3986\\UriType", case, span)
                     .map(Value::Object)
             }
             _ => Err(runtime_error(
@@ -154547,7 +154745,7 @@ impl Interpreter {
                 let parts = self.uri_whatwg_url_parts_from_object(&object, span)?;
                 match parts.host_type_case() {
                     Some(case) => self
-                        .uri_enum_case_object("Uri\\WhatWg\\UrlHostType", case, span)
+                        .core_enum_case_object("Uri\\WhatWg\\UrlHostType", case, span)
                         .map(Value::Object),
                     None => Ok(Value::Null),
                 }
@@ -154868,7 +155066,7 @@ impl Interpreter {
         }
     }
 
-    fn uri_enum_case_object(
+    fn core_enum_case_object(
         &self,
         class_name: &'static str,
         case_name: &str,
@@ -164926,6 +165124,7 @@ fn enum_like_case_name(object: &PhpObject) -> Option<String> {
             | "Uri\\Rfc3986\\UriHostType"
             | "Uri\\Rfc3986\\UriType"
             | "Uri\\WhatWg\\UrlHostType"
+            | "Random\\IntervalBoundary"
     ) {
         return None;
     }

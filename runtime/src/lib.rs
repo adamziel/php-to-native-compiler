@@ -33761,6 +33761,14 @@ impl PhpClassTable {
                 Visibility::Public,
             ))
             .expect("Deprecated core metadata should not duplicate methods");
+        let random_interval_boundary_id = classes
+            .declare_class("Random\\IntervalBoundary")
+            .expect("core class table should contain Deprecated before Random\\IntervalBoundary");
+        classes
+            .get_mut(random_interval_boundary_id)
+            .expect("declared Random\\IntervalBoundary class id should resolve")
+            .add_property(PhpPropertyMetadata::instance("name", Visibility::Public))
+            .expect("Random\\IntervalBoundary core metadata should not duplicate properties");
         classes
     }
 
@@ -81856,6 +81864,8 @@ mod tests {
                 "SplFileInfo",
                 "SplFileObject",
                 "EmptyIterator",
+                "IteratorIterator",
+                "NoRewindIterator",
                 "InfiniteIterator",
                 "LimitIterator",
                 "ReflectionExtension",
@@ -81874,6 +81884,7 @@ mod tests {
                 "ErrorException",
                 "Reflection",
                 "Deprecated",
+                "Random\\IntervalBoundary",
             ]
         );
         let mut normalized_class_names = class_names
@@ -82471,6 +82482,18 @@ mod tests {
             vec!["message", "since"]
         );
         assert!(deprecated.method("__construct").is_some());
+
+        let random_interval_boundary = classes.lookup_class("random\\intervalboundary").unwrap();
+        assert_eq!(random_interval_boundary.name(), "Random\\IntervalBoundary");
+        assert!(random_interval_boundary.parent_id().is_none());
+        assert_eq!(
+            random_interval_boundary
+                .properties()
+                .iter()
+                .map(PhpPropertyMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["name"]
+        );
     }
 
     #[test]

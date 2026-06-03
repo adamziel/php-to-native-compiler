@@ -4,6 +4,28 @@
 
 Implemented:
 
+- Added bounded core-attribute `?string $message` constructor diagnostics for
+  `Deprecated` and direct user-function `NoDiscard` paths on the interpreter
+  path. Supported `#[Deprecated]` calls and direct unused calls to user
+  functions annotated with `#[NoDiscard]` now validate/coerce message
+  arguments before emitting their diagnostics, record PHP-shaped internal
+  constructor stack frames for strict scalar, array, and bounded
+  `Random\IntervalBoundary` enum-case failures, and format bounded enum cases
+  in fatal traces. Focused proof covers exact-current pre-patch selected PHPT
+  at `0/6` and post-patch selected PHPT at `6/6` for
+  `Zend/tests/attributes/deprecated/type_validation_002.phpt`,
+  `Zend/tests/attributes/deprecated/type_validation_003.phpt`,
+  `Zend/tests/attributes/deprecated/type_validation_004.phpt`,
+  `Zend/tests/attributes/nodiscard/type_validation_002.phpt`,
+  `Zend/tests/attributes/nodiscard/type_validation_003.phpt`, and
+  `Zend/tests/attributes/nodiscard/type_validation_004.phpt`; Rust
+  object-model/scalar/runtime guards, build/fmt/diff checks, and the non-date
+  latest-published PASS-regression scout at `7/7`. Unsupported edges remain
+  `NoDiscard` targets beyond direct user-function unused calls, broader core
+  enum APIs/reflection/cases, namespace/import alias resolution for built-in
+  attribute names, broader attribute target/repeatability validation,
+  references/COW, and native lowering.
+
 - Added a bounded append-offset read fatal lane on the interpreter path.
   Append-offset reads such as `$array[]`, `foreach ($array[] as $value)`,
   `isset($array[])`, and supported instance property defaults now reach a
