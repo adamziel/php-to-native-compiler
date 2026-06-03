@@ -1442,6 +1442,9 @@ enum DirectArrayPathMutation {
     End,
 }
 
+const ARRAY_SPLICE_MODIFIED_DURING_OPERATION_MESSAGE: &str =
+    "Array was modified during array_splice operation";
+
 impl DirectArrayPathMutation {
     fn callable(self) -> &'static str {
         match self {
@@ -29682,6 +29685,36 @@ impl Interpreter {
         }
 
         self.finalize_object_destructor(object)
+    }
+
+    fn finalize_released_array_values(
+        &mut self,
+        array: &PhpArray,
+        scope: &SymbolTable,
+    ) -> CompileResult<()> {
+        for entry in array.entries() {
+            self.finalize_released_nested_value(entry.value_cloned(), scope)?;
+        }
+        Ok(())
+    }
+
+    fn finalize_released_nested_value(
+        &mut self,
+        value: Value,
+        scope: &SymbolTable,
+    ) -> CompileResult<()> {
+        match value {
+            value @ Value::Object(_) => self.finalize_released_value(Some(value), scope),
+            Value::Array(array) => self.finalize_released_array_values(&array, scope),
+            Value::Null
+            | Value::Bool(_)
+            | Value::Int(_)
+            | Value::Float(_)
+            | Value::String(_)
+            | Value::BinaryString(_)
+            | Value::Closure(_)
+            | Value::Resource(_) => Ok(()),
+        }
     }
 
     fn live_roots_contain_object_id(&self, object_id: i64, current_scope: &SymbolTable) -> bool {
@@ -76533,6 +76566,21 @@ impl Interpreter {
             },
             keys,
         );
+        let spliced_root_value = caller_scope.read_static(root_name, span)?;
+        self.finalize_released_array_values(&removed, caller_scope)?;
+        let root_was_modified = caller_scope
+            .read_static(root_name, span)
+            .map(|current| current != spliced_root_value)
+            .unwrap_or(true);
+        if root_was_modified {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "array_splice()",
+                    ARRAY_SPLICE_MODIFIED_DURING_OPERATION_MESSAGE,
+                ),
+            ));
+        }
         Ok(Value::Array(removed))
     }
 
@@ -117821,6 +117869,14 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
 
         if error.message == "Array callback must have exactly two elements" {
             return Some(("Error", error.message.clone()));
+        }
+
+        if let Some(message) = error
+            .message
+            .strip_prefix("unsupported call array_splice(): ")
+            .filter(|message| *message == ARRAY_SPLICE_MODIFIED_DURING_OPERATION_MESSAGE)
+        {
+            return Some(("Error", message.to_string()));
         }
 
         if error.message == "Array callback has to contain indices 0 and 1" {

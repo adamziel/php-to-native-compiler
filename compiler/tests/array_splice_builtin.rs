@@ -152,6 +152,64 @@ echo implode(",", $items);
 }
 
 #[test]
+fn array_splice_finalizes_removed_objects_and_rejects_reentrant_mutation() {
+    let execution = run_source(
+        r#"<?php
+class SpliceNormalDestructor {
+    function __destruct() {
+        echo "normal destructor\n";
+    }
+}
+
+$arr = ["1", new SpliceNormalDestructor, "2"];
+array_splice($arr, 1, 2);
+var_dump($arr);
+
+class SpliceReentrantDestructor {
+    public $id;
+
+    function __construct($id) {
+        $this->id = $id;
+    }
+
+    function __destruct() {
+        global $arr;
+        echo "mutator {$this->id}\n";
+        if ($this->id == 2) {
+            $arr = null;
+        }
+    }
+}
+
+$arr = ["start", new SpliceReentrantDestructor(1), new SpliceReentrantDestructor(2), "end"];
+
+try {
+    array_splice($arr, 1, 2);
+    echo "missing mutation guard\n";
+} catch (Error $e) {
+    echo "caught:", $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "normal destructor\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  string(1) \"1\"\n",
+            "}\n",
+            "mutator 1\n",
+            "mutator 2\n",
+            "caught:Array was modified during array_splice operation",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_splice_callback_reference_arguments_mutate_and_warn_for_values() {
     let execution = run_source(
         r#"<?php

@@ -4052,10 +4052,14 @@
   argument accepts `null` or the same int-coercible scalar subset. It mutates
   the selected array path, reindexes integer keys, preserves string keys,
   returns removed value slots, and preserves reference-backed replacement slots
-  from array replacements. Non-variable targets, object-property array roots,
-  deprecation warnings for null or lossy scalar coercions, broad
-  reference/copy-on-write graph parity, exact native diagnostics, and native
-  lowering remain unsupported.
+  from array replacements. Removed object values are finalized after the
+  spliced target is written back, and destructor mutation of the live root is
+  reported as a catchable `Error`. Non-variable targets, object-property array
+  roots, retained removed arrays containing objects whose lifetimes should
+  extend through the returned value, mutations that restore a
+  by-value-identical root before the guard check, deprecation warnings for null
+  or lossy scalar coercions, broad reference/copy-on-write graph parity, exact
+  native diagnostics, and native lowering remain unsupported.
   `strcasecmp($left, $right)` supports exactly two scalar/null
   string-convertible arguments, compares byte strings with ASCII case folding,
   and returns PHP's first differing folded byte delta, using sign values only
@@ -10107,7 +10111,8 @@
   reject under the function-call boundary, while native function-table
   introspection recognizes the name.
   `array_splice` accepts the same direct-variable ordered-array mutation subset
-  and offset/nullable-length coercion boundary as the builtin section above;
+  and offset/nullable-length/destructor mutation boundary as the builtin
+  section above;
   direct native `array_splice(...)` calls still reject under the function-call
   boundary, while native function-table introspection recognizes the name.
   `next` accepts the same direct array-pointer mutation subset as the builtin
@@ -12859,6 +12864,9 @@
   introspection
 - `array_splice()` outside the current direct-variable array path ordered-array
   mutation subset: non-variable targets, object-property array roots,
+  retained removed arrays containing objects whose lifetimes should extend
+  through the returned value, mutations that restore a by-value-identical root
+  before the guard check,
   deprecation warnings for null or lossy scalar offset/length coercions, broad
   reference/copy-on-write graph parity, exact warnings/errors, and native
   lowering beyond function-table introspection

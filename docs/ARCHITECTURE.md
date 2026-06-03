@@ -235,6 +235,11 @@ accept direct visible object-property array roots and write the updated cursor
 back through the existing property storage boundary. Object-property array
 roots for push/pop/shift/unshift, broad lvalues, string-keyed unpacking, and
 native lowering remain outside this interpreter path.
+`array_splice()` uses the same direct variable array-path root resolution but
+has its own splice helper so removed slots can be returned, object values from
+those removed slots can be finalized after the spliced root is live, and
+destructor-visible reentrant mutation of that live root can be rejected before
+the call completes.
 
 Nested append assignment reuses the same assignment-value metadata path before
 storing the appended value. When the RHS is a proven copied-source array from a

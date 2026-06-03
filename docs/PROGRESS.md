@@ -2746,6 +2746,19 @@ Implemented:
   path subset, object-property array roots, full reference/COW graph parity,
   exact native diagnostics, and native lowering.
 
+- Added a bounded `array_splice()` removed-object destructor lane for direct
+  variable array paths. After splicing the selected path back into the live
+  root, the interpreter finalizes object values from the removed slots before
+  returning and reports a catchable `Error` if a destructor mutates the live
+  array root during the splice. Focused proof covers the Rust
+  `array_splice_finalizes_removed_objects_and_rejects_reentrant_mutation`
+  regression and the selected public PHPT `gh16649/array_splice_*` destructor
+  rows. Unsupported edges remain retained removed arrays containing objects
+  whose lifetimes should extend through the returned value, mutations that
+  restore a by-value-identical root before the guard check, broad lvalue
+  targets outside the direct array path subset, full reference/COW graph
+  parity, exact native diagnostics, and native lowering.
+
 - Added a bounded `mb_strcut()` byte-window lane for the selected mbstring
   surfaces. The interpreter now exposes `mb_strcut()` through direct calls,
   string-valued dynamic calls, function/callability introspection, and
