@@ -60248,6 +60248,9 @@ impl Interpreter {
             ),
             "getvalue" => self.reflection_property_get_value(&state, args, span, caller_scope),
             "setvalue" => self.reflection_property_set_value(&state, args, span, caller_scope),
+            "isinitialized" => self
+                .reflection_property_is_initialized(&state, args, span, caller_scope)
+                .map(Value::Bool),
             "isreadable" => {
                 let target = self.reflection_property_access_probe_target(
                     "ReflectionProperty::isReadable",
@@ -60474,16 +60477,13 @@ impl Interpreter {
         span: Span,
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
-        self.ensure_reflection_property_public(state, "ReflectionProperty::getValue", span)?;
         if state.is_static {
             if args.len() > 1 {
-                return Err(runtime_error(
+                return Err(reflection_property_too_many_arguments_error(
+                    "ReflectionProperty::getValue",
+                    1,
+                    args.len(),
                     span,
-                    RuntimeError::arity_mismatch(
-                        "ReflectionProperty::getValue()",
-                        ArityExpectation::Between { min: 0, max: 1 },
-                        args.len(),
-                    ),
                 ));
             }
             if let Some(arg) = args.first() {
@@ -60492,12 +60492,23 @@ impl Interpreter {
             return self.reflection_property_static_value(state, span);
         }
 
-        expect_expr_arity("ReflectionProperty::getValue", args.len(), 1, span)?;
+        if args.is_empty() {
+            return Err(reflection_property_missing_instance_error(
+                "ReflectionProperty::getValue",
+                span,
+            ));
+        }
+        if args.len() > 1 {
+            return Err(reflection_property_too_many_arguments_error(
+                "ReflectionProperty::getValue",
+                1,
+                args.len(),
+                span,
+            ));
+        }
         let target = self.evaluate(&args[0], caller_scope)?;
         let object = self.reflection_property_instance_target(state, target, span)?;
-        object
-            .read_public_property(&state.name)
-            .map_err(|error| runtime_error(span, error))
+        self.reflection_property_instance_value(state, &object, span)
     }
 
     fn reflection_property_set_value(
@@ -60507,7 +60518,6 @@ impl Interpreter {
         span: Span,
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
-        self.ensure_reflection_property_public(state, "ReflectionProperty::setValue", span)?;
         if state.is_static {
             if !(1..=2).contains(&args.len()) {
                 return Err(runtime_error(
@@ -60536,27 +60546,84 @@ impl Interpreter {
                     ),
                 ));
             };
-            self.write_resolved_static_property(
-                declaring_class_id,
-                &state.declaring_class_name,
-                &state.name,
-                value,
-                span,
-            )?;
+            self.write_reflection_static_property(declaring_class_id, &state.name, value, span)?;
             return Ok(Value::Null);
         }
 
         expect_expr_arity("ReflectionProperty::setValue", args.len(), 2, span)?;
         let target = self.evaluate(&args[0], caller_scope)?;
         let value = self.evaluate(&args[1], caller_scope)?;
-        let object = self.reflection_property_instance_target(state, target, span)?;
+        let object =
+            self.reflection_property_object_argument("ReflectionProperty::setValue", target, span)?;
+        if !object.is_instance_of_class_name(&state.declaring_class_name) {
+            if state.visibility == Visibility::Public && !state.is_dynamic {
+                object
+                    .write_dynamic_public_property(&state.name, value)
+                    .map_err(|error| runtime_error(span, error))?;
+                return Ok(Value::Null);
+            }
+            return Err(reflection_property_non_instance_error(span));
+        }
         let write_result = if state.is_dynamic {
             object.write_dynamic_public_property(&state.name, value)
         } else {
-            object.write_public_property(&state.name, value)
+            self.reflection_property_write_instance_value(state, &object, value, span)
         };
         write_result.map_err(|error| runtime_error(span, error))?;
         Ok(Value::Null)
+    }
+
+    fn reflection_property_is_initialized(
+        &mut self,
+        state: &ReflectionPropertyState,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<bool> {
+        if args.len() > 1 {
+            return Err(reflection_property_too_many_arguments_error(
+                "ReflectionProperty::isInitialized",
+                1,
+                args.len(),
+                span,
+            ));
+        }
+
+        if state.is_static {
+            if let Some(arg) = args.first() {
+                let _ = self.evaluate(arg, caller_scope)?;
+            }
+            return Ok(state.declaring_class_id.is_some_and(|class_id| {
+                self.static_properties
+                    .contains_key(&(class_id, state.name.clone()))
+            }));
+        }
+
+        let Some(object_expr) = args.first() else {
+            return Err(reflection_property_missing_instance_error(
+                "ReflectionProperty::isInitialized",
+                span,
+            ));
+        };
+        let target = self.evaluate(object_expr, caller_scope)?;
+        let object = self.reflection_property_instance_target(state, target, span)?;
+
+        if state.is_dynamic {
+            return Ok(self
+                .reflection_dynamic_object_property_state(&object, &state.name)
+                .is_some());
+        }
+
+        let Some(declaring_class_id) = state.declaring_class_id else {
+            return Ok(false);
+        };
+        Ok(object.properties().into_iter().rev().any(|property| {
+            property.name() == state.name
+                && property.declaring_class_id() == declaring_class_id
+                && property.visibility() == state.visibility
+                && property.is_initialized()
+                && !property.is_unset()
+        }))
     }
 
     fn reflection_property_access_probe_target(
@@ -60636,14 +60703,14 @@ impl Interpreter {
                 }));
         }
 
-        if state.visibility != Visibility::Public {
-            return Ok(false);
-        }
-
         let Some(object) = target else {
-            return Ok(!state.is_dynamic);
+            return Ok(state.visibility == Visibility::Public && !state.is_dynamic);
         };
         if !object.is_instance_of_class_name(&state.declaring_class_name) {
+            return Err(reflection_property_non_instance_error(span));
+        }
+
+        if state.visibility != Visibility::Public {
             return Ok(false);
         }
 
@@ -60674,45 +60741,82 @@ impl Interpreter {
         &self,
         state: &ReflectionPropertyState,
         target: Option<PhpObject>,
-        _span: Span,
+        span: Span,
     ) -> CompileResult<bool> {
         if state.is_dynamic {
-            return Ok(target
-                .map(|object| {
-                    object.is_instance_of_class_name(&state.declaring_class_name)
-                        && object.allows_dynamic_public_properties()
-                })
-                .unwrap_or(true));
+            let Some(object) = target else {
+                return Ok(true);
+            };
+            if !object.is_instance_of_class_name(&state.declaring_class_name) {
+                return Err(reflection_property_non_instance_error(span));
+            }
+            return Ok(object.allows_dynamic_public_properties());
         }
 
+        if state.is_static {
+            return Ok(state.visibility == Visibility::Public);
+        }
+
+        let Some(object) = target else {
+            return Ok(state.visibility == Visibility::Public);
+        };
+        if !object.is_instance_of_class_name(&state.declaring_class_name) {
+            return Err(reflection_property_non_instance_error(span));
+        }
         if state.visibility != Visibility::Public {
             return Ok(false);
         }
-        if state.is_static {
-            return Ok(true);
-        }
-
-        Ok(target
-            .map(|object| object.is_instance_of_class_name(&state.declaring_class_name))
-            .unwrap_or(true))
+        Ok(true)
     }
 
-    fn ensure_reflection_property_public(
+    fn reflection_property_instance_value(
         &self,
         state: &ReflectionPropertyState,
-        method_name: &str,
+        object: &PhpObject,
         span: Span,
-    ) -> CompileResult<()> {
-        if state.visibility == Visibility::Public {
-            return Ok(());
+    ) -> CompileResult<Value> {
+        if state.is_dynamic {
+            return object
+                .read_public_property(&state.name)
+                .map_err(|error| runtime_error(span, error));
         }
-        Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                format!("{method_name}()"),
-                "non-public ReflectionProperty value access is not implemented in the current subset",
-            ),
-        ))
+
+        let Some(declaring_class_id) = state.declaring_class_id else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "ReflectionProperty::getValue()",
+                    "trait property value access requires a concrete class target",
+                ),
+            ));
+        };
+        let protected_class_ids = self.protected_class_ids_for_context(declaring_class_id);
+        object
+            .read_property_from_context(&state.name, Some(declaring_class_id), &protected_class_ids)
+            .map_err(|error| runtime_error(span, error))
+    }
+
+    fn reflection_property_write_instance_value(
+        &self,
+        state: &ReflectionPropertyState,
+        object: &PhpObject,
+        value: Value,
+        _span: Span,
+    ) -> Result<(), RuntimeError> {
+        let Some(declaring_class_id) = state.declaring_class_id else {
+            return Err(RuntimeError::unsupported_call(
+                "ReflectionProperty::setValue()",
+                "trait property value access requires a concrete class target",
+            ));
+        };
+        let protected_class_ids = self.protected_class_ids_for_context(declaring_class_id);
+        object.write_property_from_context_with_object_type_resolver(
+            &state.name,
+            value,
+            Some(declaring_class_id),
+            &protected_class_ids,
+            |object, type_name| self.object_satisfies_live_property_type(object, type_name),
+        )
     }
 
     fn reflection_property_static_value(
@@ -60743,9 +60847,61 @@ impl Interpreter {
             })
     }
 
+    fn write_reflection_static_property(
+        &mut self,
+        declaring_class_id: ClassId,
+        property: &str,
+        value: Value,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let declaring_class_name = self
+            .classes
+            .get(declaring_class_id)
+            .expect("reflection static property class id should resolve")
+            .name()
+            .to_string();
+        let value = self.coerce_static_property_value(
+            declaring_class_id,
+            &declaring_class_name,
+            property,
+            value,
+            span,
+        )?;
+
+        if let Some(cell) = self
+            .static_properties
+            .get(&(declaring_class_id, property.to_string()))
+        {
+            cell.set_value(value.clone());
+        } else {
+            self.static_properties.insert(
+                (declaring_class_id, property.to_string()),
+                VariableCell::new(value.clone()),
+            );
+        }
+        Ok(value)
+    }
+
     fn reflection_property_instance_target(
         &self,
         state: &ReflectionPropertyState,
+        target: Value,
+        span: Span,
+    ) -> CompileResult<PhpObject> {
+        let object = self.reflection_property_object_argument(
+            "ReflectionProperty value access",
+            target,
+            span,
+        )?;
+        if !object.is_instance_of_class_name(&state.declaring_class_name) {
+            return Err(reflection_property_non_instance_error(span));
+        }
+        Ok(object)
+    }
+
+    fn reflection_property_object_argument(
+        &self,
+        method_name: &str,
         target: Value,
         span: Span,
     ) -> CompileResult<PhpObject> {
@@ -60753,27 +60909,14 @@ impl Interpreter {
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
-                    "ReflectionProperty value access",
+                    format!("{method_name}()"),
                     format!(
-                        "instance property target must be object in the current subset, got {}",
+                        "Argument #1 ($object) must be of type ?object, {} given",
                         target.type_name()
                     ),
                 ),
             ));
         };
-        if !object.is_instance_of_class_name(&state.declaring_class_name) {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "ReflectionProperty value access",
-                    format!(
-                        "object of class {} is not an instance of {}",
-                        object.class_name(),
-                        state.declaring_class_name
-                    ),
-                ),
-            ));
-        }
         Ok(object)
     }
 
@@ -120824,6 +120967,37 @@ fn reflection_method_invoke_object_type_error(value: &Value, span: Span) -> Diag
     )
 }
 
+fn reflection_property_too_many_arguments_error(
+    method_name: &'static str,
+    max: usize,
+    actual: usize,
+    span: Span,
+) -> Diagnostic {
+    let noun = if max == 1 { "argument" } else { "arguments" };
+    Diagnostic::new(
+        Phase::Runtime,
+        span.line,
+        span.column,
+        format!("{method_name}() expects at most {max} {noun}, {actual} given"),
+    )
+}
+
+fn reflection_property_missing_instance_error(method_name: &'static str, span: Span) -> Diagnostic {
+    Diagnostic::new(
+        Phase::Runtime,
+        span.line,
+        span.column,
+        format!("{method_name}(): Argument #1 ($object) must be provided for instance properties"),
+    )
+}
+
+fn reflection_property_non_instance_error(span: Span) -> Diagnostic {
+    reflection_exception_error(
+        span,
+        "Given object is not an instance of the class this property was declared in",
+    )
+}
+
 fn reflection_method_invoke_non_instance_error(span: Span) -> Diagnostic {
     reflection_exception_error(
         span,
@@ -122042,6 +122216,10 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
         return Some(("TypeError", message));
     }
 
+    if let Some(message) = reflection_property_argument_error_message(error) {
+        return Some(("TypeError", message));
+    }
+
     if let Some(message) = reflection_constructor_argument_count_error_message(error) {
         return Some(("TypeError", message));
     }
@@ -123092,6 +123270,29 @@ fn reflection_method_invoke_argument_count_error_message(error: &Diagnostic) -> 
         .message
         .starts_with("ReflectionMethod::invoke() expects at least 1 argument, ")
         .then(|| error.message.clone())
+}
+
+fn reflection_property_argument_error_message(error: &Diagnostic) -> Option<String> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+    for method in [
+        "ReflectionProperty::getValue",
+        "ReflectionProperty::setValue",
+        "ReflectionProperty::isInitialized",
+    ] {
+        let prefix = format!("{method}()");
+        if error.message.starts_with(&prefix)
+            && (error.message.contains(" expects at most ")
+                || error.message.contains(" expects at least ")
+                || error
+                    .message
+                    .contains("Argument #1 ($object) must be provided for instance properties"))
+        {
+            return Some(error.message.clone());
+        }
+    }
+    None
 }
 
 fn reflection_constructor_argument_count_error_message(error: &Diagnostic) -> Option<String> {

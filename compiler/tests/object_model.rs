@@ -9505,6 +9505,104 @@ echo "static|set2|", $static->getValue($plugin), "|", Base::$counter;
 }
 
 #[test]
+fn reflection_property_value_and_initialization_errors_match_php_surfaces() {
+    let execution = run_source(
+        r#"<?php
+#[AllowDynamicProperties]
+class A {
+    public static ?string $ssv = null;
+    public static ?string $ss;
+    public static $s;
+    public ?int $iv = null;
+    public ?int $i;
+    public $n;
+    protected $prot = 4;
+    private int $p;
+}
+class B extends A {
+    public $child;
+}
+#[AllowDynamicProperties]
+class Other {}
+
+function line($label, $value) {
+    echo $label, "|";
+    var_dump($value);
+}
+
+$a = new A();
+$prot = new ReflectionProperty(A::class, "prot");
+line("prot-get", $prot->getValue($a));
+$prot->setValue($a, "8");
+line("prot-set", $prot->getValue($a));
+
+$public = new ReflectionProperty(A::class, "n");
+$other = new Other();
+line("dynamic-set", $public->setValue($other, "NewValue"));
+line("dynamic-read", $other->n);
+
+try {
+    $public->getValue($other);
+} catch (ReflectionException $e) {
+    echo "invalid-get|", $e->getMessage(), "\n";
+}
+try {
+    $public->getValue();
+} catch (TypeError $e) {
+    echo "missing-get|", $e->getMessage(), "\n";
+}
+try {
+    (new ReflectionProperty(B::class, "child"))->isReadable(null, new A());
+} catch (ReflectionException $e) {
+    echo "readable-invalid|", $e->getMessage(), "\n";
+}
+try {
+    (new ReflectionProperty(B::class, "child"))->isWritable(null, new Other());
+} catch (ReflectionException $e) {
+    echo "writable-invalid|", $e->getMessage(), "\n";
+}
+
+line("ssv", (new ReflectionProperty(A::class, "ssv"))->isInitialized());
+line("ss", (new ReflectionProperty(A::class, "ss"))->isInitialized());
+line("s", (new ReflectionProperty(A::class, "s"))->isInitialized());
+line("iv", (new ReflectionProperty($a, "iv"))->isInitialized($a));
+line("i", (new ReflectionProperty($a, "i"))->isInitialized($a));
+line("n", (new ReflectionProperty($a, "n"))->isInitialized($a));
+unset($a->iv);
+unset($a->i);
+unset($a->n);
+line("iv-unset", (new ReflectionProperty($a, "iv"))->isInitialized($a));
+line("i-unset", (new ReflectionProperty($a, "i"))->isInitialized($a));
+line("n-unset", (new ReflectionProperty($a, "n"))->isInitialized($a));
+$a->d = null;
+$dyn = new ReflectionProperty($a, "d");
+line("dyn", $dyn->isInitialized($a));
+unset($a->d);
+line("dyn-unset", $dyn->isInitialized($a));
+line("private", (new ReflectionProperty(A::class, "p"))->isInitialized($a));
+line("inherited-object", (new ReflectionProperty(B::class, "i"))->isInitialized($a));
+try {
+    (new ReflectionProperty(B::class, "i"))->isInitialized(new stdClass());
+} catch (ReflectionException $e) {
+    echo "init-invalid|", $e->getMessage(), "\n";
+}
+try {
+    (new ReflectionProperty(B::class, "i"))->isInitialized();
+} catch (TypeError $e) {
+    echo "init-missing|", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "prot-get|int(4)\nprot-set|string(1) \"8\"\ndynamic-set|NULL\ndynamic-read|string(8) \"NewValue\"\ninvalid-get|Given object is not an instance of the class this property was declared in\nmissing-get|ReflectionProperty::getValue(): Argument #1 ($object) must be provided for instance properties\nreadable-invalid|Given object is not an instance of the class this property was declared in\nwritable-invalid|Given object is not an instance of the class this property was declared in\nssv|bool(true)\nss|bool(false)\ns|bool(true)\niv|bool(true)\ni|bool(false)\nn|bool(true)\niv-unset|bool(false)\ni-unset|bool(false)\nn-unset|bool(false)\ndyn|bool(true)\ndyn-unset|bool(false)\nprivate|bool(false)\ninherited-object|bool(false)\ninit-invalid|Given object is not an instance of the class this property was declared in\ninit-missing|ReflectionProperty::isInitialized(): Argument #1 ($object) must be provided for instance properties\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn typed_properties_track_uninitialized_slots_and_enforce_simple_writes() {
     let execution = run_source(
         r#"<?php

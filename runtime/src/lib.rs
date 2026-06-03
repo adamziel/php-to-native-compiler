@@ -32748,6 +32748,9 @@ impl PhpClassTable {
             "hasType",
             "getType",
             "getAttributes",
+            "getValue",
+            "setValue",
+            "isInitialized",
             "isReadable",
             "isWritable",
         ] {
