@@ -33471,10 +33471,18 @@ impl PhpClassTable {
         classes
             .set_parent(date_malformed_interval_exception_id, date_exception_id)
             .expect("DateMalformedIntervalStringException should extend DateException");
+        let date_malformed_period_exception_id = classes
+            .declare_class("DateMalformedPeriodStringException")
+            .expect(
+                "core class table should contain DateMalformedIntervalStringException before DateMalformedPeriodStringException",
+            );
+        classes
+            .set_parent(date_malformed_period_exception_id, date_exception_id)
+            .expect("DateMalformedPeriodStringException should extend DateException");
         let date_interval_id = classes
             .declare_class("DateInterval")
             .expect(
-                "core class table should contain DateMalformedIntervalStringException before DateInterval",
+                "core class table should contain DateMalformedPeriodStringException before DateInterval",
             );
         let date_interval = classes
             .get_mut(date_interval_id)
@@ -33507,9 +33515,59 @@ impl PhpClassTable {
                 Visibility::Public,
             ))
             .expect("DateInterval core metadata should not duplicate static methods");
+        date_interval
+            .add_method(PhpMethodMetadata::static_method(
+                "__set_state",
+                Visibility::Public,
+            ))
+            .expect("DateInterval core metadata should not duplicate static methods");
+        let date_period_id = classes
+            .declare_class("DatePeriod")
+            .expect("core class table should contain DateInterval before DatePeriod");
+        let date_period = classes
+            .get_mut(date_period_id)
+            .expect("declared DatePeriod class id should resolve");
+        for property in [
+            "start",
+            "current",
+            "end",
+            "interval",
+            "recurrences",
+            "include_start_date",
+            "include_end_date",
+        ] {
+            date_period
+                .add_property(
+                    PhpPropertyMetadata::instance(property, Visibility::Public).readonly(),
+                )
+                .expect("DatePeriod core metadata should not duplicate properties");
+        }
+        for constant in ["EXCLUDE_START_DATE", "INCLUDE_END_DATE"] {
+            date_period
+                .add_constant(PhpClassConstantMetadata::new(constant, Visibility::Public))
+                .expect("DatePeriod core metadata should not duplicate constants");
+        }
+        for method in [
+            "__construct",
+            "__serialize",
+            "__unserialize",
+            "getStartDate",
+            "getEndDate",
+            "getDateInterval",
+            "getRecurrences",
+        ] {
+            date_period
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("DatePeriod core metadata should not duplicate methods");
+        }
+        for method in ["__set_state", "createFromISO8601String"] {
+            date_period
+                .add_method(PhpMethodMetadata::static_method(method, Visibility::Public))
+                .expect("DatePeriod core metadata should not duplicate static methods");
+        }
         let datetime_id = classes
             .declare_class("DateTime")
-            .expect("core class table should contain DateInterval before DateTime");
+            .expect("core class table should contain DatePeriod before DateTime");
         classes
             .set_interfaces(datetime_id, vec!["DateTimeInterface".to_string()])
             .expect("DateTime should implement DateTimeInterface");
@@ -37738,6 +37796,18 @@ impl PhpObject {
             self.context_property(&properties, name, current_class_id, protected_class_ids)?;
 
         Ok(property.visibility)
+    }
+
+    pub fn ensure_property_writable_from_context(
+        &self,
+        name: &str,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+    ) -> RuntimeResult<()> {
+        let properties = self.properties.borrow();
+        let property =
+            self.context_property(&properties, name, current_class_id, protected_class_ids)?;
+        property.ensure_writable()
     }
 
     pub fn is_public_property_set(&self, name: &str) -> RuntimeResult<bool> {

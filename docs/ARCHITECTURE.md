@@ -4604,6 +4604,17 @@ aliases, timestamp modifiers, and named time resets while rejecting unsupported
 timelib grammar instead of guessing. Broad timelib grammar, parser error-state
 history, and object-handle reuse behavior remain outside that runtime parser
 boundary.
+`DatePeriod` follows the same bounded runtime-metadata pattern as the current
+DateTime family. The runtime class table exposes the core class, constants,
+readonly public metadata fields, and the selected constructor/static/instance
+method signatures, while the interpreter stores period state in a request-local
+object-id map. Construction, `createFromISO8601String()`, `__serialize()`,
+`__unserialize()`, `__set_state()`, getters, object display, `var_export()`,
+generic serialization, `(array)`, `get_object_vars()`, and `json_encode()` all
+read and validate that stored metadata shape instead of expanding recurrence
+dates. Full DatePeriod iteration, `getIterator()` / `foreach` recurrence
+expansion, by-reference iterator diagnostics, complex ISO period grammar, and
+native lowering remain outside this lane.
 `ReflectionParameter::__construct()` can replace that request-local state on
 an existing object. `ReflectionParameter::getType()` now materializes a
 request-local `ReflectionNamedType` object for a single parsed named type, or a

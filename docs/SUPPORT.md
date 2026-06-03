@@ -6617,6 +6617,25 @@
   bounded non-relative token set with times, month names, `noon`, `midnight`,
   `UTC`, or `GMT`; procedural `date_interval_create_from_date_string()` emits a
   PHP-shaped warning and returns `false` for those same inputs.
+  `DateInterval::createFromDateString()` also accepts the bounded `tomorrow`
+  token used by current DatePeriod restoration rows. `DateInterval::__set_state()`
+  reconstructs bounded public interval state arrays for ISO and relative-string
+  intervals, including `from_string` / `date_string` metadata when present.
+  `DatePeriod` is visible as a core class with `EXCLUDE_START_DATE` and
+  `INCLUDE_END_DATE`. Its constructor supports the bounded overloads
+  `(DateTimeInterface, DateInterval, int $recurrences, int $options = 0)`,
+  `(DateTimeInterface, DateInterval, DateTimeInterface $end, int $options =
+  0)`, and the ISO string shape `R#/YYYY-MM-DDTHH:MM:SSZ/P...`;
+  `DatePeriod::createFromISO8601String()` returns the late-static target for
+  the same bounded grammar. DatePeriod objects expose readonly public metadata
+  fields `start`, `current`, `end`, `interval`, `recurrences`,
+  `include_start_date`, and `include_end_date`; the getters, `__serialize()`,
+  `__unserialize()`, `__set_state()`, `var_export()`, generic
+  `serialize()` / `unserialize()`, `get_object_vars()`, `(array)`,
+  `json_encode()`, and object display preserve that bounded state shape.
+  Malformed bounded ISO period strings raise catchable
+  `DateMalformedPeriodStringException`s, and writes or nested array mutations
+  against initialized readonly DatePeriod metadata raise PHP-shaped `Error`s.
   `DateTime::format()`,
   `DateTimeImmutable::format()`, `date_format()`, `date()`, `gmdate()`,
   `strftime()`, `gmstrftime()`, and `idate()` route `$format` through the
@@ -6672,7 +6691,12 @@
   fractional-microsecond subset,
   massive-year DateTime diff/day/add/sub rows outside the bounded
   civil-calendar/timestamp model,
-  DatePeriod, DateInterval serialization/unserialization and `__set_state()`,
+  DatePeriod iteration, `getIterator()` / `foreach` recurrence expansion,
+  by-reference iterator diagnostics, DatePeriod calendar recurrence expansion
+  beyond stored metadata, complex ISO period grammar beyond the bounded
+  `R#/YYYY-MM-DDTHH:MM:SSZ/P...` shape, DateInterval
+  serialization/unserialization outside the current public-state restoration
+  slice,
   full timelib relative string grammar and non-relative classification, broad
   `createFromFormat()` / `date_parse()` / `date_parse_from_format()` grammar,
   parser error metadata, `getLastErrors()` metadata, DateTime object-handle

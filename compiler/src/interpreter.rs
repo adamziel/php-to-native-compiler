@@ -74,6 +74,8 @@ const SPL_FILE_OBJECT_SKIP_EMPTY: i64 = 4;
 const SPL_FILE_OBJECT_READ_CSV: i64 = 8;
 const ARRAY_OBJECT_STD_PROP_LIST: i64 = 1;
 const ARRAY_OBJECT_ARRAY_AS_PROPS: i64 = 2;
+const DATEPERIOD_EXCLUDE_START_DATE: i64 = 1;
+const DATEPERIOD_INCLUDE_END_DATE: i64 = 2;
 const REFLECTION_MODIFIER_PUBLIC: i64 = 1;
 const REFLECTION_MODIFIER_PROTECTED: i64 = 2;
 const REFLECTION_MODIFIER_PRIVATE: i64 = 4;
@@ -563,6 +565,7 @@ struct Interpreter {
     date_time_objects: HashMap<i64, BoundedDateTimeObjectState>,
     date_interval_objects: HashMap<i64, BoundedDateIntervalState>,
     dirty_date_interval_objects: HashSet<i64>,
+    date_period_objects: HashSet<i64>,
     hash_contexts: HashMap<i64, BoundedHashContextState>,
     uri_rfc3986_empty_port_objects: HashSet<i64>,
     source_file: Option<String>,
@@ -1052,6 +1055,24 @@ struct BoundedDateIntervalState {
     total_days: Option<i64>,
     from_string: bool,
     date_string: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct BoundedDatePeriodState {
+    start: Value,
+    current: Value,
+    end: Value,
+    interval: PhpObject,
+    recurrences: i64,
+    include_start_date: bool,
+    include_end_date: bool,
+}
+
+#[derive(Debug, Clone)]
+struct ParsedBoundedDatePeriodIso {
+    recurrences: i64,
+    start_timestamp: i64,
+    interval: BoundedDateIntervalState,
 }
 
 #[derive(Debug, Clone)]
@@ -11921,6 +11942,7 @@ impl Interpreter {
             date_time_objects: HashMap::new(),
             date_interval_objects: HashMap::new(),
             dirty_date_interval_objects: HashSet::new(),
+            date_period_objects: HashSet::new(),
             hash_contexts: HashMap::new(),
             uri_rfc3986_empty_port_objects: HashSet::new(),
             main_source_file: source_file.clone(),
@@ -12318,6 +12340,20 @@ impl Interpreter {
         self.classes
             .lookup_class_id("DateInterval")
             .is_some_and(|dateinterval_id| class_id == dateinterval_id)
+    }
+
+    fn is_dateperiod_class_id(&self, class_id: ClassId) -> bool {
+        self.classes
+            .lookup_class_id("DatePeriod")
+            .is_some_and(|dateperiod_id| {
+                class_id == dateperiod_id || self.classes.is_subclass_of(class_id, dateperiod_id)
+            })
+    }
+
+    fn resolved_method_is_core_dateperiod(&self, class_id: ClassId) -> bool {
+        self.classes
+            .lookup_class_id("DatePeriod")
+            .is_some_and(|dateperiod_id| class_id == dateperiod_id)
     }
 
     fn is_dateinterval_state_property(property: &str) -> bool {
@@ -13189,7 +13225,7 @@ impl Interpreter {
 
     fn public_object_properties_array(object: &PhpObject) -> PhpArray {
         let mut array = PhpArray::new();
-        for property in object.properties() {
+        for property in dateperiod_ordered_object_properties(object, object.properties()) {
             if property.visibility() == Visibility::Public
                 && property.is_initialized()
                 && !property.is_unset()
@@ -13199,6 +13235,24 @@ impl Interpreter {
                     ArrayKey::String(property.name().to_string()),
                     &property,
                 );
+            }
+        }
+        array
+    }
+
+    fn initialized_mangled_properties_array_for_object(object: &PhpObject) -> PhpArray {
+        let mut array = PhpArray::new();
+        for property in dateperiod_ordered_object_properties(object, object.properties()) {
+            if property.is_initialized() && !property.is_unset() {
+                let key = ArrayKey::String(property.mangled_name());
+                if let Some(reference) = property
+                    .existing_reference_cell()
+                    .expect("initialized property reference snapshot should not fail")
+                {
+                    array.insert_reference(key, reference);
+                } else {
+                    array.insert(key, property.value_cloned());
+                }
             }
         }
         array
@@ -22170,6 +22224,8 @@ impl Interpreter {
         object.write_forced_public_property("from_string", Value::Bool(state.from_string));
         if let Some(date_string) = &state.date_string {
             object.write_forced_public_property("date_string", Value::String(date_string.clone()));
+        } else {
+            object.unset_forced_public_property("date_string");
         }
         self.dirty_date_interval_objects.remove(&object.id());
         self.date_interval_objects.insert(object.id(), state);
@@ -22339,6 +22395,395 @@ impl Interpreter {
         let object = self.create_core_dateinterval_object_from_state(state, span)?;
         self.track_allocated_object(&object);
         Ok(Value::Object(object))
+    }
+
+    fn call_dateinterval_set_state_static(
+        &mut self,
+        class_id: ClassId,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        expect_expr_arity("DateInterval::__set_state", args.len(), 1, span)?;
+        let value = self.evaluate(&args[0], caller_scope)?;
+        let Value::Array(state) = value else {
+            return Err(dateinterval_malformed_error(
+                span,
+                "Invalid serialization data for DateInterval object".to_string(),
+            ));
+        };
+        let state = bounded_dateinterval_state_from_state_array(&state, span)?;
+        let object = self.create_dateinterval_object_from_state(class_id, state, span)?;
+        self.track_allocated_object(&object);
+        Ok(Value::Object(object))
+    }
+
+    fn initialize_dateperiod_object(
+        &mut self,
+        object: &PhpObject,
+        args: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        let state = self.dateperiod_state_from_constructor_args(args, span, scope)?;
+        self.assign_dateperiod_object_state(object, state)
+    }
+
+    fn dateperiod_state_from_constructor_args(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<BoundedDatePeriodState> {
+        if (1..=2).contains(&args.len()) {
+            let value = self.evaluate(&args[0], scope)?;
+            let isostr = self.php_string_argument_with_magic(
+                "DatePeriod::__construct()",
+                1,
+                "isostr",
+                &value,
+                span,
+            )?;
+            let options = match args.get(1) {
+                Some(arg) => {
+                    let value = self.evaluate(arg, scope)?;
+                    php_internal_int_argument(
+                        "DatePeriod::__construct()",
+                        2,
+                        "options",
+                        &value,
+                        span,
+                    )?
+                }
+                None => 0,
+            };
+            self.emit_display_diagnostic(
+                "Deprecated",
+                PHP_E_DEPRECATED,
+                "Calling DatePeriod::__construct(string $isostr, int $options = 0) is deprecated, use DatePeriod::createFromISO8601String() instead",
+                span,
+            )?;
+            return self.dateperiod_state_from_iso_string(
+                &isostr,
+                options,
+                "DatePeriod::__construct()",
+                span,
+            );
+        }
+
+        if !(3..=4).contains(&args.len()) {
+            return Err(dateperiod_constructor_type_error(span));
+        }
+
+        let values = args
+            .iter()
+            .map(|arg| self.evaluate(arg, scope))
+            .collect::<CompileResult<Vec<_>>>()?;
+        let start = match &values[0] {
+            Value::Object(object) if dateperiod_is_datetime_interface_object(object) => {
+                object.clone()
+            }
+            _ => return Err(dateperiod_constructor_type_error(span)),
+        };
+        let interval = match &values[1] {
+            Value::Object(object) if object.is_instance_of_class_name("DateInterval") => {
+                object.clone()
+            }
+            _ => return Err(dateperiod_constructor_type_error(span)),
+        };
+        let options = match values.get(3) {
+            Some(value) => {
+                php_internal_int_argument("DatePeriod::__construct()", 4, "options", value, span)?
+            }
+            None => 0,
+        };
+        let include_start_date = options & DATEPERIOD_EXCLUDE_START_DATE == 0;
+        let include_end_date = options & DATEPERIOD_INCLUDE_END_DATE != 0;
+        let include_start_recurrence = if include_start_date { 1 } else { 0 };
+
+        match &values[2] {
+            Value::Int(recurrences) => {
+                if *recurrences <= 0 {
+                    return Err(date_exception_error(
+                        span,
+                        &format!(
+                            "DatePeriod::__construct(): Recurrence count must be greater or equal to 1 and lower than {}",
+                            i64::MAX
+                        ),
+                    ));
+                }
+                Ok(BoundedDatePeriodState {
+                    start: Value::Object(start),
+                    current: Value::Null,
+                    end: Value::Null,
+                    interval,
+                    recurrences: recurrences.saturating_add(include_start_recurrence),
+                    include_start_date,
+                    include_end_date,
+                })
+            }
+            Value::Object(end) if dateperiod_is_datetime_interface_object(end) => {
+                Ok(BoundedDatePeriodState {
+                    start: Value::Object(start),
+                    current: Value::Null,
+                    end: Value::Object(end.clone()),
+                    interval,
+                    recurrences: include_start_recurrence,
+                    include_start_date,
+                    include_end_date,
+                })
+            }
+            _ => Err(dateperiod_constructor_type_error(span)),
+        }
+    }
+
+    fn dateperiod_state_from_iso_string(
+        &mut self,
+        isostr: &str,
+        options: i64,
+        function: &'static str,
+        span: Span,
+    ) -> CompileResult<BoundedDatePeriodState> {
+        let parsed = parse_bounded_dateperiod_iso(isostr, function)
+            .map_err(|message| dateperiod_malformed_error(span, message))?;
+        let datetime_class_id = self
+            .classes
+            .lookup_class_id("DateTimeImmutable")
+            .ok_or_else(|| {
+                runtime_error(span, RuntimeError::undefined_class("DateTimeImmutable"))
+            })?;
+        let start = self.create_datetime_object_from_state(
+            datetime_class_id,
+            parsed.start_timestamp,
+            BoundedTimezone::numeric_fixed_offset(0),
+            span,
+        )?;
+        let interval = self.create_core_dateinterval_object_from_state(parsed.interval, span)?;
+        let include_start_date = options & DATEPERIOD_EXCLUDE_START_DATE == 0;
+        let include_end_date = options & DATEPERIOD_INCLUDE_END_DATE != 0;
+        let include_start_recurrence = if include_start_date { 1 } else { 0 };
+        Ok(BoundedDatePeriodState {
+            start: Value::Object(start),
+            current: Value::Null,
+            end: Value::Null,
+            interval,
+            recurrences: parsed.recurrences.saturating_add(include_start_recurrence),
+            include_start_date,
+            include_end_date,
+        })
+    }
+
+    fn create_dateperiod_object_from_state(
+        &mut self,
+        class_id: ClassId,
+        state: BoundedDatePeriodState,
+        span: Span,
+    ) -> CompileResult<PhpObject> {
+        let object = self.create_uninitialized_dateperiod_object(class_id, span)?;
+        self.assign_dateperiod_object_state(&object, state)?;
+        Ok(object)
+    }
+
+    fn create_uninitialized_dateperiod_object(
+        &mut self,
+        class_id: ClassId,
+        span: Span,
+    ) -> CompileResult<PhpObject> {
+        let object_id = self.allocate_object_id();
+        let inherited_properties = self.inherited_instance_properties(class_id);
+        let mut ancestor_class_names = self.inherited_class_names(class_id);
+        ancestor_class_names.extend(self.class_alias_names(class_id));
+        let interface_names = self.class_implements_interface_names(class_id);
+        let class = self
+            .classes
+            .get(class_id)
+            .expect("DatePeriod-compatible class id should resolve");
+        let object = PhpObject::from_class_with_relationship_metadata_with_id(
+            class,
+            &inherited_properties,
+            ancestor_class_names,
+            interface_names,
+            object_id,
+        );
+        self.apply_instance_property_defaults(&object, class_id, span)?;
+        Ok(object)
+    }
+
+    fn assign_dateperiod_object_state(
+        &mut self,
+        object: &PhpObject,
+        state: BoundedDatePeriodState,
+    ) -> CompileResult<()> {
+        object.write_forced_public_property("start", state.start);
+        object.write_forced_public_property("current", state.current);
+        object.write_forced_public_property("end", state.end);
+        object.write_forced_public_property("interval", Value::Object(state.interval));
+        object.write_forced_public_property("recurrences", Value::Int(state.recurrences));
+        object.write_forced_public_property(
+            "include_start_date",
+            Value::Bool(state.include_start_date),
+        );
+        object
+            .write_forced_public_property("include_end_date", Value::Bool(state.include_end_date));
+        self.date_period_objects.insert(object.id());
+        Ok(())
+    }
+
+    fn dateperiod_serialization_state_array(
+        object: &PhpObject,
+        span: Span,
+    ) -> CompileResult<PhpArray> {
+        let state = dateperiod_state_from_object_properties(object, span)?;
+        Ok(dateperiod_state_to_array(&state))
+    }
+
+    fn call_dateperiod_method(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        match method_name.to_ascii_lowercase().as_str() {
+            "__construct" => {
+                self.initialize_dateperiod_object(&object, args, span, caller_scope)?;
+                Ok(Value::Null)
+            }
+            "__serialize" => {
+                expect_expr_arity("DatePeriod::__serialize", args.len(), 0, span)?;
+                Ok(Value::Array(Self::dateperiod_serialization_state_array(
+                    &object, span,
+                )?))
+            }
+            "__unserialize" => {
+                expect_expr_arity("DatePeriod::__unserialize", args.len(), 1, span)?;
+                let value = self.evaluate(&args[0], caller_scope)?;
+                let Value::Array(state) = value else {
+                    return Err(dateperiod_invalid_serialization_error(span));
+                };
+                let (state, public_properties) =
+                    dateperiod_state_from_state_array_with_extras(&state, span)?;
+                self.assign_dateperiod_object_state(&object, state)?;
+                self.write_dateperiod_extra_public_properties(&object, public_properties, span)?;
+                Ok(Value::Null)
+            }
+            "getstartdate" => {
+                expect_expr_arity("DatePeriod::getStartDate", args.len(), 0, span)?;
+                object
+                    .read_public_property("start")
+                    .map_err(|_| dateperiod_invalid_serialization_error(span))
+            }
+            "getenddate" => {
+                expect_expr_arity("DatePeriod::getEndDate", args.len(), 0, span)?;
+                object
+                    .read_public_property("end")
+                    .map_err(|_| dateperiod_invalid_serialization_error(span))
+            }
+            "getdateinterval" => {
+                expect_expr_arity("DatePeriod::getDateInterval", args.len(), 0, span)?;
+                object
+                    .read_public_property("interval")
+                    .map_err(|_| dateperiod_invalid_serialization_error(span))
+            }
+            "getrecurrences" => {
+                expect_expr_arity("DatePeriod::getRecurrences", args.len(), 0, span)?;
+                let state = dateperiod_state_from_object_properties(&object, span)?;
+                if !matches!(state.end, Value::Null) {
+                    return Ok(Value::Null);
+                }
+                let adjustment = if state.include_start_date { 1 } else { 0 };
+                Ok(Value::Int(state.recurrences.saturating_sub(adjustment)))
+            }
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!("DatePeriod::{method_name}()")),
+            )),
+        }
+    }
+
+    fn call_dateperiod_set_state_static(
+        &mut self,
+        class_id: ClassId,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        expect_expr_arity("DatePeriod::__set_state", args.len(), 1, span)?;
+        let value = self.evaluate(&args[0], caller_scope)?;
+        let Value::Array(state) = value else {
+            return Err(dateperiod_invalid_serialization_error(span));
+        };
+        let (state, public_properties) =
+            dateperiod_state_from_state_array_with_extras(&state, span)?;
+        let object = self.create_dateperiod_object_from_state(class_id, state, span)?;
+        self.write_dateperiod_extra_public_properties(&object, public_properties, span)?;
+        self.track_allocated_object(&object);
+        Ok(Value::Object(object))
+    }
+
+    fn call_dateperiod_create_from_iso8601_string_static(
+        &mut self,
+        class_id: ClassId,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "DatePeriod::createFromISO8601String",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+        let value = self.evaluate(&args[0], caller_scope)?;
+        let isostr = self.php_string_argument_with_magic(
+            "DatePeriod::createFromISO8601String()",
+            1,
+            "specification",
+            &value,
+            span,
+        )?;
+        let options = match args.get(1) {
+            Some(arg) => {
+                let value = self.evaluate(arg, caller_scope)?;
+                php_internal_int_argument(
+                    "DatePeriod::createFromISO8601String()",
+                    2,
+                    "options",
+                    &value,
+                    span,
+                )?
+            }
+            None => 0,
+        };
+        let object = self.create_uninitialized_dateperiod_object(class_id, span)?;
+        let state = self.dateperiod_state_from_iso_string(
+            &isostr,
+            options,
+            "DatePeriod::createFromISO8601String()",
+            span,
+        )?;
+        self.assign_dateperiod_object_state(&object, state)?;
+        self.track_allocated_object(&object);
+        Ok(Value::Object(object))
+    }
+
+    fn write_dateperiod_extra_public_properties(
+        &mut self,
+        object: &PhpObject,
+        properties: Vec<(String, Value)>,
+        span: Span,
+    ) -> CompileResult<()> {
+        for (name, value) in properties {
+            object
+                .write_dynamic_public_property(&name, value)
+                .map_err(|error| runtime_error(span, error))?;
+        }
+        Ok(())
     }
 
     fn assign_datetime_object_serialization_state(
@@ -29617,6 +30062,11 @@ impl Interpreter {
                 self.track_allocated_object(&object);
                 return Ok(Value::Object(object));
             }
+            if self.is_dateperiod_class_id(class_id) {
+                self.initialize_dateperiod_object(&object, args, span, scope)?;
+                self.track_allocated_object(&object);
+                return Ok(Value::Object(object));
+            }
             if self.is_datetime_class_id(class_id) {
                 self.initialize_datetime_object(&object, args, span, scope)?;
                 self.track_allocated_object(&object);
@@ -29783,6 +30233,12 @@ impl Interpreter {
 
         if self.resolved_method_is_core_dateinterval(constructor_class_id) {
             self.initialize_dateinterval_object(&object, args, span, scope)?;
+            self.track_allocated_object(&object);
+            return Ok(Value::Object(object));
+        }
+
+        if self.resolved_method_is_core_dateperiod(constructor_class_id) {
+            self.initialize_dateperiod_object(&object, args, span, scope)?;
             self.track_allocated_object(&object);
             return Ok(Value::Object(object));
         }
@@ -30288,6 +30744,7 @@ impl Interpreter {
         self.date_time_objects.remove(&object_id);
         self.date_interval_objects.remove(&object_id);
         self.dirty_date_interval_objects.remove(&object_id);
+        self.date_period_objects.remove(&object_id);
         self.hash_contexts.remove(&object_id);
         self.uri_rfc3986_empty_port_objects.remove(&object_id);
 
@@ -30743,6 +31200,9 @@ impl Interpreter {
             if self.dirty_date_interval_objects.contains(&object.id()) {
                 self.dirty_date_interval_objects.insert(clone.id());
             }
+        }
+        if self.date_period_objects.contains(&object.id()) {
+            self.date_period_objects.insert(clone.id());
         }
         if let Some(state) = self.hash_contexts.get(&object.id()).cloned() {
             if state.finalized {
@@ -33522,6 +33982,22 @@ impl Interpreter {
             self.reject_array_access_reference_target_value(&value, span)?;
         }
         Ok(())
+    }
+
+    fn ensure_object_property_writable_for_array_mutation(
+        &self,
+        object_name: &str,
+        property: &str,
+        span: Span,
+        scope: &SymbolTable,
+    ) -> CompileResult<()> {
+        let Some(Value::Object(object)) = scope.read_named(object_name) else {
+            return Ok(());
+        };
+        let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        object
+            .ensure_property_writable_from_context(property, current_class_id, &protected_class_ids)
+            .map_err(|error| runtime_error(span, error))
     }
 
     fn emit_object_property_false_to_array_deprecation_if_needed(
@@ -43199,6 +43675,12 @@ impl Interpreter {
                 ));
             }
         };
+        self.ensure_object_property_writable_for_array_mutation(
+            object_name,
+            property,
+            span,
+            scope,
+        )?;
 
         let mut slot = object
             .read_property_from_context(property, current_class_id, &protected_class_ids)
@@ -43313,6 +43795,12 @@ impl Interpreter {
                 ));
             }
         };
+        self.ensure_object_property_writable_for_array_mutation(
+            object_name,
+            property,
+            span,
+            scope,
+        )?;
 
         let mut slot = object
             .read_property_from_context(property, current_class_id, &protected_class_ids)
@@ -43390,6 +43878,12 @@ impl Interpreter {
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<()> {
+        self.ensure_object_property_writable_for_array_mutation(
+            object_name,
+            property,
+            span,
+            scope,
+        )?;
         self.reject_object_property_array_access_reference_target_if_needed(
             object_name,
             property,
@@ -55700,6 +56194,17 @@ impl Interpreter {
                 .call_dateinterval_method(object, method_name, args, span, caller_scope)
                 .map(|value| (value, None));
         }
+        if object.is_instance_of_class_name("DatePeriod")
+            && self.instance_method_resolves_to_core_class(
+                &object,
+                method_name,
+                Self::resolved_method_is_core_dateperiod,
+            )
+        {
+            return self
+                .call_dateperiod_method(object, method_name, args, span, caller_scope)
+                .map(|value| (value, None));
+        }
         if object.is_instance_of_class_name("DateTime")
             && self.instance_method_resolves_to_core_class(
                 &object,
@@ -63129,6 +63634,25 @@ impl Interpreter {
             && method_name.eq_ignore_ascii_case("createFromDateString")
         {
             return self.call_dateinterval_create_from_date_string_static(
+                class_id,
+                args,
+                span,
+                caller_scope,
+            );
+        }
+        if self.is_dateinterval_class_id(class_id)
+            && method_name.eq_ignore_ascii_case("__set_state")
+        {
+            return self.call_dateinterval_set_state_static(class_id, args, span, caller_scope);
+        }
+        if self.is_dateperiod_class_id(class_id) && method_name.eq_ignore_ascii_case("__set_state")
+        {
+            return self.call_dateperiod_set_state_static(class_id, args, span, caller_scope);
+        }
+        if self.is_dateperiod_class_id(class_id)
+            && method_name.eq_ignore_ascii_case("createFromISO8601String")
+        {
+            return self.call_dateperiod_create_from_iso8601_string_static(
                 class_id,
                 args,
                 span,
@@ -101268,9 +101792,9 @@ impl Interpreter {
                     let (current_class_id, protected_class_ids) =
                         self.current_property_access_context();
                     let mut properties = PhpArray::new();
-                    for property in
-                        object.initialized_visible_properties(current_class_id, &protected_class_ids)
-                    {
+                    let visible_properties = object
+                        .initialized_visible_properties(current_class_id, &protected_class_ids);
+                    for property in dateperiod_ordered_object_properties(object, visible_properties) {
                         let key = if property.visibility() == Visibility::Public {
                             property.name().to_string()
                         } else {
@@ -101813,6 +102337,8 @@ impl Interpreter {
             self.initialize_unserialized_datetime_object(&object, properties, span)?;
         } else if self.is_datetimeimmutable_class_id(class_id) {
             self.initialize_unserialized_datetimeimmutable_object(&object, properties, span)?;
+        } else if self.is_dateperiod_class_id(class_id) {
+            self.initialize_unserialized_dateperiod_object(&object, properties, span)?;
         } else if self.is_spl_object_storage_class_id(class_id) {
             self.initialize_unserialized_spl_object_storage_object(&object, properties, span)?;
         } else {
@@ -101953,6 +102479,22 @@ impl Interpreter {
                 .map_err(|error| runtime_error(span, error))?;
         }
         Ok(())
+    }
+
+    fn initialize_unserialized_dateperiod_object(
+        &mut self,
+        object: &PhpObject,
+        properties: Vec<(String, Value)>,
+        span: Span,
+    ) -> CompileResult<()> {
+        let mut state = PhpArray::new();
+        for (name, value) in properties {
+            state.insert(name, value);
+        }
+        let (state, public_properties) =
+            dateperiod_state_from_state_array_with_extras(&state, span)?;
+        self.assign_dateperiod_object_state(object, state)?;
+        self.write_dateperiod_extra_public_properties(object, public_properties, span)
     }
 
     fn call_user_func_builtin(&mut self, args: Vec<Value>, span: Span) -> CompileResult<Value> {
@@ -109422,9 +109964,9 @@ impl Interpreter {
                         span,
                     )?))
                 }
-                Value::Object(object) => {
-                    Ok(Value::Array(object.initialized_mangled_properties_array()))
-                }
+                Value::Object(object) => Ok(Value::Array(
+                    Self::initialized_mangled_properties_array_for_object(&object),
+                )),
                 Value::Closure(_) => Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
@@ -116047,6 +116589,27 @@ fn seed_core_class_constant_runtime_tables(
                     },
                 );
             }
+        }
+    }
+    if let Some(dateperiod_id) = classes.lookup_class_id("DatePeriod") {
+        for (name, value) in [
+            ("EXCLUDE_START_DATE", DATEPERIOD_EXCLUDE_START_DATE),
+            ("INCLUDE_END_DATE", DATEPERIOD_INCLUDE_END_DATE),
+        ] {
+            let span = Span::new(1, 1);
+            class_constants.insert(
+                (dateperiod_id, name.to_string()),
+                ClassConstantDecl {
+                    name: name.to_string(),
+                    visibility: ClassVisibility::Public,
+                    is_static: false,
+                    is_abstract: false,
+                    type_decl: None,
+                    value: Expr::Int(value, span),
+                    attributes: Vec::new(),
+                    span,
+                },
+            );
         }
     }
     if let Some(spl_doubly_linked_list_id) = classes.lookup_class_id("SplDoublyLinkedList") {
@@ -123179,11 +123742,16 @@ const DATETIME_INVALID_SERIALIZATION_MESSAGE: &str =
     "Invalid serialization data for DateTime object";
 const DATETIMEIMMUTABLE_INVALID_SERIALIZATION_MESSAGE: &str =
     "Invalid serialization data for DateTimeImmutable object";
+const DATEPERIOD_INVALID_SERIALIZATION_MESSAGE: &str =
+    "Invalid serialization data for DatePeriod object";
+const DATEPERIOD_CONSTRUCTOR_TYPE_MESSAGE: &str =
+    "DatePeriod::__construct() accepts (DateTimeInterface, DateInterval, int [, int]), or (DateTimeInterface, DateInterval, DateTime [, int]), or (string [, int]) as arguments";
 const DATE_OBJECT_ERROR_DIAGNOSTIC_PREFIX: &str = "DateObjectError: ";
 const DATE_RANGE_ERROR_DIAGNOSTIC_PREFIX: &str = "DateRangeError: ";
 const DATE_EXCEPTION_DIAGNOSTIC_PREFIX: &str = "DateException: ";
 const DATE_MALFORMED_STRING_DIAGNOSTIC_PREFIX: &str = "DateMalformedStringException: ";
 const DATE_MALFORMED_INTERVAL_DIAGNOSTIC_PREFIX: &str = "DateMalformedIntervalStringException: ";
+const DATE_MALFORMED_PERIOD_DIAGNOSTIC_PREFIX: &str = "DateMalformedPeriodStringException: ";
 
 fn datetimezone_invalid_serialization_error(span: Span) -> Diagnostic {
     runtime_error(
@@ -123209,12 +123777,39 @@ fn datetimeimmutable_invalid_serialization_error(span: Span) -> Diagnostic {
     )
 }
 
+fn dateperiod_invalid_serialization_error(span: Span) -> Diagnostic {
+    runtime_error(
+        span,
+        RuntimeError::unsupported_call("unserialize()", DATEPERIOD_INVALID_SERIALIZATION_MESSAGE),
+    )
+}
+
+fn dateperiod_constructor_type_error(span: Span) -> Diagnostic {
+    runtime_error(
+        span,
+        RuntimeError::unsupported_call(
+            "DatePeriod::__construct()",
+            DATEPERIOD_CONSTRUCTOR_TYPE_MESSAGE,
+        ),
+    )
+}
+
 fn dateinterval_malformed_error(span: Span, message: String) -> Diagnostic {
     runtime_error(
         span,
         RuntimeError::unsupported_call(
             "DateInterval",
             format!("{DATE_MALFORMED_INTERVAL_DIAGNOSTIC_PREFIX}{message}"),
+        ),
+    )
+}
+
+fn dateperiod_malformed_error(span: Span, message: String) -> Diagnostic {
+    runtime_error(
+        span,
+        RuntimeError::unsupported_call(
+            "DatePeriod",
+            format!("{DATE_MALFORMED_PERIOD_DIAGNOSTIC_PREFIX}{message}"),
         ),
     )
 }
@@ -123303,10 +123898,17 @@ fn is_datetimeimmutable_invalid_serialization_error(error: &Diagnostic) -> bool 
             )
 }
 
+fn is_dateperiod_invalid_serialization_error(error: &Diagnostic) -> bool {
+    error.phase == Phase::Runtime
+        && error.message
+            == format!("unsupported call unserialize(): {DATEPERIOD_INVALID_SERIALIZATION_MESSAGE}")
+}
+
 fn is_date_object_invalid_serialization_error(error: &Diagnostic) -> bool {
     is_datetimezone_invalid_serialization_error(error)
         || is_datetime_invalid_serialization_error(error)
         || is_datetimeimmutable_invalid_serialization_error(error)
+        || is_dateperiod_invalid_serialization_error(error)
 }
 
 fn map_datetime_invalid_serialization_to_datetimeimmutable<T>(
@@ -123379,7 +123981,22 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
         ));
     }
 
+    if is_dateperiod_invalid_serialization_error(error) {
+        return Some((
+            "Error",
+            DATEPERIOD_INVALID_SERIALIZATION_MESSAGE.to_string(),
+        ));
+    }
+
     if error.phase == Phase::Runtime {
+        if let Some(message) = error
+            .message
+            .strip_prefix("unsupported call DatePeriod::__construct(): ")
+        {
+            if message == DATEPERIOD_CONSTRUCTOR_TYPE_MESSAGE {
+                return Some(("TypeError", message.to_string()));
+            }
+        }
         if let Some((_, message)) = error
             .message
             .split_once(DATE_OBJECT_ERROR_DIAGNOSTIC_PREFIX)
@@ -123400,6 +124017,12 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             .split_once(DATE_MALFORMED_INTERVAL_DIAGNOSTIC_PREFIX)
         {
             return Some(("DateMalformedIntervalStringException", message.to_string()));
+        }
+        if let Some((_, message)) = error
+            .message
+            .split_once(DATE_MALFORMED_PERIOD_DIAGNOSTIC_PREFIX)
+        {
+            return Some(("DateMalformedPeriodStringException", message.to_string()));
         }
     }
 
@@ -148828,7 +149451,7 @@ impl Interpreter {
         span: Span,
     ) -> Result<String, i64> {
         let mut pairs = Vec::new();
-        for property in object.properties() {
+        for property in dateperiod_ordered_object_properties(object, object.properties()) {
             if property.visibility() != Visibility::Public
                 || !property.is_initialized()
                 || property.is_unset()
@@ -162656,6 +163279,218 @@ where
     Ok((state, public_properties))
 }
 
+fn bounded_dateinterval_state_from_state_array(
+    state: &PhpArray,
+    span: Span,
+) -> CompileResult<BoundedDateIntervalState> {
+    fn interval_int(state: &PhpArray, key: &str, span: Span) -> CompileResult<i64> {
+        match state.get_cloned(key) {
+            Some(Value::Int(value)) => Ok(value),
+            _ => Err(dateinterval_malformed_error(
+                span,
+                "Invalid serialization data for DateInterval object".to_string(),
+            )),
+        }
+    }
+
+    fn interval_float(state: &PhpArray, key: &str, span: Span) -> CompileResult<f64> {
+        match state.get_cloned(key) {
+            Some(Value::Float(value)) => Ok(value),
+            Some(Value::Int(value)) => Ok(value as f64),
+            _ => Err(dateinterval_malformed_error(
+                span,
+                "Invalid serialization data for DateInterval object".to_string(),
+            )),
+        }
+    }
+
+    let total_days = match state.get_cloned("days") {
+        Some(Value::Int(value)) => Some(value),
+        Some(Value::Bool(false)) => None,
+        _ => {
+            return Err(dateinterval_malformed_error(
+                span,
+                "Invalid serialization data for DateInterval object".to_string(),
+            ));
+        }
+    };
+    let from_string = match state.get_cloned("from_string") {
+        Some(Value::Bool(value)) => value,
+        _ => {
+            return Err(dateinterval_malformed_error(
+                span,
+                "Invalid serialization data for DateInterval object".to_string(),
+            ));
+        }
+    };
+    let date_string = match state.get_cloned("date_string") {
+        Some(Value::String(value)) => Some(value),
+        Some(Value::Null) | None => None,
+        _ => {
+            return Err(dateinterval_malformed_error(
+                span,
+                "Invalid serialization data for DateInterval object".to_string(),
+            ));
+        }
+    };
+
+    Ok(BoundedDateIntervalState {
+        years: interval_int(state, "y", span)?,
+        months: interval_int(state, "m", span)?,
+        days: interval_int(state, "d", span)?,
+        hours: interval_int(state, "h", span)?,
+        minutes: interval_int(state, "i", span)?,
+        seconds: interval_int(state, "s", span)?,
+        fraction: interval_float(state, "f", span)?,
+        invert: interval_int(state, "invert", span)?,
+        total_days,
+        from_string,
+        date_string,
+    })
+}
+
+fn dateperiod_state_to_array(state: &BoundedDatePeriodState) -> PhpArray {
+    let mut array = PhpArray::new();
+    array.insert("start", state.start.clone());
+    array.insert("current", state.current.clone());
+    array.insert("end", state.end.clone());
+    array.insert("interval", Value::Object(state.interval.clone()));
+    array.insert("recurrences", Value::Int(state.recurrences));
+    array.insert("include_start_date", Value::Bool(state.include_start_date));
+    array.insert("include_end_date", Value::Bool(state.include_end_date));
+    array
+}
+
+fn dateperiod_state_from_object_properties(
+    object: &PhpObject,
+    span: Span,
+) -> CompileResult<BoundedDatePeriodState> {
+    let value = |name: &str| {
+        object
+            .read_public_property(name)
+            .map_err(|_| dateperiod_invalid_serialization_error(span))
+    };
+    dateperiod_state_from_values(
+        value("start")?,
+        value("current")?,
+        value("end")?,
+        value("interval")?,
+        value("recurrences")?,
+        value("include_start_date")?,
+        value("include_end_date")?,
+        span,
+    )
+}
+
+fn dateperiod_state_from_state_array_with_extras(
+    state: &PhpArray,
+    span: Span,
+) -> CompileResult<(BoundedDatePeriodState, Vec<(String, Value)>)> {
+    let mut core = PhpArray::new();
+    let mut public_properties = Vec::new();
+    for entry in state.entries() {
+        let ArrayKey::String(name) = &entry.key else {
+            return Err(dateperiod_invalid_serialization_error(span));
+        };
+        if dateperiod_core_property_name(name) {
+            core.insert(name.clone(), entry.value_cloned());
+        } else {
+            public_properties.push((name.clone(), entry.value_cloned()));
+        }
+    }
+    let state = dateperiod_state_from_state_array(&core, span)?;
+    Ok((state, public_properties))
+}
+
+fn dateperiod_state_from_state_array(
+    state: &PhpArray,
+    span: Span,
+) -> CompileResult<BoundedDatePeriodState> {
+    let value = |name: &str| {
+        state
+            .get_cloned(name)
+            .ok_or_else(|| dateperiod_invalid_serialization_error(span))
+    };
+    dateperiod_state_from_values(
+        value("start")?,
+        value("current")?,
+        value("end")?,
+        value("interval")?,
+        value("recurrences")?,
+        value("include_start_date")?,
+        value("include_end_date")?,
+        span,
+    )
+}
+
+fn dateperiod_state_from_values(
+    start: Value,
+    current: Value,
+    end: Value,
+    interval: Value,
+    recurrences: Value,
+    include_start_date: Value,
+    include_end_date: Value,
+    span: Span,
+) -> CompileResult<BoundedDatePeriodState> {
+    let start = dateperiod_datetime_or_null_value(start, span)?;
+    let current = dateperiod_datetime_or_null_value(current, span)?;
+    let end = dateperiod_datetime_or_null_value(end, span)?;
+    let interval = match interval {
+        Value::Object(object) if object.is_instance_of_class_name("DateInterval") => object,
+        _ => return Err(dateperiod_invalid_serialization_error(span)),
+    };
+    let recurrences = match recurrences {
+        Value::Int(value) if value >= 0 => value,
+        _ => return Err(dateperiod_invalid_serialization_error(span)),
+    };
+    let include_start_date = match include_start_date {
+        Value::Bool(value) => value,
+        _ => return Err(dateperiod_invalid_serialization_error(span)),
+    };
+    let include_end_date = match include_end_date {
+        Value::Bool(value) => value,
+        _ => return Err(dateperiod_invalid_serialization_error(span)),
+    };
+    Ok(BoundedDatePeriodState {
+        start,
+        current,
+        end,
+        interval,
+        recurrences,
+        include_start_date,
+        include_end_date,
+    })
+}
+
+fn dateperiod_datetime_or_null_value(value: Value, span: Span) -> CompileResult<Value> {
+    match value {
+        Value::Null => Ok(Value::Null),
+        Value::Object(object) if dateperiod_is_datetime_interface_object(&object) => {
+            Ok(Value::Object(object))
+        }
+        _ => Err(dateperiod_invalid_serialization_error(span)),
+    }
+}
+
+fn dateperiod_is_datetime_interface_object(object: &PhpObject) -> bool {
+    object.is_instance_of_class_name("DateTime")
+        || object.is_instance_of_class_name("DateTimeImmutable")
+}
+
+fn dateperiod_core_property_name(name: &str) -> bool {
+    matches!(
+        name,
+        "start"
+            | "current"
+            | "end"
+            | "interval"
+            | "recurrences"
+            | "include_start_date"
+            | "include_end_date"
+    )
+}
+
 fn bounded_datetime_state_string(state: &PhpArray, key: &str, span: Span) -> CompileResult<String> {
     match state.get_cloned(key) {
         Some(Value::String(value)) => Ok(value),
@@ -165726,10 +166561,102 @@ fn parse_bounded_dateinterval_iso(input: &str) -> Result<BoundedDateIntervalStat
     Ok(state)
 }
 
+fn parse_bounded_dateperiod_iso(
+    input: &str,
+    function: &str,
+) -> Result<ParsedBoundedDatePeriodIso, String> {
+    let trimmed = input.trim();
+    let parts = trimmed.split('/').collect::<Vec<_>>();
+    if parts.len() == 1 {
+        return Err(format!(
+            "{function}: ISO interval must contain a start date, \"{trimmed}\" given"
+        ));
+    }
+    if parts.len() == 2 {
+        if !parts[0].starts_with('R') {
+            return Err(format!(
+                "{function}: Recurrence count must be greater or equal to 1 and lower than {}",
+                i64::MAX
+            ));
+        }
+        return Err(format!(
+            "{function}: ISO interval must contain an interval, \"{trimmed}\" given"
+        ));
+    }
+    if parts.len() != 3 {
+        return Err(format!("Unknown or bad format ({trimmed})"));
+    }
+    let recurrence_token = parts[0];
+    let Some(recurrence_digits) = recurrence_token.strip_prefix('R') else {
+        return Err(format!(
+            "{function}: Recurrence count must be greater or equal to 1 and lower than {}",
+            i64::MAX
+        ));
+    };
+    let recurrences = parse_ascii_i64(recurrence_digits).unwrap_or(0);
+    if recurrences <= 0 {
+        return Err(format!(
+            "{function}: Recurrence count must be greater or equal to 1 and lower than {}",
+            i64::MAX
+        ));
+    }
+    let start_timestamp = parse_bounded_dateperiod_iso_start(parts[1])
+        .ok_or_else(|| format!("Unknown or bad format ({trimmed})"))?;
+    let interval = parse_bounded_dateinterval_iso(parts[2])
+        .map_err(|_| format!("Unknown or bad format ({trimmed})"))?;
+    Ok(ParsedBoundedDatePeriodIso {
+        recurrences,
+        start_timestamp,
+        interval,
+    })
+}
+
+fn parse_bounded_dateperiod_iso_start(input: &str) -> Option<i64> {
+    let bytes = input.as_bytes();
+    if bytes.len() != 20
+        || bytes[4] != b'-'
+        || bytes[7] != b'-'
+        || bytes[10] != b'T'
+        || bytes[13] != b':'
+        || bytes[16] != b':'
+        || bytes[19] != b'Z'
+    {
+        return None;
+    }
+    for range in [0..4, 5..7, 8..10, 11..13, 14..16, 17..19] {
+        if !bytes[range].iter().all(u8::is_ascii_digit) {
+            return None;
+        }
+    }
+    let year = parse_ascii_i64(&input[0..4])?;
+    let month = parse_ascii_i64(&input[5..7])?;
+    let day = parse_ascii_i64(&input[8..10])?;
+    let hour = parse_ascii_i64(&input[11..13])?;
+    let minute = parse_ascii_i64(&input[14..16])?;
+    let second = parse_ascii_i64(&input[17..19])?;
+    timestamp_for_bounded_parts(
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        second,
+        Some(0),
+        &BoundedTimezone::numeric_fixed_offset(0),
+    )
+}
+
 fn parse_bounded_dateinterval_relative(input: &str) -> Result<BoundedDateIntervalState, String> {
     let trimmed = input.trim();
     if trimmed.is_empty() {
         return Err(bounded_dateinterval_relative_error(input));
+    }
+    if trimmed.eq_ignore_ascii_case("tomorrow") {
+        let mut state = empty_bounded_dateinterval_state();
+        state.days = 1;
+        state.from_string = true;
+        state.date_string = Some(trimmed.to_string());
+        return Ok(state);
     }
     if bounded_dateinterval_contains_non_relative_element(trimmed) {
         return Err(format!("String '{trimmed}' contains non-relative elements"));
@@ -171248,6 +172175,33 @@ fn display_object_properties(object: &PhpObject) -> Vec<ObjectProperty> {
         });
     }
 
+    if object.is_instance_of_class_name("DatePeriod") {
+        indexed_properties.sort_by_key(|(index, property)| {
+            let is_core_dateperiod_metadata = property.visibility() == Visibility::Public
+                && dateperiod_core_property_name(property.name());
+            (is_core_dateperiod_metadata, *index)
+        });
+    }
+
+    indexed_properties
+        .into_iter()
+        .map(|(_, property)| property)
+        .collect()
+}
+
+fn dateperiod_ordered_object_properties(
+    object: &PhpObject,
+    properties: Vec<ObjectProperty>,
+) -> Vec<ObjectProperty> {
+    if !object.is_instance_of_class_name("DatePeriod") {
+        return properties;
+    }
+    let mut indexed_properties = properties.into_iter().enumerate().collect::<Vec<_>>();
+    indexed_properties.sort_by_key(|(index, property)| {
+        let is_core_dateperiod_metadata = property.visibility() == Visibility::Public
+            && dateperiod_core_property_name(property.name());
+        (is_core_dateperiod_metadata, *index)
+    });
     indexed_properties
         .into_iter()
         .map(|(_, property)| property)
