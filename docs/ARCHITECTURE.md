@@ -4545,12 +4545,14 @@ execute through the by-value argument path when the target is `null` or an
 object, with a narrow trait reflection context for `__CLASS__`, `__METHOD__`,
 `self::class`, `static::class`, `get_called_class()`, and static
 `self::method()`/`static::method()` calls that resolve to executable methods
-on the reflected trait. Interface methods and other abstract reflected methods
-stop at a stable `ReflectionMethod::invoke` runtime boundary before dispatch,
-mirroring PHP's abstract-method invocation rule without materializing exact
-`ReflectionException` objects. Non-static trait methods, trait class constants,
-`parent` context behavior, `new self`/`new static` from reflected traits,
-internal methods, by-reference invocation,
+on the reflected trait. The reflection path accepts surplus positional
+arguments for user methods, reports PHP-shaped catchable errors for missing or
+non-object targets and non-array `invokeArgs()` payloads in the covered slice,
+and maps abstract reflected methods and non-instance targets to catchable
+`ReflectionException` diagnostics before dispatch. Non-static trait methods,
+trait class constants, `parent` context behavior, `new self`/`new static` from
+reflected traits, internal methods, exact fatal stack traces for too-few
+reflected user-method arguments, by-reference invocation,
 reference returns, typed parameter/return declarations during invocation, and
 native lowering remain outside this bounded reflection
 invocation path. Method `invokeArgs()` has the same positional-only array

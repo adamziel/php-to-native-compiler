@@ -47374,33 +47374,51 @@ impl Interpreter {
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
-        if args.len() != 2 {
-            return Err(runtime_error(
-                span,
-                RuntimeError::arity_mismatch(
-                    "ReflectionMethod::__construct()",
-                    ArityExpectation::Exactly(2),
-                    args.len(),
-                ),
-            ));
-        }
-
-        let target = self.evaluate(&args[0], scope)?;
-        let method = self.evaluate(&args[1], scope)?;
-        let Value::String(method_name) = method else {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_object_instantiation(
-                    "ReflectionMethod",
-                    format!(
-                        "method argument must be string in the current subset, got {}",
-                        method.type_name()
-                    ),
-                ),
-            ));
+        let state = match args.len() {
+            0 => return Err(reflection_method_constructor_argument_count_error(0, span)),
+            1 => {
+                let method = self.evaluate(&args[0], scope)?;
+                let Value::String(method_name) = method else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_object_instantiation(
+                            "ReflectionMethod",
+                            format!(
+                                "method argument must be string in the current subset, got {}",
+                                method.type_name()
+                            ),
+                        ),
+                    ));
+                };
+                let (class_name, method_name) = reflection_method_name_parts(&method_name, span)?;
+                let class =
+                    self.resolve_reflection_class_target(&Value::String(class_name), span)?;
+                self.resolve_reflection_method_target(&class, &method_name, span)?
+            }
+            2 => {
+                let target = self.evaluate(&args[0], scope)?;
+                let method = self.evaluate(&args[1], scope)?;
+                let Value::String(method_name) = method else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_object_instantiation(
+                            "ReflectionMethod",
+                            format!(
+                                "method argument must be string in the current subset, got {}",
+                                method.type_name()
+                            ),
+                        ),
+                    ));
+                };
+                let class = self.resolve_reflection_class_target(&target, span)?;
+                self.resolve_reflection_method_target(&class, &method_name, span)?
+            }
+            actual => {
+                return Err(reflection_method_constructor_argument_count_error(
+                    actual, span,
+                ))
+            }
         };
-        let class = self.resolve_reflection_class_target(&target, span)?;
-        let state = self.resolve_reflection_method_target(&class, &method_name, span)?;
         self.create_reflection_method_object(state, span)
     }
 
@@ -58585,13 +58603,9 @@ impl Interpreter {
             }
             "invoke" => {
                 if args.is_empty() {
-                    return Err(runtime_error(
+                    return Err(reflection_method_invoke_argument_count_error(
+                        args.len(),
                         span,
-                        RuntimeError::arity_mismatch(
-                            "ReflectionMethod::invoke()",
-                            ArityExpectation::AtLeast(1),
-                            args.len(),
-                        ),
                     ));
                 }
                 let target = self.evaluate(&args[0], caller_scope)?;
@@ -58599,10 +58613,16 @@ impl Interpreter {
                 self.invoke_reflection_method(state, target, values, span)
             }
             "invokeargs" => {
+                if state.is_abstract {
+                    return Err(reflection_method_abstract_invoke_error(&state, span));
+                }
                 expect_expr_arity("ReflectionMethod::invokeArgs", args.len(), 2, span)?;
                 let target = self.evaluate(&args[0], caller_scope)?;
-                let values =
-                    self.evaluate_reflection_invocation_args_array(&args[1], caller_scope, span)?;
+                let values = self.evaluate_reflection_method_invocation_args_array(
+                    &args[1],
+                    caller_scope,
+                    span,
+                )?;
                 self.invoke_reflection_method(state, target, values, span)
             }
             _ => Err(runtime_error(
@@ -58637,13 +58657,9 @@ impl Interpreter {
         match method_name.to_ascii_lowercase().as_str() {
             "invoke" => {
                 if args.is_empty() {
-                    return Err(runtime_error(
+                    return Err(reflection_method_invoke_argument_count_error(
+                        args.len(),
                         span,
-                        RuntimeError::arity_mismatch(
-                            "ReflectionMethod::invoke()",
-                            ArityExpectation::AtLeast(1),
-                            args.len(),
-                        ),
                     ));
                 }
                 let target = self.evaluate(&args[0], caller_scope)?;
@@ -58656,6 +58672,9 @@ impl Interpreter {
                 )
             }
             "invokeargs" => {
+                if state.is_abstract {
+                    return Err(reflection_method_abstract_invoke_error(&state, span));
+                }
                 expect_expr_arity("ReflectionMethod::invokeArgs", args.len(), 2, span)?;
                 let target = self.evaluate(&args[0], caller_scope)?;
                 self.invoke_reflection_method_with_argument_array_expr(
@@ -58700,6 +58719,23 @@ impl Interpreter {
                     ),
                 ),
             ));
+        };
+        Ok(array
+            .entries()
+            .iter()
+            .map(|entry| entry.value_cloned())
+            .collect())
+    }
+
+    fn evaluate_reflection_method_invocation_args_array(
+        &mut self,
+        arg: &Expr,
+        caller_scope: &mut SymbolTable,
+        span: Span,
+    ) -> CompileResult<Vec<Value>> {
+        let value = self.evaluate(arg, caller_scope)?;
+        let Value::Array(array) = value else {
+            return Err(reflection_method_invoke_args_array_type_error(&value, span));
         };
         Ok(array
             .entries()
@@ -58952,7 +58988,7 @@ impl Interpreter {
     ) -> CompileResult<Value> {
         let function = self.trait_reflection_method_function(trait_name, method_name, span)?;
         let function = function.as_ref();
-        ensure_user_function_arity(function, values.len(), span)?;
+        ensure_user_function_arity_with_extra_policy(function, values.len(), span, true)?;
         ensure_supported_function_signature(function, values.len(), span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
@@ -59244,32 +59280,14 @@ impl Interpreter {
         }
 
         if state.is_abstract {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "ReflectionMethod::invoke",
-                    format!(
-                        "trying to invoke abstract method {}::{}(); PHP raises ReflectionException, exact ReflectionException objects are not implemented",
-                        state.declaring_class_name, state.name
-                    ),
-                ),
-            ));
+            return Err(reflection_method_abstract_invoke_error(&state, span));
         }
 
         if matches!(state.declaring_kind, ReflectionClassKind::Trait) && state.is_static {
             match target {
                 Value::Null | Value::Object(_) => {}
                 other => {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "ReflectionMethod::invoke",
-                            format!(
-                                "target must be null or object for static trait method invocation in the current subset, got {}",
-                                other.type_name()
-                            ),
-                        ),
-                    ));
+                    return Err(reflection_method_invoke_object_type_error(&other, span));
                 }
             }
 
@@ -59302,16 +59320,7 @@ impl Interpreter {
             match target {
                 Value::Null | Value::Object(_) => {}
                 other => {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "ReflectionMethod::invoke",
-                            format!(
-                                "target must be null or object for static method invocation in the current subset, got {}",
-                                other.type_name()
-                            ),
-                        ),
-                    ));
+                    return Err(reflection_method_invoke_object_type_error(&other, span));
                 }
             }
 
@@ -59322,7 +59331,7 @@ impl Interpreter {
                 span,
             )?;
             let function = function.as_ref();
-            ensure_user_function_arity(function, values.len(), span)?;
+            ensure_user_function_arity_with_extra_policy(function, values.len(), span, true)?;
             ensure_supported_function_signature(function, values.len(), span)?;
             self.ensure_user_function_call_depth(function, span)?;
             let called_class_id = state.reflected_class_id.unwrap_or(declaring_class_id);
@@ -59338,33 +59347,14 @@ impl Interpreter {
         }
 
         let Value::Object(object) = target else {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "ReflectionMethod::invoke",
-                    format!(
-                        "target must be object for non-static method invocation in the current subset, got {}",
-                        target.type_name()
-                    ),
-                ),
-            ));
+            return Err(reflection_method_invoke_object_type_error(&target, span));
         };
         if object.class_id() != declaring_class_id
             && !self
                 .classes
                 .is_subclass_of(object.class_id(), declaring_class_id)
         {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "ReflectionMethod::invoke",
-                    format!(
-                        "target object of class {} is not an instance of {}",
-                        object.class_name(),
-                        state.declaring_class_name
-                    ),
-                ),
-            ));
+            return Err(reflection_method_invoke_non_instance_error(span));
         }
 
         let function = self.method_function(
@@ -59374,7 +59364,7 @@ impl Interpreter {
             span,
         )?;
         let function = function.as_ref();
-        ensure_user_function_arity(function, values.len(), span)?;
+        ensure_user_function_arity_with_extra_policy(function, values.len(), span, true)?;
         ensure_supported_function_signature(function, values.len(), span)?;
         self.ensure_user_function_call_depth(function, span)?;
         let called_class_id = object.class_id();
@@ -59402,16 +59392,7 @@ impl Interpreter {
         }
 
         if state.is_abstract {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "ReflectionMethod::invoke",
-                    format!(
-                        "trying to invoke abstract method {}::{}(); PHP raises ReflectionException, exact ReflectionException objects are not implemented",
-                        state.declaring_class_name, state.name
-                    ),
-                ),
-            ));
+            return Err(reflection_method_abstract_invoke_error(&state, span));
         }
 
         if matches!(state.declaring_kind, ReflectionClassKind::Trait) && state.is_static {
@@ -59442,16 +59423,7 @@ impl Interpreter {
             match target {
                 Value::Null | Value::Object(_) => {}
                 other => {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "ReflectionMethod::invoke",
-                            format!(
-                                "target must be null or object for static method invocation in the current subset, got {}",
-                                other.type_name()
-                            ),
-                        ),
-                    ));
+                    return Err(reflection_method_invoke_object_type_error(&other, span));
                 }
             }
 
@@ -59477,33 +59449,14 @@ impl Interpreter {
         }
 
         let Value::Object(object) = target else {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "ReflectionMethod::invoke",
-                    format!(
-                        "target must be object for non-static method invocation in the current subset, got {}",
-                        target.type_name()
-                    ),
-                ),
-            ));
+            return Err(reflection_method_invoke_object_type_error(&target, span));
         };
         if object.class_id() != declaring_class_id
             && !self
                 .classes
                 .is_subclass_of(object.class_id(), declaring_class_id)
         {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "ReflectionMethod::invoke",
-                    format!(
-                        "target object of class {} is not an instance of {}",
-                        object.class_name(),
-                        state.declaring_class_name
-                    ),
-                ),
-            ));
+            return Err(reflection_method_invoke_non_instance_error(span));
         }
 
         let function = self.method_function(
@@ -59540,21 +59493,15 @@ impl Interpreter {
         }
 
         if state.is_abstract {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "ReflectionMethod::invoke",
-                    format!(
-                        "trying to invoke abstract method {}::{}(); PHP raises ReflectionException, exact ReflectionException objects are not implemented",
-                        state.declaring_class_name, state.name
-                    ),
-                ),
-            ));
+            return Err(reflection_method_abstract_invoke_error(&state, span));
         }
 
         if matches!(state.declaring_kind, ReflectionClassKind::Trait) && state.is_static {
-            let values =
-                self.evaluate_reflection_invocation_args_array(argument_expr, caller_scope, span)?;
+            let values = self.evaluate_reflection_method_invocation_args_array(
+                argument_expr,
+                caller_scope,
+                span,
+            )?;
             return self
                 .invoke_reflection_method(state, target, values, span)
                 .map(|value| (value, None));
@@ -59581,16 +59528,7 @@ impl Interpreter {
             match target {
                 Value::Null | Value::Object(_) => {}
                 other => {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "ReflectionMethod::invoke",
-                            format!(
-                                "target must be null or object for static method invocation in the current subset, got {}",
-                                other.type_name()
-                            ),
-                        ),
-                    ));
+                    return Err(reflection_method_invoke_object_type_error(&other, span));
                 }
             }
 
@@ -59611,45 +59549,30 @@ impl Interpreter {
                     Some(declaring_class_id),
                     Some(state.reflected_class_id.unwrap_or(declaring_class_id)),
                     Vec::new(),
-                )?
+                )
+                .map_err(reflection_method_invoke_args_error_from_call_user_func_array)?
             {
                 return Ok(result);
             }
-            let values =
-                self.evaluate_reflection_invocation_args_array(argument_expr, caller_scope, span)?;
+            let values = self.evaluate_reflection_method_invocation_args_array(
+                argument_expr,
+                caller_scope,
+                span,
+            )?;
             return self
                 .invoke_reflection_method(state, target, values, span)
                 .map(|value| (value, None));
         }
 
         let Value::Object(object) = target else {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "ReflectionMethod::invoke",
-                    format!(
-                        "target must be object for non-static method invocation in the current subset, got {}",
-                        target.type_name()
-                    ),
-                ),
-            ));
+            return Err(reflection_method_invoke_object_type_error(&target, span));
         };
         if object.class_id() != declaring_class_id
             && !self
                 .classes
                 .is_subclass_of(object.class_id(), declaring_class_id)
         {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "ReflectionMethod::invoke",
-                    format!(
-                        "target object of class {} is not an instance of {}",
-                        object.class_name(),
-                        state.declaring_class_name
-                    ),
-                ),
-            ));
+            return Err(reflection_method_invoke_non_instance_error(span));
         }
 
         let function = self.method_function(
@@ -59669,12 +59592,16 @@ impl Interpreter {
                 Some(declaring_class_id),
                 Some(object.class_id()),
                 Vec::new(),
-            )?
+            )
+            .map_err(reflection_method_invoke_args_error_from_call_user_func_array)?
         {
             return Ok(result);
         }
-        let values =
-            self.evaluate_reflection_invocation_args_array(argument_expr, caller_scope, span)?;
+        let values = self.evaluate_reflection_method_invocation_args_array(
+            argument_expr,
+            caller_scope,
+            span,
+        )?;
         self.invoke_reflection_method(state, Value::Object(object), values, span)
             .map(|value| (value, None))
     }
@@ -72385,7 +72312,12 @@ impl Interpreter {
                     span,
                 ));
             };
-            ensure_user_function_arity(function, argument_array.len(), span)?;
+            ensure_user_function_arity_with_extra_policy(
+                function,
+                argument_array.len(),
+                span,
+                true,
+            )?;
             let has_reached_reference_param = function
                 .params
                 .iter()
@@ -72462,7 +72394,7 @@ impl Interpreter {
             return Ok((values, argument_keys, reference_bindings));
         };
 
-        ensure_user_function_arity(function, items.len(), span)?;
+        ensure_user_function_arity_with_extra_policy(function, items.len(), span, true)?;
         if !function
             .params
             .iter()
@@ -72831,7 +72763,7 @@ impl Interpreter {
             return Ok(None);
         }
 
-        ensure_user_function_arity(function, argument_array.len(), span)?;
+        ensure_user_function_arity_with_extra_policy(function, argument_array.len(), span, true)?;
         Ok(Some(
             self.call_user_func_array_value_arguments_with_array_copy_sources_from_array(
                 function,
@@ -79309,7 +79241,7 @@ impl Interpreter {
             span,
             caller_scope,
         )?;
-        ensure_user_function_arity(function, values.len(), span)?;
+        ensure_user_function_arity_with_extra_policy(function, values.len(), span, true)?;
 
         Ok(CallFrameArgumentBindings {
             values,
@@ -79549,7 +79481,7 @@ impl Interpreter {
                 return Ok(None);
             }
 
-            ensure_user_function_arity(function, items.len(), span)?;
+            ensure_user_function_arity_with_extra_policy(function, items.len(), span, true)?;
             let (values, by_value_array_copy_source_bindings) = self
                 .evaluate_literal_call_user_func_array_value_arguments_with_array_copy_sources(
                     function,
@@ -79642,7 +79574,12 @@ impl Interpreter {
         if let Some((Value::Array(argument_array), copy_sources)) =
             self.evaluate_array_transform_literal_call_for_assignment(argument_expr, caller_scope)?
         {
-            ensure_user_function_arity(function, argument_array.len(), span)?;
+            ensure_user_function_arity_with_extra_policy(
+                function,
+                argument_array.len(),
+                span,
+                true,
+            )?;
             let entry_sources = argument_array
                 .entries()
                 .iter()
@@ -79676,7 +79613,7 @@ impl Interpreter {
             ));
         };
 
-        ensure_user_function_arity(function, argument_array.len(), span)?;
+        ensure_user_function_arity_with_extra_policy(function, argument_array.len(), span, true)?;
         let entry_sources = Self::call_user_func_array_entry_sources_from_argument_source(
             argument_array,
             argument_source,
@@ -119960,6 +119897,87 @@ fn reflection_exception_error(span: Span, message: impl Into<String>) -> Diagnos
     )
 }
 
+fn reflection_method_constructor_argument_count_error(actual: usize, span: Span) -> Diagnostic {
+    let message = if actual < 1 {
+        format!("ReflectionMethod::__construct() expects at least 1 argument, {actual} given")
+    } else {
+        format!("ReflectionMethod::__construct() expects at most 2 arguments, {actual} given")
+    };
+    Diagnostic::new(Phase::Runtime, span.line, span.column, message)
+}
+
+fn reflection_method_invoke_argument_count_error(actual: usize, span: Span) -> Diagnostic {
+    Diagnostic::new(
+        Phase::Runtime,
+        span.line,
+        span.column,
+        format!("ReflectionMethod::invoke() expects at least 1 argument, {actual} given"),
+    )
+}
+
+fn reflection_method_abstract_invoke_error(
+    state: &ReflectionMethodState,
+    span: Span,
+) -> Diagnostic {
+    reflection_exception_error(
+        span,
+        format!(
+            "Trying to invoke abstract method {}::{}()",
+            state.declaring_class_name, state.name
+        ),
+    )
+}
+
+fn reflection_method_invoke_object_type_error(value: &Value, span: Span) -> Diagnostic {
+    runtime_error(
+        span,
+        RuntimeError::unsupported_call(
+            "ReflectionMethod::invoke()",
+            format!(
+                "Argument #1 ($object) must be of type ?object, {} given",
+                php_type_error_given(value)
+            ),
+        ),
+    )
+}
+
+fn reflection_method_invoke_non_instance_error(span: Span) -> Diagnostic {
+    reflection_exception_error(
+        span,
+        "Given object is not an instance of the class this method was declared in",
+    )
+}
+
+fn reflection_method_invoke_args_array_type_error(value: &Value, span: Span) -> Diagnostic {
+    runtime_error(
+        span,
+        RuntimeError::unsupported_call(
+            "ReflectionMethod::invokeArgs()",
+            format!(
+                "Argument #2 ($args) must be of type array, {} given",
+                php_type_error_given(value)
+            ),
+        ),
+    )
+}
+
+fn reflection_method_invoke_args_error_from_call_user_func_array(error: Diagnostic) -> Diagnostic {
+    let Some(message) = error
+        .message
+        .strip_prefix("unsupported call call_user_func_array(): ")
+        .map(str::to_string)
+    else {
+        return error;
+    };
+    if !message.starts_with("Argument #2 ($args) must be of type array, ") {
+        return error;
+    }
+    Diagnostic {
+        message: format!("unsupported call ReflectionMethod::invokeArgs(): {message}"),
+        ..error
+    }
+}
+
 impl PendingUncaughtCallFrame {
     fn display_callable(&self, file: &str) -> String {
         if self.function_name == "{closure}" {
@@ -121112,6 +121130,14 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
         return Some(("ArgumentCountError", message));
     }
 
+    if let Some(message) = reflection_method_constructor_argument_count_error_message(error) {
+        return Some(("ArgumentCountError", message));
+    }
+
+    if let Some(message) = reflection_method_invoke_argument_count_error_message(error) {
+        return Some(("TypeError", message));
+    }
+
     if let Some(message) = reflection_constructor_argument_count_error_message(error) {
         return Some(("TypeError", message));
     }
@@ -122105,6 +122131,31 @@ fn date_constructor_argument_count_error_message(error: &Diagnostic) -> Option<S
         ));
     }
     None
+}
+
+fn reflection_method_constructor_argument_count_error_message(
+    error: &Diagnostic,
+) -> Option<String> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+    (error
+        .message
+        .starts_with("ReflectionMethod::__construct() expects at least 1 argument, ")
+        || error
+            .message
+            .starts_with("ReflectionMethod::__construct() expects at most 2 arguments, "))
+    .then(|| error.message.clone())
+}
+
+fn reflection_method_invoke_argument_count_error_message(error: &Diagnostic) -> Option<String> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+    error
+        .message
+        .starts_with("ReflectionMethod::invoke() expects at least 1 argument, ")
+        .then(|| error.message.clone())
 }
 
 fn reflection_constructor_argument_count_error_message(error: &Diagnostic) -> Option<String> {

@@ -8745,7 +8745,7 @@ echo $method->invokeArgs(new Plugin(), array("save_post", 20));
 
 #[test]
 fn reflection_method_rejects_abstract_method_invocation() {
-    let interface_error = runtime_error(
+    let execution = run_source(
         r#"<?php
 interface HookContract {
     public function register($hook);
@@ -8758,34 +8758,37 @@ class HookPlugin implements HookContract {
 }
 
 $method = new ReflectionMethod(HookContract::class, "register");
-echo $method->invoke(new HookPlugin(), "init");
-"#,
-    );
-    assert_eq!(
-        interface_error.message,
-        "unsupported call ReflectionMethod::invoke: trying to invoke abstract method HookContract::register(); PHP raises ReflectionException, exact ReflectionException objects are not implemented"
-    );
+try {
+    echo $method->invoke(new HookPlugin(), "init");
+} catch (ReflectionException $exception) {
+    echo get_class($exception), "|", $exception->getMessage(), "\n";
+}
 
-    let abstract_class_error = runtime_error(
-        r#"<?php
 abstract class BaseHook {
     abstract public function register($hook);
 }
 
-class HookPlugin extends BaseHook {
+class AbstractHookPlugin extends BaseHook {
     public function register($hook) {
         return "plugin:" . $hook;
     }
 }
 
 $method = new ReflectionMethod(BaseHook::class, "register");
-echo $method->invokeArgs(new HookPlugin(), array("save_post"));
+try {
+    echo $method->invokeArgs(new AbstractHookPlugin(), array("save_post"));
+} catch (ReflectionException $exception) {
+    echo get_class($exception), "|", $exception->getMessage(), "\n";
+}
 "#,
-    );
+    )
+    .unwrap();
+
     assert_eq!(
-        abstract_class_error.message,
-        "unsupported call ReflectionMethod::invoke: trying to invoke abstract method BaseHook::register(); PHP raises ReflectionException, exact ReflectionException objects are not implemented"
+        execution.stdout,
+        "ReflectionException|Trying to invoke abstract method HookContract::register()\nReflectionException|Trying to invoke abstract method BaseHook::register()\n"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

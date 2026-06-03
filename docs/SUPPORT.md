@@ -10608,7 +10608,8 @@
   non-private metadata, typed/uninitialized properties, and implicit nullable
   parameter display. `isReadOnly()` currently returns false because readonly
   class declarations are still outside the parser subset.
-  `new ReflectionMethod($object_or_class, $method)` creates a bounded
+  `new ReflectionMethod($object_or_class, $method)` and
+  `new ReflectionMethod("ClassName::methodName")` create a bounded
   metadata object for methods declared in the current user class, interface,
   and trait tables, including inherited class methods and existing autoload
   probing for string class-like misses. It materializes the PHP-visible public
@@ -10641,20 +10642,25 @@
   preserves object identity for `$this` mutations, accepts instances of the
   declaring class or subclasses, and runs the reflected method with the
   declaring class context while preserving the target object's called class
-  for `static::` lookup. Static method invocation accepts `null` or an object
-  target, ignores the target object like PHP, and preserves the reflected
-  class for inherited `static::` lookup. Static trait methods reflected from
-  the trait itself also execute through the same by-value argument subset when
-  the target is `null` or an object, with the reflected trait bound for
+  for `static::` lookup. Surplus positional user-method arguments are accepted
+  through reflection invocation like PHP's userland call rules. Static method
+  invocation accepts `null` or an object target, rejects non-object targets
+  with catchable `TypeError` diagnostics, ignores the target object like PHP,
+  and preserves the reflected class for inherited `static::` lookup. Static
+  trait methods reflected from the trait itself also execute through the same
+  by-value argument subset when the target is `null` or an object, with the
+  reflected trait bound for
   `__CLASS__`, `__METHOD__`, `self::class`, `static::class`, and
   `get_called_class()`, and with static `self::method()`/`static::method()`
-  calls resolved against executable methods on that reflected trait. Interface
-  methods and other abstract reflected methods now stop at a stable
-  `ReflectionMethod::invoke` runtime boundary matching PHP's abstract-method
-  invocation rule at a diagnostic level; exact `ReflectionException` objects,
-  stack traces, and catchability are not implemented. Non-static trait methods,
-  trait class constants, `parent` context behavior, `new self`/`new static` from reflected
-  traits, internal methods,
+  calls resolved against executable methods on that reflected trait. Missing
+  `invoke()` targets, non-object targets, and non-array `invokeArgs()` argument
+  lists report catchable PHP-shaped errors for the covered cases. Interface
+  methods and other abstract reflected methods now report catchable
+  `ReflectionException` diagnostics before dispatch, and non-instance
+  non-static targets report catchable `ReflectionException` diagnostics.
+  Non-static trait methods, trait class constants, `parent` context behavior,
+  `new self`/`new static` from reflected traits, internal methods, exact fatal
+  stack traces for too-few reflected user-method arguments,
   by-reference parameters, typed parameter/return declarations at invocation
   time, `invokeArgs()` named-argument semantics for string keys, reference returns, and broader
   argument/reference/COW behavior remain unsupported for reflection

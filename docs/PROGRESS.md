@@ -4,6 +4,29 @@
 
 Implemented:
 
+- Added a bounded PHP-shaped `ReflectionMethod` construction/invocation
+  diagnostics lane on the interpreter path. `new ReflectionMethod()` now
+  reports catchable constructor arity errors, the one-string
+  `"Class::method"` constructor shape shares the existing method resolver, and
+  `ReflectionMethod::invoke()` / `invokeArgs()` now accept surplus positional
+  user-method arguments while reporting catchable PHP-shaped errors for
+  missing/non-object targets, non-array `invokeArgs()` payloads, non-instance
+  non-static targets, and abstract reflected methods in the covered slice.
+  Focused proof covers exact-current pre-patch selected PHPT at `0/6` and
+  post-patch selected PHPT at `6/6` for
+  `ext/reflection/tests/ReflectionMethod_006.phpt`,
+  `ext/reflection/tests/ReflectionMethod_invoke_basic.phpt`,
+  `ext/reflection/tests/ReflectionMethod_invokeArgs_basic.phpt`,
+  `ext/reflection/tests/ReflectionMethod_invoke_error1.phpt`,
+  `ext/reflection/tests/ReflectionMethod_invokeArgs_error2.phpt`, and
+  `ext/reflection/tests/ReflectionMethod_invokeArgs_error3.phpt`; Rust
+  reflection/object-model coverage, build/fmt/diff checks, and pinned wrapper
+  proof. Unsupported edges remain exact fatal stack traces for too-few
+  reflected user-method arguments, `invokeArgs()` named-string keys,
+  by-reference invocation, reference returns, typed parameter/return
+  enforcement at invocation time, broad internal method invocation, and native
+  lowering.
+
 - Added bounded `iterable` alias canonicalization for union type diagnostics
   and invariant typed-property compatibility on the interpreter startup path.
   Union redundancy checks now expand `iterable` to PHP's

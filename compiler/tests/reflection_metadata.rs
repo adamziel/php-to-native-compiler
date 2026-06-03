@@ -428,6 +428,139 @@ var_dump((new ReflectionFunction("local_proto_fn"))->getExtension());
 }
 
 #[test]
+fn reflection_method_invocation_argument_diagnostics_are_php_shaped() {
+    let execution = run_source(
+        r#"<?php
+class TestClass {
+    public $prop = "Hello";
+
+    public function foo() {
+        echo "foo|$this->prop\n";
+        return "Return Val";
+    }
+
+    public function methodWithArgs($a, $b) {
+        echo "args|$a|$b\n";
+    }
+
+    public static function staticMethod() {
+        echo "static\n";
+        try {
+            var_dump($this);
+        } catch (Throwable $e) {
+            echo "this|", $e->getMessage(), "\n";
+        }
+    }
+
+    private static function privateMethod() {
+        echo "private\n";
+    }
+}
+
+abstract class AbstractClass {
+    abstract function foo();
+}
+
+function show($label, $callable) {
+    echo $label, "|\n";
+    try {
+        var_dump($callable());
+    } catch (Throwable $e) {
+        echo get_class($e), ": ", $e->getMessage(), "\n";
+    }
+}
+
+show("construct-none", function () {
+    return new ReflectionMethod();
+});
+show("construct-many", function () {
+    return new ReflectionMethod("a", "b", "c");
+});
+
+$fromName = new ReflectionMethod("TestClass::foo");
+echo "from-name|", $fromName->getDeclaringClass()->getName(), "::", $fromName->getName(), "\n";
+
+$test = new TestClass();
+$foo = new ReflectionMethod("TestClass", "foo");
+$methodWithArgs = new ReflectionMethod("TestClass", "methodWithArgs");
+$staticMethod = new ReflectionMethod("TestClass", "staticMethod");
+$privateMethod = ReflectionMethod::createFromMethodName("TestClass::privateMethod");
+$abstractMethod = ReflectionMethod::createFromMethodName("AbstractClass::foo");
+
+show("invoke-extra", function () use ($foo, $test) {
+    return $foo->invoke($test, true);
+});
+show("invokeArgs-extra", function () use ($methodWithArgs, $test) {
+    return $methodWithArgs->invokeArgs($test, array(1, "two", 3));
+});
+show("invoke-missing-target", function () use ($staticMethod) {
+    return $staticMethod->invoke();
+});
+show("invoke-non-object", function () use ($foo) {
+    return $foo->invoke(true);
+});
+show("invoke-non-instance", function () use ($foo) {
+    return $foo->invoke(new stdClass());
+});
+show("private-static", function () use ($privateMethod, $test) {
+    return $privateMethod->invoke($test);
+});
+show("static-object", function () use ($staticMethod) {
+    return $staticMethod->invoke(new stdClass());
+});
+show("invokeArgs-non-array", function () use ($foo, $test) {
+    return $foo->invokeArgs($test, true);
+});
+show("abstract-invoke", function () use ($abstractMethod, $test) {
+    return $abstractMethod->invoke($test);
+});
+show("abstract-invokeArgs", function () use ($abstractMethod) {
+    return $abstractMethod->invokeArgs(true);
+});
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "construct-none|\n",
+            "ArgumentCountError: ReflectionMethod::__construct() expects at least 1 argument, 0 given\n",
+            "construct-many|\n",
+            "ArgumentCountError: ReflectionMethod::__construct() expects at most 2 arguments, 3 given\n",
+            "from-name|TestClass::foo\n",
+            "invoke-extra|\n",
+            "foo|Hello\n",
+            "string(10) \"Return Val\"\n",
+            "invokeArgs-extra|\n",
+            "args|1|two\n",
+            "NULL\n",
+            "invoke-missing-target|\n",
+            "TypeError: ReflectionMethod::invoke() expects at least 1 argument, 0 given\n",
+            "invoke-non-object|\n",
+            "TypeError: ReflectionMethod::invoke(): Argument #1 ($object) must be of type ?object, true given\n",
+            "invoke-non-instance|\n",
+            "ReflectionException: Given object is not an instance of the class this method was declared in\n",
+            "private-static|\n",
+            "private\n",
+            "NULL\n",
+            "static-object|\n",
+            "static\n",
+            "this|Using $this when not in object context\n",
+            "NULL\n",
+            "invokeArgs-non-array|\n",
+            "TypeError: ReflectionMethod::invokeArgs(): Argument #2 ($args) must be of type array, true given\n",
+            "abstract-invoke|\n",
+            "ReflectionException: Trying to invoke abstract method AbstractClass::foo()\n",
+            "abstract-invokeArgs|\n",
+            "ReflectionException: Trying to invoke abstract method AbstractClass::foo()\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reflection_property_dynamic_instance_metadata_is_bounded() {
     let execution = run_source(
         r#"<?php
