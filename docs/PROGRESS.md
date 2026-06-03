@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Repaired the latest-published PASS regressions in
+  `tests/classes/type_hinting_005a.phpt` and
+  `tests/classes/type_hinting_005c.phpt`. Inherited user-method parameter
+  compatibility now distinguishes signature failures that genuinely depend on
+  an unavailable class-like relationship from failures already proven by a
+  builtin/class mismatch; direct `array` versus unresolved class-type
+  overrides therefore report PHP's declaration-incompatibility fatal instead
+  of the `Could not check compatibility... because class ... is not available`
+  fallback. Focused proof covers accepted latest-published PASS evidence,
+  exact-current pre-patch selected PHPT at `0/2`, post-patch selected PHPT at
+  `2/2`, Rust `object_model` coverage, build/fmt/diff checks, and the
+  selected score-gate blocker rows only. Unsupported edges remain full PHP
+  variance/subtyping, namespace/import alias resolution for type names,
+  complete DNF/canonicalization behavior, autoload-driven signature resolution,
+  references/COW, and native lowering.
+
 - Added a bounded direct-variable mutation lane for interpreter
   `array_walk()` / `array_walk_recursive()`. Direct array roots are now
   re-read between callbacks so unsets through captured/global aliases, root

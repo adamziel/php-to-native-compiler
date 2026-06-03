@@ -3267,7 +3267,12 @@
   broader simple declared class/interface type, or use a simple nullable/union
   builtin relationship when the current subset checks prove the inherited type
   is covered. They may not add a type where the inherited parameter is untyped
-  or change a typed inherited parameter to an unrelated type. For
+  or change a typed inherited parameter to an unrelated type. If a failed
+  relationship depends on an unavailable class-like type, startup reports the
+  bounded `Could not check compatibility... because class ... is not available`
+  fatal; failures already proven by builtin/class mismatches, such as `array`
+  versus an unresolved class name, report the ordinary declaration
+  incompatibility fatal instead. For
   inherited method return type metadata, child methods may add a return type
   when the inherited method is untyped; typed inherited methods accept the same
   return type text case-insensitively or a narrower bounded relationship,

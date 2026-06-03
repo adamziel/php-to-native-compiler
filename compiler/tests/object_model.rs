@@ -15257,6 +15257,59 @@ class Child extends Base {
 }
 
 #[test]
+fn inherited_method_unresolved_class_builtin_mismatches_are_immediate_incompatibilities() {
+    let child_class_should_be_array = runtime_error(
+        r#"<?php
+class C {
+    public function f(array $a) {}
+}
+
+class D extends C {
+    public function f(SomeClass $a) {}
+}
+"#,
+    );
+    assert_eq!(
+        child_class_should_be_array.message,
+        "Declaration of D::f(SomeClass $a) must be compatible with C::f(array $a)"
+    );
+
+    let child_array_should_be_class = runtime_error(
+        r#"<?php
+class C {
+    public function f(SomeClass $a) {}
+}
+
+class D extends C {
+    public function f(array $a) {}
+}
+"#,
+    );
+    assert_eq!(
+        child_array_should_be_class.message,
+        "Declaration of D::f(array $a) must be compatible with C::f(SomeClass $a)"
+    );
+
+    let unresolved_class_relationship = runtime_error(
+        r#"<?php
+class Known {}
+
+class C {
+    public function f(Known $a) {}
+}
+
+class D extends C {
+    public function f(Missing $a) {}
+}
+"#,
+    );
+    assert_eq!(
+        unresolved_class_relationship.message,
+        "Could not check compatibility between D::f(Missing $a) and C::f(Known $a), because class Missing is not available"
+    );
+}
+
+#[test]
 fn inherited_method_return_type_compatibility_is_enforced() {
     let execution = run_source(
         r#"<?php

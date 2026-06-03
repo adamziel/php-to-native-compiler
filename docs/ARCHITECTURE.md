@@ -1130,7 +1130,11 @@ compatible parameter types when both sides are typed, and must keep compatible
 typed parent return declarations. Compatible typed relationships include exact
 text case-insensitively, simple nullable/union builtin subset checks, and simple
 declared class/interface contravariant parameter and covariant return
-relationships when both type names resolve through current metadata. Public interface constants declared
+relationships when both type names resolve through current metadata. When a
+failed subtype relation contains an unavailable class-like type, compatibility
+uses the unresolved-class fatal only if that missing class could affect the
+relation; builtin/class mismatches remain ordinary declaration incompatibility
+fatals. Public interface constants declared
 as `const NAME = ...` or
 `public const NAME = ...` use the current class-constant expression subset and
 resolve through interface names, parent-interface inheritance, and

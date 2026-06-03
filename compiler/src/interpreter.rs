@@ -118244,20 +118244,16 @@ fn validate_inherited_method_signature_compatibility(
                             Some(child_context),
                         ) =>
                     {
-                        if let Some(missing_class) = unavailable_signature_class_name(
-                            classes,
-                            interface_lookup,
-                            child_type,
-                            Some(child_context),
-                        )
-                        .or_else(|| {
-                            unavailable_signature_class_name(
+                        if let Some(missing_class) =
+                            unavailable_class_for_failed_signature_subtype_check(
                                 classes,
                                 interface_lookup,
                                 parent_type,
                                 Some(parent_context),
+                                child_type,
+                                Some(child_context),
                             )
-                        }) {
+                        {
                             return Err(could_not_check_compatibility_error(
                                 class_name,
                                 child_signature(),
@@ -118299,20 +118295,16 @@ fn validate_inherited_method_signature_compatibility(
                             Some(child_context),
                         ) =>
                     {
-                        if let Some(missing_class) = unavailable_signature_class_name(
-                            classes,
-                            interface_lookup,
-                            child_type,
-                            Some(child_context),
-                        )
-                        .or_else(|| {
-                            unavailable_signature_class_name(
+                        if let Some(missing_class) =
+                            unavailable_class_for_failed_signature_subtype_check(
                                 classes,
                                 interface_lookup,
+                                child_type,
+                                Some(child_context),
                                 parent_type,
                                 Some(parent_context),
                             )
-                        }) {
+                        {
                             return Err(could_not_check_compatibility_error(
                                 class_name,
                                 child_signature(),
@@ -118340,20 +118332,16 @@ fn validate_inherited_method_signature_compatibility(
                     child_type,
                     Some(child_context),
                 ) {
-                    if let Some(missing_class) = unavailable_signature_class_name(
-                        classes,
-                        interface_lookup,
-                        child_type,
-                        Some(child_context),
-                    )
-                    .or_else(|| {
-                        unavailable_signature_class_name(
+                    if let Some(missing_class) =
+                        unavailable_class_for_failed_signature_subtype_check(
                             classes,
                             interface_lookup,
+                            child_type,
+                            Some(child_context),
                             parent_type,
                             Some(parent_context),
                         )
-                    }) {
+                    {
                         return Err(could_not_check_compatibility_error(
                             class_name,
                             child_signature(),
@@ -118409,29 +118397,178 @@ fn is_compatible_return_type_override_with_context(
     )
 }
 
-fn unavailable_signature_class_name(
+fn unavailable_class_for_failed_signature_subtype_check(
     classes: &PhpClassTable,
     interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
-    type_name: &str,
-    context: Option<SignatureTypeContext<'_>>,
+    subtype: &str,
+    subtype_context: Option<SignatureTypeContext<'_>>,
+    supertype: &str,
+    supertype_context: Option<SignatureTypeContext<'_>>,
 ) -> Option<String> {
-    if let Some(members) = signature_union_members(type_name) {
-        return members.into_iter().find_map(|member| {
-            unavailable_signature_class_name(classes, interface_lookup, member, context)
+    if type_name_is_subtype_of_with_context(
+        classes,
+        interface_lookup,
+        subtype,
+        subtype_context,
+        supertype,
+        supertype_context,
+    ) {
+        return None;
+    }
+
+    let subtype = subtype.trim();
+    let supertype = supertype.trim();
+
+    if let Some(super_members) = signature_intersection_members(supertype) {
+        let mut missing = None;
+        for super_member in super_members {
+            if type_name_is_subtype_of_with_context(
+                classes,
+                interface_lookup,
+                subtype,
+                subtype_context,
+                super_member,
+                supertype_context,
+            ) {
+                continue;
+            }
+            let Some(member_missing) = unavailable_class_for_failed_signature_subtype_check(
+                classes,
+                interface_lookup,
+                subtype,
+                subtype_context,
+                super_member,
+                supertype_context,
+            ) else {
+                return None;
+            };
+            missing.get_or_insert(member_missing);
+        }
+        return missing;
+    }
+
+    if let Some(sub_members) = signature_intersection_members(subtype) {
+        return sub_members.into_iter().find_map(|sub_member| {
+            unavailable_class_for_failed_signature_subtype_check(
+                classes,
+                interface_lookup,
+                sub_member,
+                subtype_context,
+                supertype,
+                supertype_context,
+            )
         });
     }
 
-    if let Some(members) = signature_intersection_members(type_name) {
-        return members.into_iter().find_map(|member| {
-            unavailable_signature_class_name(classes, interface_lookup, member, context)
+    if let Some(sub_members) = signature_union_members(subtype) {
+        let mut missing = None;
+        for sub_member in sub_members {
+            if type_name_is_subtype_of_with_context(
+                classes,
+                interface_lookup,
+                sub_member,
+                subtype_context,
+                supertype,
+                supertype_context,
+            ) {
+                continue;
+            }
+            let Some(member_missing) = unavailable_class_for_failed_signature_subtype_check(
+                classes,
+                interface_lookup,
+                sub_member,
+                subtype_context,
+                supertype,
+                supertype_context,
+            ) else {
+                return None;
+            };
+            missing.get_or_insert(member_missing);
+        }
+        return missing;
+    }
+
+    if let Some(super_members) = signature_union_members(supertype) {
+        return super_members.into_iter().find_map(|super_member| {
+            unavailable_class_for_failed_signature_subtype_check(
+                classes,
+                interface_lookup,
+                subtype,
+                subtype_context,
+                super_member,
+                supertype_context,
+            )
         });
     }
 
-    let resolved = resolve_relative_signature_type(type_name, context);
-    let Some(class_like) = simple_class_like_signature_type(resolved.as_ref()) else {
+    if signature_type_is_static_keyword(supertype) {
+        return None;
+    }
+
+    let subtype = resolve_relative_signature_type(subtype, subtype_context);
+    let supertype = resolve_relative_signature_type(supertype, supertype_context);
+
+    if subtype.eq_ignore_ascii_case(&supertype) {
+        return None;
+    }
+
+    if normalized_builtin_signature_type(supertype.as_ref()).is_some_and(|ty| ty == "mixed") {
+        return None;
+    }
+
+    if normalized_builtin_signature_type(subtype.as_ref()).is_some_and(|ty| ty == "never") {
+        return None;
+    }
+
+    if normalized_builtin_signature_type(supertype.as_ref()).is_some_and(|ty| ty == "iterable") {
+        return unavailable_class_for_failed_signature_subtype_check(
+            classes,
+            interface_lookup,
+            subtype.as_ref(),
+            subtype_context,
+            "array",
+            None,
+        )
+        .or_else(|| {
+            unavailable_class_for_failed_signature_subtype_check(
+                classes,
+                interface_lookup,
+                subtype.as_ref(),
+                subtype_context,
+                "Traversable",
+                None,
+            )
+        });
+    }
+
+    if normalized_builtin_signature_type(subtype.as_ref()).is_some()
+        && normalized_builtin_signature_type(supertype.as_ref()).is_some()
+    {
+        return None;
+    }
+
+    let Some(subtype_class_like) = simple_class_like_signature_type(subtype.as_ref()) else {
+        return None;
+    };
+    let Some(supertype_class_like) = simple_class_like_signature_type(supertype.as_ref()) else {
         return None;
     };
 
+    unavailable_resolved_signature_class_name(classes, interface_lookup, subtype_class_like)
+        .or_else(|| {
+            unavailable_resolved_signature_class_name(
+                classes,
+                interface_lookup,
+                supertype_class_like,
+            )
+        })
+}
+
+fn unavailable_resolved_signature_class_name(
+    classes: &PhpClassTable,
+    interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
+    class_like: &str,
+) -> Option<String> {
     let class_like = class_like.strip_prefix('\\').unwrap_or(class_like);
     if classes.lookup_class_id(class_like).is_some()
         || interface_lookup.contains_key(&class_like.to_ascii_lowercase())
