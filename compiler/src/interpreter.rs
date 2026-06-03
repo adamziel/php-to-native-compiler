@@ -66141,10 +66141,14 @@ impl Interpreter {
             .unwrap_or_else(|| "Command line code".to_string());
         let callable = function.name.trim_start_matches('\\');
         self.push_uncaught_fatal_separator();
+        let parameter_name = if param.is_variadic {
+            String::new()
+        } else {
+            format!(" (${})", param.name)
+        };
         self.push_unbuffered_stdout_text(&format!(
-            "Fatal error: Uncaught Error: {callable}(): Argument #{} (${}) could not be passed by reference in {file}:{}\nStack trace:\n#0 {{main}}\n  thrown in {file} on line {}",
+            "Fatal error: Uncaught Error: {callable}(): Argument #{}{parameter_name} could not be passed by reference in {file}:{}\nStack trace:\n#0 {{main}}\n  thrown in {file} on line {}",
             param_index + 1,
-            param.name,
             span.line,
             span.line
         ));
@@ -108663,6 +108667,22 @@ fn validate_child_interface_method_compatibility(
         let Some(child_param) = child_method.function.params.get(index) else {
             continue;
         };
+        if parent_param.by_reference != child_param.by_reference {
+            return Err(runtime_error(
+                interface.span,
+                RuntimeError::unsupported_class_inheritance(
+                    &interface.name,
+                    format!(
+                        "interface method {}::{}() passing mode for parameter ${} is incompatible with parent interface method {}::{}()",
+                        child_interface_name,
+                        child_method.function.name,
+                        child_param.name,
+                        parent_interface_name,
+                        parent_method.function.name
+                    ),
+                ),
+            ));
+        }
         match (
             parent_param
                 .type_decl
@@ -110405,6 +110425,18 @@ fn validate_interface_parameter_type_compatibility(
             continue;
         };
 
+        if interface_param.by_reference != class_param.by_reference {
+            return Err(incompatible_declaration_error(
+                class_name,
+                method_signature_compatibility_signature(
+                    declaring_class_name,
+                    class_method_name,
+                    Some(class_signature),
+                ),
+                function_decl_compatibility_signature(interface_name, &interface_method.function),
+            ));
+        }
+
         match (
             interface_param
                 .type_decl
@@ -110697,7 +110729,7 @@ fn parameter_signature_compatibility_signature(param: &ParameterSignature) -> St
 
 fn compatibility_default_expr(expr: &Expr) -> String {
     match expr {
-        Expr::Null(_) => "NULL".to_string(),
+        Expr::Null(_) => "null".to_string(),
         Expr::Bool(value, _) => {
             if *value {
                 "true".to_string()
@@ -113274,6 +113306,18 @@ fn validate_inherited_method_signature_compatibility(
                     continue;
                 };
 
+                if parent_param.by_reference != child_param.by_reference {
+                    return Err(incompatible_declaration_error(
+                        class_name,
+                        function_decl_compatibility_signature(class_name, &method.function),
+                        method_signature_compatibility_signature(
+                            parent.name(),
+                            parent_method.name(),
+                            Some(parent_signature),
+                        ),
+                    ));
+                }
+
                 match (
                     parent_param.type_decl.as_deref(),
                     child_param
@@ -113389,15 +113433,45 @@ fn type_name_is_subtype_of(
     subtype: &str,
     supertype: &str,
 ) -> bool {
+    let subtype = subtype.trim();
+    let supertype = supertype.trim();
+
     if subtype.eq_ignore_ascii_case(supertype) {
         return true;
+    }
+
+    if let Some(subtypes) = signature_union_members(subtype) {
+        return subtypes
+            .iter()
+            .all(|subtype| type_name_is_subtype_of(classes, interface_lookup, subtype, supertype));
+    }
+
+    if let Some(supertypes) = signature_union_members(supertype) {
+        return supertypes.iter().any(|supertype| {
+            type_name_is_subtype_of(classes, interface_lookup, subtype, supertype)
+        });
+    }
+
+    if normalized_builtin_signature_type(supertype).is_some_and(|ty| ty == "mixed") {
+        return true;
+    }
+
+    if normalized_builtin_signature_type(subtype).is_some_and(|ty| ty == "never") {
+        return true;
+    }
+
+    if let (Some(subtype), Some(supertype)) = (
+        normalized_builtin_signature_type(subtype),
+        normalized_builtin_signature_type(supertype),
+    ) {
+        return subtype == supertype;
     }
 
     let Some(subtype) = simple_class_like_signature_type(subtype) else {
         return false;
     };
     let Some(supertype) = simple_class_like_signature_type(supertype) else {
-        return false;
+        return normalized_builtin_signature_type(supertype).is_some_and(|ty| ty == "object");
     };
 
     let subtype_class_id = classes.lookup_class_id(subtype);
@@ -113422,6 +113496,43 @@ fn type_name_is_subtype_of(
     }
 
     false
+}
+
+fn signature_union_members(type_name: &str) -> Option<Vec<&str>> {
+    let type_name = type_name.trim();
+    if let Some(nullable) = type_name.strip_prefix('?') {
+        return Some(vec![nullable.trim(), "null"]);
+    }
+
+    if type_name.contains('|')
+        && !type_name.contains('&')
+        && !type_name.contains('(')
+        && !type_name.contains(')')
+    {
+        return Some(type_name.split('|').map(str::trim).collect());
+    }
+
+    None
+}
+
+fn normalized_builtin_signature_type(type_name: &str) -> Option<&'static str> {
+    match type_name.trim().to_ascii_lowercase().as_str() {
+        "array" => Some("array"),
+        "bool" | "boolean" => Some("bool"),
+        "callable" => Some("callable"),
+        "false" => Some("false"),
+        "float" | "double" => Some("float"),
+        "int" | "integer" => Some("int"),
+        "iterable" => Some("iterable"),
+        "mixed" => Some("mixed"),
+        "never" => Some("never"),
+        "null" => Some("null"),
+        "object" => Some("object"),
+        "string" => Some("string"),
+        "true" => Some("true"),
+        "void" => Some("void"),
+        _ => None,
+    }
 }
 
 fn simple_class_like_signature_type(type_name: &str) -> Option<&str> {

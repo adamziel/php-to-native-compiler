@@ -47,6 +47,24 @@ Implemented:
   remain full timelib transition parity, broad historical timezone rules,
   exact native lowering, and references/COW.
 
+- Added a bounded variadic method-signature compatibility lane on the
+  interpreter metadata path. Interface implementations and inherited method
+  redeclarations now compare by-reference passing mode, render `null`
+  signature defaults with PHP-shaped casing, accept simple nullable and union
+  parameter relationships where subset checks prove compatibility, and keep
+  variadic by-reference call fatals aligned with PHP's parameter-name omission.
+  Focused proof covers Rust regressions in `object_model` and
+  `functions_and_scopes`, build/fmt/diff checks, and selected public PHPT rows
+  `Zend/tests/variadic/adding_additional_optional_parameter.phpt`,
+  `Zend/tests/variadic/adding_additional_optional_parameter_error.phpt`,
+  `Zend/tests/variadic/by_ref_error.phpt`,
+  `Zend/tests/variadic/illegal_variadic_override_ref.phpt`,
+  `Zend/tests/variadic/legal_variadic_override.phpt`, and
+  `Zend/tests/variadic/variadic_changed_byref_error.phpt`. Unsupported edges
+  remain full PHP variance, DNF/intersection and namespace-aware type
+  canonicalization, broad variadic runtime type-enforcement diagnostics and
+  traces, native lowering, and references/COW.
+
 ## 2026-06-02
 
 Implemented:

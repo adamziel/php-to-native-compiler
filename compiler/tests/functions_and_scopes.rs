@@ -964,6 +964,25 @@ echo "after";
 }
 
 #[test]
+fn variadic_reference_parameter_literal_argument_omits_parameter_name_in_php_fatal() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+function test(&...$args) { }
+test(1);
+"#,
+        "/tmp/variadic_by_ref.php",
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Fatal error: Uncaught Error: test(): Argument #1 could not be passed by reference in /tmp/variadic_by_ref.php:3\nStack trace:\n#0 {main}\n  thrown in /tmp/variadic_by_ref.php on line 3"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 255);
+}
+
+#[test]
 fn by_value_call_argument_undefined_array_offset_warns_and_passes_null() {
     let execution = run_source_with_source_file(
         r#"<?php

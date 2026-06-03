@@ -1071,12 +1071,13 @@ class/trait parents with the same bounded not-an-interface fatal surface, then
 checks child-interface redeclarations of
 inherited methods and simple multi-parent method conflicts with the current
 bounded metadata rules: a redeclaration may not require more parameters than
-the inherited method, may not add a parameter type where the parent method is
-untyped, must keep compatible parameter types when both sides are typed, and
-must keep compatible typed parent return declarations. Compatible typed
-relationships include exact text case-insensitively plus simple declared
-class/interface contravariant parameter and covariant return relationships when
-both type names resolve through current metadata. Public interface constants declared
+the inherited method, must keep the inherited by-reference passing mode, may
+not add a parameter type where the parent method is untyped, must keep
+compatible parameter types when both sides are typed, and must keep compatible
+typed parent return declarations. Compatible typed relationships include exact
+text case-insensitively, simple nullable/union builtin subset checks, and simple
+declared class/interface contravariant parameter and covariant return
+relationships when both type names resolve through current metadata. Public interface constants declared
 as `const NAME = ...` or
 `public const NAME = ...` use the current class-constant expression subset and
 resolve through interface names, parent-interface inheritance, and
@@ -1084,7 +1085,8 @@ implementing-class class-constant lookup. Missing or cyclic parent interface
 inheritance remains a stable runtime boundary.
 typed/static/non-public/abstract/final or multi-constant interface
 declarations, full variance/signature enforcement, namespace-aware type-name
-resolution, union/intersection canonicalization, built-in/internal interface inheritance catalogs, exact PHP
+resolution, DNF/intersection/union canonicalization, broad variadic runtime
+type-enforcement diagnostics and traces, built-in/internal interface inheritance catalogs, exact PHP
 diagnostics, and native lowering remain explicit boundaries.
 
 Double-quoted string interpolation is represented explicitly in the AST for

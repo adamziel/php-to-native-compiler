@@ -3181,9 +3181,12 @@
   methods must not require more parameters than the inherited method; keeping
   the same required count or adding optional parameters is supported in the
   current metadata slice. For inherited method parameter type metadata, child
-  methods may omit an inherited parameter type or use the same type text
-  case-insensitively, but may not add a type where the inherited parameter is
-  untyped or change a typed inherited parameter to a different type. For
+  methods must keep the inherited by-reference passing mode, may omit an
+  inherited parameter type, use the same type text case-insensitively, use a
+  broader simple declared class/interface type, or use a simple nullable/union
+  builtin relationship when the current subset checks prove the inherited type
+  is covered. They may not add a type where the inherited parameter is untyped
+  or change a typed inherited parameter to an unrelated type. For
   inherited method return type metadata, child methods may add a return type
   when the inherited method is untyped, but a typed inherited method requires
   the child method to declare the same return type text case-insensitively.
@@ -3236,13 +3239,18 @@
   must expose public methods
   with the required interface method names and matching static/non-static
   shape, and must not require more parameters than those interface methods at
-  class registration time. For
+  class registration time. Implementations and child-interface redeclarations
+  must also keep the declared by-reference passing mode. For
   interface method parameter type metadata, implementations may omit an
   interface parameter type, use the same type text case-insensitively, or use
   a broader simple declared class/interface type when both type names resolve
-  through current metadata; they may not add a type where the interface
-  parameter is untyped or change a typed interface parameter to an unrelated
-  type. For interface method return type
+  through current metadata. Simple nullable and union builtin relationships are
+  also accepted where the current subset checks prove the interface parameter
+  type is covered, such as an optional `?string` parameter before a
+  `string ...$params` tail or an `int|string ...$args` tail covering inherited
+  `int` and `string` parameters. Implementations may not add a type where the
+  interface parameter is untyped or change a typed interface parameter to an
+  unrelated type. For interface method return type
   metadata, implementations may add a return type when the interface method is
   untyped, but a typed interface method requires the implementation to declare
   the same return type text case-insensitively or a narrower simple declared
@@ -3258,8 +3266,10 @@
   classes, `self::CONST`/`static::CONST` in implementing class methods, and
   `defined()`/`constant()` string lookups. Missing or cyclic parent interface
   inheritance reports stable runtime boundaries. Full PHP method signature
-  variance beyond the current simple declared class/interface metadata checks,
-  namespace-aware type-name resolution, type aliases, union/intersection canonicalization,
+  variance beyond the current simple declared class/interface and nullable/union
+  builtin metadata checks, namespace-aware type-name resolution, type aliases,
+  DNF/intersection/union canonicalization, broad variadic runtime
+  type-enforcement diagnostics and traces,
   typed/non-public/abstract/final or multi-constant interface
   declarations, exact PHP ambiguous-interface-constant diagnostics, broad
   built-in/internal interface inheritance catalogs, named arguments,

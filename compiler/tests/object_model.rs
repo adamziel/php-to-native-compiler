@@ -3534,6 +3534,91 @@ class Child extends Base {}
 }
 
 #[test]
+fn variadic_signature_compatibility_checks_reference_mode_nullable_and_unions() {
+    let optional_variadic_execution = run_source(
+        r#"<?php
+interface DB {
+    public function query($query, string ...$params);
+}
+
+class MySQL implements DB {
+    public function query($query, ?string $extraParam = null, string ...$params) { }
+}
+
+echo "done";
+"#,
+    )
+    .unwrap();
+    assert_eq!(optional_variadic_execution.stdout, "done");
+    assert_eq!(optional_variadic_execution.exit_code, 0);
+
+    let inherited_union_variadic_execution = run_source(
+        r#"<?php
+class A {
+    public function test(int $a, string $b) {}
+}
+
+class B extends A {
+    public function test(int|string ...$args) {}
+}
+
+echo "done";
+"#,
+    )
+    .unwrap();
+    assert_eq!(inherited_union_variadic_execution.stdout, "done");
+    assert_eq!(inherited_union_variadic_execution.exit_code, 0);
+
+    let optional_mismatch = runtime_error(
+        r#"<?php
+interface DB {
+    public function query($query, string ...$params);
+}
+
+class MySQL implements DB {
+    public function query($query, ?int $extraParam = null, string ...$params) { }
+}
+"#,
+    );
+    assert_eq!(
+        optional_mismatch.message,
+        "Declaration of MySQL::query($query, ?int $extraParam = null, string ...$params) must be compatible with DB::query($query, string ...$params)"
+    );
+
+    let interface_reference_mismatch = runtime_error(
+        r#"<?php
+interface DB {
+    public function query($query, &...$params);
+}
+
+class MySQL implements DB {
+    public function query($query, ...$params) { }
+}
+"#,
+    );
+    assert_eq!(
+        interface_reference_mismatch.message,
+        "Declaration of MySQL::query($query, ...$params) must be compatible with DB::query($query, &...$params)"
+    );
+
+    let inherited_reference_mismatch = runtime_error(
+        r#"<?php
+class A {
+    public function test(&$a, &$b) {}
+}
+
+class B extends A {
+    public function test(...$args) {}
+}
+"#,
+    );
+    assert_eq!(
+        inherited_reference_mismatch.message,
+        "Declaration of B::test(...$args) must be compatible with A::test(&$a, &$b)"
+    );
+}
+
+#[test]
 fn method_signature_compatibility_reports_php_startup_fatals() {
     assert_php_startup_fatal(
         r#"<?php
