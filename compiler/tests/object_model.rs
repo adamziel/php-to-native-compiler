@@ -13238,6 +13238,102 @@ class A {
 }
 
 #[test]
+fn typed_class_constants_report_bounded_inheritance_type_diagnostics() {
+    let cases = [
+        (
+            r#"<?php
+class A {
+    public const int CONST1 = 1;
+}
+class B extends A {
+    public const string CONST1 = "a";
+}
+"#,
+            "Type of B::CONST1 must be compatible with A::CONST1 of type int",
+        ),
+        (
+            r#"<?php
+class A {
+    public const int CONST1 = 1;
+}
+class B extends A {
+    public const CONST1 = 0;
+}
+"#,
+            "Type of B::CONST1 must be compatible with A::CONST1 of type int",
+        ),
+    ];
+
+    for (source, message) in cases {
+        let error = runtime_error(source);
+        assert_eq!(error.message, message);
+    }
+
+    let execution = run_source(
+        r#"<?php
+class A {
+    public const iterable CONST1 = [];
+}
+class B extends A {
+    public const array CONST1 = [];
+}
+var_dump(B::CONST1);
+"#,
+    )
+    .unwrap();
+    assert_eq!(execution.stdout, "array(0) {\n}\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn typed_class_constants_report_bounded_runtime_type_errors() {
+    let execution = run_source(
+        r#"<?php
+class S {
+    public function __toString() {
+        echo "Side effect!\n";
+        return "S";
+    }
+}
+class A {
+    public const int FROM_STRING = C;
+    public const string FROM_OBJECT = O;
+    public const string FROM_STRINGABLE = S;
+}
+define("C", "c");
+define("O", new stdClass);
+define("S", new S);
+try {
+    var_dump(A::FROM_STRING);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    var_dump(A::FROM_OBJECT);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    var_dump(A::FROM_STRINGABLE);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "Cannot assign string to class constant A::FROM_STRING of type int\n",
+            "Cannot assign stdClass to class constant A::FROM_OBJECT of type string\n",
+            "Cannot assign S to class constant A::FROM_STRINGABLE of type string\n"
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn private_parent_class_constants_are_not_inherited() {
     let execution = run_source(
         r#"<?php

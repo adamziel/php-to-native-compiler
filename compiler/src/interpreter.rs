@@ -686,6 +686,7 @@ struct ResolvedConstant {
     declaring_class_id: Option<ClassId>,
     declaring_name: String,
     visibility: Visibility,
+    type_decl: Option<TypeDecl>,
     value: Expr,
     kind: ConstantOwnerKind,
     attributes: Vec<AttributeDecl>,
@@ -1192,6 +1193,7 @@ struct ReflectionClassConstantState {
     declaring_class_id: Option<ClassId>,
     name: String,
     visibility: Visibility,
+    type_decl: Option<TypeDecl>,
     value: Expr,
     kind: ConstantOwnerKind,
     attributes: Vec<AttributeDecl>,
@@ -1204,6 +1206,7 @@ impl ReflectionClassConstantState {
             declaring_class_id: resolved.declaring_class_id,
             name: requested_name.to_string(),
             visibility: resolved.visibility,
+            type_decl: resolved.type_decl,
             value: resolved.value,
             kind: resolved.kind,
             attributes: resolved.attributes,
@@ -28792,7 +28795,7 @@ impl Interpreter {
                 RuntimeError::unsupported_call(
                     "const declaration",
                     format!(
-                        "value must be null, bool, int, float, string, or array values in the current subset, got {type_name}"
+                        "value must be null, bool, int, float, string, array, or object values in the current subset, got {type_name}"
                     ),
                 ),
             ));
@@ -57004,6 +57007,7 @@ impl Interpreter {
                     declaring_class_id: None,
                     declaring_name: trait_decl.name.clone(),
                     visibility: runtime_visibility(constant_decl.visibility),
+                    type_decl: constant_decl.type_decl,
                     value: constant_decl.value,
                     kind: ConstantOwnerKind::Class,
                     attributes: constant_decl.attributes,
@@ -57069,6 +57073,7 @@ impl Interpreter {
                             declaring_class_id: None,
                             name: constant.name,
                             visibility: runtime_visibility(constant.visibility),
+                            type_decl: constant.type_decl,
                             value: constant.value,
                             kind: ConstantOwnerKind::Class,
                             attributes: constant.attributes,
@@ -57127,6 +57132,7 @@ impl Interpreter {
             declaring_class_id: Some(class_id),
             name: metadata.name().to_string(),
             visibility: metadata.visibility(),
+            type_decl: constant.type_decl.clone(),
             value: constant.value.clone(),
             kind: ConstantOwnerKind::Class,
             attributes: constant.attributes.clone(),
@@ -57167,6 +57173,7 @@ impl Interpreter {
                 declaring_class_id: None,
                 name: constant.name.clone(),
                 visibility: Visibility::Public,
+                type_decl: constant.type_decl.clone(),
                 value: constant.value.clone(),
                 kind: ConstantOwnerKind::Interface,
                 attributes: constant.attributes.clone(),
@@ -57193,6 +57200,7 @@ impl Interpreter {
             &constant.declaring_class_name,
             &constant.name,
             constant.kind,
+            constant.type_decl.as_ref(),
             &constant.value,
             span,
         )
@@ -64768,6 +64776,7 @@ impl Interpreter {
             &resolved.declaring_name,
             constant,
             resolved.kind,
+            resolved.type_decl.as_ref(),
             &resolved.value,
             span,
         )
@@ -64827,6 +64836,7 @@ impl Interpreter {
             &resolved.declaring_name,
             constant,
             resolved.kind,
+            resolved.type_decl.as_ref(),
             &resolved.value,
             span,
         )
@@ -64838,6 +64848,7 @@ impl Interpreter {
         declaring_name: &str,
         constant: &str,
         kind: ConstantOwnerKind,
+        type_decl: Option<&TypeDecl>,
         value_expr: &Expr,
         span: Span,
     ) -> CompileResult<Value> {
@@ -64862,13 +64873,62 @@ impl Interpreter {
                 RuntimeError::unsupported_call(
                     format!("{declaring_name}::{constant}"),
                     format!(
-                        "{owner_kind} constant value must be null, bool, int, float, string, or array values in the current subset, got {type_name}"
+                        "{owner_kind} constant value must be null, bool, int, float, string, array, or object values in the current subset, got {type_name}"
                     ),
                 ),
             ));
         }
 
-        Ok(value)
+        self.validate_class_constant_runtime_type(
+            declaring_class_id,
+            declaring_name,
+            constant,
+            type_decl,
+            value,
+            span,
+        )
+    }
+
+    fn validate_class_constant_runtime_type(
+        &self,
+        declaring_class_id: Option<ClassId>,
+        declaring_name: &str,
+        constant: &str,
+        type_decl: Option<&TypeDecl>,
+        value: Value,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let Some(type_decl) = type_decl else {
+            return Ok(value);
+        };
+
+        coerce_property_value_with_object_type_resolver(
+            &type_decl.text,
+            value.clone(),
+            declaring_name,
+            constant,
+            true,
+            |object, type_name| {
+                self.object_satisfies_call_type(
+                    object,
+                    type_name,
+                    declaring_class_id,
+                    declaring_class_id,
+                )
+            },
+        )
+        .map_err(|_| {
+            Diagnostic::new(
+                Phase::Runtime,
+                span.line,
+                span.column,
+                format!(
+                    "Cannot assign {} to class constant {declaring_name}::{constant} of type {}",
+                    class_constant_type_error_actual_name(&value),
+                    type_decl.text
+                ),
+            )
+        })
     }
 
     fn resolve_class_constant(&self, class_id: ClassId, constant: &str) -> ConstantResolution {
@@ -64892,6 +64952,7 @@ impl Interpreter {
                     declaring_class_id: Some(current_id),
                     declaring_name: class.name().to_string(),
                     visibility: metadata.visibility(),
+                    type_decl: constant_decl.type_decl.clone(),
                     value: constant_decl.value.clone(),
                     kind: ConstantOwnerKind::Class,
                     attributes: constant_decl.attributes.clone(),
@@ -64930,6 +64991,7 @@ impl Interpreter {
                     declaring_class_id: None,
                     declaring_name: interface.name.clone(),
                     visibility: Visibility::Public,
+                    type_decl: constant_decl.type_decl.clone(),
                     value: constant_decl.value.clone(),
                     kind: ConstantOwnerKind::Interface,
                     attributes: constant_decl.attributes.clone(),
@@ -64968,6 +65030,7 @@ impl Interpreter {
                 declaring_class_id: None,
                 declaring_name: interface.name.clone(),
                 visibility: Visibility::Public,
+                type_decl: constant_decl.type_decl.clone(),
                 value: constant_decl.value.clone(),
                 kind: ConstantOwnerKind::Interface,
                 attributes: constant_decl.attributes.clone(),
@@ -97222,7 +97285,7 @@ impl Interpreter {
                         RuntimeError::unsupported_call(
                             "define()",
                             format!(
-                                "value must be null, bool, int, float, string, or array values in the current subset, got {type_name}"
+                                "value must be null, bool, int, float, string, array, or object values in the current subset, got {type_name}"
                             ),
                         ),
                     ));
@@ -110254,6 +110317,7 @@ fn collect_class_constant_inheritance_startup_diagnostics(
     source_file: Option<&str>,
 ) {
     let classes = top_level_class_startup_lookup(program);
+    let interfaces = top_level_interface_startup_lookup(program);
     for stmt in &program.statements {
         let Stmt::Class(class) = stmt else {
             continue;
@@ -110272,6 +110336,8 @@ fn collect_class_constant_inheritance_startup_diagnostics(
                 continue;
             };
             let Some(message) = inherited_class_constant_startup_diagnostic_message(
+                &classes,
+                &interfaces,
                 &class.name,
                 constant,
                 &parent.name,
@@ -113463,11 +113529,33 @@ fn startup_interface_extends_or_matches(
 }
 
 fn inherited_class_constant_startup_diagnostic_message(
+    classes: &HashMap<String, &ClassDecl>,
+    interfaces: &HashMap<String, &InterfaceDecl>,
     class_name: &str,
     constant: &ClassConstantDecl,
     parent_name: &str,
     parent_constant: &ClassConstantDecl,
 ) -> Option<String> {
+    if !startup_class_constant_types_are_compatible(
+        classes,
+        interfaces,
+        parent_constant
+            .type_decl
+            .as_ref()
+            .map(|decl| decl.text.as_str()),
+        constant.type_decl.as_ref().map(|decl| decl.text.as_str()),
+    ) {
+        let parent_type = parent_constant
+            .type_decl
+            .as_ref()
+            .map(|decl| decl.text.as_str())
+            .unwrap_or("mixed");
+        return Some(format!(
+            "Type of {class_name}::{} must be compatible with {parent_name}::{} of type {parent_type}",
+            constant.name, parent_constant.name
+        ));
+    }
+
     if class_property_visibility_rank(constant.visibility)
         <= class_property_visibility_rank(parent_constant.visibility)
     {
@@ -113487,6 +113575,22 @@ fn inherited_class_constant_startup_diagnostic_message(
         parent_name,
         suffix
     ))
+}
+
+fn startup_class_constant_types_are_compatible(
+    classes: &HashMap<String, &ClassDecl>,
+    interfaces: &HashMap<String, &InterfaceDecl>,
+    parent_type: Option<&str>,
+    child_type: Option<&str>,
+) -> bool {
+    match (parent_type, child_type) {
+        (None, _) => true,
+        (Some(parent_type), Some(child_type)) if parent_type == child_type => true,
+        (Some(parent_type), Some(child_type)) => {
+            startup_type_name_is_subtype_of(classes, interfaces, child_type, parent_type)
+        }
+        (Some(_), None) => false,
+    }
 }
 
 fn class_property_type_text(property: &ClassPropertyDecl) -> Option<&str> {
@@ -122601,6 +122705,13 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             return Some(("Error", error.message.clone()));
         }
 
+        if error.message.starts_with("Cannot assign ")
+            && error.message.contains(" to class constant ")
+            && error.message.contains(" of type ")
+        {
+            return Some(("TypeError", error.message.clone()));
+        }
+
         if let Some(name) = error
             .message
             .strip_prefix("undefined constant ")
@@ -128293,14 +128404,23 @@ fn unsupported_runtime_constant_value_type(value: &Value) -> Option<&'static str
         | Value::Int(_)
         | Value::Float(_)
         | Value::String(_)
-        | Value::BinaryString(_) => None,
+        | Value::BinaryString(_)
+        | Value::Object(_) => None,
         Value::Array(array) => array
             .entries()
             .iter()
             .find_map(|entry| unsupported_runtime_constant_value_type(entry.value())),
-        Value::Object(_) => Some("object"),
         Value::Closure(_) => Some("closure"),
         Value::Resource(_) => Some("resource"),
+    }
+}
+
+fn class_constant_type_error_actual_name(value: &Value) -> String {
+    match value {
+        Value::Bool(true) => "true".to_string(),
+        Value::Bool(false) => "false".to_string(),
+        Value::Object(object) => object.class_name().to_string(),
+        other => other.type_name().to_string(),
     }
 }
 
