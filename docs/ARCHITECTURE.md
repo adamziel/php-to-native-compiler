@@ -1095,8 +1095,9 @@ implementing-class class-constant lookup. Missing or cyclic parent interface
 inheritance remains a stable runtime boundary.
 typed/static/non-public/abstract/final or multi-constant interface
 declarations, full variance/signature enforcement, namespace-aware type-name
-resolution, DNF/intersection/union canonicalization, broad variadic runtime
-type-enforcement diagnostics and traces, built-in/internal interface inheritance catalogs, exact PHP
+resolution, DNF/intersection/union canonicalization beyond the bounded pure
+intersection subtype lane, broad variadic runtime type-enforcement diagnostics
+and traces, built-in/internal interface inheritance catalogs, exact PHP
 diagnostics, and native lowering remain explicit boundaries.
 
 Double-quoted string interpolation is represented explicitly in the AST for
@@ -4244,14 +4245,23 @@ child are flattened into both relationship metadata and method-presence checks.
 Implementations may omit an interface parameter type or repeat the same type
 text case-insensitively, but may not add a parameter type to an untyped
 interface parameter or substitute a different type for a typed interface
-parameter. Implementations may add a return type to an untyped interface
-method, but a typed interface method requires the implementation to declare the
-same return type text case-insensitively. Public static methods satisfy only
-static interface method requirements and do not satisfy non-static interface
-method requirements. This is a bounded compatibility check only; full
-parameter variance, broader return type covariance/contravariance,
-type subtyping, alias/import resolution, union/intersection canonicalization,
-cyclic parent-interface inheritance beyond stable rejection, broad
+parameter. The relation also covers bounded nullable/union builtin checks and
+pure-intersection declared class/interface checks, including intersections
+that satisfy `object`, `iterable`, and `Traversable` bounds. Implementations
+may add a return type to an untyped interface method, but a typed interface
+method requires the implementation to declare the same return type text
+case-insensitively or a narrower bounded pure-intersection relationship.
+Class parent and `implements` metadata is predeclared after name registration
+so interface-inheritance validation can use class/interface subtype facts
+before members are registered. Public static methods satisfy only static
+interface method requirements and do not satisfy non-static interface method
+requirements. Ancestor/descendant duplicate inherited interface method pairs
+are skipped after the descendant override has already been validated. This is
+a bounded compatibility check only; full parameter variance, broader return
+type covariance/contravariance, unrestricted type subtyping,
+alias/import resolution, parenthesized DNF or namespace-aware
+union/intersection canonicalization, cyclic parent-interface inheritance beyond
+stable rejection, broad
 built-in/internal interface method enforcement beyond the current
 `Countable`, `Iterator`, and `IteratorAggregate` shape checks, exact PHP error
 objects, autoload behavior, and native lowering remain separate work. A bounded

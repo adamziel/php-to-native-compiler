@@ -3273,17 +3273,24 @@
   also accepted where the current subset checks prove the interface parameter
   type is covered, such as an optional `?string` parameter before a
   `string ...$params` tail or an `int|string ...$args` tail covering inherited
-  `int` and `string` parameters. Implementations may not add a type where the
-  interface parameter is untyped or change a typed interface parameter to an
-  unrelated type. For interface method return type
+  `int` and `string` parameters. Pure intersection relationships are accepted
+  for the bounded declared class/interface subset as well: an intersection may
+  narrow a return type, broaden a parameter type when the inherited union
+  members all satisfy the intersection, and satisfy `object` or `iterable`
+  through object/interface and `Traversable` metadata. Implementations may not
+  add a type where the interface parameter is untyped or change a typed
+  interface parameter to an unrelated type. For interface method return type
   metadata, implementations may add a return type when the interface method is
   untyped, but a typed interface method requires the implementation to declare
   the same return type text case-insensitively or a narrower simple declared
-  class/interface type when both type names resolve through current metadata.
+  class/interface or bounded pure-intersection type when type names resolve
+  through current metadata.
   Child interfaces that redeclare inherited methods and simple multi-parent
   inherited method conflicts are
   checked with those same bounded staticness, required-parameter,
-  parameter-type, and return-type metadata rules before class registration.
+  parameter-type, and return-type metadata rules before class registration;
+  ancestor/descendant duplicate inherited interface pairs are skipped after the
+  descendant interface has already validated its override.
   Public interface
   constants declared as `const NAME = ...` or `public const NAME = ...` with
   the current class-constant expression subset resolve through `InterfaceName::CONST`,
@@ -3291,9 +3298,10 @@
   classes, `self::CONST`/`static::CONST` in implementing class methods, and
   `defined()`/`constant()` string lookups. Missing or cyclic parent interface
   inheritance reports stable runtime boundaries. Full PHP method signature
-  variance beyond the current simple declared class/interface and nullable/union
-  builtin metadata checks, namespace-aware type-name resolution, type aliases,
-  DNF/intersection/union canonicalization, broad variadic runtime
+  variance beyond the current simple declared class/interface, nullable/union
+  builtin, and pure-intersection metadata checks, namespace-aware type-name
+  resolution, type aliases, DNF/intersection/union canonicalization, broad
+  variadic runtime
   type-enforcement diagnostics and traces,
   typed/non-public/abstract/final or multi-constant interface
   declarations, exact PHP ambiguous-interface-constant diagnostics, broad
@@ -7431,7 +7439,10 @@
   strings assigned to visible declared exact `int` properties emit PHP's
   float-to-int / float-string-to-int deprecation diagnostics; compatible
   integral floats and float strings such as `1.0` and `"1.0"` remain quiet.
-  Integer writes to `float` are stored as floats. Direct
+  Integer writes to `float` are stored as floats. Inherited typed properties
+  must remain invariant, but the startup/runtime metadata check accepts
+  bounded pure-intersection equivalence, including reordered members and
+  reductions proven equivalent by a declared subclass relationship. Direct
   `unset($object->typedProperty)` over a visible declared instance typed
   property restores the slot to the same uninitialized state: later direct
   reads fail, `isset(...)` reports false, `empty(...)` reports true,
@@ -7610,23 +7621,29 @@
   no more required parameters than the interface method, and must pass the current
   bounded parameter-type metadata check: an implementation may omit an
   interface parameter type, repeat the same type text case-insensitively, or
-  use a broader simple declared class/interface type, but may not add a type
-  to an untyped interface parameter or substitute an unrelated type for a
+  use a broader simple declared class/interface type. Bounded nullable/union
+  builtin and pure-intersection relationships are also accepted where the
+  current subtype check can prove coverage, including intersections satisfying
+  `object`, `iterable`, and `Traversable` bounds. Implementations may not add a
+  type to an untyped interface parameter or substitute an unrelated type for a
   typed interface parameter. They must also pass the current bounded
   return-type metadata check: an implementation may add a return type to an
   untyped interface method, but a typed interface method requires the same
   return type text case-insensitively or a narrower simple declared
-  class/interface type;
+  class/interface or bounded pure-intersection type;
   abstract classes may defer that requirement until a concrete child is
   registered, and inherited public methods count. Public static methods satisfy
   only static interface method requirements and do not satisfy non-static
   interface method requirements. Child interfaces that redeclare inherited
   methods and simple multi-parent inherited method conflicts are validated with
-  those same bounded staticness and signature metadata rules. This is a
-  bounded public-method compatibility check only, not full parameter type
-  compatibility, broader return type covariance/contravariance, full signature
-  variance, class or interface type subtyping, type-alias/import resolution,
-  union/intersection canonicalization, or exact PHP error-object behavior.
+  those same bounded staticness and signature metadata rules, with
+  ancestor/descendant duplicate inherited interface pairs skipped after the
+  descendant override has been validated. This is a bounded public-method
+  compatibility check only, not full parameter type compatibility, broader
+  return type covariance/contravariance, full signature variance, unrestricted
+  class or interface type subtyping, type-alias/import resolution,
+  parenthesized DNF or namespace-aware union/intersection canonicalization, or
+  exact PHP error-object behavior.
   Unresolved interface names remain relationship metadata only. Most
   built-in/internal interface names are still metadata-only, except for the
   bounded `Countable`, `Iterator`, and `IteratorAggregate` concrete-class

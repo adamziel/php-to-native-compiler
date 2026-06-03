@@ -11437,6 +11437,12 @@ impl Interpreter {
             &enum_lookup,
             program,
         )?;
+        predeclare_class_relationship_metadata(
+            &mut classes,
+            &interface_lookup,
+            &trait_lookup,
+            program,
+        )?;
         validate_interface_parent_relationships(
             &classes,
             &trait_lookup,
@@ -107109,6 +107115,7 @@ fn collect_class_property_inheritance_startup_diagnostics(
     source_file: Option<&str>,
 ) {
     let classes = top_level_class_startup_lookup(program);
+    let interfaces = top_level_interface_startup_lookup(program);
     for stmt in &program.statements {
         let Stmt::Class(class) = stmt else {
             continue;
@@ -107124,6 +107131,8 @@ fn collect_class_property_inheritance_startup_diagnostics(
                 continue;
             };
             let Some(message) = inherited_property_startup_diagnostic_message(
+                &classes,
+                &interfaces,
                 &class.name,
                 &property,
                 &parent.name,
@@ -107931,6 +107940,8 @@ fn class_startup_constant(class: &ClassDecl, constant_name: &str) -> Option<Clas
 }
 
 fn inherited_property_startup_diagnostic_message(
+    classes: &HashMap<String, &ClassDecl>,
+    interfaces: &HashMap<String, &InterfaceDecl>,
     class_name: &str,
     property: &ClassPropertyDecl,
     parent_name: &str,
@@ -107950,7 +107961,12 @@ fn inherited_property_startup_diagnostic_message(
 
     let parent_type = class_property_type_text(parent_property);
     let child_type = class_property_type_text(property);
-    if parent_type != child_type {
+    if !startup_property_types_are_invariantly_compatible(
+        classes,
+        interfaces,
+        parent_type,
+        child_type,
+    ) {
         if parent_type.is_none() {
             return Some(format!(
                 "Type of {}::${} must be omitted to match the parent definition in class {}",
@@ -107977,6 +107993,202 @@ fn inherited_property_startup_diagnostic_message(
     }
 
     None
+}
+
+fn startup_property_types_are_invariantly_compatible(
+    classes: &HashMap<String, &ClassDecl>,
+    interfaces: &HashMap<String, &InterfaceDecl>,
+    parent_type: Option<&str>,
+    child_type: Option<&str>,
+) -> bool {
+    match (parent_type, child_type) {
+        (None, None) => true,
+        (Some(parent_type), Some(child_type)) if parent_type == child_type => true,
+        (Some(parent_type), Some(child_type)) => {
+            startup_type_name_is_subtype_of(classes, interfaces, child_type, parent_type)
+                && startup_type_name_is_subtype_of(classes, interfaces, parent_type, child_type)
+        }
+        _ => false,
+    }
+}
+
+fn startup_type_name_is_subtype_of(
+    classes: &HashMap<String, &ClassDecl>,
+    interfaces: &HashMap<String, &InterfaceDecl>,
+    subtype: &str,
+    supertype: &str,
+) -> bool {
+    let subtype = subtype.trim();
+    let supertype = supertype.trim();
+
+    if subtype.eq_ignore_ascii_case(supertype) {
+        return true;
+    }
+
+    if let Some(super_members) = signature_intersection_members(supertype) {
+        return super_members.iter().all(|supertype| {
+            startup_type_name_is_subtype_of(classes, interfaces, subtype, supertype)
+        });
+    }
+
+    if let Some(sub_members) = signature_intersection_members(subtype) {
+        return sub_members.iter().any(|subtype| {
+            startup_type_name_is_subtype_of(classes, interfaces, subtype, supertype)
+        });
+    }
+
+    if let Some(subtypes) = signature_union_members(subtype) {
+        return subtypes.iter().all(|subtype| {
+            startup_type_name_is_subtype_of(classes, interfaces, subtype, supertype)
+        });
+    }
+
+    if let Some(supertypes) = signature_union_members(supertype) {
+        return supertypes.iter().any(|supertype| {
+            startup_type_name_is_subtype_of(classes, interfaces, subtype, supertype)
+        });
+    }
+
+    if normalized_builtin_signature_type(supertype).is_some_and(|ty| ty == "mixed") {
+        return true;
+    }
+
+    if normalized_builtin_signature_type(subtype).is_some_and(|ty| ty == "never") {
+        return true;
+    }
+
+    if normalized_builtin_signature_type(supertype).is_some_and(|ty| ty == "iterable") {
+        return startup_type_name_is_subtype_of(classes, interfaces, subtype, "array")
+            || startup_type_name_is_subtype_of(classes, interfaces, subtype, "Traversable");
+    }
+
+    if let (Some(subtype), Some(supertype)) = (
+        normalized_builtin_signature_type(subtype),
+        normalized_builtin_signature_type(supertype),
+    ) {
+        return subtype == supertype
+            || (subtype == "false" && supertype == "bool")
+            || (subtype == "true" && supertype == "bool");
+    }
+
+    let Some(subtype) = simple_class_like_signature_type(subtype) else {
+        return false;
+    };
+    let Some(supertype) = simple_class_like_signature_type(supertype) else {
+        return normalized_builtin_signature_type(supertype).is_some_and(|ty| ty == "object");
+    };
+
+    if startup_class_extends(classes, subtype, supertype) {
+        return true;
+    }
+
+    if startup_class_implements_interface(classes, interfaces, subtype, supertype) {
+        return true;
+    }
+
+    startup_interface_extends_interface(interfaces, subtype, supertype)
+}
+
+fn startup_class_extends(
+    classes: &HashMap<String, &ClassDecl>,
+    subtype: &str,
+    supertype: &str,
+) -> bool {
+    let super_key = startup_class_lookup_key(supertype);
+    let mut current_key = startup_class_lookup_key(subtype);
+    let mut visited = HashSet::new();
+
+    loop {
+        if current_key == super_key {
+            return true;
+        }
+        if !visited.insert(current_key.clone()) {
+            return false;
+        }
+        let Some(class) = classes.get(&current_key).copied() else {
+            return false;
+        };
+        let Some(parent) = class.parent.as_deref() else {
+            return false;
+        };
+        current_key = startup_class_lookup_key(parent);
+    }
+}
+
+fn startup_class_implements_interface(
+    classes: &HashMap<String, &ClassDecl>,
+    interfaces: &HashMap<String, &InterfaceDecl>,
+    class_name: &str,
+    interface_name: &str,
+) -> bool {
+    if !startup_is_interface_name(interfaces, interface_name) {
+        return false;
+    }
+
+    let mut current_key = startup_class_lookup_key(class_name);
+    let mut visited = HashSet::new();
+    loop {
+        if !visited.insert(current_key.clone()) {
+            return false;
+        }
+        let Some(class) = classes.get(&current_key).copied() else {
+            return false;
+        };
+        if class.interfaces.iter().any(|implemented| {
+            startup_interface_extends_or_matches(interfaces, implemented, interface_name)
+        }) {
+            return true;
+        }
+        let Some(parent) = class.parent.as_deref() else {
+            return false;
+        };
+        current_key = startup_class_lookup_key(parent);
+    }
+}
+
+fn startup_interface_extends_interface(
+    interfaces: &HashMap<String, &InterfaceDecl>,
+    subtype: &str,
+    supertype: &str,
+) -> bool {
+    startup_is_interface_name(interfaces, subtype)
+        && startup_is_interface_name(interfaces, supertype)
+        && startup_interface_extends_or_matches(interfaces, subtype, supertype)
+}
+
+fn startup_is_interface_name(interfaces: &HashMap<String, &InterfaceDecl>, name: &str) -> bool {
+    interfaces.contains_key(&startup_class_lookup_key(name)) || is_core_interface_name(name)
+}
+
+fn startup_interface_extends_or_matches(
+    interfaces: &HashMap<String, &InterfaceDecl>,
+    subtype: &str,
+    supertype: &str,
+) -> bool {
+    let super_key = startup_class_lookup_key(supertype);
+    let mut pending = vec![subtype.to_string()];
+    let mut visited = HashSet::new();
+
+    while let Some(interface_name) = pending.pop() {
+        let key = startup_class_lookup_key(&interface_name);
+        if key == super_key {
+            return true;
+        }
+        if !visited.insert(key.clone()) {
+            continue;
+        }
+
+        if let Some(interface) = interfaces.get(&key) {
+            pending.extend(interface.parents.iter().cloned());
+        }
+        pending.extend(
+            core_interface_parent_names(&interface_name)
+                .iter()
+                .map(|parent| parent.to_string()),
+        );
+    }
+
+    false
 }
 
 fn inherited_class_constant_startup_diagnostic_message(
@@ -108874,6 +109086,17 @@ fn validate_inherited_interface_method_conflicts(
     for (left_index, (left_interface, left_method)) in methods.iter().enumerate() {
         for (right_interface, right_method) in methods.iter().skip(left_index + 1) {
             if left_interface.eq_ignore_ascii_case(right_interface) {
+                continue;
+            }
+            if interface_extends_or_matches_interface(
+                interface_lookup,
+                left_interface,
+                right_interface,
+            ) || interface_extends_or_matches_interface(
+                interface_lookup,
+                right_interface,
+                left_interface,
+            ) {
                 continue;
             }
             validate_parent_interface_method_pair(
@@ -109780,8 +110003,14 @@ fn register_class_members(
         }
 
         let visibility = runtime_visibility(property.visibility);
-        validate_inherited_property_compatibility(classes, id, &class.name, &property)
-            .map_err(|error| runtime_error(property.span, error))?;
+        validate_inherited_property_compatibility(
+            classes,
+            interface_lookup,
+            id,
+            &class.name,
+            &property,
+        )
+        .map_err(|error| runtime_error(property.span, error))?;
         validate_property_override_attribute(classes, interface_lookup, id, &class.name, &property)
             .map_err(|error| runtime_error(property.span, error))?;
 
@@ -109843,8 +110072,14 @@ fn register_class_members(
         match member {
             ClassMember::Property(property) => {
                 let visibility = runtime_visibility(property.visibility);
-                validate_inherited_property_compatibility(classes, id, &class.name, property)
-                    .map_err(|error| runtime_error(property.span, error))?;
+                validate_inherited_property_compatibility(
+                    classes,
+                    interface_lookup,
+                    id,
+                    &class.name,
+                    property,
+                )
+                .map_err(|error| runtime_error(property.span, error))?;
                 validate_property_override_attribute(
                     classes,
                     interface_lookup,
@@ -109878,8 +110113,14 @@ fn register_class_members(
             ClassMember::Method(method) => {
                 for property in promoted_properties_from_method(method) {
                     let visibility = runtime_visibility(property.visibility);
-                    validate_inherited_property_compatibility(classes, id, &class.name, &property)
-                        .map_err(|error| runtime_error(property.span, error))?;
+                    validate_inherited_property_compatibility(
+                        classes,
+                        interface_lookup,
+                        id,
+                        &class.name,
+                        &property,
+                    )
+                    .map_err(|error| runtime_error(property.span, error))?;
                     validate_property_override_attribute(
                         classes,
                         interface_lookup,
@@ -109978,6 +110219,41 @@ fn register_class_members(
         .map_err(|error| runtime_error(class.span, error))?;
 
     Ok(id)
+}
+
+fn predeclare_class_relationship_metadata(
+    classes: &mut PhpClassTable,
+    interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
+    trait_lookup: &HashMap<String, Rc<TraitDecl>>,
+    program: &Program,
+) -> CompileResult<()> {
+    for stmt in &program.statements {
+        let Stmt::Class(class) = stmt else {
+            continue;
+        };
+        if class.is_nested {
+            continue;
+        }
+
+        validate_class_relationship_targets(classes, interface_lookup, trait_lookup, class)?;
+
+        let id = classes
+            .lookup_class_id(&class.name)
+            .expect("class name pass should declare class id");
+        if let Some(parent_name) = &class.parent {
+            if let Some(parent_id) = classes.lookup_class_id(parent_name) {
+                classes
+                    .set_parent(id, parent_id)
+                    .map_err(|error| runtime_error(class.span, error))?;
+            }
+        }
+        let interfaces = expanded_class_interface_names(interface_lookup, &class.interfaces);
+        classes
+            .set_interfaces(id, interfaces)
+            .map_err(|error| runtime_error(class.span, error))?;
+    }
+
+    Ok(())
 }
 
 fn validate_class_relationship_targets(
@@ -113839,6 +114115,18 @@ fn type_name_is_subtype_of(
         return true;
     }
 
+    if let Some(super_members) = signature_intersection_members(supertype) {
+        return super_members.iter().all(|supertype| {
+            type_name_is_subtype_of(classes, interface_lookup, subtype, supertype)
+        });
+    }
+
+    if let Some(sub_members) = signature_intersection_members(subtype) {
+        return sub_members
+            .iter()
+            .any(|subtype| type_name_is_subtype_of(classes, interface_lookup, subtype, supertype));
+    }
+
     if let Some(subtypes) = signature_union_members(subtype) {
         return subtypes
             .iter()
@@ -113859,11 +114147,18 @@ fn type_name_is_subtype_of(
         return true;
     }
 
+    if normalized_builtin_signature_type(supertype).is_some_and(|ty| ty == "iterable") {
+        return type_name_is_subtype_of(classes, interface_lookup, subtype, "array")
+            || type_name_is_subtype_of(classes, interface_lookup, subtype, "Traversable");
+    }
+
     if let (Some(subtype), Some(supertype)) = (
         normalized_builtin_signature_type(subtype),
         normalized_builtin_signature_type(supertype),
     ) {
-        return subtype == supertype;
+        return subtype == supertype
+            || (subtype == "false" && supertype == "bool")
+            || (subtype == "true" && supertype == "bool");
     }
 
     let Some(subtype) = simple_class_like_signature_type(subtype) else {
@@ -113884,17 +114179,33 @@ fn type_name_is_subtype_of(
 
     let supertype_interface_key = supertype.to_ascii_lowercase();
     if let Some(subtype_class_id) = subtype_class_id {
-        return interface_lookup.contains_key(&supertype_interface_key)
+        return (interface_lookup.contains_key(&supertype_interface_key)
+            || is_core_interface_name(supertype))
             && classes.implements_interface(subtype_class_id, supertype);
     }
 
-    if interface_lookup.contains_key(&subtype.to_ascii_lowercase())
-        && interface_lookup.contains_key(&supertype_interface_key)
+    if (interface_lookup.contains_key(&subtype.to_ascii_lowercase())
+        || is_core_interface_name(subtype))
+        && (interface_lookup.contains_key(&supertype_interface_key)
+            || is_core_interface_name(supertype))
     {
-        return interface_extends_interface(interface_lookup, subtype, supertype);
+        return interface_extends_or_matches_interface(interface_lookup, subtype, supertype);
     }
 
     false
+}
+
+fn signature_intersection_members(type_name: &str) -> Option<Vec<&str>> {
+    let type_name = type_name.trim();
+    if type_name.contains('&')
+        && !type_name.contains('|')
+        && !type_name.contains('(')
+        && !type_name.contains(')')
+    {
+        return Some(type_name.split('&').map(str::trim).collect());
+    }
+
+    None
 }
 
 fn signature_union_members(type_name: &str) -> Option<Vec<&str>> {
@@ -113982,8 +114293,42 @@ fn interface_extends_interface(
     parent_keys.contains(&supertype.to_ascii_lowercase())
 }
 
+fn interface_extends_or_matches_interface(
+    interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
+    subtype: &str,
+    supertype: &str,
+) -> bool {
+    if subtype.eq_ignore_ascii_case(supertype) {
+        return true;
+    }
+    if interface_extends_interface(interface_lookup, subtype, supertype) {
+        return true;
+    }
+    core_interface_extends_interface(subtype, supertype)
+}
+
+fn core_interface_extends_interface(subtype: &str, supertype: &str) -> bool {
+    let mut pending = core_interface_parent_names(subtype)
+        .iter()
+        .copied()
+        .collect::<Vec<_>>();
+    let mut visited = HashSet::new();
+    while let Some(interface_name) = pending.pop() {
+        let key = interface_name.to_ascii_lowercase();
+        if !visited.insert(key) {
+            continue;
+        }
+        if interface_name.eq_ignore_ascii_case(supertype) {
+            return true;
+        }
+        pending.extend(core_interface_parent_names(interface_name).iter().copied());
+    }
+    false
+}
+
 fn validate_inherited_property_compatibility(
     classes: &PhpClassTable,
+    interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
     class_id: ClassId,
     class_name: &str,
     property: &ClassPropertyDecl,
@@ -114029,7 +114374,12 @@ fn validate_inherited_property_compatibility(
             }
 
             let child_type = property.type_decl.as_ref().map(|decl| decl.text.as_str());
-            if parent_property.type_decl() != child_type {
+            if !runtime_property_types_are_invariantly_compatible(
+                classes,
+                interface_lookup,
+                parent_property.type_decl(),
+                child_type,
+            ) {
                 return Err(RuntimeError::unsupported_class_inheritance(
                     class_name,
                     format!(
@@ -114063,6 +114413,23 @@ fn validate_inherited_property_compatibility(
     }
 
     Ok(())
+}
+
+fn runtime_property_types_are_invariantly_compatible(
+    classes: &PhpClassTable,
+    interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
+    parent_type: Option<&str>,
+    child_type: Option<&str>,
+) -> bool {
+    match (parent_type, child_type) {
+        (None, None) => true,
+        (Some(parent_type), Some(child_type)) if parent_type == child_type => true,
+        (Some(parent_type), Some(child_type)) => {
+            type_name_is_subtype_of(classes, interface_lookup, child_type, parent_type)
+                && type_name_is_subtype_of(classes, interface_lookup, parent_type, child_type)
+        }
+        _ => false,
+    }
 }
 
 fn validate_property_override_attribute(

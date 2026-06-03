@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added a bounded pure-intersection variance lane on the interpreter metadata
+  path. Startup and runtime signature checks now understand simple
+  union/intersection subtype relationships for declared classes/interfaces,
+  `object`, `iterable`/`Traversable`, `true`/`false` under `bool`, and
+  class/interface relationships predeclared before interface-inheritance
+  validation. Inherited property checks accept PHP-equivalent pure
+  intersections, including commuted members and reductions such as
+  `A&B` to subclass `B`, while transitive interface method conflicts skip
+  ancestor/descendant duplicate pairs after the child interface has already
+  validated its override. Focused proof covers Rust
+  `object_model::intersection_variance_accepts_equivalent_and_reduced_bounds`,
+  build/fmt checks, and selected public PHPT rows
+  `Zend/tests/type_declarations/intersection_types/variance/valid1.phpt`
+  through `valid8.phpt`. Unsupported edges remain parenthesized DNF,
+  namespace/import-aware type-name canonicalization, aliases, `self`/`parent`/
+  `static` signature resolution, broad runtime type-enforcement diagnostics,
+  exact PHP error objects, native lowering, and references/COW.
+
 - Added a bounded `SplFileInfo` local metadata lane on the interpreter path.
   Core `SplFileInfo` objects now carry a bounded local path state and support
   `__construct()`, `getGroup()`, `getInode()`, `getOwner()`, and `getPerms()`

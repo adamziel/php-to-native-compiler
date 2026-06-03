@@ -14995,6 +14995,78 @@ class PluginResolver implements Resolver {
 }
 
 #[test]
+fn intersection_variance_accepts_equivalent_and_reduced_bounds() {
+    let execution = run_source(
+        r#"<?php
+interface X {}
+interface Y {}
+interface Z {}
+
+class TestOne implements X, Y {}
+class TestTwo implements X, Y {}
+class Both implements X, Y, Z {}
+
+interface ParentContract {
+    public function foo(TestOne|TestTwo $param): X&Y;
+}
+
+interface ChildContract extends ParentContract {
+    public function foo(X&Y $param): TestOne|TestTwo;
+}
+
+interface GrandchildContract extends ChildContract {
+    public function foo(X $param): TestTwo;
+}
+
+class BaseCovariant {
+    public function make(): X {
+        return new Both();
+    }
+}
+
+class ChildCovariant extends BaseCovariant {
+    public function make(): X&Y {
+        return new Both();
+    }
+}
+
+class GrandchildCovariant extends ChildCovariant {
+    public function make(): X&Y&Z {
+        return new Both();
+    }
+}
+
+class AType {}
+class BType extends AType {}
+class ParentProperties {
+    public X&Y $same;
+    public AType&BType $reduced;
+}
+class ChildProperties extends ParentProperties {
+    public Y&X $same;
+    public BType $reduced;
+}
+
+class IterableBase {
+    public function values(): iterable {}
+}
+class IterableChild extends IterableBase {
+    public function values(): X&Traversable {}
+}
+
+echo interface_exists("GrandchildContract") ? "interface\n" : "missing\n";
+echo get_class((new GrandchildCovariant())->make()), "\n";
+echo class_exists("ChildProperties") ? "properties\n" : "missing\n";
+echo method_exists(new IterableChild(), "values") ? "iterable" : "missing";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "interface\nBoth\nproperties\niterable");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn nested_method_visibility_boundary_preserves_registration_timing() {
     let execution = run_source(
         r#"<?php
