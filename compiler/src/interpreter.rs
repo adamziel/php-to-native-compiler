@@ -93028,6 +93028,9 @@ impl Interpreter {
             "posix_getpwnam" => call_posix_getpwnam(&args, span),
             "posix_getgrgid" => call_posix_getgrgid(&args, span),
             "posix_getgrnam" => call_posix_getgrnam(&args, span),
+            "posix_setgid" => call_posix_setgid(&args, span),
+            "posix_seteuid" => call_posix_seteuid(&args, span),
+            "posix_setegid" => call_posix_setegid(&args, span),
             "umask" => self.call_umask(&args, span),
             "getmypid" => call_getmypid(&args, span),
             "php_uname" => call_php_uname(&args, span),
@@ -112198,6 +112201,10 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
             "array|false",
             vec![reflection_internal_param("group_name", "string")],
         ),
+        "posix_setgid" | "posix_setegid" => {
+            ("bool", vec![reflection_internal_param("group_id", "int")])
+        }
+        "posix_seteuid" => ("bool", vec![reflection_internal_param("user_id", "int")]),
         "umask" => (
             "int",
             vec![reflection_internal_optional_null_param("mask", "?int")],
@@ -117136,6 +117143,9 @@ fn is_builtin(name: &str) -> bool {
             | "posix_getpwnam"
             | "posix_getgrgid"
             | "posix_getgrnam"
+            | "posix_setgid"
+            | "posix_seteuid"
+            | "posix_setegid"
             | "umask"
             | "getmypid"
             | "php_uname"
@@ -143532,6 +143542,53 @@ fn call_posix_getgrnam(args: &[Value], span: Span) -> CompileResult<Value> {
     Ok(posix_group_entry_for_name(&name)
         .map(posix_group_entry_value)
         .unwrap_or(Value::Bool(false)))
+}
+
+fn call_posix_setgid(args: &[Value], span: Span) -> CompileResult<Value> {
+    call_posix_set_current_identity_builtin(
+        args,
+        "posix_setgid",
+        "group_id",
+        posix_getgid_value,
+        span,
+    )
+}
+
+fn call_posix_seteuid(args: &[Value], span: Span) -> CompileResult<Value> {
+    call_posix_set_current_identity_builtin(
+        args,
+        "posix_seteuid",
+        "user_id",
+        posix_geteuid_value,
+        span,
+    )
+}
+
+fn call_posix_setegid(args: &[Value], span: Span) -> CompileResult<Value> {
+    call_posix_set_current_identity_builtin(
+        args,
+        "posix_setegid",
+        "group_id",
+        posix_getegid_value,
+        span,
+    )
+}
+
+fn call_posix_set_current_identity_builtin(
+    args: &[Value],
+    function: &str,
+    argument_name: &str,
+    current_identity: fn() -> Option<i64>,
+    span: Span,
+) -> CompileResult<Value> {
+    expect_arity(function, args, 1, span)?;
+    let function_call = format!("{function}()");
+    let requested = php_internal_int_argument(&function_call, 1, argument_name, &args[0], span)?;
+    let Some(current) = current_identity() else {
+        return Ok(Value::Bool(false));
+    };
+
+    Ok(Value::Bool(requested >= 0 && requested == current))
 }
 
 fn posix_passwd_entry_for_uid(uid: u32) -> Option<PosixPasswdEntry> {

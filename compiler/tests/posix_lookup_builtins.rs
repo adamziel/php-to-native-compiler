@@ -129,6 +129,44 @@ var_dump(posix_getgrnam(""));
 }
 
 #[test]
+fn posix_identity_mutation_builtins_cover_current_identity_rows() {
+    let source = r#"<?php
+$gid = posix_getgid();
+$egid = posix_getegid();
+$euid = posix_geteuid();
+$bad_gid = $gid === 0 ? 1 : 0;
+$bad_egid = $egid === 0 ? 1 : 0;
+$bad_euid = $euid === 0 ? 1 : 0;
+echo function_exists("posix_setgid") && is_callable("posix_setegid") ? "known" : "missing";
+echo "|";
+var_dump(posix_setgid($gid));
+var_dump(posix_setgid($bad_gid));
+var_dump(posix_setgid(-2345));
+var_dump(posix_setegid($egid));
+var_dump(posix_setegid($bad_egid));
+var_dump(posix_seteuid($euid));
+var_dump(posix_seteuid($bad_euid));
+var_dump(posix_seteuid(-12345));
+$rf = new ReflectionFunction("posix_seteuid");
+echo $rf->getNumberOfRequiredParameters(), "/", $rf->getNumberOfParameters(), "/";
+echo $rf->getParameters()[0]->getName(), "/", $rf->getExtensionName(), "/";
+echo $rf->hasReturnType() ? "return" : "no-return";
+"#;
+    let path = temp_source_path("posix-identity-mutation");
+    fs::write(&path, source).expect("temporary POSIX identity mutation source is written");
+
+    let execution = run_source_with_source_file(source, path.display().to_string()).unwrap();
+    let _ = fs::remove_file(path);
+
+    assert_eq!(
+        execution.stdout,
+        "known|bool(true)\nbool(false)\nbool(false)\nbool(true)\nbool(false)\nbool(true)\nbool(false)\nbool(false)\n1/1/user_id/posix/return"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn emit_ir_folds_posix_lookup_names_but_rejects_direct_calls() {
     let ir = emit_ir_source(
         r#"<?php
@@ -138,11 +176,14 @@ echo function_exists("posix_getuid") ? "1" : "0";
 echo is_callable("posix_getgroups") ? "1" : "0";
 echo function_exists("posix_getpwnam") ? "1" : "0";
 echo is_callable("posix_getgrnam") ? "1" : "0";
+echo function_exists("posix_setgid") ? "1" : "0";
+echo is_callable("posix_seteuid") ? "1" : "0";
+echo function_exists("posix_setegid") ? "1" : "0";
 "#,
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 6, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 9, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
 
