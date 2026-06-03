@@ -5993,10 +5993,14 @@
   bounded `Failed to open directory` warning before returning `false`.
   `readdir($dir)` returns the next entry name or `false` at the end,
   `rewinddir($dir)` resets the cursor and returns `null`, and `closedir($dir)`
-  closes the directory resource and returns `null`. Directory entries are
-  exposed as `.`, `..`, then sorted UTF-8 host names for deterministic
-  fixtures; exact host iteration order remains unsupported. Bounded local
-  filesystem mutation helpers are also supported for
+  closes the directory resource and returns `null`. The omitted-handle
+  compatibility form for `readdir()`, `rewinddir()`, and `closedir()` emits
+  PHP-shaped deprecations and uses the last opened directory handle when one
+  exists; with no last handle, it raises PHP's catchable `No resource supplied`
+  `TypeError` after the deprecation. Directory entries are exposed as `.`,
+  `..`, then sorted UTF-8 host names for deterministic fixtures; exact host
+  iteration order remains unsupported. Bounded local filesystem mutation
+  helpers are also supported for
   `phpc run`: `file_put_contents()` writes string, binary-string, object
   `__toString()`, or one-level array data to local paths and local `file://`
   URLs, accepts `FILE_APPEND`, `FILE_USE_INCLUDE_PATH`, `LOCK_EX`, and bounded
@@ -6011,13 +6015,16 @@
   `mkdir()`, `rmdir()`, `copy()`,
   `rename()`, and `chdir()` perform host-local operations with bounded
   `open_basedir` checks that return `false` and emit PHP-shaped display
-  warnings for denied paths; `copy()` rejects directory sources, existing
+  warnings for denied paths, and failed `chdir()` calls emit a PHP-shaped
+  display warning with the host errno before returning `false`; `copy()`
+  rejects directory sources, existing
   directory destinations, and same-source/destination local file paths with
   PHP-style `false`/warning behavior while preserving the source file; and
-  `scandir()` returns a PHP array for local
+  `scandir()` returns a PHP array for non-empty local
   directories with `SCANDIR_SORT_ASCENDING`, `SCANDIR_SORT_DESCENDING`, or
-  `SCANDIR_SORT_NONE`, and open_basedir-denied scans emit the bounded
-  `Failed to open directory` plus `(errno 1)` warning pair. The same bounded
+  `SCANDIR_SORT_NONE`, raises PHP's catchable empty-directory `ValueError`,
+  and open_basedir-denied scans emit the bounded `Failed to open directory`
+  plus `(errno 1)` warning pair. The same bounded
   local path slice includes `stat()`,
   `lstat()`, `fileperms()`, `chmod()`, `chown()`, `chgrp()`, `is_executable()`,
   `file_exists()`, `filesize()`, `is_dir()`, `is_file()`, `is_readable()`,

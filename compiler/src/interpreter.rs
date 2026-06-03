@@ -89249,7 +89249,12 @@ impl Interpreter {
         match std::env::set_current_dir(&filesystem_path) {
             Ok(()) => Ok(Value::Bool(true)),
             Err(error) => {
-                self.emit_warning("chdir()", format!("{path}: {error}"), span)?;
+                let errno = error.raw_os_error().unwrap_or(0);
+                let reason = Self::filesystem_io_warning_message(&error);
+                self.emit_display_warning(
+                    format!("chdir(): {path}: {reason} (errno {errno})"),
+                    span,
+                )?;
                 Ok(Value::Bool(false))
             }
         }
@@ -89267,6 +89272,15 @@ impl Interpreter {
             ));
         }
         let path = self.filesystem_path_argument("scandir", "path", &args[0], span)?;
+        if path.is_empty() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "scandir()",
+                    "Argument #1 ($directory) must not be empty",
+                ),
+            ));
+        }
         let sorting_order = match args.get(1) {
             Some(Value::Int(order)) => *order,
             Some(Value::Null) | None => PHP_SCANDIR_SORT_ASCENDING,
@@ -92208,8 +92222,9 @@ impl Interpreter {
     ) -> CompileResult<Value> {
         match args {
             [] => {
-                self.emit_deprecated(
-                    function,
+                self.emit_display_diagnostic(
+                    "Deprecated",
+                    PHP_E_DEPRECATED,
                     format!(
                         "{function}(): Passing null is deprecated, instead the last opened directory stream should be provided"
                     ),
@@ -120689,6 +120704,9 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
             "scandir()",
             "Argument #2 ($sorting_order) must be one of the SCANDIR_SORT_ASCENDING, SCANDIR_SORT_DESCENDING, or SCANDIR_SORT_NONE constants",
         ) => Some(format!("{function}: {message}")),
+        ("scandir()", "Argument #1 ($directory) must not be empty") => {
+            Some(format!("{function}: {message}"))
+        }
         ("fputcsv()", "separator argument must contain exactly one character") => {
             Some("fputcsv(): Argument #3 ($separator) must be a single character".to_string())
         }

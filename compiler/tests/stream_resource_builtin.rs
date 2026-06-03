@@ -1349,6 +1349,79 @@ echo opendir("{}") === false ? "missing-false" : "missing-open";
 }
 
 #[test]
+fn local_directory_omitted_handle_and_path_diagnostics_are_php_shaped() {
+    let root = temp_stream_path("phpc-directory-diagnostics-root");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).expect("temporary directory fixture can be created");
+    fs::write(root.join("file.txt"), "payload").expect("fixture file can be written");
+
+    let source = format!(
+        r#"<?php
+$dir = opendir("{root}");
+echo readdir();
+echo "|";
+var_dump(rewinddir());
+echo "|";
+var_dump(closedir());
+try {{
+    closedir();
+}} catch (TypeError $e) {{
+    echo "|" . $e->getMessage();
+}}
+try {{
+    scandir("");
+}} catch (ValueError $e) {{
+    echo "|" . $e->getMessage();
+}}
+echo "|";
+var_dump(chdir("{file}/missing"));
+"#,
+        root = root.display(),
+        file = root.join("file.txt").display()
+    );
+    let execution = run_source(&source).unwrap();
+
+    assert!(
+        execution
+            .stdout
+            .contains("Deprecated: readdir(): Passing null is deprecated"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution
+            .stdout
+            .contains("Deprecated: rewinddir(): Passing null is deprecated"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution
+            .stdout
+            .contains("Deprecated: closedir(): Passing null is deprecated"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution.stdout.contains(
+            "|No resource supplied|scandir(): Argument #1 ($directory) must not be empty|"
+        ),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution.stdout.contains("Warning: chdir(): ")
+            && execution.stdout.contains(" (errno ")
+            && execution.stdout.ends_with("bool(false)\n"),
+        "{}",
+        execution.stdout
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn stream_resource_builtins_reject_forms_outside_current_subset() {
     let wrapper = run_source("<?php\nvar_dump(fopen('http://example.test', 'r'));\n").unwrap();
     assert_eq!(wrapper.stdout, "bool(false)\n");

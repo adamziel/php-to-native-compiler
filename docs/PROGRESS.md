@@ -4,6 +4,28 @@
 
 Implemented:
 
+- Added a bounded directory path/handle diagnostics lane on the interpreter
+  path. `scandir("")` now raises PHP's catchable empty-directory `ValueError`
+  instead of treating the empty path as the current working directory, failed
+  `chdir()` calls emit PHP-shaped display warnings with host errno before
+  returning `false`, and omitted-handle `readdir()`, `rewinddir()`, and
+  `closedir()` compatibility calls emit inline PHP-shaped deprecations while
+  using the last opened directory handle or raising the catchable
+  `No resource supplied` `TypeError` when none exists. Focused proof covers
+  Rust `local_directory_omitted_handle_and_path_diagnostics_are_php_shaped`,
+  build/fmt/diff checks, and selected public PHPT rows
+  `ext/standard/tests/dir/bug41693.phpt`,
+  `ext/standard/tests/dir/chdir_error2.phpt`,
+  `ext/standard/tests/dir/closedir_basic.phpt`,
+  `ext/standard/tests/dir/closedir_without_arg.phpt`,
+  `ext/standard/tests/dir/readdir_basic.phpt`, and
+  `ext/standard/tests/dir/rewinddir_basic.phpt` at `6/6` PASS after the
+  patch. Exact-current pre-patch proof on `4bf66286` was `0/6`. Unsupported
+  edges remain exact host directory iteration order, stream-wrapper/user-
+  wrapper directories, context effects, non-UTF-8 entry names, native lowering,
+  and broader filesystem warning parity beyond the covered local directory/path
+  diagnostics.
+
 - Added bounded by-reference `foreach` cursor preservation for direct array
   mutation during iteration on the interpreter path. Active direct-array
   foreach loops now track the current slot identity and update the next cursor

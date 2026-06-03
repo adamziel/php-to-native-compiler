@@ -165,7 +165,11 @@ with `restore_error_handler()` restoring the previous bounded handler. Local
 `fopen()` open failures, including missing read targets, use the same bounded
 warning-plus-`false` recovery path and continue execution.
 `opendir()`, `readdir()`, `rewinddir()`, and
-`closedir()` cover bounded local UTF-8 directory handles. `clearstatcache()`
+`closedir()` cover bounded local UTF-8 directory handles, including the
+omitted-handle compatibility deprecations for the last opened directory
+resource. `scandir("")` raises PHP's catchable empty-directory `ValueError`,
+and failed `chdir()` calls emit PHP-shaped display warnings with host errno
+before returning `false`. `clearstatcache()`
 accepts the PHP-shaped zero-, one-, or two-argument forms and clears the
 bounded request-local successful metadata cache used by `filesize()` and
 `filemtime()`, either globally or for one local path; successful local-file
