@@ -6483,15 +6483,23 @@
   overflow outside the bounded timestamp subset. For named `America/New_York` and
   `US/Eastern` zones from 2007 onward, the bounded model uses time-of-day aware
   spring/fall DST transition boundaries for construction, formatting, and
-  DateInterval mutation; date components are applied in local calendar time
-  before hour/minute/second components are applied as elapsed seconds.
+  DateInterval mutation. The selected central Europe named zones use bounded
+  last-Sunday March/October transition rules for the current Amsterdam rows,
+  and `Pacific/Kwajalein` covers the selected 1993 dateline shift. Date
+  components are applied in local calendar time before hour/minute/second
+  components are applied as elapsed seconds.
   `modify()` covers the current bounded
   relative weekday/unit forms plus Unix timestamp modifiers such as
   `@1234567890`, fractional forms preserving microseconds, simple month/year
-  units, `yesterday` / `noon` time resets, and counted `weekday` modifiers;
-  timestamp modifiers update the timestamp and switch the object timezone
-  identity to the bounded `+00:00` timestamp zone, while `setTimestamp()`
-  preserves the existing object timezone. Its `$modifier` operand uses the
+  units, `this week`, `<weekday> this week`, selected `first day` / `last day`
+  / `next month` calendar-relative forms, millisecond and microsecond aliases,
+  the PHP-shaped `+1 s` timezone-pattern no-op, `yesterday` / `noon` time
+  resets, and counted `weekday` modifiers; timestamp modifiers update the
+  timestamp and switch the object timezone identity to the bounded `+00:00`
+  timestamp zone, while `setTimestamp()` preserves the existing object
+  timezone. Date/time setter and timestamp arguments use the shared bounded
+  int-compatible scalar coercion subset for strings, booleans, null, finite
+  floats, and integers. Its `$modifier` operand uses the
   shared PHP-shaped string boundary for scalar conversion, `null` deprecation,
   supported visible `__toString()` objects, and catchable PHP-shaped
   `TypeError`s for arrays, resources, closures, or non-stringable objects.
@@ -6505,9 +6513,12 @@
   `date_create_immutable($time = null, ?DateTimeZone $timezone = null)` accepts
   the optional bounded timezone object for strings without an explicit timezone,
   including numeric `YYYY-MM-DD HH:MM`, `YYYY-MM-DD HH:MM:SS.u`, and
-  `YYYY-MM-DDTHH:MM:SS.uP` strings whose absent seconds default to zero, while
-  timestamp strings such as `@0` / `@0.123456` and explicit timezone tokens
-  retain their own timezone identity. `date_create_from_format()` plus
+  `YYYY-MM-DDTHH:MM:SS.uP` strings whose absent seconds default to zero,
+  selected `DD-MM-YYYY HH:MM[:SS][.u]` strings, and selected weekday/month
+  textual forms such as `Fri Aug 20 1993 23:59:59` and
+  `Sun Mar 27 01:59:59 2005`, while timestamp strings such as `@0` /
+  `@0.123456` and explicit timezone tokens retain their own timezone identity.
+  `date_create_from_format()` plus
   `DateTime::createFromFormat()` / `DateTimeImmutable::createFromFormat()`
   cover the bounded formats `Y-m-d H:i:s.u`, `U.u`,
   `Y-m-d\TH:i:sP`, `Y-m-d\TH:i:sO`, `X-m-d\TH:i:sP`,
@@ -6518,7 +6529,10 @@
   current subset. `date_parse()` exposes bounded parse-result arrays for
   numeric `YYYY-MM-DD`, `YYYY-MM`, `YYYY-MM-DD HH:MM:SS.fraction`, and
   `HH:MM:SS.fraction` forms plus selected malformed numeric timezone/error
-  metadata; `date_parse_from_format()` covers `!m/d/y` and the same bounded
+  metadata and selected relative metadata for `first day`, `last day`,
+  `next month`, `first day next month`, `last day next month`,
+  `first day of next month`, and `last day of next month`;
+  `date_parse_from_format()` covers `!m/d/y` and the same bounded
   single-separator wildcard form `!m*d*y`. The supported internal
   DateTime/DateTimeZone method-signature metadata for `setTime()`,
   `createFromFormat()`, `getTransitions()`, `listIdentifiers()`, and
@@ -6638,7 +6652,8 @@
   constructor diagnostics beyond the covered arity slice and scalar
   coercion/deprecation parity, broad `DateTimeInterface` reflection/runtime
   parity beyond existence/constants/core implementation metadata, all
-  historical transition rules outside the bounded post-2007 US/Eastern slice,
+  historical transition rules outside the bounded post-2007 US/Eastern,
+  selected central Europe, and selected Pacific/Kwajalein slices,
   full all-row timezone abbreviation inventory
   beyond `acst` and first-row metadata, location metadata beyond the bounded
   represented rows, timezone abbreviation and fixed-offset state identity
@@ -6662,8 +6677,9 @@
   `DateMalformedStringException` behavior beyond the bounded warning/exception
   split, exact
   diagnostics for constructor/timezone/state coercions outside the covered
-  slices, weak scalar timestamp/date-part coercions for `idate()` / date
-  formatting and setter helpers beyond bounded integers and `int|null`
+  slices, exact coercion/deprecation parity outside the shared bounded
+  int-compatible scalar subset, weak scalar timestamp/date-part coercions for
+  `idate()` / date formatting beyond bounded integers and `int|null`
   timestamp slots, exact invalid `__toString()` return diagnostics for
   modifier and formatter strings, binary format strings beyond represented
   runtime text, broad userland dynamic-property deprecation parity outside the

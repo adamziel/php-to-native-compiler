@@ -161813,7 +161813,13 @@ impl BoundedTimezone {
         if let Some(offset) = self.fixed_offset {
             return offset;
         }
+        if let Some(offset) = self.pacific_kwajalein_offset_at_timestamp(timestamp) {
+            return offset;
+        }
         if let Some(offset) = self.us_eastern_offset_at_timestamp(timestamp) {
+            return offset;
+        }
+        if let Some(offset) = self.europe_central_offset_at_timestamp(timestamp) {
             return offset;
         }
         let utc = bounded_datetime_parts(timestamp, 0);
@@ -161837,7 +161843,17 @@ impl BoundedTimezone {
             return offset;
         }
         if let Some(offset) =
+            self.pacific_kwajalein_offset_for_local_parts(year, month, day, hour, minute, second)
+        {
+            return offset;
+        }
+        if let Some(offset) =
             self.us_eastern_offset_for_local_parts(year, month, day, hour, minute, second)
+        {
+            return offset;
+        }
+        if let Some(offset) =
+            self.europe_central_offset_for_local_parts(year, month, day, hour, minute, second)
         {
             return offset;
         }
@@ -161930,6 +161946,7 @@ impl BoundedTimezone {
             "Asia/Hong_Kong" => 28_800,
             "Asia/Tokyo" => 32_400,
             "Australia/Brisbane" => 36_000,
+            "Pacific/Kwajalein" => 43_200,
             "Pacific/Samoa" => -39_600,
             "Pacific/Wallis" => 43_200,
             _ => {
@@ -161983,6 +162000,84 @@ impl BoundedTimezone {
         })
     }
 
+    fn europe_central_offset_at_timestamp(&self, timestamp: i64) -> Option<i64> {
+        if !self.is_europe_central_named_zone() {
+            return None;
+        }
+        let utc = bounded_datetime_parts(timestamp, 0);
+        let (spring_day, fall_day) = europe_transition_days(utc.year);
+        let spring_utc = timestamp_from_local_parts(utc.year, 3, spring_day, 2, 0, 0, 3_600);
+        let fall_utc = timestamp_from_local_parts(utc.year, 10, fall_day, 3, 0, 0, 7_200);
+        Some(if timestamp >= spring_utc && timestamp < fall_utc {
+            7_200
+        } else {
+            3_600
+        })
+    }
+
+    fn europe_central_offset_for_local_parts(
+        &self,
+        year: i64,
+        month: i64,
+        day: i64,
+        hour: i64,
+        minute: i64,
+        second: i64,
+    ) -> Option<i64> {
+        if !self.is_europe_central_named_zone() {
+            return None;
+        }
+        let (spring_day, fall_day) = europe_transition_days(year);
+        let local_seconds = hour * 3_600 + minute * 60 + second;
+        Some(match month {
+            1 | 2 => 3_600,
+            3 if day < spring_day => 3_600,
+            3 if day == spring_day && local_seconds < 3_600 * 3 => 3_600,
+            3..=9 => 7_200,
+            10 if day < fall_day => 7_200,
+            10 if day == fall_day && local_seconds < 3_600 * 3 => 7_200,
+            _ => 3_600,
+        })
+    }
+
+    fn is_europe_central_named_zone(&self) -> bool {
+        matches!(
+            self.name.as_str(),
+            "Europe/Amsterdam" | "Europe/Berlin" | "Europe/Oslo" | "Europe/Paris" | "Europe/Rome"
+        )
+    }
+
+    fn pacific_kwajalein_offset_at_timestamp(&self, timestamp: i64) -> Option<i64> {
+        if self.name != "Pacific/Kwajalein" {
+            return None;
+        }
+        let transition = timestamp_from_local_parts(1993, 8, 21, 0, 0, 0, -43_200);
+        Some(if timestamp < transition {
+            -43_200
+        } else {
+            43_200
+        })
+    }
+
+    fn pacific_kwajalein_offset_for_local_parts(
+        &self,
+        year: i64,
+        month: i64,
+        day: i64,
+        _hour: i64,
+        _minute: i64,
+        _second: i64,
+    ) -> Option<i64> {
+        if self.name != "Pacific/Kwajalein" {
+            return None;
+        }
+        Some(if (year, month, day) <= (1993, 8, 21) {
+            -43_200
+        } else {
+            43_200
+        })
+    }
+
     fn is_us_eastern_named_zone(&self) -> bool {
         matches!(self.name.as_str(), "US/Eastern" | "America/New_York")
     }
@@ -162012,6 +162107,7 @@ impl BoundedTimezone {
             "Asia/Hong_Kong" => 28_800,
             "Asia/Tokyo" => 32_400,
             "Australia/Brisbane" => 36_000,
+            "Pacific/Kwajalein" => 43_200,
             "Pacific/Samoa" => -39_600,
             "Pacific/Wallis" => 43_200,
             _ => self.offset_for_local_date(1970, 1, 1),
@@ -162128,6 +162224,13 @@ impl BoundedTimezone {
             "Asia/Hong_Kong" => "HKT",
             "Asia/Tokyo" => "JST",
             "Australia/Brisbane" => "AEST",
+            "Pacific/Kwajalein" => {
+                if parts.offset < 0 {
+                    "-12"
+                } else {
+                    "+12"
+                }
+            }
             "Pacific/Samoa" => "SST",
             "Pacific/Wallis" => "+12",
             _ => "UTC",
@@ -162162,6 +162265,7 @@ fn bounded_timezone_from_name(name: &str) -> Option<BoundedTimezone> {
         "Asia/Kolkata" => "Asia/Kolkata",
         "Asia/Hong_Kong" => "Asia/Hong_Kong",
         "Australia/Brisbane" => "Australia/Brisbane",
+        "Pacific/Kwajalein" => "Pacific/Kwajalein",
         "Pacific/Samoa" => "Pacific/Samoa",
         "Pacific/Wallis" => "Pacific/Wallis",
         "Africa/Casablanca" => "Africa/Casablanca",
@@ -162357,6 +162461,7 @@ const BOUNDED_TIMEZONE_IDENTIFIERS: &[(&str, i64, bool)] = &[
     ("Europe/Rome", PHP_DATETIMEZONE_EUROPE, false),
     ("GMT", PHP_DATETIMEZONE_UTC, false),
     ("GMT0", PHP_DATETIMEZONE_UTC, false),
+    ("Pacific/Kwajalein", PHP_DATETIMEZONE_PACIFIC, false),
     ("Pacific/Samoa", PHP_DATETIMEZONE_PACIFIC, true),
     ("Pacific/Wallis", PHP_DATETIMEZONE_PACIFIC, false),
     ("UTC", PHP_DATETIMEZONE_UTC, false),
@@ -163381,6 +163486,11 @@ fn parse_bounded_datetime_with_microsecond(
     {
         return Some((timestamp, microsecond));
     }
+    if let Some((timestamp, microsecond)) =
+        parse_bounded_dmy_datetime_with_microsecond(trimmed, default_timezone)
+    {
+        return Some((timestamp, microsecond));
+    }
 
     parse_bounded_textual_datetime(trimmed, default_timezone).map(|timestamp| (timestamp, 0))
 }
@@ -163432,6 +163542,11 @@ fn parse_bounded_create_from_format(
 }
 
 fn bounded_date_parse_array(input: &str) -> PhpArray {
+    if let Some(relative) = bounded_date_parse_relative_metadata(input) {
+        let mut array = bounded_date_parse_result_array(date_parse_result_with_errors(vec![]));
+        array.insert("relative", Value::Array(relative));
+        return array;
+    }
     bounded_date_parse_result_array(bounded_date_parse_result(input))
 }
 
@@ -163514,6 +163629,33 @@ fn date_parse_diagnostics_array(entries: &[(i64, &'static str)]) -> PhpArray {
         array.insert(*offset, Value::String((*message).to_string()));
     }
     array
+}
+
+fn bounded_date_parse_relative_metadata(input: &str) -> Option<PhpArray> {
+    let (month, day, first_day, last_day) = match input.trim().to_ascii_lowercase().as_str() {
+        "first day" => (0, 1, false, false),
+        "last day" => (0, -1, false, false),
+        "next month" => (1, 0, false, false),
+        "first day next month" => (1, 1, false, false),
+        "last day next month" => (1, -1, false, false),
+        "first day of next month" => (1, 0, true, false),
+        "last day of next month" => (1, 0, false, true),
+        _ => return None,
+    };
+    let mut relative = PhpArray::new();
+    relative.insert("year", Value::Int(0));
+    relative.insert("month", Value::Int(month));
+    relative.insert("day", Value::Int(day));
+    relative.insert("hour", Value::Int(0));
+    relative.insert("minute", Value::Int(0));
+    relative.insert("second", Value::Int(0));
+    if first_day {
+        relative.insert("first_day_of_month", Value::Bool(true));
+    }
+    if last_day {
+        relative.insert("last_day_of_month", Value::Bool(true));
+    }
+    Some(relative)
 }
 
 fn bounded_date_parse_result(input: &str) -> BoundedDateParseResult {
@@ -164207,14 +164349,18 @@ fn apply_bounded_datetime_modifier(
     if let Some(timestamp) = apply_bounded_named_time_modifier(timestamp, timezone, trimmed) {
         return Some((timestamp, 0));
     }
+    if let Some((timestamp, microsecond)) =
+        apply_bounded_relative_calendar_modifier(timestamp, microsecond, timezone, trimmed)
+    {
+        return Some((timestamp, microsecond));
+    }
     if let Some(timestamp) = apply_bounded_weekday_modifier(timestamp, timezone, trimmed) {
         return Some((timestamp, microsecond));
     }
     if let Some(timestamp) = apply_bounded_n_weekday_modifier(timestamp, timezone, trimmed) {
         return Some((timestamp, microsecond));
     }
-    apply_bounded_unit_modifier(timestamp, timezone, trimmed)
-        .map(|timestamp| (timestamp, microsecond))
+    apply_bounded_unit_modifier(timestamp, microsecond, timezone, trimmed)
 }
 
 fn apply_bounded_named_time_modifier(
@@ -164309,16 +164455,148 @@ fn apply_bounded_n_weekday_modifier(
     apply_bounded_local_seconds(timestamp, timezone, delta_days * 86_400)
 }
 
-fn apply_bounded_unit_modifier(
+fn apply_bounded_relative_calendar_modifier(
     timestamp: i64,
+    microsecond: i64,
     timezone: &BoundedTimezone,
     modifier: &str,
+) -> Option<(i64, i64)> {
+    let lower = modifier.to_ascii_lowercase();
+    let tokens: Vec<&str> = lower.split_whitespace().collect();
+    if tokens.is_empty() {
+        return None;
+    }
+
+    if tokens.len() >= 2 && tokens[0] == "this" && tokens[1] == "week" {
+        let base = bounded_this_week_base(timestamp, timezone)?;
+        return apply_bounded_modifier_tail(base, microsecond, timezone, &tokens[2..]);
+    }
+
+    if tokens.len() >= 3 && tokens[1] == "this" && tokens[2] == "week" {
+        let weekday = weekday_number_from_name(tokens[0])?;
+        let base = bounded_this_week_base(timestamp, timezone)?;
+        let delta_days = if weekday == 0 { 6 } else { weekday - 1 };
+        let base = timestamp_with_local_day_delta(base, timezone, delta_days)?;
+        return apply_bounded_modifier_tail(base, microsecond, timezone, &tokens[3..]);
+    }
+
+    let timestamp = match tokens.as_slice() {
+        ["first", "day"] => timestamp_with_local_month_day_delta(timestamp, timezone, 0, 1)?,
+        ["last", "day"] => timestamp_with_local_month_day_delta(timestamp, timezone, 0, -1)?,
+        ["next", "month"] => timestamp_with_local_month_day_delta(timestamp, timezone, 1, 0)?,
+        ["first", "day", "next", "month"] => {
+            timestamp_with_local_month_day_delta(timestamp, timezone, 1, 1)?
+        }
+        ["last", "day", "next", "month"] => {
+            timestamp_with_local_month_day_delta(timestamp, timezone, 1, -1)?
+        }
+        ["first", "day", "of", "next", "month"] => {
+            timestamp_with_local_first_day_of_next_month(timestamp, timezone)?
+        }
+        ["last", "day", "of", "next", "month"] => {
+            timestamp_with_local_last_day_of_next_month(timestamp, timezone)?
+        }
+        _ => return None,
+    };
+    Some((timestamp, microsecond))
+}
+
+fn apply_bounded_modifier_tail(
+    timestamp: i64,
+    microsecond: i64,
+    timezone: &BoundedTimezone,
+    tokens: &[&str],
+) -> Option<(i64, i64)> {
+    if tokens.is_empty() {
+        return Some((timestamp, microsecond));
+    }
+    apply_bounded_unit_modifier(timestamp, microsecond, timezone, &tokens.join(" "))
+}
+
+fn bounded_this_week_base(timestamp: i64, timezone: &BoundedTimezone) -> Option<i64> {
+    let offset = timezone.offset_at_timestamp(timestamp);
+    let parts = bounded_datetime_parts(timestamp, offset);
+    let delta_days = if parts.weekday == 0 {
+        -6
+    } else {
+        1 - parts.weekday
+    };
+    timestamp_with_local_day_delta(timestamp, timezone, delta_days)
+}
+
+fn timestamp_with_local_day_delta(
+    timestamp: i64,
+    timezone: &BoundedTimezone,
+    day_delta: i64,
 ) -> Option<i64> {
+    timestamp_with_local_month_day_delta(timestamp, timezone, 0, day_delta)
+}
+
+fn timestamp_with_local_month_day_delta(
+    timestamp: i64,
+    timezone: &BoundedTimezone,
+    month_delta: i64,
+    day_delta: i64,
+) -> Option<i64> {
+    let offset = timezone.offset_at_timestamp(timestamp);
+    let parts = bounded_datetime_parts(timestamp, offset);
+    timestamp_from_overflowing_local_parts(
+        parts.year,
+        parts.month.checked_add(month_delta)?,
+        parts.day.checked_add(day_delta)?,
+        parts.hour,
+        parts.minute,
+        parts.second,
+        timezone,
+    )
+}
+
+fn timestamp_with_local_first_day_of_next_month(
+    timestamp: i64,
+    timezone: &BoundedTimezone,
+) -> Option<i64> {
+    let offset = timezone.offset_at_timestamp(timestamp);
+    let parts = bounded_datetime_parts(timestamp, offset);
+    timestamp_from_overflowing_local_parts(
+        parts.year,
+        parts.month.checked_add(1)?,
+        1,
+        parts.hour,
+        parts.minute,
+        parts.second,
+        timezone,
+    )
+}
+
+fn timestamp_with_local_last_day_of_next_month(
+    timestamp: i64,
+    timezone: &BoundedTimezone,
+) -> Option<i64> {
+    let offset = timezone.offset_at_timestamp(timestamp);
+    let parts = bounded_datetime_parts(timestamp, offset);
+    timestamp_from_overflowing_local_parts(
+        parts.year,
+        parts.month.checked_add(2)?,
+        0,
+        parts.hour,
+        parts.minute,
+        parts.second,
+        timezone,
+    )
+}
+
+fn apply_bounded_unit_modifier(
+    timestamp: i64,
+    microsecond: i64,
+    timezone: &BoundedTimezone,
+    modifier: &str,
+) -> Option<(i64, i64)> {
     let mut tokens = modifier.split_whitespace().peekable();
     let mut years = 0_i64;
     let mut months = 0_i64;
     let mut days = 0_i64;
     let mut total_seconds = 0_i64;
+    let mut total_microseconds = 0_i64;
     while let Some(token) = tokens.next() {
         let (count, unit_token) = if token == "+" || token == "-" {
             let sign = if token == "-" { -1 } else { 1 };
@@ -164344,8 +164622,15 @@ fn apply_bounded_unit_modifier(
             "minute" | "minutes" => {
                 total_seconds = total_seconds.checked_add(count.checked_mul(60)?)?;
             }
-            "second" | "seconds" => {
+            "sec" | "secs" | "second" | "seconds" => {
                 total_seconds = total_seconds.checked_add(count)?;
+            }
+            "s" => {}
+            "ms" | "msec" | "msecs" | "millisecond" | "milliseconds" => {
+                total_microseconds = total_microseconds.checked_add(count.checked_mul(1_000)?)?;
+            }
+            "usec" | "usecs" | "microsecond" | "microseconds" | "µs" | "µsec" | "µsecs" => {
+                total_microseconds = total_microseconds.checked_add(count)?;
             }
             _ => return None,
         };
@@ -164368,7 +164653,13 @@ fn apply_bounded_unit_modifier(
     if total_seconds != 0 {
         timestamp = apply_bounded_local_seconds(timestamp, timezone, total_seconds)?;
     }
-    Some(timestamp)
+    if total_microseconds != 0 {
+        return Some(normalize_timestamp_microsecond(
+            timestamp,
+            microsecond.checked_add(total_microseconds)?,
+        ));
+    }
+    Some((timestamp, microsecond))
 }
 
 fn apply_bounded_local_seconds(
@@ -164380,7 +164671,14 @@ fn apply_bounded_local_seconds(
         .checked_add(timezone.offset_at_timestamp(timestamp))?
         .checked_add(seconds)?;
     let parts = bounded_datetime_parts(local, 0);
-    let offset = timezone.offset_for_local_date(parts.year, parts.month, parts.day);
+    let offset = timezone.offset_for_local_parts(
+        parts.year,
+        parts.month,
+        parts.day,
+        parts.hour,
+        parts.minute,
+        parts.second,
+    );
     local.checked_sub(offset)
 }
 
@@ -164474,6 +164772,55 @@ fn parse_bounded_numeric_datetime_with_microsecond(
     .map(|timestamp| (timestamp, microsecond))
 }
 
+fn parse_bounded_dmy_datetime_with_microsecond(
+    input: &str,
+    default_timezone: &BoundedTimezone,
+) -> Option<(i64, i64)> {
+    let (body, explicit_offset) = split_bounded_datetime_timezone(input);
+    let (date, time) = body.split_once(' ')?;
+    if date.len() != 10 || &date[2..3] != "-" || &date[5..6] != "-" {
+        return None;
+    }
+    let day = parse_ascii_i64(&date[0..2])?;
+    let month = parse_ascii_i64(&date[3..5])?;
+    let year = normalize_mktime_year(parse_ascii_i64(&date[6..10])?, true);
+    let (hour, minute, second, microsecond) = parse_bounded_time_with_microsecond(time)?;
+    timestamp_for_bounded_parts(
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        second,
+        explicit_offset,
+        default_timezone,
+    )
+    .map(|timestamp| (timestamp, microsecond))
+}
+
+fn parse_bounded_time_with_microsecond(input: &str) -> Option<(i64, i64, i64, i64)> {
+    let (time, microsecond) = if let Some((time, fraction)) = input.split_once('.') {
+        (time, parse_microsecond_fraction(fraction)?)
+    } else {
+        (input, 0)
+    };
+    let has_seconds = time.len() == 8;
+    if !(time.len() == 5 || has_seconds)
+        || &time[2..3] != ":"
+        || (has_seconds && &time[5..6] != ":")
+    {
+        return None;
+    }
+    let hour = parse_ascii_i64(&time[0..2])?;
+    let minute = parse_ascii_i64(&time[3..5])?;
+    let second = if has_seconds {
+        parse_ascii_i64(&time[6..8])?
+    } else {
+        0
+    };
+    Some((hour, minute, second, microsecond))
+}
+
 fn parse_microsecond_fraction(fraction: &str) -> Option<i64> {
     if fraction.is_empty() || fraction.len() > 6 || !fraction.chars().all(|ch| ch.is_ascii_digit())
     {
@@ -164503,13 +164850,49 @@ fn parse_bounded_textual_datetime(input: &str, default_timezone: &BoundedTimezon
     if tokens.len() < 4 {
         return None;
     }
-    let day = parse_ascii_i64(tokens[0])?;
-    let month = month_number_from_name(tokens[1])?;
-    let year = normalize_mktime_year(parse_ascii_i64(tokens[2])?, true);
-    let (hour, minute, second) = parse_hms_token(tokens[3])?;
-    let explicit_offset = tokens
-        .get(4)
-        .and_then(|token| parse_timezone_offset_token(token));
+    let (day, month, year, hour, minute, second, timezone_token) =
+        if weekday_number_from_name(tokens[0]).is_some() && tokens.len() >= 5 {
+            let month = month_number_from_name(tokens[1])?;
+            let day = parse_ascii_i64(tokens[2])?;
+            if let Some((hour, minute, second)) = parse_hms_token(tokens[3]) {
+                (
+                    day,
+                    month,
+                    normalize_mktime_year(parse_ascii_i64(tokens[4])?, true),
+                    hour,
+                    minute,
+                    second,
+                    tokens.get(5).copied(),
+                )
+            } else {
+                let year = normalize_mktime_year(parse_ascii_i64(tokens[3])?, true);
+                let (hour, minute, second) = parse_hms_token(tokens[4])?;
+                (
+                    day,
+                    month,
+                    year,
+                    hour,
+                    minute,
+                    second,
+                    tokens.get(5).copied(),
+                )
+            }
+        } else {
+            let day = parse_ascii_i64(tokens[0])?;
+            let month = month_number_from_name(tokens[1])?;
+            let year = normalize_mktime_year(parse_ascii_i64(tokens[2])?, true);
+            let (hour, minute, second) = parse_hms_token(tokens[3])?;
+            (
+                day,
+                month,
+                year,
+                hour,
+                minute,
+                second,
+                tokens.get(4).copied(),
+            )
+        };
+    let explicit_offset = timezone_token.and_then(parse_timezone_offset_token);
     timestamp_for_bounded_parts(
         year,
         month,
@@ -164695,6 +165078,13 @@ fn us_eastern_transition_days(year: i64) -> (i64, i64) {
     )
 }
 
+fn europe_transition_days(year: i64) -> (i64, i64) {
+    (
+        last_weekday_day_of_month(year, 3, 0),
+        last_weekday_day_of_month(year, 10, 0),
+    )
+}
+
 fn us_eastern_transition_utc_timestamps(year: i64) -> (i64, i64) {
     let (spring_day, fall_day) = us_eastern_transition_days(year);
     (
@@ -164708,6 +165098,12 @@ fn nth_weekday_day_of_month(year: i64, month: i64, weekday: i64, nth: i64) -> i6
     1 + positive_mod(weekday - first_weekday, 7) + (nth - 1) * 7
 }
 
+fn last_weekday_day_of_month(year: i64, month: i64, weekday: i64) -> i64 {
+    let last_day = days_in_month(year, month);
+    let last_weekday = positive_mod(days_from_civil(year, month, last_day) + 4, 7);
+    last_day - positive_mod(last_weekday - weekday, 7)
+}
+
 fn optional_date_int_arg(
     function: &str,
     value: Option<&Value>,
@@ -164715,17 +165111,7 @@ fn optional_date_int_arg(
     span: Span,
 ) -> CompileResult<Option<i64>> {
     match value {
-        Some(Value::Int(value)) => Ok(Some(*value)),
-        Some(other) => Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                function,
-                format!(
-                    "{label} argument must be int in the current subset, got {}",
-                    other.type_name()
-                ),
-            ),
-        )),
+        Some(value) => integer_argument_current_subset(function, label, value, span).map(Some),
         None => Ok(None),
     }
 }
@@ -166078,19 +166464,7 @@ fn required_date_int_arg(
     label: &str,
     span: Span,
 ) -> CompileResult<i64> {
-    match value {
-        Value::Int(value) => Ok(*value),
-        other => Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                function,
-                format!(
-                    "{label} argument must be int in the current subset, got {}",
-                    other.type_name()
-                ),
-            ),
-        )),
-    }
+    integer_argument_current_subset(function, label, value, span)
 }
 
 fn weekday_name(weekday: i64, full: bool) -> &'static str {

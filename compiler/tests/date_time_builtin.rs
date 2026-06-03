@@ -367,6 +367,88 @@ echo date_format($datetime, "D, d M Y"), "\n";
 }
 
 #[test]
+fn datetime_mutation_cluster_handles_calendar_relative_and_subseconds() {
+    let execution = run_source(
+        r#"<?php
+date_default_timezone_set("Asia/Calcutta");
+$date = new DateTime("18-01-2009 00:00:00");
+$date->setISODate(2009, 6, 1);
+echo $date->format("Y-m-d H:i:s"), "|";
+$date->setTime(8, 0);
+echo $date->format("Y-m-d H:i:s"), "\n";
+
+date_default_timezone_set("UTC");
+$rel = date_parse("last day of next month")["relative"];
+echo $rel["month"], "|", $rel["day"], "|", isset($rel["last_day_of_month"]) ? "last" : "missing", "\n";
+$relative = new DateTime("2010-03-06 15:21 UTC");
+$relative->modify("first day next month");
+echo $relative->format(DateTime::ISO8601), "\n";
+$relative = new DateTime("2010-03-06 15:21 UTC");
+$relative->modify("last day of next month");
+echo $relative->format(DateTime::ISO8601), "\n";
+
+$week = new DateTime("2010-07-27 09:46:49", new DateTimeZone("Europe/London"));
+$week->modify("this week +6 days");
+echo $week->format("Y-m-d H:i:s"), "|", $week->getTimestamp(), "\n";
+$friday = new DateTime("2017-01-08");
+$friday->modify("Friday this week");
+echo $friday->format("Y-m-d"), "\n";
+
+$subsecond = new DateTimeImmutable("2016-10-07 13:25:50");
+echo $subsecond->modify("+8 msec -2 µsec")->format("Y-m-d H:i:s.u"), "\n";
+$noop = new DateTime("2015-01-01 00:00:00+00:00");
+echo $noop->modify("+1 s")->format("c"), "\n";
+
+date_default_timezone_set("Pacific/Kwajalein");
+$kwajalein = date_create("Fri Aug 20 1993 23:59:59");
+echo date_format($kwajalein, "D, d M Y H:i:s T"), "\n";
+$kwajalein->modify("+1 second");
+echo date_format($kwajalein, "D, d M Y H:i:s T"), "\n";
+
+date_default_timezone_set("Europe/Amsterdam");
+$spring = date_create("Sun Mar 27 01:59:59 2005");
+echo date_format($spring, "D, d M Y H:i:s T"), "\n";
+$spring->modify("+1 second");
+echo date_format($spring, "D, d M Y H:i:s T"), "\n";
+$fall = date_create("Sun Oct 30 01:59:59 2005");
+echo date_format($fall, "D, d M Y H:i:s T"), "\n";
+$fall->modify("+ 1 hour 1 second");
+echo date_format($fall, "D, d M Y H:i:s T"), "\n";
+
+date_default_timezone_set("UTC");
+$strings = new DateTime("2011-12-25 00:00:00");
+$strings->modify("first day of next month");
+$strings->setDate("2012", "1", "29");
+echo $strings->format("Y-m-d H:i:s.u"), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "2009-02-02 00:00:00|2009-02-02 08:00:00\n",
+            "1|0|last\n",
+            "2010-04-07T15:21:00+0000\n",
+            "2010-04-30T15:21:00+0000\n",
+            "2010-08-01 09:46:49|1280652409\n",
+            "2017-01-06\n",
+            "2016-10-07 13:25:50.007998\n",
+            "2015-01-01T00:00:00+00:00\n",
+            "Fri, 20 Aug 1993 23:59:59 -12\n",
+            "Sun, 22 Aug 1993 00:00:00 +12\n",
+            "Sun, 27 Mar 2005 01:59:59 CET\n",
+            "Sun, 27 Mar 2005 03:00:00 CEST\n",
+            "Sun, 30 Oct 2005 01:59:59 CEST\n",
+            "Sun, 30 Oct 2005 03:00:00 CET\n",
+            "2012-01-29 00:00:00.000000\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn date_modify_helpers_use_php_string_modifier_boundary() {
     let execution = run_source(
         r#"<?php

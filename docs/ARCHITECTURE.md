@@ -4591,9 +4591,14 @@ The DateTime parser path is intentionally table-bounded: supported
 `createFromFormat()` and `date_parse_from_format()` rows are recognized through
 small token parsers for the documented numeric/RFC/textual formats, and
 `date_parse()` exposes only the documented numeric date/time plus selected
-malformed numeric timezone metadata arrays. Broad timelib grammar, parser
-error-state history, and object-handle reuse behavior remain outside that
-runtime parser boundary.
+malformed numeric timezone metadata arrays and selected relative metadata for
+the bounded first/last-day next-month forms. `DateTime::modify()` shares the
+same bounded approach: current support covers selected weekday/week-relative
+forms, first/last-day calendar forms, unit modifiers including subsecond
+aliases, timestamp modifiers, and named time resets while rejecting unsupported
+timelib grammar instead of guessing. Broad timelib grammar, parser error-state
+history, and object-handle reuse behavior remain outside that runtime parser
+boundary.
 `ReflectionParameter::__construct()` can replace that request-local state on
 an existing object. `ReflectionParameter::getType()` now materializes a
 request-local `ReflectionNamedType` object for a single parsed named type, or a

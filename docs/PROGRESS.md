@@ -4,6 +4,32 @@
 
 Implemented:
 
+- Added a bounded DateTime mutation/relative-parser lane on the interpreter
+  path. DateTime construction now accepts the selected DMY and weekday textual
+  forms, `date_parse()` exposes relative metadata for the selected first/last
+  day and next-month forms, `modify()` handles `this week`, `<weekday> this
+  week`, first/last-day relative calendar forms, millisecond/microsecond unit
+  aliases, and the PHP `+1 s` timezone-pattern no-op, DateTime setter
+  date/timestamp arguments use the shared bounded int-compatible scalar
+  coercion helper, and the bounded timezone table covers the selected central
+  Europe DST transition and Pacific/Kwajalein dateline-shift rows. Focused
+  proof covers exact-current pre-patch selected PHPT at `0/10` and post-patch
+  selected PHPT at `10/10` for
+  `ext/date/tests/bug-gh11368.phpt`,
+  `ext/date/tests/bug50475.phpt`,
+  `ext/date/tests/bug51096.phpt`,
+  `ext/date/tests/bug52454.phpt`,
+  `ext/date/tests/bug63740.phpt`,
+  `ext/date/tests/bug64887.phpt`,
+  `ext/date/tests/bug71525.phpt`,
+  `ext/date/tests/bug73942.phpt`,
+  `ext/date/tests/date_modify-1.phpt`, and
+  `ext/date/tests/gh10583.phpt`; Rust DateTime coverage, build/fmt/diff
+  checks, and pinned wrapper proof. Unsupported edges remain broad timelib
+  relative grammar, broad historical timezone database behavior outside the
+  represented rows, full parser diagnostics and `getLastErrors()` parity,
+  DatePeriod, references/COW, and native lowering.
+
 - Added a bounded typed class-constant startup diagnostics lane on the
   interpreter path. Class constants now retain optional parsed type metadata,
   comma-separated typed class constant declarations share the declaration type,
