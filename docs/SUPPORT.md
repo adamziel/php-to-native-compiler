@@ -2640,6 +2640,10 @@
   including `ArrayObject`, retires a `getIterator()` result's object handle
   when that returned iterator remains unrooted after the loop; iterator method
   bodies that store `$this` in a live root keep the temporary iterator alive.
+  Direct dynamic-property creation on core `ArrayObject` / `ArrayIterator`
+  storage objects emits PHP's deprecation unless `ARRAY_AS_PROPS` is active or
+  the class explicitly declares `#[AllowDynamicProperties]`, while the slot
+  write still succeeds.
   `ArrayIterator::seek()` accepts the current int-only offset path and reports
   out-of-range positions as catchable `OutOfBoundsException`s. When one
   `ArrayObject` or `ArrayIterator` is

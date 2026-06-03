@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Repaired the latest-published PASS regressions in
+  `ext/spl/tests/ArrayObject/arrayObject_magicMethods2.phpt` and
+  `ext/spl/tests/bug61326.phpt`. Direct dynamic-property creation on core
+  `ArrayObject` / `ArrayIterator` storage objects now emits PHP's deprecation
+  unless `ARRAY_AS_PROPS` is active or the class explicitly declares
+  `#[AllowDynamicProperties]`, while the slot write still succeeds. Focused
+  proof covers the accepted public PASS baseline for both rows, the blocked
+  `a7c69ff1` gate listing both rows as latest-published PASS regressions,
+  exact-current pre-patch selected PHPT at `0/2`, post-patch selected PHPT at
+  `2/2`, Rust `object_model` focused guard (`1/1`), build/fmt/diff checks,
+  and source push. Unsupported edges remain full SPL property-table invariant
+  parity, magic/property hooks, serialization/COW identity, broad SPL object
+  semantics, and native lowering.
+
 - Repaired the latest-published PASS regression in
   `ext/pcre/tests/invalid_utf8_offset.phpt`. `preg_match()` now preserves
   PHP's by-reference match output shape for invalid UTF-8 start offsets:

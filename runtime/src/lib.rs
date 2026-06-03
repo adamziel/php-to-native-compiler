@@ -38081,6 +38081,10 @@ impl PhpObject {
             || self.is_instance_of_class_name("ArrayIterator")
     }
 
+    pub fn has_declared_dynamic_properties_allowance(&self) -> bool {
+        self.allows_dynamic_properties
+    }
+
     fn forbids_dynamic_public_properties_as_error(&self) -> bool {
         self.class_name.eq_ignore_ascii_case("BcMath\\Number")
     }

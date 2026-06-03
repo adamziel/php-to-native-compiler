@@ -17017,6 +17017,39 @@ foreach (get_object_vars($obj) as $key => $value) {
 }
 
 #[test]
+fn array_object_dynamic_property_creation_emits_deprecation_without_array_as_props() {
+    let source = r#"<?php
+$ao = new ArrayObject(array("a" => "storage"));
+$ao->a = "dynamic";
+$ao->a = "updated";
+$name = "dyn";
+$ao->{$name} = "dynamic";
+$ao->{$name} = "updated";
+var_dump($ao->a, $ao->dyn, $ao["a"]);
+
+#[AllowDynamicProperties]
+class AllowedArrayObject extends ArrayObject {}
+
+$allowed = new AllowedArrayObject(array());
+$allowed->quiet = true;
+var_dump($allowed->quiet);
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert!(execution
+        .stdout
+        .contains("Deprecated: Creation of dynamic property ArrayObject::$a is deprecated"));
+    assert!(execution
+        .stdout
+        .contains("Deprecated: Creation of dynamic property ArrayObject::$dyn is deprecated"));
+    assert!(execution.stdout.ends_with(
+        "string(7) \"updated\"\nstring(7) \"updated\"\nstring(7) \"storage\"\nbool(true)\n"
+    ));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_object_user_sort_methods_use_comparators_and_guard_reentrant_mutation() {
     let source = r#"<?php
 function desc_cmp($left, $right) {

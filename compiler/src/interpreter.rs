@@ -13029,7 +13029,7 @@ impl Interpreter {
     ) -> CompileResult<()> {
         if !self.is_array_object_storage_object(object)
             || self.array_object_array_as_props_enabled(object)
-            || object.allows_dynamic_public_properties()
+            || object.has_declared_dynamic_properties_allowance()
         {
             return Ok(());
         }
