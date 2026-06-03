@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Repaired the latest-published PASS regression in
+  `ext/date/tests/date_diff.phpt` introduced by the DateTime microseconds lane.
+  Zero-microsecond DateTime diffs now use the pre-fraction component path, and
+  zero-fraction DateInterval add/sub plus zero-microsecond DateTime state
+  assignment avoid the generic microsecond normalization/padding hot path.
+  Focused proof covers the `date_diff.phpt` regression row passing in release
+  wrapper mode, the five DateTime microsecond PHPT rows still passing, the
+  seven ReflectionAttribute rows from this integration cycle still passing,
+  and Rust
+  `datetime_microsecond_format_create_from_format_and_diff_are_bounded`.
+  Unsupported edges remain full timelib performance/parity, DatePeriod,
+  fractional ISO interval parsing, references/COW, and native lowering.
+
 - Added a bounded `ReflectionAttribute` / core attribute validation lane on the
   interpreter path. Core `Attribute` flag evaluation now reports PHP-shaped
   type and invalid-flag errors, repeated internal `Attribute` metadata is

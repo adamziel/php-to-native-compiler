@@ -21282,11 +21282,12 @@ impl Interpreter {
     ) -> CompileResult<()> {
         let (timezone_type, timezone_name) =
             bounded_timezone_object_parts(&timezone.name).unwrap_or((3, timezone.name.clone()));
-        let date = format!(
-            "{}.{}",
-            format_bounded_date("Y-m-d H:i:s", timestamp, &timezone),
-            zero_pad(microsecond, 6)
-        );
+        let formatted_date = format_bounded_date("Y-m-d H:i:s", timestamp, &timezone);
+        let date = if microsecond == 0 {
+            format!("{formatted_date}.000000")
+        } else {
+            format!("{formatted_date}.{}", zero_pad(microsecond, 6))
+        };
         object
             .write_public_property("date", Value::String(date))
             .map_err(|error| runtime_error(span, error))?;
@@ -158178,14 +158179,11 @@ fn apply_bounded_dateinterval_to_datetime(
     interval: &BoundedDateIntervalState,
     subtract: bool,
 ) -> Option<(i64, i64)> {
-    let fraction_microseconds = dateinterval_fraction_microseconds(interval.fraction)?;
     let sign = if (interval.invert != 0) ^ subtract {
         -1
     } else {
         1
     };
-    let signed_fraction = fraction_microseconds.checked_mul(sign)?;
-    let microsecond_delta = state.microsecond.checked_add(signed_fraction)?;
     let offset = state.timezone.offset_at_timestamp(state.timestamp);
     let parts = bounded_datetime_parts(state.timestamp, offset);
 
@@ -158216,6 +158214,13 @@ fn apply_bounded_dateinterval_to_datetime(
         .checked_add(interval.seconds)?
         .checked_mul(sign)?;
     timestamp = timestamp.checked_add(time_delta)?;
+    if interval.fraction == 0.0 {
+        return Some((timestamp, state.microsecond));
+    }
+
+    let fraction_microseconds = dateinterval_fraction_microseconds(interval.fraction)?;
+    let signed_fraction = fraction_microseconds.checked_mul(sign)?;
+    let microsecond_delta = state.microsecond.checked_add(signed_fraction)?;
     Some(normalize_timestamp_microsecond(
         timestamp,
         microsecond_delta,
@@ -158234,6 +158239,10 @@ fn bounded_datetime_diff_interval(
     target: &BoundedDateTimeObjectState,
     absolute: bool,
 ) -> BoundedDateIntervalState {
+    if source.microsecond == 0 && target.microsecond == 0 {
+        return bounded_datetime_diff_interval_without_fraction(source, target, absolute);
+    }
+
     let source_total = datetime_total_microseconds(source);
     let target_total = datetime_total_microseconds(target);
     let source_before_target = source_total <= target_total;
@@ -158289,6 +158298,63 @@ fn bounded_datetime_diff_interval(
         minutes,
         seconds,
         fraction,
+        invert: if absolute || source_before_target {
+            0
+        } else {
+            1
+        },
+        total_days: Some(total_days),
+        from_string: false,
+        date_string: None,
+    }
+}
+
+fn bounded_datetime_diff_interval_without_fraction(
+    source: &BoundedDateTimeObjectState,
+    target: &BoundedDateTimeObjectState,
+    absolute: bool,
+) -> BoundedDateIntervalState {
+    let source_before_target = source.timestamp <= target.timestamp;
+    let source_parts = bounded_datetime_parts(
+        source.timestamp,
+        source.timezone.offset_at_timestamp(source.timestamp),
+    );
+    let target_parts = bounded_datetime_parts(
+        target.timestamp,
+        target.timezone.offset_at_timestamp(target.timestamp),
+    );
+
+    let (years, months, days, hours, minutes, seconds) = if let Some(components) =
+        bounded_same_civil_day_transition_diff_components(
+            source,
+            target,
+            source_parts,
+            target_parts,
+            source_before_target,
+        ) {
+        components
+    } else if source_before_target {
+        bounded_datetime_forward_diff_components(source_parts, target_parts)
+    } else {
+        bounded_datetime_backward_diff_components(source_parts, target_parts)
+    };
+    let total_days = bounded_datetime_diff_total_days(
+        source_parts,
+        target_parts,
+        years,
+        months,
+        days,
+        source_before_target,
+    );
+
+    BoundedDateIntervalState {
+        years,
+        months,
+        days,
+        hours,
+        minutes,
+        seconds,
+        fraction: 0.0,
         invert: if absolute || source_before_target {
             0
         } else {
