@@ -38666,8 +38666,27 @@ impl ObjectProperty {
         protected_class_ids: &[ClassId],
     ) -> bool {
         if self.visibility != Visibility::Public {
-            return current_class_id.is_some()
-                && self.is_visible_in_context(current_class_id, protected_class_ids);
+            if !(current_class_id.is_some()
+                && self.is_visible_in_context(current_class_id, protected_class_ids))
+            {
+                return false;
+            }
+
+            if self.visibility == Visibility::Protected {
+                if let Some(current_class_id) = current_class_id {
+                    if properties.iter().any(|property| {
+                        property.name == self.name
+                            && property.visibility == Visibility::Private
+                            && property.declaring_class_id == current_class_id
+                            && property.initialized
+                            && !property.unset
+                    }) {
+                        return false;
+                    }
+                }
+            }
+
+            return true;
         }
 
         !properties.iter().any(|property| {
@@ -84006,6 +84025,20 @@ mod tests {
         assert_eq!(properties[0].value_cloned(), Value::Int(64));
         assert_eq!(properties[1].mangled_name(), "\0*\0id");
         assert_eq!(properties[1].value_cloned(), Value::Int(44));
+
+        let base_visible =
+            object.initialized_visible_properties(Some(base_id), &[base_id, derived_id]);
+        assert_eq!(base_visible.len(), 1);
+        assert_eq!(base_visible[0].declaring_class_id(), base_id);
+        assert_eq!(base_visible[0].visibility(), Visibility::Private);
+        assert_eq!(base_visible[0].value_cloned(), Value::Int(64));
+
+        let derived_visible =
+            object.initialized_visible_properties(Some(derived_id), &[derived_id, base_id]);
+        assert_eq!(derived_visible.len(), 1);
+        assert_eq!(derived_visible[0].declaring_class_id(), derived_id);
+        assert_eq!(derived_visible[0].visibility(), Visibility::Protected);
+        assert_eq!(derived_visible[0].value_cloned(), Value::Int(44));
     }
 
     #[test]

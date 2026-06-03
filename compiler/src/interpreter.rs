@@ -98087,9 +98087,14 @@ impl Interpreter {
                     for property in
                         object.initialized_visible_properties(current_class_id, &protected_class_ids)
                     {
+                        let key = if property.visibility() == Visibility::Public {
+                            property.name().to_string()
+                        } else {
+                            property.object_iteration_name()
+                        };
                         Self::insert_object_property_snapshot(
                             &mut properties,
-                            ArrayKey::String(property.object_iteration_name()),
+                            ArrayKey::String(key),
                             &property,
                         );
                     }

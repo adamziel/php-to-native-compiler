@@ -5,6 +5,23 @@
 Implemented:
 
 - Repaired the latest-published PASS regression in
+  `Zend/tests/gh20177.phpt`. `get_object_vars()` from a base-class method now
+  keeps the initialized base-private property visible when a descendant
+  declares a protected property with the same PHP name, rather than letting the
+  descendant protected shadow replace it in the visible snapshot. Public
+  object property keys with PHP visibility-byte spelling continue to preserve
+  their raw names for `get_object_vars()`, while `foreach` keeps using the
+  public display key. Focused proof covers the accepted public PASS baseline
+  for the row, the blocked `a7c69ff1` gate listing it as a latest-published
+  PASS regression, exact-current pre-patch selected PHPT at `2/3` with only
+  `gh20177.phpt` failing, post-patch selected PHPT at `3/3`, adjacent
+  serialize/foreach/get_object_vars PHPT at `7/7`, Rust runtime and
+  object-model guards, build/fmt/diff checks, and source push. Unsupported
+  edges remain full magic/property-hook parity, references/COW, complete
+  object visibility parity, exact native lowering, and broader object
+  serialization identity parity.
+
+- Repaired the latest-published PASS regression in
   `ext/standard/tests/serialize/bug76300.phpt`. Runtime class-context
   property lookup now prefers the current class's own private property slot
   before falling back to another visible non-public slot with the same PHP
