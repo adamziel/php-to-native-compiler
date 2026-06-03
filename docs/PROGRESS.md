@@ -4,6 +4,27 @@
 
 Implemented:
 
+- Repaired the latest-published PASS regression in
+  `ext/date/tests/date_diff.phpt`. The interpreter now keeps bounded
+  `DateInterval` cached state authoritative on clean interval objects, marks
+  it dirty only for represented public state property writes, preserves cached
+  DateInterval state across clone/retire lifecycle paths, uses forced
+  public-property synchronization for internal DateTime/DateInterval state
+  writes, avoids cloning whole direct arrays for side-effect-free non-array
+  offset reads in dense DateTime comparison/diff loops, and short-circuits
+  exact core DateTime-family receiver method dispatch while preserving
+  subclass override resolution. Focused proof covers exact-current pre-patch
+  `date_diff.phpt` at `0/1` with empty-output timeout on `fd3bf7b0`,
+  post-patch direct release `phpc run` of `date_diff.php` producing `172800`,
+  post-patch pinned-wrapper `date_diff.phpt` at `1/1`, adjacent DateTime
+  microsecond PHPT rows at `5/5`, the non-date latest-published
+  PASS-regression scout at `7/7`, Rust DateTime guards, build/fmt/diff
+  checks, and source push. Unsupported edges remain broad DateInterval
+  property alias/COW parity, full timelib performance and timezone/history
+  parity, DatePeriod, DateInterval serialization/unserialization and
+  `__set_state()`, fractional or negative ISO interval components, broad
+  DateTime/DateInterval object-handler parity, and native lowering.
+
 - Added bounded core-attribute `?string $message` constructor diagnostics for
   `Deprecated` and direct user-function `NoDiscard` paths on the interpreter
   path. Supported `#[Deprecated]` calls and direct unused calls to user

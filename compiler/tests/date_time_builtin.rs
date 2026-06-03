@@ -1330,6 +1330,48 @@ echo "\n";
 }
 
 #[test]
+fn datetime_diff_loop_uses_cached_interval_state_and_direct_offset_reads() {
+    let execution = run_source(
+        r#"<?php
+date_default_timezone_set("UTC");
+$ok = 0;
+$d0 = new DateTime("2009-11-20");
+for ($i = 0; $i < 18; $i++) {
+    $d = clone $d0;
+    $dates[$i] = $d->add(new DateInterval("P{$i}D"));
+}
+
+for ($i = 0; $i < 6; $i++) {
+    for ($j = 0; $j < 18; $j++) {
+        $diff = date_diff($dates[$i], $dates[$j]);
+        $current = clone $dates[$i];
+        $int = new DateInterval($diff->format("P%yY%mM%dD"));
+        if ($current > $dates[$j]) {
+            $current->sub($int);
+        } else {
+            $current->add($int);
+        }
+        if ($current == $dates[$j]) {
+            $ok++;
+        }
+    }
+}
+
+$inverted = new DateInterval("P2D");
+$inverted->invert = true;
+$probe = new DateTime("2009-11-20");
+$probe->add($inverted);
+echo $ok, "|", $probe->format("Y-m-d"), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "108|2009-11-18\n");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn datetime_interval_add_sub_use_named_us_dst_transition_boundaries() {
     let execution = run_source(
         r#"<?php

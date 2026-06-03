@@ -551,6 +551,7 @@ struct Interpreter {
     spl_iterator_wrappers: HashMap<i64, SplIteratorWrapperState>,
     date_time_objects: HashMap<i64, BoundedDateTimeObjectState>,
     date_interval_objects: HashMap<i64, BoundedDateIntervalState>,
+    dirty_date_interval_objects: HashSet<i64>,
     hash_contexts: HashMap<i64, BoundedHashContextState>,
     uri_rfc3986_empty_port_objects: HashSet<i64>,
     source_file: Option<String>,
@@ -4559,6 +4560,19 @@ impl SymbolTable {
         }
 
         self.read_storage_named(name)
+    }
+
+    fn read_direct_array_offset_cloned(&self, name: &str, key: &ArrayKey) -> Option<Option<Value>> {
+        if self.is_array_offset_alias_name(name) {
+            return None;
+        }
+
+        self.read_cell(name).and_then(|cell| {
+            cell.with_value(|value| match value {
+                Value::Array(array) => Some(array.get_cloned(key.clone())),
+                _ => None,
+            })
+        })
     }
 
     fn read_named_object(&self, name: &str) -> Option<PhpObject> {
@@ -11814,6 +11828,7 @@ impl Interpreter {
             spl_iterator_wrappers: HashMap::new(),
             date_time_objects: HashMap::new(),
             date_interval_objects: HashMap::new(),
+            dirty_date_interval_objects: HashSet::new(),
             hash_contexts: HashMap::new(),
             uri_rfc3986_empty_port_objects: HashSet::new(),
             main_source_file: source_file.clone(),
@@ -12212,12 +12227,41 @@ impl Interpreter {
             .is_some_and(|dateinterval_id| class_id == dateinterval_id)
     }
 
+    fn is_dateinterval_state_property(property: &str) -> bool {
+        matches!(
+            property,
+            "y" | "m"
+                | "d"
+                | "h"
+                | "i"
+                | "s"
+                | "f"
+                | "invert"
+                | "days"
+                | "from_string"
+                | "date_string"
+        )
+    }
+
+    fn mark_dateinterval_state_property_dirty(&mut self, object: &PhpObject, property: &str) {
+        if Self::is_dateinterval_state_property(property)
+            && self.date_interval_objects.contains_key(&object.id())
+            && self.is_dateinterval_class_id(object.class_id())
+        {
+            self.dirty_date_interval_objects.insert(object.id());
+        }
+    }
+
     fn instance_method_resolves_to_core_class(
         &self,
         object: &PhpObject,
         method_name: &str,
         predicate: impl Fn(&Self, ClassId) -> bool,
     ) -> bool {
+        if predicate(self, object.class_id()) {
+            return true;
+        }
+
         self.resolve_instance_method_for_current_object_scope(object.class_id(), method_name)
             .map(|(class_id, _, _, _, _)| predicate(self, class_id))
             .unwrap_or(true)
@@ -16558,6 +16602,12 @@ impl Interpreter {
             return Ok(result);
         }
 
+        if let Some(result) =
+            self.evaluate_direct_variable_non_array_index_fast_path(target, index, span, scope)?
+        {
+            return Ok(result);
+        }
+
         let (target_value, target_copy_source) =
             self.evaluate_by_value_call_argument_with_array_copy_source(target, scope)?;
 
@@ -16649,6 +16699,52 @@ impl Interpreter {
                 )?;
                 Ok((Value::Null, None))
             }
+        }
+    }
+
+    fn evaluate_direct_variable_non_array_index_fast_path(
+        &mut self,
+        target: &Expr,
+        index: &Expr,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Option<(Value, Option<ArrayCopySource>)>> {
+        let Expr::Variable(name, _) = target else {
+            return Ok(None);
+        };
+        if name == "GLOBALS" {
+            return Ok(None);
+        }
+        let Some(key) = Self::non_diagnostic_side_effect_free_array_key(index, scope) else {
+            return Ok(None);
+        };
+        let Some(value) = scope.read_direct_array_offset_cloned(name, &key) else {
+            return Ok(None);
+        };
+        let Some(value) = value else {
+            self.emit_display_warning(
+                format!("Undefined array key {}", key.diagnostic_key()),
+                span,
+            )?;
+            return Ok(Some((Value::Null, None)));
+        };
+        if matches!(value, Value::Array(_)) {
+            return Ok(None);
+        }
+
+        Ok(Some((value, None)))
+    }
+
+    fn non_diagnostic_side_effect_free_array_key(
+        expr: &Expr,
+        scope: &SymbolTable,
+    ) -> Option<ArrayKey> {
+        match Self::side_effect_free_value(expr, scope)? {
+            Value::Int(value) => Some(ArrayKey::Int(value)),
+            Value::Bool(value) => Some(ArrayKey::Int(i64::from(value))),
+            Value::String(value) => ArrayKey::from_value(&Value::String(value)).ok(),
+            Value::BinaryString(value) => ArrayKey::from_value(&Value::BinaryString(value)).ok(),
+            _ => None,
         }
     }
 
@@ -21764,7 +21860,7 @@ impl Interpreter {
         timestamp: i64,
         microsecond: i64,
         timezone: BoundedTimezone,
-        span: Span,
+        _span: Span,
     ) -> CompileResult<()> {
         let (timezone_type, timezone_name) =
             bounded_timezone_object_parts(&timezone.name).unwrap_or((3, timezone.name.clone()));
@@ -21774,15 +21870,9 @@ impl Interpreter {
         } else {
             format!("{formatted_date}.{}", zero_pad(microsecond, 6))
         };
-        object
-            .write_public_property("date", Value::String(date))
-            .map_err(|error| runtime_error(span, error))?;
-        object
-            .write_public_property("timezone_type", Value::Int(timezone_type))
-            .map_err(|error| runtime_error(span, error))?;
-        object
-            .write_public_property("timezone", Value::String(timezone_name))
-            .map_err(|error| runtime_error(span, error))?;
+        object.write_forced_public_property("date", Value::String(date));
+        object.write_forced_public_property("timezone_type", Value::Int(timezone_type));
+        object.write_forced_public_property("timezone", Value::String(timezone_name));
         self.date_time_objects.insert(
             object.id(),
             BoundedDateTimeObjectState {
@@ -21967,7 +22057,7 @@ impl Interpreter {
         &mut self,
         object: &PhpObject,
         state: BoundedDateIntervalState,
-        span: Span,
+        _span: Span,
     ) -> CompileResult<()> {
         for (name, value) in [
             ("y", Value::Int(state.years)),
@@ -21977,33 +22067,22 @@ impl Interpreter {
             ("i", Value::Int(state.minutes)),
             ("s", Value::Int(state.seconds)),
         ] {
-            object
-                .write_public_property(name, value)
-                .map_err(|error| runtime_error(span, error))?;
+            object.write_forced_public_property(name, value);
         }
-        object
-            .write_public_property("f", Value::Float(state.fraction))
-            .map_err(|error| runtime_error(span, error))?;
-        object
-            .write_public_property("invert", Value::Int(state.invert))
-            .map_err(|error| runtime_error(span, error))?;
-        object
-            .write_public_property(
-                "days",
-                state
-                    .total_days
-                    .map(Value::Int)
-                    .unwrap_or(Value::Bool(false)),
-            )
-            .map_err(|error| runtime_error(span, error))?;
-        object
-            .write_public_property("from_string", Value::Bool(state.from_string))
-            .map_err(|error| runtime_error(span, error))?;
+        object.write_forced_public_property("f", Value::Float(state.fraction));
+        object.write_forced_public_property("invert", Value::Int(state.invert));
+        object.write_forced_public_property(
+            "days",
+            state
+                .total_days
+                .map(Value::Int)
+                .unwrap_or(Value::Bool(false)),
+        );
+        object.write_forced_public_property("from_string", Value::Bool(state.from_string));
         if let Some(date_string) = &state.date_string {
-            object
-                .write_public_property("date_string", Value::String(date_string.clone()))
-                .map_err(|error| runtime_error(span, error))?;
+            object.write_forced_public_property("date_string", Value::String(date_string.clone()));
         }
+        self.dirty_date_interval_objects.remove(&object.id());
         self.date_interval_objects.insert(object.id(), state);
         Ok(())
     }
@@ -22058,6 +22137,9 @@ impl Interpreter {
                     ),
                 )
             })?;
+        if !self.dirty_date_interval_objects.contains(&object.id()) {
+            return Ok(fallback.clone());
+        }
         Ok(BoundedDateIntervalState {
             years: Self::dateinterval_int_property(object, "y").unwrap_or(fallback.years),
             months: Self::dateinterval_int_property(object, "m").unwrap_or(fallback.months),
@@ -27834,6 +27916,7 @@ impl Interpreter {
                 property,
                 &alias_fallbacks,
             );
+            self.mark_dateinterval_state_property_dirty(&object, property);
         } else {
             if call_magic_on_missing {
                 self.call_magic_property_method_with_caller_scope(
@@ -30051,6 +30134,8 @@ impl Interpreter {
         self.spl_file_objects.remove(&object_id);
         self.spl_iterator_wrappers.remove(&object_id);
         self.date_time_objects.remove(&object_id);
+        self.date_interval_objects.remove(&object_id);
+        self.dirty_date_interval_objects.remove(&object_id);
         self.hash_contexts.remove(&object_id);
         self.uri_rfc3986_empty_port_objects.remove(&object_id);
 
@@ -30497,6 +30582,12 @@ impl Interpreter {
         }
         if let Some(state) = self.date_time_objects.get(&object.id()).cloned() {
             self.date_time_objects.insert(clone.id(), state);
+        }
+        if let Some(state) = self.date_interval_objects.get(&object.id()).cloned() {
+            self.date_interval_objects.insert(clone.id(), state);
+            if self.dirty_date_interval_objects.contains(&object.id()) {
+                self.dirty_date_interval_objects.insert(clone.id());
+            }
         }
         if let Some(state) = self.hash_contexts.get(&object.id()).cloned() {
             if state.finalized {
@@ -32887,6 +32978,7 @@ impl Interpreter {
                     &alias_fallbacks,
                 );
                 scope.sync_array_offset_aliases_for_object_property_root(object, property);
+                self.mark_dateinterval_state_property_dirty(&object_value, property);
                 scope.remove_object_property_array_copy_source_paths(&object_value, property);
                 Ok(())
             }
@@ -39631,6 +39723,10 @@ impl Interpreter {
                                 scope.sync_array_offset_aliases_for_object_property_root(
                                     object, property,
                                 );
+                                self.mark_dateinterval_state_property_dirty(
+                                    &object_value,
+                                    property,
+                                );
                                 if matches!(value, Value::Array(_)) {
                                     let root = self.context_object_property_alias_root(
                                         object, property, *span, scope,
@@ -40691,6 +40787,7 @@ impl Interpreter {
                             &alias_fallbacks,
                         );
                         scope.sync_array_offset_aliases_for_object_property_root(object, &property);
+                        self.mark_dateinterval_state_property_dirty(&object_value, &property);
                         if matches!(value, Value::Array(_)) {
                             let root = self.context_object_property_alias_root(
                                 object, &property, *span, scope,
@@ -53097,6 +53194,12 @@ impl Interpreter {
     ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
         if let Some(result) =
             self.evaluate_expression_array_index_with_array_copy_source(target, index, span, scope)?
+        {
+            return Ok(result);
+        }
+
+        if let Some(result) =
+            self.evaluate_direct_variable_non_array_index_fast_path(target, index, span, scope)?
         {
             return Ok(result);
         }
