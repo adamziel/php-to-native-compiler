@@ -33076,6 +33076,29 @@ impl Interpreter {
 
                 Err(unsupported())
             }
+            AssignTarget::StaticProperty { .. }
+            | AssignTarget::DynamicStaticProperty { .. }
+            | AssignTarget::ObjectStaticProperty { .. }
+            | AssignTarget::DynamicObjectStaticProperty { .. }
+            | AssignTarget::SelfStaticProperty { .. }
+            | AssignTarget::DynamicSelfStaticProperty { .. }
+            | AssignTarget::ParentStaticProperty { .. }
+            | AssignTarget::DynamicParentStaticProperty { .. }
+            | AssignTarget::LateStaticProperty { .. }
+            | AssignTarget::DynamicLateStaticProperty { .. } => {
+                let source_cell = match source {
+                    ReferenceSource::Variable { name, .. } => {
+                        scope.read_cell(name).ok_or_else(|| {
+                            runtime_error(span, RuntimeError::undefined_variable(name))
+                        })?
+                    }
+                    ReferenceSource::StaticProperty { expr, .. } => {
+                        self.static_property_reference_cell_from_expr(expr, span, scope)?
+                    }
+                    _ => return Err(unsupported()),
+                };
+                self.bind_static_property_reference_target_to_cell(target, source_cell, span, scope)
+            }
             _ => Err(unsupported()),
         }
     }
@@ -56732,27 +56755,28 @@ impl Interpreter {
             }
             "getstaticpropertyvalue" => {
                 if args.len() > 2 {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::arity_mismatch(
-                            "ReflectionClass::getStaticPropertyValue()",
-                            ArityExpectation::Between { min: 1, max: 2 },
-                            args.len(),
+                    return Err(reflection_class_static_property_argument_error(
+                        "ReflectionClass::getStaticPropertyValue",
+                        format!(
+                            "ReflectionClass::getStaticPropertyValue() expects at most 2 arguments, {} given",
+                            args.len()
                         ),
+                        span,
                     ));
                 }
                 let Some(name_arg) = args.first() else {
-                    return Err(runtime_error(
+                    return Err(reflection_class_static_property_argument_error(
+                        "ReflectionClass::getStaticPropertyValue",
+                        "ReflectionClass::getStaticPropertyValue() expects at least 1 argument, 0 given",
                         span,
-                        RuntimeError::arity_mismatch(
-                            "ReflectionClass::getStaticPropertyValue()",
-                            ArityExpectation::Between { min: 1, max: 2 },
-                            args.len(),
-                        ),
                     ));
                 };
                 let value = self.evaluate(name_arg, caller_scope)?;
-                let property = reflection_scalar_name_argument(value, span)?;
+                let property = self.reflection_class_static_property_name_argument(
+                    "ReflectionClass::getStaticPropertyValue",
+                    value,
+                    span,
+                )?;
                 if let Some(value) =
                     self.reflection_class_static_property_value(&state, &property, span)?
                 {
@@ -56767,14 +56791,22 @@ impl Interpreter {
                 ))
             }
             "setstaticpropertyvalue" => {
-                expect_expr_arity(
+                if args.len() != 2 {
+                    return Err(reflection_class_static_property_argument_error(
+                        "ReflectionClass::setStaticPropertyValue",
+                        format!(
+                            "ReflectionClass::setStaticPropertyValue() expects exactly 2 arguments, {} given",
+                            args.len()
+                        ),
+                        span,
+                    ));
+                }
+                let value = self.evaluate(&args[0], caller_scope)?;
+                let property = self.reflection_class_static_property_name_argument(
                     "ReflectionClass::setStaticPropertyValue",
-                    args.len(),
-                    2,
+                    value,
                     span,
                 )?;
-                let value = self.evaluate(&args[0], caller_scope)?;
-                let property = reflection_scalar_name_argument(value, span)?;
                 let value = self.evaluate(&args[1], caller_scope)?;
                 self.reflection_class_set_static_property_value(&state, &property, value, span)?;
                 Ok(Value::Null)
@@ -57926,9 +57958,41 @@ impl Interpreter {
             .ok_or_else(|| {
                 runtime_error(
                     span,
-                    RuntimeError::uninitialized_typed_property(declaring_class_name, property_name),
+                    RuntimeError::uninitialized_typed_static_property(
+                        declaring_class_name,
+                        property_name,
+                    ),
                 )
             })
+    }
+
+    fn reflection_class_static_property_name_argument(
+        &mut self,
+        method: &'static str,
+        value: Value,
+        span: Span,
+    ) -> CompileResult<String> {
+        match value {
+            Value::Null => {
+                self.emit_display_diagnostic(
+                    "Deprecated",
+                    PHP_E_DEPRECATED,
+                    format!(
+                        "{method}(): Passing null to parameter #1 ($name) of type string is deprecated"
+                    ),
+                    span,
+                )?;
+                Ok(String::new())
+            }
+            Value::Array(_) => Err(reflection_class_static_property_argument_error(
+                method,
+                format!("{method}(): Argument #1 ($name) must be of type string, array given"),
+                span,
+            )),
+            value => value
+                .try_echo_string()
+                .map_err(|error| runtime_error(span, error)),
+        }
     }
 
     fn reflection_class_set_static_property_value(
@@ -57943,7 +58007,10 @@ impl Interpreter {
         else {
             return Err(reflection_exception_error(
                 span,
-                format!("Property {}::${property_name} does not exist", state.name),
+                format!(
+                    "Class {} does not have a property named {property_name}",
+                    state.name
+                ),
             ));
         };
         let value = self.coerce_static_property_value(
@@ -57957,6 +58024,7 @@ impl Interpreter {
             .static_properties
             .get(&(declaring_class_id, property_name.to_string()))
         {
+            let value = self.coerce_reference_cell_value_for_write(cell, value, span)?;
             cell.set_value(value);
         } else {
             self.static_properties.insert(
@@ -57993,6 +58061,48 @@ impl Interpreter {
             current = class.parent_id();
         }
         None
+    }
+
+    fn static_property_type_decl(&self, class_id: ClassId, property: &str) -> Option<String> {
+        self.classes
+            .get(class_id)
+            .and_then(|class| class.property(property))
+            .and_then(|property| property.type_decl())
+            .map(str::to_string)
+    }
+
+    fn coerce_reference_cell_value_for_write(
+        &self,
+        cell: &PhpReferenceCell,
+        value: Value,
+        span: Span,
+    ) -> CompileResult<Value> {
+        cell.coerce_value_for_write_with_object_type_resolver(value, |object, type_name| {
+            self.object_satisfies_live_property_type(object, type_name)
+        })
+        .map_err(|error| runtime_error(span, error))
+    }
+
+    fn constrain_static_property_reference_cell(
+        &mut self,
+        cell: &PhpReferenceCell,
+        declaring_class_id: ClassId,
+        declaring_class_name: &str,
+        property: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        let value = self.coerce_static_property_value(
+            declaring_class_id,
+            declaring_class_name,
+            property,
+            cell.value_cloned(),
+            span,
+        )?;
+        let value = self.coerce_reference_cell_value_for_write(cell, value, span)?;
+        cell.set_value(value);
+        let type_decl = self.static_property_type_decl(declaring_class_id, property);
+        cell.add_property_type_constraint(type_decl.as_deref(), declaring_class_name, property);
+        Ok(())
     }
 
     fn reflection_trait_methods(
@@ -61049,7 +61159,7 @@ impl Interpreter {
             .ok_or_else(|| {
                 runtime_error(
                     span,
-                    RuntimeError::uninitialized_typed_property(
+                    RuntimeError::uninitialized_typed_static_property(
                         state.declaring_class_name.clone(),
                         &state.name,
                     ),
@@ -61082,14 +61192,16 @@ impl Interpreter {
             .static_properties
             .get(&(declaring_class_id, property.to_string()))
         {
+            let value = self.coerce_reference_cell_value_for_write(cell, value, span)?;
             cell.set_value(value.clone());
+            Ok(value)
         } else {
             self.static_properties.insert(
                 (declaring_class_id, property.to_string()),
                 VariableCell::new(value.clone()),
             );
+            Ok(value)
         }
-        Ok(value)
     }
 
     fn reflection_property_instance_target(
@@ -63968,15 +64080,27 @@ impl Interpreter {
 
         let (declaring_class_id, declaring_class_name) =
             self.resolve_static_property_storage(class_id, &class_name, &property, span)?;
-        self.static_properties
+        let cell = self
+            .static_properties
             .get(&(declaring_class_id, property.clone()))
             .cloned()
             .ok_or_else(|| {
                 runtime_error(
                     span,
-                    RuntimeError::uninitialized_typed_property(declaring_class_name, &property),
+                    RuntimeError::uninitialized_typed_static_property(
+                        declaring_class_name.clone(),
+                        &property,
+                    ),
                 )
-            })
+            })?;
+        self.constrain_static_property_reference_cell(
+            &cell,
+            declaring_class_id,
+            &declaring_class_name,
+            &property,
+            span,
+        )?;
+        Ok(cell)
     }
 
     fn static_property_array_offset_reference_cell_from_expr(
@@ -64036,6 +64160,165 @@ impl Interpreter {
                 ),
             )
         })
+    }
+
+    fn bind_static_property_reference_target_to_cell(
+        &mut self,
+        target: &AssignTarget,
+        source_cell: PhpReferenceCell,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        let (declaring_class_id, declaring_class_name, property) =
+            self.resolve_static_property_reference_target(target, span, scope)?;
+        let type_decl = self.static_property_type_decl(declaring_class_id, &property);
+        let value = self.coerce_static_property_value(
+            declaring_class_id,
+            &declaring_class_name,
+            &property,
+            source_cell.value_cloned(),
+            span,
+        )?;
+        let value = self.coerce_reference_cell_value_for_write(&source_cell, value, span)?;
+        source_cell.set_value(value);
+        if let Some(old_cell) = self
+            .static_properties
+            .get(&(declaring_class_id, property.clone()))
+            .cloned()
+        {
+            old_cell.remove_property_type_constraint(
+                type_decl.as_deref(),
+                &declaring_class_name,
+                &property,
+            );
+        }
+        source_cell.add_property_type_constraint(
+            type_decl.as_deref(),
+            &declaring_class_name,
+            &property,
+        );
+        self.static_properties
+            .insert((declaring_class_id, property), source_cell);
+        Ok(())
+    }
+
+    fn resolve_static_property_reference_target(
+        &mut self,
+        target: &AssignTarget,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<(ClassId, String, String)> {
+        let (class_id, class_name, property) = match target {
+            AssignTarget::StaticProperty {
+                class_name,
+                property,
+                ..
+            } => {
+                let class_id = self.classes.lookup_class_id(class_name).ok_or_else(|| {
+                    runtime_error(span, RuntimeError::undefined_class(class_name))
+                })?;
+                (class_id, class_name.clone(), property.clone())
+            }
+            AssignTarget::DynamicStaticProperty {
+                class_name,
+                property,
+                span: target_span,
+            } => {
+                let class_id = self.classes.lookup_class_id(class_name).ok_or_else(|| {
+                    runtime_error(*target_span, RuntimeError::undefined_class(class_name))
+                })?;
+                let property =
+                    self.evaluate_dynamic_property_name(property, *target_span, scope)?;
+                (class_id, class_name.clone(), property)
+            }
+            AssignTarget::ObjectStaticProperty {
+                target, property, ..
+            } => {
+                let (class_id, class_name) =
+                    self.resolve_dynamic_static_receiver(target, property, span, scope)?;
+                (class_id, class_name, property.clone())
+            }
+            AssignTarget::DynamicObjectStaticProperty {
+                target,
+                property,
+                span: target_span,
+            } => {
+                let property =
+                    self.evaluate_dynamic_property_name(property, *target_span, scope)?;
+                let (class_id, class_name) =
+                    self.resolve_dynamic_static_receiver(target, &property, *target_span, scope)?;
+                (class_id, class_name, property)
+            }
+            AssignTarget::SelfStaticProperty { property, .. } => {
+                let Some(current_class_id) = self.class_context.last().copied() else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("self::${property}"),
+                            "self static property access requires instance method context",
+                        ),
+                    ));
+                };
+                let class_name = self
+                    .classes
+                    .get(current_class_id)
+                    .expect("active class context should resolve to class metadata")
+                    .name()
+                    .to_string();
+                (current_class_id, class_name, property.clone())
+            }
+            AssignTarget::DynamicSelfStaticProperty {
+                property,
+                span: target_span,
+            } => {
+                let property =
+                    self.evaluate_dynamic_property_name(property, *target_span, scope)?;
+                let target = AssignTarget::SelfStaticProperty {
+                    property,
+                    span: *target_span,
+                };
+                return self.resolve_static_property_reference_target(&target, *target_span, scope);
+            }
+            AssignTarget::ParentStaticProperty { property, .. } => {
+                let (parent_class_id, parent_class_name) =
+                    self.resolve_parent_static_property_context(property, span)?;
+                (parent_class_id, parent_class_name, property.clone())
+            }
+            AssignTarget::DynamicParentStaticProperty {
+                property,
+                span: target_span,
+            } => {
+                let property =
+                    self.evaluate_dynamic_property_name(property, *target_span, scope)?;
+                let target = AssignTarget::ParentStaticProperty {
+                    property,
+                    span: *target_span,
+                };
+                return self.resolve_static_property_reference_target(&target, *target_span, scope);
+            }
+            AssignTarget::LateStaticProperty { property, .. } => {
+                let (called_class_id, called_class_name) =
+                    self.resolve_late_static_property_context(property, span)?;
+                (called_class_id, called_class_name, property.clone())
+            }
+            AssignTarget::DynamicLateStaticProperty {
+                property,
+                span: target_span,
+            } => {
+                let property =
+                    self.evaluate_dynamic_property_name(property, *target_span, scope)?;
+                let target = AssignTarget::LateStaticProperty {
+                    property,
+                    span: *target_span,
+                };
+                return self.resolve_static_property_reference_target(&target, *target_span, scope);
+            }
+            _ => unreachable!("static property reference helper called for non-static target"),
+        };
+
+        let (declaring_class_id, declaring_class_name) =
+            self.resolve_static_property_storage(class_id, &class_name, &property, span)?;
+        Ok((declaring_class_id, declaring_class_name, property))
     }
 
     fn write_named_static_property(
@@ -64180,7 +64463,10 @@ impl Interpreter {
             .ok_or_else(|| {
                 runtime_error(
                     span,
-                    RuntimeError::uninitialized_typed_property(declaring_class_name, &property),
+                    RuntimeError::uninitialized_typed_static_property(
+                        declaring_class_name,
+                        &property,
+                    ),
                 )
             })?;
 
@@ -64308,7 +64594,7 @@ impl Interpreter {
 
         Err(runtime_error(
             span,
-            RuntimeError::uninitialized_typed_property(declaring_class_name, property),
+            RuntimeError::uninitialized_typed_static_property(declaring_class_name, property),
         ))
     }
 
@@ -64362,14 +64648,16 @@ impl Interpreter {
             .static_properties
             .get(&(declaring_class_id, property.to_string()))
         {
+            let value = self.coerce_reference_cell_value_for_write(cell, value, span)?;
             cell.set_value(value.clone());
+            Ok(value)
         } else {
             self.static_properties.insert(
                 (declaring_class_id, property.to_string()),
                 VariableCell::new(value.clone()),
             );
+            Ok(value)
         }
-        Ok(value)
     }
 
     fn coerce_static_property_value(
@@ -121717,6 +122005,17 @@ fn reflection_property_missing_instance_error(method_name: &'static str, span: S
     )
 }
 
+fn reflection_class_static_property_argument_error(
+    method: &'static str,
+    message: impl Into<String>,
+    span: Span,
+) -> Diagnostic {
+    runtime_error(
+        span,
+        RuntimeError::unsupported_call(format!("{method}()"), message.into()),
+    )
+}
+
 fn reflection_property_non_instance_error(span: Span) -> Diagnostic {
     reflection_exception_error(
         span,
@@ -122946,6 +123245,10 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
         return Some(("TypeError", message));
     }
 
+    if let Some(message) = reflection_class_static_property_argument_error_message(error) {
+        return Some(("TypeError", message));
+    }
+
     if let Some(message) = reflection_property_argument_error_message(error) {
         return Some(("TypeError", message));
     }
@@ -124007,6 +124310,31 @@ fn reflection_method_invoke_argument_count_error_message(error: &Diagnostic) -> 
         .message
         .starts_with("ReflectionMethod::invoke() expects at least 1 argument, ")
         .then(|| error.message.clone())
+}
+
+fn reflection_class_static_property_argument_error_message(error: &Diagnostic) -> Option<String> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+    let message = error
+        .message
+        .strip_prefix("unsupported call ")
+        .and_then(|message| message.split_once(": ").map(|(_, message)| message))
+        .unwrap_or(error.message.as_str());
+    for method in [
+        "ReflectionClass::getStaticPropertyValue",
+        "ReflectionClass::setStaticPropertyValue",
+    ] {
+        let prefix = format!("{method}()");
+        if message.starts_with(&prefix)
+            && (message.contains(" expects at ")
+                || message.contains(" expects exactly ")
+                || message.contains("Argument #1 ($name) must be of type string, "))
+        {
+            return Some(message.to_string());
+        }
+    }
+    None
 }
 
 fn reflection_property_argument_error_message(error: &Diagnostic) -> Option<String> {
@@ -125161,7 +125489,8 @@ fn call_argument_type_error_callable(message: &str) -> Option<&str> {
 
 fn is_uninitialized_typed_property_diagnostic(error: &Diagnostic) -> bool {
     error.phase == Phase::Runtime
-        && error.message.starts_with("typed property ")
+        && (error.message.starts_with("typed property ")
+            || error.message.starts_with("typed static property "))
         && error
             .message
             .ends_with(" must not be accessed before initialization")

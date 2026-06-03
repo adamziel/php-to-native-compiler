@@ -13575,6 +13575,71 @@ echo "mutation|", label($aClass->getDefaultProperties()["x"]), "|", label($aClas
 }
 
 #[test]
+fn reflection_static_property_access_reports_php_errors_and_reuses_reference_cells() {
+    let execution = run_source(
+        r#"<?php
+class Test {
+    public static $x;
+    public static int $y = 2;
+    public static $z;
+}
+
+$rc = new ReflectionClass(Test::class);
+
+try {
+    $rc->getStaticPropertyValue("x", "default", "extra");
+} catch (TypeError $e) {
+    echo "get-arity|", $e->getMessage(), "\n";
+}
+
+try {
+    $rc->setStaticPropertyValue();
+} catch (TypeError $e) {
+    echo "set-arity|", $e->getMessage(), "\n";
+}
+
+try {
+    $rc->setStaticPropertyValue(array(1), "x");
+} catch (TypeError $e) {
+    echo "set-name|", $e->getMessage(), "\n";
+}
+
+try {
+    $rc->setStaticPropertyValue("missing", "x");
+} catch (ReflectionException $e) {
+    echo "missing|", $e->getMessage(), "\n";
+}
+
+Test::$x =& Test::$y;
+try {
+    $rc->setStaticPropertyValue("x", "foo");
+} catch (TypeError $e) {
+    echo "class-ref|", $e->getMessage(), "\n";
+}
+
+$rc->setStaticPropertyValue("x", "21");
+echo "class-value|", Test::$y, "\n";
+
+$rp = new ReflectionProperty(Test::class, "z");
+Test::$z =& Test::$y;
+try {
+    $rp->setValue(null, "bar");
+} catch (TypeError $e) {
+    echo "prop-ref|", $e->getMessage(), "\n";
+}
+echo "prop-value|", $rp->getValue();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "get-arity|ReflectionClass::getStaticPropertyValue() expects at most 2 arguments, 3 given\nset-arity|ReflectionClass::setStaticPropertyValue() expects exactly 2 arguments, 0 given\nset-name|ReflectionClass::setStaticPropertyValue(): Argument #1 ($name) must be of type string, array given\nmissing|Class Test does not have a property named missing\nclass-ref|Cannot assign string to reference held by property Test::$y of type int\nclass-value|21\nprop-ref|Cannot assign string to reference held by property Test::$y of type int\nprop-value|21"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn emit_ir_rejects_class_constants_until_native_object_lowering_exists() {
     for source in [
         "<?php\necho Box::VERSION;\n",

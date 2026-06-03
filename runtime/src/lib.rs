@@ -28027,6 +28027,16 @@ impl RuntimeError {
         })
     }
 
+    pub fn uninitialized_typed_static_property(
+        class_name: impl Into<String>,
+        property_name: impl Into<String>,
+    ) -> Self {
+        Self::from_kind(RuntimeErrorKind::UninitializedTypedStaticProperty {
+            class_name: class_name.into(),
+            property_name: property_name.into(),
+        })
+    }
+
     pub fn unsupported_property_access(reason: impl Into<String>) -> Self {
         Self::from_kind(RuntimeErrorKind::UnsupportedPropertyAccess {
             reason: reason.into(),
@@ -28185,6 +28195,10 @@ pub enum RuntimeErrorKind {
         visibility: Visibility,
     },
     UninitializedTypedProperty {
+        class_name: String,
+        property_name: String,
+    },
+    UninitializedTypedStaticProperty {
         class_name: String,
         property_name: String,
     },
@@ -28411,6 +28425,14 @@ fn format_runtime_error(kind: &RuntimeErrorKind) -> String {
         } => {
             format!(
                 "typed property {class_name}::${property_name} must not be accessed before initialization"
+            )
+        }
+        RuntimeErrorKind::UninitializedTypedStaticProperty {
+            class_name,
+            property_name,
+        } => {
+            format!(
+                "typed static property {class_name}::${property_name} must not be accessed before initialization"
             )
         }
         RuntimeErrorKind::UnsupportedPropertyAccess { reason } => {
@@ -31477,7 +31499,7 @@ impl PhpReferenceCell {
         Ok(value)
     }
 
-    fn add_property_type_constraint(
+    pub fn add_property_type_constraint(
         &self,
         type_decl: Option<&str>,
         class_name: &str,
@@ -31497,7 +31519,7 @@ impl PhpReferenceCell {
         }
     }
 
-    fn remove_property_type_constraint(
+    pub fn remove_property_type_constraint(
         &self,
         type_decl: Option<&str>,
         class_name: &str,
@@ -34752,7 +34774,7 @@ impl PhpStaticPropertyCell {
         if self.initialized {
             Ok(self.value_cloned())
         } else {
-            Err(RuntimeError::uninitialized_typed_property(
+            Err(RuntimeError::uninitialized_typed_static_property(
                 self.declaring_class_name.clone(),
                 self.name.clone(),
             ))
@@ -34839,7 +34861,7 @@ impl PhpStaticPropertyCell {
 
     fn reference_cell(&mut self) -> RuntimeResult<PhpReferenceCell> {
         if !self.initialized {
-            return Err(RuntimeError::uninitialized_typed_property(
+            return Err(RuntimeError::uninitialized_typed_static_property(
                 self.declaring_class_name.clone(),
                 self.name.clone(),
             ));
@@ -34869,7 +34891,7 @@ impl PhpStaticPropertyCell {
 
     fn existing_reference_cell(&self) -> RuntimeResult<Option<PhpReferenceCell>> {
         if !self.initialized {
-            return Err(RuntimeError::uninitialized_typed_property(
+            return Err(RuntimeError::uninitialized_typed_static_property(
                 self.declaring_class_name.clone(),
                 self.name.clone(),
             ));
@@ -82819,7 +82841,7 @@ mod tests {
             .unwrap_err();
         assert_eq!(
             uninitialized.kind(),
-            &RuntimeErrorKind::UninitializedTypedProperty {
+            &RuntimeErrorKind::UninitializedTypedStaticProperty {
                 class_name: "Counter".to_string(),
                 property_name: "typed".to_string(),
             }
@@ -82913,7 +82935,7 @@ mod tests {
                 )
                 .unwrap_err()
                 .message(),
-            "typed property Counter::$typed must not be accessed before initialization"
+            "typed static property Counter::$typed must not be accessed before initialization"
         );
         assert_eq!(
             first
