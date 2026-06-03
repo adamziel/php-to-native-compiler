@@ -1,6 +1,6 @@
 # PHP Native Compiler PHPT Progress
 
-Updated: 2026-06-04 01:20 CEST
+Updated: 2026-06-04 01:28 CEST
 
 Primary/public branch: `origin/master`
 Latest accepted public-score source:
@@ -21,6 +21,9 @@ Current public score: **7015 / 20294 pinned runnable PHPTs = 34.57%**.
 Latest pushed source checkpoint:
 `8e5f532140dcf399144e257b9a231a5db5c2f015 fix: add bounded DatePeriod metadata`
 
+Latest pushed branch checkpoint:
+`28662f8a482521f65fcbdc1b415163afbf65efd9 docs: note blocked b2914 gate progress`
+
 The accepted source checkpoint chain through `fd09b997` has been pushed to
 `origin/master` and is now reflected in the public score above. The completed
 score gate converted the post-`64d95b6d` source chain into a public PHPT
@@ -29,9 +32,11 @@ passes, with zero latest-published PASS regressions.
 
 Unpublished source progress since the accepted public score source:
 
-- Current source head is `8e5f532140dcf399144e257b9a231a5db5c2f015`
-  (`fix: add bounded DatePeriod metadata`), pushed to `origin/master`.
-- There are `5` commits after the accepted public-score source; `2` are
+- Latest semantic source head is `8e5f532140dcf399144e257b9a231a5db5c2f015`
+  (`fix: add bounded DatePeriod metadata`), pushed to `origin/master`. Current
+  branch head is docs-only checkpoint
+  `28662f8a482521f65fcbdc1b415163afbf65efd9`.
+- There are `6` commits after the accepted public-score source; `2` are
   score-relevant, touching `5` score-relevant paths.
 - Integrated focused selected-PHPT proof since the latest accepted public gate
   totals `34` selected rows across `2` integrated artifacts. These are local
@@ -50,7 +55,14 @@ Unpublished source progress since the accepted public score source:
   `__set_state`, ISO-string, and bad-format rows. It also preserved
   `date_diff.phpt`, `semi_reserved_005.phpt`, and a latest-published PASS
   scout.
-- The post-enum full pinned PHPT gate on branch head
+- A new full pinned PHPT score gate is running for current branch head
+  `28662f8a482521f65fcbdc1b415163afbf65efd9`:
+  `phpt-full-current-score-20260603T232433Z-php-src-f97ff59-public-28662f8a-source-28662f8a`.
+  Latest cadence readback is `RUNNING / BUILDING-RELEASE`, with PASS
+  regressions still unknown. This is publication evidence for the current
+  branch head, including the DatePeriod semantic source packet; it is not yet a
+  public score update.
+- The earlier post-enum full pinned PHPT gate on branch head
   `b2914aff8cf1f25f507386bec4a877b0ac002725`:
   `phpt-full-current-score-20260603T230358Z-php-src-f97ff59-public-b2914aff-source-b2914aff`
   completed with blocked comparable evidence `7030 / 20294 = 34.64%`, but
