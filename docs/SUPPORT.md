@@ -6452,6 +6452,14 @@
   `DateTimeInterface::diff()` is also used by the current declaration
   compatibility checks, including integer, `null`, `false`, and constant
   defaults such as `PHP_INT_MIN` and `DateTimeZone::ALL`.
+  `DateTimeZone::listIdentifiers()` additionally carries bounded tentative
+  return metadata: direct subclasses with compatible parameters receive the
+  PHP-shaped deprecation for a missing or incompatible return type unless
+  `#[ReturnTypeWillChange]` is present, while parameter incompatibilities still
+  remain hard declaration fatals. Inherited DateTime-family signature checks
+  also surface unresolved child parameter or return class names as PHP-shaped
+  `Could not check compatibility... because class ... is not available`
+  startup fatals for the covered arginfo slice.
   `DateTime::__construct()` and
   `DateTimeImmutable::__construct()` report catchable PHP-shaped
   `ArgumentCountError`s for calls with more than two arguments, and

@@ -4510,7 +4510,13 @@ including scalar and constant defaults such as `PHP_INT_MIN` and
 `DateTimeZone::ALL`. That slice is also seeded into the runtime method
 signature table so subclass and child-interface declaration compatibility can
 compare user declarations against the named internal signatures. Broader
-internal method inventories remain outside this metadata table.
+internal method inventories remain outside this metadata table. The same table
+can carry a separate tentative return type for bounded internal methods; the
+current DateTime lane uses it for `DateTimeZone::listIdentifiers()` so return
+type mismatches produce startup deprecations instead of declaration fatals
+when the override parameters are otherwise compatible, while unresolved class
+names in inherited parameter or return types still produce PHP-shaped
+compatibility-check fatals.
 `ReflectionParameter::__construct()` can replace that request-local state on
 an existing object. `ReflectionParameter::getType()` now materializes a
 request-local `ReflectionNamedType` object for a single parsed named type, or a

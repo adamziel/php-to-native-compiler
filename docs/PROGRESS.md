@@ -4,6 +4,33 @@
 
 Implemented:
 
+- Added a bounded DateTime tentative-return compatibility lane on the
+  interpreter path. `DateTimeZone::listIdentifiers()` now keeps its internal
+  arginfo defaults while treating its `array` return as tentative for
+  inheritance checks, direct `DateTimeZone` subclass overrides with compatible
+  parameters now emit the PHP-shaped deprecation for missing or incompatible
+  return types unless `#[ReturnTypeWillChange]` is present, and unresolved
+  class names in inherited method parameter or return compatibility checks now
+  report the PHP-shaped `Could not check compatibility... because class ... is
+  not available` startup fatal. DateTime-family instance dispatch now lets
+  user subclass overrides run before the core DateTime/DateTimeImmutable/
+  DateTimeZone/DateInterval handlers while preserving the core fallback for
+  runtime-only methods not present in the metadata table. Focused proof covers
+  Rust `date_time_builtin` (`37/37`), Rust `reflection_metadata` (`6/6`),
+  build/fmt/diff checks, the already-landed internal DateTime signature rows
+  at `5/5` PASS, and selected public PHPT rows
+  `Zend/tests/type_declarations/variance/internal_parent/incompatible_return_type.phpt`,
+  `Zend/tests/type_declarations/variance/internal_parent/missing_return_type.phpt`,
+  `Zend/tests/type_declarations/variance/internal_parent/unresolvable_inheritance_check_param.phpt`,
+  `Zend/tests/type_declarations/variance/internal_parent/unresolvable_inheritance_check_return.phpt`,
+  and
+  `Zend/tests/type_declarations/variance/suppressed_incompatible_return_type.phpt`
+  at `5/5` PASS. Exact-current pre-patch proof on `a7c69ff1` was `0/5`.
+  Unsupported edges remain broad tentative-return inventories,
+  `ReflectionMethod::hasTentativeReturnType()` /
+  `getTentativeReturnType()`, namespace-complete startup deprecation discovery,
+  native lowering, and references/COW.
+
 - Added a bounded scalar declaration diagnostics/coercion lane on the
   interpreter path. By-value user function, closure, and public method scalar
   parameter/return checks now use PHP-shaped closure callable names with

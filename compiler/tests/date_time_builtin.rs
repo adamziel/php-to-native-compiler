@@ -398,6 +398,29 @@ try { date_modify($datetime, array()); } catch (Throwable $e) { echo get_class($
 }
 
 #[test]
+fn datetime_subclass_modify_override_precedes_core_dispatch() {
+    let execution = run_source(
+        r#"<?php
+class MyDateTime extends DateTime
+{
+    #[ReturnTypeWillChange]
+    public function modify(string $modifier) {
+        return false;
+    }
+}
+
+$date = new MyDateTime("2021-01-01 00:00:00");
+var_dump($date->modify("+1 sec"));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "bool(false)\n");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn malformed_datetime_and_dateinterval_strings_throw_or_warn() {
     let execution = run_source(
         r#"<?php

@@ -280,6 +280,10 @@ fn class_registration_startup_fatal_message(error: &Diagnostic) -> Option<String
         return Some(format!("Declaration of {declaration}"));
     }
 
+    if let Some(message) = reason.strip_prefix("could not check compatibility between ") {
+        return Some(format!("Could not check compatibility between {message}"));
+    }
+
     if let Some((class, interface)) = reason
         .strip_prefix("class ")
         .and_then(|reason| reason.split_once(" cannot extend interface "))
@@ -667,6 +671,7 @@ struct MethodSignature {
     params: Vec<ParameterSignature>,
     static_variables: Vec<(String, Option<Expr>)>,
     return_type: Option<String>,
+    tentative_return_type: Option<String>,
     returns_by_reference: bool,
     file_name: Option<String>,
     start_line: usize,
@@ -12053,6 +12058,17 @@ impl Interpreter {
         self.classes
             .lookup_class_id("DateInterval")
             .is_some_and(|dateinterval_id| class_id == dateinterval_id)
+    }
+
+    fn instance_method_resolves_to_core_class(
+        &self,
+        object: &PhpObject,
+        method_name: &str,
+        predicate: impl Fn(&Self, ClassId) -> bool,
+    ) -> bool {
+        self.resolve_instance_method_for_current_object_scope(object.class_id(), method_name)
+            .map(|(class_id, _, _, _, _)| predicate(self, class_id))
+            .unwrap_or(true)
     }
 
     fn is_datetime_class_id(&self, class_id: ClassId) -> bool {
@@ -54521,22 +54537,46 @@ impl Interpreter {
                 .call_php_token_method_with_values(object, method_name, values, span)
                 .map(|value| (value, None));
         }
-        if object.is_instance_of_class_name("DateTimeZone") {
+        if object.is_instance_of_class_name("DateTimeZone")
+            && self.instance_method_resolves_to_core_class(
+                &object,
+                method_name,
+                Self::resolved_method_is_core_datetimezone,
+            )
+        {
             return self
                 .call_datetimezone_method(object, method_name, args, span, caller_scope)
                 .map(|value| (value, None));
         }
-        if object.is_instance_of_class_name("DateInterval") {
+        if object.is_instance_of_class_name("DateInterval")
+            && self.instance_method_resolves_to_core_class(
+                &object,
+                method_name,
+                Self::resolved_method_is_core_dateinterval,
+            )
+        {
             return self
                 .call_dateinterval_method(object, method_name, args, span, caller_scope)
                 .map(|value| (value, None));
         }
-        if object.is_instance_of_class_name("DateTime") {
+        if object.is_instance_of_class_name("DateTime")
+            && self.instance_method_resolves_to_core_class(
+                &object,
+                method_name,
+                Self::resolved_method_is_core_datetime,
+            )
+        {
             return self
                 .call_datetime_method(object, method_name, args, span, caller_scope)
                 .map(|value| (value, None));
         }
-        if object.is_instance_of_class_name("DateTimeImmutable") {
+        if object.is_instance_of_class_name("DateTimeImmutable")
+            && self.instance_method_resolves_to_core_class(
+                &object,
+                method_name,
+                Self::resolved_method_is_core_datetimeimmutable,
+            )
+        {
             return self
                 .call_datetimeimmutable_method(object, method_name, args, span, caller_scope)
                 .map(|value| (value, None));
@@ -106723,6 +106763,14 @@ fn magic_method_startup_diagnostics(
     }
 
     if !diagnostics.has_fatal() {
+        collect_datetime_tentative_return_startup_diagnostics(
+            &mut diagnostics,
+            program,
+            source_file,
+        );
+    }
+
+    if !diagnostics.has_fatal() {
         collect_static_parameter_type_startup_diagnostics(&mut diagnostics, program, source_file);
     }
 
@@ -106795,6 +106843,124 @@ fn magic_method_startup_diagnostics(
     }
 
     diagnostics
+}
+
+fn collect_datetime_tentative_return_startup_diagnostics(
+    diagnostics: &mut MagicMethodStartupDiagnostics,
+    program: &Program,
+    source_file: Option<&str>,
+) {
+    let parent_signature = core_internal_class_method_signature("DateTimeZone", "listIdentifiers");
+    let Some(parent_signature) = parent_signature.as_ref() else {
+        return;
+    };
+    let parent_context = SignatureTypeContext {
+        self_name: "DateTimeZone",
+        parent_name: None,
+    };
+
+    for stmt in &program.statements {
+        let Stmt::Class(class) = stmt else {
+            continue;
+        };
+        if class.is_nested || !class_extends_core_class_named(class, "DateTimeZone") {
+            continue;
+        }
+
+        for member in &class.members {
+            let ClassMember::Method(method) = member else {
+                continue;
+            };
+            if !method.function.name.eq_ignore_ascii_case("listIdentifiers")
+                || !method.is_static
+                || class_method_has_return_type_will_change_attribute(method)
+                || !datetimezone_list_identifiers_params_match_for_tentative_return(
+                    &method.function,
+                )
+            {
+                continue;
+            }
+
+            let child_return_type = method
+                .function
+                .return_type
+                .as_ref()
+                .map(|decl| decl.text.as_str());
+            let Some(tentative_return_type) =
+                method_signature_effective_return_type(parent_signature)
+            else {
+                continue;
+            };
+            let return_is_compatible = child_return_type.is_some_and(|return_type| {
+                return_type
+                    .trim()
+                    .eq_ignore_ascii_case(tentative_return_type)
+            });
+            if return_is_compatible {
+                continue;
+            }
+
+            let child_context = SignatureTypeContext {
+                self_name: &class.name,
+                parent_name: Some("DateTimeZone"),
+            };
+            let child_signature = function_decl_compatibility_signature_with_context(
+                &class.name,
+                &method.function,
+                Some(child_context),
+            );
+            let inherited_signature = method_signature_compatibility_signature_with_context(
+                "DateTimeZone",
+                "listIdentifiers",
+                Some(parent_signature),
+                Some(parent_context),
+            );
+            diagnostics.push_deprecated(
+                format!(
+                    "Return type of {child_signature} should either be compatible with {inherited_signature}, or the #[\\ReturnTypeWillChange] attribute should be used to temporarily suppress the notice"
+                ),
+                source_file,
+                method.function.span.line,
+            );
+        }
+    }
+}
+
+fn class_extends_core_class_named(class: &ClassDecl, core_name: &str) -> bool {
+    class
+        .parent
+        .as_deref()
+        .map(|parent| {
+            parent
+                .trim_start_matches('\\')
+                .eq_ignore_ascii_case(core_name)
+        })
+        .unwrap_or(false)
+}
+
+fn datetimezone_list_identifiers_params_match_for_tentative_return(
+    function: &FunctionDecl,
+) -> bool {
+    if function.params.len() != 2 {
+        return false;
+    }
+
+    let timezone_group = &function.params[0];
+    let country_code = &function.params[1];
+    !timezone_group.by_reference
+        && !timezone_group.is_variadic
+        && !country_code.by_reference
+        && !country_code.is_variadic
+        && timezone_group
+            .type_decl
+            .as_ref()
+            .is_some_and(|decl| decl.text.trim().eq_ignore_ascii_case("int"))
+        && country_code
+            .type_decl
+            .as_ref()
+            .is_some_and(|decl| decl.text.trim().eq_ignore_ascii_case("?string"))
+        && timezone_group.default.is_some()
+        && country_code.default.is_some()
 }
 
 fn collect_implicit_nullable_parameter_startup_diagnostics(
@@ -112605,6 +112771,17 @@ fn attribute_name_is_deprecated(attribute: &AttributeDecl) -> bool {
         || attribute.name.eq_ignore_ascii_case("\\Deprecated")
 }
 
+fn attributes_include_return_type_will_change(attributes: &[AttributeDecl]) -> bool {
+    attributes
+        .iter()
+        .any(|attribute| normalized_attribute_name(&attribute.name) == "returntypewillchange")
+}
+
+fn class_method_has_return_type_will_change_attribute(method: &ClassMethodDecl) -> bool {
+    attributes_include_return_type_will_change(&method.attributes)
+        || attributes_include_return_type_will_change(&method.function.attributes)
+}
+
 fn attributes_include_no_discard(attributes: &[AttributeDecl]) -> bool {
     attributes
         .iter()
@@ -113305,6 +113482,7 @@ fn method_signature(
         required_params: required_param_count(function),
         static_variables: reflection_static_variables_from_body(&function.body),
         return_type: function.return_type.as_ref().map(|decl| decl.text.clone()),
+        tentative_return_type: None,
         returns_by_reference: function.returns_by_reference,
         file_name,
         start_line: function.span.line,
@@ -113335,6 +113513,20 @@ fn incompatible_declaration_error(
     RuntimeError::unsupported_class_inheritance(
         class_name,
         format!("declaration of {child_signature} must be compatible with {inherited_signature}"),
+    )
+}
+
+fn could_not_check_compatibility_error(
+    class_name: &str,
+    child_signature: String,
+    inherited_signature: String,
+    missing_class: String,
+) -> RuntimeError {
+    RuntimeError::unsupported_class_inheritance(
+        class_name,
+        format!(
+            "could not check compatibility between {child_signature} and {inherited_signature}, because class {missing_class} is not available"
+        ),
     )
 }
 
@@ -113372,12 +113564,17 @@ fn method_signature_compatibility_signature_with_context(
         .map(|param| parameter_signature_compatibility_signature_with_context(param, context))
         .collect::<Vec<_>>()
         .join(", ");
-    let return_type = signature
-        .return_type
-        .as_ref()
+    let return_type = method_signature_effective_return_type(signature)
         .map(|decl| format!(": {}", render_signature_type_text(decl, context)))
         .unwrap_or_default();
     format!("{class_name}::{method_name}({params}){return_type}")
+}
+
+fn method_signature_effective_return_type(signature: &MethodSignature) -> Option<&str> {
+    signature
+        .return_type
+        .as_deref()
+        .or(signature.tentative_return_type.as_deref())
 }
 
 fn function_param_compatibility_signature_with_context(
@@ -115212,17 +115409,20 @@ fn core_internal_class_method_signature(
     if class_name.eq_ignore_ascii_case("DateTimeZone")
         && method_name.eq_ignore_ascii_case("listIdentifiers")
     {
-        return Some(core_method_signature_from_reflection_params(
-            vec![
-                reflection_internal_optional_class_constant_int_param(
-                    "timezoneGroup",
-                    "DateTimeZone",
-                    "ALL",
-                ),
-                reflection_internal_optional_null_param("countryCode", "?string"),
-            ],
-            Some("array"),
-        ));
+        return Some(
+            core_method_signature_from_reflection_params_with_tentative_return(
+                vec![
+                    reflection_internal_optional_class_constant_int_param(
+                        "timezoneGroup",
+                        "DateTimeZone",
+                        "ALL",
+                    ),
+                    reflection_internal_optional_null_param("countryCode", "?string"),
+                ],
+                None,
+                Some("array"),
+            ),
+        );
     }
     None
 }
@@ -115249,6 +115449,14 @@ fn core_method_signature_from_reflection_params(
     params: Vec<ReflectionParameterMetadata>,
     return_type: Option<&str>,
 ) -> MethodSignature {
+    core_method_signature_from_reflection_params_with_tentative_return(params, return_type, None)
+}
+
+fn core_method_signature_from_reflection_params_with_tentative_return(
+    params: Vec<ReflectionParameterMetadata>,
+    return_type: Option<&str>,
+    tentative_return_type: Option<&str>,
+) -> MethodSignature {
     let params = params
         .into_iter()
         .map(parameter_signature_from_reflection_metadata)
@@ -115258,6 +115466,7 @@ fn core_method_signature_from_reflection_params(
         params,
         static_variables: Vec::new(),
         return_type: return_type.map(str::to_string),
+        tentative_return_type: tentative_return_type.map(str::to_string),
         returns_by_reference: false,
         file_name: None,
         start_line: 0,
@@ -116278,6 +116487,21 @@ fn validate_inherited_method_signature_compatibility(
             };
             let parent_context = signature_type_context_for_class(classes, parent_id);
             let child_has_variadic = method.function.params.iter().any(|param| param.is_variadic);
+            let child_signature = || {
+                function_decl_compatibility_signature_with_context(
+                    class_name,
+                    &method.function,
+                    Some(child_context),
+                )
+            };
+            let inherited_signature = || {
+                method_signature_compatibility_signature_with_context(
+                    parent.name(),
+                    parent_method.name(),
+                    Some(parent_signature),
+                    Some(parent_context),
+                )
+            };
 
             if child_required > parent_signature.required_params
                 || (method.function.params.len() < parent_signature.params.len()
@@ -116285,17 +116509,8 @@ fn validate_inherited_method_signature_compatibility(
             {
                 return Err(incompatible_declaration_error(
                     class_name,
-                    function_decl_compatibility_signature_with_context(
-                        class_name,
-                        &method.function,
-                        Some(child_context),
-                    ),
-                    method_signature_compatibility_signature_with_context(
-                        parent.name(),
-                        parent_method.name(),
-                        Some(parent_signature),
-                        Some(parent_context),
-                    ),
+                    child_signature(),
+                    inherited_signature(),
                 ));
             }
 
@@ -116313,17 +116528,8 @@ fn validate_inherited_method_signature_compatibility(
                 if parent_param.by_reference != child_param.by_reference {
                     return Err(incompatible_declaration_error(
                         class_name,
-                        function_decl_compatibility_signature_with_context(
-                            class_name,
-                            &method.function,
-                            Some(child_context),
-                        ),
-                        method_signature_compatibility_signature_with_context(
-                            parent.name(),
-                            parent_method.name(),
-                            Some(parent_signature),
-                            Some(parent_context),
-                        ),
+                        child_signature(),
+                        inherited_signature(),
                     ));
                 }
 
@@ -116338,17 +116544,8 @@ fn validate_inherited_method_signature_compatibility(
                         let _ = child_type;
                         return Err(incompatible_declaration_error(
                             class_name,
-                            function_decl_compatibility_signature_with_context(
-                                class_name,
-                                &method.function,
-                                Some(child_context),
-                            ),
-                            method_signature_compatibility_signature_with_context(
-                                parent.name(),
-                                parent_method.name(),
-                                Some(parent_signature),
-                                Some(parent_context),
-                            ),
+                            child_signature(),
+                            inherited_signature(),
                         ));
                     }
                     (Some(parent_type), Some(child_type))
@@ -116361,76 +116558,124 @@ fn validate_inherited_method_signature_compatibility(
                             Some(child_context),
                         ) =>
                     {
+                        if let Some(missing_class) = unavailable_signature_class_name(
+                            classes,
+                            interface_lookup,
+                            child_type,
+                            Some(child_context),
+                        )
+                        .or_else(|| {
+                            unavailable_signature_class_name(
+                                classes,
+                                interface_lookup,
+                                parent_type,
+                                Some(parent_context),
+                            )
+                        }) {
+                            return Err(could_not_check_compatibility_error(
+                                class_name,
+                                child_signature(),
+                                inherited_signature(),
+                                missing_class,
+                            ));
+                        }
                         return Err(incompatible_declaration_error(
                             class_name,
-                            function_decl_compatibility_signature_with_context(
-                                class_name,
-                                &method.function,
-                                Some(child_context),
-                            ),
-                            method_signature_compatibility_signature_with_context(
-                                parent.name(),
-                                parent_method.name(),
-                                Some(parent_signature),
-                                Some(parent_context),
-                            ),
+                            child_signature(),
+                            inherited_signature(),
                         ));
                     }
                     _ => {}
                 }
             }
 
-            match (
-                parent_signature.return_type.as_deref(),
-                method
-                    .function
-                    .return_type
-                    .as_ref()
-                    .map(|decl| decl.text.as_str()),
-            ) {
-                (Some(parent_type), None) => {
-                    let _ = parent_type;
-                    return Err(incompatible_declaration_error(
-                        class_name,
-                        function_decl_compatibility_signature_with_context(
+            let child_return_type = method
+                .function
+                .return_type
+                .as_ref()
+                .map(|decl| decl.text.as_str());
+            if let Some(parent_type) = parent_signature.return_type.as_deref() {
+                match child_return_type {
+                    None => {
+                        return Err(incompatible_declaration_error(
                             class_name,
-                            &method.function,
-                            Some(child_context),
-                        ),
-                        method_signature_compatibility_signature_with_context(
-                            parent.name(),
-                            parent_method.name(),
-                            Some(parent_signature),
+                            child_signature(),
+                            inherited_signature(),
+                        ));
+                    }
+                    Some(child_type)
+                        if !is_compatible_return_type_override_with_context(
+                            classes,
+                            interface_lookup,
+                            parent_type,
                             Some(parent_context),
-                        ),
-                    ));
+                            child_type,
+                            Some(child_context),
+                        ) =>
+                    {
+                        if let Some(missing_class) = unavailable_signature_class_name(
+                            classes,
+                            interface_lookup,
+                            child_type,
+                            Some(child_context),
+                        )
+                        .or_else(|| {
+                            unavailable_signature_class_name(
+                                classes,
+                                interface_lookup,
+                                parent_type,
+                                Some(parent_context),
+                            )
+                        }) {
+                            return Err(could_not_check_compatibility_error(
+                                class_name,
+                                child_signature(),
+                                inherited_signature(),
+                                missing_class,
+                            ));
+                        }
+                        return Err(incompatible_declaration_error(
+                            class_name,
+                            child_signature(),
+                            inherited_signature(),
+                        ));
+                    }
+                    _ => {}
                 }
-                (Some(parent_type), Some(child_type))
-                    if !is_compatible_return_type_override_with_context(
+            } else if let (Some(parent_type), Some(child_type)) = (
+                parent_signature.tentative_return_type.as_deref(),
+                child_return_type,
+            ) {
+                if !is_compatible_return_type_override_with_context(
+                    classes,
+                    interface_lookup,
+                    parent_type,
+                    Some(parent_context),
+                    child_type,
+                    Some(child_context),
+                ) {
+                    if let Some(missing_class) = unavailable_signature_class_name(
                         classes,
                         interface_lookup,
-                        parent_type,
-                        Some(parent_context),
                         child_type,
                         Some(child_context),
-                    ) =>
-                {
-                    return Err(incompatible_declaration_error(
-                        class_name,
-                        function_decl_compatibility_signature_with_context(
-                            class_name,
-                            &method.function,
-                            Some(child_context),
-                        ),
-                        method_signature_compatibility_signature_with_context(
-                            parent.name(),
-                            parent_method.name(),
-                            Some(parent_signature),
+                    )
+                    .or_else(|| {
+                        unavailable_signature_class_name(
+                            classes,
+                            interface_lookup,
+                            parent_type,
                             Some(parent_context),
-                        ),
-                    ));
+                        )
+                    }) {
+                        return Err(could_not_check_compatibility_error(
+                            class_name,
+                            child_signature(),
+                            inherited_signature(),
+                            missing_class,
+                        ));
+                    }
                 }
-                _ => {}
             }
 
             return Ok(());
@@ -116476,6 +116721,40 @@ fn is_compatible_return_type_override_with_context(
         inherited_type,
         inherited_context,
     )
+}
+
+fn unavailable_signature_class_name(
+    classes: &PhpClassTable,
+    interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
+    type_name: &str,
+    context: Option<SignatureTypeContext<'_>>,
+) -> Option<String> {
+    if let Some(members) = signature_union_members(type_name) {
+        return members.into_iter().find_map(|member| {
+            unavailable_signature_class_name(classes, interface_lookup, member, context)
+        });
+    }
+
+    if let Some(members) = signature_intersection_members(type_name) {
+        return members.into_iter().find_map(|member| {
+            unavailable_signature_class_name(classes, interface_lookup, member, context)
+        });
+    }
+
+    let resolved = resolve_relative_signature_type(type_name, context);
+    let Some(class_like) = simple_class_like_signature_type(resolved.as_ref()) else {
+        return None;
+    };
+
+    let class_like = class_like.strip_prefix('\\').unwrap_or(class_like);
+    if classes.lookup_class_id(class_like).is_some()
+        || interface_lookup.contains_key(&class_like.to_ascii_lowercase())
+        || is_core_interface_name(class_like)
+    {
+        return None;
+    }
+
+    Some(class_like.to_string())
 }
 
 fn type_name_is_subtype_of(

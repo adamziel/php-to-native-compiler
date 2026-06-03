@@ -217,6 +217,80 @@ interface MyDateTimeInterface extends DateTimeInterface
 }
 
 #[test]
+fn internal_datetime_tentative_return_rows_match_startup_diagnostics() {
+    let incompatible = run_source(
+        r#"<?php
+class MyDateTimeZone extends DateTimeZone
+{
+    public static function listIdentifiers(int $timezoneGroup = DateTimeZone::ALL, ?string $countryCode = null): string
+    {
+        return "";
+    }
+}
+
+var_dump(MyDateTimeZone::listIdentifiers());
+"#,
+    )
+    .unwrap();
+    assert_eq!(incompatible.exit_code, 0);
+    assert_eq!(incompatible.stderr, "");
+    assert!(
+        incompatible.stdout.contains("Deprecated: Return type of MyDateTimeZone::listIdentifiers(int $timezoneGroup = DateTimeZone::ALL, ?string $countryCode = null): string should either be compatible with DateTimeZone::listIdentifiers(int $timezoneGroup = DateTimeZone::ALL, ?string $countryCode = null): array, or the #[\\ReturnTypeWillChange] attribute should be used to temporarily suppress the notice"),
+        "stdout: {}",
+        incompatible.stdout
+    );
+    assert!(incompatible.stdout.ends_with("string(0) \"\"\n"));
+
+    let missing = run_source(
+        r#"<?php
+class MyDateTimeZone extends DateTimeZone
+{
+    public static function listIdentifiers(int $timezoneGroup = DateTimeZone::ALL, ?string $countryCode = null)
+    {
+    }
+}
+"#,
+    )
+    .unwrap();
+    assert_eq!(missing.exit_code, 0);
+    assert_eq!(missing.stderr, "");
+    assert!(
+        missing.stdout.contains("Deprecated: Return type of MyDateTimeZone::listIdentifiers(int $timezoneGroup = DateTimeZone::ALL, ?string $countryCode = null) should either be compatible with DateTimeZone::listIdentifiers(int $timezoneGroup = DateTimeZone::ALL, ?string $countryCode = null): array, or the #[\\ReturnTypeWillChange] attribute should be used to temporarily suppress the notice"),
+        "stdout: {}",
+        missing.stdout
+    );
+
+    for (source, expected) in [
+        (
+            r#"<?php
+class Test extends DateTime {
+    public static function createFromFormat($format, $datetime, ?Wrong $timezone = null): DateTime|false {}
+}
+"#,
+            "Could not check compatibility between Test::createFromFormat($format, $datetime, ?Wrong $timezone = null): DateTime|false and DateTime::createFromFormat(string $format, string $datetime, ?DateTimeZone $timezone = null): DateTime|false, because class Wrong is not available",
+        ),
+        (
+            r#"<?php
+class Test extends DateTime {
+    public static function createFromFormat($format, $datetime, $timezone = null): Wrong {}
+}
+"#,
+            "Could not check compatibility between Test::createFromFormat($format, $datetime, $timezone = null): Wrong and DateTime::createFromFormat(string $format, string $datetime, ?DateTimeZone $timezone = null): DateTime|false, because class Wrong is not available",
+        ),
+    ] {
+        let execution = run_source(source).unwrap();
+        assert_eq!(execution.exit_code, 255, "{source}");
+        let diagnostics = format!("{}{}", execution.stdout, execution.stderr);
+        assert!(
+            diagnostics.contains(expected),
+            "expected fatal message not found\nexpected: {expected}\nstdout: {}\nstderr: {}",
+            execution.stdout,
+            execution.stderr
+        );
+    }
+}
+
+#[test]
 fn reflection_modifier_names_and_class_cloneability_metadata() {
     let execution = run_source(
         r#"<?php
