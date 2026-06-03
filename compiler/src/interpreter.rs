@@ -108050,7 +108050,7 @@ fn startup_type_name_is_subtype_of(
     }
 
     if normalized_builtin_signature_type(supertype).is_some_and(|ty| ty == "mixed") {
-        return true;
+        return !normalized_builtin_signature_type(subtype).is_some_and(|ty| ty == "void");
     }
 
     if normalized_builtin_signature_type(subtype).is_some_and(|ty| ty == "never") {
@@ -114140,7 +114140,7 @@ fn type_name_is_subtype_of(
     }
 
     if normalized_builtin_signature_type(supertype).is_some_and(|ty| ty == "mixed") {
-        return true;
+        return !normalized_builtin_signature_type(subtype).is_some_and(|ty| ty == "void");
     }
 
     if normalized_builtin_signature_type(subtype).is_some_and(|ty| ty == "never") {

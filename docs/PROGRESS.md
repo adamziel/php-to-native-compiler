@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Repaired a mixed-return inheritance PASS regression on the interpreter
+  metadata path. The bounded signature subtype relation now treats `mixed` as
+  a top type for return values while excluding `void`, so a child method with
+  `: void` no longer satisfies an inherited `: mixed` return contract, while
+  ordinary narrowed value returns and the accepted variadic/intersection
+  compatibility lanes continue to pass. Focused proof covers Rust
+  `object_model::mixed_return_variance_rejects_void_override`,
+  `object_model::intersection_variance_accepts_equivalent_and_reduced_bounds`,
+  `object_model::variadic_signature_compatibility_checks_reference_mode_nullable_and_unions`,
+  inherited/interface signature diagnostic tests, build/fmt/diff checks, and
+  selected public PHPT row
+  `Zend/tests/type_declarations/mixed/inheritance/mixed_return_inheritance_error1.phpt`.
+  Unsupported edges remain parenthesized DNF, namespace/import-aware type-name
+  canonicalization, aliases, `self`/`parent`/`static` signature resolution,
+  broad runtime type-enforcement diagnostics, exact PHP error objects, native
+  lowering, and references/COW.
+
 - Repaired two full-gate `unserialize()` PASS regressions in the interpreter
   parser. Object and custom-object class-name lengths now report signed-length
   errors at the serialized value start, and oversized object property counts

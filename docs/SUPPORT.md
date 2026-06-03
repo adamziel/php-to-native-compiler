@@ -3213,8 +3213,9 @@
   is covered. They may not add a type where the inherited parameter is untyped
   or change a typed inherited parameter to an unrelated type. For
   inherited method return type metadata, child methods may add a return type
-  when the inherited method is untyped, but a typed inherited method requires
-  the child method to declare the same return type text case-insensitively.
+  when the inherited method is untyped; typed inherited methods accept the same
+  return type text case-insensitively or a narrower bounded relationship,
+  including value-return types under `mixed` but not `void`.
   Private parent methods remain separately redeclarable.
 - object instantiation with `new ClassName(...)` for declared classes, plus
   `new $class(...)` when `$class` is a direct variable containing a string class
@@ -3282,9 +3283,8 @@
   interface parameter to an unrelated type. For interface method return type
   metadata, implementations may add a return type when the interface method is
   untyped, but a typed interface method requires the implementation to declare
-  the same return type text case-insensitively or a narrower simple declared
-  class/interface or bounded pure-intersection type when type names resolve
-  through current metadata.
+  the same return type text case-insensitively or a narrower bounded
+  relationship, including value-return types under `mixed` but not `void`.
   Child interfaces that redeclare inherited methods and simple multi-parent
   inherited method conflicts are
   checked with those same bounded staticness, required-parameter,

@@ -15067,6 +15067,49 @@ echo method_exists(new IterableChild(), "values") ? "iterable" : "missing";
 }
 
 #[test]
+fn mixed_return_variance_rejects_void_override() {
+    let accepted_value_types = run_source(
+        r#"<?php
+class Foo {
+    public function method(): mixed {}
+}
+
+class BoolChild extends Foo {
+    public function method(): bool {}
+}
+
+class NullableChild extends Foo {
+    public function method(): ?int {}
+}
+
+class ObjectChild extends Foo {
+    public function method(): stdClass {}
+}
+
+echo "ok";
+"#,
+    )
+    .unwrap();
+    assert_eq!(accepted_value_types.stdout, "ok");
+    assert_eq!(accepted_value_types.exit_code, 0);
+
+    assert_php_startup_fatal(
+        r#"<?php
+class Foo {
+    public function method(): mixed {}
+}
+
+class Bar extends Foo {
+    public function method(): void {}
+}
+"#,
+        "Zend/tests/type_declarations/mixed/inheritance/mixed_return_inheritance_error1.php",
+        7,
+        "Declaration of Bar::method(): void must be compatible with Foo::method(): mixed",
+    );
+}
+
+#[test]
 fn nested_method_visibility_boundary_preserves_registration_timing() {
     let execution = run_source(
         r#"<?php
