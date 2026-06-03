@@ -82472,13 +82472,36 @@ impl Interpreter {
             scope,
         )? {
             ReferenceReturnBodyFlow::Return(binding) => Ok(binding),
-            ReferenceReturnBodyFlow::Normal => Err(runtime_error(
-                function.span,
-                RuntimeError::unsupported_call(
-                    callable_name(&function.name),
-                    "reference-return functions must return a direct variable or direct array offset in the current subset",
-                ),
-            )),
+            ReferenceReturnBodyFlow::Normal => {
+                if function
+                    .return_type
+                    .as_ref()
+                    .is_some_and(|decl| type_decl_is_exact(decl, "never"))
+                {
+                    let class_context = self.class_context.last().copied();
+                    let callable = self.return_type_callable_name(function, class_context);
+                    let callable_kind = if class_context.is_some() && function.name != "{closure}" {
+                        "method"
+                    } else {
+                        "function"
+                    };
+                    return Err(Diagnostic::new(
+                        Phase::Runtime,
+                        function.span.line,
+                        function.span.column,
+                        format!(
+                            "{callable}: never-returning {callable_kind} must not implicitly return"
+                        ),
+                    ));
+                }
+                Err(runtime_error(
+                    function.span,
+                    RuntimeError::unsupported_call(
+                        callable_name(&function.name),
+                        "reference-return functions must return a direct variable or direct array offset in the current subset",
+                    ),
+                ))
+            }
             ReferenceReturnBodyFlow::Break { span, .. } => Err(runtime_error(
                 span,
                 RuntimeError::invalid_loop_control("break cannot be used outside a loop"),
@@ -82490,16 +82513,9 @@ impl Interpreter {
             ReferenceReturnBodyFlow::Goto { label, span } => {
                 Err(undefined_goto_label_error(span, &label))
             }
-            ReferenceReturnBodyFlow::Throw { object, span } => Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    callable_name(&function.name),
-                    format!(
-                        "uncaught {} during reference-return evaluation is not implemented",
-                        object.class_name()
-                    ),
-                ),
-            )),
+            ReferenceReturnBodyFlow::Throw { object, span } => {
+                Err(self.uncaught_throw_error(&object, span))
+            }
         }
     }
 
@@ -87664,11 +87680,26 @@ impl Interpreter {
         };
         let callable = self.return_type_callable_name(function, class_context);
         if type_decl_is_exact(type_decl, "never") {
+            let callable_kind = if class_context.is_some() && function.name != "{closure}" {
+                "method"
+            } else {
+                "function"
+            };
+            if missing_return {
+                return Err(Diagnostic::new(
+                    Phase::Runtime,
+                    function.span.line,
+                    function.span.column,
+                    format!(
+                        "{callable}: never-returning {callable_kind} must not implicitly return"
+                    ),
+                ));
+            }
             return Err(Diagnostic::new(
                 Phase::Runtime,
                 function.span.line,
                 function.span.column,
-                format!("{callable}: A never-returning function must not return"),
+                format!("{callable}: A never-returning {callable_kind} must not return"),
             ));
         }
         if type_decl_is_exact(type_decl, "void") {
@@ -109393,6 +109424,14 @@ fn magic_method_startup_diagnostics(
     }
 
     if !diagnostics.has_fatal() {
+        collect_disallowed_parameter_type_startup_diagnostics(
+            &mut diagnostics,
+            program,
+            source_file,
+        );
+    }
+
+    if !diagnostics.has_fatal() {
         collect_implicit_nullable_parameter_startup_diagnostics(
             &mut diagnostics,
             program,
@@ -110915,6 +110954,73 @@ fn standalone_only_type_display(type_name: &str) -> Option<&'static str> {
     }
 }
 
+fn collect_disallowed_parameter_type_startup_diagnostics(
+    diagnostics: &mut MagicMethodStartupDiagnostics,
+    program: &Program,
+    source_file: Option<&str>,
+) {
+    for stmt in &program.statements {
+        match stmt {
+            Stmt::Function(function) if !function.is_nested => {
+                if let Some((message, line)) = function_disallowed_parameter_type(function) {
+                    diagnostics.set_fatal(message, source_file, line);
+                    return;
+                }
+            }
+            Stmt::Class(class) if !class.is_nested => {
+                for member in &class.members {
+                    let ClassMember::Method(method) = member else {
+                        continue;
+                    };
+                    if let Some((message, line)) =
+                        function_disallowed_parameter_type(&method.function)
+                    {
+                        diagnostics.set_fatal(message, source_file, line);
+                        return;
+                    }
+                }
+            }
+            Stmt::Interface(interface) => {
+                for method in &interface.methods {
+                    if let Some((message, line)) =
+                        function_disallowed_parameter_type(&method.function)
+                    {
+                        diagnostics.set_fatal(message, source_file, line);
+                        return;
+                    }
+                }
+            }
+            Stmt::Trait(trait_decl) => {
+                for method in &trait_decl.methods {
+                    if let Some((message, line)) =
+                        function_disallowed_parameter_type(&method.function)
+                    {
+                        diagnostics.set_fatal(message, source_file, line);
+                        return;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn function_disallowed_parameter_type(function: &FunctionDecl) -> Option<(String, usize)> {
+    function.params.iter().find_map(|param| {
+        let type_decl = param.type_decl.as_ref()?;
+        let normalized = normalize_type_name(&type_decl.text).to_ascii_lowercase();
+        let type_name = match normalized.as_str() {
+            "never" => "never",
+            "void" => "void",
+            _ => return None,
+        };
+        Some((
+            format!("{type_name} cannot be used as a parameter type"),
+            type_decl.span.line,
+        ))
+    })
+}
+
 fn collect_invalid_intersection_type_startup_diagnostics(
     diagnostics: &mut MagicMethodStartupDiagnostics,
     program: &Program,
@@ -111369,11 +111475,8 @@ fn typed_return_startup_diagnostic(
         return None;
     }
     if type_decl_is_exact(return_type, "never") {
-        if let Some((span, _)) = return_with_value_span(body) {
-            return Some((
-                "A never-returning function must not return".to_string(),
-                span.line,
-            ));
+        if let Some(span) = return_statement_span(body) {
+            return Some((never_return_statement_message(is_method), span.line));
         }
         return None;
     }
@@ -111393,6 +111496,11 @@ fn void_return_with_value_message(is_method: bool, is_null: bool) -> String {
     } else {
         format!("A void {callable_kind} must not return a value")
     }
+}
+
+fn never_return_statement_message(is_method: bool) -> String {
+    let callable_kind = if is_method { "method" } else { "function" };
+    format!("A never-returning {callable_kind} must not return")
 }
 
 fn typed_return_without_value_message(return_type: &str) -> String {
@@ -111468,6 +111576,67 @@ fn return_with_value_span(statements: &[Stmt]) -> Option<(Span, bool)> {
                 if let Some(finally_body) = finally_body {
                     if let Some(found) = return_with_value_span(finally_body) {
                         return Some(found);
+                    }
+                }
+            }
+            Stmt::Function(_)
+            | Stmt::Class(_)
+            | Stmt::Interface(_)
+            | Stmt::Trait(_)
+            | Stmt::Enum(_) => {}
+            _ => {}
+        }
+    }
+    None
+}
+
+fn return_statement_span(statements: &[Stmt]) -> Option<Span> {
+    for stmt in statements {
+        match stmt {
+            Stmt::Return { span, .. } => return Some(*span),
+            Stmt::If {
+                then_branch,
+                else_branch,
+                ..
+            } => {
+                if let Some(span) = return_statement_span(then_branch)
+                    .or_else(|| return_statement_span(else_branch))
+                {
+                    return Some(span);
+                }
+            }
+            Stmt::While { body, .. }
+            | Stmt::DoWhile { body, .. }
+            | Stmt::For { body, .. }
+            | Stmt::Foreach { body, .. } => {
+                if let Some(span) = return_statement_span(body) {
+                    return Some(span);
+                }
+            }
+            Stmt::Switch { cases, .. } => {
+                for case in cases {
+                    if let Some(span) = return_statement_span(&case.body) {
+                        return Some(span);
+                    }
+                }
+            }
+            Stmt::Try {
+                body,
+                catches,
+                finally_body,
+                ..
+            } => {
+                if let Some(span) = return_statement_span(body) {
+                    return Some(span);
+                }
+                for catch in catches {
+                    if let Some(span) = return_statement_span(&catch.body) {
+                        return Some(span);
+                    }
+                }
+                if let Some(finally_body) = finally_body {
+                    if let Some(span) = return_statement_span(finally_body) {
+                        return Some(span);
                     }
                 }
             }
@@ -119786,10 +119955,6 @@ fn type_name_is_subtype_of_with_context(
         });
     }
 
-    if signature_type_is_static_keyword(supertype) {
-        return signature_type_is_static_keyword(subtype);
-    }
-
     let subtype = resolve_relative_signature_type(subtype, subtype_context);
     let supertype = resolve_relative_signature_type(supertype, supertype_context);
 
@@ -119809,6 +119974,10 @@ fn type_name_is_subtype_of_with_context(
 
     if normalized_builtin_signature_type(subtype.as_ref()).is_some_and(|ty| ty == "never") {
         return true;
+    }
+
+    if signature_type_is_static_keyword(supertype.as_ref()) {
+        return signature_type_is_static_keyword(subtype.as_ref());
     }
 
     if normalized_builtin_signature_type(supertype.as_ref()).is_some_and(|ty| ty == "iterable") {
@@ -122240,7 +122409,10 @@ fn return_type_error_message(error: &Diagnostic) -> Option<String> {
         .unwrap_or(error.message.as_str());
     (message.contains("(): Return value must be of type ")
         || message.ends_with(": A void function must not return a value")
-        || message.ends_with(": A never-returning function must not return"))
+        || message.ends_with(": A never-returning function must not return")
+        || message.ends_with(": A never-returning method must not return")
+        || message.ends_with(": never-returning function must not implicitly return")
+        || message.ends_with(": never-returning method must not implicitly return"))
     .then(|| message.to_string())
 }
 
@@ -122251,7 +122423,20 @@ fn catchable_uncaught_throw_class_and_message(
         return None;
     }
 
-    for class_name in ["Exception", "Error", "ErrorException"] {
+    for class_name in [
+        "Exception",
+        "Error",
+        "ErrorException",
+        "TypeError",
+        "ArgumentCountError",
+        "ValueError",
+        "ArithmeticError",
+        "DivisionByZeroError",
+        "RuntimeException",
+        "OutOfRangeException",
+        "UnexpectedValueException",
+        "OutOfBoundsException",
+    ] {
         let prefix = format!(
             "unsupported call throw: uncaught {class_name} propagation beyond catch/finally is not implemented"
         );
@@ -167092,6 +167277,9 @@ fn ensure_supported_reference_return_function_metadata(
 }
 
 fn reference_return_type_decl_is_supported(function: &FunctionDecl, decl: &TypeDecl) -> bool {
+    if type_decl_is_exact(decl, "never") {
+        return true;
+    }
     let supports_syntax_only_mixed_return = function.name.eq_ignore_ascii_case("offsetGet")
         || function.name.eq_ignore_ascii_case("__get");
     supports_syntax_only_mixed_return && decl.text.eq_ignore_ascii_case("mixed")

@@ -308,6 +308,167 @@ function foo(): never {
 }
 
 #[test]
+fn void_and_never_parameter_types_are_startup_fatals() {
+    let never_parameter = run_source_with_source_file(
+        r#"<?php
+function foo(never $value) {}
+"#,
+        "/tmp/never_parameter.php",
+    )
+    .unwrap();
+    assert_eq!(never_parameter.stdout, "");
+    assert_eq!(
+        never_parameter.stderr,
+        "Fatal error: never cannot be used as a parameter type in /tmp/never_parameter.php on line 2"
+    );
+    assert_eq!(never_parameter.exit_code, 255);
+
+    let void_parameter = run_source_with_source_file(
+        r#"<?php
+function foo(void $value) {}
+"#,
+        "/tmp/void_parameter.php",
+    )
+    .unwrap();
+    assert_eq!(void_parameter.stdout, "");
+    assert_eq!(
+        void_parameter.stderr,
+        "Fatal error: void cannot be used as a parameter type in /tmp/void_parameter.php on line 2"
+    );
+    assert_eq!(void_parameter.exit_code, 255);
+}
+
+#[test]
+fn never_empty_return_startup_fatals_use_function_and_method_labels() {
+    let never_function_return = run_source_with_source_file(
+        r#"<?php
+function foo(): never {
+    return;
+}
+"#,
+        "/tmp/never_empty_function_return.php",
+    )
+    .unwrap();
+    assert_eq!(never_function_return.stdout, "");
+    assert_eq!(
+        never_function_return.stderr,
+        "Fatal error: A never-returning function must not return in /tmp/never_empty_function_return.php on line 3"
+    );
+    assert_eq!(never_function_return.exit_code, 255);
+
+    let never_method_return = run_source_with_source_file(
+        r#"<?php
+class Foo {
+    public function bar(): never {
+        return;
+    }
+}
+"#,
+        "/tmp/never_empty_method_return.php",
+    )
+    .unwrap();
+    assert_eq!(never_method_return.stdout, "");
+    assert_eq!(
+        never_method_return.stderr,
+        "Fatal error: A never-returning method must not return in /tmp/never_empty_method_return.php on line 4"
+    );
+    assert_eq!(never_method_return.exit_code, 255);
+}
+
+#[test]
+fn never_implicit_return_type_errors_use_function_and_method_labels() {
+    let uncaught_function = run_source_with_source_file(
+        r#"<?php
+function foo(): never {
+    if (false) {
+        throw new Exception("bad");
+    }
+}
+
+foo();
+"#,
+        "/tmp/never_implicit_function_return.php",
+    )
+    .unwrap();
+    assert!(uncaught_function.stdout.contains(
+        "Fatal error: Uncaught TypeError: foo(): never-returning function must not implicitly return in /tmp/never_implicit_function_return.php:2"
+    ));
+    assert!(uncaught_function
+        .stdout
+        .contains("#0 /tmp/never_implicit_function_return.php(8): foo()\n#1 {main}"));
+    assert_eq!(uncaught_function.stderr, "");
+    assert_eq!(uncaught_function.exit_code, 255);
+
+    let caught_method = run_source(
+        r#"<?php
+class Foo {
+    public static function bar(): never {
+        if (false) {
+            throw new Exception("bad");
+        }
+    }
+}
+
+try {
+    Foo::bar();
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        caught_method.stdout,
+        "Foo::bar(): never-returning method must not implicitly return\n"
+    );
+    assert_eq!(caught_method.stderr, "");
+    assert_eq!(caught_method.exit_code, 0);
+}
+
+#[test]
+fn never_return_type_is_covariant_to_static_return_type() {
+    let execution = run_source(
+        r#"<?php
+class A {
+    public function someReturningStaticMethod(): static {
+    }
+
+    public function &baz() {
+    }
+}
+
+class B extends A {
+    public function someReturningStaticMethod(): never {
+        throw new UnexpectedValueException("child");
+    }
+
+    public function &baz(): never {
+        throw new UnexpectedValueException("reference-child");
+    }
+}
+
+try {
+    (new B())->someReturningStaticMethod();
+} catch (UnexpectedValueException $e) {
+}
+
+try {
+    (new B())->baz();
+} catch (UnexpectedValueException $e) {
+}
+
+echo "OK!", PHP_EOL;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "OK!\n");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn never_return_type_allows_throwing_bodies() {
     let execution = run_source(
         r#"<?php
