@@ -4,6 +4,31 @@
 
 Implemented:
 
+- Added a bounded object-property introspection and `ArrayObject` backing lane
+  on the interpreter path. `get_object_vars()`, `get_mangled_object_vars()`,
+  object-to-array casts, and object-backed `ArrayObject` / `ArrayIterator`
+  storage snapshots now preserve existing reference-backed object slots, keep
+  raw public property names including NUL-containing names, hide bounded
+  internal `ArrayObject` / `ArrayIterator` storage from
+  `get_mangled_object_vars()`, cast bounded `ArrayObject` / `ArrayIterator`
+  objects to their backing storage, allow by-reference writes to create dynamic
+  public properties, and include descendant protected slots for related
+  same-family method scopes. Focused proof covers Rust
+  `object_model::get_object_vars_preserves_references_and_related_protected_visibility`,
+  Rust
+  `object_model::array_object_introspection_hides_core_storage_and_preserves_object_backing_keys`,
+  build/fmt/diff checks, and selected public PHPT rows
+  `Zend/tests/get_mangled_object_vars.phpt`,
+  `ext/standard/tests/class_object/get_object_vars_basic_001.phpt`,
+  `ext/standard/tests/class_object/get_object_vars_basic_002.phpt`,
+  `ext/standard/tests/class_object/get_object_vars_variation_002.phpt`, and
+  `ext/standard/tests/class_object/get_object_vars_variation_005.phpt` at
+  `5/5` PASS. Exact-current pre-patch proof on `64d95b6d` was `0/5`.
+  Unsupported edges remain broad magic property hooks, full object/reference
+  COW identity, serialization parity, `ArrayObject` invariant-violation parity
+  beyond raw public property storage, native lowering, and exact fatal stack
+  formatting.
+
 - Repaired the latest-published PASS regression in
   `ext/date/tests/date_diff.phpt` introduced by the DateTime microseconds lane.
   Zero-microsecond DateTime diffs now use the pre-fraction component path, and

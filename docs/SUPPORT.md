@@ -2645,9 +2645,13 @@
   constructed with another one as its backing storage, reads and writes
   recurse through the inner object's storage so copy-constructor-style offset
   mutation updates the shared backing object. Object-backed storage exposes
-  public properties and keyed `offsetSet()` writes; appending to object-backed
-  `ArrayIterator` or `ArrayObject` storage throws the PHP-shaped `Error`
-  directing callers to `offsetSet()`. General SPL wrapper iterators such as
+  public properties and keyed `offsetSet()` writes, including raw public
+  property names with NUL bytes and integer-like keys; appending to
+  object-backed `ArrayIterator` or `ArrayObject` storage throws the PHP-shaped
+  `Error` directing callers to `offsetSet()`. Top-level `(array)` casts of
+  bounded `ArrayObject` / `ArrayIterator` values return the backing storage,
+  and `get_mangled_object_vars()` omits their internal storage property.
+  General SPL wrapper iterators such as
   `LimitIterator`, `IteratorIterator`, and `NoRewindIterator`, weak
   scalar/null/float/numeric-string coercions for `ArrayIterator::seek()`
   offsets, nested ArrayObject-backed `uasort()` / `uksort()` storage sorting,
@@ -6828,9 +6832,10 @@
   values for declared string class names, `get_object_vars` returns
   initialized properties visible in the current method context, or initialized
   public properties outside a method, with their current values in
-  parent-to-child slot order for current object values, `get_mangled_object_vars`
-  returns inherited and exact-class public/protected/private instance slots
-  with PHP-style mangled keys for current object values,
+  parent-to-child slot order for current object values while preserving
+  existing reference-backed slots, `get_mangled_object_vars` returns inherited
+  and exact-class public/protected/private plus supported dynamic public
+  instance slots with PHP-style mangled keys for current object values,
   `is_a` checks
   exact class identity and single-parent ancestor relationships over current
   object values or string class names when `allow_string` is true,
@@ -7647,11 +7652,15 @@
   unresolved class-name values raise a catchable PHP-shaped `TypeError`. It is
   available through string-valued dynamic function calls.
   `get_object_vars($object)` accepts current object values and returns an array
-  of public exact and inherited instance property names in parent-to-child slot
-  order with their current slot values. Compatible public redeclarations expose
-  the shared inherited slot once instead of duplicate parent/child entries.
-  Protected/private slots and static properties are not included. It is
-  available through string-valued dynamic function calls.
+  of initialized properties visible in the current method context, or
+  initialized public properties outside a method, in parent-to-child slot order
+  with their current slot values. Compatible public redeclarations expose the
+  shared inherited slot once instead of duplicate parent/child entries.
+  Existing reference-backed object slots are preserved in the returned array,
+  raw public property names including NUL-containing names stay raw, and
+  protected properties declared by related ancestor/descendant classes are
+  visible in same-family method scopes. Static properties are not included. It
+  is available through string-valued dynamic function calls.
   Direct `empty($object->name)` accepts direct object-variable public-property
   operands, returns true for falsey public property slots, undefined target
   variables, and non-object target variables, and uses a stable
@@ -7664,10 +7673,12 @@
   property keys are emitted as the declared name, protected property keys are
   emitted as `\0*\0name`, and private property keys are emitted with the
   declaring class name as `\0ClassName\0name`; static properties are omitted.
-  Dynamic properties, interface properties, and
-  non-public visibility-context behavior beyond the current declaring-class
-  method context are not represented yet. It is available through
-  string-valued dynamic function calls.
+  Existing reference-backed slots are preserved, supported dynamic public
+  properties are included, and the internal bounded `ArrayObject` /
+  `ArrayIterator` storage property is omitted because its contents live in the
+  interpreter storage table. Interface properties, broad magic property hooks,
+  full reference/COW identity, and native lowering remain unsupported. It is
+  available through string-valued dynamic function calls.
   Class `implements` clauses accept comma-separated class-like names and record
   them as class metadata. This metadata participates in relationship checks,
   including through parent classes. For interfaces declared in the current
@@ -10357,11 +10368,13 @@
   `get_class_vars($class_name)` returns
   public declared and inherited property names with instance properties before
   static properties and `null` values for declared string class names.
-  `get_object_vars($object)` returns public exact and
-  inherited instance property names with their current values for current
-  object values.
-  `get_mangled_object_vars($object)` returns public, protected, and private
-  instance slots with PHP-style mangled keys for current object values.
+  `get_object_vars($object)` returns initialized public or current-context
+  visible instance properties with their current values for current object
+  values and preserves existing reference-backed slots.
+  `get_mangled_object_vars($object)` returns public, protected, private, and
+  supported dynamic public instance slots with PHP-style mangled keys for
+  current object values, while omitting bounded `ArrayObject` /
+  `ArrayIterator` internal storage.
   `empty($object->name)`
   checks falsey public slots and treats missing properties, undefined target
   variables, and non-object target variables as empty in the current
@@ -12443,16 +12456,15 @@
   aliases/imports, namespace-aware names, autoloading,
   non-public/context-sensitive visibility listing, exact invalid class-name
   conversion warnings for arrays/objects/resources, and native lowering
-- `get_object_vars` dynamic properties, visibility context for non-public
-  properties, traits, interfaces, aliases/imports,
-  namespace-aware names, references/copy-on-write, exact native ordering and
-  `TypeError` behavior, and native lowering
-- `get_mangled_object_vars` dynamic properties, property defaults beyond the
-  current constant-expression subset, traits,
-  interfaces, aliases/imports, namespace-aware names,
-  non-public/context-sensitive visibility behavior beyond the current
-  declaring-class slot ownership, references/copy-on-write, exact native
+- `get_object_vars` trait/interface property composition, aliases/imports,
+  namespace-aware names, broad magic property hooks, full reference/COW
+  identity beyond preserving existing reference-backed slots, exact native
   ordering and `TypeError` behavior, and native lowering
+- `get_mangled_object_vars` property defaults beyond the current
+  constant-expression subset, trait/interface property composition,
+  aliases/imports, namespace-aware names, broad magic property hooks, full
+  reference/COW identity beyond preserving existing reference-backed slots,
+  exact native ordering and `TypeError` behavior, and native lowering
 - `property_exists` native true results, native declared property tables,
   object operands, built-in/internal/extension classes including `Exception`,
   namespaces/import aliases, exact native `TypeError` behavior, and native

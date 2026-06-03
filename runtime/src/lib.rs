@@ -37376,10 +37376,15 @@ impl PhpObject {
         let mut array = PhpArray::new();
         for property in self.properties() {
             if property.is_initialized() && !property.is_unset() {
-                array.insert(
-                    ArrayKey::String(property.mangled_name()),
-                    property.value_cloned(),
-                );
+                let key = ArrayKey::String(property.mangled_name());
+                if let Some(reference) = property
+                    .existing_reference_cell()
+                    .expect("initialized property reference snapshot should not fail")
+                {
+                    array.insert_reference(key, reference);
+                } else {
+                    array.insert(key, property.value_cloned());
+                }
             }
         }
         array
@@ -37901,6 +37906,57 @@ impl PhpObject {
         Ok(reference)
     }
 
+    pub fn bind_dynamic_public_property_reference_cell_to(
+        &self,
+        name: &str,
+        reference: PhpReferenceCell,
+    ) -> RuntimeResult<()> {
+        let mut properties = self.properties.borrow_mut();
+        if let Some(index) = properties.iter().rposition(|property| {
+            property.name == name && property.visibility == Visibility::Public
+        }) {
+            properties[index].ensure_writable()?;
+            let value = coerce_typed_property_value(&properties[index], reference.value_cloned())?;
+            reference.set_value(value);
+            properties[index].set_reference_cell(reference);
+            properties[index].initialized = true;
+            return Ok(());
+        }
+
+        if self.has_non_public_property_blocking_dynamic_public_shadow(&properties, name) {
+            return Err(RuntimeError::unsupported_property_access(format!(
+                "non-public property {}::${} requires same-class method context in the current subset",
+                self.class_name, name
+            )));
+        }
+
+        if !self.allows_dynamic_public_properties() {
+            if self.forbids_dynamic_public_properties_as_error() {
+                return Err(RuntimeError::unsupported_property_access(format!(
+                    "Cannot create dynamic property {}::${}",
+                    self.class_name, name
+                )));
+            }
+            return Err(RuntimeError::undefined_property(
+                self.class_name.clone(),
+                name,
+            ));
+        }
+
+        properties.push(ObjectProperty {
+            declaring_class_id: self.class_id,
+            declaring_class_name: self.class_name.clone(),
+            name: name.to_string(),
+            visibility: Visibility::Public,
+            type_decl: None,
+            is_readonly: false,
+            storage: ObjectPropertyStorage::Reference(reference),
+            initialized: true,
+            unset: false,
+        });
+        Ok(())
+    }
+
     pub fn write_dynamic_public_property(&self, name: &str, value: Value) -> RuntimeResult<()> {
         let mut properties = self.properties.borrow_mut();
         if let Some(index) = properties.iter().rposition(|property| {
@@ -37947,6 +38003,29 @@ impl PhpObject {
         Ok(())
     }
 
+    pub fn write_forced_public_property(&self, name: &str, value: Value) {
+        let mut properties = self.properties.borrow_mut();
+        if let Some(index) = properties.iter().rposition(|property| {
+            property.name == name && property.visibility == Visibility::Public
+        }) {
+            properties[index].set_value(value);
+            properties[index].initialized = true;
+            return;
+        }
+
+        properties.push(ObjectProperty {
+            declaring_class_id: self.class_id,
+            declaring_class_name: self.class_name.clone(),
+            name: name.to_string(),
+            visibility: Visibility::Public,
+            type_decl: None,
+            is_readonly: false,
+            storage: ObjectPropertyStorage::Value(PhpValueCell::new(value)),
+            initialized: true,
+            unset: false,
+        });
+    }
+
     pub fn write_serialized_property(&self, mangled_name: &str, value: Value) -> RuntimeResult<()> {
         let mut properties = self.properties.borrow_mut();
         let (visibility, declaring_class_name, name) =
@@ -37991,7 +38070,7 @@ impl PhpObject {
         self.write_dynamic_public_property(name, value)
     }
 
-    fn allows_dynamic_public_properties(&self) -> bool {
+    pub fn allows_dynamic_public_properties(&self) -> bool {
         self.allows_dynamic_properties
             || self.class_name.eq_ignore_ascii_case("stdClass")
             || self.class_name.eq_ignore_ascii_case("wpdb")
@@ -38525,7 +38604,7 @@ impl ObjectProperty {
             return self.name.clone();
         }
 
-        unmangle_public_object_iteration_name(&self.name).unwrap_or_else(|| self.name.clone())
+        self.name.clone()
     }
 
     fn is_visible_in_context(
@@ -38643,7 +38722,7 @@ impl ObjectProperty {
         }
     }
 
-    fn existing_reference_cell(&self) -> RuntimeResult<Option<PhpReferenceCell>> {
+    pub fn existing_reference_cell(&self) -> RuntimeResult<Option<PhpReferenceCell>> {
         if !self.initialized {
             return Err(RuntimeError::uninitialized_typed_property(
                 self.declaring_class_name.clone(),
@@ -38656,12 +38735,6 @@ impl ObjectProperty {
             ObjectPropertyStorage::Value(_) => Ok(None),
         }
     }
-}
-
-fn unmangle_public_object_iteration_name(name: &str) -> Option<String> {
-    let rest = name.strip_prefix('\0')?;
-    let (_, property) = rest.split_once('\0')?;
-    Some(property.to_string())
 }
 
 struct ObjectComparisonProperty {

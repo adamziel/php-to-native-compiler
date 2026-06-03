@@ -4253,18 +4253,24 @@ static properties, walking the current class toward parents within each group,
 with supported constant-expression default values or `null` for properties
 without defaults. Invalid or unresolved class names raise the current
 PHP-shaped catchable `TypeError` surface.
-`get_object_vars($object)` accepts current object values and returns public
-exact and inherited instance property names with their current slot values in
-parent-to-child slot order.
+`get_object_vars($object)` accepts current object values and returns initialized
+properties visible in the current method context, or initialized public
+properties outside a method, with their current slot values in parent-to-child
+slot order. The returned array preserves existing reference-backed object
+slots, keeps raw public property names including NUL-containing names, and
+treats protected properties declared by related ancestor/descendant classes as
+visible in same-family method scopes.
 `get_mangled_object_vars($object)` accepts current object values and returns
 public, protected, and private instance slots in declaration order with
 PHP-style property keys: public names as-is, protected names as `\0*\0name`,
-and private names as `\0ClassName\0name` using the declaring class name.
-Dynamic properties, readonly property metadata/enforcement, non-constant or
-typed property defaults, promoted constructor properties, trait/interface
-properties, and non-public property visibility-context behavior beyond
-same-declaring-class private access and class/ancestor protected access remain
-outside the current object model.
+and private names as `\0ClassName\0name` using the declaring class name. It
+preserves existing reference-backed slots and omits the internal bounded
+`ArrayObject` / `ArrayIterator` storage property that is represented separately
+by the interpreter storage table. Dynamic public properties created through the
+supported write paths are included. Readonly property metadata/enforcement,
+promoted constructor properties, trait/interface properties, broad magic
+property hooks, full reference/COW identity, and native lowering remain outside
+the current object model.
 `is_a($object_or_class, $class_name[, $allow_string])` checks exact-class,
 single-parent ancestor, and recorded `implements` metadata relationships
 against the current metadata table.

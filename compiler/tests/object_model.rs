@@ -6051,6 +6051,47 @@ foreach ($vars as $key => $value) {
 }
 
 #[test]
+fn get_object_vars_preserves_references_and_related_protected_visibility() {
+    let source = r#"<?php
+class A {
+    private $hiddenPriv = "A::hiddenPriv";
+
+    public static function inspect($b) {
+        foreach (get_object_vars($b) as $key => $value) {
+            echo $key, "=", $value, ";";
+        }
+        echo "\n";
+    }
+}
+
+class B extends A {
+    protected $prot = "B::prot";
+    public $pub = "B::pub";
+}
+
+$b = new B();
+A::inspect($b);
+
+$obj = new stdClass();
+$a = "original";
+$obj->ref = &$a;
+$obj->val = $a;
+$vars = get_object_vars($obj);
+$vars["ref"] = "changed.ref";
+$vars["val"] = "changed.val";
+echo $a, "|", $obj->ref, "|", $obj->val, "|", $vars["val"];
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "hiddenPriv=A::hiddenPriv;prot=B::prot;pub=B::pub;\nchanged.ref|changed.ref|original|changed.val"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn allow_dynamic_properties_child_can_shadow_inherited_private_property() {
     let source = r#"<?php
 class ParentSlot {
@@ -16928,6 +16969,51 @@ foreach ($it as $key => $value) {
         execution.stdout,
         "bool(true)\n4|1\nb:2\na:1\n0:3\n1|copy\n0=3\na=1\nb=2\nx:ex\ny:why\n"
     );
+}
+
+#[test]
+fn array_object_introspection_hides_core_storage_and_preserves_object_backing_keys() {
+    let source = r#"<?php
+#[AllowDynamicProperties]
+class AO extends ArrayObject {
+    private $priv = 1;
+}
+
+$ao = new AO(array("x" => "y"));
+$ao->dyn = 2;
+foreach (get_mangled_object_vars($ao) as $key => $value) {
+    echo str_replace("\0", "%0", $key), "=", $value, ";";
+}
+echo "\n";
+foreach ((array) $ao as $key => $value) {
+    echo $key, "=", $value, ";";
+}
+echo "\n";
+
+class Test {
+    public $prop;
+}
+
+$obj = new Test();
+$storage = new ArrayObject($obj);
+$storage["\0A\0b"] = 42;
+$storage["\0*\0b"] = 24;
+$storage[12] = 6;
+foreach (get_object_vars($obj) as $key => $value) {
+    echo str_replace("\0", "%0", $key), "=", $value, ";";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert!(execution.stdout.starts_with("%0AO%0priv=1;dyn=2;\nx=y;\n"));
+    assert!(execution.stdout.contains(
+        "Deprecated: ArrayObject::__construct(): Using an object as a backing array for ArrayObject is deprecated"
+    ));
+    assert!(execution
+        .stdout
+        .ends_with("prop=;%0A%0b=42;%0*%0b=24;12=6;"));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

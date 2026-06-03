@@ -12847,6 +12847,37 @@ impl Interpreter {
         Ok((storage, flags, iterator_class))
     }
 
+    fn insert_object_property_snapshot(
+        properties: &mut PhpArray,
+        key: ArrayKey,
+        property: &ObjectProperty,
+    ) {
+        if let Some(reference) = property
+            .existing_reference_cell()
+            .expect("initialized property reference snapshot should not fail")
+        {
+            properties.insert_reference(key, reference);
+        } else {
+            properties.insert(key, property.value_cloned());
+        }
+    }
+
+    fn is_array_object_core_storage_property(
+        object: &PhpObject,
+        property: &ObjectProperty,
+    ) -> bool {
+        (object.is_instance_of_class_name("ArrayObject")
+            || object.is_instance_of_class_name("ArrayIterator"))
+            && property.name() == "storage"
+            && property.visibility() == Visibility::Private
+            && (property
+                .declaring_class_name()
+                .eq_ignore_ascii_case("ArrayObject")
+                || property
+                    .declaring_class_name()
+                    .eq_ignore_ascii_case("ArrayIterator"))
+    }
+
     fn public_object_properties_array(object: &PhpObject) -> PhpArray {
         let mut array = PhpArray::new();
         for property in object.properties() {
@@ -12854,9 +12885,10 @@ impl Interpreter {
                 && property.is_initialized()
                 && !property.is_unset()
             {
-                array.insert(
+                Self::insert_object_property_snapshot(
+                    &mut array,
                     ArrayKey::String(property.name().to_string()),
-                    property.value_cloned(),
+                    &property,
                 );
             }
         }
@@ -12977,6 +13009,7 @@ impl Interpreter {
     ) -> CompileResult<()> {
         if !self.is_array_object_storage_object(object)
             || self.array_object_array_as_props_enabled(object)
+            || object.allows_dynamic_public_properties()
         {
             return Ok(());
         }
@@ -13177,12 +13210,11 @@ impl Interpreter {
                         ),
                     )
                 })?;
-                object
-                    .write_dynamic_public_property(
-                        &Self::array_object_key_to_property_name(&key),
-                        value,
-                    )
-                    .map_err(|error| runtime_error(span, error))
+                object.write_forced_public_property(
+                    &Self::array_object_key_to_property_name(&key),
+                    value,
+                );
+                Ok(())
             }
             other => Err(runtime_error(
                 span,
@@ -32329,14 +32361,18 @@ impl Interpreter {
                 scope.pre_replace_holder_storage(&boundary);
                 let alias_fallbacks =
                     scope.public_object_property_root_alias_fallbacks(object, property);
-                object_value
-                    .bind_property_reference_cell_to_context(
-                        property,
-                        source_cell,
-                        current_class_id,
-                        &protected_class_ids,
-                    )
-                    .map_err(|error| runtime_error(span, error))?;
+                match object_value.bind_property_reference_cell_to_context(
+                    property,
+                    source_cell.clone(),
+                    current_class_id,
+                    &protected_class_ids,
+                ) {
+                    Ok(()) => {}
+                    Err(error) if Self::is_undefined_property_error(&error) => object_value
+                        .bind_dynamic_public_property_reference_cell_to(property, source_cell)
+                        .map_err(|error| runtime_error(span, error))?,
+                    Err(error) => return Err(runtime_error(span, error)),
+                }
                 scope.post_replace_holder_storage(&boundary);
                 scope.remove_public_object_property_root_from_array_offset_aliases(
                     object,
@@ -64105,6 +64141,16 @@ impl Interpreter {
                 .get(class_id)
                 .expect("ancestor class id should resolve to metadata")
                 .parent_id();
+        }
+
+        for class in self.classes.classes() {
+            let class_id = class.id();
+            if class_id != current_class_id
+                && self.classes.is_subclass_of(class_id, current_class_id)
+                && !protected_class_ids.contains(&class_id)
+            {
+                protected_class_ids.push(class_id);
+            }
         }
 
         protected_class_ids
@@ -97882,9 +97928,10 @@ impl Interpreter {
                     for property in
                         object.initialized_visible_properties(current_class_id, &protected_class_ids)
                     {
-                        properties.insert(
+                        Self::insert_object_property_snapshot(
+                            &mut properties,
                             ArrayKey::String(property.object_iteration_name()),
-                            property.value_cloned(),
+                            &property,
                         );
                     }
                     Ok(Value::Array(properties))
@@ -97909,12 +97956,16 @@ impl Interpreter {
                 [Value::Object(object)] => {
                     let mut properties = PhpArray::new();
                     for property in object.properties() {
-                        if !property.is_initialized() {
+                        if !property.is_initialized()
+                            || property.is_unset()
+                            || Self::is_array_object_core_storage_property(object, &property)
+                        {
                             continue;
                         }
-                        properties.insert(
+                        Self::insert_object_property_snapshot(
+                            &mut properties,
                             ArrayKey::String(property.mangled_name()),
-                            property.value_cloned(),
+                            &property,
                         );
                     }
                     Ok(Value::Array(properties))
@@ -105568,6 +105619,14 @@ impl Interpreter {
                         .append(value)
                         .expect("append into a fresh array should not fail");
                     Ok(Value::Array(array))
+                }
+                Value::Object(object) if self.is_array_object_storage_object(&object) => {
+                    let state = self.array_object_state(&object, "(array)", span)?.clone();
+                    Ok(Value::Array(self.array_object_storage_to_array(
+                        &state.storage,
+                        "(array)",
+                        span,
+                    )?))
                 }
                 Value::Object(object) => {
                     Ok(Value::Array(object.initialized_mangled_properties_array()))
