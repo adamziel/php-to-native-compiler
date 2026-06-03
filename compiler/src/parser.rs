@@ -3,12 +3,13 @@ use std::collections::HashMap;
 use crate::ast::{
     ArrayItem, AssignTarget, AttributeDecl, BinaryOp, CastKind, CatchClause, CatchType,
     ClassConstantDecl, ClassDecl, ClassMember, ClassMethodDecl, ClassPropertyDecl, ClassVisibility,
-    ClosureCapture, CompoundAssignOp, ConstDeclarator, EnumCaseDecl, EnumDecl, Expr, ForAction,
-    ForeachListItem, ForeachListKey, ForeachValueTarget, FunctionDecl, FunctionParam,
-    IncrementDecrementOp, IncrementDecrementPosition, InterfaceDecl, InterfaceMethodDecl, MatchArm,
-    NewClassName, Program, ReferenceSource, Span, StaticLocalDeclarator, Stmt, SwitchCase,
-    TraitDecl, TraitMethodAliasDecl, TraitMethodPrecedenceDecl, TraitMethodVisibilityDecl,
-    TraitUseDecl, TypeDecl, UnaryOp, UnsetTarget, UseImport, UseImportKind,
+    ClosureCapture, CompoundAssignOp, ConstDeclarator, EnumCaseDecl, EnumDecl,
+    EnumMemberDiagnosticDecl, EnumMemberDiagnosticKind, Expr, ForAction, ForeachListItem,
+    ForeachListKey, ForeachValueTarget, FunctionDecl, FunctionParam, IncrementDecrementOp,
+    IncrementDecrementPosition, InterfaceDecl, InterfaceMethodDecl, MatchArm, NewClassName,
+    Program, ReferenceSource, Span, StaticLocalDeclarator, Stmt, SwitchCase, TraitDecl,
+    TraitMethodAliasDecl, TraitMethodPrecedenceDecl, TraitMethodVisibilityDecl, TraitUseDecl,
+    TypeDecl, UnaryOp, UnsetTarget, UseImport, UseImportKind,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::lexer::{tokenize, AttributeToken, Token, TokenKind};
@@ -1404,16 +1405,24 @@ impl Parser {
 
         self.consume_keyword(TokenKind::LBrace, "expected enum body")?;
         let mut cases = Vec::new();
+        let mut diagnostics = Vec::new();
         while !self.check(|kind| matches!(kind, TokenKind::RBrace | TokenKind::Eof)) {
             self.trace_parse("enum member");
             self.consume_doc_comments_and_attributes();
             self.pending_doc_comment = None;
-            cases.push(self.parse_enum_case()?);
+            if self.check(
+                |kind| matches!(kind, TokenKind::Identifier(name) if name.eq_ignore_ascii_case("case")),
+            ) {
+                cases.push(self.parse_enum_case()?);
+            } else {
+                diagnostics.push(self.parse_enum_member_diagnostic()?);
+            }
         }
         self.consume_keyword(TokenKind::RBrace, "expected '}' after enum body")?;
         Ok(Stmt::Enum(EnumDecl {
             name,
             cases,
+            diagnostics,
             attributes,
             span,
         }))
@@ -1437,6 +1446,112 @@ impl Parser {
             attributes,
             span,
         })
+    }
+
+    fn parse_enum_member_diagnostic(&mut self) -> CompileResult<EnumMemberDiagnosticDecl> {
+        let modifiers = self.parse_class_member_modifiers()?;
+        self.pending_attributes.clear();
+        self.pending_doc_comment = None;
+        if self.match_token(|kind| matches!(kind, TokenKind::Function)) {
+            let span = self.previous().span;
+            let function = self.parse_function_signature_after_keyword(span)?;
+            let kind = if modifiers.is_abstract {
+                self.consume_keyword(
+                    TokenKind::Semicolon,
+                    "expected ';' after abstract enum method declaration",
+                )?;
+                EnumMemberDiagnosticKind::AbstractMethod
+            } else {
+                if !Self::enum_magic_method_is_forbidden(&function.name) {
+                    return Err(self.error_at(span, unsupported_enum_member_message()));
+                }
+                self.skip_enum_method_body_after_signature(span)?;
+                EnumMemberDiagnosticKind::MagicMethod
+            };
+            return Ok(EnumMemberDiagnosticDecl {
+                kind,
+                name: Some(function.name),
+                span,
+            });
+        }
+
+        if self.check(|kind| matches!(kind, TokenKind::Variable(_))) {
+            let (_name, span) = self.consume_variable_with_span("expected enum property name")?;
+            self.skip_enum_member_declaration_remainder()?;
+            return Ok(EnumMemberDiagnosticDecl {
+                kind: EnumMemberDiagnosticKind::Property,
+                name: None,
+                span,
+            });
+        }
+
+        Err(self.error_at(self.peek().span, unsupported_enum_member_message()))
+    }
+
+    fn skip_enum_method_body_after_signature(&mut self, span: Span) -> CompileResult<()> {
+        self.consume_keyword(TokenKind::LBrace, "expected enum method body")?;
+        self.skip_balanced_block_after_open(span, "expected '}' after enum method body")
+    }
+
+    fn skip_enum_member_declaration_remainder(&mut self) -> CompileResult<()> {
+        let mut paren_depth = 0usize;
+        let mut bracket_depth = 0usize;
+        loop {
+            let token = self.peek().clone();
+            match token.kind {
+                TokenKind::Eof => {
+                    return Err(self.error_at(token.span, "expected ';' after enum property"));
+                }
+                TokenKind::Semicolon if paren_depth == 0 && bracket_depth == 0 => {
+                    self.advance();
+                    return Ok(());
+                }
+                TokenKind::LBrace if paren_depth == 0 && bracket_depth == 0 => {
+                    return Err(self.error_at(token.span, unsupported_property_hook_message()));
+                }
+                TokenKind::RBrace if paren_depth == 0 && bracket_depth == 0 => {
+                    return Err(self.error_at(token.span, "expected ';' after enum property"));
+                }
+                TokenKind::LParen => {
+                    paren_depth += 1;
+                    self.advance();
+                }
+                TokenKind::RParen => {
+                    paren_depth = paren_depth.saturating_sub(1);
+                    self.advance();
+                }
+                TokenKind::LBracket => {
+                    bracket_depth += 1;
+                    self.advance();
+                }
+                TokenKind::RBracket => {
+                    bracket_depth = bracket_depth.saturating_sub(1);
+                    self.advance();
+                }
+                _ => {
+                    self.advance();
+                }
+            }
+        }
+    }
+
+    fn enum_magic_method_is_forbidden(name: &str) -> bool {
+        matches!(
+            name.to_ascii_lowercase().as_str(),
+            "__clone"
+                | "__construct"
+                | "__destruct"
+                | "__get"
+                | "__isset"
+                | "__serialize"
+                | "__set"
+                | "__set_state"
+                | "__sleep"
+                | "__tostring"
+                | "__unserialize"
+                | "__unset"
+                | "__wakeup"
+        )
     }
 
     fn parse_class_member(&mut self) -> CompileResult<Vec<ClassMember>> {
@@ -1807,7 +1922,11 @@ impl Parser {
         })
     }
 
-    fn skip_declare_block_after_open(&mut self, span: Span) -> CompileResult<()> {
+    fn skip_balanced_block_after_open(
+        &mut self,
+        span: Span,
+        eof_message: &'static str,
+    ) -> CompileResult<()> {
         let mut depth = 1usize;
         while depth > 0 {
             let token = self.advance().clone();
@@ -1815,12 +1934,16 @@ impl Parser {
                 TokenKind::LBrace => depth += 1,
                 TokenKind::RBrace => depth -= 1,
                 TokenKind::Eof => {
-                    return Err(self.error_at(span, "expected '}' after declare block"));
+                    return Err(self.error_at(span, eof_message));
                 }
                 _ => {}
             }
         }
         Ok(())
+    }
+
+    fn skip_declare_block_after_open(&mut self, span: Span) -> CompileResult<()> {
+        self.skip_balanced_block_after_open(span, "expected '}' after declare block")
     }
 
     fn parse_namespace(&mut self) -> CompileResult<Stmt> {

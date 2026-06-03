@@ -4308,6 +4308,11 @@ non-static methods, object static methods, arbitrary callable arrays, exact PHP
 warning/throw behavior, and native autoload lowering remain unsupported.
 `class_exists()` also reports true for declared enums in the current
 class-like metadata slice.
+Top-level unit enum declarations may also carry diagnostic-only member records
+for PHP-forbidden magic methods, abstract enum methods, and untyped enum
+properties; startup validation consumes those records to emit PHP-shaped
+fatals before execution, while ordinary enum member execution and native enum
+lowering remain unsupported.
 `property_exists($object_or_class, $property)` checks the same declared and
 inherited property metadata for current object values or string class names,
 with case-sensitive property names. Non-empty unresolved string class names

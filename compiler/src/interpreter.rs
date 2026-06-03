@@ -42,11 +42,12 @@ use xxhash_rust::{
 use crate::ast::{
     ArrayItem, AssignTarget, AttributeDecl, BinaryOp, CastKind, CatchClause, ClassConstantDecl,
     ClassDecl, ClassMember, ClassMethodDecl, ClassPropertyDecl, ClassVisibility, ClosureCapture,
-    CompoundAssignOp, EnumDecl, Expr, ForAction, ForeachListKey, ForeachValueTarget, FunctionDecl,
-    FunctionParam, IncrementDecrementOp, IncrementDecrementPosition, InterfaceDecl,
-    InterfaceMethodDecl, InterpolatedAccessSegment, InterpolatedArrayKey, InterpolatedStringPart,
-    MatchArm, NewClassName, Program, ReferenceSource, Span, StaticLocalDeclarator, Stmt,
-    SwitchCase, TraitDecl, TraitUseDecl, TypeDecl, UnaryOp, UnsetTarget,
+    CompoundAssignOp, EnumDecl, EnumMemberDiagnosticDecl, EnumMemberDiagnosticKind, Expr,
+    ForAction, ForeachListKey, ForeachValueTarget, FunctionDecl, FunctionParam,
+    IncrementDecrementOp, IncrementDecrementPosition, InterfaceDecl, InterfaceMethodDecl,
+    InterpolatedAccessSegment, InterpolatedArrayKey, InterpolatedStringPart, MatchArm,
+    NewClassName, Program, ReferenceSource, Span, StaticLocalDeclarator, Stmt, SwitchCase,
+    TraitDecl, TraitUseDecl, TypeDecl, UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::legacy_hashes;
@@ -110315,6 +110316,12 @@ fn magic_method_startup_diagnostics(
                     source_file,
                 );
             }
+            Stmt::Enum(enum_decl) => {
+                if let Some((message, line)) = enum_member_startup_diagnostic(enum_decl) {
+                    diagnostics.set_fatal(message, source_file, line);
+                    return diagnostics;
+                }
+            }
             Stmt::Use { imports, .. } => {
                 for import in imports {
                     if !matches!(import.kind, crate::ast::UseImportKind::Class) {
@@ -110491,6 +110498,66 @@ fn magic_method_startup_diagnostics(
     }
 
     diagnostics
+}
+
+fn enum_member_startup_diagnostic(enum_decl: &EnumDecl) -> Option<(String, usize)> {
+    enum_decl
+        .diagnostics
+        .iter()
+        .find_map(|diagnostic| enum_member_startup_diagnostic_message(enum_decl, diagnostic))
+}
+
+fn enum_member_startup_diagnostic_message(
+    enum_decl: &EnumDecl,
+    diagnostic: &EnumMemberDiagnosticDecl,
+) -> Option<(String, usize)> {
+    match diagnostic.kind {
+        EnumMemberDiagnosticKind::Property => Some((
+            format!("Enum {} cannot include properties", enum_decl.name),
+            diagnostic.span.line,
+        )),
+        EnumMemberDiagnosticKind::AbstractMethod => {
+            let name = diagnostic.name.as_deref()?;
+            Some((
+                format!(
+                    "Enum method {}::{}() must not be abstract",
+                    enum_decl.name, name
+                ),
+                diagnostic.span.line,
+            ))
+        }
+        EnumMemberDiagnosticKind::MagicMethod => {
+            let name = diagnostic.name.as_deref()?;
+            enum_forbidden_magic_method_name(name).map(|method| {
+                (
+                    format!(
+                        "Enum {} cannot include magic method {method}",
+                        enum_decl.name
+                    ),
+                    diagnostic.span.line,
+                )
+            })
+        }
+    }
+}
+
+fn enum_forbidden_magic_method_name(name: &str) -> Option<&str> {
+    match name.to_ascii_lowercase().as_str() {
+        "__clone" => Some("__clone"),
+        "__construct" => Some("__construct"),
+        "__destruct" => Some("__destruct"),
+        "__get" => Some("__get"),
+        "__isset" => Some("__isset"),
+        "__serialize" => Some("__serialize"),
+        "__set" => Some("__set"),
+        "__set_state" => Some("__set_state"),
+        "__sleep" => Some("__sleep"),
+        "__tostring" => Some("__toString"),
+        "__unserialize" => Some("__unserialize"),
+        "__unset" => Some("__unset"),
+        "__wakeup" => Some("__wakeup"),
+        _ => None,
+    }
 }
 
 fn class_reserved_relationship_name_diagnostic(class: &ClassDecl) -> Option<(String, usize)> {

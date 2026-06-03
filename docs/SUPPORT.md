@@ -7219,9 +7219,11 @@
   simple method alias, visibility-adaptation, and bounded `insteadof` shapes,
   broad conflict resolution,
   `__TRAIT__` context,
-  references/copy-on-write, and native trait lowering, backed enum declarations
-  and enum members beyond
-  bare cases,
+  references/copy-on-write, and native trait lowering, backed enum declarations,
+  backed enum case values, ordinary enum methods/constants/interface
+  implementations/traits, typed or property-hook enum properties, enum case
+  objects/value access beyond current metadata and forbidden-member startup
+  diagnostics,
   unsupported class modifier combinations, readonly class declarations before
   readonly class metadata, typed-property enforcement, initialization/write
   rules, reflection behavior, and native lowering exist,
@@ -7779,7 +7781,15 @@
   calls. The autoload flag accepts current bool-like scalar values and does
   not trigger enum loading beyond the current metadata recheck. `class_exists()`
   also reports true for declared enums in the current class-like metadata
-  slice.
+  slice. Top-level unit enums also retain diagnostic-only forbidden-member
+  metadata so PHP-forbidden magic methods (`__clone`, `__construct`,
+  `__destruct`, `__get`, `__isset`, `__serialize`, `__set`, `__set_state`,
+  `__sleep`, `__toString`, `__unserialize`, `__unset`, `__wakeup`), abstract
+  enum methods, and untyped instance/static enum properties emit PHP-shaped
+  startup fatals. Ordinary enum method dispatch, `__call`, `__callStatic`,
+  `__invoke`, typed/property-hook enum properties, enum constants, backed enum
+  values, enum case objects, broader enum reflection APIs, and native enum
+  lowering remain unsupported.
   `property_exists($object_or_class, $property)` accepts a current object value
   or string class name and a string property name. It checks the current
   declared and inherited property metadata with case-sensitive property names,

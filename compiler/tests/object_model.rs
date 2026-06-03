@@ -5437,6 +5437,51 @@ fn enum_exists_requires_string_name_and_bool_autoload_arguments() {
 }
 
 #[test]
+fn enum_forbidden_members_report_php_startup_fatals() {
+    let cases = [
+        (
+            "<?php\nenum Foo {\n    public function __get(string $name) {}\n}\n",
+            3,
+            "Enum Foo cannot include magic method __get",
+        ),
+        (
+            "<?php\nenum Foo {\n    public static function __set_state(array $properties): object {}\n}\n",
+            3,
+            "Enum Foo cannot include magic method __set_state",
+        ),
+        (
+            "<?php\nenum Foo {\n    public function __serialize(): array {}\n}\n",
+            3,
+            "Enum Foo cannot include magic method __serialize",
+        ),
+        (
+            "<?php\nenum Foo {\n    public function __construct() {}\n}\n",
+            3,
+            "Enum Foo cannot include magic method __construct",
+        ),
+        (
+            "<?php\nenum Foo {\n    public $bar;\n}\n",
+            3,
+            "Enum Foo cannot include properties",
+        ),
+        (
+            "<?php\nenum Foo {\n    public static $bar;\n}\n",
+            3,
+            "Enum Foo cannot include properties",
+        ),
+        (
+            "<?php\nenum Example {\n    abstract public function foo();\n}\n",
+            3,
+            "Enum method Example::foo() must not be abstract",
+        ),
+    ];
+
+    for (source, line, message) in cases {
+        assert_php_startup_fatal(source, "Command line code", line, message);
+    }
+}
+
+#[test]
 fn property_exists_checks_declared_property_metadata() {
     let source = r#"<?php
 class Base {
