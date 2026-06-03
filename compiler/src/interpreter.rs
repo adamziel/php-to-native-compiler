@@ -30388,6 +30388,10 @@ impl Interpreter {
             return Ok(());
         };
 
+        if !self.object_has_supported_public_destructor(&object) {
+            return Ok(());
+        }
+
         if self.live_roots_contain_object_id(object.id(), scope) {
             return Ok(());
         }
