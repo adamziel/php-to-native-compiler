@@ -717,6 +717,7 @@ struct MethodSignature {
 struct SignatureTypeContext<'a> {
     self_name: &'a str,
     parent_name: Option<&'a str>,
+    is_final: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -27156,14 +27157,17 @@ impl Interpreter {
             return closure_name;
         }
 
-        if let Some(object) = this_object {
-            return format!("{}->{}", object.class_name(), function.name);
-        }
-
         if let Some(class_id) = class_context {
             if let Some(class) = self.classes.get(class_id) {
+                if this_object.is_some() {
+                    return format!("{}->{}", class.name(), function.name);
+                }
                 return format!("{}::{}", class.name(), function.name);
             }
+        }
+
+        if let Some(object) = this_object {
+            return format!("{}->{}", object.class_name(), function.name);
         }
 
         function.name.clone()
@@ -64090,6 +64094,14 @@ impl Interpreter {
                     object.class_id() == class_id
                         || self.classes.is_subclass_of(object.class_id(), class_id)
                 }),
+            "iterable" => {
+                let class_id = object.class_id();
+                self.classes.implements_interface(class_id, "Traversable")
+                    || self.classes.implements_interface(class_id, "Iterator")
+                    || self
+                        .classes
+                        .implements_interface(class_id, "IteratorAggregate")
+            }
             _ => self.object_satisfies_live_property_type(object, type_name),
         }
     }
@@ -87771,13 +87783,15 @@ impl Interpreter {
             };
         }
         if missing_return {
+            let expected_type =
+                self.call_type_error_type_text(type_decl, class_context, called_class_context);
             return Err(Diagnostic::new(
                 Phase::Runtime,
                 function.span.line,
                 function.span.column,
                 format!(
                     "{callable}: Return value must be of type {}, none returned",
-                    type_decl.text
+                    expected_type
                 ),
             ));
         }
@@ -87793,13 +87807,15 @@ impl Interpreter {
             called_class_context,
         )
         .map_err(|_| {
+            let expected_type =
+                self.call_type_error_type_text(type_decl, class_context, called_class_context);
             Diagnostic::new(
                 Phase::Runtime,
                 function.span.line,
                 function.span.column,
                 format!(
                     "{callable}: Return value must be of type {}, {} returned",
-                    type_decl.text,
+                    expected_type,
                     Self::returned_type_name(&value, missing_return)
                 ),
             )
@@ -87857,6 +87873,98 @@ impl Interpreter {
             object.class_name().to_string()
         } else {
             value.type_name().to_string()
+        }
+    }
+
+    fn call_type_error_type_text(
+        &self,
+        type_decl: &TypeDecl,
+        class_context: Option<ClassId>,
+        called_class_context: Option<ClassId>,
+    ) -> String {
+        self.call_type_error_type_text_from_str(
+            &type_decl.text,
+            class_context,
+            called_class_context,
+        )
+    }
+
+    fn call_type_error_type_text_from_str(
+        &self,
+        type_text: &str,
+        class_context: Option<ClassId>,
+        called_class_context: Option<ClassId>,
+    ) -> String {
+        let trimmed = type_text.trim();
+        if trimmed.is_empty() {
+            return type_text.to_string();
+        }
+        if let Some(nullable) = trimmed.strip_prefix('?') {
+            return format!(
+                "?{}",
+                self.call_type_error_type_text_from_str(
+                    nullable.trim(),
+                    class_context,
+                    called_class_context,
+                )
+            );
+        }
+        if trimmed.contains('|')
+            && !trimmed.contains('&')
+            && !trimmed.contains('(')
+            && !trimmed.contains(')')
+        {
+            return trimmed
+                .split('|')
+                .map(|member| {
+                    self.call_type_error_type_text_from_str(
+                        member,
+                        class_context,
+                        called_class_context,
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("|");
+        }
+        if trimmed.contains('&')
+            && !trimmed.contains('|')
+            && !trimmed.contains('(')
+            && !trimmed.contains(')')
+        {
+            return trimmed
+                .split('&')
+                .map(|member| {
+                    self.call_type_error_type_text_from_str(
+                        member,
+                        class_context,
+                        called_class_context,
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("&");
+        }
+
+        let normalized = trimmed
+            .strip_prefix('\\')
+            .unwrap_or(trimmed)
+            .to_ascii_lowercase();
+        match normalized.as_str() {
+            "self" => class_context
+                .and_then(|class_id| self.classes.get(class_id))
+                .map(|class| class.name().to_string())
+                .unwrap_or_else(|| type_text.to_string()),
+            "parent" => class_context
+                .and_then(|class_id| self.classes.get(class_id))
+                .and_then(|class| class.parent_id())
+                .and_then(|parent_id| self.classes.get(parent_id))
+                .map(|parent| parent.name().to_string())
+                .unwrap_or_else(|| type_text.to_string()),
+            "static" => called_class_context
+                .or(class_context)
+                .and_then(|class_id| self.classes.get(class_id))
+                .map(|class| class.name().to_string())
+                .unwrap_or_else(|| type_text.to_string()),
+            _ => type_text.to_string(),
         }
     }
 
@@ -109556,6 +109664,7 @@ fn collect_datetime_tentative_return_startup_diagnostics(
     let parent_context = SignatureTypeContext {
         self_name: "DateTimeZone",
         parent_name: None,
+        is_final: false,
     };
 
     for stmt in &program.statements {
@@ -109602,6 +109711,7 @@ fn collect_datetime_tentative_return_startup_diagnostics(
             let child_context = SignatureTypeContext {
                 self_name: &class.name,
                 parent_name: Some("DateTimeZone"),
+                is_final: class.is_final,
             };
             let child_signature = function_decl_compatibility_signature_with_context(
                 &class.name,
@@ -115075,6 +115185,7 @@ fn register_class_members(
             .map_err(|error| runtime_error(method.span, error))?;
         validate_inherited_method_signature_compatibility(
             classes,
+            final_classes,
             interface_lookup,
             method_signatures,
             id,
@@ -115192,6 +115303,7 @@ fn register_class_members(
                 .map_err(|error| runtime_error(method.span, error))?;
                 validate_inherited_method_signature_compatibility(
                     classes,
+                    final_classes,
                     interface_lookup,
                     method_signatures,
                     id,
@@ -115243,6 +115355,7 @@ fn register_class_members(
         .map_err(|error| runtime_error(class.span, error))?;
     validate_interface_method_implementation(
         classes,
+        final_classes,
         interface_lookup,
         &effective_method_signatures,
         id,
@@ -115798,6 +115911,7 @@ fn collect_interface_methods<'a>(
 
 fn validate_interface_method_implementation(
     classes: &PhpClassTable,
+    final_classes: &HashSet<ClassId>,
     interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
     method_signatures: &HashMap<(ClassId, String), MethodSignature>,
     class_id: ClassId,
@@ -115883,7 +115997,8 @@ fn validate_interface_method_implementation(
             let class_has_variadic = class_signature
                 .as_ref()
                 .is_some_and(|signature| signature.params.iter().any(|param| param.is_variadic));
-            let class_context = signature_type_context_for_class(classes, declaring_class_id);
+            let class_context =
+                signature_type_context_for_class(classes, final_classes, declaring_class_id);
             let interface_context = signature_type_context_for_name(&method_interface_name);
             if class_required > interface_required
                 || (class_param_count < method.function.params.len() && !class_has_variadic)
@@ -115906,6 +116021,7 @@ fn validate_interface_method_implementation(
 
             validate_interface_parameter_type_compatibility(
                 classes,
+                final_classes,
                 interface_lookup,
                 &class.name,
                 declaring_class_id,
@@ -115917,6 +116033,7 @@ fn validate_interface_method_implementation(
             )?;
             validate_interface_return_type_compatibility(
                 classes,
+                final_classes,
                 interface_lookup,
                 &class.name,
                 declaring_class_id,
@@ -116133,6 +116250,7 @@ fn validate_core_interface_required_methods(
 
 fn validate_interface_parameter_type_compatibility(
     classes: &PhpClassTable,
+    final_classes: &HashSet<ClassId>,
     interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
     class_name: &str,
     declaring_class_id: ClassId,
@@ -116145,7 +116263,8 @@ fn validate_interface_parameter_type_compatibility(
     let Some(class_signature) = class_signature else {
         return Ok(());
     };
-    let class_context = signature_type_context_for_class(classes, declaring_class_id);
+    let class_context =
+        signature_type_context_for_class(classes, final_classes, declaring_class_id);
     let interface_context = signature_type_context_for_name(interface_name);
     let class_variadic_param = class_signature
         .params
@@ -116232,6 +116351,7 @@ fn validate_interface_parameter_type_compatibility(
 
 fn validate_interface_return_type_compatibility(
     classes: &PhpClassTable,
+    final_classes: &HashSet<ClassId>,
     interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
     class_name: &str,
     declaring_class_id: ClassId,
@@ -116244,7 +116364,8 @@ fn validate_interface_return_type_compatibility(
     let Some(class_signature) = class_signature else {
         return Ok(());
     };
-    let class_context = signature_type_context_for_class(classes, declaring_class_id);
+    let class_context =
+        signature_type_context_for_class(classes, final_classes, declaring_class_id);
     let interface_context = signature_type_context_for_name(interface_name);
 
     match (
@@ -119082,6 +119203,7 @@ fn implemented_interface_names(classes: &PhpClassTable, class_id: ClassId) -> Ve
 
 fn signature_type_context_for_class<'a>(
     classes: &'a PhpClassTable,
+    final_classes: &HashSet<ClassId>,
     class_id: ClassId,
 ) -> SignatureTypeContext<'a> {
     let class = classes
@@ -119094,6 +119216,7 @@ fn signature_type_context_for_class<'a>(
     SignatureTypeContext {
         self_name: class.name(),
         parent_name,
+        is_final: final_classes.contains(&class_id),
     }
 }
 
@@ -119101,6 +119224,7 @@ fn signature_type_context_for_name(name: &str) -> SignatureTypeContext<'_> {
     SignatureTypeContext {
         self_name: name,
         parent_name: None,
+        is_final: false,
     }
 }
 
@@ -119480,6 +119604,7 @@ fn validate_destructor_method_shape(
 
 fn validate_inherited_method_signature_compatibility(
     classes: &PhpClassTable,
+    final_classes: &HashSet<ClassId>,
     interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
     method_signatures: &HashMap<(ClassId, String), MethodSignature>,
     class_id: ClassId,
@@ -119492,7 +119617,7 @@ fn validate_inherited_method_signature_compatibility(
     }
 
     let child_required = required_param_count(&method.function);
-    let child_context = signature_type_context_for_class(classes, class_id);
+    let child_context = signature_type_context_for_class(classes, final_classes, class_id);
     let mut current = classes
         .get(class_id)
         .expect("class id should resolve to class metadata")
@@ -119514,7 +119639,8 @@ fn validate_inherited_method_signature_compatibility(
             else {
                 return Ok(());
             };
-            let parent_context = signature_type_context_for_class(classes, parent_id);
+            let parent_context =
+                signature_type_context_for_class(classes, final_classes, parent_id);
             let child_has_variadic = method.function.params.iter().any(|param| param.is_variadic);
             let child_signature = || {
                 function_decl_compatibility_signature_with_context(
@@ -120013,6 +120139,10 @@ fn type_name_is_subtype_of_with_context(
         });
     }
 
+    if signature_type_is_static_keyword(supertype) {
+        return signature_static_supertype_accepts_subtype(classes, subtype, subtype_context);
+    }
+
     let subtype = resolve_relative_signature_type(subtype, subtype_context);
     let supertype = resolve_relative_signature_type(supertype, supertype_context);
 
@@ -120111,6 +120241,61 @@ fn signature_type_is_static_keyword(type_name: &str) -> bool {
         .strip_prefix('\\')
         .unwrap_or_else(|| type_name.trim())
         .eq_ignore_ascii_case("static")
+}
+
+fn signature_static_supertype_accepts_subtype(
+    classes: &PhpClassTable,
+    subtype: &str,
+    subtype_context: Option<SignatureTypeContext<'_>>,
+) -> bool {
+    if normalized_builtin_signature_type(subtype).is_some_and(|ty| ty == "never") {
+        return true;
+    }
+    if signature_type_is_static_keyword(subtype) {
+        return true;
+    }
+
+    let Some(context) = subtype_context else {
+        return false;
+    };
+    context.is_final && signature_type_resolves_to_context_self(classes, subtype, context)
+}
+
+fn signature_type_resolves_to_context_self(
+    classes: &PhpClassTable,
+    type_name: &str,
+    context: SignatureTypeContext<'_>,
+) -> bool {
+    let trimmed = type_name.trim();
+    let candidate = match trimmed
+        .strip_prefix('\\')
+        .unwrap_or(trimmed)
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "self" => context.self_name,
+        "parent" | "static" => return false,
+        _ => match simple_class_like_signature_type(trimmed) {
+            Some(name) => name,
+            None => return false,
+        },
+    };
+
+    match (
+        classes.lookup_class_id(candidate),
+        classes.lookup_class_id(context.self_name),
+    ) {
+        (Some(candidate_id), Some(context_id)) => candidate_id == context_id,
+        _ => candidate
+            .strip_prefix('\\')
+            .unwrap_or(candidate)
+            .eq_ignore_ascii_case(
+                context
+                    .self_name
+                    .strip_prefix('\\')
+                    .unwrap_or(context.self_name),
+            ),
+    }
 }
 
 fn signature_intersection_members(type_name: &str) -> Option<Vec<&str>> {
@@ -167864,7 +168049,7 @@ fn type_text_is_runtime_enforceable_for_call(text: &str) -> bool {
         .strip_prefix('\\')
         .unwrap_or(without_nullable)
         .to_ascii_lowercase();
-    !matches!(normalized.as_str(), "iterable" | "resource")
+    !matches!(normalized.as_str(), "resource")
 }
 
 fn syntax_only_magic_array_access_type_metadata_is_supported(function: &FunctionDecl) -> bool {

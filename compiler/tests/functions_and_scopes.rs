@@ -255,6 +255,161 @@ class actual_return_type {
 }
 
 #[test]
+fn late_static_return_type_errors_use_called_class_context() {
+    let execution = run_source(
+        r#"<?php
+trait T {
+    public function test($arg): static {
+        return $arg;
+    }
+}
+
+class C {
+    use T;
+}
+class P extends C {}
+
+$c = new C();
+$p = new P();
+try {
+    $p->test($c);
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "C::test(): Return value must be of type P, C returned"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+
+    let uncaught = run_source_with_source_file(
+        r#"<?php
+trait T {
+    public function test($arg): static {
+        return $arg;
+    }
+}
+
+class C {
+    use T;
+}
+class P extends C {}
+
+$c = new C();
+$p = new P();
+$p->test($c);
+"#,
+        "/tmp/late_static_trait_trace.php",
+    )
+    .unwrap();
+    assert!(uncaught.stdout.contains(
+        "Fatal error: Uncaught TypeError: C::test(): Return value must be of type P, C returned"
+    ));
+    assert!(uncaught.stdout.contains(": C->test(Object(C))\n#1 {main}"));
+    assert_eq!(uncaught.stderr, "");
+    assert_eq!(uncaught.exit_code, 255);
+}
+
+#[test]
+fn static_return_variance_rejects_self_in_non_final_overrides() {
+    let class_error = run_source(
+        r#"<?php
+class A {
+    public function test(): static {}
+}
+class B extends A {
+    public function test(): self {}
+}
+"#,
+    )
+    .unwrap();
+    assert_eq!(class_error.stdout, "");
+    assert!(class_error.stderr.contains(
+        "Fatal error: Declaration of B::test(): B must be compatible with A::test(): static"
+    ));
+    assert_eq!(class_error.exit_code, 255);
+
+    let interface_error = run_source(
+        r#"<?php
+interface A {
+    public function method1(): static;
+}
+class Foo implements A {
+    public function method1(): self {
+        return $this;
+    }
+}
+"#,
+    )
+    .unwrap();
+    assert_eq!(interface_error.stdout, "");
+    assert!(interface_error.stderr.contains(
+        "Fatal error: Declaration of Foo::method1(): Foo must be compatible with A::method1(): static"
+    ));
+    assert_eq!(interface_error.exit_code, 255);
+}
+
+#[test]
+fn final_self_overrides_static_union_and_iterable_return_types() {
+    let execution = run_source(
+        r#"<?php
+interface A {
+    public function methodScalar(): static|string;
+    public function methodIterable1(): static|iterable;
+    public function methodIterable2(): static|array;
+}
+
+final class B implements A {
+    public function methodScalar(): self { return $this; }
+    public function methodIterable1(): self|iterable { return $this; }
+    public function methodIterable2(): array { return []; }
+}
+
+$b = new B();
+echo get_class($b->methodScalar()), "\n";
+echo get_class($b->methodIterable1()), "\n";
+var_dump($b->methodIterable2());
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "B\nB\narray(0) {\n}\n");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn static_union_rejects_other_final_implementation_class() {
+    let error = run_source(
+        r#"<?php
+interface A {
+    public function methodScalar1(): static|bool;
+}
+
+final class C implements A {
+    public function methodScalar1(): self { return $this; }
+}
+
+final class B implements A {
+    public function methodScalar1(): C { return new C(); }
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(error.stdout, "");
+    assert!(error.stderr.contains(
+        "Declaration of B::methodScalar1(): C must be compatible with A::methodScalar1(): static|bool"
+    ));
+    assert_eq!(error.exit_code, 255);
+}
+
+#[test]
 fn void_and_never_return_value_startup_fatals_are_php_shaped() {
     let void_null = run_source_with_source_file(
         r#"<?php
