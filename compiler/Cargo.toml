@@ -13,6 +13,7 @@ name = "phpc"
 path = "src/main.rs"
 
 [dependencies]
+libc = "0.2"
 md2 = "0.11"
 md4 = "0.11"
 md-5 = "0.10"

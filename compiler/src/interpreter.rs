@@ -97564,6 +97564,7 @@ impl Interpreter {
                 span,
             ),
             "posix_ctermid" => call_posix_ctermid(&args, span),
+            "posix_access" => call_posix_access(&args, span),
             "posix_getuid" => call_posix_getuid(&args, span),
             "posix_geteuid" => call_posix_geteuid(&args, span),
             "posix_getgid" => call_posix_getgid(&args, span),
@@ -97571,6 +97572,8 @@ impl Interpreter {
             "posix_getpid" => call_posix_getpid(&args, span),
             "posix_getppid" => call_posix_getppid(&args, span),
             "posix_getpgrp" => call_posix_getpgrp(&args, span),
+            "posix_getpgid" => call_posix_getpgid(&args, span),
+            "posix_getsid" => call_posix_getsid(&args, span),
             "posix_getgroups" => call_posix_getgroups(&args, span),
             "posix_getpwuid" => call_posix_getpwuid(&args, span),
             "posix_getpwnam" => call_posix_getpwnam(&args, span),
@@ -97579,6 +97582,7 @@ impl Interpreter {
             "posix_setgid" => call_posix_setgid(&args, span),
             "posix_seteuid" => call_posix_seteuid(&args, span),
             "posix_setegid" => call_posix_setegid(&args, span),
+            "posix_uname" => call_posix_uname(&args, span),
             "umask" => self.call_umask(&args, span),
             "getmypid" => call_getmypid(&args, span),
             "php_uname" => call_php_uname(&args, span),
@@ -118701,8 +118705,19 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
         "get_current_user" => ("string", vec![]),
         "getlastmod" | "getmyinode" | "getmyuid" | "getmygid" => ("int|false", vec![]),
         "posix_ctermid" => ("string|false", vec![]),
+        "posix_access" => (
+            "bool",
+            vec![
+                reflection_internal_param("filename", "string"),
+                reflection_internal_optional_int_param("flags", 0),
+            ],
+        ),
         "posix_getuid" | "posix_geteuid" | "posix_getgid" | "posix_getegid" | "posix_getpid"
         | "posix_getppid" | "posix_getpgrp" => ("int", vec![]),
+        "posix_getpgid" | "posix_getsid" => (
+            "int|false",
+            vec![reflection_internal_param("process_id", "int")],
+        ),
         "posix_getgroups" => ("array|false", vec![]),
         "posix_getpwuid" => (
             "array|false",
@@ -118724,6 +118739,7 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
             ("bool", vec![reflection_internal_param("group_id", "int")])
         }
         "posix_seteuid" => ("bool", vec![reflection_internal_param("user_id", "int")]),
+        "posix_uname" => ("array|false", vec![]),
         "umask" => (
             "int",
             vec![reflection_internal_optional_null_param("mask", "?int")],
@@ -124042,6 +124058,11 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
             "Argument #1 ($mode) must be a single character"
             | "Argument #1 ($mode) must be one of \"a\", \"m\", \"n\", \"r\", \"s\", or \"v\"",
         ) => Some(format!("{function}: {message}")),
+        ("posix_getpgid()" | "posix_getsid()", message)
+            if message.starts_with("Argument #1 ($process_id) must be between 0 and ") =>
+        {
+            Some(format!("{function}: {message}"))
+        }
         ("unserialize()", message)
             if message
                 .starts_with("Option \"allowed_classes\" must be an array of class names, \"") =>
@@ -125189,6 +125210,7 @@ fn is_builtin(name: &str) -> bool {
             | "getmyuid"
             | "getmygid"
             | "posix_ctermid"
+            | "posix_access"
             | "posix_getuid"
             | "posix_geteuid"
             | "posix_getgid"
@@ -125196,6 +125218,8 @@ fn is_builtin(name: &str) -> bool {
             | "posix_getpid"
             | "posix_getppid"
             | "posix_getpgrp"
+            | "posix_getpgid"
+            | "posix_getsid"
             | "posix_getgroups"
             | "posix_getpwuid"
             | "posix_getpwnam"
@@ -125204,6 +125228,7 @@ fn is_builtin(name: &str) -> bool {
             | "posix_setgid"
             | "posix_seteuid"
             | "posix_setegid"
+            | "posix_uname"
             | "umask"
             | "getmypid"
             | "php_uname"
@@ -151831,6 +151856,29 @@ fn call_posix_ctermid(args: &[Value], span: Span) -> CompileResult<Value> {
         .unwrap_or(Value::Bool(false)))
 }
 
+fn call_posix_access(args: &[Value], span: Span) -> CompileResult<Value> {
+    if args.is_empty() || args.len() > 2 {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "posix_access()",
+                ArityExpectation::Between { min: 1, max: 2 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let path = string_builtin_argument("posix_access()", "filename", &args[0], span)?;
+    let flags = match args.get(1) {
+        Some(value) => php_internal_int_argument("posix_access()", 2, "flags", value, span)?,
+        None => 0,
+    };
+    let Ok(flags) = i32::try_from(flags) else {
+        return Ok(Value::Bool(false));
+    };
+    Ok(Value::Bool(posix_access_value(&path, flags)))
+}
+
 fn call_posix_getuid(args: &[Value], span: Span) -> CompileResult<Value> {
     expect_arity("posix_getuid", args, 0, span)?;
     Ok(posix_getuid_value()
@@ -151880,6 +151928,22 @@ fn call_posix_getpgrp(args: &[Value], span: Span) -> CompileResult<Value> {
         .unwrap_or(Value::Bool(false)))
 }
 
+fn call_posix_getpgid(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("posix_getpgid", args, 1, span)?;
+    let pid = posix_process_id_argument("posix_getpgid()", &args[0], span)?;
+    Ok(posix_getpgid_value(pid)
+        .map(Value::Int)
+        .unwrap_or(Value::Bool(false)))
+}
+
+fn call_posix_getsid(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("posix_getsid", args, 1, span)?;
+    let pid = posix_process_id_argument("posix_getsid()", &args[0], span)?;
+    Ok(posix_getsid_value(pid)
+        .map(Value::Int)
+        .unwrap_or(Value::Bool(false)))
+}
+
 fn call_posix_getgroups(args: &[Value], span: Span) -> CompileResult<Value> {
     expect_arity("posix_getgroups", args, 0, span)?;
     let Some(groups) = posix_group_ids() else {
@@ -151891,6 +151955,24 @@ fn call_posix_getgroups(args: &[Value], span: Span) -> CompileResult<Value> {
         let _ = array.append(Value::Int(group));
     }
     Ok(Value::Array(array))
+}
+
+fn call_posix_uname(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("posix_uname", args, 0, span)?;
+    Ok(posix_uname_value().unwrap_or(Value::Bool(false)))
+}
+
+#[cfg(unix)]
+fn posix_access_value(path: &str, flags: i32) -> bool {
+    let Ok(path) = std::ffi::CString::new(path) else {
+        return false;
+    };
+    unsafe { libc::access(path.as_ptr(), flags as libc::c_int) == 0 }
+}
+
+#[cfg(not(unix))]
+fn posix_access_value(_path: &str, _flags: i32) -> bool {
+    false
 }
 
 #[cfg(unix)]
@@ -152058,6 +152140,95 @@ fn posix_group_ids() -> Option<Vec<i64>> {
 #[cfg(unix)]
 fn nonnegative_posix_int(value: std::os::raw::c_int) -> Option<i64> {
     (value >= 0).then(|| i64::from(value))
+}
+
+fn posix_process_id_argument(function: &str, value: &Value, span: Span) -> CompileResult<i32> {
+    let pid = php_internal_int_argument(function, 1, "process_id", value, span)?;
+    if !(0..=i64::from(i32::MAX)).contains(&pid) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!(
+                    "Argument #1 ($process_id) must be between 0 and {}",
+                    i32::MAX
+                ),
+            ),
+        ));
+    }
+    Ok(pid as i32)
+}
+
+#[cfg(unix)]
+fn posix_getpgid_value(pid: i32) -> Option<i64> {
+    let value = unsafe { libc::getpgid(pid as libc::pid_t) };
+    (value >= 0).then(|| i64::from(value))
+}
+
+#[cfg(not(unix))]
+fn posix_getpgid_value(_pid: i32) -> Option<i64> {
+    None
+}
+
+#[cfg(unix)]
+fn posix_getsid_value(pid: i32) -> Option<i64> {
+    let value = unsafe { libc::getsid(pid as libc::pid_t) };
+    (value >= 0).then(|| i64::from(value))
+}
+
+#[cfg(not(unix))]
+fn posix_getsid_value(_pid: i32) -> Option<i64> {
+    None
+}
+
+#[cfg(unix)]
+fn posix_uname_value() -> Option<Value> {
+    let mut utsname = std::mem::MaybeUninit::<libc::utsname>::zeroed();
+    if unsafe { libc::uname(utsname.as_mut_ptr()) } != 0 {
+        return None;
+    }
+    let utsname = unsafe { utsname.assume_init() };
+
+    let mut array = PhpArray::new();
+    array.insert(
+        "sysname",
+        Value::String(posix_uname_field(&utsname.sysname)?),
+    );
+    array.insert(
+        "nodename",
+        Value::String(posix_uname_field(&utsname.nodename)?),
+    );
+    array.insert(
+        "release",
+        Value::String(posix_uname_field(&utsname.release)?),
+    );
+    array.insert(
+        "version",
+        Value::String(posix_uname_field(&utsname.version)?),
+    );
+    array.insert(
+        "machine",
+        Value::String(posix_uname_field(&utsname.machine)?),
+    );
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    array.insert(
+        "domainname",
+        Value::String(posix_uname_field(&utsname.domainname)?),
+    );
+    Some(Value::Array(array))
+}
+
+#[cfg(unix)]
+fn posix_uname_field(field: &[libc::c_char]) -> Option<String> {
+    unsafe { std::ffi::CStr::from_ptr(field.as_ptr()) }
+        .to_str()
+        .ok()
+        .map(str::to_string)
+}
+
+#[cfg(not(unix))]
+fn posix_uname_value() -> Option<Value> {
+    None
 }
 
 fn call_posix_getpwuid(args: &[Value], span: Span) -> CompileResult<Value> {

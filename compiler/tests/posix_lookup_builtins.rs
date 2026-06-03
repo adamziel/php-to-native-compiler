@@ -129,6 +129,55 @@ var_dump(posix_getgrnam(""));
 }
 
 #[test]
+fn posix_access_process_metadata_and_uname_cover_basic_rows() {
+    let source = r#"<?php
+$pid = posix_getpid();
+$pgid = posix_getpgid($pid);
+$sid = posix_getsid($pid);
+$uname = posix_uname();
+echo function_exists("posix_access") && is_callable("posix_uname") ? "known" : "missing";
+echo "|";
+var_dump(posix_access(str_repeat("bogus path", 1042)));
+echo "|";
+echo is_int($pgid) && $pgid >= 0 ? "pgid" : "bad-pgid";
+echo "|";
+echo is_int($sid) && $sid >= 0 ? "sid" : "bad-sid";
+echo "|";
+echo is_array($uname)
+    && is_string($uname["sysname"])
+    && is_string($uname["nodename"])
+    && is_string($uname["release"])
+    && is_string($uname["version"])
+    && is_string($uname["machine"])
+    ? "uname"
+    : "bad-uname";
+echo "|";
+$rf = new ReflectionFunction("posix_getsid");
+echo $rf->getNumberOfRequiredParameters(), "/", $rf->getNumberOfParameters(), "/";
+echo $rf->getParameters()[0]->getName(), "/", $rf->getExtensionName(), "/";
+echo $rf->hasReturnType() ? "return" : "no-return";
+echo "|";
+try {
+    posix_getsid(-1);
+} catch (Throwable $e) {
+    echo $e::class, ": ", $e->getMessage();
+}
+"#;
+    let path = temp_source_path("posix-access-process");
+    fs::write(&path, source).expect("temporary POSIX access/process source is written");
+
+    let execution = run_source_with_source_file(source, path.display().to_string()).unwrap();
+    let _ = fs::remove_file(path);
+
+    assert_eq!(
+        execution.stdout,
+        "known|bool(false)\n|pgid|sid|uname|1/1/process_id/posix/return|ValueError: posix_getsid(): Argument #1 ($process_id) must be between 0 and 2147483647"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn posix_identity_mutation_builtins_cover_current_identity_rows() {
     let source = r#"<?php
 $gid = posix_getgid();
@@ -179,11 +228,15 @@ echo is_callable("posix_getgrnam") ? "1" : "0";
 echo function_exists("posix_setgid") ? "1" : "0";
 echo is_callable("posix_seteuid") ? "1" : "0";
 echo function_exists("posix_setegid") ? "1" : "0";
+echo function_exists("posix_access") ? "1" : "0";
+echo is_callable("posix_getpgid") ? "1" : "0";
+echo function_exists("posix_getsid") ? "1" : "0";
+echo is_callable("posix_uname") ? "1" : "0";
 "#,
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 9, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 13, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
 

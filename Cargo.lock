@@ -182,6 +182,7 @@ name = "phpc"
 version = "0.1.0"
 dependencies = [
  "gost94",
+ "libc",
  "md-5",
  "md2",
  "md4",
