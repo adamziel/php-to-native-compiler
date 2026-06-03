@@ -17,12 +17,12 @@ use md5::{Digest as Md5Digest, Md5};
 use murmur3::{murmur3_32, murmur3_x64_128, murmur3_x86_128};
 use php_runtime::{
     classify_php_numeric_string, coerce_property_value_with_object_type_resolver, ArithmeticOp,
-    ArityExpectation, ArrayColumnKey, ArrayEntry, ArrayKey, ArrayKeyCase, ArraySlot, ClassId,
-    ClassMemberKind, Comparison, ObjectProperty, PhpArray, PhpArraySortOperation,
-    PhpClassConstantMetadata, PhpClassTable, PhpClosure, PhpClosureCapture, PhpMethodMetadata,
-    PhpNumericStringClassification, PhpObject, PhpObjectPropertyInitializer, PhpPropertyMetadata,
-    PhpReferenceCell, PhpReferenceCellId, RuntimeError, RuntimeErrorKind, RuntimeResult, Value,
-    Visibility,
+    ArityExpectation, ArrayColumnKey, ArrayEntry, ArrayKey, ArrayKeyCase, ArraySlot,
+    ArraySlotCellId, ClassId, ClassMemberKind, Comparison, ObjectProperty, PhpArray,
+    PhpArraySortOperation, PhpClassConstantMetadata, PhpClassTable, PhpClosure, PhpClosureCapture,
+    PhpMethodMetadata, PhpNumericStringClassification, PhpObject, PhpObjectPropertyInitializer,
+    PhpPropertyMetadata, PhpReferenceCell, PhpReferenceCellId, RuntimeError, RuntimeErrorKind,
+    RuntimeResult, Value, Visibility,
 };
 use regex::bytes::{Captures as RegexCaptures, Regex, RegexBuilder};
 use ripemd::{Ripemd128, Ripemd160, Ripemd256, Ripemd320};
@@ -703,6 +703,16 @@ struct ActiveForeachReference {
     root: ForeachArrayRoot,
     value_name: String,
     key: ArrayKey,
+    position: usize,
+    slot_id: ArraySlotCellId,
+    next_position_override: Option<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ForeachCurrentPosition {
+    position: usize,
+    key: ArrayKey,
+    matched_slot: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -1477,6 +1487,55 @@ impl DirectArrayPathMutation {
             Self::Pop => array.entries().last().map(|entry| entry.key.clone()),
             Self::Shift => array.entries().first().map(|entry| entry.key.clone()),
             _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ActiveForeachCursorMutation {
+    Shift {
+        old_len: usize,
+    },
+    Unshift {
+        inserted: usize,
+    },
+    Splice {
+        start: usize,
+        end: usize,
+        replacement_len: usize,
+    },
+}
+
+impl ActiveForeachCursorMutation {
+    fn next_position(self, current_position: usize) -> usize {
+        match self {
+            Self::Shift { old_len } => {
+                if old_len == 0 {
+                    current_position
+                } else {
+                    current_position.min(old_len.saturating_sub(1))
+                }
+            }
+            Self::Unshift { inserted } => {
+                current_position.saturating_add(inserted).saturating_add(1)
+            }
+            Self::Splice {
+                start,
+                end,
+                replacement_len,
+            } => {
+                let removed = end.saturating_sub(start);
+                if current_position < start {
+                    current_position.saturating_add(1)
+                } else if current_position < end {
+                    start.saturating_add(replacement_len)
+                } else {
+                    current_position
+                        .saturating_sub(removed)
+                        .saturating_add(replacement_len)
+                        .saturating_add(1)
+                }
+            }
         }
     }
 }
@@ -11060,6 +11119,38 @@ fn bind_foreach_reference_to_key(
     }
 }
 
+fn foreach_value_still_bound_to_key(
+    scope: &SymbolTable,
+    root: &ForeachArrayRoot,
+    value_name: &str,
+    key: &ArrayKey,
+) -> bool {
+    if let Some(expected_aliases) = foreach_root_slot_aliases(scope, root, key) {
+        return scope
+            .array_offset_aliases_for_name(value_name)
+            .is_some_and(|bound_aliases| bound_aliases == expected_aliases);
+    }
+
+    match root {
+        ForeachArrayRoot::Static { name, keys } => {
+            let mut alias_keys = keys.clone();
+            alias_keys.push(key.clone());
+            scope.is_static_bound_to_array_offset_path(value_name, name, &alias_keys)
+        }
+        ForeachArrayRoot::Global { name, keys } => {
+            let mut alias_keys = keys.clone();
+            alias_keys.push(key.clone());
+            scope.is_static_bound_to_global_array_offset_path(value_name, name, &alias_keys)
+        }
+        ForeachArrayRoot::Alias { root, keys } => {
+            let mut alias_keys = keys.clone();
+            alias_keys.push(key.clone());
+            scope.is_static_bound_to_array_offset_alias_root(value_name, root, &alias_keys)
+        }
+        ForeachArrayRoot::Aliases { .. } | ForeachArrayRoot::ObjectProperties { .. } => false,
+    }
+}
+
 #[derive(Debug, Clone)]
 struct ReferenceBinding {
     param_name: String,
@@ -14575,6 +14666,94 @@ impl Interpreter {
         }
     }
 
+    fn active_foreach_reference_for_slot(
+        root: &ForeachArrayRoot,
+        value_name: &str,
+        key: &ArrayKey,
+        position: usize,
+        scope: &SymbolTable,
+        span: Span,
+    ) -> CompileResult<ActiveForeachReference> {
+        let array = Self::read_foreach_root_array(root, scope, span)?;
+        let slot_id = array
+            .entries()
+            .iter()
+            .find(|entry| entry.key == *key)
+            .map(|entry| entry.slot().cell_id())
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::undefined_array_key(key.diagnostic_key()),
+                )
+            })?;
+        Ok(ActiveForeachReference {
+            root: root.clone(),
+            value_name: value_name.to_string(),
+            key: key.clone(),
+            position,
+            slot_id,
+            next_position_override: None,
+        })
+    }
+
+    fn foreach_current_position_after_body(
+        array: &PhpArray,
+        entry_key: &ArrayKey,
+        active: Option<&ActiveForeachReference>,
+    ) -> Option<ForeachCurrentPosition> {
+        if let Some(active) = active {
+            let by_slot = array
+                .entries()
+                .iter()
+                .enumerate()
+                .find(|(_, entry)| entry.slot().cell_id() == active.slot_id)
+                .map(|(position, entry)| ForeachCurrentPosition {
+                    position,
+                    key: entry.key.clone(),
+                    matched_slot: true,
+                });
+            if by_slot.is_some() || active.next_position_override.is_some() {
+                return by_slot;
+            }
+        }
+
+        array
+            .entries()
+            .iter()
+            .enumerate()
+            .find(|(_, entry)| entry.key == *entry_key)
+            .map(|(position, entry)| ForeachCurrentPosition {
+                position,
+                key: entry.key.clone(),
+                matched_slot: false,
+            })
+    }
+
+    fn foreach_next_position_after_body(
+        previous_position: usize,
+        current_position: Option<&ForeachCurrentPosition>,
+        active: Option<&ActiveForeachReference>,
+    ) -> usize {
+        if let Some(next_position) = active.and_then(|active| active.next_position_override) {
+            return next_position;
+        }
+
+        match (active, current_position) {
+            (Some(_), Some(current_position))
+                if !current_position.matched_slot
+                    && current_position.position > previous_position =>
+            {
+                previous_position
+            }
+            (Some(_), Some(current_position)) => current_position.position.saturating_add(1),
+            (None, Some(current_position)) if current_position.position > previous_position => {
+                previous_position
+            }
+            (None, Some(current_position)) => current_position.position.saturating_add(1),
+            (_, None) => previous_position,
+        }
+    }
+
     fn write_foreach_value_target(
         &mut self,
         target: &ForeachValueTarget,
@@ -15753,79 +15932,35 @@ impl Interpreter {
             self.write_foreach_key_target(key, value_from_array_key(&entry_key), span, scope)?;
             self.bind_foreach_value_target_reference_to_key(value, &root, &entry_key, span, scope)?;
             if let Some(value_name) = value.variable_name() {
-                self.active_foreach_references.push(ActiveForeachReference {
-                    root: root.clone(),
-                    value_name: value_name.to_string(),
-                    key: entry_key.clone(),
-                });
+                let active = Self::active_foreach_reference_for_slot(
+                    &root, value_name, &entry_key, position, scope, span,
+                )?;
+                self.active_foreach_references.push(active);
             }
             let flow_result = self.execute_array_copy_return_statement_list(body, scope);
-            if value.variable_name().is_some() {
-                self.active_foreach_references.pop();
-            }
-            let flow = flow_result?;
-
-            let value_still_bound = if let Some(value_name) = value.variable_name() {
-                if let Some(expected_aliases) = foreach_root_slot_aliases(scope, &root, &entry_key)
-                {
-                    scope
-                        .array_offset_aliases_for_name(value_name)
-                        .is_some_and(|bound_aliases| bound_aliases == expected_aliases)
-                } else {
-                    match &root {
-                        ForeachArrayRoot::Static { name, keys } => {
-                            let mut alias_keys = keys.clone();
-                            alias_keys.push(entry_key.clone());
-                            scope.is_static_bound_to_array_offset_path(
-                                value_name,
-                                name,
-                                &alias_keys,
-                            )
-                        }
-                        ForeachArrayRoot::Global { name, keys } => {
-                            let mut alias_keys = keys.clone();
-                            alias_keys.push(entry_key.clone());
-                            scope.is_static_bound_to_global_array_offset_path(
-                                value_name,
-                                name,
-                                &alias_keys,
-                            )
-                        }
-                        ForeachArrayRoot::Alias { root, keys } => {
-                            let mut alias_keys = keys.clone();
-                            alias_keys.push(entry_key.clone());
-                            scope.is_static_bound_to_array_offset_alias_root(
-                                value_name,
-                                root,
-                                &alias_keys,
-                            )
-                        }
-                        ForeachArrayRoot::Aliases { .. } => false,
-                        ForeachArrayRoot::ObjectProperties { .. } => false,
-                    }
-                }
-            } else {
-                false
-            };
-            let array = Self::read_foreach_root_array(&root, scope, span)?;
-            let current_position = array
-                .entries()
-                .iter()
-                .position(|entry| entry.key == entry_key);
-            lingering_reference_key = if value_still_bound && current_position.is_some() {
-                Some(entry_key.clone())
+            let active = if value.variable_name().is_some() {
+                self.active_foreach_references.pop()
             } else {
                 None
             };
-            let next_position = match current_position {
-                Some(current_position) if current_position > position => position,
-                Some(current_position) => current_position + 1,
-                None => {
-                    lingering_reference_key = None;
-                    position
-                }
+            let flow = flow_result?;
+
+            let array = Self::read_foreach_root_array(&root, scope, span)?;
+            let current_position =
+                Self::foreach_current_position_after_body(&array, &entry_key, active.as_ref());
+            lingering_reference_key = if let (Some(value_name), Some(current_position)) =
+                (value.variable_name(), current_position.as_ref())
+            {
+                foreach_value_still_bound_to_key(scope, &root, value_name, &current_position.key)
+                    .then(|| current_position.key.clone())
+            } else {
+                None
             };
-            position = next_position;
+            position = Self::foreach_next_position_after_body(
+                position,
+                current_position.as_ref(),
+                active.as_ref(),
+            );
 
             match flow {
                 ArrayCopyReturnBodyFlow::Normal => {}
@@ -25900,81 +26035,44 @@ impl Interpreter {
                             value, &root, &entry_key, *span, scope,
                         )?;
                         if let Some(value_name) = value.variable_name() {
-                            self.active_foreach_references.push(ActiveForeachReference {
-                                root: root.clone(),
-                                value_name: value_name.to_string(),
-                                key: entry_key.clone(),
-                            });
+                            let active = Self::active_foreach_reference_for_slot(
+                                &root, value_name, &entry_key, position, scope, *span,
+                            )?;
+                            self.active_foreach_references.push(active);
                         }
                         let flow_result = self.execute_statements(body, scope);
-                        if value.variable_name().is_some() {
-                            self.active_foreach_references.pop();
-                        }
-                        let flow = flow_result?;
-
-                        let value_still_bound = if let Some(value_name) = value.variable_name() {
-                            if let Some(expected_aliases) =
-                                foreach_root_slot_aliases(scope, &root, &entry_key)
-                            {
-                                scope
-                                    .array_offset_aliases_for_name(value_name)
-                                    .is_some_and(|bound_aliases| bound_aliases == expected_aliases)
-                            } else {
-                                match &root {
-                                    ForeachArrayRoot::Static { name, keys } => {
-                                        let mut alias_keys = keys.clone();
-                                        alias_keys.push(entry_key.clone());
-                                        scope.is_static_bound_to_array_offset_path(
-                                            value_name,
-                                            name,
-                                            &alias_keys,
-                                        )
-                                    }
-                                    ForeachArrayRoot::Global { name, keys } => {
-                                        let mut alias_keys = keys.clone();
-                                        alias_keys.push(entry_key.clone());
-                                        scope.is_static_bound_to_global_array_offset_path(
-                                            value_name,
-                                            name,
-                                            &alias_keys,
-                                        )
-                                    }
-                                    ForeachArrayRoot::Alias { root, keys } => {
-                                        let mut alias_keys = keys.clone();
-                                        alias_keys.push(entry_key.clone());
-                                        scope.is_static_bound_to_array_offset_alias_root(
-                                            value_name,
-                                            root,
-                                            &alias_keys,
-                                        )
-                                    }
-                                    ForeachArrayRoot::Aliases { .. } => false,
-                                    ForeachArrayRoot::ObjectProperties { .. } => false,
-                                }
-                            }
-                        } else {
-                            false
-                        };
-                        let array = Self::read_foreach_root_array(&root, scope, *span)?;
-                        let current_position = array
-                            .entries()
-                            .iter()
-                            .position(|entry| entry.key == entry_key);
-                        lingering_reference_key = if value_still_bound && current_position.is_some()
-                        {
-                            Some(entry_key.clone())
+                        let active = if value.variable_name().is_some() {
+                            self.active_foreach_references.pop()
                         } else {
                             None
                         };
-                        let next_position = match current_position {
-                            Some(current_position) if current_position > position => position,
-                            Some(current_position) => current_position + 1,
-                            None => {
-                                lingering_reference_key = None;
-                                position
-                            }
-                        };
-                        position = next_position;
+                        let flow = flow_result?;
+
+                        let array = Self::read_foreach_root_array(&root, scope, *span)?;
+                        let current_position = Self::foreach_current_position_after_body(
+                            &array,
+                            &entry_key,
+                            active.as_ref(),
+                        );
+                        lingering_reference_key =
+                            if let (Some(value_name), Some(current_position)) =
+                                (value.variable_name(), current_position.as_ref())
+                            {
+                                foreach_value_still_bound_to_key(
+                                    scope,
+                                    &root,
+                                    value_name,
+                                    &current_position.key,
+                                )
+                                .then(|| current_position.key.clone())
+                            } else {
+                                None
+                            };
+                        position = Self::foreach_next_position_after_body(
+                            position,
+                            current_position.as_ref(),
+                            active.as_ref(),
+                        );
 
                         match flow {
                             Flow::Normal => {}
@@ -76327,6 +76425,63 @@ impl Interpreter {
         }
     }
 
+    fn active_foreach_reference_matches_direct_array_path(
+        active: &ActiveForeachReference,
+        root_name: &str,
+        keys: &[ArrayKey],
+    ) -> bool {
+        matches!(
+            &active.root,
+            ForeachArrayRoot::Static {
+                name,
+                keys: root_keys,
+            } if name == root_name && root_keys.as_slice() == keys
+        )
+    }
+
+    fn adjust_active_foreach_references_after_direct_array_reindex(
+        &mut self,
+        root_name: &str,
+        keys: &[ArrayKey],
+        mutation: ActiveForeachCursorMutation,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        let root_value = scope.read_static(root_name, span)?;
+        let Some(target_array) = Self::direct_array_path_target_array(&root_value, keys) else {
+            return Ok(());
+        };
+
+        for active in &mut self.active_foreach_references {
+            if !Self::active_foreach_reference_matches_direct_array_path(active, root_name, keys) {
+                continue;
+            }
+
+            active.next_position_override = Some(mutation.next_position(active.position));
+            if let Some((new_position, entry)) = target_array
+                .entries()
+                .iter()
+                .enumerate()
+                .find(|(_, entry)| entry.slot().cell_id() == active.slot_id)
+            {
+                active.position = new_position;
+                active.key = entry.key.clone();
+                let mut alias_keys = keys.to_vec();
+                alias_keys.push(entry.key.clone());
+                scope.bind_static_to_existing_nested_array_offset(
+                    &active.value_name,
+                    root_name,
+                    alias_keys,
+                    span,
+                )?;
+            } else if let Some(next_position) = active.next_position_override {
+                active.position = next_position;
+            }
+        }
+
+        Ok(())
+    }
+
     fn detach_removed_direct_array_path_aliases(
         &mut self,
         root_name: &str,
@@ -76372,6 +76527,9 @@ impl Interpreter {
         )?;
 
         let mut root_value = caller_scope.read_static(root_name, span)?;
+        let old_target_len = Self::direct_array_path_target_array(&root_value, keys)
+            .map(|array| array.len())
+            .unwrap_or(0);
         let type_name = root_value.type_name();
         let Value::Array(root_array) = &mut root_value else {
             return Err(runtime_error(
@@ -76392,6 +76550,36 @@ impl Interpreter {
             },
             keys,
         );
+        match operation {
+            DirectArrayPathMutation::Shift => {
+                self.adjust_active_foreach_references_after_direct_array_reindex(
+                    root_name,
+                    keys,
+                    ActiveForeachCursorMutation::Shift {
+                        old_len: old_target_len,
+                    },
+                    span,
+                    caller_scope,
+                )?;
+            }
+            DirectArrayPathMutation::Unshift => {
+                self.adjust_active_foreach_references_after_direct_array_reindex(
+                    root_name,
+                    keys,
+                    ActiveForeachCursorMutation::Unshift {
+                        inserted: values.len(),
+                    },
+                    span,
+                    caller_scope,
+                )?;
+            }
+            DirectArrayPathMutation::Push
+            | DirectArrayPathMutation::Pop
+            | DirectArrayPathMutation::Next
+            | DirectArrayPathMutation::Prev
+            | DirectArrayPathMutation::Reset
+            | DirectArrayPathMutation::End => {}
+        }
         Ok(result)
     }
 
@@ -76962,6 +77150,11 @@ impl Interpreter {
     ) -> CompileResult<Value> {
         Self::promote_array_splice_target_alias_group(root_name, keys, caller_scope);
         let mut root_value = caller_scope.read_static(root_name, span)?;
+        let old_target_len = Self::direct_array_path_target_array(&root_value, keys)
+            .map(|array| array.len())
+            .unwrap_or(0);
+        let (splice_start, splice_end) =
+            Self::normalized_array_splice_bounds(old_target_len, offset, length);
         let type_name = root_value.type_name();
         let Value::Array(root_array) = &mut root_value else {
             return Err(runtime_error(
@@ -76997,6 +77190,17 @@ impl Interpreter {
                 ),
             ));
         }
+        self.adjust_active_foreach_references_after_direct_array_reindex(
+            root_name,
+            keys,
+            ActiveForeachCursorMutation::Splice {
+                start: splice_start,
+                end: splice_end,
+                replacement_len: replacement.len(),
+            },
+            span,
+            caller_scope,
+        )?;
         Ok(Value::Array(removed))
     }
 
@@ -77083,6 +77287,30 @@ impl Interpreter {
 
     fn array_splice_length_from_value(value: &Value, span: Span) -> CompileResult<Option<i64>> {
         php_internal_nullable_int_argument("array_splice()", 3, "length", value, span)
+    }
+
+    fn normalized_array_splice_bounds(
+        len: usize,
+        offset: i64,
+        length: Option<i64>,
+    ) -> (usize, usize) {
+        let len = i64::try_from(len).expect("array length fits in i64");
+        let start = if offset >= 0 {
+            offset.min(len)
+        } else {
+            len.saturating_add(offset).max(0)
+        };
+        let end = match length {
+            Some(length) if length >= 0 => start.saturating_add(length).min(len),
+            Some(length) => len.saturating_add(length).max(0).min(len),
+            None => len,
+        }
+        .max(start);
+
+        (
+            usize::try_from(start).expect("non-negative splice start fits in usize"),
+            usize::try_from(end).expect("non-negative splice end fits in usize"),
+        )
     }
 
     fn array_splice_replacement_slots(value: Value) -> Vec<ArraySlot> {
@@ -81510,80 +81738,36 @@ impl Interpreter {
             self.write_foreach_key_target(key, value_from_array_key(&entry_key), span, scope)?;
             self.bind_foreach_value_target_reference_to_key(value, &root, &entry_key, span, scope)?;
             if let Some(value_name) = value.variable_name() {
-                self.active_foreach_references.push(ActiveForeachReference {
-                    root: root.clone(),
-                    value_name: value_name.to_string(),
-                    key: entry_key.clone(),
-                });
+                let active = Self::active_foreach_reference_for_slot(
+                    &root, value_name, &entry_key, position, scope, span,
+                )?;
+                self.active_foreach_references.push(active);
             }
             let flow_result =
                 self.execute_reference_return_assignment_statement_list(function, body, scope);
-            if value.variable_name().is_some() {
-                self.active_foreach_references.pop();
-            }
-            let flow = flow_result?;
-
-            let value_still_bound = if let Some(value_name) = value.variable_name() {
-                if let Some(expected_aliases) = foreach_root_slot_aliases(scope, &root, &entry_key)
-                {
-                    scope
-                        .array_offset_aliases_for_name(value_name)
-                        .is_some_and(|bound_aliases| bound_aliases == expected_aliases)
-                } else {
-                    match &root {
-                        ForeachArrayRoot::Static { name, keys } => {
-                            let mut alias_keys = keys.clone();
-                            alias_keys.push(entry_key.clone());
-                            scope.is_static_bound_to_array_offset_path(
-                                value_name,
-                                name,
-                                &alias_keys,
-                            )
-                        }
-                        ForeachArrayRoot::Global { name, keys } => {
-                            let mut alias_keys = keys.clone();
-                            alias_keys.push(entry_key.clone());
-                            scope.is_static_bound_to_global_array_offset_path(
-                                value_name,
-                                name,
-                                &alias_keys,
-                            )
-                        }
-                        ForeachArrayRoot::Alias { root, keys } => {
-                            let mut alias_keys = keys.clone();
-                            alias_keys.push(entry_key.clone());
-                            scope.is_static_bound_to_array_offset_alias_root(
-                                value_name,
-                                root,
-                                &alias_keys,
-                            )
-                        }
-                        ForeachArrayRoot::Aliases { .. } => false,
-                        ForeachArrayRoot::ObjectProperties { .. } => false,
-                    }
-                }
-            } else {
-                false
-            };
-            let array = Self::read_foreach_root_array(&root, scope, span)?;
-            let current_position = array
-                .entries()
-                .iter()
-                .position(|entry| entry.key == entry_key);
-            lingering_reference_key = if value_still_bound && current_position.is_some() {
-                Some(entry_key.clone())
+            let active = if value.variable_name().is_some() {
+                self.active_foreach_references.pop()
             } else {
                 None
             };
-            let next_position = match current_position {
-                Some(current_position) if current_position > position => position,
-                Some(current_position) => current_position + 1,
-                None => {
-                    lingering_reference_key = None;
-                    position
-                }
+            let flow = flow_result?;
+
+            let array = Self::read_foreach_root_array(&root, scope, span)?;
+            let current_position =
+                Self::foreach_current_position_after_body(&array, &entry_key, active.as_ref());
+            lingering_reference_key = if let (Some(value_name), Some(current_position)) =
+                (value.variable_name(), current_position.as_ref())
+            {
+                foreach_value_still_bound_to_key(scope, &root, value_name, &current_position.key)
+                    .then(|| current_position.key.clone())
+            } else {
+                None
             };
-            position = next_position;
+            position = Self::foreach_next_position_after_body(
+                position,
+                current_position.as_ref(),
+                active.as_ref(),
+            );
 
             match flow {
                 ReferenceReturnBodyFlow::Normal => {}

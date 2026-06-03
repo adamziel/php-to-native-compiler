@@ -1870,6 +1870,119 @@ foreach ($iterator as $key => &$value) {
 }
 
 #[test]
+fn foreach_by_reference_preserves_cursor_through_shift_and_unshift_reindexing() {
+    let execution = run_source(
+        r#"<?php
+$a = [1, 2, 3, 4];
+foreach ($a as &$v) {
+    echo $v, "\n";
+    array_shift($a);
+}
+var_dump($a);
+unset($v);
+
+echo "--\n";
+$a = [1, 2, 3];
+foreach ($a as &$v) {
+    echo $v, "\n";
+    if ($v == 2) {
+        array_unshift($a, 0, 0, 0, 0, 0, 0, 0, 0);
+    }
+}
+var_dump(count($a));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "1\n2\n3\n4\narray(0) {\n}\n--\n1\n2\n3\nint(11)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn foreach_by_reference_rebinds_moved_slot_after_unshift() {
+    let execution = run_source(
+        r#"<?php
+$a = ["v0", "v1"];
+foreach ($a as $k => &$v) {
+    echo $k, ":", $v, "\n";
+    array_unshift($a, "new.$k");
+}
+var_dump($a);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "0:v0\n",
+            "2:v1\n",
+            "array(4) {\n",
+            "  [0]=>\n",
+            "  string(5) \"new.2\"\n",
+            "  [1]=>\n",
+            "  string(5) \"new.0\"\n",
+            "  [2]=>\n",
+            "  string(2) \"v0\"\n",
+            "  [3]=>\n",
+            "  &string(2) \"v1\"\n",
+            "}\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn foreach_by_reference_preserves_cursor_through_array_splice() {
+    let execution = run_source(
+        r#"<?php
+$done = 0;
+$a = [0, 1, 2, 3, 4];
+foreach ($a as &$v) {
+    echo $v, "\n";
+    if (!$done && $v == 3) {
+        $done = 1;
+        array_splice($a, 1, 2);
+    }
+}
+echo "\n";
+
+$done = 0;
+$a = [0, 1, 2, 3, 4];
+foreach ($a as &$v) {
+    echo $v, "\n";
+    if (!$done && $v == 2) {
+        $done = 1;
+        array_splice($a, 1, 3);
+    }
+}
+echo "\n";
+
+$replacement = ["x", "y", "z"];
+$done = 0;
+$a = [0, 1, 2, 3, 4];
+foreach ($a as &$v) {
+    echo $v, "\n";
+    if (!$done && $v == 2) {
+        $done = 1;
+        array_splice($a, 1, 3, $replacement);
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "0\n1\n2\n3\n4\n\n0\n1\n2\n4\n\n0\n1\n2\n4\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn foreach_by_reference_rejects_iterator_aggregate_userland_iterator_like_php() {
     let error = runtime_error(
         r#"<?php

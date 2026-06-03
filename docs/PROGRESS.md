@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added bounded by-reference `foreach` cursor preservation for direct array
+  mutation during iteration on the interpreter path. Active direct-array
+  foreach loops now track the current slot identity and update the next cursor
+  position for `array_shift()`, `array_unshift()`, and `array_splice()` on the
+  iterated direct array path; reindexed surviving slots rebind the loop value
+  to the moved slot rather than the old numeric key, while same-key
+  reinsertion after `unset()` keeps the previous detached behavior. Focused
+  proof covers exact-current pre-patch selected PHPT at `0/5` and post-patch
+  selected PHPT at `5/5` for `Zend/tests/foreach/foreach_015.phpt`,
+  `Zend/tests/foreach/foreach_016.phpt`, `Zend/tests/foreach/foreach_017.phpt`,
+  `tests/lang/foreachLoop.013.phpt`, and `tests/lang/foreachLoop.015.phpt`;
+  Rust `foreach`, array mutation builtin tests, build/fmt/diff checks, and
+  `phpc run` through the PHPT wrapper. Unsupported edges remain broad array
+  reordering/sorting mutation during active foreach, object-property direct
+  array mutation targets for these builtins, exact PHP reference/COW graph
+  parity beyond the tracked slots, destructor/lifetime parity for removed
+  spliced arrays containing objects, and native lowering.
+
 - Added a bounded SPL forwarding-wrapper iterator lane on the interpreter path.
   Core `IteratorIterator` and `NoRewindIterator` metadata and runtime state now
   cover construction over direct bounded `Iterator` objects,

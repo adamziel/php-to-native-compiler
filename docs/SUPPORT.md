@@ -2522,14 +2522,18 @@
   are visible through the loop variable. If the active direct array slot is
   unset during the body, the loop variable detaches onto the removed value; a
   same-key reinsertion in that body does not retarget the loop variable until a
-  later iteration reaches the reinserted tail entry. By-reference value forms
-  also execute over temporary array expressions such as array literals and
-  direct non-reference-returning function calls returning arrays; those route
-  the loop value variable to an internal temporary array slot and preserve
-  PHP's post-loop lingering reference behavior without mutating a source
-  variable. The loop value target may also be a direct visible object property
-  lvalue, such as `foreach ($items as &$object->slot)`, or a direct dynamic
-  property spelling such as `foreach ($items as &$object->{$name})`; the
+  later iteration reaches the reinserted tail entry. Direct `array_shift()`,
+  `array_unshift()`, and `array_splice()` calls that mutate the same direct
+  array path while the body is active update the loop cursor for the supported
+  PHP preserve-pointer cases, and surviving reindexed slots rebind the loop
+  value to the moved slot instead of the old numeric key. By-reference value
+  forms also execute over temporary array expressions such as array literals
+  and direct non-reference-returning function calls returning arrays; those
+  route the loop value variable to an internal temporary array slot and
+  preserve PHP's post-loop lingering reference behavior without mutating a
+  source variable. The loop value target may also be a direct visible object
+  property lvalue, such as `foreach ($items as &$object->slot)`, or a direct
+  dynamic property spelling such as `foreach ($items as &$object->{$name})`; the
   property is rebound to each current foreach slot, writes through that
   property update the slot, and after a non-empty loop the property remains a
   reference to the last visited slot. Missing dynamic public properties are
@@ -2605,8 +2609,9 @@
   `An iterator cannot be used with foreach by reference`; aggregate
   `getIterator()` values that are not traversable report a stable invalid
   foreach diagnostic. This is still not full PHP
-  foreach or by-reference iteration: broad array reordering/replacement
-  semantics, full reference containers, copy-on-write, by-reference
+  foreach or by-reference iteration: broad array reordering/sorting mutation
+  outside the named direct mutation builtins, full reference containers,
+  copy-on-write, by-reference
   SPL `Iterator`/`IteratorAggregate`/`Traversable` object execution,
   `Iterator::current()` array-copy provenance outside direct public
   `$this->property` array and selected-bucket return expressions,
@@ -4058,9 +4063,12 @@
   variable array path subset, reindexes integer keys, preserves string keys,
   preserves existing reference-backed array slots while rebuilding the target,
   accepts integer-keyed argument unpacking for prepended values, and returns
-  the new count. Newly prepended value arguments are still evaluated by value
-  rather than installed as caller reference slots. Through `call_user_func()` the
-  covered callback form evaluates the array argument by value, emits the
+  the new count. When it mutates the same direct array path currently being
+  traversed by by-reference `foreach`, the active foreach cursor skips the
+  prepended entries and continues at the next original slot. Newly prepended
+  value arguments are still evaluated by value rather than installed as caller
+  reference slots. Through `call_user_func()` the covered callback form
+  evaluates the array argument by value, emits the
   bounded reference-parameter warning, returns the copied-array count, and
   leaves the caller array unchanged. Through `call_user_func_array()` a
   literal or stored reference element for the first argument mutates the
@@ -4076,7 +4084,10 @@
   argument accepts `null` or the same int-coercible scalar subset. It mutates
   the selected array path, reindexes integer keys, preserves string keys,
   returns removed value slots, and preserves reference-backed replacement slots
-  from array replacements. Removed object values are finalized after the
+  from array replacements. When it mutates the same direct array path currently
+  being traversed by by-reference `foreach`, the active foreach cursor
+  continues after removed/replaced ranges using the supported PHP
+  preserve-pointer slice. Removed object values are finalized after the
   spliced target is written back, and destructor mutation of the live root is
   reported as a catchable `Error`. Non-variable targets, object-property array
   roots, retained removed arrays containing objects whose lifetimes should
@@ -8028,7 +8039,10 @@
   variable array paths, reindexes integer keys, preserves string keys, returns
   `null` for empty arrays, and falls back to PHP's bounded "Only variables
   should be passed by reference" notice when the argument is a by-value array
-  expression. `array_pop($array)` removes and returns the last inserted value
+  expression. When it mutates the same direct array path currently being
+  traversed by by-reference `foreach`, the active foreach cursor continues at
+  the new first slot after the shifted element. `array_pop($array)` removes
+  and returns the last inserted value
   for the same direct variable array path subset, returns `null` for empty
   arrays, resets the current cursor to the first remaining element, and follows
   the reached PHP append-index behavior after popping the last integer key.

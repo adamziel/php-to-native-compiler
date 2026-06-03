@@ -231,20 +231,26 @@ slots via slot setters. `array_push()`, `array_unshift()`, `array_pop()`,
 `array_unshift()` carries existing slots through its reindexed rebuild,
 pop/shift detach aliases for the removed leaf before mutation, and array-entry
 removal adjusts the ordered-array cursor when the removed slot was before the
-cursor. `array_shift()` additionally has a bounded by-value expression fallback
-that emits PHP's reference notice and shifts a temporary copy. `next()` and
-`prev()` have the same bounded notice-and-temporary path for supported
-function-returned arrays, while direct array literals use the bounded
-pass-by-reference fatal path. `next()`, `prev()`, `reset()`, and `end()` also
-accept direct visible object-property array roots and write the updated cursor
-back through the existing property storage boundary. Object-property array
-roots for push/pop/shift/unshift, broad lvalues, string-keyed unpacking, and
-native lowering remain outside this interpreter path.
+cursor. When an active by-reference `foreach` is iterating the same direct
+array path, `array_shift()` and `array_unshift()` also update the loop cursor
+and moved-slot alias binding for the supported PHP preserve-pointer cases.
+`array_shift()` additionally has a bounded by-value expression fallback that
+emits PHP's reference notice and shifts a temporary copy. `next()` and `prev()`
+have the same bounded notice-and-temporary path for supported function-returned
+arrays, while direct array literals use the bounded pass-by-reference fatal
+path. `next()`, `prev()`, `reset()`, and `end()` also accept direct visible
+object-property array roots and write the updated cursor back through the
+existing property storage boundary. Object-property array roots for
+push/pop/shift/unshift, broad lvalues, string-keyed unpacking, and native
+lowering remain outside this interpreter path.
 `array_splice()` uses the same direct variable array-path root resolution but
 has its own splice helper so removed slots can be returned, object values from
 those removed slots can be finalized after the spliced root is live, and
 destructor-visible reentrant mutation of that live root can be rejected before
-the call completes.
+the call completes. The helper also adjusts an active by-reference foreach
+cursor for direct same-path splice removal and replacement slices; broader
+reordering/sorting mutation during active foreach remains outside the bounded
+model.
 
 Nested append assignment reuses the same assignment-value metadata path before
 storing the appended value. When the RHS is a proven copied-source array from a
@@ -1947,19 +1953,24 @@ tail entries are visited by the same loop, and direct writes to the current
 slot are visible through the loop variable. If the active direct array slot is
 unset during the body, the value variable is detached onto the removed value;
 a same-key reinsertion in that body does not retarget the value variable until
-a later iteration reaches the reinserted tail entry. After loop completion, the
-value variable remains routed to the last successfully iterated existing slot
-until `unset($value)` detaches it. Empty array iteration creates no lingering
-route. Temporary array-producing expressions such as array literals and direct
-non-reference-returning function calls use the same direct-slot loop machinery
-after the evaluated array is stored in an internal hidden array slot; this
-preserves loop-body and post-loop value-variable aliasing to the temporary
-without claiming mutation of a source lvalue. Direct string-keyed
+a later iteration reaches the reinserted tail entry. Direct `array_shift()`,
+`array_unshift()`, and `array_splice()` calls that mutate the same direct
+array path while the body is active update the loop cursor for the supported
+PHP preserve-pointer cases, and surviving reindexed slots rebind the loop
+value to the moved slot instead of the old numeric key. After loop completion,
+the value variable remains routed to the last successfully iterated existing
+slot until `unset($value)` detaches it. Empty array iteration creates no
+lingering route. Temporary array-producing expressions such as array literals
+and direct non-reference-returning function calls use the same direct-slot
+loop machinery after the evaluated array is stored in an internal hidden array
+slot; this preserves loop-body and post-loop value-variable aliasing to the
+temporary without claiming mutation of a source lvalue. Direct string-keyed
 `$GLOBALS["name"]` roots use the same alias metadata with a global-array root,
 so the loop value can mutate and linger on slots under the real root symbol
 table from top-level or function scope. This intentionally avoids claiming
-full mutation-during-iteration fidelity, broad array reordering/replacement
-semantics, nested lvalue iterable support such as `$items[0]` or
+full mutation-during-iteration fidelity outside those named direct mutation
+builtins, broad array reordering/sorting semantics, nested lvalue iterable
+support such as `$items[0]` or
 `$GLOBALS["name"]["child"]`, non-string-keyed `$GLOBALS` roots,
 reference-returning call iterables, object/`Traversable` iteration,
 destructuring targets,
