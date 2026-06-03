@@ -1,6 +1,6 @@
 # PHP Native Compiler PHPT Progress
 
-Updated: 2026-06-04 01:02 CEST
+Updated: 2026-06-04 01:09 CEST
 
 Primary/public branch: `origin/master`
 Latest accepted public-score source:
@@ -31,6 +31,8 @@ Unpublished source progress since the accepted public score source:
 
 - Current source head is `627ff63ed439bfca5cb3e42a74a3d6f2d718aa3b`
   (`fix: report forbidden enum members`), pushed to `origin/master`.
+  The current branch head also includes the docs-only score publication commit
+  `b2914aff8cf1f25f507386bec4a877b0ac002725`.
 - There are `2` commits after the accepted public-score source; `1` is
   score-relevant, touching `4` score-relevant paths.
 - Integrated focused selected-PHPT proof since the latest accepted public gate
@@ -45,9 +47,11 @@ Unpublished source progress since the accepted public score source:
   `no-properties.phpt`, and `no-static-properties.phpt`. It also preserved the
   repaired `Zend/tests/grammar/semi_reserved_005.phpt` row and a seven-row
   latest-published PASS scout.
-- No post-`627ff63` full pinned PHPT gate has run yet. The next score gate
-  should cover this enum packet and any later focused selected-PHPT source
-  deltas after the cadence/stale window or a larger batch justifies it.
+- A post-`627ff63` full pinned PHPT gate is now running on branch head
+  `b2914aff8cf1f25f507386bec4a877b0ac002725`:
+  `phpt-full-current-score-20260603T230358Z-php-src-f97ff59-public-b2914aff-source-b2914aff`.
+  It is currently `RUNNING / SHARDED-PHPT`; publication waits for a final
+  aggregate with zero latest-published PASS regressions.
 
 Accepted public gate: checkpoint `fd09b997` completed the pinned full PHPT
 gate with `7015 / 20294 = 34.57%` and zero latest-published PASS regressions
