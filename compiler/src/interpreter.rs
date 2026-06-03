@@ -110353,13 +110353,19 @@ fn union_redundant_type_message(
         }
     }
     if union_parts_contain(&parts, UnionTypePartKind::Object) {
-        if let Some(class_part) = parts
-            .iter()
-            .find(|part| matches!(part.kind, UnionTypePartKind::ClassLike))
-        {
+        if let Some(class_part) = parts.iter().find(|part| {
+            matches!(
+                part.kind,
+                UnionTypePartKind::ClassLike | UnionTypePartKind::Traversable
+            )
+        }) {
+            let display = if union_parts_contain(&parts, UnionTypePartKind::Iterable) {
+                union_iterable_expanded_object_redundancy_display(&parts)
+            } else {
+                format!("{}|object", class_part.display)
+            };
             return Some(format!(
-                "Type {}|object contains both object and a class type, which is redundant",
-                class_part.display
+                "Type {display} contains both object and a class type, which is redundant"
             ));
         }
     }
@@ -110367,11 +110373,60 @@ fn union_redundant_type_message(
     let mut seen: Vec<&UnionTypePart> = Vec::new();
     for part in &parts {
         if seen.iter().any(|seen_part| seen_part.key == part.key) {
+            if part.kind == UnionTypePartKind::Iterable {
+                return Some("Duplicate type array is redundant".to_string());
+            }
             return Some(format!("Duplicate type {} is redundant", part.display));
         }
         seen.push(part);
     }
     None
+}
+
+fn union_iterable_expanded_object_redundancy_display(parts: &[UnionTypePart]) -> String {
+    let mut class_like_displays = Vec::new();
+    let mut deferred_displays = Vec::new();
+    let mut has_object = false;
+    let mut has_array = false;
+    let mut has_null = false;
+
+    for part in parts {
+        match part.kind {
+            UnionTypePartKind::Iterable => {
+                union_push_display_once(&mut class_like_displays, "Traversable");
+                has_array = true;
+            }
+            UnionTypePartKind::Traversable | UnionTypePartKind::ClassLike => {
+                union_push_display_once(&mut class_like_displays, &part.display);
+            }
+            UnionTypePartKind::Object => has_object = true,
+            UnionTypePartKind::Array => has_array = true,
+            UnionTypePartKind::Other if part.key == "null" => has_null = true,
+            _ => union_push_display_once(&mut deferred_displays, &part.display),
+        }
+    }
+
+    let mut displays = class_like_displays;
+    if has_object {
+        displays.push("object".to_string());
+    }
+    if has_array {
+        displays.push("array".to_string());
+    }
+    displays.extend(deferred_displays);
+    if has_null {
+        displays.push("null".to_string());
+    }
+    displays.join("|")
+}
+
+fn union_push_display_once(displays: &mut Vec<String>, display: &str) {
+    if !displays
+        .iter()
+        .any(|existing| existing.eq_ignore_ascii_case(display))
+    {
+        displays.push(display.to_string());
+    }
 }
 
 fn union_parts_contain(parts: &[UnionTypePart], kind: UnionTypePartKind) -> bool {
@@ -112266,6 +112321,11 @@ fn startup_type_name_is_subtype_of(
         return subtypes.iter().all(|subtype| {
             startup_type_name_is_subtype_of(classes, interfaces, subtype, supertype)
         });
+    }
+
+    if normalized_builtin_signature_type(subtype).is_some_and(|ty| ty == "iterable") {
+        return startup_type_name_is_subtype_of(classes, interfaces, "array", supertype)
+            && startup_type_name_is_subtype_of(classes, interfaces, "Traversable", supertype);
     }
 
     if let Some(supertypes) = signature_union_members(supertype) {
@@ -119373,6 +119433,24 @@ fn type_name_is_subtype_of_with_context(
                 supertype_context,
             )
         });
+    }
+
+    if normalized_builtin_signature_type(subtype).is_some_and(|ty| ty == "iterable") {
+        return type_name_is_subtype_of_with_context(
+            classes,
+            interface_lookup,
+            "array",
+            None,
+            supertype,
+            supertype_context,
+        ) && type_name_is_subtype_of_with_context(
+            classes,
+            interface_lookup,
+            "Traversable",
+            None,
+            supertype,
+            supertype_context,
+        );
     }
 
     if let Some(supertypes) = signature_union_members(supertype) {

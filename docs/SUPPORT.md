@@ -2862,7 +2862,10 @@
   for lossy finite real floats and numeric strings coerced through exact weak
   `int` parameters and returns. Weak `int|string` unions defer
   non-representable real floats to string semantics and emit PHP's `NAN`
-  string-coercion warning when applicable. Return-type mismatches in this
+  string-coercion warning when applicable. Startup union redundancy diagnostics
+  for the bounded union syntax expand `iterable` to PHP's `Traversable|array`
+  alias for duplicate iterable aliases and `object`/class redundancy messages.
+  Return-type mismatches in this
   subset report PHP-shaped `TypeError` messages. Parameter type mismatches in
   this subset report PHP-shaped `TypeError` messages with runtime object class
   names for object arguments and, for caught direct user-function calls, the
@@ -7628,7 +7631,9 @@
   Integer writes to `float` are stored as floats. Inherited typed properties
   must remain invariant, but the startup/runtime metadata check accepts
   bounded pure-intersection equivalence, including reordered members and
-  reductions proven equivalent by a declared subclass relationship. Direct
+  reductions proven equivalent by a declared subclass relationship, and treats
+  the covered `iterable` alias as `Traversable|array` so `object|iterable` and
+  `object|array` are invariant-compatible. Direct
   `unset($object->typedProperty)` over a visible declared instance typed
   property restores the slot to the same uninitialized state: later direct
   reads fail, `isset(...)` reports false, `empty(...)` reports true,
@@ -7640,7 +7645,9 @@
   compatibility checks, arbitrary typed-property reference writes through
   complex alias paths, readonly properties, property hooks, static typed
   property unset, parenthesized DNF property types, exact PHP union scalar
-  coercion preference rules, and native lowering remain unsupported.
+  coercion preference rules, full iterable parameter/return enforcement,
+  generator-return execution, namespace/import alias resolution for type names,
+  and native lowering remain unsupported.
   Methods
   whose parameters/bodies use the existing function parser subset, including
   optional trailing commas after the final real parameter. `new

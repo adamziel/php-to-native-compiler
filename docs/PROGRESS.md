@@ -4,6 +4,28 @@
 
 Implemented:
 
+- Added bounded `iterable` alias canonicalization for union type diagnostics
+  and invariant typed-property compatibility on the interpreter startup path.
+  Union redundancy checks now expand `iterable` to PHP's
+  `Traversable|array` spelling for duplicate-`iterable` diagnostics and
+  `object`-plus-class redundancy messages, while property type invariance
+  treats `object|iterable` and `object|array` as equivalent for the covered
+  alias relation. Focused proof covers exact-current pre-patch selected PHPT
+  at `0/6` and post-patch selected PHPT at `6/6` for
+  `Zend/tests/type_declarations/iterable/iterable_alias_redundancy_iterable.phpt`,
+  `Zend/tests/type_declarations/iterable/iterable_alias_redundancy_object_3.phpt`,
+  `Zend/tests/type_declarations/iterable/iterable_alias_redundancy_object_4.phpt`,
+  `Zend/tests/type_declarations/iterable/iterable_alias_redundancy_object_5.phpt`,
+  `Zend/tests/type_declarations/iterable/iterable_alias_redundancy_object_6.phpt`,
+  and
+  `Zend/tests/type_declarations/iterable/iterable_alias_redundancy_object_variance.phpt`;
+  Rust union-redundancy and typed-property invariance coverage, build/fmt/diff
+  checks, and pinned wrapper proof. Unsupported edges remain full iterable
+  return/parameter runtime enforcement, generator-return execution,
+  parenthesized DNF type canonicalization, namespace/import alias resolution
+  for type names, full PHP variance/subtyping, references/COW, and native
+  lowering.
+
 - Added a bounded dynamic-property `ReflectionProperty` lane on the
   interpreter path. `new ReflectionProperty($object, $name)` now resolves
   initialized public dynamic object properties after declared metadata,

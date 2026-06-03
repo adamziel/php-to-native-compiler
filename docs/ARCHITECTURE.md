@@ -1140,7 +1140,11 @@ relationships when both type names resolve through current metadata. When a
 failed subtype relation contains an unavailable class-like type, compatibility
 uses the unresolved-class fatal only if that missing class could affect the
 relation; builtin/class mismatches remain ordinary declaration incompatibility
-fatals. Public interface constants declared
+fatals. The same bounded type-relation helpers expand the `iterable` alias to
+`Traversable|array` for reached union redundancy diagnostics and typed-property
+invariance, so duplicate iterable aliases and `object|iterable` versus
+`object|array` comparisons share one canonicalization path. Public interface
+constants declared
 as `const NAME = ...` or
 `public const NAME = ...` use the current class-constant expression subset and
 resolve through interface names, parent-interface inheritance, and
@@ -1149,9 +1153,10 @@ inheritance remains a stable runtime boundary.
 typed/static/non-public/abstract/final or multi-constant interface
 declarations, full variance/signature enforcement, namespace-aware type-name
 resolution, DNF/intersection/union canonicalization beyond the bounded pure
-intersection subtype lane, broad variadic runtime type-enforcement diagnostics
-and traces, built-in/internal interface inheritance catalogs, exact PHP
-diagnostics, and native lowering remain explicit boundaries.
+intersection and iterable-alias lanes, broad variadic runtime
+type-enforcement diagnostics and traces, built-in/internal interface
+inheritance catalogs, exact PHP diagnostics, and native lowering remain
+explicit boundaries.
 
 Double-quoted string interpolation is represented explicitly in the AST for
 the current simple `$name`, `{$name}`, deprecated `${name}`, array-offset,

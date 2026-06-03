@@ -65,6 +65,20 @@ function test(): iterable|Traversable|ArrayAccess {}
 }
 
 #[test]
+fn duplicate_iterable_reports_expanded_array_alias() {
+    let stderr = fatal_for(
+        r#"<?php
+function test(): iterable|iterable|null {}
+"#,
+        "Zend/tests/type_declarations/iterable/iterable_alias_redundancy_iterable.php",
+    );
+    assert_eq!(
+        stderr,
+        "Fatal error: Duplicate type array is redundant in Zend/tests/type_declarations/iterable/iterable_alias_redundancy_iterable.php on line 2"
+    );
+}
+
+#[test]
 fn object_with_class_type_is_redundant() {
     let stderr = fatal_for(
         r#"<?php
@@ -75,6 +89,20 @@ function test(): object|Test {}
     assert_eq!(
         stderr,
         "Fatal error: Type Test|object contains both object and a class type, which is redundant in tests/type_declarations/union_object_class.php on line 2"
+    );
+}
+
+#[test]
+fn object_with_iterable_and_class_displays_expanded_alias_members() {
+    let stderr = fatal_for(
+        r#"<?php
+function test(): object|iterable|T|null {}
+"#,
+        "Zend/tests/type_declarations/iterable/iterable_alias_redundancy_object.php",
+    );
+    assert_eq!(
+        stderr,
+        "Fatal error: Type Traversable|T|object|array|null contains both object and a class type, which is redundant in Zend/tests/type_declarations/iterable/iterable_alias_redundancy_object.php on line 2"
     );
 }
 
