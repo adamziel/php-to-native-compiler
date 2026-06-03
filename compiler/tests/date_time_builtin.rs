@@ -398,6 +398,71 @@ try { date_modify($datetime, array()); } catch (Throwable $e) { echo get_class($
 }
 
 #[test]
+fn malformed_datetime_and_dateinterval_strings_throw_or_warn() {
+    let execution = run_source(
+        r#"<?php
+date_default_timezone_set("UTC");
+
+$mutable = new DateTime();
+var_dump(date_modify($mutable, ""));
+try {
+    $mutable->modify("");
+} catch (DateMalformedStringException $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+
+$immutable = new DateTimeImmutable();
+try {
+    $immutable->modify("");
+} catch (DateMalformedStringException $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+
+var_dump(date_interval_create_from_date_string("foobar"));
+var_dump(date_interval_create_from_date_string(null));
+
+foreach (["next weekday 15:30", "+5 hours noon", "-8 days March 23", "+72 seconds UTC"] as $format) {
+    try {
+        DateInterval::createFromDateString($format);
+    } catch (DateMalformedIntervalStringException $e) {
+        echo $e::class, ": ", $e->getMessage(), "\n";
+    }
+}
+
+foreach (["next weekday 15:30", "+5 hours noon", "-8 days March 23", "+72 seconds UTC"] as $format) {
+    var_dump(date_interval_create_from_date_string($format));
+}
+"#,
+    )
+    .unwrap();
+
+    assert!(execution.stdout.contains(
+        "Warning: date_modify(): Failed to parse time string () at position 0 ( ): Empty string"
+    ));
+    assert!(execution.stdout.contains(
+        "DateMalformedStringException: DateTime::modify(): Failed to parse time string () at position 0 ( ): Empty string"
+    ));
+    assert!(execution.stdout.contains(
+        "DateMalformedStringException: DateTimeImmutable::modify(): Failed to parse time string () at position 0 ( ): Empty string"
+    ));
+    assert!(execution.stdout.contains(
+        "Warning: date_interval_create_from_date_string(): Unknown or bad format (foobar) at position 0 (f): The timezone could not be found in the database"
+    ));
+    assert!(execution.stdout.contains(
+        "Warning: date_interval_create_from_date_string(): Unknown or bad format () at position 0 ( ): Empty string"
+    ));
+    assert!(execution.stdout.contains(
+        "DateMalformedIntervalStringException: String 'next weekday 15:30' contains non-relative elements"
+    ));
+    assert!(execution.stdout.contains(
+        "Warning: date_interval_create_from_date_string(): String '+72 seconds UTC' contains non-relative elements"
+    ));
+    assert_eq!(execution.stdout.matches("bool(false)").count(), 7);
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn datetime_modify_at_timestamp_uses_unix_timestamp_timezone_identity() {
     let execution = run_source(
         r#"<?php

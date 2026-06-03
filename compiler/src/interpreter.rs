@@ -22136,8 +22136,16 @@ impl Interpreter {
             &args[0],
             span,
         )?;
-        let state = parse_bounded_dateinterval_relative(&datetime)
-            .map_err(|message| dateinterval_malformed_error(span, message))?;
+        let state = match parse_bounded_dateinterval_relative(&datetime) {
+            Ok(state) => state,
+            Err(message) => {
+                self.emit_display_warning(
+                    format!("date_interval_create_from_date_string(): {message}"),
+                    span,
+                )?;
+                return Ok(Value::Bool(false));
+            }
+        };
         let object = self.create_core_dateinterval_object_from_state(state, span)?;
         self.track_allocated_object(&object);
         Ok(Value::Object(object))
@@ -22147,7 +22155,13 @@ impl Interpreter {
         expect_arity("date_modify", args, 2, span)?;
         let object = self.datetime_object_argument("date_modify()", args, 0, span)?;
         let modifier = self.date_modifier_string_argument("date_modify()", 2, &args[1], span)?;
-        self.modify_datetime_object(&object, &modifier, "date_modify()", span)?;
+        if let Err(error) = self.modify_datetime_object(&object, &modifier, "date_modify()", span) {
+            if let Some(message) = date_malformed_string_error_message(&error) {
+                self.emit_display_warning(message, span)?;
+                return Ok(Value::Bool(false));
+            }
+            return Err(error);
+        }
         Ok(Value::Object(object))
     }
 
@@ -22190,14 +22204,12 @@ impl Interpreter {
         let (timestamp, timezone) = match parse_bounded_at_timestamp(modifier.trim()) {
             Some(timestamp) => (timestamp, BoundedTimezone::numeric_fixed_offset(0)),
             None => {
-                let unsupported_message =
-                    format!("modifier {modifier:?} is not implemented in the current subset");
                 let timestamp =
                     apply_bounded_datetime_modifier(state.timestamp, &state.timezone, modifier)
                         .ok_or_else(|| {
-                            runtime_error(
+                            date_malformed_string_error(
                                 span,
-                                RuntimeError::unsupported_call(function, unsupported_message),
+                                date_modifier_parse_error(function, modifier),
                             )
                         })?;
                 (timestamp, state.timezone)
@@ -114738,6 +114750,7 @@ const DATETIMEIMMUTABLE_INVALID_SERIALIZATION_MESSAGE: &str =
     "Invalid serialization data for DateTimeImmutable object";
 const DATE_OBJECT_ERROR_DIAGNOSTIC_PREFIX: &str = "DateObjectError: ";
 const DATE_EXCEPTION_DIAGNOSTIC_PREFIX: &str = "DateException: ";
+const DATE_MALFORMED_STRING_DIAGNOSTIC_PREFIX: &str = "DateMalformedStringException: ";
 const DATE_MALFORMED_INTERVAL_DIAGNOSTIC_PREFIX: &str = "DateMalformedIntervalStringException: ";
 
 fn datetimezone_invalid_serialization_error(span: Span) -> Diagnostic {
@@ -114772,6 +114785,38 @@ fn dateinterval_malformed_error(span: Span, message: String) -> Diagnostic {
             format!("{DATE_MALFORMED_INTERVAL_DIAGNOSTIC_PREFIX}{message}"),
         ),
     )
+}
+
+fn date_malformed_string_error(span: Span, message: String) -> Diagnostic {
+    runtime_error(
+        span,
+        RuntimeError::unsupported_call(
+            "DateTime",
+            format!("{DATE_MALFORMED_STRING_DIAGNOSTIC_PREFIX}{message}"),
+        ),
+    )
+}
+
+fn date_modifier_parse_error(function: &str, modifier: &str) -> String {
+    let first = modifier.chars().next().unwrap_or(' ');
+    if modifier.is_empty() {
+        format!("{function}: Failed to parse time string ({modifier}) at position 0 ({first}): Empty string")
+    } else {
+        format!(
+            "{function}: Failed to parse time string ({modifier}) at position 0 ({first}): The timezone could not be found in the database"
+        )
+    }
+}
+
+fn date_malformed_string_error_message(error: &Diagnostic) -> Option<String> {
+    if error.phase == Phase::Runtime {
+        error
+            .message
+            .split_once(DATE_MALFORMED_STRING_DIAGNOSTIC_PREFIX)
+            .map(|(_, message)| message.to_string())
+    } else {
+        None
+    }
 }
 
 fn date_object_error(span: Span, message: &str) -> Diagnostic {
@@ -114901,6 +114946,9 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
         }
         if let Some((_, message)) = error.message.split_once(DATE_EXCEPTION_DIAGNOSTIC_PREFIX) {
             return Some(("DateException", message.to_string()));
+        }
+        if let Some(message) = date_malformed_string_error_message(error) {
+            return Some(("DateMalformedStringException", message));
         }
         if let Some((_, message)) = error
             .message
@@ -154767,6 +154815,9 @@ fn parse_bounded_dateinterval_relative(input: &str) -> Result<BoundedDateInterva
     if trimmed.is_empty() {
         return Err(bounded_dateinterval_relative_error(input));
     }
+    if bounded_dateinterval_contains_non_relative_element(trimmed) {
+        return Err(format!("String '{trimmed}' contains non-relative elements"));
+    }
     let mut tokens = trimmed.split_whitespace().filter(|token| *token != "+");
     let mut state = empty_bounded_dateinterval_state();
     state.from_string = true;
@@ -154800,9 +154851,55 @@ fn parse_bounded_dateinterval_relative(input: &str) -> Result<BoundedDateInterva
 }
 
 fn bounded_dateinterval_relative_error(input: &str) -> String {
-    let first = input.chars().next().unwrap_or('\0');
-    format!(
-        "Unknown or bad format ({input}) at position 0 ({first}): The timezone could not be found in the database"
+    let first = input.chars().next().unwrap_or(' ');
+    if input.is_empty() {
+        format!("Unknown or bad format ({input}) at position 0 ({first}): Empty string")
+    } else {
+        format!(
+            "Unknown or bad format ({input}) at position 0 ({first}): The timezone could not be found in the database"
+        )
+    }
+}
+
+fn bounded_dateinterval_contains_non_relative_element(input: &str) -> bool {
+    input
+        .split_whitespace()
+        .any(|token| bounded_dateinterval_non_relative_token(token))
+}
+
+fn bounded_dateinterval_non_relative_token(token: &str) -> bool {
+    if token.contains(':') {
+        return true;
+    }
+    matches!(
+        token.to_ascii_lowercase().as_str(),
+        "january"
+            | "jan"
+            | "february"
+            | "feb"
+            | "march"
+            | "mar"
+            | "april"
+            | "apr"
+            | "may"
+            | "june"
+            | "jun"
+            | "july"
+            | "jul"
+            | "august"
+            | "aug"
+            | "september"
+            | "sep"
+            | "october"
+            | "oct"
+            | "november"
+            | "nov"
+            | "december"
+            | "dec"
+            | "noon"
+            | "midnight"
+            | "utc"
+            | "gmt"
     )
 }
 

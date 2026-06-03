@@ -51,6 +51,30 @@ Implemented:
   comparison was `6392` current passes vs. `6261` baseline passes with `0`
   regressions, and the invalid-proof-marker summary reported `0` hits.
 
+- Added a bounded DateTime/DateInterval malformed-string diagnostics lane on the
+  interpreter path. Object `DateTime::modify()` and
+  `DateTimeImmutable::modify()` now raise catchable
+  `DateMalformedStringException`s for empty or unsupported bounded modifiers,
+  while procedural `date_modify()` emits the PHP-shaped warning and returns
+  `false`. `DateInterval::createFromDateString()` now keeps throwing
+  `DateMalformedIntervalStringException` for malformed relative strings and the
+  bounded non-relative token set with times, month names, `noon`, `midnight`,
+  `UTC`, or `GMT`; procedural `date_interval_create_from_date_string()` now
+  emits a PHP-shaped warning plus `false` for those same malformed inputs.
+  Focused proof covers the Rust
+  `malformed_datetime_and_dateinterval_strings_throw_or_warn` regression, the
+  full `date_time_builtin` Rust file, runtime/object-model core class metadata
+  checks, build/fmt/diff checks, and selected public PHPT rows
+  `ext/date/tests/DateTime_modify_invalid_format.phpt`,
+  `ext/date/tests/DateTimeImmutable_modify_invalid_format.phpt`,
+  `ext/date/tests/date_interval_create_from_date_string_broken.phpt`,
+  `ext/date/tests/date_interval_create_from_date_string_nullparam.phpt`, and
+  `ext/date/tests/date_interval_non_relative_warning.phpt` at `5/5` PASS.
+  Unsupported edges remain full timelib relative grammar and non-relative
+  classification, exact invalid-modifier diagnostics beyond the bounded parser,
+  DatePeriod, DateInterval serialization/state restoration, references/COW, and
+  native lowering.
+
 - Accepted checkpoint `dcd07a3c` as the current public PHPT score source after
   the replacement full pinned php-src gate completed with zero
   latest-published PASS regressions. The public-comparable score is now

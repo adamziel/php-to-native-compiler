@@ -6328,6 +6328,10 @@
   shared PHP-shaped string boundary for scalar conversion, `null` deprecation,
   supported visible `__toString()` objects, and catchable PHP-shaped
   `TypeError`s for arrays, resources, closures, or non-stringable objects.
+  Empty or unsupported bounded modifiers raise catchable
+  `DateMalformedStringException`s for `DateTime::modify()` and
+  `DateTimeImmutable::modify()`, while procedural `date_modify()` emits a
+  PHP-shaped warning and returns `false`.
   Construction through `new DateTime($time = null, ?DateTimeZone $timezone =
   null)`, `date_create($time = null, ?DateTimeZone $timezone = null)`, `new
   DateTimeImmutable($time = null, ?DateTimeZone $timezone = null)`, and
@@ -6391,7 +6395,12 @@
   strings. `DateInterval::createFromDateString()` and
   `date_interval_create_from_date_string()` accept simple signed relative
   year/month/week/day/hour/minute/second sequences such as `2 weeks` and
-  `1 year + 1 day`, exposing the corresponding component properties.
+  `1 year + 1 day`, exposing the corresponding component properties. Static
+  `DateInterval::createFromDateString()` raises catchable
+  `DateMalformedIntervalStringException`s for malformed relative strings and the
+  bounded non-relative token set with times, month names, `noon`, `midnight`,
+  `UTC`, or `GMT`; procedural `date_interval_create_from_date_string()` emits a
+  PHP-shaped warning and returns `false` for those same inputs.
   `DateTime::format()`,
   `DateTimeImmutable::format()`, `date_format()`, `date()`, `gmdate()`,
   `strftime()`, `gmstrftime()`, and `idate()` route `$format` through the
@@ -6446,11 +6455,13 @@
   massive-year DateTime diff/day/add/sub rows outside the bounded
   civil-calendar/timestamp model,
   DatePeriod, DateInterval serialization/unserialization and `__set_state()`,
-  full timelib relative string grammar, fractional or negative ISO interval
+  full timelib relative string grammar and non-relative classification,
+  fractional or negative ISO interval
   components, exact
   DateInterval object-dump handler parity for `from_string` intervals, exact
   invalid-modifier
-  `DateMalformedStringException` behavior, exact
+  `DateMalformedStringException` behavior beyond the bounded warning/exception
+  split, exact
   diagnostics for constructor/timezone/state coercions outside the covered
   slices, weak scalar timestamp/date-part coercions for `idate()` / date
   formatting and setter helpers beyond bounded integers and `int|null`
