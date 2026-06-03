@@ -32795,6 +32795,8 @@ impl PhpClassTable {
             ))
             .expect("ReflectionAttribute core metadata should not duplicate constants");
         for method in [
+            "__construct",
+            "__toString",
             "getName",
             "getTarget",
             "isRepeated",
@@ -33698,6 +33700,23 @@ impl PhpClassTable {
                 Visibility::Public,
             ))
             .expect("Reflection core metadata should not duplicate static methods");
+        let deprecated_id = classes
+            .declare_class("Deprecated")
+            .expect("core class table should contain Reflection before Deprecated");
+        let deprecated = classes
+            .get_mut(deprecated_id)
+            .expect("declared Deprecated class id should resolve");
+        for property in ["message", "since"] {
+            deprecated
+                .add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
+                .expect("Deprecated core metadata should not duplicate properties");
+        }
+        deprecated
+            .add_method(PhpMethodMetadata::instance(
+                "__construct",
+                Visibility::Public,
+            ))
+            .expect("Deprecated core metadata should not duplicate methods");
         classes
     }
 
@@ -81667,6 +81686,7 @@ mod tests {
                 "DOMDocumentType",
                 "ErrorException",
                 "Reflection",
+                "Deprecated",
             ]
         );
         let mut normalized_class_names = class_names
@@ -82202,6 +82222,8 @@ mod tests {
             vec!["name"]
         );
         assert!(reflection_attribute.constant("IS_INSTANCEOF").is_some());
+        assert!(reflection_attribute.method("__construct").is_some());
+        assert!(reflection_attribute.method("__toString").is_some());
         assert!(reflection_attribute.method("getArguments").is_some());
 
         let type_error = classes.lookup_class("typeerror").unwrap();
@@ -82249,6 +82271,19 @@ mod tests {
             .method("getModifierNames")
             .expect("Reflection::getModifierNames should be registered")
             .is_static());
+
+        let deprecated = classes.lookup_class("deprecated").unwrap();
+        assert_eq!(deprecated.name(), "Deprecated");
+        assert!(deprecated.parent_id().is_none());
+        assert_eq!(
+            deprecated
+                .properties()
+                .iter()
+                .map(PhpPropertyMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["message", "since"]
+        );
+        assert!(deprecated.method("__construct").is_some());
     }
 
     #[test]

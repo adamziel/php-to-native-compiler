@@ -4,6 +4,29 @@
 
 Implemented:
 
+- Added a bounded `ReflectionAttribute` / core attribute validation lane on the
+  interpreter path. Core `Attribute` flag evaluation now reports PHP-shaped
+  type and invalid-flag errors, repeated internal `Attribute` metadata is
+  rejected, AST-node attribute arguments resolve missing class constants during
+  validation, `ReflectionAttribute::__construct()` is protected from direct
+  instantiation, `ReflectionAttribute::__toString()` renders selected argument
+  metadata, and the core `Deprecated` attribute materializes `message` and
+  `since` properties through `newInstance()`. Focused proof covers Rust
+  `object_model` `reflection_attribute_`, the core class metadata guard,
+  build/fmt/diff checks, and selected public PHPT rows
+  `Zend/tests/attributes/021_attribute_flags_type_is_validated.phpt`,
+  `Zend/tests/attributes/022_attribute_flags_value_is_validated.phpt`,
+  `Zend/tests/attributes/023_ast_node_in_validation.phpt`,
+  `Zend/tests/attributes/025_internal_repeatable_validation.phpt`,
+  `ext/reflection/tests/ReflectionAttribute_constructor_001.phpt`,
+  `ext/reflection/tests/ReflectionAttribute_newInstance_deprecated.phpt`, and
+  `ext/reflection/tests/ReflectionAttribute_toString.phpt` at `7/7` PASS.
+  Exact-current pre-patch evidence on `23109651` was `0/7` from the pinned
+  full-gate shard results. Unsupported edges remain userland attribute
+  validation blocked by anonymous classes, exact constructor exception stack
+  rendering, full attribute argument AST/value parity, broader Reflection
+  identity formatting, native lowering, and references/COW.
+
 - Added a bounded DateTime microseconds lane on the interpreter path.
   DateTime and DateTimeImmutable state now preserves microseconds through
   construction, formatting, serialization/state restoration, copies, timezone

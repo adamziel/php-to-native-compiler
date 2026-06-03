@@ -85,6 +85,7 @@ const CORE_CLASS_NAMES: &[&str] = &[
     "DOMDocumentType",
     "ErrorException",
     "Reflection",
+    "Deprecated",
     "Generator",
 ];
 const CORE_INTERFACE_NAMES: &[&str] = &[
@@ -8057,7 +8058,7 @@ fn reflection_attribute_filters_repeats_named_args_and_core_attribute_metadata()
 #[Attribute]
 class BaseAttr {}
 
-#[Attribute]
+#[Attribute(Attribute::TARGET_ALL | Attribute::IS_REPEATABLE)]
 class ChildAttr extends BaseAttr {
     public $value;
     public $named;
@@ -8095,6 +8096,105 @@ echo "core|", count($core), "|", $core[0]->getName(), "|", $core[0]->getTarget()
 }
 
 #[test]
+fn reflection_attribute_new_instance_validation_core_deprecated_and_to_string() {
+    let execution = run_source(
+        r#"<?php
+#[Attribute("foo")]
+class BadFlagsType {}
+#[BadFlagsType]
+class UsesBadFlagsType {}
+try {
+    (new ReflectionClass(UsesBadFlagsType::class))->getAttributes()[0]->newInstance();
+} catch (Error $e) {
+    echo "type|", $e->getMessage(), "\n";
+}
+
+#[Attribute(-1)]
+class BadFlagsValue {}
+#[BadFlagsValue]
+class UsesBadFlagsValue {}
+try {
+    (new ReflectionClass(UsesBadFlagsValue::class))->getAttributes()[0]->newInstance();
+} catch (Error $e) {
+    echo "value|", $e->getMessage(), "\n";
+}
+
+#[Attribute(MissingFlags::VALUE)]
+class BadFlagsConstant {}
+#[BadFlagsConstant]
+class UsesBadFlagsConstant {}
+try {
+    (new ReflectionClass(UsesBadFlagsConstant::class))->getAttributes()[0]->newInstance();
+} catch (Error $e) {
+    echo "constant|", $e->getMessage(), "\n";
+}
+
+#[Deprecated("use newer()", since: "1.0")]
+function old_api() {}
+$deprecated = (new ReflectionFunction("old_api"))->getAttributes()[0]->newInstance();
+echo "deprecated|", $deprecated->message, "|", $deprecated->since, "\n";
+
+#[Foo, Bar(a: "foo", b: 1234), Baz("foo", 1234), X(NO_ERROR), Y(new stdClass)]
+function reflected_attrs() {}
+foreach ((new ReflectionFunction("reflected_attrs"))->getAttributes() as $attribute) {
+    echo $attribute;
+}
+
+#[Attribute]
+class ConstructAttr {}
+class ConstructSubject {
+    #[ConstructAttr]
+    public function run() {}
+}
+$attribute = (new ReflectionMethod(ConstructSubject::class, "run"))->getAttributes()[0];
+$method = new ReflectionMethod($attribute, "__construct");
+try {
+    $method->invoke($attribute, 0);
+} catch (ReflectionException $e) {
+    echo "ctor|", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "type|Attribute::__construct(): Argument #1 ($flags) must be of type int, string given\n",
+            "value|Invalid attribute flags specified\n",
+            "constant|Class \"MissingFlags\" not found\n",
+            "deprecated|use newer()|1.0\n",
+            "Attribute [ Foo ]\n",
+            "Attribute [ Bar ] {\n",
+            "  - Arguments [2] {\n",
+            "    Argument #0 [ a = 'foo' ]\n",
+            "    Argument #1 [ b = 1234 ]\n",
+            "  }\n",
+            "}\n",
+            "Attribute [ Baz ] {\n",
+            "  - Arguments [2] {\n",
+            "    Argument #0 [ 'foo' ]\n",
+            "    Argument #1 [ 1234 ]\n",
+            "  }\n",
+            "}\n",
+            "Attribute [ X ] {\n",
+            "  - Arguments [1] {\n",
+            "    Argument #0 [ NO_ERROR ]\n",
+            "  }\n",
+            "}\n",
+            "Attribute [ Y ] {\n",
+            "  - Arguments [1] {\n",
+            "    Argument #0 [ new \\stdClass() ]\n",
+            "  }\n",
+            "}\n",
+            "ctor|Cannot directly instantiate ReflectionAttribute\n"
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn builtin_attribute_target_startup_diagnostics_match_php_subset() {
     assert_php_startup_fatal(
         r#"<?php
@@ -8104,6 +8204,16 @@ function a1() {}
         "Command line code",
         3,
         "Attribute \"Attribute\" cannot target function (allowed targets: class)",
+    );
+    assert_php_startup_fatal(
+        r#"<?php
+#[Attribute]
+#[Attribute]
+class Demo {}
+"#,
+        "Command line code",
+        4,
+        "Attribute \"Attribute\" must not be repeated",
     );
     assert_php_startup_fatal(
         r#"<?php

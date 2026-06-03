@@ -7117,9 +7117,18 @@
   arguments. Direct built-in target validation covers `#[Attribute]` /
   `#[\Attribute]` on top-level functions, abstract classes, interfaces,
   traits, and enums plus `#[AllowDynamicProperties]` /
-  `#[\AllowDynamicProperties]` on interfaces, traits, and enums.
+  `#[\AllowDynamicProperties]` on interfaces, traits, and enums, and repeated
+  `#[Attribute]` on supported class declarations. Reflection attributes
+  returned by the supported `getAttributes()` paths expose
+  `getName()`, `getTarget()`, `isRepeated()`, `getArguments()`,
+  `newInstance()`, and `__toString()` for the current argument expression
+  subset. `ReflectionAttribute::newInstance()` validates the reflected
+  attribute class' own `#[Attribute(...)]` flags for int type errors, invalid
+  flag bits, deferred class-constant lookup failures, target masks, and
+  repeatability; the core `Deprecated` attribute materializes `message` and
+  `since` public properties.
   Namespace/import alias resolution for the built-in attribute names,
-  repeated-attribute rules, broader target validation on nested
+  broader repeated-attribute rules, broader target validation on nested
   functions/members/parameters/closures, readonly-class
   `AllowDynamicProperties` diagnostics, deprecations on
   classes/interfaces/traits/enums/constants/class constants/properties, exact
@@ -12559,7 +12568,9 @@
   Parameter/return type reflection remains metadata only and does not enforce
   call arguments or return values.
   Parenthesized DNF parameter/return types, callable/iterable/object special
-  PHP edge cases beyond the current parsed-name metadata, attributes,
+  PHP edge cases beyond the current parsed-name metadata, attributes beyond
+  the supported `getAttributes()` / `ReflectionAttribute` metadata and
+  instantiation subset,
   exact parameter/property docblock association across attributes and unusual trivia,
   bracketed namespace declaration blocks in the parser, anonymous class
   constructor/method-name reflection shapes, parameter doc-comment metadata,
@@ -12626,8 +12637,10 @@
 - generator functions, generator objects, `yield`, `yield from` delegation,
   key/value yields, by-reference yields, `send`/`throw`/`return` generator
   semantics, `Traversable` forwarding, and native lowering
-- executable attribute declarations and reflection metadata beyond the current
-  syntax-only skip boundary
+- executable attribute declarations and reflection metadata beyond the
+  supported `getAttributes()` / `ReflectionAttribute` runtime subset, including
+  anonymous classes with attributes, namespace/import alias expansion for
+  attribute names, and broad internal attribute catalogs
 - `is_callable` callable-name output targets beyond direct variables, object
   `__invoke` callables outside the bounded closure first-class callable slice,
   private/protected caller-context method callability,

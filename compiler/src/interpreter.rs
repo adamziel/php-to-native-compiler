@@ -28743,6 +28743,9 @@ impl Interpreter {
         if declared_class_name.eq_ignore_ascii_case("Attribute") {
             return self.instantiate_core_attribute(args, span, scope);
         }
+        if declared_class_name.eq_ignore_ascii_case("Deprecated") {
+            return self.instantiate_core_deprecated(args, span, scope);
+        }
         if self
             .enum_lookup
             .contains_key(&declared_class_name.to_ascii_lowercase())
@@ -29266,6 +29269,30 @@ impl Interpreter {
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
+        let flags = self.core_attribute_flags_from_args(args, span, scope)?;
+        let class_id = self
+            .classes
+            .lookup_class_id("Attribute")
+            .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class("Attribute")))?;
+        let object_id = self.allocate_object_id();
+        let class = self
+            .classes
+            .get(class_id)
+            .expect("core Attribute class id should resolve");
+        let object = PhpObject::from_class_with_id(class, object_id);
+        object
+            .write_public_property("flags", Value::Int(flags))
+            .map_err(|error| runtime_error(span, error))?;
+        self.track_allocated_object(&object);
+        Ok(Value::Object(object))
+    }
+
+    fn core_attribute_flags_from_args(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<i64> {
         let flags_expr = match args {
             [] => None,
             [Expr::NamedArgument { name, expr, span }] if name == "flags" => {
@@ -29307,11 +29334,11 @@ impl Interpreter {
                 other => {
                     return Err(runtime_error(
                         arg_span,
-                        RuntimeError::unsupported_object_instantiation(
-                            "Attribute",
+                        RuntimeError::unsupported_call(
+                            "Attribute::__construct()",
                             format!(
-                                "flags argument must be int in the current subset, got {}",
-                                other.type_name()
+                                "Argument #1 ($flags) must be of type int, {} given",
+                                php_type_error_given(&other)
                             ),
                         ),
                     ));
@@ -29321,26 +29348,39 @@ impl Interpreter {
             PHP_ATTRIBUTE_TARGET_ALL
         };
         if flags & !(PHP_ATTRIBUTE_TARGET_ALL | PHP_ATTRIBUTE_IS_REPEATABLE) != 0 {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_object_instantiation(
-                    "Attribute",
-                    "flags argument contains unsupported Attribute target bits",
-                ),
+            return Err(Diagnostic::new(
+                Phase::Runtime,
+                span.line,
+                span.column,
+                "Invalid attribute flags specified",
             ));
         }
+        Ok(flags)
+    }
+
+    fn instantiate_core_deprecated(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let (message, since) =
+            self.deprecated_attribute_message_parts_from_exprs(args, false, scope)?;
         let class_id = self
             .classes
-            .lookup_class_id("Attribute")
-            .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class("Attribute")))?;
+            .lookup_class_id("Deprecated")
+            .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class("Deprecated")))?;
         let object_id = self.allocate_object_id();
         let class = self
             .classes
             .get(class_id)
-            .expect("core Attribute class id should resolve");
+            .expect("core Deprecated class id should resolve");
         let object = PhpObject::from_class_with_id(class, object_id);
         object
-            .write_public_property("flags", Value::Int(flags))
+            .write_public_property("message", optional_string_value(message.as_deref()))
+            .map_err(|error| runtime_error(span, error))?;
+        object
+            .write_public_property("since", optional_string_value(since.as_deref()))
             .map_err(|error| runtime_error(span, error))?;
         self.track_allocated_object(&object);
         Ok(Value::Object(object))
@@ -53823,6 +53863,28 @@ impl Interpreter {
             }
             if object
                 .class_name()
+                .eq_ignore_ascii_case("ReflectionAttribute")
+            {
+                let state = self
+                    .reflection_attributes
+                    .get(&object.id())
+                    .cloned()
+                    .ok_or_else(|| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "ReflectionAttribute::__toString()",
+                                "missing ReflectionAttribute runtime metadata",
+                            ),
+                        )
+                    })?;
+                return self
+                    .reflection_attribute_to_string(&state, span)
+                    .map(Value::String)
+                    .map(Some);
+            }
+            if object
+                .class_name()
                 .eq_ignore_ascii_case("ReflectionNamedType")
             {
                 let state = self
@@ -57882,6 +57944,10 @@ impl Interpreter {
         values: Vec<Value>,
         span: Span,
     ) -> CompileResult<Value> {
+        if let Some(error) = reflection_method_core_invoke_error(&state, span) {
+            return Err(error);
+        }
+
         if state.is_abstract {
             return Err(runtime_error(
                 span,
@@ -58036,6 +58102,10 @@ impl Interpreter {
         span: Span,
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
+        if let Some(error) = reflection_method_core_invoke_error(&state, span) {
+            return Err(error);
+        }
+
         if state.is_abstract {
             return Err(runtime_error(
                 span,
@@ -58170,6 +58240,10 @@ impl Interpreter {
         span: Span,
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
+        if let Some(error) = reflection_method_core_invoke_error(&state, span) {
+            return Err(error);
+        }
+
         if state.is_abstract {
             return Err(runtime_error(
                 span,
@@ -59106,6 +59180,19 @@ impl Interpreter {
             "Deprecated::__construct",
         )?;
         let mut scope = SymbolTable::new_child(self.global_symbols.clone());
+        self.deprecated_attribute_message_parts_from_exprs(
+            &argument_exprs,
+            strict_types,
+            &mut scope,
+        )
+    }
+
+    fn deprecated_attribute_message_parts_from_exprs(
+        &mut self,
+        argument_exprs: &[Expr],
+        strict_types: bool,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<(Option<String>, Option<String>)> {
         let mut message = None;
         let mut since = None;
         let mut positional_index = 0usize;
@@ -59113,7 +59200,7 @@ impl Interpreter {
         for argument in argument_exprs {
             match argument {
                 Expr::NamedArgument { name, expr, span } => {
-                    let value = self.evaluate(&expr, &mut scope)?;
+                    let value = self.evaluate(expr, scope)?;
                     match name.to_ascii_lowercase().as_str() {
                         "message" => {
                             message = self.deprecated_attribute_nullable_string_argument(
@@ -59121,7 +59208,7 @@ impl Interpreter {
                                 strict_types,
                                 1,
                                 "message",
-                                span,
+                                *span,
                             )?;
                         }
                         "since" => {
@@ -59130,12 +59217,12 @@ impl Interpreter {
                                 strict_types,
                                 2,
                                 "since",
-                                span,
+                                *span,
                             )?;
                         }
                         _ => {
                             return Err(runtime_error(
-                                span,
+                                *span,
                                 RuntimeError::unsupported_call(
                                     "Deprecated::__construct()",
                                     format!("unknown named argument ${name}"),
@@ -59146,7 +59233,7 @@ impl Interpreter {
                 }
                 Expr::SpreadArgument { span, .. } => {
                     return Err(runtime_error(
-                        span,
+                        *span,
                         RuntimeError::unsupported_call(
                             "Deprecated::__construct()",
                             "argument unpacking is not implemented for Deprecated attributes",
@@ -59154,7 +59241,7 @@ impl Interpreter {
                     ));
                 }
                 expr => {
-                    let value = self.evaluate(&expr, &mut scope)?;
+                    let value = self.evaluate(expr, scope)?;
                     match positional_index {
                         0 => {
                             message = self.deprecated_attribute_nullable_string_argument(
@@ -59414,6 +59501,15 @@ impl Interpreter {
             })?;
 
         match method_name.to_ascii_lowercase().as_str() {
+            "__construct" => Err(reflection_exception_error(
+                span,
+                "Cannot directly instantiate ReflectionAttribute",
+            )),
+            "__tostring" => {
+                expect_expr_arity("ReflectionAttribute::__toString", args.len(), 0, span)?;
+                self.reflection_attribute_to_string(&state, span)
+                    .map(Value::String)
+            }
             "getname" => {
                 expect_expr_arity("ReflectionAttribute::getName", args.len(), 0, span)?;
                 Ok(Value::String(state.name))
@@ -59433,6 +59529,7 @@ impl Interpreter {
             }
             "newinstance" => {
                 expect_expr_arity("ReflectionAttribute::newInstance", args.len(), 0, span)?;
+                self.validate_reflection_attribute_class_usage(&state, span)?;
                 let argument_exprs = Self::reflection_attribute_argument_exprs(
                     state.arguments.as_deref(),
                     span,
@@ -59451,6 +59548,113 @@ impl Interpreter {
                 RuntimeError::undefined_function(format!("ReflectionAttribute::{method_name}()")),
             )),
         }
+    }
+
+    fn validate_reflection_attribute_class_usage(
+        &mut self,
+        state: &ReflectionAttributeState,
+        span: Span,
+    ) -> CompileResult<()> {
+        if !self.class_like_exists(&state.name, AutoloadKind::Any) {
+            self.run_autoload_callbacks(&state.name, AutoloadKind::Any, span)?;
+        }
+        if !self.class_like_exists(&state.name, AutoloadKind::Any) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::undefined_class(&state.name),
+            ));
+        }
+
+        let attribute_class =
+            self.resolve_reflection_class_name_without_autoload(&state.name, span)?;
+        let Some(flags) =
+            self.reflection_attribute_class_flags(&attribute_class.attributes, span)?
+        else {
+            return Err(Diagnostic::new(
+                Phase::Runtime,
+                span.line,
+                span.column,
+                format!(
+                    "Attempting to use non-attribute class \"{}\" as attribute",
+                    attribute_display_name(&attribute_class.name)
+                ),
+            ));
+        };
+
+        if flags & state.target == 0 {
+            return Err(Diagnostic::new(
+                Phase::Runtime,
+                span.line,
+                span.column,
+                format!(
+                    "Attribute \"{}\" cannot target {} (allowed targets: {})",
+                    attribute_display_name(&state.name),
+                    attribute_target_name(state.target),
+                    attribute_allowed_targets(flags)
+                ),
+            ));
+        }
+
+        if state.is_repeated && flags & PHP_ATTRIBUTE_IS_REPEATABLE == 0 {
+            return Err(Diagnostic::new(
+                Phase::Runtime,
+                span.line,
+                span.column,
+                format!(
+                    "Attribute \"{}\" must not be repeated",
+                    attribute_display_name(&state.name)
+                ),
+            ));
+        }
+
+        Ok(())
+    }
+
+    fn reflection_attribute_class_flags(
+        &mut self,
+        attributes: &[AttributeDecl],
+        span: Span,
+    ) -> CompileResult<Option<i64>> {
+        let Some(attribute) = attributes
+            .iter()
+            .find(|attribute| attribute_name_is_attribute(attribute))
+        else {
+            return Ok(None);
+        };
+        let argument_exprs = Self::reflection_attribute_argument_exprs(
+            attribute.arguments.as_deref(),
+            span,
+            "Attribute::__construct",
+        )?;
+        let mut scope = SymbolTable::new_child(self.global_symbols.clone());
+        self.core_attribute_flags_from_args(&argument_exprs, span, &mut scope)
+            .map(Some)
+    }
+
+    fn reflection_attribute_to_string(
+        &mut self,
+        state: &ReflectionAttributeState,
+        span: Span,
+    ) -> CompileResult<String> {
+        let argument_exprs = Self::reflection_attribute_argument_exprs(
+            state.arguments.as_deref(),
+            span,
+            "ReflectionAttribute::__toString",
+        )?;
+        if argument_exprs.is_empty() {
+            return Ok(format!("Attribute [ {} ]\n", state.name));
+        }
+
+        let mut output = format!("Attribute [ {} ] {{\n", state.name);
+        output.push_str(&format!("  - Arguments [{}] {{\n", argument_exprs.len()));
+        for (index, argument) in argument_exprs.iter().enumerate() {
+            output.push_str(&format!(
+                "    Argument #{index} [ {} ]\n",
+                reflection_attribute_to_string_argument(argument)
+            ));
+        }
+        output.push_str("  }\n}\n");
+        Ok(output)
     }
 
     fn reflection_attribute_arguments_array(
@@ -106591,6 +106795,10 @@ fn collect_builtin_attribute_target_startup_diagnostics(
 fn stmt_builtin_attribute_target_error(stmt: &Stmt) -> Option<(String, usize)> {
     match stmt {
         Stmt::Class(class) => {
+            if let Some(error) = builtin_attribute_repeat_error(&class.attributes, class.span.line)
+            {
+                return Some(error);
+            }
             if !class.is_abstract {
                 return None;
             }
@@ -106626,6 +106834,22 @@ fn stmt_builtin_attribute_target_error(stmt: &Stmt) -> Option<(String, usize)> {
         Stmt::Function(function) => function_attribute_target_error(function),
         _ => None,
     }
+}
+
+fn builtin_attribute_repeat_error(
+    attributes: &[AttributeDecl],
+    line: usize,
+) -> Option<(String, usize)> {
+    let count = attributes
+        .iter()
+        .filter(|attribute| attribute_name_is_attribute(attribute))
+        .count();
+    (count > 1).then(|| {
+        (
+            "Attribute \"Attribute\" must not be repeated".to_string(),
+            line,
+        )
+    })
 }
 
 fn declaration_attribute_target_error(
@@ -106669,6 +106893,86 @@ fn function_attribute_target_error(function: &FunctionDecl) -> Option<(String, u
 
 fn attribute_display_name(name: &str) -> &str {
     name.trim_start_matches('\\')
+}
+
+fn attribute_target_name(target: i64) -> &'static str {
+    match target {
+        PHP_ATTRIBUTE_TARGET_CLASS => "class",
+        PHP_ATTRIBUTE_TARGET_FUNCTION => "function",
+        PHP_ATTRIBUTE_TARGET_METHOD => "method",
+        PHP_ATTRIBUTE_TARGET_PROPERTY => "property",
+        PHP_ATTRIBUTE_TARGET_CLASS_CONSTANT => "class constant",
+        PHP_ATTRIBUTE_TARGET_PARAMETER => "parameter",
+        PHP_ATTRIBUTE_TARGET_CONSTANT => "constant",
+        _ => "declaration",
+    }
+}
+
+fn attribute_allowed_targets(flags: i64) -> String {
+    [
+        (PHP_ATTRIBUTE_TARGET_CLASS, "class"),
+        (PHP_ATTRIBUTE_TARGET_FUNCTION, "function"),
+        (PHP_ATTRIBUTE_TARGET_METHOD, "method"),
+        (PHP_ATTRIBUTE_TARGET_PROPERTY, "property"),
+        (PHP_ATTRIBUTE_TARGET_CLASS_CONSTANT, "class constant"),
+        (PHP_ATTRIBUTE_TARGET_PARAMETER, "parameter"),
+        (PHP_ATTRIBUTE_TARGET_CONSTANT, "constant"),
+    ]
+    .into_iter()
+    .filter_map(|(target, label)| (flags & target != 0).then_some(label))
+    .collect::<Vec<_>>()
+    .join(", ")
+}
+
+fn reflection_attribute_to_string_argument(expr: &Expr) -> String {
+    match expr {
+        Expr::NamedArgument { name, expr, .. } => {
+            format!("{name} = {}", reflection_attribute_to_string_expr(expr))
+        }
+        expr => reflection_attribute_to_string_expr(expr),
+    }
+}
+
+fn reflection_attribute_to_string_expr(expr: &Expr) -> String {
+    match expr {
+        Expr::Null(_) => "NULL".to_string(),
+        Expr::Bool(true, _) => "true".to_string(),
+        Expr::Bool(false, _) => "false".to_string(),
+        Expr::Int(value, _) => value.to_string(),
+        Expr::Float(value, _) => value.to_string(),
+        Expr::String(value, _) => {
+            let value = match php_string_literal_value(value) {
+                Value::String(value) => value,
+                Value::BinaryString(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+                other => other.echo_string(),
+            };
+            format!("'{}'", value.replace('\\', "\\\\").replace('\'', "\\'"))
+        }
+        Expr::GlobalConstant { name, .. } => name.clone(),
+        Expr::ClassConstant {
+            class_name,
+            constant,
+            ..
+        } => format!("{class_name}::{constant}"),
+        Expr::Unary {
+            op: UnaryOp::Negate,
+            expr,
+            ..
+        } => format!("-{}", reflection_attribute_to_string_expr(expr)),
+        Expr::Unary {
+            op: UnaryOp::Plus,
+            expr,
+            ..
+        } => reflection_attribute_to_string_expr(expr),
+        Expr::New {
+            class_name: NewClassName::Named(class_name),
+            args,
+            ..
+        } if args.is_empty() => {
+            format!("new \\{}()", attribute_display_name(class_name))
+        }
+        _ => "<expr>".to_string(),
+    }
 }
 
 fn stmt_attribute_unpack_line(stmt: &Stmt) -> Option<usize> {
@@ -114879,6 +115183,17 @@ fn reflection_class_constant_matches_filter(
     }
 }
 
+fn reflection_method_core_invoke_error(
+    state: &ReflectionMethodState,
+    span: Span,
+) -> Option<Diagnostic> {
+    (state
+        .declaring_class_name
+        .eq_ignore_ascii_case("ReflectionAttribute")
+        && state.name.eq_ignore_ascii_case("__construct"))
+    .then(|| reflection_exception_error(span, "Cannot directly instantiate ReflectionAttribute"))
+}
+
 fn reflection_class_constant_filter_argument(value: Value, span: Span) -> CompileResult<i64> {
     match value {
         Value::Null => Ok(0),
@@ -116210,6 +116525,12 @@ fn core_class_attributes_for_reflection(name: &str) -> Vec<AttributeDecl> {
             Some("(Attribute::TARGET_CLASS)".to_string()),
         )];
     }
+    if name.eq_ignore_ascii_case("Deprecated") {
+        return vec![AttributeDecl::new(
+            "Attribute".to_string(),
+            Some("(Attribute::TARGET_ALL)".to_string()),
+        )];
+    }
     Vec::new()
 }
 
@@ -117371,6 +117692,17 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
         }
 
         if error.message == "Call to private HashContext::__construct() from global scope" {
+            return Some(("Error", error.message.clone()));
+        }
+
+        if error.message == "Invalid attribute flags specified"
+            || error
+                .message
+                .starts_with("Attempting to use non-attribute class ")
+            || (error.message.starts_with("Attribute \"")
+                && (error.message.contains("\" cannot target ")
+                    || error.message.ends_with(" must not be repeated")))
+        {
             return Some(("Error", error.message.clone()));
         }
 
