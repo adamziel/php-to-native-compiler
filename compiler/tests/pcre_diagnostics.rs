@@ -102,6 +102,46 @@ var_dump($matches[0][3]);
 }
 
 #[test]
+fn preg_match_invalid_utf8_offset_sets_empty_matches_and_last_error() {
+    let execution = run_source(
+        r#"<?php
+$string = "\xc3\xa9 uma string utf8 bem formada";
+var_dump(preg_match('~.*~u', $string, $matches, 0, 1));
+var_dump($matches);
+var_dump(preg_last_error() == PREG_BAD_UTF8_OFFSET_ERROR);
+var_dump(preg_match('~.*~u', $string, $matches, 0, 2));
+var_dump($matches);
+var_dump(preg_last_error() == PREG_NO_ERROR);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.exit_code, 0);
+    assert!(
+        execution.stdout.contains("bool(false)"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution.stdout.contains("array(0) {\n}"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution.stdout.contains("bool(true)"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution
+            .stdout
+            .contains("string(28) \" uma string utf8 bem formada\""),
+        "{}",
+        execution.stdout
+    );
+}
+
+#[test]
 fn pcre_replace_family_reports_invalid_patterns_and_replacement_type_errors() {
     let execution = run_source(
         r#"<?php

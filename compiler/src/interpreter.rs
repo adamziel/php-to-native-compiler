@@ -137978,7 +137978,12 @@ impl Interpreter {
         let subject = self.pcre_subject_bytes(context, subject, span)?;
         let Some(start) = self.pcre_match_start(context, &subject, offset, regex.utf8, span)?
         else {
-            return Ok((Value::Bool(false), None));
+            let matches = if self.pcre_last_error == PHP_PREG_BAD_UTF8_OFFSET_ERROR {
+                Some(PhpArray::new())
+            } else {
+                None
+            };
+            return Ok((Value::Bool(false), matches));
         };
 
         let searched = &subject[start..];

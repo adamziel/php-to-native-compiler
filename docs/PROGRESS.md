@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Repaired the latest-published PASS regression in
+  `ext/pcre/tests/invalid_utf8_offset.phpt`. `preg_match()` now preserves
+  PHP's by-reference match output shape for invalid UTF-8 start offsets:
+  the call returns `false`, `preg_last_error()` reports
+  `PREG_BAD_UTF8_OFFSET_ERROR`, and the `$matches` output is reset to an
+  empty array rather than left as `NULL`. Focused proof covers Rust
+  `pcre_diagnostics` (`3/3`), build/fmt/diff checks, and selected public
+  PHPT rows `ext/pcre/tests/invalid_utf8_offset.phpt`,
+  `preg_match_error1.phpt`, `preg_match_all_error1.phpt`,
+  `preg_replace_error1.phpt`, `preg_replace_error2.phpt`,
+  `preg_split_error1.phpt`, `preg_grep_error1.phpt`, and
+  `preg_replace_callback_error1.phpt` at `8/8` PASS. The accepted public
+  baseline marked `invalid_utf8_offset.phpt` `PASSED`; the blocked
+  `a7c69ff1` gate marked it as a latest-published PASS regression.
+  Unsupported edges remain full PCRE parity, match-array offset-capture
+  combinations beyond the current bounded subset, exact native lowering, and
+  broader references/COW.
+
 - Added a bounded DateTime tentative-return compatibility lane on the
   interpreter path. `DateTimeZone::listIdentifiers()` now keeps its internal
   arginfo defaults while treating its `array` return as tentative for
