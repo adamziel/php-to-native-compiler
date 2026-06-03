@@ -933,6 +933,14 @@ enum SplIteratorWrapperState {
 #[derive(Debug, Clone)]
 struct BoundedDateTimeObjectState {
     timestamp: i64,
+    microsecond: i64,
+    timezone: BoundedTimezone,
+}
+
+#[derive(Debug, Clone)]
+struct BoundedParsedDateTime {
+    timestamp: i64,
+    microsecond: i64,
     timezone: BoundedTimezone,
 }
 
@@ -21216,19 +21224,20 @@ impl Interpreter {
     ) -> CompileResult<()> {
         let default_timezone =
             self.datetime_constructor_timezone(function, timezone_value, span)?;
-        let (timestamp, timezone) = match value {
-            Some(Value::Null) | None => (self.request_time, default_timezone),
+        let (timestamp, microsecond, timezone) = match value {
+            Some(Value::Null) | None => (self.request_time, 0, default_timezone),
             Some(Value::String(value)) if value.eq_ignore_ascii_case("now") => {
-                (self.request_time, default_timezone)
+                (self.request_time, 0, default_timezone)
             }
             Some(Value::String(value)) => {
                 if let Some(zone) = bounded_timezone_from_name(value) {
-                    (self.request_time, zone)
+                    (self.request_time, 0, zone)
                 } else {
                     let timezone = bounded_datetime_timezone_hint(value, &default_timezone);
-                    let timestamp = parse_bounded_strtotime(value, &default_timezone)
-                        .unwrap_or(self.request_time);
-                    (timestamp, timezone)
+                    let (timestamp, microsecond) =
+                        parse_bounded_datetime_with_microsecond(value, &default_timezone)
+                            .unwrap_or((self.request_time, 0));
+                    (timestamp, microsecond, timezone)
                 }
             }
             Some(other) => {
@@ -21244,7 +21253,13 @@ impl Interpreter {
                 ));
             }
         };
-        self.assign_datetime_object_state(object, timestamp, timezone, span)
+        self.assign_datetime_object_state_with_microsecond(
+            object,
+            timestamp,
+            microsecond,
+            timezone,
+            span,
+        )
     }
 
     fn assign_datetime_object_state(
@@ -21254,11 +21269,23 @@ impl Interpreter {
         timezone: BoundedTimezone,
         span: Span,
     ) -> CompileResult<()> {
+        self.assign_datetime_object_state_with_microsecond(object, timestamp, 0, timezone, span)
+    }
+
+    fn assign_datetime_object_state_with_microsecond(
+        &mut self,
+        object: &PhpObject,
+        timestamp: i64,
+        microsecond: i64,
+        timezone: BoundedTimezone,
+        span: Span,
+    ) -> CompileResult<()> {
         let (timezone_type, timezone_name) =
             bounded_timezone_object_parts(&timezone.name).unwrap_or((3, timezone.name.clone()));
         let date = format!(
-            "{}.000000",
-            format_bounded_date("Y-m-d H:i:s", timestamp, &timezone)
+            "{}.{}",
+            format_bounded_date("Y-m-d H:i:s", timestamp, &timezone),
+            zero_pad(microsecond, 6)
         );
         object
             .write_public_property("date", Value::String(date))
@@ -21273,6 +21300,7 @@ impl Interpreter {
             object.id(),
             BoundedDateTimeObjectState {
                 timestamp,
+                microsecond,
                 timezone,
             },
         );
@@ -21350,6 +21378,19 @@ impl Interpreter {
         timezone: BoundedTimezone,
         span: Span,
     ) -> CompileResult<PhpObject> {
+        self.create_datetime_object_from_state_with_microsecond(
+            class_id, timestamp, 0, timezone, span,
+        )
+    }
+
+    fn create_datetime_object_from_state_with_microsecond(
+        &mut self,
+        class_id: ClassId,
+        timestamp: i64,
+        microsecond: i64,
+        timezone: BoundedTimezone,
+        span: Span,
+    ) -> CompileResult<PhpObject> {
         let object_id = self.allocate_object_id();
         let inherited_properties = self.inherited_instance_properties(class_id);
         let mut ancestor_class_names = self.inherited_class_names(class_id);
@@ -21366,7 +21407,13 @@ impl Interpreter {
             interface_names,
             object_id,
         );
-        self.assign_datetime_object_state(&object, timestamp, timezone, span)?;
+        self.assign_datetime_object_state_with_microsecond(
+            &object,
+            timestamp,
+            microsecond,
+            timezone,
+            span,
+        )?;
         Ok(object)
     }
 
@@ -21642,16 +21689,14 @@ impl Interpreter {
         state: &PhpArray,
         span: Span,
     ) -> CompileResult<()> {
-        let date = bounded_datetime_state_string(state, "date", span)?;
-        let timestamp = bounded_datetime_timestamp_from_state_array(state, span)?;
-        let timezone = bounded_timezone_from_state_array(state, span)?;
-        self.assign_datetime_object_state(object, timestamp, timezone, span)?;
-        if date.contains('.') {
-            object
-                .write_public_property("date", Value::String(date))
-                .map_err(|error| runtime_error(span, error))?;
-        }
-        Ok(())
+        let parsed = bounded_datetime_state_from_state_array(state, span)?;
+        self.assign_datetime_object_state_with_microsecond(
+            object,
+            parsed.timestamp,
+            parsed.microsecond,
+            parsed.timezone,
+            span,
+        )
     }
 
     fn datetime_serialization_state_array(
@@ -21721,10 +21766,12 @@ impl Interpreter {
         let Value::Array(state) = state else {
             return Err(datetime_invalid_serialization_error(span));
         };
-        let object = self.create_datetime_object_from_state(
+        let parsed = bounded_datetime_state_from_state_array(&state, span)?;
+        let object = self.create_datetime_object_from_state_with_microsecond(
             class_id,
-            bounded_datetime_timestamp_from_state_array(&state, span)?,
-            bounded_timezone_from_state_array(&state, span)?,
+            parsed.timestamp,
+            parsed.microsecond,
+            parsed.timezone,
             span,
         )?;
         self.track_allocated_object(&object);
@@ -21743,15 +21790,17 @@ impl Interpreter {
         let Value::Array(state) = state else {
             return Err(datetimeimmutable_invalid_serialization_error(span));
         };
-        let timestamp = map_datetime_invalid_serialization_to_datetimeimmutable(
-            bounded_datetime_timestamp_from_state_array(&state, span),
+        let parsed = map_datetime_invalid_serialization_to_datetimeimmutable(
+            bounded_datetime_state_from_state_array(&state, span),
             span,
         )?;
-        let timezone = map_datetime_invalid_serialization_to_datetimeimmutable(
-            bounded_timezone_from_state_array(&state, span),
+        let object = self.create_datetime_object_from_state_with_microsecond(
+            class_id,
+            parsed.timestamp,
+            parsed.microsecond,
+            parsed.timezone,
             span,
         )?;
-        let object = self.create_datetime_object_from_state(class_id, timestamp, timezone, span)?;
         self.track_allocated_object(&object);
         Ok(Value::Object(object))
     }
@@ -21909,10 +21958,77 @@ impl Interpreter {
         span: Span,
     ) -> CompileResult<Value> {
         let state = self.datetime_copy_source_state(source, function, span)?;
-        let object = self.create_datetime_object_from_state(
+        let object = self.create_datetime_object_from_state_with_microsecond(
             class_id,
             state.timestamp,
+            state.microsecond,
             state.timezone,
+            span,
+        )?;
+        self.track_allocated_object(&object);
+        Ok(Value::Object(object))
+    }
+
+    fn call_datetime_create_from_format_static(
+        &mut self,
+        class_id: ClassId,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+        immutable: bool,
+    ) -> CompileResult<Value> {
+        let function = if immutable {
+            "DateTimeImmutable::createFromFormat()"
+        } else {
+            "DateTime::createFromFormat()"
+        };
+        if !(2..=3).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    function.trim_end_matches("()"),
+                    ArityExpectation::Between { min: 2, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+        let values = args
+            .iter()
+            .map(|arg| self.evaluate(arg, caller_scope))
+            .collect::<CompileResult<Vec<_>>>()?;
+        self.create_datetime_from_format_values(
+            class_id,
+            function,
+            &values[0],
+            &values[1],
+            values.get(2),
+            span,
+        )
+    }
+
+    fn create_datetime_from_format_values(
+        &mut self,
+        class_id: ClassId,
+        function: &'static str,
+        format_value: &Value,
+        datetime_value: &Value,
+        timezone_value: Option<&Value>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let format = self.date_format_string_argument(function, 1, format_value, span)?;
+        let datetime =
+            self.php_string_argument_with_magic(function, 2, "datetime", datetime_value, span)?;
+        let default_timezone =
+            self.datetime_constructor_timezone(function, timezone_value, span)?;
+        let Some(parsed) = parse_bounded_create_from_format(&format, &datetime, &default_timezone)
+        else {
+            return Ok(Value::Bool(false));
+        };
+        let object = self.create_datetime_object_from_state_with_microsecond(
+            class_id,
+            parsed.timestamp,
+            parsed.microsecond,
+            parsed.timezone,
             span,
         )?;
         self.track_allocated_object(&object);
@@ -22042,10 +22158,11 @@ impl Interpreter {
                         ),
                     )
                 })?;
-                Ok(Value::String(format_bounded_date(
+                Ok(Value::String(format_bounded_date_with_microsecond(
                     &format,
                     state.timestamp,
                     &state.timezone,
+                    state.microsecond,
                 )))
             }
             "getoffset" => {
@@ -22103,10 +22220,10 @@ impl Interpreter {
                         ));
                     }
                 };
-                let timestamp = self
+                let state = self
                     .date_time_objects
                     .get(&object.id())
-                    .map(|state| state.timestamp)
+                    .cloned()
                     .ok_or_else(|| {
                         runtime_error(
                             span,
@@ -22129,7 +22246,13 @@ impl Interpreter {
                         ),
                     )
                 })?;
-                self.assign_datetime_object_state(&object, timestamp, timezone, span)?;
+                self.assign_datetime_object_state_with_microsecond(
+                    &object,
+                    state.timestamp,
+                    state.microsecond,
+                    timezone,
+                    span,
+                )?;
                 Ok(Value::Object(object))
             }
             "setdate" => {
@@ -22211,6 +22334,29 @@ impl Interpreter {
                     )
                 })?;
                 Ok(Value::Int(state.timestamp))
+            }
+            "getmicrosecond" => {
+                expect_expr_arity("DateTime::getMicrosecond", args.len(), 0, span)?;
+                let state =
+                    self.datetime_object_state(&object, "DateTime::getMicrosecond()", span)?;
+                Ok(Value::Int(state.microsecond))
+            }
+            "setmicrosecond" => {
+                expect_expr_arity("DateTime::setMicrosecond", args.len(), 1, span)?;
+                let value = self.evaluate(&args[0], caller_scope)?;
+                let microsecond = required_date_int_arg(
+                    "DateTime::setMicrosecond()",
+                    &value,
+                    "microsecond",
+                    span,
+                )?;
+                self.set_datetime_microsecond(
+                    &object,
+                    "DateTime::setMicrosecond()",
+                    microsecond,
+                    span,
+                )?;
+                Ok(Value::Object(object))
             }
             "settimestamp" => {
                 expect_expr_arity("DateTime::setTimestamp", args.len(), 1, span)?;
@@ -22354,10 +22500,11 @@ impl Interpreter {
                         ),
                     )
                 })?;
-                Ok(Value::String(format_bounded_date(
+                Ok(Value::String(format_bounded_date_with_microsecond(
                     &format,
                     state.timestamp,
                     &state.timezone,
+                    state.microsecond,
                 )))
             }
             "getoffset" => {
@@ -22433,9 +22580,10 @@ impl Interpreter {
                         ),
                     )
                 })?;
-                let copy = self.create_datetime_object_from_state(
+                let copy = self.create_datetime_object_from_state_with_microsecond(
                     object.class_id(),
                     state.timestamp,
+                    state.microsecond,
                     timezone,
                     span,
                 )?;
@@ -22539,6 +22687,38 @@ impl Interpreter {
                     )
                 })?;
                 Ok(Value::Int(state.timestamp))
+            }
+            "getmicrosecond" => {
+                expect_expr_arity("DateTimeImmutable::getMicrosecond", args.len(), 0, span)?;
+                let state = self.datetime_object_state(
+                    &object,
+                    "DateTimeImmutable::getMicrosecond()",
+                    span,
+                )?;
+                Ok(Value::Int(state.microsecond))
+            }
+            "setmicrosecond" => {
+                expect_expr_arity("DateTimeImmutable::setMicrosecond", args.len(), 1, span)?;
+                let value = self.evaluate(&args[0], caller_scope)?;
+                let microsecond = required_date_int_arg(
+                    "DateTimeImmutable::setMicrosecond()",
+                    &value,
+                    "microsecond",
+                    span,
+                )?;
+                let copy = self.datetimeimmutable_copy_for_mutation(
+                    &object,
+                    "DateTimeImmutable::setMicrosecond()",
+                    span,
+                )?;
+                self.set_datetime_microsecond(
+                    &copy,
+                    "DateTimeImmutable::setMicrosecond()",
+                    microsecond,
+                    span,
+                )?;
+                self.track_allocated_object(&copy);
+                Ok(Value::Object(copy))
             }
             "settimestamp" => {
                 expect_expr_arity("DateTimeImmutable::setTimestamp", args.len(), 1, span)?;
@@ -22670,9 +22850,10 @@ impl Interpreter {
         span: Span,
     ) -> CompileResult<PhpObject> {
         let state = self.datetime_object_state(object, function, span)?;
-        self.create_datetime_object_from_state(
+        self.create_datetime_object_from_state_with_microsecond(
             object.class_id(),
             state.timestamp,
+            state.microsecond,
             state.timezone,
             span,
         )
@@ -22704,17 +22885,25 @@ impl Interpreter {
     ) -> CompileResult<()> {
         let state = self.datetime_object_state(object, function, span)?;
         let interval = self.dateinterval_object_state(interval, function, span)?;
-        let timestamp = apply_bounded_dateinterval_to_datetime(&state, &interval, subtract)
-            .ok_or_else(|| {
-                runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        function,
-                        "DateInterval arithmetic overflowed the current bounded DateTime subset",
-                    ),
-                )
-            })?;
-        self.assign_datetime_object_state(object, timestamp, state.timezone, span)
+        let (timestamp, microsecond) = apply_bounded_dateinterval_to_datetime(
+            &state, &interval, subtract,
+        )
+        .ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    "DateInterval arithmetic overflowed the current bounded DateTime subset",
+                ),
+            )
+        })?;
+        self.assign_datetime_object_state_with_microsecond(
+            object,
+            timestamp,
+            microsecond,
+            state.timezone,
+            span,
+        )
     }
 
     fn call_date_create(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -22747,6 +22936,31 @@ impl Interpreter {
         let object = self.create_datetimeimmutable_object_from_values(args, span)?;
         self.track_allocated_object(&object);
         Ok(Value::Object(object))
+    }
+
+    fn call_date_create_from_format(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(2..=3).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "date_create_from_format()",
+                    ArityExpectation::Between { min: 2, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+        let class_id = self
+            .classes
+            .lookup_class_id("DateTime")
+            .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class("DateTime")))?;
+        self.create_datetime_from_format_values(
+            class_id,
+            "date_create_from_format()",
+            &args[0],
+            &args[1],
+            args.get(2),
+            span,
+        )
     }
 
     fn call_date_diff(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -22858,21 +23072,36 @@ impl Interpreter {
                     ),
                 )
             })?;
-        let (timestamp, timezone) = match parse_bounded_at_timestamp(modifier.trim()) {
-            Some(timestamp) => (timestamp, BoundedTimezone::numeric_fixed_offset(0)),
-            None => {
-                let timestamp =
-                    apply_bounded_datetime_modifier(state.timestamp, &state.timezone, modifier)
-                        .ok_or_else(|| {
-                            date_malformed_string_error(
-                                span,
-                                date_modifier_parse_error(function, modifier),
-                            )
-                        })?;
-                (timestamp, state.timezone)
-            }
-        };
-        self.assign_datetime_object_state(object, timestamp, timezone, span)
+        let (timestamp, microsecond, timezone) =
+            match parse_bounded_at_timestamp_with_microsecond(modifier.trim()) {
+                Some((timestamp, microsecond)) => (
+                    timestamp,
+                    microsecond,
+                    BoundedTimezone::numeric_fixed_offset(0),
+                ),
+                None => {
+                    let (timestamp, microsecond) = apply_bounded_datetime_modifier(
+                        state.timestamp,
+                        state.microsecond,
+                        &state.timezone,
+                        modifier,
+                    )
+                    .ok_or_else(|| {
+                        date_malformed_string_error(
+                            span,
+                            date_modifier_parse_error(function, modifier),
+                        )
+                    })?;
+                    (timestamp, microsecond, state.timezone)
+                }
+            };
+        self.assign_datetime_object_state_with_microsecond(
+            object,
+            timestamp,
+            microsecond,
+            timezone,
+            span,
+        )
     }
 
     fn datetime_object_state(
@@ -22957,6 +23186,8 @@ impl Interpreter {
             current.hour,
             current.minute,
             current.second,
+            state.microsecond,
+            4,
             state.timezone,
             span,
         )
@@ -23001,6 +23232,8 @@ impl Interpreter {
             current.hour,
             current.minute,
             current.second,
+            state.microsecond,
+            4,
             state.timezone,
             span,
         )
@@ -23026,15 +23259,6 @@ impl Interpreter {
             Some(value) => required_date_int_arg(function, value, "microsecond", span)?,
             None => 0,
         };
-        if microsecond != 0 {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    function,
-                    "non-zero microseconds are not represented by the current DateTime state",
-                ),
-            ));
-        }
         let state = self.datetime_object_state(object, function, span)?;
         let current = bounded_datetime_parts(
             state.timestamp,
@@ -23049,6 +23273,26 @@ impl Interpreter {
             hour,
             minute,
             second,
+            microsecond,
+            4,
+            state.timezone,
+            span,
+        )
+    }
+
+    fn set_datetime_microsecond(
+        &mut self,
+        object: &PhpObject,
+        function: &'static str,
+        microsecond: i64,
+        span: Span,
+    ) -> CompileResult<()> {
+        validate_datetime_microsecond(function, 1, microsecond, span)?;
+        let state = self.datetime_object_state(object, function, span)?;
+        self.assign_datetime_object_state_with_microsecond(
+            object,
+            state.timestamp,
+            microsecond,
             state.timezone,
             span,
         )
@@ -23065,9 +23309,12 @@ impl Interpreter {
         hour: i64,
         minute: i64,
         second: i64,
+        microsecond: i64,
+        microsecond_position: usize,
         timezone: BoundedTimezone,
         span: Span,
     ) -> CompileResult<()> {
+        validate_datetime_microsecond(function, microsecond_position, microsecond, span)?;
         let timestamp = timestamp_from_overflowing_local_parts(
             year, month, day, hour, minute, second, &timezone,
         )
@@ -23080,7 +23327,13 @@ impl Interpreter {
                 ),
             )
         })?;
-        self.assign_datetime_object_state(object, timestamp, timezone, span)
+        self.assign_datetime_object_state_with_microsecond(
+            object,
+            timestamp,
+            microsecond,
+            timezone,
+            span,
+        )
     }
 
     fn date_format_string_argument(
@@ -23116,10 +23369,11 @@ impl Interpreter {
                 ),
             )
         })?;
-        Ok(Value::String(format_bounded_date(
+        Ok(Value::String(format_bounded_date_with_microsecond(
             &format,
             state.timestamp,
             &state.timezone,
+            state.microsecond,
         )))
     }
 
@@ -60250,6 +60504,17 @@ impl Interpreter {
             return self.call_datetime_set_state_static(class_id, args, span, caller_scope);
         }
         if self.is_datetime_class_id(class_id)
+            && method_name.eq_ignore_ascii_case("createFromFormat")
+        {
+            return self.call_datetime_create_from_format_static(
+                class_id,
+                args,
+                span,
+                caller_scope,
+                false,
+            );
+        }
+        if self.is_datetime_class_id(class_id)
             && method_name.eq_ignore_ascii_case("createFromImmutable")
         {
             return self.call_datetime_create_from_immutable_static(
@@ -60277,6 +60542,17 @@ impl Interpreter {
                 args,
                 span,
                 caller_scope,
+            );
+        }
+        if self.is_datetimeimmutable_class_id(class_id)
+            && method_name.eq_ignore_ascii_case("createFromFormat")
+        {
+            return self.call_datetime_create_from_format_static(
+                class_id,
+                args,
+                span,
+                caller_scope,
+                true,
             );
         }
         if self.is_datetimeimmutable_class_id(class_id)
@@ -94458,6 +94734,7 @@ impl Interpreter {
             "date_sunset" => self.call_date_sunrise_sunset(&args, span, true),
             "date_sun_info" => self.call_date_sun_info(&args, span),
             "date_create" => self.call_date_create(&args, span),
+            "date_create_from_format" => self.call_date_create_from_format(&args, span),
             "date_create_immutable" => self.call_date_create_immutable(&args, span),
             "date_diff" => self.call_date_diff(&args, span),
             "date_modify" => self.call_date_modify(&args, span),
@@ -116724,6 +117001,7 @@ const DATETIME_INVALID_SERIALIZATION_MESSAGE: &str =
 const DATETIMEIMMUTABLE_INVALID_SERIALIZATION_MESSAGE: &str =
     "Invalid serialization data for DateTimeImmutable object";
 const DATE_OBJECT_ERROR_DIAGNOSTIC_PREFIX: &str = "DateObjectError: ";
+const DATE_RANGE_ERROR_DIAGNOSTIC_PREFIX: &str = "DateRangeError: ";
 const DATE_EXCEPTION_DIAGNOSTIC_PREFIX: &str = "DateException: ";
 const DATE_MALFORMED_STRING_DIAGNOSTIC_PREFIX: &str = "DateMalformedStringException: ";
 const DATE_MALFORMED_INTERVAL_DIAGNOSTIC_PREFIX: &str = "DateMalformedIntervalStringException: ";
@@ -116800,6 +117078,16 @@ fn date_object_error(span: Span, message: &str) -> Diagnostic {
         RuntimeError::unsupported_call(
             "DateTime",
             format!("{DATE_OBJECT_ERROR_DIAGNOSTIC_PREFIX}{message}"),
+        ),
+    )
+}
+
+fn date_range_error(span: Span, message: String) -> Diagnostic {
+    runtime_error(
+        span,
+        RuntimeError::unsupported_call(
+            "DateTime",
+            format!("{DATE_RANGE_ERROR_DIAGNOSTIC_PREFIX}{message}"),
         ),
     )
 }
@@ -116918,6 +117206,9 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             .split_once(DATE_OBJECT_ERROR_DIAGNOSTIC_PREFIX)
         {
             return Some(("DateObjectError", message.to_string()));
+        }
+        if let Some((_, message)) = error.message.split_once(DATE_RANGE_ERROR_DIAGNOSTIC_PREFIX) {
+            return Some(("DateRangeError", message.to_string()));
         }
         if let Some((_, message)) = error.message.split_once(DATE_EXCEPTION_DIAGNOSTIC_PREFIX) {
             return Some(("DateException", message.to_string()));
@@ -119478,6 +119769,7 @@ fn is_builtin(name: &str) -> bool {
             | "date_sunset"
             | "date_sun_info"
             | "date_create"
+            | "date_create_from_format"
             | "date_create_immutable"
             | "date_diff"
             | "date_modify"
@@ -155330,22 +155622,26 @@ fn bounded_timezone_from_state_array(
 }
 
 fn bounded_datetime_timestamp_from_state_array(state: &PhpArray, span: Span) -> CompileResult<i64> {
-    let timezone = bounded_timezone_from_state_array(state, span)?;
-    let date = bounded_datetime_state_string(state, "date", span)?;
-    parse_bounded_datetime_state_date(&date, &timezone)
-        .ok_or_else(|| datetime_invalid_serialization_error(span))
+    bounded_datetime_state_from_state_array(state, span).map(|state| state.timestamp)
 }
 
-fn parse_bounded_datetime_state_date(date: &str, timezone: &BoundedTimezone) -> Option<i64> {
-    let body = if let Some((body, fraction)) = date.rsplit_once('.') {
-        if fraction.len() != 6 || !fraction.chars().all(|ch| ch.is_ascii_digit()) {
-            return None;
-        }
-        body
-    } else {
-        date
-    };
-    parse_bounded_strtotime(body, timezone)
+fn bounded_datetime_state_from_state_array(
+    state: &PhpArray,
+    span: Span,
+) -> CompileResult<BoundedParsedDateTime> {
+    let timezone = bounded_timezone_from_state_array(state, span)?;
+    let date = bounded_datetime_state_string(state, "date", span)?;
+    let (timestamp, microsecond) = parse_bounded_datetime_state_date(&date, &timezone)
+        .ok_or_else(|| datetime_invalid_serialization_error(span))?;
+    Ok(BoundedParsedDateTime {
+        timestamp,
+        microsecond,
+        timezone,
+    })
+}
+
+fn parse_bounded_datetime_state_date(date: &str, timezone: &BoundedTimezone) -> Option<(i64, i64)> {
+    parse_bounded_datetime_with_microsecond(date, timezone)
 }
 
 fn bounded_datetime_timezone_hint(
@@ -156128,12 +156424,19 @@ fn optional_sun_float_arg(
 }
 
 fn parse_bounded_strtotime(input: &str, default_timezone: &BoundedTimezone) -> Option<i64> {
+    parse_bounded_datetime_with_microsecond(input, default_timezone).map(|(timestamp, _)| timestamp)
+}
+
+fn parse_bounded_datetime_with_microsecond(
+    input: &str,
+    default_timezone: &BoundedTimezone,
+) -> Option<(i64, i64)> {
     let trimmed = input.trim();
     if trimmed.is_empty() {
         return None;
     }
-    if let Some(timestamp) = parse_bounded_at_timestamp(trimmed) {
-        return Some(timestamp);
+    if let Some((timestamp, microsecond)) = parse_bounded_at_timestamp_with_microsecond(trimmed) {
+        return Some((timestamp, microsecond));
     }
 
     if trimmed.len() == 14 && trimmed.chars().all(|ch| ch.is_ascii_digit()) {
@@ -156152,36 +156455,201 @@ fn parse_bounded_strtotime(input: &str, default_timezone: &BoundedTimezone) -> O
             second,
             None,
             default_timezone,
-        );
+        )
+        .map(|timestamp| (timestamp, 0));
     }
 
     if trimmed.len() == 10 && &trimmed[4..5] == "-" && &trimmed[7..8] == "-" {
         let year = parse_ascii_i64(&trimmed[0..4])?;
         let month = parse_ascii_i64(&trimmed[5..7])?;
         let day = parse_ascii_i64(&trimmed[8..10])?;
-        return timestamp_for_bounded_parts(year, month, day, 0, 0, 0, None, default_timezone);
+        return timestamp_for_bounded_parts(year, month, day, 0, 0, 0, None, default_timezone)
+            .map(|timestamp| (timestamp, 0));
     }
 
-    if let Some(timestamp) = parse_bounded_numeric_datetime(trimmed, default_timezone) {
-        return Some(timestamp);
+    if let Some((timestamp, microsecond)) =
+        parse_bounded_numeric_datetime_with_microsecond(trimmed, default_timezone)
+    {
+        return Some((timestamp, microsecond));
     }
 
-    parse_bounded_textual_datetime(trimmed, default_timezone)
+    parse_bounded_textual_datetime(trimmed, default_timezone).map(|timestamp| (timestamp, 0))
+}
+
+fn parse_bounded_create_from_format(
+    format: &str,
+    input: &str,
+    default_timezone: &BoundedTimezone,
+) -> Option<BoundedParsedDateTime> {
+    match format {
+        "Y-m-d H:i:s.u" => {
+            let (timestamp, microsecond) =
+                parse_bounded_ymd_his_microseconds(input, default_timezone)?;
+            Some(BoundedParsedDateTime {
+                timestamp,
+                microsecond,
+                timezone: default_timezone.clone(),
+            })
+        }
+        "U.u" => {
+            let (timestamp, microsecond) = parse_bounded_unix_microseconds(input)?;
+            Some(BoundedParsedDateTime {
+                timestamp,
+                microsecond,
+                timezone: BoundedTimezone::numeric_fixed_offset(0),
+            })
+        }
+        "Y-m-d\\TH:i:s.vP" => parse_bounded_rfc3339_extended(input, default_timezone),
+        _ => None,
+    }
+}
+
+fn parse_bounded_ymd_his_microseconds(
+    input: &str,
+    default_timezone: &BoundedTimezone,
+) -> Option<(i64, i64)> {
+    if !input.is_ascii()
+        || input.len() != 26
+        || &input[4..5] != "-"
+        || &input[7..8] != "-"
+        || &input[10..11] != " "
+        || &input[13..14] != ":"
+        || &input[16..17] != ":"
+        || &input[19..20] != "."
+    {
+        return None;
+    }
+    let year = parse_ascii_i64(&input[0..4])?;
+    let month = parse_ascii_i64(&input[5..7])?;
+    let day = parse_ascii_i64(&input[8..10])?;
+    let hour = parse_ascii_i64(&input[11..13])?;
+    let minute = parse_ascii_i64(&input[14..16])?;
+    let second = parse_ascii_i64(&input[17..19])?;
+    let microsecond = parse_microsecond_fraction(&input[20..26])?;
+    timestamp_for_bounded_parts(
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        second,
+        None,
+        default_timezone,
+    )
+    .map(|timestamp| (timestamp, microsecond))
+}
+
+fn parse_bounded_unix_microseconds(input: &str) -> Option<(i64, i64)> {
+    let trimmed = input.trim();
+    let (seconds, fraction) = trimmed.split_once('.')?;
+    if seconds.is_empty() || fraction.is_empty() {
+        return None;
+    }
+    let timestamp = parse_signed_ascii_i64(seconds)?;
+    let microsecond = parse_microsecond_fraction(fraction)?;
+    let microsecond_delta = if seconds.starts_with('-') {
+        -microsecond
+    } else {
+        microsecond
+    };
+    Some(normalize_timestamp_microsecond(
+        timestamp,
+        microsecond_delta,
+    ))
+}
+
+fn parse_bounded_rfc3339_extended(
+    input: &str,
+    default_timezone: &BoundedTimezone,
+) -> Option<BoundedParsedDateTime> {
+    if !input.is_ascii()
+        || input.len() != 29
+        || &input[4..5] != "-"
+        || &input[7..8] != "-"
+        || &input[10..11] != "T"
+        || &input[13..14] != ":"
+        || &input[16..17] != ":"
+        || &input[19..20] != "."
+        || &input[26..27] != ":"
+    {
+        return None;
+    }
+    let offset = parse_timezone_offset_token(&input[23..29])?;
+    let year = parse_ascii_i64(&input[0..4])?;
+    let month = parse_ascii_i64(&input[5..7])?;
+    let day = parse_ascii_i64(&input[8..10])?;
+    let hour = parse_ascii_i64(&input[11..13])?;
+    let minute = parse_ascii_i64(&input[14..16])?;
+    let second = parse_ascii_i64(&input[17..19])?;
+    let millisecond = parse_microsecond_fraction(&input[20..23])?;
+    let timestamp = timestamp_for_bounded_parts(
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        second,
+        Some(offset),
+        default_timezone,
+    )?;
+    Some(BoundedParsedDateTime {
+        timestamp,
+        microsecond: millisecond,
+        timezone: BoundedTimezone::numeric_fixed_offset(offset),
+    })
 }
 
 fn apply_bounded_datetime_modifier(
     timestamp: i64,
+    microsecond: i64,
     timezone: &BoundedTimezone,
     modifier: &str,
-) -> Option<i64> {
+) -> Option<(i64, i64)> {
     let trimmed = modifier.trim();
     if trimmed.is_empty() {
         return None;
     }
+    if let Some(timestamp) = apply_bounded_named_time_modifier(timestamp, timezone, trimmed) {
+        return Some((timestamp, 0));
+    }
     if let Some(timestamp) = apply_bounded_weekday_modifier(timestamp, timezone, trimmed) {
-        return Some(timestamp);
+        return Some((timestamp, microsecond));
+    }
+    if let Some(timestamp) = apply_bounded_n_weekday_modifier(timestamp, timezone, trimmed) {
+        return Some((timestamp, microsecond));
     }
     apply_bounded_unit_modifier(timestamp, timezone, trimmed)
+        .map(|timestamp| (timestamp, microsecond))
+}
+
+fn apply_bounded_named_time_modifier(
+    timestamp: i64,
+    timezone: &BoundedTimezone,
+    modifier: &str,
+) -> Option<i64> {
+    let offset = timezone.offset_at_timestamp(timestamp);
+    let parts = bounded_datetime_parts(timestamp, offset);
+    match modifier.to_ascii_lowercase().as_str() {
+        "yesterday" => timestamp_from_overflowing_local_parts(
+            parts.year,
+            parts.month,
+            parts.day - 1,
+            0,
+            0,
+            0,
+            timezone,
+        ),
+        "noon" => timestamp_from_overflowing_local_parts(
+            parts.year,
+            parts.month,
+            parts.day,
+            12,
+            0,
+            0,
+            timezone,
+        ),
+        _ => None,
+    }
 }
 
 fn apply_bounded_weekday_modifier(
@@ -156218,12 +156686,43 @@ fn apply_bounded_weekday_modifier(
     apply_bounded_local_seconds(timestamp, timezone, delta_days * 86_400)
 }
 
+fn apply_bounded_n_weekday_modifier(
+    timestamp: i64,
+    timezone: &BoundedTimezone,
+    modifier: &str,
+) -> Option<i64> {
+    let mut tokens = modifier.split_whitespace();
+    let count = parse_signed_ascii_i64(tokens.next()?)?;
+    let unit = tokens.next()?.to_ascii_lowercase();
+    if tokens.next().is_some() || !matches!(unit.as_str(), "weekday" | "weekdays") {
+        return None;
+    }
+    if count == 0 {
+        return Some(timestamp);
+    }
+    let direction = count.signum();
+    let mut remaining = count.abs();
+    let mut delta_days = 0_i64;
+    while remaining > 0 {
+        delta_days = delta_days.checked_add(direction)?;
+        let candidate = apply_bounded_local_seconds(timestamp, timezone, delta_days * 86_400)?;
+        let parts = bounded_datetime_parts(candidate, timezone.offset_at_timestamp(candidate));
+        if (1..=5).contains(&parts.weekday) {
+            remaining -= 1;
+        }
+    }
+    apply_bounded_local_seconds(timestamp, timezone, delta_days * 86_400)
+}
+
 fn apply_bounded_unit_modifier(
     timestamp: i64,
     timezone: &BoundedTimezone,
     modifier: &str,
 ) -> Option<i64> {
     let mut tokens = modifier.split_whitespace().peekable();
+    let mut years = 0_i64;
+    let mut months = 0_i64;
+    let mut days = 0_i64;
     let mut total_seconds = 0_i64;
     while let Some(token) = tokens.next() {
         let (count, unit_token) = if token == "+" || token == "-" {
@@ -156239,17 +156738,42 @@ fn apply_bounded_unit_modifier(
             let number = parse_ascii_i64(digits)?;
             (sign * number, tokens.next()?)
         };
-        let unit_seconds = match unit_token.to_ascii_lowercase().as_str() {
-            "second" | "seconds" => 1,
-            "minute" | "minutes" => 60,
-            "hour" | "hours" => 3_600,
-            "day" | "days" => 86_400,
-            "week" | "weeks" => 604_800,
+        match unit_token.to_ascii_lowercase().as_str() {
+            "year" | "years" => years = years.checked_add(count)?,
+            "month" | "months" => months = months.checked_add(count)?,
+            "week" | "weeks" => days = days.checked_add(count.checked_mul(7)?)?,
+            "day" | "days" => days = days.checked_add(count)?,
+            "hour" | "hours" => {
+                total_seconds = total_seconds.checked_add(count.checked_mul(3_600)?)?;
+            }
+            "minute" | "minutes" => {
+                total_seconds = total_seconds.checked_add(count.checked_mul(60)?)?;
+            }
+            "second" | "seconds" => {
+                total_seconds = total_seconds.checked_add(count)?;
+            }
             _ => return None,
         };
-        total_seconds = total_seconds.checked_add(count.checked_mul(unit_seconds)?)?;
     }
-    apply_bounded_local_seconds(timestamp, timezone, total_seconds)
+    let mut timestamp = if years != 0 || months != 0 || days != 0 {
+        let offset = timezone.offset_at_timestamp(timestamp);
+        let parts = bounded_datetime_parts(timestamp, offset);
+        timestamp_from_overflowing_local_parts(
+            parts.year.checked_add(years)?,
+            parts.month.checked_add(months)?,
+            parts.day.checked_add(days)?,
+            parts.hour,
+            parts.minute,
+            parts.second,
+            timezone,
+        )?
+    } else {
+        timestamp
+    };
+    if total_seconds != 0 {
+        timestamp = apply_bounded_local_seconds(timestamp, timezone, total_seconds)?;
+    }
+    Some(timestamp)
 }
 
 fn apply_bounded_local_seconds(
@@ -156266,6 +156790,10 @@ fn apply_bounded_local_seconds(
 }
 
 fn parse_bounded_at_timestamp(input: &str) -> Option<i64> {
+    parse_bounded_at_timestamp_with_microsecond(input).map(|(timestamp, _)| timestamp)
+}
+
+fn parse_bounded_at_timestamp_with_microsecond(input: &str) -> Option<(i64, i64)> {
     let rest = input.strip_prefix('@')?;
     let mut end = 0;
     for (index, ch) in rest.char_indices() {
@@ -156282,14 +156810,41 @@ fn parse_bounded_at_timestamp(input: &str) -> Option<i64> {
     if end == 0 || rest[..end].chars().all(|ch| ch == '-' || ch == '+') {
         return None;
     }
-    rest[..end].parse::<i64>().ok()
+    let integer = rest[..end].parse::<i64>().ok()?;
+    let mut microsecond = 0_i64;
+    if let Some(fraction) = rest[end..].strip_prefix('.') {
+        let fraction_end = fraction
+            .char_indices()
+            .take_while(|(_, ch)| ch.is_ascii_digit())
+            .last()
+            .map(|(index, ch)| index + ch.len_utf8())
+            .unwrap_or(0);
+        if fraction_end == 0 {
+            return None;
+        }
+        microsecond = parse_microsecond_fraction(&fraction[..fraction_end])?;
+    }
+    let microsecond_delta = if rest.starts_with('-') {
+        -microsecond
+    } else {
+        microsecond
+    };
+    Some(normalize_timestamp_microsecond(integer, microsecond_delta))
 }
 
-fn parse_bounded_numeric_datetime(input: &str, default_timezone: &BoundedTimezone) -> Option<i64> {
+fn parse_bounded_numeric_datetime_with_microsecond(
+    input: &str,
+    default_timezone: &BoundedTimezone,
+) -> Option<(i64, i64)> {
     let (body, explicit_offset) = split_bounded_datetime_timezone(input);
     let separator_index = body.find(' ').or_else(|| body.find('T'))?;
     let date = &body[..separator_index];
     let time = &body[separator_index + 1..];
+    let (time, microsecond) = if let Some((time, fraction)) = time.split_once('.') {
+        (time, parse_microsecond_fraction(fraction)?)
+    } else {
+        (time, 0)
+    };
     let has_seconds = time.len() == 8;
     if date.len() != 10 || !(time.len() == 5 || has_seconds) {
         return None;
@@ -156320,6 +156875,31 @@ fn parse_bounded_numeric_datetime(input: &str, default_timezone: &BoundedTimezon
         second,
         explicit_offset,
         default_timezone,
+    )
+    .map(|timestamp| (timestamp, microsecond))
+}
+
+fn parse_microsecond_fraction(fraction: &str) -> Option<i64> {
+    if fraction.is_empty() || fraction.len() > 6 || !fraction.chars().all(|ch| ch.is_ascii_digit())
+    {
+        return None;
+    }
+    let mut padded = fraction.to_string();
+    while padded.len() < 6 {
+        padded.push('0');
+    }
+    parse_ascii_i64(&padded)
+}
+
+fn normalize_timestamp_microsecond(timestamp: i64, microsecond_delta: i64) -> (i64, i64) {
+    let total = (timestamp as i128)
+        .saturating_mul(1_000_000)
+        .saturating_add(microsecond_delta as i128);
+    let seconds = total.div_euclid(1_000_000);
+    let micros = total.rem_euclid(1_000_000);
+    (
+        seconds.clamp(i64::MIN as i128, i64::MAX as i128) as i64,
+        micros as i64,
     )
 }
 
@@ -156553,6 +157133,23 @@ fn optional_date_int_arg(
         )),
         None => Ok(None),
     }
+}
+
+fn validate_datetime_microsecond(
+    function: &str,
+    position: usize,
+    microsecond: i64,
+    span: Span,
+) -> CompileResult<()> {
+    if (0..=999_999).contains(&microsecond) {
+        return Ok(());
+    }
+    Err(date_range_error(
+        span,
+        format!(
+            "{function}: Argument #{position} ($microsecond) must be between 0 and 999999, {microsecond} given"
+        ),
+    ))
 }
 
 fn optional_timestamp_arg(
@@ -156878,6 +157475,15 @@ fn strftime_week_number(parts: BoundedDateTimeParts, monday_first: bool) -> i64 
 }
 
 fn format_bounded_date(format: &str, timestamp: i64, timezone: &BoundedTimezone) -> String {
+    format_bounded_date_with_microsecond(format, timestamp, timezone, 0)
+}
+
+fn format_bounded_date_with_microsecond(
+    format: &str,
+    timestamp: i64,
+    timezone: &BoundedTimezone,
+    microsecond: i64,
+) -> String {
     let offset = timezone.offset_at_timestamp(timestamp);
     let parts = bounded_datetime_parts(timestamp, offset);
     let mut output = String::new();
@@ -156892,7 +157498,13 @@ fn format_bounded_date(format: &str, timestamp: i64, timezone: &BoundedTimezone)
             escaped = true;
             continue;
         }
-        output.push_str(&format_bounded_date_token(ch, timestamp, timezone, &parts));
+        output.push_str(&format_bounded_date_token(
+            ch,
+            timestamp,
+            timezone,
+            &parts,
+            microsecond,
+        ));
     }
     if escaped {
         output.push('\\');
@@ -156905,6 +157517,7 @@ fn format_bounded_date_token(
     timestamp: i64,
     timezone: &BoundedTimezone,
     parts: &BoundedDateTimeParts,
+    microsecond: i64,
 ) -> String {
     match token {
         'd' => zero_pad(parts.day, 2),
@@ -156965,8 +157578,8 @@ fn format_bounded_date_token(
         'H' => zero_pad(parts.hour, 2),
         'i' => zero_pad(parts.minute, 2),
         's' => zero_pad(parts.second, 2),
-        'u' => "000000".to_string(),
-        'v' => "000".to_string(),
+        'u' => zero_pad(microsecond, 6),
+        'v' => zero_pad(microsecond / 1_000, 3),
         'e' => timezone.name.clone(),
         'I' => {
             if timezone.is_dst(parts) {
@@ -157232,16 +157845,15 @@ fn apply_bounded_dateinterval_to_datetime(
     state: &BoundedDateTimeObjectState,
     interval: &BoundedDateIntervalState,
     subtract: bool,
-) -> Option<i64> {
-    if interval.fraction != 0.0 {
-        return None;
-    }
-
+) -> Option<(i64, i64)> {
+    let fraction_microseconds = dateinterval_fraction_microseconds(interval.fraction)?;
     let sign = if (interval.invert != 0) ^ subtract {
         -1
     } else {
         1
     };
+    let signed_fraction = fraction_microseconds.checked_mul(sign)?;
+    let microsecond_delta = state.microsecond.checked_add(signed_fraction)?;
     let offset = state.timezone.offset_at_timestamp(state.timestamp);
     let parts = bounded_datetime_parts(state.timestamp, offset);
 
@@ -157272,7 +157884,17 @@ fn apply_bounded_dateinterval_to_datetime(
         .checked_add(interval.seconds)?
         .checked_mul(sign)?;
     timestamp = timestamp.checked_add(time_delta)?;
-    Some(timestamp)
+    Some(normalize_timestamp_microsecond(
+        timestamp,
+        microsecond_delta,
+    ))
+}
+
+fn dateinterval_fraction_microseconds(fraction: f64) -> Option<i64> {
+    if !fraction.is_finite() || !(0.0..1.0).contains(&fraction) {
+        return None;
+    }
+    Some((fraction * 1_000_000.0).round() as i64)
 }
 
 fn bounded_datetime_diff_interval(
@@ -157280,7 +157902,9 @@ fn bounded_datetime_diff_interval(
     target: &BoundedDateTimeObjectState,
     absolute: bool,
 ) -> BoundedDateIntervalState {
-    let source_before_target = source.timestamp <= target.timestamp;
+    let source_total = datetime_total_microseconds(source);
+    let target_total = datetime_total_microseconds(target);
+    let source_before_target = source_total <= target_total;
     let source_parts = bounded_datetime_parts(
         source.timestamp,
         source.timezone.offset_at_timestamp(source.timestamp),
@@ -157312,6 +157936,18 @@ fn bounded_datetime_diff_interval(
         days,
         source_before_target,
     );
+    let (years, months, days, hours, minutes, seconds, fraction) =
+        bounded_diff_components_with_fraction(
+            years,
+            months,
+            days,
+            hours,
+            minutes,
+            seconds,
+            source.microsecond,
+            target.microsecond,
+            source_before_target,
+        );
 
     BoundedDateIntervalState {
         years,
@@ -157320,7 +157956,7 @@ fn bounded_datetime_diff_interval(
         hours,
         minutes,
         seconds,
-        fraction: 0.0,
+        fraction,
         invert: if absolute || source_before_target {
             0
         } else {
@@ -157329,6 +157965,74 @@ fn bounded_datetime_diff_interval(
         total_days: Some(total_days),
         from_string: false,
         date_string: None,
+    }
+}
+
+fn datetime_total_microseconds(state: &BoundedDateTimeObjectState) -> i128 {
+    (state.timestamp as i128) * 1_000_000 + state.microsecond as i128
+}
+
+#[allow(clippy::too_many_arguments)]
+fn bounded_diff_components_with_fraction(
+    mut years: i64,
+    mut months: i64,
+    mut days: i64,
+    mut hours: i64,
+    mut minutes: i64,
+    mut seconds: i64,
+    source_microsecond: i64,
+    target_microsecond: i64,
+    source_before_target: bool,
+) -> (i64, i64, i64, i64, i64, i64, f64) {
+    let mut microseconds = if source_before_target {
+        target_microsecond - source_microsecond
+    } else {
+        source_microsecond - target_microsecond
+    };
+    if microseconds < 0 {
+        microseconds += 1_000_000;
+        borrow_one_second_from_diff_components(
+            &mut years,
+            &mut months,
+            &mut days,
+            &mut hours,
+            &mut minutes,
+            &mut seconds,
+        );
+    }
+    (
+        years,
+        months,
+        days,
+        hours,
+        minutes,
+        seconds,
+        microseconds as f64 / 1_000_000.0,
+    )
+}
+
+fn borrow_one_second_from_diff_components(
+    _years: &mut i64,
+    _months: &mut i64,
+    days: &mut i64,
+    hours: &mut i64,
+    minutes: &mut i64,
+    seconds: &mut i64,
+) {
+    if *seconds > 0 {
+        *seconds -= 1;
+    } else if *minutes > 0 {
+        *minutes -= 1;
+        *seconds = 59;
+    } else if *hours > 0 {
+        *hours -= 1;
+        *minutes = 59;
+        *seconds = 59;
+    } else if *days > 0 {
+        *days -= 1;
+        *hours = 23;
+        *minutes = 59;
+        *seconds = 59;
     }
 }
 

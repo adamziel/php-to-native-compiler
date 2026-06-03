@@ -4,6 +4,27 @@
 
 Implemented:
 
+- Added a bounded DateTime microseconds lane on the interpreter path.
+  DateTime and DateTimeImmutable state now preserves microseconds through
+  construction, formatting, serialization/state restoration, copies, timezone
+  and date setters, and bounded `DateInterval` diff/add/sub arithmetic.
+  Implemented bounded `date_create_from_format()` /
+  `DateTime::createFromFormat()` / `DateTimeImmutable::createFromFormat()`
+  coverage for selected fractional formats, plus
+  `DateTime[Immutable]::getMicrosecond()` / `setMicrosecond()` with catchable
+  `DateRangeError` bounds. Focused proof covers Rust
+  `datetime_microsecond_format_create_from_format_and_diff_are_bounded`, the
+  full `date_time_builtin` file, core class metadata guards, build/fmt/diff
+  checks, and selected public PHPT rows
+  `ext/date/tests/date_time_fractions.phpt`,
+  `ext/date/tests/date_time_fractions_create_from_format.phpt`,
+  `ext/date/tests/date_time_fractions_serialize.phpt`,
+  `ext/date/tests/getSetMicroseconds.phpt`, and
+  `ext/date/tests/bug75577.phpt` at `5/5` PASS. Exact-current pre-patch proof
+  on `c2feffda` was `0/5`. Unsupported edges remain full timelib and
+  `createFromFormat()` grammar/error metadata, DatePeriod, fractional ISO
+  interval parsing, references/COW, and native lowering.
+
 - Added a bounded method visibility and callability lane on the interpreter
   path. Instance/static dispatch now shares a receiver-aware visibility helper
   for current method scope, protected receiver/prototype access, PHP-shaped

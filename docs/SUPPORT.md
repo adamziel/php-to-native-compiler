@@ -6370,24 +6370,28 @@
   and returns `false` with a PHP-shaped notice for unknown identifiers.
   Mutable `DateTime` and immutable `DateTimeImmutable` objects support bounded
   `format()`, `getTimestamp()`, `setTimestamp()`, `setDate()`, `setISODate()`,
-  `setTime()`, `modify()`, `add(DateInterval $interval)`,
-  `sub(DateInterval $interval)`, `getOffset()`, `getTimezone()`, and
-  `setTimezone(DateTimeZone $timezone)` behavior over the same bounded timezone
-  table. Mutable mutators preserve the receiver timezone, return the same
-  object, and normalize overflowing date/time parts through the bounded local
-  timestamp model; immutable mutators return a fresh object and preserve the
-  original receiver. Non-zero microseconds are not represented by the current
-  DateTime object state. `add()` / `sub()` apply bounded integer
-  `DateInterval` component metadata plus `invert` through the local timestamp
-  model and reject nonzero fractional interval mutation or arithmetic overflow
-  outside the bounded timestamp subset. For named `America/New_York` and
+  `setTime()`, `getMicrosecond()`, `setMicrosecond()`, `modify()`,
+  `add(DateInterval $interval)`, `sub(DateInterval $interval)`, `getOffset()`,
+  `getTimezone()`, and `setTimezone(DateTimeZone $timezone)` behavior over the
+  same bounded timezone table. Mutable mutators preserve the receiver timezone,
+  return the same object, and normalize overflowing date/time parts through the
+  bounded local timestamp model; immutable mutators return a fresh object and
+  preserve the original receiver. Non-zero microseconds are represented in the
+  object state, are emitted through `u` / `v` DateTime object format tokens, and
+  are preserved by timezone/date setters, copies, serialization, and state
+  restoration. `setMicrosecond()` accepts bounded `0..=999999` integers and
+  raises a catchable `DateRangeError` outside that range. `add()` / `sub()`
+  apply bounded `DateInterval` component metadata plus `invert` and normalized
+  fractional `f` metadata through the local timestamp model, rejecting arithmetic
+  overflow outside the bounded timestamp subset. For named `America/New_York` and
   `US/Eastern` zones from 2007 onward, the bounded model uses time-of-day aware
   spring/fall DST transition boundaries for construction, formatting, and
   DateInterval mutation; date components are applied in local calendar time
   before hour/minute/second components are applied as elapsed seconds.
   `modify()` covers the current bounded
   relative weekday/unit forms plus Unix timestamp modifiers such as
-  `@1234567890`;
+  `@1234567890`, fractional forms preserving microseconds, simple month/year
+  units, `yesterday` / `noon` time resets, and counted `weekday` modifiers;
   timestamp modifiers update the timestamp and switch the object timezone
   identity to the bounded `+00:00` timestamp zone, while `setTimestamp()`
   preserves the existing object timezone. Its `$modifier` operand uses the
@@ -6403,9 +6407,14 @@
   DateTimeImmutable($time = null, ?DateTimeZone $timezone = null)`, and
   `date_create_immutable($time = null, ?DateTimeZone $timezone = null)` accepts
   the optional bounded timezone object for strings without an explicit timezone,
-  including numeric `YYYY-MM-DD HH:MM` strings whose seconds default to zero,
-  while timestamp strings such as `@0` and explicit timezone tokens retain
-  their own timezone identity. `DateTime::__construct()` and
+  including numeric `YYYY-MM-DD HH:MM`, `YYYY-MM-DD HH:MM:SS.u`, and
+  `YYYY-MM-DDTHH:MM:SS.uP` strings whose absent seconds default to zero, while
+  timestamp strings such as `@0` / `@0.123456` and explicit timezone tokens
+  retain their own timezone identity. `date_create_from_format()` plus
+  `DateTime::createFromFormat()` / `DateTimeImmutable::createFromFormat()`
+  cover the bounded formats `Y-m-d H:i:s.u`, `U.u`, and
+  `Y-m-d\TH:i:s.vP` / `DateTime::RFC3339_EXTENDED`, returning `false` for
+  unsupported formats in the current subset. `DateTime::__construct()` and
   `DateTimeImmutable::__construct()` report catchable PHP-shaped
   `ArgumentCountError`s for calls with more than two arguments, and
   `DateTimeZone::__construct()` reports catchable PHP-shaped
@@ -6431,9 +6440,10 @@
   through generic serialization alongside the three core state fields.
   `DateTime::createFromImmutable()`,
   `DateTime::createFromInterface()`, `DateTimeImmutable::createFromMutable()`,
-  and `DateTimeImmutable::createFromInterface()` copy bounded timestamp/timezone
-  state into the called mutable or immutable target class, with uninitialized
-  source objects reporting catchable `DateObjectError`s for the covered
+  and `DateTimeImmutable::createFromInterface()` copy bounded
+  timestamp/microsecond/timezone state into the called mutable or immutable
+  target class, with uninitialized source objects reporting catchable
+  `DateObjectError`s for the covered
   DateTime and DateTimeImmutable inheritance cases. Cloning exact and
   subclassed `DateTime`, `DateTimeImmutable`, and `DateTimeZone` objects
   preserves the bounded internal state and public properties represented by
@@ -6446,8 +6456,9 @@
   `DateTimeImmutable::diff()`, and `date_diff()` produce bounded
   `DateInterval` objects for initialized mutable/immutable DateTime operands,
   with directional local-calendar month/day borrowing for forward and reverse
-  intervals and `%a` / `days` metadata derived from absolute local civil-day
-  distance in the covered bounded rows. Supported formatting includes
+  intervals, fractional `f` metadata from microsecond differences, and `%a` /
+  `days` metadata derived from absolute local civil-day distance in the covered
+  bounded rows. Supported formatting includes
   `%Y/%M/%D/%H/%I/%S`, lowercase component tokens, `%R/%r`, `%a`, `%%`, and
   unknown percent-token preservation through `DateInterval::format()` and
   `date_interval_format()`. Ordinary diff/ISO `DateInterval` object display
@@ -6517,13 +6528,14 @@
   and `timezone_type`/`timezone` shapes, DateTime manual `__serialize()` /
   `__unserialize()` methods, private/protected serialized properties on
   DateTimeImmutable subclasses, DateInterval arithmetic beyond the bounded
-  `DateTime` / `DateTimeImmutable` `add()` / `sub()` integer-component subset,
+  `DateTime` / `DateTimeImmutable` `add()` / `sub()` normalized component and
+  fractional-microsecond subset,
   massive-year DateTime diff/day/add/sub rows outside the bounded
   civil-calendar/timestamp model,
   DatePeriod, DateInterval serialization/unserialization and `__set_state()`,
-  full timelib relative string grammar and non-relative classification,
-  fractional or negative ISO interval
-  components, exact
+  full timelib relative string grammar and non-relative classification, broad
+  `createFromFormat()` grammar/errors/getLastErrors metadata, fractional or
+  negative ISO interval components, exact
   DateInterval object-dump handler parity for `from_string` intervals, exact
   invalid-modifier
   `DateMalformedStringException` behavior beyond the bounded warning/exception
@@ -6535,8 +6547,8 @@
   modifier and formatter strings, binary format strings beyond represented
   runtime text, broad userland dynamic-property deprecation parity outside the
   bounded date object write path, DateTimeZone ordering semantics beyond the
-  represented same-kind/mixed-kind comparison rows, non-zero DateTime
-  microsecond mutation/formatting, and native lowering remain unsupported.
+  represented same-kind/mixed-kind comparison rows, and native lowering remain
+  unsupported.
   `header($header, $replace = true, $response_code = 0)` accepts a string
   header line plus optional bool replacement flag and optional integer response
   code, records the raw header line in deterministic in-process CLI request

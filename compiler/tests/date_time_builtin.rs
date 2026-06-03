@@ -1355,6 +1355,48 @@ echo $fixed->format("Y-m-d H:i:s T e"), "\n";
 }
 
 #[test]
+fn datetime_microsecond_format_create_from_format_and_diff_are_bounded() {
+    let execution = run_source(
+        r#"<?php
+date_default_timezone_set("UTC");
+$date = date_create_from_format("Y-m-d H:i:s.u", "2016-10-03 12:47:18.819313");
+echo $date->format("Y-m-d H:i:s.u"), "|", $date->getMicrosecond(), "\n";
+$date->setMicrosecond(12);
+echo $date->format("Y-m-d H:i:s.u"), "|", $date->getMicrosecond(), "\n";
+
+$start = new DateTimeImmutable("2016-10-03 13:20:07.103123");
+$target = DateTimeImmutable::createFromFormat("Y-m-d H:i:s.u", "2016-10-03 13:20:07.481312");
+$diff = $start->diff($target);
+echo $diff->format("%s"), "|", $diff->f, "\n";
+echo $target->add($diff)->format("Y-m-d H:i:s.u"), "\n";
+
+$rfc = DateTime::createFromFormat(DateTime::RFC3339_EXTENDED, "2018-10-09T09:56:45.412+01:00");
+echo $rfc->format("Y-m-d H:i:s.u P"), "\n";
+try {
+    $date->setMicrosecond(-1);
+} catch (Throwable $e) {
+    echo get_class($e), ": ", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "2016-10-03 12:47:18.819313|819313\n",
+            "2016-10-03 12:47:18.000012|12\n",
+            "0|0.378189\n",
+            "2016-10-03 13:20:07.859501\n",
+            "2018-10-09 09:56:45.412000 +01:00\n",
+            "DateRangeError: DateTime::setMicrosecond(): Argument #1 ($microsecond) must be between 0 and 999999, -1 given\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn datetime_mutable_date_time_setters_normalize_bounded_parts() {
     let execution = run_source(
         r#"<?php

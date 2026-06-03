@@ -66688,6 +66688,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "date_sunset",
     "date_sun_info",
     "date_create",
+    "date_create_from_format",
     "date_create_immutable",
     "date_diff",
     "date_modify",
