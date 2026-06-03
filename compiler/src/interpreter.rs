@@ -73768,6 +73768,7 @@ impl Interpreter {
             } else {
                 None
             };
+            caller_scope.write_static(matches_name, Value::Null);
             let (result, matches) = self.pcre_match_result(
                 "preg_match()",
                 &pattern,
@@ -73776,7 +73777,9 @@ impl Interpreter {
                 offset.as_ref(),
                 span,
             )?;
-            caller_scope.write_static(matches_name, Value::Array(matches));
+            if let Some(matches) = matches {
+                caller_scope.write_static(matches_name, Value::Array(matches));
+            }
             return Ok(result);
         }
 
@@ -73797,6 +73800,7 @@ impl Interpreter {
             ));
         };
 
+        caller_scope.write_static(matches_name, Value::Null);
         let (result, matches) = self.pcre_match_result(
             "preg_match()",
             &values[0],
@@ -73805,7 +73809,9 @@ impl Interpreter {
             None,
             span,
         )?;
-        caller_scope.write_static(matches_name, Value::Array(matches));
+        if let Some(matches) = matches {
+            caller_scope.write_static(matches_name, Value::Array(matches));
+        }
         Ok(result)
     }
 
@@ -73838,10 +73844,8 @@ impl Interpreter {
         } else {
             None
         };
-        let (count, matches) =
-            self.pcre_match_all_result(&pattern, &subject, &flags, offset.as_ref(), span)?;
 
-        if let Some(matches_arg) = args.get(2) {
+        let matches_name = if let Some(matches_arg) = args.get(2) {
             let Expr::Variable(matches_name, _) = matches_arg else {
                 return Err(runtime_error(
                     span,
@@ -73851,7 +73855,19 @@ impl Interpreter {
                     ),
                 ));
             };
-            caller_scope.write_static(matches_name, Value::Array(matches));
+            caller_scope.write_static(matches_name, Value::Null);
+            Some(matches_name)
+        } else {
+            None
+        };
+
+        let (count, matches) =
+            self.pcre_match_all_result(&pattern, &subject, &flags, offset.as_ref(), span)?;
+
+        if let Some(matches_name) = matches_name {
+            if let Some(matches) = matches {
+                caller_scope.write_static(matches_name, Value::Array(matches));
+            }
         }
 
         Ok(count)
@@ -136944,12 +136960,24 @@ impl Interpreter {
         pattern: &Value,
         span: Span,
     ) -> CompileResult<Option<PhpPcreRegex>> {
-        let pattern = self.pcre_subject_bytes(context, pattern, span)?;
-        let pattern = String::from_utf8_lossy(&pattern);
-        let (body, modifiers) = match parse_php_pcre_pattern(&pattern) {
+        let pattern = PcrePatternValue::from_bytes_with_warning(
+            self.pcre_string_argument_bytes(context, 1, "pattern", "string", pattern, span)?,
+            true,
+        );
+        self.compile_pcre_pattern_or_warn(context, &pattern, span)
+    }
+
+    fn compile_pcre_pattern_or_warn(
+        &mut self,
+        context: &'static str,
+        pattern: &PcrePatternValue,
+        span: Span,
+    ) -> CompileResult<Option<PhpPcreRegex>> {
+        let pattern_text = String::from_utf8_lossy(&pattern.value);
+        let (body, modifiers) = match parse_php_pcre_pattern(&pattern_text) {
             Ok(parts) => parts,
             Err(message) => {
-                self.emit_warning(context, message, span)?;
+                self.emit_pcre_pattern_warning(context, pattern, message, span)?;
                 self.pcre_last_error = PHP_PREG_INTERNAL_ERROR;
                 return Ok(None);
             }
@@ -136958,7 +136986,7 @@ impl Interpreter {
         let settings = match PhpPcreSettings::parse(&modifiers) {
             Ok(settings) => settings,
             Err(message) => {
-                self.emit_warning(context, message, span)?;
+                self.emit_pcre_pattern_warning(context, pattern, message, span)?;
                 self.pcre_last_error = PHP_PREG_INTERNAL_ERROR;
                 return Ok(None);
             }
@@ -136979,11 +137007,135 @@ impl Interpreter {
                 utf8: settings.utf8,
             })),
             Err(error) => {
-                self.emit_warning(context, format!("Compilation failed: {error}"), span)?;
+                self.emit_pcre_pattern_warning(
+                    context,
+                    pattern,
+                    format!("Compilation failed: {error}"),
+                    span,
+                )?;
                 self.pcre_last_error = PHP_PREG_INTERNAL_ERROR;
                 Ok(None)
             }
         }
+    }
+
+    fn emit_pcre_pattern_warning(
+        &mut self,
+        context: &'static str,
+        pattern: &PcrePatternValue,
+        message: impl AsRef<str>,
+        span: Span,
+    ) -> CompileResult<()> {
+        if pattern.warn_on_invalid_pattern {
+            self.emit_display_warning(format!("{context}: {}", message.as_ref()), span)?;
+        }
+        Ok(())
+    }
+
+    fn pcre_pattern_values(
+        &mut self,
+        context: &'static str,
+        value: &Value,
+        allow_array: bool,
+        span: Span,
+    ) -> CompileResult<Vec<PcrePatternValue>> {
+        match value {
+            Value::Array(patterns) if allow_array => patterns
+                .entries()
+                .iter()
+                .map(|entry| {
+                    let value = entry.value_cloned();
+                    self.pcre_string_argument_bytes(context, 1, "pattern", "string", &value, span)
+                        .map(|bytes| PcrePatternValue::from_bytes_with_warning(bytes, false))
+                })
+                .collect(),
+            Value::Array(_) => Err(Self::pcre_argument_type_error(
+                context, 1, "pattern", "string", value, span,
+            )),
+            value => {
+                let expected_type = if allow_array {
+                    "array|string"
+                } else {
+                    "string"
+                };
+                Ok(vec![PcrePatternValue::from_bytes_with_warning(
+                    self.pcre_string_argument_bytes(
+                        context,
+                        1,
+                        "pattern",
+                        expected_type,
+                        value,
+                        span,
+                    )?,
+                    true,
+                )])
+            }
+        }
+    }
+
+    fn pcre_string_argument_bytes(
+        &mut self,
+        context: &'static str,
+        position: usize,
+        name: &str,
+        expected_type: &str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<Vec<u8>> {
+        if matches!(value, Value::Null) {
+            self.emit_display_diagnostic(
+                "Deprecated",
+                PHP_E_DEPRECATED,
+                format!(
+                    "{context}: Passing null to parameter #{position} (${name}) of type {expected_type} is deprecated"
+                ),
+                span,
+            )?;
+        }
+
+        if let Value::Object(object) = value {
+            if let Some(value) = self.object_to_string_with_magic(object.clone(), context, span)? {
+                return Ok(value.into_bytes());
+            }
+        }
+
+        if matches!(
+            value,
+            Value::Array(_) | Value::Object(_) | Value::Closure(_) | Value::Resource(_)
+        ) {
+            return Err(Self::pcre_argument_type_error(
+                context,
+                position,
+                name,
+                expected_type,
+                value,
+                span,
+            ));
+        }
+
+        value
+            .try_echo_bytes()
+            .map_err(|error| runtime_error(span, error))
+    }
+
+    fn pcre_argument_type_error(
+        context: &'static str,
+        position: usize,
+        name: &str,
+        expected_type: &str,
+        value: &Value,
+        span: Span,
+    ) -> Diagnostic {
+        runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                context,
+                format!(
+                    "Argument #{position} (${name}) must be of type {expected_type}, {} given",
+                    php_type_error_given(value)
+                ),
+            ),
+        )
     }
 
     fn pcre_subject_bytes(
@@ -137045,15 +137197,15 @@ impl Interpreter {
         flags: &Value,
         offset: Option<&Value>,
         span: Span,
-    ) -> CompileResult<(Value, PhpArray)> {
+    ) -> CompileResult<(Value, Option<PhpArray>)> {
         let flags = pcre_int_value(flags).unwrap_or(0);
         let Some(regex) = self.compile_pcre_or_warn(context, pattern, span)? else {
-            return Ok((Value::Bool(false), PhpArray::new()));
+            return Ok((Value::Bool(false), None));
         };
         let subject = self.pcre_subject_bytes(context, subject, span)?;
         let Some(start) = self.pcre_match_start(context, &subject, offset, regex.utf8, span)?
         else {
-            return Ok((Value::Bool(false), PhpArray::new()));
+            return Ok((Value::Bool(false), None));
         };
 
         let searched = &subject[start..];
@@ -137064,15 +137216,15 @@ impl Interpreter {
             && pcre_low_limit_backtrack_exhausted_on_candidate(&regex.body, searched)
         {
             self.pcre_last_error = PHP_PREG_BACKTRACK_LIMIT_ERROR;
-            return Ok((Value::Bool(false), PhpArray::new()));
+            return Ok((Value::Bool(false), None));
         }
         let Some(captures) = regex.regex.captures(searched) else {
             self.pcre_last_error = PHP_PREG_NO_ERROR;
-            return Ok((Value::Int(0), PhpArray::new()));
+            return Ok((Value::Int(0), Some(PhpArray::new())));
         };
         let matches = pcre_capture_array(&regex.regex, &subject, start, &captures, flags, span)?;
         self.pcre_last_error = PHP_PREG_NO_ERROR;
-        Ok((Value::Int(1), matches))
+        Ok((Value::Int(1), Some(matches)))
     }
 
     fn pcre_match_all_result(
@@ -137082,17 +137234,17 @@ impl Interpreter {
         flags: &Value,
         offset: Option<&Value>,
         span: Span,
-    ) -> CompileResult<(Value, PhpArray)> {
+    ) -> CompileResult<(Value, Option<PhpArray>)> {
         let flags = pcre_int_value(flags).unwrap_or(PHP_PREG_PATTERN_ORDER);
         let set_order = flags & PHP_PREG_SET_ORDER != 0;
         let Some(regex) = self.compile_pcre_or_warn("preg_match_all()", pattern, span)? else {
-            return Ok((Value::Bool(false), PhpArray::new()));
+            return Ok((Value::Bool(false), None));
         };
         let subject = self.pcre_subject_bytes("preg_match_all()", subject, span)?;
         let Some(start) =
             self.pcre_match_start("preg_match_all()", &subject, offset, regex.utf8, span)?
         else {
-            return Ok((Value::Bool(false), PhpArray::new()));
+            return Ok((Value::Bool(false), None));
         };
 
         let capture_len = regex.regex.captures_len();
@@ -137136,7 +137288,7 @@ impl Interpreter {
         }
 
         self.pcre_last_error = PHP_PREG_NO_ERROR;
-        Ok((Value::Int(rows.len() as i64), output))
+        Ok((Value::Int(rows.len() as i64), Some(output)))
     }
 
     fn preg_replace_result(
@@ -137145,9 +137297,22 @@ impl Interpreter {
         filter_only: bool,
         span: Span,
     ) -> CompileResult<(Value, i64)> {
-        let patterns = pcre_pattern_values(&args[0]);
-        let replacements = pcre_replacement_values(&args[1]);
         let replacement_is_array = matches!(&args[1], Value::Array(_));
+        if replacement_is_array && !matches!(&args[0], Value::Array(_)) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "preg_replace()",
+                    format!(
+                        "Argument #1 ($pattern) must be of type array when argument #2 ($replacement) is an array, {} given",
+                        php_type_error_given(&args[0])
+                    ),
+                ),
+            ));
+        }
+
+        let patterns = self.pcre_pattern_values("preg_replace()", &args[0], true, span)?;
+        let replacements = pcre_replacement_values(&args[1]);
         let limit = args.get(3).and_then(pcre_int_value).unwrap_or(-1);
         let mut count = 0_i64;
 
@@ -137158,7 +137323,7 @@ impl Interpreter {
                     let subject_value = entry.value_cloned();
                     let subject =
                         self.pcre_subject_bytes("preg_replace()", &subject_value, span)?;
-                    let (replaced, changed) = self.preg_replace_subject_bytes(
+                    let replaced = self.preg_replace_subject_bytes(
                         &patterns,
                         &replacements,
                         replacement_is_array,
@@ -137167,18 +137332,25 @@ impl Interpreter {
                         &mut count,
                         span,
                     )?;
-                    if !filter_only || changed {
-                        result.insert(
-                            entry.key.clone(),
-                            interpreter_value_from_php_string_bytes(replaced),
-                        );
+                    match replaced {
+                        Some((replaced, changed)) if !filter_only || changed => {
+                            result.insert(
+                                entry.key.clone(),
+                                interpreter_value_from_php_string_bytes(replaced),
+                            );
+                        }
+                        Some(_) => {}
+                        None if !filter_only => {
+                            result.insert(entry.key.clone(), Value::Null);
+                        }
+                        None => {}
                     }
                 }
                 Ok((Value::Array(result), count))
             }
             subject => {
                 let subject = self.pcre_subject_bytes("preg_replace()", subject, span)?;
-                let (replaced, changed) = self.preg_replace_subject_bytes(
+                let replaced = self.preg_replace_subject_bytes(
                     &patterns,
                     &replacements,
                     replacement_is_array,
@@ -137187,10 +137359,10 @@ impl Interpreter {
                     &mut count,
                     span,
                 )?;
-                let value = if filter_only && !changed {
-                    Value::Null
-                } else {
-                    interpreter_value_from_php_string_bytes(replaced)
+                let value = match replaced {
+                    Some((_, changed)) if filter_only && !changed => Value::Null,
+                    Some((replaced, _)) => interpreter_value_from_php_string_bytes(replaced),
+                    None => Value::Null,
                 };
                 Ok((value, count))
             }
@@ -137206,7 +137378,7 @@ impl Interpreter {
         limit: i64,
         count: &mut i64,
         span: Span,
-    ) -> CompileResult<(Vec<u8>, bool)> {
+    ) -> CompileResult<Option<(Vec<u8>, bool)>> {
         let mut current = subject.to_vec();
         let mut changed = false;
         for (index, pattern) in patterns.iter().enumerate() {
@@ -137219,7 +137391,18 @@ impl Interpreter {
                 replacements.first()
             };
             let replacement = match replacement_value {
-                Some(value) => self.pcre_subject_bytes("preg_replace()", value, span)?,
+                Some(value) => self.pcre_string_argument_bytes(
+                    "preg_replace()",
+                    2,
+                    "replacement",
+                    if replacement_is_array {
+                        "string"
+                    } else {
+                        "array|string"
+                    },
+                    value,
+                    span,
+                )?,
                 None => Vec::new(),
             };
             if let Some(legacy) =
@@ -137233,14 +137416,16 @@ impl Interpreter {
                 }
                 continue;
             }
-            let Some(regex) =
-                self.compile_pcre_or_warn("preg_replace()", &pattern.value_as_php(), span)?
+            let Some(regex) = self.compile_pcre_pattern_or_warn("preg_replace()", pattern, span)?
             else {
-                return Ok((Vec::new(), false));
+                if pattern.warn_on_invalid_pattern {
+                    return Ok(None);
+                }
+                continue;
             };
             if regex.utf8 && std::str::from_utf8(&current).is_err() {
                 self.pcre_last_error = PHP_PREG_BAD_UTF8_ERROR;
-                return Ok((Vec::new(), false));
+                return Ok(None);
             }
             let (replaced, replacements_made) = pcre_replace_bytes(
                 &regex.regex,
@@ -137256,7 +137441,7 @@ impl Interpreter {
             }
             self.pcre_last_error = PHP_PREG_NO_ERROR;
         }
-        Ok((current, changed))
+        Ok(Some((current, changed)))
     }
 
     fn preg_replace_callback_result(
@@ -137264,7 +137449,7 @@ impl Interpreter {
         args: &[Value],
         span: Span,
     ) -> CompileResult<(Value, i64)> {
-        let patterns = pcre_pattern_values(&args[0]);
+        let patterns = self.pcre_pattern_values("preg_replace_callback()", &args[0], true, span)?;
         let callback = &args[1];
         let limit = args.get(3).and_then(pcre_int_value).unwrap_or(-1);
         let flags = args.get(4).and_then(pcre_int_value).unwrap_or(0);
@@ -137289,7 +137474,9 @@ impl Interpreter {
                     )?;
                     result.insert(
                         entry.key.clone(),
-                        interpreter_value_from_php_string_bytes(replaced),
+                        replaced
+                            .map(interpreter_value_from_php_string_bytes)
+                            .unwrap_or(Value::Null),
                     );
                 }
                 Ok((Value::Array(result), count))
@@ -137306,7 +137493,12 @@ impl Interpreter {
                     "preg_replace_callback()",
                     span,
                 )?;
-                Ok((interpreter_value_from_php_string_bytes(replaced), count))
+                Ok((
+                    replaced
+                        .map(interpreter_value_from_php_string_bytes)
+                        .unwrap_or(Value::Null),
+                    count,
+                ))
             }
         }
     }
@@ -137354,26 +137546,32 @@ impl Interpreter {
                 let mut result = PhpArray::new();
                 for entry in subjects.entries() {
                     let subject_value = entry.value_cloned();
-                    let mut subject = self.pcre_subject_bytes(
+                    let mut subject = Some(self.pcre_subject_bytes(
                         "preg_replace_callback_array()",
                         &subject_value,
                         span,
-                    )?;
+                    )?);
                     for (pattern, callback) in &patterns {
-                        subject = self.preg_replace_callback_subject_bytes(
+                        let Some(current_subject) = subject.as_ref() else {
+                            break;
+                        };
+                        let replaced = self.preg_replace_callback_subject_bytes(
                             std::slice::from_ref(pattern),
                             callback,
-                            &subject,
+                            current_subject,
                             limit,
                             flags,
                             &mut count,
                             "preg_replace_callback_array()",
                             span,
                         )?;
+                        subject = replaced;
                     }
                     result.insert(
                         entry.key.clone(),
-                        interpreter_value_from_php_string_bytes(subject),
+                        subject
+                            .map(interpreter_value_from_php_string_bytes)
+                            .unwrap_or(Value::Null),
                     );
                 }
                 Ok((Value::Array(result), count))
@@ -137382,7 +137580,7 @@ impl Interpreter {
                 let mut subject =
                     self.pcre_subject_bytes("preg_replace_callback_array()", subject, span)?;
                 for (pattern, callback) in &patterns {
-                    subject = self.preg_replace_callback_subject_bytes(
+                    let replaced = self.preg_replace_callback_subject_bytes(
                         std::slice::from_ref(pattern),
                         callback,
                         &subject,
@@ -137392,6 +137590,10 @@ impl Interpreter {
                         "preg_replace_callback_array()",
                         span,
                     )?;
+                    let Some(replaced) = replaced else {
+                        return Ok((Value::Null, count));
+                    };
+                    subject = replaced;
                 }
                 Ok((interpreter_value_from_php_string_bytes(subject), count))
             }
@@ -137408,7 +137610,7 @@ impl Interpreter {
         count: &mut i64,
         context: &'static str,
         span: Span,
-    ) -> CompileResult<Vec<u8>> {
+    ) -> CompileResult<Option<Vec<u8>>> {
         let mut current = subject.to_vec();
         for pattern in patterns {
             if limit >= 0 && *count >= limit {
@@ -137420,13 +137622,15 @@ impl Interpreter {
                 current = replaced?;
                 continue;
             }
-            let Some(regex) = self.compile_pcre_or_warn(context, &pattern.value_as_php(), span)?
-            else {
-                return Ok(Vec::new());
+            let Some(regex) = self.compile_pcre_pattern_or_warn(context, pattern, span)? else {
+                if pattern.warn_on_invalid_pattern {
+                    return Ok(None);
+                }
+                continue;
             };
             if regex.utf8 && std::str::from_utf8(&current).is_err() {
                 self.pcre_last_error = PHP_PREG_BAD_UTF8_ERROR;
-                return Ok(Vec::new());
+                return Ok(None);
             }
             let mut output = Vec::with_capacity(current.len());
             let mut cursor = 0_usize;
@@ -137458,7 +137662,7 @@ impl Interpreter {
             }
             self.pcre_last_error = PHP_PREG_NO_ERROR;
         }
-        Ok(current)
+        Ok(Some(current))
     }
 
     fn preg_replace_callback_bounded_subject_bytes(
@@ -137650,23 +137854,19 @@ struct PhpPcreRegex {
 #[derive(Clone)]
 struct PcrePatternValue {
     value: Vec<u8>,
+    warn_on_invalid_pattern: bool,
 }
 
 impl PcrePatternValue {
-    fn from_value(value: &Value) -> Self {
-        match value {
-            Value::String(value) => Self::from_bytes(value.as_bytes().to_vec()),
-            Value::BinaryString(value) => Self::from_bytes(value.clone()),
-            value => Self::from_bytes(value.echo_string().into_bytes()),
-        }
-    }
-
     fn from_bytes(value: Vec<u8>) -> Self {
-        Self { value }
+        Self::from_bytes_with_warning(value, true)
     }
 
-    fn value_as_php(&self) -> Value {
-        interpreter_value_from_php_string_bytes(self.value.clone())
+    fn from_bytes_with_warning(value: Vec<u8>, warn_on_invalid_pattern: bool) -> Self {
+        Self {
+            value,
+            warn_on_invalid_pattern,
+        }
     }
 }
 
@@ -137710,17 +137910,6 @@ fn pcre_int_value(value: &Value) -> Option<i64> {
     }
 }
 
-fn pcre_pattern_values(value: &Value) -> Vec<PcrePatternValue> {
-    match value {
-        Value::Array(patterns) => patterns
-            .entries()
-            .iter()
-            .map(|entry| PcrePatternValue::from_value(&entry.value_cloned()))
-            .collect(),
-        value => vec![PcrePatternValue::from_value(value)],
-    }
-}
-
 fn pcre_replacement_values(value: &Value) -> Vec<Value> {
     match value {
         Value::Array(replacements) => replacements
@@ -137742,7 +137931,7 @@ fn parse_php_pcre_pattern(pattern: &str) -> Result<(String, String), String> {
         return Err("Empty regular expression".to_string());
     };
     if delimiter.is_ascii_alphanumeric() || delimiter == '\\' || delimiter == '\0' {
-        return Err("Delimiter must not be alphanumeric, backslash, or NUL".to_string());
+        return Err("Delimiter must not be alphanumeric, backslash, or NUL byte".to_string());
     }
     let close = match delimiter {
         '(' => ')',
@@ -137767,7 +137956,7 @@ fn parse_php_pcre_pattern(pattern: &str) -> Result<(String, String), String> {
         }
     }
     let Some(end) = closing_index else {
-        return Err("No ending delimiter found".to_string());
+        return Err(format!("No ending delimiter '{close}' found"));
     };
     let body = pattern[delimiter.len_utf8()..end].to_string();
     let modifiers = pattern[end + close.len_utf8()..].to_string();

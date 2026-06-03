@@ -4217,29 +4217,39 @@
   variables. The exact WordPress `wpdb::check_ascii()` non-ASCII
   byte detector `/[^\x00-\x7F]/` is supported over the current valid UTF-8
   runtime string model, returning whether any represented character is
-  non-ASCII. Non-direct matches outputs, flags, offsets, optional
-  unmatched-group fidelity, broad named-capture support, full PCRE syntax,
-  modifiers other than the documented exact WordPress `i` patterns and `u`,
-  invalid-pattern warnings, byte/Unicode edge cases, broad coercions, exact
-  diagnostics, and native lowering remain unsupported. `preg_last_error()`
+  non-ASCII. The current interpreter PCRE diagnostic surface also emits
+  PHP-shaped warnings and `false`/`NULL` returns for malformed scalar patterns
+  with invalid delimiters, missing ending delimiters, or unknown modifiers.
+  Array and non-stringable object pattern arguments raise PHP-shaped
+  `TypeError` messages for `preg_match()`, `preg_match_all()`,
+  `preg_split()`, and `preg_grep()`, and direct `preg_match_all()` matches
+  output remains untouched when pattern compilation fails. Non-direct matches
+  outputs, flags, offsets, optional unmatched-group fidelity, broad
+  named-capture support, full PCRE syntax, modifiers other than the documented
+  exact WordPress `i` patterns and `u`, byte/Unicode edge cases, broader
+  coercions, exact diagnostics beyond the listed malformed-pattern cases, and
+  native lowering remain unsupported. `preg_last_error()`
   reports the bounded error code from these current PCRE paths, including the
   backtrack-limit, bad-UTF8, and bad-UTF8-offset cases covered by focused
   tests. `preg_quote()` escapes current string bytes for the bounded delimiter
   subset, including NUL as `\\000`; the PCRE translator maps that escape back
   to a NUL byte for the supported pattern paths, and escaped `#` remains
   escaped under extended-mode patterns. Exact PCRE engine state, complete
-  escape/delimiter policy, error messages, JIT/study behavior, and broader
+  escape/delimiter policy, diagnostics beyond the listed malformed scalar
+  pattern cases, JIT/study behavior, and broader
   pattern failure modes remain unsupported.
   `preg_replace_callback($pattern, $callback, $subject)` supports exactly the
   WordPress `wp_sanitize_redirect()` verbose UTF-8 sanitizer regex shape with
   the string callback `_wp_sanitize_utf8_in_redirect`. It percent-encodes
   non-ASCII UTF-8 bytes in the current runtime string representation and
-  leaves ASCII redirect paths unchanged. Pattern arrays, subject arrays,
-  callback arrays/closures/method callables, broad callback invocation,
-  captures/backrefs beyond the matched full string, limit/count/flags
-  arguments, invalid-pattern warnings, byte/Unicode edge cases outside valid
-  runtime strings, broad coercions, exact diagnostics, and native lowering
-  remain unsupported.
+  leaves ASCII redirect paths unchanged. The current diagnostic surface also
+  emits PHP-shaped warnings and `NULL` for malformed scalar patterns and skips
+  malformed entries in string-valued pattern arrays without warning before
+  applying later valid patterns. Subject arrays, callback arrays/closures/method
+  callables, broad callback invocation, captures/backrefs beyond the matched
+  full string, limit/count/flags arguments, byte/Unicode edge cases outside
+  valid runtime strings, broad coercions, exact diagnostics beyond the listed
+  malformed-pattern cases, and native lowering remain unsupported.
   `preg_replace($pattern, $replacement, $subject)` supports exactly the
   WordPress database-version cleanup pattern `/[^0-9.].*/`, the WordPress
   path-tail cleanup pattern `#/[^/]*$#i`, the WordPress redirect sanitizer
@@ -4257,12 +4267,17 @@
   `/%(?:%|$|(?!($allowed_format)?[sdfFi]))/` shape after WordPress expands
   `$allowed_format`, with the exact `'%%\\1'` replacement, escaping
   unrecognized percent signs while preserving recognized placeholders in the
-  current formatting-prefix subset. Pattern or replacement arrays, subject
-  arrays, arbitrary non-empty replacements, limit/count arguments, callbacks,
+  current formatting-prefix subset. The current diagnostic surface also emits
+  PHP-shaped warnings and `NULL` for malformed scalar patterns, skips
+  malformed entries in string-valued pattern arrays without warning, raises the
+  PHP-shaped object pattern `TypeError`, and validates replacement arrays
+  against scalar patterns plus non-stringable object replacements. Full
+  pattern/replacement array semantics, subject arrays, arbitrary non-empty
+  replacements beyond the current regex path, limit/count arguments, callbacks,
   full PCRE replacement behavior, captures/backrefs beyond the reached
-  placeholder replacement, invalid-pattern warnings, byte/Unicode edge cases,
-  broad coercions, exact diagnostics, SQL semantics, and native lowering remain
-  unsupported.
+  placeholder replacement, byte/Unicode edge cases, broad coercions, exact
+  diagnostics beyond the listed malformed-pattern and replacement type cases,
+  SQL semantics, and native lowering remain unsupported.
   `preg_split($pattern, $subject, $limit, $flags)` supports exactly the
   reached WordPress `wpdb::prepare()` placeholder extraction regex
   `/(^|[^%]|(?:%%)+)(%(?:$allowed_format)?[sdfFi])/` after `$allowed_format`
@@ -4270,10 +4285,13 @@
   `PREG_SPLIT_DELIM_CAPTURE` (value `2`). It returns a sequential array with
   the leading literal segment and the two captured delimiter groups for each
   recognized placeholder, matching the shape WordPress documents as one
-  leading value plus three values per placeholder. Broad PCRE splitting,
+  leading value plus three values per placeholder. Malformed scalar pattern
+  warnings and array/non-stringable object pattern `TypeError`s use the same
+  current PCRE diagnostic path as `preg_match()`. Broad PCRE splitting,
   pattern arrays, subject arrays, other limits, `PREG_SPLIT_NO_EMPTY`,
-  `PREG_SPLIT_OFFSET_CAPTURE`, flag combinations, invalid-pattern warnings,
-  full capture semantics, SQL semantics, and native lowering remain
+  `PREG_SPLIT_OFFSET_CAPTURE`, flag combinations, diagnostics beyond the
+  listed malformed-pattern cases, full capture semantics, SQL semantics, and
+  native lowering remain
   unsupported.
   `error_reporting($error_level = null)` supports no arguments to read the
   current integer mask and one nullable PHP-internal integer argument to store

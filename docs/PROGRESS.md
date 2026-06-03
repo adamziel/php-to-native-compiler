@@ -4,6 +4,27 @@
 
 Implemented:
 
+- Added a bounded PCRE diagnostics lane on the interpreter path. The
+  `preg_match()`, `preg_match_all()`, `preg_grep()`, `preg_split()`,
+  `preg_replace()`, and `preg_replace_callback()` families now validate
+  pattern and replacement argument surfaces with PHP-shaped catchable
+  diagnostics, emit warning text for malformed PCRE delimiters/modifiers, skip
+  invalid array-pattern entries in replace-style calls, and initialize direct
+  by-reference match outputs to `NULL` before validation. Focused proof covers
+  Rust `pcre_diagnostics` (`2/2`), Rust preg-family builtin targets (`33/33`),
+  build/fmt/diff checks, and selected public PHPT rows
+  `ext/pcre/tests/preg_match_error1.phpt`,
+  `ext/pcre/tests/preg_match_all_error1.phpt`,
+  `ext/pcre/tests/preg_replace_error1.phpt`,
+  `ext/pcre/tests/preg_replace_error2.phpt`,
+  `ext/pcre/tests/preg_split_error1.phpt`,
+  `ext/pcre/tests/preg_grep_error1.phpt`, and
+  `ext/pcre/tests/preg_replace_callback_error1.phpt` at `7/7` PASS.
+  Exact-current pre-patch proof on `80fcb800` was `0/7`. Unsupported edges
+  remain full PCRE grammar/parity, complete match-array shape coverage,
+  callback callable-surface parity, exact fatal stack formatting, native
+  lowering, and broad references/COW.
+
 - Added a bounded object-property introspection and `ArrayObject` backing lane
   on the interpreter path. `get_object_vars()`, `get_mangled_object_vars()`,
   object-to-array casts, and object-backed `ArrayObject` / `ArrayIterator`
