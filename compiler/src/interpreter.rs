@@ -924,6 +924,13 @@ impl Default for SplFileObjectState {
 
 #[derive(Debug, Clone)]
 enum SplIteratorWrapperState {
+    Forward {
+        inner: PhpObject,
+    },
+    NoRewind {
+        inner: PhpObject,
+        current: Option<Value>,
+    },
     Infinite {
         inner: PhpObject,
         valid_after_next: Option<bool>,
@@ -10634,9 +10641,16 @@ fn spl_iterator_wrapper_state_contains_object_id(
     visited: &mut LiveRootVisit,
 ) -> bool {
     match state {
-        SplIteratorWrapperState::Infinite { inner, .. }
+        SplIteratorWrapperState::Forward { inner }
+        | SplIteratorWrapperState::Infinite { inner, .. }
         | SplIteratorWrapperState::Limit { inner, .. } => {
             object_contains_object_id(inner, object_id, visited)
+        }
+        SplIteratorWrapperState::NoRewind { inner, current } => {
+            object_contains_object_id(inner, object_id, visited)
+                || current
+                    .as_ref()
+                    .is_some_and(|value| value_contains_object_id(value, object_id, visited))
         }
     }
 }
@@ -11960,6 +11974,22 @@ impl Interpreter {
             })
     }
 
+    fn is_spl_iterator_iterator_class_id(&self, class_id: ClassId) -> bool {
+        self.classes
+            .lookup_class_id("IteratorIterator")
+            .is_some_and(|iterator_id| {
+                class_id == iterator_id || self.classes.is_subclass_of(class_id, iterator_id)
+            })
+    }
+
+    fn is_spl_no_rewind_iterator_class_id(&self, class_id: ClassId) -> bool {
+        self.classes
+            .lookup_class_id("NoRewindIterator")
+            .is_some_and(|iterator_id| {
+                class_id == iterator_id || self.classes.is_subclass_of(class_id, iterator_id)
+            })
+    }
+
     fn is_spl_infinite_iterator_class_id(&self, class_id: ClassId) -> bool {
         self.classes
             .lookup_class_id("InfiniteIterator")
@@ -11977,10 +12007,16 @@ impl Interpreter {
     }
 
     fn resolved_method_is_core_spl_iterator_wrapper(&self, class_id: ClassId) -> bool {
-        ["EmptyIterator", "InfiniteIterator", "LimitIterator"]
-            .iter()
-            .filter_map(|class_name| self.classes.lookup_class_id(class_name))
-            .any(|core_id| class_id == core_id)
+        [
+            "EmptyIterator",
+            "IteratorIterator",
+            "NoRewindIterator",
+            "InfiniteIterator",
+            "LimitIterator",
+        ]
+        .iter()
+        .filter_map(|class_name| self.classes.lookup_class_id(class_name))
+        .any(|core_id| class_id == core_id)
     }
 
     fn spl_file_object_method_parameter_index(method_name: &str, name: &str) -> Option<usize> {
@@ -17720,6 +17756,115 @@ impl Interpreter {
         Ok(object.clone())
     }
 
+    fn spl_iterator_iterator_inner_argument(
+        &mut self,
+        function: &str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<PhpObject> {
+        let Value::Object(object) = value else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    format!(
+                        "Argument #1 ($iterator) must be of type Traversable, {} given",
+                        php_type_error_given(value)
+                    ),
+                ),
+            ));
+        };
+        if self
+            .classes
+            .implements_interface(object.class_id(), "Iterator")
+        {
+            return Ok(object.clone());
+        }
+        if self
+            .classes
+            .implements_interface(object.class_id(), "IteratorAggregate")
+        {
+            return match self.call_required_iterator_method(object.clone(), "getIterator", span)? {
+                Value::Object(iterator)
+                    if self
+                        .classes
+                        .implements_interface(iterator.class_id(), "Iterator") =>
+                {
+                    Ok(iterator)
+                }
+                Value::Object(iterator) => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        function,
+                        format!(
+                            "IteratorAggregate::getIterator() must return an Iterator object in the current subset, got {}",
+                            iterator.class_name()
+                        ),
+                    ),
+                )),
+                other => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        function,
+                        format!(
+                            "IteratorAggregate::getIterator() must return a Traversable object for IteratorIterator, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                )),
+            };
+        }
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!(
+                    "Argument #1 ($iterator) must be of type Traversable, {} given",
+                    object.class_name()
+                ),
+            ),
+        ))
+    }
+
+    fn initialize_iterator_iterator(
+        &mut self,
+        object: &PhpObject,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<()> {
+        expect_arity("IteratorIterator::__construct", args, 1, span)?;
+        let inner = self.spl_iterator_iterator_inner_argument(
+            "IteratorIterator::__construct()",
+            &args[0],
+            span,
+        )?;
+        self.spl_iterator_wrappers
+            .insert(object.id(), SplIteratorWrapperState::Forward { inner });
+        Ok(())
+    }
+
+    fn initialize_no_rewind_iterator(
+        &mut self,
+        object: &PhpObject,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<()> {
+        expect_arity("NoRewindIterator::__construct", args, 1, span)?;
+        let inner = self.spl_iterator_wrapper_inner_argument(
+            "NoRewindIterator::__construct()",
+            &args[0],
+            span,
+        )?;
+        self.spl_iterator_wrappers.insert(
+            object.id(),
+            SplIteratorWrapperState::NoRewind {
+                inner,
+                current: None,
+            },
+        );
+        Ok(())
+    }
+
     fn spl_limit_iterator_bound_argument(
         function: &str,
         position: usize,
@@ -17901,6 +18046,115 @@ impl Interpreter {
             };
         }
 
+        if self.is_spl_iterator_iterator_class_id(object.class_id()) {
+            return match method.as_str() {
+                "__construct" => {
+                    self.initialize_iterator_iterator(&object, &args, span)?;
+                    Ok(Value::Null)
+                }
+                "rewind" | "valid" | "current" | "key" | "next" => {
+                    expect_arity(&format!("IteratorIterator::{method_name}"), &args, 0, span)?;
+                    let inner = match self.spl_iterator_wrapper_state(&object, method_name, span)? {
+                        SplIteratorWrapperState::Forward { inner } => inner.clone(),
+                        SplIteratorWrapperState::NoRewind { .. }
+                        | SplIteratorWrapperState::Infinite { .. }
+                        | SplIteratorWrapperState::Limit { .. } => unreachable!(),
+                    };
+                    self.call_required_iterator_method(inner, method_name, span)
+                }
+                "getinneriterator" => {
+                    expect_arity("IteratorIterator::getInnerIterator", &args, 0, span)?;
+                    let inner = match self.spl_iterator_wrapper_state(&object, method_name, span)? {
+                        SplIteratorWrapperState::Forward { inner } => inner.clone(),
+                        SplIteratorWrapperState::NoRewind { .. }
+                        | SplIteratorWrapperState::Infinite { .. }
+                        | SplIteratorWrapperState::Limit { .. } => unreachable!(),
+                    };
+                    Ok(Value::Object(inner))
+                }
+                _ => Err(runtime_error(
+                    span,
+                    RuntimeError::undefined_function(format!(
+                        "{}::{method_name}()",
+                        object.class_name()
+                    )),
+                )),
+            };
+        }
+
+        if self.is_spl_no_rewind_iterator_class_id(object.class_id()) {
+            return match method.as_str() {
+                "__construct" => {
+                    self.initialize_no_rewind_iterator(&object, &args, span)?;
+                    Ok(Value::Null)
+                }
+                "rewind" => {
+                    expect_arity("NoRewindIterator::rewind", &args, 0, span)?;
+                    Ok(Value::Null)
+                }
+                "valid" | "current" | "key" | "next" => {
+                    expect_arity(&format!("NoRewindIterator::{method_name}"), &args, 0, span)?;
+                    let inner = match self.spl_iterator_wrapper_state(&object, method_name, span)? {
+                        SplIteratorWrapperState::NoRewind { inner, .. } => inner.clone(),
+                        SplIteratorWrapperState::Forward { .. }
+                        | SplIteratorWrapperState::Infinite { .. }
+                        | SplIteratorWrapperState::Limit { .. } => unreachable!(),
+                    };
+                    match method.as_str() {
+                        "current" => {
+                            if let Some(current) = self
+                                .spl_iterator_wrappers
+                                .get(&object.id())
+                                .and_then(|state| match state {
+                                    SplIteratorWrapperState::NoRewind { current, .. } => {
+                                        current.clone()
+                                    }
+                                    _ => None,
+                                })
+                            {
+                                return Ok(current);
+                            }
+                            let current =
+                                self.call_required_iterator_method(inner, method_name, span)?;
+                            if let Some(SplIteratorWrapperState::NoRewind {
+                                current: cached, ..
+                            }) = self.spl_iterator_wrappers.get_mut(&object.id())
+                            {
+                                *cached = Some(current.clone());
+                            }
+                            Ok(current)
+                        }
+                        "next" => {
+                            if let Some(SplIteratorWrapperState::NoRewind { current, .. }) =
+                                self.spl_iterator_wrappers.get_mut(&object.id())
+                            {
+                                *current = None;
+                            }
+                            self.call_required_iterator_method(inner, method_name, span)
+                        }
+                        _ => self.call_required_iterator_method(inner, method_name, span),
+                    }
+                }
+                "getinneriterator" => {
+                    expect_arity("NoRewindIterator::getInnerIterator", &args, 0, span)?;
+                    let inner = match self.spl_iterator_wrapper_state(&object, method_name, span)? {
+                        SplIteratorWrapperState::NoRewind { inner, .. } => inner.clone(),
+                        SplIteratorWrapperState::Forward { .. }
+                        | SplIteratorWrapperState::Infinite { .. }
+                        | SplIteratorWrapperState::Limit { .. } => unreachable!(),
+                    };
+                    Ok(Value::Object(inner))
+                }
+                _ => Err(runtime_error(
+                    span,
+                    RuntimeError::undefined_function(format!(
+                        "{}::{method_name}()",
+                        object.class_name()
+                    )),
+                )),
+            };
+        }
+
         if self.is_spl_infinite_iterator_class_id(object.class_id()) {
             return match method.as_str() {
                 "__construct" => {
@@ -17911,7 +18165,9 @@ impl Interpreter {
                     expect_arity("InfiniteIterator::rewind", &args, 0, span)?;
                     let inner = match self.spl_iterator_wrapper_state(&object, method_name, span)? {
                         SplIteratorWrapperState::Infinite { inner, .. } => inner.clone(),
-                        SplIteratorWrapperState::Limit { .. } => unreachable!(),
+                        SplIteratorWrapperState::Forward { .. }
+                        | SplIteratorWrapperState::NoRewind { .. }
+                        | SplIteratorWrapperState::Limit { .. } => unreachable!(),
                     };
                     self.call_required_iterator_method(inner, "rewind", span)?;
                     if let Some(SplIteratorWrapperState::Infinite {
@@ -17940,7 +18196,9 @@ impl Interpreter {
                             inner,
                             valid_after_next,
                         } => (inner.clone(), valid_after_next.take()),
-                        SplIteratorWrapperState::Limit { .. } => unreachable!(),
+                        SplIteratorWrapperState::Forward { .. }
+                        | SplIteratorWrapperState::NoRewind { .. }
+                        | SplIteratorWrapperState::Limit { .. } => unreachable!(),
                     };
                     if let Some(true) = valid_after_next {
                         return Ok(Value::Bool(true));
@@ -17951,7 +18209,9 @@ impl Interpreter {
                     expect_arity(&format!("InfiniteIterator::{method_name}"), &args, 0, span)?;
                     let inner = match self.spl_iterator_wrapper_state(&object, method_name, span)? {
                         SplIteratorWrapperState::Infinite { inner, .. } => inner.clone(),
-                        SplIteratorWrapperState::Limit { .. } => unreachable!(),
+                        SplIteratorWrapperState::Forward { .. }
+                        | SplIteratorWrapperState::NoRewind { .. }
+                        | SplIteratorWrapperState::Limit { .. } => unreachable!(),
                     };
                     self.call_required_iterator_method(inner, method_name, span)
                 }
@@ -17959,7 +18219,9 @@ impl Interpreter {
                     expect_arity("InfiniteIterator::next", &args, 0, span)?;
                     let inner = match self.spl_iterator_wrapper_state(&object, method_name, span)? {
                         SplIteratorWrapperState::Infinite { inner, .. } => inner.clone(),
-                        SplIteratorWrapperState::Limit { .. } => unreachable!(),
+                        SplIteratorWrapperState::Forward { .. }
+                        | SplIteratorWrapperState::NoRewind { .. }
+                        | SplIteratorWrapperState::Limit { .. } => unreachable!(),
                     };
                     self.call_required_iterator_method(inner.clone(), "next", span)?;
                     if self.spl_iterator_valid_bool(inner.clone(), span)? {
@@ -17984,7 +18246,9 @@ impl Interpreter {
                     expect_arity("InfiniteIterator::getInnerIterator", &args, 0, span)?;
                     let inner = match self.spl_iterator_wrapper_state(&object, method_name, span)? {
                         SplIteratorWrapperState::Infinite { inner, .. } => inner.clone(),
-                        SplIteratorWrapperState::Limit { .. } => unreachable!(),
+                        SplIteratorWrapperState::Forward { .. }
+                        | SplIteratorWrapperState::NoRewind { .. }
+                        | SplIteratorWrapperState::Limit { .. } => unreachable!(),
                     };
                     Ok(Value::Object(inner))
                 }
@@ -18011,7 +18275,9 @@ impl Interpreter {
                             SplIteratorWrapperState::Limit { inner, offset, .. } => {
                                 (inner.clone(), *offset)
                             }
-                            SplIteratorWrapperState::Infinite { .. } => unreachable!(),
+                            SplIteratorWrapperState::Forward { .. }
+                            | SplIteratorWrapperState::NoRewind { .. }
+                            | SplIteratorWrapperState::Infinite { .. } => unreachable!(),
                         };
                     self.call_required_iterator_method(inner.clone(), "rewind", span)?;
                     self.advance_limit_iterator_to_offset(inner, offset, span)?;
@@ -18032,7 +18298,9 @@ impl Interpreter {
                                 position,
                                 ..
                             } => (inner.clone(), *limit, *position),
-                            SplIteratorWrapperState::Infinite { .. } => unreachable!(),
+                            SplIteratorWrapperState::Forward { .. }
+                            | SplIteratorWrapperState::NoRewind { .. }
+                            | SplIteratorWrapperState::Infinite { .. } => unreachable!(),
                         };
                     if limit >= 0 && position >= limit {
                         return Ok(Value::Bool(false));
@@ -18043,7 +18311,9 @@ impl Interpreter {
                     expect_arity(&format!("LimitIterator::{method_name}"), &args, 0, span)?;
                     let inner = match self.spl_iterator_wrapper_state(&object, method_name, span)? {
                         SplIteratorWrapperState::Limit { inner, .. } => inner.clone(),
-                        SplIteratorWrapperState::Infinite { .. } => unreachable!(),
+                        SplIteratorWrapperState::Forward { .. }
+                        | SplIteratorWrapperState::NoRewind { .. }
+                        | SplIteratorWrapperState::Infinite { .. } => unreachable!(),
                     };
                     self.call_required_iterator_method(inner, method_name, span)
                 }
@@ -18051,7 +18321,9 @@ impl Interpreter {
                     expect_arity("LimitIterator::next", &args, 0, span)?;
                     let inner = match self.spl_iterator_wrapper_state(&object, method_name, span)? {
                         SplIteratorWrapperState::Limit { inner, .. } => inner.clone(),
-                        SplIteratorWrapperState::Infinite { .. } => unreachable!(),
+                        SplIteratorWrapperState::Forward { .. }
+                        | SplIteratorWrapperState::NoRewind { .. }
+                        | SplIteratorWrapperState::Infinite { .. } => unreachable!(),
                     };
                     self.call_required_iterator_method(inner, "next", span)?;
                     if let Some(SplIteratorWrapperState::Limit { position, .. }) =
@@ -18065,7 +18337,9 @@ impl Interpreter {
                     expect_arity("LimitIterator::getInnerIterator", &args, 0, span)?;
                     let inner = match self.spl_iterator_wrapper_state(&object, method_name, span)? {
                         SplIteratorWrapperState::Limit { inner, .. } => inner.clone(),
-                        SplIteratorWrapperState::Infinite { .. } => unreachable!(),
+                        SplIteratorWrapperState::Forward { .. }
+                        | SplIteratorWrapperState::NoRewind { .. }
+                        | SplIteratorWrapperState::Infinite { .. } => unreachable!(),
                     };
                     Ok(Value::Object(inner))
                 }

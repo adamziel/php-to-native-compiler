@@ -127,10 +127,15 @@ user-comparator sort methods raise PHP-shaped `Error`s with the covered
 internal method frame. While a user comparator is running for one of those
 ArrayObject sorts, covered mutating methods on the same object reject the
 write with PHP's storage-modification `Error` message.
-Core `EmptyIterator`, `InfiniteIterator`, and `LimitIterator` objects are
-modeled as small interpreter-side wrapper states: empty iterators have no
-payload, infinite iterators retain an inner `Iterator`, and limit iterators
-retain an inner `Iterator` plus offset, limit, and logical position. Wrapper
+Core `EmptyIterator`, `IteratorIterator`, `NoRewindIterator`,
+`InfiniteIterator`, and `LimitIterator` objects are modeled as small
+interpreter-side wrapper states: empty iterators have no payload,
+`IteratorIterator` retains a resolved inner `Iterator`, `NoRewindIterator`
+retains an inner `Iterator` plus the current value cache needed after a loop
+break, infinite iterators retain an inner `Iterator`, and limit iterators
+retain an inner `Iterator` plus offset, limit, and logical position.
+`IteratorIterator` can also resolve a bounded `IteratorAggregate` constructor
+argument through `getIterator()` when that call returns an `Iterator`. Wrapper
 methods delegate through the same required-iterator method dispatch used by
 `foreach`, so userland overrides on inner iterators and `parent::` calls on
 wrapper subclasses share the normal object method path.

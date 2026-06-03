@@ -2657,16 +2657,22 @@
   `Error` directing callers to `offsetSet()`. Top-level `(array)` casts of
   bounded `ArrayObject` / `ArrayIterator` values return the backing storage,
   and `get_mangled_object_vars()` omits their internal storage property.
-  General SPL wrapper iterators such as
-  `LimitIterator`, `IteratorIterator`, and `NoRewindIterator`, weak
-  scalar/null/float/numeric-string coercions for `ArrayIterator::seek()`
-  offsets, nested ArrayObject-backed `uasort()` / `uksort()` storage sorting,
-  disabled-function internal-method stack traces outside direct method-call
-  dispatch, comparator side effects outside the covered storage mutation guard,
-  object-handle reuse outside these unrooted foreach iterator temporaries, full
-  destructor/unwinding lifetime parity, by-reference iteration over SPL
-  iterator objects, serialization parity, full COW/reference identity, and
-  native lowering remain unsupported.
+  Bounded SPL wrapper iterators include `IteratorIterator` and
+  `NoRewindIterator`, in addition to the `EmptyIterator`, `InfiniteIterator`,
+  and `LimitIterator` support described below: `IteratorIterator` forwards
+  `rewind()`, `valid()`, `current()`, `key()`, `next()`, and
+  `getInnerIterator()` to a direct inner `Iterator`, or to a bounded
+  `IteratorAggregate::getIterator()` result when that result is an
+  `Iterator`; `NoRewindIterator` forwards the same methods except that
+  `rewind()` is a no-op and a bounded current-value cache preserves the value
+  visible after a loop break. Weak scalar/null/float/numeric-string coercions
+  for `ArrayIterator::seek()` offsets, nested ArrayObject-backed `uasort()` /
+  `uksort()` storage sorting, disabled-function internal-method stack traces
+  outside direct method-call dispatch, comparator side effects outside the
+  covered storage mutation guard, object-handle reuse outside these unrooted
+  foreach iterator temporaries, full destructor/unwinding lifetime parity,
+  by-reference iteration over SPL iterator objects, serialization parity, full
+  COW/reference identity, and native lowering remain unsupported.
 - SPL `SplFixedArray` has a bounded fixed-size storage model for construction,
   `fromArray()`, `toArray()`, `count()`/`getSize()`, `setSize()`, offset
   reads/writes/unsets/existence checks, and ordinary by-value iteration.
@@ -2768,19 +2774,26 @@
   the covered method omissions, binary or non-UTF-8 line storage, independent
   nested iterator cursors, serialization parity, references/COW, and native
   lowering remain unsupported.
-- SPL `EmptyIterator`, `InfiniteIterator`, and `LimitIterator` have a bounded
-  interpreter runtime model over existing bounded `Iterator` objects.
-  `EmptyIterator` supports no-op `rewind()` / `next()` and false `valid()` for
-  ordinary foreach. `InfiniteIterator` stores its inner iterator, delegates
-  `rewind()`, `valid()`, `current()`, `key()`, and `next()`, and rewinds the
-  inner iterator after `next()` observes it became invalid. `LimitIterator`
-  stores its inner iterator plus offset, limit, and logical position; validates
-  constructor offset/limit bounds, advances to the requested offset during
-  `rewind()`, raises the bounded `OutOfBoundsException` shape when the offset
-  cannot be reached, enforces the limit in `valid()`, and delegates
-  current/key/next to the inner iterator. `getInnerIterator()` returns the
-  stored inner iterator for `InfiniteIterator` and `LimitIterator`. The exact
-  SPL `OuterIterator` / `IteratorIterator` class hierarchy,
+- SPL `EmptyIterator`, `IteratorIterator`, `NoRewindIterator`,
+  `InfiniteIterator`, and `LimitIterator` have a bounded interpreter runtime
+  model over existing bounded `Iterator` objects. `EmptyIterator` supports
+  no-op `rewind()` / `next()` and false `valid()` for ordinary foreach.
+  `IteratorIterator` stores a direct inner `Iterator`, or a bounded
+  `IteratorAggregate::getIterator()` result when that result is an `Iterator`,
+  and delegates `rewind()`, `valid()`, `current()`, `key()`, `next()`, and
+  `getInnerIterator()`. `NoRewindIterator` stores a direct inner `Iterator`,
+  delegates `valid()`, `current()`, `key()`, `next()`, and
+  `getInnerIterator()`, keeps `rewind()` as a no-op, and preserves the current
+  value visible after a loop break. `InfiniteIterator` stores its inner
+  iterator, delegates `rewind()`, `valid()`, `current()`, `key()`, and
+  `next()`, and rewinds the inner iterator after `next()` observes it became
+  invalid. `LimitIterator` stores its inner iterator plus offset, limit, and
+  logical position; validates constructor offset/limit bounds, advances to the
+  requested offset during `rewind()`, raises the bounded
+  `OutOfBoundsException` shape when the offset cannot be reached, enforces the
+  limit in `valid()`, and delegates current/key/next to the inner iterator.
+  `getInnerIterator()` returns the stored inner iterator for all bounded
+  non-empty wrapper iterators. The exact SPL `OuterIterator` class hierarchy,
   `SeekableIterator` and `LimitIterator::seek()` parity, named/spread
   arguments on these wrapper methods, `EmptyIterator::current()` / `key()`
   exception parity beyond no-current foreach rows, independent cloned iterator

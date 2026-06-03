@@ -4,6 +4,27 @@
 
 Implemented:
 
+- Added a bounded SPL forwarding-wrapper iterator lane on the interpreter path.
+  Core `IteratorIterator` and `NoRewindIterator` metadata and runtime state now
+  cover construction over direct bounded `Iterator` objects,
+  `IteratorIterator` construction over bounded `IteratorAggregate::getIterator()`
+  results that return an `Iterator`, public method forwarding for `rewind()`,
+  `valid()`, `current()`, `key()`, `next()`, and `getInnerIterator()`,
+  subclass `parent::` calls through the same core method dispatcher, and
+  `NoRewindIterator`'s no-op rewind plus current-value cache after loop
+  breaks. Focused proof covers Rust
+  `spl_iterator_iterator_and_no_rewind_iterator_forward_bounded_iterators`,
+  build/fmt checks, and selected public PHPT rows
+  `ext/spl/tests/ArrayObject/array_013.phpt`,
+  `ext/spl/tests/ArrayObject/array_016.phpt`,
+  `ext/spl/tests/iterator_005.phpt`, `ext/spl/tests/iterator_007.phpt`, and
+  `ext/spl/tests/iterator_012.phpt` at `5/5` PASS. Exact-current pre-patch
+  proof on `123c8282` was `0/5`. Unsupported edges remain `CachingIterator`,
+  `FilterIterator`, `AppendIterator`, `RecursiveIteratorIterator`,
+  `RecursiveArrayIterator`, broader SPL wrapper diagnostics/constructor
+  variants, by-reference SPL iterator execution, serialization/lifetime
+  parity, exact object handle numbering, references/COW, and native lowering.
+
 - Added a bounded `BcMath\Number` operator lane on the interpreter path.
   Exponentiation syntax now parses into AST nodes, non-BcMath `**`/`**=`
   remains an explicit runtime/codegen boundary, and `BcMath\Number` binary

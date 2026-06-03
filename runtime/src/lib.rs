@@ -33246,9 +33246,53 @@ impl PhpClassTable {
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
                 .expect("EmptyIterator core metadata should not duplicate methods");
         }
+        let iterator_iterator_id = classes
+            .declare_class("IteratorIterator")
+            .expect("core class table should contain EmptyIterator before IteratorIterator");
+        classes
+            .set_interfaces(iterator_iterator_id, vec!["Iterator".to_string()])
+            .expect("IteratorIterator should implement Iterator");
+        let iterator_iterator = classes
+            .get_mut(iterator_iterator_id)
+            .expect("declared IteratorIterator class id should resolve");
+        for method in [
+            "__construct",
+            "current",
+            "getInnerIterator",
+            "key",
+            "next",
+            "rewind",
+            "valid",
+        ] {
+            iterator_iterator
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("IteratorIterator core metadata should not duplicate methods");
+        }
+        let no_rewind_iterator_id = classes
+            .declare_class("NoRewindIterator")
+            .expect("core class table should contain IteratorIterator before NoRewindIterator");
+        classes
+            .set_interfaces(no_rewind_iterator_id, vec!["Iterator".to_string()])
+            .expect("NoRewindIterator should implement Iterator");
+        let no_rewind_iterator = classes
+            .get_mut(no_rewind_iterator_id)
+            .expect("declared NoRewindIterator class id should resolve");
+        for method in [
+            "__construct",
+            "current",
+            "getInnerIterator",
+            "key",
+            "next",
+            "rewind",
+            "valid",
+        ] {
+            no_rewind_iterator
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("NoRewindIterator core metadata should not duplicate methods");
+        }
         let infinite_iterator_id = classes
             .declare_class("InfiniteIterator")
-            .expect("core class table should contain EmptyIterator before InfiniteIterator");
+            .expect("core class table should contain NoRewindIterator before InfiniteIterator");
         classes
             .set_interfaces(infinite_iterator_id, vec!["Iterator".to_string()])
             .expect("InfiniteIterator should implement Iterator");

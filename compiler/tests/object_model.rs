@@ -68,6 +68,8 @@ const CORE_CLASS_NAMES: &[&str] = &[
     "SplFileInfo",
     "SplFileObject",
     "EmptyIterator",
+    "IteratorIterator",
+    "NoRewindIterator",
     "InfiniteIterator",
     "LimitIterator",
     "ReflectionExtension",
@@ -17884,6 +17886,74 @@ try {
     assert_eq!(
         execution.stdout,
         "empty\nEmptyIteratorEx::rewind\nEmptyIteratorEx::valid\ninfinite\nArrayIteratorEx::rewind\nArrayIteratorEx::valid\nArrayIteratorEx::current\nArrayIteratorEx::key\nvalue=0\nArrayIteratorEx::next\nArrayIteratorEx::valid\nArrayIteratorEx::current\nArrayIteratorEx::key\nvalue=1\nArrayIteratorEx::next\nArrayIteratorEx::valid\nArrayIteratorEx::current\nArrayIteratorEx::key\nvalue=2\nArrayIteratorEx::next\nArrayIteratorEx::valid\nArrayIteratorEx::rewind\nArrayIteratorEx::valid\nArrayIteratorEx::current\nArrayIteratorEx::key\nvalue=0\nArrayIteratorEx::next\nArrayIteratorEx::valid\nArrayIteratorEx::current\nArrayIteratorEx::key\nvalue=1\nArrayIteratorEx::next\nArrayIteratorEx::valid\nArrayIteratorEx::current\nArrayIteratorEx::key\nvalue=2\nArrayIteratorEx::next\nArrayIteratorEx::valid\nArrayIteratorEx::rewind\nArrayIteratorEx::valid\nArrayIteratorEx::current\nArrayIteratorEx::key\nvalue=0\nlimit-empty\nlimit-infinite\n2=>C\n3=>D\n0=>A\n1=>B\n2=>C\nnested\n1=>B\n2=>C\n1=>B\n2=>C\n1=>B\nLimitIterator::__construct(): Argument #2 ($offset) must be greater than or equal to 0\nSeek position 3 is out of range\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn spl_iterator_iterator_and_no_rewind_iterator_forward_bounded_iterators() {
+    let source = r#"<?php
+class ArrayIteratorEx extends ArrayIterator {
+    function rewind(): void {
+        echo __METHOD__ . "\n";
+        parent::rewind();
+    }
+    function valid(): bool {
+        echo __METHOD__ . "\n";
+        return parent::valid();
+    }
+    function current(): mixed {
+        echo __METHOD__ . "\n";
+        return parent::current();
+    }
+    function key(): string|int|null {
+        echo __METHOD__ . "\n";
+        return parent::key();
+    }
+    function next(): void {
+        echo __METHOD__ . "\n";
+        parent::next();
+    }
+}
+
+class ArrayObjectEx extends ArrayObject {
+    function getIterator(): Iterator {
+        echo __METHOD__ . "\n";
+        return parent::getIterator();
+    }
+}
+
+class NoRewindIteratorEx extends NoRewindIterator {
+    function rewind(): void {
+        echo __METHOD__ . "\n";
+        parent::rewind();
+    }
+}
+
+echo "forward-array\n";
+foreach (new IteratorIterator(new ArrayIteratorEx(range(0, 1))) as $value) {
+    echo "v=$value\n";
+}
+
+echo "forward-aggregate\n";
+foreach (new IteratorIterator(new ArrayObjectEx(array("a", "b"))) as $value) {
+    echo "v=$value\n";
+}
+
+echo "no-rewind\n";
+$it = new NoRewindIteratorEx(new ArrayIteratorEx(array(0 => "A", 1 => "B", 2 => "C")));
+echo $it->key(), "=>", $it->current(), "\n";
+$it->next();
+foreach ($it as $key => $value) {
+    echo "$key=>$value\n";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "forward-array\nArrayIteratorEx::rewind\nArrayIteratorEx::valid\nArrayIteratorEx::current\nv=0\nArrayIteratorEx::next\nArrayIteratorEx::valid\nArrayIteratorEx::current\nv=1\nArrayIteratorEx::next\nArrayIteratorEx::valid\nforward-aggregate\nArrayObjectEx::getIterator\nv=a\nv=b\nno-rewind\nArrayIteratorEx::key\n0=>ArrayIteratorEx::current\nA\nArrayIteratorEx::next\nNoRewindIteratorEx::rewind\nArrayIteratorEx::valid\nArrayIteratorEx::current\nArrayIteratorEx::key\n1=>B\nArrayIteratorEx::next\nArrayIteratorEx::valid\nArrayIteratorEx::current\nArrayIteratorEx::key\n2=>C\nArrayIteratorEx::next\nArrayIteratorEx::valid\n"
     );
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
