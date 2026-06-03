@@ -96233,13 +96233,23 @@ impl Interpreter {
     }
 
     fn call_unserialize_builtin(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
-        expect_arity("unserialize()", args, 1, span)?;
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "unserialize()",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
         let data = string_builtin_argument("unserialize()", "data", &args[0], span)?;
+        let options = self.parse_unserialize_options(args.get(1), span)?;
         let mut parser = PhpSerializedParser::new(&data);
         let mut object_error = None;
         let parsed = {
             let mut object_factory = |class_name: &str, properties: Vec<(String, Value)>| match self
-                .create_unserialized_object(class_name, properties, span)
+                .create_unserialized_object(class_name, properties, &options, span)
             {
                 Ok(value) => Some(value),
                 Err(error) => {
@@ -96281,19 +96291,114 @@ impl Interpreter {
         }
     }
 
+    fn parse_unserialize_options(
+        &mut self,
+        options: Option<&Value>,
+        span: Span,
+    ) -> CompileResult<UnserializeOptions> {
+        let Some(options) = options else {
+            return Ok(UnserializeOptions::default());
+        };
+        let Value::Array(options) = options else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "unserialize()",
+                    format!(
+                        "Argument #2 ($options) must be of type array, {} given",
+                        php_type_error_given(options)
+                    ),
+                ),
+            ));
+        };
+        let Some(allowed_classes) = options.get(ArrayKey::String("allowed_classes".to_string()))
+        else {
+            return Ok(UnserializeOptions::default());
+        };
+        let allowed_classes = match allowed_classes {
+            Value::Bool(true) => UnserializeAllowedClasses::All,
+            Value::Bool(false) => UnserializeAllowedClasses::None,
+            Value::Array(classes) => {
+                let mut names = HashSet::new();
+                for entry in classes.entries() {
+                    let name = self.unserialize_allowed_class_name(entry.value(), span)?;
+                    validate_unserialize_allowed_class_name(&name, span)?;
+                    names.insert(name.to_ascii_lowercase());
+                }
+                UnserializeAllowedClasses::Only(names)
+            }
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "unserialize()",
+                        format!(
+                            "Option \"allowed_classes\" must be of type array|bool, {} given",
+                            php_type_error_given(other)
+                        ),
+                    ),
+                ));
+            }
+        };
+        Ok(UnserializeOptions { allowed_classes })
+    }
+
+    fn unserialize_allowed_class_name(
+        &mut self,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<String> {
+        match value {
+            Value::String(value) => Ok(value.clone()),
+            Value::BinaryString(value) => tree_walk_binary_string_utf8_option(value)
+                .map(str::to_string)
+                .ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "unserialize()",
+                            "Option \"allowed_classes\" must be an array of class names, string given",
+                        ),
+                    )
+                }),
+            Value::Object(object) => {
+                if let Some(value) =
+                    self.object_to_string_with_magic(object.clone(), "unserialize()", span)?
+                {
+                    Ok(value)
+                } else {
+                    Err(object_to_string_error(object.class_name(), span))
+                }
+            }
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "unserialize()",
+                    format!(
+                        "Option \"allowed_classes\" must be an array of class names, {} given",
+                        php_type_error_given(other)
+                    ),
+                ),
+            )),
+        }
+    }
+
     fn create_unserialized_object(
         &mut self,
         class_name: &str,
         properties: Vec<(String, Value)>,
+        options: &UnserializeOptions,
         span: Span,
     ) -> CompileResult<Value> {
+        if !options.allowed_classes.allows(class_name) {
+            return self.create_unserialized_incomplete_object(class_name, properties, span);
+        }
         if self.classes.lookup_class(class_name).is_none() {
             self.run_autoload_callbacks(class_name, AutoloadKind::Class, span)?;
         }
-        let class_id = self
-            .classes
-            .lookup_class_id(class_name)
-            .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class(class_name)))?;
+        let Some(class_id) = self.classes.lookup_class_id(class_name) else {
+            return self.create_unserialized_incomplete_object(class_name, properties, span);
+        };
         let inherited_properties = self.inherited_instance_properties(class_id);
         let mut ancestor_class_names = self.inherited_class_names(class_id);
         ancestor_class_names.extend(self.class_alias_names(class_id));
@@ -96322,6 +96427,52 @@ impl Interpreter {
                     .write_dynamic_public_property(&name, value)
                     .map_err(|error| runtime_error(span, error))?;
             }
+        }
+        self.track_allocated_object(&object);
+        Ok(Value::Object(object))
+    }
+
+    fn create_unserialized_incomplete_object(
+        &mut self,
+        original_class_name: &str,
+        properties: Vec<(String, Value)>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let class_id = self
+            .classes
+            .lookup_class_id("__PHP_Incomplete_Class")
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::undefined_class("__PHP_Incomplete_Class"),
+                )
+            })?;
+        let inherited_properties = self.inherited_instance_properties(class_id);
+        let mut ancestor_class_names = self.inherited_class_names(class_id);
+        ancestor_class_names.extend(self.class_alias_names(class_id));
+        let interface_names = self.class_implements_interface_names(class_id);
+        let object_id = self.allocate_object_id();
+        let class = self
+            .classes
+            .get(class_id)
+            .expect("__PHP_Incomplete_Class id should resolve to class metadata");
+        let object = PhpObject::from_class_with_relationship_metadata_with_id(
+            class,
+            &inherited_properties,
+            ancestor_class_names,
+            interface_names,
+            object_id,
+        );
+        object
+            .write_dynamic_public_property(
+                "__PHP_Incomplete_Class_Name",
+                Value::String(original_class_name.to_string()),
+            )
+            .map_err(|error| runtime_error(span, error))?;
+        for (name, value) in properties {
+            object
+                .write_dynamic_public_property(&name, value)
+                .map_err(|error| runtime_error(span, error))?;
         }
         self.track_allocated_object(&object);
         Ok(Value::Object(object))
@@ -115513,6 +115664,12 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
             "Argument #1 ($mode) must be a single character"
             | "Argument #1 ($mode) must be one of \"a\", \"m\", \"n\", \"r\", \"s\", or \"v\"",
         ) => Some(format!("{function}: {message}")),
+        ("unserialize()", message)
+            if message
+                .starts_with("Option \"allowed_classes\" must be an array of class names, \"") =>
+        {
+            Some(format!("{function}: {message}"))
+        }
         ("getprotobyname()" | "getservbyname()" | "getservbyport()", message)
             if message.starts_with("Argument #")
                 && message.ends_with(" must not contain any null bytes") =>
@@ -116223,6 +116380,9 @@ fn call_argument_type_error_message(error: &Diagnostic) -> Option<String> {
         return None;
     }
     let reason = error.message.strip_prefix("unsupported call ")?;
+    if is_unserialize_allowed_classes_type_error_message(reason) {
+        return Some(reason.to_string());
+    }
     if reason.starts_with("array_multisort(): Argument #")
         && (reason.contains(" must be an array or a sort flag")
             || reason
@@ -116234,6 +116394,19 @@ fn call_argument_type_error_message(error: &Diagnostic) -> Option<String> {
         return None;
     }
     Some(reason.to_string())
+}
+
+fn is_unserialize_allowed_classes_type_error_message(message: &str) -> bool {
+    const OPTION_TYPE_PREFIX: &str =
+        "unserialize(): Option \"allowed_classes\" must be of type array|bool, ";
+    const CLASS_NAME_PREFIX: &str =
+        "unserialize(): Option \"allowed_classes\" must be an array of class names, ";
+    if message.starts_with(OPTION_TYPE_PREFIX) {
+        return true;
+    }
+    message
+        .strip_prefix(CLASS_NAME_PREFIX)
+        .is_some_and(|given| !given.starts_with('"'))
 }
 
 fn is_call_argument_type_error_message(message: &str) -> bool {
@@ -140907,9 +141080,35 @@ fn format_php_serialized_value(value: &Value, output: &mut String) -> Option<()>
             }
             output.push('}');
         }
-        Value::Object(object) => format_php_serialized_date_object(object, output)?,
+        Value::Object(object) => format_php_serialized_object(object, output)?,
         Value::Closure(_) | Value::Resource(_) => return None,
     }
+    Some(())
+}
+
+fn format_php_serialized_object(object: &PhpObject, output: &mut String) -> Option<()> {
+    if format_php_serialized_date_object(object, output).is_some() {
+        return Some(());
+    }
+
+    let properties: Vec<_> = object
+        .properties()
+        .into_iter()
+        .filter(|property| property.is_initialized() && !property.is_unset())
+        .collect();
+    let class_name = object.class_name();
+    output.push_str("O:");
+    output.push_str(&class_name.len().to_string());
+    output.push_str(":\"");
+    output.push_str(class_name);
+    output.push_str("\":");
+    output.push_str(&properties.len().to_string());
+    output.push_str(":{");
+    for property in properties {
+        format_php_serialized_array_key(&ArrayKey::String(property.mangled_name()), output);
+        format_php_serialized_value(&property.value_cloned(), output)?;
+    }
+    output.push('}');
     Some(())
 }
 
@@ -141055,6 +141254,52 @@ fn parse_php_session_file(data: &str) -> Option<PhpArray> {
         session.insert(ArrayKey::String(name), value);
     }
     Some(session)
+}
+
+#[derive(Debug, Clone)]
+struct UnserializeOptions {
+    allowed_classes: UnserializeAllowedClasses,
+}
+
+impl Default for UnserializeOptions {
+    fn default() -> Self {
+        Self {
+            allowed_classes: UnserializeAllowedClasses::All,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+enum UnserializeAllowedClasses {
+    All,
+    None,
+    Only(HashSet<String>),
+}
+
+impl UnserializeAllowedClasses {
+    fn allows(&self, class_name: &str) -> bool {
+        match self {
+            Self::All => true,
+            Self::None => false,
+            Self::Only(names) => names.contains(&class_name.to_ascii_lowercase()),
+        }
+    }
+}
+
+fn validate_unserialize_allowed_class_name(name: &str, span: Span) -> CompileResult<()> {
+    if name.contains('\0') || name.starts_with('$') || name.chars().any(char::is_whitespace) {
+        let display_name = name.split('\0').next().unwrap_or(name);
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "unserialize()",
+                format!(
+                    "Option \"allowed_classes\" must be an array of class names, \"{display_name}\" given"
+                ),
+            ),
+        ));
+    }
+    Ok(())
 }
 
 struct PhpSerializedParser<'a> {

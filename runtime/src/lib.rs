@@ -32001,9 +32001,16 @@ impl PhpClassTable {
         classes
             .declare_class("stdClass")
             .expect("core class table should contain RequestParseBodyException before stdClass");
+        let incomplete_class_id = classes
+            .declare_class("__PHP_Incomplete_Class")
+            .expect("core class table should contain stdClass before __PHP_Incomplete_Class");
+        classes
+            .get_mut(incomplete_class_id)
+            .expect("core __PHP_Incomplete_Class id should resolve")
+            .set_allows_dynamic_properties(true);
         let php_token_id = classes
             .declare_class("PhpToken")
-            .expect("core class table should contain stdClass before PhpToken");
+            .expect("core class table should contain __PHP_Incomplete_Class before PhpToken");
         let php_token = classes
             .get_mut(php_token_id)
             .expect("declared PhpToken class id should resolve");
