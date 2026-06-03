@@ -8311,9 +8311,18 @@
   object-to-array casts. The same callback subset as `array_map()` is used, and
   user callbacks whose first value parameter is by-reference receive the live
   walked slot; updates are written back to array entries or object properties.
+  Direct-variable array roots are re-read between callbacks so same-storage
+  unsets, different-array root replacement, and scalar root replacement during
+  recursive walking are visible to the cursor. Temporary references created
+  only for a by-reference callback are demoted back to value slots when the
+  walked slot was not a reference before dispatch. The string callback
+  `settype` is supported through that first-reference callback path.
   `array_walk_recursive(...)` shares those forms and recursively descends into
   array values. Invalid string callbacks such as language constructs raise
-  catchable PHP-shaped callback `TypeError`s before iteration.
+  catchable PHP-shaped callback `TypeError`s before iteration. Direct-offset
+  root live-mutation parity, array-root replacement with objects, precise
+  array-callable/magic reference metadata, broad reference/COW parity, and
+  native lowering are not implemented.
   `array_multisort($array, ...)` accepts direct interpreter calls with one or
   more scalar-valued arrays plus `SORT_ASC`, `SORT_DESC`, `SORT_REGULAR`,
   `SORT_NUMERIC`, `SORT_STRING`, `SORT_NATURAL`, and
@@ -11381,13 +11390,20 @@
   $userdata)` accept direct array and ordinary object inputs. Object inputs use
   initialized PHP-mangled property keys, including private/protected property
   names, and callback updates to a by-reference first value parameter are
-  written back to the walked slot. `array_walk_recursive(...)` shares those
-  forms and recursively descends through array values. Invalid string
-  callbacks such as language constructs raise catchable PHP-shaped callback
-  `TypeError`s before iteration. First-class callable forms, unsupported
-  dynamic callable shapes, exact exception trace frames for callbacks, mutation
-  of object property sets during walking, broad reference/COW parity, exact
-  native `TypeError` internals, and native lowering are not implemented.
+  written back to the walked slot. Direct-variable array roots are re-read
+  between callbacks, so same-storage unsets, different-array root replacement,
+  and scalar root replacement during recursive walking are visible to the
+  cursor. Temporary references created only for a by-reference callback are
+  demoted back to value slots when the walked slot was not a reference before
+  dispatch. The string callback `settype` is supported through that
+  first-reference callback path. `array_walk_recursive(...)` shares those forms
+  and recursively descends through array values. Invalid string callbacks such
+  as language constructs raise catchable PHP-shaped callback `TypeError`s
+  before iteration. First-class callable forms, unsupported dynamic callable
+  shapes, exact exception trace frames for callbacks, direct-offset root
+  live-mutation parity, array-root replacement with objects, mutation of object
+  property sets during walking, broad reference/COW parity, exact native
+  `TypeError` internals, and native lowering are not implemented.
   `array_find($array, $callback)`, `array_find_key($array, $callback)`,
   `array_any($array, $callback)`, and `array_all($array, $callback)` accept an
   array plus callbacks that evaluate to string function names resolving to

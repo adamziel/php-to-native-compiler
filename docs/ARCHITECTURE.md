@@ -3801,6 +3801,14 @@ The interpreter path also keeps `array_walk()` and `array_walk_recursive()` as
 boxed runtime helpers over direct array/object inputs with PHP-mangled object
 property keys. They remain outside native lowering until generated code has the
 boxed array/object/reference machinery needed to preserve walk-visible mutation.
+For direct-variable array roots, the interpreter re-reads the root between
+callbacks, keeps same-storage unsets visible to the cursor, restarts on
+different-array root replacement, and raises a catchable PHP-shaped `TypeError`
+when recursive walking observes a scalar root replacement. Temporary
+by-reference callback slots are demoted back to value slots when the slot was
+not a reference before callback dispatch. Direct-offset roots, array-root
+replacement with objects, precise array-callable/magic reference metadata, and
+full reference/COW parity remain outside this subset.
 Direct `strlen($value)` calls fold only when `$value` is an already-lowerable
 known string operand, including tracked string expressions whose possible
 values have one uniform byte length. A selected-`clang` assembly snapshot

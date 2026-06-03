@@ -4,6 +4,33 @@
 
 Implemented:
 
+- Added a bounded direct-variable mutation lane for interpreter
+  `array_walk()` / `array_walk_recursive()`. Direct array roots are now
+  re-read between callbacks so unsets through captured/global aliases, root
+  replacement with a different array, and replacement with a scalar during a
+  recursive walk are visible to the cursor. The cursor continues after the
+  current slot when it survives, advances to the next surviving original slot
+  when the current slot is removed from the same storage, and restarts when the
+  root is replaced by an array with no shared slot identity. By-reference first
+  callback parameters receive a temporary live slot reference, and slots that
+  were not references before the callback are demoted back to value slots after
+  callback return. The `settype` builtin callback uses the same first-reference
+  callback channel, and scalar root replacement reports the catchable
+  `Iterated value is no longer an array or object` `TypeError`. Focused proof
+  covers exact-current pre-patch selected PHPT at `0/6` and post-patch
+  selected PHPT at `6/6` for
+  `ext/standard/tests/array/array_walk/bug42850.phpt`,
+  `ext/standard/tests/array/array_walk/bug61730.phpt`,
+  `ext/standard/tests/array/array_walk/bug61967.phpt`,
+  `ext/standard/tests/array/array_walk/bug69068.phpt`,
+  `ext/standard/tests/array/array_walk/bug69068_2.phpt`, and
+  `ext/standard/tests/array/array_walk/bug70713.phpt`; Rust `array_walk`
+  coverage, build/fmt/diff checks, and latest-published PASS-regression scout
+  verification. Unsupported edges remain direct-offset root live mutation
+  parity, array-root replacement with object inputs, precise first-parameter
+  reference detection for all array-callable/magic forms, broad
+  references/COW, and native lowering.
+
 - Added bounded userland `ReflectionClass::__toString()` rendering on the
   interpreter path. Direct string conversion and explicit `__toString()` calls
   now render declared user classes and traits from existing reflection

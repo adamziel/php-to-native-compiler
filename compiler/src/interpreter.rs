@@ -70243,6 +70243,38 @@ impl Interpreter {
                 reference.set_value(array_value);
                 Ok(value)
             }
+            "settype" => {
+                if rest.len() != 1 {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "settype()",
+                            ArityExpectation::Exactly(2),
+                            rest.len() + 1,
+                        ),
+                    ));
+                }
+
+                let target_type = string_builtin_argument("settype()", "type", &rest[0], span)?;
+                Self::validate_settype_target_type(&target_type, span)?;
+                let value = reference.value_cloned();
+                match self.settype_cast_value(value, &target_type, span) {
+                    Ok(converted) => {
+                        reference.set_value(converted);
+                        Ok(Value::Bool(true))
+                    }
+                    Err(error)
+                        if Self::settype_string_conversion_has_empty_string_side_effect(
+                            &target_type,
+                            &error,
+                        ) =>
+                    {
+                        reference.set_value(Value::String(String::new()));
+                        Err(error)
+                    }
+                    Err(error) => Err(error),
+                }
+            }
             _ => unreachable!("caller restricts reference-parameter builtin callbacks"),
         }
     }
@@ -103179,16 +103211,34 @@ impl Interpreter {
         };
         match &args[0] {
             Expr::Variable(array_name, _) => {
-                let mut array_value = caller_scope.read_static(array_name, span)?;
-                self.call_array_walk_on_value(
-                    &mut array_value,
-                    &callback,
-                    userdata.as_ref(),
-                    recursive,
-                    callable,
-                    span,
-                )?;
-                caller_scope.write_static(array_name, array_value);
+                let array_value = caller_scope.read_static(array_name, span)?;
+                if matches!(array_value, Value::Array(_)) {
+                    let value_by_reference =
+                        self.array_walk_callback_first_value_by_reference(
+                            &callback, callable, span,
+                        )?;
+                    self.walk_direct_variable_array_with_callback(
+                        array_name,
+                        &callback,
+                        userdata.as_ref(),
+                        recursive,
+                        callable,
+                        value_by_reference,
+                        span,
+                        caller_scope,
+                    )?;
+                } else {
+                    let mut array_value = array_value;
+                    self.call_array_walk_on_value(
+                        &mut array_value,
+                        &callback,
+                        userdata.as_ref(),
+                        recursive,
+                        callable,
+                        span,
+                    )?;
+                    caller_scope.write_static(array_name, array_value);
+                }
                 Ok(Value::Bool(true))
             }
             Expr::Index {
@@ -103256,12 +103306,30 @@ impl Interpreter {
     ) -> CompileResult<()> {
         match array_value {
             Value::Array(array) => {
-                self.walk_array_with_callback(array, callback, userdata, recursive, callable, span)
+                let value_by_reference =
+                    self.array_walk_callback_first_value_by_reference(callback, callable, span)?;
+                self.walk_array_with_callback(
+                    array,
+                    callback,
+                    userdata,
+                    recursive,
+                    callable,
+                    value_by_reference,
+                    span,
+                )
             }
             Value::Object(object) => {
                 let mut array = object.initialized_mangled_properties_array();
+                let value_by_reference =
+                    self.array_walk_callback_first_value_by_reference(callback, callable, span)?;
                 self.walk_array_with_callback(
-                    &mut array, callback, userdata, recursive, callable, span,
+                    &mut array,
+                    callback,
+                    userdata,
+                    recursive,
+                    callable,
+                    value_by_reference,
+                    span,
                 )?;
                 for entry in array.entries() {
                     let ArrayKey::String(name) = &entry.key else {
@@ -103329,6 +103397,7 @@ impl Interpreter {
         userdata: Option<&Value>,
         recursive: bool,
         callable: &str,
+        value_by_reference: bool,
         span: Span,
     ) -> CompileResult<()> {
         let keys: Vec<ArrayKey> = array
@@ -103344,16 +103413,30 @@ impl Interpreter {
                 let mut value = slot.value_cloned();
                 if let Value::Array(child) = &mut value {
                     self.walk_array_with_callback(
-                        child, callback, userdata, recursive, callable, span,
+                        child,
+                        callback,
+                        userdata,
+                        recursive,
+                        callable,
+                        value_by_reference,
+                        span,
                     )?;
                     slot.set_value(value);
                     continue;
                 }
             }
 
-            let (value, value_reference) = {
-                let reference = slot.promote_to_reference_cell();
-                (reference.value_cloned(), reference)
+            let (value, value_reference, temporary_reference_id) = {
+                let value = slot.value_cloned();
+                if value_by_reference {
+                    let temporary_reference = !slot.is_reference();
+                    let reference = slot.promote_to_reference_cell();
+                    let temporary_reference_id = temporary_reference.then(|| reference.id());
+                    (reference.value_cloned(), reference, temporary_reference_id)
+                } else {
+                    let reference = PhpReferenceCell::new(value.clone());
+                    (value, reference, None)
+                }
             };
             self.call_array_walk_callback_with_values(
                 callback,
@@ -103365,9 +103448,302 @@ impl Interpreter {
                 callable,
                 span,
             )?;
+            if let Some(reference_id) = temporary_reference_id {
+                Self::array_walk_demote_temporary_reference_slot(array, key.clone(), reference_id);
+            }
         }
 
         Ok(())
+    }
+
+    fn walk_direct_variable_array_with_callback(
+        &mut self,
+        array_name: &str,
+        callback: &Value,
+        userdata: Option<&Value>,
+        recursive: bool,
+        callable: &str,
+        value_by_reference: bool,
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        let mut position = 0usize;
+
+        loop {
+            let mut array = match caller_scope.read_static(array_name, span)? {
+                Value::Array(array) => array,
+                _ => return Err(Self::array_walk_iterated_value_type_error(span)),
+            };
+            if position >= array.entries().len() {
+                return Ok(());
+            }
+
+            let before_slot_ids = Self::array_walk_slot_ids(&array);
+            let entry = array
+                .entries()
+                .get(position)
+                .expect("position checked against array entries")
+                .clone();
+            let key = entry.key.clone();
+            let current_slot_id = entry.slot().cell_id();
+
+            if recursive {
+                let mut value = entry.value_cloned();
+                if let Value::Array(child) = &mut value {
+                    self.walk_array_with_callback(
+                        child,
+                        callback,
+                        userdata,
+                        recursive,
+                        callable,
+                        value_by_reference,
+                        span,
+                    )?;
+                    if let Value::Array(mut current_array) =
+                        caller_scope.read_static(array_name, span)?
+                    {
+                        if let Some(slot) = current_array
+                            .get_slot_mut(key.clone())
+                            .filter(|slot| slot.cell_id() == current_slot_id)
+                        {
+                            slot.set_value(value);
+                            caller_scope.write_static(array_name, Value::Array(current_array));
+                        }
+                    } else {
+                        return Err(Self::array_walk_iterated_value_type_error(span));
+                    }
+
+                    let after = Self::array_walk_direct_root_array(array_name, span, caller_scope)?;
+                    position = Self::array_walk_next_position_after_mutation(
+                        &before_slot_ids,
+                        current_slot_id,
+                        position,
+                        &after,
+                    );
+                    continue;
+                }
+            }
+
+            let (value, value_reference, temporary_reference_id) = if value_by_reference {
+                let slot = array
+                    .get_slot_mut(key.clone())
+                    .expect("entry key came from the same array snapshot");
+                let temporary_reference = !slot.is_reference();
+                let reference = slot.promote_to_reference_cell();
+                let value = reference.value_cloned();
+                let temporary_reference_id = temporary_reference.then(|| reference.id());
+                caller_scope.write_static(array_name, Value::Array(array));
+                (value, reference, temporary_reference_id)
+            } else {
+                let value = entry.value_cloned();
+                (value.clone(), PhpReferenceCell::new(value), None)
+            };
+
+            self.call_array_walk_callback_with_values(
+                callback,
+                value,
+                value_reference,
+                value_from_array_key(&key),
+                userdata.cloned(),
+                position,
+                callable,
+                span,
+            )?;
+
+            let demoted_current = if let Some(reference_id) = temporary_reference_id {
+                Self::array_walk_demote_direct_root_temporary_reference_slot(
+                    array_name,
+                    key.clone(),
+                    reference_id,
+                    span,
+                    caller_scope,
+                )?
+            } else {
+                false
+            };
+            let after = Self::array_walk_direct_root_array(array_name, span, caller_scope)?;
+            position = if demoted_current {
+                Self::array_walk_position_after_key(&after, &key).unwrap_or_else(|| {
+                    Self::array_walk_next_position_after_mutation(
+                        &before_slot_ids,
+                        current_slot_id,
+                        position,
+                        &after,
+                    )
+                })
+            } else {
+                Self::array_walk_next_position_after_mutation(
+                    &before_slot_ids,
+                    current_slot_id,
+                    position,
+                    &after,
+                )
+            };
+        }
+    }
+
+    fn array_walk_demote_temporary_reference_slot(
+        array: &mut PhpArray,
+        key: ArrayKey,
+        reference_id: PhpReferenceCellId,
+    ) -> bool {
+        let Some(slot) = array.get_slot_mut(key) else {
+            return false;
+        };
+        if slot.reference_cell_id() != Some(reference_id) {
+            return false;
+        }
+
+        let value = slot.value_cloned();
+        *slot = ArraySlot::new(value);
+        true
+    }
+
+    fn array_walk_demote_direct_root_temporary_reference_slot(
+        array_name: &str,
+        key: ArrayKey,
+        reference_id: PhpReferenceCellId,
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<bool> {
+        match caller_scope.read_static(array_name, span)? {
+            Value::Array(mut array) => {
+                let demoted =
+                    Self::array_walk_demote_temporary_reference_slot(&mut array, key, reference_id);
+                if demoted {
+                    caller_scope.write_static(array_name, Value::Array(array));
+                }
+                Ok(demoted)
+            }
+            _ => Err(Self::array_walk_iterated_value_type_error(span)),
+        }
+    }
+
+    fn array_walk_direct_root_array(
+        array_name: &str,
+        span: Span,
+        caller_scope: &SymbolTable,
+    ) -> CompileResult<PhpArray> {
+        match caller_scope.read_static(array_name, span)? {
+            Value::Array(array) => Ok(array),
+            _ => Err(Self::array_walk_iterated_value_type_error(span)),
+        }
+    }
+
+    fn array_walk_iterated_value_type_error(span: Span) -> Diagnostic {
+        Diagnostic::new(
+            Phase::Runtime,
+            span.line,
+            span.column,
+            "Iterated value is no longer an array or object",
+        )
+    }
+
+    fn array_walk_slot_ids(array: &PhpArray) -> Vec<ArraySlotCellId> {
+        array
+            .entries()
+            .iter()
+            .map(|entry| entry.slot().cell_id())
+            .collect()
+    }
+
+    fn array_walk_next_position_after_mutation(
+        before_slot_ids: &[ArraySlotCellId],
+        current_slot_id: ArraySlotCellId,
+        current_position: usize,
+        after: &PhpArray,
+    ) -> usize {
+        let after_slot_ids = Self::array_walk_slot_ids(after);
+        if let Some(position) = after_slot_ids
+            .iter()
+            .position(|slot_id| *slot_id == current_slot_id)
+        {
+            return position + 1;
+        }
+
+        let before_set = before_slot_ids.iter().copied().collect::<HashSet<_>>();
+        if !after_slot_ids
+            .iter()
+            .any(|slot_id| before_set.contains(slot_id))
+        {
+            return 0;
+        }
+
+        for (after_position, slot_id) in after_slot_ids.iter().enumerate() {
+            let Some(before_position) = before_slot_ids
+                .iter()
+                .position(|before_slot_id| before_slot_id == slot_id)
+            else {
+                continue;
+            };
+            if before_position > current_position {
+                return after_position;
+            }
+        }
+
+        after.entries().len()
+    }
+
+    fn array_walk_position_after_key(array: &PhpArray, key: &ArrayKey) -> Option<usize> {
+        array
+            .entries()
+            .iter()
+            .position(|entry| entry.key == *key)
+            .map(|position| position + 1)
+    }
+
+    fn array_walk_callback_first_value_by_reference(
+        &self,
+        callback: &Value,
+        callable: &str,
+        span: Span,
+    ) -> CompileResult<bool> {
+        match callback {
+            Value::String(callback_name) => {
+                if static_method_callable_string(callback_name).is_some() {
+                    return Ok(true);
+                }
+                if let Some(error) = forbidden_dynamic_builtin_call_error(callback_name, span) {
+                    return Err(error);
+                }
+                let callable_target = self.lookup_function(callback_name).ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::undefined_function(callable_name(callback_name)),
+                    )
+                })?;
+                Ok(match callable_target {
+                    Callable::Builtin(key) => {
+                        Self::array_walk_builtin_callback_has_first_reference_param(&key)
+                    }
+                    Callable::User(function) => function
+                        .params
+                        .first()
+                        .is_some_and(|param| param.by_reference),
+                })
+            }
+            Value::Array(_) => Ok(true),
+            Value::Closure(closure) => {
+                let function = self.closure_functions.get(&closure.id()).ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            callable,
+                            "closure body metadata is missing in the current subset",
+                        ),
+                    )
+                })?;
+                Ok(function
+                    .params
+                    .first()
+                    .is_some_and(|param| param.by_reference))
+            }
+            _ => Ok(true),
+        }
+    }
+
+    fn array_walk_builtin_callback_has_first_reference_param(key: &str) -> bool {
+        key == "settype" || Self::builtin_callback_has_first_reference_array_param(key)
     }
 
     fn call_array_walk_callback_with_values(
@@ -103456,7 +103832,17 @@ impl Interpreter {
         span: Span,
     ) -> CompileResult<Value> {
         match callable {
-            Callable::Builtin(key) => self.call_builtin(&key, args, span),
+            Callable::Builtin(key) => {
+                if Self::array_walk_builtin_callback_has_first_reference_param(&key) {
+                    return self.call_builtin_callback_with_first_reference(
+                        &key,
+                        value_reference,
+                        args.into_iter().skip(1).collect(),
+                        span,
+                    );
+                }
+                self.call_builtin(&key, args, span)
+            }
             Callable::User(function) => {
                 let function = function.as_ref();
                 self.call_array_walk_user_function_with_values(
@@ -119897,6 +120283,10 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
         if error.message.starts_with("Cannot increment ")
             || error.message.starts_with("Cannot decrement ")
         {
+            return Some(("TypeError", error.message.clone()));
+        }
+
+        if error.message == "Iterated value is no longer an array or object" {
             return Some(("TypeError", error.message.clone()));
         }
 
