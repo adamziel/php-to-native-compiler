@@ -109807,8 +109807,11 @@ fn validate_interface_method_implementation(
             let class_param_count = class_signature
                 .as_ref()
                 .map_or(0, |signature| signature.params.len());
+            let class_has_variadic = class_signature
+                .as_ref()
+                .is_some_and(|signature| signature.params.iter().any(|param| param.is_variadic));
             if class_required > interface_required
-                || class_param_count < method.function.params.len()
+                || (class_param_count < method.function.params.len() && !class_has_variadic)
             {
                 return Err(incompatible_declaration_error(
                     &class.name,
@@ -110059,9 +110062,13 @@ fn validate_interface_parameter_type_compatibility(
     let Some(class_signature) = class_signature else {
         return Ok(());
     };
+    let class_variadic_param = class_signature
+        .params
+        .iter()
+        .find(|param| param.is_variadic);
 
     for (index, interface_param) in interface_method.function.params.iter().enumerate() {
-        let Some(class_param) = class_signature.params.get(index) else {
+        let Some(class_param) = class_signature.params.get(index).or(class_variadic_param) else {
             continue;
         };
 
@@ -112902,9 +112909,11 @@ fn validate_inherited_method_signature_compatibility(
             else {
                 return Ok(());
             };
+            let child_has_variadic = method.function.params.iter().any(|param| param.is_variadic);
 
             if child_required > parent_signature.required_params
-                || method.function.params.len() < parent_signature.params.len()
+                || (method.function.params.len() < parent_signature.params.len()
+                    && !child_has_variadic)
             {
                 return Err(incompatible_declaration_error(
                     class_name,
@@ -112917,8 +112926,14 @@ fn validate_inherited_method_signature_compatibility(
                 ));
             }
 
+            let child_variadic_param = method
+                .function
+                .params
+                .iter()
+                .find(|param| param.is_variadic);
             for (index, parent_param) in parent_signature.params.iter().enumerate() {
-                let Some(child_param) = method.function.params.get(index) else {
+                let Some(child_param) = method.function.params.get(index).or(child_variadic_param)
+                else {
                     continue;
                 };
 

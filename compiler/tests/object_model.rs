@@ -3454,6 +3454,28 @@ echo $service->log("ok", "custom");
     assert_eq!(execution.stdout, "log:ok:default\nlog:ok:custom");
     assert_eq!(execution.exit_code, 0);
 
+    let variadic_drop_execution = run_source(
+        r#"<?php
+interface DB {
+    public function query($query, ...$params);
+}
+
+class MySQL implements DB {
+    public function query(...$params) {
+        return count($params);
+    }
+}
+
+$db = new MySQL();
+echo $db->query("SELECT 1"), "\n";
+echo $db->query("SELECT ?", "value");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(variadic_drop_execution.stdout, "1\n2");
+    assert_eq!(variadic_drop_execution.exit_code, 0);
+
     let extra_required_error = runtime_error(
         r#"<?php
 interface Logger {
@@ -14513,6 +14535,30 @@ echo $child->label("two", "?");
 
     assert_eq!(execution.stdout, "child:one!\nchild:two?");
     assert_eq!(execution.exit_code, 0);
+
+    let variadic_drop_execution = run_source(
+        r#"<?php
+class Base {
+    public function query($query, ...$params) {
+        return "base";
+    }
+}
+
+class Child extends Base {
+    public function query(...$params) {
+        return count($params);
+    }
+}
+
+$child = new Child();
+echo $child->query("SELECT 1"), "\n";
+echo $child->query("SELECT ?", "value");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(variadic_drop_execution.stdout, "1\n2");
+    assert_eq!(variadic_drop_execution.exit_code, 0);
 
     let error = runtime_error(
         r#"<?php
