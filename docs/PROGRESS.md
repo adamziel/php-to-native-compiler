@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Repaired the active score-gate PASS regression in
+  `Zend/tests/bug60598.phpt`. Direct variable and `$GLOBALS`-routed nested
+  array writes now update existing root array cells in place instead of
+  cloning and rewriting the whole root on every bucket assignment, so
+  `spl_object_hash()` keyed object maps built from constructor/destructor
+  paths remain linear enough for the 10,000-object row. Live-root scans also
+  check the deterministic object-hash bucket before falling back to the full
+  recursive array walk, and released objects whose destructor already ran skip
+  redundant reachability scans. Focused proof covers exact-current pre-patch
+  selected PHPT at `0/1` with a wrapper timeout, post-patch selected PHPT at
+  `1/1`, the scaled object-model destructor/hash-map guard, build/fmt/diff
+  checks, and the same selected active score-gate blocker row only.
+  Unsupported edges remain broad object lifetime/refcount parity, exact
+  destructor ordering for every temporary/container graph, general root
+  object-reachability indexing, references/COW beyond the existing bounded
+  cell model, and native lowering.
+
 - Repaired the latest-published PASS regression in
   `Zend/tests/grammar/semi_reserved_005.phpt`. Class-constant declaration
   parsing now treats the existing semi-reserved class-constant name token set

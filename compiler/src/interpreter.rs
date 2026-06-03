@@ -10801,10 +10801,19 @@ fn object_contains_object_id(
 fn value_contains_object_id(value: &Value, object_id: i64, visited: &mut LiveRootVisit) -> bool {
     match value {
         Value::Object(object) => object_contains_object_id(object, object_id, visited),
-        Value::Array(array) => array
-            .entries()
-            .iter()
-            .any(|entry| value_contains_object_id(&entry.value_cloned(), object_id, visited)),
+        Value::Array(array) => {
+            let object_hash_key = ArrayKey::String(format!("{object_id:032x}"));
+            if let Some(slot) = array.get_slot(object_hash_key) {
+                if value_contains_object_id(&slot.value_cloned(), object_id, visited) {
+                    return true;
+                }
+            }
+
+            array
+                .entries()
+                .iter()
+                .any(|entry| value_contains_object_id(&entry.value_cloned(), object_id, visited))
+        }
         Value::Closure(closure) => {
             if !visited.closures.insert(closure.id()) {
                 return false;
@@ -31183,6 +31192,10 @@ impl Interpreter {
             return Ok(());
         }
 
+        if self.finalized_objects.contains(&object.id()) {
+            return Ok(());
+        }
+
         if self.live_roots_contain_object_id(object.id(), scope) {
             return Ok(());
         }
@@ -43915,6 +43928,51 @@ impl Interpreter {
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<()> {
+        if !scope.is_array_offset_alias_name(name) {
+            scope.clear_public_object_property_array_copy_source(name);
+            scope.clear_array_literal_copy_source_paths_for_root(name);
+            let cell = { scope.routed_storage(name).borrow().get(name).cloned() };
+
+            if let Some(cell) = cell {
+                cell.update_value(|slot| {
+                    if matches!(slot, Value::Bool(false)) {
+                        self.emit_false_to_array_deprecation(span)?;
+                        *slot = Value::Array(PhpArray::new());
+                    } else if matches!(slot, Value::Null) {
+                        *slot = Value::Array(PhpArray::new());
+                    }
+
+                    match slot {
+                        Value::Array(array) => {
+                            self.write_nested_array_value(array, keys, value, span)
+                        }
+                        other => Err(runtime_error(
+                            span,
+                            RuntimeError::invalid_array_access(format!(
+                                "cannot write offset on {}",
+                                other.type_name()
+                            )),
+                        )),
+                    }
+                })?;
+            } else {
+                let mut array = PhpArray::new();
+                self.write_nested_array_value(&mut array, keys, value, span)?;
+                scope.write_static(name, Value::Array(array));
+            }
+
+            if scope.name_routes_to_global_storage(name) {
+                scope.sync_array_offset_aliases_for_global_root(name);
+            }
+            scope.sync_array_offset_aliases_for_root_path(
+                &ArrayOffsetAliasRoot::StaticArray {
+                    name: name.to_string(),
+                },
+                keys,
+            );
+            return Ok(());
+        }
+
         let mut slot = scope
             .read_named(name)
             .unwrap_or_else(|| Value::Array(PhpArray::new()));
@@ -43956,37 +44014,42 @@ impl Interpreter {
         scope: &mut SymbolTable,
     ) -> CompileResult<()> {
         let (global_name, keys) = SymbolTable::split_globals_reference_path(keys.to_vec(), span)?;
-        let mut slot = scope
-            .read_global_name(&global_name)
-            .unwrap_or_else(|| Value::Array(PhpArray::new()));
 
-        if matches!(slot, Value::Bool(false)) {
-            self.emit_false_to_array_deprecation(span)?;
-            slot = Value::Array(PhpArray::new());
-        } else if matches!(slot, Value::Null) {
-            slot = Value::Array(PhpArray::new());
+        let cell = { scope.global_storage().borrow().get(&global_name).cloned() };
+
+        if let Some(cell) = cell {
+            cell.update_value(|slot| {
+                if matches!(slot, Value::Bool(false)) {
+                    self.emit_false_to_array_deprecation(span)?;
+                    *slot = Value::Array(PhpArray::new());
+                } else if matches!(slot, Value::Null) {
+                    *slot = Value::Array(PhpArray::new());
+                }
+
+                match slot {
+                    Value::Array(array) => self.write_nested_array_value(array, &keys, value, span),
+                    other => Err(runtime_error(
+                        span,
+                        RuntimeError::invalid_array_access(format!(
+                            "cannot write offset on {}",
+                            other.type_name()
+                        )),
+                    )),
+                }
+            })?;
+        } else {
+            let mut array = PhpArray::new();
+            self.write_nested_array_value(&mut array, &keys, value, span)?;
+            scope.write_global_name(&global_name, Value::Array(array));
         }
 
-        match &mut slot {
-            Value::Array(array) => {
-                self.write_nested_array_value(array, &keys, value, span)?;
-                scope.write_global_name(&global_name, slot);
-                scope.sync_array_offset_aliases_for_root_path(
-                    &ArrayOffsetAliasRoot::GlobalArray {
-                        name: global_name.clone(),
-                    },
-                    &keys,
-                );
-                Ok(())
-            }
-            other => Err(runtime_error(
-                span,
-                RuntimeError::invalid_array_access(format!(
-                    "cannot write offset on {}",
-                    other.type_name()
-                )),
-            )),
-        }
+        scope.sync_array_offset_aliases_for_root_path(
+            &ArrayOffsetAliasRoot::GlobalArray {
+                name: global_name.clone(),
+            },
+            &keys,
+        );
+        Ok(())
     }
 
     fn write_object_property_nested_array_assignment(

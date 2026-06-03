@@ -14601,7 +14601,7 @@ echo "body\n";
 fn destructor_global_hash_table_retention_loop_finishes() {
     let execution = run_source(
         r#"<?php
-define('OBJECT_COUNT', 512);
+define('OBJECT_COUNT', 10000);
 
 $containers = array();
 
@@ -14629,7 +14629,7 @@ echo count($containers), "\n";
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "512\n");
+    assert_eq!(execution.stdout, "10000\n");
     assert_eq!(execution.exit_code, 0);
 }
 
