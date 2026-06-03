@@ -2476,8 +2476,8 @@
   spelling are exposed with their unmangled property key. By-value `foreach`
   over bounded userland `Iterator` objects calls
   public `rewind()`, `valid()`, `current()`, `key()`, and `next()` methods in
-  PHP order, writes the key variable from `key()`, writes the value variable
-  from `current()`, and observes iterator object mutations made by the loop
+  PHP order, writes the key target from `key()`, writes the value target from
+  `current()`, and observes iterator object mutations made by the loop
   body before later iterations. `IteratorAggregate` is recognized only when
   `getIterator()` returns one of those bounded `Iterator` objects; the runtime
   now expands the core `Iterator` and `IteratorAggregate` interfaces through
@@ -2491,15 +2491,22 @@
   remain detached. `foreach` over `null`, including an undefined direct
   variable that resolves to `null` for this statement, emits a PHP-style
   warning and skips the loop. Empty statement loop bodies such as
-  `foreach ($items as $value);` parse as no-op bodies. By-value loop value
-  targets also cover bounded `list(...)` / `[...]` destructuring: positional
-  slots with skips, nested lists, literal integer or string keyed list slots,
-  direct variables, and direct object-property targets. Missing offsets and
-  `null` destructured values assign `null`; scalar values emit PHP-style
-  `Cannot use ... as array` warnings and assign `null` to reached nested
-  targets. Empty list targets and list targets used as the foreach key emit
-  the bounded PHP fatal messages. Other non-array/non-object iterables still
-  use the current bounded runtime error.
+  `foreach ($items as $value);` parse as no-op bodies. By-value loop key and
+  value targets cover direct variables, direct object-property targets, direct
+  array-offset targets, and direct object-property array-offset targets, with
+  simple direct object-property writes falling back to `__set()` when normal
+  property assignment reports an undefined public property. By-value loop
+  value targets also cover bounded `list(...)` / `[...]` destructuring:
+  positional slots with skips, nested lists, and literal integer or string
+  keyed list slots. Missing offsets and `null` destructured values assign
+  `null`; scalar values emit PHP-style `Cannot use ... as array` warnings and
+  assign `null` to reached nested targets. Empty list targets, list targets
+  used as the foreach key, `$this` assignment targets, and by-reference key
+  targets emit the bounded PHP fatal messages. Unsupported target edges remain
+  append targets, non-direct/static target holders, by-reference array-offset
+  and destructuring value targets, native lowering, and broader reference/COW
+  semantics. Other non-array/non-object iterables still use the current
+  bounded runtime error.
   By-reference
   value forms over a direct array variable, such
   as `foreach ($array as &$value)` and

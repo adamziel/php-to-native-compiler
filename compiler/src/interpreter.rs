@@ -1549,15 +1549,10 @@ fn collect_implicit_arrow_capture_stmt(
             ..
         } => {
             collect_implicit_arrow_capture_expr(iterable, excluded, seen, captures);
-            if let Some(name) = key {
-                seen.insert(name.clone());
+            if let Some(key) = key {
+                collect_implicit_arrow_capture_foreach_target(key, excluded, seen, captures);
             }
-            if let Some(name) = value.variable_name() {
-                seen.insert(name.to_string());
-            }
-            if let ForeachValueTarget::DynamicProperty { property, .. } = value {
-                collect_implicit_arrow_capture_expr(property, excluded, seen, captures);
-            }
+            collect_implicit_arrow_capture_foreach_target(value, excluded, seen, captures);
             collect_implicit_arrow_capture_stmts(body, excluded, seen, captures);
         }
         Stmt::UnsetArrayIndex { index, .. } => {
@@ -1988,11 +1983,17 @@ fn collect_deprecated_dollar_brace_interpolation_stmt_spans(stmts: &[Stmt], span
             }
             Stmt::Foreach {
                 iterable,
+                key,
                 value,
                 body,
                 ..
             } => {
                 collect_deprecated_dollar_brace_interpolation_expr_spans(iterable, spans);
+                if let Some(key) = key {
+                    collect_deprecated_dollar_brace_interpolation_foreach_value_target_spans(
+                        key, spans,
+                    );
+                }
                 collect_deprecated_dollar_brace_interpolation_foreach_value_target_spans(
                     value, spans,
                 );
@@ -2539,9 +2540,20 @@ fn collect_deprecated_dollar_brace_interpolation_foreach_value_target_spans(
                 );
             }
         }
-        ForeachValueTarget::InvalidListKey { .. } => {}
+        ForeachValueTarget::InvalidListKey { .. }
+        | ForeachValueTarget::InvalidReferenceKey { .. } => {}
+        ForeachValueTarget::ArrayIndex { indices, .. }
+        | ForeachValueTarget::ObjectPropertyArrayIndex { indices, .. } => {
+            collect_deprecated_dollar_brace_interpolation_exprs(indices, spans);
+        }
         ForeachValueTarget::DynamicProperty { property, .. } => {
             collect_deprecated_dollar_brace_interpolation_expr_spans(property, spans);
+        }
+        ForeachValueTarget::DynamicObjectPropertyArrayIndex {
+            property, indices, ..
+        } => {
+            collect_deprecated_dollar_brace_interpolation_expr_spans(property, spans);
+            collect_deprecated_dollar_brace_interpolation_exprs(indices, spans);
         }
     }
 }
@@ -2817,6 +2829,55 @@ fn collect_implicit_arrow_capture_assign_target_tail(
             collect_implicit_arrow_capture_expr(property, excluded, seen, captures);
         }
         _ => {}
+    }
+}
+
+fn collect_implicit_arrow_capture_foreach_target(
+    target: &ForeachValueTarget,
+    excluded: &HashSet<String>,
+    seen: &mut HashSet<String>,
+    captures: &mut Vec<ClosureCapture>,
+) {
+    match target {
+        ForeachValueTarget::Variable { name, .. } => {
+            seen.insert(name.clone());
+        }
+        ForeachValueTarget::List { items, .. } => {
+            for item in items.iter().filter_map(|item| item.target.as_ref()) {
+                collect_implicit_arrow_capture_foreach_target(item, excluded, seen, captures);
+            }
+        }
+        ForeachValueTarget::InvalidListKey { .. }
+        | ForeachValueTarget::InvalidReferenceKey { .. } => {}
+        ForeachValueTarget::ArrayIndex { name, indices, .. } => {
+            seen.insert(name.clone());
+            collect_implicit_arrow_capture_exprs(indices, excluded, seen, captures);
+        }
+        ForeachValueTarget::Property { object, .. } => {
+            seen.insert(object.clone());
+        }
+        ForeachValueTarget::DynamicProperty {
+            object, property, ..
+        } => {
+            seen.insert(object.clone());
+            collect_implicit_arrow_capture_expr(property, excluded, seen, captures);
+        }
+        ForeachValueTarget::ObjectPropertyArrayIndex {
+            object, indices, ..
+        } => {
+            seen.insert(object.clone());
+            collect_implicit_arrow_capture_exprs(indices, excluded, seen, captures);
+        }
+        ForeachValueTarget::DynamicObjectPropertyArrayIndex {
+            object,
+            property,
+            indices,
+            ..
+        } => {
+            seen.insert(object.clone());
+            collect_implicit_arrow_capture_expr(property, excluded, seen, captures);
+            collect_implicit_arrow_capture_exprs(indices, excluded, seen, captures);
+        }
     }
 }
 
@@ -14409,6 +14470,21 @@ impl Interpreter {
                 scope.write_static(name, assigned_value);
                 Ok(())
             }
+            ForeachValueTarget::ArrayIndex {
+                name,
+                indices,
+                span,
+            } => {
+                let keys = indices
+                    .iter()
+                    .map(|index| self.evaluate_array_key(index, scope))
+                    .collect::<CompileResult<Vec<_>>>()?;
+                if name == "GLOBALS" {
+                    self.write_global_nested_array_assignment(&keys, assigned_value, *span, scope)
+                } else {
+                    self.write_nested_array_assignment(name, &keys, assigned_value, *span, scope)
+                }
+            }
             ForeachValueTarget::List { items, span } => {
                 let array = match assigned_value {
                     Value::Array(array) => Some(array),
@@ -14436,7 +14512,8 @@ impl Interpreter {
 
                 Ok(())
             }
-            ForeachValueTarget::InvalidListKey { .. } => Ok(()),
+            ForeachValueTarget::InvalidListKey { .. }
+            | ForeachValueTarget::InvalidReferenceKey { .. } => Ok(()),
             ForeachValueTarget::Property {
                 object, property, ..
             } => self.write_foreach_object_property_target(
@@ -14458,7 +14535,59 @@ impl Interpreter {
                     scope,
                 )
             }
+            ForeachValueTarget::ObjectPropertyArrayIndex {
+                object,
+                property,
+                indices,
+                span,
+            } => {
+                let keys = indices
+                    .iter()
+                    .map(|index| self.evaluate_array_key(index, scope))
+                    .collect::<CompileResult<Vec<_>>>()?;
+                self.write_object_property_nested_array_assignment(
+                    object,
+                    property,
+                    &keys,
+                    assigned_value,
+                    *span,
+                    scope,
+                )
+            }
+            ForeachValueTarget::DynamicObjectPropertyArrayIndex {
+                object,
+                property,
+                indices,
+                span,
+            } => {
+                let property_name = self.evaluate_dynamic_property_name(property, *span, scope)?;
+                let keys = indices
+                    .iter()
+                    .map(|index| self.evaluate_array_key(index, scope))
+                    .collect::<CompileResult<Vec<_>>>()?;
+                self.write_object_property_nested_array_assignment(
+                    object,
+                    &property_name,
+                    &keys,
+                    assigned_value,
+                    *span,
+                    scope,
+                )
+            }
         }
+    }
+
+    fn write_foreach_key_target(
+        &mut self,
+        target: &Option<ForeachValueTarget>,
+        assigned_value: Value,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        if let Some(target) = target {
+            self.write_foreach_value_target(target, assigned_value, span, scope)?;
+        }
+        Ok(())
     }
 
     fn foreach_list_item_key(key: Option<&ForeachListKey>, positional_index: usize) -> ArrayKey {
@@ -14471,8 +14600,14 @@ impl Interpreter {
 
     fn foreach_value_target_fatal(target: &ForeachValueTarget) -> Option<(&'static str, Span)> {
         match target {
+            ForeachValueTarget::Variable { name, span } if name.eq_ignore_ascii_case("this") => {
+                Some(("Cannot re-assign $this", *span))
+            }
             ForeachValueTarget::InvalidListKey { span } => {
                 Some(("Cannot use list as key element", *span))
+            }
+            ForeachValueTarget::InvalidReferenceKey { span } => {
+                Some(("Key element cannot be a reference", *span))
             }
             ForeachValueTarget::List { items, span } if items.is_empty() => {
                 Some(("Cannot use empty list", *span))
@@ -14482,8 +14617,11 @@ impl Interpreter {
                 .filter_map(|item| item.target.as_ref())
                 .find_map(Self::foreach_value_target_fatal),
             ForeachValueTarget::Variable { .. }
+            | ForeachValueTarget::ArrayIndex { .. }
             | ForeachValueTarget::Property { .. }
-            | ForeachValueTarget::DynamicProperty { .. } => None,
+            | ForeachValueTarget::DynamicProperty { .. }
+            | ForeachValueTarget::ObjectPropertyArrayIndex { .. }
+            | ForeachValueTarget::DynamicObjectPropertyArrayIndex { .. } => None,
         }
     }
 
@@ -14508,14 +14646,26 @@ impl Interpreter {
             }
         };
         let (current_class_id, protected_class_ids) = self.current_property_access_context();
-        object
-            .write_property_from_context(
-                property,
-                assigned_value,
-                current_class_id,
-                &protected_class_ids,
-            )
-            .map_err(|error| runtime_error(span, error))
+        match object.write_property_from_context(
+            property,
+            assigned_value.clone(),
+            current_class_id,
+            &protected_class_ids,
+        ) {
+            Ok(()) => Ok(()),
+            Err(error) if Self::is_undefined_property_error(&error) => match self
+                .call_magic_instance_method_with_values_and_caller_scope(
+                    object,
+                    "__set",
+                    vec![Value::String(property.to_string()), assigned_value],
+                    span,
+                    scope,
+                )? {
+                Some(_) => Ok(()),
+                None => Err(runtime_error(span, error)),
+            },
+            Err(error) => Err(runtime_error(span, error)),
+        }
     }
 
     fn bind_foreach_value_target_reference_to_key(
@@ -14530,14 +14680,18 @@ impl Interpreter {
             ForeachValueTarget::Variable { name, .. } => {
                 bind_foreach_reference_to_key(scope, name, root, key, span)
             }
-            ForeachValueTarget::List { .. } => Err(runtime_error(
+            ForeachValueTarget::List { .. }
+            | ForeachValueTarget::ArrayIndex { .. }
+            | ForeachValueTarget::ObjectPropertyArrayIndex { .. }
+            | ForeachValueTarget::DynamicObjectPropertyArrayIndex { .. } => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
                     "foreach",
-                    "by-reference destructuring loop targets are not implemented",
+                    "by-reference array-offset and destructuring loop targets are not implemented",
                 ),
             )),
-            ForeachValueTarget::InvalidListKey { .. } => Ok(()),
+            ForeachValueTarget::InvalidListKey { .. }
+            | ForeachValueTarget::InvalidReferenceKey { .. } => Ok(()),
             ForeachValueTarget::Property {
                 object, property, ..
             } => {
@@ -14649,7 +14803,7 @@ impl Interpreter {
     fn execute_foreach_by_value_iterable(
         &mut self,
         iterable: Value,
-        key: &Option<String>,
+        key: &Option<ForeachValueTarget>,
         value: &ForeachValueTarget,
         body: &[Stmt],
         span: Span,
@@ -14724,7 +14878,7 @@ impl Interpreter {
     fn execute_foreach_array_by_value(
         &mut self,
         array: PhpArray,
-        key: &Option<String>,
+        key: &Option<ForeachValueTarget>,
         value: &ForeachValueTarget,
         body: &[Stmt],
         span: Span,
@@ -14732,9 +14886,7 @@ impl Interpreter {
     ) -> CompileResult<Flow> {
         for entry in array.entries() {
             self.tick(span)?;
-            if let Some(key) = key {
-                scope.write_static(key, value_from_array_key(&entry.key));
-            }
+            self.write_foreach_key_target(key, value_from_array_key(&entry.key), span, scope)?;
             self.write_foreach_value_target(value, entry.value_cloned(), span, scope)?;
             match self.execute_statements(body, scope)? {
                 Flow::Normal => {}
@@ -14767,7 +14919,7 @@ impl Interpreter {
     fn execute_foreach_spl_fixed_array_by_value(
         &mut self,
         object: PhpObject,
-        key: &Option<String>,
+        key: &Option<ForeachValueTarget>,
         value: &ForeachValueTarget,
         body: &[Stmt],
         span: Span,
@@ -14784,9 +14936,7 @@ impl Interpreter {
             };
 
             self.tick(span)?;
-            if let Some(key) = key {
-                scope.write_static(key, Value::Int(cursor as i64));
-            }
+            self.write_foreach_key_target(key, Value::Int(cursor as i64), span, scope)?;
             self.write_foreach_value_target(value, current, span, scope)?;
 
             match self.execute_statements(body, scope)? {
@@ -14824,7 +14974,7 @@ impl Interpreter {
     fn execute_foreach_public_object_by_value(
         &mut self,
         object: PhpObject,
-        key: &Option<String>,
+        key: &Option<ForeachValueTarget>,
         value: &ForeachValueTarget,
         body: &[Stmt],
         span: Span,
@@ -14844,9 +14994,7 @@ impl Interpreter {
 
         for (property, iteration_name) in properties {
             self.tick(span)?;
-            if let Some(key) = key {
-                scope.write_static(key, Value::String(iteration_name));
-            }
+            self.write_foreach_key_target(key, Value::String(iteration_name), span, scope)?;
             self.write_foreach_value_target(
                 value,
                 object.read_property_from_context(
@@ -15458,7 +15606,7 @@ impl Interpreter {
     fn execute_foreach_by_reference_with_array_copy_return_source(
         &mut self,
         iterable: &Expr,
-        key: &Option<String>,
+        key: &Option<ForeachValueTarget>,
         value: &ForeachValueTarget,
         body: &[Stmt],
         span: Span,
@@ -15477,9 +15625,7 @@ impl Interpreter {
             let entry_key = entry.key.clone();
             self.tick(span)?;
 
-            if let Some(key) = key {
-                scope.write_static(key, value_from_array_key(&entry_key));
-            }
+            self.write_foreach_key_target(key, value_from_array_key(&entry_key), span, scope)?;
             self.bind_foreach_value_target_reference_to_key(value, &root, &entry_key, span, scope)?;
             if let Some(value_name) = value.variable_name() {
                 self.active_foreach_references.push(ActiveForeachReference {
@@ -15648,7 +15794,7 @@ impl Interpreter {
     fn execute_foreach_by_value_iterable_with_array_copy_return_source(
         &mut self,
         iterable: Value,
-        key: &Option<String>,
+        key: &Option<ForeachValueTarget>,
         value: &ForeachValueTarget,
         body: &[Stmt],
         span: Span,
@@ -15726,7 +15872,7 @@ impl Interpreter {
     fn execute_foreach_array_by_value_with_array_copy_return_source(
         &mut self,
         array: PhpArray,
-        key: &Option<String>,
+        key: &Option<ForeachValueTarget>,
         value: &ForeachValueTarget,
         body: &[Stmt],
         span: Span,
@@ -15734,9 +15880,7 @@ impl Interpreter {
     ) -> CompileResult<ArrayCopyReturnBodyFlow> {
         for entry in array.entries() {
             self.tick(span)?;
-            if let Some(key) = key {
-                scope.write_static(key, value_from_array_key(&entry.key));
-            }
+            self.write_foreach_key_target(key, value_from_array_key(&entry.key), span, scope)?;
             self.write_foreach_value_target(value, entry.value_cloned(), span, scope)?;
             let flow = self.execute_array_copy_return_statement_list(body, scope)?;
             match flow {
@@ -15768,7 +15912,7 @@ impl Interpreter {
     fn execute_foreach_public_object_by_value_with_array_copy_return_source(
         &mut self,
         object: PhpObject,
-        key: &Option<String>,
+        key: &Option<ForeachValueTarget>,
         value: &ForeachValueTarget,
         body: &[Stmt],
         span: Span,
@@ -15788,9 +15932,7 @@ impl Interpreter {
 
         for (property, iteration_name) in properties {
             self.tick(span)?;
-            if let Some(key) = key {
-                scope.write_static(key, Value::String(iteration_name));
-            }
+            self.write_foreach_key_target(key, Value::String(iteration_name), span, scope)?;
             self.write_foreach_value_target(
                 value,
                 object.read_property_from_context(
@@ -15831,7 +15973,7 @@ impl Interpreter {
     fn execute_foreach_spl_fixed_array_by_value_with_array_copy_return_source(
         &mut self,
         object: PhpObject,
-        key: &Option<String>,
+        key: &Option<ForeachValueTarget>,
         value: &ForeachValueTarget,
         body: &[Stmt],
         span: Span,
@@ -15848,9 +15990,7 @@ impl Interpreter {
             };
 
             self.tick(span)?;
-            if let Some(key) = key {
-                scope.write_static(key, Value::Int(cursor as i64));
-            }
+            self.write_foreach_key_target(key, Value::Int(cursor as i64), span, scope)?;
             self.write_foreach_value_target(value, current, span, scope)?;
 
             let flow = self.execute_array_copy_return_statement_list(body, scope)?;
@@ -15887,7 +16027,7 @@ impl Interpreter {
     fn execute_foreach_iterator_by_value_with_array_copy_return_source(
         &mut self,
         object: PhpObject,
-        key: &Option<String>,
+        key: &Option<ForeachValueTarget>,
         value: &ForeachValueTarget,
         body: &[Stmt],
         span: Span,
@@ -15911,9 +16051,7 @@ impl Interpreter {
                     scope,
                 )?;
             let iterator_key = self.call_required_iterator_method(object.clone(), "key", span)?;
-            if let Some(key) = key {
-                scope.write_static(key, iterator_key);
-            }
+            self.write_foreach_key_target(key, iterator_key, span, scope)?;
             let target_is_alias = value
                 .variable_name()
                 .is_some_and(|name| scope.is_array_offset_alias_name(name));
@@ -22984,7 +23122,7 @@ impl Interpreter {
     fn execute_foreach_iterator_by_value(
         &mut self,
         object: PhpObject,
-        key: &Option<String>,
+        key: &Option<ForeachValueTarget>,
         value: &ForeachValueTarget,
         body: &[Stmt],
         span: Span,
@@ -23013,8 +23151,8 @@ impl Interpreter {
                 } else {
                     None
                 };
-            if let (Some(key), Some(iterator_key)) = (key, iterator_key) {
-                scope.write_static(key, iterator_key);
+            if let Some(iterator_key) = iterator_key {
+                self.write_foreach_key_target(key, iterator_key, span, scope)?;
             }
             let target_is_alias = value
                 .variable_name()
@@ -24818,6 +24956,12 @@ impl Interpreter {
                 body,
                 span,
             } => {
+                if let Some((message, fatal_span)) =
+                    key.as_ref().and_then(Self::foreach_value_target_fatal)
+                {
+                    self.emit_simple_fatal(message, fatal_span);
+                    return Ok(Flow::Exit(255));
+                }
                 if let Some((message, fatal_span)) = Self::foreach_value_target_fatal(value) {
                     self.emit_simple_fatal(message, fatal_span);
                     return Ok(Flow::Exit(255));
@@ -24836,9 +24980,12 @@ impl Interpreter {
                         let entry_key = entry.key.clone();
                         self.tick(*span)?;
 
-                        if let Some(key) = key {
-                            scope.write_static(key, value_from_array_key(&entry_key));
-                        }
+                        self.write_foreach_key_target(
+                            key,
+                            value_from_array_key(&entry_key),
+                            *span,
+                            scope,
+                        )?;
                         self.bind_foreach_value_target_reference_to_key(
                             value, &root, &entry_key, *span, scope,
                         )?;
@@ -79579,7 +79726,7 @@ impl Interpreter {
         &mut self,
         function: &FunctionDecl,
         object: PhpObject,
-        key: &Option<String>,
+        key: &Option<ForeachValueTarget>,
         value: &ForeachValueTarget,
         body: &[Stmt],
         span: Span,
@@ -79599,9 +79746,7 @@ impl Interpreter {
 
         for (property, iteration_name) in properties {
             self.tick(span)?;
-            if let Some(key) = key {
-                scope.write_static(key, Value::String(iteration_name));
-            }
+            self.write_foreach_key_target(key, Value::String(iteration_name), span, scope)?;
             self.write_foreach_value_target(
                 value,
                 object.read_property_from_context(
@@ -79626,7 +79771,7 @@ impl Interpreter {
         &mut self,
         function: &FunctionDecl,
         object: PhpObject,
-        key: &Option<String>,
+        key: &Option<ForeachValueTarget>,
         value: &ForeachValueTarget,
         body: &[Stmt],
         span: Span,
@@ -79655,8 +79800,8 @@ impl Interpreter {
                 } else {
                     None
                 };
-            if let (Some(key), Some(iterator_key)) = (key, iterator_key) {
-                scope.write_static(key, iterator_key);
+            if let Some(iterator_key) = iterator_key {
+                self.write_foreach_key_target(key, iterator_key, span, scope)?;
             }
             let target_is_alias = value
                 .variable_name()
@@ -79697,7 +79842,7 @@ impl Interpreter {
         &mut self,
         function: &FunctionDecl,
         array: PhpArray,
-        key: &Option<String>,
+        key: &Option<ForeachValueTarget>,
         value: &ForeachValueTarget,
         body: &[Stmt],
         span: Span,
@@ -79705,9 +79850,7 @@ impl Interpreter {
     ) -> CompileResult<ReferenceReturnBodyFlow> {
         for entry in array.entries() {
             self.tick(span)?;
-            if let Some(key) = key {
-                scope.write_static(key, value_from_array_key(&entry.key));
-            }
+            self.write_foreach_key_target(key, value_from_array_key(&entry.key), span, scope)?;
             self.write_foreach_value_target(value, entry.value_cloned(), span, scope)?;
             match self.execute_reference_return_assignment_statement_list(function, body, scope)? {
                 ReferenceReturnBodyFlow::Normal => {}
@@ -79740,7 +79883,7 @@ impl Interpreter {
         &mut self,
         function: &FunctionDecl,
         iterable: &Expr,
-        key: &Option<String>,
+        key: &Option<ForeachValueTarget>,
         value: &ForeachValueTarget,
         body: &[Stmt],
         span: Span,
@@ -79759,9 +79902,7 @@ impl Interpreter {
             let entry_key = entry.key.clone();
             self.tick(span)?;
 
-            if let Some(key) = key {
-                scope.write_static(key, value_from_array_key(&entry_key));
-            }
+            self.write_foreach_key_target(key, value_from_array_key(&entry_key), span, scope)?;
             self.bind_foreach_value_target_reference_to_key(value, &root, &entry_key, span, scope)?;
             if let Some(value_name) = value.variable_name() {
                 self.active_foreach_references.push(ActiveForeachReference {

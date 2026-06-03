@@ -2540,63 +2540,21 @@ impl Parser {
                 unsupported_foreach_destructuring_message(),
             ));
         }
-        let (first_variable, first_variable_span) =
-            if self.check_foreach_destructuring_target_start() {
-                let first_target = self.parse_foreach_value_target()?;
-                if self.match_token(|kind| matches!(kind, TokenKind::FatArrow)) {
-                    let value_by_reference =
-                        self.match_token(|kind| matches!(kind, TokenKind::Ampersand));
-                    if value_by_reference && self.check_foreach_destructuring_target_start() {
-                        return Err(self.error_at(
-                            self.peek().span,
-                            unsupported_foreach_destructuring_message(),
-                        ));
-                    }
-                    let _value = self.parse_foreach_value_target()?;
-                    self.consume_keyword(
-                        TokenKind::RParen,
-                        "expected ')' after foreach value variable",
-                    )?;
-                    let body = self.parse_block_or_statement()?;
-
-                    return Ok(Stmt::Foreach {
-                        iterable,
-                        key: None,
-                        value: ForeachValueTarget::InvalidListKey {
-                            span: first_target.span(),
-                        },
-                        by_reference: false,
-                        body,
-                        span,
-                    });
-                }
-                let value = first_target;
-                self.consume_keyword(
-                    TokenKind::RParen,
-                    "expected ')' after foreach value variable",
-                )?;
-                let body = self.parse_block_or_statement()?;
-
-                return Ok(Stmt::Foreach {
-                    iterable,
-                    key: None,
-                    value,
-                    by_reference: first_by_reference,
-                    body,
-                    span,
-                });
-            } else {
-                self.consume_variable_with_span("expected foreach value variable")?
-            };
+        let first_target = self.parse_foreach_value_target()?;
         let (key, value, by_reference) = if self
             .match_token(|kind| matches!(kind, TokenKind::FatArrow))
         {
-            if first_by_reference {
-                return Err(self.error_at(
-                        span,
-                        "unsupported foreach: key variables cannot be by-reference in the current subset",
-                    ));
-            }
+            let key = if first_by_reference {
+                ForeachValueTarget::InvalidReferenceKey {
+                    span: first_target.span(),
+                }
+            } else if matches!(first_target, ForeachValueTarget::List { .. }) {
+                ForeachValueTarget::InvalidListKey {
+                    span: first_target.span(),
+                }
+            } else {
+                first_target
+            };
             let value_by_reference = self.match_token(|kind| matches!(kind, TokenKind::Ampersand));
             if value_by_reference && self.check_foreach_destructuring_target_start() {
                 return Err(self.error_at(
@@ -2605,11 +2563,9 @@ impl Parser {
                 ));
             }
             let value = self.parse_foreach_value_target()?;
-            (Some(first_variable), value, value_by_reference)
+            (Some(key), value, value_by_reference)
         } else {
-            let value =
-                self.parse_foreach_value_target_tail(first_variable, first_variable_span)?;
-            (None, value, first_by_reference)
+            (None, first_target, first_by_reference)
         };
         self.consume_keyword(
             TokenKind::RParen,
@@ -2780,6 +2736,15 @@ impl Parser {
         name: String,
         span: Span,
     ) -> CompileResult<ForeachValueTarget> {
+        if self.check(|kind| matches!(kind, TokenKind::LBracket)) {
+            let indices = self.parse_foreach_target_array_indices()?;
+            return Ok(ForeachValueTarget::ArrayIndex {
+                name,
+                indices,
+                span,
+            });
+        }
+
         if !self.match_token(|kind| matches!(kind, TokenKind::ObjectOperator)) {
             return Ok(ForeachValueTarget::Variable { name, span });
         }
@@ -2787,6 +2752,15 @@ impl Parser {
         let operator_span = self.previous().span;
         if matches!(self.peek().kind, TokenKind::Variable(_) | TokenKind::LBrace) {
             let property = self.parse_dynamic_property_name_expr(operator_span)?;
+            if self.check(|kind| matches!(kind, TokenKind::LBracket)) {
+                let indices = self.parse_foreach_target_array_indices()?;
+                return Ok(ForeachValueTarget::DynamicObjectPropertyArrayIndex {
+                    object: name,
+                    property: Box::new(property),
+                    indices,
+                    span,
+                });
+            }
             return Ok(ForeachValueTarget::DynamicProperty {
                 object: name,
                 property: Box::new(property),
@@ -2795,11 +2769,35 @@ impl Parser {
         }
 
         let (property, _) = self.consume_object_property_name(operator_span)?;
+        if self.check(|kind| matches!(kind, TokenKind::LBracket)) {
+            let indices = self.parse_foreach_target_array_indices()?;
+            return Ok(ForeachValueTarget::ObjectPropertyArrayIndex {
+                object: name,
+                property,
+                indices,
+                span,
+            });
+        }
         Ok(ForeachValueTarget::Property {
             object: name,
             property,
             span,
         })
+    }
+
+    fn parse_foreach_target_array_indices(&mut self) -> CompileResult<Vec<Expr>> {
+        let mut indices = Vec::new();
+        while self.match_token(|kind| matches!(kind, TokenKind::LBracket)) {
+            if self.match_token(|kind| matches!(kind, TokenKind::RBracket)) {
+                return Err(self.error_at(
+                    self.previous().span,
+                    "unsupported foreach: append targets are not implemented",
+                ));
+            }
+            indices.push(self.parse_expression()?);
+            self.consume_keyword(TokenKind::RBracket, "expected ']' after array index")?;
+        }
+        Ok(indices)
     }
 
     fn parse_switch(&mut self) -> CompileResult<Stmt> {

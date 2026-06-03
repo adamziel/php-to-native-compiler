@@ -42302,9 +42302,18 @@ impl CGenerator {
                 let Some(value) = value.variable_name() else {
                     return Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION));
                 };
+                let key = match key {
+                    Some(key) => {
+                        let Some(name) = key.variable_name() else {
+                            return Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION));
+                        };
+                        Some(name)
+                    }
+                    None => None,
+                };
                 self.emit_native_array_foreach_statement(
                     iterable,
-                    key.as_deref(),
+                    key,
                     value,
                     *by_reference,
                     body,

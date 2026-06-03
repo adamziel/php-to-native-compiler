@@ -102,7 +102,7 @@ pub enum Stmt {
     },
     Foreach {
         iterable: Expr,
-        key: Option<String>,
+        key: Option<ForeachValueTarget>,
         value: ForeachValueTarget,
         by_reference: bool,
         body: Vec<Stmt>,
@@ -551,6 +551,14 @@ pub enum ForeachValueTarget {
     InvalidListKey {
         span: Span,
     },
+    InvalidReferenceKey {
+        span: Span,
+    },
+    ArrayIndex {
+        name: String,
+        indices: Vec<Expr>,
+        span: Span,
+    },
     Property {
         object: String,
         property: String,
@@ -561,6 +569,18 @@ pub enum ForeachValueTarget {
         property: Box<Expr>,
         span: Span,
     },
+    ObjectPropertyArrayIndex {
+        object: String,
+        property: String,
+        indices: Vec<Expr>,
+        span: Span,
+    },
+    DynamicObjectPropertyArrayIndex {
+        object: String,
+        property: Box<Expr>,
+        indices: Vec<Expr>,
+        span: Span,
+    },
 }
 
 impl ForeachValueTarget {
@@ -569,8 +589,12 @@ impl ForeachValueTarget {
             Self::Variable { name, .. } => Some(name),
             Self::List { .. }
             | Self::InvalidListKey { .. }
+            | Self::InvalidReferenceKey { .. }
+            | Self::ArrayIndex { .. }
             | Self::Property { .. }
-            | Self::DynamicProperty { .. } => None,
+            | Self::DynamicProperty { .. }
+            | Self::ObjectPropertyArrayIndex { .. }
+            | Self::DynamicObjectPropertyArrayIndex { .. } => None,
         }
     }
 
@@ -579,8 +603,12 @@ impl ForeachValueTarget {
             Self::Variable { span, .. }
             | Self::List { span, .. }
             | Self::InvalidListKey { span }
+            | Self::InvalidReferenceKey { span }
+            | Self::ArrayIndex { span, .. }
             | Self::Property { span, .. }
-            | Self::DynamicProperty { span, .. } => *span,
+            | Self::DynamicProperty { span, .. }
+            | Self::ObjectPropertyArrayIndex { span, .. }
+            | Self::DynamicObjectPropertyArrayIndex { span, .. } => *span,
         }
     }
 }

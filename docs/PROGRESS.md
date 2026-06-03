@@ -4,6 +4,27 @@
 
 Implemented:
 
+- Added a bounded `foreach` complex target lane on the interpreter path.
+  By-value key and value targets now share the recursive target writer for
+  direct variables, direct object properties, magic `__set()` properties,
+  direct array offsets, and direct object-property array offsets. The same
+  lane emits PHP-shaped simple fatals for `$this` as a foreach assignment
+  target and by-reference key targets. Focused proof covers the Rust
+  `foreach` target, build/fmt/diff checks, and selected public PHPT rows at
+  `9/9` PASS:
+  `Zend/tests/foreach/bug34310.phpt`,
+  `Zend/tests/foreach/bug34467.phpt`,
+  `Zend/tests/foreach/bug34873.phpt`,
+  `Zend/tests/foreach/this_in_foreach_001.phpt`,
+  `Zend/tests/foreach/this_in_foreach_002.phpt`,
+  `Zend/tests/foreach/this_in_foreach_003.phpt`,
+  `Zend/tests/foreach/this_in_foreach_004.phpt`,
+  `tests/lang/foreachLoop.004.phpt`, and
+  `tests/lang/foreachLoop.006.phpt`. Unsupported edges remain non-direct
+  holder/static/append foreach targets, by-reference array-offset and
+  destructuring value targets, exact compile-time fatal ordering outside this
+  slice, native lowering, and broader references/COW.
+
 - Repaired a mixed-return inheritance PASS regression on the interpreter
   metadata path. The bounded signature subtype relation now treats `mixed` as
   a top type for return values while excluding `void`, so a child method with

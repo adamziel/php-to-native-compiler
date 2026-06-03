@@ -80,12 +80,19 @@ behavior where a mutation to a later visible property is observed when the
 loop arrives at that property. Visible non-public slots shadow same-name
 public/dynamic slots for this enumeration, and public property names that use
 PHP's mangled object property spelling are exposed with their unmangled key.
-By-value foreach value targets are written through one recursive target writer:
-direct variables/properties receive the current value, while bounded
-`list(...)` / `[...]` targets select positional or literal keyed array slots,
-recurse into nested lists, recover scalar values with PHP-style warnings plus
-`null`, and route empty-list or list-as-key forms to the simple PHP fatal
-output path.
+By-value foreach key and value targets are written through one bounded
+recursive target writer. Direct variables, direct object properties, direct
+array offsets, and direct object-property array offsets receive the current
+key or value, with simple direct object-property writes falling back to
+`__set()` when normal property assignment reports an undefined public
+property. Bounded `list(...)` / `[...]` value targets select positional or
+literal keyed array slots, recurse into nested lists, recover scalar values
+with PHP-style warnings plus `null`, and route empty-list or list-as-key forms
+to the simple PHP fatal output path. `$this` as a foreach assignment target
+and by-reference key targets also route through that simple fatal path.
+Append targets, non-direct/static target holders, by-reference array-offset
+and destructuring value targets, native lowering, and broader reference/COW
+semantics remain outside this lane.
 By-value `foreach` over bounded userland
 `Iterator` objects dispatches public `rewind()`, `valid()`, `current()`,
 `key()`, and `next()` in PHP order through the existing method-call path;

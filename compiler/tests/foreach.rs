@@ -58,6 +58,106 @@ echo "\nlast:", $key, "=", $item;
 }
 
 #[test]
+fn foreach_writes_complex_key_and_value_targets() {
+    let source = r#"<?php
+class C {
+    public $d;
+}
+
+$c = new C();
+$arr = array(1 => "a", 2 => "b", 3 => "c");
+foreach ($arr as $x => $c->d) {
+    echo $x, " => ", $c->d, "\n";
+}
+foreach ($arr as $c->d => $x) {
+    echo $c->d, " => ", $x, "\n";
+}
+
+class MagicBag {
+    private $arr = [];
+    function __set($key, $value) { $this->arr[$key] = $value; }
+    function __get($key) { return $this->arr[$key]; }
+}
+$bag = new MagicBag();
+foreach (array(1, 2) as $bag->k => $bag->v) {
+    var_dump($bag->k, $bag->v);
+}
+
+class Holder {
+    public $var = [];
+    function test() {
+        $cont = array("mykey" => "myvalue");
+        foreach ($cont as $this->var["key"] => $this->var["value"]) {
+            var_dump($this->var["key"], $this->var["value"]);
+        }
+    }
+}
+(new Holder())->test();
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "1 => a\n2 => b\n3 => c\n1 => a\n2 => b\n3 => c\nint(0)\nint(1)\nint(1)\nint(2)\nstring(5) \"mykey\"\nstring(7) \"myvalue\"\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn foreach_writes_array_offset_value_targets() {
+    let source = r#"<?php
+$a = array("a", "b", "c");
+$v = array();
+foreach ($a as $v[0]) {
+    var_dump($v);
+}
+var_dump($a);
+var_dump($v);
+
+$a = array("a", "b", "c");
+$v = array();
+foreach ($a as $k => $v[0]) {
+    var_dump($k, $v);
+}
+var_dump($a);
+var_dump($k, $v);
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert!(execution.stdout.contains("string(1) \"a\""));
+    assert!(execution.stdout.contains("string(1) \"c\""));
+    assert!(execution.stdout.contains("int(2)"));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn foreach_target_fatals_for_this_and_reference_keys() {
+    let this_value = run_source("<?php\n$a = [1];\nforeach ($a as $this) {}\n").unwrap();
+    assert_eq!(
+        this_value.stdout,
+        "Fatal error: Cannot re-assign $this in Command line code on line 3"
+    );
+    assert_eq!(this_value.exit_code, 255);
+
+    let this_list = run_source("<?php\n$a = [[1]];\nforeach ($a as list($this)) {}\n").unwrap();
+    assert_eq!(
+        this_list.stdout,
+        "Fatal error: Cannot re-assign $this in Command line code on line 3"
+    );
+    assert_eq!(this_list.exit_code, 255);
+
+    let reference_key =
+        run_source("<?php\n$a = array('a', 'b');\nforeach ($a as &$k => $v) {}\n").unwrap();
+    assert_eq!(
+        reference_key.stdout,
+        "Fatal error: Key element cannot be a reference in Command line code on line 3"
+    );
+    assert_eq!(reference_key.exit_code, 255);
+}
+
+#[test]
 fn foreach_consumes_innermost_break_and_continue() {
     let source = r#"<?php
 $items = [1, 2, 3, 4, 5];
