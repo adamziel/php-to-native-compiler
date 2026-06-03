@@ -6440,7 +6440,13 @@
   `DateTime::createFromFormat()` / `DateTimeImmutable::createFromFormat()`
   cover the bounded formats `Y-m-d H:i:s.u`, `U.u`, and
   `Y-m-d\TH:i:s.vP` / `DateTime::RFC3339_EXTENDED`, returning `false` for
-  unsupported formats in the current subset. `DateTime::__construct()` and
+  unsupported formats in the current subset. The supported internal
+  DateTime/DateTimeZone method-signature metadata for `setTime()`,
+  `createFromFormat()`, `getTransitions()`, `listIdentifiers()`, and
+  `DateTimeInterface::diff()` is also used by the current declaration
+  compatibility checks, including integer, `null`, `false`, and constant
+  defaults such as `PHP_INT_MIN` and `DateTimeZone::ALL`.
+  `DateTime::__construct()` and
   `DateTimeImmutable::__construct()` report catchable PHP-shaped
   `ArgumentCountError`s for calls with more than two arguments, and
   `DateTimeZone::__construct()` reports catchable PHP-shaped
@@ -10599,11 +10605,14 @@
   `canBePassedByValue()`, `isVariadic()`, and
   `hasType()` over the current parsed function or method parameter metadata.
   For the bounded internal method slice, `DateTime::setTime()`,
-  `DateTimeImmutable::setTime()`, `DateTimeZone::getTransitions()`, and
-  `DateTimeZone::listIdentifiers()` expose PHP-shaped parameter names, types,
-  optional/default availability, default values, constant-default names, and
-  internal signature `__toString()` formatting. Parameters with no default
-  raise the current catchable `ReflectionException` internal-default
+  `DateTimeImmutable::setTime()`, `DateTime::createFromFormat()`,
+  `DateTimeImmutable::createFromFormat()`,
+  `DateTimeZone::getTransitions()`, `DateTimeZone::listIdentifiers()`, and
+  `DateTimeInterface::diff()` expose PHP-shaped parameter names, types,
+  optional/default availability, default values, constant-default names,
+  internal signature `__toString()` formatting, and declaration-compatibility
+  metadata for the current subclass/child-interface checks. Parameters with no
+  default raise the current catchable `ReflectionException` internal-default
   diagnostic for default-value inspection; non-constant defaults return
   `null` from `getDefaultValueConstantName()`.
   The bounded

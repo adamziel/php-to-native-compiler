@@ -156,6 +156,67 @@ foreach ($identifiers->getParameters() as $parameter) {
 }
 
 #[test]
+fn internal_datetime_signatures_feed_declaration_compatibility() {
+    for (source, expected) in [
+        (
+            r#"<?php
+class MyDateTimeZone extends DateTimeZone
+{
+    public static function listIdentifiers(): array {}
+}
+"#,
+            "Declaration of MyDateTimeZone::listIdentifiers(): array must be compatible with DateTimeZone::listIdentifiers(int $timezoneGroup = DateTimeZone::ALL, ?string $countryCode = null): array",
+        ),
+        (
+            r#"<?php
+class MyDateTimeZone extends DateTimeZone
+{
+    public function getTransitions(): array|false {}
+}
+"#,
+            "Declaration of MyDateTimeZone::getTransitions(): array|false must be compatible with DateTimeZone::getTransitions(int $timestampBegin = PHP_INT_MIN, int $timestampEnd = 2147483647): array|false",
+        ),
+        (
+            r#"<?php
+class MyDateTime extends DateTime
+{
+    public function setTime(int $hour, int $minute, int $second = 0, bool $microsecond = false): DateTime {}
+}
+"#,
+            "Declaration of MyDateTime::setTime(int $hour, int $minute, int $second = 0, bool $microsecond = false): DateTime must be compatible with DateTime::setTime(int $hour, int $minute, int $second = 0, int $microsecond = 0): DateTime",
+        ),
+        (
+            r#"<?php
+class MyDateTime extends DateTime
+{
+    public static function createFromFormat(): DateTime|false {}
+}
+"#,
+            "Declaration of MyDateTime::createFromFormat(): DateTime|false must be compatible with DateTime::createFromFormat(string $format, string $datetime, ?DateTimeZone $timezone = null): DateTime|false",
+        ),
+        (
+            r#"<?php
+interface MyDateTimeInterface extends DateTimeInterface
+{
+    public function diff(): DateInterval;
+}
+"#,
+            "Declaration of MyDateTimeInterface::diff(): DateInterval must be compatible with DateTimeInterface::diff(DateTimeInterface $targetObject, bool $absolute = false): DateInterval",
+        ),
+    ] {
+        let execution = run_source(source).unwrap();
+        assert_eq!(execution.exit_code, 255, "{source}");
+        let diagnostics = format!("{}{}", execution.stdout, execution.stderr);
+        assert!(
+            diagnostics.contains(expected),
+            "expected fatal message not found\nexpected: {expected}\nstdout: {}\nstderr: {}",
+            execution.stdout,
+            execution.stderr
+        );
+    }
+}
+
+#[test]
 fn reflection_modifier_names_and_class_cloneability_metadata() {
     let execution = run_source(
         r#"<?php

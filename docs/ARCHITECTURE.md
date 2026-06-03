@@ -4503,10 +4503,14 @@ class/function, optional/default availability and values, by-reference flags,
 type-presence checks, nullability checks, and simple named type metadata.
 The same request-local parameter state carries a bounded internal DateTime
 method arginfo slice for `DateTime::setTime()`,
-`DateTimeImmutable::setTime()`, `DateTimeZone::getTransitions()`, and
-`DateTimeZone::listIdentifiers()`, including default constants such as
-`PHP_INT_MIN` and `DateTimeZone::ALL`; broader internal method inventories
-remain outside this metadata table.
+`DateTimeImmutable::setTime()`, `DateTime::createFromFormat()`,
+`DateTimeImmutable::createFromFormat()`, `DateTimeZone::getTransitions()`,
+`DateTimeZone::listIdentifiers()`, and `DateTimeInterface::diff()`,
+including scalar and constant defaults such as `PHP_INT_MIN` and
+`DateTimeZone::ALL`. That slice is also seeded into the runtime method
+signature table so subclass and child-interface declaration compatibility can
+compare user declarations against the named internal signatures. Broader
+internal method inventories remain outside this metadata table.
 `ReflectionParameter::__construct()` can replace that request-local state on
 an existing object. `ReflectionParameter::getType()` now materializes a
 request-local `ReflectionNamedType` object for a single parsed named type, or a

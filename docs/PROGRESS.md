@@ -4,6 +4,30 @@
 
 Implemented:
 
+- Added a bounded internal DateTime method-signature metadata lane on the
+  interpreter path for declaration compatibility checks. Runtime class method
+  signature tables now seed the supported `DateTime::setTime()`,
+  `DateTimeImmutable::setTime()`, `DateTime::createFromFormat()`,
+  `DateTimeImmutable::createFromFormat()`, `DateTimeZone::getTransitions()`,
+  and `DateTimeZone::listIdentifiers()` signatures, including integer,
+  `null`, and constant defaults such as `PHP_INT_MIN` and
+  `DateTimeZone::ALL`. User child interfaces extending the core
+  `DateTimeInterface` slice also validate `diff(DateTimeInterface
+  $targetObject, bool $absolute = false): DateInterval` against the internal
+  parent signature. Focused proof covers Rust `reflection_metadata` (`5/5`),
+  Rust `date_time_builtin` (`36/36`), build/fmt/diff checks, and selected
+  public PHPT rows
+  `Zend/tests/parameter_default_values/internal_declaration_error_class_const.phpt`,
+  `Zend/tests/parameter_default_values/internal_declaration_error_const.phpt`,
+  `Zend/tests/parameter_default_values/internal_declaration_error_int.phpt`,
+  `Zend/tests/parameter_default_values/internal_declaration_error_null.phpt`,
+  and
+  `Zend/tests/parameter_default_values/internal_declaration_error_false.phpt`
+  at `5/5` PASS. Exact-current pre-patch proof on `524096cf` was `0/5`.
+  Unsupported edges remain broader internal method inventories, full
+  DateTimeInterface and DateTimeZone parity beyond the named signature slice,
+  exact diagnostic-stack formatting, native lowering, and references/COW.
+
 - Added a bounded PCRE diagnostics lane on the interpreter path. The
   `preg_match()`, `preg_match_all()`, `preg_grep()`, `preg_split()`,
   `preg_replace()`, and `preg_replace_callback()` families now validate

@@ -11441,6 +11441,7 @@ impl Interpreter {
         seed_core_final_class_markers(&classes, &mut final_classes);
         seed_core_final_method_markers(&classes, &mut final_methods);
         seed_core_class_constant_runtime_tables(&classes, &mut class_constants);
+        seed_core_method_signature_runtime_tables(&classes, &mut method_signatures);
         for stmt in &program.statements {
             match stmt {
                 Stmt::Function(function) if !function.is_nested => {
@@ -46807,7 +46808,7 @@ impl Interpreter {
                     .expect("resolved method metadata should exist");
                 let signature_key = (declaring_class_id, metadata.name().to_ascii_lowercase());
                 let signature = self.method_signatures.get(&signature_key);
-                let is_internal = signature.is_none();
+                let is_internal = !self.class_source_metadata.contains_key(&declaring_class_id);
                 let params = signature
                     .map(reflection_parameter_metadata_from_signature)
                     .unwrap_or_else(|| {
@@ -56473,13 +56474,13 @@ impl Interpreter {
             .expect("declaring class id should resolve");
         let signature_key = (declaring_class_id, method.name().to_ascii_lowercase());
         let signature = self.method_signatures.get(&signature_key);
-        let is_internal = signature.is_none();
         let declaring_class_name = declaring_class.name().to_string();
         let params = signature
             .map(reflection_parameter_metadata_from_signature)
             .unwrap_or_else(|| {
                 reflection_internal_method_params(&declaring_class_name, method.name())
             });
+        let is_internal = !self.class_source_metadata.contains_key(&declaring_class_id);
         let static_variables = signature
             .map(|signature| signature.static_variables.clone())
             .unwrap_or_default();
@@ -110464,6 +110465,27 @@ fn seed_core_final_method_markers(
     }
 }
 
+fn seed_core_method_signature_runtime_tables(
+    classes: &PhpClassTable,
+    method_signatures: &mut HashMap<(ClassId, String), MethodSignature>,
+) {
+    for class_name in ["DateTime", "DateTimeImmutable", "DateTimeZone"] {
+        let Some(class_id) = classes.lookup_class_id(class_name) else {
+            continue;
+        };
+        let Some(class) = classes.get(class_id) else {
+            continue;
+        };
+        for method in class.methods() {
+            let Some(signature) = core_internal_class_method_signature(class_name, method.name())
+            else {
+                continue;
+            };
+            method_signatures.insert((class_id, method.name().to_ascii_lowercase()), signature);
+        }
+    }
+}
+
 fn register_class_name(classes: &mut PhpClassTable, class: &ClassDecl) -> CompileResult<ClassId> {
     if is_core_interface_name(&class.name) {
         return Err(runtime_error(
@@ -110749,7 +110771,85 @@ fn validate_interface_method_inheritance(
         }
     }
 
+    for method in &interface.methods {
+        let lookup_name = method.function.name.to_ascii_lowercase();
+        for (parent_interface_name, parent_method_name, parent_signature) in
+            core_parent_interface_method_signatures(interface_lookup, interface, &lookup_name)
+        {
+            validate_child_interface_method_signature_compatibility(
+                classes,
+                interface_lookup,
+                interface,
+                &interface.name,
+                method,
+                &parent_interface_name,
+                parent_method_name,
+                &parent_signature,
+            )?;
+        }
+    }
+
     Ok(())
+}
+
+fn core_parent_interface_method_signatures(
+    interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
+    interface: &InterfaceDecl,
+    method_lookup_name: &str,
+) -> Vec<(String, &'static str, MethodSignature)> {
+    let mut signatures = Vec::new();
+    let mut visited = HashSet::new();
+    for parent_name in &interface.parents {
+        collect_core_interface_method_signatures(
+            interface_lookup,
+            parent_name,
+            method_lookup_name,
+            &mut visited,
+            &mut signatures,
+        );
+    }
+    signatures
+}
+
+fn collect_core_interface_method_signatures(
+    interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
+    interface_name: &str,
+    method_lookup_name: &str,
+    visited: &mut HashSet<String>,
+    signatures: &mut Vec<(String, &'static str, MethodSignature)>,
+) {
+    let key = interface_name.to_ascii_lowercase();
+    if !visited.insert(key.clone()) {
+        return;
+    }
+
+    if let Some((method_name, signature)) =
+        core_internal_interface_method_signature(interface_name, method_lookup_name)
+    {
+        signatures.push((interface_name.to_string(), method_name, signature));
+    }
+
+    if let Some(interface) = interface_lookup.get(&key) {
+        for parent_name in &interface.parents {
+            collect_core_interface_method_signatures(
+                interface_lookup,
+                parent_name,
+                method_lookup_name,
+                visited,
+                signatures,
+            );
+        }
+    } else {
+        for parent_name in core_interface_parent_names(interface_name) {
+            collect_core_interface_method_signatures(
+                interface_lookup,
+                parent_name,
+                method_lookup_name,
+                visited,
+                signatures,
+            );
+        }
+    }
 }
 
 fn validate_inherited_interface_method_conflicts(
@@ -111108,6 +111208,124 @@ fn validate_child_interface_method_compatibility(
                     ),
                 ),
             ))
+        }
+        _ => Ok(()),
+    }
+}
+
+fn validate_child_interface_method_signature_compatibility(
+    classes: &PhpClassTable,
+    interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
+    interface: &InterfaceDecl,
+    child_interface_name: &str,
+    child_method: &InterfaceMethodDecl,
+    parent_interface_name: &str,
+    parent_method_name: &str,
+    parent_signature: &MethodSignature,
+) -> CompileResult<()> {
+    let child_context = signature_type_context_for_name(child_interface_name);
+    let parent_context = signature_type_context_for_name(parent_interface_name);
+
+    let incompatible = || {
+        runtime_error(
+            child_method.span,
+            incompatible_declaration_error(
+                &interface.name,
+                function_decl_compatibility_signature_with_context(
+                    child_interface_name,
+                    &child_method.function,
+                    Some(child_context),
+                ),
+                method_signature_compatibility_signature_with_context(
+                    parent_interface_name,
+                    parent_method_name,
+                    Some(parent_signature),
+                    Some(parent_context),
+                ),
+            ),
+        )
+    };
+
+    if child_method.is_static {
+        return Err(incompatible());
+    }
+
+    let child_required = required_param_count(&child_method.function);
+    let child_has_variadic = child_method
+        .function
+        .params
+        .iter()
+        .any(|param| param.is_variadic);
+    if child_required > parent_signature.required_params
+        || (child_method.function.params.len() < parent_signature.params.len()
+            && !child_has_variadic)
+    {
+        return Err(incompatible());
+    }
+
+    let child_variadic_param = child_method
+        .function
+        .params
+        .iter()
+        .find(|param| param.is_variadic);
+    for (index, parent_param) in parent_signature.params.iter().enumerate() {
+        let Some(child_param) = child_method
+            .function
+            .params
+            .get(index)
+            .or(child_variadic_param)
+        else {
+            continue;
+        };
+
+        if parent_param.by_reference != child_param.by_reference {
+            return Err(incompatible());
+        }
+
+        match (
+            parent_param.type_decl.as_deref(),
+            child_param
+                .type_decl
+                .as_ref()
+                .map(|decl| decl.text.as_str()),
+        ) {
+            (None, Some(_)) => return Err(incompatible()),
+            (Some(parent_type), Some(child_type))
+                if !is_compatible_parameter_type_override_with_context(
+                    classes,
+                    interface_lookup,
+                    parent_type,
+                    Some(parent_context),
+                    child_type,
+                    Some(child_context),
+                ) =>
+            {
+                return Err(incompatible());
+            }
+            _ => {}
+        }
+    }
+
+    match (
+        parent_signature.return_type.as_deref(),
+        child_method
+            .function
+            .return_type
+            .as_ref()
+            .map(|decl| decl.text.as_str()),
+    ) {
+        (Some(_), None) => Err(incompatible()),
+        (Some(parent_type), Some(child_type))
+            if !is_compatible_return_type_override_with_context(
+                classes,
+                interface_lookup,
+                parent_type,
+                Some(parent_context),
+                child_type,
+                Some(child_context),
+            ) =>
+        {
+            Err(incompatible())
         }
         _ => Ok(()),
     }
@@ -113228,6 +113446,11 @@ fn compatibility_default_expr(expr: &Expr) -> String {
             _ => "<expr>".to_string(),
         },
         Expr::GlobalConstant { name, .. } => name.clone(),
+        Expr::ClassConstant {
+            class_name,
+            constant,
+            ..
+        } => format!("{class_name}::{constant}"),
         _ => "<expr>".to_string(),
     }
 }
@@ -114817,10 +115040,20 @@ fn reflection_internal_method_params(
     if class_name.eq_ignore_ascii_case("DateTime") && method_name.eq_ignore_ascii_case("setTime") {
         return reflection_internal_datetime_set_time_params();
     }
+    if class_name.eq_ignore_ascii_case("DateTime")
+        && method_name.eq_ignore_ascii_case("createFromFormat")
+    {
+        return reflection_internal_datetime_create_from_format_params();
+    }
     if class_name.eq_ignore_ascii_case("DateTimeImmutable")
         && method_name.eq_ignore_ascii_case("setTime")
     {
         return reflection_internal_datetime_set_time_params();
+    }
+    if class_name.eq_ignore_ascii_case("DateTimeImmutable")
+        && method_name.eq_ignore_ascii_case("createFromFormat")
+    {
+        return reflection_internal_datetime_create_from_format_params();
     }
     if class_name.eq_ignore_ascii_case("DateTimeZone")
         && method_name.eq_ignore_ascii_case("getTransitions")
@@ -114865,12 +115098,156 @@ fn reflection_internal_method_params(
     Vec::new()
 }
 
+fn core_internal_class_method_signature(
+    class_name: &str,
+    method_name: &str,
+) -> Option<MethodSignature> {
+    if (class_name.eq_ignore_ascii_case("DateTime")
+        || class_name.eq_ignore_ascii_case("DateTimeImmutable"))
+        && method_name.eq_ignore_ascii_case("setTime")
+    {
+        return Some(core_method_signature_from_reflection_params(
+            reflection_internal_datetime_set_time_params(),
+            Some(class_name),
+        ));
+    }
+    if (class_name.eq_ignore_ascii_case("DateTime")
+        || class_name.eq_ignore_ascii_case("DateTimeImmutable"))
+        && method_name.eq_ignore_ascii_case("createFromFormat")
+    {
+        let return_type = if class_name.eq_ignore_ascii_case("DateTimeImmutable") {
+            "DateTimeImmutable|false"
+        } else {
+            "DateTime|false"
+        };
+        return Some(core_method_signature_from_reflection_params(
+            reflection_internal_datetime_create_from_format_params(),
+            Some(return_type),
+        ));
+    }
+    if (class_name.eq_ignore_ascii_case("DateTime")
+        || class_name.eq_ignore_ascii_case("DateTimeImmutable"))
+        && method_name.eq_ignore_ascii_case("diff")
+    {
+        return Some(core_method_signature_from_reflection_params(
+            reflection_internal_datetime_interface_diff_params(),
+            Some("DateInterval"),
+        ));
+    }
+    if class_name.eq_ignore_ascii_case("DateTimeZone")
+        && method_name.eq_ignore_ascii_case("getTransitions")
+    {
+        return Some(core_method_signature_from_reflection_params(
+            vec![
+                reflection_internal_optional_global_constant_int_param(
+                    "timestampBegin",
+                    "PHP_INT_MIN",
+                ),
+                reflection_internal_optional_int_param("timestampEnd", 2_147_483_647),
+            ],
+            Some("array|false"),
+        ));
+    }
+    if class_name.eq_ignore_ascii_case("DateTimeZone")
+        && method_name.eq_ignore_ascii_case("listIdentifiers")
+    {
+        return Some(core_method_signature_from_reflection_params(
+            vec![
+                reflection_internal_optional_class_constant_int_param(
+                    "timezoneGroup",
+                    "DateTimeZone",
+                    "ALL",
+                ),
+                reflection_internal_optional_null_param("countryCode", "?string"),
+            ],
+            Some("array"),
+        ));
+    }
+    None
+}
+
+fn core_internal_interface_method_signature(
+    interface_name: &str,
+    method_lookup_name: &str,
+) -> Option<(&'static str, MethodSignature)> {
+    if interface_name.eq_ignore_ascii_case("DateTimeInterface")
+        && method_lookup_name.eq_ignore_ascii_case("diff")
+    {
+        return Some((
+            "diff",
+            core_method_signature_from_reflection_params(
+                reflection_internal_datetime_interface_diff_params(),
+                Some("DateInterval"),
+            ),
+        ));
+    }
+    None
+}
+
+fn core_method_signature_from_reflection_params(
+    params: Vec<ReflectionParameterMetadata>,
+    return_type: Option<&str>,
+) -> MethodSignature {
+    let params = params
+        .into_iter()
+        .map(parameter_signature_from_reflection_metadata)
+        .collect::<Vec<_>>();
+    MethodSignature {
+        required_params: required_parameter_signature_count(&params),
+        params,
+        static_variables: Vec::new(),
+        return_type: return_type.map(str::to_string),
+        returns_by_reference: false,
+        file_name: None,
+        start_line: 0,
+        end_line: 0,
+        doc_comment: None,
+        attributes: Vec::new(),
+        is_deprecated: false,
+    }
+}
+
+fn parameter_signature_from_reflection_metadata(
+    param: ReflectionParameterMetadata,
+) -> ParameterSignature {
+    ParameterSignature {
+        name: param.name,
+        type_decl: param.type_decl,
+        by_reference: param.by_reference,
+        is_variadic: param.is_variadic,
+        default: param.default,
+        attributes: param.attributes,
+    }
+}
+
+fn required_parameter_signature_count(params: &[ParameterSignature]) -> usize {
+    params
+        .iter()
+        .take_while(|param| param.default.is_none() && !param.is_variadic)
+        .count()
+}
+
 fn reflection_internal_datetime_set_time_params() -> Vec<ReflectionParameterMetadata> {
     vec![
         reflection_internal_param("hour", "int"),
         reflection_internal_param("minute", "int"),
         reflection_internal_optional_int_param("second", 0),
         reflection_internal_optional_int_param("microsecond", 0),
+    ]
+}
+
+fn reflection_internal_datetime_create_from_format_params() -> Vec<ReflectionParameterMetadata> {
+    vec![
+        reflection_internal_param("format", "string"),
+        reflection_internal_param("datetime", "string"),
+        reflection_internal_optional_null_param("timezone", "?DateTimeZone"),
+    ]
+}
+
+fn reflection_internal_datetime_interface_diff_params() -> Vec<ReflectionParameterMetadata> {
+    vec![
+        reflection_internal_param("targetObject", "DateTimeInterface"),
+        reflection_internal_optional_bool_param("absolute", false),
     ]
 }
 
