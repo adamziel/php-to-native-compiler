@@ -4,6 +4,17 @@
 
 Implemented:
 
+- Accepted checkpoint `d22bef26` as the current public PHPT score source after
+  the replacement full pinned php-src gate completed with zero
+  latest-published PASS regressions. The public-comparable score is now
+  `6396 / 20294 = 31.52%`, up from `6265 / 20294 = 30.87%` at checkpoint
+  `dcd07a3c`. The accepted gate evidence is
+  `state/logs/phpt-full-current-score-20260603T082116Z-php-src-f97ff59-public-d22bef26-source-d22bef26`;
+  aggregate counts were `6396` passed, `12624` failed, `2755` skipped, `16`
+  xfailed, `539` borked, and `1` warned. The normalized PASS regression
+  comparison was `6392` current passes vs. `6261` baseline passes with `0`
+  regressions, and the invalid-proof-marker summary reported `0` hits.
+
 - Accepted checkpoint `dcd07a3c` as the current public PHPT score source after
   the replacement full pinned php-src gate completed with zero
   latest-published PASS regressions. The public-comparable score is now
