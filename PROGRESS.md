@@ -1,13 +1,13 @@
 # PHP Native Compiler PHPT Progress
 
-Updated: 2026-06-04 00:48 CEST
+Updated: 2026-06-04 01:02 CEST
 
 Primary/public branch: `origin/master`
 Latest accepted public-score source:
-`64d95b6d3dda2152d54ae7c63b09d13fcce1862a fix: keep date diff regression fast`
+`fd09b99711d7d61dcec71bff66cde632e9d70871 fix: parse semi-reserved class constants`
 
 Semantic source for current published score:
-`64d95b6d3dda2152d54ae7c63b09d13fcce1862a fix: keep date diff regression fast`
+`fd09b99711d7d61dcec71bff66cde632e9d70871 fix: parse semi-reserved class constants`
 
 Public PHPT metric:
 
@@ -16,48 +16,48 @@ Public PHPT metric:
 Pinned denominator: `20294` total pinned runnable php-src PHPTs. Raw runner
 denominators that exclude BORKED rows are not public progress.
 
-Current public score: **6628 / 20294 pinned runnable PHPTs = 32.66%**.
+Current public score: **7015 / 20294 pinned runnable PHPTs = 34.57%**.
 
 Latest pushed source checkpoint:
-`fd09b99711d7d61dcec71bff66cde632e9d70871 fix: parse semi-reserved class constants`
+`627ff63ed439bfca5cb3e42a74a3d6f2d718aa3b fix: report forbidden enum members`
 
-The accepted source checkpoint chain through `64d95b6d` has been pushed to
-`origin/master` and is now reflected in the public score above. The current
-score gate converted 10 score-relevant post-`f9927a95` source commits into a
-public PHPT movement of `6498 -> 6628` passed pinned rows, a net gain of `130`
-public PHPT passes, with zero latest-published PASS regressions.
+The accepted source checkpoint chain through `fd09b997` has been pushed to
+`origin/master` and is now reflected in the public score above. The completed
+score gate converted the post-`64d95b6d` source chain into a public PHPT
+movement of `6628 -> 7015` passed pinned rows, a net gain of `387` public PHPT
+passes, with zero latest-published PASS regressions.
 
 Unpublished source progress since the accepted public score source:
 
-- Current source head is `fd09b99711d7d61dcec71bff66cde632e9d70871`
-  (`fix: parse semi-reserved class constants`), pushed to `origin/master`.
-- There are `52` commits after the accepted public-score source; `50` are
-  score-relevant, touching `37` score-relevant paths.
+- Current source head is `627ff63ed439bfca5cb3e42a74a3d6f2d718aa3b`
+  (`fix: report forbidden enum members`), pushed to `origin/master`.
+- There are `2` commits after the accepted public-score source; `1` is
+  score-relevant, touching `4` score-relevant paths.
 - Integrated focused selected-PHPT proof since the latest accepted public gate
-  totals `272` selected rows across `50` integrated artifacts. These are local
+  totals `16` selected rows across `1` integrated artifact. These are local
   source/staging facts, not a public score update.
-- The newest static reflection source packet moved selected PHPT
-  `0/5 -> 5/5` for
-  `ReflectionClass_getStaticPropertyValue_002.phpt`,
-  `ReflectionClass_setStaticPropertyValue_001.phpt`,
-  `ReflectionClass_setStaticPropertyValue_002.phpt`,
-  `ReflectionClass_setStaticPropertyValue_003.phpt`, and
-  `ReflectionProperty_typed_static.phpt`.
-- The subsequent constant-attribute source packet moved selected PHPT
-  `0/12 -> 12/12`; the DateTime mutation packet moved selected PHPT
-  `0/10 -> 10/10`; and the semi-reserved class-constant parser repair moved
-  the active latest-published PASS regression
-  `Zend/tests/grammar/semi_reserved_005.phpt` from `0/1 -> 1/1`.
-- The prior completed full gate, on source `8fa00e0e`, measured blocked
-  comparable evidence at `6986 / 20294`, but publication was blocked by
-  `semi_reserved_005.phpt`. That blocker is now repaired in source
-  `fd09b997`.
-- An exact-current full pinned PHPT gate is running on `fd09b997`:
-  `phpt-full-current-score-20260603T224452Z-php-src-f97ff59-public-fd09b997-source-fd09b997`.
-  It is currently `RUNNING / BUILDING-RELEASE`; publication waits for this
-  gate to finish with zero latest-published PASS regressions.
+- The newest enum forbidden-member diagnostics source packet moved selected
+  PHPT `0/16 -> 16/16` for
+  `Zend/tests/enum/__clone.phpt`, `__get.phpt`, `__isset.phpt`,
+  `__serialize.phpt`, `__set.phpt`, `__set_state.phpt`, `__sleep.phpt`,
+  `__toString.phpt`, `__unserialize.phpt`, `__unset.phpt`, `__wakeup.phpt`,
+  `no-abstract.phpt`, `no-constructors.phpt`, `no-destruct.phpt`,
+  `no-properties.phpt`, and `no-static-properties.phpt`. It also preserved the
+  repaired `Zend/tests/grammar/semi_reserved_005.phpt` row and a seven-row
+  latest-published PASS scout.
+- No post-`627ff63` full pinned PHPT gate has run yet. The next score gate
+  should cover this enum packet and any later focused selected-PHPT source
+  deltas after the cadence/stale window or a larger batch justifies it.
 
-Accepted public gate: checkpoint `64d95b6d` completed the pinned full PHPT
+Accepted public gate: checkpoint `fd09b997` completed the pinned full PHPT
+gate with `7015 / 20294 = 34.57%` and zero latest-published PASS regressions
+against the `64d95b6d` baseline. Full gate evidence is in
+`state/logs/phpt-full-current-score-20260603T224452Z-php-src-f97ff59-public-fd09b997-source-fd09b997`;
+the aggregate had `7015` passed rows, `7011` normalized current passes, and
+`0` PASS regressions. The invalid-proof-marker summary is not a publication
+blocker in this accepted gate.
+
+Previous accepted public gate: checkpoint `64d95b6d` completed the pinned full PHPT
 gate with `6628 / 20294 = 32.66%` and zero latest-published PASS regressions
 against the `f9927a95` baseline. Full gate evidence is in
 `state/logs/phpt-full-current-score-20260603T121455Z-php-src-f97ff59-public-64d95b6d-source-64d95b6d`;
