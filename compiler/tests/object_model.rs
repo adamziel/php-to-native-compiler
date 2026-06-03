@@ -8625,7 +8625,7 @@ echo "arrow|", $arrowReflection->getName(), "|", $arrowReflection->getNumberOfPa
 
     assert_eq!(
         execution.stdout,
-        "fn|{closure}|ReflectionFunction|2/1|0|1|string\nsource|tests/fixtures/milestone1587/closure_reflection_metadata.php|2|2|1\nparam0|hook|0|0||string|{closure}\nparam1|priority|1|1|10||{closure}\narrow|{closure}|1/1|int|13|13"
+        "fn|{closure:tests/fixtures/milestone1587/closure_reflection_metadata.php:2}|ReflectionFunction|2/1|0|1|string\nsource|tests/fixtures/milestone1587/closure_reflection_metadata.php|2|2|1\nparam0|hook|0|0||string|{closure:tests/fixtures/milestone1587/closure_reflection_metadata.php:2}\nparam1|priority|1|1|10||{closure:tests/fixtures/milestone1587/closure_reflection_metadata.php:2}\narrow|{closure:tests/fixtures/milestone1587/closure_reflection_metadata.php:13}|1/1|int|13|13"
     );
     assert_eq!(execution.exit_code, 0);
 }

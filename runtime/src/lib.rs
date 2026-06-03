@@ -32514,6 +32514,7 @@ impl PhpClassTable {
             "isUserDefined",
             "isClosure",
             "isAnonymous",
+            "isStatic",
             "isDeprecated",
             "getExtensionName",
             "getExtension",
@@ -32527,7 +32528,11 @@ impl PhpClassTable {
             "getNumberOfRequiredParameters",
             "isVariadic",
             "getStaticVariables",
+            "getClosureUsedVariables",
             "getClosure",
+            "getClosureThis",
+            "getClosureScopeClass",
+            "getClosureCalledClass",
             "hasReturnType",
             "getReturnType",
             "returnsReference",
@@ -33772,9 +33777,14 @@ impl PhpClassTable {
             .expect("declared Random\\IntervalBoundary class id should resolve")
             .add_property(PhpPropertyMetadata::instance("name", Visibility::Public))
             .expect("Random\\IntervalBoundary core metadata should not duplicate properties");
-        classes
+        let closure_id = classes
             .declare_class("Closure")
             .expect("core class table should contain Random\\IntervalBoundary before Closure");
+        classes
+            .get_mut(closure_id)
+            .expect("declared Closure class id should resolve")
+            .add_method(PhpMethodMetadata::instance("__invoke", Visibility::Public))
+            .expect("Closure core metadata should not duplicate methods");
         classes
     }
 

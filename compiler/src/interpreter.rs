@@ -1038,6 +1038,7 @@ struct ReflectionClassState {
     name: String,
     kind: ReflectionClassKind,
     class_id: Option<ClassId>,
+    closure_id: Option<i64>,
     file_name: Option<String>,
     start_line: usize,
     end_line: usize,
@@ -1073,6 +1074,10 @@ struct ReflectionFunctionState {
     is_internal: bool,
     is_closure: bool,
     closure_id: Option<i64>,
+    is_static: bool,
+    closure_scope_class_id: Option<ClassId>,
+    closure_called_class_id: Option<ClassId>,
+    closure_this: Option<PhpObject>,
     file_name: Option<String>,
     start_line: usize,
     end_line: usize,
@@ -1091,6 +1096,7 @@ struct ReflectionMethodState {
     declaring_class_name: String,
     declaring_kind: ReflectionClassKind,
     declaring_class_id: Option<ClassId>,
+    closure_id: Option<i64>,
     name: String,
     file_name: Option<String>,
     start_line: usize,
@@ -47029,7 +47035,7 @@ impl Interpreter {
         }
 
         let target = self.evaluate(&args[0], scope)?;
-        if !matches!(target, Value::Object(_)) {
+        if !matches!(target, Value::Object(_) | Value::Closure(_)) {
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_object_instantiation(
@@ -47113,12 +47119,37 @@ impl Interpreter {
             name,
             kind,
             class_id,
+            closure_id: None,
             file_name: metadata.and_then(|metadata| metadata.file_name.clone()),
             start_line: metadata.map(|metadata| metadata.start_line).unwrap_or(0),
             end_line: metadata.map(|metadata| metadata.end_line).unwrap_or(0),
             doc_comment: metadata.and_then(|metadata| metadata.doc_comment.clone()),
             attributes,
         }
+    }
+
+    fn reflection_closure_class_state(
+        &self,
+        closure_id: i64,
+        span: Span,
+    ) -> CompileResult<ReflectionClassState> {
+        let class_id = self.classes.lookup_class_id("Closure").ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::undefined_class("Closure core placeholder"),
+            )
+        })?;
+        Ok(ReflectionClassState {
+            name: "Closure".to_string(),
+            kind: ReflectionClassKind::Class,
+            class_id: Some(class_id),
+            closure_id: Some(closure_id),
+            file_name: None,
+            start_line: 0,
+            end_line: 0,
+            doc_comment: None,
+            attributes: core_class_attributes_for_reflection("Closure"),
+        })
     }
 
     fn resolve_reflection_class_target(
@@ -47137,6 +47168,7 @@ impl Interpreter {
                     name: class.name().to_string(),
                     kind: ReflectionClassKind::Class,
                     class_id: Some(object.class_id()),
+                    closure_id: None,
                     file_name: metadata.and_then(|metadata| metadata.file_name.clone()),
                     start_line: metadata.map(|metadata| metadata.start_line).unwrap_or(0),
                     end_line: metadata.map(|metadata| metadata.end_line).unwrap_or(0),
@@ -47146,6 +47178,7 @@ impl Interpreter {
                         .unwrap_or_else(|| core_class_attributes_for_reflection(class.name())),
                 })
             }
+            Value::Closure(closure) => self.reflection_closure_class_state(closure.id(), span),
             Value::String(name) => {
                 if !self.class_like_exists(name, AutoloadKind::Any) {
                     self.run_autoload_callbacks(name, AutoloadKind::Any, span)?;
@@ -47156,6 +47189,7 @@ impl Interpreter {
                         name: class.name().to_string(),
                         kind: ReflectionClassKind::Class,
                         class_id: Some(class.id()),
+                        closure_id: None,
                         file_name: metadata.and_then(|metadata| metadata.file_name.clone()),
                         start_line: metadata.map(|metadata| metadata.start_line).unwrap_or(0),
                         end_line: metadata.map(|metadata| metadata.end_line).unwrap_or(0),
@@ -47173,6 +47207,7 @@ impl Interpreter {
                         name: interface.name.clone(),
                         kind: ReflectionClassKind::Interface,
                         class_id: None,
+                        closure_id: None,
                         file_name: metadata.and_then(|metadata| metadata.file_name.clone()),
                         start_line: metadata.map(|metadata| metadata.start_line).unwrap_or(0),
                         end_line: metadata.map(|metadata| metadata.end_line).unwrap_or(0),
@@ -47190,6 +47225,7 @@ impl Interpreter {
                         name: trait_decl.name.clone(),
                         kind: ReflectionClassKind::Trait,
                         class_id: None,
+                        closure_id: None,
                         file_name: metadata.and_then(|metadata| metadata.file_name.clone()),
                         start_line: metadata.map(|metadata| metadata.start_line).unwrap_or(0),
                         end_line: metadata.map(|metadata| metadata.end_line).unwrap_or(0),
@@ -47425,6 +47461,12 @@ impl Interpreter {
         method_name: &str,
         span: Span,
     ) -> CompileResult<ReflectionMethodState> {
+        if let Some(closure_id) = class.closure_id {
+            if method_name.eq_ignore_ascii_case("__invoke") {
+                return self.reflection_closure_invoke_method_state(closure_id, span);
+            }
+        }
+
         match class.kind {
             ReflectionClassKind::Class => {
                 let Some(class_id) = class.class_id else {
@@ -47470,6 +47512,7 @@ impl Interpreter {
                     declaring_class_name,
                     declaring_kind: ReflectionClassKind::Class,
                     declaring_class_id: Some(declaring_class_id),
+                    closure_id: None,
                     name: resolved_method_name,
                     file_name: signature.and_then(|signature| signature.file_name.clone()),
                     start_line: signature.map(|signature| signature.start_line).unwrap_or(0),
@@ -47515,6 +47558,7 @@ impl Interpreter {
                             declaring_class_name: declaring_interface,
                             declaring_kind: ReflectionClassKind::Interface,
                             declaring_class_id: None,
+                            closure_id: None,
                             name: method.function.name.clone(),
                             file_name: metadata.and_then(|metadata| metadata.file_name.clone()),
                             start_line: method.function.span.line,
@@ -47568,6 +47612,7 @@ impl Interpreter {
                             declaring_class_name: trait_decl.name.clone(),
                             declaring_kind: ReflectionClassKind::Trait,
                             declaring_class_id: None,
+                            closure_id: None,
                             name: method.function.name.clone(),
                             file_name: metadata.and_then(|metadata| metadata.file_name.clone()),
                             start_line: method.function.span.line,
@@ -47601,6 +47646,55 @@ impl Interpreter {
                 ))
             }
         }
+    }
+
+    fn reflection_closure_invoke_method_state(
+        &self,
+        closure_id: i64,
+        span: Span,
+    ) -> CompileResult<ReflectionMethodState> {
+        let closure_class_id = self.classes.lookup_class_id("Closure").ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::undefined_class("Closure core placeholder"),
+            )
+        })?;
+        let function = self
+            .closure_reflection_functions
+            .get(&closure_id)
+            .cloned()
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "Closure::__invoke reflection",
+                        "closure reflection metadata is missing in the current subset",
+                    ),
+                )
+            })?;
+        Ok(ReflectionMethodState {
+            reflected_class_id: Some(closure_class_id),
+            declaring_class_name: "Closure".to_string(),
+            declaring_kind: ReflectionClassKind::Class,
+            declaring_class_id: Some(closure_class_id),
+            closure_id: Some(closure_id),
+            name: "__invoke".to_string(),
+            file_name: function.file_name,
+            start_line: function.start_line,
+            end_line: function.end_line,
+            doc_comment: function.doc_comment,
+            visibility: Visibility::Public,
+            is_static: false,
+            is_abstract: false,
+            is_final: false,
+            is_internal: false,
+            return_type: function.return_type,
+            returns_by_reference: function.returns_by_reference,
+            params: function.params,
+            static_variables: function.static_variables,
+            is_deprecated: function.is_deprecated,
+            attributes: function.attributes,
+        })
     }
 
     fn instantiate_reflection_parameter(
@@ -55206,6 +55300,15 @@ impl Interpreter {
         let target_value = self.evaluate(target, caller_scope)?;
         let object = match target_value {
             Value::Object(object) => object,
+            Value::Closure(closure) if method_name.eq_ignore_ascii_case("__invoke") => {
+                return self.invoke_closure_value_direct_with_array_copy_source(
+                    closure,
+                    args,
+                    span,
+                    caller_scope,
+                    "Closure::__invoke",
+                );
+            }
             other => {
                 return Err(Diagnostic::new(
                     Phase::Runtime,
@@ -55775,7 +55878,7 @@ impl Interpreter {
             "__construct" if object.class_name().eq_ignore_ascii_case("ReflectionObject") => {
                 expect_expr_arity("ReflectionObject::__construct", args.len(), 1, span)?;
                 let target = self.evaluate(&args[0], caller_scope)?;
-                if !matches!(target, Value::Object(_)) {
+                if !matches!(target, Value::Object(_) | Value::Closure(_)) {
                     return Err(runtime_error(
                         span,
                         RuntimeError::unsupported_call(
@@ -55977,6 +56080,7 @@ impl Interpreter {
                         name: parent_name,
                         kind: ReflectionClassKind::Class,
                         class_id: Some(parent_id),
+                        closure_id: None,
                         file_name: self
                             .class_source_metadata
                             .get(&parent_id)
@@ -56764,9 +56868,16 @@ impl Interpreter {
         &self,
         state: &ReflectionClassState,
         filter: Option<i64>,
-        _span: Span,
+        span: Span,
     ) -> CompileResult<Vec<ReflectionMethodState>> {
         let mut methods = Vec::new();
+        if let Some(closure_id) = state.closure_id {
+            let method_state = self.reflection_closure_invoke_method_state(closure_id, span)?;
+            if reflection_method_matches_filter(&method_state, filter) {
+                methods.push(method_state);
+            }
+            return Ok(methods);
+        }
         match state.kind {
             ReflectionClassKind::Class => {
                 let Some(class_id) = state.class_id else {
@@ -57181,6 +57292,9 @@ impl Interpreter {
     }
 
     fn reflection_class_has_method(&self, state: &ReflectionClassState, method_name: &str) -> bool {
+        if state.closure_id.is_some() && method_name.eq_ignore_ascii_case("__invoke") {
+            return true;
+        }
         match state.kind {
             ReflectionClassKind::Class => state.class_id.is_some_and(|class_id| {
                 self.resolve_instance_method(class_id, method_name)
@@ -57447,6 +57561,7 @@ impl Interpreter {
             declaring_class_name,
             declaring_kind: ReflectionClassKind::Class,
             declaring_class_id: Some(declaring_class_id),
+            closure_id: None,
             name: method.name().to_string(),
             file_name: signature.and_then(|signature| signature.file_name.clone()),
             start_line: signature.map(|signature| signature.start_line).unwrap_or(0),
@@ -57483,6 +57598,7 @@ impl Interpreter {
             declaring_class_name: declaring_interface,
             declaring_kind: ReflectionClassKind::Interface,
             declaring_class_id: None,
+            closure_id: None,
             name: method.function.name.clone(),
             file_name: metadata.and_then(|metadata| metadata.file_name.clone()),
             start_line: method.function.span.line,
@@ -57519,6 +57635,7 @@ impl Interpreter {
             declaring_class_name: trait_decl.name.clone(),
             declaring_kind: ReflectionClassKind::Trait,
             declaring_class_id: None,
+            closure_id: None,
             name: method.function.name.clone(),
             file_name: metadata.and_then(|metadata| metadata.file_name.clone()),
             start_line: method.function.span.line,
@@ -57686,6 +57803,60 @@ impl Interpreter {
         Ok(Value::Array(array))
     }
 
+    fn reflection_closure_used_variables_array(&self, state: &ReflectionFunctionState) -> Value {
+        let mut array = PhpArray::new();
+        let Some(closure_id) = state.closure_id else {
+            return Value::Array(array);
+        };
+        let Some(closure) = self.closure_values.get(&closure_id) else {
+            return Value::Array(array);
+        };
+        for capture in closure.captures() {
+            let key = ArrayKey::String(capture.name().to_string());
+            if capture.by_reference() {
+                array.insert_reference(key, capture.cell());
+            } else {
+                array.insert(key, capture.value());
+            }
+        }
+        Value::Array(array)
+    }
+
+    fn reflection_function_bound_variable_names(
+        &self,
+        state: &ReflectionFunctionState,
+    ) -> Vec<String> {
+        let mut names = Vec::new();
+        if let Some(closure_id) = state.closure_id {
+            if let Some(closure) = self.closure_values.get(&closure_id) {
+                names.extend(
+                    closure
+                        .captures()
+                        .iter()
+                        .map(|capture| capture.name().to_string()),
+                );
+            }
+        }
+        names.extend(state.static_variables.iter().map(|(name, _)| name.clone()));
+        names
+    }
+
+    fn create_reflection_class_object_for_class_id(
+        &mut self,
+        class_id: ClassId,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let class_name = self
+            .classes
+            .get(class_id)
+            .expect("reflected class id should resolve")
+            .name()
+            .to_string();
+        let state =
+            self.reflection_class_state_for(class_name, ReflectionClassKind::Class, Some(class_id));
+        self.create_reflection_class_object(state, span)
+    }
+
     fn call_reflection_function_method(
         &mut self,
         object: PhpObject,
@@ -57723,7 +57894,7 @@ impl Interpreter {
             }
             "getname" => {
                 expect_expr_arity("ReflectionFunction::getName", args.len(), 0, span)?;
-                Ok(Value::String(state.name))
+                Ok(Value::String(reflection_function_display_name(&state)))
             }
             "getshortname" => {
                 expect_expr_arity("ReflectionFunction::getShortName", args.len(), 0, span)?;
@@ -57752,6 +57923,10 @@ impl Interpreter {
             "isanonymous" => {
                 expect_expr_arity("ReflectionFunction::isAnonymous", args.len(), 0, span)?;
                 Ok(Value::Bool(state.is_closure))
+            }
+            "isstatic" => {
+                expect_expr_arity("ReflectionFunction::isStatic", args.len(), 0, span)?;
+                Ok(Value::Bool(state.is_static))
             }
             "getextensionname" => {
                 expect_expr_arity("ReflectionFunction::getExtensionName", args.len(), 0, span)?;
@@ -57860,6 +58035,15 @@ impl Interpreter {
                 )?;
                 self.reflection_static_variables_array(&state.static_variables)
             }
+            "getclosureusedvariables" => {
+                expect_expr_arity(
+                    "ReflectionFunction::getClosureUsedVariables",
+                    args.len(),
+                    0,
+                    span,
+                )?;
+                Ok(self.reflection_closure_used_variables_array(&state))
+            }
             "getclosure" => {
                 expect_expr_arity("ReflectionFunction::getClosure", args.len(), 0, span)?;
                 if state.is_closure {
@@ -57874,6 +58058,34 @@ impl Interpreter {
                         .unwrap_or(Value::Null));
                 }
                 Ok(Value::String(state.name))
+            }
+            "getclosurethis" => {
+                expect_expr_arity("ReflectionFunction::getClosureThis", args.len(), 0, span)?;
+                Ok(state.closure_this.map(Value::Object).unwrap_or(Value::Null))
+            }
+            "getclosurescopeclass" => {
+                expect_expr_arity(
+                    "ReflectionFunction::getClosureScopeClass",
+                    args.len(),
+                    0,
+                    span,
+                )?;
+                let Some(class_id) = state.closure_scope_class_id else {
+                    return Ok(Value::Null);
+                };
+                self.create_reflection_class_object_for_class_id(class_id, span)
+            }
+            "getclosurecalledclass" => {
+                expect_expr_arity(
+                    "ReflectionFunction::getClosureCalledClass",
+                    args.len(),
+                    0,
+                    span,
+                )?;
+                let Some(class_id) = state.closure_called_class_id else {
+                    return Ok(Value::Null);
+                };
+                self.create_reflection_class_object_for_class_id(class_id, span)
             }
             "hasreturntype" => {
                 expect_expr_arity("ReflectionFunction::hasReturnType", args.len(), 0, span)?;
@@ -57955,6 +58167,33 @@ impl Interpreter {
         } else {
             "user"
         };
+        if state.is_closure {
+            let name = reflection_function_display_name(state);
+            let mut output = format!("Closure [ <{kind}> function {name} ] {{\n");
+            if !state.is_internal {
+                if let Some(file_name) = state.file_name.as_deref() {
+                    output.push_str(&format!(
+                        "  @@ {file_name} {} - {}\n",
+                        state.start_line, state.end_line
+                    ));
+                }
+            }
+            let bound_variables = self.reflection_function_bound_variable_names(state);
+            if !bound_variables.is_empty() {
+                output.push('\n');
+                output.push_str(&format!(
+                    "  - Bound Variables [{}] {{\n",
+                    bound_variables.len()
+                ));
+                for (position, name) in bound_variables.iter().enumerate() {
+                    output.push_str(&format!("      Variable #{position} [ ${name} ]\n"));
+                }
+                output.push_str("  }\n");
+            }
+            output.push_str("}\n");
+            return Ok(output);
+        }
+
         let mut output = format!("Function [ <{kind}> function {} ] {{\n", state.name);
         if !state.is_internal {
             if let Some(file_name) = state.file_name.as_deref() {
@@ -58265,6 +58504,30 @@ impl Interpreter {
                             args.len(),
                         ),
                     ));
+                }
+                if let Some(closure_id) = state.closure_id {
+                    if let Some(target_expr) = args.first() {
+                        let target = self.evaluate(target_expr, caller_scope)?;
+                        let Value::Closure(closure) = target else {
+                            return Err(runtime_error(
+                                target_expr.span(),
+                                RuntimeError::unsupported_call(
+                                    "ReflectionMethod::getClosure",
+                                    format!(
+                                        "closure method requires closure target, got {}",
+                                        target.type_name()
+                                    ),
+                                ),
+                            ));
+                        };
+                        return Ok(Value::Closure(closure));
+                    }
+                    return Ok(self
+                        .closure_values
+                        .get(&closure_id)
+                        .cloned()
+                        .map(Value::Closure)
+                        .unwrap_or(Value::Null));
                 }
                 let mut callable = PhpArray::new();
                 if state.is_static {
@@ -65807,6 +66070,41 @@ impl Interpreter {
         }
 
         let id = self.allocate_object_id();
+        let bound_context = if !is_static {
+            if let Some(Value::Object(this_object)) = scope.read_storage_named("this") {
+                let class_context = self
+                    .class_context
+                    .last()
+                    .copied()
+                    .or_else(|| Some(this_object.class_id()));
+                let called_class_context = self
+                    .called_class_context
+                    .last()
+                    .copied()
+                    .or_else(|| Some(this_object.class_id()));
+                Some(ClosureBoundContext {
+                    this_object,
+                    class_context,
+                    called_class_context,
+                })
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        let closure_this = bound_context
+            .as_ref()
+            .map(|context| context.this_object.clone());
+        let closure_scope_class_id = bound_context
+            .as_ref()
+            .and_then(|context| context.class_context)
+            .or_else(|| self.class_context.last().copied());
+        let closure_called_class_id = bound_context
+            .as_ref()
+            .and_then(|context| context.called_class_context)
+            .or_else(|| self.called_class_context.last().copied())
+            .or(closure_scope_class_id);
         self.closure_reflection_functions.insert(
             id,
             reflection_function_state_from_closure(
@@ -65816,6 +66114,10 @@ impl Interpreter {
                 returns_by_reference,
                 body,
                 attributes,
+                is_static,
+                closure_scope_class_id,
+                closure_called_class_id,
+                closure_this,
                 self.source_file.clone(),
                 span,
             ),
@@ -65839,27 +66141,8 @@ impl Interpreter {
         );
         let closure = PhpClosure::new(id, is_arrow, captured_values);
         self.closure_values.insert(id, closure.clone());
-        if !is_static {
-            if let Some(Value::Object(this_object)) = scope.read_storage_named("this") {
-                let class_context = self
-                    .class_context
-                    .last()
-                    .copied()
-                    .or_else(|| Some(this_object.class_id()));
-                let called_class_context = self
-                    .called_class_context
-                    .last()
-                    .copied()
-                    .or_else(|| Some(this_object.class_id()));
-                self.closure_bound_contexts.insert(
-                    id,
-                    ClosureBoundContext {
-                        this_object,
-                        class_context,
-                        called_class_context,
-                    },
-                );
-            }
+        if let Some(bound_context) = bound_context {
+            self.closure_bound_contexts.insert(id, bound_context);
         }
         if !alias_captures.is_empty() {
             self.closure_alias_captures.insert(id, alias_captures);
@@ -115926,6 +116209,10 @@ fn reflection_function_state_from_decl(
         is_internal: false,
         is_closure: false,
         closure_id: None,
+        is_static: false,
+        closure_scope_class_id: None,
+        closure_called_class_id: None,
+        closure_this: None,
         static_variables: reflection_static_variables_from_body(&function.body),
         file_name,
         start_line: function.span.line,
@@ -115946,6 +116233,10 @@ fn reflection_function_state_from_closure(
     returns_by_reference: bool,
     body: &[Stmt],
     attributes: &[AttributeDecl],
+    is_static: bool,
+    closure_scope_class_id: Option<ClassId>,
+    closure_called_class_id: Option<ClassId>,
+    closure_this: Option<PhpObject>,
     file_name: Option<String>,
     span: Span,
 ) -> ReflectionFunctionState {
@@ -115954,6 +116245,10 @@ fn reflection_function_state_from_closure(
         is_internal: false,
         is_closure: true,
         closure_id: Some(closure_id),
+        is_static,
+        closure_scope_class_id,
+        closure_called_class_id,
+        closure_this,
         static_variables: reflection_static_variables_from_body(body),
         file_name,
         start_line: span.line,
@@ -115968,10 +116263,25 @@ fn reflection_function_state_from_closure(
 }
 
 fn reflection_closure_end_line(body: &[Stmt], span: Span) -> usize {
-    body.iter()
+    let body_end_line = body
+        .iter()
         .map(|stmt| stmt.span().line)
         .max()
-        .unwrap_or(span.line)
+        .unwrap_or(span.line);
+    if body_end_line > span.line {
+        body_end_line + 1
+    } else {
+        body_end_line
+    }
+}
+
+fn reflection_function_display_name(state: &ReflectionFunctionState) -> String {
+    if state.is_closure {
+        if let Some(file_name) = state.file_name.as_deref() {
+            return format!("{{closure:{file_name}:{}}}", state.start_line);
+        }
+    }
+    state.name.clone()
 }
 
 fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionState> {
@@ -117281,6 +117591,10 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
         is_internal: true,
         is_closure: false,
         closure_id: None,
+        is_static: false,
+        closure_scope_class_id: None,
+        closure_called_class_id: None,
+        closure_this: None,
         static_variables: Vec::new(),
         file_name: None,
         start_line: 0,

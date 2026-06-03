@@ -47279,6 +47279,42 @@ Next:
 
 Next:
 
+- Added a bounded closure reflection metadata slice for current closure values
+  in `phpc run`. `ReflectionFunction($closure)` now exposes
+  location-qualified closure names, closure static/scope/`$this` metadata,
+  used-variable arrays with by-reference capture entries, and closure-specific
+  `__toString()` source/bound-variable output. `ReflectionObject($closure)`,
+  `ReflectionMethod($closure, "__invoke")`, array-callable
+  `ReflectionParameter([$closure, "__invoke"], ...)`, and
+  `$closure->__invoke(...)` now use a request-local `Closure::__invoke`
+  signature derived from the closure body.
+- Focused PHPT proof moved the selected reflection/closure cluster from
+  pre-patch `0/9 PASS` to post-patch `9/9 PASS`:
+  `ext/reflection/tests/ReflectionFunction__toString_bound_variables.phpt`,
+  `ext/reflection/tests/ReflectionFunction_getClosureScopeClass.phpt`,
+  `ext/reflection/tests/ReflectionFunction_getClosureThis.phpt`,
+  `ext/reflection/tests/ReflectionFunction_getClosureUsedVariables.phpt`,
+  `ext/reflection/tests/closures_001.phpt`,
+  `ext/reflection/tests/closures_003.phpt`,
+  `ext/reflection/tests/closures_003_v1.phpt`,
+  `ext/reflection/tests/closures_004.phpt`, and
+  `ext/reflection/tests/closures_005.phpt`.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-output-function-metadata-124101 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo build -q -p phpc --bin phpc`;
+  `timeout 120 env CARGO_TARGET_DIR=/tmp/phpc-target-output-function-metadata-124101 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -q -p phpc --test object_model reflection_function_reflects_bounded_closure_metadata -- --exact`;
+  and the selected PHPT set above via lowercase `run-tests.php -p` with
+  `PHPC_BIN=/tmp/phpc-target-output-function-metadata-124101/debug/phpc`.
+  An earlier non-exact `cargo test -q -p phpc
+  reflection_function_reflects_bounded_closure_metadata` attempt was
+  terminated after it remained quiet for repeated polls.
+- `Closure::bind`/`bindTo`, `Closure::fromCallable()`, private-scope method
+  closures, exact `Closure` object identity/parity beyond current reflection
+  and invocation, typed parameter/return enforcement during reflected closure
+  invocation, named `invokeArgs()` semantics, reference returns, broader
+  reference/copy-on-write behavior, and native lowering remain unsupported.
+
+Next:
+
 - Added a focused mbstring output-buffer lane for the public
   `ext/mbstring/tests/mb_output_handler_pattern-01.phpt` through
   `mb_output_handler_pattern-10.phpt` rows. Output buffers now retain raw bytes

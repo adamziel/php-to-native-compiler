@@ -10688,19 +10688,29 @@
   covered case where the closure outlives its creating user function.
   Positional by-value invocation arguments remain the supported argument
   shape. The constructor also accepts current closure values and exposes
-  bounded metadata for closure name `{closure}`, source file/start/end lines,
-  false doc comments, parameter metadata, return type metadata, and false
-  by-reference-return status. Other internal functions, exact internal
+  bounded metadata for location-qualified closure names, source
+  file/start/end lines, false doc comments, parameter metadata, return type
+  metadata, static-closure status, closure scope/`$this` metadata, captured
+  `use`/implicit arrow variables through `getClosureUsedVariables()`, and
+  false by-reference-return status. Closure `__toString()` output covers
+  current source ranges plus captured/static bound-variable names.
+  `ReflectionObject($closure)` and `new ReflectionMethod($closure,
+  "__invoke")` expose a request-local `Closure::__invoke` metadata object
+  carrying the current closure signature, and `$closure->__invoke(...)`
+  dispatches through the same direct closure invocation path as
+  `$closure(...)`. Other internal functions, exact internal
   default metadata beyond that named slice, builtin argument shapes not
   supported by direct calls such as `trim()` custom masks, recursive
   `count()` mode, and the third by-reference output argument of
   `is_callable()`, by-reference capture of array-offset,
   object-property, magic-property, or `ArrayAccess` alias roots outside the
   direct invocation support documented for ordinary closures, closure
-  scope/class rebinding, captured-variable reflection, typed parameter/return
-  declarations at invocation time, `invokeArgs()` named-argument semantics for
-  string keys, reference returns, and broader argument/reference/COW behavior
-  remain unsupported for reflection invocation. `new ReflectionParameter($function,
+  scope/class rebinding, `Closure::bind`/`bindTo`,
+  `Closure::fromCallable()`, exact `Closure` object identity/parity beyond
+  current reflection and invocation, typed parameter/return declarations at
+  invocation time, `invokeArgs()` named-argument semantics for string keys,
+  reference returns, and broader argument/reference/COW behavior remain
+  unsupported for reflection invocation. `new ReflectionParameter($function,
   $parameter)` accepts a declared user function string, a supported internal
   function string, or a current closure value with an integer position or
   string parameter name; `getDeclaringFunction()` returns a bounded
@@ -12726,11 +12736,15 @@
   `strcmp`, `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `stripos`, `strrpos`, `strripos`,
   `substr`, `str_shuffle`, `printf`, `fprintf`, `sprintf`, `vprintf`, `vfprintf`, `implode`, `basename`, `dirname`, `number_format`, `defined`,
   `function_exists`, `get_current_user`, `posix_ctermid`, `posix_getpwuid`,
-  `posix_getgrgid`, `umask`, `getmypid`, and `php_sapi_name`. Closure metadata is supported for
-  current closure values. The supported
-  metadata methods are the name, file/start/end/doc-comment, parameter-list,
-  return-type, by-reference-return, extension, and stringification methods
-  documented above.
+  `posix_getgrgid`, `umask`, `getmypid`, and `php_sapi_name`. Closure metadata
+  is supported for current closure values. The supported metadata methods are
+  the location-qualified name, file/start/end/doc-comment, parameter-list,
+  return-type, by-reference-return, static-closure predicate, closure
+  scope/`$this`, captured used variables, extension, and stringification
+  methods documented above. Current closure values are also accepted by
+  `ReflectionObject`, `ReflectionMethod($closure, "__invoke")`, and array
+  callable `ReflectionParameter([$closure, "__invoke"], ...)` for the
+  request-local `Closure::__invoke` signature.
   `ReflectionParameter` currently supports only method parameters from that
   same metadata slice, declared user-function parameters named by string,
   supported internal-function parameters, and current closure parameters.
