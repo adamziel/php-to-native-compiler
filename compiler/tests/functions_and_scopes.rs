@@ -585,6 +585,49 @@ echo $formatter->value("2.5"), "|", takes_box(new ChildBox()), "|", $closure(12)
 }
 
 #[test]
+fn scalar_declaration_coercion_handles_stringable_and_nan_edges() {
+    let execution = run_source(
+        r#"<?php
+set_error_handler(function ($errno, $message) {
+    echo "warning:$message\n";
+    return true;
+});
+
+class StringCapable {
+    public function __toString() {
+        return "text";
+    }
+}
+
+$toString = function (string $value): string {
+    return $value;
+};
+$toBool = function (bool $value): bool {
+    return $value;
+};
+$toInt = function (int $value): int {
+    return $value;
+};
+
+echo $toString(new StringCapable()), "\n";
+var_dump($toBool(NAN));
+try {
+    $toInt(NAN);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "text\nwarning:unexpected NAN value was coerced to bool\nbool(true)\n{closure:Command line code:19}(): Argument #1 ($value) must be of type int, float given, called in Command line code on line 26\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn function_type_metadata_rejects_mismatched_values() {
     let execution = fatal_execution(
         r#"<?php

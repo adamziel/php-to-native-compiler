@@ -38954,10 +38954,15 @@ fn coerce_property_value_with_object_type_resolver_dyn(
         "int" => match &value {
             Value::Int(_) => Some(value.clone()),
             Value::Bool(value) => Some(Value::Int(if *value { 1 } else { 0 })),
-            Value::Float(value) => Some(Value::Int(*value as i64)),
-            Value::String(value) => parse_numeric_string(value).map(|number| match number {
-                Number::Int(value) => Value::Int(value),
-                Number::Float(value) => Value::Int(value as i64),
+            Value::Float(value) if !php_float_to_int_is_not_representable(*value) => {
+                Some(Value::Int(*value as i64))
+            }
+            Value::String(value) => parse_numeric_string(value).and_then(|number| match number {
+                Number::Int(value) => Some(Value::Int(value)),
+                Number::Float(value) if !php_float_to_int_is_not_representable(value) => {
+                    Some(Value::Int(value as i64))
+                }
+                Number::Float(_) => None,
             }),
             _ => None,
         },
@@ -60935,6 +60940,12 @@ mod tests {
         assert_eq!(
             coerce_property_value("string", Value::Bool(false), "Packet", "payload").unwrap(),
             Value::String(String::new())
+        );
+        assert_eq!(
+            coerce_property_value("int", Value::Float(f64::NAN), "Packet", "count")
+                .unwrap_err()
+                .message(),
+            "invalid property access: typed property Packet::$count expects int, got float"
         );
         assert_eq!(
             coerce_property_value("string", Value::Null, "Packet", "payload")

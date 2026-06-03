@@ -26507,7 +26507,9 @@ impl Interpreter {
             return message.to_string();
         }
         let callable = callable.strip_suffix("()").unwrap_or(callable);
-        if callable != frame.function_name {
+        let same_callable = callable == frame.function_name
+            || (frame.function_name == "{closure}" && callable.starts_with("{closure:"));
+        if !same_callable {
             return message.to_string();
         }
         let file = self
@@ -85621,12 +85623,21 @@ impl Interpreter {
         if matches!(value, Value::Null) && parameter_accepts_implicit_null(param) {
             return Ok(value);
         }
+        let strict_scalars = self.current_strict_types();
+        let callable = self.call_type_callable_name(function, class_context);
+        let value = self.coerce_stringable_object_for_exact_string_type_decl(
+            type_decl,
+            value,
+            strict_scalars,
+            function.span,
+            &callable,
+        )?;
         let actual_type = Self::php_type_error_actual_name(&value);
         let expected_type = parameter_type_error_type_text(type_decl, param);
         self.emit_float_string_to_int_deprecation_for_type_decl(
             &type_decl.text,
             &value,
-            self.current_strict_types(),
+            strict_scalars,
             function.span,
         )?;
         coerce_property_value_with_object_type_resolver(
@@ -85634,7 +85645,7 @@ impl Interpreter {
             value,
             &function.name,
             &format!("parameter ${}", param.name),
-            self.current_strict_types(),
+            strict_scalars,
             |object, type_name| {
                 self.object_satisfies_call_type(
                     object,
@@ -85648,7 +85659,7 @@ impl Interpreter {
             runtime_error(
                 function.span,
                 RuntimeError::unsupported_call(
-                    callable_name(&function.name),
+                    callable,
                     format!(
                         "Argument #{} (${}) must be of type {}, {actual_type} given",
                         param_index + 1,
@@ -85727,7 +85738,20 @@ impl Interpreter {
                 return format!("{}::{}()", class.name(), function.name);
             }
         }
-        callable_name(&function.name)
+        function_callable_name(function, self.source_file.as_deref())
+    }
+
+    fn call_type_callable_name(
+        &self,
+        function: &FunctionDecl,
+        class_context: Option<ClassId>,
+    ) -> String {
+        if let Some(class_id) = class_context {
+            if let Some(class) = self.classes.get(class_id) {
+                return format!("{}::{}()", class.name(), function.name);
+            }
+        }
+        function_callable_name(function, self.source_file.as_deref())
     }
 
     fn returned_type_name(value: &Value, missing_return: bool) -> String {
@@ -85750,6 +85774,14 @@ impl Interpreter {
         called_class_context: Option<ClassId>,
     ) -> CompileResult<Value> {
         let actual_type = value.type_name();
+        let callable = self.return_type_callable_name(function, class_context);
+        let value = self.coerce_stringable_object_for_exact_string_type_decl(
+            type_decl,
+            value,
+            function.strict_types,
+            function.span,
+            &callable,
+        )?;
         self.emit_float_string_to_int_deprecation_for_type_decl(
             &type_decl.text,
             &value,
@@ -85775,11 +85807,33 @@ impl Interpreter {
             runtime_error(
                 function.span,
                 RuntimeError::unsupported_call(
-                    callable_name(&function.name),
+                    callable,
                     format!("{label} expects {}, got {actual_type}", type_decl.text),
                 ),
             )
         })
+    }
+
+    fn coerce_stringable_object_for_exact_string_type_decl(
+        &mut self,
+        type_decl: &TypeDecl,
+        value: Value,
+        strict_scalars: bool,
+        span: Span,
+        callable: &str,
+    ) -> CompileResult<Value> {
+        if strict_scalars || !type_decl_is_exact(type_decl, "string") {
+            return Ok(value);
+        }
+
+        let Value::Object(object) = value else {
+            return Ok(value);
+        };
+
+        match self.object_to_string_with_magic(object.clone(), callable, span)? {
+            Some(output) => Ok(Value::String(output)),
+            None => Ok(Value::Object(object)),
+        }
     }
 
     fn call_user_function_with_this(
@@ -105498,6 +105552,7 @@ impl Interpreter {
             match value {
                 Value::Float(float)
                     if !accepts_float
+                        && !php_float_to_int_is_not_representable(*float)
                         && !(accepts_string && php_float_to_int_is_not_representable(*float)) =>
                 {
                     self.emit_float_string_to_int_deprecation_for_value(value, span)?
@@ -105516,6 +105571,12 @@ impl Interpreter {
             && matches!(value, Value::Float(value) if value.is_nan())
         {
             self.emit_display_warning("unexpected NAN value was coerced to string", span)?;
+        }
+        if !accepts_float
+            && type_decl_contains_name(type_decl, "bool")
+            && matches!(value, Value::Float(value) if value.is_nan())
+        {
+            self.emit_display_warning("unexpected NAN value was coerced to bool", span)?;
         }
         Ok(())
     }
@@ -162948,7 +163009,7 @@ fn ensure_user_function_arity(
         return Err(runtime_error(
             span,
             RuntimeError::arity_mismatch(
-                callable_name(&function.name),
+                function_callable_name(function, None),
                 arity_expectation(required, function.params.len(), variadic),
                 actual,
             ),
@@ -162974,7 +163035,7 @@ fn ensure_user_function_arity_with_extra_policy(
         return Err(runtime_error(
             span,
             RuntimeError::arity_mismatch(
-                callable_name(&function.name),
+                function_callable_name(function, None),
                 arity_expectation(required, function.params.len(), variadic),
                 actual,
             ),
@@ -163411,6 +163472,15 @@ fn arity_expectation(required: usize, total: usize, variadic: bool) -> ArityExpe
 fn callable_name(name: &str) -> String {
     let name = name.trim_start_matches('\\');
     format!("{name}()")
+}
+
+fn function_callable_name(function: &FunctionDecl, source_file: Option<&str>) -> String {
+    if function.name == "{closure}" {
+        let source_file = source_file.unwrap_or("Command line code");
+        format!("{{closure:{source_file}:{}}}()", function.span.line)
+    } else {
+        callable_name(&function.name)
+    }
 }
 
 fn array_keys_matching_loose(

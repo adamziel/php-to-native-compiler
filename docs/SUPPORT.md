@@ -10,9 +10,10 @@
 - Bounded `declare` directives: file-scope `declare(strict_types=0|1);` and
   `declare(encoding="...");` parse as interpreter no-ops so source ordering
   around namespaces can proceed. `declare(strict_types=...) { ... }` reports
-  PHP's fatal block-mode diagnostic. Actual strict scalar call enforcement,
-  tick handlers, source transcoding, and broader declare block semantics
-  remain unsupported.
+  PHP's fatal block-mode diagnostic. File-scope `strict_types` is observed by
+  the bounded scalar parameter/return type subset described below. Tick
+  handlers, source transcoding, and broader declare block semantics remain
+  unsupported.
 - `echo` statements with one or more comma-separated expressions, including
   array operands that emit `Array to string conversion` and output `Array`
 - `print` statements
@@ -2856,11 +2857,16 @@
   class-name, `self`, `static`, union, or intersection declarations while still
   rejecting scalar arms. Exact ordering when a magic method has multiple
   invalid signature facets and exact nullable `__debugInfo()` deprecation
-  text/order remain unsupported. Typed by-reference parameters, `callable`,
+  text/order remain unsupported. The scalar subset observes file-scope
+  `strict_types=1` for direct user-function and closure calls, rejecting weak
+  scalar coercions while still allowing PHP's `int` to `float` widening; weak
+  exact `string` declarations accept supported `__toString()` objects, and
+  closure TypeError/arity messages include bounded file/line callable names.
+  Typed by-reference parameters, `callable`,
   `iterable`, broad `self` / `parent` / `static` behavior outside the covered
-  `__set_state()` covariance slice, `resource`, `strict_types`, throw
-  expressions, broader `never` implicit-return diagnostics, and native lowering
-  remain unsupported.
+  `__set_state()` covariance slice, `resource`, strict-types behavior outside
+  the covered scalar call/return subset, throw expressions, broader `never`
+  implicit-return diagnostics, and native lowering remain unsupported.
 - recursive user-function calls up to a fixed 64-frame user-function call-depth
   guard
 - `return`

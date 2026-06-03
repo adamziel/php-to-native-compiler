@@ -4,6 +4,31 @@
 
 Implemented:
 
+- Added a bounded scalar declaration diagnostics/coercion lane on the
+  interpreter path. By-value user function, closure, and public method scalar
+  parameter/return checks now use PHP-shaped closure callable names with
+  file/line metadata, weak exact `string` declarations accept supported
+  `__toString()` objects, weak exact `int` declarations reject
+  non-representable floats/float strings instead of truncating them, weak
+  `bool` declarations emit PHP's `NAN` coercion warning, and typed-property
+  scalar coercion shares the same non-representable float-to-int boundary.
+  Focused proof covers Rust
+  `scalar_declaration_coercion_handles_stringable_and_nan_edges`,
+  `function_type_metadata`, runtime
+  `php_scalar_string_boundary_reused_by_properties_and_array_comparisons`,
+  build/fmt/diff checks, and selected public PHPT rows
+  `Zend/tests/type_declarations/scalar_basic.phpt`,
+  `Zend/tests/type_declarations/scalar_none.phpt`,
+  `Zend/tests/type_declarations/scalar_null.phpt`,
+  `Zend/tests/type_declarations/scalar_return_basic_64bit.phpt`,
+  `Zend/tests/type_declarations/scalar_strict_basic.phpt`, and
+  `Zend/tests/type_declarations/scalar_strict_64bit.phpt` at `6/6` PASS.
+  Exact-current pre-patch proof on `7e108f3e` was `0/6`. Unsupported edges
+  remain typed by-reference parameter coercion/enforcement, full union
+  preference and intersection scalar interactions beyond the current metadata
+  subset, exact native PHP exception object internals, broader stack
+  formatting parity, references/COW, and native lowering.
+
 - Repaired a latest-published PASS regression in
   `Zend/tests/foreach/foreach_018.phpt` on the runtime object iteration path.
   Public object properties whose stored names use PHP's mangled visibility
