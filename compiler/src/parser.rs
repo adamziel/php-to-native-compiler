@@ -160,17 +160,21 @@ impl Parser {
 
     fn parse_statement(&mut self) -> CompileResult<Stmt> {
         self.consume_doc_comments_and_attributes();
-        if !matches!(
-            self.peek().kind,
+        let declaration_can_use_attributes = match &self.peek().kind {
             TokenKind::Function
-                | TokenKind::Class
-                | TokenKind::Interface
-                | TokenKind::Trait
-                | TokenKind::Enum
-                | TokenKind::Abstract
-                | TokenKind::Final
-                | TokenKind::Readonly
-        ) {
+            | TokenKind::Class
+            | TokenKind::Interface
+            | TokenKind::Trait
+            | TokenKind::Enum
+            | TokenKind::Abstract
+            | TokenKind::Final
+            | TokenKind::Readonly => true,
+            TokenKind::Identifier(name) => {
+                self.nested_statement_depth == 0 && name.eq_ignore_ascii_case("const")
+            }
+            _ => false,
+        };
+        if !declaration_can_use_attributes {
             self.pending_doc_comment = None;
             self.pending_attributes.clear();
         }
@@ -2098,6 +2102,7 @@ impl Parser {
 
     fn parse_const_declaration(&mut self) -> CompileResult<Stmt> {
         let span = self.advance().span;
+        let attributes = self.take_pending_attributes();
         let mut declarations = Vec::new();
 
         loop {
@@ -2130,6 +2135,7 @@ impl Parser {
             declarations.push(ConstDeclarator {
                 name,
                 value,
+                attributes: attributes.clone(),
                 span: if declarations.is_empty() {
                     span
                 } else {

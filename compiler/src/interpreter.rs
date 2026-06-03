@@ -26435,6 +26435,7 @@ impl Interpreter {
                     self.execute_const_declaration(
                         &declaration.name,
                         &declaration.value,
+                        &declaration.attributes,
                         declaration.span,
                         scope,
                     )?;
@@ -28795,6 +28796,7 @@ impl Interpreter {
         &mut self,
         name: &str,
         value: &Expr,
+        attributes: &[AttributeDecl],
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<()> {
@@ -28816,7 +28818,7 @@ impl Interpreter {
                 value,
                 RuntimeConstantMetadata {
                     file_name: self.source_file.clone(),
-                    attributes: Vec::new(),
+                    attributes: attributes.to_vec(),
                 },
             )
             .map_err(|error| runtime_error(span, error))
@@ -55783,9 +55785,12 @@ impl Interpreter {
             .class_name()
             .eq_ignore_ascii_case("ReflectionAttribute")
         {
-            return self
-                .call_reflection_attribute_method(object, method_name, args, span)
-                .map(|value| (value, None));
+            let callable = format!("{}->{method_name}", object.class_name());
+            let result = self.call_reflection_attribute_method(object, method_name, args, span);
+            if let Err(error) = &result {
+                self.record_pending_uncaught_internal_call_frame(callable, span, &[], error);
+            }
+            return result.map(|value| (value, None));
         }
         if object
             .class_name()
@@ -110935,8 +110940,74 @@ fn stmt_builtin_attribute_target_error(stmt: &Stmt) -> Option<(String, usize)> {
             true,
         ),
         Stmt::Function(function) => function_attribute_target_error(function),
+        Stmt::ConstDeclaration { declarations, .. } => {
+            if declarations.len() > 1
+                && declarations
+                    .iter()
+                    .any(|declaration| !declaration.attributes.is_empty())
+            {
+                return Some((
+                    "Cannot apply attributes to multiple constants at once".to_string(),
+                    declarations
+                        .first()
+                        .map(|declaration| declaration.span.line)
+                        .unwrap_or(1),
+                ));
+            }
+
+            declarations.iter().find_map(|declaration| {
+                builtin_global_constant_attribute_error(
+                    &declaration.attributes,
+                    declaration.span.line,
+                )
+            })
+        }
         _ => None,
     }
+}
+
+fn builtin_global_constant_attribute_error(
+    attributes: &[AttributeDecl],
+    line: usize,
+) -> Option<(String, usize)> {
+    if let Some(error) = attributes.iter().find_map(|attribute| {
+        if attribute_name_is_attribute(attribute) {
+            return Some((
+                "Attribute \"Attribute\" cannot target constant (allowed targets: class)"
+                    .to_string(),
+                line,
+            ));
+        }
+        None
+    }) {
+        return Some(error);
+    }
+
+    builtin_non_repeatable_attribute_error(attributes, line)
+}
+
+fn builtin_non_repeatable_attribute_error(
+    attributes: &[AttributeDecl],
+    line: usize,
+) -> Option<(String, usize)> {
+    let mut seen = HashSet::new();
+    for attribute in attributes {
+        let normalized = normalized_attribute_name(&attribute.name);
+        if matches!(
+            normalized.as_str(),
+            "deprecated" | "nodiscard" | "override" | "allowdynamicproperties"
+        ) && !seen.insert(normalized)
+        {
+            return Some((
+                format!(
+                    "Attribute \"{}\" must not be repeated",
+                    attribute_display_name(&attribute.name)
+                ),
+                line,
+            ));
+        }
+    }
+    None
 }
 
 fn builtin_attribute_repeat_error(

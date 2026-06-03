@@ -629,6 +629,7 @@ pub enum ForeachListKey {
 pub struct ConstDeclarator {
     pub name: String,
     pub value: Expr,
+    pub attributes: Vec<AttributeDecl>,
     pub span: Span,
 }
 

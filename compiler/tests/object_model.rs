@@ -9279,6 +9279,90 @@ echo "reinit|", $reinit->name, "|", $reinit->getValue(), "\n";
 }
 
 #[test]
+fn reflection_constant_reports_global_constant_attributes() {
+    let execution = run_source(
+        r#"<?php
+#[Attribute]
+class ConstantAttr {
+    public $first;
+    public $second;
+
+    public function __construct($first = "", $second = "") {
+        $this->first = $first;
+        $this->second = $second;
+    }
+}
+
+#[ConstantAttr(second: "bar", first: "foo")]
+const EXAMPLE = "ignored";
+
+#[Foo, Bar]
+const GROUPED = 1;
+
+$attrs = (new ReflectionConstant("EXAMPLE"))->getAttributes();
+$args = $attrs[0]->getArguments();
+$instance = $attrs[0]->newInstance();
+echo count($attrs), "|", $attrs[0]->getName(), "|", $attrs[0]->getTarget(), "|", $args["second"], "|", $args["first"], "|", $instance->first, "|", $instance->second, "\n";
+echo count((new ReflectionConstant("GROUPED"))->getAttributes()), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "1|ConstantAttr|64|bar|foo|foo|bar\n2\n");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+
+    assert_php_startup_fatal(
+        r#"<?php
+#[Foo]
+const First = 1,
+    Second = 2;
+"#,
+        "Command line code",
+        3,
+        "Cannot apply attributes to multiple constants at once",
+    );
+    assert_php_startup_fatal(
+        r#"<?php
+#[Attribute]
+const EXAMPLE = "Foo";
+"#,
+        "Command line code",
+        3,
+        "Attribute \"Attribute\" cannot target constant (allowed targets: class)",
+    );
+    assert_php_startup_fatal(
+        r#"<?php
+#[Deprecated]
+#[Deprecated]
+const MY_CONST = true;
+"#,
+        "Command line code",
+        4,
+        "Attribute \"Deprecated\" must not be repeated",
+    );
+
+    let repeated = run_source(
+        r#"<?php
+#[Attribute]
+class MyAttribute {}
+
+#[MyAttribute]
+#[MyAttribute]
+const MY_CONST = true;
+
+$attributes = (new ReflectionConstant("MY_CONST"))->getAttributes();
+$attributes[0]->newInstance();
+"#,
+    )
+    .unwrap();
+    assert!(repeated
+        .stdout
+        .contains("#0 Command line code(10): ReflectionAttribute->newInstance()"));
+    assert_eq!(repeated.exit_code, 255);
+}
+
+#[test]
 fn reflection_class_to_string_renders_bounded_userland_metadata() {
     let execution = run_source(
         r#"<?php

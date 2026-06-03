@@ -7242,8 +7242,9 @@
   property names, static properties, variable variables, arbitrary expression
   interpolation, exact diagnostics, and native lowering remain unsupported.
 - PHP attributes are accepted as runtime metadata before functions, closures,
-  classes, class members, and parameters, including constructor-style argument
-  lists in the current expression subset. For `phpc run`, `#[Deprecated]` and
+  classes, class members, parameters, and top-level `const` declarations,
+  including constructor-style argument lists in the current expression subset.
+  For `phpc run`, `#[Deprecated]` and
   `#[\Deprecated]` on executable user functions, closures, instance/static
   methods, constructors, and destructors emit `E_USER_DEPRECATED` through the
   shared diagnostic path when a supported call reaches the body. The
@@ -7261,10 +7262,14 @@
   bounded `Random\IntervalBoundary` enum-case failures. Direct built-in target
   validation covers `#[Attribute]` /
   `#[\Attribute]` on top-level functions, abstract classes, interfaces,
-  traits, and enums plus `#[AllowDynamicProperties]` /
+  traits, enums, and top-level constants plus `#[AllowDynamicProperties]` /
   `#[\AllowDynamicProperties]` on interfaces, traits, and enums, and repeated
-  `#[Attribute]` on supported class declarations. Reflection attributes
-  returned by the supported `getAttributes()` paths expose
+  `#[Attribute]` on supported class declarations. Top-level constant
+  attributes retain grouped/ungrouped metadata for single-constant
+  declarations, expose `ReflectionAttribute::TARGET_CONSTANT` (`64`), preserve
+  named arguments, reject applying attributes to multi-constant declarations,
+  and validate the covered non-repeatable builtin/userland attribute cases.
+  Reflection attributes returned by the supported `getAttributes()` paths expose
   `getName()`, `getTarget()`, `isRepeated()`, `getArguments()`,
   `newInstance()`, and `__toString()` for the current argument expression
   subset. `ReflectionAttribute::newInstance()` validates the reflected
@@ -7276,7 +7281,8 @@
   broader repeated-attribute rules, broader target validation on nested
   functions/members/parameters/closures, readonly-class
   `AllowDynamicProperties` diagnostics, deprecations on
-  classes/interfaces/traits/enums/constants/class constants/properties, exact
+  classes/interfaces/traits/enums/class constants/properties and deprecated
+  constant read diagnostics, exact
   exception-handler diagnostic call-site rendering, `NoDiscard` targets beyond
   direct user-function unused calls, broader core enum APIs/reflection/cases,
   references/copy-on-write, and native lowering remain unsupported; ordinary
@@ -10847,11 +10853,16 @@
   false. User constants return false/null extension ownership, while current
   builtin constants report registry ownership where known, Core fallback
   ownership for other builtin names, and json ownership for the current
-  `JSON_*` builtin constant slice. Attribute arrays are currently empty unless
-  future constant-attribute metadata is added; userland `#[Deprecated] const`
-  metadata, bracketed namespace parser rows, broad extension constant catalogs,
-  exact invalid-input diagnostics for every constructor shape, and native
-  lowering remain unsupported.
+  `JSON_*` builtin constant slice. Top-level `const` declarations retain
+  parsed attribute metadata for single-constant declarations; reflected
+  attributes expose `ReflectionAttribute::TARGET_CONSTANT` (`64`), grouped and
+  ungrouped attributes, named arguments, repeatability, and the covered
+  `newInstance()` validation behavior. Attributes on multi-constant
+  declarations are rejected with the current startup fatal path. Runtime
+  `define()` has no source attribute syntax, and deprecated-constant read
+  diagnostics, bracketed namespace parser rows, broad extension constant
+  catalogs, exact invalid-input diagnostics for every constructor shape, and
+  native lowering remain unsupported.
   Parser/runtime support for readonly class/property declarations and property
   hooks/asymmetric visibility remains unsupported even where the compatibility
   constants and modifier-name mapping exist.

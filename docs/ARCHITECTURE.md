@@ -4678,8 +4678,10 @@ native lowering remain out of scope.
 helpers to materialize request-local objects. Runtime/user constants expose
 stored declaration-file metadata and no extension owner; builtin constants
 expose file-less Core/json or registered-extension ownership for the current
-bounded slice. Constant attributes and deprecation metadata are not yet recorded
-in the global constant metadata table.
+bounded slice. Top-level single-constant declarations also retain parsed
+attribute metadata in the runtime constant table so `ReflectionConstant` can
+return constant-target `ReflectionAttribute` objects; runtime `define()` and
+builtin constants remain attribute-less.
 `get_called_class()` is a zero-argument runtime builtin that reads the
 interpreter's called-class context in current instance and static method calls;
 outside method or static class context it fails with a stable unsupported-call
@@ -4851,15 +4853,17 @@ and PHP's exact warning/fatal recovery details.
 
 ## Attribute Boundary
 
-PHP attributes are currently syntax-only metadata for simple no-argument
-`#[Name]` blocks; the lexer skips them before the parser sees the surrounding
-declaration. Attribute blocks with constructor-style arguments such as
-`#[Route('/wp-json/demo')]` stop at a dedicated lex diagnostic because
-attribute argument evaluation, reflection data, target validation,
-namespace-aware attribute name resolution, repeated-attribute rules,
-references/copy-on-write behavior, and native lowering do not exist yet.
-Ordinary `#` comments remain comments, including `# [` with whitespace before
-the bracket.
+PHP attributes are runtime metadata for the currently supported declarations:
+functions, closures, classes, class members, parameters, and top-level
+single-constant declarations. Parsed names and constructor-style arguments are
+stored on the relevant runtime metadata records and exposed through the bounded
+`ReflectionAttribute` surface. Validation is intentionally targeted at the
+selected builtin/core cases already exercised by public PHPT rows, including
+selected target-mask, repeatability, and constructor-argument diagnostics.
+Namespace/import alias expansion for attribute names, broad delayed validation,
+many member/parameter target combinations, references/copy-on-write behavior,
+and native lowering remain outside this boundary. Ordinary `#` comments remain
+comments, including `# [` with whitespace before the bracket.
 
 ## Cast Boundary
 
