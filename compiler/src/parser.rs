@@ -598,7 +598,9 @@ impl Parser {
         let name = self.resolve_declared_class_name(&name);
 
         let parent = if self.match_token(|kind| matches!(kind, TokenKind::Extends)) {
-            Some(self.consume_class_like_name("expected parent class name after 'extends'")?)
+            Some(self.consume_relationship_class_like_name(
+                "expected parent class name after 'extends'",
+            )?)
         } else {
             None
         };
@@ -659,8 +661,9 @@ impl Parser {
     fn parse_class_implements_list(&mut self) -> CompileResult<Vec<String>> {
         let mut interfaces = Vec::new();
         loop {
-            interfaces
-                .push(self.consume_class_like_name("expected interface name after 'implements'")?);
+            interfaces.push(self.consume_relationship_class_like_name(
+                "expected interface name after 'implements'",
+            )?);
             if !self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
                 break;
             }
@@ -1102,9 +1105,15 @@ impl Parser {
         let name = self.resolve_declared_class_name(&name);
         let mut parents = Vec::new();
         if self.match_token(|kind| matches!(kind, TokenKind::Extends)) {
-            parents.push(self.consume_class_like_name("expected interface name after 'extends'")?);
+            parents.push(
+                self.consume_relationship_class_like_name(
+                    "expected interface name after 'extends'",
+                )?,
+            );
             while self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
-                parents.push(self.consume_class_like_name("expected interface name after ','")?);
+                parents.push(
+                    self.consume_relationship_class_like_name("expected interface name after ','")?,
+                );
             }
         }
 
@@ -8629,6 +8638,18 @@ impl Parser {
     }
 
     fn consume_class_like_name(&mut self, message: &str) -> CompileResult<String> {
+        self.consume_class_like_name_with_reserved(message, false)
+    }
+
+    fn consume_relationship_class_like_name(&mut self, message: &str) -> CompileResult<String> {
+        self.consume_class_like_name_with_reserved(message, true)
+    }
+
+    fn consume_class_like_name_with_reserved(
+        &mut self,
+        message: &str,
+        allow_reserved_contextual: bool,
+    ) -> CompileResult<String> {
         if self.check(|kind| matches!(kind, TokenKind::Namespace)) {
             let span = self.advance().span;
             if !self.match_token(|kind| matches!(kind, TokenKind::Backslash)) {
@@ -8641,6 +8662,23 @@ impl Parser {
         if self.check(|kind| matches!(kind, TokenKind::Backslash)) {
             let raw = self.parse_qualified_name(true, message)?;
             return Ok(self.resolve_class_like_name(&raw));
+        }
+
+        if allow_reserved_contextual {
+            match &self.peek().kind {
+                TokenKind::Identifier(name)
+                    if name.eq_ignore_ascii_case("self") || name.eq_ignore_ascii_case("parent") =>
+                {
+                    let name = name.to_ascii_lowercase();
+                    self.advance();
+                    return Ok(name);
+                }
+                TokenKind::Static => {
+                    self.advance();
+                    return Ok("static".to_string());
+                }
+                _ => {}
+            }
         }
 
         let raw = self.parse_qualified_name(false, message)?;

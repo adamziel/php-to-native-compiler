@@ -109585,6 +109585,10 @@ fn magic_method_startup_diagnostics(
                     );
                     return diagnostics;
                 }
+                if let Some((message, line)) = class_reserved_relationship_name_diagnostic(class) {
+                    diagnostics.set_fatal(message, source_file, line);
+                    return diagnostics;
+                }
                 collect_class_magic_method_startup_diagnostics(
                     &mut diagnostics,
                     class,
@@ -109598,6 +109602,11 @@ fn magic_method_startup_diagnostics(
                         source_file,
                         interface.span.line,
                     );
+                    return diagnostics;
+                }
+                if let Some((message, line)) = interface_reserved_parent_name_diagnostic(interface)
+                {
+                    diagnostics.set_fatal(message, source_file, line);
                     return diagnostics;
                 }
                 collect_interface_magic_method_startup_diagnostics(
@@ -109797,6 +109806,37 @@ fn magic_method_startup_diagnostics(
     }
 
     diagnostics
+}
+
+fn class_reserved_relationship_name_diagnostic(class: &ClassDecl) -> Option<(String, usize)> {
+    if let Some(parent) = class.parent.as_deref() {
+        if let Some(name) = reserved_special_class_name_segment(parent) {
+            return Some((
+                format!("Cannot use \"{name}\" as class name, as it is reserved"),
+                class.span.line,
+            ));
+        }
+    }
+
+    class.interfaces.iter().find_map(|interface| {
+        reserved_special_class_name_segment(interface).map(|name| {
+            (
+                format!("Cannot use \"{name}\" as interface name, as it is reserved"),
+                class.span.line,
+            )
+        })
+    })
+}
+
+fn interface_reserved_parent_name_diagnostic(interface: &InterfaceDecl) -> Option<(String, usize)> {
+    interface.parents.iter().find_map(|parent| {
+        reserved_special_class_name_segment(parent).map(|name| {
+            (
+                format!("Cannot use \"{name}\" as interface name, as it is reserved"),
+                interface.span.line,
+            )
+        })
+    })
 }
 
 fn collect_datetime_tentative_return_startup_diagnostics(
