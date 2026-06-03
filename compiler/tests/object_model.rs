@@ -9375,6 +9375,79 @@ echo "plain|", $plain->getName(), "|", yn($plain->getDocComment() === false);
 }
 
 #[test]
+fn reflection_doc_comments_follow_php_token_and_property_list_rules() {
+    let execution = run_source(
+        r#"<?php
+/**
+ * class doc
+ */
+class Marked {}
+
+class Blocky {} {}
+
+/***
+ * not a doc comment
+ */
+function no_function_doc() {}
+
+/**
+ * function doc
+ */
+function yes_function_doc() {}
+
+class X {
+    /**
+     * doc x
+     */
+    public $x = "x",
+        $y = "y",
+        /** doc z */
+        $z = "z";
+
+    /*** not a method doc */
+    function noMethodDoc() {}
+
+    /** method doc */
+    function yesMethodDoc() {}
+}
+
+class Child extends X {
+    /** child x */
+    public $x = "child-x";
+}
+
+function doc($value) {
+    return $value === false ? "false" : str_replace("\n", "\\n", $value);
+}
+
+$marked = new ReflectionClass(Marked::class);
+$blocky = new ReflectionClass(Blocky::class);
+echo "class|", doc($marked->getDocComment()), "\n";
+echo "block|", doc($blocky->getDocComment()), "\n";
+
+$noFunction = new ReflectionFunction("no_function_doc");
+$yesFunction = new ReflectionFunction("yes_function_doc");
+echo "function|", doc($noFunction->getDocComment()), "|", doc($yesFunction->getDocComment()), "\n";
+
+$noMethod = new ReflectionMethod(X::class, "noMethodDoc");
+$yesMethod = new ReflectionMethod(X::class, "yesMethodDoc");
+echo "method|", doc($noMethod->getDocComment()), "|", doc($yesMethod->getDocComment()), "\n";
+
+foreach ((new ReflectionClass(Child::class))->getProperties() as $property) {
+    echo "prop|", $property->getName(), "|", $property->getDeclaringClass()->getName(), "|", doc($property->getDocComment()), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "class|/**\\n * class doc\\n */\nblock|false\nfunction|false|/**\\n * function doc\\n */\nmethod|false|/** method doc */\nprop|x|Child|/** child x */\nprop|y|X|false\nprop|z|X|/** doc z */\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reflection_property_get_value_and_set_value_mutate_public_declared_properties() {
     let execution = run_source(
         r#"<?php

@@ -107,6 +107,10 @@ impl Parser {
             if self.skip_empty_statements() {
                 continue;
             }
+            if self.match_token(|kind| matches!(kind, TokenKind::LBrace)) {
+                statements.extend(self.parse_block_after_open()?);
+                continue;
+            }
             statements.push(self.parse_statement()?);
         }
         Ok(Program {
@@ -1504,7 +1508,7 @@ impl Parser {
             })]);
         }
 
-        let doc_comment = self.pending_doc_comment.take();
+        let mut doc_comment = self.pending_doc_comment.take();
 
         if self.check_unsupported_property_type_declaration() {
             if modifiers.is_abstract || modifiers.is_final {
@@ -1524,6 +1528,10 @@ impl Parser {
             }
             let mut properties = Vec::new();
             loop {
+                if doc_comment.is_none() {
+                    self.consume_doc_comments_and_attributes();
+                    doc_comment = self.pending_doc_comment.take();
+                }
                 let (name, span) = self.consume_variable_with_span("expected property name")?;
                 let default = if self.match_token(|kind| matches!(kind, TokenKind::Equal)) {
                     let expr = self.parse_expression()?;
@@ -1544,7 +1552,7 @@ impl Parser {
                     type_decl: Some(type_decl.clone()),
                     default,
                     attributes: attributes.clone(),
-                    doc_comment: doc_comment.clone(),
+                    doc_comment: doc_comment.take(),
                     span,
                 }));
                 if !self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
@@ -1572,6 +1580,10 @@ impl Parser {
             }
             let mut properties = Vec::new();
             loop {
+                if doc_comment.is_none() {
+                    self.consume_doc_comments_and_attributes();
+                    doc_comment = self.pending_doc_comment.take();
+                }
                 let (name, span) = self.consume_variable_with_span("expected property name")?;
                 let default = if self.match_token(|kind| matches!(kind, TokenKind::Equal)) {
                     let expr = self.parse_expression()?;
@@ -1591,7 +1603,7 @@ impl Parser {
                     type_decl: None,
                     default,
                     attributes: attributes.clone(),
-                    doc_comment: doc_comment.clone(),
+                    doc_comment: doc_comment.take(),
                     span,
                 }));
                 if !self.match_token(|kind| matches!(kind, TokenKind::Comma)) {

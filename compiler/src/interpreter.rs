@@ -58023,6 +58023,7 @@ impl Interpreter {
 
     fn reflection_class_properties(&self, class_id: ClassId) -> Vec<ReflectionPropertyState> {
         let mut properties = Vec::new();
+        let mut seen = HashSet::new();
         let mut current = Some(class_id);
         while let Some(current_id) = current {
             let class = self
@@ -58031,6 +58032,9 @@ impl Interpreter {
                 .expect("class id should resolve to class metadata");
             for property in class.properties() {
                 if current_id != class_id && property.visibility() == Visibility::Private {
+                    continue;
+                }
+                if !seen.insert(property.name().to_string()) {
                     continue;
                 }
                 let source_metadata = self

@@ -197,7 +197,7 @@ impl<'a> Lexer<'a> {
                 continue;
             }
 
-            if self.starts_with("/**") && !self.starts_with("/**/") {
+            if self.is_doc_comment_start() {
                 let span = self.span();
                 let kind = self.lex_doc_comment(span)?;
                 tokens.push(Token { kind, span });
@@ -391,7 +391,7 @@ impl<'a> Lexer<'a> {
             }
 
             if self.peek() == Some('/') && self.peek_next() == Some('*') {
-                if self.starts_with("/**") && !self.starts_with("/**/") {
+                if self.is_doc_comment_start() {
                     break;
                 }
                 self.advance();
@@ -1376,6 +1376,14 @@ impl<'a> Lexer<'a> {
 
     fn starts_with(&self, needle: &str) -> bool {
         self.source[self.byte_index()..].starts_with(needle)
+    }
+
+    fn is_doc_comment_start(&self) -> bool {
+        self.starts_with("/**")
+            && matches!(
+                self.chars.get(self.index + 3),
+                Some(' ' | '\t' | '\r' | '\n')
+            )
     }
 
     fn byte_index(&self) -> usize {
