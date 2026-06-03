@@ -9023,6 +9023,52 @@ line("CURRENT");
 }
 
 #[test]
+fn reflection_class_to_string_renders_bounded_userland_metadata() {
+    let execution = run_source(
+        r#"<?php
+class Base {
+    protected static $cache = 1;
+    private function hidden() {}
+    public function inherited($arg = null) {}
+}
+
+trait Marker {}
+
+class Packet extends Base {
+    const NAME = "core";
+    const FLAGS = array("a");
+    public ?int $id = 42;
+    public string $typed;
+    private static $secret = null;
+    public function run() {}
+}
+
+echo new ReflectionClass(Packet::class);
+echo new ReflectionClass(Marker::class);
+"#,
+    )
+    .unwrap();
+
+    assert!(execution
+        .stdout
+        .contains("Class [ <user> class Packet extends Base ] {"));
+    assert!(execution.stdout.contains(
+        "  - Constants [2] {\n    Constant [ public string NAME ] { core }\n    Constant [ public array FLAGS ] { Array }\n  }"
+    ));
+    assert!(execution.stdout.contains(
+        "  - Static properties [2] {\n    Property [ private static $secret = NULL ]\n    Property [ protected static $cache = 1 ]\n  }"
+    ));
+    assert!(execution.stdout.contains(
+        "  - Properties [2] {\n    Property [ public ?int $id = 42 ]\n    Property [ public string $typed ]\n  }"
+    ));
+    assert!(execution
+        .stdout
+        .contains("Method [ <user, inherits Base> public method inherited ]"));
+    assert!(execution.stdout.contains("Trait [ <user> trait Marker ] {"));
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reflection_property_reports_bounded_typed_property_metadata() {
     let execution = run_source(
         r#"<?php

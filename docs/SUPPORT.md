@@ -10574,8 +10574,12 @@
   not a PHP construct. `isCloneable()` reports false for non-class
   reflections, abstract classes, classes whose resolved `__clone()` is
   non-public or static, and the current uncloneable internal/reflection object
-  boundary. `isReadOnly()` currently returns false because readonly class
-  declarations are still outside the parser subset.
+  boundary. Direct string conversion and explicit `__toString()` calls render
+  bounded userland class and trait metadata, including source span, constants,
+  static and instance properties, static and instance methods, inherited
+  non-private metadata, typed/uninitialized properties, and implicit nullable
+  parameter display. `isReadOnly()` currently returns false because readonly
+  class declarations are still outside the parser subset.
   `new ReflectionMethod($object_or_class, $method)` creates a bounded
   metadata object for methods declared in the current user class, interface,
   and trait tables, including inherited class methods and existing autoload

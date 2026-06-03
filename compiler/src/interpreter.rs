@@ -54497,6 +54497,25 @@ impl Interpreter {
         }
 
         if method_name.eq_ignore_ascii_case("__toString") && args.is_empty() {
+            if object.is_instance_of_class_name("ReflectionClass") {
+                let state = self
+                    .reflection_classes
+                    .get(&object.id())
+                    .cloned()
+                    .ok_or_else(|| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "ReflectionClass::__toString()",
+                                "missing ReflectionClass runtime metadata",
+                            ),
+                        )
+                    })?;
+                return self
+                    .reflection_class_to_string(&state, span)
+                    .map(Value::String)
+                    .map(Some);
+            }
             if object
                 .class_name()
                 .eq_ignore_ascii_case("ReflectionFunction")
@@ -55697,6 +55716,11 @@ impl Interpreter {
                     "reinitializing ReflectionClass objects is not implemented",
                 ),
             )),
+            "__tostring" => {
+                expect_expr_arity("ReflectionClass::__toString", args.len(), 0, span)?;
+                self.reflection_class_to_string(&state, span)
+                    .map(Value::String)
+            }
             "getname" => {
                 expect_expr_arity("ReflectionClass::getName", args.len(), 0, span)?;
                 Ok(Value::String(state.name))
@@ -56763,6 +56787,202 @@ impl Interpreter {
             }
         }
         Ok(methods)
+    }
+
+    fn reflection_class_to_string(
+        &mut self,
+        state: &ReflectionClassState,
+        span: Span,
+    ) -> CompileResult<String> {
+        if !self.reflection_class_is_user_defined(state) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "ReflectionClass::__toString()",
+                    "internal class string rendering is not implemented in the current subset",
+                ),
+            ));
+        }
+
+        let mut output = self.reflection_class_to_string_header(state);
+        if let Some(file_name) = state.file_name.as_deref() {
+            output.push_str(&format!(
+                "  @@ {file_name} {}-{}\n",
+                state.start_line, state.end_line
+            ));
+        }
+        output.push('\n');
+
+        let constants = self.reflection_class_constants(state, None)?;
+        output.push_str(&format!("  - Constants [{}] {{\n", constants.len()));
+        for constant in &constants {
+            output.push_str("    ");
+            output.push_str(&self.reflection_class_constant_to_string(constant, span)?);
+            output.push('\n');
+        }
+        output.push_str("  }\n\n");
+
+        let properties = match state.kind {
+            ReflectionClassKind::Class => state
+                .class_id
+                .map(|class_id| self.reflection_class_properties(class_id))
+                .unwrap_or_default(),
+            ReflectionClassKind::Trait => {
+                match self.trait_lookup.get(&state.name.to_ascii_lowercase()) {
+                    Some(trait_decl) => composed_trait_properties_for_trait(
+                        trait_decl,
+                        &self.trait_lookup,
+                        &mut HashSet::new(),
+                    )?
+                    .into_iter()
+                    .map(|property| ReflectionPropertyState {
+                        declaring_class_name: trait_decl.name.clone(),
+                        declaring_kind: ReflectionClassKind::Trait,
+                        declaring_class_id: None,
+                        name: property.name,
+                        doc_comment: property.doc_comment,
+                        visibility: runtime_visibility(property.visibility),
+                        is_static: property.is_static,
+                        has_default: property.default.is_some(),
+                        type_decl: property.type_decl.map(|decl| decl.text),
+                        attributes: property.attributes,
+                    })
+                    .collect(),
+                    None => Vec::new(),
+                }
+            }
+            ReflectionClassKind::Interface => Vec::new(),
+        };
+        let (static_properties, instance_properties): (Vec<_>, Vec<_>) = properties
+            .into_iter()
+            .partition(|property| property.is_static);
+
+        output.push_str(&format!(
+            "  - Static properties [{}] {{\n",
+            static_properties.len()
+        ));
+        for property in &static_properties {
+            output.push_str("    ");
+            output.push_str(&self.reflection_class_property_to_string(property, span)?);
+            output.push('\n');
+        }
+        output.push_str("  }\n\n");
+
+        let methods = self.reflection_class_methods(state, None, span)?;
+        let (static_methods, instance_methods): (Vec<_>, Vec<_>) =
+            methods.into_iter().partition(|method| method.is_static);
+
+        output.push_str(&format!(
+            "  - Static methods [{}] {{\n",
+            static_methods.len()
+        ));
+        for (index, method) in static_methods.iter().enumerate() {
+            if index > 0 {
+                output.push('\n');
+            }
+            let method = self.reflection_method_to_string(method, span)?;
+            output.push_str(&indent_reflection_block(&method, "    "));
+        }
+        output.push_str("  }\n\n");
+
+        output.push_str(&format!(
+            "  - Properties [{}] {{\n",
+            instance_properties.len()
+        ));
+        for property in &instance_properties {
+            output.push_str("    ");
+            output.push_str(&self.reflection_class_property_to_string(property, span)?);
+            output.push('\n');
+        }
+        output.push_str("  }\n\n");
+
+        output.push_str(&format!("  - Methods [{}] {{\n", instance_methods.len()));
+        for (index, method) in instance_methods.iter().enumerate() {
+            if index > 0 {
+                output.push('\n');
+            }
+            let method = self.reflection_method_to_string(method, span)?;
+            output.push_str(&indent_reflection_block(&method, "    "));
+        }
+        output.push_str("  }\n}\n");
+        Ok(output)
+    }
+
+    fn reflection_class_to_string_header(&self, state: &ReflectionClassState) -> String {
+        match state.kind {
+            ReflectionClassKind::Class => {
+                let abstract_prefix = if self.reflection_class_is_abstract(state) {
+                    "abstract "
+                } else {
+                    ""
+                };
+                let final_prefix = if self.reflection_class_is_final(state) {
+                    "final "
+                } else {
+                    ""
+                };
+                let parent = state
+                    .class_id
+                    .and_then(|class_id| self.classes.get(class_id))
+                    .and_then(|class| class.parent_id())
+                    .and_then(|parent_id| self.classes.get(parent_id))
+                    .map(|parent| format!(" extends {}", parent.name()))
+                    .unwrap_or_default();
+                format!(
+                    "Class [ <user> {abstract_prefix}{final_prefix}class {}{parent} ] {{\n",
+                    state.name
+                )
+            }
+            ReflectionClassKind::Interface => {
+                format!("Interface [ <user> interface {} ] {{\n", state.name)
+            }
+            ReflectionClassKind::Trait => {
+                format!("Trait [ <user> trait {} ] {{\n", state.name)
+            }
+        }
+    }
+
+    fn reflection_class_constant_to_string(
+        &mut self,
+        state: &ReflectionClassConstantState,
+        span: Span,
+    ) -> CompileResult<String> {
+        let value = self.evaluate_reflection_class_constant_value(state, span)?;
+        let visibility = reflection_visibility_name(state.visibility);
+        let type_name = reflection_class_constant_type_name(&value);
+        let rendered = reflection_class_constant_display_value(&value);
+        Ok(format!(
+            "Constant [ {visibility} {type_name} {} ] {{ {rendered} }}",
+            state.name
+        ))
+    }
+
+    fn reflection_class_property_to_string(
+        &mut self,
+        state: &ReflectionPropertyState,
+        span: Span,
+    ) -> CompileResult<String> {
+        let visibility = reflection_visibility_name(state.visibility);
+        let static_marker = if state.is_static { " static" } else { "" };
+        let type_marker = state
+            .type_decl
+            .as_deref()
+            .map(|type_decl| format!(" {type_decl}"))
+            .unwrap_or_default();
+        let default = if state.has_default {
+            format!(
+                " = {}",
+                reflection_value_export_short(
+                    &self.reflection_property_default_value(state, span)?
+                )
+            )
+        } else {
+            String::new()
+        };
+        Ok(format!(
+            "Property [ {visibility}{static_marker}{type_marker} ${}{default} ]",
+            state.name
+        ))
     }
 
     fn reflection_method_prototype(
@@ -59788,7 +60008,15 @@ impl Interpreter {
             .parameter
             .type_decl
             .as_deref()
-            .map(|type_decl| format!("{type_decl} "))
+            .map(|type_decl| {
+                if reflection_parameter_has_implicit_nullable_default(&state.parameter)
+                    && !type_decl_text_allows_null(type_decl)
+                {
+                    format!("{} ", reflection_implicit_nullable_type_text(type_decl))
+                } else {
+                    format!("{type_decl} ")
+                }
+            })
             .unwrap_or_default();
         let reference_prefix = if state.parameter.by_reference {
             "&"
@@ -116740,6 +116968,20 @@ fn reflection_parameter_allows_null(type_decl: Option<&str>, default: Option<&Ex
         || matches!(default, Some(Expr::Null(_)))
 }
 
+fn reflection_parameter_has_implicit_nullable_default(param: &ReflectionParameterMetadata) -> bool {
+    matches!(param.default, Some(Expr::Null(_))) && param.type_decl.is_some()
+}
+
+fn reflection_implicit_nullable_type_text(type_decl: &str) -> String {
+    if type_decl.contains('&') && !type_decl.contains('|') {
+        return format!("({type_decl})|null");
+    }
+    if !type_decl.contains('|') {
+        return format!("?{type_decl}");
+    }
+    format!("{type_decl}|null")
+}
+
 fn reflection_type_name_is_builtin(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
@@ -116820,6 +117062,56 @@ fn reflection_class_namespace_name(name: &str) -> String {
     name.rsplit_once('\\')
         .map(|(namespace, _)| namespace.to_string())
         .unwrap_or_default()
+}
+
+fn reflection_visibility_name(visibility: Visibility) -> &'static str {
+    match visibility {
+        Visibility::Public => "public",
+        Visibility::Protected => "protected",
+        Visibility::Private => "private",
+    }
+}
+
+fn reflection_class_constant_type_name(value: &Value) -> &'static str {
+    match value {
+        Value::Null => "null",
+        Value::Bool(_) => "bool",
+        Value::Int(_) => "int",
+        Value::Float(_) => "float",
+        Value::String(_) | Value::BinaryString(_) => "string",
+        Value::Array(_) => "array",
+        Value::Object(_) => "object",
+        Value::Closure(_) => "Closure",
+        Value::Resource(_) => "resource",
+    }
+}
+
+fn reflection_class_constant_display_value(value: &Value) -> String {
+    match value {
+        Value::Null | Value::Bool(false) => String::new(),
+        Value::Bool(true) => "1".to_string(),
+        Value::String(value) => value.clone(),
+        Value::BinaryString(bytes) => String::from_utf8(bytes.clone()).unwrap_or_default(),
+        Value::Array(_) => "Array".to_string(),
+        Value::Object(object) => enum_like_case_name(object)
+            .map(|case_name| format!("{}::{case_name}", object.class_name()))
+            .unwrap_or_else(|| format!("Object({})", object.class_name())),
+        Value::Closure(_) => "Closure".to_string(),
+        Value::Resource(id) => format!("Resource id #{id}"),
+        _ => value.echo_string(),
+    }
+}
+
+fn indent_reflection_block(block: &str, prefix: &str) -> String {
+    let mut output = String::new();
+    for line in block.trim_end_matches('\n').split('\n') {
+        if !line.is_empty() {
+            output.push_str(prefix);
+        }
+        output.push_str(line);
+        output.push('\n');
+    }
+    output
 }
 
 fn reflection_scalar_name_argument(value: Value, span: Span) -> CompileResult<String> {

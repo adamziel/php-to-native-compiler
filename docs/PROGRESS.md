@@ -4,6 +4,29 @@
 
 Implemented:
 
+- Added bounded userland `ReflectionClass::__toString()` rendering on the
+  interpreter path. Direct string conversion and explicit `__toString()` calls
+  now render declared user classes and traits from existing reflection
+  metadata, including class/trait headers, source span, constants, static and
+  instance properties, static and instance methods, inherited non-private
+  metadata, typed/uninitialized properties, and implicit nullable parameter
+  display. Focused proof covers exact-current pre-patch selected PHPT at
+  `0/8` and post-patch selected PHPT at `8/8` for
+  `ext/reflection/tests/017.phpt`,
+  `ext/reflection/tests/ReflectionClass_export_array_bug72222.phpt`,
+  `ext/reflection/tests/ReflectionClass_export_basic1.phpt`,
+  `ext/reflection/tests/ReflectionClass_export_basic2.phpt`,
+  `ext/reflection/tests/bug29986.phpt`,
+  `ext/reflection/tests/bug33389.phpt`,
+  `ext/reflection/tests/bug45571.phpt`, and
+  `ext/reflection/tests/traits002.phpt`; Rust
+  `reflection_class_to_string_renders_bounded_userland_metadata`, build/fmt/
+  diff checks, and latest-published PASS-regression scout verification.
+  Unsupported edges remain internal class exact dumps, enums, readonly class
+  rendering, property hooks, object-valued constants/defaults, exact engine
+  ordering beyond the covered metadata order, references/COW, and native
+  lowering.
+
 - Added a bounded shutdown closure callback lane on the interpreter path.
   `register_shutdown_function()` now queues closure callbacks instead of
   accepting them as registration-only no-ops, and shutdown execution dispatches
