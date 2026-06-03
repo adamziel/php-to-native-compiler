@@ -38604,6 +38604,12 @@ impl ObjectProperty {
             return self.name.clone();
         }
 
+        if let Some(rest) = self.name.strip_prefix('\0') {
+            if let Some((_, suffix)) = rest.split_once('\0') {
+                return suffix.to_string();
+            }
+        }
+
         self.name.clone()
     }
 

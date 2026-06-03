@@ -4,6 +4,18 @@
 
 Implemented:
 
+- Repaired a latest-published PASS regression in
+  `Zend/tests/foreach/foreach_018.phpt` on the runtime object iteration path.
+  Public object properties whose stored names use PHP's mangled visibility
+  spelling, such as properties created by `(object) ["\0A\0b" => 42]`, now
+  expose the unmangled suffix key during ordinary object `foreach`. Focused
+  proof covers the accepted public score row status as `PASSED`, exact-current
+  pre-patch selected PHPT at `4/5` with only `foreach_018.phpt` failing,
+  post-patch selected PHPT at `5/5`, Rust `foreach` (`47/47`), build/fmt/diff
+  checks, and source push. Unsupported edges remain broader by-reference
+  non-public ordinary-object iteration, magic object iteration, property
+  hooks/lazy objects, exact object handle formatting, and native lowering.
+
 - Added a bounded internal DateTime method-signature metadata lane on the
   interpreter path for declaration compatibility checks. Runtime class method
   signature tables now seed the supported `DateTime::setTime()`,
