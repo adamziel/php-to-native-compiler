@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -673,6 +674,12 @@ struct MethodSignature {
     doc_comment: Option<String>,
     attributes: Vec<AttributeDecl>,
     is_deprecated: bool,
+}
+
+#[derive(Clone, Copy)]
+struct SignatureTypeContext<'a> {
+    self_name: &'a str,
+    parent_name: Option<&'a str>,
 }
 
 #[derive(Debug, Clone)]
@@ -61595,6 +61602,40 @@ impl Interpreter {
             .any(|interface_name| interface_name.eq_ignore_ascii_case(type_name))
     }
 
+    fn object_satisfies_call_type(
+        &self,
+        object: &PhpObject,
+        type_name: &str,
+        class_context: Option<ClassId>,
+        called_class_context: Option<ClassId>,
+    ) -> bool {
+        let normalized = type_name
+            .trim()
+            .strip_prefix('\\')
+            .unwrap_or_else(|| type_name.trim())
+            .to_ascii_lowercase();
+        match normalized.as_str() {
+            "self" => class_context.is_some_and(|class_id| {
+                object.class_id() == class_id
+                    || self.classes.is_subclass_of(object.class_id(), class_id)
+            }),
+            "parent" => class_context
+                .and_then(|class_id| self.classes.get(class_id))
+                .and_then(|class| class.parent_id())
+                .is_some_and(|parent_id| {
+                    object.class_id() == parent_id
+                        || self.classes.is_subclass_of(object.class_id(), parent_id)
+                }),
+            "static" => called_class_context
+                .or(class_context)
+                .is_some_and(|class_id| {
+                    object.class_id() == class_id
+                        || self.classes.is_subclass_of(object.class_id(), class_id)
+                }),
+            _ => self.object_satisfies_live_property_type(object, type_name),
+        }
+    }
+
     fn resolve_static_property_storage(
         &self,
         class_id: ClassId,
@@ -79281,9 +79322,14 @@ impl Interpreter {
                 .find(|binding| binding.param_name == param.name)
             {
                 if let Some(arg) = args.get(index) {
-                    if let Err(error) =
-                        self.coerce_call_argument_value(function, index, param, arg.clone())
-                    {
+                    if let Err(error) = self.coerce_call_argument_value(
+                        function,
+                        index,
+                        param,
+                        arg.clone(),
+                        class_context,
+                        called_class_context,
+                    ) {
                         self.function_context.pop();
                         if class_context.is_some() {
                             self.class_context.pop();
@@ -83373,7 +83419,8 @@ impl Interpreter {
         if self.exit_signal.is_some() {
             return Ok((Value::Null, None));
         }
-        let args = self.coerce_call_frame_values(function, args)?;
+        let args =
+            self.coerce_call_frame_values(function, args, class_context, called_class_context)?;
         self.function_context.push(function.name.clone());
         if let Some(class_context) = class_context {
             self.class_context.push(class_context);
@@ -83848,7 +83895,14 @@ impl Interpreter {
                     }
                 }
             };
-            let value = match self.coerce_call_argument_value(function, index, param, value) {
+            let value = match self.coerce_call_argument_value(
+                function,
+                index,
+                param,
+                value,
+                class_context,
+                called_class_context,
+            ) {
                 Ok(value) => value,
                 Err(error) => {
                     self.function_context.pop();
@@ -84160,7 +84214,13 @@ impl Interpreter {
         let (flow, array_copy_source) = flow?;
         match flow {
             Flow::Normal => self
-                .coerce_call_return_value(function, class_context, Value::Null, true)
+                .coerce_call_return_value(
+                    function,
+                    class_context,
+                    called_class_context,
+                    Value::Null,
+                    true,
+                )
                 .map(|value| (value, None)),
             Flow::Break { span, .. } => Err(runtime_error(
                 span,
@@ -84184,7 +84244,13 @@ impl Interpreter {
                         )
                     })
                     .unwrap_or(value);
-                let value = self.coerce_call_return_value(function, class_context, value, false)?;
+                let value = self.coerce_call_return_value(
+                    function,
+                    class_context,
+                    called_class_context,
+                    value,
+                    false,
+                )?;
                 let array_copy_source = if matches!(value, Value::Array(_)) {
                     array_copy_source
                 } else {
@@ -84718,6 +84784,8 @@ impl Interpreter {
         &mut self,
         function: &FunctionDecl,
         args: Vec<Value>,
+        class_context: Option<ClassId>,
+        called_class_context: Option<ClassId>,
     ) -> CompileResult<Vec<Value>> {
         args.into_iter()
             .enumerate()
@@ -84727,7 +84795,14 @@ impl Interpreter {
                 else {
                     return Ok(value);
                 };
-                self.coerce_call_argument_value(function, param_index, param, value)
+                self.coerce_call_argument_value(
+                    function,
+                    param_index,
+                    param,
+                    value,
+                    class_context,
+                    called_class_context,
+                )
             })
             .collect()
     }
@@ -84753,6 +84828,8 @@ impl Interpreter {
         param_index: usize,
         param: &FunctionParam,
         value: Value,
+        class_context: Option<ClassId>,
+        called_class_context: Option<ClassId>,
     ) -> CompileResult<Value> {
         let Some(type_decl) = param.type_decl.as_ref() else {
             return Ok(value);
@@ -84777,7 +84854,14 @@ impl Interpreter {
             &function.name,
             &format!("parameter ${}", param.name),
             self.current_strict_types(),
-            |object, type_name| self.object_satisfies_live_property_type(object, type_name),
+            |object, type_name| {
+                self.object_satisfies_call_type(
+                    object,
+                    type_name,
+                    class_context,
+                    called_class_context,
+                )
+            },
         )
         .map_err(|_| {
             runtime_error(
@@ -84799,6 +84883,7 @@ impl Interpreter {
         &mut self,
         function: &FunctionDecl,
         class_context: Option<ClassId>,
+        called_class_context: Option<ClassId>,
         value: Value,
         missing_return: bool,
     ) -> CompileResult<Value> {
@@ -84829,19 +84914,26 @@ impl Interpreter {
         if type_decl_is_exact(type_decl, "mixed") {
             return Ok(value);
         }
-        self.coerce_call_value_for_type_decl(function, type_decl, "return value", value.clone())
-            .map_err(|_| {
-                Diagnostic::new(
-                    Phase::Runtime,
-                    function.span.line,
-                    function.span.column,
-                    format!(
-                        "{callable}: Return value must be of type {}, {} returned",
-                        type_decl.text,
-                        Self::returned_type_name(&value, missing_return)
-                    ),
-                )
-            })
+        self.coerce_call_value_for_type_decl(
+            function,
+            type_decl,
+            "return value",
+            value.clone(),
+            class_context,
+            called_class_context,
+        )
+        .map_err(|_| {
+            Diagnostic::new(
+                Phase::Runtime,
+                function.span.line,
+                function.span.column,
+                format!(
+                    "{callable}: Return value must be of type {}, {} returned",
+                    type_decl.text,
+                    Self::returned_type_name(&value, missing_return)
+                ),
+            )
+        })
     }
 
     fn return_type_callable_name(
@@ -84873,6 +84965,8 @@ impl Interpreter {
         type_decl: &TypeDecl,
         label: &str,
         value: Value,
+        class_context: Option<ClassId>,
+        called_class_context: Option<ClassId>,
     ) -> CompileResult<Value> {
         let actual_type = value.type_name();
         self.emit_float_string_to_int_deprecation_for_type_decl(
@@ -84887,7 +84981,14 @@ impl Interpreter {
             &function.name,
             label,
             function.strict_types,
-            |object, type_name| self.object_satisfies_live_property_type(object, type_name),
+            |object, type_name| {
+                self.object_satisfies_call_type(
+                    object,
+                    type_name,
+                    class_context,
+                    called_class_context,
+                )
+            },
         )
         .map_err(|_| {
             runtime_error(
@@ -108701,7 +108802,7 @@ fn startup_type_name_is_subtype_of(
     let subtype = subtype.trim();
     let supertype = supertype.trim();
 
-    if subtype.eq_ignore_ascii_case(supertype) {
+    if subtype.eq_ignore_ascii_case(&supertype) {
         return true;
     }
 
@@ -109872,11 +109973,13 @@ fn validate_parent_interface_method_pair(
                 );
             }
             (Some(left), Some(right))
-                if !is_compatible_parameter_type_override(
+                if !is_compatible_parameter_type_override_with_context(
                     classes,
                     interface_lookup,
                     right,
+                    Some(signature_type_context_for_name(right_interface)),
                     left,
+                    Some(signature_type_context_for_name(left_interface)),
                 ) =>
             {
                 return validate_child_interface_method_compatibility(
@@ -109904,7 +110007,14 @@ fn validate_parent_interface_method_pair(
         .as_ref()
         .map(|decl| decl.text.as_str());
     if let (Some(left), Some(right)) = (left_return, right_return) {
-        if !is_compatible_return_type_override(classes, interface_lookup, right, left) {
+        if !is_compatible_return_type_override_with_context(
+            classes,
+            interface_lookup,
+            right,
+            Some(signature_type_context_for_name(right_interface)),
+            left,
+            Some(signature_type_context_for_name(left_interface)),
+        ) {
             return validate_child_interface_method_compatibility(
                 classes,
                 interface_lookup,
@@ -109929,6 +110039,8 @@ fn validate_child_interface_method_compatibility(
     parent_interface_name: &str,
     parent_method: &InterfaceMethodDecl,
 ) -> CompileResult<()> {
+    let child_context = signature_type_context_for_name(child_interface_name);
+    let parent_context = signature_type_context_for_name(parent_interface_name);
     if child_method.is_static != parent_method.is_static {
         return Err(runtime_error(
             interface.span,
@@ -109996,6 +110108,8 @@ fn validate_child_interface_method_compatibility(
                 .map(|decl| decl.text.as_str()),
         ) {
             (None, Some(child_type)) => {
+                let rendered_child_type =
+                    render_signature_type_text(child_type, Some(child_context));
                 return Err(runtime_error(
                     interface.span,
                     RuntimeError::unsupported_class_inheritance(
@@ -110004,7 +110118,7 @@ fn validate_child_interface_method_compatibility(
                             "interface method {}::{}() cannot add parameter type {} for parameter ${} when parent interface method {}::{}() has no parameter type",
                             child_interface_name,
                             child_method.function.name,
-                            child_type,
+                            rendered_child_type,
                             child_param.name,
                             parent_interface_name,
                             parent_method.function.name
@@ -110013,13 +110127,19 @@ fn validate_child_interface_method_compatibility(
                 ));
             }
             (Some(parent_type), Some(child_type))
-                if !is_compatible_parameter_type_override(
+                if !is_compatible_parameter_type_override_with_context(
                     classes,
                     interface_lookup,
                     parent_type,
+                    Some(parent_context),
                     child_type,
+                    Some(child_context),
                 ) =>
             {
+                let rendered_parent_type =
+                    render_signature_type_text(parent_type, Some(parent_context));
+                let rendered_child_type =
+                    render_signature_type_text(child_type, Some(child_context));
                 return Err(runtime_error(
                     interface.span,
                     RuntimeError::unsupported_class_inheritance(
@@ -110029,10 +110149,10 @@ fn validate_child_interface_method_compatibility(
                             child_interface_name,
                             child_method.function.name,
                             child_param.name,
-                            child_type,
+                            rendered_child_type,
                             parent_interface_name,
                             parent_method.function.name,
-                            parent_type
+                            rendered_parent_type
                         ),
                     ),
                 ));
@@ -110061,20 +110181,24 @@ fn validate_child_interface_method_compatibility(
                     "interface method {}::{}() must declare return type {} to match parent interface method {}::{}()",
                     child_interface_name,
                     child_method.function.name,
-                    parent_type,
+                    render_signature_type_text(parent_type, Some(parent_context)),
                     parent_interface_name,
                     parent_method.function.name
                 ),
             ),
         )),
         (Some(parent_type), Some(child_type))
-            if !is_compatible_return_type_override(
+            if !is_compatible_return_type_override_with_context(
                 classes,
                 interface_lookup,
                 parent_type,
+                Some(parent_context),
                 child_type,
+                Some(child_context),
             ) =>
         {
+            let rendered_parent_type = render_signature_type_text(parent_type, Some(parent_context));
+            let rendered_child_type = render_signature_type_text(child_type, Some(child_context));
             Err(runtime_error(
                 interface.span,
                 RuntimeError::unsupported_class_inheritance(
@@ -110083,10 +110207,10 @@ fn validate_child_interface_method_compatibility(
                         "interface method {}::{}() return type {} is incompatible with parent interface method {}::{}() return type {}",
                         child_interface_name,
                         child_method.function.name,
-                        child_type,
+                        rendered_child_type,
                         parent_interface_name,
                         parent_method.function.name,
-                        parent_type
+                        rendered_parent_type
                     ),
                 ),
             ))
@@ -111518,17 +111642,24 @@ fn validate_interface_method_implementation(
             let class_has_variadic = class_signature
                 .as_ref()
                 .is_some_and(|signature| signature.params.iter().any(|param| param.is_variadic));
+            let class_context = signature_type_context_for_class(classes, declaring_class_id);
+            let interface_context = signature_type_context_for_name(&method_interface_name);
             if class_required > interface_required
                 || (class_param_count < method.function.params.len() && !class_has_variadic)
             {
                 return Err(incompatible_declaration_error(
                     &class.name,
-                    method_signature_compatibility_signature(
+                    method_signature_compatibility_signature_with_context(
                         declaring_class_name,
                         class_method.name(),
                         class_signature.as_ref(),
+                        Some(class_context),
                     ),
-                    function_decl_compatibility_signature(&method_interface_name, &method.function),
+                    function_decl_compatibility_signature_with_context(
+                        &method_interface_name,
+                        &method.function,
+                        Some(interface_context),
+                    ),
                 ));
             }
 
@@ -111536,6 +111667,7 @@ fn validate_interface_method_implementation(
                 classes,
                 interface_lookup,
                 &class.name,
+                declaring_class_id,
                 &method_interface_name,
                 method,
                 declaring_class_name,
@@ -111546,6 +111678,7 @@ fn validate_interface_method_implementation(
                 classes,
                 interface_lookup,
                 &class.name,
+                declaring_class_id,
                 &method_interface_name,
                 method,
                 declaring_class_name,
@@ -111761,6 +111894,7 @@ fn validate_interface_parameter_type_compatibility(
     classes: &PhpClassTable,
     interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
     class_name: &str,
+    declaring_class_id: ClassId,
     interface_name: &str,
     interface_method: &InterfaceMethodDecl,
     declaring_class_name: &str,
@@ -111770,6 +111904,8 @@ fn validate_interface_parameter_type_compatibility(
     let Some(class_signature) = class_signature else {
         return Ok(());
     };
+    let class_context = signature_type_context_for_class(classes, declaring_class_id);
+    let interface_context = signature_type_context_for_name(interface_name);
     let class_variadic_param = class_signature
         .params
         .iter()
@@ -111783,12 +111919,17 @@ fn validate_interface_parameter_type_compatibility(
         if interface_param.by_reference != class_param.by_reference {
             return Err(incompatible_declaration_error(
                 class_name,
-                method_signature_compatibility_signature(
+                method_signature_compatibility_signature_with_context(
                     declaring_class_name,
                     class_method_name,
                     Some(class_signature),
+                    Some(class_context),
                 ),
-                function_decl_compatibility_signature(interface_name, &interface_method.function),
+                function_decl_compatibility_signature_with_context(
+                    interface_name,
+                    &interface_method.function,
+                    Some(interface_context),
+                ),
             ));
         }
 
@@ -111803,35 +111944,41 @@ fn validate_interface_parameter_type_compatibility(
                 let _ = class_type;
                 return Err(incompatible_declaration_error(
                     class_name,
-                    method_signature_compatibility_signature(
+                    method_signature_compatibility_signature_with_context(
                         declaring_class_name,
                         class_method_name,
                         Some(class_signature),
+                        Some(class_context),
                     ),
-                    function_decl_compatibility_signature(
+                    function_decl_compatibility_signature_with_context(
                         interface_name,
                         &interface_method.function,
+                        Some(interface_context),
                     ),
                 ));
             }
             (Some(interface_type), Some(class_type))
-                if !is_compatible_parameter_type_override(
+                if !is_compatible_parameter_type_override_with_context(
                     classes,
                     interface_lookup,
                     interface_type,
+                    Some(interface_context),
                     class_type,
+                    Some(class_context),
                 ) =>
             {
                 return Err(incompatible_declaration_error(
                     class_name,
-                    method_signature_compatibility_signature(
+                    method_signature_compatibility_signature_with_context(
                         declaring_class_name,
                         class_method_name,
                         Some(class_signature),
+                        Some(class_context),
                     ),
-                    function_decl_compatibility_signature(
+                    function_decl_compatibility_signature_with_context(
                         interface_name,
                         &interface_method.function,
+                        Some(interface_context),
                     ),
                 ));
             }
@@ -111846,6 +111993,7 @@ fn validate_interface_return_type_compatibility(
     classes: &PhpClassTable,
     interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
     class_name: &str,
+    declaring_class_id: ClassId,
     interface_name: &str,
     interface_method: &InterfaceMethodDecl,
     declaring_class_name: &str,
@@ -111855,6 +112003,8 @@ fn validate_interface_return_type_compatibility(
     let Some(class_signature) = class_signature else {
         return Ok(());
     };
+    let class_context = signature_type_context_for_class(classes, declaring_class_id);
+    let interface_context = signature_type_context_for_name(interface_name);
 
     match (
         interface_method
@@ -111866,29 +112016,41 @@ fn validate_interface_return_type_compatibility(
     ) {
         (Some(_), None) => Err(incompatible_declaration_error(
             class_name,
-            method_signature_compatibility_signature(
+            method_signature_compatibility_signature_with_context(
                 declaring_class_name,
                 class_method_name,
                 Some(class_signature),
+                Some(class_context),
             ),
-            function_decl_compatibility_signature(interface_name, &interface_method.function),
+            function_decl_compatibility_signature_with_context(
+                interface_name,
+                &interface_method.function,
+                Some(interface_context),
+            ),
         )),
         (Some(interface_type), Some(class_type))
-            if !is_compatible_return_type_override(
+            if !is_compatible_return_type_override_with_context(
                 classes,
                 interface_lookup,
                 interface_type,
+                Some(interface_context),
                 class_type,
+                Some(class_context),
             ) =>
         {
             Err(incompatible_declaration_error(
                 class_name,
-                method_signature_compatibility_signature(
+                method_signature_compatibility_signature_with_context(
                     declaring_class_name,
                     class_method_name,
                     Some(class_signature),
+                    Some(class_context),
                 ),
-                function_decl_compatibility_signature(interface_name, &interface_method.function),
+                function_decl_compatibility_signature_with_context(
+                    interface_name,
+                    &interface_method.function,
+                    Some(interface_context),
+                ),
             ))
         }
         _ => Ok(()),
@@ -112003,25 +112165,30 @@ fn incompatible_declaration_error(
     )
 }
 
-fn function_decl_compatibility_signature(class_name: &str, function: &FunctionDecl) -> String {
+fn function_decl_compatibility_signature_with_context(
+    class_name: &str,
+    function: &FunctionDecl,
+    context: Option<SignatureTypeContext<'_>>,
+) -> String {
     let params = function
         .params
         .iter()
-        .map(function_param_compatibility_signature)
+        .map(|param| function_param_compatibility_signature_with_context(param, context))
         .collect::<Vec<_>>()
         .join(", ");
     let return_type = function
         .return_type
         .as_ref()
-        .map(|decl| format!(": {}", decl.text))
+        .map(|decl| format!(": {}", render_signature_type_text(&decl.text, context)))
         .unwrap_or_default();
     format!("{class_name}::{}({params}){return_type}", function.name)
 }
 
-fn method_signature_compatibility_signature(
+fn method_signature_compatibility_signature_with_context(
     class_name: &str,
     method_name: &str,
     signature: Option<&MethodSignature>,
+    context: Option<SignatureTypeContext<'_>>,
 ) -> String {
     let Some(signature) = signature else {
         return format!("{class_name}::{method_name}()");
@@ -112029,21 +112196,24 @@ fn method_signature_compatibility_signature(
     let params = signature
         .params
         .iter()
-        .map(parameter_signature_compatibility_signature)
+        .map(|param| parameter_signature_compatibility_signature_with_context(param, context))
         .collect::<Vec<_>>()
         .join(", ");
     let return_type = signature
         .return_type
         .as_ref()
-        .map(|decl| format!(": {decl}"))
+        .map(|decl| format!(": {}", render_signature_type_text(decl, context)))
         .unwrap_or_default();
     format!("{class_name}::{method_name}({params}){return_type}")
 }
 
-fn function_param_compatibility_signature(param: &FunctionParam) -> String {
+fn function_param_compatibility_signature_with_context(
+    param: &FunctionParam,
+    context: Option<SignatureTypeContext<'_>>,
+) -> String {
     let mut rendered = String::new();
     if let Some(type_decl) = &param.type_decl {
-        rendered.push_str(&type_decl.text);
+        rendered.push_str(&render_signature_type_text(&type_decl.text, context));
         rendered.push(' ');
     }
     if param.by_reference {
@@ -112061,10 +112231,13 @@ fn function_param_compatibility_signature(param: &FunctionParam) -> String {
     rendered
 }
 
-fn parameter_signature_compatibility_signature(param: &ParameterSignature) -> String {
+fn parameter_signature_compatibility_signature_with_context(
+    param: &ParameterSignature,
+    context: Option<SignatureTypeContext<'_>>,
+) -> String {
     let mut rendered = String::new();
     if let Some(type_decl) = &param.type_decl {
-        rendered.push_str(type_decl);
+        rendered.push_str(&render_signature_type_text(type_decl, context));
         rendered.push(' ');
     }
     if param.by_reference {
@@ -112080,6 +112253,57 @@ fn parameter_signature_compatibility_signature(param: &ParameterSignature) -> St
         rendered.push_str(&compatibility_default_expr(default));
     }
     rendered
+}
+
+fn render_signature_type_text(
+    type_text: &str,
+    context: Option<SignatureTypeContext<'_>>,
+) -> String {
+    let trimmed = type_text.trim();
+    if trimmed.is_empty() {
+        return type_text.to_string();
+    }
+    if let Some(nullable) = trimmed.strip_prefix('?') {
+        return format!("?{}", render_signature_type_text(nullable.trim(), context));
+    }
+    if trimmed.contains('|')
+        && !trimmed.contains('&')
+        && !trimmed.contains('(')
+        && !trimmed.contains(')')
+    {
+        return trimmed
+            .split('|')
+            .map(|member| render_signature_type_text(member, context))
+            .collect::<Vec<_>>()
+            .join("|");
+    }
+    if trimmed.contains('&')
+        && !trimmed.contains('|')
+        && !trimmed.contains('(')
+        && !trimmed.contains(')')
+    {
+        return trimmed
+            .split('&')
+            .map(|member| render_signature_type_text(member, context))
+            .collect::<Vec<_>>()
+            .join("&");
+    }
+
+    let normalized = trimmed
+        .strip_prefix('\\')
+        .unwrap_or(trimmed)
+        .to_ascii_lowercase();
+    match normalized.as_str() {
+        "self" => context
+            .map(|context| context.self_name.to_string())
+            .unwrap_or_else(|| type_text.to_string()),
+        "parent" => context
+            .and_then(|context| context.parent_name)
+            .map(str::to_string)
+            .unwrap_or_else(|| type_text.to_string()),
+        "static" => type_text.to_string(),
+        _ => type_text.to_string(),
+    }
 }
 
 fn compatibility_default_expr(expr: &Expr) -> String {
@@ -114275,6 +114499,68 @@ fn implemented_interface_names(classes: &PhpClassTable, class_id: ClassId) -> Ve
     names
 }
 
+fn signature_type_context_for_class<'a>(
+    classes: &'a PhpClassTable,
+    class_id: ClassId,
+) -> SignatureTypeContext<'a> {
+    let class = classes
+        .get(class_id)
+        .expect("class id should resolve to class metadata");
+    let parent_name = class
+        .parent_id()
+        .and_then(|parent_id| classes.get(parent_id))
+        .map(|parent| parent.name());
+    SignatureTypeContext {
+        self_name: class.name(),
+        parent_name,
+    }
+}
+
+fn signature_type_context_for_name(name: &str) -> SignatureTypeContext<'_> {
+    SignatureTypeContext {
+        self_name: name,
+        parent_name: None,
+    }
+}
+
+fn class_implements_signature_interface(
+    classes: &PhpClassTable,
+    interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
+    class_id: ClassId,
+    interface_name: &str,
+) -> bool {
+    let mut current = Some(class_id);
+    while let Some(current_id) = current {
+        let class = classes
+            .get(current_id)
+            .expect("class id should resolve to class metadata");
+        for implemented in class.interfaces() {
+            if signature_interface_extends_or_matches(interface_lookup, implemented, interface_name)
+            {
+                return true;
+            }
+        }
+        current = class.parent_id();
+    }
+    false
+}
+
+fn signature_interface_extends_or_matches(
+    interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
+    subtype: &str,
+    supertype: &str,
+) -> bool {
+    if subtype.eq_ignore_ascii_case(&supertype) {
+        return true;
+    }
+    if interface_extends_interface(interface_lookup, subtype, supertype) {
+        return true;
+    }
+    core_interface_parent_names(subtype)
+        .iter()
+        .any(|parent| signature_interface_extends_or_matches(interface_lookup, parent, supertype))
+}
+
 fn find_public_method<'a>(
     classes: &'a PhpClassTable,
     class_id: ClassId,
@@ -114625,6 +114911,7 @@ fn validate_inherited_method_signature_compatibility(
     }
 
     let child_required = required_param_count(&method.function);
+    let child_context = signature_type_context_for_class(classes, class_id);
     let mut current = classes
         .get(class_id)
         .expect("class id should resolve to class metadata")
@@ -114646,6 +114933,7 @@ fn validate_inherited_method_signature_compatibility(
             else {
                 return Ok(());
             };
+            let parent_context = signature_type_context_for_class(classes, parent_id);
             let child_has_variadic = method.function.params.iter().any(|param| param.is_variadic);
 
             if child_required > parent_signature.required_params
@@ -114654,11 +114942,16 @@ fn validate_inherited_method_signature_compatibility(
             {
                 return Err(incompatible_declaration_error(
                     class_name,
-                    function_decl_compatibility_signature(class_name, &method.function),
-                    method_signature_compatibility_signature(
+                    function_decl_compatibility_signature_with_context(
+                        class_name,
+                        &method.function,
+                        Some(child_context),
+                    ),
+                    method_signature_compatibility_signature_with_context(
                         parent.name(),
                         parent_method.name(),
                         Some(parent_signature),
+                        Some(parent_context),
                     ),
                 ));
             }
@@ -114677,11 +114970,16 @@ fn validate_inherited_method_signature_compatibility(
                 if parent_param.by_reference != child_param.by_reference {
                     return Err(incompatible_declaration_error(
                         class_name,
-                        function_decl_compatibility_signature(class_name, &method.function),
-                        method_signature_compatibility_signature(
+                        function_decl_compatibility_signature_with_context(
+                            class_name,
+                            &method.function,
+                            Some(child_context),
+                        ),
+                        method_signature_compatibility_signature_with_context(
                             parent.name(),
                             parent_method.name(),
                             Some(parent_signature),
+                            Some(parent_context),
                         ),
                     ));
                 }
@@ -114697,29 +114995,41 @@ fn validate_inherited_method_signature_compatibility(
                         let _ = child_type;
                         return Err(incompatible_declaration_error(
                             class_name,
-                            function_decl_compatibility_signature(class_name, &method.function),
-                            method_signature_compatibility_signature(
+                            function_decl_compatibility_signature_with_context(
+                                class_name,
+                                &method.function,
+                                Some(child_context),
+                            ),
+                            method_signature_compatibility_signature_with_context(
                                 parent.name(),
                                 parent_method.name(),
                                 Some(parent_signature),
+                                Some(parent_context),
                             ),
                         ));
                     }
                     (Some(parent_type), Some(child_type))
-                        if !is_compatible_parameter_type_override(
+                        if !is_compatible_parameter_type_override_with_context(
                             classes,
                             interface_lookup,
                             parent_type,
+                            Some(parent_context),
                             child_type,
+                            Some(child_context),
                         ) =>
                     {
                         return Err(incompatible_declaration_error(
                             class_name,
-                            function_decl_compatibility_signature(class_name, &method.function),
-                            method_signature_compatibility_signature(
+                            function_decl_compatibility_signature_with_context(
+                                class_name,
+                                &method.function,
+                                Some(child_context),
+                            ),
+                            method_signature_compatibility_signature_with_context(
                                 parent.name(),
                                 parent_method.name(),
                                 Some(parent_signature),
+                                Some(parent_context),
                             ),
                         ));
                     }
@@ -114739,29 +115049,41 @@ fn validate_inherited_method_signature_compatibility(
                     let _ = parent_type;
                     return Err(incompatible_declaration_error(
                         class_name,
-                        function_decl_compatibility_signature(class_name, &method.function),
-                        method_signature_compatibility_signature(
+                        function_decl_compatibility_signature_with_context(
+                            class_name,
+                            &method.function,
+                            Some(child_context),
+                        ),
+                        method_signature_compatibility_signature_with_context(
                             parent.name(),
                             parent_method.name(),
                             Some(parent_signature),
+                            Some(parent_context),
                         ),
                     ));
                 }
                 (Some(parent_type), Some(child_type))
-                    if !is_compatible_return_type_override(
+                    if !is_compatible_return_type_override_with_context(
                         classes,
                         interface_lookup,
                         parent_type,
+                        Some(parent_context),
                         child_type,
+                        Some(child_context),
                     ) =>
                 {
                     return Err(incompatible_declaration_error(
                         class_name,
-                        function_decl_compatibility_signature(class_name, &method.function),
-                        method_signature_compatibility_signature(
+                        function_decl_compatibility_signature_with_context(
+                            class_name,
+                            &method.function,
+                            Some(child_context),
+                        ),
+                        method_signature_compatibility_signature_with_context(
                             parent.name(),
                             parent_method.name(),
                             Some(parent_signature),
+                            Some(parent_context),
                         ),
                     ));
                 }
@@ -114777,22 +115099,40 @@ fn validate_inherited_method_signature_compatibility(
     Ok(())
 }
 
-fn is_compatible_parameter_type_override(
+fn is_compatible_parameter_type_override_with_context(
     classes: &PhpClassTable,
     interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
     inherited_type: &str,
+    inherited_context: Option<SignatureTypeContext<'_>>,
     override_type: &str,
+    override_context: Option<SignatureTypeContext<'_>>,
 ) -> bool {
-    type_name_is_subtype_of(classes, interface_lookup, inherited_type, override_type)
+    type_name_is_subtype_of_with_context(
+        classes,
+        interface_lookup,
+        inherited_type,
+        inherited_context,
+        override_type,
+        override_context,
+    )
 }
 
-fn is_compatible_return_type_override(
+fn is_compatible_return_type_override_with_context(
     classes: &PhpClassTable,
     interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
     inherited_type: &str,
+    inherited_context: Option<SignatureTypeContext<'_>>,
     override_type: &str,
+    override_context: Option<SignatureTypeContext<'_>>,
 ) -> bool {
-    type_name_is_subtype_of(classes, interface_lookup, override_type, inherited_type)
+    type_name_is_subtype_of_with_context(
+        classes,
+        interface_lookup,
+        override_type,
+        override_context,
+        inherited_type,
+        inherited_context,
+    )
 }
 
 fn type_name_is_subtype_of(
@@ -114801,64 +115141,124 @@ fn type_name_is_subtype_of(
     subtype: &str,
     supertype: &str,
 ) -> bool {
+    type_name_is_subtype_of_with_context(classes, interface_lookup, subtype, None, supertype, None)
+}
+
+fn type_name_is_subtype_of_with_context(
+    classes: &PhpClassTable,
+    interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
+    subtype: &str,
+    subtype_context: Option<SignatureTypeContext<'_>>,
+    supertype: &str,
+    supertype_context: Option<SignatureTypeContext<'_>>,
+) -> bool {
     let subtype = subtype.trim();
     let supertype = supertype.trim();
 
-    if subtype.eq_ignore_ascii_case(supertype) {
-        return true;
-    }
-
     if let Some(super_members) = signature_intersection_members(supertype) {
         return super_members.iter().all(|supertype| {
-            type_name_is_subtype_of(classes, interface_lookup, subtype, supertype)
+            type_name_is_subtype_of_with_context(
+                classes,
+                interface_lookup,
+                subtype,
+                subtype_context,
+                supertype,
+                supertype_context,
+            )
         });
     }
 
     if let Some(sub_members) = signature_intersection_members(subtype) {
-        return sub_members
-            .iter()
-            .any(|subtype| type_name_is_subtype_of(classes, interface_lookup, subtype, supertype));
+        return sub_members.iter().any(|subtype| {
+            type_name_is_subtype_of_with_context(
+                classes,
+                interface_lookup,
+                subtype,
+                subtype_context,
+                supertype,
+                supertype_context,
+            )
+        });
     }
 
     if let Some(subtypes) = signature_union_members(subtype) {
-        return subtypes
-            .iter()
-            .all(|subtype| type_name_is_subtype_of(classes, interface_lookup, subtype, supertype));
+        return subtypes.iter().all(|subtype| {
+            type_name_is_subtype_of_with_context(
+                classes,
+                interface_lookup,
+                subtype,
+                subtype_context,
+                supertype,
+                supertype_context,
+            )
+        });
     }
 
     if let Some(supertypes) = signature_union_members(supertype) {
         return supertypes.iter().any(|supertype| {
-            type_name_is_subtype_of(classes, interface_lookup, subtype, supertype)
+            type_name_is_subtype_of_with_context(
+                classes,
+                interface_lookup,
+                subtype,
+                subtype_context,
+                supertype,
+                supertype_context,
+            )
         });
     }
 
-    if normalized_builtin_signature_type(supertype).is_some_and(|ty| ty == "mixed") {
-        return !normalized_builtin_signature_type(subtype).is_some_and(|ty| ty == "void");
+    if signature_type_is_static_keyword(supertype) {
+        return signature_type_is_static_keyword(subtype);
     }
 
-    if normalized_builtin_signature_type(subtype).is_some_and(|ty| ty == "never") {
+    let subtype = resolve_relative_signature_type(subtype, subtype_context);
+    let supertype = resolve_relative_signature_type(supertype, supertype_context);
+
+    if subtype.eq_ignore_ascii_case(&supertype) {
         return true;
     }
 
-    if normalized_builtin_signature_type(supertype).is_some_and(|ty| ty == "iterable") {
-        return type_name_is_subtype_of(classes, interface_lookup, subtype, "array")
-            || type_name_is_subtype_of(classes, interface_lookup, subtype, "Traversable");
+    if normalized_builtin_signature_type(supertype.as_ref()).is_some_and(|ty| ty == "mixed") {
+        return !normalized_builtin_signature_type(subtype.as_ref()).is_some_and(|ty| ty == "void");
+    }
+
+    if normalized_builtin_signature_type(subtype.as_ref()).is_some_and(|ty| ty == "never") {
+        return true;
+    }
+
+    if normalized_builtin_signature_type(supertype.as_ref()).is_some_and(|ty| ty == "iterable") {
+        return type_name_is_subtype_of_with_context(
+            classes,
+            interface_lookup,
+            subtype.as_ref(),
+            subtype_context,
+            "array",
+            None,
+        ) || type_name_is_subtype_of_with_context(
+            classes,
+            interface_lookup,
+            subtype.as_ref(),
+            subtype_context,
+            "Traversable",
+            None,
+        );
     }
 
     if let (Some(subtype), Some(supertype)) = (
-        normalized_builtin_signature_type(subtype),
-        normalized_builtin_signature_type(supertype),
+        normalized_builtin_signature_type(subtype.as_ref()),
+        normalized_builtin_signature_type(supertype.as_ref()),
     ) {
         return subtype == supertype
             || (subtype == "false" && supertype == "bool")
             || (subtype == "true" && supertype == "bool");
     }
 
-    let Some(subtype) = simple_class_like_signature_type(subtype) else {
+    let Some(subtype) = simple_class_like_signature_type(subtype.as_ref()) else {
         return false;
     };
-    let Some(supertype) = simple_class_like_signature_type(supertype) else {
-        return normalized_builtin_signature_type(supertype).is_some_and(|ty| ty == "object");
+    let Some(supertype) = simple_class_like_signature_type(supertype.as_ref()) else {
+        return normalized_builtin_signature_type(supertype.as_ref())
+            .is_some_and(|ty| ty == "object");
     };
 
     let subtype_class_id = classes.lookup_class_id(subtype);
@@ -114874,7 +115274,12 @@ fn type_name_is_subtype_of(
     if let Some(subtype_class_id) = subtype_class_id {
         return (interface_lookup.contains_key(&supertype_interface_key)
             || is_core_interface_name(supertype))
-            && classes.implements_interface(subtype_class_id, supertype);
+            && class_implements_signature_interface(
+                classes,
+                interface_lookup,
+                subtype_class_id,
+                supertype,
+            );
     }
 
     if (interface_lookup.contains_key(&subtype.to_ascii_lowercase())
@@ -114886,6 +115291,14 @@ fn type_name_is_subtype_of(
     }
 
     false
+}
+
+fn signature_type_is_static_keyword(type_name: &str) -> bool {
+    type_name
+        .trim()
+        .strip_prefix('\\')
+        .unwrap_or_else(|| type_name.trim())
+        .eq_ignore_ascii_case("static")
 }
 
 fn signature_intersection_members(type_name: &str) -> Option<Vec<&str>> {
@@ -114916,6 +115329,24 @@ fn signature_union_members(type_name: &str) -> Option<Vec<&str>> {
     }
 
     None
+}
+
+fn resolve_relative_signature_type<'a>(
+    type_name: &'a str,
+    context: Option<SignatureTypeContext<'a>>,
+) -> Cow<'a, str> {
+    let Some(context) = context else {
+        return Cow::Borrowed(type_name);
+    };
+    match type_name.trim().to_ascii_lowercase().as_str() {
+        "self" => Cow::Borrowed(context.self_name),
+        "parent" => context
+            .parent_name
+            .map(Cow::Borrowed)
+            .unwrap_or_else(|| Cow::Borrowed(type_name)),
+        "static" => Cow::Borrowed(context.self_name),
+        _ => Cow::Borrowed(type_name),
+    }
 }
 
 fn normalized_builtin_signature_type(type_name: &str) -> Option<&'static str> {
@@ -160838,10 +161269,7 @@ fn type_text_is_runtime_enforceable_for_call(text: &str) -> bool {
         .strip_prefix('\\')
         .unwrap_or(without_nullable)
         .to_ascii_lowercase();
-    !matches!(
-        normalized.as_str(),
-        "callable" | "iterable" | "parent" | "resource" | "self" | "static"
-    )
+    !matches!(normalized.as_str(), "callable" | "iterable" | "resource")
 }
 
 fn syntax_only_magic_array_access_type_metadata_is_supported(function: &FunctionDecl) -> bool {

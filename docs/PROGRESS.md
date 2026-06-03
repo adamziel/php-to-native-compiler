@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added a bounded relative `self` / `parent` / `static` method-signature
+  variance lane on the interpreter path. Method signature comparison now
+  resolves relative type tokens in the declaring class or interface context,
+  preserves PHP's `static` return constraint, expands interface parents for
+  subtype checks, and uses the resolved relative context for supported runtime
+  parameter and return enforcement. Focused proof covers Rust
+  `object_model::relative_self_parent_static_method_variance_uses_declaring_context`,
+  build/fmt/diff checks, and selected public PHPT rows
+  `Zend/tests/type_declarations/variance/object_variance.phpt`,
+  `Zend/tests/type_declarations/variance/parent_in_class_success.phpt`,
+  `Zend/tests/type_declarations/variance/parent_in_class_failure2.phpt`,
+  `Zend/tests/type_declarations/variance/static_variance_success.phpt`, and
+  `Zend/tests/type_declarations/variance/static_variance_failure.phpt` at
+  `5/5` PASS. Unsupported edges remain parenthesized DNF declarations,
+  namespace/import-aware relative type diagnostics and aliases, broad runtime
+  type-enforcement diagnostics, exact PHP error objects, native lowering, and
+  references/COW.
+
 - Added a bounded intersection type diagnostics lane on the interpreter path.
   Runtime parameter and typed-property errors now report PHP-shaped runtime
   object class names instead of the generic `object` type for covered class,

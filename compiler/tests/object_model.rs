@@ -15041,6 +15041,96 @@ class PluginResolver implements Resolver {
 }
 
 #[test]
+fn relative_self_parent_static_method_variance_uses_declaring_context() {
+    let execution = run_source(
+        r#"<?php
+class P2 {}
+class A2 extends P2 {
+    public function method(parent $x) {}
+}
+class B2 extends A2 {
+    public function method(P2 $x) {}
+}
+
+class P3 {}
+class A3 extends P3 {
+    public function method($x): parent {}
+}
+class B3 extends A3 {
+    public function method($x): parent {}
+}
+
+class X {}
+class Y {}
+class A {
+    public function test1(): self {}
+    public function test2(): B {}
+    public function test3(): object {}
+    public function test4(): X|Y|self {}
+    public function test5(): ?static {}
+}
+class B extends A {
+    public function test1(): static {}
+    public function test2(): static {}
+    public function test3(): static {}
+    public function test4(): X|Y|static {}
+    public function test5(): static {}
+}
+
+interface I1 {
+    public function method1(I1 $o): object;
+}
+interface I2 extends I1 {
+    public function method1(object $o): I1;
+}
+final class C1 implements I2 {
+    public function method1($o = null): self {
+        return $this;
+    }
+}
+
+$o = new C1();
+echo get_class($o->method1()), "\n";
+echo "done";
+"#,
+    )
+    .unwrap();
+    assert_eq!(execution.stdout, "C1\ndone");
+    assert_eq!(execution.exit_code, 0);
+
+    let parent_parameter_error = runtime_error(
+        r#"<?php
+class P4 {}
+class A4 extends P4 {
+    public function method(parent $x) {}
+}
+class B4 extends A4 {
+    public function method(parent $x) {}
+}
+"#,
+    );
+    assert_eq!(
+        parent_parameter_error.message,
+        "Declaration of B4::method(A4 $x) must be compatible with A4::method(P4 $x)"
+    );
+
+    let static_return_error = runtime_error(
+        r#"<?php
+class StaticBase {
+    public function test(): static {}
+}
+class StaticChild extends StaticBase {
+    public function test(): self {}
+}
+"#,
+    );
+    assert_eq!(
+        static_return_error.message,
+        "Declaration of StaticChild::test(): StaticChild must be compatible with StaticBase::test(): static"
+    );
+}
+
+#[test]
 fn intersection_variance_accepts_equivalent_and_reduced_bounds() {
     let execution = run_source(
         r#"<?php
