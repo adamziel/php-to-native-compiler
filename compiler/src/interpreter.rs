@@ -95,6 +95,9 @@ const PHP_EXTR_IF_EXISTS: i64 = 6;
 const PHP_EXTR_REFS: i64 = 256;
 const PHP_FIRST_USER_RESOURCE_ID: i64 = 4;
 const PHP_DEFAULT_REQUEST_UMASK: i64 = 0o022;
+const PHP_POSIX_ERRNO_NONE: i64 = 0;
+const PHP_POSIX_EPERM: i64 = 1;
+const PHP_POSIX_EINVAL: i64 = 22;
 const ARRAY_PAD_MAX_PADDING: u64 = 1_048_576;
 const PHP_OUTPUT_HANDLER_START: i64 = 1;
 const PHP_OUTPUT_HANDLER_USER: i64 = 1;
@@ -587,6 +590,7 @@ struct Interpreter {
     directories: HashMap<i64, DirectoryResource>,
     last_opened_directory: Option<i64>,
     strtok_state: Option<StrtokState>,
+    posix_last_error: i64,
     pcre_last_error: i64,
     uploaded_file_paths: HashSet<PathBuf>,
     stat_cache: HashMap<PathBuf, fs::Metadata>,
@@ -11946,6 +11950,7 @@ impl Interpreter {
             directories: HashMap::new(),
             last_opened_directory: None,
             strtok_state: None,
+            posix_last_error: PHP_POSIX_ERRNO_NONE,
             pcre_last_error: PHP_PREG_NO_ERROR,
             uploaded_file_paths: HashSet::new(),
             stat_cache: HashMap::new(),
@@ -89907,6 +89912,45 @@ impl Interpreter {
         }
     }
 
+    fn call_lchown_or_lchgrp(
+        &mut self,
+        args: &[Value],
+        function: &str,
+        value_label: &str,
+        current_identity: fn() -> Option<i64>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        expect_arity(function, args, 2, span)?;
+        let path = self.filesystem_path_argument(function, "filename", &args[0], span)?;
+        let function_call = format!("{function}()");
+        let requested = php_internal_int_argument(&function_call, 2, value_label, &args[1], span)?;
+        let filesystem_path =
+            self.resolve_local_filesystem_operation_path(function, &path, false, span)?;
+        if !self.enforce_bounded_open_basedir(&function_call, &path, &filesystem_path, span)? {
+            return Ok(Value::Bool(false));
+        }
+        if let Err(error) = fs::symlink_metadata(&filesystem_path) {
+            self.emit_filesystem_display_warning(
+                function,
+                Self::filesystem_io_warning_message(&error),
+                span,
+            )?;
+            return Ok(Value::Bool(false));
+        }
+
+        let Some(current) = current_identity() else {
+            self.emit_filesystem_display_warning(function, "Operation not permitted", span)?;
+            return Ok(Value::Bool(false));
+        };
+        if requested >= 0 && requested == current {
+            self.clear_stat_cache_filesystem_path(&filesystem_path);
+            return Ok(Value::Bool(true));
+        }
+
+        self.emit_filesystem_display_warning(function, "Operation not permitted", span)?;
+        Ok(Value::Bool(false))
+    }
+
     fn call_file_metadata_int_builtin(
         &mut self,
         args: &[Value],
@@ -98012,9 +98056,30 @@ impl Interpreter {
             "posix_getgrgid" => call_posix_getgrgid(&args, span),
             "posix_getgrnam" => call_posix_getgrnam(&args, span),
             "posix_setgid" => call_posix_setgid(&args, span),
+            "posix_setuid" => {
+                expect_arity("posix_setuid", &args, 1, span)?;
+                let requested =
+                    php_internal_int_argument("posix_setuid()", 1, "user_id", &args[0], span)?;
+                let success = posix_getuid_value()
+                    .map(|current| requested >= 0 && requested == current)
+                    .unwrap_or(false);
+                self.posix_last_error = if success {
+                    PHP_POSIX_ERRNO_NONE
+                } else if requested < 0 {
+                    PHP_POSIX_EINVAL
+                } else {
+                    PHP_POSIX_EPERM
+                };
+                Ok(Value::Bool(success))
+            }
             "posix_seteuid" => call_posix_seteuid(&args, span),
             "posix_setegid" => call_posix_setegid(&args, span),
             "posix_uname" => call_posix_uname(&args, span),
+            "posix_errno" | "posix_get_last_error" => {
+                expect_arity(name, &args, 0, span)?;
+                Ok(Value::Int(self.posix_last_error))
+            }
+            "posix_strerror" => call_posix_strerror(&args, span),
             "umask" => self.call_umask(&args, span),
             "getmypid" => call_getmypid(&args, span),
             "php_uname" => call_php_uname(&args, span),
@@ -100281,6 +100346,12 @@ impl Interpreter {
             ),
             "chown" => self.call_chown_or_chgrp(&args, "chown", "user", span),
             "chgrp" => self.call_chown_or_chgrp(&args, "chgrp", "group", span),
+            "lchown" => {
+                self.call_lchown_or_lchgrp(&args, "lchown", "user", posix_getuid_value, span)
+            }
+            "lchgrp" => {
+                self.call_lchown_or_lchgrp(&args, "lchgrp", "group", posix_getgid_value, span)
+            }
             "filetype" => self.call_filetype(&args, span),
             "is_executable" => self.call_is_executable(&args, span),
             "disk_free_space" => {
@@ -119280,8 +119351,15 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
         "posix_setgid" | "posix_setegid" => {
             ("bool", vec![reflection_internal_param("group_id", "int")])
         }
-        "posix_seteuid" => ("bool", vec![reflection_internal_param("user_id", "int")]),
         "posix_uname" => ("array|false", vec![]),
+        "posix_setuid" | "posix_seteuid" => {
+            ("bool", vec![reflection_internal_param("user_id", "int")])
+        }
+        "posix_errno" | "posix_get_last_error" => ("int", vec![]),
+        "posix_strerror" => (
+            "string",
+            vec![reflection_internal_param("error_code", "int")],
+        ),
         "umask" => (
             "int",
             vec![reflection_internal_optional_null_param("mask", "?int")],
@@ -125841,9 +125919,13 @@ fn is_builtin(name: &str) -> bool {
             | "posix_getgrgid"
             | "posix_getgrnam"
             | "posix_setgid"
+            | "posix_setuid"
             | "posix_seteuid"
             | "posix_setegid"
             | "posix_uname"
+            | "posix_errno"
+            | "posix_get_last_error"
+            | "posix_strerror"
             | "umask"
             | "getmypid"
             | "php_uname"
@@ -126344,6 +126426,8 @@ fn is_builtin(name: &str) -> bool {
             | "filetype"
             | "chown"
             | "chgrp"
+            | "lchown"
+            | "lchgrp"
             | "is_executable"
             | "disk_free_space"
             | "diskfreespace"
@@ -152939,6 +153023,39 @@ fn call_posix_set_current_identity_builtin(
     };
 
     Ok(Value::Bool(requested >= 0 && requested == current))
+}
+
+fn call_posix_strerror(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("posix_strerror", args, 1, span)?;
+    let error_code =
+        php_internal_int_argument("posix_strerror()", 1, "error_code", &args[0], span)?;
+    Ok(Value::String(posix_strerror_message(error_code)))
+}
+
+#[cfg(unix)]
+fn posix_strerror_message(error_code: i64) -> String {
+    use std::ffi::CStr;
+    use std::os::raw::{c_char, c_int};
+
+    unsafe extern "C" {
+        fn strerror(errnum: c_int) -> *mut c_char;
+    }
+
+    let Ok(errnum) = c_int::try_from(error_code) else {
+        return format!("Unknown error {error_code}");
+    };
+    let pointer = unsafe { strerror(errnum) };
+    if pointer.is_null() {
+        return format!("Unknown error {error_code}");
+    }
+    unsafe { CStr::from_ptr(pointer) }
+        .to_string_lossy()
+        .into_owned()
+}
+
+#[cfg(not(unix))]
+fn posix_strerror_message(error_code: i64) -> String {
+    format!("Unknown error {error_code}")
 }
 
 fn posix_passwd_entry_for_uid(uid: u32) -> Option<PosixPasswdEntry> {

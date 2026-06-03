@@ -375,6 +375,59 @@ echo "alive";
 }
 
 #[test]
+fn lchown_and_lchgrp_current_identity_rows_return_true_without_mutation() {
+    let fixture = TempFsFixture::new("link-ownership");
+    let root = php_string(&fixture.root);
+    let source = format!(
+        r#"<?php
+$root = {root};
+$file = $root . "/owned.txt";
+$link = $root . "/owned-link.txt";
+file_put_contents($file, "payload");
+var_dump(symlink($file, $link));
+$uid = posix_getuid();
+$gid = posix_getgid();
+echo function_exists("lchown") && is_callable("lchgrp") ? "known" : "missing";
+echo "|";
+var_dump(lchown($file, $uid));
+var_dump(lchgrp($file, $gid));
+var_dump(fileowner($link) === $uid);
+var_dump(filegroup($link) === $gid);
+var_dump(lchown($file, -5));
+var_dump(lchgrp($file, -5));
+"#,
+        root = root
+    );
+
+    let execution = run_source(&source).unwrap();
+
+    assert!(
+        execution
+            .stdout
+            .starts_with("bool(true)\nknown|bool(true)\nbool(true)\nbool(true)\nbool(true)"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution
+            .stdout
+            .contains("Warning: lchown(): Operation not permitted"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution
+            .stdout
+            .contains("Warning: lchgrp(): Operation not permitted"),
+        "{}",
+        execution.stdout
+    );
+    assert_eq!(execution.stdout.matches("bool(false)").count(), 2);
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn open_basedir_relative_parent_denials_cover_predicates_metadata_and_directories() {
     let _cwd_guard = cwd_guard();
     let fixture = TempFsFixture::new("metadata-basedir-relative-parent");

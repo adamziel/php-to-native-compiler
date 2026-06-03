@@ -182,11 +182,19 @@ fn posix_identity_mutation_builtins_cover_current_identity_rows() {
     let source = r#"<?php
 $gid = posix_getgid();
 $egid = posix_getegid();
+$uid = posix_getuid();
 $euid = posix_geteuid();
 $bad_gid = $gid === 0 ? 1 : 0;
 $bad_egid = $egid === 0 ? 1 : 0;
+$bad_uid = $uid === 0 ? 1 : 0;
 $bad_euid = $euid === 0 ? 1 : 0;
-echo function_exists("posix_setgid") && is_callable("posix_setegid") ? "known" : "missing";
+echo function_exists("posix_setgid")
+    && function_exists("posix_setuid")
+    && is_callable("posix_setegid")
+    && is_callable("posix_errno")
+    && is_callable("posix_strerror")
+    ? "known"
+    : "missing";
 echo "|";
 var_dump(posix_setgid($gid));
 var_dump(posix_setgid($bad_gid));
@@ -196,6 +204,13 @@ var_dump(posix_setegid($bad_egid));
 var_dump(posix_seteuid($euid));
 var_dump(posix_seteuid($bad_euid));
 var_dump(posix_seteuid(-12345));
+var_dump(posix_setuid($uid));
+var_dump(posix_errno());
+var_dump(posix_setuid($bad_uid));
+var_dump(posix_errno());
+var_dump(posix_setuid(-12345));
+var_dump(posix_errno());
+echo gettype(posix_strerror(posix_errno())), "|";
 $rf = new ReflectionFunction("posix_seteuid");
 echo $rf->getNumberOfRequiredParameters(), "/", $rf->getNumberOfParameters(), "/";
 echo $rf->getParameters()[0]->getName(), "/", $rf->getExtensionName(), "/";
@@ -209,7 +224,7 @@ echo $rf->hasReturnType() ? "return" : "no-return";
 
     assert_eq!(
         execution.stdout,
-        "known|bool(true)\nbool(false)\nbool(false)\nbool(true)\nbool(false)\nbool(true)\nbool(false)\nbool(false)\n1/1/user_id/posix/return"
+        "known|bool(true)\nbool(false)\nbool(false)\nbool(true)\nbool(false)\nbool(true)\nbool(false)\nbool(false)\nbool(true)\nint(0)\nbool(false)\nint(1)\nbool(false)\nint(22)\nstring|1/1/user_id/posix/return"
     );
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
@@ -226,17 +241,20 @@ echo is_callable("posix_getgroups") ? "1" : "0";
 echo function_exists("posix_getpwnam") ? "1" : "0";
 echo is_callable("posix_getgrnam") ? "1" : "0";
 echo function_exists("posix_setgid") ? "1" : "0";
+echo function_exists("posix_setuid") ? "1" : "0";
 echo is_callable("posix_seteuid") ? "1" : "0";
 echo function_exists("posix_setegid") ? "1" : "0";
 echo function_exists("posix_access") ? "1" : "0";
 echo is_callable("posix_getpgid") ? "1" : "0";
 echo function_exists("posix_getsid") ? "1" : "0";
 echo is_callable("posix_uname") ? "1" : "0";
+echo function_exists("posix_errno") ? "1" : "0";
+echo is_callable("posix_strerror") ? "1" : "0";
 "#,
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 13, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 16, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
 
