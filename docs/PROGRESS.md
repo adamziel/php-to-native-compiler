@@ -4,6 +4,29 @@
 
 Implemented:
 
+- Added a bounded method visibility and callability lane on the interpreter
+  path. Instance/static dispatch now shares a receiver-aware visibility helper
+  for current method scope, protected receiver/prototype access, PHP-shaped
+  private/protected method `Error` diagnostics, and direct public non-static
+  `__call()` fallback for missing or inaccessible instance calls. Runtime
+  `is_callable()` now resolves `Class::method` strings and two-element
+  object/class-string callable arrays through the same visibility-aware method
+  metadata and supported magic-call metadata. Focused proof covers Rust
+  `object_model::method_visibility_handles_protected_prototypes_scope_callables_and_magic_call`,
+  the broader object-model `visibility` filter, build/fmt/diff checks, and
+  selected public PHPT rows
+  `Zend/tests/access_modifiers/access_modifiers_008.phpt`,
+  `Zend/tests/access_modifiers/access_modifiers_009.phpt`,
+  `Zend/tests/access_modifiers/access_modifiers_011.phpt`,
+  `Zend/tests/get_class_methods/bug43483.phpt`, and
+  `Zend/tests/inheritance/grandparent_prototype.phpt` at `5/5` PASS.
+  Exact-current pre-patch proof on `6a8e4f1f` was `0/5`. Unsupported edges
+  remain exact uncaught fatal stack formatting, full callable-name output,
+  first-class callable parity, broader Reflection/native callable invocation
+  surfaces, `__callStatic` execution beyond metadata fallback, namespace/import
+  and autoload parity beyond existing bounded lookup hooks, native lowering,
+  and references/COW.
+
 - Added a bounded relative `self` / `parent` / `static` method-signature
   variance lane on the interpreter path. Method signature comparison now
   resolves relative type tokens in the declaring class or interface context,

@@ -15086,7 +15086,14 @@ impl Interpreter {
             ));
         }
 
-        self.ensure_instance_method_visible(class_id, &class_name, method_name, visibility, span)?;
+        self.ensure_instance_method_visible_for_receiver(
+            Some(object.class_id()),
+            class_id,
+            &class_name,
+            method_name,
+            visibility,
+            span,
+        )?;
 
         if self.resolved_method_is_core_array_object(class_id) {
             return self
@@ -54320,7 +54327,34 @@ impl Interpreter {
             ));
         }
 
-        self.ensure_instance_method_visible(class_id, &class_name, method_name, visibility, span)?;
+        if !self.method_visible_for_dispatch(
+            Some(object.class_id()),
+            class_id,
+            method_name,
+            visibility,
+        ) {
+            if let Some(result) = self
+                .call_missing_instance_method_via_magic_with_array_copy_source(
+                    object.clone(),
+                    method_name,
+                    args,
+                    span,
+                    caller_scope,
+                )?
+            {
+                return Ok(result);
+            }
+            if let Some(value) = self.call_missing_instance_method_via_magic(
+                object.clone(),
+                method_name,
+                args,
+                span,
+                caller_scope,
+            )? {
+                return Ok((value, None));
+            }
+            return Err(self.method_visibility_error(&class_name, method_name, visibility, span));
+        }
 
         if self.resolved_method_is_core_array_object(class_id) {
             let values = args
@@ -60322,7 +60356,8 @@ impl Interpreter {
         };
 
         if is_static {
-            self.ensure_instance_method_visible(
+            self.ensure_instance_method_visible_for_receiver(
+                Some(class_id),
                 declaring_class_id,
                 &declaring_class_name,
                 method_name,
@@ -60377,7 +60412,8 @@ impl Interpreter {
                 .map(|(value, _)| value);
         }
 
-        self.ensure_instance_method_visible(
+        self.ensure_instance_method_visible_for_receiver(
+            Some(class_id),
             declaring_class_id,
             &declaring_class_name,
             method_name,
@@ -60480,7 +60516,8 @@ impl Interpreter {
             };
         };
 
-        self.ensure_instance_method_visible(
+        self.ensure_instance_method_visible_for_receiver(
+            Some(receiver_class_id),
             declaring_class_id,
             &declaring_class_name,
             method_name,
@@ -63616,36 +63653,122 @@ impl Interpreter {
         visibility: Visibility,
         span: Span,
     ) -> CompileResult<()> {
+        self.ensure_instance_method_visible_for_receiver(
+            None,
+            class_id,
+            class_name,
+            method_name,
+            visibility,
+            span,
+        )
+    }
+
+    fn ensure_instance_method_visible_for_receiver(
+        &self,
+        receiver_class_id: Option<ClassId>,
+        declaring_class_id: ClassId,
+        declaring_class_name: &str,
+        method_name: &str,
+        visibility: Visibility,
+        span: Span,
+    ) -> CompileResult<()> {
+        if self.method_visible_for_dispatch(
+            receiver_class_id,
+            declaring_class_id,
+            method_name,
+            visibility,
+        ) {
+            return Ok(());
+        }
+
+        Err(self.method_visibility_error(declaring_class_name, method_name, visibility, span))
+    }
+
+    fn method_visible_for_dispatch(
+        &self,
+        receiver_class_id: Option<ClassId>,
+        declaring_class_id: ClassId,
+        method_name: &str,
+        visibility: Visibility,
+    ) -> bool {
         match visibility {
-            Visibility::Public => Ok(()),
-            Visibility::Private if self.class_context.last().copied() == Some(class_id) => Ok(()),
-            Visibility::Protected
-                if self
-                    .class_context
+            Visibility::Public => true,
+            Visibility::Private => self.class_context.last().copied() == Some(declaring_class_id),
+            Visibility::Protected => {
+                self.class_context
                     .last()
                     .copied()
                     .is_some_and(|current_class_id| {
-                        current_class_id == class_id
-                            || self.classes.is_subclass_of(current_class_id, class_id)
-                    }) =>
-            {
-                Ok(())
+                        current_class_id == declaring_class_id
+                            || self
+                                .classes
+                                .is_subclass_of(current_class_id, declaring_class_id)
+                            || self
+                                .classes
+                                .is_subclass_of(declaring_class_id, current_class_id)
+                            || receiver_class_id.is_some_and(|receiver_class_id| {
+                                self.protected_method_has_accessible_prototype(
+                                    current_class_id,
+                                    receiver_class_id,
+                                    method_name,
+                                )
+                            })
+                    })
             }
-            Visibility::Private => Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    format!("{class_name}::{method_name}()"),
-                    "private method dispatch requires same-class method context",
-                ),
-            )),
-            Visibility::Protected => Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    format!("{class_name}::{method_name}()"),
-                    "protected method dispatch requires same-class or child method context",
-                ),
-            )),
         }
+    }
+
+    fn protected_method_has_accessible_prototype(
+        &self,
+        current_class_id: ClassId,
+        receiver_class_id: ClassId,
+        method_name: &str,
+    ) -> bool {
+        let mut current = Some(receiver_class_id);
+        while let Some(class_id) = current {
+            let class = self
+                .classes
+                .get(class_id)
+                .expect("class id should resolve to class metadata");
+            if class.method(method_name).is_some_and(|method| {
+                method.visibility() == Visibility::Protected
+                    && (current_class_id == class_id
+                        || self.classes.is_subclass_of(current_class_id, class_id))
+            }) {
+                return true;
+            }
+            current = class.parent_id();
+        }
+
+        false
+    }
+
+    fn method_visibility_error(
+        &self,
+        class_name: &str,
+        method_name: &str,
+        visibility: Visibility,
+        span: Span,
+    ) -> Diagnostic {
+        let visibility = match visibility {
+            Visibility::Private => "private",
+            Visibility::Protected => "protected",
+            Visibility::Public => "public",
+        };
+        let scope = self
+            .class_context
+            .last()
+            .copied()
+            .and_then(|class_id| self.classes.get(class_id))
+            .map(|class| format!("scope {}", class.name()))
+            .unwrap_or_else(|| "global scope".to_string());
+
+        Diagnostic::new(
+            Phase::Runtime,
+            span.line,
+            span.column,
+            format!("Call to {visibility} method {class_name}::{method_name}() from {scope}"),
+        )
     }
 
     fn evaluate_array_key(
@@ -65699,10 +65822,76 @@ impl Interpreter {
     fn is_callable_value(&self, value: &Value, syntax_only: bool) -> bool {
         match value {
             Value::String(_) if syntax_only => true,
-            Value::String(name) => self.lookup_function(name).is_some(),
+            Value::String(name) => {
+                if self.lookup_function(name).is_some() {
+                    return true;
+                }
+                self.static_method_callable_string_is_callable(name)
+            }
             Value::Array(array) if syntax_only => is_array_callable_syntax_shape(array),
-            Value::Array(array) => is_array_callable_for_is_callable(&self.classes, array),
+            Value::Array(array) => self.array_callable_is_callable(array),
             _ => false,
+        }
+    }
+
+    fn static_method_callable_string_is_callable(&self, name: &str) -> bool {
+        let Some((class_name, method_name)) = static_method_callable_string(name) else {
+            return false;
+        };
+        self.classes.lookup_class(class_name).is_some_and(|class| {
+            self.static_method_is_callable_from_current_scope(class.id(), method_name)
+        })
+    }
+
+    fn array_callable_is_callable(&self, array: &PhpArray) -> bool {
+        let Some((target, method_name)) = array_callable_parts(array) else {
+            return false;
+        };
+
+        match target {
+            Value::Object(object) => {
+                self.object_method_is_callable_from_current_scope(object.class_id(), method_name)
+            }
+            Value::String(class_name) => {
+                self.classes.lookup_class(class_name).is_some_and(|class| {
+                    self.static_method_is_callable_from_current_scope(class.id(), method_name)
+                })
+            }
+            _ => false,
+        }
+    }
+
+    fn object_method_is_callable_from_current_scope(
+        &self,
+        class_id: ClassId,
+        method_name: &str,
+    ) -> bool {
+        match self.resolve_instance_method_for_current_object_scope(class_id, method_name) {
+            Some((declaring_class_id, _, _, visibility, is_static)) if !is_static => self
+                .method_visible_for_dispatch(
+                    Some(class_id),
+                    declaring_class_id,
+                    method_name,
+                    visibility,
+                ),
+            Some(_) | None => has_public_non_static_magic_call(&self.classes, class_id),
+        }
+    }
+
+    fn static_method_is_callable_from_current_scope(
+        &self,
+        class_id: ClassId,
+        method_name: &str,
+    ) -> bool {
+        match self.resolve_instance_method(class_id, method_name) {
+            Some((declaring_class_id, _, _, visibility, true)) => self.method_visible_for_dispatch(
+                Some(class_id),
+                declaring_class_id,
+                method_name,
+                visibility,
+            ),
+            Some(_) => false,
+            None => has_public_static_magic_call_static(&self.classes, class_id),
         }
     }
 
@@ -116449,47 +116638,6 @@ fn is_array_callable_resolved(classes: &PhpClassTable, array: &PhpArray) -> bool
     }
 }
 
-fn is_array_callable_for_is_callable(classes: &PhpClassTable, array: &PhpArray) -> bool {
-    let Some((target, method_name)) = array_callable_parts(array) else {
-        return false;
-    };
-
-    match target {
-        Value::Object(object) => {
-            is_object_array_callable_for_is_callable(classes, object.class_id(), method_name)
-        }
-        Value::String(class_name) => classes.lookup_class(class_name).is_some_and(|class| {
-            is_static_array_callable_for_is_callable(classes, class.id(), method_name)
-        }),
-        _ => false,
-    }
-}
-
-fn is_object_array_callable_for_is_callable(
-    classes: &PhpClassTable,
-    class_id: ClassId,
-    method_name: &str,
-) -> bool {
-    match find_method(classes, class_id, method_name) {
-        Some((_, _, method)) if method.visibility() == Visibility::Public => true,
-        Some(_) | None => has_public_non_static_magic_call(classes, class_id),
-    }
-}
-
-fn is_static_array_callable_for_is_callable(
-    classes: &PhpClassTable,
-    class_id: ClassId,
-    method_name: &str,
-) -> bool {
-    match find_method(classes, class_id, method_name) {
-        Some((_, _, method)) if method.visibility() == Visibility::Public && method.is_static() => {
-            true
-        }
-        Some((_, _, method)) if method.visibility() == Visibility::Public => false,
-        Some(_) | None => has_public_static_magic_call_static(classes, class_id),
-    }
-}
-
 fn has_public_non_static_magic_call(classes: &PhpClassTable, class_id: ClassId) -> bool {
     find_method(classes, class_id, "__call").is_some_and(|(_, _, method)| {
         method.visibility() == Visibility::Public && !method.is_static()
@@ -116917,6 +117065,12 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
 
         if error.message.starts_with("Non-static method ")
             && error.message.ends_with(" cannot be called statically")
+        {
+            return Some(("Error", error.message.clone()));
+        }
+
+        if error.message.starts_with("Call to private method ")
+            || error.message.starts_with("Call to protected method ")
         {
             return Some(("Error", error.message.clone()));
         }

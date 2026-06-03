@@ -1040,6 +1040,13 @@ autoload path for non-empty unresolved class-like strings, prepends implemented
 interface method names before class methods, and filters class methods through
 the active method context: public methods are always visible, private methods
 only from the active class, and protected methods from related classes.
+The same visibility helper is shared by interpreter method dispatch and
+runtime `is_callable()` metadata checks: protected dispatch can use the current
+method scope, receiver class, and an accessible protected prototype in the
+receiver's parent chain, while inaccessible private/protected dispatch reports
+PHP-shaped catchable `Error` messages. Direct missing or inaccessible instance
+calls then try the existing public non-static `__call()` fallback before
+raising the visibility error.
 When a consuming class declares a public instance/static method with the same name as
 a composed public trait method or alias, the class method takes precedence and
 the trait method is skipped in the effective class method table. This lets a
@@ -1951,7 +1958,8 @@ full reference containers, or PHP copy-on-write.
 - dynamic method/property names, broader visibility enforcement for
   non-public properties/constructors, static methods and broader static member
   semantics, magic methods beyond the current direct missing-property
-  `__get`/`__isset`/`__set`/`__unset`, missing-method `__call`/`__callStatic`,
+  `__get`/`__isset`/`__set`/`__unset` and the direct missing/inaccessible
+  instance-method `__call` subset, `__callStatic` execution,
   direct object-to-string `__toString` including current interpolation,
   bounded core interface metadata, and direct/property-held `ArrayAccess`
   offset and compound-assignment/increment-decrement slices,
@@ -4099,15 +4107,21 @@ for two-element arrays keyed `0` and `1` whose first value is a string class
 name or current object and whose second value is a string method name. This
 does not resolve classes or methods and is not callable dispatch. Normal
 `is_callable([$receiver, $method])` resolution checks the same shape against
-current declared method metadata: object receivers are true for public declared
-methods, and class-string receivers are true for public static declared
-methods. Array/object callable dynamic invocation is supported by the current
+current declared method metadata and active method scope: object receivers are
+true for visible public/private/protected non-static declared methods, while
+class-string receivers are true for visible public/private/protected static
+declared methods or the existing public static `__callStatic` metadata
+fallback for missing methods. Object receivers also report true for missing
+methods when the object class declares or inherits public non-static `__call`.
+String `Class::method` values use the same static method
+visibility lookup. Array/object callable dynamic invocation is supported by the current
 dynamic-call path for the documented two-element callable shape, including
 public object methods and public static class-string methods, and first-class
 callable acquisition now reuses that same shape for method forms. Broader
-private/protected caller-context method callability, full PHP `Closure` object
-semantics for first-class callables, and namespace/autoload-aware callable
-resolution are still outside the implemented dynamic-call subset. Constant names that are lexed as language keywords or
+full PHP `Closure` object semantics for first-class callables, complete
+callable-name output, `__callStatic` execution, and namespace/autoload-aware
+callable resolution are still outside the implemented dynamic-call subset.
+Constant names that are lexed as language keywords or
 literals cannot be read bare, and case-insensitive legacy constants, extension
 constants, namespace-qualified constants, nested or namespace-aware `const`
 declarations, dynamic `const` values, class constants through
@@ -4571,7 +4585,10 @@ diagnostics for normal reads/writes. Public, same-class private, and protected
 same-class/child instance methods can execute through `phpc run` with `$this`
 bound to the receiver object handle, and inherited public constructors execute
 during child instantiation. Protected constructors can execute from same-class
-or child-class method context. Explicit
+or child-class method context. Inaccessible private/protected method calls
+raise PHP-shaped catchable `Error` diagnostics, and protected method dispatch
+also accepts the current receiver/prototype path used by PHP's grandparent
+prototype cases. Explicit
 `parent::method(...)` and `parent::__construct(...)` calls execute from active
 instance method/constructor context against the current class's parent chain
 with the current `$this` object. `self::method(...)` calls execute from active

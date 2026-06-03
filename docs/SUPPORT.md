@@ -2228,9 +2228,10 @@
   typed static-property enforcement through returned aliases remain
   unsupported.
   Bounded magic
-  `__call()` is supported for direct missing instance method calls and object
-  array-callable paths when `__call()` is public, returns by reference, and
-  returns a proven lvalue from the executed body. This covers
+  `__call()` is supported for direct missing or inaccessible instance method
+  calls and object array-callable paths when `__call()` is public. The
+  reference-return source slice additionally requires `__call()` to be declared
+  by reference and to return a proven lvalue from the executed body. This covers
   `$this->missing($key)`, `[$this, "missing"]($key)`, and
   `call_user_func([$this, "missing"], $key)` inside supported
   reference-return bodies. Arbitrary callable arrays,
@@ -3807,9 +3808,11 @@
   lane, aliases/reference edge cases, broader object/string magic failure
   parity, exact PHP diagnostics beyond the covered rows, and native lowering
   remain unsupported.
-  `is_callable($value)` supports the current string function-name subset: it
-  returns true for names that resolve to current user functions or documented
-  callable builtins, and false for missing names or non-string values.
+  `is_callable($value)` supports the current string function-name and
+  static-method callable subset: it returns true for names that resolve to
+  current user functions, documented callable builtins, or a visible
+  `Class::method` static callable under the active method scope, and false for
+  missing names or non-string values.
   `is_callable($value, $syntax_only)` accepts boolean syntax-only flags; for
   string values, `true` reports callable syntax without resolving the name,
   while `false` uses the current function lookup path. Scalar non-string
@@ -3818,11 +3821,12 @@
   and `1`, where the first value is a string class name or current object and
   the second value is a string method name; this shape check does not resolve
   classes or methods. Normal array callable resolution checks the same
-  two-element shape against current declared method metadata: object receivers
-  are true for public declared methods, or for missing/inaccessible methods
-  when the object class declares or inherits public non-static `__call`.
-  Class-string receivers are true for public static declared methods, or for
-  missing/inaccessible methods when the class declares or inherits public
+  two-element shape against current declared method metadata and the active
+  method scope: object receivers are true for visible public/private/protected
+  non-static declared methods, or for missing methods when the object class
+  declares or inherits public non-static `__call`. Class-string
+  receivers are true for visible public/private/protected static declared
+  methods, or for missing methods when the class declares or inherits public
   static `__callStatic`. This `is_callable()` magic-method introspection does
   not broaden the currently executable array-callback dispatch subset.
   Direct interpreter calls with a third direct-variable argument write the
@@ -3830,11 +3834,11 @@
   closures, and resources; this output slice does not imply broader callable
   dispatch support. Callable-name output targets beyond direct variables,
   object `__invoke` callables outside the bounded closure first-class callable
-  slice, private/protected caller-context method callability, `__callStatic`
-  parity for declared public non-static methods, full PHP `Closure` object
-  parity for first-class callables, namespace/autoload behavior, exact native
-  `TypeError` behavior, native lowering, and the environment-specific legacy
-  `is_real` alias are not implemented.
+  slice, first-class method/static callable
+  parity, full `__callStatic` execution parity, namespace/autoload behavior
+  beyond the existing bounded class lookup hooks, exact native `TypeError`
+  behavior, native lowering, and the environment-specific legacy `is_real`
+  alias are not implemented.
   `version_compare($version1, $version2, $operator = null)` supports string
   versions made of dot, hyphen, or underscore separated non-negative integer
   components. With two arguments it returns `-1`, `0`, or `1`; with a string

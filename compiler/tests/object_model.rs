@@ -5756,6 +5756,135 @@ IC:IC=pubI,privIC,protIC,pubIC,testFromIC\n"
 }
 
 #[test]
+fn method_visibility_handles_protected_prototypes_scope_callables_and_magic_call() {
+    let execution = run_source(
+        r#"<?php
+class A {
+    static protected function ma() {
+        return 'A::ma()';
+    }
+
+    static private function mp() {
+        return 'A::mp()';
+    }
+}
+
+class B1 extends A {
+    static protected function ma() {
+        return 'B1::ma()';
+    }
+
+    static protected function mp() {
+        return 'B1::mp()';
+    }
+
+    static protected function mb() {
+        return 'B1::mb()';
+    }
+}
+
+class B2 extends A {
+    static public function test() {
+        echo A::ma() . "\n";
+        try {
+            echo A::mp() . "\n";
+        } catch (Throwable $e) {
+            echo $e->getMessage() . "\n";
+        }
+        echo B1::ma() . "\n";
+        try {
+            echo B1::mp() . "\n";
+        } catch (Throwable $e) {
+            echo $e->getMessage() . "\n";
+        }
+        try {
+            echo B1::mb() . "\n";
+        } catch (Throwable $e) {
+            echo $e->getMessage() . "\n";
+        }
+        echo "scope-callable:";
+        foreach (array('A::ma', 'A::mp', 'B1::ma', 'B1::mp', 'B1::mb') as $name) {
+            echo is_callable($name) ? "1" : "0";
+        }
+        echo "\n";
+    }
+}
+
+echo "global-callable:";
+foreach (array('B2::ma', 'B2::mp', 'B2::mb', 'B2::test') as $name) {
+    echo is_callable($name) ? "1" : "0";
+}
+echo "\n";
+B2::test();
+
+class C {
+    public static function test() {
+        D::prot();
+        echo implode(",", get_class_methods("D")), "\n";
+    }
+}
+class D extends C {
+    protected static function prot() {
+        echo "D::prot()\n";
+    }
+}
+D::test();
+
+class MagicA {
+    private function func1() {
+        return "in func1";
+    }
+    protected function func2() {
+        return "in func2";
+    }
+    public function __call($func, array $args = array()) {
+        return call_user_func_array(array($this, $func), $args);
+    }
+}
+$a = new MagicA();
+echo $a->func1(), "\n";
+echo $a->func2(), "\n";
+
+class ProtoA {
+    protected function test() {}
+}
+class ProtoB extends ProtoA {
+    public function test2($x) {
+        $x->test();
+    }
+}
+class ProtoC extends ProtoA {
+    protected function test() {}
+}
+class ProtoD extends ProtoC {
+    protected function test() {
+        echo "grandparent\n";
+    }
+}
+(new ProtoB)->test2(new ProtoD);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "global-callable:0001\n\
+A::ma()\n\
+Call to private method A::mp() from scope B2\n\
+B1::ma()\n\
+Call to protected method B1::mp() from scope B2\n\
+Call to protected method B1::mb() from scope B2\n\
+scope-callable:10100\n\
+D::prot()\n\
+prot,test\n\
+in func1\n\
+in func2\n\
+grandparent\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn get_class_methods_requires_object_or_valid_class_name_argument() {
     let execution = run_source(
         r#"<?php
@@ -10999,7 +11128,7 @@ $box::make();
     );
     assert_eq!(
         private_method.message,
-        "unsupported call Box::make(): private method dispatch requires same-class method context"
+        "Call to private method Box::make() from global scope"
     );
 }
 
@@ -13670,7 +13799,7 @@ $child->call();
     assert_eq!(private_parent_method.column, 15);
     assert_eq!(
         private_parent_method.message,
-        "unsupported call Base::hide(): private method dispatch requires same-class method context"
+        "Call to private method Base::hide() from scope Child"
     );
 
     let non_static_parent_method_without_this = runtime_error(
@@ -13794,7 +13923,7 @@ $child->call();
     assert_eq!(private_parent_method.column, 13);
     assert_eq!(
         private_parent_method.message,
-        "unsupported call Base::hide(): private method dispatch requires same-class method context"
+        "Call to private method Base::hide() from scope Child"
     );
 
     let non_static_self_method_without_this = runtime_error(
@@ -13928,7 +14057,7 @@ Box::make();
     );
     assert_eq!(
         private_method.message,
-        "unsupported call Box::make(): private method dispatch requires same-class method context"
+        "Call to private method Box::make() from global scope"
     );
 
     let protected_method = runtime_error(
@@ -13941,7 +14070,7 @@ Box::make();
     );
     assert_eq!(
         protected_method.message,
-        "unsupported call Box::make(): protected method dispatch requires same-class or child method context"
+        "Call to protected method Box::make() from global scope"
     );
 
     let missing_method = runtime_error(
@@ -16130,7 +16259,7 @@ $box->secret();
     assert_eq!(private_method.column, 1);
     assert_eq!(
         private_method.message,
-        "unsupported call Box::secret(): private method dispatch requires same-class method context"
+        "Call to private method Box::secret() from global scope"
     );
 
     let protected_method = runtime_error(
@@ -16148,7 +16277,7 @@ $box->seal();
     assert_eq!(protected_method.column, 1);
     assert_eq!(
         protected_method.message,
-        "unsupported call Box::seal(): protected method dispatch requires same-class or child method context"
+        "Call to protected method Box::seal() from global scope"
     );
 
     let parent_private_from_child = runtime_error(
@@ -16171,7 +16300,7 @@ $child->reveal();
     assert_eq!(parent_private_from_child.column, 16);
     assert_eq!(
         parent_private_from_child.message,
-        "unsupported call Base::secret(): private method dispatch requires same-class method context"
+        "Call to private method Base::secret() from scope Child"
     );
 
     let static_method = runtime_error(
