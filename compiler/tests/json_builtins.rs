@@ -530,3 +530,137 @@ json_last_error() expects exactly 0 arguments, 1 given\n"
     );
     assert_eq!(execution.exit_code, 0);
 }
+
+#[test]
+fn json_throw_on_error_uses_json_exception_and_preserves_error_state() {
+    let execution = run_source(
+        r#"<?php
+json_encode("\x80");
+echo json_last_error(), "|", json_last_error_msg(), "\n";
+try {
+    json_decode("{", false, 512, JSON_THROW_ON_ERROR);
+} catch (JsonException $e) {
+    echo get_class($e), "|", $e->getCode(), "|", $e->getMessage(), "\n";
+}
+echo json_last_error(), "|", json_last_error_msg(), "\n";
+try {
+    json_encode(NAN, JSON_THROW_ON_ERROR);
+} catch (JsonException $e) {
+    echo get_class($e), "|", $e->getCode(), "|", $e->getMessage(), "\n";
+}
+echo json_last_error(), "|", json_last_error_msg(), "\n";
+var_dump(json_encode("\x80", JSON_PARTIAL_OUTPUT_ON_ERROR | JSON_THROW_ON_ERROR));
+echo json_last_error(), "|", json_last_error_msg(), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "5|Malformed UTF-8 characters, possibly incorrectly encoded\n",
+            "JsonException|4|Syntax error near location 1:2\n",
+            "5|Malformed UTF-8 characters, possibly incorrectly encoded\n",
+            "JsonException|7|Inf and NaN cannot be JSON encoded\n",
+            "5|Malformed UTF-8 characters, possibly incorrectly encoded\n",
+            "string(4) \"null\"\n",
+            "5|Malformed UTF-8 characters, possibly incorrectly encoded\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn json_encode_line_terminator_and_invalid_key_flags_match_core_rows() {
+    let execution = run_source(
+        r#"<?php
+$u2027 = json_decode('"\u2027"');
+$u2028 = json_decode('"\u2028"');
+$u2029 = json_decode('"\u2029"');
+echo json_encode($u2027), "\n";
+echo json_encode($u2028), "\n";
+echo json_encode($u2029), "\n";
+echo json_encode($u2028, JSON_UNESCAPED_UNICODE), "\n";
+echo json_encode($u2028, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_LINE_TERMINATORS), "\n";
+$array = array("\x80" => 1);
+var_dump(json_encode($array));
+echo json_last_error(), "|", json_last_error_msg(), "\n";
+var_dump(json_encode($array, JSON_PARTIAL_OUTPUT_ON_ERROR));
+echo json_last_error(), "|", json_last_error_msg(), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "\"\\u2027\"\n",
+            "\"\\u2028\"\n",
+            "\"\\u2029\"\n",
+            "\"\\u2028\"\n",
+            "\"\u{2028}\"\n",
+            "bool(false)\n",
+            "5|Malformed UTF-8 characters, possibly incorrectly encoded\n",
+            "string(6) \"{\"\":1}\"\n",
+            "5|Malformed UTF-8 characters, possibly incorrectly encoded\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn json_decode_rejects_nul_property_names_and_allows_overflow_floats() {
+    let execution = run_source(
+        r#"<?php
+var_dump(json_decode('{"key\u0000": "value"}'));
+echo json_last_error(), "|", json_last_error_msg(), "\n";
+var_dump(json_decode('[{"key1": 0, "\u1234": 1, "\u0000": 1}]'));
+echo json_last_error(), "|", json_last_error_msg(), "\n";
+try {
+    json_decode('{"key\u0000": "value"}', false, 512, JSON_THROW_ON_ERROR);
+} catch (JsonException $e) {
+    echo get_class($e), "|", $e->getCode(), "|", $e->getMessage(), "\n";
+}
+var_dump(json_decode('23456789012E666'));
+echo json_encode([1.23456789e-13, 1.23456789e+34]), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "NULL\n",
+            "9|The decoded property name is invalid near location 1:2\n",
+            "NULL\n",
+            "9|The decoded property name is invalid near location 1:27\n",
+            "JsonException|9|The decoded property name is invalid near location 1:2\n",
+            "float(INF)\n",
+            "[1.23456789e-13,1.23456789e+34]\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn json_serializable_thrown_exceptions_propagate() {
+    let execution = run_source(
+        r#"<?php
+class ThrowsFromJson implements JsonSerializable {
+    public function jsonSerialize(): mixed {
+        throw new Exception("json fail", 99);
+    }
+}
+
+try {
+    json_encode(new ThrowsFromJson());
+} catch (Exception $e) {
+    echo get_class($e), "|", $e->getCode(), "|", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "Exception|99|json fail\n");
+    assert_eq!(execution.exit_code, 0);
+}

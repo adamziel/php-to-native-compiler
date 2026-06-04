@@ -31965,13 +31965,27 @@ impl PhpClassTable {
             let exception = classes
                 .get_mut(exception_id)
                 .expect("core Exception class id should resolve");
-            for property in ["message", "code", "file", "previous", "line"] {
+            exception
+                .add_property(PhpPropertyMetadata::instance(
+                    "message",
+                    Visibility::Protected,
+                ))
+                .expect("Exception core metadata should not duplicate message");
+            exception
+                .add_property(PhpPropertyMetadata::instance("string", Visibility::Private))
+                .expect("Exception core metadata should not duplicate string state");
+            for property in ["code", "file", "line"] {
                 exception
                     .add_property(PhpPropertyMetadata::instance(
                         property,
                         Visibility::Protected,
                     ))
                     .expect("Exception core metadata should not duplicate constructor state");
+            }
+            for property in ["trace", "previous"] {
+                exception
+                    .add_property(PhpPropertyMetadata::instance(property, Visibility::Private))
+                    .expect("Exception core metadata should not duplicate private state");
             }
             for method in [
                 "getMessage",
@@ -34263,9 +34277,18 @@ impl PhpClassTable {
             .expect("declared Closure class id should resolve")
             .add_method(PhpMethodMetadata::instance("__invoke", Visibility::Public))
             .expect("Closure core metadata should not duplicate methods");
+        let json_exception_id = classes
+            .declare_class("JsonException")
+            .expect("core class table should contain Closure before JsonException");
+        let exception_id = classes
+            .lookup_class_id("Exception")
+            .expect("core Exception class id should resolve for JsonException");
+        classes
+            .set_parent(json_exception_id, exception_id)
+            .expect("JsonException should extend Exception");
         let reflection_enum_id = classes
             .declare_class("ReflectionEnum")
-            .expect("core class table should contain Closure before ReflectionEnum");
+            .expect("core class table should contain JsonException before ReflectionEnum");
         classes
             .set_parent(reflection_enum_id, reflection_class_id)
             .expect("ReflectionEnum should extend ReflectionClass");
@@ -83110,6 +83133,10 @@ mod tests {
                 "NoDiscard",
                 "Random\\IntervalBoundary",
                 "Closure",
+                "JsonException",
+                "ReflectionEnum",
+                "ReflectionEnumUnitCase",
+                "ReflectionEnumBackedCase",
             ]
         );
         let mut normalized_class_names = class_names
@@ -83130,7 +83157,7 @@ mod tests {
                 .iter()
                 .map(PhpPropertyMetadata::name)
                 .collect::<Vec<_>>(),
-            vec!["message", "code", "file", "previous", "line"]
+            vec!["message", "string", "code", "file", "line", "trace", "previous"]
         );
         assert_eq!(
             exception
@@ -83538,7 +83565,14 @@ mod tests {
         assert_eq!(reflection_function.name(), "ReflectionFunction");
         assert_eq!(reflection_function.id().index(), 34);
         assert!(reflection_function.parent_id().is_none());
-        assert!(reflection_function.properties().is_empty());
+        assert_eq!(
+            reflection_function
+                .properties()
+                .iter()
+                .map(PhpPropertyMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["name"]
+        );
         assert!(reflection_function.method("getParameters").is_some());
         assert!(reflection_function.method("returnsReference").is_some());
         assert!(reflection_function.method("getAttributes").is_some());
@@ -83768,6 +83802,11 @@ mod tests {
         assert!(closure.parent_id().is_none());
         assert!(closure.properties().is_empty());
         assert!(closure.method("__invoke").is_some());
+
+        let json_exception = classes.lookup_class("jsonexception").unwrap();
+        assert_eq!(json_exception.name(), "JsonException");
+        assert_eq!(json_exception.parent_id(), Some(exception.id()));
+        assert!(json_exception.properties().is_empty());
     }
 
     #[test]

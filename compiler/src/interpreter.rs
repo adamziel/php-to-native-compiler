@@ -31296,6 +31296,26 @@ impl Interpreter {
         }
     }
 
+    fn throwable_previous_for_object(&self, object: &PhpObject) -> Value {
+        if object.is_instance_of_class_name("Exception") {
+            if let Some(exception_id) = self.classes.lookup_class_id("Exception") {
+                if let Ok(value) = object.read_property_from_context(
+                    "previous",
+                    Some(exception_id),
+                    &[exception_id],
+                ) {
+                    return value;
+                }
+            }
+        }
+
+        let class_id = object.class_id();
+        let protected_class_ids = self.protected_class_ids_for_context(class_id);
+        object
+            .read_property_from_context("previous", Some(class_id), &protected_class_ids)
+            .unwrap_or(Value::Null)
+    }
+
     fn throwable_trace_as_string(&self, object: &PhpObject) -> String {
         self.throwable_string_traces
             .get(&object.id())
@@ -31803,6 +31823,34 @@ impl Interpreter {
         class_id: ClassId,
         line: usize,
     ) -> CompileResult<PhpObject> {
+        let class_name = self
+            .classes
+            .get(class_id)
+            .expect("core Error class id should resolve")
+            .name()
+            .to_string();
+        let code = if class_name.eq_ignore_ascii_case("DOMException") {
+            dom_exception_code_for_message(&message)
+        } else {
+            0
+        };
+        self.create_core_error_object_with_code_and_frames(
+            message,
+            class_id,
+            line,
+            code,
+            self.pending_uncaught_call_frames.clone(),
+        )
+    }
+
+    fn create_core_error_object_with_code_and_frames(
+        &mut self,
+        message: String,
+        class_id: ClassId,
+        line: usize,
+        code: i64,
+        trace_frames: Vec<PendingUncaughtCallFrame>,
+    ) -> CompileResult<PhpObject> {
         let inherited_properties = self.inherited_instance_properties(class_id);
         let mut ancestor_class_names = self.inherited_class_names(class_id);
         ancestor_class_names.extend(self.class_alias_names(class_id));
@@ -31812,12 +31860,6 @@ impl Interpreter {
             .classes
             .get(class_id)
             .expect("core Error class id should resolve");
-        let class_name = class.name().to_string();
-        let code = if class_name.eq_ignore_ascii_case("DOMException") {
-            dom_exception_code_for_message(&message)
-        } else {
-            0
-        };
         let object = PhpObject::from_class_with_relationship_metadata_with_id(
             class,
             &inherited_properties,
@@ -31825,6 +31867,26 @@ impl Interpreter {
             interface_names,
             object_id,
         );
+        if self.class_is_exception_or_subclass(class_id) {
+            let file = self.throwable_display_file();
+            self.initialize_core_exception_state(
+                &object,
+                class_id,
+                message,
+                code,
+                file.clone(),
+                line as i64,
+                Value::Null,
+                trace_frames.clone(),
+                Span { line, column: 0 },
+            )?;
+            let stack_trace = Self::formatted_call_trace(&trace_frames, &file);
+            self.throwable_string_traces
+                .insert(object.id(), stack_trace);
+            self.throwable_traces.insert(object.id(), trace_frames);
+            self.track_allocated_object(&object);
+            return Ok(object);
+        }
         let protected_class_ids = self.protected_class_ids_for_context(class_id);
         object
             .write_property_from_context(
@@ -31867,7 +31929,6 @@ impl Interpreter {
                 &protected_class_ids,
             )
             .map_err(|error| runtime_error(Span { line: 0, column: 0 }, error))?;
-        let trace_frames = self.pending_uncaught_call_frames.clone();
         let stack_trace = Self::formatted_call_trace(&trace_frames, &file);
         self.throwable_string_traces
             .insert(object.id(), stack_trace);
@@ -36150,6 +36211,13 @@ impl Interpreter {
         false
     }
 
+    fn class_is_exception_or_subclass(&self, class_id: ClassId) -> bool {
+        let Some(exception_id) = self.classes.lookup_class_id("Exception") else {
+            return false;
+        };
+        class_id == exception_id || self.classes.is_subclass_of(class_id, exception_id)
+    }
+
     fn resolved_method_is_core_throwable(&self, class_id: ClassId) -> bool {
         ["Exception", "Error", "ErrorException"]
             .iter()
@@ -36167,6 +36235,87 @@ impl Interpreter {
             }
         }
         "Exception"
+    }
+
+    fn initialize_core_exception_state(
+        &mut self,
+        object: &PhpObject,
+        class_id: ClassId,
+        message: String,
+        code: i64,
+        file: String,
+        line: i64,
+        previous: Value,
+        trace_frames: Vec<PendingUncaughtCallFrame>,
+        span: Span,
+    ) -> CompileResult<()> {
+        let exception_id = self
+            .classes
+            .lookup_class_id("Exception")
+            .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class("Exception")))?;
+        self.write_core_object_property_from_context(
+            object,
+            "message",
+            Value::String(message),
+            class_id,
+            span,
+        )?;
+        self.write_core_object_property_from_context(
+            object,
+            "string",
+            Value::String(String::new()),
+            exception_id,
+            span,
+        )?;
+        self.write_core_object_property_from_context(
+            object,
+            "code",
+            Value::Int(code),
+            class_id,
+            span,
+        )?;
+        self.write_core_object_property_from_context(
+            object,
+            "file",
+            Value::String(file.clone()),
+            class_id,
+            span,
+        )?;
+        self.write_core_object_property_from_context(
+            object,
+            "line",
+            Value::Int(line),
+            class_id,
+            span,
+        )?;
+        let trace = self.structured_trace_array(&trace_frames, span)?;
+        self.write_core_object_property_from_context(object, "trace", trace, exception_id, span)?;
+        self.write_core_object_property_from_context(
+            object,
+            "previous",
+            previous,
+            exception_id,
+            span,
+        )?;
+        let stack_trace = Self::formatted_call_trace(&trace_frames, &file);
+        self.throwable_string_traces
+            .insert(object.id(), stack_trace);
+        self.throwable_traces.insert(object.id(), trace_frames);
+        Ok(())
+    }
+
+    fn write_core_object_property_from_context(
+        &self,
+        object: &PhpObject,
+        name: &str,
+        value: Value,
+        context_class_id: ClassId,
+        span: Span,
+    ) -> CompileResult<()> {
+        let protected_class_ids = self.protected_class_ids_for_context(context_class_id);
+        object
+            .write_property_from_context(name, value, Some(context_class_id), &protected_class_ids)
+            .map_err(|error| runtime_error(span, error))
     }
 
     fn initialize_core_exception_object(
@@ -36214,44 +36363,17 @@ impl Interpreter {
             None => Value::Null,
         };
         let file = self.throwable_display_file();
-        let protected_class_ids = self.protected_class_ids_for_context(class_id);
-        object
-            .write_property_from_context(
-                "message",
-                Value::String(message),
-                Some(class_id),
-                &protected_class_ids,
-            )
-            .map_err(|error| runtime_error(span, error))?;
-        object
-            .write_property_from_context(
-                "code",
-                Value::Int(code),
-                Some(class_id),
-                &protected_class_ids,
-            )
-            .map_err(|error| runtime_error(span, error))?;
-        object
-            .write_property_from_context(
-                "file",
-                Value::String(file.clone()),
-                Some(class_id),
-                &protected_class_ids,
-            )
-            .map_err(|error| runtime_error(span, error))?;
-        object
-            .write_property_from_context("previous", previous, Some(class_id), &protected_class_ids)
-            .map_err(|error| runtime_error(span, error))?;
-        object
-            .write_property_from_context(
-                "line",
-                Value::Int(span.line as i64),
-                Some(class_id),
-                &protected_class_ids,
-            )
-            .map_err(|error| runtime_error(span, error))?;
-        self.store_throwable_trace(object, &file);
-        Ok(())
+        self.initialize_core_exception_state(
+            object,
+            class_id,
+            message,
+            code,
+            file,
+            span.line as i64,
+            previous,
+            self.current_structured_trace_frames(),
+            span,
+        )
     }
 
     fn initialize_core_error_exception_object(
@@ -36311,22 +36433,17 @@ impl Interpreter {
             None => Value::Null,
         };
         let protected_class_ids = self.protected_class_ids_for_context(class_id);
-        object
-            .write_property_from_context(
-                "message",
-                Value::String(message),
-                Some(class_id),
-                &protected_class_ids,
-            )
-            .map_err(|error| runtime_error(span, error))?;
-        object
-            .write_property_from_context(
-                "code",
-                Value::Int(code),
-                Some(class_id),
-                &protected_class_ids,
-            )
-            .map_err(|error| runtime_error(span, error))?;
+        self.initialize_core_exception_state(
+            object,
+            class_id,
+            message,
+            code,
+            file.clone(),
+            line,
+            previous,
+            self.current_structured_trace_frames(),
+            span,
+        )?;
         object
             .write_property_from_context(
                 "severity",
@@ -36335,26 +36452,6 @@ impl Interpreter {
                 &protected_class_ids,
             )
             .map_err(|error| runtime_error(span, error))?;
-        object
-            .write_property_from_context(
-                "file",
-                Value::String(file.clone()),
-                Some(class_id),
-                &protected_class_ids,
-            )
-            .map_err(|error| runtime_error(span, error))?;
-        object
-            .write_property_from_context("previous", previous, Some(class_id), &protected_class_ids)
-            .map_err(|error| runtime_error(span, error))?;
-        object
-            .write_property_from_context(
-                "line",
-                Value::Int(line),
-                Some(class_id),
-                &protected_class_ids,
-            )
-            .map_err(|error| runtime_error(span, error))?;
-        self.store_throwable_trace(object, &file);
         Ok(())
     }
 
@@ -64261,14 +64358,7 @@ impl Interpreter {
             }
             "getprevious" => {
                 expect_expr_arity("Error::getPrevious", arg_count, 0, span)?;
-                let protected_class_ids = self.protected_class_ids_for_context(object.class_id());
-                Ok(object
-                    .read_property_from_context(
-                        "previous",
-                        Some(object.class_id()),
-                        &protected_class_ids,
-                    )
-                    .unwrap_or(Value::Null))
+                Ok(self.throwable_previous_for_object(object))
             }
             "gettraceasstring" => {
                 expect_expr_arity("Error::getTraceAsString", arg_count, 0, span)?;
@@ -164527,6 +164617,10 @@ impl JsonEncodeOptions {
     fn partial_output(self) -> bool {
         self.has_flag(PHP_JSON_PARTIAL_OUTPUT_ON_ERROR)
     }
+
+    fn throw_on_error(self) -> bool {
+        self.has_flag(PHP_JSON_THROW_ON_ERROR)
+    }
 }
 
 #[derive(Debug, Default)]
@@ -164535,6 +164629,7 @@ struct JsonEncodeState {
     active_references: HashSet<i64>,
     error_code: Option<i64>,
     error_message: Option<String>,
+    runtime_error: Option<Diagnostic>,
 }
 
 impl JsonEncodeState {
@@ -164674,7 +164769,15 @@ impl<'a> JsonParser<'a> {
             if self.peek() != Some('"') {
                 return Err(self.error(PHP_JSON_ERROR_SYNTAX, "Syntax error"));
             }
+            let key_start = self.position;
             let key = self.parse_string()?;
+            if key.contains('\0') {
+                return Err(self.error_at_raw(
+                    PHP_JSON_ERROR_INVALID_PROPERTY_NAME,
+                    json_error_base_message(PHP_JSON_ERROR_INVALID_PROPERTY_NAME),
+                    key_start,
+                ));
+            }
             self.skip_whitespace();
             self.expect_char(':')?;
             self.skip_whitespace();
@@ -164748,10 +164851,8 @@ impl<'a> JsonParser<'a> {
         }
         token
             .parse::<f64>()
-            .ok()
-            .filter(|value| value.is_finite())
             .map(JsonParsedValue::Float)
-            .ok_or_else(|| self.error(PHP_JSON_ERROR_SYNTAX, "Syntax error"))
+            .map_err(|_| self.error(PHP_JSON_ERROR_SYNTAX, "Syntax error"))
     }
 
     fn parse_string(&mut self) -> Result<String, JsonDecodeError> {
@@ -164908,6 +165009,13 @@ impl<'a> JsonParser<'a> {
             message: json_error_message_at_chars(&self.chars, code, message, position),
         }
     }
+
+    fn error_at_raw(&self, code: i64, message: &str, position: usize) -> JsonDecodeError {
+        JsonDecodeError {
+            code,
+            message: json_error_message_at_chars_raw(&self.chars, code, message, position),
+        }
+    }
 }
 
 fn json_array_is_list(array: &PhpArray) -> bool {
@@ -164962,6 +165070,21 @@ fn json_error_message_at_input(input: &str, code: i64, base: &str, position: usi
     json_error_message_at_chars(&chars, code, base, position)
 }
 
+fn json_error_message_at_chars_raw(
+    chars: &[char],
+    code: i64,
+    base: &str,
+    position: usize,
+) -> String {
+    match code {
+        PHP_JSON_ERROR_INVALID_PROPERTY_NAME => {
+            let (line, column) = json_raw_line_column_for_position(chars, position);
+            format!("{base} near location {line}:{column}")
+        }
+        _ => json_error_message_at_chars(chars, code, base, position),
+    }
+}
+
 fn json_line_column_for_position(chars: &[char], position: usize) -> (usize, usize) {
     let mut line = 1;
     let mut column = 1;
@@ -164989,6 +165112,34 @@ fn json_line_column_for_position(chars: &[char], position: usize) -> (usize, usi
                     continue;
                 }
                 column += 1;
+            }
+            _ => column += 1,
+        }
+        index += 1;
+    }
+
+    (line, column)
+}
+
+fn json_raw_line_column_for_position(chars: &[char], position: usize) -> (usize, usize) {
+    let mut line = 1;
+    let mut column = 1;
+    let mut index = 0;
+    let limit = position.min(chars.len());
+
+    while index < limit {
+        match chars[index] {
+            '\r' => {
+                line += 1;
+                column = 1;
+                if index + 1 < limit && chars[index + 1] == '\n' {
+                    index += 2;
+                    continue;
+                }
+            }
+            '\n' => {
+                line += 1;
+                column = 1;
             }
             _ => column += 1,
         }
@@ -165206,10 +165357,10 @@ fn json_invalid_utf8_encode_sequence_len(bytes: &[u8], index: usize, width: usiz
     len
 }
 
-fn json_key_string(key: &ArrayKey) -> String {
+fn json_key_bytes(key: &ArrayKey) -> Vec<u8> {
     match key {
-        ArrayKey::Int(value) => value.to_string(),
-        ArrayKey::String(value) => value.clone(),
+        ArrayKey::Int(value) => value.to_string().into_bytes(),
+        ArrayKey::String(value) => php_string_literal_bytes(value),
     }
 }
 
@@ -165231,6 +165382,18 @@ fn json_quote_string(value: &str, options: JsonEncodeOptions) -> String {
             '&' if options.has_flag(PHP_JSON_HEX_AMP) => output.push_str("\\u0026"),
             '\'' if options.has_flag(PHP_JSON_HEX_APOS) => output.push_str("\\u0027"),
             ch if ch < ' ' => output.push_str(&format!("\\u{:04x}", ch as u32)),
+            '\u{2028}'
+                if !(options.has_flag(PHP_JSON_UNESCAPED_UNICODE)
+                    && options.has_flag(PHP_JSON_UNESCAPED_LINE_TERMINATORS)) =>
+            {
+                output.push_str("\\u2028")
+            }
+            '\u{2029}'
+                if !(options.has_flag(PHP_JSON_UNESCAPED_UNICODE)
+                    && options.has_flag(PHP_JSON_UNESCAPED_LINE_TERMINATORS)) =>
+            {
+                output.push_str("\\u2029")
+            }
             ch if ch as u32 > 0x7f && !options.has_flag(PHP_JSON_UNESCAPED_UNICODE) => {
                 let code = ch as u32;
                 if code <= 0xffff {
@@ -165354,6 +165517,10 @@ impl Interpreter {
             self.json_encode_value(&args[0], options, &mut state, 1, span)
         };
 
+        if let Some(error) = state.runtime_error.take() {
+            return Err(error);
+        }
+
         match encoded {
             Ok(encoded) => {
                 self.set_json_last_error(
@@ -165365,12 +165532,13 @@ impl Interpreter {
                 Ok(Value::String(encoded))
             }
             Err(code) => {
-                self.set_json_last_error(
-                    code,
-                    state
-                        .error_message
-                        .unwrap_or_else(|| json_error_base_message(code).to_string()),
-                );
+                let message = state
+                    .error_message
+                    .unwrap_or_else(|| json_error_base_message(code).to_string());
+                if options.throw_on_error() && !options.partial_output() {
+                    return self.throw_json_exception(code, message, "json_encode", args, span);
+                }
+                self.set_json_last_error(code, message);
                 Ok(Value::Bool(false))
             }
         }
@@ -165461,6 +165629,9 @@ impl Interpreter {
             Value::Int(value) => Ok(value.to_string()),
             Value::Float(value) if value.is_finite() => {
                 let mut encoded = php_default_precision_float_string(*value);
+                if encoded.contains('E') {
+                    encoded = encoded.replace('E', "e");
+                }
                 if options.has_flag(PHP_JSON_PRESERVE_ZERO_FRACTION)
                     && !encoded.contains('.')
                     && !encoded.contains('E')
@@ -165533,12 +165704,42 @@ impl Interpreter {
 
         let mut pairs = Vec::new();
         for entry in array.entries() {
-            let key = json_key_string(&entry.key);
+            let key = self.json_encode_array_key(&entry.key, options, state)?;
             let value =
                 self.json_encode_slot_value(entry.slot(), options, state, depth + 1, span)?;
-            pairs.push((json_quote_string(&key, options), value));
+            pairs.push((key, value));
         }
         Ok(json_join_object(pairs, options, depth))
+    }
+
+    fn json_encode_array_key(
+        &self,
+        key: &ArrayKey,
+        options: JsonEncodeOptions,
+        state: &mut JsonEncodeState,
+    ) -> Result<String, i64> {
+        let bytes = json_key_bytes(key);
+        let key = match std::str::from_utf8(&bytes) {
+            Ok(value) => value.to_string(),
+            Err(_) if options.has_flag(PHP_JSON_INVALID_UTF8_IGNORE) => {
+                json_repair_invalid_utf8_for_encode(&bytes, JsonInvalidUtf8Repair::Ignore)
+            }
+            Err(_) if options.has_flag(PHP_JSON_INVALID_UTF8_SUBSTITUTE) => {
+                json_repair_invalid_utf8_for_encode(&bytes, JsonInvalidUtf8Repair::Substitute)
+            }
+            Err(_) => {
+                state.record_error(
+                    PHP_JSON_ERROR_UTF8,
+                    json_error_base_message(PHP_JSON_ERROR_UTF8),
+                );
+                return if options.partial_output() {
+                    Ok(json_quote_string("", options))
+                } else {
+                    Err(PHP_JSON_ERROR_UTF8)
+                };
+            }
+        };
+        Ok(json_quote_string(&key, options))
     }
 
     fn json_encode_slot_value(
@@ -165611,7 +165812,16 @@ impl Interpreter {
         );
         self.json_active_serializable_objects.remove(&object_id);
 
-        if let Some(serialized) = serialized.map_err(|_| PHP_JSON_ERROR_UNSUPPORTED_TYPE)? {
+        let serialized = match serialized {
+            Ok(value) => value,
+            Err(error) => {
+                state.runtime_error = Some(error);
+                state.active_objects.remove(&object.id());
+                return Err(PHP_JSON_ERROR_UNSUPPORTED_TYPE);
+            }
+        };
+
+        if let Some(serialized) = serialized {
             let result = match &serialized {
                 Value::Object(serialized_object) if serialized_object.id() == object_id => {
                     self.json_encode_public_object_properties(object, options, state, depth, span)
@@ -165681,6 +165891,7 @@ impl Interpreter {
             .map(|value| php_internal_int_argument("json_decode()", 4, "flags", value, span))
             .transpose()?
             .unwrap_or(0);
+        let throw_on_error = flags & PHP_JSON_THROW_ON_ERROR != 0;
         let utf8_repair = if flags & PHP_JSON_INVALID_UTF8_SUBSTITUTE != 0 {
             Some(JsonInvalidUtf8Repair::Substitute)
         } else if flags & PHP_JSON_INVALID_UTF8_IGNORE != 0 {
@@ -165698,18 +165909,32 @@ impl Interpreter {
                     match json_repair_invalid_utf8_in_strings(&input_bytes, repair) {
                         Some(value) => value,
                         None => {
-                            self.set_json_last_error(
-                                PHP_JSON_ERROR_UTF8,
-                                json_error_base_message(PHP_JSON_ERROR_UTF8).to_string(),
-                            );
+                            let message = json_error_base_message(PHP_JSON_ERROR_UTF8).to_string();
+                            if throw_on_error {
+                                return self.throw_json_exception(
+                                    PHP_JSON_ERROR_UTF8,
+                                    message,
+                                    "json_decode",
+                                    args,
+                                    span,
+                                );
+                            }
+                            self.set_json_last_error(PHP_JSON_ERROR_UTF8, message);
                             return Ok(Value::Null);
                         }
                     }
                 } else {
-                    self.set_json_last_error(
-                        PHP_JSON_ERROR_UTF8,
-                        json_error_base_message(PHP_JSON_ERROR_UTF8).to_string(),
-                    );
+                    let message = json_error_base_message(PHP_JSON_ERROR_UTF8).to_string();
+                    if throw_on_error {
+                        return self.throw_json_exception(
+                            PHP_JSON_ERROR_UTF8,
+                            message,
+                            "json_decode",
+                            args,
+                            span,
+                        );
+                    }
+                    self.set_json_last_error(PHP_JSON_ERROR_UTF8, message);
                     return Ok(Value::Null);
                 }
             }
@@ -165720,15 +165945,22 @@ impl Interpreter {
             .position(|ch| ch.is_control() && !matches!(ch, '\t' | '\n' | '\r'))
         {
             let token_position = json_control_character_token_position(&input, position);
-            self.set_json_last_error(
+            let message = json_error_message_at_input(
+                &input,
                 PHP_JSON_ERROR_CTRL_CHAR,
-                json_error_message_at_input(
-                    &input,
-                    PHP_JSON_ERROR_CTRL_CHAR,
-                    json_error_base_message(PHP_JSON_ERROR_CTRL_CHAR),
-                    token_position,
-                ),
+                json_error_base_message(PHP_JSON_ERROR_CTRL_CHAR),
+                token_position,
             );
+            if throw_on_error {
+                return self.throw_json_exception(
+                    PHP_JSON_ERROR_CTRL_CHAR,
+                    message,
+                    "json_decode",
+                    args,
+                    span,
+                );
+            }
+            self.set_json_last_error(PHP_JSON_ERROR_CTRL_CHAR, message);
             return Ok(Value::Null);
         }
 
@@ -165779,6 +166011,15 @@ impl Interpreter {
                 Ok(value)
             }
             Err(error) => {
+                if throw_on_error {
+                    return self.throw_json_exception(
+                        error.code,
+                        error.message,
+                        "json_decode",
+                        args,
+                        span,
+                    );
+                }
                 self.set_json_last_error(error.code, error.message);
                 Ok(Value::Null)
             }
@@ -165950,6 +166191,34 @@ impl Interpreter {
     fn set_json_last_error(&mut self, code: i64, message: String) {
         self.json_last_error = code;
         self.json_last_error_message = message;
+    }
+
+    fn throw_json_exception(
+        &mut self,
+        code: i64,
+        message: String,
+        callable: &'static str,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<Value> {
+        let class_id = self
+            .classes
+            .lookup_class_id("JsonException")
+            .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class("JsonException")))?;
+        let trace_frame = PendingUncaughtCallFrame {
+            function_name: callable.to_string(),
+            function_line: span.line,
+            call_line: span.line,
+            args: args.to_vec(),
+        };
+        let object = self.create_core_error_object_with_code_and_frames(
+            message,
+            class_id,
+            span.line,
+            code,
+            vec![trace_frame],
+        )?;
+        Err(self.uncaught_throw_error(&object, span))
     }
 
     fn call_sprintf(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {

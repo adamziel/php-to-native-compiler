@@ -14383,12 +14383,22 @@ Unsupported code should fail with an explicit parse, runtime, or codegen error.
   character-based line/column decode and validation error locations for
   depth, state-mismatch, control-character, truncated-string, invalid-escape,
   invalid-literal, and malformed UTF-16 parse failures, and catchable
-  `ValueError` diagnostics for invalid decode depth. Full
-  `JsonSerializable` parity, exact invalid `__toString()` return diagnostics,
-  exact exception propagation for every serializer shape, broad partial-output
-  interaction parity beyond current
-  non-finite/unsupported/recursion/depth placeholders, exact escaped-string
-  invalid-byte parity, complete UTF-16/UTF-8 diagnostics and invalid-byte
-  grouping beyond the covered bounded encode/decode lanes, every JSON option
-  interaction,
-  remaining json extension functions, and native lowering remain unsupported.
+  `ValueError` diagnostics for invalid decode depth. `JsonException` is
+  available as an `Exception` subclass for JSON throw-on-error handling:
+  `JSON_THROW_ON_ERROR` throws for bounded `json_decode()` parse/UTF-8/control
+  errors, invalid decoded object property names containing NUL bytes, and
+  hard `json_encode()` errors while preserving the previous global
+  `json_last_error()` state; `JSON_PARTIAL_OUTPUT_ON_ERROR` still wins for the
+  covered partial-output encode placeholders. Exceptions thrown from
+  `JsonSerializable::jsonSerialize()` propagate out of `json_encode()` instead
+  of being rewritten as JSON errors. Additional bounded encode/decode parity
+  includes invalid UTF-8 array keys with partial-output empty-key replacement,
+  `JSON_UNESCAPED_LINE_TERMINATORS` only when paired with
+  `JSON_UNESCAPED_UNICODE`, lowercase JSON float exponents, and overflow JSON
+  number decode to PHP `INF`. Full `JsonSerializable` parity, exact invalid
+  `__toString()` return diagnostics, broad partial-output interaction parity
+  beyond current non-finite/unsupported/recursion/depth/invalid-key
+  placeholders, exact escaped-string invalid-byte parity, complete UTF-16/UTF-8
+  diagnostics and invalid-byte grouping beyond the covered bounded
+  encode/decode lanes, every JSON option interaction, remaining json extension
+  functions, and native lowering remain unsupported.
