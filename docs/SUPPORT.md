@@ -2875,6 +2875,20 @@
   exception parity beyond no-current foreach rows, independent cloned iterator
   cursors, serialization parity, references/COW, and native lowering remain
   unsupported.
+- SPL `RegexIterator` has a bounded interpreter runtime model over existing
+  bounded `Iterator` objects. It supports construction with regex, mode,
+  flags, and preg-flags; constants `MATCH`, `GET_MATCH`, `ALL_MATCHES`,
+  `SPLIT`, `REPLACE`, `USE_KEY`, and `INVERT_MATCH`; accessors/mutators for
+  regex, mode, flags, and preg-flags; `getInnerIterator()`; direct
+  `accept()` before rewind returning `false`; and by-value foreach over
+  `MATCH`, `GET_MATCH`, `SPLIT`, and `REPLACE` current-value shapes, including
+  key matching and inverted matching for the covered rows. The implementation
+  reuses the current bounded PCRE compiler/replacement helpers and the
+  existing bounded iterator method surface. `RecursiveRegexIterator`, full
+  PCRE2 parity, callback/magic side effects outside the virtual `accept()`
+  path, recursive array/object current values, complete preg-flag
+  combinations, serialization/cloning cursor parity, references/COW, and
+  native lowering remain unsupported.
 - SPL iterator helper functions `iterator_count()` and `iterator_to_array()`
   accept arrays and the bounded `Iterator` / `IteratorAggregate` object
   surface. Array inputs are counted or copied directly. `Iterator` inputs are

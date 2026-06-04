@@ -4,6 +4,36 @@
 
 Implemented:
 
+- Added a bounded SPL `RegexIterator` lane on the interpreter path. Core
+  metadata now declares `RegexIterator` as an `Iterator` with the reached mode
+  and flag constants, and runtime state now stores the inner iterator, regex,
+  mode, flags, preg-flags, and cached accepted key/current values. The bounded
+  implementation covers constructor/accessor/mutator behavior, catchable
+  `setMode()` `ValueError`, `MATCH`, `GET_MATCH`, `SPLIT`, `REPLACE`,
+  `USE_KEY`, and `INVERT_MATCH` foreach behavior over existing bounded
+  iterators, direct `accept()` before rewind, replacement property writes, and
+  the current bounded PCRE match/split/replacement helpers. Focused proof
+  covers exact-current pre-patch selected PHPT at `0/17` and post-patch
+  selected PHPT at `17/17` for
+  `ext/spl/tests/regexiterator_getregex.phpt`,
+  `ext/spl/tests/regexIterator_mode_basic.phpt`,
+  `ext/spl/tests/regexIterator_flags_basic.phpt`,
+  `ext/spl/tests/regexiterator_getpregflags.phpt`,
+  `ext/spl/tests/regexiterator_setpregflags.phpt`,
+  `ext/spl/tests/regexIterator_setMode_error.phpt`,
+  `ext/spl/tests/iterator_029.phpt`,
+  `ext/spl/tests/iterator_050.phpt`,
+  `ext/spl/tests/iterator_051.phpt`,
+  `ext/spl/tests/iterator_054.phpt`,
+  `ext/spl/tests/iterator_055.phpt`,
+  `ext/spl/tests/bug46088.phpt`, `ext/spl/tests/bug50579.phpt`,
+  `ext/spl/tests/bug54304.phpt`, `ext/spl/tests/bug66702.phpt`,
+  `ext/spl/tests/bug68175.phpt`, and `ext/spl/tests/bug70868.phpt`, plus
+  focused Rust RegexIterator and core metadata tests, build, and fmt checks.
+  Unsupported edges remain `RecursiveRegexIterator`, full PCRE2 parity,
+  recursive current-value matching, broad preg-flag combinations, exact
+  serialization/cloning cursor parity, references/COW, and native lowering.
+
 - Repaired the latest-published PASS regression in
   `Zend/tests/first_class_callable/first_class_callable_005.phpt`. Dynamic
   class-string callables, including descriptors produced by first-class static

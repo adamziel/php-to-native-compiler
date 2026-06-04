@@ -33557,9 +33557,59 @@ impl PhpClassTable {
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
                 .expect("LimitIterator core metadata should not duplicate methods");
         }
+        let regex_iterator_id = classes
+            .declare_class("RegexIterator")
+            .expect("core class table should contain LimitIterator before RegexIterator");
+        classes
+            .set_interfaces(regex_iterator_id, vec!["Iterator".to_string()])
+            .expect("RegexIterator should implement Iterator");
+        let regex_iterator = classes
+            .get_mut(regex_iterator_id)
+            .expect("declared RegexIterator class id should resolve");
+        regex_iterator
+            .add_property(PhpPropertyMetadata::instance(
+                "replacement",
+                Visibility::Public,
+            ))
+            .expect("RegexIterator core metadata should not duplicate properties");
+        for constant in [
+            "MATCH",
+            "match",
+            "GET_MATCH",
+            "ALL_MATCHES",
+            "SPLIT",
+            "REPLACE",
+            "USE_KEY",
+            "INVERT_MATCH",
+        ] {
+            regex_iterator
+                .add_constant(PhpClassConstantMetadata::new(constant, Visibility::Public))
+                .expect("RegexIterator core metadata should not duplicate constants");
+        }
+        for method in [
+            "__construct",
+            "accept",
+            "current",
+            "getFlags",
+            "getInnerIterator",
+            "getMode",
+            "getPregFlags",
+            "getRegex",
+            "key",
+            "next",
+            "rewind",
+            "setFlags",
+            "setMode",
+            "setPregFlags",
+            "valid",
+        ] {
+            regex_iterator
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("RegexIterator core metadata should not duplicate methods");
+        }
         let reflection_extension_id = classes
             .declare_class("ReflectionExtension")
-            .expect("core class table should contain LimitIterator before ReflectionExtension");
+            .expect("core class table should contain RegexIterator before ReflectionExtension");
         let reflection_extension = classes
             .get_mut(reflection_extension_id)
             .expect("declared ReflectionExtension class id should resolve");

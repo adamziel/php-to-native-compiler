@@ -79,6 +79,7 @@ const CORE_CLASS_NAMES: &[&str] = &[
     "NoRewindIterator",
     "InfiniteIterator",
     "LimitIterator",
+    "RegexIterator",
     "ReflectionExtension",
     "ReflectionZendExtension",
     "DateMalformedStringException",
@@ -333,6 +334,10 @@ echo "ready\n";
     assert!(recursive_iterator_iterator
         .method("getSubPathname")
         .is_some());
+    let regex_iterator = classes.lookup_class("RegexIterator").unwrap();
+    assert!(classes.implements_interface(regex_iterator.id(), "Iterator"));
+    assert!(regex_iterator.constant("GET_MATCH").is_some());
+    assert!(regex_iterator.method("setPregFlags").is_some());
 
     let class = classes.lookup_class("box").unwrap();
     assert_eq!(class.name(), "Box");

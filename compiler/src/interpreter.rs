@@ -88,6 +88,13 @@ const SPL_FILESYSTEM_OTHER_MODE_MASK: i64 = 0x7000;
 const SPL_FILESYSTEM_FLAGS_MASK: i64 = 0x7ff0;
 const ARRAY_OBJECT_STD_PROP_LIST: i64 = 1;
 const ARRAY_OBJECT_ARRAY_AS_PROPS: i64 = 2;
+const REGEX_ITERATOR_MATCH: i64 = 0;
+const REGEX_ITERATOR_GET_MATCH: i64 = 1;
+const REGEX_ITERATOR_ALL_MATCHES: i64 = 2;
+const REGEX_ITERATOR_SPLIT: i64 = 3;
+const REGEX_ITERATOR_REPLACE: i64 = 4;
+const REGEX_ITERATOR_USE_KEY: i64 = 1;
+const REGEX_ITERATOR_INVERT_MATCH: i64 = 2;
 const DATEPERIOD_EXCLUDE_START_DATE: i64 = 1;
 const DATEPERIOD_INCLUDE_END_DATE: i64 = 2;
 const REFLECTION_MODIFIER_PUBLIC: i64 = 1;
@@ -684,6 +691,7 @@ struct Interpreter {
     spl_directory_iterators: HashMap<i64, DirectoryIteratorState>,
     spl_recursive_iterator_iterators: HashMap<i64, RecursiveIteratorIteratorState>,
     spl_iterator_wrappers: HashMap<i64, SplIteratorWrapperState>,
+    regex_iterators: HashMap<i64, RegexIteratorState>,
     date_time_objects: HashMap<i64, BoundedDateTimeObjectState>,
     date_interval_objects: HashMap<i64, BoundedDateIntervalState>,
     dirty_date_interval_objects: HashSet<i64>,
@@ -1153,6 +1161,23 @@ enum SplIteratorWrapperState {
         limit: i64,
         position: i64,
     },
+}
+
+#[derive(Debug, Clone)]
+struct RegexIteratorCurrent {
+    key: Value,
+    value: Value,
+}
+
+#[derive(Debug, Clone, Default)]
+struct RegexIteratorState {
+    inner: Option<PhpObject>,
+    regex: String,
+    mode: i64,
+    flags: i64,
+    preg_flags: i64,
+    started: bool,
+    current: Option<RegexIteratorCurrent>,
 }
 
 #[derive(Debug, Clone)]
@@ -11045,6 +11070,21 @@ fn spl_iterator_wrapper_state_contains_object_id(
     }
 }
 
+fn regex_iterator_state_contains_object_id(
+    state: &RegexIteratorState,
+    object_id: i64,
+    visited: &mut LiveRootVisit,
+) -> bool {
+    state
+        .inner
+        .as_ref()
+        .is_some_and(|inner| object_contains_object_id(inner, object_id, visited))
+        || state.current.as_ref().is_some_and(|current| {
+            value_contains_object_id(&current.key, object_id, visited)
+                || value_contains_object_id(&current.value, object_id, visited)
+        })
+}
+
 fn symbol_table_contains_object_id(
     symbols: &SymbolTable,
     object_id: i64,
@@ -12178,6 +12218,7 @@ impl Interpreter {
             spl_directory_iterators: HashMap::new(),
             spl_recursive_iterator_iterators: HashMap::new(),
             spl_iterator_wrappers: HashMap::new(),
+            regex_iterators: HashMap::new(),
             date_time_objects: HashMap::new(),
             date_interval_objects: HashMap::new(),
             dirty_date_interval_objects: HashSet::new(),
@@ -12556,6 +12597,14 @@ impl Interpreter {
             })
     }
 
+    fn is_regex_iterator_class_id(&self, class_id: ClassId) -> bool {
+        self.classes
+            .lookup_class_id("RegexIterator")
+            .is_some_and(|iterator_id| {
+                class_id == iterator_id || self.classes.is_subclass_of(class_id, iterator_id)
+            })
+    }
+
     fn resolved_method_is_core_spl_iterator_wrapper(&self, class_id: ClassId) -> bool {
         [
             "EmptyIterator",
@@ -12563,6 +12612,7 @@ impl Interpreter {
             "NoRewindIterator",
             "InfiniteIterator",
             "LimitIterator",
+            "RegexIterator",
         ]
         .iter()
         .filter_map(|class_name| self.classes.lookup_class_id(class_name))
@@ -18519,6 +18569,724 @@ impl Interpreter {
         )
     }
 
+    fn regex_iterator_state(
+        &self,
+        object: &PhpObject,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<&RegexIteratorState> {
+        self.regex_iterators.get(&object.id()).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("RegexIterator::{method_name}()"),
+                    "missing RegexIterator runtime state",
+                ),
+            )
+        })
+    }
+
+    fn regex_iterator_inner(
+        &self,
+        object: &PhpObject,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<PhpObject> {
+        self.regex_iterator_state(object, method_name, span)?
+            .inner
+            .clone()
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("RegexIterator::{method_name}()"),
+                        "Object not initialized",
+                    ),
+                )
+            })
+    }
+
+    fn regex_iterator_validate_mode(
+        function: &'static str,
+        mode: i64,
+        span: Span,
+    ) -> CompileResult<()> {
+        if (REGEX_ITERATOR_MATCH..=REGEX_ITERATOR_REPLACE).contains(&mode) {
+            return Ok(());
+        }
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!(
+                    "{function}: Argument #1 ($mode) must be RegexIterator::MATCH, RegexIterator::GET_MATCH, RegexIterator::ALL_MATCHES, RegexIterator::SPLIT, or RegexIterator::REPLACE"
+                ),
+            ),
+        ))
+    }
+
+    fn initialize_regex_iterator(
+        &mut self,
+        object: &PhpObject,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<()> {
+        if !(2..=5).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "RegexIterator::__construct()",
+                    ArityExpectation::Between { min: 2, max: 5 },
+                    args.len(),
+                ),
+            ));
+        }
+        let inner = self.spl_iterator_wrapper_inner_argument(
+            "RegexIterator::__construct()",
+            &args[0],
+            span,
+        )?;
+        let regex = self.pcre_string_argument_bytes(
+            "RegexIterator::__construct()",
+            2,
+            "regex",
+            "string",
+            &args[1],
+            span,
+        )?;
+        let regex = String::from_utf8_lossy(&regex).into_owned();
+        let mode = match args.get(2) {
+            Some(value) => {
+                let mode = php_internal_int_argument(
+                    "RegexIterator::__construct()",
+                    3,
+                    "mode",
+                    value,
+                    span,
+                )?;
+                Self::regex_iterator_validate_mode("RegexIterator::__construct()", mode, span)?;
+                mode
+            }
+            None => REGEX_ITERATOR_MATCH,
+        };
+        let flags = match args.get(3) {
+            Some(value) => {
+                php_internal_int_argument("RegexIterator::__construct()", 4, "flags", value, span)?
+            }
+            None => 0,
+        };
+        let preg_flags = match args.get(4) {
+            Some(value) => php_internal_int_argument(
+                "RegexIterator::__construct()",
+                5,
+                "pregFlags",
+                value,
+                span,
+            )?,
+            None => 0,
+        };
+        self.regex_iterators.insert(
+            object.id(),
+            RegexIteratorState {
+                inner: Some(inner),
+                regex,
+                mode,
+                flags,
+                preg_flags,
+                started: false,
+                current: None,
+            },
+        );
+        Ok(())
+    }
+
+    fn call_regex_iterator_method_with_values(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        args: Vec<Value>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        match method_name.to_ascii_lowercase().as_str() {
+            "__construct" => {
+                self.initialize_regex_iterator(&object, &args, span)?;
+                Ok(Value::Null)
+            }
+            "getregex" => {
+                expect_arity("RegexIterator::getRegex", &args, 0, span)?;
+                Ok(Value::String(
+                    self.regex_iterator_state(&object, method_name, span)?
+                        .regex
+                        .clone(),
+                ))
+            }
+            "getmode" => {
+                expect_arity("RegexIterator::getMode", &args, 0, span)?;
+                Ok(Value::Int(
+                    self.regex_iterator_state(&object, method_name, span)?.mode,
+                ))
+            }
+            "setmode" => {
+                expect_arity("RegexIterator::setMode", &args, 1, span)?;
+                let mode = php_internal_int_argument(
+                    "RegexIterator::setMode()",
+                    1,
+                    "mode",
+                    args.first().expect("arity checked"),
+                    span,
+                )?;
+                Self::regex_iterator_validate_mode("RegexIterator::setMode()", mode, span)?;
+                if let Some(state) = self.regex_iterators.get_mut(&object.id()) {
+                    state.mode = mode;
+                    state.current = None;
+                }
+                Ok(Value::Null)
+            }
+            "getflags" => {
+                expect_arity("RegexIterator::getFlags", &args, 0, span)?;
+                Ok(Value::Int(
+                    self.regex_iterator_state(&object, method_name, span)?.flags,
+                ))
+            }
+            "setflags" => {
+                expect_arity("RegexIterator::setFlags", &args, 1, span)?;
+                let flags = php_internal_int_argument(
+                    "RegexIterator::setFlags()",
+                    1,
+                    "flags",
+                    args.first().expect("arity checked"),
+                    span,
+                )?;
+                if let Some(state) = self.regex_iterators.get_mut(&object.id()) {
+                    state.flags = flags;
+                    state.current = None;
+                }
+                Ok(Value::Null)
+            }
+            "getpregflags" => {
+                expect_arity("RegexIterator::getPregFlags", &args, 0, span)?;
+                Ok(Value::Int(
+                    self.regex_iterator_state(&object, method_name, span)?
+                        .preg_flags,
+                ))
+            }
+            "setpregflags" => {
+                expect_arity("RegexIterator::setPregFlags", &args, 1, span)?;
+                let preg_flags = php_internal_int_argument(
+                    "RegexIterator::setPregFlags()",
+                    1,
+                    "pregFlags",
+                    args.first().expect("arity checked"),
+                    span,
+                )?;
+                if let Some(state) = self.regex_iterators.get_mut(&object.id()) {
+                    state.preg_flags = preg_flags;
+                    state.current = None;
+                }
+                Ok(Value::Null)
+            }
+            "getinneriterator" => {
+                expect_arity("RegexIterator::getInnerIterator", &args, 0, span)?;
+                Ok(Value::Object(self.regex_iterator_inner(
+                    &object,
+                    method_name,
+                    span,
+                )?))
+            }
+            "rewind" => {
+                expect_arity("RegexIterator::rewind", &args, 0, span)?;
+                let inner = self.regex_iterator_inner(&object, method_name, span)?;
+                if let Some(state) = self.regex_iterators.get_mut(&object.id()) {
+                    state.started = true;
+                    state.current = None;
+                }
+                self.call_required_iterator_method(inner, "rewind", span)?;
+                self.advance_regex_iterator_to_next_accepted(object, span)?;
+                Ok(Value::Null)
+            }
+            "next" => {
+                expect_arity("RegexIterator::next", &args, 0, span)?;
+                let inner = self.regex_iterator_inner(&object, method_name, span)?;
+                if let Some(state) = self.regex_iterators.get_mut(&object.id()) {
+                    state.started = true;
+                    state.current = None;
+                }
+                self.call_required_iterator_method(inner, "next", span)?;
+                self.advance_regex_iterator_to_next_accepted(object, span)?;
+                Ok(Value::Null)
+            }
+            "valid" => {
+                expect_arity("RegexIterator::valid", &args, 0, span)?;
+                Ok(Value::Bool(
+                    self.regex_iterator_state(&object, method_name, span)?
+                        .current
+                        .is_some(),
+                ))
+            }
+            "current" => {
+                expect_arity("RegexIterator::current", &args, 0, span)?;
+                Ok(self
+                    .regex_iterator_state(&object, method_name, span)?
+                    .current
+                    .as_ref()
+                    .map(|current| current.value.clone())
+                    .unwrap_or(Value::Null))
+            }
+            "key" => {
+                expect_arity("RegexIterator::key", &args, 0, span)?;
+                Ok(self
+                    .regex_iterator_state(&object, method_name, span)?
+                    .current
+                    .as_ref()
+                    .map(|current| current.key.clone())
+                    .unwrap_or(Value::Null))
+            }
+            "accept" => {
+                expect_arity("RegexIterator::accept", &args, 0, span)?;
+                Ok(Value::Bool(
+                    self.regex_iterator_accept_current(object, span)?.is_some(),
+                ))
+            }
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!(
+                    "{}::{method_name}()",
+                    object.class_name()
+                )),
+            )),
+        }
+    }
+
+    fn advance_regex_iterator_to_next_accepted(
+        &mut self,
+        object: PhpObject,
+        span: Span,
+    ) -> CompileResult<()> {
+        loop {
+            let inner = self.regex_iterator_inner(&object, "valid", span)?;
+            if !self.spl_iterator_valid_bool(inner.clone(), span)? {
+                if let Some(state) = self.regex_iterators.get_mut(&object.id()) {
+                    state.current = None;
+                }
+                return Ok(());
+            }
+
+            if self
+                .call_required_iterator_method(object.clone(), "accept", span)?
+                .is_truthy()
+            {
+                if self
+                    .regex_iterators
+                    .get(&object.id())
+                    .and_then(|state| state.current.as_ref())
+                    .is_none()
+                {
+                    if let Some(current) =
+                        self.regex_iterator_accept_current(object.clone(), span)?
+                    {
+                        if let Some(state) = self.regex_iterators.get_mut(&object.id()) {
+                            state.current = Some(current);
+                        }
+                    }
+                }
+                return Ok(());
+            }
+
+            self.call_required_iterator_method(inner, "next", span)?;
+        }
+    }
+
+    fn regex_iterator_accept_current(
+        &mut self,
+        object: PhpObject,
+        span: Span,
+    ) -> CompileResult<Option<RegexIteratorCurrent>> {
+        let state = self.regex_iterator_state(&object, "accept", span)?.clone();
+        if !state.started {
+            if let Some(state) = self.regex_iterators.get_mut(&object.id()) {
+                state.current = None;
+            }
+            return Ok(None);
+        }
+        let Some(inner) = state.inner.clone() else {
+            return Ok(None);
+        };
+        if !self.spl_iterator_valid_bool(inner.clone(), span)? {
+            if let Some(state) = self.regex_iterators.get_mut(&object.id()) {
+                state.current = None;
+            }
+            return Ok(None);
+        }
+
+        let key = self.call_required_iterator_method(inner.clone(), "key", span)?;
+        let current_value = self.call_required_iterator_method(inner, "current", span)?;
+        let subject_source = if state.flags & REGEX_ITERATOR_USE_KEY != 0 {
+            &key
+        } else {
+            &current_value
+        };
+        let subject = self.regex_iterator_subject_bytes(subject_source, span)?;
+        let value = self.regex_iterator_filtered_value(
+            &object,
+            &state.regex,
+            state.mode,
+            state.flags,
+            state.preg_flags,
+            current_value,
+            &subject,
+            span,
+        )?;
+        let current = value.map(|value| RegexIteratorCurrent { key, value });
+        if let Some(state) = self.regex_iterators.get_mut(&object.id()) {
+            state.current = current.clone();
+        }
+        Ok(current)
+    }
+
+    fn regex_iterator_subject_bytes(
+        &mut self,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<Vec<u8>> {
+        match value {
+            Value::Array(_) => Ok(b"Array".to_vec()),
+            Value::Object(object) => {
+                if let Some(value) = self.object_to_string_with_magic(
+                    object.clone(),
+                    "RegexIterator::accept()",
+                    span,
+                )? {
+                    return Ok(value.into_bytes());
+                }
+                Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "RegexIterator::accept()",
+                        format!(
+                            "Object of class {} could not be converted to string",
+                            object.class_name()
+                        ),
+                    ),
+                ))
+            }
+            Value::Closure(_) => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "RegexIterator::accept()",
+                    "Closure could not be converted to string",
+                ),
+            )),
+            _ => value
+                .try_echo_bytes()
+                .map_err(|error| runtime_error(span, error)),
+        }
+    }
+
+    fn compile_regex_iterator_pattern(
+        &mut self,
+        regex: &str,
+        span: Span,
+    ) -> CompileResult<Option<PhpPcreRegex>> {
+        let pattern = PcrePatternValue::from_bytes_with_warning(regex.as_bytes().to_vec(), true);
+        self.compile_pcre_pattern_or_warn("RegexIterator::accept()", &pattern, span)
+    }
+
+    fn regex_iterator_subject_is_usable(&mut self, regex: &PhpPcreRegex, subject: &[u8]) -> bool {
+        if regex.utf8 && std::str::from_utf8(subject).is_err() {
+            self.pcre_last_error = PHP_PREG_BAD_UTF8_ERROR;
+            return false;
+        }
+        true
+    }
+
+    fn regex_iterator_filtered_value(
+        &mut self,
+        object: &PhpObject,
+        regex: &str,
+        mode: i64,
+        flags: i64,
+        preg_flags: i64,
+        current_value: Value,
+        subject: &[u8],
+        span: Span,
+    ) -> CompileResult<Option<Value>> {
+        match mode {
+            REGEX_ITERATOR_MATCH => {
+                let Some(regex) = self.compile_regex_iterator_pattern(regex, span)? else {
+                    return Ok(None);
+                };
+                if !self.regex_iterator_subject_is_usable(&regex, subject) {
+                    return Ok(None);
+                }
+                let matched = regex.regex.is_match(subject);
+                self.pcre_last_error = PHP_PREG_NO_ERROR;
+                let accepted = if flags & REGEX_ITERATOR_INVERT_MATCH != 0 {
+                    !matched
+                } else {
+                    matched
+                };
+                Ok(accepted.then_some(current_value))
+            }
+            REGEX_ITERATOR_GET_MATCH => self.regex_iterator_get_match_value(
+                regex,
+                flags,
+                preg_flags,
+                current_value,
+                subject,
+                span,
+            ),
+            REGEX_ITERATOR_ALL_MATCHES => self.regex_iterator_all_matches_value(
+                regex,
+                flags,
+                preg_flags,
+                current_value,
+                subject,
+                span,
+            ),
+            REGEX_ITERATOR_SPLIT => self.regex_iterator_split_value(
+                regex,
+                flags,
+                preg_flags,
+                current_value,
+                subject,
+                span,
+            ),
+            REGEX_ITERATOR_REPLACE => self.regex_iterator_replace_value(
+                object,
+                regex,
+                flags,
+                current_value,
+                subject,
+                span,
+            ),
+            _ => Ok(None),
+        }
+    }
+
+    fn regex_iterator_get_match_value(
+        &mut self,
+        regex: &str,
+        flags: i64,
+        preg_flags: i64,
+        current_value: Value,
+        subject: &[u8],
+        span: Span,
+    ) -> CompileResult<Option<Value>> {
+        let Some(regex) = self.compile_regex_iterator_pattern(regex, span)? else {
+            return Ok(None);
+        };
+        if !self.regex_iterator_subject_is_usable(&regex, subject) {
+            return Ok(None);
+        }
+        let captures = regex.regex.captures(subject);
+        let matched = captures.is_some();
+        if flags & REGEX_ITERATOR_INVERT_MATCH != 0 {
+            self.pcre_last_error = PHP_PREG_NO_ERROR;
+            return Ok((!matched).then_some(current_value));
+        }
+        let Some(captures) = captures else {
+            self.pcre_last_error = PHP_PREG_NO_ERROR;
+            return Ok(None);
+        };
+        let matches = pcre_capture_array(&regex.regex, subject, 0, &captures, preg_flags, span)?;
+        self.pcre_last_error = PHP_PREG_NO_ERROR;
+        Ok(Some(Value::Array(matches)))
+    }
+
+    fn regex_iterator_all_matches_value(
+        &mut self,
+        regex: &str,
+        flags: i64,
+        preg_flags: i64,
+        current_value: Value,
+        subject: &[u8],
+        span: Span,
+    ) -> CompileResult<Option<Value>> {
+        let Some(regex) = self.compile_regex_iterator_pattern(regex, span)? else {
+            return Ok(None);
+        };
+        if !self.regex_iterator_subject_is_usable(&regex, subject) {
+            return Ok(None);
+        }
+        let capture_len = regex.regex.captures_len();
+        let mut rows: Vec<Vec<Option<(usize, usize)>>> = Vec::new();
+        for captures in regex.regex.captures_iter(subject) {
+            let mut row = Vec::with_capacity(capture_len);
+            for index in 0..capture_len {
+                row.push(
+                    captures
+                        .get(index)
+                        .map(|matched| (matched.start(), matched.end())),
+                );
+            }
+            rows.push(row);
+        }
+        let matched = !rows.is_empty();
+        if flags & REGEX_ITERATOR_INVERT_MATCH != 0 {
+            self.pcre_last_error = PHP_PREG_NO_ERROR;
+            return Ok((!matched).then_some(current_value));
+        }
+        if !matched {
+            self.pcre_last_error = PHP_PREG_NO_ERROR;
+            return Ok(None);
+        }
+
+        let set_order = preg_flags & PHP_PREG_SET_ORDER != 0;
+        let mut output = PhpArray::new();
+        if set_order {
+            for row in &rows {
+                let mut match_array = PhpArray::new();
+                for capture in row {
+                    match_array
+                        .append(pcre_capture_value(subject, *capture, preg_flags, span)?)
+                        .map_err(|error| runtime_error(span, error))?;
+                }
+                output
+                    .append(Value::Array(match_array))
+                    .map_err(|error| runtime_error(span, error))?;
+            }
+        } else {
+            for capture_index in 0..capture_len {
+                let mut capture_array = PhpArray::new();
+                for row in &rows {
+                    let capture = row.get(capture_index).copied().flatten();
+                    capture_array
+                        .append(pcre_capture_value(subject, capture, preg_flags, span)?)
+                        .map_err(|error| runtime_error(span, error))?;
+                }
+                output.insert(capture_index as i64, Value::Array(capture_array));
+            }
+        }
+        self.pcre_last_error = PHP_PREG_NO_ERROR;
+        Ok(Some(Value::Array(output)))
+    }
+
+    fn regex_iterator_split_value(
+        &mut self,
+        regex: &str,
+        flags: i64,
+        preg_flags: i64,
+        current_value: Value,
+        subject: &[u8],
+        span: Span,
+    ) -> CompileResult<Option<Value>> {
+        let Some(regex) = self.compile_regex_iterator_pattern(regex, span)? else {
+            return Ok(None);
+        };
+        if !self.regex_iterator_subject_is_usable(&regex, subject) {
+            return Ok(None);
+        }
+
+        let no_empty = preg_flags & PHP_PREG_SPLIT_NO_EMPTY != 0;
+        let delimiter_capture = preg_flags & PHP_PREG_SPLIT_DELIM_CAPTURE != 0;
+        let offset_capture = preg_flags & PHP_PREG_SPLIT_OFFSET_CAPTURE != 0;
+        let mut split_count = 0_usize;
+        let mut cursor = 0_usize;
+        let mut search_start = 0_usize;
+        let mut output = PhpArray::new();
+
+        while search_start <= subject.len() {
+            let Some(captures) = regex.regex.captures_at(subject, search_start) else {
+                break;
+            };
+            let Some(matched) = captures.get(0) else {
+                break;
+            };
+
+            pcre_split_append_piece(
+                &mut output,
+                &subject[cursor..matched.start()],
+                cursor,
+                no_empty,
+                offset_capture,
+                span,
+            )?;
+
+            if delimiter_capture {
+                for index in 1..captures.len() {
+                    if let Some(capture) = captures.get(index) {
+                        pcre_split_append_piece(
+                            &mut output,
+                            &subject[capture.start()..capture.end()],
+                            capture.start(),
+                            no_empty,
+                            offset_capture,
+                            span,
+                        )?;
+                    }
+                }
+            }
+
+            cursor = matched.end();
+            split_count += 1;
+
+            if matched.start() == matched.end() {
+                if matched.end() >= subject.len() {
+                    break;
+                }
+                search_start = matched.end() + 1;
+            } else {
+                search_start = matched.end();
+            }
+        }
+
+        pcre_split_append_piece(
+            &mut output,
+            &subject[cursor..],
+            cursor,
+            no_empty,
+            offset_capture,
+            span,
+        )?;
+        self.pcre_last_error = PHP_PREG_NO_ERROR;
+        let matched = split_count > 0;
+        if flags & REGEX_ITERATOR_INVERT_MATCH != 0 {
+            Ok((!matched).then_some(current_value))
+        } else if matched {
+            Ok(Some(Value::Array(output)))
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn regex_iterator_replace_value(
+        &mut self,
+        object: &PhpObject,
+        regex: &str,
+        flags: i64,
+        current_value: Value,
+        subject: &[u8],
+        span: Span,
+    ) -> CompileResult<Option<Value>> {
+        let Some(regex) = self.compile_regex_iterator_pattern(regex, span)? else {
+            return Ok(None);
+        };
+        if !self.regex_iterator_subject_is_usable(&regex, subject) {
+            return Ok(None);
+        }
+        let replacement = object
+            .read_public_property("replacement")
+            .unwrap_or_else(|_| Value::String(String::new()));
+        let replacement = self.pcre_string_argument_bytes(
+            "RegexIterator::accept()",
+            2,
+            "replacement",
+            "array|string",
+            &replacement,
+            span,
+        )?;
+        let (replaced, count) =
+            pcre_replace_bytes(&regex.regex, subject, &replacement, None, span)?;
+        self.pcre_last_error = PHP_PREG_NO_ERROR;
+        if flags & REGEX_ITERATOR_INVERT_MATCH != 0 {
+            Ok((count == 0).then_some(current_value))
+        } else if count > 0 {
+            Ok(Some(interpreter_value_from_php_string_bytes(replaced)))
+        } else {
+            Ok(None)
+        }
+    }
+
     fn spl_iterator_wrapper_state(
         &self,
         object: &PhpObject,
@@ -18822,6 +19590,9 @@ impl Interpreter {
         span: Span,
     ) -> CompileResult<Value> {
         let method = method_name.to_ascii_lowercase();
+        if self.is_regex_iterator_class_id(object.class_id()) {
+            return self.call_regex_iterator_method_with_values(object, method_name, args, span);
+        }
         if self.is_spl_empty_iterator_class_id(object.class_id()) {
             return match method.as_str() {
                 "rewind" | "next" => {
@@ -32935,6 +33706,10 @@ impl Interpreter {
             self.spl_recursive_iterator_iterators
                 .insert(object.id(), RecursiveIteratorIteratorState::default());
         }
+        if self.is_regex_iterator_class_id(class_id) {
+            self.regex_iterators
+                .insert(object.id(), RegexIteratorState::default());
+        }
         self.apply_instance_property_defaults(&object, class_id, span)?;
         self.sync_spl_doubly_linked_list_object_properties(&object, span)?;
         Ok(object)
@@ -33435,6 +34210,7 @@ impl Interpreter {
         self.spl_directory_iterators.remove(&object_id);
         self.spl_recursive_iterator_iterators.remove(&object_id);
         self.spl_iterator_wrappers.remove(&object_id);
+        self.regex_iterators.remove(&object_id);
         self.date_time_objects.remove(&object_id);
         self.date_interval_objects.remove(&object_id);
         self.dirty_date_interval_objects.remove(&object_id);
@@ -33783,6 +34559,14 @@ impl Interpreter {
             return true;
         }
 
+        if self
+            .regex_iterators
+            .values()
+            .any(|state| regex_iterator_state_contains_object_id(state, object_id, &mut visited))
+        {
+            return true;
+        }
+
         if self.closure_values.values().any(|closure| {
             value_contains_object_id(&Value::Closure(closure.clone()), object_id, &mut visited)
         }) || self.closure_bound_contexts.values().any(|context| {
@@ -34035,6 +34819,9 @@ impl Interpreter {
         }
         if let Some(state) = self.spl_iterator_wrappers.get(&object.id()).cloned() {
             self.spl_iterator_wrappers.insert(clone.id(), state);
+        }
+        if let Some(state) = self.regex_iterators.get(&object.id()).cloned() {
+            self.regex_iterators.insert(clone.id(), state);
         }
         if let Some(state) = self.date_time_objects.get(&object.id()).cloned() {
             self.date_time_objects.insert(clone.id(), state);
@@ -124070,6 +124857,35 @@ fn seed_core_class_constant_runtime_tables(
             }
         }
     }
+    if let Some(regex_iterator_id) = classes.lookup_class_id("RegexIterator") {
+        for (name, value) in [
+            ("MATCH", REGEX_ITERATOR_MATCH),
+            ("match", REGEX_ITERATOR_MATCH),
+            ("GET_MATCH", REGEX_ITERATOR_GET_MATCH),
+            ("ALL_MATCHES", REGEX_ITERATOR_ALL_MATCHES),
+            ("SPLIT", REGEX_ITERATOR_SPLIT),
+            ("REPLACE", REGEX_ITERATOR_REPLACE),
+            ("USE_KEY", REGEX_ITERATOR_USE_KEY),
+            ("INVERT_MATCH", REGEX_ITERATOR_INVERT_MATCH),
+        ] {
+            let span = Span::new(1, 1);
+            class_constants.insert(
+                (regex_iterator_id, name.to_string()),
+                ClassConstantDecl {
+                    name: name.to_string(),
+                    visibility: ClassVisibility::Public,
+                    is_static: false,
+                    is_abstract: false,
+                    is_final: false,
+                    is_readonly: false,
+                    type_decl: None,
+                    value: Expr::Int(value, span),
+                    attributes: Vec::new(),
+                    span,
+                },
+            );
+        }
+    }
     if let Some(reflection_class_id) = classes.lookup_class_id("ReflectionClass") {
         for (name, value) in [
             ("IS_IMPLICIT_ABSTRACT", REFLECTION_MODIFIER_STATIC),
@@ -132979,6 +133795,7 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             "unsupported call InfiniteIterator::",
             "unsupported call LimitIterator::",
             "unsupported call EmptyIterator::",
+            "unsupported call RegexIterator::",
         ] {
             if let Some(message) = error
                 .message
@@ -132990,6 +133807,9 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
                     return Some(("OutOfBoundsException", message));
                 }
                 if message.contains("must be greater than or equal") {
+                    return Some(("ValueError", message));
+                }
+                if message.contains("must be RegexIterator::MATCH") {
                     return Some(("ValueError", message));
                 }
                 if message.contains(" must be of type ") {
