@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Repaired the active score-gate PASS regression in
+  `ext/standard/tests/math/round_gh12143_expand_rounding_target.phpt`.
+  `round()` now keeps the first argument as the shared math
+  `int|float` value until dispatch, so integer values and integer-shaped
+  numeric strings are rounded through the bounded decimal engine before the
+  final float result is produced. This preserves one-more-digit decimal
+  half-boundaries for negative-precision modes such as
+  `12345678901234565` rounded to tens under half-up/half-odd and the enum
+  directed modes. Focused proof covers exact-current pre-patch selected PHPT
+  at `0/1`, post-patch selected PHPT at `1/1`, Rust standard-math regression
+  coverage, build/fmt/diff checks, and the selected active score-gate blocker
+  row only. Unsupported edges remain broad decimal-rounding/libm platform
+  parity outside the covered `round()` integer and shortest-float decimal
+  lanes, exact diagnostics for every malformed numeric/coercion edge,
+  references/COW, and native lowering.
+
 - Repaired the latest-published PASS regression in
   `ext/spl/tests/ArrayObject/arrayObject_getIteratorClass_basic1.phpt`.
   Direct `var_dump()` now limits reusable temporary object-handle retirement

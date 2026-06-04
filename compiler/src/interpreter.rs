@@ -156357,7 +156357,8 @@ fn call_round(interpreter: &mut Interpreter, args: &[Value], span: Span) -> Comp
         ));
     }
 
-    let number = interpreter.php_math_float_argument("round()", "int|float", &args[0], span)?;
+    let number =
+        php_math_int_or_float_argument(interpreter, "round()", "int|float", &args[0], span)?;
     let precision = match args.get(1) {
         Some(value) => round_precision_argument(interpreter, value, span)?,
         None => 0,
@@ -156367,7 +156368,9 @@ fn call_round(interpreter: &mut Interpreter, args: &[Value], span: Span) -> Comp
         None => BcRoundingMode::HalfAwayFromZero,
     };
 
-    Ok(Value::Float(round_float_value(number, precision, mode)))
+    Ok(Value::Float(round_math_number_value(
+        number, precision, mode,
+    )))
 }
 
 fn round_precision_argument(
@@ -156486,21 +156489,45 @@ fn round_mode_argument(value: &Value, span: Span) -> CompileResult<BcRoundingMod
     }
 }
 
+fn round_math_number_value(value: MathIntOrFloat, precision: i64, mode: BcRoundingMode) -> f64 {
+    match value {
+        MathIntOrFloat::Int(value) => round_int_value(value, precision, mode),
+        MathIntOrFloat::Float(value) => round_float_value(value, precision, mode),
+    }
+}
+
+fn round_int_value(value: i64, precision: i64, mode: BcRoundingMode) -> f64 {
+    let Some(decimal) = BcDecimal::parse(&value.to_string()) else {
+        return value as f64;
+    };
+    round_decimal_to_float(&decimal, value.is_negative(), value as f64, precision, mode)
+}
+
 fn round_float_value(value: f64, precision: i64, mode: BcRoundingMode) -> f64 {
     if !value.is_finite() || value == 0.0 {
         return value;
     }
 
-    let precision = precision.clamp(-308, 308) as i32;
     let Some(decimal) = bc_decimal_from_float_shortest(value) else {
         return value;
     };
+    round_decimal_to_float(&decimal, value.is_sign_negative(), value, precision, mode)
+}
+
+fn round_decimal_to_float(
+    decimal: &BcDecimal,
+    source_negative: bool,
+    fallback: f64,
+    precision: i64,
+    mode: BcRoundingMode,
+) -> f64 {
+    let precision = precision.clamp(-308, 308) as i32;
     let rounded = decimal.round(precision, mode);
     let output_scale = precision.max(0) as usize;
     let Ok(result) = rounded.format_with_scale(output_scale).parse::<f64>() else {
-        return value;
+        return fallback;
     };
-    if result == 0.0 && value.is_sign_negative() {
+    if result == 0.0 && source_negative {
         -0.0
     } else {
         result

@@ -6972,9 +6972,10 @@
   object, and resource operands. Interpreter scalar exponentiation syntax
   (`**` and `**=`) reuses the same bounded `pow()` semantics for current
   non-BcMath scalar operands, including zero-base negative-exponent
-  deprecations. `round()` uses bounded decimal rounding over shortest
-  round-trip float text for the covered precision/mode cases and preserves
-  signed zero in float string conversion.
+  deprecations. `round()` uses bounded decimal rounding over exact integer
+  values, exact integer-shaped numeric strings, and shortest round-trip float
+  text for the covered precision/mode cases, then produces PHP-shaped float
+  output while preserving signed zero in float string conversion.
   `deg2rad()` and `rad2deg()` use PHP's multiplication/division operation
   order for the covered PHPT precision-sensitive cases. Locale-sensitive
   parsing, exact warnings for all malformed numeric inputs, general

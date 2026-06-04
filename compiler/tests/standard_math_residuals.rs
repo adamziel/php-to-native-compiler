@@ -226,6 +226,45 @@ try {
 }
 
 #[test]
+fn round_preserves_integer_half_boundaries_before_float_output() {
+    let execution = run_source(
+        r#"<?php
+foreach ([12345678901234565, -12345678901234565, "12345678901234565"] as $value) {
+    var_dump(round($value, -1, PHP_ROUND_HALF_UP));
+    var_dump(round($value, -1, PHP_ROUND_HALF_DOWN));
+    var_dump(round($value, -1, PHP_ROUND_HALF_EVEN));
+    var_dump(round($value, -1, PHP_ROUND_HALF_ODD));
+}
+var_dump(round(12345678901234567, -1, RoundingMode::AwayFromZero));
+var_dump(round(-12345678901234567, -1, RoundingMode::NegativeInfinity));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "float(12345678901234570)\n",
+            "float(12345678901234560)\n",
+            "float(12345678901234560)\n",
+            "float(12345678901234570)\n",
+            "float(-12345678901234570)\n",
+            "float(-12345678901234560)\n",
+            "float(-12345678901234560)\n",
+            "float(-12345678901234570)\n",
+            "float(12345678901234570)\n",
+            "float(12345678901234560)\n",
+            "float(12345678901234560)\n",
+            "float(12345678901234570)\n",
+            "float(12345678901234570)\n",
+            "float(-12345678901234570)\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn clamp_uses_php_comparison_and_reports_invalid_bounds() {
     let execution = run_source(
         r#"<?php
