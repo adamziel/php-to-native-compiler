@@ -1,6 +1,6 @@
 # PHP Native Compiler PHPT Progress
 
-Updated: 2026-06-04 04:18 CEST
+Updated: 2026-06-04 04:35 CEST
 
 Primary/public branch: `origin/master`
 Latest accepted public-score source:
@@ -19,10 +19,10 @@ denominators that exclude BORKED rows are not public progress.
 Current public score: **7201 / 20294 pinned runnable PHPTs = 35.48%**.
 
 Latest pushed source checkpoint:
-`bfde7284afe168000a848f5df2e2fe8c1aea3867 fix: add SPL filesystem iterator metadata`
+`13a0caf90de543696ca031ae9c2141b8bc70d639 fix: support sensitive parameter traces`
 
 Next score-gate target:
-`bfde7284afe168000a848f5df2e2fe8c1aea3867 fix: add SPL filesystem iterator metadata`
+`13a0caf90de543696ca031ae9c2141b8bc70d639 fix: support sensitive parameter traces`
 once disk headroom recovers enough for a fresh full pinned PHPT gate.
 
 The accepted source checkpoint chain through semantic source `00a8fa10` has
@@ -34,13 +34,16 @@ latest-published PASS regressions.
 
 Unpublished source progress since the accepted public score source:
 
-- Latest pushed source head is `bfde7284afe168000a848f5df2e2fe8c1aea3867`
-  (`fix: add SPL filesystem iterator metadata`), pushed to `origin/master`.
-- There is `1` score-relevant source commit after the accepted public-score
+- Latest pushed source head is `13a0caf90de543696ca031ae9c2141b8bc70d639`
+  (`fix: support sensitive parameter traces`), pushed to `origin/master`.
+- There are `2` score-relevant source commits after the accepted public-score
   checkpoint: `bfde7284afe168000a848f5df2e2fe8c1aea3867`
-  (`fix: add SPL filesystem iterator metadata`).
+  (`fix: add SPL filesystem iterator metadata`) and
+  `13a0caf90de543696ca031ae9c2141b8bc70d639`
+  (`fix: support sensitive parameter traces`).
 - Staged focused selected-PHPT proof after the latest accepted public-score
-  checkpoint totals `12` selected rows. These are source/staging facts, not a
+  checkpoint totals `26` selected rows across `2` integrated artifacts. These
+  are source/staging facts, not a
   public score update until a future full pinned PHPT gate accepts them.
 - The SPL filesystem iterator metadata packet moved selected PHPT
   `0/12 -> 12/12` for `ext/spl/tests/filesystemiterator_flags.phpt`,
@@ -57,6 +60,29 @@ Unpublished source progress since the accepted public score source:
   `ext/spl/tests/SplFileObject/SplFileObject_fstat_with_basic_fstat_disabled.phpt`.
   It also preserved a ten-row latest-published PASS scout including the
   repaired `round_gh12143_expand_rounding_target.phpt` and ArrayObject rows.
+- The SensitiveParameter diagnostics and introspection packet moved selected
+  PHPT `0/14 -> 14/14` for
+  `Zend/tests/function_arguments/sensitive_parameter.phpt`,
+  `Zend/tests/function_arguments/sensitive_parameter_closure.phpt`,
+  `Zend/tests/function_arguments/sensitive_parameter_correctly_captures_original.phpt`,
+  `Zend/tests/function_arguments/sensitive_parameter_extra_arguments.phpt`,
+  `Zend/tests/function_arguments/sensitive_parameter_multiple_arguments.phpt`,
+  `Zend/tests/function_arguments/sensitive_parameter_named_arguments.phpt`,
+  `Zend/tests/function_arguments/sensitive_parameter_nested_calls.phpt`,
+  `Zend/tests/function_arguments/sensitive_parameter_variadic_arguments.phpt`,
+  `Zend/tests/function_arguments/sensitive_parameter_value.phpt`,
+  `Zend/tests/function_arguments/sensitive_parameter_value_clone.phpt`,
+  `Zend/tests/function_arguments/sensitive_parameter_value_no_dynamic_property.phpt`,
+  `Zend/tests/function_arguments/sensitive_parameter_value_reflection.phpt`,
+  `Zend/tests/function_arguments/sensitive_parameter_value_serialize.phpt`, and
+  `Zend/tests/function_arguments/sensitive_parameter_value_to_string.phpt`.
+  It also preserved an eight-row latest-published PASS scout and rechecked the
+  staged filesystem selected PHPT rows at `12/12`.
+- Cadence currently reports `SCORE-GATE-BLOCKED-DISK`: the current source head
+  is `13a0caf9`, disk headroom is about `24 GiB`, below the `35 GiB` full-gate
+  threshold, and no full PHPT wrapper processes are running. The next public
+  score movement therefore still requires a fresh full pinned PHPT gate with
+  zero latest-published PASS regressions after disk headroom recovers.
 - The previous publication blocker was the blocked `52a79aa1` full gate:
   `state/logs/phpt-full-current-score-20260604T005236Z-php-src-f97ff59-public-52a79aa1-source-52a79aa1`
   had `1` latest-published PASS regression,
