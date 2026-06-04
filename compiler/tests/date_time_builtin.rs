@@ -1769,6 +1769,9 @@ $empty = date_parse("");
 echo $empty["error_count"], "|", $empty["errors"][0], "\n";
 $format = date_parse_from_format("!m*d*y", "06/08/04");
 echo $format["year"], "-", $format["month"], "-", $format["day"], "|", $format["hour"], ":", $format["minute"], ":", $format["second"], "|", ($format["is_localtime"] ? "local" : "not-local"), "\n";
+$pipe = date_parse_from_format("m*d*y|", "06/08/04");
+$plain = date_parse_from_format("m*d*y", "06/08/04");
+echo $pipe["hour"], ":", $pipe["minute"], ":", $pipe["second"], "|", ($plain["hour"] === false ? "plain-false" : "plain-time"), "\n";
 "#,
     )
     .unwrap();
@@ -1782,6 +1785,7 @@ echo $format["year"], "-", $format["month"], "-", $format["day"], "|", $format["
             "no-year|10|0.5\n",
             "1|Empty string\n",
             "2004-6-8|0:0:0|not-local\n",
+            "0:0:0|plain-false\n",
         )
     );
     assert_eq!(execution.stderr, "");

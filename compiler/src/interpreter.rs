@@ -172285,6 +172285,7 @@ fn parse_bounded_format_datetime_attempt(
         second_seen: false,
         fraction_seen: false,
         timezone_seen: false,
+        reset_defaults_seen: false,
         day_of_year: None,
         unix_timestamp: None,
         lenient_trailing_data: false,
@@ -172301,7 +172302,7 @@ fn parse_bounded_format_datetime_attempt(
         match token {
             '\\' => escaped = true,
             '+' => parts.lenient_trailing_data = true,
-            '|' => {}
+            '|' => parts.reset_defaults_seen = true,
             '!' => {
                 parts.year = 1970;
                 parts.month = 1;
@@ -172319,6 +172320,7 @@ fn parse_bounded_format_datetime_attempt(
                 parts.second_seen = false;
                 parts.fraction_seen = false;
                 parts.timezone_seen = false;
+                parts.reset_defaults_seen = true;
                 parts.day_of_year = None;
                 parts.unix_timestamp = None;
             }
@@ -172622,14 +172624,15 @@ fn bounded_format_parse_success(
     } else {
         (None, None, None)
     };
+    let include_defaulted_fields = parts.reset_defaults_seen;
     let fields = BoundedDateParseResult {
-        year: parts.year_seen.then_some(parts.year),
-        month: parts.month_seen.then_some(parts.month),
-        day: parts.day_seen.then_some(parts.day),
-        hour: parts.hour_seen.then_some(parts.hour),
-        minute: parts.minute_seen.then_some(parts.minute),
-        second: parts.second_seen.then_some(parts.second),
-        fraction: if parts.fraction_seen {
+        year: (parts.year_seen || include_defaulted_fields).then_some(parts.year),
+        month: (parts.month_seen || include_defaulted_fields).then_some(parts.month),
+        day: (parts.day_seen || include_defaulted_fields).then_some(parts.day),
+        hour: (parts.hour_seen || include_defaulted_fields).then_some(parts.hour),
+        minute: (parts.minute_seen || include_defaulted_fields).then_some(parts.minute),
+        second: (parts.second_seen || include_defaulted_fields).then_some(parts.second),
+        fraction: if parts.fraction_seen || include_defaulted_fields {
             Value::Float(parts.microsecond as f64 / 1_000_000.0)
         } else {
             Value::Bool(false)
@@ -172695,6 +172698,7 @@ struct BoundedFormatParts {
     second_seen: bool,
     fraction_seen: bool,
     timezone_seen: bool,
+    reset_defaults_seen: bool,
     day_of_year: Option<i64>,
     unix_timestamp: Option<i64>,
     lenient_trailing_data: bool,
