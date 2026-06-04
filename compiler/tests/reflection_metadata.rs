@@ -754,3 +754,57 @@ var_dump($hidden->isWritable(null, $bag));
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
 }
+
+#[test]
+fn reflection_enum_metadata_cases_and_backing_values_are_bounded() {
+    let execution = run_source(
+        r#"<?php
+enum PlainEnum {
+    /** Case doc */
+    case One;
+    const Alias = self::One;
+}
+
+enum BackedEnumExample: int {
+    case One = 7;
+}
+
+$plain = new ReflectionEnum(PlainEnum::class);
+var_dump((new ReflectionClass(PlainEnum::class))->isEnum());
+echo $plain->getName(), "|", ($plain->isBacked() ? "1" : "0"), "|";
+echo ($plain->hasCase("One") ? "1" : "0"), ($plain->hasCase("Alias") ? "1" : "0"), "\n";
+
+$case = $plain->getCase("One");
+echo $case->getName(), "|", $case->getDocComment(), "|", $case->getEnum()->getName(), "\n";
+var_dump($case->getValue() === PlainEnum::One);
+var_dump((new ReflectionClassConstant(PlainEnum::class, "One"))->getDocComment());
+
+try {
+    $plain->getCase("Alias");
+} catch (ReflectionException $e) {
+    echo "alias-error|", $e->getMessage(), "\n";
+}
+
+$backed = new ReflectionEnum(BackedEnumExample::class);
+echo $backed->getBackingType(), "|", ($backed->isBacked() ? "1" : "0"), "\n";
+echo $backed->getCase("One")->getBackingValue(), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "bool(true)\n",
+            "PlainEnum|0|10\n",
+            "One|/** Case doc */|PlainEnum\n",
+            "bool(true)\n",
+            "string(15) \"/** Case doc */\"\n",
+            "alias-error|PlainEnum::Alias is not a case\n",
+            "int|1\n",
+            "7\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}

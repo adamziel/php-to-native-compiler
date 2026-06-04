@@ -960,7 +960,10 @@ pub struct TraitMethodPrecedenceDecl {
 #[derive(Debug, Clone, PartialEq)]
 pub struct EnumDecl {
     pub name: String,
+    pub backing_type: Option<String>,
     pub cases: Vec<EnumCaseDecl>,
+    pub constants: Vec<ClassConstantDecl>,
+    pub end_line: usize,
     pub diagnostics: Vec<EnumMemberDiagnosticDecl>,
     pub attributes: Vec<AttributeDecl>,
     pub span: Span,
@@ -969,6 +972,8 @@ pub struct EnumDecl {
 #[derive(Debug, Clone, PartialEq)]
 pub struct EnumCaseDecl {
     pub name: String,
+    pub value: Option<Expr>,
+    pub doc_comment: Option<String>,
     pub attributes: Vec<AttributeDecl>,
     pub span: Span,
 }

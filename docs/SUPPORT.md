@@ -7640,11 +7640,10 @@
   simple method alias, visibility-adaptation, and bounded `insteadof` shapes,
   broad conflict resolution,
   `__TRAIT__` context,
-  references/copy-on-write, and native trait lowering, backed enum declarations,
-  backed enum case values, ordinary enum methods/constants/interface
-  implementations/traits, typed or property-hook enum properties, enum case
-  objects/value access beyond current metadata and forbidden-member startup
-  diagnostics,
+  references/copy-on-write, and native trait lowering, enum methods/interface
+  implementations/traits, generated enum `cases()` / `from()` / `tryFrom()`
+  execution, typed or property-hook enum properties, enum case object/value
+  behavior beyond the bounded direct case-read and reflection metadata paths,
   unsupported class modifier combinations, full readonly class runtime
   semantics beyond bounded declaration metadata and startup diagnostics,
   typed-property initialization/write rules, reflection behavior, and native
@@ -8235,21 +8234,25 @@
   registered bounded autoload callbacks on misses with the normalized
   class-like name.
   `enum_exists($name)` and `enum_exists($name, $autoload)` accept string enum
-  names, perform case-insensitive lookup against top-level unit enums declared
-  in the current parsed program, ignore one leading global namespace separator
-  in lookup strings, and are available through string-valued dynamic function
-  calls. The autoload flag accepts current bool-like scalar values and does
-  not trigger enum loading beyond the current metadata recheck. `class_exists()`
-  also reports true for declared enums in the current class-like metadata
-  slice. Top-level unit enums also retain diagnostic-only forbidden-member
+  names, perform case-insensitive lookup against top-level unit and backed
+  enums declared in the current parsed program, ignore one leading global
+  namespace separator in lookup strings, and are available through
+  string-valued dynamic function calls. The autoload flag accepts current
+  bool-like scalar values and does not trigger enum loading beyond the current
+  metadata recheck. `class_exists()` also reports true for declared enums in
+  the current class-like metadata slice. Top-level enums also retain
+  diagnostic-only forbidden-member
   metadata so PHP-forbidden magic methods (`__clone`, `__construct`,
   `__destruct`, `__get`, `__isset`, `__serialize`, `__set`, `__set_state`,
   `__sleep`, `__toString`, `__unserialize`, `__unset`, `__wakeup`), abstract
   enum methods, and untyped instance/static enum properties emit PHP-shaped
-  startup fatals. Ordinary enum method dispatch, `__call`, `__callStatic`,
-  `__invoke`, typed/property-hook enum properties, enum constants, backed enum
-  values, enum case objects, broader enum reflection APIs, and native enum
-  lowering remain unsupported.
+  startup fatals. Enum cases are singleton objects for direct `Enum::Case`
+  reads, and backed case values are evaluated for the bounded reflection
+  `getBackingValue()` path. Ordinary enum method dispatch, `__call`,
+  `__callStatic`, `__invoke`, typed/property-hook enum properties, enum
+  `cases()`/`from()`/`tryFrom()` methods, enum `implements` declarations,
+  enum reflection APIs beyond the current `ReflectionEnum`/case metadata
+  slice, and native enum lowering remain unsupported.
   `property_exists($object_or_class, $property)` accepts a current object value
   or string class name and a string property name. It checks the current
   declared and inherited property metadata with case-sensitive property names,
@@ -11127,7 +11130,7 @@
   for declared user classes, interfaces, and traits. It accepts object values
   and string class-like names, invokes the existing autoload path for string
   misses, and supports `getName()`, `getShortName()`, `isInterface()`,
-  `isTrait()`, `isInstantiable()`, `getParentClass()`,
+  `isTrait()`, `isEnum()`, `isInstantiable()`, `getParentClass()`,
   `getInterfaceNames()`, `getInterfaces()`, `getTraitNames()`, `getTraits()`,
   `hasMethod($name)`, `getConstructor()`, `getFileName()`,
   `getStartLine()`, `getEndLine()`, `getDocComment()`, `isAbstract()`,
@@ -11183,6 +11186,22 @@
   dynamic-property section for initialized public dynamic properties whose
   names do not collide with declared properties in the reflected class
   hierarchy.
+  `new ReflectionEnum($object_or_class)` creates bounded metadata for
+  declared unit and `int`/`string` backed enums. It supports `getName()`,
+  `isBacked()`, `getBackingType()`, `hasCase($name)`, `getCase($name)`,
+  `getCases()`, and exact-current unbacked enum `__toString()` output over
+  parsed enum cases, constants, source file/start/end line metadata, and the
+  implicit `UnitEnum` / `BackedEnum` interfaces. `ReflectionEnumUnitCase` and
+  `ReflectionEnumBackedCase` support construction from enum class and case
+  names, public `name`/`class` properties for debug output, `getName()`,
+  `isPublic()`, `getModifiers()`, `getDocComment()`, `getEnum()`,
+  `getValue()`, and backed-case `getBackingValue()` over the current constant
+  expression subset. Enum cases are also registered as class constants for
+  `ReflectionClassConstant`, including `getDocComment()` and `isEnumCase()`.
+  Enum methods, interfaces declared with `implements`, traits, `cases()`,
+  `from()`, `tryFrom()`, backed enum `__toString()` parity beyond the
+  represented metadata rows, references/COW, and native enum lowering remain
+  unsupported.
   `new ReflectionMethod($object_or_class, $method)` and
   `new ReflectionMethod("ClassName::methodName")` create a bounded
   metadata object for methods declared in the current user class, interface,
@@ -12294,9 +12313,10 @@
   traits, unqualified `insteadof`, trait property or constant adaptations,
   `__TRAIT__`,
   delayed conditional/nested trait registration, exact trait diagnostics,
-  backed enum declarations, enum case objects, backed enum values, enum
-  methods, enum constants/properties, enum interface implementations,
-  namespace-aware enum member access,
+  enum methods, enum properties, enum constants beyond the current simple
+  constant-expression metadata slice, enum interface implementations,
+  generated enum `cases()`/`from()`/`tryFrom()` execution, namespace-aware
+  enum member access,
   full method signature compatibility beyond inherited required-parameter count
   increases, readonly class semantics beyond bounded startup diagnostics,
   readonly property runtime enforcement and reflection metadata,
@@ -13544,7 +13564,8 @@
 - broad interface implementation enforcement beyond the current
   public-method/signature metadata slice,
   trait composition beyond the current public method/adaptation subset, and
-  enum case objects/backed values/methods/interfaces
+  enum methods/interfaces/generated case lookup methods beyond the current
+  reflection metadata and direct-case slices
 - generator functions, generator objects, `yield`, `yield from` delegation,
   key/value yields, by-reference yields, `send`/`throw`/`return` generator
   semantics, `Traversable` forwarding, and native lowering

@@ -1526,9 +1526,12 @@ impl Parser {
         }
         let name = self.consume_identifier("expected enum name")?;
         let name = self.resolve_declared_class_name(&name);
-        if self.match_token(|kind| matches!(kind, TokenKind::Colon)) {
-            return Err(self.error_at(self.previous().span, unsupported_backed_enum_message()));
-        }
+        let backing_type = if self.match_token(|kind| matches!(kind, TokenKind::Colon)) {
+            let backing_type = self.consume_identifier("expected enum backing type")?;
+            Some(backing_type.to_ascii_lowercase())
+        } else {
+            None
+        };
         if self.match_token(|kind| matches!(kind, TokenKind::Implements)) {
             return Err(self.error_at(
                 self.previous().span,
@@ -1538,23 +1541,29 @@ impl Parser {
 
         self.consume_keyword(TokenKind::LBrace, "expected enum body")?;
         let mut cases = Vec::new();
+        let mut constants = Vec::new();
         let mut diagnostics = Vec::new();
         while !self.check(|kind| matches!(kind, TokenKind::RBrace | TokenKind::Eof)) {
             self.trace_parse("enum member");
             self.consume_doc_comments_and_attributes();
-            self.pending_doc_comment = None;
             if self.check(
                 |kind| matches!(kind, TokenKind::Identifier(name) if name.eq_ignore_ascii_case("case")),
             ) {
                 cases.push(self.parse_enum_case()?);
+            } else if self.enum_member_starts_constant() {
+                constants.push(self.parse_enum_constant()?);
             } else {
                 diagnostics.push(self.parse_enum_member_diagnostic()?);
             }
         }
         self.consume_keyword(TokenKind::RBrace, "expected '}' after enum body")?;
+        let end_line = self.previous().span.line;
         Ok(Stmt::Enum(EnumDecl {
             name,
+            backing_type,
             cases,
+            constants,
+            end_line,
             diagnostics,
             attributes,
             span,
@@ -1568,16 +1577,76 @@ impl Parser {
             return Err(self.error_at(self.peek().span, unsupported_enum_member_message()));
         }
         let attributes = self.take_pending_attributes();
+        let doc_comment = self.pending_doc_comment.take();
         let span = self.advance().span;
         let name = self.consume_identifier("expected enum case name")?;
-        if self.match_token(|kind| matches!(kind, TokenKind::Equal)) {
-            return Err(self.error_at(self.previous().span, unsupported_enum_case_value_message()));
-        }
+        let value = if self.match_token(|kind| matches!(kind, TokenKind::Equal)) {
+            Some(self.parse_expression()?)
+        } else {
+            None
+        };
         self.consume_keyword(TokenKind::Semicolon, "expected ';' after enum case")?;
         Ok(EnumCaseDecl {
             name,
+            value,
+            doc_comment,
             attributes,
             span,
+        })
+    }
+
+    fn enum_member_starts_constant(&self) -> bool {
+        if matches!(&self.peek().kind, TokenKind::Identifier(name) if name.eq_ignore_ascii_case("const"))
+        {
+            return true;
+        }
+        let mut index = self.current;
+        while let Some(token) = self.tokens.get(index) {
+            match &token.kind {
+                TokenKind::Public
+                | TokenKind::Protected
+                | TokenKind::Private
+                | TokenKind::Static
+                | TokenKind::Final
+                | TokenKind::Abstract
+                | TokenKind::Readonly => index += 1,
+                TokenKind::Identifier(name) if name.eq_ignore_ascii_case("const") => return true,
+                _ => return false,
+            }
+        }
+        false
+    }
+
+    fn parse_enum_constant(&mut self) -> CompileResult<ClassConstantDecl> {
+        let modifiers = self.parse_class_member_modifiers()?;
+        let attributes = self.take_pending_attributes();
+        self.pending_doc_comment = None;
+        self.match_identifier("const");
+        let type_decl = if self.check_class_constant_type_declaration() {
+            Some(self.parse_type_decl(unsupported_class_constant_type_message())?)
+        } else {
+            None
+        };
+        let (name, name_span) =
+            self.consume_class_constant_name_with_span("expected enum constant name after const")?;
+        self.consume_keyword(TokenKind::Equal, "expected '=' after enum constant name")?;
+        let value = self.parse_expression()?;
+        self.ensure_supported_const_declaration_expr(&value)?;
+        self.consume_keyword(
+            TokenKind::Semicolon,
+            "expected ';' after enum constant declaration",
+        )?;
+        Ok(ClassConstantDecl {
+            name,
+            visibility: modifiers.visibility,
+            is_static: modifiers.is_static,
+            is_abstract: modifiers.is_abstract,
+            is_final: modifiers.is_final,
+            is_readonly: modifiers.is_readonly,
+            type_decl,
+            value,
+            attributes,
+            span: name_span,
         })
     }
 
@@ -8881,6 +8950,7 @@ impl Parser {
             Expr::MagicFunction { .. } => Ok(()),
             Expr::MagicClass { .. } | Expr::MagicMethod { .. } => Ok(()),
             Expr::ClassConstant { .. } => Ok(()),
+            Expr::SelfClassConstant { .. } | Expr::ParentClassConstant { .. } => Ok(()),
             Expr::Call { name, .. }
                 if allow_first_class_callable && is_first_class_callable_helper_name(name) =>
             {
@@ -8891,8 +8961,6 @@ impl Parser {
             | Expr::Cast { .. }
             | Expr::ObjectStaticClassConstant { .. }
             | Expr::ObjectClassNameConstant { .. }
-            | Expr::SelfClassConstant { .. }
-            | Expr::ParentClassConstant { .. }
             | Expr::LateStaticClassConstant { .. }
             | Expr::StaticProperty { .. }
             | Expr::DynamicStaticProperty { .. }
@@ -10739,20 +10807,12 @@ fn unsupported_nested_enum_declaration_message() -> &'static str {
     "unsupported enum declaration: only top-level enum declarations are implemented"
 }
 
-fn unsupported_backed_enum_message() -> &'static str {
-    "unsupported backed enum declaration: backed enum values and scalar backing types are not implemented"
-}
-
 fn unsupported_enum_implementation_message() -> &'static str {
     "unsupported enum interface implementation: enum implements clauses are not implemented"
 }
 
 fn unsupported_enum_member_message() -> &'static str {
     "unsupported enum member declaration: only unbacked enum case declarations are implemented"
-}
-
-fn unsupported_enum_case_value_message() -> &'static str {
-    "unsupported enum case value: backed enum case values are not implemented"
 }
 
 fn unsupported_clone_message() -> &'static str {

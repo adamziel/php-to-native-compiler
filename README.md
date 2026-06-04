@@ -605,7 +605,7 @@ incorrect native code.
   compatibility slice, including no-argument `phpcredits()` output metadata,
   and registered user-function table, bounded
   `ReflectionClass` metadata objects with `getName()`, `getShortName()`,
-  `isInterface()`, `isTrait()`, `isInstantiable()`, `getParentClass()`,
+  `isInterface()`, `isTrait()`, `isEnum()`, `isInstantiable()`, `getParentClass()`,
   `getInterfaceNames()`, `getTraitNames()`, `getTraits()`,
   `hasMethod($name)`, `getMethod($name)`, `getMethods([$filter])`, class-like
   file/start/end/doc-comment source metadata, `hasProperty($name)`,
@@ -643,7 +643,12 @@ incorrect native code.
   typed-property coercions, and bounded uninitialized typed-property slots for
   properties without explicit defaults, with runtime typed-property writes
   accepting inherited class-name objects and declared user-interface
-  implementors in the current object metadata model, declared trait
+  implementors in the current object metadata model, bounded
+  `ReflectionEnum`, `ReflectionEnumUnitCase`, and
+  `ReflectionEnumBackedCase` metadata for declared unit and `int`/`string`
+  backed enums, including case lookup/listing, case doc comments, enum-case
+  singleton values, and backed scalar values,
+  declared trait
   metadata for empty traits, public trait constants, supported trait
   properties, simple public instance trait methods, simple class-body
   `use TraitName;` and `use TraitA, TraitB;` composition for already-declared
@@ -711,8 +716,8 @@ beyond the current simple public, qualified public-alias, same-block
 winner public-alias, and protected/private alias slices,
 unqualified visibility-only adaptations across multiple used traits,
 unqualified `insteadof`, trait property or constant adaptations, `__TRAIT__`,
-conditional/nested trait registration, enum case objects/backed
-values/methods/interfaces,
+conditional/nested trait registration, enum methods/interfaces, generated
+enum `cases()`/`from()`/`tryFrom()` execution, and native enum lowering,
 catch matching and exception unwinding, exception objects and stack unwinding,
 autoload-triggered class discovery beyond string user-function callbacks,
 public `"ClassName::method"` static-method strings, public object-method array

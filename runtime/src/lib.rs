@@ -32515,6 +32515,7 @@ impl PhpClassTable {
             "isUserDefined",
             "isInterface",
             "isTrait",
+            "isEnum",
             "isAbstract",
             "isFinal",
             "isReadOnly",
@@ -32856,6 +32857,8 @@ impl PhpClassTable {
             "isPrivate",
             "isFinal",
             "isDeprecated",
+            "isEnumCase",
+            "getDocComment",
             "getValue",
             "getAttributes",
         ] {
@@ -34260,6 +34263,73 @@ impl PhpClassTable {
             .expect("declared Closure class id should resolve")
             .add_method(PhpMethodMetadata::instance("__invoke", Visibility::Public))
             .expect("Closure core metadata should not duplicate methods");
+        let reflection_enum_id = classes
+            .declare_class("ReflectionEnum")
+            .expect("core class table should contain Closure before ReflectionEnum");
+        classes
+            .set_parent(reflection_enum_id, reflection_class_id)
+            .expect("ReflectionEnum should extend ReflectionClass");
+        let reflection_enum = classes
+            .get_mut(reflection_enum_id)
+            .expect("declared ReflectionEnum class id should resolve");
+        for method in [
+            "__construct",
+            "__toString",
+            "getName",
+            "isBacked",
+            "getBackingType",
+            "hasCase",
+            "getCase",
+            "getCases",
+        ] {
+            reflection_enum
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("ReflectionEnum core metadata should not duplicate methods");
+        }
+        let reflection_enum_unit_case_id = classes
+            .declare_class("ReflectionEnumUnitCase")
+            .expect("core class table should contain ReflectionEnum before ReflectionEnumUnitCase");
+        classes
+            .set_parent(reflection_enum_unit_case_id, reflection_class_constant_id)
+            .expect("ReflectionEnumUnitCase should extend ReflectionClassConstant");
+        let reflection_enum_unit_case = classes
+            .get_mut(reflection_enum_unit_case_id)
+            .expect("declared ReflectionEnumUnitCase class id should resolve");
+        for method in [
+            "__construct",
+            "getName",
+            "getDeclaringClass",
+            "getModifiers",
+            "isPublic",
+            "isProtected",
+            "isPrivate",
+            "isFinal",
+            "isDeprecated",
+            "getDocComment",
+            "getEnum",
+            "getValue",
+            "getAttributes",
+        ] {
+            reflection_enum_unit_case
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("ReflectionEnumUnitCase core metadata should not duplicate methods");
+        }
+        let reflection_enum_backed_case_id = classes
+            .declare_class("ReflectionEnumBackedCase")
+            .expect(
+                "core class table should contain ReflectionEnumUnitCase before ReflectionEnumBackedCase",
+            );
+        classes
+            .set_parent(reflection_enum_backed_case_id, reflection_enum_unit_case_id)
+            .expect("ReflectionEnumBackedCase should extend ReflectionEnumUnitCase");
+        classes
+            .get_mut(reflection_enum_backed_case_id)
+            .expect("declared ReflectionEnumBackedCase class id should resolve")
+            .add_method(PhpMethodMetadata::instance(
+                "getBackingValue",
+                Visibility::Public,
+            ))
+            .expect("ReflectionEnumBackedCase core metadata should not duplicate methods");
         classes
     }
 

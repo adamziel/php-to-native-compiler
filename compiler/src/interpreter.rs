@@ -42,7 +42,7 @@ use xxhash_rust::{
 use crate::ast::{
     ArrayItem, AssignTarget, AttributeDecl, BinaryOp, CastKind, CatchClause, ClassConstantDecl,
     ClassDecl, ClassDiagnosticDecl, ClassDiagnosticKind, ClassMember, ClassMethodDecl,
-    ClassPropertyDecl, ClassVisibility, ClosureCapture, CompoundAssignOp, EnumDecl,
+    ClassPropertyDecl, ClassVisibility, ClosureCapture, CompoundAssignOp, EnumCaseDecl, EnumDecl,
     EnumMemberDiagnosticDecl, EnumMemberDiagnosticKind, Expr, ForAction, ForeachListKey,
     ForeachValueTarget, FunctionDecl, FunctionParam, IncrementDecrementOp,
     IncrementDecrementPosition, InterfaceDecl, InterfaceMethodDecl, InterpolatedAccessSegment,
@@ -857,6 +857,8 @@ struct Interpreter {
     reflection_parameters: HashMap<i64, ReflectionParameterState>,
     reflection_properties: HashMap<i64, ReflectionPropertyState>,
     reflection_class_constants: HashMap<i64, ReflectionClassConstantState>,
+    reflection_enums: HashMap<i64, ReflectionEnumState>,
+    reflection_enum_cases: HashMap<i64, ReflectionEnumCaseState>,
     reflection_constants: HashMap<i64, ReflectionConstantState>,
     reflection_attributes: HashMap<i64, ReflectionAttributeState>,
     reflection_extensions: HashMap<i64, ReflectionExtensionState>,
@@ -1662,6 +1664,8 @@ struct ReflectionClassConstantState {
     type_decl: Option<TypeDecl>,
     value: Expr,
     kind: ConstantOwnerKind,
+    doc_comment: Option<String>,
+    is_enum_case: bool,
     attributes: Vec<AttributeDecl>,
 }
 
@@ -1676,9 +1680,34 @@ impl ReflectionClassConstantState {
             type_decl: resolved.type_decl,
             value: resolved.value,
             kind: resolved.kind,
+            doc_comment: None,
+            is_enum_case: false,
             attributes: resolved.attributes,
         }
     }
+}
+
+#[derive(Debug, Clone)]
+struct ReflectionEnumState {
+    enum_decl: Rc<EnumDecl>,
+    class_id: ClassId,
+    file_name: Option<String>,
+    start_line: usize,
+    end_line: usize,
+}
+
+#[derive(Debug, Clone)]
+struct ReflectionEnumCaseState {
+    enum_decl: Rc<EnumDecl>,
+    class_id: ClassId,
+    case_decl: EnumCaseDecl,
+    kind: ReflectionEnumCaseKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ReflectionEnumCaseKind {
+    Unit,
+    Backed,
 }
 
 #[derive(Debug, Clone)]
@@ -4809,10 +4838,13 @@ const CORE_INTERFACE_NAMES: &[&str] = &[
     "SplObserver",
     "SplSubject",
     "DateTimeInterface",
+    "UnitEnum",
+    "BackedEnum",
 ];
 
 const NO_CORE_INTERFACE_PARENTS: &[&str] = &[];
 const CORE_ITERATOR_PARENT_INTERFACES: &[&str] = &["Traversable"];
+const CORE_BACKED_ENUM_PARENT_INTERFACES: &[&str] = &["UnitEnum"];
 
 fn is_core_interface_name(name: &str) -> bool {
     CORE_INTERFACE_NAMES
@@ -4823,6 +4855,8 @@ fn is_core_interface_name(name: &str) -> bool {
 fn core_interface_parent_names(name: &str) -> &'static [&'static str] {
     if name.eq_ignore_ascii_case("Iterator") || name.eq_ignore_ascii_case("IteratorAggregate") {
         CORE_ITERATOR_PARENT_INTERFACES
+    } else if name.eq_ignore_ascii_case("BackedEnum") {
+        CORE_BACKED_ENUM_PARENT_INTERFACES
     } else {
         NO_CORE_INTERFACE_PARENTS
     }
@@ -12274,6 +12308,12 @@ impl Interpreter {
                         class_id,
                         class_like_source_metadata_from_enum(enum_decl, source_file.clone()),
                     );
+                    register_enum_member_runtime_tables(
+                        &mut classes,
+                        &mut class_constants,
+                        class_id,
+                        enum_decl,
+                    )?;
                 }
                 _ => {}
             }
@@ -12443,6 +12483,8 @@ impl Interpreter {
             reflection_parameters: HashMap::new(),
             reflection_properties: HashMap::new(),
             reflection_class_constants: HashMap::new(),
+            reflection_enums: HashMap::new(),
+            reflection_enum_cases: HashMap::new(),
             reflection_constants: HashMap::new(),
             reflection_attributes: HashMap::new(),
             reflection_extensions: HashMap::new(),
@@ -28170,6 +28212,12 @@ impl Interpreter {
                         class_id,
                         class_like_source_metadata_from_enum(enum_decl, self.source_file.clone()),
                     );
+                    register_enum_member_runtime_tables(
+                        &mut self.classes,
+                        &mut self.class_constants,
+                        class_id,
+                        enum_decl,
+                    )?;
                 }
                 _ => {}
             }
@@ -34073,6 +34121,15 @@ impl Interpreter {
         if declared_class_name.eq_ignore_ascii_case("ReflectionClassConstant") {
             return self.instantiate_reflection_class_constant(args, span, scope);
         }
+        if declared_class_name.eq_ignore_ascii_case("ReflectionEnum") {
+            return self.instantiate_reflection_enum(args, span, scope);
+        }
+        if declared_class_name.eq_ignore_ascii_case("ReflectionEnumUnitCase") {
+            return self.instantiate_reflection_enum_case(args, span, scope, false);
+        }
+        if declared_class_name.eq_ignore_ascii_case("ReflectionEnumBackedCase") {
+            return self.instantiate_reflection_enum_case(args, span, scope, true);
+        }
         if declared_class_name.eq_ignore_ascii_case("ReflectionConstant") {
             return self.instantiate_reflection_constant(args, span, scope);
         }
@@ -35028,6 +35085,8 @@ impl Interpreter {
         self.reflection_parameters.remove(&object_id);
         self.reflection_properties.remove(&object_id);
         self.reflection_class_constants.remove(&object_id);
+        self.reflection_enums.remove(&object_id);
+        self.reflection_enum_cases.remove(&object_id);
         self.reflection_constants.remove(&object_id);
         self.reflection_attributes.remove(&object_id);
         self.reflection_extensions.remove(&object_id);
@@ -35191,6 +35250,8 @@ impl Interpreter {
             || self.is_array_object_class_id(object.class_id())
             || self.is_bcmath_number_class_id(object.class_id())
             || self.is_gmp_class_id(object.class_id())
+            || object.class_name().eq_ignore_ascii_case("ReflectionEnum")
+            || object.is_instance_of_class_name("ReflectionEnumUnitCase")
     }
 
     fn retire_reusable_temporary_objects_in_value(
@@ -35247,6 +35308,28 @@ impl Interpreter {
         Ok(())
     }
 
+    fn release_function_scope_reflection_enum_temporaries(
+        &mut self,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        let values = scope
+            .symbols
+            .borrow_mut()
+            .drain()
+            .map(|(_, cell)| cell.value_cloned())
+            .collect::<Vec<_>>();
+        let (enum_values, other_values): (Vec<_>, Vec<_>) = values
+            .into_iter()
+            .partition(value_contains_reflection_enum_temporary);
+        for value in other_values {
+            self.finalize_released_nested_value(value, scope)?;
+        }
+        for value in enum_values {
+            self.finalize_released_nested_value(value, scope)?;
+        }
+        Ok(())
+    }
+
     fn finalize_released_value(
         &mut self,
         value: Option<Value>,
@@ -35261,6 +35344,12 @@ impl Interpreter {
         }
 
         if self.is_gmp_class_id(object.class_id()) {
+            return self.retire_reusable_unrooted_temporary_object_handle(&object, scope);
+        }
+
+        if object.class_name().eq_ignore_ascii_case("ReflectionEnum")
+            || object.is_instance_of_class_name("ReflectionEnumUnitCase")
+        {
             return self.retire_reusable_unrooted_temporary_object_handle(&object, scope);
         }
 
@@ -54056,6 +54145,330 @@ impl Interpreter {
         Ok(())
     }
 
+    fn instantiate_reflection_enum(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if args.len() != 1 {
+            return Err(reflection_constructor_exact_argument_count_error(
+                "ReflectionEnum",
+                1,
+                args.len(),
+                span,
+            ));
+        }
+        let target = self.evaluate(&args[0], scope)?;
+        let state = self.resolve_reflection_enum_constructor_target(
+            target,
+            "ReflectionEnum",
+            "objectOrClass",
+            span,
+        )?;
+        self.create_reflection_enum_object(state, span)
+    }
+
+    fn resolve_reflection_enum_constructor_target(
+        &mut self,
+        target: Value,
+        class_name: &'static str,
+        parameter_name: &'static str,
+        span: Span,
+    ) -> CompileResult<ReflectionEnumState> {
+        if matches!(target, Value::Array(_)) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{class_name}::__construct()"),
+                    format!(
+                        "Argument #1 (${parameter_name}) must be of type object|string, {} given",
+                        php_type_error_given(&target)
+                    ),
+                ),
+            ));
+        }
+
+        let name = match target {
+            Value::String(name) => name,
+            Value::BinaryString(bytes) => String::from_utf8(bytes).map_err(|_| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("{class_name}::__construct()"),
+                        format!(
+                            "Argument #1 (${parameter_name}) must be valid UTF-8 in the current subset"
+                        ),
+                    ),
+                )
+            })?,
+            Value::Object(object) => object.class_name().to_string(),
+            Value::Closure(_) => "Closure".to_string(),
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("{class_name}::__construct()"),
+                        format!(
+                            "Argument #1 (${parameter_name}) must be of type object|string, {} given",
+                            php_type_error_given(&other)
+                        ),
+                    ),
+                ));
+            }
+        };
+
+        self.resolve_reflection_enum_named_target(&name, span)
+    }
+
+    fn resolve_reflection_enum_named_target(
+        &mut self,
+        name: &str,
+        span: Span,
+    ) -> CompileResult<ReflectionEnumState> {
+        if !self.class_like_exists(name, AutoloadKind::Any) {
+            self.run_autoload_callbacks(name, AutoloadKind::Any, span)?;
+        }
+        let key = name.to_ascii_lowercase();
+        if let Some(enum_decl) = self.enum_lookup.get(&key).cloned() {
+            let class_id = self
+                .classes
+                .lookup_class_id(&enum_decl.name)
+                .ok_or_else(|| {
+                    runtime_error(span, RuntimeError::undefined_class(&enum_decl.name))
+                })?;
+            let metadata = self.class_source_metadata.get(&class_id);
+            return Ok(ReflectionEnumState {
+                enum_decl,
+                class_id,
+                file_name: metadata.and_then(|metadata| metadata.file_name.clone()),
+                start_line: metadata.map(|metadata| metadata.start_line).unwrap_or(0),
+                end_line: metadata.map(|metadata| metadata.end_line).unwrap_or(0),
+            });
+        }
+        if self.class_like_exists(name, AutoloadKind::Any) {
+            return Err(reflection_exception_error(
+                span,
+                format!("Class \"{name}\" is not an enum"),
+            ));
+        }
+        Err(reflection_exception_error(
+            span,
+            format!("Class \"{name}\" does not exist"),
+        ))
+    }
+
+    fn create_reflection_enum_object(
+        &mut self,
+        state: ReflectionEnumState,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let class_id = self
+            .classes
+            .lookup_class_id("ReflectionEnum")
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::undefined_class("ReflectionEnum core placeholder"),
+                )
+            })?;
+        let object_id = self.allocate_object_id();
+        let inherited_properties = self.inherited_instance_properties(class_id);
+        let mut ancestor_class_names = self.inherited_class_names(class_id);
+        ancestor_class_names.extend(self.class_alias_names(class_id));
+        let interface_names = self.class_implements_interface_names(class_id);
+        let class = self
+            .classes
+            .get(class_id)
+            .expect("core ReflectionEnum class id should resolve");
+        let enum_name = state.enum_decl.name.clone();
+        self.reflection_enums.insert(object_id, state);
+        let object = PhpObject::from_class_with_relationship_metadata_with_id(
+            class,
+            &inherited_properties,
+            ancestor_class_names,
+            interface_names,
+            object_id,
+        );
+        object
+            .write_public_property("name", Value::String(enum_name))
+            .map_err(|error| runtime_error(span, error))?;
+        Ok(Value::Object(object))
+    }
+
+    fn instantiate_reflection_enum_case(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+        require_backed: bool,
+    ) -> CompileResult<Value> {
+        let class_name = if require_backed {
+            "ReflectionEnumBackedCase"
+        } else {
+            "ReflectionEnumUnitCase"
+        };
+        let state =
+            self.reflection_enum_case_state_from_constructor_args(class_name, args, span, scope)?;
+        if require_backed && state.kind != ReflectionEnumCaseKind::Backed {
+            return Err(reflection_exception_error(
+                span,
+                format!(
+                    "Enum case {}::{} is not a backed case",
+                    state.enum_decl.name, state.case_decl.name
+                ),
+            ));
+        }
+        self.create_reflection_enum_case_object(state, span)
+    }
+
+    fn reflection_enum_case_state_from_constructor_args(
+        &mut self,
+        class_name: &'static str,
+        args: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<ReflectionEnumCaseState> {
+        if args.len() != 2 {
+            return Err(reflection_constructor_exact_argument_count_error(
+                class_name,
+                2,
+                args.len(),
+                span,
+            ));
+        }
+        let target = self.evaluate(&args[0], scope)?;
+        let enum_state =
+            self.resolve_reflection_enum_constructor_target(target, class_name, "class", span)?;
+        let case_value = self.evaluate(&args[1], scope)?;
+        let case_name = match case_value {
+            Value::String(name) => name,
+            Value::BinaryString(bytes) => String::from_utf8(bytes).map_err(|_| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("{class_name}::__construct()"),
+                        "Argument #2 ($constant) must be valid UTF-8 in the current subset",
+                    ),
+                )
+            })?,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("{class_name}::__construct()"),
+                        format!(
+                            "Argument #2 ($constant) must be of type string, {} given",
+                            php_type_error_given(&other)
+                        ),
+                    ),
+                ));
+            }
+        };
+        self.reflection_enum_case_state_for_name(&enum_state, &case_name, span, true)
+    }
+
+    fn reflection_enum_case_state_for_name(
+        &self,
+        enum_state: &ReflectionEnumState,
+        case_name: &str,
+        span: Span,
+        constructor_message: bool,
+    ) -> CompileResult<ReflectionEnumCaseState> {
+        if let Some(case_decl) = enum_state
+            .enum_decl
+            .cases
+            .iter()
+            .find(|case_decl| case_decl.name == case_name)
+            .cloned()
+        {
+            let kind = if enum_state.enum_decl.backing_type.is_some() {
+                ReflectionEnumCaseKind::Backed
+            } else {
+                ReflectionEnumCaseKind::Unit
+            };
+            return Ok(ReflectionEnumCaseState {
+                enum_decl: enum_state.enum_decl.clone(),
+                class_id: enum_state.class_id,
+                case_decl,
+                kind,
+            });
+        }
+
+        if enum_state
+            .enum_decl
+            .constants
+            .iter()
+            .any(|constant| constant.name == case_name)
+        {
+            let message = if constructor_message {
+                format!(
+                    "Constant {}::{case_name} is not a case",
+                    enum_state.enum_decl.name
+                )
+            } else {
+                format!("{}::{case_name} is not a case", enum_state.enum_decl.name)
+            };
+            return Err(reflection_exception_error(span, message));
+        }
+
+        let message = if constructor_message {
+            format!(
+                "Constant {}::{case_name} does not exist",
+                enum_state.enum_decl.name
+            )
+        } else {
+            format!(
+                "Case {}::{case_name} does not exist",
+                enum_state.enum_decl.name
+            )
+        };
+        Err(reflection_exception_error(span, message))
+    }
+
+    fn create_reflection_enum_case_object(
+        &mut self,
+        state: ReflectionEnumCaseState,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let class_name = match state.kind {
+            ReflectionEnumCaseKind::Unit => "ReflectionEnumUnitCase",
+            ReflectionEnumCaseKind::Backed => "ReflectionEnumBackedCase",
+        };
+        let class_id = self.classes.lookup_class_id(class_name).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::undefined_class(format!("{class_name} core placeholder")),
+            )
+        })?;
+        let object_id = self.allocate_object_id();
+        let inherited_properties = self.inherited_instance_properties(class_id);
+        let mut ancestor_class_names = self.inherited_class_names(class_id);
+        ancestor_class_names.extend(self.class_alias_names(class_id));
+        let interface_names = self.class_implements_interface_names(class_id);
+        let class = self
+            .classes
+            .get(class_id)
+            .expect("core ReflectionEnum case class id should resolve");
+        let case_name = state.case_decl.name.clone();
+        let enum_name = state.enum_decl.name.clone();
+        self.reflection_enum_cases.insert(object_id, state);
+        let object = PhpObject::from_class_with_relationship_metadata_with_id(
+            class,
+            &inherited_properties,
+            ancestor_class_names,
+            interface_names,
+            object_id,
+        );
+        object
+            .write_public_property("name", Value::String(case_name))
+            .map_err(|error| runtime_error(span, error))?;
+        object
+            .write_public_property("class", Value::String(enum_name))
+            .map_err(|error| runtime_error(span, error))?;
+        Ok(Value::Object(object))
+    }
+
     fn reflection_class_state_for(
         &self,
         name: String,
@@ -61944,6 +62357,22 @@ impl Interpreter {
                     .map(Value::String)
                     .map(Some);
             }
+            if object.class_name().eq_ignore_ascii_case("ReflectionEnum") {
+                let state = self
+                    .reflection_enums
+                    .get(&object.id())
+                    .cloned()
+                    .ok_or_else(|| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "ReflectionEnum::__toString()",
+                                "missing ReflectionEnum runtime metadata",
+                            ),
+                        )
+                    })?;
+                return Ok(Some(Value::String(self.reflection_enum_to_string(&state))));
+            }
             if object.is_instance_of_class_name("ReflectionClass") {
                 let state = self
                     .reflection_classes
@@ -63005,6 +63434,16 @@ impl Interpreter {
                 .call_sensitive_parameter_value_method(&object, method_name, args, span)
                 .map(|value| (value, None));
         }
+        if object.class_name().eq_ignore_ascii_case("ReflectionEnum") {
+            return self
+                .call_reflection_enum_method(object, method_name, args, span, caller_scope)
+                .map(|value| (value, None));
+        }
+        if object.is_instance_of_class_name("ReflectionEnumUnitCase") {
+            return self
+                .call_reflection_enum_case_method(object, method_name, args, span, caller_scope)
+                .map(|value| (value, None));
+        }
         if object.is_instance_of_class_name("ReflectionClass")
             && self.instance_method_resolves_to_core_class(
                 &object,
@@ -63727,6 +64166,306 @@ impl Interpreter {
         )
     }
 
+    fn call_reflection_enum_method(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let state = self
+            .reflection_enums
+            .get(&object.id())
+            .cloned()
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("ReflectionEnum::{method_name}()"),
+                        "missing ReflectionEnum runtime metadata",
+                    ),
+                )
+            })?;
+
+        match method_name.to_ascii_lowercase().as_str() {
+            "__construct" => {
+                if args.len() != 1 {
+                    return Err(reflection_constructor_exact_argument_count_error(
+                        "ReflectionEnum",
+                        1,
+                        args.len(),
+                        span,
+                    ));
+                }
+                let target = self.evaluate(&args[0], caller_scope)?;
+                let state = self.resolve_reflection_enum_constructor_target(
+                    target,
+                    "ReflectionEnum",
+                    "objectOrClass",
+                    span,
+                )?;
+                object
+                    .write_public_property("name", Value::String(state.enum_decl.name.clone()))
+                    .map_err(|error| runtime_error(span, error))?;
+                self.reflection_enums.insert(object.id(), state);
+                Ok(Value::Null)
+            }
+            "__tostring" => {
+                expect_expr_arity("ReflectionEnum::__toString", args.len(), 0, span)?;
+                Ok(Value::String(self.reflection_enum_to_string(&state)))
+            }
+            "getname" => {
+                expect_expr_arity("ReflectionEnum::getName", args.len(), 0, span)?;
+                Ok(Value::String(state.enum_decl.name.clone()))
+            }
+            "isbacked" => {
+                expect_expr_arity("ReflectionEnum::isBacked", args.len(), 0, span)?;
+                Ok(Value::Bool(state.enum_decl.backing_type.is_some()))
+            }
+            "getbackingtype" => {
+                expect_expr_arity("ReflectionEnum::getBackingType", args.len(), 0, span)?;
+                match &state.enum_decl.backing_type {
+                    Some(name) => self.create_reflection_named_type_object(
+                        ReflectionNamedTypeState {
+                            name: name.clone(),
+                            allows_null: false,
+                            is_builtin: true,
+                        },
+                        span,
+                    ),
+                    None => Ok(Value::Null),
+                }
+            }
+            "hascase" => {
+                expect_expr_arity("ReflectionEnum::hasCase", args.len(), 1, span)?;
+                let value = self.evaluate(&args[0], caller_scope)?;
+                let Value::String(case_name) = value else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "ReflectionEnum::hasCase()",
+                            format!(
+                                "Argument #1 ($name) must be of type string, {} given",
+                                php_type_error_given(&value)
+                            ),
+                        ),
+                    ));
+                };
+                Ok(Value::Bool(
+                    state
+                        .enum_decl
+                        .cases
+                        .iter()
+                        .any(|case_decl| case_decl.name == case_name),
+                ))
+            }
+            "getcase" => {
+                expect_expr_arity("ReflectionEnum::getCase", args.len(), 1, span)?;
+                let value = self.evaluate(&args[0], caller_scope)?;
+                let Value::String(case_name) = value else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "ReflectionEnum::getCase()",
+                            format!(
+                                "Argument #1 ($name) must be of type string, {} given",
+                                php_type_error_given(&value)
+                            ),
+                        ),
+                    ));
+                };
+                let case_state =
+                    self.reflection_enum_case_state_for_name(&state, &case_name, span, false)?;
+                self.create_reflection_enum_case_object(case_state, span)
+            }
+            "getcases" => {
+                expect_expr_arity("ReflectionEnum::getCases", args.len(), 0, span)?;
+                let mut cases = PhpArray::new();
+                for case_decl in &state.enum_decl.cases {
+                    let case_state = self.reflection_enum_case_state_for_name(
+                        &state,
+                        &case_decl.name,
+                        span,
+                        false,
+                    )?;
+                    let object = self.create_reflection_enum_case_object(case_state, span)?;
+                    cases
+                        .append(object)
+                        .expect("enum case count fits in array keys");
+                }
+                self.retire_reusable_unrooted_temporary_object_handle(&object, caller_scope)?;
+                Ok(Value::Array(cases))
+            }
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!("ReflectionEnum::{method_name}()")),
+            )),
+        }
+    }
+
+    fn call_reflection_enum_case_method(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let state = self
+            .reflection_enum_cases
+            .get(&object.id())
+            .cloned()
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("{}::{method_name}()", object.class_name()),
+                        "missing ReflectionEnum case runtime metadata",
+                    ),
+                )
+            })?;
+
+        match method_name.to_ascii_lowercase().as_str() {
+            "__construct" => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{}::__construct()", object.class_name()),
+                    "reinitializing ReflectionEnum case objects is not implemented",
+                ),
+            )),
+            "getname" => {
+                expect_expr_arity("ReflectionEnumUnitCase::getName", args.len(), 0, span)?;
+                Ok(Value::String(state.case_decl.name))
+            }
+            "ispublic" => {
+                expect_expr_arity("ReflectionEnumUnitCase::isPublic", args.len(), 0, span)?;
+                Ok(Value::Bool(true))
+            }
+            "getmodifiers" => {
+                expect_expr_arity("ReflectionEnumUnitCase::getModifiers", args.len(), 0, span)?;
+                Ok(Value::Int(REFLECTION_MODIFIER_PUBLIC))
+            }
+            "getdoccomment" => {
+                expect_expr_arity("ReflectionEnumUnitCase::getDocComment", args.len(), 0, span)?;
+                Ok(state
+                    .case_decl
+                    .doc_comment
+                    .map(Value::String)
+                    .unwrap_or(Value::Bool(false)))
+            }
+            "getenum" => {
+                expect_expr_arity("ReflectionEnumUnitCase::getEnum", args.len(), 0, span)?;
+                let enum_state = self.reflection_enum_state_from_case_state(&state);
+                self.create_reflection_enum_object(enum_state, span)
+            }
+            "getvalue" => {
+                expect_expr_arity("ReflectionEnumUnitCase::getValue", args.len(), 0, span)?;
+                let enum_decl = state.enum_decl.clone();
+                self.evaluate_enum_case_object(&enum_decl, &state.case_decl.name, span)
+            }
+            "getbackingvalue" => {
+                expect_expr_arity(
+                    "ReflectionEnumBackedCase::getBackingValue",
+                    args.len(),
+                    0,
+                    span,
+                )?;
+                if state.kind != ReflectionEnumCaseKind::Backed {
+                    return Err(reflection_exception_error(
+                        span,
+                        format!(
+                            "Enum case {}::{} is not a backed case",
+                            state.enum_decl.name, state.case_decl.name
+                        ),
+                    ));
+                }
+                self.evaluate_reflection_enum_backing_value(&state, span)
+            }
+            "getdeclaringclass" => {
+                expect_expr_arity(
+                    "ReflectionEnumUnitCase::getDeclaringClass",
+                    args.len(),
+                    0,
+                    span,
+                )?;
+                let enum_state = self.reflection_enum_state_from_case_state(&state);
+                self.create_reflection_enum_object(enum_state, span)
+            }
+            "isprotected" => {
+                expect_expr_arity("ReflectionEnumUnitCase::isProtected", args.len(), 0, span)?;
+                Ok(Value::Bool(false))
+            }
+            "isprivate" => {
+                expect_expr_arity("ReflectionEnumUnitCase::isPrivate", args.len(), 0, span)?;
+                Ok(Value::Bool(false))
+            }
+            "isfinal" => {
+                expect_expr_arity("ReflectionEnumUnitCase::isFinal", args.len(), 0, span)?;
+                Ok(Value::Bool(false))
+            }
+            "isdeprecated" => {
+                expect_expr_arity("ReflectionEnumUnitCase::isDeprecated", args.len(), 0, span)?;
+                Ok(Value::Bool(attributes_include_deprecated(
+                    &state.case_decl.attributes,
+                )))
+            }
+            "getattributes" => self.call_reflection_get_attributes(
+                &state.case_decl.attributes,
+                PHP_ATTRIBUTE_TARGET_CLASS_CONSTANT,
+                args,
+                span,
+                caller_scope,
+            ),
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!(
+                    "{}::{method_name}()",
+                    object.class_name()
+                )),
+            )),
+        }
+    }
+
+    fn reflection_enum_state_from_case_state(
+        &self,
+        state: &ReflectionEnumCaseState,
+    ) -> ReflectionEnumState {
+        let metadata = self.class_source_metadata.get(&state.class_id);
+        ReflectionEnumState {
+            enum_decl: state.enum_decl.clone(),
+            class_id: state.class_id,
+            file_name: metadata.and_then(|metadata| metadata.file_name.clone()),
+            start_line: metadata.map(|metadata| metadata.start_line).unwrap_or(0),
+            end_line: metadata.map(|metadata| metadata.end_line).unwrap_or(0),
+        }
+    }
+
+    fn evaluate_reflection_enum_backing_value(
+        &mut self,
+        state: &ReflectionEnumCaseState,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let Some(value_expr) = state.case_decl.value.as_ref() else {
+            return Err(reflection_exception_error(
+                span,
+                format!(
+                    "Enum case {}::{} is not a backed case",
+                    state.enum_decl.name, state.case_decl.name
+                ),
+            ));
+        };
+        self.evaluate_reflection_constant_expr(
+            Some(state.class_id),
+            &state.enum_decl.name,
+            &state.case_decl.name,
+            ConstantOwnerKind::Class,
+            None,
+            value_expr,
+            span,
+        )
+    }
+
     fn call_reflection_class_method(
         &mut self,
         object: PhpObject,
@@ -63885,6 +64624,15 @@ impl Interpreter {
             "istrait" => {
                 expect_expr_arity("ReflectionClass::isTrait", args.len(), 0, span)?;
                 Ok(Value::Bool(state.kind == ReflectionClassKind::Trait))
+            }
+            "isenum" => {
+                expect_expr_arity("ReflectionClass::isEnum", args.len(), 0, span)?;
+                Ok(Value::Bool(state.class_id.is_some_and(|class_id| {
+                    self.classes.get(class_id).is_some_and(|class| {
+                        self.enum_lookup
+                            .contains_key(&class.name().to_ascii_lowercase())
+                    })
+                })))
             }
             "isabstract" => {
                 expect_expr_arity("ReflectionClass::isAbstract", args.len(), 0, span)?;
@@ -64918,9 +65666,16 @@ impl Interpreter {
         };
 
         match resolution {
-            ConstantResolution::Found(resolved) => Ok(Some(
-                ReflectionClassConstantState::from_resolved(constant, resolved),
-            )),
+            ConstantResolution::Found(resolved) => {
+                let mut state = ReflectionClassConstantState::from_resolved(constant, resolved);
+                if let Some(class_id) = state.declaring_class_id {
+                    let (doc_comment, is_enum_case) =
+                        self.enum_case_class_constant_metadata(class_id, &state.name);
+                    state.doc_comment = doc_comment;
+                    state.is_enum_case = is_enum_case;
+                }
+                Ok(Some(state))
+            }
             ConstantResolution::Missing => Ok(None),
             ConstantResolution::Ambiguous(owners) => Err(runtime_error(
                 span,
@@ -65021,6 +65776,8 @@ impl Interpreter {
                             type_decl: constant.type_decl,
                             value: constant.value,
                             kind: ConstantOwnerKind::Class,
+                            doc_comment: None,
+                            is_enum_case: false,
                             attributes: constant.attributes,
                         };
                         if reflection_class_constant_matches_filter(&constant_state, filter) {
@@ -65072,6 +65829,8 @@ impl Interpreter {
         let constant = self
             .class_constants
             .get(&(class_id, metadata.name().to_string()))?;
+        let (doc_comment, is_enum_case) =
+            self.enum_case_class_constant_metadata(class_id, metadata.name());
         Some(ReflectionClassConstantState {
             declaring_class_name: class.name().to_string(),
             declaring_class_id: Some(class_id),
@@ -65081,8 +65840,29 @@ impl Interpreter {
             type_decl: constant.type_decl.clone(),
             value: constant.value.clone(),
             kind: ConstantOwnerKind::Class,
+            doc_comment,
+            is_enum_case,
             attributes: constant.attributes.clone(),
         })
+    }
+
+    fn enum_case_class_constant_metadata(
+        &self,
+        class_id: ClassId,
+        constant_name: &str,
+    ) -> (Option<String>, bool) {
+        let Some(class) = self.classes.get(class_id) else {
+            return (None, false);
+        };
+        let Some(enum_decl) = self.enum_lookup.get(&class.name().to_ascii_lowercase()) else {
+            return (None, false);
+        };
+        enum_decl
+            .cases
+            .iter()
+            .find(|case_decl| case_decl.name == constant_name)
+            .map(|case_decl| (case_decl.doc_comment.clone(), true))
+            .unwrap_or((None, false))
     }
 
     fn push_class_interface_constant_states(
@@ -65123,6 +65903,8 @@ impl Interpreter {
                 type_decl: constant.type_decl.clone(),
                 value: constant.value.clone(),
                 kind: ConstantOwnerKind::Interface,
+                doc_comment: None,
+                is_enum_case: false,
                 attributes: constant.attributes.clone(),
             };
             if reflection_class_constant_matches_filter(&constant_state, filter) {
@@ -65286,6 +66068,66 @@ impl Interpreter {
         span: Span,
     ) -> CompileResult<String> {
         self.reflection_class_like_to_string(state, true, reflected_object, span)
+    }
+
+    fn reflection_enum_to_string(&self, state: &ReflectionEnumState) -> String {
+        let interface_suffix = if let Some(backing_type) = &state.enum_decl.backing_type {
+            format!(": {backing_type} implements UnitEnum, BackedEnum")
+        } else {
+            " implements UnitEnum".to_string()
+        };
+        let mut output = format!(
+            "Enum [ <user> enum {}{} ] {{\n",
+            state.enum_decl.name, interface_suffix
+        );
+        if let Some(file_name) = state.file_name.as_deref() {
+            output.push_str(&format!(
+                "  @@ {file_name} {}-{}\n",
+                state.start_line, state.end_line
+            ));
+        }
+        output.push('\n');
+        output.push_str(&format!(
+            "  - Enum cases [{}] {{\n",
+            state.enum_decl.cases.len()
+        ));
+        for case_decl in &state.enum_decl.cases {
+            output.push_str(&format!("    Case {}\n", case_decl.name));
+        }
+        output.push_str("  }\n\n");
+        output.push_str(&format!(
+            "  - Constants [{}] {{\n",
+            state.enum_decl.constants.len()
+        ));
+        output.push_str("  }\n\n");
+        output.push_str("  - Static properties [0] {\n");
+        output.push_str("  }\n\n");
+        output.push_str("  - Static methods [1] {\n");
+        output.push_str(
+            "    Method [ <internal, prototype UnitEnum> static public method cases ] {\n\n",
+        );
+        output.push_str("      - Parameters [0] {\n");
+        output.push_str("      }\n");
+        output.push_str("      - Return [ array ]\n");
+        output.push_str("    }\n");
+        output.push_str("  }\n\n");
+        let property_count = if state.enum_decl.backing_type.is_some() {
+            2
+        } else {
+            1
+        };
+        output.push_str(&format!("  - Properties [{property_count}] {{\n"));
+        output.push_str("    Property [ public protected(set) readonly string $name ]\n");
+        if let Some(backing_type) = &state.enum_decl.backing_type {
+            output.push_str(&format!(
+                "    Property [ public protected(set) readonly {backing_type} $value ]\n"
+            ));
+        }
+        output.push_str("  }\n\n");
+        output.push_str("  - Methods [0] {\n");
+        output.push_str("  }\n");
+        output.push_str("}\n");
+        output
     }
 
     fn reflection_class_like_to_string(
@@ -68836,6 +69678,22 @@ impl Interpreter {
                 Ok(Value::Bool(attributes_include_deprecated(
                     &state.attributes,
                 )))
+            }
+            "isenumcase" => {
+                expect_expr_arity("ReflectionClassConstant::isEnumCase", args.len(), 0, span)?;
+                Ok(Value::Bool(state.is_enum_case))
+            }
+            "getdoccomment" => {
+                expect_expr_arity(
+                    "ReflectionClassConstant::getDocComment",
+                    args.len(),
+                    0,
+                    span,
+                )?;
+                Ok(state
+                    .doc_comment
+                    .map(Value::String)
+                    .unwrap_or(Value::Bool(false)))
             }
             "getvalue" => {
                 expect_expr_arity("ReflectionClassConstant::getValue", args.len(), 0, span)?;
@@ -73659,7 +74517,14 @@ impl Interpreter {
             .lookup_class(&enum_decl.name)
             .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class(&enum_decl.name)))?;
         let class_id = class.id();
-        let object = PhpObject::from_class_with_id(class, object_id);
+        let interface_names = self.class_implements_interface_names(class_id);
+        let object = PhpObject::from_class_with_relationship_metadata_with_id(
+            class,
+            &[],
+            Vec::new(),
+            interface_names,
+            object_id,
+        );
         object
             .write_property_from_context(
                 "name",
@@ -73668,6 +74533,20 @@ impl Interpreter {
                 &[class_id],
             )
             .map_err(|error| runtime_error(span, error))?;
+        if let Some(value_expr) = &case_decl.value {
+            let backing_value = self.evaluate_reflection_constant_expr(
+                Some(class_id),
+                &enum_decl.name,
+                &case_decl.name,
+                ConstantOwnerKind::Class,
+                None,
+                value_expr,
+                span,
+            )?;
+            object
+                .write_property_from_context("value", backing_value, Some(class_id), &[class_id])
+                .map_err(|error| runtime_error(span, error))?;
+        }
         self.enum_case_objects.insert(key, object.clone());
         Ok(Value::Object(object))
     }
@@ -97740,15 +98619,17 @@ impl Interpreter {
         writeback_result?;
         let (flow, array_copy_source) = flow?;
         match flow {
-            Flow::Normal => self
-                .coerce_call_return_value(
+            Flow::Normal => {
+                self.release_function_scope_reflection_enum_temporaries(&mut local_scope)?;
+                self.coerce_call_return_value(
                     function,
                     class_context,
                     called_class_context,
                     Value::Null,
                     true,
                 )
-                .map(|value| (value, None)),
+                .map(|value| (value, None))
+            }
             Flow::Break { span, .. } => Err(runtime_error(
                 span,
                 RuntimeError::invalid_loop_control("break cannot be used outside a loop"),
@@ -127605,14 +128486,90 @@ fn register_enum_name(
     let class_id = classes
         .declare_class(&enum_decl.name)
         .map_err(|error| runtime_error(enum_decl.span, error))?;
+    let interfaces = if enum_decl.backing_type.is_some() {
+        vec!["UnitEnum".to_string(), "BackedEnum".to_string()]
+    } else {
+        vec!["UnitEnum".to_string()]
+    };
     classes
+        .set_interfaces(class_id, interfaces)
+        .map_err(|error| runtime_error(enum_decl.span, error))?;
+    let enum_class = classes
         .get_mut(class_id)
-        .expect("enum class id should resolve to metadata")
-        .add_property(PhpPropertyMetadata::instance("name", Visibility::Public))
+        .expect("enum class id should resolve to metadata");
+    enum_class
+        .add_property(
+            PhpPropertyMetadata::instance("name", Visibility::Public)
+                .with_type_decl(Some("string".to_string()))
+                .readonly(),
+        )
+        .map_err(|error| runtime_error(enum_decl.span, error))?;
+    if let Some(backing_type) = &enum_decl.backing_type {
+        enum_class
+            .add_property(
+                PhpPropertyMetadata::instance("value", Visibility::Public)
+                    .with_type_decl(Some(backing_type.clone()))
+                    .readonly(),
+            )
+            .map_err(|error| runtime_error(enum_decl.span, error))?;
+    }
+    enum_class
+        .add_method(PhpMethodMetadata::static_method(
+            "cases",
+            Visibility::Public,
+        ))
         .map_err(|error| runtime_error(enum_decl.span, error))?;
     enums.push(enum_decl.clone());
     enum_lookup.insert(key, enum_decl);
     Ok(class_id)
+}
+
+fn register_enum_member_runtime_tables(
+    classes: &mut PhpClassTable,
+    class_constants: &mut HashMap<(ClassId, String), ClassConstantDecl>,
+    class_id: ClassId,
+    enum_decl: &EnumDecl,
+) -> CompileResult<()> {
+    let enum_class = classes
+        .get_mut(class_id)
+        .expect("enum class id should resolve to metadata");
+    for case_decl in &enum_decl.cases {
+        enum_class
+            .add_constant(PhpClassConstantMetadata::new(
+                &case_decl.name,
+                Visibility::Public,
+            ))
+            .map_err(|error| runtime_error(case_decl.span, error))?;
+        class_constants.insert(
+            (class_id, case_decl.name.clone()),
+            ClassConstantDecl {
+                name: case_decl.name.clone(),
+                visibility: ClassVisibility::Public,
+                is_static: false,
+                is_abstract: false,
+                is_final: false,
+                is_readonly: false,
+                type_decl: None,
+                value: Expr::ClassConstant {
+                    class_name: enum_decl.name.clone(),
+                    constant: case_decl.name.clone(),
+                    span: case_decl.span,
+                },
+                attributes: case_decl.attributes.clone(),
+                span: case_decl.span,
+            },
+        );
+    }
+    for constant in &enum_decl.constants {
+        enum_class
+            .add_constant(PhpClassConstantMetadata::new(
+                &constant.name,
+                runtime_visibility(constant.visibility),
+            ))
+            .map_err(|error| runtime_error(constant.span, error))?;
+        class_constants.insert((class_id, constant.name.clone()), constant.clone());
+    }
+    Ok(())
 }
 
 fn register_class_member_runtime_tables(
@@ -130182,7 +131139,7 @@ fn class_like_source_metadata_from_enum(
     ClassLikeSourceMetadata {
         file_name,
         start_line: enum_decl.span.line,
-        end_line: enum_decl.span.line,
+        end_line: enum_decl.end_line,
         doc_comment: None,
         attributes: enum_decl.attributes.clone(),
     }
@@ -136931,9 +137888,7 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             if name.contains("::") {
                 return Some(("Error", format!("Undefined constant {name}")));
             }
-            if name.contains('\\') {
-                return Some(("Error", format!("Undefined constant \"{name}\"")));
-            }
+            return Some(("Error", format!("Undefined constant \"{name}\"")));
         }
 
         if let Some(message) = error.message.strip_prefix("ReflectionException: ") {
@@ -190452,20 +191407,46 @@ fn is_sensitive_parameter_value_object(object: &PhpObject) -> bool {
 }
 
 fn enum_like_case_name(object: &PhpObject) -> Option<String> {
-    if !matches!(
-        object.class_name(),
-        "RoundingMode"
-            | "Uri\\UriComparisonMode"
-            | "Uri\\Rfc3986\\UriHostType"
-            | "Uri\\Rfc3986\\UriType"
-            | "Uri\\WhatWg\\UrlHostType"
-            | "Random\\IntervalBoundary"
-    ) {
+    if !object.is_instance_of_class_name("UnitEnum")
+        && !matches!(
+            object.class_name(),
+            "RoundingMode"
+                | "Uri\\UriComparisonMode"
+                | "Uri\\Rfc3986\\UriHostType"
+                | "Uri\\Rfc3986\\UriType"
+                | "Uri\\WhatWg\\UrlHostType"
+                | "Random\\IntervalBoundary"
+        )
+    {
         return None;
     }
     match object.read_public_property("name").ok()? {
         Value::String(name) => Some(name),
         _ => None,
+    }
+}
+
+fn value_contains_reflection_enum_temporary(value: &Value) -> bool {
+    match value {
+        Value::Object(object) => {
+            object.class_name().eq_ignore_ascii_case("ReflectionEnum")
+                || object.is_instance_of_class_name("ReflectionEnumUnitCase")
+        }
+        Value::Array(array) => array
+            .entries()
+            .iter()
+            .any(|entry| value_contains_reflection_enum_temporary(&entry.value_cloned())),
+        Value::Closure(closure) => closure
+            .captures()
+            .iter()
+            .any(|capture| value_contains_reflection_enum_temporary(&capture.value())),
+        Value::Null
+        | Value::Bool(_)
+        | Value::Int(_)
+        | Value::Float(_)
+        | Value::String(_)
+        | Value::BinaryString(_)
+        | Value::Resource(_) => false,
     }
 }
 
