@@ -3506,7 +3506,9 @@
   built-in/internal interface inheritance catalogs, named arguments,
   executable property hook body semantics, virtual hooked properties,
   reference-return hook dispatch, hook reflection metadata,
-  trait composition beyond the current public-method and simple-alias slice,
+  trait composition beyond the current method alias/visibility,
+  bounded `insteadof`, PHP-shaped conflict diagnostic, and property
+  compatibility slice,
   exact PHP `Error` objects, and readonly class semantics
   are not implemented.
   Magic
@@ -7605,8 +7607,9 @@
   interface property hooks beyond the current declaration metadata parser,
   typed/abstract/static trait constants, multi-constant trait declarations,
   trait constant adaptations, exact private-final trait-constant diagnostics,
-  final trait methods, concrete non-public trait methods, native trait method execution
-  beyond generated-C metadata validation, adaptation blocks beyond the current
+  final trait methods, native trait method execution beyond generated-C
+  metadata validation, non-public trait method execution parity beyond the
+  current metadata and conflict-diagnostic slice, adaptation blocks beyond the current
   simple method alias, visibility-adaptation, and bounded `insteadof` shapes,
   broad conflict resolution,
   `__TRAIT__` context,
@@ -12252,11 +12255,10 @@
   bounded method and not-an-interface target checks, cyclic parent-interface
   inheritance execution beyond the stable rejection,
   built-in/internal interface catalogs,
-  trait properties, non-public/typed/abstract/final/static trait constants,
+  trait property adaptations, non-public/typed/abstract/final/static trait constants,
   multi-constant trait declarations, trait constant adaptations, conflicting
-  trait/class constants, final trait methods, concrete non-public trait methods,
-  executing unresolved same-name trait method conflicts, exact PHP fatal-error
-  text for trait conflicts,
+  trait/class constants, final trait methods, non-public trait method execution
+  parity beyond the current metadata and PHP-shaped conflict-diagnostic slice,
   trait aliases beyond the current simple public, qualified public-alias,
   same-block winner public-alias, and protected/private alias slices,
   including those same method-adaptation slices inside trait-body `use`

@@ -145,7 +145,12 @@ a same-block explicit-public alias, such as
 `TraitA::method insteadof TraitB; TraitA::method as public alias;`; the
 original method and alias are both ordinary public methods for dispatch,
 `method_exists()`, `get_class_methods()`, and current interface method-presence
-checks. Public constants declared by already-declared traits as
+checks. Class declaration execution emits PHP-shaped fatal output for missing
+alias targets, missing `insteadof` winners, ambiguous unqualified aliases,
+same-name trait method collisions including concrete non-public trait methods,
+alias-created method collisions, and incompatible trait/class or trait/trait
+properties while preserving prior statement output. Public constants declared
+by already-declared traits as
 `const NAME = ...` or `public const NAME = ...` are composed into consuming
 classes as ordinary public class constants and can be resolved through the
 current `ClassName::CONST`, `self::CONST`, `parent::CONST`, and late-bound
@@ -510,10 +515,11 @@ multi-constant interface declarations, cyclic parent-interface inheritance
 beyond stable rejection,
 full interface signature fatal text beyond the bounded metadata and
 not-an-interface target checks,
-trait properties, non-public/typed/abstract/final/static trait constants,
+trait property adaptations, non-public/typed/abstract/final/static trait constants,
 multi-constant trait declarations, trait constant adaptations, conflicting
-trait/class constants, abstract/final or non-public trait methods,
-conflicting trait use beyond the bounded `insteadof` shape,
+trait/class constants, abstract/final trait methods, non-public trait method
+execution parity beyond metadata/conflict diagnostics,
+conflicting trait use beyond the bounded `insteadof` and PHP-shaped diagnostic shape,
 trait alias/adaptation edge cases beyond the current simple public, qualified
 public-alias, same-block winner public-alias, protected/private alias, and
 single-trait visibility-only slices,

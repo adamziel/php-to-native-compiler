@@ -1504,16 +1504,16 @@ fn emit_asm_rejects_interface_declaration_before_backend_execution() {
 fn unsupported_trait_declaration_has_stable_parse_errors() {
     let cases = [
         (
-            "<?php\ntrait Reusable {\n    private function render() {}\n}\n",
+            "<?php\ntrait Reusable {\n    final public function render() {}\n}\n",
             3,
-            13,
-            "unsupported trait method declaration: only concrete public instance/static methods and abstract method requirements are implemented; final methods, concrete non-public methods, __TRAIT__ context, references/copy-on-write, and native lowering remain unsupported",
+            18,
+            "unsupported trait method declaration: final trait methods, __TRAIT__ context, references/copy-on-write, and native lowering remain unsupported",
         ),
         (
-            "<?php\ntrait Reusable {\n    protected static function render() {}\n}\n",
+            "<?php\ntrait Reusable {\n    final protected static function render() {}\n}\n",
             3,
-            22,
-            "unsupported trait method declaration: only concrete public instance/static methods and abstract method requirements are implemented; final methods, concrete non-public methods, __TRAIT__ context, references/copy-on-write, and native lowering remain unsupported",
+            28,
+            "unsupported trait method declaration: final trait methods, __TRAIT__ context, references/copy-on-write, and native lowering remain unsupported",
         ),
         (
             "<?php\nif (true) {\n    trait Nested {}\n}\n",

@@ -28559,6 +28559,51 @@ impl Interpreter {
         self.exit_signal = Some(255);
     }
 
+    fn trait_method_composition_fatal_for_class(
+        &self,
+        class: &ClassDecl,
+    ) -> Option<(String, Span)> {
+        match trait_semantics::compose_class_effective_trait_methods(class, &self.trait_lookup) {
+            Err(error)
+                if trait_semantics::is_php_trait_composition_fatal_message(&error.message) =>
+            {
+                Some((error.message, error.span))
+            }
+            _ => None,
+        }
+    }
+
+    fn trait_property_composition_fatal_for_class(
+        &self,
+        class: &ClassDecl,
+    ) -> Option<(String, Span)> {
+        match trait_semantics::compose_class_effective_trait_properties(class, &self.trait_lookup) {
+            Ok(properties) => {
+                if !class.is_readonly {
+                    return None;
+                }
+                properties
+                    .into_iter()
+                    .find(|property| !property.property.is_readonly)
+                    .map(|property| {
+                        (
+                            format!(
+                                "Readonly class {} cannot use trait with a non-readonly property {}::${}",
+                                class.name, property.declaring_trait_name, property.property.name
+                            ),
+                            property.property.span,
+                        )
+                    })
+            }
+            Err(error)
+                if trait_semantics::is_php_trait_composition_fatal_message(&error.message) =>
+            {
+                Some((error.message, class.span))
+            }
+            _ => None,
+        }
+    }
+
     fn trait_constant_composition_fatal_for_trait(
         &mut self,
         trait_decl: &TraitDecl,
@@ -30091,6 +30136,17 @@ impl Interpreter {
                     self.register_nested_class_declaration(class)?;
                 }
                 self.emit_deprecated_trait_use_diagnostics(&class.name, &class.trait_uses)?;
+                if let Some((message, span)) = self.trait_method_composition_fatal_for_class(class)
+                {
+                    self.emit_simple_fatal(&message, span);
+                    return Ok(Flow::Exit(255));
+                }
+                if let Some((message, span)) =
+                    self.trait_property_composition_fatal_for_class(class)
+                {
+                    self.emit_simple_fatal(&message, span);
+                    return Ok(Flow::Exit(255));
+                }
                 if let Some((message, span)) =
                     self.trait_constant_composition_fatal_for_class(class)?
                 {
@@ -120513,14 +120569,6 @@ fn magic_method_startup_diagnostics(
     }
 
     if !diagnostics.has_fatal() {
-        collect_trait_property_composition_startup_diagnostics(
-            &mut diagnostics,
-            program,
-            source_file,
-        );
-    }
-
-    if !diagnostics.has_fatal() {
         collect_property_override_startup_diagnostics(&mut diagnostics, program, source_file);
     }
 
@@ -124019,113 +124067,6 @@ fn collect_class_property_inheritance_startup_diagnostics(
             return;
         }
     }
-}
-
-#[derive(Debug, Clone)]
-struct StartupTraitProperty {
-    declaring_trait_name: String,
-    property: ClassPropertyDecl,
-}
-
-fn collect_trait_property_composition_startup_diagnostics(
-    diagnostics: &mut MagicMethodStartupDiagnostics,
-    program: &Program,
-    source_file: Option<&str>,
-) {
-    let traits = top_level_trait_startup_lookup(program);
-    for stmt in &program.statements {
-        let Stmt::Class(class) = stmt else {
-            continue;
-        };
-        if class.is_nested {
-            continue;
-        }
-        if let Some((message, line)) =
-            class_trait_property_composition_startup_diagnostic(class, &traits)
-        {
-            diagnostics.set_fatal(message, source_file, line);
-            return;
-        }
-    }
-}
-
-fn class_trait_property_composition_startup_diagnostic(
-    class: &ClassDecl,
-    traits: &HashMap<String, Rc<TraitDecl>>,
-) -> Option<(String, usize)> {
-    let mut composed: HashMap<String, StartupTraitProperty> = HashMap::new();
-    for trait_use in &class.trait_uses {
-        let trait_decl = traits.get(&startup_class_lookup_key(&trait_use.name))?;
-        for property in startup_trait_properties_for_trait(trait_decl, traits, &mut HashSet::new())?
-        {
-            if class.is_readonly && !property.property.is_readonly {
-                return Some((
-                    format!(
-                        "Readonly class {} cannot use trait with a non-readonly property {}::${}",
-                        class.name, property.declaring_trait_name, property.property.name
-                    ),
-                    property.property.span.line,
-                ));
-            }
-            let key = property.property.name.clone();
-            if let Some(existing) = composed.get(&key) {
-                if trait_properties_are_compatible(&existing.property, &property.property) {
-                    continue;
-                }
-                return Some((
-                    format!(
-                        "{} and {} define the same property (${}) in the composition of {}. However, the definition differs and is considered incompatible. Class was composed",
-                        existing.declaring_trait_name,
-                        property.declaring_trait_name,
-                        property.property.name,
-                        class.name
-                    ),
-                    class.span.line,
-                ));
-            }
-            composed.insert(key, property);
-        }
-    }
-    None
-}
-
-fn startup_trait_properties_for_trait(
-    trait_decl: &TraitDecl,
-    traits: &HashMap<String, Rc<TraitDecl>>,
-    path: &mut HashSet<String>,
-) -> Option<Vec<StartupTraitProperty>> {
-    let key = startup_class_lookup_key(&trait_decl.name);
-    if !path.insert(key.clone()) {
-        return None;
-    }
-
-    let direct_names: HashSet<&str> = trait_decl
-        .properties
-        .iter()
-        .map(|property| property.name.as_str())
-        .collect();
-    let mut properties = Vec::new();
-    for trait_use in &trait_decl.trait_uses {
-        let nested = traits.get(&startup_class_lookup_key(&trait_use.name))?;
-        for property in startup_trait_properties_for_trait(nested, traits, path)? {
-            if !direct_names.contains(property.property.name.as_str()) {
-                properties.push(property);
-            }
-        }
-    }
-    properties.extend(
-        trait_decl
-            .properties
-            .iter()
-            .cloned()
-            .map(|property| StartupTraitProperty {
-                declaring_trait_name: trait_decl.name.clone(),
-                property,
-            }),
-    );
-
-    path.remove(&key);
-    Some(properties)
 }
 
 fn top_level_class_startup_lookup(program: &Program) -> HashMap<String, &ClassDecl> {
@@ -128257,53 +128198,45 @@ fn composed_trait_properties(
     class: &ClassDecl,
     trait_lookup: &HashMap<String, Rc<TraitDecl>>,
 ) -> CompileResult<Vec<ClassPropertyDecl>> {
-    let mut properties = Vec::new();
-    let mut composed: HashMap<String, ClassPropertyDecl> = HashMap::new();
-    for trait_use in &class.trait_uses {
-        let trait_decl = resolve_trait_use_decl(trait_use, trait_lookup)?;
-        for property in
-            composed_trait_properties_for_trait(trait_decl, trait_lookup, &mut HashSet::new())?
-        {
-            let key = property.name.clone();
-            if let Some(existing) = composed.get(&key) {
-                if !trait_properties_are_compatible(existing, &property) {
-                    return Err(runtime_error(
-                        property.span,
-                        RuntimeError::unsupported_trait_use(format!(
-                            "trait property {}::${} conflicts with another composed trait property; incompatible trait property definitions are not implemented",
-                            trait_decl.name, property.name
-                        )),
-                    ));
-                }
-                continue;
-            }
-            composed.insert(key, property.clone());
-            properties.push(property);
+    match trait_semantics::compose_class_effective_trait_properties(class, trait_lookup) {
+        Ok(properties) => Ok(properties
+            .into_iter()
+            .map(|property| property.property)
+            .collect()),
+        Err(error) if trait_semantics::is_php_trait_composition_fatal_message(&error.message) => {
+            Ok(Vec::new())
         }
+        Err(error) => Err(error.to_diagnostic(Phase::Runtime)),
     }
-    Ok(properties)
 }
 
 fn composed_trait_methods(
     class: &ClassDecl,
     trait_lookup: &HashMap<String, Rc<TraitDecl>>,
 ) -> CompileResult<Vec<ClassMethodDecl>> {
-    trait_semantics::compose_class_effective_trait_methods(class, trait_lookup)
-        .map(|methods| {
-            methods
-                .into_iter()
-                .map(|method| method.method)
-                .collect::<Vec<_>>()
-        })
-        .map_err(|error| error.to_diagnostic(Phase::Runtime))
+    match trait_semantics::compose_class_effective_trait_methods(class, trait_lookup) {
+        Ok(methods) => Ok(methods
+            .into_iter()
+            .map(|method| method.method)
+            .collect::<Vec<_>>()),
+        Err(error) if trait_semantics::is_php_trait_composition_fatal_message(&error.message) => {
+            Ok(Vec::new())
+        }
+        Err(error) => Err(error.to_diagnostic(Phase::Runtime)),
+    }
 }
 
 fn composed_abstract_trait_method_requirements(
     class: &ClassDecl,
     trait_lookup: &HashMap<String, Rc<TraitDecl>>,
 ) -> CompileResult<Vec<trait_semantics::EffectiveTraitMethod>> {
-    trait_semantics::compose_class_abstract_trait_method_requirements(class, trait_lookup)
-        .map_err(|error| error.to_diagnostic(Phase::Runtime))
+    match trait_semantics::compose_class_abstract_trait_method_requirements(class, trait_lookup) {
+        Ok(requirements) => Ok(requirements),
+        Err(error) if trait_semantics::is_php_trait_composition_fatal_message(&error.message) => {
+            Ok(Vec::new())
+        }
+        Err(error) => Err(error.to_diagnostic(Phase::Runtime)),
+    }
 }
 
 fn composed_trait_constants_for_trait(

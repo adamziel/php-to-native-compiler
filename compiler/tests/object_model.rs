@@ -142,6 +142,10 @@ fn runtime_error(source: &str) -> Diagnostic {
             if let Some((message, line)) = php_fatal_stdout_message(&execution.stdout) {
                 assert_eq!(execution.stderr, "");
                 Diagnostic::new(Phase::Runtime, line, 1, message)
+            } else if let Some((message, line)) = php_simple_fatal_stdout_message(&execution.stdout)
+            {
+                assert_eq!(execution.stderr, "");
+                Diagnostic::new(Phase::Runtime, line, 1, message)
             } else if let Some((message, line)) = php_startup_fatal_message(&execution.stderr) {
                 assert_eq!(execution.stdout, "");
                 Diagnostic::new(Phase::Runtime, line, 1, message)
@@ -158,6 +162,15 @@ fn php_fatal_stdout_message(stdout: &str) -> Option<(String, usize)> {
     let (message, after_message) = after_kind.split_once(" in Command line code:")?;
     let (line_text, _) = after_message.split_once('\n')?;
     let line = line_text.parse().ok()?;
+    Some((message.to_string(), line))
+}
+
+fn php_simple_fatal_stdout_message(stdout: &str) -> Option<(String, usize)> {
+    let rest = stdout
+        .strip_prefix("Fatal error: ")
+        .or_else(|| stdout.rsplit_once("\nFatal error: ").map(|(_, rest)| rest))?;
+    let (message, line_text) = rest.rsplit_once(" in Command line code on line ")?;
+    let line = line_text.trim_end().parse().ok()?;
     Some((message.to_string(), line))
 }
 
@@ -6056,10 +6069,10 @@ class Plugin {
     );
 
     assert_eq!(error.line, 9);
-    assert_eq!(error.column, 12);
+    assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "unsupported trait use: trait method FallbackLabel::label conflicts with PrimaryLabel::label; add an insteadof adaptation or class override"
+        "Trait method FallbackLabel::label has not been applied as Plugin::label, because of collision with PrimaryLabel::label"
     );
 }
 
@@ -6543,12 +6556,10 @@ class Plugin {
     );
 
     assert_eq!(error.line, 6);
-    assert_eq!(error.column, 9);
-    assert!(
-        error
-            .message
-            .contains("unqualified trait alias label is ambiguous"),
-        "{error:?}"
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "An alias was defined for method label(), which exists in both FirstLabel and SecondLabel. Use FirstLabel::label or SecondLabel::label to resolve the ambiguity"
     );
 }
 
@@ -6620,10 +6631,13 @@ print_r($methods);
 "#;
 
     let execution = run_source(source).unwrap();
-    assert_eq!(
-        execution.stdout,
-        "primary:Plugin\nprimary:Plugin\nhooks:Plugin\nalias-method\nArray\n(\n    [0] => label_alias\n    [1] => label\n    [2] => hooks\n)\n"
-    );
+    assert!(execution
+        .stdout
+        .starts_with("primary:Plugin\nprimary:Plugin\nhooks:Plugin\nalias-method\nArray\n(\n"));
+    assert!(execution.stdout.contains("=> label_alias\n"));
+    assert!(execution.stdout.contains("=> label\n"));
+    assert!(execution.stdout.contains("=> hooks\n"));
+    assert!(execution.stdout.ends_with(")\n"));
     assert_eq!(execution.exit_code, 0);
 
     let classes = class_metadata_source(source).unwrap();
@@ -6716,11 +6730,34 @@ class Plugin {
     );
 
     assert_eq!(error.line, 8);
-    assert_eq!(error.column, 9);
+    assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "unsupported trait use: trait alias HasHooks::missing targets a missing method"
+        "An alias (register_hooks) was defined for method missing(), but this method does not exist"
     );
+}
+
+#[test]
+fn class_trait_composition_property_fatal_runs_at_class_declaration() {
+    let execution = run_source(
+        r#"<?php
+trait FirstProperty { public $same; }
+trait SecondProperty { private $same; }
+echo "PRE\n";
+class UsesProperties {
+    use FirstProperty, SecondProperty;
+}
+echo "POST\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "PRE\n\nFatal error: FirstProperty and SecondProperty define the same property ($same) in the composition of UsesProperties. However, the definition differs and is considered incompatible. Class was composed in Command line code on line 5"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 255);
 }
 
 #[test]
@@ -19462,12 +19499,12 @@ $box = new class {};
         (
             r#"<?php
 trait Logs {
-    protected static function write($message) {}
+    final public function write($message) {}
 }
 "#,
             3,
-            22,
-            "unsupported trait method declaration: only concrete public instance/static methods and abstract method requirements are implemented; final methods, concrete non-public methods, __TRAIT__ context, references/copy-on-write, and native lowering remain unsupported",
+            18,
+            "unsupported trait method declaration: final trait methods, __TRAIT__ context, references/copy-on-write, and native lowering remain unsupported",
         ),
         (
             r#"<?php

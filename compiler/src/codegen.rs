@@ -68461,7 +68461,7 @@ mod tests {
         assert_eq!(error.phase, Phase::Codegen);
         assert_eq!(
             error.message,
-            "unsupported trait use: trait alias AliasCollisionSource::aliasSource as existing conflicts with AliasCollisionSource::existing"
+            "Trait method AliasCollisionSource::aliasSource has not been applied as AliasCollisionConsumer::existing, because of collision with AliasCollisionSource::existing"
         );
     }
 
