@@ -402,9 +402,11 @@
   it requires no runtime type check.
   This does
   not provide general PHP reference containers,
-  `Closure::bind`/`bindTo`, untracked dynamic container recovery, arbitrary
-  dynamic callables or arbitrary reflection targets, unsupported method-body syntax
-  beyond the documented dynamic instance-call slice, general type enforcement,
+  static `Closure::bind`, `Closure::bindTo()` behavior outside the documented
+  runtime closure scope-rebinding subset, untracked dynamic container
+  recovery, arbitrary dynamic callables or arbitrary reflection targets,
+  unsupported method-body syntax beyond the documented dynamic instance-call
+  slice, general type enforcement,
   arbitrary side effects beyond covered writeback paths, broader dynamic
   callback mutation of containers whose copied-source roots cannot be synced
   through a concrete shared object property or global root, full whole-array
@@ -7219,19 +7221,22 @@
   `<?php`, executes in the caller's current scope, and falling off the end
   returns `null`; expression-position `eval(...)` and `return` from evaluated
   fragments remain outside this slice.
-- multiple unbracketed named `namespace` declarations per file, plus simple
-  top-level class `use` imports with optional `as` aliases, including
+- multiple named `namespace` declarations per file in semicolon form and
+  top-level bracketed named/global namespace blocks, plus simple top-level
+  class `use` imports with optional `as` aliases, including
   comma-separated class import lists and class-import prefix expansion for
-  qualified function calls. Each namespace declaration starts a fresh lexical
-  import segment. Class declarations and class-like references in `extends`,
+  qualified function calls. Each namespace declaration or bracketed namespace
+  block starts a fresh lexical import segment. Class declarations and
+  class-like references in `extends`,
   `new`, `instanceof`, static members, and `ClassName::class` resolve through
   the current namespace and class-import table. Namespace-scoped function and
   supported constant declarations register under their resolved names;
   unqualified, qualified, namespace-relative, fully-qualified, and imported
   direct function calls resolve through the bounded namespace/function tables.
 - explicit parse diagnostics for unsupported namespace forms and imports:
-  bracketed/global namespaces, grouped imports, namespace-qualified constant
-  reads, and leading-backslash fully-qualified constant reads.
+  grouped imports, namespace-qualified constant reads, and leading-backslash
+  fully-qualified constant reads. Invalid mixed or nested namespace forms still
+  remain outside exact PHP diagnostic parity.
 - bounded magic class names in `new` expressions such as `new self()`,
   `new parent()`, and `new static()` in active class/method contexts;
   contextless magic class-name instantiation remains a stable runtime boundary
@@ -7569,10 +7574,11 @@
   behavior, and PHP's exact warning/fatal recovery behavior are not
   implemented.
 - Namespaces/imports: `phpc run` supports a bounded class-name plus
-  namespace function/constant slice: multiple unbracketed named namespaces per
-  file, simple top-level class imports with optional aliases, including
-  comma-separated class import lists and class-import prefix expansion for
-  qualified function calls, namespace-qualified class declarations, and
+  namespace function/constant slice: multiple named namespaces per file in
+  semicolon form and top-level bracketed named/global namespace blocks, simple
+  top-level class imports with optional aliases, including comma-separated
+  class import lists and class-import prefix expansion for qualified function
+  calls, namespace-qualified class declarations, and
   class-like references for declarations, `extends`, `new`, `instanceof`,
   static members, and `ClassName::class`. Namespace-scoped function and
   supported constant declarations register under resolved names; unqualified,
@@ -7584,11 +7590,10 @@
   parent must already be declared in the current program, an executed
   include/require path, or an include/require-triggered string autoload
   dependency path.
-  Bracketed namespace blocks, global namespace blocks, grouped imports,
-  namespace-qualified and fully-qualified constant read syntax, trait `use`
-  execution, `__NAMESPACE__`, autoload interaction, exact PHP diagnostics,
-  partial-output behavior, and namespace-aware native lowering are not
-  implemented.
+  Grouped imports, namespace-qualified and fully-qualified constant read
+  syntax, invalid mixed/nested namespace-form validation, trait `use`
+  execution, autoload interaction, exact PHP diagnostics, partial-output
+  behavior, and namespace-aware native lowering are not implemented.
 - Object/class model: `php_runtime` has a small metadata and object-value model
   for the first object slice. It records an ordered class table with stable
   `ClassId` handles, declared class names with case-insensitive class lookup,
@@ -8117,8 +8122,12 @@
   requiring class metadata. `self::class` resolves to the active declaring
   class name and `parent::class` resolves to that class's immediate parent
   name while executing in class context. `static::class` resolves to the active
-  called class for current instance and static method calls; outside method or
-  static class context it fails with a stable runtime diagnostic.
+  called class for current instance/static method and retained closure class
+  contexts; outside method or static class context it fails with a PHP-shaped
+  catchable `Error`. Dynamic/object receiver `::class` accepts current object
+  values and string class names, maps `null` to the covered catchable
+  `TypeError`, and reports PHP-shaped fatal messages for the selected illegal
+  scalar receivers.
   Class constant declarations accept the current constant-expression value
   subset, and `ClassName::CONST`, `self::CONST`, `parent::CONST`, and
   late-bound `static::CONST` in active called-class context resolve declared
@@ -8132,10 +8141,11 @@
   receiver/result cleanup. Typed constants, multiple constants in one class
   declaration,
   broader string-name lookup for `self::CONST`, `parent::CONST`,
-  `static::CONST`, dynamic receiver `::class`, autoload-triggered class
-  discovery, enum cases/interface constants beyond the current metadata, typed
-  constants, multiple constants in one class declaration, and LLVM/direct
-  assembly lowering remain unsupported.
+  `static::CONST`, autoload-triggered class discovery, enum cases/interface
+  constants beyond the current metadata, typed constants, multiple constants
+  in one class declaration, exact dynamic receiver `::class` diagnostics for
+  every scalar/expression form, and LLVM/direct assembly lowering remain
+  unsupported.
   Static property reads, direct writes, compound assignment, pre/post
   increment/decrement, `isset`, `empty`, `??`, `??=`, and stable diagnostics
   for PHP-forbidden `unset(...)` through
@@ -9834,11 +9844,16 @@
   created while `$this` is in scope retain their bound receiver plus
   class/called-class context for the documented direct, `call_user_func()`,
   positional `call_user_func_array()`, and `ReflectionFunction::invoke()`
-  paths; `static function` closures deliberately do not bind `$this`. Arrow
-  implicit capture binding and execution, `Closure::bind`/`bindTo`,
-  by-reference capture of dynamic property roots outside the documented alias
-  metadata, arbitrary magic/`ArrayAccess` method bodies, arbitrary alias roots,
-  closure
+  paths; closures created in static method context retain class/called-class
+  context without binding `$this`. `$closure->bindTo($newThis, $newScope)`
+  clones current runtime closure values for the documented invocation paths
+  when `$newThis` is `null` or a current object and `$newScope` is omitted,
+  `null`, a current object, a declared class-name string, or `"static"`.
+  Arrow implicit capture binding and execution, static `Closure::bind`, exact
+  PHP `bindTo()` warning/visibility behavior outside that null/object/string
+  scope slice, by-reference capture of dynamic property roots outside the
+  documented alias metadata, arbitrary magic/`ArrayAccess` method bodies,
+  arbitrary alias roots, closure
   reference returns, array-callable `call_user_func()` forms beyond public
   object/static method callbacks over by-value arguments, variadic
   reference parameters through `call_user_func()`, typed parameter/return
@@ -10896,7 +10911,8 @@
   `is_callable()`, by-reference capture of array-offset,
   object-property, magic-property, or `ArrayAccess` alias roots outside the
   direct invocation support documented for ordinary closures, closure
-  scope/class rebinding, `Closure::bind`/`bindTo`,
+  scope/class rebinding beyond the documented `$closure->bindTo(...)` subset,
+  static `Closure::bind`,
   `Closure::fromCallable()`, exact `Closure` object identity/parity beyond
   current reflection and invocation, typed parameter/return declarations at
   invocation time, `invokeArgs()` named-argument semantics for string keys,
@@ -12110,11 +12126,11 @@
 - numeric literal separators, binary integer literals, exact non-finite
   overflow policy for arbitrarily huge numeric source literals, and invalid
   legacy-octal integer recovery remain unsupported
-- namespace forms outside the current unbracketed-namespace/imported
-  class-name plus function/constant slice: bracketed/global namespaces,
-  grouped imports, namespace-qualified constant reads, leading-backslash
-  fully-qualified constant reads, `__NAMESPACE__`, string-name import
-  expansion, autoload-aware lookup, and namespace-aware native lowering
+- namespace forms outside the current namespace/imported class-name plus
+  function/constant slice: invalid mixed/nested namespace forms, grouped
+  imports, namespace-qualified constant reads, leading-backslash
+  fully-qualified constant reads, string-name import expansion,
+  autoload-aware lookup, and namespace-aware native lowering
 - dynamic method names; `$object->$method()` currently fails with a stable
   parse diagnostic. Dynamic property-name support is limited to existing
   public slots, `stdClass` public dynamic slots, and the bounded WordPress

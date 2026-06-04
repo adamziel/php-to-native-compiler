@@ -1659,8 +1659,10 @@ covered reference-return/source closure paths then execute the callback with
 that bound context, so `$this`-based backing writes inside the closure use the
 same alias and copied-source propagation machinery. This is still a bounded
 interpreter-scope writeback model rather than a general PHP reference
-container, and it does not cover unsupported syntax, `Closure::bind`/`bindTo`,
-untracked dynamic containers, exact diagnostics, or native lowering.
+container, and it does not cover unsupported syntax, static `Closure::bind`,
+`Closure::bindTo()` behavior outside the documented runtime closure
+scope-rebinding subset, untracked dynamic containers, exact diagnostics, or
+native lowering.
 Direct magic-property append stores such as `$box->missing[] = $array` and
 `$box->{$name}[] = $array` are a separate store path from magic append
 reference sources. For the covered store shape, the runtime calls visible
@@ -4193,6 +4195,9 @@ paths. Invocation prebinds the closure's by-value captured snapshot into the
 callee local scope and then reuses the user-function call frame machinery.
 For non-static anonymous closures created while `$this` is visible, the
 closure id also records the bound object plus class and called-class context.
+Closures created in static method context record class and called-class
+context without recording a bound `$this`, so `self::class` and
+`static::class` can resolve through the same invocation frame machinery.
 The documented direct, callback, and reflection invocation paths pass that
 context into the user-function frame, while `static function` closures leave
 `$this` unbound.
@@ -4209,7 +4214,14 @@ the value-only callback argument path and emits the same bounded recoverable
 warnings as string user-function callbacks when a reached non-variadic closure
 parameter is declared by reference; direct-variable by-reference captures are
 still prebound as cells.
-Closure rebinding through `Closure::bind`/`bindTo` is not represented yet.
+Instance rebinding through `$closure->bindTo($newThis, $newScope)` clones the
+runtime closure value and its body/capture/reflection metadata, then records a
+new optional `$this`, declaring-class scope, and called-class scope for later
+direct/callback/reflection invocation. The current subset accepts `null` or a
+current object for `$newThis`, and omitted, `null`, current object, declared
+class-name string, or `"static"` for `$newScope`; static `Closure::bind`,
+exact PHP warning/visibility behavior, and rebinding to unsupported internal
+scope names remain outside the model.
 Arrow values do not bind implicit captures or execute their synthetic return
 bodies. Static arrow functions stop at a dedicated parse boundary until
 no-`$this` binding, implicit capture metadata, references/copy-on-write, and
@@ -4267,26 +4279,27 @@ code.
 
 The first executable namespace/import slice covers class names,
 namespace-scoped functions, supported constants, and direct function imports.
-The parser accepts multiple unbracketed named `namespace` declarations per file
-and simple top-level class `use` imports with optional aliases, including
-comma-separated class import lists and class-import prefix expansion for
-qualified function calls. Each namespace declaration starts a fresh lexical
-import segment. Class declarations and class-like references in `extends`,
-`new`, `instanceof`, static members, and `ClassName::class` are stored as
-canonical names without a leading slash and resolved through the lexical
-namespace/import table. Namespace and `use` statements are execution no-ops in
-`phpc run` because the parser has already resolved the covered names in the
-AST.
+The parser accepts multiple named `namespace` declarations per file in
+semicolon form, top-level bracketed named/global namespace blocks, and simple
+top-level class `use` imports with optional aliases, including comma-separated
+class import lists and class-import prefix expansion for qualified function
+calls. Each namespace declaration or bracketed namespace block starts a fresh
+lexical import segment; bracketed blocks are flattened into ordinary execution
+statements while restoring the previous namespace/import context after the
+block. Class declarations and class-like references in `extends`, `new`,
+`instanceof`, static members, and `ClassName::class` are stored as canonical
+names without a leading slash and resolved through the lexical namespace/import
+table. Namespace and `use` statements are execution no-ops in `phpc run`
+because the parser has already resolved the covered names in the AST.
 Class inheritance uses the same resolved class-like names. Parent classes must
 already be present in the interpreter's class metadata table from the current
 program or from an executed include/require path; class lookup does not invoke
 autoload callbacks.
 
-Unsupported namespace/import behavior remains: bracketed namespace blocks,
-global namespace blocks, namespace-qualified constant reads,
-leading-backslash fully-qualified constant reads, grouped imports, string-name
-import expansion, trait `use` execution, `__NAMESPACE__`, autoload interaction,
-exact PHP diagnostics,
+Unsupported namespace/import behavior remains: namespace-qualified constant
+reads, leading-backslash fully-qualified constant reads, grouped imports,
+invalid mixed/nested namespace-form validation, string-name import expansion,
+trait `use` execution, autoload interaction, exact PHP diagnostics,
 partial-output behavior, and namespace-aware native lowering. The native path
 rejects namespace declarations/imports before scalar folding or backend
 execution until native symbol tables and namespace context exist.
@@ -4811,7 +4824,13 @@ nested calls.
 `ClassName::class` returns the source-spelled class string, `self::class` and
 `parent::class` resolve from the active declaring class context, and
 `static::class` resolves from the active called-class context in current
-instance and static method execution. Direct `ClassName::CONST`, `self::CONST`,
+instance/static method execution and retained closure class contexts.
+Dynamic/object receiver `::class` evaluates current object receivers to their
+declared class name, preserves string receivers, and routes the covered
+null/illegal-scalar cases through PHP-shaped `TypeError` or fatal messages.
+Compile-time class-name resolution diagnostics reject `static::class` in
+constant/default expressions and `parent::class` in no-parent class constant
+contexts before execution. Direct `ClassName::CONST`, `self::CONST`,
 `parent::CONST`, and late-bound `static::CONST` resolve declared or inherited
 class constants through runtime class metadata in the interpreter. Startup
 diagnostics reject invalid `static const` / `abstract const` class declarations

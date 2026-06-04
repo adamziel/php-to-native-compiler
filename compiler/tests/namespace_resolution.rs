@@ -943,12 +943,14 @@ fn unsupported_namespace_forms_keep_stable_parse_boundaries() {
         (
             r#"<?php
 namespace App\Demo {
-    echo "blocked";
+    namespace Nested {
+        echo "blocked";
+    }
 }
 "#,
-            2,
-            1,
-            "unsupported namespace declaration: bracketed namespace blocks are not implemented",
+            3,
+            5,
+            "unsupported namespace declaration: nested bracketed namespace blocks are not implemented",
         ),
         (
             r#"<?php

@@ -12292,7 +12292,7 @@ echo Child::forwardParent();
     let static_class_error = runtime_error("<?php\nstatic::class;\n");
     assert_eq!(
         static_class_error.message,
-        "unsupported call static::class: static::class requires method or static class context"
+        "Cannot use \"static\" in the global scope"
     );
 }
 
@@ -13622,18 +13622,18 @@ echo $child->inheritedNames();
 
     let self_error = runtime_error("<?php\nself::class;\n");
     assert_eq!(self_error.line, 2);
-    assert_eq!(self_error.column, 5);
+    assert_eq!(self_error.column, 1);
     assert_eq!(
         self_error.message,
-        "unsupported call self::class: self::class requires instance method context"
+        "Cannot use \"self\" in the global scope"
     );
 
     let parent_error = runtime_error("<?php\nparent::class;\n");
     assert_eq!(parent_error.line, 2);
-    assert_eq!(parent_error.column, 7);
+    assert_eq!(parent_error.column, 1);
     assert_eq!(
         parent_error.message,
-        "unsupported call parent::class: parent::class requires instance method context"
+        "Cannot use \"parent\" in the global scope"
     );
 
     let parent_error = runtime_error(
@@ -13649,8 +13649,39 @@ echo $root->name();
     );
     assert_eq!(
         parent_error.message,
-        "unsupported call parent::class: parent::class requires a parent class"
+        "Cannot use \"parent\" when current class scope has no parent"
     );
+}
+
+#[test]
+fn closure_class_name_scope_survives_static_creation_and_bind_to() {
+    let execution = run_source(
+        r#"<?php
+class A {
+    public static function make() {
+        return function () {
+            echo self::class, ":", static::class, "\n";
+        };
+    }
+}
+class B extends A {}
+
+$f = B::make();
+$f();
+$g = $f->bindTo(null, A::class);
+$g();
+
+$unscoped = function () {
+    echo self::class, ":", static::class, "\n";
+};
+$bound = $unscoped->bindTo(null, A::class);
+$bound();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "A:B\nA:A\nA:A\n");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

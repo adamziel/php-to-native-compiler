@@ -119,6 +119,12 @@ impl Parser {
                 statements.extend(self.parse_block_after_open()?);
                 continue;
             }
+            if matches!(self.peek().kind, TokenKind::Namespace)
+                && !matches!(self.peek_next().kind, TokenKind::Backslash)
+            {
+                statements.extend(self.parse_top_level_namespace()?);
+                continue;
+            }
             statements.push(self.parse_statement()?);
         }
         Ok(Program {
@@ -2045,6 +2051,61 @@ impl Parser {
 
     fn skip_declare_block_after_open(&mut self, span: Span) -> CompileResult<()> {
         self.skip_balanced_block_after_open(span, "expected '}' after declare block")
+    }
+
+    fn parse_top_level_namespace(&mut self) -> CompileResult<Vec<Stmt>> {
+        let span = self
+            .consume_keyword(TokenKind::Namespace, "expected 'namespace'")?
+            .span;
+        if self.nested_statement_depth > 0 || self.function_body_depth > 0 {
+            return Err(self.error_at(span, unsupported_nested_namespace_message()));
+        }
+
+        if self.match_token(|kind| matches!(kind, TokenKind::LBrace)) {
+            return self.parse_bracketed_namespace_after_open(String::new(), span);
+        }
+
+        let name = self.parse_qualified_name(false, "expected namespace name")?;
+        if self.match_token(|kind| matches!(kind, TokenKind::LBrace)) {
+            return self.parse_bracketed_namespace_after_open(name, span);
+        }
+        self.consume_keyword(
+            TokenKind::Semicolon,
+            "expected ';' after namespace declaration",
+        )?;
+        self.enter_namespace(name.clone());
+        Ok(vec![Stmt::Namespace { name, span }])
+    }
+
+    fn parse_bracketed_namespace_after_open(
+        &mut self,
+        name: String,
+        span: Span,
+    ) -> CompileResult<Vec<Stmt>> {
+        let previous_namespace = self.current_namespace.clone();
+        self.enter_namespace(name.clone());
+        let mut statements = vec![Stmt::Namespace { name, span }];
+        while !self.check(|kind| matches!(kind, TokenKind::RBrace)) {
+            if self.check(|kind| matches!(kind, TokenKind::Eof)) {
+                self.enter_namespace(previous_namespace);
+                return Err(self.error_at(span, "expected '}' after namespace block"));
+            }
+            self.trace_parse("namespace-block");
+            if self.skip_doc_comments_before(|kind| matches!(kind, TokenKind::RBrace)) {
+                continue;
+            }
+            if self.skip_empty_statements() {
+                continue;
+            }
+            if self.match_token(|kind| matches!(kind, TokenKind::LBrace)) {
+                statements.extend(self.parse_block_after_open()?);
+                continue;
+            }
+            statements.push(self.parse_statement()?);
+        }
+        self.consume_keyword(TokenKind::RBrace, "expected '}' after namespace block")?;
+        self.enter_namespace(previous_namespace);
+        Ok(statements)
     }
 
     fn parse_namespace(&mut self) -> CompileResult<Stmt> {
@@ -8129,7 +8190,11 @@ impl Parser {
                 expr.span(),
                 "default parameter values only support constant expressions in the current subset",
             )),
-            Expr::GlobalConstant { .. } | Expr::ClassNameConstant { .. } => Ok(()),
+            Expr::GlobalConstant { .. }
+            | Expr::ClassNameConstant { .. }
+            | Expr::SelfClassNameConstant { .. }
+            | Expr::ParentClassNameConstant { .. }
+            | Expr::StaticClassNameConstant { .. } => Ok(()),
             Expr::MagicLine { .. } => Ok(()),
             Expr::MagicFile { .. } => Ok(()),
             Expr::MagicDir { .. } => Ok(()),
@@ -8142,9 +8207,6 @@ impl Parser {
             Expr::Variable(_, _)
             | Expr::InterpolatedString { .. }
             | Expr::Cast { .. }
-            | Expr::SelfClassNameConstant { .. }
-            | Expr::ParentClassNameConstant { .. }
-            | Expr::StaticClassNameConstant { .. }
             | Expr::ObjectClassNameConstant { .. }
             | Expr::ObjectStaticClassConstant { .. }
             | Expr::StaticProperty { .. }
@@ -8223,7 +8285,11 @@ impl Parser {
                 expr.span(),
                 "const declaration values only support constant expressions in the current subset",
             )),
-            Expr::GlobalConstant { .. } | Expr::ClassNameConstant { .. } => Ok(()),
+            Expr::GlobalConstant { .. }
+            | Expr::ClassNameConstant { .. }
+            | Expr::SelfClassNameConstant { .. }
+            | Expr::ParentClassNameConstant { .. }
+            | Expr::StaticClassNameConstant { .. } => Ok(()),
             Expr::MagicLine { .. } => Ok(()),
             Expr::MagicFile { .. } => Ok(()),
             Expr::MagicDir { .. } => Ok(()),
@@ -8233,9 +8299,6 @@ impl Parser {
             Expr::Variable(_, _)
             | Expr::InterpolatedString { .. }
             | Expr::Cast { .. }
-            | Expr::SelfClassNameConstant { .. }
-            | Expr::ParentClassNameConstant { .. }
-            | Expr::StaticClassNameConstant { .. }
             | Expr::ObjectStaticClassConstant { .. }
             | Expr::ObjectClassNameConstant { .. }
             | Expr::SelfClassConstant { .. }
@@ -9824,7 +9887,7 @@ fn unsupported_increment_decrement_target_message() -> &'static str {
 }
 
 fn unsupported_bracketed_namespace_message() -> &'static str {
-    "unsupported namespace declaration: bracketed namespace blocks are not implemented"
+    "unsupported namespace declaration: nested bracketed namespace blocks are not implemented"
 }
 
 fn unsupported_nested_namespace_message() -> &'static str {

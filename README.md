@@ -455,9 +455,10 @@ incorrect native code.
   table-status counters or timestamps, full dbDelta diffing, real transactional DDL
   beyond bounded in-memory schema snapshots, persistent object cache, full
   `wpdb`, or native database support
-- a bounded namespace/class-name/function slice: multiple unbracketed named
-  `namespace` declarations per file, simple top-level class `use` imports with
-  optional `as` aliases, including comma-separated class import lists and
+- a bounded namespace/class-name/function slice: multiple named `namespace`
+  declarations per file in semicolon form and top-level bracketed named/global
+  namespace blocks, simple top-level class `use` imports with optional `as`
+  aliases, including comma-separated class import lists and
   class-import prefix expansion for qualified function calls,
   namespace-qualified class declarations, class imports for class-like
   references, `new`, `extends`, `instanceof`, static members, and
@@ -557,8 +558,9 @@ incorrect native code.
   and `parent::__construct()` calls in instance context, narrow
   `self::method()` calls in instance context, default parameters using declared
   `ClassName::CONST` or class-method `self::CONST` from the declaring method
-  class, narrow `ClassName::class`,
-  `self::class`, and `parent::class` resolution, narrow class constants
+  class, narrow `ClassName::class`, `self::class`, `parent::class`,
+  `static::class`, and object/string receiver `::class` resolution, narrow
+  class constants
   through `ClassName::CONST`, `self::CONST`, `parent::CONST`, and late-bound
   `static::CONST` in active called-class context,
   narrow static properties through `ClassName::$prop`, `self::$prop`,
@@ -666,7 +668,8 @@ incorrect native code.
 The runtime still names unsupported zones explicitly. Examples include
 references beyond the current direct variable-to-variable assignment cell
 slice, copy-on-write, namespace forms beyond the current class-name/import,
-same-namespace function, and namespace-scoped top-level constant slices,
+top-level bracketed namespace block, same-namespace function, and
+namespace-scoped top-level constant slices,
 including leading-backslash fully-qualified function calls such as `\strlen()`,
 leading-backslash fully-qualified constant reads such as `\PHP_VERSION`,
 include/require breadth beyond the current narrow local string-path,

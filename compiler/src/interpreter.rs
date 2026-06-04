@@ -11425,7 +11425,7 @@ struct ClosureAliasCapture {
 
 #[derive(Debug, Clone)]
 struct ClosureBoundContext {
-    this_object: PhpObject,
+    this_object: Option<PhpObject>,
     class_context: Option<ClassId>,
     called_class_context: Option<ClassId>,
 }
@@ -26861,6 +26861,9 @@ impl Interpreter {
                 if is_first_class_callable_creation_fatal_error(&error) {
                     return self.fatal_runtime_message_execution(&error, &error.message);
                 }
+                if let Some(message) = class_name_resolution_fatal_message(&error) {
+                    return self.fatal_runtime_message_execution(&error, &message);
+                }
                 if let Some((error_class_name, error_message)) =
                     catchable_php_error_class_and_message(&error)
                 {
@@ -31143,6 +31146,11 @@ impl Interpreter {
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<()> {
+        let has_class_scope =
+            !self.class_context.is_empty() || !self.trait_class_context.is_empty();
+        if let Some(error) = const_declaration_class_scope_error(value, has_class_scope) {
+            return Err(error);
+        }
         let value = self.evaluate(value, scope)?;
         if let Some(type_name) = unsupported_runtime_constant_value_type(&value) {
             return Err(runtime_error(
@@ -31230,15 +31238,23 @@ impl Interpreter {
                                 .unwrap_or_else(|| class_name.to_vec()),
                         ))
                     }
-                    other => Err(runtime_error(
-                        *span,
-                        RuntimeError::unsupported_call(
-                            "dynamic class-name receiver",
-                            format!(
-                                "dynamic class-name receiver must be object or class string, got {}",
-                                other.type_name()
-                            ),
-                        ),
+                    Value::Null => Err(Diagnostic::new(
+                        Phase::Runtime,
+                        span.line,
+                        span.column,
+                        "Cannot use \"::class\" on null",
+                    )),
+                    _other if matches!(target.as_ref(), Expr::Int(_, _)) => Err(Diagnostic::new(
+                        Phase::Runtime,
+                        span.line,
+                        span.column,
+                        "Illegal class name",
+                    )),
+                    other => Err(Diagnostic::new(
+                        Phase::Runtime,
+                        span.line,
+                        span.column,
+                        format!("Cannot use \"::class\" on {}", other.type_name()),
                     )),
                 }
             }
@@ -33099,17 +33115,18 @@ impl Interpreter {
 
         if self.closure_values.values().any(|closure| {
             value_contains_object_id(&Value::Closure(closure.clone()), object_id, &mut visited)
+        }) || self.closure_bound_contexts.values().any(|context| {
+            context
+                .this_object
+                .as_ref()
+                .is_some_and(|object| object_contains_object_id(object, object_id, &mut visited))
         }) || self
-            .closure_bound_contexts
+            .closure_alias_captures
             .values()
-            .any(|context| object_contains_object_id(&context.this_object, object_id, &mut visited))
-            || self
-                .closure_alias_captures
-                .values()
-                .flatten()
-                .any(|capture| {
-                    symbol_table_contains_object_id(&capture.source_scope, object_id, &mut visited)
-                })
+            .flatten()
+            .any(|capture| {
+                symbol_table_contains_object_id(&capture.source_scope, object_id, &mut visited)
+            })
             || self
                 .closure_array_copy_source_captures
                 .values()
@@ -58438,6 +58455,187 @@ impl Interpreter {
         )
     }
 
+    fn call_closure_bind_to(
+        &mut self,
+        closure: PhpClosure,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "Closure::bindTo()",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let new_this = self.evaluate_by_value_argument_with_cow_source(&args[0], caller_scope)?;
+        let this_object = match new_this {
+            Value::Null => None,
+            Value::Object(object) => Some(object),
+            other => {
+                return Err(runtime_error(
+                    args[0].span(),
+                    RuntimeError::unsupported_call(
+                        "Closure::bindTo()",
+                        format!(
+                            "Argument #1 ($newThis) must be of type ?object, {} given",
+                            php_type_error_given(&other)
+                        ),
+                    ),
+                ));
+            }
+        };
+
+        let scope_class_id = if let Some(scope_expr) = args.get(1) {
+            let scope_value =
+                self.evaluate_by_value_argument_with_cow_source(scope_expr, caller_scope)?;
+            self.closure_bind_scope_class_id(&closure, scope_value, scope_expr.span())?
+        } else {
+            this_object
+                .as_ref()
+                .map(|object| object.class_id())
+                .or_else(|| {
+                    self.closure_bound_contexts
+                        .get(&closure.id())
+                        .and_then(|context| context.class_context)
+                })
+        };
+        let called_class_id = scope_class_id.or_else(|| this_object.as_ref().map(|o| o.class_id()));
+
+        let rebound = self.clone_closure_with_bound_context(
+            &closure,
+            this_object,
+            scope_class_id,
+            called_class_id,
+            span,
+        )?;
+        Ok((Value::Closure(rebound), None))
+    }
+
+    fn closure_bind_scope_class_id(
+        &self,
+        closure: &PhpClosure,
+        value: Value,
+        span: Span,
+    ) -> CompileResult<Option<ClassId>> {
+        match value {
+            Value::Null => Ok(None),
+            Value::Object(object) => Ok(Some(object.class_id())),
+            Value::String(class_name) => {
+                if class_name.eq_ignore_ascii_case("static") {
+                    return Ok(self.closure_bound_contexts.get(&closure.id()).and_then(
+                        |context| context.called_class_context.or(context.class_context),
+                    ));
+                }
+                let lookup = class_name.strip_prefix('\\').unwrap_or(&class_name);
+                self.classes
+                    .lookup_class_id(lookup)
+                    .map(Some)
+                    .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class(lookup)))
+            }
+            Value::BinaryString(bytes) => {
+                let class_name = String::from_utf8(bytes).map_err(|_| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "Closure::bindTo()",
+                            "Argument #2 ($newScope) must be a valid class name",
+                        ),
+                    )
+                })?;
+                let lookup = class_name.strip_prefix('\\').unwrap_or(&class_name);
+                self.classes
+                    .lookup_class_id(lookup)
+                    .map(Some)
+                    .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class(lookup)))
+            }
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "Closure::bindTo()",
+                    format!(
+                        "Argument #2 ($newScope) must be of type object|string|null, {} given",
+                        php_type_error_given(&other)
+                    ),
+                ),
+            )),
+        }
+    }
+
+    fn clone_closure_with_bound_context(
+        &mut self,
+        closure: &PhpClosure,
+        this_object: Option<PhpObject>,
+        class_context: Option<ClassId>,
+        called_class_context: Option<ClassId>,
+        span: Span,
+    ) -> CompileResult<PhpClosure> {
+        let id = self.allocate_object_id();
+        let captures = closure.captures().to_vec();
+        let rebound = if let Some(descriptor) = closure.descriptor() {
+            PhpClosure::new_with_descriptor(id, closure.is_arrow(), captures, descriptor)
+        } else {
+            PhpClosure::new(id, closure.is_arrow(), captures)
+        };
+
+        let function = self
+            .closure_functions
+            .get(&closure.id())
+            .cloned()
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "Closure::bindTo()",
+                        "closure body metadata is missing in the current subset",
+                    ),
+                )
+            })?;
+        self.closure_functions.insert(id, function);
+
+        if let Some(mut state) = self
+            .closure_reflection_functions
+            .get(&closure.id())
+            .cloned()
+        {
+            state.closure_id = Some(id);
+            state.closure_scope_class_id = class_context;
+            state.closure_called_class_id = called_class_context;
+            state.closure_this = this_object.clone();
+            self.closure_reflection_functions.insert(id, state);
+        }
+
+        self.closure_values.insert(id, rebound.clone());
+        if this_object.is_some() || class_context.is_some() || called_class_context.is_some() {
+            self.closure_bound_contexts.insert(
+                id,
+                ClosureBoundContext {
+                    this_object,
+                    class_context,
+                    called_class_context,
+                },
+            );
+        }
+        if let Some(alias_captures) = self.closure_alias_captures.get(&closure.id()).cloned() {
+            self.closure_alias_captures.insert(id, alias_captures);
+        }
+        if let Some(array_copy_source_captures) = self
+            .closure_array_copy_source_captures
+            .get(&closure.id())
+            .cloned()
+        {
+            self.closure_array_copy_source_captures
+                .insert(id, array_copy_source_captures);
+        }
+
+        Ok(rebound)
+    }
+
     fn evaluate_dynamic_method_name(
         &mut self,
         method: &Expr,
@@ -58471,6 +58669,9 @@ impl Interpreter {
         let target_value = self.evaluate(target, caller_scope)?;
         let object = match target_value {
             Value::Object(object) => object,
+            Value::Closure(closure) if method_name.eq_ignore_ascii_case("bindTo") => {
+                return self.call_closure_bind_to(closure, args, span, caller_scope);
+            }
             Value::Closure(closure) if method_name.eq_ignore_ascii_case("__invoke") => {
                 return self.invoke_closure_value_direct_with_array_copy_source(
                     closure,
@@ -62941,7 +63142,7 @@ impl Interpreter {
             .get(&closure.id())
             .map(|context| {
                 (
-                    Some(context.this_object.clone()),
+                    context.this_object.clone(),
                     context.class_context,
                     context.called_class_context,
                 )
@@ -67257,12 +67458,11 @@ impl Interpreter {
             if let Some(trait_name) = self.trait_class_context.last() {
                 return Ok(Value::String(trait_name.clone()));
             }
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "self::class",
-                    "self::class requires instance method context",
-                ),
+            return Err(Diagnostic::new(
+                Phase::Runtime,
+                span.line,
+                span.column,
+                "Cannot use \"self\" in the global scope",
             ));
         };
 
@@ -67275,12 +67475,11 @@ impl Interpreter {
 
     fn evaluate_parent_class_name_constant(&self, span: Span) -> CompileResult<Value> {
         let Some(current_class_id) = self.class_context.last().copied() else {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "parent::class",
-                    "parent::class requires instance method context",
-                ),
+            return Err(Diagnostic::new(
+                Phase::Runtime,
+                span.line,
+                span.column,
+                "Cannot use \"parent\" in the global scope",
             ));
         };
 
@@ -67289,12 +67488,11 @@ impl Interpreter {
             .get(current_class_id)
             .expect("active class context should resolve to class metadata");
         let Some(parent_class_id) = current_class.parent_id() else {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "parent::class",
-                    "parent::class requires a parent class",
-                ),
+            return Err(Diagnostic::new(
+                Phase::Runtime,
+                span.line,
+                span.column,
+                "Cannot use \"parent\" when current class scope has no parent",
             ));
         };
 
@@ -67310,12 +67508,11 @@ impl Interpreter {
             if let Some(trait_name) = self.trait_called_class_context.last() {
                 return Ok(Value::String(trait_name.clone()));
             }
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "static::class",
-                    "static::class requires method or static class context",
-                ),
+            return Err(Diagnostic::new(
+                Phase::Runtime,
+                span.line,
+                span.column,
+                "Cannot use \"static\" in the global scope",
             ));
         };
 
@@ -70474,18 +70671,26 @@ impl Interpreter {
         }
 
         let id = self.allocate_object_id();
-        let bound_context = if !is_static {
-            if let Some(Value::Object(this_object)) = scope.read_storage_named("this") {
-                let class_context = self
-                    .class_context
-                    .last()
-                    .copied()
-                    .or_else(|| Some(this_object.class_id()));
-                let called_class_context = self
-                    .called_class_context
-                    .last()
-                    .copied()
-                    .or_else(|| Some(this_object.class_id()));
+        let this_object = if is_static {
+            None
+        } else if let Some(Value::Object(this_object)) = scope.read_storage_named("this") {
+            Some(this_object)
+        } else {
+            None
+        };
+        let class_context = self
+            .class_context
+            .last()
+            .copied()
+            .or_else(|| this_object.as_ref().map(|object| object.class_id()));
+        let called_class_context = self
+            .called_class_context
+            .last()
+            .copied()
+            .or_else(|| this_object.as_ref().map(|object| object.class_id()))
+            .or(class_context);
+        let bound_context =
+            if this_object.is_some() || class_context.is_some() || called_class_context.is_some() {
                 Some(ClosureBoundContext {
                     this_object,
                     class_context,
@@ -70493,13 +70698,10 @@ impl Interpreter {
                 })
             } else {
                 None
-            }
-        } else {
-            None
-        };
+            };
         let closure_this = bound_context
             .as_ref()
-            .map(|context| context.this_object.clone());
+            .and_then(|context| context.this_object.clone());
         let closure_scope_class_id = bound_context
             .as_ref()
             .and_then(|context| context.class_context)
@@ -98683,7 +98885,7 @@ impl Interpreter {
         let bound_this = self
             .closure_bound_contexts
             .get(&closure.id())
-            .map(|context| context.this_object.clone());
+            .and_then(|context| context.this_object.clone());
         if bound_this.is_some() {
             property_count += 1;
         }
@@ -114180,6 +114382,10 @@ fn magic_method_startup_diagnostics(
     }
 
     if !diagnostics.has_fatal() {
+        collect_compile_time_class_name_startup_diagnostics(&mut diagnostics, program, source_file);
+    }
+
+    if !diagnostics.has_fatal() {
         collect_class_property_inheritance_startup_diagnostics(
             &mut diagnostics,
             program,
@@ -114292,6 +114498,142 @@ fn magic_method_startup_diagnostics(
     }
 
     diagnostics
+}
+
+fn collect_compile_time_class_name_startup_diagnostics(
+    diagnostics: &mut MagicMethodStartupDiagnostics,
+    program: &Program,
+    source_file: Option<&str>,
+) {
+    for stmt in &program.statements {
+        match stmt {
+            Stmt::Class(class) if !class.is_nested => {
+                let class_has_parent = class.parent.is_some();
+                for member in &class.members {
+                    let diagnostic = match member {
+                        ClassMember::Constant(constant) => {
+                            compile_time_class_name_expr_startup_diagnostic(
+                                &constant.value,
+                                Some(class_has_parent),
+                            )
+                        }
+                        ClassMember::Property(property) => {
+                            property.default.as_ref().and_then(|default| {
+                                compile_time_class_name_expr_startup_diagnostic(
+                                    default,
+                                    Some(class_has_parent),
+                                )
+                            })
+                        }
+                        ClassMember::Method(method) => {
+                            function_compile_time_class_name_startup_diagnostic(
+                                &method.function,
+                                Some(class_has_parent),
+                            )
+                        }
+                    };
+                    if let Some((message, line)) = diagnostic {
+                        diagnostics.set_fatal(message, source_file, line);
+                        return;
+                    }
+                }
+            }
+            Stmt::Interface(interface) => {
+                for constant in &interface.constants {
+                    if let Some((message, line)) = compile_time_class_name_expr_startup_diagnostic(
+                        &constant.value,
+                        Some(false),
+                    ) {
+                        diagnostics.set_fatal(message, source_file, line);
+                        return;
+                    }
+                }
+                for method in &interface.methods {
+                    if let Some((message, line)) =
+                        function_compile_time_class_name_startup_diagnostic(
+                            &method.function,
+                            Some(false),
+                        )
+                    {
+                        diagnostics.set_fatal(message, source_file, line);
+                        return;
+                    }
+                }
+            }
+            Stmt::Function(function) => {
+                if let Some((message, line)) =
+                    function_compile_time_class_name_startup_diagnostic(function, None)
+                {
+                    diagnostics.set_fatal(message, source_file, line);
+                    return;
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn function_compile_time_class_name_startup_diagnostic(
+    function: &FunctionDecl,
+    class_has_parent: Option<bool>,
+) -> Option<(String, usize)> {
+    function.params.iter().find_map(|param| {
+        param.default.as_ref().and_then(|default| {
+            compile_time_class_name_expr_startup_diagnostic(default, class_has_parent)
+        })
+    })
+}
+
+fn compile_time_class_name_expr_startup_diagnostic(
+    expr: &Expr,
+    class_has_parent: Option<bool>,
+) -> Option<(String, usize)> {
+    match expr {
+        Expr::StaticClassNameConstant { span } => Some((
+            "static::class cannot be used for compile-time class name resolution".to_string(),
+            span.line,
+        )),
+        Expr::ParentClassNameConstant { span } if class_has_parent == Some(false) => Some((
+            "Cannot use \"parent\" when current class scope has no parent".to_string(),
+            span.line,
+        )),
+        Expr::Array { items, .. } => items.iter().find_map(|item| {
+            item.key
+                .as_ref()
+                .and_then(|key| {
+                    compile_time_class_name_expr_startup_diagnostic(key, class_has_parent)
+                })
+                .or_else(|| {
+                    compile_time_class_name_expr_startup_diagnostic(&item.value, class_has_parent)
+                })
+        }),
+        Expr::Unary { expr, .. } => {
+            compile_time_class_name_expr_startup_diagnostic(expr, class_has_parent)
+        }
+        Expr::Binary { left, right, .. } => {
+            compile_time_class_name_expr_startup_diagnostic(left, class_has_parent).or_else(|| {
+                compile_time_class_name_expr_startup_diagnostic(right, class_has_parent)
+            })
+        }
+        Expr::Ternary {
+            condition,
+            if_true,
+            if_false,
+            ..
+        } => compile_time_class_name_expr_startup_diagnostic(condition, class_has_parent)
+            .or_else(|| compile_time_class_name_expr_startup_diagnostic(if_true, class_has_parent))
+            .or_else(|| {
+                compile_time_class_name_expr_startup_diagnostic(if_false, class_has_parent)
+            }),
+        Expr::ShortTernary {
+            condition,
+            if_false,
+            ..
+        } => compile_time_class_name_expr_startup_diagnostic(condition, class_has_parent).or_else(
+            || compile_time_class_name_expr_startup_diagnostic(if_false, class_has_parent),
+        ),
+        _ => None,
+    }
 }
 
 fn enum_member_startup_diagnostic(enum_decl: &EnumDecl) -> Option<(String, usize)> {
@@ -127689,6 +128031,58 @@ fn runtime_error(span: Span, error: RuntimeError) -> Diagnostic {
     Diagnostic::new(Phase::Runtime, span.line, span.column, error.message())
 }
 
+fn class_name_resolution_fatal_message(error: &Diagnostic) -> Option<String> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+    if error.message == "Illegal class name" {
+        return Some(error.message.clone());
+    }
+    if error.message.starts_with("Cannot use \"::class\" on ")
+        && error.message != "Cannot use \"::class\" on null"
+    {
+        return Some(error.message.clone());
+    }
+    None
+}
+
+fn const_declaration_class_scope_error(expr: &Expr, has_class_scope: bool) -> Option<Diagnostic> {
+    match expr {
+        Expr::SelfClassNameConstant { span } if !has_class_scope => Some(Diagnostic::new(
+            Phase::Runtime,
+            span.line,
+            span.column,
+            "Cannot use \"self\" when no class scope is active",
+        )),
+        Expr::Array { items, .. } => items.iter().find_map(|item| {
+            item.key
+                .as_ref()
+                .and_then(|key| const_declaration_class_scope_error(key, has_class_scope))
+                .or_else(|| const_declaration_class_scope_error(&item.value, has_class_scope))
+        }),
+        Expr::Unary { expr, .. } => const_declaration_class_scope_error(expr, has_class_scope),
+        Expr::Binary { left, right, .. } => {
+            const_declaration_class_scope_error(left, has_class_scope)
+                .or_else(|| const_declaration_class_scope_error(right, has_class_scope))
+        }
+        Expr::Ternary {
+            condition,
+            if_true,
+            if_false,
+            ..
+        } => const_declaration_class_scope_error(condition, has_class_scope)
+            .or_else(|| const_declaration_class_scope_error(if_true, has_class_scope))
+            .or_else(|| const_declaration_class_scope_error(if_false, has_class_scope)),
+        Expr::ShortTernary {
+            condition,
+            if_false,
+            ..
+        } => const_declaration_class_scope_error(condition, has_class_scope)
+            .or_else(|| const_declaration_class_scope_error(if_false, has_class_scope)),
+        _ => None,
+    }
+}
+
 fn append_offset_read_error(span: Span) -> Diagnostic {
     runtime_error(
         span,
@@ -128283,6 +128677,21 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
     }
 
     if error.phase == Phase::Runtime {
+        if error.message == "Cannot use \"::class\" on null" {
+            return Some(("TypeError", error.message.clone()));
+        }
+
+        if matches!(
+            error.message.as_str(),
+            "Cannot use \"self\" in the global scope"
+                | "Cannot use \"self\" when no class scope is active"
+                | "Cannot use \"parent\" in the global scope"
+                | "Cannot use \"parent\" when current class scope has no parent"
+                | "Cannot use \"static\" in the global scope"
+        ) {
+            return Some(("Error", error.message.clone()));
+        }
+
         if let Some(message) = error
             .message
             .strip_prefix("unsupported call DatePeriod::__construct(): ")

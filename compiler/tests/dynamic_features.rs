@@ -1208,24 +1208,24 @@ $result = eval('return 1;');
 }
 
 #[test]
-fn unsupported_bracketed_namespace_forms_are_rejected_with_stable_parse_errors() {
-    let cases = [(
+fn bracketed_namespace_blocks_execute_with_scoped_imports() {
+    let execution = run_source(
         r#"<?php
 namespace App\Demo {
-    echo "blocked";
+    class Thing {}
+    echo Thing::class, "\n";
+}
+
+namespace {
+    use App\Demo\Thing;
+    echo Thing::class;
 }
 "#,
-        2,
-        1,
-        "unsupported namespace declaration: bracketed namespace blocks are not implemented",
-    )];
+    )
+    .unwrap();
 
-    for (source, line, column, message) in cases {
-        let error = parse_error(source);
-        assert_eq!(error.line, line);
-        assert_eq!(error.column, column);
-        assert_eq!(error.message, message);
-    }
+    assert_eq!(execution.stdout, "App\\Demo\\Thing\nApp\\Demo\\Thing");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -1630,21 +1630,26 @@ echo "|", defined("SecretBox::OPEN") ? "1" : "0", "\n";
     assert_eq!(execution.stdout, "0|0|1\n");
     assert_eq!(execution.exit_code, 0);
 
-    let private_error = runtime_error(
+    let private_error = run_source(
         r#"<?php
 class SecretBox {
     private const SECRET = "secret";
 }
 echo constant("SecretBox::SECRET");
 "#,
-    );
+    )
+    .unwrap();
 
-    assert_eq!(private_error.line, 5);
-    assert_eq!(private_error.column, 6);
     assert_eq!(
-        private_error.message,
-        "Cannot access private constant SecretBox::SECRET"
+        private_error.exit_code, 255,
+        "private constant access should be a PHP fatal Error"
     );
+    assert!(private_error
+        .stdout
+        .contains("Cannot access private constant SecretBox::SECRET"));
+    assert!(private_error
+        .stdout
+        .contains("thrown in Command line code on line 5"));
 }
 
 #[test]
@@ -2370,18 +2375,16 @@ define("123BAD", "bad");
         "unsupported call define(): constant name must be a non-empty supported identifier or qualified name in the current subset, got 123BAD"
     );
 
-    let unsupported_value = runtime_error(
+    let object_value = run_source(
         r#"<?php
 class Box {}
 define("BOX", new Box());
+var_dump(BOX);
 "#,
-    );
-    assert_eq!(unsupported_value.line, 3);
-    assert_eq!(unsupported_value.column, 1);
-    assert_eq!(
-        unsupported_value.message,
-        "unsupported call define(): value must be null, bool, int, float, string, or array values in the current subset, got object"
-    );
+    )
+    .unwrap();
+    assert_eq!(object_value.stdout, "object(Box)#1 (0) {\n}\n");
+    assert_eq!(object_value.exit_code, 0);
 }
 
 #[test]

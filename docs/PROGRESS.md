@@ -4,6 +4,28 @@
 
 Implemented:
 
+- Moved a focused `Zend/tests/class_name` PHPT cluster from `0/14` to
+  `14/14` on the interpreter path. The parser now flattens top-level
+  bracketed named/global namespace blocks with block-local namespace/import
+  context, constant-expression parsing accepts `self::class`, `parent::class`,
+  and `static::class` so startup/runtime diagnostics can match PHP-shaped
+  behavior, dynamic/object `::class` receivers now report the covered
+  `TypeError`/fatal surfaces, and closures created in static class context
+  keep class/called-class context through direct invocation and bounded
+  `$closure->bindTo(...)` rebinding. Focused proof covers
+  `Zend/tests/class_name/bug66811.phpt`,
+  `Zend/tests/class_name/bug77530.phpt`,
+  `Zend/tests/class_name/class_name_as_scalar*.phpt`,
+  `Zend/tests/class_name/class_on_constant_evaluated_expression.phpt`,
+  `Zend/tests/class_name/class_on_object.phpt`,
+  `Zend/tests/class_name/parent_class_name_without_parent.phpt`, and
+  `Zend/tests/class_name/self_class_const_in_unknown_scope.phpt`, plus focused
+  Rust namespace/object-model guards, build, fmt, and diff checks. Unsupported
+  edges remain full PHP validation for invalid mixed/nested namespace forms,
+  namespace-qualified constant reads/imports, exact `Closure::bind`/`bindTo`
+  warning and visibility parity beyond the documented null/object/class-string
+  scope slice, references/COW, and native lowering.
+
 - Added a bounded statement-form by-value array destructuring assignment lane
   on the interpreter path. `list(...) = expr` and `[...] = expr` now accept
   direct variable targets with skipped slots, nested lists, and literal
