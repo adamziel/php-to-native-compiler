@@ -5411,8 +5411,25 @@ class Box {
 }
 
 #[test]
-fn abstract_trait_method_aliases_create_remaining_class_requirements() {
-    let error = runtime_error(
+fn missing_public_abstract_trait_requirements_do_not_abort_class_declaration() {
+    let declaration_only = run_source(
+        r#"<?php
+trait RequiresStuff {
+    abstract public function doStuff();
+}
+
+class Box {
+    use RequiresStuff;
+}
+
+echo "declared";
+"#,
+    )
+    .unwrap();
+    assert_eq!(declaration_only.stdout, "declared");
+    assert_eq!(declaration_only.exit_code, 0);
+
+    let alias_declaration_only = run_source(
         r#"<?php
 trait RequiresStuff {
     abstract public function doStuff();
@@ -5425,12 +5442,40 @@ class Box {
 
     public function doStuff() {}
 }
-"#,
-    );
 
+echo "alias-declared";
+"#,
+    )
+    .unwrap();
+    assert_eq!(alias_declaration_only.stdout, "alias-declared");
+    assert_eq!(alias_declaration_only.exit_code, 0);
+}
+
+#[test]
+fn abstract_trait_requirements_do_not_preempt_direct_abstract_method_startup_fatal() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+trait TraitWithAbstract {
+    abstract public function foo();
+}
+
+class TraitWorks {
+    use TraitWithAbstract;
+}
+
+class NotAbstract {
+    abstract public function bar();
+}
+"#,
+        "abstract-implicit.php",
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "");
+    assert_eq!(execution.exit_code, 255);
     assert_eq!(
-        error.message,
-        "Class Box contains 1 abstract method and must therefore be declared abstract or implement the remaining method (Box::doOtherStuff)"
+        execution.stderr,
+        "Fatal error: Class NotAbstract declares abstract method bar() and must therefore be declared abstract in abstract-implicit.php on line 10"
     );
 }
 

@@ -1138,12 +1138,17 @@ Abstract trait methods are not composed as executable methods. The trait
 composition pass carries them as requirements through direct and nested
 trait-body uses, applies aliases as additional requirement names, and lets the
 consuming class, an ancestor method, or another concrete trait method satisfy
-the obligation. Class registration validates missing abstract trait
-requirements, staticness, and bounded signature compatibility with the same
-type-relationship helpers used for inherited/interface method checks. Abstract
-trait requirement visibility is intentionally not enforced, matching PHP's
-backward-compatibility behavior; private abstract requirements still must be
-satisfied by the declaring class where PHP requires that startup fatal.
+the obligation. Class registration validates private missing abstract trait
+requirements, and validates staticness plus bounded signature compatibility
+when a concrete implementation is present, with the same type-relationship
+helpers used for inherited/interface method checks. Missing public/protected
+abstract trait requirements do not abort otherwise-unused class declarations in
+the eager interpreter startup path, so direct abstract methods in later
+non-abstract classes can surface PHP's declaration fatal first. Abstract trait
+requirement visibility is intentionally not enforced, matching PHP's
+backward-compatibility behavior; full lazy PHP class-linking and exact
+implicit-abstract class metadata/instantiation parity for missing public or
+protected trait requirements remain outside this bounded startup model.
 Public trait constants declared as `const NAME = ...` or
 `public const NAME = ...` with the current class-constant expression subset are
 composed into consuming classes and resolve through the existing
@@ -1160,8 +1165,9 @@ trait conflicts, unqualified visibility-only adaptations across
 multiple used traits, unqualified `insteadof`, trait property or constant
 adaptations,
 qualified or multi-trait alias edge cases beyond the current winner-alias slice,
-`__TRAIT__` context, references/copy-on-write, nested or conditional trait
-declarations, and native trait lowering remain explicit boundaries.
+`__TRAIT__` context, full lazy trait obligation linking, references/copy-on-write,
+nested or conditional trait declarations, and native trait lowering remain
+explicit boundaries.
 Generated-C class metadata validation consumes the same trait effective-method
 composition helper as interpreter metadata/reflection, so top-level trait
 metadata registration and class trait-use composition share one semantic

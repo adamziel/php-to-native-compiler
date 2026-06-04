@@ -11235,10 +11235,15 @@
   declarations. Abstract trait methods are metadata-only requirements rather
   than composed executable methods: direct class methods, inherited concrete
   methods, or concrete methods supplied by other traits can satisfy them,
-  aliases create additional requirement names, missing requirements report
-  PHP-shaped abstract-method startup fatals, and staticness plus bounded
-  signature compatibility are checked while visibility remains deliberately
-  unenforced for PHP compatibility. Trait
+  aliases create additional requirement names, private missing requirements
+  report PHP-shaped abstract-method startup fatals, and staticness plus bounded
+  signature compatibility are checked when a concrete implementation is present
+  while visibility remains deliberately unenforced for PHP compatibility.
+  Missing public/protected abstract trait requirements do not stop an otherwise
+  unused class declaration during eager interpreter startup, matching the
+  reached PHP 8.5 declaration-order surface; full lazy class-linking and exact
+  implicit-abstract instantiation/reflection parity for those missing trait
+  requirements remain unsupported. Trait
   constants declared as `const NAME = ...` or `public const NAME = ...` use the
   current class-constant expression subset and resolve as ordinary public class
   constants through `ClassName::CONST`, `self::CONST`, `parent::CONST`, and

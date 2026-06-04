@@ -128011,7 +128011,7 @@ fn validate_abstract_trait_method_requirements(
         let Some((declaring_class_id, declaring_class_name, implementation)) =
             find_method(classes, class_id, &lookup_name)
         else {
-            if class.is_abstract && requirement.method.visibility != ClassVisibility::Private {
+            if requirement.method.visibility != ClassVisibility::Private {
                 continue;
             }
             missing.push(format!(
@@ -128024,6 +128024,9 @@ fn validate_abstract_trait_method_requirements(
         let implementation_is_abstract =
             abstract_methods.contains(&(declaring_class_id, lookup_name.clone()));
         if implementation_is_abstract && !class.is_abstract {
+            if requirement.method.visibility != ClassVisibility::Private {
+                continue;
+            }
             missing.push(format!(
                 "{}::{}()",
                 class.name, requirement.method.function.name
