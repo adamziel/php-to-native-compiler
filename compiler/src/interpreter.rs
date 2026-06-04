@@ -46,8 +46,9 @@ use crate::ast::{
     EnumMemberDiagnosticDecl, EnumMemberDiagnosticKind, Expr, ForAction, ForeachListKey,
     ForeachValueTarget, FunctionDecl, FunctionParam, IncrementDecrementOp,
     IncrementDecrementPosition, InterfaceDecl, InterfaceMethodDecl, InterpolatedAccessSegment,
-    InterpolatedArrayKey, InterpolatedStringPart, MatchArm, NewClassName, Program, ReferenceSource,
-    Span, StaticLocalDeclarator, Stmt, SwitchCase, TraitDecl, TraitUseDecl, TypeDecl, UnaryOp,
+    InterpolatedArrayKey, InterpolatedStringPart, ListAssignmentItem, ListAssignmentKey,
+    ListAssignmentTarget, MatchArm, NewClassName, Program, ReferenceSource, Span,
+    StaticLocalDeclarator, Stmt, SwitchCase, TraitDecl, TraitUseDecl, TypeDecl, UnaryOp,
     UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
@@ -27440,11 +27441,7 @@ impl Interpreter {
 
         let index = Self::string_offset_index_from_i64(offset, value.len(), span)?;
         let Some(byte) = value.as_bytes().get(index) else {
-            self.emit_warning(
-                "string offset",
-                format!("Uninitialized string offset {display_key}"),
-                span,
-            )?;
+            self.emit_display_warning(format!("Uninitialized string offset {display_key}"), span)?;
             return Ok(Value::String(String::new()));
         };
         Ok(Value::String(char::from(*byte).to_string()))
@@ -41586,8 +41583,8 @@ impl Interpreter {
                 }
                 Ok(value)
             }
-            AssignTarget::List { names, span } => {
-                self.evaluate_list_assignment(names, expr, *span, scope)
+            AssignTarget::List { items, span } => {
+                self.evaluate_list_assignment(items, expr, *span, scope)
             }
             AssignTarget::ArrayIndex { name, index, span } => {
                 if let (Some(index), Some(object)) = (index.as_ref(), scope.read_named_object(name))
@@ -46387,43 +46384,85 @@ impl Interpreter {
 
     fn evaluate_list_assignment(
         &mut self,
-        names: &[Option<String>],
+        items: &[ListAssignmentItem],
         expr: &Expr,
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
         let value = self.evaluate(expr, scope)?;
-        let array = match &value {
-            Value::Array(array) => array,
-            other => {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "list()",
-                        format!("right-hand side must be array, got {}", other.type_name()),
-                    ),
-                ));
-            }
-        };
-
-        let assignments: Vec<(String, Value)> = names
-            .iter()
-            .enumerate()
-            .filter_map(|(index, name)| {
-                name.as_ref().map(|name| {
-                    let element = array
-                        .get_cloned(ArrayKey::Int(index as i64))
-                        .unwrap_or(Value::Null);
-                    (name.clone(), element)
-                })
-            })
-            .collect();
+        let mut assignments = Vec::new();
+        self.collect_list_assignment_writes(items, &value, span, &mut assignments)?;
 
         for (name, element) in assignments {
             scope.write_static(&name, element);
         }
 
         Ok(value)
+    }
+
+    fn collect_list_assignment_writes(
+        &mut self,
+        items: &[ListAssignmentItem],
+        source: &Value,
+        span: Span,
+        assignments: &mut Vec<(String, Value)>,
+    ) -> CompileResult<()> {
+        for (index, item) in items.iter().enumerate() {
+            let Some(target) = item.target.as_ref() else {
+                continue;
+            };
+            let key = Self::list_assignment_item_key(item.key.as_ref(), index);
+            let element = self.read_list_assignment_element(source, &key, span)?;
+            match target {
+                ListAssignmentTarget::Variable { name, .. } => {
+                    assignments.push((name.clone(), element));
+                }
+                ListAssignmentTarget::List { items, .. } => {
+                    self.collect_list_assignment_writes(items, &element, span, assignments)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn list_assignment_item_key(
+        key: Option<&ListAssignmentKey>,
+        positional_index: usize,
+    ) -> ArrayKey {
+        match key {
+            Some(ListAssignmentKey::Int(value)) => ArrayKey::Int(*value),
+            Some(ListAssignmentKey::String(value)) => ArrayKey::String(value.clone()),
+            None => ArrayKey::Int(positional_index as i64),
+        }
+    }
+
+    fn read_list_assignment_element(
+        &mut self,
+        source: &Value,
+        key: &ArrayKey,
+        span: Span,
+    ) -> CompileResult<Value> {
+        match source {
+            Value::Array(array) => {
+                if let Some(value) = array.get_cloned(key.clone()) {
+                    Ok(value)
+                } else {
+                    self.emit_display_warning(
+                        format!("Undefined array key {}", key.diagnostic_key()),
+                        span,
+                    )?;
+                    Ok(Value::Null)
+                }
+            }
+            Value::Null => Ok(Value::Null),
+            other => {
+                self.emit_display_warning(
+                    format!("Cannot use {} as array", other.type_name()),
+                    span,
+                )?;
+                Ok(Value::Null)
+            }
+        }
     }
 
     fn execute_compound_assignment(

@@ -4,6 +4,34 @@
 
 Implemented:
 
+- Added a bounded statement-form by-value array destructuring assignment lane
+  on the interpreter path. `list(...) = expr` and `[...] = expr` now accept
+  direct variable targets with skipped slots, nested lists, and literal
+  integer/string keyed slots; evaluate the right-hand side once; collect all
+  reads before mutating target variables; emit PHP-style missing-key and
+  scalar-source warnings; and assign `null` for missing, `null`, or scalar
+  destructured sources in the covered slice. Uninitialized string-offset reads
+  now use the display-warning path so list destructuring over an empty string
+  offset preserves PHP warning order. Focused proof covers exact-current
+  pre-patch selected PHPT at `0/16` and post-patch selected PHPT at `16/16`
+  for `Zend/tests/list/bug39304.phpt`,
+  `Zend/tests/list/bug40899.phpt`, `Zend/tests/list/destruct_bool.phpt`,
+  `Zend/tests/list/destruct_float.phpt`,
+  `Zend/tests/list/destruct_int.phpt`,
+  `Zend/tests/list/destruct_null.phpt`,
+  `Zend/tests/list/destruct_resource.phpt`,
+  `Zend/tests/list/destruct_string.phpt`, `Zend/tests/list/list_001.phpt`,
+  `Zend/tests/list/list_002.phpt`, `Zend/tests/list/list_006.phpt`,
+  `Zend/tests/list/list_keyed.phpt`,
+  `Zend/tests/list/list_keyed_trailing_comma.phpt`,
+  `Zend/tests/list/list_keyed_undefined.phpt`,
+  `Zend/tests/list/list_mixed_nested_keyed_unkeyed.phpt`, and
+  `Zend/tests/list/list_self_assign.phpt`. Unsupported edges remain
+  reference destructuring, expression-position destructuring, dynamic key
+  expressions, mixed keyed/unkeyed entries at one nesting level, non-variable
+  targets such as `$array[]`, ArrayAccess/object destructuring sources, exact
+  reference/COW semantics, and native lowering.
+
 - Added a bounded `strtotime()` absolute-format/timezone parser lane on the
   interpreter path. `strtotime()` now accepts `now` with the supplied base
   timestamp, compact `YYYYMMDDHHMMSS` values with explicit timezone suffixes,

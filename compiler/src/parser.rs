@@ -7,10 +7,10 @@ use crate::ast::{
     ConstDeclarator, EnumCaseDecl, EnumDecl, EnumMemberDiagnosticDecl, EnumMemberDiagnosticKind,
     Expr, ForAction, ForeachListItem, ForeachListKey, ForeachValueTarget, FunctionDecl,
     FunctionParam, IncrementDecrementOp, IncrementDecrementPosition, InterfaceDecl,
-    InterfaceMethodDecl, MatchArm, NewClassName, Program, ReferenceSource, Span,
-    StaticLocalDeclarator, Stmt, SwitchCase, TraitDecl, TraitMethodAliasDecl,
-    TraitMethodPrecedenceDecl, TraitMethodVisibilityDecl, TraitUseDecl, TypeDecl, UnaryOp,
-    UnsetTarget, UseImport, UseImportKind,
+    InterfaceMethodDecl, ListAssignmentItem, ListAssignmentKey, ListAssignmentTarget, MatchArm,
+    NewClassName, Program, ReferenceSource, Span, StaticLocalDeclarator, Stmt, SwitchCase,
+    TraitDecl, TraitMethodAliasDecl, TraitMethodPrecedenceDecl, TraitMethodVisibilityDecl,
+    TraitUseDecl, TypeDecl, UnaryOp, UnsetTarget, UseImport, UseImportKind,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::lexer::{tokenize, AttributeToken, Token, TokenKind};
@@ -4228,54 +4228,61 @@ impl Parser {
     fn parse_list_assignment_target(&mut self) -> CompileResult<AssignTarget> {
         let span = self.advance().span;
         self.consume_keyword(TokenKind::LParen, "expected '(' after list")?;
-        self.parse_positional_list_assignment_target(span, TokenKind::RParen)
+        let items = self.parse_list_assignment_items(span, TokenKind::RParen)?;
+        Ok(AssignTarget::List { items, span })
     }
 
     fn parse_short_list_assignment_target(&mut self) -> CompileResult<AssignTarget> {
         let span = self.advance().span;
-        self.parse_positional_list_assignment_target(span, TokenKind::RBracket)
+        let items = self.parse_list_assignment_items(span, TokenKind::RBracket)?;
+        Ok(AssignTarget::List { items, span })
     }
 
-    fn parse_positional_list_assignment_target(
+    fn parse_nested_list_assignment_target(
         &mut self,
         span: Span,
         closing_token: TokenKind,
-    ) -> CompileResult<AssignTarget> {
-        let mut names = Vec::new();
+    ) -> CompileResult<ListAssignmentTarget> {
+        let items = self.parse_list_assignment_items(span, closing_token)?;
+        Ok(ListAssignmentTarget::List { items, span })
+    }
 
+    fn parse_list_assignment_items(
+        &mut self,
+        span: Span,
+        closing_token: TokenKind,
+    ) -> CompileResult<Vec<ListAssignmentItem>> {
+        let mut items = Vec::new();
         if self.check(|kind| same_token_kind(kind, &closing_token)) {
             return Err(self.error_at(span, unsupported_array_destructuring_assignment_message()));
         }
 
         loop {
-            match self.peek().kind.clone() {
-                TokenKind::Comma => {
-                    names.push(None);
-                    self.advance();
-                    if self.check(|kind| same_token_kind(kind, &closing_token)) {
-                        break;
-                    }
-                    continue;
+            if self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
+                items.push(ListAssignmentItem {
+                    key: None,
+                    target: None,
+                });
+                if self.check(|kind| same_token_kind(kind, &closing_token)) {
+                    break;
                 }
-                TokenKind::Variable(name) => {
-                    self.advance();
-                    if !self.check(|kind| {
-                        matches!(kind, TokenKind::Comma) || same_token_kind(kind, &closing_token)
-                    }) {
-                        return Err(self.error_at(
-                            self.peek().span,
-                            unsupported_array_destructuring_assignment_message(),
-                        ));
-                    }
-                    names.push(Some(name));
-                }
-                _ => {
-                    return Err(self.error_at(
-                        self.peek().span,
-                        unsupported_array_destructuring_assignment_message(),
-                    ));
-                }
+                continue;
             }
+
+            let key = self.parse_list_assignment_key()?;
+            let target = self.parse_list_assignment_item_target()?;
+            if !self.check(|kind| {
+                matches!(kind, TokenKind::Comma) || same_token_kind(kind, &closing_token)
+            }) {
+                return Err(self.error_at(
+                    self.peek().span,
+                    unsupported_array_destructuring_assignment_message(),
+                ));
+            }
+            items.push(ListAssignmentItem {
+                key,
+                target: Some(target),
+            });
 
             if !self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
                 break;
@@ -4285,7 +4292,12 @@ impl Parser {
             }
         }
 
-        if names.iter().all(Option::is_none) {
+        if items.iter().all(|item| item.target.is_none()) {
+            return Err(self.error_at(span, unsupported_array_destructuring_assignment_message()));
+        }
+        let has_keyed_items = items.iter().any(|item| item.key.is_some());
+        let has_unkeyed_items = items.iter().any(|item| item.key.is_none());
+        if has_keyed_items && has_unkeyed_items {
             return Err(self.error_at(span, unsupported_array_destructuring_assignment_message()));
         }
 
@@ -4297,7 +4309,61 @@ impl Parser {
             unreachable!("list assignment target uses a closing delimiter")
         };
         self.consume_keyword(closing_token, message)?;
-        Ok(AssignTarget::List { names, span })
+        Ok(items)
+    }
+
+    fn parse_list_assignment_key(&mut self) -> CompileResult<Option<ListAssignmentKey>> {
+        let key = match self.peek().kind.clone() {
+            TokenKind::Int(value)
+                if matches!(
+                    self.tokens.get(self.current + 1).map(|token| &token.kind),
+                    Some(TokenKind::FatArrow)
+                ) =>
+            {
+                self.advance();
+                Some(ListAssignmentKey::Int(value))
+            }
+            TokenKind::StringLiteral(value)
+                if matches!(
+                    self.tokens.get(self.current + 1).map(|token| &token.kind),
+                    Some(TokenKind::FatArrow)
+                ) =>
+            {
+                self.advance();
+                Some(ListAssignmentKey::String(value))
+            }
+            _ => None,
+        };
+
+        if key.is_some() {
+            self.consume_keyword(
+                TokenKind::FatArrow,
+                "expected '=>' in list assignment target",
+            )?;
+        }
+        Ok(key)
+    }
+
+    fn parse_list_assignment_item_target(&mut self) -> CompileResult<ListAssignmentTarget> {
+        match self.peek().kind.clone() {
+            TokenKind::Variable(name) => {
+                let span = self.advance().span;
+                Ok(ListAssignmentTarget::Variable { name, span })
+            }
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("list") => {
+                let span = self.advance().span;
+                self.consume_keyword(TokenKind::LParen, "expected '(' after list")?;
+                self.parse_nested_list_assignment_target(span, TokenKind::RParen)
+            }
+            TokenKind::LBracket => {
+                let span = self.advance().span;
+                self.parse_nested_list_assignment_target(span, TokenKind::RBracket)
+            }
+            _ => Err(self.error_at(
+                self.peek().span,
+                unsupported_array_destructuring_assignment_message(),
+            )),
+        }
     }
 
     fn starts_short_destructuring_assignment(&self) -> bool {
@@ -9810,7 +9876,7 @@ fn unsupported_fully_qualified_constant_name_message() -> &'static str {
 }
 
 fn unsupported_array_destructuring_assignment_message() -> &'static str {
-    "unsupported array destructuring: only positional statement-form list($a, $b) = expr and [$a, $b] = expr targets with variable or skipped slots are implemented; expression-position list(...), nested, keyed, reference, and non-variable targets are not implemented"
+    "unsupported array destructuring: statement-form list(...) = expr and [...] = expr support variable, skipped, nested, and literal int/string keyed targets; expression-position list(...), mixed keyed/unkeyed lists, reference, dynamic-key, and non-variable targets are not implemented"
 }
 
 fn unsupported_reference_assignment_source_message() -> &'static str {

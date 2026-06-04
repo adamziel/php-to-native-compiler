@@ -9,8 +9,8 @@ use crate::ast::{
     ClassMethodDecl, ClassVisibility, ClosureCapture, CompoundAssignOp, ConstDeclarator, Expr,
     ForAction, FunctionDecl, FunctionParam, IncrementDecrementOp, IncrementDecrementPosition,
     InterfaceDecl, InterfaceMethodDecl, InterpolatedAccessSegment, InterpolatedArrayKey,
-    InterpolatedStringPart, MatchArm, NewClassName, Program, ReferenceSource, Span, Stmt,
-    SwitchCase, TraitDecl, TypeDecl, UnaryOp, UnsetTarget,
+    InterpolatedStringPart, ListAssignmentTarget, MatchArm, NewClassName, Program, ReferenceSource,
+    Span, Stmt, SwitchCase, TraitDecl, TypeDecl, UnaryOp, UnsetTarget,
 };
 use crate::call_arguments::{
     normalize_call_arguments, CallArgument, CallArgumentNormalizationError, CallArgumentParameter,
@@ -173,8 +173,8 @@ const ASSEMBLY_ARRAY_REJECTION: &str = "assembly array lowering rejects unsuppor
 const ASSEMBLY_NATIVE_ARRAY_BY_REFERENCE_FOREACH_REJECTION: &str = "native executable by-reference foreach lowering rejects this by-reference iteration form; generated C currently supports array, nested-array, direct reference-slot, and active root symbol-table lvalue owners with compact value-reference assignment, loop-value array-lvalue assignment bodies, and direct loop-variable post-loop aliases through phpc_native_array_lvalue_owner_foreach_value_reference_result(), while temporary iterable owners, arbitrary body mutation, cursor variable mutation, request owners, arbitrary alias-root owners, broader references/copy-on-write parity, and exact cleanup ownership remain unsupported; phpc run handles current by-reference foreach behavior";
 const LLVM_ARRAY_ACCESS_REJECTION: &str = "LLVM ArrayAccess lowering rejects object offset reads/writes/isset/empty/unset/compound paths until native ArrayAccess dispatch for offsetGet(), offsetSet(), offsetExists(), and offsetUnset(), object handles, references/copy-on-write, and exact PHP diagnostics exist; phpc run handles current bounded ArrayAccess behavior";
 const ASSEMBLY_ARRAY_ACCESS_REJECTION: &str = "assembly ArrayAccess lowering rejects object offset reads/writes/isset/empty/unset/compound paths until native ArrayAccess dispatch for offsetGet(), offsetSet(), offsetExists(), and offsetUnset(), object handles, references/copy-on-write, and exact PHP diagnostics exist; phpc run handles current bounded ArrayAccess behavior";
-const LLVM_ARRAY_DESTRUCTURING_REJECTION: &str = "LLVM array destructuring lowering rejects list(...) and [...] assignment targets until native array storage layout, ordered key lookup, missing-key diagnostics, nested destructuring, references/copy-on-write, and exact native assignment ordering exist; phpc run handles current simple destructuring assignment behavior";
-const ASSEMBLY_ARRAY_DESTRUCTURING_REJECTION: &str = "assembly array destructuring lowering rejects list(...) and [...] assignment targets until native array storage layout, ordered key lookup, missing-key diagnostics, nested destructuring, references/copy-on-write, and exact native assignment ordering exist; phpc run handles current simple destructuring assignment behavior";
+const LLVM_ARRAY_DESTRUCTURING_REJECTION: &str = "LLVM array destructuring lowering rejects list(...) and [...] assignment targets until native array storage layout, ordered key lookup, missing-key diagnostics, nested destructuring, references/copy-on-write, and exact native assignment ordering exist; phpc run handles current bounded destructuring assignment behavior";
+const ASSEMBLY_ARRAY_DESTRUCTURING_REJECTION: &str = "assembly array destructuring lowering rejects list(...) and [...] assignment targets until native array storage layout, ordered key lookup, missing-key diagnostics, nested destructuring, references/copy-on-write, and exact native assignment ordering exist; phpc run handles current bounded destructuring assignment behavior";
 const LLVM_CONTROL_FLOW_REJECTION: &str = "LLVM control-flow lowering rejects if/else and elseif chains, while loops, for loops, do-while loops, switch statements, goto labels, break, and continue until native PHP truthiness, branch layout, loop control flow, switch fallthrough, goto jumps, references/copy-on-write side effects, and exact native error behavior exist; phpc run handles current control-flow behavior";
 const ASSEMBLY_CONTROL_FLOW_REJECTION: &str = "assembly control-flow lowering rejects if/else branch state merges outside cleanup-free scalar/string/bool variable values, owned native-value handle joins, and branch-local native-value cleanup joins, while/for loops outside state-stable condition/body/increment cleanup boundaries or loop-carried int/float/bool scalar storage, do-while loops outside state-stable body/condition cleanup boundaries or loop-carried int/float/bool scalar storage, switch statements outside state-stable condition/case-body cleanup boundaries and switch-local continue, goto labels outside top-level state-stable target snapshots, top-level or depth-out-of-range break/continue, elseif chains, and unbounded loop headers until native PHP truthiness, branch layout, loop and switch control flow, broader goto state joins, references/copy-on-write side effects, broader cleanup ownership joins, and exact native error behavior exist; generated-native C routes lowerable side-effect-only if/else branches, cleanup-free scalar/string/bool branch-state joins, selected owned native-value branch results, discarded branch-local native-value cleanup, state-stable while/do-while/for loops, loop-carried scalar while/do-while/for state, multi-level while/do-while/for transfer targets, state-stable switch dispatch/fallthrough/break, and top-level state-stable goto labels through scoped control-flow emission";
 const LLVM_EXCEPTION_REJECTION: &str = "LLVM exception lowering rejects throw statements and try/catch/finally blocks until native Throwable objects, stack unwinding, catch/finally dispatch, stack traces, and exact native error behavior exist; phpc run handles the current exception boundary";
@@ -6525,10 +6525,8 @@ fn collect_native_arrow_capture_candidates_from_assign_target(
 ) {
     match target {
         AssignTarget::Variable { name, span } => captures.push((name.clone(), *span)),
-        AssignTarget::List { names, span } => {
-            for name in names.iter().flatten() {
-                captures.push((name.clone(), *span));
-            }
+        AssignTarget::List { items, .. } => {
+            collect_native_arrow_capture_candidates_from_list_assignment_items(items, captures);
         }
         AssignTarget::ArrayIndex { name, index, span } => {
             captures.push((name.clone(), *span));
@@ -6687,6 +6685,25 @@ fn collect_native_arrow_capture_candidates_from_assign_target(
         | AssignTarget::DynamicObjectStaticProperty { .. }
         | AssignTarget::DynamicLateStaticProperty { .. }
         | AssignTarget::UnsupportedExpression { .. } => {}
+    }
+}
+
+fn collect_native_arrow_capture_candidates_from_list_assignment_items(
+    items: &[crate::ast::ListAssignmentItem],
+    captures: &mut Vec<(String, Span)>,
+) {
+    for item in items {
+        let Some(target) = item.target.as_ref() else {
+            continue;
+        };
+        match target {
+            ListAssignmentTarget::Variable { name, span } => {
+                captures.push((name.clone(), *span));
+            }
+            ListAssignmentTarget::List { items, .. } => {
+                collect_native_arrow_capture_candidates_from_list_assignment_items(items, captures);
+            }
+        }
     }
 }
 

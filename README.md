@@ -373,9 +373,10 @@ incorrect native code.
   preservation of covered reference elements when copying literal-key nested
   direct array paths such as `$_REQUEST["payload"]`,
   and
-  positional statement-form
-  `list($a, $b) = expr;` plus `[$a, $b] = expr;` assignment over numeric
-  keys, including skipped slots
+  statement-form by-value
+  `list(...) = expr;` plus `[...] = expr;` assignment over direct variable
+  targets, including skipped slots, nested lists, and literal int/string keyed
+  slots
 - top-level constants, namespace-scoped top-level `const` declarations in the
   current unbracketed namespace slice, selected built-in constants,
   runtime-defined constants with bounded qualified string names, simple
@@ -714,8 +715,8 @@ probing through the current extension registry; autoload lifecycle behavior beyo
 exact callable validation, scalar-to-string coercions for SPL autoload
 extension arguments, warning parity, recursive loader edge cases, and enum
 autoloading,
-array destructuring beyond positional statement-form `list(...)`/`[...]` with
-skipped slots,
+array destructuring beyond statement-form direct-variable `list(...)`/`[...]`
+targets with skipped, nested, and literal int/string keyed slots,
 constructor behavior beyond public/inherited public instance `__construct`
 and explicit parent calls, broader `self::`/`static::` execution beyond the
 current method, dynamic static method, class-name, class-constant, and

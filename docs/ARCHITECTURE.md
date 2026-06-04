@@ -267,6 +267,19 @@ cursor for direct same-path splice removal and replacement slices; broader
 reordering/sorting mutation during active foreach remains outside the bounded
 model.
 
+Statement-form by-value array destructuring assignment uses a separate
+snapshot-first collector. `list(...) = expr` and `[...] = expr` evaluate the
+right-hand side once, recursively read direct variable targets from positional
+slots, skipped slots, nested lists, and literal integer/string keyed slots,
+then write the collected variable assignments left to right after reads have
+finished. Missing array keys emit PHP-style display warnings and contribute
+`null`; `null` sources contribute `null` without warnings; scalar/resource
+sources emit `Cannot use ... as array` warnings for reached slots and
+contribute `null`. This lane intentionally does not create reference cells for
+list targets and does not cover expression-position destructuring, dynamic
+keys, mixed keyed/unkeyed list levels, non-variable targets, object or
+ArrayAccess sources, or native lowering.
+
 Nested append assignment reuses the same assignment-value metadata path before
 storing the appended value. When the RHS is a proven copied-source array from a
 direct by-value `ArrayAccess::offsetGet()`, visible magic `__get()`, or

@@ -1887,12 +1887,20 @@
   assignment, nested `??=`, nested
   increment/decrement, mixed object/property/ArrayAccess
   targets, non-`stdClass` missing property materialization,
-  references/copy-on-write, and native lowering remain unsupported. Simple
-  positional statement-form array destructuring `list($a, $b) = expr;` is
-  supported for direct variable targets when the right-hand side evaluates to a
-  current ordered array. It reads numeric keys `0..n`, evaluates the right-hand
-  side once before writes, assigns targets left to right, and assigns `null` for
-  missing numeric offsets without emitting PHP's warning/notice yet.
+  references/copy-on-write, and native lowering remain unsupported.
+  Statement-form by-value array destructuring
+  `list(...) = expr;` and `[...] = expr;` supports direct variable targets,
+  skipped slots, nested lists, and literal integer or string keyed slots. The
+  right-hand side is evaluated once, target writes are collected from that
+  snapshot before any variable is mutated, and writes are applied left to
+  right. Missing array keys emit PHP-style `Undefined array key ...` warnings
+  and assign `null`; `null` right-hand sides assign `null` without warnings;
+  scalar/resource right-hand sides emit PHP-style `Cannot use ... as array`
+  warnings for reached slots and assign `null`. Reference destructuring,
+  expression-position destructuring, dynamic key expressions, mixed
+  keyed/unkeyed list entries at the same nesting level, non-variable targets
+  such as `$array[]`, object/ArrayAccess destructuring sources, exact
+  reference/COW semantics, and native lowering remain unsupported.
 - direct object-offset `ArrayAccess` over current object variables whose class
   metadata records `implements ArrayAccess`. Direct reads call visible
   non-static `offsetGet($key)`, direct writes and append writes call
@@ -11953,19 +11961,19 @@
   reference storage beyond null-only ABI shapes, WordPress host-state ABI, and
   C fallback assembly helper calls remain unsupported.
 - Array gaps: Traversable/object array unpacking, reference array keys,
-  expression-position `list(...)`, and keyed, nested, reference, or
-  non-variable destructuring targets remain unsupported; the reference-key and
-  destructuring forms are rejected with stable parse diagnostics.
+  expression-position `list(...)`, and reference, dynamic-key, mixed
+  keyed/unkeyed, non-variable, or object/ArrayAccess-source destructuring
+  semantics remain unsupported; unsupported reference-key and destructuring
+  forms are rejected with stable parse diagnostics.
   Array literal reference values are parsed and
   evaluated by current value only; real aliases, reference containers, and
   copy-on-write are not implemented. Object-property reference-assignment
   sources are parsed and copy current array/object values only; scalar sources,
   real aliases, reference containers, and copy-on-write are not implemented.
-  Positional statement-form
-  `list($a, $b) = expr;` and `[$a, $b] = expr;` are supported for direct
-  variable targets and skipped slots only; exact PHP warning/notice emission
-  for missing offsets and
-  non-array right-hand sides is not implemented. `unset(...)` forms outside direct variables,
+  Statement-form by-value `list(...) = expr;` and `[...] = expr;` are
+  supported for direct variable targets with skipped, nested, and literal
+  int/string keyed slots; references and broader PHP destructuring target
+  semantics remain unsupported. `unset(...)` forms outside direct variables,
   direct/nested array-offset operands, direct/dynamic object-property operands,
   nested object-property array-offset operands, and static-property diagnostic operands,
   comma-separated `for` header expression lists,
@@ -11983,8 +11991,9 @@
   `isset($array[$key])` lowering, `$array[]` as a read expression, string
   offset access, by-reference `foreach`, object iteration, destructuring loop
   targets outside the bounded by-value list slice, array destructuring
-  assignments with keyed, nested, reference, expression-position, or
-  non-variable target semantics,
+  assignments with reference, expression-position, dynamic-key, mixed
+  keyed/unkeyed, non-variable target, ArrayAccess/object-source, or exact
+  reference/COW semantics,
   references, copy-on-write containers, and
   object/resource keys are not implemented. The current `foreach` array forms
   snapshot array entries at loop start and do not claim PHP's full

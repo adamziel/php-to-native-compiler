@@ -276,7 +276,7 @@ pub enum AssignTarget {
         span: Span,
     },
     List {
-        names: Vec<Option<String>>,
+        items: Vec<ListAssignmentItem>,
         span: Span,
     },
     ArrayIndex {
@@ -536,6 +536,38 @@ pub enum ReferenceSource {
         expr: Expr,
         span: Span,
     },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ListAssignmentItem {
+    pub key: Option<ListAssignmentKey>,
+    pub target: Option<ListAssignmentTarget>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ListAssignmentKey {
+    Int(i64),
+    String(String),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ListAssignmentTarget {
+    Variable {
+        name: String,
+        span: Span,
+    },
+    List {
+        items: Vec<ListAssignmentItem>,
+        span: Span,
+    },
+}
+
+impl ListAssignmentTarget {
+    pub fn span(&self) -> Span {
+        match self {
+            Self::Variable { span, .. } | Self::List { span, .. } => *span,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
