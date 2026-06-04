@@ -1,6 +1,6 @@
 # PHP Native Compiler PHPT Progress
 
-Updated: 2026-06-04 23:03 CEST
+Updated: 2026-06-04 23:33 CEST
 
 Primary/public branch: `origin/master`
 Latest accepted public-score source:
@@ -19,7 +19,7 @@ denominators that exclude BORKED rows are not public progress.
 Current public score: **7873 / 20294 pinned runnable PHPTs = 38.79%**.
 
 Latest pushed source checkpoint:
-`ac0c019764ce7b9469ed2b87811fa55481849ea9 fix: support function argument diagnostics`
+`2ecb075047bc3d95650decd84231eb928d39f7d1 fix: support gd image diagnostics`
 
 Current score-gate status:
 Accepted public gate:
@@ -32,7 +32,7 @@ the accepted `6c038019` PASS baseline. It reported public-comparable
 `7873 / 20294 = 38.79%`, `7869` normalized current passes, `0`
 latest-published PASS regressions, and `0` invalid proof-marker hits. This
 gate converts the post-`6c038019` source chain through `0b917f67` into public
-PHPT progress. Newer source commits through `ac0c0197` are staged after this
+PHPT progress. Newer source commits through `2ecb0750` are staged after this
 accepted public source and are not included in the public score above.
 
 Latest non-public full gate:
@@ -42,7 +42,7 @@ accepted `0b917f67` PASS baseline. The repaired runner captured
 `signal-events.tsv`, shard signal events, and shard exit codes; all 12 shard
 exits were `143` after TERM. It produced no accepted aggregate current-pass or
 latest-published PASS-regression publication artifacts. Current source later
-advanced to `ac0c0197`. This gate does not authorize a public score change or
+advanced to `2ecb0750`. This gate does not authorize a public score change or
 publish source commits after `0b917f67`.
 
 Recent non-public gate history: the `6bca3d9c` gate at `203538Z` also ended
@@ -107,10 +107,10 @@ passes, with zero latest-published PASS regressions.
 
 Unpublished source progress since the accepted public score source:
 
-- Latest pushed source head is `ac0c019764ce7b9469ed2b87811fa55481849ea9`
-  (`fix: support function argument diagnostics`), which is newer than the
+- Latest pushed source head is `2ecb075047bc3d95650decd84231eb928d39f7d1`
+  (`fix: support gd image diagnostics`), which is newer than the
   accepted `0b917f67` full gate and is not included in the public score above.
-- There are `24` score-relevant source commits after the accepted public-score
+- There are `25` score-relevant source commits after the accepted public-score
   source: `88071e97e22d6b840ab9ebbc248a67a55e5b6926`
   (`fix: reject invalid property hooks`),
   `1b3c4f4dad1eef590cfec69504dd16c4e55e0743`
@@ -156,11 +156,13 @@ Unpublished source progress since the accepted public score source:
   `6bca3d9c554cc80fd8088cadee2d057e8b2274a9`
   (`fix: support password bcrypt helpers`),
   `eab7db21e00e706eca24aec5598254aa6d1fd3b0`
-  (`fix: support html entity encoding edges`), and
+  (`fix: support html entity encoding edges`),
   `ac0c019764ce7b9469ed2b87811fa55481849ea9`
-  (`fix: support function argument diagnostics`).
+  (`fix: support function argument diagnostics`), and
+  `2ecb075047bc3d95650decd84231eb928d39f7d1`
+  (`fix: support gd image diagnostics`).
 - Staged focused selected-PHPT proof after the latest accepted public-score
-  source totals `333` selected rows across `27` integrated status artifacts.
+  source totals `346` selected rows across `28` integrated status artifacts.
   These are source/staging facts, not a public score update unless a full
   pinned PHPT gate accepts them.
 - The staged packets are property-hook diagnostics `0/16 -> 16/16`, GMP
@@ -180,17 +182,18 @@ Unpublished source progress since the accepted public score source:
   BcMath Number invalid operand/coercion rows `0/12 -> 12/12`, enum generated
   method/property rows `1/16 -> 16/16` with direct selected movement `+15`,
   JSON throw/core-edge rows `0/11 -> 11/11`, password/bcrypt helper rows
-  `0/12 -> 12/12`, HTML entity encoding rows `0/11 -> 11/11`, and
-  function-argument diagnostics rows `0/10 -> 10/10`.
+  `0/12 -> 12/12`, HTML entity encoding rows `0/11 -> 11/11`,
+  function-argument diagnostics rows `0/10 -> 10/10`, and GD image
+  diagnostics rows `0/13 -> 13/13`.
   They preserved latest-published PASS scouts in the accepted integration
   artifacts and passed focused Rust, build, fmt, diff, php-src cleanliness, and
   production row-name leakage checks.
 - Outstanding publication blocker: cadence reports `SCORE-GATE-BLOCKED-DISK`
-  with disk below the 35 GiB floor after the `eab7db21` full gate ended
-  `FINAL / RUNNER-INTERRUPTED-TERM`. No full gate has accepted staged source
-  after `0b917f67`, and no staged source can move the public score unless a
-  fresh/current full pinned PHPT gate completes with zero latest-published
-  PASS regressions.
+  with disk (`12` GiB) below the 35 GiB floor after the `eab7db21` full gate
+  ended `FINAL / RUNNER-INTERRUPTED-TERM`. No full gate has accepted staged
+  source through `2ecb0750` after `0b917f67`, and no staged source can move the
+  public score unless a fresh/current full pinned PHPT gate completes with zero
+  latest-published PASS regressions.
 
 Accepted source proof included in the `0b917f67` public gate:
 
