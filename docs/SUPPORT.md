@@ -7248,11 +7248,12 @@
   implementations/traits, typed or property-hook enum properties, enum case
   objects/value access beyond current metadata and forbidden-member startup
   diagnostics,
-  unsupported class modifier combinations, readonly class declarations before
-  readonly class metadata, typed-property enforcement, initialization/write
-  rules, reflection behavior, and native lowering exist,
-  `abstract`/`final`/`readonly` class member modifiers, readonly property
-  declarations before readonly metadata, initialization rules, write-once
+  unsupported class modifier combinations, full readonly class runtime
+  semantics beyond bounded declaration metadata and startup diagnostics,
+  typed-property initialization/write rules, reflection behavior, and native
+  lowering exist,
+  `abstract`/`final`/`readonly` class member modifiers beyond bounded startup
+  diagnostics, full readonly property initialization rules, write-once
   enforcement, reflection behavior, and native lowering exist,
   asymmetric PHP 8 property set-visibility modifiers such as `private(set)`
   and `protected(set)` before property visibility metadata, broader
@@ -10694,7 +10695,8 @@
   static and instance properties, static and instance methods, inherited
   non-private metadata, typed/uninitialized properties, and implicit nullable
   parameter display. `isReadOnly()` currently returns false because readonly
-  class declarations are still outside the parser subset.
+  class declarations are parsed only for bounded startup diagnostics, not
+  reflection readonly metadata.
   `new ReflectionMethod($object_or_class, $method)` and
   `new ReflectionMethod("ClassName::methodName")` create a bounded
   metadata object for methods declared in the current user class, interface,
@@ -10891,9 +10893,10 @@
   covered public slots, and `setValue()` writes through the dynamic public
   property path. Non-public property value access, uninitialized/unset or
   non-public dynamic slots, exact `ReflectionException` and `TypeError` text,
-  property aliases/references/COW side effects, readonly property
-  declarations, asymmetric visibility/property-hook behavior, and native
-  lowering remain unsupported for reflection property value access.
+  property aliases/references/COW side effects, readonly property write-once
+  enforcement and reflection modifier reporting, asymmetric
+  visibility/property-hook behavior, and native lowering remain unsupported
+  for reflection property value access.
   `Reflection::getModifierNames()` accepts int-like scalar masks and returns
   PHP-ordered names for the currently supported reflection modifier bits:
   `abstract`, `final`, `public`, `protected`, `private`, `static`,
@@ -10928,9 +10931,11 @@
   diagnostics, bracketed namespace parser rows, broad extension constant
   catalogs, exact invalid-input diagnostics for every constructor shape, and
   native lowering remain unsupported.
-  Parser/runtime support for readonly class/property declarations and property
-  hooks/asymmetric visibility remains unsupported even where the compatibility
-  constants and modifier-name mapping exist.
+  Readonly class/property declarations are parsed for bounded startup
+  diagnostics, but runtime write-once enforcement and reflection readonly
+  metadata remain unsupported. Property hooks/asymmetric visibility remain
+  unsupported even where the compatibility constants and modifier-name mapping
+  exist.
   `get_declared_classes()` returns a zero-indexed array containing the current
   metadata-only core class seeds followed by the parsed program's declared
   class names in declaration order.
@@ -11744,8 +11749,8 @@
   methods, enum constants/properties, enum interface implementations,
   namespace-aware enum member access,
   full method signature compatibility beyond inherited required-parameter count
-  increases, readonly class semantics,
-  readonly properties,
+  increases, readonly class semantics beyond bounded startup diagnostics,
+  readonly property runtime enforcement and reflection metadata,
   typed property storage and enforcement,
   asymmetric property set visibility such as `private(set)` and
   `protected(set)`,
@@ -12044,8 +12049,9 @@
   implementation,
   autoload-triggered trait, enum, static-member, reflection, namespace-imported
   string-name, closure-callback, and array-callable discovery,
-  promoted constructor properties,
-  readonly property metadata/enforcement, typed property storage/enforcement,
+  promoted constructor property semantics beyond bounded metadata/startup
+  diagnostics,
+  readonly property runtime enforcement/reflection metadata, typed property storage/enforcement,
   DNF-shaped typed property declarations,
   non-constant instance property defaults, multiple properties in
   one declaration, per-property defaults in multi-property declarations,

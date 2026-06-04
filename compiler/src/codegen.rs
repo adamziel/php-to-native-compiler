@@ -1799,6 +1799,7 @@ fn native_value_print_r_params(span: Span) -> [FunctionParam; 2] {
             is_variadic: false,
             default: None,
             promotion: None,
+            promotion_readonly: false,
             attributes: Vec::new(),
             span,
         },
@@ -1809,6 +1810,7 @@ fn native_value_print_r_params(span: Span) -> [FunctionParam; 2] {
             is_variadic: false,
             default: Some(Expr::Bool(false, span)),
             promotion: None,
+            promotion_readonly: false,
             attributes: Vec::new(),
             span,
         },
@@ -8201,6 +8203,72 @@ fn is_globals_superglobal_name(name: &str) -> bool {
     name == "GLOBALS"
 }
 
+fn readonly_class_native_metadata_span(class: &ClassDecl) -> Option<Span> {
+    if class.is_readonly {
+        return Some(class.span);
+    }
+    readonly_trait_use_native_metadata_span(&class.trait_uses)
+        .or_else(|| class.members.iter().find_map(readonly_class_member_span))
+}
+
+fn readonly_trait_native_metadata_span(trait_decl: &TraitDecl) -> Option<Span> {
+    readonly_trait_use_native_metadata_span(&trait_decl.trait_uses)
+        .or_else(|| {
+            trait_decl
+                .constants
+                .iter()
+                .find_map(|constant| constant.is_readonly.then_some(constant.span))
+        })
+        .or_else(|| {
+            trait_decl
+                .properties
+                .iter()
+                .find_map(|property| property.is_readonly.then_some(property.span))
+        })
+        .or_else(|| {
+            trait_decl
+                .methods
+                .iter()
+                .find_map(readonly_class_method_span)
+        })
+}
+
+fn readonly_trait_use_native_metadata_span(
+    trait_uses: &[crate::ast::TraitUseDecl],
+) -> Option<Span> {
+    trait_uses.iter().find_map(|trait_use| {
+        trait_use
+            .aliases
+            .iter()
+            .find_map(|alias| alias.is_readonly.then_some(alias.span))
+            .or_else(|| {
+                trait_use
+                    .visibility_adaptations
+                    .iter()
+                    .find_map(|adaptation| adaptation.is_readonly.then_some(adaptation.span))
+            })
+    })
+}
+
+fn readonly_class_member_span(member: &ClassMember) -> Option<Span> {
+    match member {
+        ClassMember::Property(property) => property.is_readonly.then_some(property.span),
+        ClassMember::Constant(constant) => constant.is_readonly.then_some(constant.span),
+        ClassMember::Method(method) => readonly_class_method_span(method),
+    }
+}
+
+fn readonly_class_method_span(method: &ClassMethodDecl) -> Option<Span> {
+    if method.is_readonly {
+        return Some(method.span);
+    }
+    method
+        .function
+        .params
+        .iter()
+        .find_map(|param| param.promotion_readonly.then_some(param.span))
+}
+
 fn is_frame_separated_symbol_environment_name(name: &str) -> bool {
     is_globals_superglobal_name(name) || is_request_superglobal_name(name)
 }
@@ -11612,6 +11680,9 @@ impl LlvmGenerator {
                 }
                 if class.is_nested {
                     return Err(self.unsupported(class.span, LLVM_OBJECT_CLASS_REJECTION));
+                }
+                if let Some(span) = readonly_class_native_metadata_span(class) {
+                    return Err(self.unsupported(span, LLVM_OBJECT_CLASS_REJECTION));
                 }
                 self.emit_llvm_user_class_declaration(class);
                 Ok(())
@@ -19165,6 +19236,7 @@ impl CNativeBuiltinSignature {
                 is_variadic: false,
                 default: self.fixed_param_defaults[index].map(|default| default.to_expr(span)),
                 promotion: None,
+                promotion_readonly: false,
                 attributes: Vec::new(),
                 span,
             })
@@ -19177,6 +19249,7 @@ impl CNativeBuiltinSignature {
                 is_variadic: true,
                 default: None,
                 promotion: None,
+                promotion_readonly: false,
                 attributes: Vec::new(),
                 span,
             });
@@ -21623,6 +21696,9 @@ impl CGenerator {
             let Stmt::Trait(trait_decl) = stmt else {
                 continue;
             };
+            if let Some(span) = readonly_trait_native_metadata_span(trait_decl) {
+                return Err(self.unsupported(span, ASSEMBLY_TRAIT_REJECTION));
+            }
             let key = trait_semantics::trait_key(&trait_decl.name);
             if self.declared_traits.contains_key(&key) {
                 return Err(self.unsupported(trait_decl.span, ASSEMBLY_TRAIT_REJECTION));
@@ -21732,8 +21808,11 @@ impl CGenerator {
         class_index: usize,
     ) -> CompileResult<CDeclaredClass> {
         let interface_names = self.validate_declared_class_interface_names(class)?;
-        if class.is_nested || class.is_abstract || class.is_readonly {
+        if class.is_nested || class.is_abstract {
             return Err(self.unsupported(class.span, ASSEMBLY_OBJECT_CLASS_REJECTION));
+        }
+        if let Some(span) = readonly_class_native_metadata_span(class) {
+            return Err(self.unsupported(span, ASSEMBLY_OBJECT_CLASS_REJECTION));
         }
 
         let trait_effective_methods =
@@ -72760,6 +72839,7 @@ echo " 10" < "zeta";
             is_variadic,
             default: None,
             promotion: None,
+            promotion_readonly: false,
             attributes: Vec::new(),
             span: test_span(),
         }
@@ -72776,6 +72856,7 @@ echo " 10" < "zeta";
             is_variadic: false,
             default: None,
             promotion: None,
+            promotion_readonly: false,
             attributes: Vec::new(),
             span: test_span(),
         }
@@ -75500,6 +75581,7 @@ echo $call("Ada");
             is_variadic: false,
             default: None,
             promotion: None,
+            promotion_readonly: false,
             attributes: Vec::new(),
             span: test_span(),
         };

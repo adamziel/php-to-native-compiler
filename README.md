@@ -518,7 +518,8 @@ incorrect native code.
   contravariant parameter and covariant return relationships when both type
   names resolve through current metadata, concrete
   classes with unimplemented abstract methods rejected as runtime boundaries,
-  and readonly class declarations kept at a parse boundary,
+  and readonly class/property declarations parsed for bounded startup
+  diagnostics,
   bounded `new self`, `new parent`, and `new static` class-name instantiation
   in active class/method contexts, plus direct-variable dynamic class-name
   instantiation for `new $class(...)`; missing named or direct-variable
@@ -733,8 +734,8 @@ user-interface typed-property write checks, current or newly registered
 class/interface alias typed-property write checks, and bounded union/pure
 intersection property type checks, parenthesized DNF-shaped typed property
 declarations, exact PHP union scalar coercion preference rules, readonly
-property metadata and write-once enforcement, promoted
-constructor properties,
+runtime write-once enforcement and reflection metadata, promoted
+constructor property semantics beyond bounded metadata/startup diagnostics,
 typed, final, or multi-declarator class constants, dynamic method names, dynamic
 property creation outside `stdClass` and `wpdb`, non-public dynamic property
 access outside valid method visibility contexts,

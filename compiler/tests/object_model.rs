@@ -16933,12 +16933,32 @@ class Box {
     public const VERSION = 1, NAME = "box";
 }
 "#,
+        r#"<?php
+class Box {
+    public (Countable&Iterator)|ArrayAccess $id;
+}
+"#,
     ] {
         let execution = run_source(supported).unwrap();
         assert_eq!(execution.stdout, "");
         assert_eq!(execution.stderr, "");
         assert_eq!(execution.exit_code, 0);
     }
+
+    let readonly_startup = run_source(
+        r#"<?php
+class Value {
+    public readonly $id;
+}
+"#,
+    )
+    .unwrap();
+    assert_eq!(readonly_startup.stdout, "");
+    assert_eq!(readonly_startup.exit_code, 255);
+    assert_eq!(
+        readonly_startup.stderr,
+        "Fatal error: Readonly property Value::$id must have type in Command line code on line 3"
+    );
 
     let cases = [
         (
@@ -17038,26 +17058,6 @@ if (true) {
             3,
             5,
             "unsupported enum declaration: only top-level enum declarations are implemented",
-        ),
-        (
-            r#"<?php
-class Box {
-    public (Countable&Iterator)|ArrayAccess $id;
-}
-"#,
-            3,
-            12,
-            "unsupported DNF type declaration: parenthesized union/intersection type declarations are not implemented",
-        ),
-        (
-            r#"<?php
-class Value {
-    public readonly $id;
-}
-"#,
-            3,
-            12,
-            "unsupported readonly property declaration: readonly property metadata, initialization rules, write-once enforcement, reflection, and native lowering are not implemented",
         ),
         (
             r#"<?php

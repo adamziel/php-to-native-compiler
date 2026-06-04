@@ -111395,6 +111395,10 @@ fn magic_method_startup_diagnostics(
     }
 
     if !diagnostics.has_fatal() {
+        collect_readonly_startup_diagnostics(&mut diagnostics, program, source_file);
+    }
+
+    if !diagnostics.has_fatal() {
         collect_class_constant_modifier_startup_diagnostics(&mut diagnostics, program, source_file);
     }
 
@@ -111827,6 +111831,14 @@ fn collect_class_constant_modifier_startup_diagnostics(
             ClassMember::Constant(constant) => Some(constant),
             _ => None,
         }) {
+            if constant.is_readonly {
+                diagnostics.set_fatal(
+                    "Cannot use the readonly modifier on a class constant".to_string(),
+                    source_file,
+                    constant.span.line,
+                );
+                return;
+            }
             if constant.is_static {
                 diagnostics.set_fatal(
                     "Cannot use the static modifier on a class constant".to_string(),
@@ -112268,6 +112280,214 @@ fn no_discard_function_startup_error_with_attrs(
 
 fn attributes_have_no_discard(attributes: &[AttributeDecl]) -> bool {
     attributes.iter().any(attribute_name_is_no_discard)
+}
+
+fn collect_readonly_startup_diagnostics(
+    diagnostics: &mut MagicMethodStartupDiagnostics,
+    program: &Program,
+    source_file: Option<&str>,
+) {
+    let classes = top_level_class_startup_lookup(program);
+    for stmt in &program.statements {
+        match stmt {
+            Stmt::Class(class) if !class.is_nested => {
+                if let Some((message, line)) = readonly_class_startup_diagnostic(&classes, class) {
+                    diagnostics.set_fatal(message, source_file, line);
+                    return;
+                }
+                if let Some((message, line)) =
+                    trait_use_readonly_method_adaptation_diagnostic(&class.trait_uses)
+                {
+                    diagnostics.set_fatal(message, source_file, line);
+                    return;
+                }
+                for member in &class.members {
+                    match member {
+                        ClassMember::Property(property) => {
+                            if let Some((message, line)) = readonly_property_startup_diagnostic(
+                                &class.name,
+                                class.is_readonly,
+                                property,
+                            ) {
+                                diagnostics.set_fatal(message, source_file, line);
+                                return;
+                            }
+                        }
+                        ClassMember::Constant(constant) if constant.is_readonly => {
+                            diagnostics.set_fatal(
+                                "Cannot use the readonly modifier on a class constant".to_string(),
+                                source_file,
+                                constant.span.line,
+                            );
+                            return;
+                        }
+                        ClassMember::Method(method) if method.is_readonly => {
+                            diagnostics.set_fatal(
+                                "Cannot use the readonly modifier on a method".to_string(),
+                                source_file,
+                                method.span.line,
+                            );
+                            return;
+                        }
+                        ClassMember::Method(method) => {
+                            for property in promoted_properties_from_method(method) {
+                                if let Some((message, line)) = readonly_property_startup_diagnostic(
+                                    &class.name,
+                                    class.is_readonly,
+                                    &property,
+                                ) {
+                                    diagnostics.set_fatal(message, source_file, line);
+                                    return;
+                                }
+                            }
+                        }
+                        ClassMember::Constant(_) => {}
+                    }
+                }
+            }
+            Stmt::Trait(trait_decl) => {
+                if let Some((message, line)) =
+                    trait_use_readonly_method_adaptation_diagnostic(&trait_decl.trait_uses)
+                {
+                    diagnostics.set_fatal(message, source_file, line);
+                    return;
+                }
+                for constant in &trait_decl.constants {
+                    if constant.is_readonly {
+                        diagnostics.set_fatal(
+                            "Cannot use the readonly modifier on a class constant".to_string(),
+                            source_file,
+                            constant.span.line,
+                        );
+                        return;
+                    }
+                }
+                for method in &trait_decl.methods {
+                    if method.is_readonly {
+                        diagnostics.set_fatal(
+                            "Cannot use the readonly modifier on a method".to_string(),
+                            source_file,
+                            method.span.line,
+                        );
+                        return;
+                    }
+                }
+                for property in &trait_decl.properties {
+                    if let Some((message, line)) =
+                        readonly_property_startup_diagnostic(&trait_decl.name, false, property)
+                    {
+                        diagnostics.set_fatal(message, source_file, line);
+                        return;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn readonly_class_startup_diagnostic(
+    classes: &HashMap<String, &ClassDecl>,
+    class: &ClassDecl,
+) -> Option<(String, usize)> {
+    if class.is_readonly
+        && class
+            .attributes
+            .iter()
+            .any(attribute_name_is_allow_dynamic_properties)
+    {
+        return Some((
+            format!(
+                "Cannot apply #[\\AllowDynamicProperties] to readonly class {}",
+                class.name
+            ),
+            class.span.line,
+        ));
+    }
+
+    let parent = class
+        .parent
+        .as_deref()
+        .and_then(|parent| classes.get(&startup_class_lookup_key(parent)).copied())?;
+    match (class.is_readonly, parent.is_readonly) {
+        (true, false) => Some((
+            format!(
+                "Readonly class {} cannot extend non-readonly class {}",
+                class.name, parent.name
+            ),
+            class.span.line,
+        )),
+        (false, true) => Some((
+            format!(
+                "Non-readonly class {} cannot extend readonly class {}",
+                class.name, parent.name
+            ),
+            class.span.line,
+        )),
+        _ => None,
+    }
+}
+
+fn trait_use_readonly_method_adaptation_diagnostic(
+    trait_uses: &[TraitUseDecl],
+) -> Option<(String, usize)> {
+    for trait_use in trait_uses {
+        if let Some(adaptation) = trait_use
+            .visibility_adaptations
+            .iter()
+            .find(|adaptation| adaptation.is_readonly)
+        {
+            return Some((
+                "Cannot use the readonly modifier on a method".to_string(),
+                adaptation.span.line,
+            ));
+        }
+        if let Some(alias) = trait_use.aliases.iter().find(|alias| alias.is_readonly) {
+            return Some((
+                "Cannot use the readonly modifier on a method".to_string(),
+                alias.span.line,
+            ));
+        }
+    }
+    None
+}
+
+fn readonly_property_startup_diagnostic(
+    class_name: &str,
+    class_is_readonly: bool,
+    property: &ClassPropertyDecl,
+) -> Option<(String, usize)> {
+    if !class_is_readonly && !property.is_readonly {
+        return None;
+    }
+    if property.is_static {
+        return Some((
+            format!(
+                "Static property {class_name}::${} cannot be readonly",
+                property.name
+            ),
+            property.span.line,
+        ));
+    }
+    if property.type_decl.is_none() {
+        return Some((
+            format!(
+                "Readonly property {class_name}::${} must have type",
+                property.name
+            ),
+            property.span.line,
+        ));
+    }
+    if property.default.is_some() {
+        return Some((
+            format!(
+                "Readonly property {class_name}::${} cannot have default value",
+                property.name
+            ),
+            property.span.line,
+        ));
+    }
+    None
 }
 
 fn attribute_display_name(name: &str) -> &str {
@@ -114413,6 +114633,15 @@ fn class_trait_property_composition_startup_diagnostic(
         let trait_decl = traits.get(&startup_class_lookup_key(&trait_use.name))?;
         for property in startup_trait_properties_for_trait(trait_decl, traits, &mut HashSet::new())?
         {
+            if class.is_readonly && !property.property.is_readonly {
+                return Some((
+                    format!(
+                        "Readonly class {} cannot use trait with a non-readonly property {}::${}",
+                        class.name, property.declaring_trait_name, property.property.name
+                    ),
+                    property.property.span.line,
+                ));
+            }
             let key = property.property.name.clone();
             if let Some(existing) = composed.get(&key) {
                 if trait_properties_are_compatible(&existing.property, &property.property) {
@@ -115150,7 +115379,7 @@ fn class_startup_property(class: &ClassDecl, property_name: &str) -> Option<Clas
         .iter()
         .find_map(|member| match member {
             ClassMember::Property(property) if property.name == property_name => {
-                Some(property.clone())
+                Some(class_effective_property(class, property.clone()))
             }
             _ => None,
         })
@@ -115176,6 +115405,23 @@ fn inherited_property_startup_diagnostic_message(
     parent_name: &str,
     parent_property: &ClassPropertyDecl,
 ) -> Option<String> {
+    if parent_property.is_readonly != property.is_readonly {
+        let parent_readonly = if parent_property.is_readonly {
+            "readonly"
+        } else {
+            "non-readonly"
+        };
+        let child_readonly = if property.is_readonly {
+            "readonly"
+        } else {
+            "non-readonly"
+        };
+        return Some(format!(
+            "Cannot redeclare {parent_readonly} property {parent_name}::${} as {child_readonly} {class_name}::${}",
+            property.name, property.name
+        ));
+    }
+
     if parent_property.is_static != property.is_static {
         return Some(format!(
             "Cannot redeclare {} {}::${} as {} {}::${}",
@@ -117127,6 +117373,7 @@ fn seed_core_class_constant_runtime_tables(
                 visibility: ClassVisibility::Public,
                 is_static: false,
                 is_abstract: false,
+                is_readonly: false,
                 type_decl: None,
                 value: Expr::Int(value, span),
                 attributes: Vec::new(),
@@ -117159,6 +117406,7 @@ fn seed_core_class_constant_runtime_tables(
                     visibility: ClassVisibility::Public,
                     is_static: false,
                     is_abstract: false,
+                    is_readonly: false,
                     type_decl: None,
                     value: Expr::Int(value, span),
                     attributes: Vec::new(),
@@ -117178,6 +117426,7 @@ fn seed_core_class_constant_runtime_tables(
                         visibility: ClassVisibility::Public,
                         is_static: false,
                         is_abstract: false,
+                        is_readonly: false,
                         type_decl: None,
                         value: Expr::String(value.to_string(), span),
                         attributes: Vec::new(),
@@ -117200,6 +117449,7 @@ fn seed_core_class_constant_runtime_tables(
                     visibility: ClassVisibility::Public,
                     is_static: false,
                     is_abstract: false,
+                    is_readonly: false,
                     type_decl: None,
                     value: Expr::Int(value, span),
                     attributes: Vec::new(),
@@ -117223,6 +117473,7 @@ fn seed_core_class_constant_runtime_tables(
                     visibility: ClassVisibility::Public,
                     is_static: false,
                     is_abstract: false,
+                    is_readonly: false,
                     type_decl: None,
                     value: Expr::Int(value, span),
                     attributes: Vec::new(),
@@ -117246,6 +117497,7 @@ fn seed_core_class_constant_runtime_tables(
                     visibility: ClassVisibility::Public,
                     is_static: false,
                     is_abstract: false,
+                    is_readonly: false,
                     type_decl: None,
                     value: Expr::Int(value, span),
                     attributes: Vec::new(),
@@ -117268,6 +117520,7 @@ fn seed_core_class_constant_runtime_tables(
                         visibility: ClassVisibility::Public,
                         is_static: false,
                         is_abstract: false,
+                        is_readonly: false,
                         type_decl: None,
                         value: Expr::Int(value, span),
                         attributes: Vec::new(),
@@ -117295,6 +117548,7 @@ fn seed_core_class_constant_runtime_tables(
                     visibility: ClassVisibility::Public,
                     is_static: false,
                     is_abstract: false,
+                    is_readonly: false,
                     type_decl: None,
                     value: Expr::Int(value, span),
                     attributes: Vec::new(),
@@ -117320,6 +117574,7 @@ fn seed_core_class_constant_runtime_tables(
                     visibility: ClassVisibility::Public,
                     is_static: false,
                     is_abstract: false,
+                    is_readonly: false,
                     type_decl: None,
                     value: Expr::Int(value, span),
                     attributes: Vec::new(),
@@ -117352,6 +117607,7 @@ fn seed_core_class_constant_runtime_tables(
                     visibility: ClassVisibility::Public,
                     is_static: false,
                     is_abstract: false,
+                    is_readonly: false,
                     type_decl: None,
                     value: Expr::Int(value, span),
                     attributes: Vec::new(),
@@ -117375,6 +117631,7 @@ fn seed_core_class_constant_runtime_tables(
                     visibility: ClassVisibility::Public,
                     is_static: false,
                     is_abstract: false,
+                    is_readonly: false,
                     type_decl: None,
                     value: Expr::Int(value, span),
                     attributes: Vec::new(),
@@ -117403,6 +117660,7 @@ fn seed_core_class_constant_runtime_tables(
                     visibility: ClassVisibility::Public,
                     is_static: false,
                     is_abstract: false,
+                    is_readonly: false,
                     type_decl: None,
                     value: Expr::Int(value, span),
                     attributes: Vec::new(),
@@ -117420,6 +117678,7 @@ fn seed_core_class_constant_runtime_tables(
                 visibility: ClassVisibility::Public,
                 is_static: false,
                 is_abstract: false,
+                is_readonly: false,
                 type_decl: None,
                 value: Expr::Int(PHP_REFLECTION_ATTRIBUTE_IS_INSTANCEOF, span),
                 attributes: Vec::new(),
@@ -118024,13 +118283,13 @@ fn declared_class_properties_in_source_order(class: &ClassDecl) -> Vec<ClassProp
         match member {
             ClassMember::Property(property) => {
                 if seen.insert(property.name.clone()) {
-                    properties.push(property.clone());
+                    properties.push(class_effective_property(class, property.clone()));
                 }
             }
             ClassMember::Method(method) => {
                 for property in promoted_properties_from_method(method) {
                     if seen.insert(property.name.clone()) {
-                        properties.push(property);
+                        properties.push(class_effective_property(class, property));
                     }
                 }
             }
@@ -118038,6 +118297,16 @@ fn declared_class_properties_in_source_order(class: &ClassDecl) -> Vec<ClassProp
         }
     }
     properties
+}
+
+fn class_effective_property(
+    class: &ClassDecl,
+    mut property: ClassPropertyDecl,
+) -> ClassPropertyDecl {
+    if class.is_readonly {
+        property.is_readonly = true;
+    }
+    property
 }
 
 fn promoted_constructor_properties(class: &ClassDecl) -> Vec<ClassPropertyDecl> {
@@ -118071,6 +118340,7 @@ fn promoted_property_from_param(param: &FunctionParam) -> Option<ClassPropertyDe
         name: param.name.clone(),
         visibility: param.promotion?,
         is_static: false,
+        is_readonly: param.promotion_readonly,
         type_decl: param.type_decl.clone(),
         default: None,
         attributes: param.attributes.clone(),
@@ -118097,6 +118367,7 @@ fn declared_trait_properties(trait_decl: &TraitDecl) -> HashMap<String, ClassPro
 fn trait_properties_are_compatible(left: &ClassPropertyDecl, right: &ClassPropertyDecl) -> bool {
     left.visibility == right.visibility
         && left.is_static == right.is_static
+        && left.is_readonly == right.is_readonly
         && left.type_decl.as_ref().map(|decl| decl.text.as_str())
             == right.type_decl.as_ref().map(|decl| decl.text.as_str())
         && optional_default_exprs_are_compatible(left.default.as_ref(), right.default.as_ref())
@@ -172888,6 +173159,62 @@ mod tests {
     }
 
     #[test]
+    fn readonly_property_startup_diagnostics_use_php_fatals() {
+        let source = concat!(
+            "<?php\n",
+            "readonly class Box {\n",
+            "    public $value;\n",
+            "}\n",
+        );
+        let program = parse_source(source).unwrap();
+        let execution = run_program_with_source_file(&program, "readonly.php").unwrap();
+
+        assert_eq!(execution.exit_code, 255);
+        assert_eq!(execution.stdout, "");
+        assert_eq!(
+            execution.stderr,
+            "Fatal error: Readonly property Box::$value must have type in readonly.php on line 3"
+        );
+    }
+
+    #[test]
+    fn readonly_method_trait_adaptation_reports_method_fatal() {
+        let source = concat!(
+            "<?php\n",
+            "class UsesTrait {\n",
+            "    use MissingTrait { foo as readonly; }\n",
+            "}\n",
+        );
+        let program = parse_source(source).unwrap();
+        let execution = run_program_with_source_file(&program, "readonly-trait.php").unwrap();
+
+        assert_eq!(execution.exit_code, 255);
+        assert_eq!(execution.stdout, "");
+        assert_eq!(
+            execution.stderr,
+            "Fatal error: Cannot use the readonly modifier on a method in readonly-trait.php on line 3"
+        );
+    }
+
+    #[test]
+    fn readonly_property_inheritance_mismatch_reports_php_fatal() {
+        let source = concat!(
+            "<?php\n",
+            "class ParentBox { public int $value; }\n",
+            "class ChildBox extends ParentBox { public readonly int $value; }\n",
+        );
+        let program = parse_source(source).unwrap();
+        let execution = run_program_with_source_file(&program, "readonly-inherit.php").unwrap();
+
+        assert_eq!(execution.exit_code, 255);
+        assert_eq!(execution.stdout, "");
+        assert_eq!(
+            execution.stderr,
+            "Fatal error: Cannot redeclare non-readonly property ParentBox::$value as readonly ChildBox::$value in readonly-inherit.php on line 3"
+        );
+    }
+
+    #[test]
     fn symbol_table_static_reads_and_writes_use_named_storage() {
         let mut symbols = SymbolTable::new();
         let span = Span::new(7, 3);
@@ -174587,6 +174914,7 @@ echo $items["shared"]["leaf"] . "|" . $shared . "|" . $items["plain"]["leaf"] . 
                 is_variadic: false,
                 default: None,
                 promotion: None,
+                promotion_readonly: false,
                 attributes: Vec::new(),
                 span,
             }],
@@ -175946,6 +176274,7 @@ echo $items["shared"]["leaf"] . "|" . $shared . "|" . $items["plain"]["leaf"] . 
                 is_variadic: false,
                 default: None,
                 promotion: None,
+                promotion_readonly: false,
                 attributes: Vec::new(),
                 span,
             }],

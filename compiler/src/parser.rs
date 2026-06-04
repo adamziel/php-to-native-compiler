@@ -60,6 +60,7 @@ struct ClassMemberModifiers {
     is_static: bool,
     is_abstract: bool,
     is_final: bool,
+    is_readonly: bool,
     abstract_span: Option<Span>,
     final_span: Option<Span>,
 }
@@ -353,17 +354,18 @@ impl Parser {
                 self.consume_doc_comments_and_attributes();
                 self.pending_doc_comment = None;
                 let attributes = self.take_pending_attributes();
-                let promotion = if self.check(is_promoted_property_parameter_start) {
-                    if !allow_promoted_properties {
-                        return Err(self.error_at(
-                            self.peek().span,
-                            unsupported_promoted_property_parameter_message(),
-                        ));
-                    }
-                    Some(self.parse_promoted_property_visibility()?)
-                } else {
-                    None
-                };
+                let (promotion, promotion_readonly) =
+                    if self.check(is_promoted_property_parameter_start) {
+                        if !allow_promoted_properties {
+                            return Err(self.error_at(
+                                self.peek().span,
+                                unsupported_promoted_property_parameter_message(),
+                            ));
+                        }
+                        self.parse_promoted_property_visibility()?
+                    } else {
+                        (None, false)
+                    };
                 if self.check(is_promoted_property_parameter_start) {
                     return Err(self.error_at(
                         self.peek().span,
@@ -406,6 +408,7 @@ impl Parser {
                     is_variadic,
                     default,
                     promotion,
+                    promotion_readonly,
                     attributes,
                     span,
                 });
@@ -428,32 +431,63 @@ impl Parser {
         Ok(params)
     }
 
-    fn parse_promoted_property_visibility(&mut self) -> CompileResult<ClassVisibility> {
-        let visibility = match self.peek().kind {
-            TokenKind::Public => ClassVisibility::Public,
-            TokenKind::Protected => ClassVisibility::Protected,
-            TokenKind::Private => ClassVisibility::Private,
-            TokenKind::Readonly => {
-                return Err(self.error_at(
-                    self.peek().span,
-                    "unsupported promoted property parameter: readonly promoted properties are not implemented",
-                ));
+    fn parse_promoted_property_visibility(
+        &mut self,
+    ) -> CompileResult<(Option<ClassVisibility>, bool)> {
+        let mut visibility = None;
+        let mut is_readonly = false;
+        loop {
+            match self.peek().kind {
+                TokenKind::Public => {
+                    if visibility.is_some() {
+                        return Err(self.error_at(
+                            self.peek().span,
+                            "duplicate visibility modifier in promoted property declaration",
+                        ));
+                    }
+                    visibility = Some(ClassVisibility::Public);
+                    self.advance();
+                }
+                TokenKind::Protected => {
+                    if visibility.is_some() {
+                        return Err(self.error_at(
+                            self.peek().span,
+                            "duplicate visibility modifier in promoted property declaration",
+                        ));
+                    }
+                    visibility = Some(ClassVisibility::Protected);
+                    self.advance();
+                }
+                TokenKind::Private => {
+                    if visibility.is_some() {
+                        return Err(self.error_at(
+                            self.peek().span,
+                            "duplicate visibility modifier in promoted property declaration",
+                        ));
+                    }
+                    visibility = Some(ClassVisibility::Private);
+                    self.advance();
+                }
+                TokenKind::Readonly => {
+                    if is_readonly {
+                        return Err(self.error_at(
+                            self.peek().span,
+                            "duplicate readonly modifier in promoted property declaration",
+                        ));
+                    }
+                    is_readonly = true;
+                    self.advance();
+                }
+                _ => break,
             }
-            _ => {
-                return Err(self.error_at(
-                    self.peek().span,
-                    unsupported_promoted_property_parameter_message(),
-                ));
-            }
-        };
-        self.advance();
-        if self.match_token(|kind| matches!(kind, TokenKind::Readonly)) {
+        }
+        if visibility.is_none() && !is_readonly {
             return Err(self.error_at(
-                self.previous().span,
-                "unsupported promoted property parameter: readonly promoted properties are not implemented",
+                self.peek().span,
+                unsupported_promoted_property_parameter_message(),
             ));
         }
-        Ok(visibility)
+        Ok((visibility, is_readonly))
     }
 
     fn parse_type_decl(&mut self, message: &'static str) -> CompileResult<TypeDecl> {
@@ -539,7 +573,6 @@ impl Parser {
         let mut is_final = false;
         let mut is_readonly = false;
         let mut modifier_span = None;
-        let mut readonly_span = None;
 
         loop {
             match self.peek().kind {
@@ -573,7 +606,6 @@ impl Parser {
                         ));
                     }
                     is_readonly = true;
-                    readonly_span = Some(self.peek().span);
                     modifier_span.get_or_insert(self.peek().span);
                     self.advance();
                 }
@@ -586,10 +618,6 @@ impl Parser {
                 modifier_span.expect("abstract/final modifier should set span"),
                 "unsupported class modifier combination: abstract final classes are not implemented",
             ));
-        }
-
-        if let Some(readonly_span) = readonly_span {
-            return Err(self.error_at(readonly_span, unsupported_readonly_class_message()));
         }
 
         let class_span = self
@@ -815,6 +843,7 @@ impl Parser {
             visibility: ClassVisibility::Public,
             is_static: false,
             is_abstract: false,
+            is_readonly: modifiers.is_readonly,
             type_decl: None,
             value,
             attributes,
@@ -874,6 +903,7 @@ impl Parser {
             name,
             visibility: modifiers.visibility,
             is_static: modifiers.is_static,
+            is_readonly: modifiers.is_readonly,
             type_decl,
             default,
             attributes,
@@ -918,6 +948,7 @@ impl Parser {
             is_static: modifiers.is_static,
             is_abstract: modifiers.is_abstract,
             is_final: false,
+            is_readonly: modifiers.is_readonly,
             attributes,
             span,
         })
@@ -1026,9 +1057,11 @@ impl Parser {
                 continue;
             }
             self.consume_trait_adaptation_as()?;
-            let alias_visibility = if let Some(visibility) =
-                self.match_trait_visibility_adaptation()
-            {
+            let mut alias_is_readonly = false;
+            let alias_visibility = if self.match_token(|kind| matches!(kind, TokenKind::Readonly)) {
+                alias_is_readonly = true;
+                ClassVisibility::Public
+            } else if let Some(visibility) = self.match_trait_visibility_adaptation() {
                 if self.check(|kind| matches!(kind, TokenKind::Semicolon)) {
                     self.consume_keyword(
                         TokenKind::Semicolon,
@@ -1051,6 +1084,7 @@ impl Parser {
                             trait_name,
                             method_name,
                             visibility,
+                            is_readonly: false,
                             span,
                         },
                     );
@@ -1060,6 +1094,34 @@ impl Parser {
             } else {
                 ClassVisibility::Public
             };
+            if alias_is_readonly && self.check(|kind| matches!(kind, TokenKind::Semicolon)) {
+                self.consume_keyword(
+                    TokenKind::Semicolon,
+                    "expected ';' after trait method readonly adaptation",
+                )?;
+                let target_index = match &trait_name {
+                    Some(name) => trait_uses
+                        .iter()
+                        .position(|trait_use| trait_use.name.eq_ignore_ascii_case(name))
+                        .ok_or_else(|| {
+                            self.error_at(
+                                span,
+                                "unsupported trait use adaptation: trait-qualified readonly adaptations must target a trait in the same use declaration",
+                            )
+                        })?,
+                    None => 0,
+                };
+                trait_uses[target_index]
+                    .visibility_adaptations
+                    .push(TraitMethodVisibilityDecl {
+                        trait_name,
+                        method_name,
+                        visibility: alias_visibility,
+                        is_readonly: true,
+                        span,
+                    });
+                continue;
+            }
             let alias = self.consume_identifier("expected trait method alias after 'as'")?;
             self.consume_keyword(
                 TokenKind::Semicolon,
@@ -1084,6 +1146,7 @@ impl Parser {
                 method_name,
                 alias,
                 visibility: alias_visibility,
+                is_readonly: alias_is_readonly,
                 span,
             });
         }
@@ -1206,6 +1269,7 @@ impl Parser {
             visibility: ClassVisibility::Public,
             is_static: false,
             is_abstract: false,
+            is_readonly: modifiers.is_readonly,
             type_decl: None,
             value,
             attributes,
@@ -1263,6 +1327,7 @@ impl Parser {
             name,
             visibility: ClassVisibility::Public,
             is_static: false,
+            is_readonly: modifiers.is_readonly,
             type_decl,
             default: None,
             attributes,
@@ -1585,6 +1650,7 @@ impl Parser {
                     visibility: modifiers.visibility,
                     is_static: modifiers.is_static,
                     is_abstract: modifiers.is_abstract,
+                    is_readonly: modifiers.is_readonly,
                     type_decl: type_decl.clone(),
                     value,
                     attributes: attributes.clone(),
@@ -1625,6 +1691,7 @@ impl Parser {
                 is_static: modifiers.is_static,
                 is_abstract: modifiers.is_abstract,
                 is_final: modifiers.is_final,
+                is_readonly: modifiers.is_readonly,
                 attributes,
                 span,
             })]);
@@ -1668,6 +1735,7 @@ impl Parser {
                     name,
                     visibility: modifiers.visibility,
                     is_static: modifiers.is_static,
+                    is_readonly: modifiers.is_readonly,
                     type_decl: Some(type_decl.clone()),
                     default,
                     attributes: attributes.clone(),
@@ -1719,6 +1787,7 @@ impl Parser {
                     name,
                     visibility: modifiers.visibility,
                     is_static: modifiers.is_static,
+                    is_readonly: modifiers.is_readonly,
                     type_decl: None,
                     default,
                     attributes: attributes.clone(),
@@ -1748,6 +1817,7 @@ impl Parser {
         let mut is_static = false;
         let mut is_abstract = false;
         let mut is_final = false;
+        let mut is_readonly = false;
         let mut abstract_span = None;
         let mut final_span = None;
 
@@ -1803,12 +1873,14 @@ impl Parser {
                 }
                 TokenKind::Readonly => {
                     let span = self.advance().span;
-                    if self.check_readonly_property_declaration() {
-                        return Err(self.error_at(span, unsupported_readonly_property_message()));
+                    if is_readonly {
+                        return Err(self.error_at(
+                            span,
+                            "duplicate readonly modifier in class member declaration",
+                        ));
                     }
-                    return Err(
-                        self.error_at(span, unsupported_readonly_class_member_modifier_message())
-                    );
+                    is_readonly = true;
+                    continue;
                 }
                 _ => None,
             };
@@ -1833,6 +1905,7 @@ impl Parser {
             is_static,
             is_abstract,
             is_final,
+            is_readonly,
             abstract_span,
             final_span,
         })
@@ -9549,14 +9622,6 @@ fn unsupported_class_constant_type_message() -> &'static str {
     "unsupported class constant type declaration: expected class constant type name"
 }
 
-fn unsupported_readonly_property_message() -> &'static str {
-    "unsupported readonly property declaration: readonly property metadata, initialization rules, write-once enforcement, reflection, and native lowering are not implemented"
-}
-
-fn unsupported_readonly_class_message() -> &'static str {
-    "unsupported readonly class declaration: readonly class metadata, typed-property enforcement, initialization and write rules, reflection, and native lowering are not implemented"
-}
-
 fn unsupported_dnf_type_message() -> &'static str {
     "unsupported DNF type declaration: parenthesized union/intersection type declarations are not implemented"
 }
@@ -9947,7 +10012,8 @@ impl Parser {
                 | TokenKind::Private
                 | TokenKind::Static
                 | TokenKind::Abstract
-                | TokenKind::Final => {
+                | TokenKind::Final
+                | TokenKind::Readonly => {
                     index += 1;
                 }
                 TokenKind::Identifier(name) if name.eq_ignore_ascii_case("const") => return true,
@@ -10005,21 +10071,6 @@ impl Parser {
                 TokenKind::Identifier(name) if name.eq_ignore_ascii_case("set")
             )
             && matches!(self.peek_n(3).kind, TokenKind::RParen)
-    }
-
-    fn check_readonly_property_declaration(&self) -> bool {
-        for token in self.tokens[self.current..]
-            .iter()
-            .take_while(|token| !matches!(token.kind, TokenKind::Semicolon | TokenKind::RBrace))
-        {
-            match &token.kind {
-                TokenKind::Variable(_) => return true,
-                TokenKind::Function => return false,
-                TokenKind::Identifier(name) if name.eq_ignore_ascii_case("const") => return false,
-                _ => {}
-            }
-        }
-        false
     }
 
     fn check_unsupported_property_type_declaration(&self) -> bool {

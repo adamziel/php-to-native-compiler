@@ -4459,8 +4459,8 @@ protected properties, and exclude inherited private properties when reflecting
 a child class. `isCloneable()` is computed from the reflected class kind,
 abstract-class set, resolved `__clone()` visibility/staticness, and the current
 uncloneable internal/reflection object list. `isReadOnly()` currently reports
-false because readonly class declarations are outside the parser subset. This
-is metadata only.
+false because readonly class declarations are parsed only for bounded startup
+diagnostics, not reflection readonly metadata. This is metadata only.
 `ReflectionMethod` uses the same core placeholder class plus request-local
 state pattern for declared user class, interface, and trait methods. The
 constructor accepts an object or class-like string plus a string-convertible
@@ -4648,10 +4648,12 @@ public-property path. `Reflection::getModifierNames()` is implemented
 as a deterministic bit-mask-to-name mapping over the compatibility modifier
 constants in the core class table, covering class, method, property, and class
 constant public/protected/private/static/final/abstract/readonly/virtual and
-asymmetric-set bits used by current public PHPT rows. Parser/runtime support
-for readonly class/property declarations, property hooks, and asymmetric
-visibility remains outside this metadata lane even though those constants and
-modifier names are available. Property file/line metadata, attributes and exact
+asymmetric-set bits used by current public PHPT rows. Readonly
+class/property declarations are parsed for bounded startup diagnostics, but
+runtime write-once enforcement and reflection readonly metadata remain outside
+this metadata lane. Property hooks and asymmetric visibility remain
+unsupported even though those constants and modifier names are available.
+Property file/line metadata, attributes and exact
 docblock association across unusual trivia, parenthesized DNF property types,
 uninitialized/unset/non-public dynamic slots, exact PHP union scalar coercion
 preference rules, reference/COW interactions, and native lowering remain

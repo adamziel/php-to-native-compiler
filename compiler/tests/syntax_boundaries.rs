@@ -17,6 +17,7 @@ const LLVM_ARITHMETIC_REJECTION: &str = "LLVM arithmetic lowering rejects unsupp
 const LLVM_MATCH_REJECTION: &str = "LLVM match expression lowering rejects match expressions until native strict arm comparison, default/exhaustiveness handling, value evaluation order, references/copy-on-write, and exact native error behavior exist; phpc run handles current match expression behavior";
 const LLVM_NONLOCAL_UNSET_REJECTION: &str = "LLVM native array non-local unset lowering rejects object, dynamic-object, non-direct object, and static property unsets until non-local owner cells, magic __unset dispatch, typed/static property state, references/copy-on-write, and exact diagnostics share one unset owner contract; local variables and native array offset unsets use their shared native lvalue unset contracts";
 const LLVM_OBJECT_INSTANTIATION_REJECTION: &str = "LLVM object-instantiation lowering rejects new expressions and constructor dispatch until native object allocation, object handles, constructor calls, visibility checks, autoload/class lookup, references/copy-on-write, and exact native object-instantiation errors exist; phpc run handles current bounded new behavior";
+const LLVM_OBJECT_CLASS_REJECTION: &str = "LLVM object/class lowering rejects class declarations, inheritance metadata, object instantiation, constructor dispatch, public property reads/writes, instance method calls, and object metadata builtins until native object layout, handles, visibility, method dispatch, and exact native error behavior exist; phpc run handles current object/class behavior";
 
 fn parse_error(source: &str) -> php_compiler::error::Diagnostic {
     let error = run_source(source).unwrap_err();
@@ -825,16 +826,14 @@ fn promoted_property_parameters_are_limited_to_constructor_contexts() {
 }
 
 #[test]
-fn readonly_promoted_property_parameters_have_stable_parse_errors() {
-    let error = parse_error(
+fn readonly_promoted_property_parameters_parse_for_startup_diagnostics() {
+    let execution = run_source(
         "<?php\nclass User {\n    public function __construct(protected readonly string $name) {}\n}\n",
-    );
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 43);
-    assert_eq!(
-        error.message,
-        "unsupported promoted property parameter: readonly promoted properties are not implemented"
-    );
+    )
+    .unwrap();
+    assert_eq!(execution.stdout, "");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -1034,140 +1033,115 @@ fn emit_ir_rejects_fully_qualified_constant_reads_at_parse_boundary() {
 }
 
 #[test]
-fn unsupported_readonly_class_declarations_have_stable_parse_errors() {
-    let cases = [
-        (
-            "<?php\nreadonly class Value {\n    public $id;\n}\n",
-            2,
-            1,
-            "unsupported readonly class declaration: readonly class metadata, typed-property enforcement, initialization and write rules, reflection, and native lowering are not implemented",
-        ),
-        (
-            "<?php\nfinal readonly class Value {}\n",
-            2,
-            7,
-            "unsupported readonly class declaration: readonly class metadata, typed-property enforcement, initialization and write rules, reflection, and native lowering are not implemented",
-        ),
-        (
-            "<?php\nreadonly final class Value {}\n",
-            2,
-            1,
-            "unsupported readonly class declaration: readonly class metadata, typed-property enforcement, initialization and write rules, reflection, and native lowering are not implemented",
-        ),
-        (
-            "<?php\nreadonly readonly class Value {}\n",
-            2,
-            10,
-            "duplicate readonly modifier in class declaration",
-        ),
-    ];
-
-    for (source, line, column, message) in cases {
-        let error = parse_error(source);
-        assert_eq!(error.line, line);
-        assert_eq!(error.column, column);
-        assert_eq!(error.message, message);
+fn readonly_class_declarations_parse_for_startup_diagnostics() {
+    for source in [
+        "<?php\nfinal readonly class Value {}\n",
+        "<?php\nreadonly final class Value {}\n",
+    ] {
+        let execution = run_source(source).unwrap();
+        assert_eq!(execution.stdout, "");
+        assert_eq!(execution.stderr, "");
+        assert_eq!(execution.exit_code, 0);
     }
-}
 
-#[test]
-fn emit_ir_rejects_readonly_class_declarations_at_parse_boundary() {
-    let error = php_compiler::emit_ir_source("<?php\nfinal readonly class Value {}\n").unwrap_err();
-
-    assert_eq!(error.phase, Phase::Parse);
+    let fatal = run_source("<?php\nreadonly class Value {\n    public $id;\n}\n").unwrap();
+    assert_eq!(fatal.stdout, "");
+    assert_eq!(fatal.exit_code, 255);
     assert_eq!(
-        error.message,
-        "unsupported readonly class declaration: readonly class metadata, typed-property enforcement, initialization and write rules, reflection, and native lowering are not implemented"
+        fatal.stderr,
+        "Fatal error: Readonly property Value::$id must have type in Command line code on line 3"
+    );
+
+    let duplicate = parse_error("<?php\nreadonly readonly class Value {}\n");
+    assert_eq!(duplicate.line, 2);
+    assert_eq!(duplicate.column, 10);
+    assert_eq!(
+        duplicate.message,
+        "duplicate readonly modifier in class declaration"
     );
 }
 
 #[test]
-fn unsupported_readonly_property_declarations_have_stable_parse_errors() {
+fn emit_ir_rejects_readonly_class_declarations_until_native_metadata_exists() {
+    let error = php_compiler::emit_ir_source("<?php\nfinal readonly class Value {}\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, LLVM_OBJECT_CLASS_REJECTION);
+}
+
+#[test]
+fn readonly_property_declarations_parse_for_startup_diagnostics() {
+    let valid = run_source("<?php\nclass Value {\n    public readonly string $id;\n}\n").unwrap();
+    assert_eq!(valid.stdout, "");
+    assert_eq!(valid.stderr, "");
+    assert_eq!(valid.exit_code, 0);
+
     let cases = [
-        ("<?php\nclass Value {\n    public readonly $id;\n}\n", 3, 12),
         (
-            "<?php\nclass Value {\n    public readonly string $id;\n}\n",
-            3,
-            12,
+            "<?php\nclass Value {\n    public readonly $id;\n}\n",
+            "Fatal error: Readonly property Value::$id must have type in Command line code on line 3",
         ),
         (
             "<?php\nclass Value {\n    private static readonly int $id;\n}\n",
-            3,
-            20,
+            "Fatal error: Static property Value::$id cannot be readonly in Command line code on line 3",
         ),
         (
-            "<?php\nclass Value {\n    readonly public string $id;\n}\n",
-            3,
-            5,
+            "<?php\nclass Value {\n    readonly public string $id = 'x';\n}\n",
+            "Fatal error: Readonly property Value::$id cannot have default value in Command line code on line 3",
         ),
     ];
 
-    for (source, line, column) in cases {
-        let error = parse_error(source);
-        assert_eq!(error.line, line);
-        assert_eq!(error.column, column);
-        assert_eq!(
-            error.message,
-            "unsupported readonly property declaration: readonly property metadata, initialization rules, write-once enforcement, reflection, and native lowering are not implemented"
-        );
+    for (source, message) in cases {
+        let execution = run_source(source).unwrap();
+        assert_eq!(execution.stdout, "");
+        assert_eq!(execution.exit_code, 255);
+        assert_eq!(execution.stderr, message);
     }
 }
 
 #[test]
-fn emit_ir_rejects_readonly_property_declarations_at_parse_boundary() {
+fn emit_ir_rejects_readonly_property_declarations_until_native_metadata_exists() {
     let error =
         php_compiler::emit_ir_source("<?php\nclass Value {\n    public readonly string $id;\n}\n")
             .unwrap_err();
 
-    assert_eq!(error.phase, Phase::Parse);
-    assert_eq!(
-        error.message,
-        "unsupported readonly property declaration: readonly property metadata, initialization rules, write-once enforcement, reflection, and native lowering are not implemented"
-    );
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, LLVM_OBJECT_CLASS_REJECTION);
 }
 
 #[test]
-fn unsupported_readonly_non_property_class_members_have_stable_parse_errors() {
+fn readonly_non_property_class_members_parse_for_startup_diagnostics() {
     let cases = [
         (
             "<?php\nclass Value {\n    readonly function id() {}\n}\n",
-            3,
-            5,
+            "Fatal error: Cannot use the readonly modifier on a method in Command line code on line 3",
         ),
         (
             "<?php\nclass Value {\n    public readonly function id() {}\n}\n",
-            3,
-            12,
+            "Fatal error: Cannot use the readonly modifier on a method in Command line code on line 3",
         ),
         (
             "<?php\nclass Value {\n    readonly const ID = 1;\n}\n",
-            3,
-            5,
+            "Fatal error: Cannot use the readonly modifier on a class constant in Command line code on line 3",
         ),
     ];
 
-    for (source, line, column) in cases {
-        let error = parse_error(source);
-        assert_eq!(error.line, line);
-        assert_eq!(error.column, column);
-        assert_eq!(
-            error.message,
-            "unsupported readonly class member modifier: readonly methods and readonly class constants are not implemented"
-        );
+    for (source, message) in cases {
+        let execution = run_source(source).unwrap();
+        assert_eq!(execution.stdout, "");
+        assert_eq!(execution.exit_code, 255);
+        assert_eq!(execution.stderr, message);
     }
 }
 
 #[test]
-fn emit_ir_rejects_readonly_non_property_class_members_at_parse_boundary() {
+fn emit_ir_rejects_readonly_non_property_class_members_until_native_metadata_exists() {
     let error =
         php_compiler::emit_ir_source("<?php\nclass Value {\n    readonly const ID = 1;\n}\n")
             .unwrap_err();
 
-    assert_eq!(error.phase, Phase::Parse);
-    assert_eq!(
-        error.message,
-        "unsupported readonly class member modifier: readonly methods and readonly class constants are not implemented"
-    );
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, LLVM_OBJECT_CLASS_REJECTION);
 }
 
 #[test]

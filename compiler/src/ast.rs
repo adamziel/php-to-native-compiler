@@ -887,6 +887,7 @@ pub struct TraitMethodAliasDecl {
     pub method_name: String,
     pub alias: String,
     pub visibility: ClassVisibility,
+    pub is_readonly: bool,
     pub span: Span,
 }
 
@@ -895,6 +896,7 @@ pub struct TraitMethodVisibilityDecl {
     pub trait_name: Option<String>,
     pub method_name: String,
     pub visibility: ClassVisibility,
+    pub is_readonly: bool,
     pub span: Span,
 }
 
@@ -949,6 +951,7 @@ pub struct ClassConstantDecl {
     pub visibility: ClassVisibility,
     pub is_static: bool,
     pub is_abstract: bool,
+    pub is_readonly: bool,
     pub type_decl: Option<TypeDecl>,
     pub value: Expr,
     pub attributes: Vec<AttributeDecl>,
@@ -960,6 +963,7 @@ pub struct ClassPropertyDecl {
     pub name: String,
     pub visibility: ClassVisibility,
     pub is_static: bool,
+    pub is_readonly: bool,
     pub type_decl: Option<TypeDecl>,
     pub default: Option<Expr>,
     pub attributes: Vec<AttributeDecl>,
@@ -974,6 +978,7 @@ pub struct ClassMethodDecl {
     pub is_static: bool,
     pub is_abstract: bool,
     pub is_final: bool,
+    pub is_readonly: bool,
     pub attributes: Vec<AttributeDecl>,
     pub span: Span,
 }
@@ -1009,6 +1014,7 @@ pub struct FunctionParam {
     pub is_variadic: bool,
     pub default: Option<Expr>,
     pub promotion: Option<ClassVisibility>,
+    pub promotion_readonly: bool,
     pub attributes: Vec<AttributeDecl>,
     pub span: Span,
 }
