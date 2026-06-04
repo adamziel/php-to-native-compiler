@@ -33,6 +33,7 @@ const CORE_CLASS_NAMES: &[&str] = &[
     "DateRangeError",
     "DateException",
     "HashContext",
+    "SensitiveParameterValue",
     "DateTimeZone",
     "ReflectionException",
     "Attribute",

@@ -31969,6 +31969,7 @@ impl PhpClassTable {
                 "getFile",
                 "getLine",
                 "getPrevious",
+                "getTrace",
                 "getTraceAsString",
             ] {
                 exception
@@ -31993,6 +31994,7 @@ impl PhpClassTable {
             "getFile",
             "getLine",
             "getPrevious",
+            "getTrace",
             "getTraceAsString",
         ] {
             error
@@ -32336,9 +32338,27 @@ impl PhpClassTable {
                 true,
             ))
             .expect("HashContext core metadata should not duplicate constructor");
+        let sensitive_parameter_value_id = classes
+            .declare_class("SensitiveParameterValue")
+            .expect("core class table should contain HashContext before SensitiveParameterValue");
+        let sensitive_parameter_value = classes
+            .get_mut(sensitive_parameter_value_id)
+            .expect("declared SensitiveParameterValue class id should resolve");
+        sensitive_parameter_value
+            .add_property(PhpPropertyMetadata::instance("value", Visibility::Private))
+            .expect("SensitiveParameterValue core metadata should not duplicate value");
+        sensitive_parameter_value
+            .add_method(PhpMethodMetadata::instance(
+                "__construct",
+                Visibility::Public,
+            ))
+            .expect("SensitiveParameterValue core metadata should not duplicate constructor");
+        sensitive_parameter_value
+            .add_method(PhpMethodMetadata::instance("getValue", Visibility::Public))
+            .expect("SensitiveParameterValue core metadata should not duplicate getValue");
         let datetimezone_id = classes
             .declare_class("DateTimeZone")
-            .expect("core class table should contain HashContext before DateTimeZone");
+            .expect("core class table should contain SensitiveParameterValue before DateTimeZone");
         let datetimezone = classes
             .get_mut(datetimezone_id)
             .expect("declared DateTimeZone class id should resolve");
@@ -38438,6 +38458,9 @@ impl PhpObject {
 
     fn forbids_dynamic_public_properties_as_error(&self) -> bool {
         self.class_name.eq_ignore_ascii_case("BcMath\\Number")
+            || self
+                .class_name
+                .eq_ignore_ascii_case("SensitiveParameterValue")
     }
 
     pub fn replace_public_properties_from_array(&self, array: &PhpArray) -> RuntimeResult<()> {

@@ -3867,7 +3867,8 @@
   `spl_object_id`, `spl_object_hash`, `spl_autoload`,
   `spl_autoload_register`,
   `spl_autoload_functions`, `spl_autoload_unregister`, `spl_autoload_call`,
-  `var_dump`, and `print_r`;
+  `var_dump`, `debug_zval_dump`, `print_r`, `var_export`,
+  `debug_backtrace`, and `debug_print_backtrace`;
   `gettype` returns PHP legacy type names for the current value model
   (`NULL`, `boolean`, `integer`, `double`, `string`, `array`, `object`,
   `resource`, and `resource (closed)` for the current supported stream
@@ -12219,17 +12220,32 @@
   `Exception` work through the current object metadata model. Constructed
   `Exception` objects initialize bounded `message`, `code`, `file`, `line`,
   and `previous` state, and expose `getMessage()`, `getCode()`, `getFile()`,
-  `getLine()`, `getPrevious()`, and a bounded `getTraceAsString()`.
+  `getLine()`, `getPrevious()`, bounded structured `getTrace()` frame arrays,
+  and a bounded `getTraceAsString()`.
   `ErrorException` additionally supports bounded message/code/severity/
   filename/line/previous construction and `getSeverity()`. Caught core
   `Error`/`TypeError`-style objects expose the same bounded file/line/
   previous/trace-string accessors.
+  `debug_backtrace()` and `debug_print_backtrace()` expose the same bounded
+  active user-function/closure frame stack with `file`, `line`, `function`,
+  and `args` entries. Parameters marked with `#[SensitiveParameter]` are
+  represented in these frame arguments by core `SensitiveParameterValue`
+  objects. `SensitiveParameterValue` stores the original private `value`,
+  exposes `getValue()`, remains clonable, hides that value from
+  `var_dump()`, `debug_zval_dump()`, `print_r()`, `var_export()`, `(array)`,
+  and JSON object encoding, rejects dynamic properties, allows reflection of
+  the private `value`, and rejects generic `serialize()` with PHP's current
+  exception shape. Outside that redaction surface, `debug_zval_dump()` falls
+  back to the current `var_dump()`-style formatter and does not expose real
+  zval/refcount internals.
   `ReflectionException` is also seeded as metadata-only and records
   `Exception` as its parent for `class_exists()`, `get_declared_classes()`,
   `get_parent_class()`, `is_a()`, `is_subclass_of()`, and `ReflectionClass`
   metadata checks.
-  `Throwable` interface parity, structured `getTrace()` arrays, exact internal
-  stack frames, exact `__toString()` frames, callable user methods on core
+  `Throwable` interface parity, full debug-backtrace option/class/object
+  fields, exact internal stack frames, exact `__toString()` frames, precise
+  function-local object lifetime/refcount ordering for
+  `SensitiveParameterValue` trace wrappers, callable user methods on core
   Throwable subclasses, full stack unwinding parity, multi-catch semantics
   beyond parsed type lists, finally execution during exception/error
   unwinding, exact native error objects, references/copy-on-write, and native

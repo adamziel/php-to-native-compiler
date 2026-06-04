@@ -66556,6 +66556,7 @@ fn is_builtin_class_name(name: &str) -> bool {
             | "datetimeimmutable"
             | "reflectionclass"
             | "reflectionmethod"
+            | "sensitiveparametervalue"
     )
 }
 

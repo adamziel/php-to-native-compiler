@@ -521,6 +521,7 @@ struct Interpreter {
     active_static_locals: Vec<Vec<String>>,
     active_symbol_roots: Vec<SymbolStorage>,
     active_function_call_arguments: Vec<ActiveFunctionCallArguments>,
+    active_debug_backtrace_frames: Vec<PendingUncaughtCallFrame>,
     generator_states: HashMap<i64, GeneratorState>,
     active_generator_yields: Vec<Vec<PendingGeneratorYield>>,
     global_symbols: SymbolStorage,
@@ -626,6 +627,7 @@ struct Interpreter {
     pending_uncaught_call_frames: Vec<PendingUncaughtCallFrame>,
     last_return_span: Option<Span>,
     throwable_string_traces: HashMap<i64, String>,
+    throwable_traces: HashMap<i64, Vec<PendingUncaughtCallFrame>>,
     class_context: Vec<ClassId>,
     called_class_context: Vec<ClassId>,
     trait_class_context: Vec<String>,
@@ -10878,6 +10880,17 @@ fn value_contains_object_id(value: &Value, object_id: i64, visited: &mut LiveRoo
     }
 }
 
+fn pending_call_frame_contains_object_id(
+    frame: &PendingUncaughtCallFrame,
+    object_id: i64,
+    visited: &mut LiveRootVisit,
+) -> bool {
+    frame
+        .args
+        .iter()
+        .any(|value| value_contains_object_id(value, object_id, visited))
+}
+
 fn spl_fixed_array_state_contains_object_id(
     state: &SplFixedArrayState,
     object_id: i64,
@@ -11944,6 +11957,7 @@ impl Interpreter {
             active_static_locals: Vec::new(),
             active_symbol_roots: Vec::new(),
             active_function_call_arguments: Vec::new(),
+            active_debug_backtrace_frames: Vec::new(),
             generator_states: HashMap::new(),
             active_generator_yields: Vec::new(),
             global_symbols: Rc::new(RefCell::new(HashMap::new())),
@@ -12051,6 +12065,7 @@ impl Interpreter {
             pending_uncaught_call_frames: Vec::new(),
             last_return_span: None,
             throwable_string_traces: HashMap::new(),
+            throwable_traces: HashMap::new(),
             class_context: Vec::new(),
             called_class_context: Vec::new(),
             trait_class_context: Vec::new(),
@@ -28946,12 +28961,16 @@ impl Interpreter {
     }
 
     fn formatted_pending_uncaught_call_trace(&self, file: &str) -> String {
-        if self.pending_uncaught_call_frames.is_empty() {
+        Self::formatted_call_trace(&self.pending_uncaught_call_frames, file)
+    }
+
+    fn formatted_call_trace(frames: &[PendingUncaughtCallFrame], file: &str) -> String {
+        if frames.is_empty() {
             return "#0 {main}".to_string();
         }
 
         let mut trace = String::new();
-        for (index, frame) in self.pending_uncaught_call_frames.iter().enumerate() {
+        for (index, frame) in frames.iter().enumerate() {
             trace.push_str(&format!(
                 "#{index} {file}({}): {}({})\n",
                 frame.call_line,
@@ -28959,11 +28978,76 @@ impl Interpreter {
                 format_stack_trace_args(&frame.args)
             ));
         }
-        trace.push_str(&format!(
-            "#{} {{main}}",
-            self.pending_uncaught_call_frames.len()
-        ));
+        trace.push_str(&format!("#{} {{main}}", frames.len()));
         trace
+    }
+
+    fn current_structured_trace_frames(&self) -> Vec<PendingUncaughtCallFrame> {
+        self.active_debug_backtrace_frames
+            .iter()
+            .rev()
+            .cloned()
+            .collect()
+    }
+
+    fn store_throwable_trace(&mut self, object: &PhpObject, file: &str) {
+        let frames = self.current_structured_trace_frames();
+        let trace = Self::formatted_call_trace(&frames, file);
+        self.throwable_string_traces.insert(object.id(), trace);
+        self.throwable_traces.insert(object.id(), frames);
+    }
+
+    fn throwable_trace_array(&self, object: &PhpObject, span: Span) -> CompileResult<Value> {
+        let frames = self
+            .throwable_traces
+            .get(&object.id())
+            .cloned()
+            .unwrap_or_default();
+        self.structured_trace_array(&frames, span)
+    }
+
+    fn structured_trace_array(
+        &self,
+        frames: &[PendingUncaughtCallFrame],
+        span: Span,
+    ) -> CompileResult<Value> {
+        let file = self.throwable_display_file();
+        let mut output = PhpArray::new();
+        for frame in frames {
+            output
+                .append(self.structured_trace_frame_array(frame, &file, span)?)
+                .map_err(|error| runtime_error(span, error))?;
+        }
+        Ok(Value::Array(output))
+    }
+
+    fn structured_trace_frame_array(
+        &self,
+        frame: &PendingUncaughtCallFrame,
+        file: &str,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let mut args = PhpArray::new();
+        for value in &frame.args {
+            args.append(value.clone())
+                .map_err(|error| runtime_error(span, error))?;
+        }
+
+        let mut entry = PhpArray::new();
+        entry.insert(
+            ArrayKey::String("file".to_string()),
+            Value::String(file.to_string()),
+        );
+        entry.insert(
+            ArrayKey::String("line".to_string()),
+            Value::Int(frame.call_line as i64),
+        );
+        entry.insert(
+            ArrayKey::String("function".to_string()),
+            Value::String(frame.display_callable(file)),
+        );
+        entry.insert(ArrayKey::String("args".to_string()), Value::Array(args));
+        Ok(Value::Array(entry))
     }
 
     fn clear_pending_uncaught_call_frames(&mut self) {
@@ -29037,6 +29121,48 @@ impl Interpreter {
                 call_line: call_span.line,
                 args: args.to_vec(),
             });
+    }
+
+    fn pending_user_debug_call_frame(
+        &mut self,
+        function: &FunctionDecl,
+        this_object: Option<&PhpObject>,
+        class_context: Option<ClassId>,
+        call_span: Span,
+        args: &[Value],
+    ) -> CompileResult<PendingUncaughtCallFrame> {
+        Ok(PendingUncaughtCallFrame {
+            function_name: self.pending_uncaught_user_call_callable(
+                function,
+                this_object,
+                class_context,
+            ),
+            function_line: function.span.line,
+            call_line: call_span.line,
+            args: self.sensitive_parameter_trace_args(function, args, call_span)?,
+        })
+    }
+
+    fn sensitive_parameter_trace_args(
+        &mut self,
+        function: &FunctionDecl,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<Vec<Value>> {
+        let mut output = Vec::with_capacity(args.len());
+        for (index, value) in args.iter().enumerate() {
+            let should_redact = Self::call_argument_param_for_index(function, index)
+                .map(|(_, param)| attributes_include_sensitive_parameter(&param.attributes))
+                .unwrap_or(false);
+            if should_redact {
+                output.push(Value::Object(
+                    self.create_sensitive_parameter_value_object(value.clone(), span)?,
+                ));
+            } else {
+                output.push(value.clone());
+            }
+        }
+        Ok(output)
     }
 
     fn pending_uncaught_user_call_callable(
@@ -29205,9 +29331,11 @@ impl Interpreter {
                 &protected_class_ids,
             )
             .map_err(|error| runtime_error(Span { line: 0, column: 0 }, error))?;
-        let stack_trace = self.formatted_pending_uncaught_call_trace(&file);
+        let trace_frames = self.pending_uncaught_call_frames.clone();
+        let stack_trace = Self::formatted_call_trace(&trace_frames, &file);
         self.throwable_string_traces
             .insert(object.id(), stack_trace);
+        self.throwable_traces.insert(object.id(), trace_frames);
         self.track_allocated_object(&object);
         Ok(object)
     }
@@ -31622,6 +31750,9 @@ impl Interpreter {
         if declared_class_name.eq_ignore_ascii_case("NoDiscard") {
             return self.instantiate_core_no_discard(args, span, scope);
         }
+        if declared_class_name.eq_ignore_ascii_case("SensitiveParameterValue") {
+            return self.instantiate_core_sensitive_parameter_value(args, span, scope);
+        }
         if self
             .enum_lookup
             .contains_key(&declared_class_name.to_ascii_lowercase())
@@ -32375,6 +32506,46 @@ impl Interpreter {
         Ok(Value::Object(object))
     }
 
+    fn instantiate_core_sensitive_parameter_value(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        expect_expr_arity("SensitiveParameterValue::__construct", args.len(), 1, span)?;
+        let value = self.evaluate(&args[0], scope)?;
+        self.create_sensitive_parameter_value_object(value, span)
+            .map(Value::Object)
+    }
+
+    fn create_sensitive_parameter_value_object(
+        &mut self,
+        value: Value,
+        span: Span,
+    ) -> CompileResult<PhpObject> {
+        let class_id = self
+            .classes
+            .lookup_class_id("SensitiveParameterValue")
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::undefined_class("SensitiveParameterValue"),
+                )
+            })?;
+        let object_id = self.allocate_object_id();
+        let class = self
+            .classes
+            .get(class_id)
+            .expect("core SensitiveParameterValue class id should resolve");
+        let object = PhpObject::from_class_with_id(class, object_id);
+        let protected_class_ids = self.protected_class_ids_for_context(class_id);
+        object
+            .write_property_from_context("value", value, Some(class_id), &protected_class_ids)
+            .map_err(|error| runtime_error(span, error))?;
+        self.track_allocated_object(&object);
+        Ok(object)
+    }
+
     fn resolve_instanceof_class_name(
         &mut self,
         class_name: &NewClassName,
@@ -32816,6 +32987,23 @@ impl Interpreter {
         }
 
         if self
+            .active_debug_backtrace_frames
+            .iter()
+            .any(|frame| pending_call_frame_contains_object_id(frame, object_id, &mut visited))
+            || self
+                .pending_uncaught_call_frames
+                .iter()
+                .any(|frame| pending_call_frame_contains_object_id(frame, object_id, &mut visited))
+            || self
+                .throwable_traces
+                .values()
+                .flatten()
+                .any(|frame| pending_call_frame_contains_object_id(frame, object_id, &mut visited))
+        {
+            return true;
+        }
+
+        if self
             .constants
             .values
             .values()
@@ -33237,7 +33425,7 @@ impl Interpreter {
         object
             .write_property_from_context(
                 "file",
-                Value::String(file),
+                Value::String(file.clone()),
                 Some(class_id),
                 &protected_class_ids,
             )
@@ -33253,6 +33441,7 @@ impl Interpreter {
                 &protected_class_ids,
             )
             .map_err(|error| runtime_error(span, error))?;
+        self.store_throwable_trace(object, &file);
         Ok(())
     }
 
@@ -33337,7 +33526,7 @@ impl Interpreter {
         object
             .write_property_from_context(
                 "file",
-                Value::String(file),
+                Value::String(file.clone()),
                 Some(class_id),
                 &protected_class_ids,
             )
@@ -33353,6 +33542,7 @@ impl Interpreter {
                 &protected_class_ids,
             )
             .map_err(|error| runtime_error(span, error))?;
+        self.store_throwable_trace(object, &file);
         Ok(())
     }
 
@@ -57817,6 +58007,7 @@ impl Interpreter {
             Vec::new(),
             Vec::new(),
             by_value_array_copy_source_bindings,
+            None,
         )
         .map(|(value, _)| value)
         .map(Some)
@@ -58298,6 +58489,14 @@ impl Interpreter {
         if object.class_name().eq_ignore_ascii_case("Deprecated") {
             return self
                 .call_deprecated_method(method_name, args, span, caller_scope)
+                .map(|value| (value, None));
+        }
+        if object
+            .class_name()
+            .eq_ignore_ascii_case("SensitiveParameterValue")
+        {
+            return self
+                .call_sensitive_parameter_value_method(&object, method_name, args, span)
                 .map(|value| (value, None));
         }
         if object.is_instance_of_class_name("ReflectionClass") {
@@ -58804,6 +59003,10 @@ impl Interpreter {
                 expect_expr_arity("Error::getTraceAsString", arg_count, 0, span)?;
                 Ok(Value::String(self.throwable_trace_as_string(object)))
             }
+            "gettrace" => {
+                expect_expr_arity("Error::getTrace", arg_count, 0, span)?;
+                self.throwable_trace_array(object, span)
+            }
             "getseverity" if object.is_instance_of_class_name("ErrorException") => {
                 expect_expr_arity("ErrorException::getSeverity", arg_count, 0, span)?;
                 let protected_class_ids = self.protected_class_ids_for_context(object.class_id());
@@ -58917,6 +59120,38 @@ impl Interpreter {
             _ => Err(runtime_error(
                 span,
                 RuntimeError::undefined_function(format!("Deprecated::{method_name}()")),
+            )),
+        }
+    }
+
+    fn call_sensitive_parameter_value_method(
+        &mut self,
+        object: &PhpObject,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+    ) -> CompileResult<Value> {
+        match method_name.to_ascii_lowercase().as_str() {
+            "getvalue" => {
+                expect_expr_arity("SensitiveParameterValue::getValue", args.len(), 0, span)?;
+                let class_id = object.class_id();
+                let protected_class_ids = self.protected_class_ids_for_context(class_id);
+                object
+                    .read_property_from_context("value", Some(class_id), &protected_class_ids)
+                    .map_err(|error| runtime_error(span, error))
+            }
+            "__construct" => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "SensitiveParameterValue::__construct()",
+                    "manual reinitialization is not supported in the current subset",
+                ),
+            )),
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!(
+                    "SensitiveParameterValue::{method_name}()"
+                )),
             )),
         }
     }
@@ -65469,6 +65704,7 @@ impl Interpreter {
             Vec::new(),
             Vec::new(),
             by_value_array_copy_source_bindings,
+            None,
         )
         .map(Some)
     }
@@ -73406,6 +73642,7 @@ impl Interpreter {
             prebound_locals,
             frame.by_value_array_copy_bindings,
             frame.array_copy_source_bindings,
+            None,
         )
     }
 
@@ -83442,10 +83679,13 @@ impl Interpreter {
             return Ok((Value::Null, None));
         }
 
-        let trace_args = frame.values.clone();
-        let trace_callable =
-            self.pending_uncaught_user_call_callable(function, this_object.as_ref(), class_context);
-        let trace_function_line = function.span.line;
+        let trace_frame = self.pending_user_debug_call_frame(
+            function,
+            this_object.as_ref(),
+            class_context,
+            span,
+            &frame.values,
+        )?;
         let result = self.call_user_function_with_checked_values_and_locals_with_array_copy_source_and_arg_sources(
             function,
             frame.values,
@@ -83458,13 +83698,14 @@ impl Interpreter {
             prebound_locals,
             frame.by_value_array_copy_bindings,
             frame.array_copy_source_bindings,
+            Some(trace_frame.clone()),
         );
         if let Err(error) = &result {
             self.record_pending_uncaught_call_frame(
-                trace_callable,
-                trace_function_line,
+                trace_frame.function_name,
+                trace_frame.function_line,
                 span,
-                &trace_args,
+                &trace_frame.args,
                 error,
             );
         }
@@ -83572,6 +83813,7 @@ impl Interpreter {
             prebound_locals,
             frame.by_value_array_copy_bindings,
             frame.array_copy_source_bindings,
+            None,
         )
         .map(Some)
     }
@@ -90008,6 +90250,7 @@ impl Interpreter {
             prebound_locals,
             by_value_array_copy_bindings,
             Vec::new(),
+            None,
         )
     }
 
@@ -90055,6 +90298,7 @@ impl Interpreter {
             prebound_locals,
             frame.by_value_array_copy_bindings,
             frame.array_copy_source_bindings,
+            None,
         )
     }
 
@@ -90071,6 +90315,7 @@ impl Interpreter {
         prebound_locals: Vec<PreboundLocal>,
         by_value_array_copy_bindings: Vec<(String, String, Vec<ArrayKey>)>,
         by_value_array_copy_source_bindings: Vec<ArrayCopySourceBinding>,
+        active_debug_frame: Option<PendingUncaughtCallFrame>,
     ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
         if self.exit_signal.is_some() {
             return Ok((Value::Null, None));
@@ -90733,9 +90978,18 @@ impl Interpreter {
         self.active_symbol_roots.push(local_scope.symbols.clone());
         self.active_function_call_arguments
             .push(active_function_arguments);
+        let pushed_debug_frame = if let Some(frame) = active_debug_frame {
+            self.active_debug_backtrace_frames.push(frame);
+            true
+        } else {
+            false
+        };
         let flow = self.with_strict_types_scope(function.strict_types, |this| {
             this.execute_statements_with_array_copy_return_source(&function.body, &mut local_scope)
         });
+        if pushed_debug_frame {
+            self.active_debug_backtrace_frames.pop();
+        }
         self.active_function_call_arguments.pop();
         let writeback_result = if matches!(
             &flow,
@@ -91434,6 +91688,56 @@ impl Interpreter {
                     "func_get_arg(): Argument #1 ($position) must be less than the number of the arguments passed to the currently executed function",
                 )
             })
+    }
+
+    fn call_debug_backtrace(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("debug_backtrace", args, 0, span)?;
+        let frames = self.current_structured_trace_frames();
+        self.structured_trace_array(&frames, span)
+    }
+
+    fn call_debug_print_backtrace(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("debug_print_backtrace", args, 0, span)?;
+        let file = self.throwable_display_file();
+        let mut output = String::new();
+        for (index, frame) in self.active_debug_backtrace_frames.iter().rev().enumerate() {
+            output.push_str(&format!(
+                "#{index} {file}({}): {}({})\n",
+                frame.call_line,
+                frame.display_callable(&file),
+                format_stack_trace_args(&frame.args)
+            ));
+        }
+        self.append_output_at(&output, span);
+        Ok(Value::Null)
+    }
+
+    fn call_debug_zval_dump(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.is_empty() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch("debug_zval_dump()", ArityExpectation::AtLeast(1), 0),
+            ));
+        }
+        for value in args {
+            match value {
+                Value::Object(object) if is_sensitive_parameter_value_object(object) => {
+                    self.append_output_at(
+                        &format!(
+                            "object(SensitiveParameterValue)#{} (0) refcount(2){{\n}}\n",
+                            object.id()
+                        ),
+                        span,
+                    );
+                }
+                _ => {
+                    if let Some(output) = self.format_var_dump_argument_bytes(value, span)? {
+                        self.append_output_bytes_at(&output, span);
+                    }
+                }
+            }
+        }
+        Ok(Value::Null)
     }
 
     fn coerce_call_frame_values(
@@ -101210,6 +101514,9 @@ impl Interpreter {
             "func_num_args" => self.call_func_num_args(&args, span),
             "func_get_args" => self.call_func_get_args(&args, span),
             "func_get_arg" => self.call_func_get_arg(&args, span),
+            "debug_backtrace" => self.call_debug_backtrace(&args, span),
+            "debug_print_backtrace" => self.call_debug_print_backtrace(&args, span),
+            "debug_zval_dump" => self.call_debug_zval_dump(&args, span),
             "call_user_func" => self.call_user_func_builtin(args, span),
             "call_user_func_array" => self.call_user_func_array_builtin(args, span),
             "explode" => self.call_explode(&args, span),
@@ -104648,6 +104955,17 @@ impl Interpreter {
                         "Serialization of 'Directory' is not allowed",
                     ),
                 ));
+            }
+            if is_sensitive_parameter_value_object(object) {
+                let error = runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "serialize()",
+                        "Serialization of 'SensitiveParameterValue' is not allowed",
+                    ),
+                );
+                self.record_pending_uncaught_internal_call_frame("serialize", span, args, &error);
+                return Err(error);
             }
             if let Some(state) = self.hash_contexts.get(&object.id()) {
                 if let Some(message) = hash_context_serialize_error_message(state) {
@@ -112543,6 +112861,9 @@ impl Interpreter {
                         "(array)",
                         span,
                     )?))
+                }
+                Value::Object(object) if is_sensitive_parameter_value_object(&object) => {
+                    Ok(Value::Array(PhpArray::new()))
                 }
                 Value::Object(object) => Ok(Value::Array(
                     Self::initialized_mangled_properties_array_for_object(&object),
@@ -120829,6 +121150,12 @@ fn class_method_has_return_type_will_change_attribute(method: &ClassMethodDecl) 
 
 fn attribute_name_is_no_discard(attribute: &AttributeDecl) -> bool {
     normalized_attribute_name(&attribute.name) == "nodiscard"
+}
+
+fn attributes_include_sensitive_parameter(attributes: &[AttributeDecl]) -> bool {
+    attributes
+        .iter()
+        .any(|attribute| normalized_attribute_name(&attribute.name) == "sensitiveparameter")
 }
 
 fn attribute_name_is_attribute(attribute: &AttributeDecl) -> bool {
@@ -129478,6 +129805,7 @@ fn hash_context_php_exception_message(error: &Diagnostic) -> Option<String> {
         .message
         .strip_prefix("unsupported call serialize(): ")?;
     if message == "Serialization of 'Directory' is not allowed"
+        || message == "Serialization of 'SensitiveParameterValue' is not allowed"
         || message == "HashContext with HASH_HMAC option cannot be serialized"
         || (message.starts_with("HashContext for algorithm \"")
             && message.ends_with("\" cannot be serialized"))
@@ -129740,6 +130068,9 @@ const DEFINED_INTERNAL_CORE_FUNCTION_NAMES: &[&str] = &[
     "func_num_args",
     "func_get_arg",
     "func_get_args",
+    "debug_backtrace",
+    "debug_print_backtrace",
+    "debug_zval_dump",
     "call_user_func",
     "call_user_func_array",
     "set_exception_handler",
@@ -129996,6 +130327,9 @@ fn is_builtin(name: &str) -> bool {
             | "func_num_args"
             | "func_get_args"
             | "func_get_arg"
+            | "debug_backtrace"
+            | "debug_print_backtrace"
+            | "debug_zval_dump"
             | "call_user_func"
             | "call_user_func_array"
             | "explode"
@@ -174903,6 +175237,12 @@ where
             output
         }
         Value::Object(value) => {
+            if is_sensitive_parameter_value_object(value) {
+                return Ok(format!(
+                    "{padding}object(SensitiveParameterValue)#{} (0) {{\n{padding}}}\n",
+                    value.id()
+                ));
+            }
             if let Some(output) = format_enum_like_var_dump(value, &padding) {
                 return Ok(output);
             }
@@ -174994,6 +175334,13 @@ where
             Ok(output)
         }
         Value::Object(value) => {
+            if is_sensitive_parameter_value_object(value) {
+                return Ok(format!(
+                    "{padding}object(SensitiveParameterValue)#{} (0) {{\n{padding}}}\n",
+                    value.id()
+                )
+                .into_bytes());
+            }
             if let Some(output) = format_enum_like_var_dump(value, &padding) {
                 return Ok(output.into_bytes());
             }
@@ -175068,6 +175415,12 @@ where
 fn format_enum_like_var_dump(object: &PhpObject, padding: &str) -> Option<String> {
     enum_like_case_name(object)
         .map(|case_name| format!("{padding}enum({}::{case_name})\n", object.class_name()))
+}
+
+fn is_sensitive_parameter_value_object(object: &PhpObject) -> bool {
+    object
+        .class_name()
+        .eq_ignore_ascii_case("SensitiveParameterValue")
 }
 
 fn enum_like_case_name(object: &PhpObject) -> Option<String> {
@@ -175257,6 +175610,10 @@ fn append_print_r_object_bytes(output: &mut Vec<u8>, object: &PhpObject, indent:
 
     output.extend_from_slice(format!("{} Object\n", object.class_name()).as_bytes());
     output.extend_from_slice(format!("{padding}(\n").as_bytes());
+    if is_sensitive_parameter_value_object(object) {
+        output.extend_from_slice(format!("{padding})\n").as_bytes());
+        return;
+    }
     for property in display_object_properties(object) {
         output.extend_from_slice(
             format!(
@@ -175445,6 +175802,11 @@ fn format_var_export_object(
     let property_padding = format!("{padding}   ");
     let class_name = object.class_name();
     let is_std_class = class_name.eq_ignore_ascii_case("stdClass");
+    if is_sensitive_parameter_value_object(object) {
+        return Ok(format!(
+            "{padding}\\SensitiveParameterValue::__set_state(array(\n{padding}))"
+        ));
+    }
     let mut output = if is_std_class {
         format!("{padding}(object) array(\n")
     } else {
