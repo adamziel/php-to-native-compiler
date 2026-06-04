@@ -827,16 +827,10 @@ impl Parser {
                 "unsupported trait constant declaration: static trait constants are not implemented",
             ));
         }
-        if modifiers.is_abstract || modifiers.is_final {
+        if modifiers.is_abstract {
             return Err(self.error_at(
-                modifiers.abstract_or_final_span().unwrap_or(const_span),
-                "unsupported trait constant declaration: abstract/final trait constants are not implemented",
-            ));
-        }
-        if !matches!(modifiers.visibility, ClassVisibility::Public) {
-            return Err(self.error_at(
-                const_span,
-                "unsupported trait constant declaration: only public trait constants are implemented",
+                modifiers.abstract_span.unwrap_or(const_span),
+                "unsupported trait constant declaration: abstract trait constants are not implemented",
             ));
         }
         if matches!(self.peek().kind, TokenKind::Identifier(_))
@@ -864,10 +858,10 @@ impl Parser {
         )?;
         Ok(ClassConstantDecl {
             name,
-            visibility: ClassVisibility::Public,
+            visibility: modifiers.visibility,
             is_static: false,
             is_abstract: false,
-            is_final: false,
+            is_final: modifiers.is_final,
             is_readonly: modifiers.is_readonly,
             type_decl: None,
             value,
@@ -7048,6 +7042,19 @@ impl Parser {
                         continue;
                     }
                     TokenKind::Identifier(constant) => {
+                        self.advance();
+                        let span = expr.span();
+                        expr = Expr::ObjectStaticClassConstant {
+                            target: Box::new(expr),
+                            constant,
+                            span,
+                        };
+                        continue;
+                    }
+                    kind if class_constant_keyword_name(&kind).is_some() => {
+                        let constant = class_constant_keyword_name(&kind)
+                            .expect("guard checked class constant keyword")
+                            .to_string();
                         self.advance();
                         let span = expr.span();
                         expr = Expr::ObjectStaticClassConstant {

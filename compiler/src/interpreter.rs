@@ -27416,6 +27416,199 @@ impl Interpreter {
         self.exit_signal = Some(255);
     }
 
+    fn trait_constant_composition_fatal_for_trait(
+        &mut self,
+        trait_decl: &TraitDecl,
+    ) -> CompileResult<Option<(String, Span)>> {
+        let direct_constants = trait_decl
+            .constants
+            .iter()
+            .map(|constant| (constant.name.clone(), constant.clone()))
+            .collect::<HashMap<_, _>>();
+        let mut composed: HashMap<String, RuntimeTraitConstant> = HashMap::new();
+
+        for trait_use in &trait_decl.trait_uses {
+            let Some(nested) = self
+                .trait_lookup
+                .get(&trait_use.name.to_ascii_lowercase())
+                .cloned()
+            else {
+                continue;
+            };
+            for constant in
+                runtime_trait_constants_for_trait(&nested, &self.trait_lookup, &mut HashSet::new())
+                    .unwrap_or_default()
+            {
+                let key = constant.constant.name.clone();
+                if let Some(direct) = direct_constants.get(&key) {
+                    if !self
+                        .trait_constant_decls_are_runtime_compatible(direct, &constant.constant)?
+                    {
+                        return Ok(Some((
+                            trait_constant_composition_message(
+                                &trait_decl.name,
+                                &constant.declaring_trait_name,
+                                &key,
+                                &trait_decl.name,
+                            ),
+                            trait_decl.span,
+                        )));
+                    }
+                    continue;
+                }
+
+                if let Some(existing) = composed.get(&key) {
+                    if !self.trait_constant_decls_are_runtime_compatible(
+                        &existing.constant,
+                        &constant.constant,
+                    )? {
+                        return Ok(Some((
+                            trait_constant_composition_message(
+                                &existing.declaring_trait_name,
+                                &constant.declaring_trait_name,
+                                &key,
+                                &trait_decl.name,
+                            ),
+                            trait_decl.span,
+                        )));
+                    }
+                    continue;
+                }
+                composed.insert(key, constant);
+            }
+        }
+
+        Ok(None)
+    }
+
+    fn trait_constant_composition_fatal_for_class(
+        &mut self,
+        class: &ClassDecl,
+    ) -> CompileResult<Option<(String, Span)>> {
+        let direct_constants = declared_class_constants(class);
+        let mut composed: HashMap<String, RuntimeTraitConstant> = HashMap::new();
+
+        for trait_use in &class.trait_uses {
+            let Some(trait_decl) = self
+                .trait_lookup
+                .get(&trait_use.name.to_ascii_lowercase())
+                .cloned()
+            else {
+                continue;
+            };
+            for constant in runtime_trait_constants_for_trait(
+                &trait_decl,
+                &self.trait_lookup,
+                &mut HashSet::new(),
+            )
+            .unwrap_or_default()
+            {
+                let key = constant.constant.name.clone();
+                if let Some(class_constant) = direct_constants.get(&key) {
+                    if !self.trait_constant_decls_are_runtime_compatible(
+                        class_constant,
+                        &constant.constant,
+                    )? {
+                        return Ok(Some((
+                            trait_constant_composition_message(
+                                &class.name,
+                                &constant.declaring_trait_name,
+                                &key,
+                                &class.name,
+                            ),
+                            class.span,
+                        )));
+                    }
+                    continue;
+                }
+
+                if let Some(existing) = composed.get(&key) {
+                    if !self.trait_constant_decls_are_runtime_compatible(
+                        &existing.constant,
+                        &constant.constant,
+                    )? {
+                        return Ok(Some((
+                            trait_constant_composition_message(
+                                &existing.declaring_trait_name,
+                                &constant.declaring_trait_name,
+                                &key,
+                                &class.name,
+                            ),
+                            class.span,
+                        )));
+                    }
+                    continue;
+                }
+                composed.insert(key, constant);
+            }
+        }
+
+        for constant in composed.values() {
+            let Some((declaring_name, parent_constant)) =
+                self.inherited_runtime_class_constant(&class.name, &constant.constant.name)
+            else {
+                continue;
+            };
+            if parent_constant.is_final {
+                return Ok(Some((
+                    format!(
+                        "{}::{} cannot override final constant {}::{}",
+                        class.name, constant.constant.name, declaring_name, parent_constant.name
+                    ),
+                    class.span,
+                )));
+            }
+        }
+
+        Ok(None)
+    }
+
+    fn trait_constant_decls_are_runtime_compatible(
+        &mut self,
+        left: &ClassConstantDecl,
+        right: &ClassConstantDecl,
+    ) -> CompileResult<bool> {
+        if left.visibility != right.visibility
+            || left.is_final != right.is_final
+            || left.type_decl.as_ref().map(|decl| decl.text.as_str())
+                != right.type_decl.as_ref().map(|decl| decl.text.as_str())
+        {
+            return Ok(false);
+        }
+
+        let left = self.evaluate_trait_constant_compatibility_value(left)?;
+        let right = self.evaluate_trait_constant_compatibility_value(right)?;
+        Ok(left == right)
+    }
+
+    fn evaluate_trait_constant_compatibility_value(
+        &mut self,
+        constant: &ClassConstantDecl,
+    ) -> CompileResult<Value> {
+        let mut scope = SymbolTable::new();
+        self.evaluate_constant_like_expr(&constant.value, &mut scope)
+    }
+
+    fn inherited_runtime_class_constant(
+        &self,
+        class_name: &str,
+        constant: &str,
+    ) -> Option<(String, ClassConstantDecl)> {
+        let class_id = self.classes.lookup_class_id(class_name)?;
+        let mut current = self.classes.get(class_id)?.parent_id();
+        while let Some(current_id) = current {
+            let class = self.classes.get(current_id)?;
+            if let Some(metadata) = class.constant(constant) {
+                let constant_decl = self
+                    .class_constants
+                    .get(&(current_id, metadata.name().to_string()))?;
+                return Some((class.name().to_string(), constant_decl.clone()));
+            }
+            current = class.parent_id();
+        }
+        None
+    }
+
     fn emit_display_warning(&mut self, message: impl AsRef<str>, span: Span) -> CompileResult<()> {
         self.emit_display_diagnostic("Warning", PHP_E_WARNING, message, span)
     }
@@ -28752,6 +28945,12 @@ impl Interpreter {
                     &trait_decl.name,
                     &trait_decl.trait_uses,
                 )?;
+                if let Some((message, span)) =
+                    self.trait_constant_composition_fatal_for_trait(trait_decl)?
+                {
+                    self.emit_simple_fatal(&message, span);
+                    return Ok(Flow::Exit(255));
+                }
                 Ok(Flow::Normal)
             }
             Stmt::Class(class) => {
@@ -28759,6 +28958,12 @@ impl Interpreter {
                     self.register_nested_class_declaration(class)?;
                 }
                 self.emit_deprecated_trait_use_diagnostics(&class.name, &class.trait_uses)?;
+                if let Some((message, span)) =
+                    self.trait_constant_composition_fatal_for_class(class)?
+                {
+                    self.emit_simple_fatal(&message, span);
+                    return Ok(Flow::Exit(255));
+                }
                 Ok(Flow::Normal)
             }
             Stmt::Return { value, span } => {
@@ -69438,6 +69643,15 @@ impl Interpreter {
             return self.evaluate_resolved_class_constant(class_id, class_name, constant, span);
         }
 
+        if self
+            .trait_lookup
+            .contains_key(&class_name.to_ascii_lowercase())
+        {
+            return Err(trait_constant_direct_access_error(
+                class_name, constant, span,
+            ));
+        }
+
         let Some(interface) = self
             .interface_lookup
             .get(&class_name.to_ascii_lowercase())
@@ -69573,6 +69787,13 @@ impl Interpreter {
                 )),
                 ConstantResolution::Missing => Ok(false),
             };
+        }
+
+        if self
+            .trait_lookup
+            .contains_key(&class_name.to_ascii_lowercase())
+        {
+            return Ok(false);
         }
 
         let Some(interface) = self.interface_lookup.get(&class_name.to_ascii_lowercase()) else {
@@ -104395,7 +104616,17 @@ impl Interpreter {
                         if let Some((class_name, constant)) =
                             normalize_runtime_class_constant_lookup_name(name)
                         {
-                            return self.evaluate_named_class_constant(class_name, constant, span);
+                            let result =
+                                self.evaluate_named_class_constant(class_name, constant, span);
+                            if let Err(error) = &result {
+                                self.record_pending_uncaught_internal_call_frame(
+                                    "constant",
+                                    span,
+                                    &args,
+                                    error,
+                                );
+                            }
+                            return result;
                         }
 
                         let Some(normalized) = normalize_runtime_constant_lookup_name(name) else {
@@ -123011,7 +123242,7 @@ fn register_class_member_runtime_tables(
     class_id: ClassId,
     class: &ClassDecl,
 ) -> CompileResult<()> {
-    for constant in composed_trait_constants(class, trait_lookup)? {
+    for constant in composed_trait_constants(class, trait_lookup) {
         class_constants.insert((class_id, constant.name.clone()), constant);
     }
 
@@ -123590,7 +123821,7 @@ fn register_class_members(
         .set_traits(id, traits)
         .map_err(|error| runtime_error(class.span, error))?;
 
-    for constant in composed_trait_constants(class, trait_lookup)? {
+    for constant in composed_trait_constants(class, trait_lookup) {
         let visibility = runtime_visibility(constant.visibility);
         let metadata_constant =
             PhpClassConstantMetadata::new(&constant.name, visibility).with_final(constant.is_final);
@@ -123993,17 +124224,79 @@ fn validate_class_relationship_targets(
 fn composed_trait_constants(
     class: &ClassDecl,
     trait_lookup: &HashMap<String, Rc<TraitDecl>>,
-) -> CompileResult<Vec<ClassConstantDecl>> {
+) -> Vec<ClassConstantDecl> {
+    let direct_constants = declared_class_constants(class);
     let mut constants = Vec::new();
+    let mut seen = HashSet::new();
     for trait_use in &class.trait_uses {
-        let trait_decl = resolve_trait_use_decl(trait_use, trait_lookup)?;
-        constants.extend(composed_trait_constants_for_trait(
-            trait_decl,
+        let Some(trait_decl) = trait_lookup.get(&trait_use.name.to_ascii_lowercase()) else {
+            continue;
+        };
+        let Some(trait_constants) =
+            runtime_trait_constants_for_trait(trait_decl, trait_lookup, &mut HashSet::new())
+        else {
+            continue;
+        };
+        for constant in trait_constants {
+            let key = constant.constant.name.clone();
+            if direct_constants.contains_key(&key) || !seen.insert(key) {
+                continue;
+            }
+            constants.push(constant.constant);
+        }
+    }
+    constants
+}
+
+#[derive(Debug, Clone)]
+struct RuntimeTraitConstant {
+    declaring_trait_name: String,
+    constant: ClassConstantDecl,
+}
+
+fn runtime_trait_constants_for_trait(
+    trait_decl: &TraitDecl,
+    trait_lookup: &HashMap<String, Rc<TraitDecl>>,
+    path: &mut HashSet<String>,
+) -> Option<Vec<RuntimeTraitConstant>> {
+    let key = trait_decl.name.to_ascii_lowercase();
+    if !path.insert(key.clone()) {
+        return None;
+    }
+
+    let mut constants = Vec::new();
+    for trait_use in &trait_decl.trait_uses {
+        let nested = trait_lookup.get(&trait_use.name.to_ascii_lowercase())?;
+        constants.extend(runtime_trait_constants_for_trait(
+            nested,
             trait_lookup,
-            &mut HashSet::new(),
+            path,
         )?);
     }
-    Ok(constants)
+    constants.extend(
+        trait_decl
+            .constants
+            .iter()
+            .cloned()
+            .map(|constant| RuntimeTraitConstant {
+                declaring_trait_name: trait_decl.name.clone(),
+                constant,
+            }),
+    );
+
+    path.remove(&key);
+    Some(constants)
+}
+
+fn trait_constant_composition_message(
+    left: &str,
+    right: &str,
+    constant: &str,
+    composing: &str,
+) -> String {
+    format!(
+        "{left} and {right} define the same constant ({constant}) in the composition of {composing}. However, the definition differs and is considered incompatible. Class was composed"
+    )
 }
 
 fn composed_trait_properties(
@@ -124139,6 +124432,17 @@ fn declared_class_properties(class: &ClassDecl) -> HashMap<String, ClassProperty
     declared_class_properties_in_source_order(class)
         .into_iter()
         .map(|property| (property.name.clone(), property))
+        .collect()
+}
+
+fn declared_class_constants(class: &ClassDecl) -> HashMap<String, ClassConstantDecl> {
+    class
+        .members
+        .iter()
+        .filter_map(|member| match member {
+            ClassMember::Constant(constant) => Some((constant.name.clone(), constant.clone())),
+            _ => None,
+        })
         .collect()
 }
 
@@ -131225,6 +131529,15 @@ fn class_constant_visibility_error_message(
     }
 }
 
+fn trait_constant_direct_access_error(class_name: &str, constant: &str, span: Span) -> Diagnostic {
+    Diagnostic::new(
+        Phase::Runtime,
+        span.line,
+        span.column,
+        format!("Cannot access trait constant {class_name}::{constant} directly"),
+    )
+}
+
 fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static str, String)> {
     if is_forbidden_dynamic_builtin_call_diagnostic(error) {
         return Some(("Error", error.message.clone()));
@@ -131423,6 +131736,8 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             || error
                 .message
                 .starts_with("Cannot access protected constant ")
+            || (error.message.starts_with("Cannot access trait constant ")
+                && error.message.ends_with(" directly"))
         {
             return Some(("Error", error.message.clone()));
         }

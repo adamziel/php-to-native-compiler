@@ -3601,6 +3601,20 @@
   Exact source-spelled reflection and string lookup for names that lex as
   keyword tokens remains bounded to the parser's current canonical token
   spelling.
+- trait constants declared as `const NAME = value;`,
+  `public|protected|private const NAME = value;`, and final public/protected
+  variants are composed into consuming classes on the interpreter path.
+  `ClassName::CONST`, object `::CONST`, `self::CONST`, `parent::CONST`, and
+  `static::CONST` resolve the composed constants with the existing
+  class-constant visibility checks. Duplicate trait/class constants are allowed
+  only when visibility, finality, optional type text, and runtime-evaluated
+  values are compatible; incompatible class/trait and trait/trait duplicates
+  emit PHP-shaped composition fatals at the declaration statement. Direct
+  `TraitName::CONST` and `constant("TraitName::CONST")` access raises PHP
+  `Error` instead of exposing trait constants directly. Typed, abstract, and
+  static trait constants, multi-constant trait declarations, trait constant
+  adaptations, exact private-final trait-constant diagnostics, references/COW,
+  and native lowering remain unsupported.
 - static property reads, direct writes, compound assignment, pre/post
   increment/decrement, `isset`, `empty`, `??`, `??=`, `unset(...)`, direct
   references, selected array-offset mutation, and selected array-offset
@@ -7468,8 +7482,8 @@
   single-parent class `extends` and already-declared interface parent lists,
   typed/non-public/abstract/final or multi-constant interface
   declarations, non-public interface methods,
-  non-public/typed/abstract/final/static trait constants, multi-constant trait
-  declarations, trait constant adaptations, conflicting trait/class constants,
+  typed/abstract/static trait constants, multi-constant trait declarations,
+  trait constant adaptations, exact private-final trait-constant diagnostics,
   final trait methods, concrete non-public trait methods, native trait method execution
   beyond generated-C metadata validation, adaptation blocks beyond the current
   simple method alias, visibility-adaptation, and bounded `insteadof` shapes,

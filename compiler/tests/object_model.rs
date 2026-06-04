@@ -4966,8 +4966,262 @@ echo $child->hookKey(), "\n";
 }
 
 #[test]
+fn class_trait_use_composes_visible_and_final_trait_constants() {
+    let execution = run_source(
+        r#"<?php
+trait Foo {
+    public const PUBLIC = "public";
+    protected const PROTECTED = "protected";
+    private const PRIVATE = "private";
+    public final const FINALIZED = "finalized";
+
+    public function f1(): void {
+        echo self::PUBLIC, " via self\n";
+        echo static::PUBLIC, " via static\n";
+        echo $this::PUBLIC, " via this\n";
+        echo self::FINALIZED, " via final\n";
+    }
+}
+
+class Base {
+    use Foo;
+
+    public function f2(): void {
+        echo self::PRIVATE, " via self\n";
+        echo static::PRIVATE, " via static\n";
+    }
+}
+
+class Derived extends Base {
+    public function f3(): void {
+        echo self::PROTECTED, " via self\n";
+        echo static::PROTECTED, " via static\n";
+        echo parent::PROTECTED, " via parent\n";
+    }
+}
+
+echo Base::PUBLIC, " via class name\n";
+echo (new Base)::PUBLIC, " via object\n";
+(new Base)->f1();
+(new Base)->f2();
+echo Derived::PUBLIC, " via derived class name\n";
+echo (new Derived)::PUBLIC, " via derived class object\n";
+(new Derived)->f3();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "public via class name\n",
+            "public via object\n",
+            "public via self\n",
+            "public via static\n",
+            "public via this\n",
+            "finalized via final\n",
+            "private via self\n",
+            "private via static\n",
+            "public via derived class name\n",
+            "public via derived class object\n",
+            "protected via self\n",
+            "protected via static\n",
+            "protected via parent\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+
+    let classes = class_metadata_source(
+        r#"<?php
+trait Foo {
+    public const PUBLIC = "public";
+    protected const PROTECTED = "protected";
+    private const PRIVATE = "private";
+    public final const FINALIZED = "finalized";
+}
+
+class Base {
+    use Foo;
+}
+"#,
+    )
+    .unwrap();
+    let class = classes.lookup_class("Base").unwrap();
+    assert_eq!(
+        class.constant("public").unwrap().visibility(),
+        Visibility::Public
+    );
+    assert_eq!(
+        class.constant("protected").unwrap().visibility(),
+        Visibility::Protected
+    );
+    assert_eq!(
+        class.constant("private").unwrap().visibility(),
+        Visibility::Private
+    );
+    assert!(class.constant("FINALIZED").unwrap().is_final());
+}
+
+#[test]
+fn class_trait_use_validates_trait_constant_composition_at_runtime() {
+    let compatible = run_source(
+        r#"<?php
+define("RUNTIME_CONSTANT", 2);
+
+trait TestTrait1 {
+    public const A = 42;
+}
+
+trait TestTrait2 {
+    public const A = 42;
+}
+
+trait TestTrait3 {
+    use TestTrait2;
+    public const A = 42;
+}
+
+trait RuntimeExprTrait {
+    public const Constant = 40 + RUNTIME_CONSTANT;
+}
+
+class ComposingClass1 {
+    use TestTrait1;
+    use TestTrait2;
+}
+
+class ComposingClass2 {
+    use TestTrait1;
+    use TestTrait3;
+}
+
+class ComposingClass3 {
+    use RuntimeExprTrait;
+    public const Constant = 42;
+}
+
+echo ComposingClass1::A, "\n";
+echo ComposingClass2::A, "\n";
+echo ComposingClass3::Constant, "\n";
+"#,
+    )
+    .unwrap();
+    assert_eq!(compatible.stdout, "42\n42\n42\n");
+    assert_eq!(compatible.stderr, "");
+    assert_eq!(compatible.exit_code, 0);
+
+    let class_conflict = run_source(
+        r#"<?php
+trait TestTrait {
+  public const Constant = 42;
+}
+
+echo "PRE-CLASS-GUARD\n";
+
+class ComposingClass {
+    use TestTrait;
+    private const Constant = 42;
+}
+
+echo "POST-CLASS-GUARD\n";
+"#,
+    )
+    .unwrap();
+    assert!(class_conflict.stdout.starts_with(concat!(
+        "PRE-CLASS-GUARD\n",
+        "\n",
+        "Fatal error: ComposingClass and TestTrait define the same constant (Constant) in the composition of ComposingClass. However, the definition differs and is considered incompatible. Class was composed in Command line code on line ",
+    )));
+    assert_eq!(class_conflict.stderr, "");
+    assert_eq!(class_conflict.exit_code, 255);
+
+    let trait_conflict = run_source(
+        r#"<?php
+trait Trait1 {
+    public const Constant = 42;
+}
+
+trait Trait2 {
+    use Trait1;
+    private const Constant = 42;
+}
+"#,
+    )
+    .unwrap();
+    assert!(trait_conflict.stdout.starts_with(
+        "Fatal error: Trait2 and Trait1 define the same constant (Constant) in the composition of Trait2. However, the definition differs and is considered incompatible. Class was composed in Command line code on line "
+    ));
+    assert_eq!(trait_conflict.stderr, "");
+    assert_eq!(trait_conflict.exit_code, 255);
+
+    let final_parent_conflict = run_source(
+        r#"<?php
+trait TestTrait1 {
+    public final const Constant = 123;
+}
+
+class BaseClass1 {
+    public final const Constant = 123;
+}
+
+class DerivedClass1 extends BaseClass1 {
+    use TestTrait1;
+}
+"#,
+    )
+    .unwrap();
+    assert!(final_parent_conflict.stdout.starts_with(
+        "Fatal error: DerivedClass1::Constant cannot override final constant BaseClass1::Constant in Command line code on line "
+    ));
+    assert_eq!(final_parent_conflict.stderr, "");
+    assert_eq!(final_parent_conflict.exit_code, 255);
+}
+
+#[test]
+fn trait_constants_cannot_be_accessed_directly() {
+    let caught = run_source(
+        r#"<?php
+trait Foo {
+    const A = 42;
+}
+
+try {
+    echo Foo::A;
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+    assert_eq!(
+        caught.stdout,
+        "Cannot access trait constant Foo::A directly\n"
+    );
+    assert_eq!(caught.stderr, "");
+    assert_eq!(caught.exit_code, 0);
+
+    let execution = run_source(
+        r#"<?php
+trait TestTrait {
+  public const Constant = 42;
+}
+
+var_dump(\constant("TestTrait::Constant"));
+"#,
+    )
+    .unwrap();
+    assert!(execution.stdout.starts_with(
+        "Fatal error: Uncaught Error: Cannot access trait constant TestTrait::Constant directly in Command line code:"
+    ));
+    assert!(execution.stdout.contains("constant('TestTrait::Cons...')"));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 255);
+}
+
+#[test]
 fn class_trait_use_rejects_conflicting_trait_constants() {
-    let error = runtime_error(
+    let trait_conflict = run_source(
         r#"<?php
 trait PrimaryConfig {
     public const OPTION = "primary";
@@ -4981,15 +5235,15 @@ class Plugin {
     use PrimaryConfig, FallbackConfig;
 }
 "#,
-    );
+    )
+    .unwrap();
+    assert!(trait_conflict.stdout.starts_with(
+        "Fatal error: PrimaryConfig and FallbackConfig define the same constant (OPTION) in the composition of Plugin. However, the definition differs and is considered incompatible. Class was composed in Command line code on line "
+    ));
+    assert_eq!(trait_conflict.stderr, "");
+    assert_eq!(trait_conflict.exit_code, 255);
 
-    assert_eq!(error.phase, Phase::Runtime);
-    assert_eq!(
-        error.message,
-        "class Plugin already defines constant OPTION"
-    );
-
-    let class_override = runtime_error(
+    let class_override = run_source(
         r#"<?php
 trait PrimaryConfig {
     public const OPTION = "primary";
@@ -5000,12 +5254,13 @@ class Plugin {
     public const OPTION = "class";
 }
 "#,
-    );
-
-    assert_eq!(
-        class_override.message,
-        "class Plugin already defines constant OPTION"
-    );
+    )
+    .unwrap();
+    assert!(class_override.stdout.starts_with(
+        "Fatal error: Plugin and PrimaryConfig define the same constant (OPTION) in the composition of Plugin. However, the definition differs and is considered incompatible. Class was composed in Command line code on line "
+    ));
+    assert_eq!(class_override.stderr, "");
+    assert_eq!(class_override.exit_code, 255);
 }
 
 #[test]
@@ -18209,12 +18464,12 @@ trait Logs {
         (
             r#"<?php
 trait Logs {
-    protected const CHANNEL = "debug";
+    abstract const CHANNEL = "debug";
 }
 "#,
             3,
-            15,
-            "unsupported trait constant declaration: only public trait constants are implemented",
+            5,
+            "unsupported trait constant declaration: abstract trait constants are not implemented",
         ),
         (
             r#"<?php

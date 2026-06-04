@@ -1149,16 +1149,23 @@ requirement visibility is intentionally not enforced, matching PHP's
 backward-compatibility behavior; full lazy PHP class-linking and exact
 implicit-abstract class metadata/instantiation parity for missing public or
 protected trait requirements remain outside this bounded startup model.
-Public trait constants declared as `const NAME = ...` or
-`public const NAME = ...` with the current class-constant expression subset are
-composed into consuming classes and resolve through the existing
-`ClassName::CONST`, `self::CONST`, and `static::CONST` paths. Supported trait
+Trait constants declared as `const NAME = ...`,
+`public|protected|private const NAME = ...`, or final public/protected variants
+with the current class-constant expression subset are composed into consuming
+classes and resolve through the existing `ClassName::CONST`, object `::CONST`,
+`self::CONST`, `parent::CONST`, and `static::CONST` paths. Duplicate
+trait/class constants with the same name are compatible only when visibility,
+finality, optional type text, and evaluated runtime values match; incompatible
+duplicates emit PHP-shaped composition fatals at the class or trait declaration
+statement, preserving prior output. Direct `TraitName::CONST` and
+`constant("TraitName::CONST")` lookups raise catchable/uncaught PHP `Error`
+objects instead of exposing trait metadata as a class. Supported trait
 properties reuse the current class-property metadata/default subset and are
 composed as consuming-class properties for object storage and reflection;
 identical duplicate definitions are deduped, while incompatible duplicate
-definitions stop with a stable trait-use diagnostic. Non-public/typed/abstract/final/static trait constants,
-multi-constant trait declarations, trait constant adaptations, conflicting
-trait/class constants, final trait methods, concrete non-public trait methods,
+definitions stop with a stable trait-use diagnostic. Typed/abstract/static
+trait constants, multi-constant trait declarations, trait constant adaptations,
+private-final trait-constant exact diagnostics, final trait methods, concrete non-public trait methods,
 broad executable conflict resolution beyond class-method precedence and the
 current bounded `insteadof` slice, exact PHP fatal-error text for unresolved
 trait conflicts, unqualified visibility-only adaptations across

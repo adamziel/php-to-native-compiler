@@ -897,7 +897,11 @@ pub fn trait_properties_are_compatible(
 }
 
 pub fn trait_constants_are_compatible(left: &ClassConstantDecl, right: &ClassConstantDecl) -> bool {
-    left.visibility == right.visibility && default_exprs_are_compatible(&left.value, &right.value)
+    left.visibility == right.visibility
+        && left.is_final == right.is_final
+        && left.type_decl.as_ref().map(|decl| decl.text.as_str())
+            == right.type_decl.as_ref().map(|decl| decl.text.as_str())
+        && default_exprs_are_compatible(&left.value, &right.value)
 }
 
 fn optional_default_exprs_are_compatible(left: Option<&Expr>, right: Option<&Expr>) -> bool {
