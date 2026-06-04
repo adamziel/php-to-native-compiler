@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Repaired the latest-published PASS regression in
+  `Zend/tests/typehints/namespace_relative_scalar.phpt`. Namespace-relative
+  built-in type names such as `namespace\int` now keep their namespace-relative
+  spelling through parser type metadata so startup diagnostics emit PHP's
+  `Type declaration 'int' must be unqualified` fatal instead of resolving to a
+  plain `int` type in the global namespace. Ordinary namespace-relative
+  class-like type names continue to resolve against the active namespace.
+  Focused proof covers the pre-patch PHPT failure and post-patch PHPT pass for
+  the repaired row, adjacent namespace-relative type resolution, focused Rust
+  type-declaration startup diagnostics, fmt, and diff checks. Unsupported
+  edges remain the documented broader native lowering gaps for namespace-aware
+  type metadata and runtime references/COW.
+
 - Added a bounded magic-method dispatch correction for static-syntax and
   array-callback missing-method calls on the interpreter path. Missing
   `self::` / `parent::` / `static::` / `Class::` / `$object::` /

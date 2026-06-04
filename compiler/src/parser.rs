@@ -9289,6 +9289,9 @@ impl Parser {
             }
         }
         if let Some(suffix) = raw.strip_prefix("namespace\\") {
+            if Self::is_builtin_type_decl_name(suffix) {
+                return raw.to_string();
+            }
             return self.resolve_relative_namespace_class_name(suffix);
         }
         if Self::is_special_type_decl_name(raw) {
@@ -9296,6 +9299,30 @@ impl Parser {
         } else {
             self.resolve_class_like_name(raw)
         }
+    }
+
+    fn is_builtin_type_decl_name(raw: &str) -> bool {
+        if raw.starts_with('\\') || raw.contains('\\') {
+            return false;
+        }
+
+        matches!(
+            raw.to_ascii_lowercase().as_str(),
+            "array"
+                | "bool"
+                | "callable"
+                | "false"
+                | "float"
+                | "int"
+                | "iterable"
+                | "mixed"
+                | "never"
+                | "null"
+                | "object"
+                | "string"
+                | "true"
+                | "void"
+        )
     }
 
     fn is_special_type_decl_name(raw: &str) -> bool {
