@@ -1,13 +1,13 @@
 # PHP Native Compiler PHPT Progress
 
-Updated: 2026-06-04 12:50 CEST
+Updated: 2026-06-04 13:20 CEST
 
 Primary/public branch: `origin/master`
 Latest accepted public-score source:
-`e38135290f48e7f97dec2e99e673c6466a950f3e fix: implement trait constant semantics`
+`6c03801927f71f7c43fb7200dbdc37542a2ad8e9 fix: handle overloaded property updates`
 
 Semantic source for current published score:
-`e38135290f48e7f97dec2e99e673c6466a950f3e fix: implement trait constant semantics`
+`6c03801927f71f7c43fb7200dbdc37542a2ad8e9 fix: handle overloaded property updates`
 
 Public PHPT metric:
 
@@ -16,21 +16,31 @@ Public PHPT metric:
 Pinned denominator: `20294` total pinned runnable php-src PHPTs. Raw runner
 denominators that exclude BORKED rows are not public progress.
 
-Current public score: **7685 / 20294 pinned runnable PHPTs = 37.87%**.
+Current public score: **7703 / 20294 pinned runnable PHPTs = 37.96%**.
 
 Latest pushed source checkpoint:
-`6c03801927f71f7c43fb7200dbdc37542a2ad8e9 fix: handle overloaded property updates`
+`248aa93a432e0e0c72020cf2d676d1dd8117ff16 fix: implement regex iterator semantics`
 
 Current score-gate status:
-The latest accepted full gate for source `e3813529`:
+The latest accepted full gate for source `6c038019`:
+`state/logs/phpt-full-current-score-20260604T110314Z-php-src-f97ff59-public-6c038019-source-6c038019`
+completed `FINAL / GATE-AGGREGATE-COMPLETE / ZERO-PASS-REGRESSIONS` against
+the accepted `e3813529` PASS baseline. It reported public-comparable
+`7703 / 20294 = 37.96%`, `7699` normalized current passes, `0`
+latest-published PASS regressions, and `0` invalid proof-marker hits. This
+gate converts the overloaded-property source checkpoint `6c038019` into
+public PHPT progress. Newer source commits `5bfe8362` and `248aa93a` are
+staged after this accepted public source and are not included in the public
+score above.
+
+The previous accepted full gate for source `e3813529`:
 `state/logs/phpt-full-current-score-20260604T103438Z-php-src-f97ff59-public-e3813529-source-e3813529`
 completed `FINAL / GATE-AGGREGATE-COMPLETE / ZERO-PASS-REGRESSIONS` against
 the accepted `dcf615c9` PASS baseline. It reported public-comparable
 `7685 / 20294 = 37.87%`, `7681` normalized current passes, `0`
 latest-published PASS regressions, and `0` invalid proof-marker hits. This
-gate converts the post-`dcf615c9` source chain through `e3813529` into public
-PHPT progress. Newer source `6c038019` is staged after this accepted public
-source and is not included in the public score above.
+gate converted the post-`dcf615c9` source chain through `e3813529` into
+public PHPT progress.
 
 The previous accepted full gate for source `dcf615c9`:
 `state/logs/phpt-full-current-score-20260604T095029Z-php-src-f97ff59-public-dcf615c9-source-dcf615c9`
@@ -44,11 +54,15 @@ PHPT progress.
 Historical blocked full gates from before the `dcf615c9` publication included
 `593c0625` with four latest-published PASS regressions, `a3889f45` with two,
 and `6b0952e0` with one. Those blocked gates are not publication evidence, and
-the later clean `dcf615c9` and `e3813529` gates supersede them for the current
-public score.
+the later clean `dcf615c9`, `e3813529`, and `6c038019` gates supersede them
+for the current public score.
 
-The accepted source checkpoint chain through semantic source `e3813529` has
+The accepted source checkpoint chain through semantic source `6c038019` has
 been pushed to `origin/master` and is now reflected in the public score above.
+The completed score gate at checkpoint `6c038019` converted the post-`e3813529`
+source checkpoint into a public PHPT movement of `7685 -> 7703` passed pinned
+rows, a net gain of `18` public PHPT passes, with zero latest-published PASS
+regressions.
 The completed score gate at checkpoint `e3813529` converted the
 post-`dcf615c9` source chain into a public PHPT movement of `7636 -> 7685`
 passed pinned rows, a net gain of `49` public PHPT passes, with zero
@@ -63,37 +77,48 @@ passes, with zero latest-published PASS regressions.
 
 Unpublished source progress since the accepted public score source:
 
-- Latest pushed source head is `6c03801927f71f7c43fb7200dbdc37542a2ad8e9`
-  (`fix: handle overloaded property updates`), which is newer than the
-  accepted `e3813529` full gate and is not included in the public score above.
-- There is `1` score-relevant source commit after the accepted public-score
-  source: `6c03801927f71f7c43fb7200dbdc37542a2ad8e9`
-  (`fix: handle overloaded property updates`).
+- Latest pushed source head is `248aa93a432e0e0c72020cf2d676d1dd8117ff16`
+  (`fix: implement regex iterator semantics`), which is newer than the
+  accepted `6c038019` full gate and is not included in the public score above.
+- There are `2` score-relevant source commits after the accepted public-score
+  source: `5bfe836230ff17c3011e77018123bd09aa9d538e`
+  (`fix: render reflection metadata strings`) and
+  `248aa93a432e0e0c72020cf2d676d1dd8117ff16`
+  (`fix: implement regex iterator semantics`).
 - Staged focused selected-PHPT proof after the latest accepted public-score
-  source totals `17` selected rows across `1` integrated source artifact.
+  source totals `30` selected rows across `2` integrated source artifacts.
   These are source/staging facts, not a public score update unless a full
   pinned PHPT gate accepts them.
-- The overloaded-property update packet moved selected PHPT `0/17 -> 17/17`
-  for `Zend/tests/magic_methods/bug30394.phpt`,
-  `Zend/tests/magic_methods/bug30889.phpt`,
-  `Zend/tests/magic_methods/bug37667.phpt`,
-  `Zend/tests/magic_methods/bug39775.phpt`,
-  `Zend/tests/magic_methods/bug66609.phpt`,
-  `Zend/tests/magic_methods/bug70223.phpt`,
-  `Zend/tests/magic_methods/overloaded_prop_assign_op_refs.phpt`,
-  `Zend/tests/bug69201.phpt`,
-  `Zend/tests/exceptions/exception_during_property_assign_op.phpt`,
-  `Zend/tests/throwing_overloaded_compound_assign_op.phpt`,
-  `tests/classes/__set__get_001.phpt`,
-  `tests/classes/assign_op_property_001.phpt`,
-  `tests/classes/incdec_property_001.phpt`,
-  `tests/classes/incdec_property_002.phpt`,
-  `tests/classes/incdec_property_003.phpt`,
-  `tests/classes/incdec_property_004.phpt`, and
-  `tests/lang/operators/overloaded_property_ref.phpt`. It also preserved the
-  latest-published PASS scout `8/8`, passed focused Rust object-model
+- The reflection metadata/string-rendering packet moved selected PHPT
+  `0/13 -> 13/13` for `ext/reflection/tests/009.phpt`, `010.phpt`,
+  `024.phpt`, `025.phpt`, `ReflectionClass_toString_002.phpt`,
+  `ReflectionClass_toString_005.phpt`,
+  `ReflectionClass_toString_006.phpt`,
+  `ReflectionObject___toString_basic1.phpt`,
+  `ReflectionObject___toString_basic2.phpt`,
+  `ReflectionObject_export_basic3.phpt`, `bug41061.phpt`, `bug60357.phpt`,
+  and `bug74673.phpt`.
+- The SPL `RegexIterator` packet moved selected PHPT `0/17 -> 17/17` for
+  `ext/spl/tests/regexiterator_getregex.phpt`,
+  `ext/spl/tests/regexIterator_mode_basic.phpt`,
+  `ext/spl/tests/regexIterator_flags_basic.phpt`,
+  `ext/spl/tests/regexiterator_getpregflags.phpt`,
+  `ext/spl/tests/regexiterator_setpregflags.phpt`,
+  `ext/spl/tests/regexIterator_setMode_error.phpt`,
+  `ext/spl/tests/iterator_029.phpt`, `iterator_050.phpt`,
+  `iterator_051.phpt`, `iterator_054.phpt`, `iterator_055.phpt`,
+  `bug46088.phpt`, `bug50579.phpt`, `bug54304.phpt`, `bug66702.phpt`,
+  `bug68175.phpt`, and `bug70868.phpt`. It also preserved the latest-published
+  PASS scout `8/8`, passed focused Rust `RegexIterator` and object metadata
   coverage, build, fmt, diff checks, php-src cleanliness, and production
   row-name leakage scan.
+
+Accepted source proof included in the `6c038019` public gate:
+
+- The now-published `e3813529..6c038019` source checkpoint moved selected PHPT
+  `0/17 -> 17/17` for overloaded-property read/modify/write and magic
+  `__get()` / `__set()` rows. The clean full gate accepted it with zero
+  latest-published PASS regressions.
 
 Accepted source proof included in the `e3813529` public gate:
 
