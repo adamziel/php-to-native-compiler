@@ -11330,10 +11330,12 @@
   including traits with supported public constants, supported properties, and
   public instance/static methods.
   `get_loaded_extensions()` exposes a deterministic compatibility extension
-  list, including the current `posix` function metadata surface.
+  list, including the current `posix` function metadata surface and bounded
+  `xmlreader` class metadata surface.
   `ReflectionExtension` exposes a deterministic compatibility registry for the
-  current `Reflection`, `standard`, `ctype`, and `dom` slices, with other
-  extension inventories still outside the bounded object metadata surface.
+  current `Reflection`, `standard`, `ctype`, `dom`, and `xmlreader` slices,
+  with other extension inventories still outside the bounded object metadata
+  surface.
   `ReflectionExtension` supports constructor lookup,
   `getName()`, `getVersion()`, `getFunctions()`, `getConstants()`,
   `getINIEntries()`, `getClassNames()`, `getClasses()`, `getDependencies()`,
@@ -11353,6 +11355,18 @@
   Parser-backed doctype population, `DOMNamedNodeMap` entity/notation objects,
   readonly DOM property-hook write diagnostics, and native DOM/libxml
   execution remain unsupported.
+  The XMLReader core class slice includes node-type and parser-property
+  constants, readonly metadata properties, simple `open()` / `XML()` source
+  loading, `read()` / `next()` event traversal, element/text/end-element event
+  metadata, simple namespace declaration inheritance, attribute cursor movement
+  and lookup by name/index/namespace, `moveToElement()`, `readInnerXml()`,
+  `readOuterXml()`, `readString()`, catchable empty-argument `ValueError`s,
+  missing-source warnings, and simple external-DTD default attributes through
+  `XMLReader::DEFAULTATTRS`. Full libxml parser parity, malformed recovery,
+  entity expansion, validation, schema/RelaxNG behavior, stream contexts,
+  encoding conversion, broad DTD grammars, comment/PI event payload parity,
+  XMLReader subclass constructor side effects, and native lowering remain
+  unsupported.
   Simple class-body `use TraitName;`, repeated simple trait-use declarations,
   and `use TraitA, TraitB;` compose already-declared public trait constants and
   supported trait properties plus public instance/static trait methods onto the

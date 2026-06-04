@@ -67255,7 +67255,8 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "var_export",
 ];
 
-const COMPAT_LOADED_EXTENSION_NAMES: &[&str] = &["json", "hash", "pdo", "pdo_mysql", "posix"];
+const COMPAT_LOADED_EXTENSION_NAMES: &[&str] =
+    &["json", "hash", "pdo", "pdo_mysql", "posix", "xmlreader"];
 
 fn native_text_membership_candidates(candidates: &[&str]) -> Vec<String> {
     candidates

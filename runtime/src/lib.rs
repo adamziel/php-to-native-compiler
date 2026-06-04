@@ -34038,9 +34038,100 @@ impl PhpClassTable {
                 .add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
                 .expect("DOMDocumentType core metadata should not duplicate properties");
         }
+        let xml_reader_id = classes
+            .declare_class("XMLReader")
+            .expect("core class table should contain DOMDocumentType before XMLReader");
+        let xml_reader = classes
+            .get_mut(xml_reader_id)
+            .expect("declared XMLReader class id should resolve");
+        for property in [
+            "attributeCount",
+            "baseURI",
+            "depth",
+            "hasAttributes",
+            "hasValue",
+            "isDefault",
+            "isEmptyElement",
+            "localName",
+            "name",
+            "namespaceURI",
+            "nodeType",
+            "prefix",
+            "value",
+            "xmlLang",
+        ] {
+            xml_reader
+                .add_property(
+                    PhpPropertyMetadata::instance(property, Visibility::Public).readonly(),
+                )
+                .expect("XMLReader core metadata should not duplicate properties");
+        }
+        for method in [
+            "__construct",
+            "close",
+            "getAttribute",
+            "getAttributeNo",
+            "getAttributeNs",
+            "getParserProperty",
+            "isValid",
+            "lookupNamespace",
+            "moveToAttribute",
+            "moveToAttributeNo",
+            "moveToAttributeNs",
+            "moveToElement",
+            "moveToFirstAttribute",
+            "moveToNextAttribute",
+            "next",
+            "open",
+            "read",
+            "readInnerXml",
+            "readOuterXml",
+            "readString",
+            "setParserProperty",
+            "setRelaxNGSchema",
+            "setSchema",
+            "XML",
+        ] {
+            xml_reader
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("XMLReader core metadata should not duplicate methods");
+        }
+        for method in ["fromString", "fromUri"] {
+            xml_reader
+                .add_method(PhpMethodMetadata::static_method(method, Visibility::Public))
+                .expect("XMLReader core metadata should not duplicate static methods");
+        }
+        for constant in [
+            "NONE",
+            "ELEMENT",
+            "ATTRIBUTE",
+            "TEXT",
+            "CDATA",
+            "ENTITY_REF",
+            "ENTITY",
+            "PI",
+            "COMMENT",
+            "DOC",
+            "DOC_TYPE",
+            "DOC_FRAGMENT",
+            "NOTATION",
+            "WHITESPACE",
+            "SIGNIFICANT_WHITESPACE",
+            "END_ELEMENT",
+            "END_ENTITY",
+            "XML_DECLARATION",
+            "LOADDTD",
+            "DEFAULTATTRS",
+            "VALIDATE",
+            "SUBST_ENTITIES",
+        ] {
+            xml_reader
+                .add_constant(PhpClassConstantMetadata::new(constant, Visibility::Public))
+                .expect("XMLReader core metadata should not duplicate constants");
+        }
         let error_exception_id = classes
             .declare_class("ErrorException")
-            .expect("core class table should contain DOMDocumentType before ErrorException");
+            .expect("core class table should contain XMLReader before ErrorException");
         let exception_id = classes
             .lookup_class_id("Exception")
             .expect("core Exception class id should resolve for ErrorException");
@@ -82375,6 +82466,7 @@ mod tests {
                 "NoRewindIterator",
                 "InfiniteIterator",
                 "LimitIterator",
+                "RegexIterator",
                 "ReflectionExtension",
                 "ReflectionZendExtension",
                 "DateMalformedStringException",
@@ -82390,6 +82482,7 @@ mod tests {
                 "DOMElement",
                 "DOMDocument",
                 "DOMDocumentType",
+                "XMLReader",
                 "ErrorException",
                 "Reflection",
                 "Deprecated",
