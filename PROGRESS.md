@@ -22,6 +22,9 @@ Latest pushed source checkpoint:
 `248aa93a432e0e0c72020cf2d676d1dd8117ff16 fix: implement regex iterator semantics`
 
 Current score-gate status:
+Accepted public gate:
+`state/logs/phpt-full-current-score-20260604T110314Z-php-src-f97ff59-public-6c038019-source-6c038019`
+
 The latest accepted full gate for source `6c038019`:
 `state/logs/phpt-full-current-score-20260604T110314Z-php-src-f97ff59-public-6c038019-source-6c038019`
 completed `FINAL / GATE-AGGREGATE-COMPLETE / ZERO-PASS-REGRESSIONS` against
