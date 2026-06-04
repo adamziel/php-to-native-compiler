@@ -1,13 +1,13 @@
 # PHP Native Compiler PHPT Progress
 
-Updated: 2026-06-04 02:34 CEST
+Updated: 2026-06-04 02:48 CEST
 
 Primary/public branch: `origin/master`
 Latest accepted public-score source:
-`4cbed17007d8105004b2e7af202ed3097cac50ed fix: report readonly startup diagnostics`
+`5753eadfdf584bac87bfc23c4afb9505facd44dc docs: publish 4cbed170 PHPT score`
 
 Semantic source for current published score:
-`4cbed17007d8105004b2e7af202ed3097cac50ed fix: report readonly startup diagnostics`
+`3a003811c04e4756cccf2c18343188d964c568a2 fix: report user type diagnostics`
 
 Public PHPT metric:
 
@@ -16,54 +16,63 @@ Public PHPT metric:
 Pinned denominator: `20294` total pinned runnable php-src PHPTs. Raw runner
 denominators that exclude BORKED rows are not public progress.
 
-Current public score: **7090 / 20294 pinned runnable PHPTs = 34.94%**.
+Current public score: **7119 / 20294 pinned runnable PHPTs = 35.08%**.
 
 Latest pushed source checkpoint:
-`3a003811c04e4756cccf2c18343188d964c568a2 fix: report user type diagnostics`
+`397461985bdf64b947776851c1ce7e48a5998515 fix: add bounded directory iterator metadata`
 
 Next score-gate target:
-`3a003811c04e4756cccf2c18343188d964c568a2 fix: report user type diagnostics`
+`397461985bdf64b947776851c1ce7e48a5998515 fix: add bounded directory iterator metadata`
 
-The accepted source checkpoint chain through `4cbed170` has been pushed to
-`origin/master` and is now reflected in the public score above. The completed
-score gate converted the post-`fd09b997` source chain into a public PHPT
-movement of `7015 -> 7090` passed pinned rows, a net gain of `75` public PHPT
-passes, with zero latest-published PASS regressions.
+The accepted source checkpoint chain through semantic source `3a003811` has
+been pushed to `origin/master` and is now reflected in the public score above.
+The completed score gate at checkpoint `5753eadf` converted the
+post-`4cbed170` source chain into a public PHPT movement of `7090 -> 7119`
+passed pinned rows, a net gain of `29` public PHPT passes, with zero
+latest-published PASS regressions.
 
 Unpublished source progress since the accepted public score source:
 
-- Latest semantic source head is `3a003811c04e4756cccf2c18343188d964c568a2`
-  (`fix: report user type diagnostics`), pushed to `origin/master`.
-- There are `2` score-relevant commits after the accepted public-score source:
-  `7f78a158c01007020b02bc3f19fc062524ecb48a` (`fix: emit deprecated constant
-  diagnostics`) and `3a003811c04e4756cccf2c18343188d964c568a2` (`fix: report
-  user type diagnostics`).
+- Latest pushed source head is `397461985bdf64b947776851c1ce7e48a5998515`
+  (`fix: add bounded directory iterator metadata`), pushed to `origin/master`.
+- There is `1` score-relevant commit after the accepted public-score checkpoint:
+  `397461985bdf64b947776851c1ce7e48a5998515` (`fix: add bounded directory
+  iterator metadata`).
 - Integrated focused selected-PHPT proof since the latest accepted public gate
-  totals `22` selected rows across `2` integrated artifacts. These are local
+  totals `10` selected rows across `1` integrated artifact. These are local
   source/staging facts, not a public score update.
-- The deprecated constants diagnostics source packet moved selected PHPT
-  `0/12 -> 12/12` for the covered constant-deprecation rows and preserved a
-  latest-published PASS scout.
-- The userland type diagnostics source packet moved selected PHPT
-  `0/10 -> 10/10` for `tests/classes/type_hinting_001.phpt`,
-  `tests/classes/type_hinting_002.phpt`,
-  `tests/classes/type_hinting_003.phpt`, `tests/lang/type_hints_001.phpt`,
-  `Zend/tests/object_types/type_hint_in_function.phpt`,
-  `Zend/tests/object_types/type_hint_in_class_method.phpt`,
-  `Zend/tests/object_types/return_type_in_function.phpt`,
-  `Zend/tests/typehints/bug76198.phpt`,
-  `Zend/tests/typehints/fully_qualified_scalar.phpt`, and
-  `Zend/tests/typehints/namespace_relative_scalar.phpt`. It also preserved a
-  seven-row latest-published PASS scout.
+- The DirectoryIterator/SplFileInfo source packet moved selected PHPT
+  `0/10 -> 10/10` for `ext/spl/tests/DirectoryIterator_empty_constructor.phpt`,
+  `ext/spl/tests/DirectoryIterator_getBasename_basic_test.phpt`,
+  `ext/spl/tests/DirectoryIterator_getExtension_basic.phpt`,
+  `ext/spl/tests/DirectoryIterator_getGroup_basic.phpt`,
+  `ext/spl/tests/DirectoryIterator_getInode_basic.phpt`,
+  `ext/spl/tests/DirectoryIterator_getOwner_basic.phpt`,
+  `ext/spl/tests/DirectoryIterator_uninitialized.phpt`,
+  `ext/spl/tests/SplFileinfo_debugInfo_basic.phpt`,
+  `ext/spl/tests/SplFileinfo_getBasename_basic.phpt`, and
+  `ext/spl/tests/SplFileinfo_getFilename_basic.phpt`. It also preserved an
+  eight-row latest-published PASS scout including `bug60598.phpt` and
+  `semi_reserved_005.phpt`.
 - The prior score-gate checkpoint
   `28662f8a482521f65fcbdc1b415163afbf65efd9` is not publication evidence
   because its gate is missing result files. The earlier `b2914aff` full gate
   remains blocked by the latest-published PASS regression
   `php-src/Zend/tests/bug60598.phpt`.
 
-Accepted public gate: checkpoint `4cbed170` completed the pinned full PHPT
-gate with `7090 / 20294 = 34.94%` and zero latest-published PASS regressions
-against the `fd09b997` baseline. Full gate evidence is in
+Accepted public gate: checkpoint `5753eadf` completed the pinned full PHPT
+gate with `7119 / 20294 = 35.08%` and zero latest-published PASS regressions
+against the `4cbed170` baseline. Full gate evidence is in
+`state/logs/phpt-full-current-score-20260604T003615Z-php-src-f97ff59-public-5753eadf-source-5753eadf`;
+the aggregate had `7119` passed rows, `7115` normalized current passes, and
+`0` PASS regressions. The accepted PASS baseline is
+`state/logs/phpt-full-current-score-20260604T003615Z-php-src-f97ff59-public-5753eadf-source-5753eadf/current-passes.normalized.txt`
+with SHA-256
+`aa2e0f901686caf7436d8497e8b4a18b418c534b312b6723518ae9d555bd2a18`.
+
+Previous accepted public gate: checkpoint `4cbed170` completed the pinned full
+PHPT gate with `7090 / 20294 = 34.94%` and zero latest-published PASS
+regressions against the `fd09b997` baseline. Full gate evidence is in
 `state/logs/phpt-full-current-score-20260604T001248Z-php-src-f97ff59-public-4cbed170-source-4cbed170`;
 the aggregate had `7090` passed rows, `7086` normalized current passes, and
 `0` PASS regressions. The accepted PASS baseline is
