@@ -2897,9 +2897,15 @@
   `?array`, `array|null`, or `null|array`; `__serialize()` and `__sleep()`
   require `array`; and `__set_state()` accepts `object` plus object-compatible
   class-name, `self`, `static`, union, or intersection declarations while still
-  rejecting scalar arms. Exact ordering when a magic method has multiple
-  invalid signature facets and exact nullable `__debugInfo()` deprecation
-  text/order remain unsupported. The scalar subset observes file-scope
+  rejecting scalar arms. The same startup lane enforces bounded
+  signature/staticness contracts for `__construct()`, `__destruct()`,
+  `__clone()`, `__toString()`, `__sleep()`, `__wakeup()`, `__serialize()`,
+  `__unserialize()`, `__set_state()`, and `__invoke()`, including preserving
+  queued magic-method visibility warnings before later registration fatals.
+  Exact ordering when a magic method has multiple invalid signature facets,
+  private `__invoke()` dispatch semantics, and exact nullable `__debugInfo()`
+  deprecation text/order remain unsupported. The scalar subset observes
+  file-scope
   `strict_types=1` for direct user-function and closure calls, rejecting weak
   scalar coercions while still allowing PHP's `int` to `float` widening; weak
   exact `string` declarations accept supported `__toString()` objects, missing

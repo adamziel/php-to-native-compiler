@@ -1799,6 +1799,169 @@ class Box {
 }
 
 #[test]
+fn magic_method_signature_contracts_emit_php_startup_fatals() {
+    let cases = [
+        (
+            r#"<?php
+class Box {
+    protected static function __toString($left, $right) {}
+}
+"#,
+            "Zend/tests/magic_methods/magic_methods_010.php",
+            3,
+            "Method Box::__toString() cannot take arguments",
+        ),
+        (
+            r#"<?php
+class Box {
+    public function __clone($value) {}
+}
+"#,
+            "Zend/tests/errmsg/errmsg_015.php",
+            3,
+            "Method Box::__clone() cannot take arguments",
+        ),
+        (
+            r#"<?php
+class Box {
+    public function __destruct($value) {}
+}
+"#,
+            "Zend/tests/errmsg/errmsg_019.php",
+            3,
+            "Method Box::__destruct() cannot take arguments",
+        ),
+        (
+            r#"<?php
+class Box {
+    public static function __construct() {}
+}
+"#,
+            "Zend/tests/errmsg/errmsg_032.php",
+            3,
+            "Method Box::__construct() cannot be static",
+        ),
+        (
+            r#"<?php
+class Box {
+    public static function __clone() {}
+}
+"#,
+            "Zend/tests/errmsg/errmsg_034.php",
+            3,
+            "Method Box::__clone() cannot be static",
+        ),
+        (
+            r#"<?php
+class Box {
+    public static function __invoke() {}
+}
+"#,
+            "Zend/tests/magic_methods/bug70215.php",
+            3,
+            "Method Box::__invoke() cannot be static",
+        ),
+        (
+            r#"<?php
+class Box {
+    public function __serialize($value) {}
+}
+"#,
+            "Zend/tests/magic_methods/magic_methods_serialize.php",
+            3,
+            "Method Box::__serialize() cannot take arguments",
+        ),
+        (
+            r#"<?php
+class Box {
+    public function __sleep($value) {}
+}
+"#,
+            "Zend/tests/magic_methods/magic_methods_sleep.php",
+            3,
+            "Method Box::__sleep() cannot take arguments",
+        ),
+        (
+            r#"<?php
+class Box {
+    public function __wakeup($value) {}
+}
+"#,
+            "Zend/tests/magic_methods/magic_methods_wakeup.php",
+            3,
+            "Method Box::__wakeup() cannot take arguments",
+        ),
+        (
+            r#"<?php
+class Box {
+    public function __unserialize($data, $extra) {}
+}
+"#,
+            "Zend/tests/magic_methods/magic_methods_unserialize.php",
+            3,
+            "Method Box::__unserialize() must take exactly 1 argument",
+        ),
+        (
+            r#"<?php
+class Box {
+    public function __unserialize(string $data) {}
+}
+"#,
+            "Zend/tests/magic_methods/magic_methods_019.php",
+            3,
+            "Box::__unserialize(): Parameter #1 ($data) must be of type array when declared",
+        ),
+        (
+            r#"<?php
+class Box {
+    public static function __set_state(int $properties) {}
+}
+"#,
+            "Zend/tests/magic_methods/magic_methods_020.php",
+            3,
+            "Box::__set_state(): Parameter #1 ($properties) must be of type array when declared",
+        ),
+        (
+            r#"<?php
+class Box {
+    public function __set_state(array $properties) {}
+}
+"#,
+            "Zend/tests/magic_methods/magic_methods_set_state.php",
+            3,
+            "Method Box::__set_state() must be static",
+        ),
+    ];
+
+    for (source, file, line, message) in cases {
+        assert_php_startup_fatal(source, file, line, message);
+    }
+}
+
+#[test]
+fn magic_method_visibility_warning_is_preserved_before_registration_fatal() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+abstract class Base {
+    abstract function __set($name, $value);
+}
+class Child extends Base {
+    private function __set($name, $value) {}
+}
+"#,
+        "Zend/tests/magic_methods/magic_methods_008.php",
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "");
+    assert_eq!(
+        execution.stderr,
+        "Warning: The magic method Child::__set() must have public visibility in Zend/tests/magic_methods/magic_methods_008.php on line 6\n\nFatal error: Access level to Child::__set() must be public (as in class Base) in Zend/tests/magic_methods/magic_methods_008.php on line 6"
+    );
+    assert_eq!(execution.exit_code, 255);
+}
+
+#[test]
 fn magic_method_return_type_contracts_accept_supported_declarations() {
     let execution = run_source(
         r#"<?php
@@ -15095,10 +15258,10 @@ class StaticDestructor {
 "#,
     );
     assert_eq!(static_destructor.line, 3);
-    assert_eq!(static_destructor.column, 19);
+    assert_eq!(static_destructor.column, 1);
     assert_eq!(
         static_destructor.message,
-        "unsupported class inheritance for StaticDestructor: destructor StaticDestructor::__destruct() must be non-static in the current subset"
+        "Method StaticDestructor::__destruct() cannot be static"
     );
 
     let parameter_destructor = runtime_error(
@@ -15109,10 +15272,10 @@ class ParameterDestructor {
 "#,
     );
     assert_eq!(parameter_destructor.line, 3);
-    assert_eq!(parameter_destructor.column, 12);
+    assert_eq!(parameter_destructor.column, 1);
     assert_eq!(
         parameter_destructor.message,
-        "unsupported class inheritance for ParameterDestructor: destructor ParameterDestructor::__destruct() cannot declare parameters in the current subset"
+        "Method ParameterDestructor::__destruct() cannot take arguments"
     );
 }
 

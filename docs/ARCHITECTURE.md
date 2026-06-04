@@ -353,12 +353,15 @@ magic/`ArrayAccess` helpers additionally accepts the standard PHP signatures
 for `__get`, `__set`, `__isset`, `__unset`, `__call`, `__callStatic`,
 `offsetGet`, `offsetSet`, `offsetExists`, and `offsetUnset` as syntax-only
 metadata for the existing body executor. A declaration-startup pass separately
-checks bounded magic-method return contracts for classes, interfaces, and
-traits: constructors and destructors reject any return declaration, selected
-magic methods require `void`, `bool`, `string`, `array` / nullable-array, or
+checks bounded magic-method contracts for classes, interfaces, and traits:
+constructors and destructors reject any return declaration, selected magic
+methods require `void`, `bool`, `string`, `array` / nullable-array, or
 object-compatible `object`, class-name, `self`, `static`, union, or
-intersection declarations for `__set_state()` exactly as PHP requires for the
-covered rows. By-value `callable` parameter and return declarations share the
+intersection declarations for `__set_state()`, and the covered startup
+signature lane enforces magic arity/staticness plus first-parameter `array`
+requirements for `__unserialize()` / `__set_state()`. Queued magic-method
+visibility warnings are kept when a later class-registration startup fatal is
+materialized. By-value `callable` parameter and return declarations share the
 runtime callable validator for the current string callback, public
 array-callable method, and closure value subset, and signature compatibility
 treats `Closure` as a subtype of `callable`. Declared functions that fall off

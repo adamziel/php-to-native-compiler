@@ -229,9 +229,10 @@ fn run_program_with_optional_source_file(
             {
                 return Ok(execution);
             }
-            if let Some(execution) =
+            if let Some(mut execution) =
                 class_registration_startup_fatal_execution(&error, source_file.as_deref())
             {
+                startup_diagnostics.prepend_warnings_to_execution(&mut execution);
                 return Ok(execution);
             }
             return Err(error);
@@ -112246,8 +112247,15 @@ enum MagicMethodStaticRequirement {
 }
 
 #[derive(Clone, Copy)]
+enum MagicMethodArityRequirement {
+    Any,
+    Exact(usize),
+    None,
+}
+
+#[derive(Clone, Copy)]
 struct MagicMethodSignatureContract {
-    expected_arity: usize,
+    arity: MagicMethodArityRequirement,
     first_parameter_type: Option<&'static str>,
     second_parameter_type: Option<&'static str>,
     static_requirement: MagicMethodStaticRequirement,
@@ -112324,7 +112332,7 @@ impl MagicMethodStartupDiagnostics {
         }
         let mut stderr = self.warnings.join("\n");
         if !stderr.is_empty() {
-            stderr.push('\n');
+            stderr.push_str("\n\n");
         }
         stderr.push_str(fatal);
         let stdout_bytes = stdout.as_bytes().to_vec();
@@ -112356,7 +112364,11 @@ impl MagicMethodStartupDiagnostics {
         }
         let mut stderr = self.warnings.join("\n");
         if !execution.stderr.is_empty() {
-            stderr.push('\n');
+            if execution.exit_code == 255 && execution.stderr.starts_with("Fatal error:") {
+                stderr.push_str("\n\n");
+            } else {
+                stderr.push('\n');
+            }
             stderr.push_str(&execution.stderr);
         }
         execution.stderr = stderr;
@@ -117168,24 +117180,43 @@ fn magic_method_signature_diagnostic(
         return Some(message);
     }
     let contract = magic_method_signature_contract(method_name)?;
-    if function.params.len() != contract.expected_arity
-        || function.params.iter().any(|param| param.is_variadic)
-    {
-        return Some(format!(
-            "Method {class_name}::{method_name}() must take exactly {} {}",
-            contract.expected_arity,
-            if contract.expected_arity == 1 {
-                "argument"
-            } else {
-                "arguments"
+
+    match contract.arity {
+        MagicMethodArityRequirement::Any => {}
+        MagicMethodArityRequirement::Exact(expected_arity) => {
+            if function.params.len() != expected_arity
+                || function.params.iter().any(|param| param.is_variadic)
+            {
+                return Some(format!(
+                    "Method {class_name}::{method_name}() must take exactly {expected_arity} {}",
+                    if expected_arity == 1 {
+                        "argument"
+                    } else {
+                        "arguments"
+                    }
+                ));
             }
-        ));
+            if function.params.iter().any(|param| param.by_reference) {
+                return Some(format!(
+                    "Method {class_name}::{method_name}() cannot take arguments by reference"
+                ));
+            }
+        }
+        MagicMethodArityRequirement::None => {
+            if !function.params.is_empty() || function.params.iter().any(|param| param.is_variadic)
+            {
+                return Some(format!(
+                    "Method {class_name}::{method_name}() cannot take arguments"
+                ));
+            }
+            if function.params.iter().any(|param| param.by_reference) {
+                return Some(format!(
+                    "Method {class_name}::{method_name}() cannot take arguments by reference"
+                ));
+            }
+        }
     }
-    if function.params.iter().any(|param| param.by_reference) {
-        return Some(format!(
-            "Method {class_name}::{method_name}() cannot take arguments by reference"
-        ));
-    }
+
     match contract.static_requirement {
         MagicMethodStaticRequirement::MustBeStatic if !is_static => {
             return Some(format!(
@@ -117352,7 +117383,9 @@ fn magic_method_visibility_warning(
     function: &FunctionDecl,
     visibility: ClassVisibility,
 ) -> Option<String> {
-    magic_method_signature_contract(function.name.as_str())?;
+    if !magic_method_requires_public_visibility(function.name.as_str()) {
+        return None;
+    }
     if visibility == ClassVisibility::Public {
         return None;
     }
@@ -117362,24 +117395,44 @@ fn magic_method_visibility_warning(
     ))
 }
 
+fn magic_method_requires_public_visibility(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "__call"
+            | "__callstatic"
+            | "__get"
+            | "__set"
+            | "__isset"
+            | "__unset"
+            | "__tostring"
+            | "__sleep"
+            | "__wakeup"
+            | "__debuginfo"
+            | "__serialize"
+            | "__unserialize"
+            | "__set_state"
+            | "__invoke"
+    )
+}
+
 fn magic_method_signature_contract(name: &str) -> Option<MagicMethodSignatureContract> {
     if name.eq_ignore_ascii_case("__call") {
         Some(MagicMethodSignatureContract {
-            expected_arity: 2,
+            arity: MagicMethodArityRequirement::Exact(2),
             first_parameter_type: Some("string"),
             second_parameter_type: Some("array"),
             static_requirement: MagicMethodStaticRequirement::MustNotBeStatic,
         })
     } else if name.eq_ignore_ascii_case("__callStatic") {
         Some(MagicMethodSignatureContract {
-            expected_arity: 2,
+            arity: MagicMethodArityRequirement::Exact(2),
             first_parameter_type: Some("string"),
             second_parameter_type: Some("array"),
             static_requirement: MagicMethodStaticRequirement::MustBeStatic,
         })
     } else if name.eq_ignore_ascii_case("__set") {
         Some(MagicMethodSignatureContract {
-            expected_arity: 2,
+            arity: MagicMethodArityRequirement::Exact(2),
             first_parameter_type: Some("string"),
             second_parameter_type: None,
             static_requirement: MagicMethodStaticRequirement::MustNotBeStatic,
@@ -117389,8 +117442,50 @@ fn magic_method_signature_contract(name: &str) -> Option<MagicMethodSignatureCon
         || name.eq_ignore_ascii_case("__unset")
     {
         Some(MagicMethodSignatureContract {
-            expected_arity: 1,
+            arity: MagicMethodArityRequirement::Exact(1),
             first_parameter_type: Some("string"),
+            second_parameter_type: None,
+            static_requirement: MagicMethodStaticRequirement::MustNotBeStatic,
+        })
+    } else if name.eq_ignore_ascii_case("__construct") {
+        Some(MagicMethodSignatureContract {
+            arity: MagicMethodArityRequirement::Any,
+            first_parameter_type: None,
+            second_parameter_type: None,
+            static_requirement: MagicMethodStaticRequirement::MustNotBeStatic,
+        })
+    } else if name.eq_ignore_ascii_case("__destruct")
+        || name.eq_ignore_ascii_case("__clone")
+        || name.eq_ignore_ascii_case("__toString")
+        || name.eq_ignore_ascii_case("__sleep")
+        || name.eq_ignore_ascii_case("__wakeup")
+        || name.eq_ignore_ascii_case("__serialize")
+        || name.eq_ignore_ascii_case("__debugInfo")
+    {
+        Some(MagicMethodSignatureContract {
+            arity: MagicMethodArityRequirement::None,
+            first_parameter_type: None,
+            second_parameter_type: None,
+            static_requirement: MagicMethodStaticRequirement::MustNotBeStatic,
+        })
+    } else if name.eq_ignore_ascii_case("__unserialize") {
+        Some(MagicMethodSignatureContract {
+            arity: MagicMethodArityRequirement::Exact(1),
+            first_parameter_type: Some("array"),
+            second_parameter_type: None,
+            static_requirement: MagicMethodStaticRequirement::MustNotBeStatic,
+        })
+    } else if name.eq_ignore_ascii_case("__set_state") {
+        Some(MagicMethodSignatureContract {
+            arity: MagicMethodArityRequirement::Exact(1),
+            first_parameter_type: Some("array"),
+            second_parameter_type: None,
+            static_requirement: MagicMethodStaticRequirement::MustBeStatic,
+        })
+    } else if name.eq_ignore_ascii_case("__invoke") {
+        Some(MagicMethodSignatureContract {
+            arity: MagicMethodArityRequirement::Any,
+            first_parameter_type: None,
             second_parameter_type: None,
             static_requirement: MagicMethodStaticRequirement::MustNotBeStatic,
         })
