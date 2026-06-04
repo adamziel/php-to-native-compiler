@@ -31791,6 +31791,12 @@ impl Interpreter {
         Ok(())
     }
 
+    fn can_reuse_var_dump_temporary_object_handle(&self, object: &PhpObject) -> bool {
+        self.is_spl_file_info_class_id(object.class_id())
+            || self.is_spl_file_object_class_id(object.class_id())
+            || self.is_spl_directory_iterator_class_id(object.class_id())
+    }
+
     fn retire_reusable_temporary_objects_in_value(
         &mut self,
         value: &Value,
@@ -31800,6 +31806,9 @@ impl Interpreter {
         match value {
             Value::Object(object) => {
                 if !visited.insert(object.id()) {
+                    return Ok(());
+                }
+                if !self.can_reuse_var_dump_temporary_object_handle(object) {
                     return Ok(());
                 }
                 for property in object.properties() {

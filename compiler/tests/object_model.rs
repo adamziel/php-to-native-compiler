@@ -18533,6 +18533,28 @@ echo spl_object_id($captured_iterator), "|", spl_object_id($after_capture), "\n"
 }
 
 #[test]
+fn array_object_var_dumped_iterator_temporaries_keep_php_handle_progression() {
+    let source = r#"<?php
+class DumpedHandleIterator extends ArrayIterator {}
+
+$ao = new ArrayObject(array("a" => 1), 0, "DumpedHandleIterator");
+var_dump($ao->getIterator());
+foreach ($ao as $value) {}
+var_dump($ao->getIterator());
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert!(execution
+        .stdout
+        .contains("object(DumpedHandleIterator)#2 (1)"));
+    assert!(execution
+        .stdout
+        .contains("object(DumpedHandleIterator)#3 (1)"));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn spl_doubly_linked_list_iteration_offsets_and_exceptions() {
     let source = r#"<?php
 $list = new SplDoublyLinkedList();
@@ -18833,6 +18855,26 @@ var_dump(new SplFileInfo('path/to/b'));
         "{}",
         execution.stdout
     );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn spl_file_info_var_dump_temporaries_reuse_php_handles() {
+    let source = r#"<?php
+var_dump(new SplFileInfo("first.txt"));
+var_dump(new SplFileInfo("second.txt"));
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution
+            .stdout
+            .matches("object(SplFileInfo)#1 (2)")
+            .count(),
+        2
+    );
+    assert!(!execution.stdout.contains("object(SplFileInfo)#2"));
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
 }

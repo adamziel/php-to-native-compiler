@@ -2747,11 +2747,14 @@
   `getFileInfo()`, and `getPathInfo()` create bounded SPL objects using the
   selected class state without invoking selected-class constructor side
   effects. `getBasename()`, `getFilename()`, and `__debugInfo()` are pure
-  path-string operations over the stored path. Core `DirectoryIterator`
-  supports bounded local directory construction, `current()`, `key()`,
-  `next()`, `rewind()`, `valid()`, `isDot()`, `isFile()`, `getFilename()`,
-  `getBasename()`, `getExtension()`, `getGroup()`, `getInode()`, and
-  `getOwner()` for the reached public PHPT rows. Broad `SplFileInfo`
+  path-string operations over the stored path. Direct `var_dump()` recycles
+  unrooted temporary object handles only for selected SPL file/directory
+  temporaries in this lane; broader object temporary handle reuse remains
+  unsupported. Core `DirectoryIterator` supports bounded local directory
+  construction, `current()`, `key()`, `next()`, `rewind()`, `valid()`,
+  `isDot()`, `isFile()`, `getFilename()`, `getBasename()`, `getExtension()`,
+  `getGroup()`, `getInode()`, and `getOwner()` for the reached public PHPT
+  rows. Broad `SplFileInfo`
   path/name/type methods, `FilesystemIterator` / `RecursiveDirectoryIterator`,
   broad `DirectoryIterator` seek/path/type/link behavior, link-target-specific
   metadata, non-local/user stream wrappers, exact open_basedir warning parity,

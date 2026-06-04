@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Repaired the latest-published PASS regression in
+  `ext/spl/tests/ArrayObject/arrayObject_getIteratorClass_basic1.phpt`.
+  Direct `var_dump()` now limits reusable temporary object-handle retirement
+  to the selected SPL file/directory classes that need repeated temporary dump
+  handle reuse, instead of recycling arbitrary unrooted objects such as
+  `ArrayIterator` instances returned by `ArrayObject::getIterator()`. This
+  preserves PHP-shaped handle progression for `var_dump($ao->getIterator())`,
+  a following `foreach` iterator temporary, and a later explicit
+  `getIterator()` call. Focused proof covers exact-current pre-patch selected
+  PHPT at `0/1`, post-patch selected PHPT at `1/1`, Rust object-model
+  regression coverage, the related SPL file/directory handle-reuse guard,
+  build/fmt/diff checks, and the selected latest-published PASS regression row
+  only. Unsupported edges remain full PHP object lifetime/refcount parity,
+  exact temporary destruction scheduling for arbitrary object graphs, broad
+  var_dump handle reuse outside selected SPL file/directory temporaries,
+  references/COW, and native lowering.
+
 - Repaired the active score-gate PASS regression in
   `Zend/tests/bug60598.phpt`. Direct variable and `$GLOBALS`-routed nested
   array writes now update existing root array cells in place instead of

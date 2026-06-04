@@ -147,9 +147,11 @@ current `setFileClass()` / `setInfoClass()` selections so `openFile()`,
 `getFileInfo()`, and `getPathInfo()` can allocate bounded SPL objects through
 the existing object metadata path, while `getExtension()` remains a pure
 basename operation. `getBasename()`, `getFilename()`, and `__debugInfo()` are
-also pure path-state operations, with direct `var_dump()` retiring unrooted
-temporary object handles after formatting so repeated temporary dumps can reuse
-PHP-shaped object handles. Core `DirectoryIterator` instances add a bounded
+also pure path-state operations, with direct `var_dump()` retiring selected
+unrooted `SplFileInfo` / `SplFileObject` / `DirectoryIterator` temporary
+object handles after formatting so repeated temporary dumps can reuse
+PHP-shaped object handles without recycling general iterator temporaries. Core
+`DirectoryIterator` instances add a bounded
 local-directory cursor state layered on `SplFileInfo`: construction resolves a
 local directory, records a deterministic entry list with dot entries, and the
 covered cursor, basename/extension/filename, dot/file, and group/inode/owner
