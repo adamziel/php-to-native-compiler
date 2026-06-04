@@ -4762,7 +4762,16 @@ objects store copied function or method metadata plus the selected parsed
 parameter metadata, so the interpreter can answer names, positions, declaring
 class/function, optional/default availability and values, by-reference flags,
 `canBePassedByValue()`, variadic flags, default constant-name metadata,
-type-presence checks, nullability checks, and simple named type metadata.
+type-presence checks, nullability checks, deprecated simple class/array type
+probes, and simple named type metadata. Deprecated `getClass()` reuses the
+same request-local class metadata path for simple class-like parameter types,
+including nullable class types, `self`, `parent`, and autoloaded names; built-in
+and compound types stay null in that compatibility path. Deprecated
+`isArray()` is a simple `array` / `?array` type probe. Reflected user-method
+default values evaluate `self::` and `parent::` class constants with the
+reflected declaring class context, including nested array defaults, while
+global constant default-name metadata is stored without a leading namespace
+separator.
 The same request-local parameter state carries a bounded internal DateTime
 method arginfo slice for `DateTime::setTime()`,
 `DateTimeImmutable::setTime()`, `DateTime::createFromFormat()`,
@@ -4833,7 +4842,8 @@ interpreter. Deprecated `ReflectionParameter::isCallable()` emits the PHP
 `callable`. Untyped parameters return `null`. It does not expose files, line
 numbers, doc comments, extension/internal metadata beyond the named bounded
 internal-function slice, invocation-time reference binding, full callable-object
-constructor targets, deprecated `getClass()` behavior, DNF type objects,
+constructor targets, compound/DNF deprecated `getClass()` parity, new
+initializer defaults, optional-before-required metadata, DNF type objects,
 runtime argument/return type enforcement, or native lowering.
 `ReflectionProperty` uses a core placeholder class plus request-local state for
 the selected declaring class id/name, property name, visibility, static flag,

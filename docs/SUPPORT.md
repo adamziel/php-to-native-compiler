@@ -11253,8 +11253,19 @@
   `getDeclaringFunction()`, `isOptional()`, `isDefaultValueAvailable()`,
   `getDefaultValue()`, `isDefaultValueConstant()`,
   `getDefaultValueConstantName()`, `isPassedByReference()`,
-  `canBePassedByValue()`, `isVariadic()`, and
+  `canBePassedByValue()`, `isVariadic()`, deprecated `getClass()`,
+  deprecated `isArray()`, and
   `hasType()` over the current parsed function or method parameter metadata.
+  Deprecated `getClass()` emits the PHP 8 deprecation and resolves simple
+  class-like parameter types, including nullable class types, `self`, `parent`,
+  and autoloaded class names; built-in, union, intersection, and untyped
+  parameters return `null` in this bounded path. Deprecated `isArray()` emits
+  the matching PHP 8 deprecation and reports true for simple `array` and
+  `?array` parameter types, not for unions such as `array|string`.
+  Reflected user-method default values that contain `self::` or `parent::`
+  class constants are evaluated with the reflected declaring class context,
+  including array defaults, and global constant default names omit the leading
+  namespace separator in `getDefaultValueConstantName()`.
   For the bounded internal method slice, `DateTime::setTime()`,
   `DateTimeImmutable::setTime()`, `DateTime::createFromFormat()`,
   `DateTimeImmutable::createFromFormat()`,
@@ -11278,7 +11289,11 @@
   union member, `mixed`, and typed-default-`null` cases in the current function/method
   parameter slice. Deprecated `ReflectionParameter::isCallable()` emits the
   PHP 8.0 deprecation and returns true when the parsed parameter type includes
-  `callable`. Direct user instantiation of `ReflectionType`,
+  `callable`. Broader deprecated `getClass()` parity for compound/DNF types,
+  exact invalid `self`/`parent` diagnostics outside the documented closure and
+  method contexts, new-in-constant-expression defaults, optional-before-required
+  metadata, and broad internal default inventories remain unsupported. Direct
+  user instantiation of `ReflectionType`,
   `ReflectionNamedType`, `ReflectionUnionType`, and
   `ReflectionIntersectionType` is rejected; these objects are only materialized
   by the supported reflection `getType()` and method `getReturnType()` paths.

@@ -32561,6 +32561,9 @@ impl PhpClassTable {
         let reflection_function = classes
             .get_mut(reflection_function_id)
             .expect("declared ReflectionFunction class id should resolve");
+        reflection_function
+            .add_property(PhpPropertyMetadata::instance("name", Visibility::Public))
+            .expect("ReflectionFunction core metadata should not duplicate properties");
         for method in [
             "__construct",
             "__toString",
@@ -32695,6 +32698,8 @@ impl PhpClassTable {
             "isPassedByReference",
             "canBePassedByValue",
             "isVariadic",
+            "getClass",
+            "isArray",
             "isCallable",
             "hasType",
             "getType",

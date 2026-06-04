@@ -143,6 +143,70 @@ try {
 }
 
 #[test]
+fn reflection_parameter_deprecated_class_array_and_contextual_default_metadata() {
+    let execution = run_source(
+        r#"<?php
+namespace ReflectionParamDefaults {
+    const VALUE = "v";
+}
+
+namespace {
+    function yn($value) {
+        return $value ? "1" : "0";
+    }
+
+    function class_name_for($parameter) {
+        $class = @$parameter->getClass();
+        return $class ? $class->getName() : "NULL";
+    }
+
+    class BaseParamDefault {
+        const FALLBACK = 20;
+    }
+
+    class ChildParamDefault extends BaseParamDefault {
+        const DEFAULT_VALUE = 12;
+
+        public function method(
+            array $array,
+            ?array $nullableArray,
+            stdClass $object,
+            self $selfType,
+            parent $parentType,
+            $selfDefault = self::DEFAULT_VALUE,
+            $parentDefault = array(parent::FALLBACK)
+        ) {}
+    }
+
+    function global_constant_default($value = ReflectionParamDefaults\VALUE) {}
+
+    $method = new ReflectionMethod(ChildParamDefault::class, "method");
+    $params = $method->getParameters();
+
+    echo "array|", yn(@$params[0]->isArray()), yn(@$params[1]->isArray()), yn(@$params[2]->isArray()), "\n";
+    echo "class|", class_name_for($params[2]), "|", class_name_for($params[3]), "|", class_name_for($params[4]), "\n";
+    $arrayDefault = $params[6]->getDefaultValue();
+    echo "default|", $params[5]->getDefaultValue(), "|", $arrayDefault[0], "\n";
+    echo "constant|", (new ReflectionFunction("global_constant_default"))->getParameters()[0]->getDefaultValueConstantName(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "array|110\n",
+            "class|stdClass|ChildParamDefault|BaseParamDefault\n",
+            "default|12|20\n",
+            "constant|ReflectionParamDefaults\\VALUE\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn internal_datetime_parameter_defaults_reflect_php_metadata() {
     let execution = run_source(
         r#"<?php

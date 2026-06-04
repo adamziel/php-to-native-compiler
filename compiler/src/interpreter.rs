@@ -53679,10 +53679,12 @@ impl Interpreter {
             .classes
             .get(class_id)
             .expect("core ReflectionFunction class id should resolve");
+        let object = PhpObject::from_class_with_id(class, object_id);
+        object
+            .write_public_property("name", Value::String(state.name.clone()))
+            .map_err(|error| runtime_error(span, error))?;
         self.reflection_functions.insert(object_id, state);
-        Ok(Value::Object(PhpObject::from_class_with_id(
-            class, object_id,
-        )))
+        Ok(Value::Object(object))
     }
 
     fn instantiate_reflection_method(
@@ -54022,7 +54024,7 @@ impl Interpreter {
             is_static: false,
             is_abstract: false,
             is_final: false,
-            is_internal: false,
+            is_internal: true,
             return_type: function.return_type,
             returns_by_reference: function.returns_by_reference,
             params: function.params,
@@ -66120,12 +66122,18 @@ impl Interpreter {
             }
             output.push_str("  }\n");
         }
+        if let Some(return_type) = state.return_type.as_deref() {
+            output.push_str(&format!("  - Return [ {return_type} ]\n"));
+        }
         output.push_str("}\n");
         Ok(output)
     }
 
     fn reflection_method_to_string_traits(&self, state: &ReflectionMethodState) -> String {
         if state.is_internal {
+            if state.closure_id.is_some() {
+                return "internal".to_string();
+            }
             return "internal:Reflection".to_string();
         }
 
@@ -67644,14 +67652,13 @@ impl Interpreter {
             }
             "getdefaultvalue" => {
                 expect_expr_arity("ReflectionParameter::getDefaultValue", args.len(), 0, span)?;
-                let Some(default) = state.parameter.default else {
+                let Some(default) = state.parameter.default.as_ref() else {
                     return Err(reflection_exception_error(
                         span,
                         "Internal error: Failed to retrieve the default value",
                     ));
                 };
-                let mut default_scope = SymbolTable::new();
-                self.evaluate(&default, &mut default_scope)
+                self.evaluate_reflection_parameter_default_value(&state, default)
             }
             "isdefaultvalueconstant" => {
                 expect_expr_arity(
@@ -67705,6 +67712,24 @@ impl Interpreter {
             "isvariadic" => {
                 expect_expr_arity("ReflectionParameter::isVariadic", args.len(), 0, span)?;
                 Ok(Value::Bool(state.parameter.is_variadic))
+            }
+            "getclass" => {
+                expect_expr_arity("ReflectionParameter::getClass", args.len(), 0, span)?;
+                self.retire_reusable_unrooted_temporary_object_handle(&object, caller_scope)?;
+                self.reflection_parameter_deprecated_get_class(&state, span)
+            }
+            "isarray" => {
+                expect_expr_arity("ReflectionParameter::isArray", args.len(), 0, span)?;
+                self.emit_display_diagnostic(
+                    "Deprecated",
+                    PHP_E_DEPRECATED,
+                    "Method ReflectionParameter::isArray() is deprecated since 8.0, use ReflectionParameter::getType() instead",
+                    span,
+                )?;
+                Ok(Value::Bool(
+                    reflection_parameter_simple_type_name(&state.parameter)
+                        .is_some_and(|name| name.eq_ignore_ascii_case("array")),
+                ))
             }
             "iscallable" => {
                 expect_expr_arity("ReflectionParameter::isCallable", args.len(), 0, span)?;
@@ -67773,6 +67798,145 @@ impl Interpreter {
                 span,
                 RuntimeError::undefined_function(format!("ReflectionParameter::{method_name}()")),
             )),
+        }
+    }
+
+    fn reflection_parameter_deprecated_get_class(
+        &mut self,
+        state: &ReflectionParameterState,
+        span: Span,
+    ) -> CompileResult<Value> {
+        self.emit_display_diagnostic(
+            "Deprecated",
+            PHP_E_DEPRECATED,
+            "Method ReflectionParameter::getClass() is deprecated since 8.0, use ReflectionParameter::getType() instead",
+            span,
+        )?;
+
+        let Some(type_name) = reflection_parameter_simple_type_name(&state.parameter) else {
+            return Ok(Value::Null);
+        };
+        if reflection_type_name_is_builtin(type_name) {
+            return Ok(Value::Null);
+        }
+
+        let class_name = match type_name.to_ascii_lowercase().as_str() {
+            "self" => self.reflection_parameter_self_type_name(state, span)?,
+            "parent" => self.reflection_parameter_parent_type_name(state, span)?,
+            _ => type_name.trim_start_matches('\\').to_string(),
+        };
+        let class_state = self.resolve_reflection_class_named_target(&class_name, span)?;
+        self.create_reflection_class_object(class_state, span)
+    }
+
+    fn reflection_parameter_self_type_name(
+        &self,
+        state: &ReflectionParameterState,
+        span: Span,
+    ) -> CompileResult<String> {
+        match &state.declaring {
+            ReflectionParameterDeclaring::Method(method) => Ok(method.declaring_class_name.clone()),
+            ReflectionParameterDeclaring::Function(function) => {
+                let Some(class_id) = function.closure_scope_class_id else {
+                    return Err(reflection_exception_error(
+                        span,
+                        "Parameter uses \"self\" as type but function is not a class member",
+                    ));
+                };
+                Ok(self
+                    .classes
+                    .get(class_id)
+                    .expect("closure scope class id should resolve")
+                    .name()
+                    .to_string())
+            }
+        }
+    }
+
+    fn reflection_parameter_parent_type_name(
+        &self,
+        state: &ReflectionParameterState,
+        span: Span,
+    ) -> CompileResult<String> {
+        let class_id = match &state.declaring {
+            ReflectionParameterDeclaring::Method(method) => {
+                method.declaring_class_id.or_else(|| {
+                    self.classes
+                        .lookup_class(&method.declaring_class_name)
+                        .map(|class| class.id())
+                })
+            }
+            ReflectionParameterDeclaring::Function(function) => {
+                let Some(class_id) = function.closure_scope_class_id else {
+                    return Err(reflection_exception_error(
+                        span,
+                        "Parameter uses \"parent\" as type but function is not a class member",
+                    ));
+                };
+                Some(class_id)
+            }
+        };
+        let Some(class_id) = class_id else {
+            return Err(reflection_exception_error(
+                span,
+                "Parameter uses \"parent\" as type but function is not a class member",
+            ));
+        };
+        let class = self
+            .classes
+            .get(class_id)
+            .expect("reflection parameter class id should resolve");
+        let Some(parent_id) = class.parent_id() else {
+            return Err(reflection_exception_error(
+                span,
+                "Parameter uses \"parent\" as type although class does not have a parent",
+            ));
+        };
+        Ok(self
+            .classes
+            .get(parent_id)
+            .expect("parent class id should resolve")
+            .name()
+            .to_string())
+    }
+
+    fn evaluate_reflection_parameter_default_value(
+        &mut self,
+        state: &ReflectionParameterState,
+        default: &Expr,
+    ) -> CompileResult<Value> {
+        let mut default_scope = SymbolTable::new();
+        let Some((class_id, called_class_id)) = self.reflection_parameter_default_context(state)
+        else {
+            return self.evaluate(default, &mut default_scope);
+        };
+
+        self.class_context.push(class_id);
+        self.called_class_context.push(called_class_id);
+        let result = self.evaluate(default, &mut default_scope);
+        self.called_class_context.pop();
+        self.class_context.pop();
+        result
+    }
+
+    fn reflection_parameter_default_context(
+        &self,
+        state: &ReflectionParameterState,
+    ) -> Option<(ClassId, ClassId)> {
+        match &state.declaring {
+            ReflectionParameterDeclaring::Method(method) => {
+                let class_id = method.declaring_class_id.or_else(|| {
+                    self.classes
+                        .lookup_class(&method.declaring_class_name)
+                        .map(|class| class.id())
+                })?;
+                Some((class_id, class_id))
+            }
+            ReflectionParameterDeclaring::Function(function) => {
+                let class_id = function.closure_scope_class_id?;
+                let called_class_id = function.closure_called_class_id.unwrap_or(class_id);
+                Some((class_id, called_class_id))
+            }
         }
     }
 
@@ -129312,7 +129476,11 @@ fn reflection_static_variables_from_body(body: &[Stmt]) -> Vec<(String, Option<E
 
 fn reflection_default_constant_name(expr: &Expr) -> Option<String> {
     match expr {
-        Expr::GlobalConstant { name, .. } => Some(name.clone()),
+        Expr::GlobalConstant { name, .. } => Some(
+            name.strip_prefix('\\')
+                .map(str::to_string)
+                .unwrap_or_else(|| name.clone()),
+        ),
         Expr::ClassConstant {
             class_name,
             constant,
@@ -131748,6 +131916,20 @@ fn reflection_parameter_allows_null(type_decl: Option<&str>, default: Option<&Ex
             .any(|part| part.eq_ignore_ascii_case("null"))
         || type_decl.eq_ignore_ascii_case("mixed")
         || matches!(default, Some(Expr::Null(_)))
+}
+
+fn reflection_parameter_simple_type_name(param: &ReflectionParameterMetadata) -> Option<&str> {
+    let mut type_decl = param.type_decl.as_deref()?.trim();
+    if type_decl.contains('|') || type_decl.contains('&') || type_decl.contains('(') {
+        return None;
+    }
+    if let Some(nullable) = type_decl.strip_prefix('?') {
+        type_decl = nullable.trim();
+    }
+    if type_decl.is_empty() || type_decl.contains('|') || type_decl.contains('&') {
+        return None;
+    }
+    Some(type_decl)
 }
 
 fn reflection_parameter_has_implicit_nullable_default(param: &ReflectionParameterMetadata) -> bool {
