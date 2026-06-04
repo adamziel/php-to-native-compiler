@@ -102,6 +102,66 @@ var_dump(strtotime("-2\thours", 1140973388));
 }
 
 #[test]
+fn strtotime_accepts_bounded_absolute_edge_formats() {
+    let execution = run_source(
+        r#"<?php
+date_default_timezone_set("US/Eastern");
+echo date("r", strtotime("Sep 04 2001 16:39:45")), "\n";
+date_default_timezone_set("America/New_York");
+echo date("Y-m-d H:i:s T", strtotime("2003-10-28 10:20:30-0800")), "\n";
+date_default_timezone_set("UTC");
+echo gmdate("Y-m-d H:i:s", strtotime("20050620091407 GMT")), "\n";
+echo gmdate("Y-m-d H:i:s", strtotime("2002-06-25 14:18:48.543728-04")), "|";
+echo gmdate("Y-m-d H:i:s", strtotime("2002-06-25 14:18:48.543728+04")), "\n";
+echo date("Y-m-d H:i:s", strtotime("2003-11-19T12:30:42Z")), "\n";
+echo gmdate("m/d/y Hi", strtotime("04/04/04 0045")), "\n";
+echo gmdate("Y-m-d H:i:s", strtotime("2004W30")), "\n";
+echo date("m/d/Y", strtotime("11Oct2005")), "|", date("m/d/Y", strtotime("Oct11")), "\n";
+$base = strtotime("2005-01-01 01:01:01");
+echo date(DATE_ISO8601, strtotime("+5days", $base)), "|";
+echo date(DATE_ISO8601, strtotime("+1month", $base)), "\n";
+echo strtotime("2005/8/12"), "|", date(DATE_ISO8601, strtotime("2005/1/2")), "\n";
+echo date(DATE_ISO8601, strtotime("2005-12-22 1p.m.")), "\n";
+var_dump(strtotime("NOW", 1234567890) === 1234567890);
+echo date(DATE_ISO8601, strtotime("2006-1-6T0:0:0-8:0")), "\n";
+date_default_timezone_set("Europe/Oslo");
+echo date(DATE_ATOM, strtotime("2006-01-31T19:23:56Z")), "\n";
+date_default_timezone_set("UTC");
+echo date("r", strtotime("May 18th 5:05pm", 1168156376)), "\n";
+$parsed = date_parse(" a ");
+echo count($parsed), "|", $parsed["zone_type"], "|", $parsed["zone"], "|", $parsed["tz_abbr"], "\n";
+var_dump(date_parse(" \n ")["error_count"]);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "Tue, 04 Sep 2001 16:39:45 -0400\n",
+            "2003-10-28 13:20:30 EST\n",
+            "2005-06-20 09:14:07\n",
+            "2002-06-25 18:18:48|2002-06-25 10:18:48\n",
+            "2003-11-19 12:30:42\n",
+            "04/04/04 0045\n",
+            "2004-07-19 00:00:00\n",
+            "10/11/2005|10/11/1970\n",
+            "2005-01-06T01:01:01+0000|2005-02-01T01:01:01+0000\n",
+            "1123804800|2005-01-02T00:00:00+0000\n",
+            "2005-12-22T13:00:00+0000\n",
+            "bool(true)\n",
+            "2006-01-06T08:00:00+0000\n",
+            "2006-01-31T20:23:56+01:00\n",
+            "Fri, 18 May 2007 17:05:00 +0000\n",
+            "16|2|3600|A\n",
+            "int(0)\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn datetime_timestamp_helpers_get_and_set_bounded_state() {
     let execution = run_source(
         r#"<?php

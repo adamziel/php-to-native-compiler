@@ -4629,16 +4629,19 @@ The DateTime parser path is intentionally table-bounded: supported
 `createFromFormat()` and `date_parse_from_format()` rows are recognized through
 small token parsers for the documented numeric/RFC/textual formats, and
 `date_parse()` exposes only the documented numeric date/time plus selected
-malformed numeric timezone metadata arrays and selected relative metadata for
-the bounded first/last-day next-month forms. `DateTime::modify()` shares the
+malformed numeric timezone metadata arrays, selected single-letter timezone
+abbreviation/whitespace metadata, and selected relative metadata for the
+bounded first/last-day next-month forms. `DateTime::modify()` shares the
 same bounded approach: current support covers selected weekday/week-relative
 forms, first/last-day calendar forms, unit modifiers including subsecond
 aliases, timestamp modifiers, and named time resets while rejecting unsupported
 timelib grammar instead of guessing. `strtotime()` reuses that bounded modifier
 engine for selected base-timestamp relative forms and keeps its extra absolute
-grammar to small table-driven compact, month/year, ordinal textual, named-time,
-and weekday-prefixed forms. Broad timelib grammar, parser error-state history,
-and object-handle reuse behavior remain outside that runtime parser boundary.
+grammar to small table-driven compact, flexible numeric, slash-date, ISO-week,
+RFC-ish timezone suffix, compact textual, month/year, ordinal textual,
+named-time, and weekday-prefixed forms. Broad timelib grammar, parser
+error-state history, and object-handle reuse behavior remain outside that
+runtime parser boundary.
 `DatePeriod` follows the same bounded runtime-metadata pattern as the current
 DateTime family. The runtime class table exposes the core class, constants,
 readonly public metadata fields, and the selected constructor/static/instance

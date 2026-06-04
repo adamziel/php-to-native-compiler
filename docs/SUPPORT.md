@@ -6576,17 +6576,25 @@
   current subset. `date_parse()` exposes bounded parse-result arrays for
   numeric `YYYY-MM-DD`, `YYYY-MM`, `YYYY-MM-DD HH:MM:SS.fraction`, and
   `HH:MM:SS.fraction` forms plus selected malformed numeric timezone/error
-  metadata and selected relative metadata for `first day`, `last day`,
-  `next month`, `first day next month`, `last day next month`,
-  `first day of next month`, and `last day of next month`;
+  metadata, selected single-letter `A` timezone-abbreviation metadata,
+  whitespace-only no-error result arrays, and selected relative metadata for
+  `first day`, `last day`, `next month`, `first day next month`,
+  `last day next month`, `first day of next month`, and `last day of next
+  month`;
   `date_parse_from_format()` covers `!m/d/y` and the same bounded
   single-separator wildcard form `!m*d*y`. `strtotime()` uses the supplied
   base timestamp for the bounded relative unit and `<weekday> this week`
-  modifiers already shared with DateTime mutation, and recognizes selected
-  compact UTC `YYYYMMDDtHHMMSSZ`, `YYYY-M[M]`, `HH:MM YYYY-MM-DD`,
-  `Month YYYY` / `YYYY Month`, Roman-month, ordinal textual date,
-  `YYYY-MM-DD noon` / `midnight`, and weekday-prefixed date forms. The
-  supported internal
+  modifiers already shared with DateTime mutation, including joined count/unit
+  spellings such as `+5days`, and recognizes selected compact UTC
+  `YYYYMMDDtHHMMSSZ`, compact `YYYYMMDDHHMMSS` with timezone suffixes,
+  flexible `Y/M/D` and `Y-m-d[T ]H:i:s(.fraction)` forms with `Z` or short
+  numeric offsets, slash `M/D/YY HHMM` and `M/D/YYYY H:MM AM`, RFC-ish
+  weekday/timezone suffix forms, ISO week `YYYYWww`, compact textual
+  `Oct11`/`11Oct2005`, AM/PM textual times, `now`, `YYYY-M[M]`,
+  `HH:MM YYYY-MM-DD`, `Month YYYY` / `YYYY Month`, Roman-month, ordinal
+  textual date, `YYYY-MM-DD noon` / `midnight`, and weekday-prefixed date
+  forms. The bounded timezone table includes the represented pre-2007
+  US/Eastern transition slice used by current rows. The supported internal
   DateTime/DateTimeZone method-signature metadata for `setTime()`,
   `createFromFormat()`, `getTransitions()`, `listIdentifiers()`, and
   `DateTimeInterface::diff()` is also used by the current declaration

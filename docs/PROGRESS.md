@@ -4,6 +4,41 @@
 
 Implemented:
 
+- Added a bounded `strtotime()` absolute-format/timezone parser lane on the
+  interpreter path. `strtotime()` now accepts `now` with the supplied base
+  timestamp, compact `YYYYMMDDHHMMSS` values with explicit timezone suffixes,
+  flexible `Y/M/D` and `Y-m-d[T ]H:i:s(.fraction)` forms with `Z` or short
+  numeric offsets, slash `M/D/YY HHMM` and `M/D/YYYY H:MM AM` forms, ISO week
+  `YYYYWww`, RFC-ish weekday/offset suffix forms, compact textual
+  `Oct11`/`11Oct2005`, AM/PM textual times, and joined count/unit modifiers
+  such as `+5days`. The bounded timezone table also covers the represented
+  pre-2007 US/Eastern DST transition rules, and `date_parse()` exposes the
+  selected single-letter `A` timezone-abbreviation metadata plus whitespace-only
+  no-error result arrays. Focused proof covers exact-current pre-patch selected
+  PHPT at `0/17` and post-patch selected PHPT at `17/17` for
+  `ext/date/tests/bug13142.phpt`,
+  `ext/date/tests/bug17988.phpt`,
+  `ext/date/tests/bug21399.phpt`,
+  `ext/date/tests/bug26090.phpt`,
+  `ext/date/tests/bug26320.phpt`,
+  `ext/date/tests/bug26694.phpt`,
+  `ext/date/tests/bug28088.phpt`,
+  `ext/date/tests/bug29585.phpt`,
+  `ext/date/tests/bug33578.phpt`,
+  `ext/date/tests/bug33869.phpt`,
+  `ext/date/tests/bug34087.phpt`,
+  `ext/date/tests/bug34771.phpt`,
+  `ext/date/tests/bug35499.phpt`,
+  `ext/date/tests/bug35885.phpt`,
+  `ext/date/tests/bug35887.phpt`,
+  `ext/date/tests/bug36224.phpt`, and
+  `ext/date/tests/bug37514.phpt`; Rust DateTime regression coverage, build
+  checks, and pinned wrapper proof. Unsupported edges remain broad timelib
+  grammar, broader timezone database/history outside the represented bounded
+  zones and legacy US/Eastern transition slice, parser diagnostics and
+  `getLastErrors()` metadata, DateTime object-handle parser loops,
+  references/COW, and native lowering.
+
 - Added a bounded `strtotime()` parser/mutation lane on the interpreter path.
   `strtotime()` now uses its supplied base timestamp for relative modifiers
   and shares the existing bounded DateTime modifier engine for selected unit
