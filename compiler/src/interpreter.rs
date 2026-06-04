@@ -75243,6 +75243,15 @@ impl Interpreter {
                     is_static,
                 )) = self.resolve_instance_method(class_id, method_name)
                 else {
+                    if context == "dynamic function call"
+                        && has_public_non_static_magic_call(&self.classes, class_id)
+                    {
+                        return Err(non_static_method_called_statically_error(
+                            &receiver_class_name,
+                            method_name,
+                            span,
+                        ));
+                    }
                     return match self.call_missing_static_method_via_magic(
                         class_id,
                         method_name,
@@ -75511,6 +75520,15 @@ impl Interpreter {
                     is_static,
                 )) = self.resolve_instance_method(class_id, method_name)
                 else {
+                    if context == "dynamic function call"
+                        && has_public_non_static_magic_call(&self.classes, class_id)
+                    {
+                        return Err(non_static_method_called_statically_error(
+                            &receiver_class_name,
+                            method_name,
+                            span,
+                        ));
+                    }
                     return match self.call_missing_static_method_via_magic(
                         class_id,
                         method_name,

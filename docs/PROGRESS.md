@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Repaired the active score-gate PASS regression in
+  `Zend/tests/dynamic_call/dynamic_call_non_static.phpt`. Direct dynamic
+  class-method callable invocation through `['Class', 'missing']()` and
+  `'Class::missing'()` now rejects a public non-static `__call()` fallback with
+  PHP's `Non-static method Class::missing() cannot be called statically` Error
+  surface, while `call_user_func()` and static-syntax missing-method paths keep
+  the bounded current `$this->__call()` behavior added for the magic-method
+  rows, and `__callStatic()` remains available for dynamic class-method
+  callables without non-static `__call()`. Focused proof covers exact-current
+  pre-patch selected PHPT at `0/1`, post-patch selected PHPT at `1/1`,
+  adjacent dynamic-call PHPT guards, focused Rust object-model coverage, build,
+  fmt, and diff checks. Unsupported edges remain broader callable autoload and
+  deprecation parity outside the existing bounded dynamic callable contexts,
+  references/COW, and native lowering.
+
 - Repaired the latest-published PASS regression in
   `Zend/tests/typehints/namespace_relative_scalar.phpt`. Namespace-relative
   built-in type names such as `namespace\int` now keep their namespace-relative

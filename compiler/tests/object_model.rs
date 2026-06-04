@@ -1737,6 +1737,37 @@ Router::six(6);
 }
 
 #[test]
+fn dynamic_class_method_callables_do_not_use_current_this_magic_call() {
+    let source = r#"<?php
+class Foo {
+    public function __call($name, $args) {
+        echo "magic:$name\n";
+    }
+
+    public function run() {
+        foreach (array(array("Foo", "bar"), "Foo::bar") as $callback) {
+            try {
+                $callback();
+            } catch (Error $e) {
+                echo $e->getMessage(), "\n";
+            }
+        }
+    }
+}
+
+$foo = new Foo();
+$foo->run();
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "Non-static method Foo::bar() cannot be called statically\nNon-static method Foo::bar() cannot be called statically\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn inaccessible_static_syntax_methods_fall_back_to_call_static() {
     let source = r#"<?php
 class Hidden {
