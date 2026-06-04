@@ -26734,8 +26734,25 @@ impl Interpreter {
                 })?;
                 match callable {
                     Callable::User(function) => {
-                        let args = error_handler_args_for_function(function.as_ref(), &args);
-                        self.call_user_function_with_values(function, args, span)
+                        let function = function.as_ref();
+                        let args = error_handler_args_for_function(function, &args);
+                        ensure_user_function_arity_with_extra_policy(
+                            function,
+                            args.len(),
+                            span,
+                            true,
+                        )?;
+                        ensure_supported_function_signature(function, args.len(), span)?;
+                        self.ensure_user_function_call_depth(function, span)?;
+                        self.call_error_handler_user_function_with_checked_values(
+                            function,
+                            args,
+                            span,
+                            None,
+                            None,
+                            None,
+                            Vec::new(),
+                        )
                     }
                     Callable::Builtin(key) => self.call_builtin(&key, args, span),
                 }
@@ -26755,13 +26772,23 @@ impl Interpreter {
                             ),
                         )
                     })?;
-                let args = error_handler_args_for_function(function.as_ref(), &args);
-                self.invoke_closure_value_with_extra_policy(
-                    closure,
+                let function = function.as_ref();
+                let args = error_handler_args_for_function(function, &args);
+                ensure_user_function_arity_with_extra_policy(function, args.len(), span, false)
+                    .map_err(|error| callback_context_diagnostic("set_error_handler()", error))?;
+                ensure_supported_function_signature(function, args.len(), span)?;
+                self.ensure_user_function_call_depth(function, span)?;
+                let prebound_locals = self.closure_prebound_locals(&closure);
+                let (this_object, class_context, called_class_context) =
+                    self.closure_call_context(&closure);
+                self.call_error_handler_user_function_with_checked_values(
+                    function,
                     args,
                     span,
-                    "set_error_handler()",
-                    false,
+                    this_object,
+                    class_context,
+                    called_class_context,
+                    prebound_locals,
                 )
             }
             other => Err(runtime_error(
@@ -26775,6 +26802,43 @@ impl Interpreter {
                 ),
             )),
         }
+    }
+
+    fn call_error_handler_user_function_with_checked_values(
+        &mut self,
+        function: &FunctionDecl,
+        args: Vec<Value>,
+        span: Span,
+        this_object: Option<PhpObject>,
+        class_context: Option<ClassId>,
+        called_class_context: Option<ClassId>,
+        prebound_locals: Vec<PreboundLocal>,
+    ) -> CompileResult<Value> {
+        let trace_args = args.clone();
+        let trace_callable =
+            self.pending_uncaught_user_call_callable(function, this_object.as_ref(), class_context);
+        let trace_function_line = function.span.line;
+        let result = self.call_user_function_with_checked_values_and_locals(
+            function,
+            args,
+            this_object,
+            class_context,
+            called_class_context,
+            Vec::new(),
+            None,
+            prebound_locals,
+            Vec::new(),
+        );
+        if let Err(error) = &result {
+            self.record_pending_uncaught_call_frame(
+                trace_callable,
+                trace_function_line,
+                span,
+                &trace_args,
+                error,
+            );
+        }
+        result
     }
 
     fn call_error_handler_array_callable(
@@ -26837,14 +26901,14 @@ impl Interpreter {
                 ensure_user_function_arity(function, args.len(), span)?;
                 ensure_supported_function_signature(function, args.len(), span)?;
                 self.ensure_user_function_call_depth(function, span)?;
-                self.call_user_function_with_checked_values(
+                self.call_error_handler_user_function_with_checked_values(
                     function,
                     args,
+                    span,
                     Some(object.clone()),
                     Some(class_id),
                     Some(object.class_id()),
                     Vec::new(),
-                    None,
                 )
             }
             Value::String(class_name) => {
@@ -26901,14 +26965,14 @@ impl Interpreter {
                 ensure_user_function_arity(function, args.len(), span)?;
                 ensure_supported_function_signature(function, args.len(), span)?;
                 self.ensure_user_function_call_depth(function, span)?;
-                self.call_user_function_with_checked_values(
+                self.call_error_handler_user_function_with_checked_values(
                     function,
                     args,
+                    span,
                     None,
                     Some(declaring_class_id),
                     Some(class_id),
                     Vec::new(),
-                    None,
                 )
             }
             _ => unreachable!("array_callable_parts restricts callback targets"),
@@ -27477,11 +27541,19 @@ impl Interpreter {
                 }
                 Ok(Flow::Normal)
             }
-            Stmt::Interface(_) | Stmt::Trait(_) | Stmt::Enum(_) => Ok(Flow::Normal),
+            Stmt::Interface(_) | Stmt::Enum(_) => Ok(Flow::Normal),
+            Stmt::Trait(trait_decl) => {
+                self.emit_deprecated_trait_use_diagnostics(
+                    &trait_decl.name,
+                    &trait_decl.trait_uses,
+                )?;
+                Ok(Flow::Normal)
+            }
             Stmt::Class(class) => {
                 if class.is_nested {
                     self.register_nested_class_declaration(class)?;
                 }
+                self.emit_deprecated_trait_use_diagnostics(&class.name, &class.trait_uses)?;
                 Ok(Flow::Normal)
             }
             Stmt::Return { value, span } => {
@@ -57338,6 +57410,11 @@ impl Interpreter {
                 .call_no_discard_method(method_name, args, span, caller_scope)
                 .map(|value| (value, None));
         }
+        if object.class_name().eq_ignore_ascii_case("Deprecated") {
+            return self
+                .call_deprecated_method(method_name, args, span, caller_scope)
+                .map(|value| (value, None));
+        }
         if object.is_instance_of_class_name("ReflectionClass") {
             return self
                 .call_reflection_class_method(object, method_name, args, span, caller_scope)
@@ -57861,6 +57938,57 @@ impl Interpreter {
                 RuntimeError::undefined_function(format!("NoDiscard::{method_name}()")),
             )),
         }
+    }
+
+    fn call_deprecated_method(
+        &mut self,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        match method_name.to_ascii_lowercase().as_str() {
+            "__construct" => {
+                let mut trace_args = Vec::new();
+                let result = self.deprecated_attribute_message_parts_from_exprs_inner(
+                    args,
+                    self.current_strict_types(),
+                    &mut trace_args,
+                    caller_scope,
+                );
+                if let Err(error) = &result {
+                    self.record_pending_uncaught_internal_call_frame(
+                        "Deprecated->__construct",
+                        span,
+                        &trace_args,
+                        error,
+                    );
+                }
+                result?;
+
+                let error = Self::deprecated_readonly_property_error("message", span);
+                self.record_pending_uncaught_internal_call_frame(
+                    "Deprecated->__construct",
+                    span,
+                    &trace_args,
+                    &error,
+                );
+                Err(error)
+            }
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!("Deprecated::{method_name}()")),
+            )),
+        }
+    }
+
+    fn deprecated_readonly_property_error(property: &str, span: Span) -> Diagnostic {
+        runtime_error(
+            span,
+            RuntimeError::unsupported_property_access(format!(
+                "Cannot modify readonly property Deprecated::${property}"
+            )),
+        )
     }
 
     fn no_discard_readonly_message_property_error(span: Span) -> Diagnostic {
@@ -63216,6 +63344,52 @@ impl Interpreter {
         }
 
         self.emit_display_diagnostic("Deprecated", PHP_E_USER_DEPRECATED, diagnostic, span)
+    }
+
+    fn emit_deprecated_trait_use_diagnostics(
+        &mut self,
+        owner_name: &str,
+        trait_uses: &[TraitUseDecl],
+    ) -> CompileResult<()> {
+        for trait_use in trait_uses {
+            let Some((trait_name, attribute)) =
+                self.deprecated_trait_use_attribute_parts(&trait_use.name)
+            else {
+                continue;
+            };
+            let (message, since) =
+                self.deprecated_attribute_message_parts(&attribute, false, trait_use.span)?;
+            let mut diagnostic = format!("Trait {trait_name} used by {owner_name} is deprecated");
+            if let Some(since) = since.filter(|value| !value.is_empty()) {
+                diagnostic.push_str(" since ");
+                diagnostic.push_str(&since);
+            }
+            if let Some(message) = message.filter(|value| !value.is_empty()) {
+                diagnostic.push_str(", ");
+                diagnostic.push_str(&message);
+            }
+            self.emit_display_diagnostic(
+                "Deprecated",
+                PHP_E_USER_DEPRECATED,
+                diagnostic,
+                trait_use.span,
+            )?;
+        }
+        Ok(())
+    }
+
+    fn deprecated_trait_use_attribute_parts(
+        &self,
+        trait_name: &str,
+    ) -> Option<(String, AttributeDecl)> {
+        let key = trait_name.trim_start_matches('\\').to_ascii_lowercase();
+        let trait_decl = self.trait_lookup.get(&key)?;
+        let attribute = trait_decl
+            .attributes
+            .iter()
+            .find(|attribute| attribute_name_is_deprecated(attribute))?
+            .clone();
+        Some((trait_decl.name.clone(), attribute))
     }
 
     fn deprecated_attribute_message_parts(
@@ -112924,6 +113098,14 @@ fn stmt_builtin_attribute_target_error(stmt: &Stmt) -> Option<(String, usize)> {
             {
                 return Some(error);
             }
+            if let Some(error) = deprecated_declaration_attribute_target_error(
+                &class.attributes,
+                "class",
+                &class.name,
+                class.span.line,
+            ) {
+                return Some(error);
+            }
             if !class.is_abstract {
                 return None;
             }
@@ -112935,13 +113117,23 @@ fn stmt_builtin_attribute_target_error(stmt: &Stmt) -> Option<(String, usize)> {
                 false,
             )
         }
-        Stmt::Interface(interface) => declaration_attribute_target_error(
-            &interface.attributes,
-            "interface",
-            &interface.name,
-            interface.span.line,
-            true,
-        ),
+        Stmt::Interface(interface) => {
+            if let Some(error) = deprecated_declaration_attribute_target_error(
+                &interface.attributes,
+                "interface",
+                &interface.name,
+                interface.span.line,
+            ) {
+                return Some(error);
+            }
+            declaration_attribute_target_error(
+                &interface.attributes,
+                "interface",
+                &interface.name,
+                interface.span.line,
+                true,
+            )
+        }
         Stmt::Trait(trait_decl) => declaration_attribute_target_error(
             &trait_decl.attributes,
             "trait",
@@ -112949,13 +113141,23 @@ fn stmt_builtin_attribute_target_error(stmt: &Stmt) -> Option<(String, usize)> {
             trait_decl.span.line,
             true,
         ),
-        Stmt::Enum(enum_decl) => declaration_attribute_target_error(
-            &enum_decl.attributes,
-            "enum",
-            &enum_decl.name,
-            enum_decl.span.line,
-            true,
-        ),
+        Stmt::Enum(enum_decl) => {
+            if let Some(error) = deprecated_declaration_attribute_target_error(
+                &enum_decl.attributes,
+                "enum",
+                &enum_decl.name,
+                enum_decl.span.line,
+            ) {
+                return Some(error);
+            }
+            declaration_attribute_target_error(
+                &enum_decl.attributes,
+                "enum",
+                &enum_decl.name,
+                enum_decl.span.line,
+                true,
+            )
+        }
         Stmt::Function(function) => function_attribute_target_error(function),
         Stmt::ConstDeclaration { declarations, .. } => {
             if declarations.len() > 1
@@ -113065,6 +113267,25 @@ fn declaration_attribute_target_error(
             ));
         }
         None
+    })
+}
+
+fn deprecated_declaration_attribute_target_error(
+    attributes: &[AttributeDecl],
+    kind: &str,
+    name: &str,
+    line: usize,
+) -> Option<(String, usize)> {
+    if attributes_include_delayed_target_validation(attributes) {
+        return None;
+    }
+    attributes.iter().find_map(|attribute| {
+        attribute_name_is_deprecated(attribute).then(|| {
+            (
+                format!("Cannot apply #[\\Deprecated] to {kind} {name}"),
+                line,
+            )
+        })
     })
 }
 
@@ -119456,6 +119677,12 @@ fn attributes_include_return_type_will_change(attributes: &[AttributeDecl]) -> b
         .any(|attribute| normalized_attribute_name(&attribute.name) == "returntypewillchange")
 }
 
+fn attributes_include_delayed_target_validation(attributes: &[AttributeDecl]) -> bool {
+    attributes
+        .iter()
+        .any(|attribute| normalized_attribute_name(&attribute.name) == "delayedtargetvalidation")
+}
+
 fn class_method_has_return_type_will_change_attribute(method: &ClassMethodDecl) -> bool {
     attributes_include_return_type_will_change(&method.attributes)
         || attributes_include_return_type_will_change(&method.function.attributes)
@@ -124772,14 +124999,29 @@ fn format_stack_trace_arg(value: &Value) -> String {
         }
         Value::Int(value) => value.to_string(),
         Value::Float(value) => value.to_string(),
-        Value::String(value) => format!("'{}'", value),
-        Value::BinaryString(value) => format!("'{}'", String::from_utf8_lossy(value)),
+        Value::String(value) => format_stack_trace_string_arg(value),
+        Value::BinaryString(value) => {
+            format_stack_trace_string_arg(&String::from_utf8_lossy(value))
+        }
         Value::Array(_) => "Array".to_string(),
         Value::Object(object) => enum_like_case_name(object)
             .map(|case_name| format!("{}::{case_name}", object.class_name()))
             .unwrap_or_else(|| format!("Object({})", object.class_name())),
         Value::Closure(_) => "Object(Closure)".to_string(),
         Value::Resource(id) => format!("Resource id #{id}"),
+    }
+}
+
+fn format_stack_trace_string_arg(value: &str) -> String {
+    const STACK_TRACE_STRING_PREVIEW_CHARS: usize = 15;
+    let preview = value
+        .chars()
+        .take(STACK_TRACE_STRING_PREVIEW_CHARS)
+        .collect::<String>();
+    if value.chars().count() > STACK_TRACE_STRING_PREVIEW_CHARS {
+        format!("'{preview}...'")
+    } else {
+        format!("'{preview}'")
     }
 }
 

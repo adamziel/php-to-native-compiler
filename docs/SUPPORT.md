@@ -7328,7 +7328,14 @@
   in method attributes; and weak scalar-to-string coercion for covered message
   arguments. Supported strict scalar, array, and bounded
   `Random\IntervalBoundary` enum-case message failures report PHP-shaped
-  `Deprecated::__construct()` fatal `TypeError` stack traces. Discarded calls
+  `Deprecated::__construct()` fatal `TypeError` stack traces. The core
+  `Deprecated` class is seeded with readonly public `message` and `since`
+  properties; direct writes and direct `__construct()` re-entry report
+  PHP-shaped readonly-property `Error`s for the covered paths. Direct use of a
+  trait annotated with `#[Deprecated]` emits PHP's
+  `E_USER_DEPRECATED` trait-use diagnostic at class or trait execution time,
+  including supported `message` / `since` arguments and user error handlers
+  that convert the diagnostic to `ErrorException`. Discarded calls
   that resolve to user functions, instance/static methods, trait-composed
   methods, closures, first-class function values, and supported
   `call_user_func()` string/array callbacks annotated with `#[NoDiscard]` /
@@ -7345,7 +7352,9 @@
   `#[\Attribute]` on top-level functions, abstract classes, interfaces,
   traits, enums, and top-level constants plus `#[AllowDynamicProperties]` /
   `#[\AllowDynamicProperties]` on interfaces, traits, and enums, and repeated
-  `#[Attribute]` on supported class declarations. Top-level constant
+  `#[Attribute]` on supported class declarations. It also rejects
+  `#[Deprecated]` / `#[\Deprecated]` on classes, interfaces, and enums unless
+  delayed target validation is explicitly requested. Top-level constant
   attributes retain grouped/ungrouped metadata for single-constant
   declarations, expose `ReflectionAttribute::TARGET_CONSTANT` (`64`), preserve
   named arguments, reject applying attributes to multi-constant declarations,
@@ -7361,10 +7370,11 @@
   Namespace/import alias resolution for the built-in attribute names,
   broader repeated-attribute rules, broader target validation on nested
   functions/members/parameters/closures, readonly-class
-  `AllowDynamicProperties` diagnostics, deprecations on
-  classes/interfaces/traits/enums/class constants/properties and deprecated
-  constant read diagnostics, exact
-  exception-handler diagnostic call-site rendering, NoDiscard warning
+  `AllowDynamicProperties` diagnostics, delayed `Deprecated` target
+  validation, deprecations on class constants/properties and broader
+  deprecated constant read diagnostics, exact
+  exception-handler diagnostic call-site rendering beyond the supported
+  error-handler frame surface, NoDiscard warning
   pre-emission for magic `__call`/`__callStatic`/`__invoke` targets, arbitrary
   dynamic callback expression resolution, broader native-method NoDiscard
   metadata, full readonly property semantics, broader core enum

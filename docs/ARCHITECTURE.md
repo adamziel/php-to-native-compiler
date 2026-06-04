@@ -4918,8 +4918,14 @@ comments, including `# [` with whitespace before the bracket.
 The interpreter also uses supported `Deprecated` attribute metadata on
 top-level constants, class/interface constants, and unbacked enum cases to emit
 runtime `E_USER_DEPRECATED` diagnostics when those constants or cases are read;
-declaration-target deprecations for classes/interfaces/traits/enums/properties
-and broader delayed target validation remain outside this boundary.
+direct class-body or trait-body use of a deprecated trait emits the matching
+trait-use `E_USER_DEPRECATED` diagnostic through the user error-handler path.
+The core `Deprecated` metadata class exposes readonly public `message` and
+`since` properties for the covered construction/mutation paths, and direct
+`#[Deprecated]` use on classes/interfaces/enums is rejected at startup unless
+delayed target validation is requested. Declaration-target deprecations for
+class constants/properties and broader delayed target validation remain outside
+this boundary.
 
 ## Cast Boundary
 

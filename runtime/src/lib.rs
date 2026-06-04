@@ -33915,7 +33915,9 @@ impl PhpClassTable {
             .expect("declared Deprecated class id should resolve");
         for property in ["message", "since"] {
             deprecated
-                .add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
+                .add_property(
+                    PhpPropertyMetadata::instance(property, Visibility::Public).readonly(),
+                )
                 .expect("Deprecated core metadata should not duplicate properties");
         }
         deprecated

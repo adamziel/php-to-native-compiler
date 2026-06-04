@@ -8749,6 +8749,121 @@ class C {
 }
 
 #[test]
+fn deprecated_core_attribute_readonly_targets_and_trait_use_diagnostics() {
+    let readonly = run_source_with_source_file(
+        r#"<?php
+$d = new Deprecated("foo", "1.0");
+$d->since = "2.0";
+"#,
+        "/tmp/deprecated_readonly_since.php",
+    )
+    .unwrap();
+
+    assert!(readonly.stdout.contains(
+        "Fatal error: Uncaught Error: Cannot modify readonly property Deprecated::$since in /tmp/deprecated_readonly_since.php:"
+    ));
+    assert_eq!(readonly.stderr, "");
+    assert_eq!(readonly.exit_code, 255);
+
+    let constructor = run_source_with_source_file(
+        r#"<?php
+$d = new Deprecated("foo");
+$d->__construct("bar");
+"#,
+        "/tmp/deprecated_readonly_constructor.php",
+    )
+    .unwrap();
+
+    assert!(constructor.stdout.contains(
+        "Fatal error: Uncaught Error: Cannot modify readonly property Deprecated::$message in /tmp/deprecated_readonly_constructor.php:"
+    ));
+    assert!(constructor
+        .stdout
+        .contains("Deprecated->__construct('bar')"));
+    assert_eq!(constructor.stderr, "");
+    assert_eq!(constructor.exit_code, 255);
+
+    for (kind, source) in [
+        (
+            "class",
+            r#"<?php
+#[Deprecated]
+class Demo {}
+"#,
+        ),
+        (
+            "interface",
+            r#"<?php
+#[Deprecated]
+interface Demo {}
+"#,
+        ),
+        (
+            "enum",
+            r#"<?php
+#[Deprecated]
+enum Demo {}
+"#,
+        ),
+    ] {
+        assert_php_startup_fatal(
+            source,
+            "Command line code",
+            3,
+            &format!("Cannot apply #[\\Deprecated] to {kind} Demo"),
+        );
+    }
+
+    let trait_use = run_source_with_source_file(
+        r#"<?php
+#[Deprecated("replace it", since: "2.7")]
+trait DemoTrait {}
+
+class DemoClass {
+    use DemoTrait;
+}
+"#,
+        "/tmp/deprecated_trait_use.php",
+    )
+    .unwrap();
+
+    assert_eq!(
+        trait_use.stdout,
+        "Deprecated: Trait DemoTrait used by DemoClass is deprecated since 2.7, replace it in /tmp/deprecated_trait_use.php on line 6\n"
+    );
+    assert_eq!(trait_use.stderr, "");
+    assert_eq!(trait_use.exit_code, 0);
+
+    let throwing_handler = run_source_with_source_file(
+        r#"<?php
+function my_error_handler(int $errno, string $errstr, ?string $errfile = null, ?int $errline = null) {
+    throw new ErrorException($errstr, 0, $errno, $errfile, $errline);
+}
+
+set_error_handler("my_error_handler");
+
+#[Deprecated]
+trait DemoTrait {}
+
+class DemoClass {
+    use DemoTrait;
+}
+"#,
+        "/tmp/deprecated_trait_error_handler.php",
+    )
+    .unwrap();
+
+    assert!(throwing_handler.stdout.contains(
+        "Fatal error: Uncaught ErrorException: Trait DemoTrait used by DemoClass is deprecated in /tmp/deprecated_trait_error_handler.php:3"
+    ));
+    assert!(throwing_handler
+        .stdout
+        .contains("my_error_handler(16384, 'Trait DemoTrait...', '/tmp/deprecated...', 12)"));
+    assert_eq!(throwing_handler.stderr, "");
+    assert_eq!(throwing_handler.exit_code, 255);
+}
+
+#[test]
 fn builtin_attribute_target_startup_diagnostics_match_php_subset() {
     assert_php_startup_fatal(
         r#"<?php
