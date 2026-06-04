@@ -1,6 +1,6 @@
 # PHP Native Compiler PHPT Progress
 
-Updated: 2026-06-04 09:46 CEST
+Updated: 2026-06-04 11:03 CEST
 
 Primary/public branch: `origin/master`
 Latest accepted public-score source:
@@ -19,26 +19,27 @@ denominators that exclude BORKED rows are not public progress.
 Current public score: **7376 / 20294 pinned runnable PHPTs = 36.35%**.
 
 Latest pushed source checkpoint:
-`6b0952e0507a6f810e162b4aeb4a40589753c05c fix: preserve reset date parse defaults`
+`e340aa0b0b300711bd0f3c003665397f1e8ded44 fix: reject dynamic non-static callables`
 
 Current score-gate status:
-The latest full gate is running for source `6b0952e0`:
-`state/logs/phpt-full-current-score-20260604T074408Z-php-src-f97ff59-public-6b0952e0-source-6b0952e0`.
-The latest status reports `RUNNING / BUILDING-RELEASE` as of
-`2026-06-04T07:44:46Z`; PASS regressions are still unknown, so it is not
-publication evidence yet. It is running against the accepted `0086ba77` PASS
-baseline with `7372` normalized rows and SHA-256
-`533d26badda5ae40d414a51611a76417eb2621d67d9ba5a83a38b47e7684316f`.
-The previous full gate for source `6eb8d818`:
-`state/logs/phpt-full-current-score-20260604T070724Z-php-src-f97ff59-public-6eb8d818-source-6eb8d818`
+The latest full gate for source `a3889f45`:
+`state/logs/phpt-full-current-score-20260604T083545Z-php-src-f97ff59-public-a3889f45-source-a3889f45`
 completed `FINAL / BLOCKED-PASS-REGRESSIONS` against the accepted `0086ba77`
-PASS baseline. It reported public-comparable `7542 / 20294 = 37.16%` and
-`7538` normalized current passes, but it is not publication evidence because it
-has `1` latest-published PASS regression:
-`php-src/ext/date/tests/date-parse-by-format001.phpt`. That row now has
-selected repair proof at current source `6b0952e0`, but the blocked `6eb8d818`
-gate cannot be published. The previous `f13e45f4` gate ended
-`FINAL / GATE-INCOMPLETE-NO-EXIT-MARKERS / NOT-PUBLICATION-EVIDENCE`, and the
+PASS baseline. It reported public-comparable `7602 / 20294 = 37.46%` and
+`7598` normalized current passes, but it is not publication evidence because it
+has `2` latest-published PASS regressions:
+`php-src/Zend/tests/abstract_implicit.phpt` and
+`php-src/Zend/tests/dynamic_call/dynamic_call_non_static.phpt`. That gate does
+not include newer source `1b1e9b0d` or `e340aa0b`. The dynamic-call row now has
+selected repair proof at current source `e340aa0b`; `abstract_implicit.phpt`
+remains an outstanding publication blocker. The earlier replacement full gate
+for source `6b0952e0` completed `FINAL / BLOCKED-PASS-REGRESSIONS` with one
+latest-published PASS regression,
+`php-src/Zend/tests/typehints/namespace_relative_scalar.phpt`; that row has
+selected repair proof at source `a3889f45`, but the blocked `6b0952e0` gate
+cannot be published. The older `6b0952e0` gate ended
+`FINAL / GATE-INCOMPLETE-NO-EXIT-MARKERS / NOT-PUBLICATION-EVIDENCE`, the
+previous `f13e45f4` gate also ended incomplete with no exit markers, and the
 previous `daee77c1` gate completed with a broken aggregate caused by
 shard-directory naming mismatch. The latest accepted full gate remains
 `state/logs/phpt-full-current-score-20260604T043544Z-php-src-f97ff59-public-0086ba77-source-0086ba77`.
@@ -57,10 +58,10 @@ latest-published PASS regressions.
 
 Unpublished source progress since the accepted public score source:
 
-- Latest pushed source head is `6b0952e0507a6f810e162b4aeb4a40589753c05c`
-  (`fix: preserve reset date parse defaults`), which is newer than the
+- Latest pushed source head is `e340aa0b0b300711bd0f3c003665397f1e8ded44`
+  (`fix: reject dynamic non-static callables`), which is newer than the
   accepted `0086ba77` full gate and is not included in the public score above.
-- There are `14` score-relevant source commits after the accepted public-score
+- There are `19` score-relevant source commits after the accepted public-score
   source: `01afaf19e44c2d4a23023469a0a1122ed81f7d90`
   (`fix: parse numeric literal separators`),
   `f4be414cce658cfc8c6f77ad5a17146a97c66e22`
@@ -86,11 +87,21 @@ Unpublished source progress since the accepted public score source:
   `22a45603987ba28705f678941cf6edfe12521e9e`
   (`fix: resolve namespace constants`),
   `2b3f00fc3cf77aa081509a3b64b4dd03357d1994`
-  (`fix: handle ArrayObject object storage`), and
+  (`fix: handle ArrayObject object storage`),
   `6b0952e0507a6f810e162b4aeb4a40589753c05c`
-  (`fix: preserve reset date parse defaults`).
+  (`fix: preserve reset date parse defaults`),
+  `6e1c1ebf30c0f138e53a7c7f4f846cf5a1b684d9`
+  (`fix: dispatch magic static method calls`),
+  `2c401b6d36d0641bed43cc3b745157b67e0b095d`
+  (`fix: validate abstract trait requirements`),
+  `a3889f457ab8a0d2fc2856db443b14779d3bf72e`
+  (`fix: reject namespace-relative builtin types`),
+  `1b1e9b0d557a8c124e7a05692bacbfd4ebba7fae`
+  (`fix: honor get class vars scope`), and
+  `e340aa0b0b300711bd0f3c003665397f1e8ded44`
+  (`fix: reject dynamic non-static callables`).
 - Staged focused selected-PHPT proof after the latest accepted public-score
-  source totals `146` selected rows across `14` integrated source artifacts.
+  source totals `191` selected rows across `19` integrated source artifacts.
   These are source/staging facts, not a public score update unless a full
   pinned PHPT gate accepts them.
 - The numeric literal separator packet moved selected PHPT `0/11 -> 11/11`
@@ -255,12 +266,68 @@ Unpublished source progress since the accepted public score source:
   This repairs the exact known `6eb8d818` publication blocker at current source
   `6b0952e0`, but it is not public score movement unless the fresh full pinned
   PHPT gate accepts it.
-- The `6b0952e0` full gate is running:
-  `state/logs/phpt-full-current-score-20260604T074408Z-php-src-f97ff59-public-6b0952e0-source-6b0952e0`
+- The magic-method dispatch packet moved selected PHPT `0/12 -> 12/12` for
+  `Zend/tests/magic_methods/bug19859.phpt`, `bug42937.phpt`,
+  `bug45186.phpt`, `bug45186_2.phpt`, `bug46238.phpt`, `bug47801.phpt`,
+  `bug48533.phpt`, `bug53826.phpt`, `bug77339.phpt`,
+  `call_static_003.phpt`, `call_static_006.phpt`, and
+  `call_static_007.phpt`. It also preserved the latest-published PASS scout
+  `8/8`, passed focused Rust object-model coverage, build, fmt, diff checks,
+  and production row-name leakage scan.
+- The abstract trait requirements packet moved selected PHPT `0/19 -> 19/19`
+  for the selected `Zend/tests/traits/abstract_method_*`, trait bug, and
+  `Zend/tests/traits/gh14009_*` rows covering abstract trait method
+  requirements. It also preserved the latest-published PASS scout `8/8`,
+  passed focused Rust object/syntax coverage, build, fmt, diff checks, and
+  production row-name leakage scan.
+- The `namespace_relative_scalar.phpt` PASS-regression repair packet moved
+  selected PHPT `0/1 -> 1/1` for
+  `Zend/tests/typehints/namespace_relative_scalar.phpt`. It confirmed that row
+  was the sole latest-published PASS regression in the blocked `6b0952e0`
+  replacement gate, preserved adjacent type/date scouts and latest-published
+  PASS scout `8/8`, and passed focused Rust, build, fmt, diff checks, and
+  production row-name leakage scan.
+- The get-class-vars / late-static-binding packet moved selected PHPT
+  `0/12 -> 12/12` for the selected `Zend/tests/get_class_vars/*`,
+  `ext/standard/tests/class_object/get_class_vars_variation2.phpt`,
+  `Zend/tests/lsb/*`, and `Zend/tests/traits/static_003.phpt` rows. It also
+  preserved the latest-published PASS scout `8/8` after an isolated longer
+  timeout rerun for `Zend/tests/bug60598.phpt`, passed focused Rust
+  object-model coverage, build, fmt, diff checks, and production row-name
+  leakage scan.
+- The `dynamic_call_non_static.phpt` PASS-regression repair packet moved
+  selected PHPT `0/1 -> 1/1` for
+  `Zend/tests/dynamic_call/dynamic_call_non_static.phpt`. It repairs one of
+  the two latest-published PASS regressions from the blocked `a3889f45` full
+  gate at current source `e340aa0b`; `Zend/tests/abstract_implicit.phpt`
+  remains the known publication blocker. It also preserved adjacent
+  dynamic-call rows and latest-published PASS scout `8/8`, and passed focused
+  Rust, build, fmt, diff checks, and production row-name leakage scan.
+- The `a3889f45` full gate is blocked:
+  `state/logs/phpt-full-current-score-20260604T083545Z-php-src-f97ff59-public-a3889f45-source-a3889f45`
   against the accepted `0086ba77` PASS baseline with `7372` normalized rows.
-  Latest status is `RUNNING / BUILDING-RELEASE`; PASS regressions are unknown,
-  and it is not publication evidence unless it completes with zero
-  latest-published PASS regressions.
+  It completed `FINAL / BLOCKED-PASS-REGRESSIONS` with public-comparable
+  `7602 / 20294 = 37.46%`, `7598` normalized current passes, and `2`
+  latest-published PASS regressions:
+  `php-src/Zend/tests/abstract_implicit.phpt` and
+  `php-src/Zend/tests/dynamic_call/dynamic_call_non_static.phpt`. It is not
+  publication evidence for `a3889f45` or newer sources; the dynamic-call row now
+  has selected repair proof at `e340aa0b`, and `abstract_implicit.phpt`
+  remains outstanding.
+- The `6b0952e0` replacement full gate is blocked:
+  `state/logs/phpt-full-current-score-20260604T075946Z-php-src-f97ff59-public-6b0952e0-source-6b0952e0`
+  against the accepted `0086ba77` PASS baseline with `7372` normalized rows.
+  It completed `FINAL / BLOCKED-PASS-REGRESSIONS` with public-comparable
+  `7567 / 20294 = 37.29%`, `7563` normalized current passes, and `1`
+  latest-published PASS regression:
+  `php-src/Zend/tests/typehints/namespace_relative_scalar.phpt`. It is not
+  publication evidence for `6b0952e0` or newer sources; that exact row now has
+  selected repair proof at source `a3889f45`.
+- The earlier `6b0952e0` full gate is incomplete and not publication evidence:
+  `state/logs/phpt-full-current-score-20260604T074408Z-php-src-f97ff59-public-6b0952e0-source-6b0952e0`
+  ended `FINAL / GATE-INCOMPLETE-NO-EXIT-MARKERS /
+  NOT-PUBLICATION-EVIDENCE` with empty shard exit markers and no aggregate,
+  current-passes, or PASS-regression files.
 - The `6eb8d818` full gate is blocked:
   `state/logs/phpt-full-current-score-20260604T070724Z-php-src-f97ff59-public-6eb8d818-source-6eb8d818`
   against the accepted `0086ba77` PASS baseline with `7372` normalized rows.
