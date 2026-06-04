@@ -1,6 +1,6 @@
 # PHP Native Compiler PHPT Progress
 
-Updated: 2026-06-04 02:48 CEST
+Updated: 2026-06-04 03:06 CEST
 
 Primary/public branch: `origin/master`
 Latest accepted public-score source:
@@ -19,10 +19,11 @@ denominators that exclude BORKED rows are not public progress.
 Current public score: **7119 / 20294 pinned runnable PHPTs = 35.08%**.
 
 Latest pushed source checkpoint:
-`397461985bdf64b947776851c1ce7e48a5998515 fix: add bounded directory iterator metadata`
+`3b156157501b71f0e6c96d000ad3305197a238f2 fix: report access modifier diagnostics`
 
 Next score-gate target:
-`397461985bdf64b947776851c1ce7e48a5998515 fix: add bounded directory iterator metadata`
+`3b156157501b71f0e6c96d000ad3305197a238f2 fix: report access modifier diagnostics`
+after the active latest-published PASS regression is repaired or adjudicated.
 
 The accepted source checkpoint chain through semantic source `3a003811` has
 been pushed to `origin/master` and is now reflected in the public score above.
@@ -31,16 +32,28 @@ post-`4cbed170` source chain into a public PHPT movement of `7090 -> 7119`
 passed pinned rows, a net gain of `29` public PHPT passes, with zero
 latest-published PASS regressions.
 
+The newer full pinned gate at checkpoint `52a79aa1` completed
+`FINAL / BLOCKED-PASS-REGRESSIONS` and is not publication evidence. Its
+public-comparable aggregate was `7138 / 20294 = 35.17%`, but it had one
+latest-published PASS regression, so the public score remains
+`7119 / 20294 = 35.08%`.
+
 Unpublished source progress since the accepted public score source:
 
-- Latest pushed source head is `397461985bdf64b947776851c1ce7e48a5998515`
-  (`fix: add bounded directory iterator metadata`), pushed to `origin/master`.
-- There is `1` score-relevant commit after the accepted public-score checkpoint:
+- Latest pushed source head is `3b156157501b71f0e6c96d000ad3305197a238f2`
+  (`fix: report access modifier diagnostics`), pushed to `origin/master`.
+- There are `3` commits after the accepted public-score checkpoint, including
+  `2` score-relevant source commits:
   `397461985bdf64b947776851c1ce7e48a5998515` (`fix: add bounded directory
-  iterator metadata`).
-- Integrated focused selected-PHPT proof since the latest accepted public gate
-  totals `10` selected rows across `1` integrated artifact. These are local
-  source/staging facts, not a public score update.
+  iterator metadata`) and
+  `3b156157501b71f0e6c96d000ad3305197a238f2` (`fix: report access modifier
+  diagnostics`). The intervening `52a79aa1` commit is docs-only publication.
+- Staged focused selected-PHPT proof after the latest accepted public-score
+  checkpoint totals `20` selected rows across `2` integrated source artifacts.
+  These are source/staging facts, not a public score update. The `39746198`
+  DirectoryIterator/SplFileInfo packet is included in the blocked `52a79aa1`
+  full gate; the `3b156157` access-modifier diagnostics packet is newer than
+  that gate and still lacks a full pinned gate.
 - The DirectoryIterator/SplFileInfo source packet moved selected PHPT
   `0/10 -> 10/10` for `ext/spl/tests/DirectoryIterator_empty_constructor.phpt`,
   `ext/spl/tests/DirectoryIterator_getBasename_basic_test.phpt`,
@@ -54,6 +67,25 @@ Unpublished source progress since the accepted public score source:
   `ext/spl/tests/SplFileinfo_getFilename_basic.phpt`. It also preserved an
   eight-row latest-published PASS scout including `bug60598.phpt` and
   `semi_reserved_005.phpt`.
+- The access-modifier diagnostics source packet moved selected PHPT
+  `0/10 -> 10/10` for `Zend/tests/access_modifiers/access_modifiers_001.phpt`,
+  `Zend/tests/access_modifiers/access_modifiers_002.phpt`,
+  `Zend/tests/access_modifiers/access_modifiers_003.phpt`,
+  `Zend/tests/access_modifiers/access_modifiers_004.phpt`,
+  `Zend/tests/access_modifiers/access_modifiers_005.phpt`,
+  `Zend/tests/access_modifiers/access_modifiers_006.phpt`,
+  `Zend/tests/access_modifiers/access_modifiers_007.phpt`,
+  `Zend/tests/access_modifiers/access_modifiers_010.phpt`,
+  `Zend/tests/access_modifiers/access_modifiers_012.phpt`, and
+  `Zend/tests/access_modifiers/access_modifiers_013.phpt`. It also preserved
+  an eight-row latest-published PASS scout including `bug60598.phpt` and
+  `semi_reserved_005.phpt`.
+- The active publication blocker is the blocked `52a79aa1` full gate:
+  `state/logs/phpt-full-current-score-20260604T005236Z-php-src-f97ff59-public-52a79aa1-source-52a79aa1`
+  had `1` latest-published PASS regression,
+  `php-src/ext/spl/tests/ArrayObject/arrayObject_getIteratorClass_basic1.phpt`.
+  Its normalized PASS comparison was `7115` baseline rows to `7134` current
+  rows with `1` regression, so it cannot move the public score.
 - The prior score-gate checkpoint
   `28662f8a482521f65fcbdc1b415163afbf65efd9` is not publication evidence
   because its gate is missing result files. The earlier `b2914aff` full gate
