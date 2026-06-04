@@ -4511,7 +4511,8 @@ object stores request-local reflection state and dispatches the current
 `isCloneable()`, `getModifiers()`, `getParentClass()`, `getInterfaceNames()`,
 `getInterfaces()`, `hasMethod($name)`, `getConstructor()`,
 `getMethod($name)`, `getMethods([$filter])`, `getFileName()`,
-`getStartLine()`, `getEndLine()`, and `getDocComment()` methods directly through the
+`getStartLine()`, `getEndLine()`, `getDocComment()`, `newInstance()`,
+`newInstanceArgs()`, and `newInstanceWithoutConstructor()` methods directly through the
 interpreter. ReflectionClass objects also materialize the bounded public
 `name` property so debug output and simple metadata reads observe the reflected
 class-like name. Class-like source
@@ -4525,9 +4526,15 @@ request-local reflection path now covers declared user-class properties:
 protected properties, and exclude inherited private properties when reflecting
 a child class. `isCloneable()` is computed from the reflected class kind,
 abstract-class set, resolved `__clone()` visibility/staticness, and the current
-uncloneable internal/reflection object list. `isReadOnly()` currently reports
-false because readonly class declarations are parsed only for bounded startup
-diagnostics, not reflection readonly metadata. This is metadata only.
+uncloneable internal/reflection object list. The bounded construction path uses
+the same object allocation/default-property initialization as direct `new`,
+then invokes public userland constructors by value so `func_get_args()` sees
+extra reflection arguments while by-reference parameters emit warnings instead
+of binding caller variables. It also reuses the core `ReflectionClass`
+constructor state assignment for `ReflectionClass` subclasses.
+`isReadOnly()` currently reports false because readonly class declarations are
+parsed only for bounded startup diagnostics, not reflection readonly metadata.
+Internal class construction through reflection remains outside this lane.
 `ReflectionMethod` uses the same core placeholder class plus request-local
 state pattern for declared user class, interface, and trait methods. The
 constructor accepts an object or class-like string plus a string-convertible

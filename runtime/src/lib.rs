@@ -32523,6 +32523,8 @@ impl PhpClassTable {
             "getStaticPropertyValue",
             "setStaticPropertyValue",
             "getDefaultProperties",
+            "newInstance",
+            "newInstanceArgs",
             "newInstanceWithoutConstructor",
             "getAttributes",
         ] {

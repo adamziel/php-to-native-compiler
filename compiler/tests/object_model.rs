@@ -8310,6 +8310,66 @@ parameter-index|ReflectionParameter::__construct(): Argument #2 ($param) must be
 }
 
 #[test]
+fn reflection_class_new_instance_invokes_public_user_constructors_by_value() {
+    let execution = run_source(
+        r#"<?php
+class NoCtor {}
+class WithCtor {
+    public function __construct($a = null) {
+        echo "ctor|", $a, "|", count(func_get_args()), "\n";
+    }
+}
+class NeedsRef {
+    public function __construct(&$x) {
+        $x = "changed";
+    }
+}
+class Base {}
+class Child extends Base {}
+class ReflectionClassEx extends ReflectionClass {
+    public $extra = "ok";
+}
+
+$no = new ReflectionClass(NoCtor::class);
+echo "no|", get_class($no->newInstance()), "\n";
+try {
+    $no->newInstance("x");
+} catch (ReflectionException $e) {
+    echo "no-args|", $e->getMessage(), "\n";
+}
+
+$with = new ReflectionClass(WithCtor::class);
+echo "with|", get_class($with->newInstance("a", "b")), "\n";
+
+$x = "original";
+(new ReflectionClass(NeedsRef::class))->newInstance($x);
+echo "ref|", $x, "\n";
+
+$child = (new ReflectionClass(Child::class))->newInstanceArgs(array());
+echo "child|", (new ReflectionClass(Base::class))->isInstance($child) ? "1" : "0", "\n";
+
+$rx = new ReflectionClassEx("ReflectionClassEx");
+echo "sub|", $rx->name, "|", $rx->extra, "\n";
+"#,
+    )
+    .unwrap();
+
+    assert!(execution.stdout.contains("no|NoCtor\n"));
+    assert!(execution.stdout.contains(
+        "no-args|Class NoCtor does not have a constructor, so you cannot pass any constructor arguments\n"
+    ));
+    assert!(execution.stdout.contains("with|ctor|a|2\nWithCtor\n"));
+    assert!(execution.stdout.contains(
+        "Warning: NeedsRef::__construct(): Argument #1 ($x) must be passed by reference, value given"
+    ));
+    assert!(execution.stdout.contains("ref|original\n"));
+    assert!(execution.stdout.contains("child|1\n"));
+    assert!(execution.stdout.contains("sub|ReflectionClassEx|ok\n"));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reflection_method_and_parameter_report_bounded_compound_type_metadata() {
     let execution = run_source(
         r#"<?php

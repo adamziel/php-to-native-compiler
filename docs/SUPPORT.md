@@ -10783,8 +10783,14 @@
   `getInterfaceNames()`, `getInterfaces()`, `getTraitNames()`, `getTraits()`,
   `hasMethod($name)`, `getConstructor()`, `getFileName()`,
   `getStartLine()`, `getEndLine()`, `getDocComment()`, `isAbstract()`,
-  `isFinal()`, `isReadOnly()`, `isCloneable()`, and `getModifiers()` over the
-  current metadata tables. `hasMethod($name)` accepts scalar
+  `isFinal()`, `isReadOnly()`, `isCloneable()`, `getModifiers()`,
+  `newInstance()`, `newInstanceArgs()`, and
+  `newInstanceWithoutConstructor()` over the current metadata tables.
+  `newInstance()` and `newInstanceArgs()` allocate declared user classes,
+  reject non-public constructors with `ReflectionException`, pass constructor
+  arguments by value with PHP-shaped by-reference warnings, preserve extra
+  user constructor arguments for `func_get_args()`, and reject constructor
+  arguments for classes without constructors. `hasMethod($name)` accepts scalar
   string-convertible names in this bounded path. ReflectionClass objects expose
   the bounded public `name`
   property used by PHP's debug output and simple metadata reads. For declared
@@ -12994,8 +13000,12 @@
   `getConstructor()`, `getFileName()`,
   `getStartLine()`, `getEndLine()`, `getDocComment()`,
   `getMethod($name)`, `getMethods([$filter])`, `hasProperty($name)`,
-  `getProperty($name)`, and
-  zero-argument `getProperties()`. `hasConstant($name)` and
+  `getProperty($name)`, zero-argument `getProperties()`, `newInstance()`,
+  `newInstanceArgs()`, and `newInstanceWithoutConstructor()`.
+  `newInstance()` and `newInstanceArgs()` are bounded to declared user classes
+  with public userland constructors or no constructor; inherited core
+  `ReflectionClass::__construct()` is supported for `ReflectionClass`
+  subclasses. `hasConstant($name)` and
   `getConstant($name)` accept string and scalar names in this bounded metadata
   path. `ReflectionMethod` currently supports only bounded
   method metadata over declared user classes, interfaces, and traits with the

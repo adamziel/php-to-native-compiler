@@ -2001,6 +2001,22 @@ caller();
 }
 
 #[test]
+fn magic_function_constant_in_closure_includes_source_and_line() {
+    let execution = run_source(
+        r#"<?php
+$fn = function () {
+    echo __FUNCTION__, "\n";
+};
+$fn();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "{closure:Command line code:2}\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn emit_ir_rejects_magic_function_until_native_source_mapping_exists() {
     let error = emit_ir_source("<?php\necho __FUNCTION__;\n").unwrap_err();
     assert_eq!(error.phase, Phase::Codegen);

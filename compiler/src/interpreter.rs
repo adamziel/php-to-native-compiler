@@ -12464,6 +12464,12 @@ impl Interpreter {
             .is_some_and(|php_token_id| class_id == php_token_id)
     }
 
+    fn resolved_method_is_core_reflection_class(&self, class_id: ClassId) -> bool {
+        self.classes
+            .lookup_class_id("ReflectionClass")
+            .is_some_and(|reflection_class_id| class_id == reflection_class_id)
+    }
+
     fn spl_doubly_linked_list_default_iterator_mode(class_name: &str) -> i64 {
         if class_name.eq_ignore_ascii_case("SplQueue") {
             SPL_QUEUE_ITERATOR_MODE
@@ -15875,7 +15881,8 @@ impl Interpreter {
         self.ensure_user_function_call_depth(function, span)?;
 
         let called_class_id = object.class_id();
-        self.function_context.push(function.name.clone());
+        self.function_context
+            .push(self.function_context_name(function));
         self.class_context.push(class_id);
         self.called_class_context.push(called_class_id);
         let mut local_scope = SymbolTable::new_child(self.global_symbols.clone());
@@ -31921,58 +31928,7 @@ impl Interpreter {
 
         let constructor = self.resolve_instance_method(class_id, "__construct");
 
-        let object_id = self.allocate_object_id();
-
-        let inherited_properties = self.inherited_instance_properties(class_id);
-        let mut ancestor_class_names = self.inherited_class_names(class_id);
-        ancestor_class_names.extend(self.class_alias_names(class_id));
-        let interface_names = self.class_implements_interface_names(class_id);
-        let class = self
-            .classes
-            .get(class_id)
-            .expect("class id should resolve to class metadata");
-        let object = PhpObject::from_class_with_relationship_metadata_with_id(
-            class,
-            &inherited_properties,
-            ancestor_class_names,
-            interface_names,
-            object_id,
-        );
-        if self.is_spl_fixed_array_class_id(class_id) {
-            self.spl_fixed_arrays
-                .insert(object.id(), SplFixedArrayState::default());
-        }
-        if self.is_array_object_storage_class_id(class_id) {
-            self.array_objects
-                .insert(object.id(), BoundedArrayObjectState::default());
-        }
-        if self.is_spl_object_storage_class_id(class_id) {
-            self.spl_object_storages
-                .insert(object.id(), SplObjectStorageState::default());
-        }
-        if self.is_spl_doubly_linked_list_class_id(class_id) {
-            let iterator_mode = Self::spl_doubly_linked_list_default_iterator_mode(class.name());
-            self.spl_doubly_linked_lists
-                .insert(object.id(), SplDoublyLinkedListState::new(iterator_mode));
-        }
-        if self.is_spl_file_info_class_id(class_id) {
-            self.spl_file_infos
-                .insert(object.id(), SplFileInfoState::default());
-        }
-        if self.is_spl_file_object_class_id(class_id) {
-            self.spl_file_objects
-                .insert(object.id(), SplFileObjectState::default());
-        }
-        if self.is_spl_directory_iterator_class_id(class_id) {
-            self.spl_directory_iterators
-                .insert(object.id(), DirectoryIteratorState::default());
-        }
-        if self.is_spl_recursive_iterator_iterator_class_id(class_id) {
-            self.spl_recursive_iterator_iterators
-                .insert(object.id(), RecursiveIteratorIteratorState::default());
-        }
-        self.apply_instance_property_defaults(&object, class_id, span)?;
-        self.sync_spl_doubly_linked_list_object_properties(&object, span)?;
+        let object = self.allocate_object_without_constructor(class_id, span)?;
         let Some((
             constructor_class_id,
             constructor_class_name,
@@ -32039,6 +31995,14 @@ impl Interpreter {
                     "static constructors are not implemented",
                 ),
             ));
+        }
+
+        if constructor_name.eq_ignore_ascii_case("__construct")
+            && self.resolved_method_is_core_reflection_class(constructor_class_id)
+        {
+            self.assign_reflection_class_constructor_state_from_exprs(&object, args, span, scope)?;
+            self.track_allocated_object(&object);
+            return Ok(Value::Object(object));
         }
 
         if self.resolved_method_is_core_php_token(constructor_class_id) {
@@ -32306,6 +32270,66 @@ impl Interpreter {
         result?;
         self.track_allocated_object(&object);
         Ok(Value::Object(object))
+    }
+
+    fn allocate_object_without_constructor(
+        &mut self,
+        class_id: ClassId,
+        span: Span,
+    ) -> CompileResult<PhpObject> {
+        let object_id = self.allocate_object_id();
+        let inherited_properties = self.inherited_instance_properties(class_id);
+        let mut ancestor_class_names = self.inherited_class_names(class_id);
+        ancestor_class_names.extend(self.class_alias_names(class_id));
+        let interface_names = self.class_implements_interface_names(class_id);
+        let class = self
+            .classes
+            .get(class_id)
+            .expect("class id should resolve to class metadata");
+        let class_name = class.name().to_string();
+        let object = PhpObject::from_class_with_relationship_metadata_with_id(
+            class,
+            &inherited_properties,
+            ancestor_class_names,
+            interface_names,
+            object_id,
+        );
+        if self.is_spl_fixed_array_class_id(class_id) {
+            self.spl_fixed_arrays
+                .insert(object.id(), SplFixedArrayState::default());
+        }
+        if self.is_array_object_storage_class_id(class_id) {
+            self.array_objects
+                .insert(object.id(), BoundedArrayObjectState::default());
+        }
+        if self.is_spl_object_storage_class_id(class_id) {
+            self.spl_object_storages
+                .insert(object.id(), SplObjectStorageState::default());
+        }
+        if self.is_spl_doubly_linked_list_class_id(class_id) {
+            let iterator_mode = Self::spl_doubly_linked_list_default_iterator_mode(&class_name);
+            self.spl_doubly_linked_lists
+                .insert(object.id(), SplDoublyLinkedListState::new(iterator_mode));
+        }
+        if self.is_spl_file_info_class_id(class_id) {
+            self.spl_file_infos
+                .insert(object.id(), SplFileInfoState::default());
+        }
+        if self.is_spl_file_object_class_id(class_id) {
+            self.spl_file_objects
+                .insert(object.id(), SplFileObjectState::default());
+        }
+        if self.is_spl_directory_iterator_class_id(class_id) {
+            self.spl_directory_iterators
+                .insert(object.id(), DirectoryIteratorState::default());
+        }
+        if self.is_spl_recursive_iterator_iterator_class_id(class_id) {
+            self.spl_recursive_iterator_iterators
+                .insert(object.id(), RecursiveIteratorIteratorState::default());
+        }
+        self.apply_instance_property_defaults(&object, class_id, span)?;
+        self.sync_spl_doubly_linked_list_object_properties(&object, span)?;
+        Ok(object)
     }
 
     fn resolve_new_class_name(
@@ -48778,6 +48802,17 @@ impl Interpreter {
         }
     }
 
+    fn function_context_name(&self, function: &FunctionDecl) -> String {
+        if function.name == "{closure}" {
+            let source_file = self
+                .source_file
+                .clone()
+                .unwrap_or_else(|| "Command line code".to_string());
+            return format!("{{closure:{source_file}:{}}}", function.span.line);
+        }
+        function.name.clone()
+    }
+
     fn magic_method_value(&self, span: Span) -> CompileResult<String> {
         let Some(function_name) = self.function_context.last() else {
             return Ok(String::new());
@@ -49923,7 +49958,16 @@ impl Interpreter {
             ));
         }
 
-        let mut target = self.evaluate(&args[0], scope)?;
+        let target = self.evaluate(&args[0], scope)?;
+        let state = self.resolve_reflection_class_constructor_target(target, span)?;
+        self.create_reflection_class_object(state, span)
+    }
+
+    fn resolve_reflection_class_constructor_target(
+        &mut self,
+        mut target: Value,
+        span: Span,
+    ) -> CompileResult<ReflectionClassState> {
         if matches!(target, Value::Null) {
             self.emit_display_diagnostic(
                 "Deprecated",
@@ -49945,8 +49989,7 @@ impl Interpreter {
                 ),
             ));
         }
-        let state = self.resolve_reflection_class_target(&target, span)?;
-        self.create_reflection_class_object(state, span)
+        self.resolve_reflection_class_target(&target, span)
     }
 
     fn create_reflection_class_object(
@@ -49969,11 +50012,50 @@ impl Interpreter {
             .get(class_id)
             .expect("core ReflectionClass class id should resolve");
         let object = PhpObject::from_class_with_id(class, object_id);
-        object
-            .write_public_property("name", Value::String(state.name.clone()))
-            .map_err(|error| runtime_error(span, error))?;
-        self.reflection_classes.insert(object_id, state);
+        self.assign_reflection_class_state(&object, state, span)?;
         Ok(Value::Object(object))
+    }
+
+    fn assign_reflection_class_constructor_state_from_exprs(
+        &mut self,
+        object: &PhpObject,
+        args: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        if args.len() != 1 {
+            return Err(reflection_constructor_exact_argument_count_error(
+                "ReflectionClass",
+                1,
+                args.len(),
+                span,
+            ));
+        }
+        let target = self.evaluate(&args[0], scope)?;
+        let state = self.resolve_reflection_class_constructor_target(target, span)?;
+        self.assign_reflection_class_state(object, state, span)
+    }
+
+    fn assign_reflection_class_constructor_state_from_values(
+        &mut self,
+        object: &PhpObject,
+        values: Vec<Value>,
+        span: Span,
+    ) -> CompileResult<()> {
+        if values.len() != 1 {
+            return Err(reflection_constructor_exact_argument_count_error(
+                "ReflectionClass",
+                1,
+                values.len(),
+                span,
+            ));
+        }
+        let target = values
+            .into_iter()
+            .next()
+            .expect("exactly one value checked above");
+        let state = self.resolve_reflection_class_constructor_target(target, span)?;
+        self.assign_reflection_class_state(object, state, span)
     }
 
     fn instantiate_reflection_object(
@@ -50039,6 +50121,19 @@ impl Interpreter {
         );
         self.assign_reflection_object_state(&object, state, span)?;
         Ok(Value::Object(object))
+    }
+
+    fn assign_reflection_class_state(
+        &mut self,
+        object: &PhpObject,
+        state: ReflectionClassState,
+        span: Span,
+    ) -> CompileResult<()> {
+        object
+            .write_public_property("name", Value::String(state.name.clone()))
+            .map_err(|error| runtime_error(span, error))?;
+        self.reflection_classes.insert(object.id(), state);
+        Ok(())
     }
 
     fn assign_reflection_object_state(
@@ -58801,7 +58896,13 @@ impl Interpreter {
                 .call_sensitive_parameter_value_method(&object, method_name, args, span)
                 .map(|value| (value, None));
         }
-        if object.is_instance_of_class_name("ReflectionClass") {
+        if object.is_instance_of_class_name("ReflectionClass")
+            && self.instance_method_resolves_to_core_class(
+                &object,
+                method_name,
+                Self::resolved_method_is_core_reflection_class,
+            )
+        {
             return self
                 .call_reflection_class_method(object, method_name, args, span, caller_scope)
                 .map(|value| (value, None));
@@ -59518,13 +59619,15 @@ impl Interpreter {
                 self.assign_reflection_object_state(&object, state, span)?;
                 Ok(Value::Null)
             }
-            "__construct" => Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "ReflectionClass::__construct()",
-                    "reinitializing ReflectionClass objects is not implemented",
-                ),
-            )),
+            "__construct" => {
+                self.assign_reflection_class_constructor_state_from_exprs(
+                    &object,
+                    args,
+                    span,
+                    caller_scope,
+                )?;
+                Ok(Value::Null)
+            }
             "__tostring" => {
                 expect_expr_arity("ReflectionClass::__toString", args.len(), 0, span)?;
                 self.reflection_class_to_string(&state, span)
@@ -59644,6 +59747,18 @@ impl Interpreter {
                     .is_some_and(|class_id| !self.abstract_classes.contains(&class_id));
                 Ok(Value::Bool(instantiable))
             }
+            "newinstance" => {
+                let values = args
+                    .iter()
+                    .map(|arg| self.evaluate(arg, caller_scope))
+                    .collect::<CompileResult<Vec<_>>>()?;
+                self.reflection_class_new_instance_from_values(&state, values, span)
+            }
+            "newinstanceargs" => {
+                let values =
+                    self.reflection_class_new_instance_args_values(args, span, caller_scope)?;
+                self.reflection_class_new_instance_from_values(&state, values, span)
+            }
             "newinstancewithoutconstructor" => {
                 expect_expr_arity(
                     "ReflectionClass::newInstanceWithoutConstructor",
@@ -59669,23 +59784,7 @@ impl Interpreter {
                         format!("Cannot instantiate abstract class {}", state.name),
                     ));
                 }
-                let inherited_properties = self.inherited_instance_properties(class_id);
-                let mut ancestor_class_names = self.inherited_class_names(class_id);
-                ancestor_class_names.extend(self.class_alias_names(class_id));
-                let interface_names = self.class_implements_interface_names(class_id);
-                let object_id = self.allocate_object_id();
-                let class = self
-                    .classes
-                    .get(class_id)
-                    .expect("reflected class id should resolve");
-                let object = PhpObject::from_class_with_relationship_metadata_with_id(
-                    class,
-                    &inherited_properties,
-                    ancestor_class_names,
-                    interface_names,
-                    object_id,
-                );
-                self.apply_instance_property_defaults(&object, class_id, span)?;
+                let object = self.allocate_object_without_constructor(class_id, span)?;
                 self.track_allocated_object(&object);
                 Ok(Value::Object(object))
             }
@@ -60120,6 +60219,195 @@ impl Interpreter {
                 RuntimeError::undefined_function(format!("ReflectionClass::{method_name}()")),
             )),
         }
+    }
+
+    fn reflection_class_new_instance_args_values(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Vec<Value>> {
+        if args.len() > 1 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "ReflectionClass::newInstanceArgs()",
+                    ArityExpectation::Between { min: 0, max: 1 },
+                    args.len(),
+                ),
+            ));
+        }
+        let Some(arg) = args.first() else {
+            return Ok(Vec::new());
+        };
+        let value = self.evaluate(arg, caller_scope)?;
+        let Value::Array(array) = value else {
+            let error = runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "ReflectionClass::newInstanceArgs()",
+                    format!(
+                        "Argument #1 ($args) must be of type array, {} given",
+                        php_type_error_given(&value)
+                    ),
+                ),
+            );
+            self.record_pending_uncaught_internal_call_frame(
+                "ReflectionClass->newInstanceArgs",
+                span,
+                std::slice::from_ref(&value),
+                &error,
+            );
+            return Err(error);
+        };
+        Ok(array
+            .entries()
+            .iter()
+            .map(|entry| entry.value_cloned())
+            .collect())
+    }
+
+    fn reflection_class_new_instance_from_values(
+        &mut self,
+        state: &ReflectionClassState,
+        values: Vec<Value>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let (ReflectionClassKind::Class, Some(class_id)) = (state.kind, state.class_id) else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_object_instantiation(
+                    state.name.clone(),
+                    "only concrete classes can be instantiated by ReflectionClass::newInstance()",
+                ),
+            ));
+        };
+        if self.abstract_classes.contains(&class_id) {
+            return Err(Diagnostic::new(
+                Phase::Runtime,
+                span.line,
+                span.column,
+                format!("Cannot instantiate abstract class {}", state.name),
+            ));
+        }
+
+        let Some((
+            constructor_class_id,
+            constructor_class_name,
+            constructor_name,
+            constructor_visibility,
+            constructor_is_static,
+        )) = self.resolve_instance_method(class_id, "__construct")
+        else {
+            if !values.is_empty() {
+                return Err(reflection_exception_error(
+                    span,
+                    format!(
+                        "Class {} does not have a constructor, so you cannot pass any constructor arguments",
+                        state.name
+                    ),
+                ));
+            }
+            let object = self.allocate_object_without_constructor(class_id, span)?;
+            self.track_allocated_object(&object);
+            return Ok(Value::Object(object));
+        };
+
+        if constructor_is_static {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_object_instantiation(
+                    state.name.clone(),
+                    "static constructors are not implemented",
+                ),
+            ));
+        }
+        if constructor_visibility != Visibility::Public {
+            return Err(reflection_exception_error(
+                span,
+                format!("Access to non-public constructor of class {}", state.name),
+            ));
+        }
+
+        let object = self.allocate_object_without_constructor(class_id, span)?;
+        if constructor_name.eq_ignore_ascii_case("__construct")
+            && self.resolved_method_is_core_reflection_class(constructor_class_id)
+        {
+            self.assign_reflection_class_constructor_state_from_values(&object, values, span)?;
+            self.track_allocated_object(&object);
+            return Ok(Value::Object(object));
+        }
+
+        let function = self.method_function(
+            constructor_class_id,
+            &constructor_class_name,
+            &constructor_name,
+            span,
+        )?;
+        let function = function.as_ref();
+        ensure_reflection_constructor_arity_with_extra_policy(
+            function,
+            values.len(),
+            &constructor_class_name,
+            &constructor_name,
+            span,
+        )?;
+        ensure_supported_function_metadata(function, span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+        self.emit_call_user_func_method_reference_parameter_warnings(
+            function,
+            values.len(),
+            &constructor_class_name,
+            &constructor_name,
+            span,
+        )?;
+
+        if function_has_promoted_properties(function) {
+            let protected_class_ids = self.protected_class_ids_for_context(constructor_class_id);
+            for (param, value) in function.params.iter().zip(values.iter()) {
+                if param.promotion.is_none() {
+                    continue;
+                }
+                object
+                    .write_property_from_context_with_object_type_resolver(
+                        &param.name,
+                        value.clone(),
+                        Some(constructor_class_id),
+                        &protected_class_ids,
+                        |object, type_name| object.is_instance_of_class_name(type_name),
+                    )
+                    .map_err(|error| runtime_error(span, error))?;
+            }
+        }
+
+        let trace_args = values.clone();
+        let trace_callable = self.pending_uncaught_user_call_callable(
+            function,
+            Some(&object),
+            Some(constructor_class_id),
+        );
+        let trace_function_line = function.span.line;
+        let result = self.call_user_function_with_checked_values(
+            function,
+            values,
+            Some(object.clone()),
+            Some(constructor_class_id),
+            Some(object.class_id()),
+            Vec::new(),
+            None,
+        );
+        if let Err(error) = &result {
+            self.record_pending_uncaught_call_frame(
+                trace_callable,
+                trace_function_line,
+                span,
+                &trace_args,
+                error,
+            );
+        }
+        result?;
+        self.track_allocated_object(&object);
+        Ok(Value::Object(object))
     }
 
     fn reflection_class_is_user_defined(&self, state: &ReflectionClassState) -> bool {
@@ -75961,6 +76249,35 @@ impl Interpreter {
         actual: usize,
         span: Span,
     ) -> CompileResult<()> {
+        self.emit_call_user_func_reference_parameter_warnings_for_callable(
+            function,
+            actual,
+            &callable_name(&function.name),
+            span,
+        )
+    }
+
+    fn emit_call_user_func_method_reference_parameter_warnings(
+        &mut self,
+        function: &FunctionDecl,
+        actual: usize,
+        class_name: &str,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        let callable = callable_name(&format!("{class_name}::{method_name}"));
+        self.emit_call_user_func_reference_parameter_warnings_for_callable(
+            function, actual, &callable, span,
+        )
+    }
+
+    fn emit_call_user_func_reference_parameter_warnings_for_callable(
+        &mut self,
+        function: &FunctionDecl,
+        actual: usize,
+        callable: &str,
+        span: Span,
+    ) -> CompileResult<()> {
         for (index, param) in function.params.iter().enumerate() {
             if !param.by_reference || index >= actual {
                 continue;
@@ -75968,7 +76285,7 @@ impl Interpreter {
             self.emit_display_warning(
                 format!(
                     "{}: Argument #{} (${}) must be passed by reference, value given",
-                    callable_name(&function.name),
+                    callable,
                     index + 1,
                     param.name
                 ),
@@ -86019,7 +86336,8 @@ impl Interpreter {
         if self.exit_signal.is_some() {
             return Ok(ReferenceReturnBinding::Cell(value_cell(Value::Null)));
         }
-        self.function_context.push(function.name.clone());
+        self.function_context
+            .push(self.function_context_name(function));
         if let Some(class_context) = class_context {
             self.class_context.push(class_context);
         }
@@ -86952,7 +87270,8 @@ impl Interpreter {
         reference_bindings: Vec<ReferenceBinding>,
         mut writeback_scope: Option<&mut SymbolTable>,
     ) -> CompileResult<VariableCell> {
-        self.function_context.push(function.name.clone());
+        self.function_context
+            .push(self.function_context_name(function));
         if let Some(class_context) = class_context {
             self.class_context.push(class_context);
         }
@@ -91110,7 +91429,8 @@ impl Interpreter {
         }
         let args =
             self.coerce_call_frame_values(function, args, class_context, called_class_context)?;
-        self.function_context.push(function.name.clone());
+        self.function_context
+            .push(self.function_context_name(function));
         if let Some(class_context) = class_context {
             self.class_context.push(class_context);
         }
@@ -92315,7 +92635,8 @@ impl Interpreter {
                 .write_static("this", Value::Object(this_object.clone()));
         }
 
-        self.function_context.push(state.function.name.clone());
+        self.function_context
+            .push(self.function_context_name(&state.function));
         if let Some(class_context) = state.class_context {
             self.class_context.push(class_context);
         }
@@ -129150,6 +129471,10 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
         return Some(("TypeError", message));
     }
 
+    if let Some(message) = reflection_constructor_too_few_arguments_message(error) {
+        return Some(("TypeError", message));
+    }
+
     if let Some(message) = reflection_constructor_argument_count_error_message(error) {
         return Some(("TypeError", message));
     }
@@ -130337,6 +130662,27 @@ fn user_function_too_few_arguments_message(error: &Diagnostic) -> Option<String>
     Some(format!(
         "Too few arguments to function {callable}, {actual} passed in {source} on line {} and exactly {expected} expected",
         error.line
+    ))
+}
+
+fn reflection_constructor_too_few_arguments_message(error: &Diagnostic) -> Option<String> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+
+    let rest = error
+        .message
+        .strip_prefix("reflection constructor arity mismatch for ")?;
+    let (callable, expectation) = rest.split_once(": expected ")?;
+    let (expected, actual) = expectation.split_once(" argument(s), got ")?;
+    let expected = expected.parse::<usize>().ok()?;
+    let actual = actual.parse::<usize>().ok()?;
+    if actual >= expected {
+        return None;
+    }
+
+    Some(format!(
+        "Too few arguments to function {callable}, {actual} passed and exactly {expected} expected"
     ))
 }
 
@@ -177277,6 +177623,29 @@ fn ensure_user_function_arity_with_extra_policy(
     }
 
     Ok(())
+}
+
+fn ensure_reflection_constructor_arity_with_extra_policy(
+    function: &FunctionDecl,
+    actual: usize,
+    class_name: &str,
+    method_name: &str,
+    span: Span,
+) -> CompileResult<()> {
+    let required = required_param_count(function);
+    if actual >= required {
+        return Ok(());
+    }
+
+    let callable = callable_name(&format!("{class_name}::{method_name}"));
+    Err(Diagnostic::new(
+        Phase::Runtime,
+        span.line,
+        span.column,
+        format!(
+            "reflection constructor arity mismatch for {callable}: expected {required} argument(s), got {actual}"
+        ),
+    ))
 }
 
 fn error_handler_args_for_function(function: &FunctionDecl, args: &[Value]) -> Vec<Value> {
