@@ -73,6 +73,22 @@ echo "|", $items["name"];
 }
 
 #[test]
+fn binary_and_multibyte_string_offset_reads_are_byte_based() {
+    let execution = run_source(
+        r#"<?php
+$binary = html_entity_decode("&#xA0;", ENT_QUOTES, "ISO-8859-1");
+echo bin2hex($binary[0]), "|";
+$utf8 = "å";
+echo bin2hex($utf8[0]), "|", bin2hex($utf8[1]);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "a0|c3|a5");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn ascii_string_offset_writes_reject_uncovered_edges() {
     let empty = runtime_error(
         r#"<?php

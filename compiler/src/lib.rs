@@ -2,6 +2,7 @@ pub mod ast;
 pub mod call_arguments;
 pub mod codegen;
 pub mod error;
+mod html_entities_generated;
 pub mod include_discovery;
 pub mod interpreter;
 mod legacy_hash_tables;

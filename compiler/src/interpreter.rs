@@ -52,6 +52,12 @@ use crate::ast::{
     UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
+use crate::html_entities_generated::{
+    HtmlEntityTranslation, CP1251_CODEPOINTS, CP1252_CODEPOINTS, CP866_CODEPOINTS,
+    HTML4_DECODE_ENTITIES, HTML4_ENCODE_ENTITIES, HTML4_SINGLE_BYTE_EXTRA_ENTITIES,
+    ISO_8859_15_CODEPOINTS, ISO_8859_1_CODEPOINTS, ISO_8859_5_CODEPOINTS, KOI8_R_CODEPOINTS,
+    MAC_ROMAN_CODEPOINTS,
+};
 use crate::legacy_hashes;
 use crate::parser::parse_source;
 use crate::php_tokenizer::{self, PhpTokenizerToken};
@@ -17276,7 +17282,13 @@ impl Interpreter {
             }
             Value::String(value) => {
                 let (offset, display_key) = self.evaluate_string_offset_index(index, scope)?;
-                let value = self.read_ascii_string_offset_at(&value, offset, &display_key, span)?;
+                let value =
+                    self.read_string_offset_at(value.as_bytes(), offset, &display_key, span)?;
+                Ok((value, None))
+            }
+            Value::BinaryString(value) => {
+                let (offset, display_key) = self.evaluate_string_offset_index(index, scope)?;
+                let value = self.read_string_offset_at(&value, offset, &display_key, span)?;
                 Ok((value, None))
             }
             Value::Object(object) => {
@@ -28797,29 +28809,19 @@ impl Interpreter {
         )
     }
 
-    fn read_ascii_string_offset_at(
+    fn read_string_offset_at(
         &mut self,
-        value: &str,
+        value: &[u8],
         offset: i64,
         display_key: &str,
         span: Span,
     ) -> CompileResult<Value> {
-        if !value.is_ascii() {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "string offset",
-                    "binary and multibyte string offset reads are not implemented",
-                ),
-            ));
-        }
-
         let index = Self::string_offset_index_from_i64(offset, value.len(), span)?;
-        let Some(byte) = value.as_bytes().get(index) else {
+        let Some(byte) = value.get(index) else {
             self.emit_display_warning(format!("Uninitialized string offset {display_key}"), span)?;
             return Ok(Value::String(String::new()));
         };
-        Ok(Value::String(char::from(*byte).to_string()))
+        Ok(interpreter_value_from_php_string_bytes(vec![*byte]))
     }
 
     fn write_ascii_string_offset(
@@ -58523,7 +58525,13 @@ impl Interpreter {
             }
             Value::String(value) => {
                 let (offset, display_key) = self.evaluate_string_offset_index(index, scope)?;
-                let value = self.read_ascii_string_offset_at(&value, offset, &display_key, span)?;
+                let value =
+                    self.read_string_offset_at(value.as_bytes(), offset, &display_key, span)?;
+                Ok((value, None))
+            }
+            Value::BinaryString(value) => {
+                let (offset, display_key) = self.evaluate_string_offset_index(index, scope)?;
+                let value = self.read_string_offset_at(&value, offset, &display_key, span)?;
                 Ok((value, None))
             }
             Value::Object(object) => {
@@ -145634,6 +145642,7 @@ impl PackFormatItem {
             b'i' => "i",
             b'I' => "I",
             b'c' => "c",
+            b'C' => "C",
             b'Q' => "Q",
             b'J' => "J",
             b'P' => "P",
@@ -145722,7 +145731,7 @@ impl Interpreter {
                         }
                     }
                 }
-                b'c' | b'V' | b'l' | b'i' | b'I' | b'Q' | b'J' | b'P' | b'q' => {
+                b'c' | b'C' | b'V' | b'l' | b'i' | b'I' | b'Q' | b'J' | b'P' | b'q' => {
                     let count = pack_numeric_repeat_count(item.repeat, args.len(), value_index);
                     for _ in 0..count {
                         let value =
@@ -145841,8 +145850,8 @@ impl Interpreter {
                     );
                     cursor += count;
                 }
-                b'e' | b'E' | b'g' | b'G' | b'V' | b'l' | b'i' | b'I' | b'Q' | b'J' | b'P'
-                | b'q' => {
+                b'e' | b'E' | b'g' | b'G' | b'c' | b'C' | b'V' | b'l' | b'i' | b'I' | b'Q'
+                | b'J' | b'P' | b'q' => {
                     let size = pack_fixed_item_size(item.code).expect("fixed-size pack code");
                     let count = unpack_numeric_repeat_count(item.repeat, data.len(), cursor, size);
                     for index in 0..count {
@@ -145957,6 +145966,7 @@ fn parse_pack_format_items(
                     | b'A'
                     | b'Z'
                     | b'c'
+                    | b'C'
                     | b'V'
                     | b'l'
                     | b'i'
@@ -145978,6 +145988,7 @@ fn parse_pack_format_items(
                     | b'A'
                     | b'Z'
                     | b'c'
+                    | b'C'
                     | b'V'
                     | b'l'
                     | b'i'
@@ -146144,6 +146155,7 @@ fn pack_string_field(code: u8, repeat: PackRepeat, value: &[u8]) -> Vec<u8> {
 
 fn pack_fixed_item_size(code: u8) -> Option<usize> {
     match code {
+        b'c' | b'C' => Some(1),
         b'g' | b'G' | b'V' | b'l' | b'i' | b'I' => Some(4),
         b'e' | b'E' | b'Q' | b'J' | b'P' | b'q' => Some(8),
         _ => None,
@@ -146152,7 +146164,7 @@ fn pack_fixed_item_size(code: u8) -> Option<usize> {
 
 fn pack_integer_bytes(code: u8, value: i64) -> Vec<u8> {
     match code {
-        b'c' => vec![value as u8],
+        b'c' | b'C' => vec![value as u8],
         b'V' | b'I' => (value as u32).to_le_bytes().to_vec(),
         b'l' | b'i' => (value as i32).to_le_bytes().to_vec(),
         b'Q' | b'P' => (value as u64).to_le_bytes().to_vec(),
@@ -146203,6 +146215,8 @@ fn unpack_string_field(code: u8, value: &[u8]) -> Vec<u8> {
 
 fn unpack_fixed_value(code: u8, bytes: &[u8]) -> Value {
     match code {
+        b'c' => Value::Int(i8::from_ne_bytes(bytes.try_into().unwrap()) as i64),
+        b'C' => Value::Int(bytes[0] as i64),
         b'V' | b'I' => Value::Int(u32::from_le_bytes(bytes.try_into().unwrap()) as i64),
         b'l' | b'i' => Value::Int(i32::from_le_bytes(bytes.try_into().unwrap()) as i64),
         b'Q' | b'P' => Value::Int(u64::from_le_bytes(bytes.try_into().unwrap()) as i64),
@@ -148413,6 +148427,21 @@ enum HtmlQuoteMode {
     Both,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HtmlDocumentType {
+    Html401,
+    Xml1,
+    Xhtml,
+    Html5,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HtmlEncoding {
+    Utf8,
+    BasicOnly,
+    SingleByte(&'static [(u8, u32)]),
+}
+
 fn html_quote_mode(flags: i64) -> HtmlQuoteMode {
     if flags & PHP_ENT_QUOTES == PHP_ENT_QUOTES {
         HtmlQuoteMode::Both
@@ -148423,21 +148452,26 @@ fn html_quote_mode(flags: i64) -> HtmlQuoteMode {
     }
 }
 
-fn html_document_type(flags: i64) -> i64 {
-    flags & PHP_ENT_HTML5
+fn html_document_type(flags: i64) -> HtmlDocumentType {
+    match flags & PHP_ENT_HTML5 {
+        PHP_ENT_XML1 => HtmlDocumentType::Xml1,
+        PHP_ENT_XHTML => HtmlDocumentType::Xhtml,
+        PHP_ENT_HTML5 => HtmlDocumentType::Html5,
+        _ => HtmlDocumentType::Html401,
+    }
 }
 
 fn html_single_quote_entity(flags: i64) -> &'static [u8] {
     match html_document_type(flags) {
-        PHP_ENT_XML1 | PHP_ENT_XHTML | PHP_ENT_HTML5 => b"&apos;",
-        _ => b"&#039;",
+        HtmlDocumentType::Xml1 | HtmlDocumentType::Xhtml | HtmlDocumentType::Html5 => b"&apos;",
+        HtmlDocumentType::Html401 => b"&#039;",
     }
 }
 
 fn html_decode_apostrophe_entity(flags: i64) -> bool {
     matches!(
         html_document_type(flags),
-        PHP_ENT_XML1 | PHP_ENT_XHTML | PHP_ENT_HTML5
+        HtmlDocumentType::Xml1 | HtmlDocumentType::Xhtml | HtmlDocumentType::Html5
     )
 }
 
@@ -148453,31 +148487,40 @@ fn html_default_flags(
     }
 }
 
-fn html_validate_encoding_arg(
+fn html_encoding_arg(
     interpreter: &mut Interpreter,
     args: &[Value],
     index: usize,
     function: &str,
     span: Span,
-) -> CompileResult<()> {
-    if let Some(value) = args.get(index) {
-        if !matches!(value, Value::Null) {
-            let bytes = string_compare_argument_bytes(function, "encoding", value, span)?;
-            if !html_charset_is_supported(&bytes) {
-                interpreter.emit_display_warning(
-                    format!(
-                        "{function}: Charset \"{}\" is not supported, assuming UTF-8",
-                        String::from_utf8_lossy(&bytes)
-                    ),
-                    span,
-                )?;
-            }
-        }
+) -> CompileResult<HtmlEncoding> {
+    let mut bytes = match args.get(index) {
+        Some(Value::Null) | None => Vec::new(),
+        Some(value) => string_compare_argument_bytes(function, "encoding", value, span)?,
+    };
+
+    if bytes.is_empty() {
+        bytes = interpreter
+            .ini_value("default_charset")
+            .unwrap_or_else(|| "UTF-8".to_string())
+            .into_bytes();
     }
-    Ok(())
+
+    if let Some(encoding) = html_encoding_from_label(&bytes) {
+        return Ok(encoding);
+    }
+
+    interpreter.emit_display_warning(
+        format!(
+            "{function}: Charset \"{}\" is not supported, assuming UTF-8",
+            String::from_utf8_lossy(&bytes)
+        ),
+        span,
+    )?;
+    Ok(HtmlEncoding::Utf8)
 }
 
-fn html_charset_is_supported(bytes: &[u8]) -> bool {
+fn html_encoding_from_label(bytes: &[u8]) -> Option<HtmlEncoding> {
     let normalized: String = bytes
         .iter()
         .filter_map(|byte| match *byte {
@@ -148486,25 +148529,175 @@ fn html_charset_is_supported(bytes: &[u8]) -> bool {
         })
         .collect();
 
-    matches!(
-        normalized.as_str(),
-        "" | "UTF8"
-            | "ISO88591"
-            | "ISO885915"
-            | "SJIS"
-            | "SHIFTJIS"
-            | "KOI8R"
-            | "EUCJP"
-            | "1251"
-            | "CP1251"
-            | "WINDOWS1251"
-            | "1252"
-            | "CP1252"
-            | "WINDOWS1252"
-            | "866"
-            | "CP866"
-            | "IBM866"
-    )
+    match normalized.as_str() {
+        "" | "UTF8" => Some(HtmlEncoding::Utf8),
+        "ISO88591" => Some(HtmlEncoding::SingleByte(ISO_8859_1_CODEPOINTS)),
+        "ISO88595" => Some(HtmlEncoding::SingleByte(ISO_8859_5_CODEPOINTS)),
+        "ISO885915" => Some(HtmlEncoding::SingleByte(ISO_8859_15_CODEPOINTS)),
+        "1251" | "CP1251" | "WINDOWS1251" | "WIN1251" => {
+            Some(HtmlEncoding::SingleByte(CP1251_CODEPOINTS))
+        }
+        "1252" | "CP1252" | "WINDOWS1252" | "WIN1252" => {
+            Some(HtmlEncoding::SingleByte(CP1252_CODEPOINTS))
+        }
+        "866" | "CP866" | "IBM866" => Some(HtmlEncoding::SingleByte(CP866_CODEPOINTS)),
+        "KOI8R" => Some(HtmlEncoding::SingleByte(KOI8_R_CODEPOINTS)),
+        "MACROMAN" | "MACINTOSH" => Some(HtmlEncoding::SingleByte(MAC_ROMAN_CODEPOINTS)),
+        "SJIS" | "SHIFTJIS" | "EUCJP" => Some(HtmlEncoding::BasicOnly),
+        _ => None,
+    }
+}
+
+fn html_entity_encode_table(flags: i64) -> &'static [HtmlEntityTranslation] {
+    match html_document_type(flags) {
+        HtmlDocumentType::Html401 | HtmlDocumentType::Xhtml => HTML4_ENCODE_ENTITIES,
+        HtmlDocumentType::Xml1 | HtmlDocumentType::Html5 => &[],
+    }
+}
+
+fn html_entity_decode_table(flags: i64) -> &'static [HtmlEntityTranslation] {
+    match html_document_type(flags) {
+        HtmlDocumentType::Html401 | HtmlDocumentType::Xhtml => HTML4_DECODE_ENTITIES,
+        HtmlDocumentType::Xml1 | HtmlDocumentType::Html5 => &[],
+    }
+}
+
+fn html_entity_single_byte_extra_table(
+    flags: i64,
+    encoding: HtmlEncoding,
+) -> &'static [HtmlEntityTranslation] {
+    match (html_document_type(flags), encoding) {
+        (HtmlDocumentType::Html401 | HtmlDocumentType::Xhtml, HtmlEncoding::SingleByte(_)) => {
+            HTML4_SINGLE_BYTE_EXTRA_ENTITIES
+        }
+        _ => &[],
+    }
+}
+
+fn html_entity_codepoints_allowed(
+    codepoints: &[u32],
+    quote_mode: HtmlQuoteMode,
+    all_entities: bool,
+) -> bool {
+    match codepoints {
+        [34] => matches!(quote_mode, HtmlQuoteMode::Double | HtmlQuoteMode::Both),
+        [39] => matches!(quote_mode, HtmlQuoteMode::Both),
+        [38] | [60] | [62] => true,
+        _ => all_entities,
+    }
+}
+
+fn html_input_codepoint_at(
+    value: &[u8],
+    index: usize,
+    encoding: HtmlEncoding,
+) -> Option<(usize, u32)> {
+    let byte = *value.get(index)?;
+    match encoding {
+        HtmlEncoding::Utf8 => html_utf8_codepoint_at(value, index).or(Some((1, u32::from(byte)))),
+        HtmlEncoding::BasicOnly => Some((1, u32::from(byte))),
+        HtmlEncoding::SingleByte(table) => Some((
+            1,
+            if byte < 0x80 {
+                u32::from(byte)
+            } else {
+                html_single_byte_to_codepoint(table, byte).unwrap_or_else(|| u32::from(byte))
+            },
+        )),
+    }
+}
+
+fn html_utf8_codepoint_at(value: &[u8], index: usize) -> Option<(usize, u32)> {
+    let first = *value.get(index)?;
+    let width = match first {
+        0x00..=0x7f => 1,
+        0xc2..=0xdf => 2,
+        0xe0..=0xef => 3,
+        0xf0..=0xf4 => 4,
+        _ => return None,
+    };
+    let end = index.checked_add(width)?;
+    let slice = value.get(index..end)?;
+    let text = std::str::from_utf8(slice).ok()?;
+    let ch = text.chars().next()?;
+    Some((width, ch as u32))
+}
+
+fn html_single_byte_to_codepoint(table: &[(u8, u32)], byte: u8) -> Option<u32> {
+    table
+        .iter()
+        .find_map(|(candidate, codepoint)| (*candidate == byte).then_some(*codepoint))
+}
+
+fn html_codepoint_to_single_byte(table: &[(u8, u32)], codepoint: u32) -> Option<u8> {
+    table
+        .iter()
+        .find_map(|(byte, candidate)| (*candidate == codepoint).then_some(*byte))
+}
+
+fn html_encode_codepoints(codepoints: &[u32], encoding: HtmlEncoding) -> Option<Vec<u8>> {
+    let mut output = Vec::new();
+    for codepoint in codepoints {
+        match encoding {
+            HtmlEncoding::Utf8 => {
+                let ch = char::from_u32(*codepoint)?;
+                let mut buffer = [0_u8; 4];
+                output.extend_from_slice(ch.encode_utf8(&mut buffer).as_bytes());
+            }
+            HtmlEncoding::BasicOnly => {
+                if *codepoint > 0x7f {
+                    return None;
+                }
+                output.push(*codepoint as u8);
+            }
+            HtmlEncoding::SingleByte(table) => {
+                if *codepoint < 0x80 {
+                    output.push(*codepoint as u8);
+                } else {
+                    output.push(html_codepoint_to_single_byte(table, *codepoint)?);
+                }
+            }
+        }
+    }
+    Some(output)
+}
+
+fn html_input_starts_with_codepoints(
+    value: &[u8],
+    mut index: usize,
+    encoding: HtmlEncoding,
+    codepoints: &[u32],
+) -> Option<usize> {
+    let start = index;
+    for codepoint in codepoints {
+        let (consumed, found) = html_input_codepoint_at(value, index, encoding)?;
+        if found != *codepoint {
+            return None;
+        }
+        index += consumed;
+    }
+    Some(index - start)
+}
+
+fn html_entity_at_input(
+    value: &[u8],
+    index: usize,
+    encoding: HtmlEncoding,
+    table: &[HtmlEntityTranslation],
+    extra_table: &[HtmlEntityTranslation],
+    quote_mode: HtmlQuoteMode,
+) -> Option<(usize, &'static str)> {
+    for translation in table.iter().chain(extra_table.iter()) {
+        if !html_entity_codepoints_allowed(translation.codepoints, quote_mode, true) {
+            continue;
+        }
+        if let Some(consumed) =
+            html_input_starts_with_codepoints(value, index, encoding, translation.codepoints)
+        {
+            return Some((consumed, translation.entity));
+        }
+    }
+    None
 }
 
 fn call_htmlspecialchars(
@@ -148525,7 +148718,7 @@ fn call_htmlspecialchars(
 
     let value = string_compare_argument_bytes("htmlspecialchars()", "string", &args[0], span)?;
     let flags = html_default_flags(args, 1, "htmlspecialchars()", span)?;
-    html_validate_encoding_arg(interpreter, args, 2, "htmlspecialchars()", span)?;
+    html_encoding_arg(interpreter, args, 2, "htmlspecialchars()", span)?;
     let double_encode = args.get(3).map(Value::is_truthy).unwrap_or(true);
     Ok(interpreter_value_from_php_string_bytes(
         htmlspecialchars_encode_bytes(&value, flags, double_encode),
@@ -148550,10 +148743,10 @@ fn call_htmlentities(
 
     let value = string_compare_argument_bytes("htmlentities()", "string", &args[0], span)?;
     let flags = html_default_flags(args, 1, "htmlentities()", span)?;
-    html_validate_encoding_arg(interpreter, args, 2, "htmlentities()", span)?;
+    let encoding = html_encoding_arg(interpreter, args, 2, "htmlentities()", span)?;
     let double_encode = args.get(3).map(Value::is_truthy).unwrap_or(true);
     Ok(interpreter_value_from_php_string_bytes(
-        htmlentities_encode_bytes(&value, flags, double_encode),
+        htmlentities_encode_bytes(&value, flags, double_encode, encoding),
     ))
 }
 
@@ -148573,7 +148766,10 @@ fn call_htmlspecialchars_decode(args: &[Value], span: Span) -> CompileResult<Val
         string_compare_argument_bytes("htmlspecialchars_decode()", "string", &args[0], span)?;
     let flags = html_default_flags(args, 1, "htmlspecialchars_decode()", span)?;
     Ok(interpreter_value_from_php_string_bytes(html_decode_bytes(
-        &value, flags, false,
+        &value,
+        flags,
+        false,
+        HtmlEncoding::Utf8,
     )))
 }
 
@@ -148595,9 +148791,9 @@ fn call_html_entity_decode(
 
     let value = string_compare_argument_bytes("html_entity_decode()", "string", &args[0], span)?;
     let flags = html_default_flags(args, 1, "html_entity_decode()", span)?;
-    html_validate_encoding_arg(interpreter, args, 2, "html_entity_decode()", span)?;
+    let encoding = html_encoding_arg(interpreter, args, 2, "html_entity_decode()", span)?;
     Ok(interpreter_value_from_php_string_bytes(html_decode_bytes(
-        &value, flags, true,
+        &value, flags, true, encoding,
     )))
 }
 
@@ -148624,7 +148820,7 @@ fn call_get_html_translation_table(
         None => PHP_HTML_SPECIALCHARS,
     };
     let flags = html_default_flags(args, 1, "get_html_translation_table()", span)?;
-    html_validate_encoding_arg(interpreter, args, 2, "get_html_translation_table()", span)?;
+    let encoding = html_encoding_arg(interpreter, args, 2, "get_html_translation_table()", span)?;
     if table != PHP_HTML_SPECIALCHARS && table != PHP_HTML_ENTITIES {
         return Err(runtime_error(
             span,
@@ -148647,9 +148843,18 @@ fn call_get_html_translation_table(
         HtmlQuoteMode::Double => html_insert_translation(&mut array, b"\"", b"&quot;"),
         HtmlQuoteMode::None => {}
     }
-    if table == PHP_HTML_ENTITIES {
-        for (bytes, entity) in HTML_ENTITY_EXTRA_TRANSLATIONS {
-            html_insert_translation(&mut array, bytes, entity.as_bytes());
+    if table == PHP_HTML_ENTITIES && encoding != HtmlEncoding::BasicOnly {
+        for translation in html_entity_encode_table(flags)
+            .iter()
+            .chain(html_entity_single_byte_extra_table(flags, encoding).iter())
+        {
+            let Some(bytes) = html_encode_codepoints(translation.codepoints, encoding) else {
+                continue;
+            };
+            if matches!(translation.codepoints, [34] | [38] | [39] | [60] | [62]) {
+                continue;
+            }
+            html_insert_translation(&mut array, &bytes, translation.entity.as_bytes());
         }
     }
     Ok(Value::Array(array))
@@ -148946,11 +149151,20 @@ fn htmlspecialchars_encode_bytes(value: &[u8], flags: i64, double_encode: bool) 
     html_encode_bytes(value, flags, double_encode, false)
 }
 
-fn htmlentities_encode_bytes(value: &[u8], flags: i64, double_encode: bool) -> Vec<u8> {
-    html_encode_bytes(value, flags, double_encode, true)
+fn htmlentities_encode_bytes(
+    value: &[u8],
+    flags: i64,
+    double_encode: bool,
+    encoding: HtmlEncoding,
+) -> Vec<u8> {
+    html_encode_bytes_with_encoding(value, flags, double_encode, encoding)
 }
 
 fn html_encode_bytes(value: &[u8], flags: i64, double_encode: bool, all_entities: bool) -> Vec<u8> {
+    if all_entities {
+        return html_encode_bytes_with_encoding(value, flags, double_encode, HtmlEncoding::Utf8);
+    }
+
     let mut output = Vec::with_capacity(value.len());
     let quote_mode = html_quote_mode(flags);
     let mut index = 0;
@@ -148981,18 +149195,81 @@ fn html_encode_bytes(value: &[u8], flags: i64, double_encode: bool, all_entities
                 output.extend_from_slice(html_single_quote_entity(flags));
                 index += 1;
             }
-            _ if all_entities => {
-                if let Some((consumed, entity)) = html_extra_entity_at(value, index) {
+            _ => {
+                output.push(byte);
+                index += 1;
+            }
+        }
+    }
+    output
+}
+
+fn html_encode_bytes_with_encoding(
+    value: &[u8],
+    flags: i64,
+    double_encode: bool,
+    encoding: HtmlEncoding,
+) -> Vec<u8> {
+    let mut output = Vec::with_capacity(value.len());
+    let quote_mode = html_quote_mode(flags);
+    let table = if encoding == HtmlEncoding::BasicOnly {
+        &[][..]
+    } else {
+        html_entity_encode_table(flags)
+    };
+    let extra_table = html_entity_single_byte_extra_table(flags, encoding);
+    let mut index = 0;
+    while index < value.len() {
+        let byte = value[index];
+        match byte {
+            b'&' if !double_encode && html_entity_like_end(value, index).is_some() => {
+                output.push(byte);
+                index += 1;
+            }
+            b'&' => {
+                output.extend_from_slice(b"&amp;");
+                index += 1;
+            }
+            b'<' => {
+                output.extend_from_slice(b"&lt;");
+                index += 1;
+            }
+            b'>' => {
+                output.extend_from_slice(b"&gt;");
+                index += 1;
+            }
+            b'\"' if matches!(quote_mode, HtmlQuoteMode::Double | HtmlQuoteMode::Both) => {
+                output.extend_from_slice(b"&quot;");
+                index += 1;
+            }
+            b'\'' if matches!(quote_mode, HtmlQuoteMode::Both) => {
+                output.extend_from_slice(html_single_quote_entity(flags));
+                index += 1;
+            }
+            _ => {
+                if matches!(encoding, HtmlEncoding::Utf8)
+                    && byte >= 0x80
+                    && html_utf8_codepoint_at(value, index).is_none()
+                {
+                    if flags & PHP_ENT_IGNORE == PHP_ENT_IGNORE {
+                        index += 1;
+                    } else if flags & PHP_ENT_SUBSTITUTE == PHP_ENT_SUBSTITUTE {
+                        output.extend_from_slice("\u{fffd}".as_bytes());
+                        index += 1;
+                    } else {
+                        return Vec::new();
+                    }
+                    continue;
+                }
+                if let Some((consumed, entity)) =
+                    html_entity_at_input(value, index, encoding, table, extra_table, quote_mode)
+                {
                     output.extend_from_slice(entity.as_bytes());
                     index += consumed;
                 } else {
                     output.push(byte);
                     index += 1;
                 }
-            }
-            _ => {
-                output.push(byte);
-                index += 1;
             }
         }
     }
@@ -149025,7 +149302,12 @@ fn html_entity_like_end(value: &[u8], amp_index: usize) -> Option<usize> {
     (index > start && value.get(index) == Some(&b';')).then_some(index)
 }
 
-fn html_decode_bytes(value: &[u8], flags: i64, all_entities: bool) -> Vec<u8> {
+fn html_decode_bytes(
+    value: &[u8],
+    flags: i64,
+    all_entities: bool,
+    encoding: HtmlEncoding,
+) -> Vec<u8> {
     let mut output = Vec::with_capacity(value.len());
     let quote_mode = html_quote_mode(flags);
     let mut index = 0;
@@ -149037,7 +149319,7 @@ fn html_decode_bytes(value: &[u8], flags: i64, all_entities: bool) -> Vec<u8> {
         }
 
         if let Some((consumed, decoded)) =
-            html_decode_entity_at(value, index, flags, quote_mode, all_entities)
+            html_decode_entity_at(value, index, flags, quote_mode, all_entities, encoding)
         {
             output.extend_from_slice(&decoded);
             index += consumed;
@@ -149055,6 +149337,7 @@ fn html_decode_entity_at(
     flags: i64,
     quote_mode: HtmlQuoteMode,
     all_entities: bool,
+    encoding: HtmlEncoding,
 ) -> Option<(usize, Vec<u8>)> {
     let rest = &value[amp_index..];
     for (entity, decoded) in HTML_BASIC_DECODE_ENTITIES {
@@ -149075,22 +149358,24 @@ fn html_decode_entity_at(
     }
 
     if all_entities {
-        for (decoded, entity) in HTML_ENTITY_EXTRA_TRANSLATIONS {
-            if rest.starts_with(entity.as_bytes()) {
-                return Some((entity.len(), decoded.to_vec()));
+        for translation in html_entity_decode_table(flags)
+            .iter()
+            .chain(html_entity_single_byte_extra_table(flags, encoding).iter())
+        {
+            if !rest.starts_with(translation.entity.as_bytes()) {
+                continue;
+            }
+            if html_entity_codepoints_allowed(translation.codepoints, quote_mode, all_entities) {
+                if let Some(decoded) = html_encode_codepoints(translation.codepoints, encoding) {
+                    return Some((translation.entity.len(), decoded));
+                }
             }
         }
     }
 
     html_numeric_entity_at(value, amp_index).and_then(|(consumed, codepoint)| {
         if html_numeric_decode_allowed(codepoint, quote_mode, all_entities) {
-            let mut buffer = [0_u8; 4];
-            char::from_u32(codepoint).map(|character| {
-                (
-                    consumed,
-                    character.encode_utf8(&mut buffer).as_bytes().to_vec(),
-                )
-            })
+            html_encode_codepoints(&[codepoint], encoding).map(|decoded| (consumed, decoded))
         } else {
             None
         }
@@ -149145,45 +149430,6 @@ static HTML_BASIC_DECODE_ENTITIES: &[(&str, &str)] = &[
     ("&lt;", "<"),
     ("&gt;", ">"),
 ];
-
-static HTML_ENTITY_EXTRA_TRANSLATIONS: &[(&[u8], &str)] = &[
-    ("\u{00a0}".as_bytes(), "&nbsp;"),
-    ("\u{00a1}".as_bytes(), "&iexcl;"),
-    ("\u{00a2}".as_bytes(), "&cent;"),
-    ("\u{00a3}".as_bytes(), "&pound;"),
-    ("\u{00a4}".as_bytes(), "&curren;"),
-    ("\u{00a5}".as_bytes(), "&yen;"),
-    ("\u{00a9}".as_bytes(), "&copy;"),
-    ("\u{00ae}".as_bytes(), "&reg;"),
-    ("\u{00c4}".as_bytes(), "&Auml;"),
-    ("\u{00c5}".as_bytes(), "&Aring;"),
-    ("\u{00e5}".as_bytes(), "&aring;"),
-    ("\u{00e9}".as_bytes(), "&eacute;"),
-    ("\u{0152}".as_bytes(), "&OElig;"),
-    ("\u{0153}".as_bytes(), "&oelig;"),
-    ("\u{0178}".as_bytes(), "&Yuml;"),
-    (&[0xa0], "&nbsp;"),
-    (&[0xa1], "&iexcl;"),
-    (&[0xa2], "&cent;"),
-    (&[0xa3], "&pound;"),
-    (&[0xa4], "&curren;"),
-    (&[0xa5], "&yen;"),
-    (&[0xa9], "&copy;"),
-    (&[0xae], "&reg;"),
-    (&[0xc4], "&Auml;"),
-    (&[0xc5], "&Aring;"),
-    (&[0xe5], "&aring;"),
-    (&[0xe9], "&eacute;"),
-];
-
-fn html_extra_entity_at(value: &[u8], index: usize) -> Option<(usize, &'static str)> {
-    for (bytes, entity) in HTML_ENTITY_EXTRA_TRANSLATIONS {
-        if value[index..].starts_with(bytes) {
-            return Some((bytes.len(), *entity));
-        }
-    }
-    None
-}
 
 fn call_ucwords(interpreter: &mut Interpreter, args: &[Value], span: Span) -> CompileResult<Value> {
     if !(1..=2).contains(&args.len()) {
@@ -179496,6 +179742,7 @@ const COMPAT_INI_DIRECTIVES: &[&str] = &[
     "date.sunrise_zenith",
     "date.sunset_zenith",
     "date.timezone",
+    "default_charset",
     "default_mimetype",
     "disable_functions",
     "display_errors",
@@ -180285,6 +180532,7 @@ fn compat_ini_value(normalized_name: &str) -> Option<&'static str> {
         "date.sunrise_zenith" => Some("90.833333"),
         "date.sunset_zenith" => Some("90.833333"),
         "date.timezone" => Some("UTC"),
+        "default_charset" => Some("UTF-8"),
         "default_mimetype" => Some("text/html"),
         "disable_functions" => Some(""),
         "display_errors" => Some(""),

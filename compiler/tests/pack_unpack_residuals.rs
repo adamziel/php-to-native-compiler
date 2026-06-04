@@ -30,7 +30,7 @@ printf("0x%08x 0x%08x\n", unpack("l", $data, 3)[1], unpack("@4/l", $data, 3)[1])
 }
 
 #[test]
-fn pack_signed_char_writes_low_byte_values() {
+fn pack_char_formats_write_low_byte_values_and_unpack_signedness() {
     let execution = run_source(
         r#"<?php
 echo bin2hex(pack("c", -1)), "\n";
@@ -40,11 +40,19 @@ echo bin2hex(pack("c", 128)), "\n";
 echo bin2hex(pack("c", 255)), "\n";
 echo bin2hex(pack("c", 256)), "\n";
 echo base64_encode(pack("c", 255)), "\n";
+echo bin2hex(pack("C", -1)), "\n";
+echo bin2hex(pack("C", 256)), "\n";
+$signed = unpack("c2", "\xff\x7f");
+$unsigned = unpack("C2", "\x80\xff");
+echo $signed[1], ":", $signed[2], ":", $unsigned[1], ":", $unsigned[2], "\n";
 "#,
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "ff\n00\n7f\n80\nff\n00\n/w==\n");
+    assert_eq!(
+        execution.stdout,
+        "ff\n00\n7f\n80\nff\n00\n/w==\nff\n00\n-1:127:128:255\n"
+    );
     assert_eq!(execution.exit_code, 0);
 }
 

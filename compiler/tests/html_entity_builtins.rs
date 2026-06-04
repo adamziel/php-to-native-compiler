@@ -97,6 +97,48 @@ echo $function->getName(), ":", $function->getNumberOfRequiredParameters(), "/",
 }
 
 #[test]
+fn html_entities_cover_html4_tables_and_single_byte_charsets() {
+    let execution = run_source(
+        r#"<?php
+echo count(get_html_translation_table(HTML_ENTITIES, ENT_COMPAT, "UTF-8")), "\n";
+echo count(get_html_translation_table(HTML_ENTITIES, ENT_QUOTES | ENT_XML1, "UTF-8")), "\n";
+echo count(get_html_translation_table(HTML_ENTITIES, ENT_QUOTES | ENT_HTML401, "SJIS")), "\n";
+echo get_html_translation_table(HTML_ENTITIES, ENT_QUOTES | ENT_XHTML, "UTF-8")["'"], "\n";
+echo htmlentities("\x82\x86\x99\x9f", ENT_QUOTES, "Windows-1252"), "\n";
+echo htmlentities("\xa4\xa6\xa8\xb4\xbc", ENT_QUOTES, "ISO-8859-15"), "\n";
+echo bin2hex(html_entity_decode("&euro;&trade;&Yuml;", ENT_QUOTES, "Windows-1252")), "\n";
+echo html_entity_decode("&apos;&notin;", ENT_QUOTES | ENT_XHTML, "UTF-8"), "\n";
+echo html_entity_decode("&#x20AC;&#x2019;", ENT_QUOTES, "Windows-1252") === "\x80\x92" ? "win1252" : "bad";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "252\n5\n5\n&apos;\n&sbquo;&dagger;&trade;&Yuml;\n&euro;&Scaron;&scaron;&Zcaron;&OElig;\n80999f\n'∉\nwin1252"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn htmlentities_respects_quote_modes_and_invalid_utf8_flags() {
+    let execution = run_source(
+        r#"<?php
+echo htmlentities("'", ENT_NOQUOTES, "UTF-8"), "\n";
+echo htmlentities("'", ENT_COMPAT, "UTF-8"), "\n";
+echo htmlentities("'", ENT_QUOTES, "UTF-8"), "\n";
+echo htmlentities("\x80", ENT_QUOTES, "UTF-8") === "" ? "empty" : "bad", "\n";
+echo bin2hex(htmlentities("\x80", ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8")), "\n";
+echo htmlentities("\x80", ENT_QUOTES | ENT_IGNORE, "UTF-8") === "" ? "ignore" : "bad";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "'\n'\n&#039;\nempty\nefbfbd\nignore");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn emit_ir_folds_html_entity_builtin_metadata_and_constants() {
     let ir = emit_ir_source(
         r#"<?php

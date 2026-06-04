@@ -3778,14 +3778,17 @@
   `is_callable()`, and `ReflectionFunction` metadata recognize these builtins.
 - HTML entity builtins `htmlspecialchars`, `htmlentities`,
   `htmlspecialchars_decode`, `html_entity_decode`, and
-  `get_html_translation_table` cover the current byte-string special-character
-  subset, quote-style flags, double-encode preservation, selected Latin-1
-  named entities, bounded charset validation with UTF-8 fallback warnings,
-  internal metadata, and the `HTML_*` / `ENT_*` constants. Recognized charset
-  names are limited to the current UTF-8, ISO-8859-1/15, Shift-JIS, EUC-JP,
-  Windows-1251/1252, and IBM866 spellings reached by PHPT coverage. Full
-  HTML4/HTML5 translation tables, all legacy encodings, invalid Unicode
-  substitution/disallowed-character parity, and native lowering remain
+  `get_html_translation_table` cover byte-string special-character handling,
+  quote-style flags, double-encode preservation, table-driven HTML4 named
+  entity encode/decode for UTF-8, bounded single-byte charset encode/decode
+  for ISO-8859-1, ISO-8859-5, ISO-8859-15, Windows-1251/1252, CP866, KOI8-R,
+  and MacRoman, bounded `default_charset` fallback, invalid UTF-8
+  empty/substitute/ignore behavior for `htmlentities()`, internal metadata,
+  and the `HTML_*` / `ENT_*` constants. Shift-JIS and EUC-JP names are
+  recognized as basic-character-only entity contexts. HTML5/XML full named
+  tables, full legacy encoding parity, exact control-character numeric decode
+  boundaries, binary array-key fidelity for translation-table entries,
+  source-file parsing for non-UTF-8 PHP test files, and native lowering remain
   unsupported.
   `strip_tags()` covers the current byte-string HTML/PHP/comment removal
   subset, allowed tag names from string and array forms, NUL removal, quoted
@@ -4605,7 +4608,7 @@
   support the bounded binary format subset used by the current string
   pack/unpack PHPT rows: hexadecimal `H`/`h`, padding `x`, cursor controls
   `X` and `@` for unpacking, space/NUL string fields `A`/`Z`, pack-side
-  signed-byte `c`, 32-bit little-endian integers `V`, native 32-bit integer
+  signed-byte `c`, unsigned-byte `C`, 32-bit little-endian integers `V`, native 32-bit integer
   aliases `l`/`i`/`I`, 64-bit integer forms `Q`/`J`/`P`/`q`, and
   float/double forms `e`/`E`/`g`/`G`. The declared string operands
   (`pack()` format plus `unpack()` format and data) route through the shared
@@ -4618,8 +4621,8 @@
   PHP warning-and-ignore behavior for `unpack()` cursor-control `X*`, offset
   validation, catchable pack-side too-few-value `ValueError`s, and the
   invalid-format `ValueError` shape are covered. Broad host-portable endian
-  matrices, unpack-side byte formats, every PHP pack format code, alignment
-  codes, cursor-control star handling beyond the covered `X*` row, exact
+  matrices, every PHP pack format code, alignment codes, cursor-control star
+  handling beyond the covered `X*` row, exact
   pack-side unused-argument warnings, PHP's warning/stringification behavior
   for array values in variadic string pack fields, exact null/lossy offset
   deprecations, references/copy-on-write, exact warning breadth beyond the
@@ -7904,15 +7907,16 @@
   reference-target paths, including covered object-property array-offset and
   append reference targets whose visible/context property root is provably
   `false`. Adjacent `true`, numeric, and string roots remain scalar write
-  errors in this bounded path. Bounded ASCII string offset reads/writes are
-  supported for direct variables, visible/context object-property roots, and
-  array buckets when the offset is an integer or decimal integer-form string
-  such as `"01"`, `"+2"`, or `" 1"`. These writes preserve by-value copy
-  isolation and by-reference write-through for direct aliases, object-property
-  aliases, and array-slot aliases, including negative in-range offsets and
-  out-of-range positive offset space padding. Binary/multibyte string
-  offsets, decimal/exponent non-integer string offset keys, and
-  magic/`ArrayAccess` string-offset paths remain unsupported. By-value
+  errors in this bounded path. Bounded string offset reads are byte-based for
+  both text and binary string values reached through direct variables,
+  visible/context object-property roots, and array buckets when the offset is
+  an integer or decimal integer-form string such as `"01"`, `"+2"`, or
+  `" 1"`. Bounded ASCII string offset writes preserve by-value copy isolation
+  and by-reference write-through for direct aliases, object-property aliases,
+  and array-slot aliases, including negative in-range offsets and out-of-range
+  positive offset space padding. Binary/multibyte string offset writes,
+  decimal/exponent non-integer string offset keys, and magic/`ArrayAccess`
+  string-offset paths remain unsupported. By-value
   terminal/plain-array nested
   appends through property-held `ArrayAccess`, magic-provided `ArrayAccess`,
   and by-value magic plain-array roots follow PHP's
