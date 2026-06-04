@@ -888,6 +888,7 @@ struct Interpreter {
     date_period_objects: HashSet<i64>,
     date_last_errors: Option<BoundedDateParseDiagnostics>,
     hash_contexts: HashMap<i64, BoundedHashContextState>,
+    gd_images: HashMap<i64, BoundedGdImageState>,
     uri_rfc3986_empty_port_objects: HashSet<i64>,
     source_file: Option<String>,
     main_source_file: Option<String>,
@@ -1520,6 +1521,14 @@ struct BoundedHashContextState {
     options: HashComputationOptions,
     data: Vec<u8>,
     finalized: bool,
+}
+
+#[derive(Debug, Clone, Default)]
+struct BoundedGdImageState {
+    width: i64,
+    height: i64,
+    true_color: bool,
+    color_count: i64,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -12517,6 +12526,7 @@ impl Interpreter {
             date_period_objects: HashSet::new(),
             date_last_errors: None,
             hash_contexts: HashMap::new(),
+            gd_images: HashMap::new(),
             uri_rfc3986_empty_port_objects: HashSet::new(),
             main_source_file: source_file.clone(),
             source_file,
@@ -12675,6 +12685,12 @@ impl Interpreter {
         self.classes
             .lookup_class_id("GMP")
             .is_some_and(|gmp_id| class_id == gmp_id)
+    }
+
+    fn is_gd_image_class_id(&self, class_id: ClassId) -> bool {
+        self.classes
+            .lookup_class_id("GdImage")
+            .is_some_and(|gd_image_id| class_id == gd_image_id)
     }
 
     fn is_spl_object_storage_class_id(&self, class_id: ClassId) -> bool {
@@ -34502,6 +34518,14 @@ impl Interpreter {
         if declared_class_name.eq_ignore_ascii_case("GMP") {
             return self.instantiate_gmp(args, span, scope);
         }
+        if declared_class_name.eq_ignore_ascii_case("GdImage") {
+            return Err(Diagnostic::new(
+                Phase::Runtime,
+                span.line,
+                span.column,
+                "Call to private GdImage::__construct() from global scope",
+            ));
+        }
         if declared_class_name.eq_ignore_ascii_case("HashContext") {
             return Err(Diagnostic::new(
                 Phase::Runtime,
@@ -34936,6 +34960,10 @@ impl Interpreter {
         if self.is_regex_iterator_class_id(class_id) {
             self.regex_iterators
                 .insert(object.id(), RegexIteratorState::default());
+        }
+        if self.is_gd_image_class_id(class_id) {
+            self.gd_images
+                .insert(object.id(), BoundedGdImageState::default());
         }
         self.apply_instance_property_defaults(&object, class_id, span)?;
         self.sync_spl_doubly_linked_list_object_properties(&object, span)?;
@@ -110128,6 +110156,19 @@ impl Interpreter {
             "unixtojd" => self.call_unixtojd(&args, span),
             "jdtounix" => self.call_jdtounix(&args, span),
             "jddayofweek" => self.call_jddayofweek(&args, span),
+            "imagecreate" => self.call_imagecreate(&args, false, span),
+            "imagecreatetruecolor" => self.call_imagecreate(&args, true, span),
+            "imagecolorallocate" => self.call_imagecolorallocate(&args, false, span),
+            "imagecolorallocatealpha" => self.call_imagecolorallocate(&args, true, span),
+            "imagecolorstotal" => self.call_imagecolorstotal(&args, span),
+            "imagecolordeallocate" => self.call_imagecolordeallocate(&args, span),
+            "imagecolormatch" => self.call_imagecolormatch(&args, span),
+            "imagecolorset" => self.call_imagecolorset(&args, span),
+            "imageantialias" => self.call_imageantialias(&args, span),
+            "imagestring" => self.call_imagestring(&args, span),
+            "imageconvolution" => self.call_imageconvolution(&args, span),
+            "imagefilter" => self.call_imagefilter(&args, span),
+            "imageloadfont" => self.call_imageloadfont(&args, span),
             "date_default_timezone_get" => {
                 expect_arity(name, &args, 0, span)?;
                 Ok(Value::String(self.default_timezone.clone()))
@@ -128201,7 +128242,7 @@ fn seed_interpreter_generator_class(classes: &mut PhpClassTable) -> CompileResul
 }
 
 fn seed_core_final_class_markers(classes: &PhpClassTable, final_classes: &mut HashSet<ClassId>) {
-    for class_name in ["BcMath\\Number", "Directory", "HashContext"] {
+    for class_name in ["BcMath\\Number", "Directory", "GdImage", "HashContext"] {
         if let Some(class_id) = classes.lookup_class_id(class_name) {
             final_classes.insert(class_id);
         }
@@ -138643,6 +138684,10 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
         return Some((class_name, message));
     }
 
+    if let Some((class_name, message)) = gd_php_error_class_and_message(error) {
+        return Some((class_name, message));
+    }
+
     if let Some(message) = chunk_split_argument_count_error_message(error) {
         return Some(("ArgumentCountError", message));
     }
@@ -138847,7 +138892,9 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             return Some(("Error", error.message.clone()));
         }
 
-        if error.message == "Call to private HashContext::__construct() from global scope" {
+        if error.message == "Call to private GdImage::__construct() from global scope"
+            || error.message == "Call to private HashContext::__construct() from global scope"
+        {
             return Some(("Error", error.message.clone()));
         }
 
@@ -139754,6 +139801,62 @@ fn password_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static 
                 format!("{callable}() expects exactly {expected} {noun}, {actual} given"),
             ));
         }
+    }
+
+    None
+}
+
+fn gd_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static str, String)> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+
+    let prefix = "arity mismatch for imagefilter(): expected at least 2 argument(s), got ";
+    if let Some(actual) = error
+        .message
+        .strip_prefix(prefix)
+        .and_then(|actual| actual.parse::<usize>().ok())
+        .filter(|actual| *actual < 2)
+    {
+        return Some((
+            "TypeError",
+            format!("imagefilter() expects at least 2 arguments, {actual} given"),
+        ));
+    }
+
+    let (function, reason) = error
+        .message
+        .strip_prefix("unsupported call ")?
+        .split_once(": ")?;
+    let is_gd_function = matches!(
+        function,
+        "imagecolordeallocate()"
+            | "imagecolormatch()"
+            | "imagecolorset()"
+            | "imageconvolution()"
+            | "imagefilter()"
+    );
+    if !is_gd_function {
+        return None;
+    }
+
+    if reason.starts_with("Argument #") && reason.contains(" must be of type GdImage, ") {
+        return Some(("TypeError", format!("{function}: {reason}")));
+    }
+
+    if matches!(
+        reason,
+        "Argument #1 ($image1) must be TrueColor"
+            | "Argument #2 ($image2) must be Palette"
+            | "Argument #2 ($image2) must be the same size as argument #1 ($im1)"
+            | "Argument #2 ($filter) must be one of the IMG_FILTER_* filter constants"
+    ) || reason.starts_with("Argument #2 ($color) must be between 0 and ")
+        || reason.starts_with("Argument #2 ($matrix) must be a 3x3 array")
+        || (reason.starts_with("Argument #")
+            && reason.contains(" must be between 0 and ")
+            && reason.ends_with(" (inclusive)"))
+    {
+        return Some(("ValueError", format!("{function}: {reason}")));
     }
 
     None
@@ -142095,6 +142198,19 @@ fn is_builtin(name: &str) -> bool {
             | "unixtojd"
             | "jdtounix"
             | "jddayofweek"
+            | "imagecreate"
+            | "imagecreatetruecolor"
+            | "imagecolorallocate"
+            | "imagecolorallocatealpha"
+            | "imagecolorstotal"
+            | "imagecolordeallocate"
+            | "imagecolormatch"
+            | "imagecolorset"
+            | "imageantialias"
+            | "imagestring"
+            | "imageconvolution"
+            | "imagefilter"
+            | "imageloadfont"
             | "date_default_timezone_get"
             | "date_default_timezone_set"
             | "timezone_version_get"
@@ -144200,6 +144316,19 @@ const PHP_ROUND_HALF_ODD: i64 = 4;
 const GMP_ROUND_ZERO: i64 = 0;
 const GMP_ROUND_PLUSINF: i64 = 1;
 const GMP_ROUND_MINUSINF: i64 = 2;
+const PHP_IMG_FILTER_NEGATE: i64 = 0;
+const PHP_IMG_FILTER_GRAYSCALE: i64 = 1;
+const PHP_IMG_FILTER_BRIGHTNESS: i64 = 2;
+const PHP_IMG_FILTER_CONTRAST: i64 = 3;
+const PHP_IMG_FILTER_COLORIZE: i64 = 4;
+const PHP_IMG_FILTER_EDGEDETECT: i64 = 5;
+const PHP_IMG_FILTER_EMBOSS: i64 = 6;
+const PHP_IMG_FILTER_GAUSSIAN_BLUR: i64 = 7;
+const PHP_IMG_FILTER_SELECTIVE_BLUR: i64 = 8;
+const PHP_IMG_FILTER_MEAN_REMOVAL: i64 = 9;
+const PHP_IMG_FILTER_SMOOTH: i64 = 10;
+const PHP_IMG_FILTER_PIXELATE: i64 = 11;
+const PHP_IMG_FILTER_SCATTER: i64 = 12;
 const PHP_ASSERT_ACTIVE: i64 = 1;
 const PHP_ASSERT_CALLBACK: i64 = 2;
 const PHP_ASSERT_BAIL: i64 = 3;
@@ -144238,6 +144367,19 @@ const BUILTIN_GLOBAL_CONSTANT_NAMES: &[&str] = &[
     "GMP_ROUND_ZERO",
     "GMP_ROUND_PLUSINF",
     "GMP_ROUND_MINUSINF",
+    "IMG_FILTER_NEGATE",
+    "IMG_FILTER_GRAYSCALE",
+    "IMG_FILTER_BRIGHTNESS",
+    "IMG_FILTER_CONTRAST",
+    "IMG_FILTER_COLORIZE",
+    "IMG_FILTER_EDGEDETECT",
+    "IMG_FILTER_EMBOSS",
+    "IMG_FILTER_GAUSSIAN_BLUR",
+    "IMG_FILTER_SELECTIVE_BLUR",
+    "IMG_FILTER_MEAN_REMOVAL",
+    "IMG_FILTER_SMOOTH",
+    "IMG_FILTER_PIXELATE",
+    "IMG_FILTER_SCATTER",
     "ASSERT_ACTIVE",
     "ASSERT_CALLBACK",
     "ASSERT_BAIL",
@@ -144717,6 +144859,19 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "GMP_ROUND_ZERO" => Some(Value::Int(GMP_ROUND_ZERO)),
         "GMP_ROUND_PLUSINF" => Some(Value::Int(GMP_ROUND_PLUSINF)),
         "GMP_ROUND_MINUSINF" => Some(Value::Int(GMP_ROUND_MINUSINF)),
+        "IMG_FILTER_NEGATE" => Some(Value::Int(PHP_IMG_FILTER_NEGATE)),
+        "IMG_FILTER_GRAYSCALE" => Some(Value::Int(PHP_IMG_FILTER_GRAYSCALE)),
+        "IMG_FILTER_BRIGHTNESS" => Some(Value::Int(PHP_IMG_FILTER_BRIGHTNESS)),
+        "IMG_FILTER_CONTRAST" => Some(Value::Int(PHP_IMG_FILTER_CONTRAST)),
+        "IMG_FILTER_COLORIZE" => Some(Value::Int(PHP_IMG_FILTER_COLORIZE)),
+        "IMG_FILTER_EDGEDETECT" => Some(Value::Int(PHP_IMG_FILTER_EDGEDETECT)),
+        "IMG_FILTER_EMBOSS" => Some(Value::Int(PHP_IMG_FILTER_EMBOSS)),
+        "IMG_FILTER_GAUSSIAN_BLUR" => Some(Value::Int(PHP_IMG_FILTER_GAUSSIAN_BLUR)),
+        "IMG_FILTER_SELECTIVE_BLUR" => Some(Value::Int(PHP_IMG_FILTER_SELECTIVE_BLUR)),
+        "IMG_FILTER_MEAN_REMOVAL" => Some(Value::Int(PHP_IMG_FILTER_MEAN_REMOVAL)),
+        "IMG_FILTER_SMOOTH" => Some(Value::Int(PHP_IMG_FILTER_SMOOTH)),
+        "IMG_FILTER_PIXELATE" => Some(Value::Int(PHP_IMG_FILTER_PIXELATE)),
+        "IMG_FILTER_SCATTER" => Some(Value::Int(PHP_IMG_FILTER_SCATTER)),
         "ASSERT_ACTIVE" => Some(Value::Int(PHP_ASSERT_ACTIVE)),
         "ASSERT_CALLBACK" => Some(Value::Int(PHP_ASSERT_CALLBACK)),
         "ASSERT_BAIL" => Some(Value::Int(PHP_ASSERT_BAIL)),
@@ -177368,6 +177523,379 @@ impl Interpreter {
         )))
     }
 
+    fn call_imagecreate(
+        &mut self,
+        args: &[Value],
+        true_color: bool,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let function = if true_color {
+            "imagecreatetruecolor()"
+        } else {
+            "imagecreate()"
+        };
+        expect_arity(function.trim_end_matches("()"), args, 2, span)?;
+        let width = php_internal_int_argument(function, 1, "width", &args[0], span)?;
+        let height = php_internal_int_argument(function, 2, "height", &args[1], span)?;
+        self.allocate_gd_image(width, height, true_color, span)
+    }
+
+    fn allocate_gd_image(
+        &mut self,
+        width: i64,
+        height: i64,
+        true_color: bool,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let class_id = self
+            .classes
+            .lookup_class_id("GdImage")
+            .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class("GdImage")))?;
+        let object = self.allocate_object_without_constructor(class_id, span)?;
+        self.gd_images.insert(
+            object.id(),
+            BoundedGdImageState {
+                width,
+                height,
+                true_color,
+                color_count: 0,
+            },
+        );
+        Ok(Value::Object(object))
+    }
+
+    fn gd_image_object_argument(
+        &self,
+        function: &str,
+        position: usize,
+        name: &str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<PhpObject> {
+        match value {
+            Value::Object(object)
+                if object.is_instance_of_class_name("GdImage")
+                    && self.gd_images.contains_key(&object.id()) =>
+            {
+                Ok(object.clone())
+            }
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    format!(
+                        "Argument #{position} (${name}) must be of type GdImage, {} given",
+                        php_type_error_given(other)
+                    ),
+                ),
+            )),
+        }
+    }
+
+    fn gd_image_state<'a>(
+        &'a self,
+        object: &PhpObject,
+        function: &str,
+        span: Span,
+    ) -> CompileResult<&'a BoundedGdImageState> {
+        self.gd_images.get(&object.id()).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(function, "invalid GdImage object state"),
+            )
+        })
+    }
+
+    fn gd_image_state_mut<'a>(
+        &'a mut self,
+        object: &PhpObject,
+        function: &str,
+        span: Span,
+    ) -> CompileResult<&'a mut BoundedGdImageState> {
+        self.gd_images.get_mut(&object.id()).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(function, "invalid GdImage object state"),
+            )
+        })
+    }
+
+    fn call_imagecolorallocate(
+        &mut self,
+        args: &[Value],
+        with_alpha: bool,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let function = if with_alpha {
+            "imagecolorallocatealpha()"
+        } else {
+            "imagecolorallocate()"
+        };
+        let expected = if with_alpha { 5 } else { 4 };
+        expect_arity(function.trim_end_matches("()"), args, expected, span)?;
+        let object = self.gd_image_object_argument(function, 1, "image", &args[0], span)?;
+        let _red = php_internal_int_argument(function, 2, "red", &args[1], span)?;
+        let _green = php_internal_int_argument(function, 3, "green", &args[2], span)?;
+        let _blue = php_internal_int_argument(function, 4, "blue", &args[3], span)?;
+        if with_alpha {
+            let _alpha = php_internal_int_argument(function, 5, "alpha", &args[4], span)?;
+        }
+        let state = self.gd_image_state_mut(&object, function, span)?;
+        let color = state.color_count;
+        state.color_count = state.color_count.saturating_add(1);
+        Ok(Value::Int(color))
+    }
+
+    fn call_imagecolorstotal(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("imagecolorstotal", args, 1, span)?;
+        let object =
+            self.gd_image_object_argument("imagecolorstotal()", 1, "image", &args[0], span)?;
+        Ok(Value::Int(
+            self.gd_image_state(&object, "imagecolorstotal()", span)?
+                .color_count,
+        ))
+    }
+
+    fn call_imagecolordeallocate(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("imagecolordeallocate", args, 2, span)?;
+        let object =
+            self.gd_image_object_argument("imagecolordeallocate()", 1, "image", &args[0], span)?;
+        let color =
+            php_internal_int_argument("imagecolordeallocate()", 2, "color", &args[1], span)?;
+        let upper = self
+            .gd_image_state(&object, "imagecolordeallocate()", span)?
+            .color_count;
+        if color < 0 || color > upper {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "imagecolordeallocate()",
+                    format!("Argument #2 ($color) must be between 0 and {upper}"),
+                ),
+            ));
+        }
+        Ok(Value::Bool(true))
+    }
+
+    fn call_imagecolormatch(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("imagecolormatch", args, 2, span)?;
+        let image1 =
+            self.gd_image_object_argument("imagecolormatch()", 1, "image1", &args[0], span)?;
+        let image2 =
+            self.gd_image_object_argument("imagecolormatch()", 2, "image2", &args[1], span)?;
+        let image1_state = self
+            .gd_image_state(&image1, "imagecolormatch()", span)?
+            .clone();
+        let image2_state = self
+            .gd_image_state(&image2, "imagecolormatch()", span)?
+            .clone();
+        if !image1_state.true_color {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "imagecolormatch()",
+                    "Argument #1 ($image1) must be TrueColor",
+                ),
+            ));
+        }
+        if image2_state.true_color {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "imagecolormatch()",
+                    "Argument #2 ($image2) must be Palette",
+                ),
+            ));
+        }
+        if image1_state.width != image2_state.width || image1_state.height != image2_state.height {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "imagecolormatch()",
+                    "Argument #2 ($image2) must be the same size as argument #1 ($im1)",
+                ),
+            ));
+        }
+        Ok(Value::Bool(true))
+    }
+
+    fn call_imagecolorset(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(5..=6).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "imagecolorset()",
+                    ArityExpectation::Between { min: 5, max: 6 },
+                    args.len(),
+                ),
+            ));
+        }
+        let _object =
+            self.gd_image_object_argument("imagecolorset()", 1, "image", &args[0], span)?;
+        let _color = php_internal_int_argument("imagecolorset()", 2, "color", &args[1], span)?;
+        for (index, name, max) in [
+            (3usize, "red", 255i64),
+            (4, "green", 255),
+            (5, "blue", 255),
+            (6, "alpha", 127),
+        ] {
+            let Some(value) = args.get(index - 1) else {
+                continue;
+            };
+            let channel = php_internal_int_argument("imagecolorset()", index, name, value, span)?;
+            if channel < 0 || channel > max {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "imagecolorset()",
+                        format!(
+                            "Argument #{index} (${name}) must be between 0 and {max} (inclusive)"
+                        ),
+                    ),
+                ));
+            }
+        }
+        Ok(Value::Null)
+    }
+
+    fn call_imageantialias(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("imageantialias", args, 2, span)?;
+        let _object =
+            self.gd_image_object_argument("imageantialias()", 1, "image", &args[0], span)?;
+        let _enabled = php_internal_bool_argument("imageantialias()", 2, "enable", &args[1], span)?;
+        Ok(Value::Bool(true))
+    }
+
+    fn call_imagestring(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("imagestring", args, 6, span)?;
+        let _object = self.gd_image_object_argument("imagestring()", 1, "image", &args[0], span)?;
+        let _font = php_internal_int_argument("imagestring()", 2, "font", &args[1], span)?;
+        let _x = php_internal_int_argument("imagestring()", 3, "x", &args[2], span)?;
+        let _y = php_internal_int_argument("imagestring()", 4, "y", &args[3], span)?;
+        let _string = string_builtin_argument("imagestring()", "string", &args[4], span)?;
+        let _color = php_internal_int_argument("imagestring()", 6, "color", &args[5], span)?;
+        Ok(Value::Bool(true))
+    }
+
+    fn call_imageconvolution(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("imageconvolution", args, 4, span)?;
+        let _object =
+            self.gd_image_object_argument("imageconvolution()", 1, "image", &args[0], span)?;
+        let Value::Array(matrix) = &args[1] else {
+            return Err(php_internal_array_type_error(
+                "imageconvolution()",
+                2,
+                "matrix",
+                &args[1],
+                span,
+            ));
+        };
+        Self::validate_imageconvolution_matrix(matrix, span)?;
+        let _divisor =
+            php_internal_int_argument("imageconvolution()", 3, "divisor", &args[2], span)?;
+        let _offset = php_internal_int_argument("imageconvolution()", 4, "offset", &args[3], span)?;
+        Ok(Value::Bool(true))
+    }
+
+    fn validate_imageconvolution_matrix(matrix: &PhpArray, span: Span) -> CompileResult<()> {
+        if matrix.entries().len() != 3 {
+            return Err(Self::imageconvolution_matrix_error(
+                "Argument #2 ($matrix) must be a 3x3 array",
+                span,
+            ));
+        }
+        for row_index in 0..3 {
+            let Some(row) = gd_matrix_row(matrix, row_index) else {
+                return Err(Self::imageconvolution_matrix_error(
+                    "Argument #2 ($matrix) must be a 3x3 array",
+                    span,
+                ));
+            };
+            if row.entries().len() != 3 {
+                return Err(Self::imageconvolution_matrix_error(
+                    format!(
+                        "Argument #2 ($matrix) must be a 3x3 array, matrix[{row_index}] only has {} elements",
+                        row.entries().len()
+                    ),
+                    span,
+                ));
+            }
+            for column_index in 0..3 {
+                if !array_has_int_key(row, column_index) {
+                    return Err(Self::imageconvolution_matrix_error(
+                        format!(
+                            "Argument #2 ($matrix) must be a 3x3 array, matrix[{row_index}][{column_index}] cannot be found (missing integer key)"
+                        ),
+                        span,
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn imageconvolution_matrix_error(message: impl Into<String>, span: Span) -> Diagnostic {
+        runtime_error(
+            span,
+            RuntimeError::unsupported_call("imageconvolution()", message.into()),
+        )
+    }
+
+    fn call_imagefilter(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.len() < 2 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "imagefilter()",
+                    ArityExpectation::AtLeast(2),
+                    args.len(),
+                ),
+            ));
+        }
+        if args.len() > 6 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "imagefilter()",
+                    ArityExpectation::Between { min: 2, max: 6 },
+                    args.len(),
+                ),
+            ));
+        }
+        let _object = self.gd_image_object_argument("imagefilter()", 1, "image", &args[0], span)?;
+        let filter = php_internal_int_argument("imagefilter()", 2, "filter", &args[1], span)?;
+        if !(PHP_IMG_FILTER_NEGATE..=PHP_IMG_FILTER_SCATTER).contains(&filter) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "imagefilter()",
+                    "Argument #2 ($filter) must be one of the IMG_FILTER_* filter constants",
+                ),
+            ));
+        }
+        for (position, name) in [(3usize, "arg1"), (4, "arg2"), (5, "arg3"), (6, "arg4")] {
+            if let Some(value) = args.get(position - 1) {
+                let _ = php_internal_int_argument("imagefilter()", position, name, value, span)?;
+            }
+        }
+        Ok(Value::Bool(true))
+    }
+
+    fn call_imageloadfont(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("imageloadfont", args, 1, span)?;
+        let filename = string_builtin_argument("imageloadfont()", "filename", &args[0], span)?;
+        if !Path::new(&filename).exists() {
+            self.emit_display_warning(
+                format!(
+                    "imageloadfont({filename}): Failed to open stream: No such file or directory"
+                ),
+                span,
+            )?;
+            return Ok(Value::Bool(false));
+        }
+        Ok(Value::Int(1))
+    }
+
     fn call_cal_days_in_month(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("cal_days_in_month", args, 3, span)?;
         let calendar = required_date_int_arg("cal_days_in_month()", &args[0], "calendar", span)?;
@@ -188175,6 +188703,24 @@ fn jd_to_unix_timestamp(jd: i64) -> Option<i64> {
 
 fn calendar_day_of_week(jd: i64) -> i64 {
     positive_mod(jd + 1, 7)
+}
+
+fn gd_matrix_row(array: &PhpArray, row_index: i64) -> Option<&PhpArray> {
+    array
+        .entries()
+        .iter()
+        .find(|entry| matches!(entry.key, ArrayKey::Int(key) if key == row_index))
+        .and_then(|entry| match entry.value() {
+            Value::Array(row) => Some(row),
+            _ => None,
+        })
+}
+
+fn array_has_int_key(array: &PhpArray, target: i64) -> bool {
+    array
+        .entries()
+        .iter()
+        .any(|entry| matches!(entry.key, ArrayKey::Int(key) if key == target))
 }
 
 fn required_date_int_arg(

@@ -7392,6 +7392,21 @@
   binary-string/non-ASCII parsing parity, unbounded exponent/factorial/root and
   binomial inputs, references/copy-on-write, and native lowering remain
   unsupported.
+  GD support is a bounded interpreter-only image-handle diagnostics lane.
+  `GdImage` is declared as a final internal handle class. The covered runtime
+  surface allocates in-memory handles through `imagecreate()` and
+  `imagecreatetruecolor()`, tracks width/height, true-color vs palette images,
+  and palette color counts for `imagecolorallocate()`,
+  `imagecolorallocatealpha()`, `imagecolorstotal()`, and
+  `imagecolordeallocate()`. It also covers the reached validation/no-op
+  behavior for `imageantialias()`, `imagecolormatch()`, `imagecolorset()`,
+  `imagestring()`, `imageconvolution()`, `imagefilter()`, and nonexistent-path
+  `imageloadfont()` warnings, including `IMG_FILTER_*` constants and selected
+  PHP-shaped `TypeError`/`ValueError` surfaces. Pixel buffers, real drawing,
+  image encoding/decoding, successful font loading, broader GD functions,
+  `extension_loaded` / `get_loaded_extensions` GD extension advertising, exact
+  image lifetime/destructor behavior, references/copy-on-write, and native
+  lowering remain unsupported.
   `extension_loaded($name)` accepts scalar/null string-compatible extension
   names and supported visible `__toString()` objects through a bounded
   PHP-internal string boundary, including PHP-shaped null-to-string

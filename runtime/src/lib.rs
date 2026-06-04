@@ -32334,9 +32334,22 @@ impl PhpClassTable {
             gmp.add_method(PhpMethodMetadata::instance(method, Visibility::Public))
                 .expect("GMP core metadata should not duplicate methods");
         }
+        let gd_image_id = classes
+            .declare_class("GdImage")
+            .expect("core class table should contain GMP before GdImage");
+        classes
+            .get_mut(gd_image_id)
+            .expect("declared GdImage class id should resolve")
+            .add_method(PhpMethodMetadata::instance_with_flags(
+                "__construct",
+                Visibility::Private,
+                false,
+                true,
+            ))
+            .expect("GdImage core metadata should not duplicate constructor");
         let date_error_id = classes
             .declare_class("DateError")
-            .expect("core class table should contain GMP before DateError");
+            .expect("core class table should contain GdImage before DateError");
         classes
             .set_parent(date_error_id, error_id)
             .expect("DateError should extend Error");
