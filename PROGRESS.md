@@ -1,6 +1,6 @@
 # PHP Native Compiler PHPT Progress
 
-Updated: 2026-06-04 04:35 CEST
+Updated: 2026-06-04 04:47 CEST
 
 Primary/public branch: `origin/master`
 Latest accepted public-score source:
@@ -19,11 +19,13 @@ denominators that exclude BORKED rows are not public progress.
 Current public score: **7201 / 20294 pinned runnable PHPTs = 35.48%**.
 
 Latest pushed source checkpoint:
-`13a0caf90de543696ca031ae9c2141b8bc70d639 fix: support sensitive parameter traces`
+`980cf9c4280bd64bb76b4b01ef5d01eff0a9a9cb fix: support bounded strtotime forms`
 
-Next score-gate target:
-`13a0caf90de543696ca031ae9c2141b8bc70d639 fix: support sensitive parameter traces`
-once disk headroom recovers enough for a fresh full pinned PHPT gate.
+Current score-gate target:
+`96ed077df500ade549ed3f3ee15d7c0da56d05bc docs: record 13a0caf9 PHPT staging`
+is running a full pinned PHPT gate against the accepted `00a8fa10` PASS
+baseline. This gate covers source-equivalent `13a0caf9`; later source
+`980cf9c4` remains staged for a future full gate.
 
 The accepted source checkpoint chain through semantic source `00a8fa10` has
 been pushed to `origin/master` and is now reflected in the public score above.
@@ -34,15 +36,17 @@ latest-published PASS regressions.
 
 Unpublished source progress since the accepted public score source:
 
-- Latest pushed source head is `13a0caf90de543696ca031ae9c2141b8bc70d639`
-  (`fix: support sensitive parameter traces`), pushed to `origin/master`.
-- There are `2` score-relevant source commits after the accepted public-score
+- Latest pushed source head is `980cf9c4280bd64bb76b4b01ef5d01eff0a9a9cb`
+  (`fix: support bounded strtotime forms`), pushed to `origin/master`.
+- There are `3` score-relevant source commits after the accepted public-score
   checkpoint: `bfde7284afe168000a848f5df2e2fe8c1aea3867`
-  (`fix: add SPL filesystem iterator metadata`) and
+  (`fix: add SPL filesystem iterator metadata`),
   `13a0caf90de543696ca031ae9c2141b8bc70d639`
-  (`fix: support sensitive parameter traces`).
+  (`fix: support sensitive parameter traces`), and
+  `980cf9c4280bd64bb76b4b01ef5d01eff0a9a9cb`
+  (`fix: support bounded strtotime forms`).
 - Staged focused selected-PHPT proof after the latest accepted public-score
-  checkpoint totals `26` selected rows across `2` integrated artifacts. These
+  checkpoint totals `38` selected rows across `3` integrated artifacts. These
   are source/staging facts, not a
   public score update until a future full pinned PHPT gate accepts them.
 - The SPL filesystem iterator metadata packet moved selected PHPT
@@ -78,11 +82,22 @@ Unpublished source progress since the accepted public score source:
   `Zend/tests/function_arguments/sensitive_parameter_value_to_string.phpt`.
   It also preserved an eight-row latest-published PASS scout and rechecked the
   staged filesystem selected PHPT rows at `12/12`.
-- Cadence currently reports `SCORE-GATE-BLOCKED-DISK`: the current source head
-  is `13a0caf9`, disk headroom is about `24 GiB`, below the `35 GiB` full-gate
-  threshold, and no full PHPT wrapper processes are running. The next public
-  score movement therefore still requires a fresh full pinned PHPT gate with
-  zero latest-published PASS regressions after disk headroom recovers.
+- The DateTime `strtotime()` packet moved selected PHPT `0/12 -> 12/12` for
+  `ext/date/tests/bug14561.phpt`, `ext/date/tests/bug26198.phpt`,
+  `ext/date/tests/bug28024.phpt`, `ext/date/tests/bug28599.phpt`,
+  `ext/date/tests/bug29150.phpt`, `ext/date/tests/bug33056.phpt`,
+  `ext/date/tests/bug34676.phpt`, `ext/date/tests/bug35414.phpt`,
+  `ext/date/tests/bug36510.phpt`, `ext/date/tests/bug38229.phpt`,
+  `ext/date/tests/bug74057.phpt`, and
+  `ext/date/tests/strtotime-relative.phpt`. It also preserved a five-row
+  latest-published non-date PASS scout.
+- Cadence currently reports `SCORE-GATE-RUNNING`: full gate
+  `state/logs/phpt-full-current-score-20260604T024037Z-php-src-f97ff59-public-96ed077d-source-96ed077d`
+  was in `RUNNING / SHARDED-PHPT`, using the accepted `00a8fa10` PASS
+  baseline, with PASS regressions still unknown and sharded PHPT wrapper
+  processes active. The next public score movement therefore still requires that
+  full pinned PHPT gate, or a later one, to complete with zero
+  latest-published PASS regressions.
 - The previous publication blocker was the blocked `52a79aa1` full gate:
   `state/logs/phpt-full-current-score-20260604T005236Z-php-src-f97ff59-public-52a79aa1-source-52a79aa1`
   had `1` latest-published PASS regression,
