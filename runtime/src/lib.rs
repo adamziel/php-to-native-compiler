@@ -39176,7 +39176,7 @@ impl ObjectProperty {
     fn ensure_writable_for_indirect_mutation(&self) -> RuntimeResult<()> {
         if self.is_readonly && self.initialized && !self.unset {
             return Err(RuntimeError::unsupported_property_access(format!(
-                "Cannot indirectly modify readonly property {}::${}",
+                "Cannot modify readonly property {}::${}",
                 self.declaring_class_name, self.name
             )));
         }

@@ -14022,14 +14022,19 @@ class Bag {
     }
 }
 
-clone new Bag();
+try {
+    clone new Bag();
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
 "#;
 
-    let error = runtime_error(source);
+    let execution = run_source(source).unwrap();
     assert_eq!(
-        error.message,
-        "unsupported object property access: Cannot indirectly modify readonly property Bag::$prop"
+        execution.stdout,
+        "Cannot modify readonly property Bag::$prop\n"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
