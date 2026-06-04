@@ -17,13 +17,19 @@ Implemented:
   metadata properties, `extension_loaded("xmlreader")`, `get_loaded_extensions()`,
   and `ReflectionExtension("xmlreader")` coverage.
 - The interpreter path supports a bounded `XMLReader` event stream for simple
-  XML documents with XML declarations, elements, end elements, text, attributes,
-  namespace declarations, `open()`, `XML()`, `close()`, `read()`, `next()`,
+  XML documents with XML declarations, elements, end elements, text, CDATA,
+  comments, attributes, namespace declarations, `open()`, `XML()`,
+  `fromUri()`, `fromString()`, `fromStream()` over readable local/memory
+  streams, `close()`, `read()`, `next()`,
   `moveToFirstAttribute()`, `moveToNextAttribute()`, `moveToAttribute()`,
   `moveToAttributeNo()`, `moveToAttributeNs()`, `moveToElement()`,
   `getAttribute()`, `getAttributeNo()`, `getAttributeNs()`,
   `readInnerXml()`, `readOuterXml()`, `readString()`, `lookupNamespace()`,
-  and parser-property get/set state.
+  parser-property get/set state, selected encoding argument validation, and
+  empty/preload `setSchema()` / `setRelaxNGSchema()` diagnostics.
+- Core XMLReader factory calls allocate subclasses, run zero-argument subclass
+  constructors after successful source loading, surface constructor failures,
+  and allow userland static `open()` overrides to win over the core factory.
 - `XMLReader::DEFAULTATTRS` is honored for simple external DTD `ATTLIST`
   default attributes when the XML source references a readable system DTD path.
 
@@ -34,8 +40,9 @@ Unsupported:
 - `DOMNamedNodeMap` entity and notation objects.
 - Exact readonly DOM property-hook write diagnostics.
 - Full libxml parser parity: malformed XML recovery, entity expansion,
-  validation, schemas, RelaxNG, stream contexts, encoding conversion, comments
-  and processing-instruction event payload parity, broad DTD grammars, namespace
-  edge cases beyond simple prefix declarations, `XMLReader` subclass constructor
+  validation, real schema/RelaxNG evaluation, stream contexts beyond readable
+  local/memory stream payloads, encoding conversion, processing-instruction
+  event payload parity, broad DTD grammars, namespace edge cases beyond simple
+  prefix declarations, XMLReader subclass constructor arguments/property-hook
   side effects, and virtual-property reflection hooks.
 - Native DOM/libxml execution.

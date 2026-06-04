@@ -12559,6 +12559,20 @@ impl Interpreter {
             })
     }
 
+    fn resolved_method_is_core_xmlreader(&self, class_id: ClassId) -> bool {
+        self.classes
+            .lookup_class_id("XMLReader")
+            .is_some_and(|reader_id| class_id == reader_id)
+    }
+
+    fn method_resolves_to_core_xmlreader(&self, class_id: ClassId, method_name: &str) -> bool {
+        self.resolve_instance_method(class_id, method_name)
+            .map(|(declaring_class_id, _, _, _, _)| {
+                self.resolved_method_is_core_xmlreader(declaring_class_id)
+            })
+            .unwrap_or_else(|| self.resolved_method_is_core_xmlreader(class_id))
+    }
+
     fn resolved_method_is_core_spl_fixed_array(&self, class_id: ClassId) -> bool {
         self.classes
             .lookup_class_id("SplFixedArray")
@@ -33733,6 +33747,16 @@ impl Interpreter {
             return Ok(Value::Object(object));
         }
 
+        if self.resolved_method_is_core_xmlreader(constructor_class_id) {
+            expect_expr_arity("XMLReader::__construct", args.len(), 0, span)?;
+            self.initialize_xmlreader_public_properties(&object);
+            self.xml_readers
+                .insert(object.id(), BoundedXmlReaderState::default());
+            self.track_allocated_object(&object);
+            self.sync_xmlreader_public_properties(&object, span)?;
+            return Ok(Value::Object(object));
+        }
+
         if self.resolved_method_is_core_datetimezone(constructor_class_id) {
             self.initialize_datetimezone_object(&object, args, span, scope)?;
             self.track_allocated_object(&object);
@@ -34984,6 +35008,7 @@ impl Interpreter {
         };
 
         if object.class_name().eq_ignore_ascii_case("mysqli_driver")
+            || object.is_instance_of_class_name("XMLReader")
             || reflection_object_is_uncloneable_class(object.class_name())
         {
             return Err(runtime_error(
@@ -51786,12 +51811,7 @@ impl Interpreter {
         class_id: ClassId,
         span: Span,
     ) -> CompileResult<PhpObject> {
-        let object_id = self.allocate_object_id();
-        let class = self
-            .classes
-            .get(class_id)
-            .expect("XMLReader class id should resolve");
-        let object = PhpObject::from_class_with_id(class, object_id);
+        let object = self.allocate_object_without_constructor(class_id, span)?;
         self.initialize_xmlreader_public_properties(&object);
         self.xml_readers
             .insert(object.id(), BoundedXmlReaderState::default());
@@ -51808,7 +51828,7 @@ impl Interpreter {
         ] {
             object.write_forced_public_property(property, value);
         }
-        for property in ["hasAttributes", "hasValue", "isDefault", "isEmptyElement"] {
+        for property in ["hasAttributes", "hasValue", "isDefault"] {
             object.write_forced_public_property(property, Value::Bool(false));
         }
         for property in [
@@ -51839,13 +51859,103 @@ impl Interpreter {
             ));
         };
         let object = self.create_xmlreader_object_for_class_id(class_id, span)?;
-        let loaded =
-            self.call_xmlreader_method(object.clone(), instance_method, args, span, scope)?;
-        if loaded.is_truthy() {
-            Ok(Value::Object(object))
-        } else {
-            Ok(Value::Bool(false))
+        let loaded = self.call_xmlreader_factory_loader(
+            &object,
+            method_name,
+            instance_method,
+            args,
+            span,
+            scope,
+        )?;
+        if !loaded {
+            return Ok(Value::Bool(false));
         }
+        self.call_xmlreader_factory_constructor(&object, class_id, span, scope)?;
+        Ok(Value::Object(object))
+    }
+
+    fn call_xmlreader_factory_loader(
+        &mut self,
+        object: &PhpObject,
+        method_name: &str,
+        instance_method: &str,
+        args: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<bool> {
+        let values = self.evaluate_xmlreader_method_arguments(method_name, args, span, scope)?;
+        match method_name.to_ascii_lowercase().as_str() {
+            "fromuri" => self
+                .xmlreader_open_with_options(object, &values, span, true)
+                .map(|value| value.is_truthy()),
+            "fromstream" => self
+                .xmlreader_from_stream(object, &values, span)
+                .map(|value| value.is_truthy()),
+            "fromstring" => self
+                .xmlreader_xml_with_base_uri(object, &values, "string://".to_string(), span)
+                .map(|value| value.is_truthy()),
+            _ => self
+                .call_xmlreader_method_with_values(object.clone(), instance_method, values, span)
+                .map(|value| value.is_truthy()),
+        }
+    }
+
+    fn call_xmlreader_factory_constructor(
+        &mut self,
+        object: &PhpObject,
+        class_id: ClassId,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        let Some((
+            constructor_class_id,
+            constructor_class_name,
+            constructor_name,
+            constructor_visibility,
+            constructor_is_static,
+        )) = self.resolve_instance_method(class_id, "__construct")
+        else {
+            return Ok(());
+        };
+        if self.resolved_method_is_core_xmlreader(constructor_class_id) {
+            return Ok(());
+        }
+        if constructor_is_static {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_object_instantiation(
+                    object.class_name(),
+                    "static XMLReader subclass constructors are not implemented",
+                ),
+            ));
+        }
+        if !self.can_call_constructor(constructor_class_id, constructor_visibility) {
+            return Err(self.constructor_visibility_error(
+                &constructor_class_name,
+                constructor_visibility,
+                span,
+            ));
+        }
+        let function = self.method_function(
+            constructor_class_id,
+            &constructor_class_name,
+            &constructor_name,
+            span,
+        )?;
+        let function = function.as_ref();
+        ensure_user_function_arity(function, 0, span)?;
+        ensure_supported_function_metadata(function, span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+        let result = self.call_user_function_with_checked_values(
+            function,
+            Vec::new(),
+            Some(object.clone()),
+            Some(constructor_class_id),
+            Some(class_id),
+            Vec::new(),
+            Some(scope),
+        );
+        result.map(|_| ())
     }
 
     fn call_xmlreader_method(
@@ -51856,10 +51966,95 @@ impl Interpreter {
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
-        let values = args
-            .iter()
-            .map(|arg| self.evaluate(arg, scope))
-            .collect::<CompileResult<Vec<_>>>()?;
+        let values = self.evaluate_xmlreader_method_arguments(method_name, args, span, scope)?;
+        self.call_xmlreader_method_with_values(object, method_name, values, span)
+    }
+
+    fn evaluate_xmlreader_method_arguments(
+        &mut self,
+        method_name: &str,
+        args: &[Expr],
+        _span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Vec<Value>> {
+        let uses_named_or_spread = args.iter().any(|arg| {
+            matches!(
+                arg,
+                Expr::NamedArgument { .. } | Expr::SpreadArgument { .. }
+            )
+        });
+        if !uses_named_or_spread {
+            return args
+                .iter()
+                .map(|arg| self.evaluate(arg, scope))
+                .collect::<CompileResult<Vec<_>>>();
+        }
+
+        let mut values: Vec<Option<Value>> = vec![None, None, None];
+        let mut positional_index = 0_usize;
+        for arg in args {
+            match arg {
+                Expr::NamedArgument { name, expr, span } => {
+                    let Some(index) = xmlreader_method_parameter_index(method_name, name) else {
+                        return Err(runtime_error(
+                            *span,
+                            RuntimeError::unsupported_call(
+                                format!("XMLReader::{method_name}()"),
+                                format!(
+                                    "named argument ${name} does not match a supported XMLReader::{method_name}() parameter in the current subset"
+                                ),
+                            ),
+                        ));
+                    };
+                    if values[index].is_some() || index < positional_index {
+                        return Err(runtime_error(
+                            *span,
+                            RuntimeError::unsupported_call(
+                                format!("XMLReader::{method_name}()"),
+                                format!("Named parameter ${name} overwrites previous argument"),
+                            ),
+                        ));
+                    }
+                    values[index] = Some(self.evaluate(expr, scope)?);
+                }
+                Expr::SpreadArgument { span, .. } => {
+                    return Err(runtime_error(
+                        *span,
+                        RuntimeError::unsupported_call(
+                            format!("XMLReader::{method_name}()"),
+                            "argument unpacking is not implemented for XMLReader methods in the current subset",
+                        ),
+                    ));
+                }
+                expr => {
+                    while positional_index < values.len() && values[positional_index].is_some() {
+                        positional_index += 1;
+                    }
+                    if positional_index >= values.len() {
+                        values.push(Some(self.evaluate(expr, scope)?));
+                    } else {
+                        values[positional_index] = Some(self.evaluate(expr, scope)?);
+                    }
+                    positional_index += 1;
+                }
+            }
+        }
+        while matches!(values.last(), Some(None)) {
+            values.pop();
+        }
+        Ok(values
+            .into_iter()
+            .map(|value| value.unwrap_or(Value::Null))
+            .collect())
+    }
+
+    fn call_xmlreader_method_with_values(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        values: Vec<Value>,
+        span: Span,
+    ) -> CompileResult<Value> {
         match method_name.to_ascii_lowercase().as_str() {
             "__construct" => {
                 expect_arity("XMLReader::__construct", &values, 0, span)?;
@@ -51898,9 +52093,13 @@ impl Interpreter {
                             .map(|_| BoundedXmlReaderCursor::Node(element_index + 1)),
                     }
                 };
-                self.xmlreader_state_mut(&object, span)?.cursor = next_cursor;
-                self.sync_xmlreader_public_properties(&object, span)?;
-                Ok(Value::Bool(next_cursor.is_some()))
+                if let Some(cursor) = next_cursor {
+                    self.xmlreader_state_mut(&object, span)?.cursor = Some(cursor);
+                    self.sync_xmlreader_public_properties(&object, span)?;
+                    Ok(Value::Bool(true))
+                } else {
+                    Ok(Value::Bool(false))
+                }
             }
             "next" => {
                 if values.len() > 1 {
@@ -51986,9 +52185,8 @@ impl Interpreter {
                     &values[0],
                     span,
                 )?;
-                let namespace = string_builtin_argument(
+                let namespace = self.xmlreader_namespace_argument(
                     "XMLReader::moveToAttributeNs()",
-                    "namespace",
                     &values[1],
                     span,
                 )?;
@@ -52050,9 +52248,8 @@ impl Interpreter {
                     &values[0],
                     span,
                 )?;
-                let namespace = string_builtin_argument(
+                let namespace = self.xmlreader_namespace_argument(
                     "XMLReader::getAttributeNs()",
-                    "namespace",
                     &values[1],
                     span,
                 )?;
@@ -52062,6 +52259,15 @@ impl Interpreter {
             }
             "setparserproperty" => {
                 expect_arity("XMLReader::setParserProperty", &values, 2, span)?;
+                if !self.xmlreader_state(&object, span)?.loaded {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "XMLReader::setParserProperty()",
+                            "Cannot access parser properties before loading data",
+                        ),
+                    ));
+                }
                 let property = xmlreader_parser_property_argument(
                     "XMLReader::setParserProperty()",
                     &values[0],
@@ -52076,6 +52282,15 @@ impl Interpreter {
             }
             "getparserproperty" => {
                 expect_arity("XMLReader::getParserProperty", &values, 1, span)?;
+                if !self.xmlreader_state(&object, span)?.loaded {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "XMLReader::getParserProperty()",
+                            "Cannot access parser properties before loading data",
+                        ),
+                    ));
+                }
                 let property = xmlreader_parser_property_argument(
                     "XMLReader::getParserProperty()",
                     &values[0],
@@ -52130,7 +52345,15 @@ impl Interpreter {
                     .and_then(|event| event.namespaces.get(&prefix).cloned());
                 Ok(value.map(Value::String).unwrap_or(Value::Null))
             }
-            "setrelaxngschema" | "setschema" => Ok(Value::Bool(false)),
+            "setrelaxngschema" => self.xmlreader_set_schema_like(
+                &object,
+                &values,
+                "XMLReader::setRelaxNGSchema()",
+                span,
+            ),
+            "setschema" => {
+                self.xmlreader_set_schema_like(&object, &values, "XMLReader::setSchema()", span)
+            }
             _ => Err(runtime_error(
                 span,
                 RuntimeError::undefined_function(format!("XMLReader::{method_name}()")),
@@ -52154,7 +52377,28 @@ impl Interpreter {
                 ),
             ));
         }
+        self.xmlreader_open_with_options(object, values, span, false)
+    }
+
+    fn xmlreader_open_with_options(
+        &mut self,
+        object: &PhpObject,
+        values: &[Value],
+        span: Span,
+        throw_on_missing: bool,
+    ) -> CompileResult<Value> {
+        if values.is_empty() || values.len() > 3 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "XMLReader::open()",
+                    ArityExpectation::Between { min: 1, max: 3 },
+                    values.len(),
+                ),
+            ));
+        }
         let uri = string_builtin_argument("XMLReader::open()", "uri", &values[0], span)?;
+        xmlreader_validate_encoding_argument("XMLReader::open()", values.get(1), span)?;
         if uri.is_empty() {
             return Err(runtime_error(
                 span,
@@ -52165,6 +52409,15 @@ impl Interpreter {
             ));
         }
         let Ok(source) = fs::read_to_string(&uri) else {
+            if throw_on_missing {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "XMLReader::open()",
+                        "Unable to open source data",
+                    ),
+                ));
+            }
             self.emit_display_warning("XMLReader::open(): Unable to open source data", span)?;
             return Ok(Value::Bool(false));
         };
@@ -52178,6 +52431,16 @@ impl Interpreter {
         values: &[Value],
         span: Span,
     ) -> CompileResult<Value> {
+        self.xmlreader_xml_with_base_uri(object, values, String::new(), span)
+    }
+
+    fn xmlreader_xml_with_base_uri(
+        &mut self,
+        object: &PhpObject,
+        values: &[Value],
+        base_uri: String,
+        span: Span,
+    ) -> CompileResult<Value> {
         if values.is_empty() || values.len() > 3 {
             return Err(runtime_error(
                 span,
@@ -52189,6 +52452,7 @@ impl Interpreter {
             ));
         }
         let source = string_builtin_argument("XMLReader::XML()", "source", &values[0], span)?;
+        xmlreader_validate_encoding_argument("XMLReader::XML()", values.get(1), span)?;
         if source.is_empty() {
             return Err(runtime_error(
                 span,
@@ -52198,8 +52462,86 @@ impl Interpreter {
                 ),
             ));
         }
+        self.xmlreader_load_source(object, source, base_uri, span)?;
+        Ok(Value::Bool(true))
+    }
+
+    fn xmlreader_namespace_argument(
+        &mut self,
+        function: &'static str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<String> {
+        if matches!(value, Value::Null) {
+            self.emit_display_diagnostic(
+                "Deprecated",
+                PHP_E_DEPRECATED,
+                format!(
+                    "{function}: Passing null to parameter #2 ($namespace) of type string is deprecated"
+                ),
+                span,
+            )?;
+        }
+        let namespace = string_builtin_argument(function, "namespace", value, span)?;
+        if namespace.is_empty() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    "Argument #2 ($namespace) must not be empty",
+                ),
+            ));
+        }
+        Ok(namespace)
+    }
+
+    fn xmlreader_from_stream(
+        &mut self,
+        object: &PhpObject,
+        values: &[Value],
+        span: Span,
+    ) -> CompileResult<Value> {
+        if values.is_empty() || values.len() > 3 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "XMLReader::fromStream()",
+                    ArityExpectation::Between { min: 1, max: 3 },
+                    values.len(),
+                ),
+            ));
+        }
+        xmlreader_validate_encoding_argument("XMLReader::fromStream()", values.get(1), span)?;
+        let source = self.stream_read_to_string("XMLReader::fromStream", &values[0], None, span)?;
         self.xmlreader_load_source(object, source, String::new(), span)?;
         Ok(Value::Bool(true))
+    }
+
+    fn xmlreader_set_schema_like(
+        &self,
+        object: &PhpObject,
+        values: &[Value],
+        function: &'static str,
+        span: Span,
+    ) -> CompileResult<Value> {
+        expect_arity(function.trim_end_matches("()"), values, 1, span)?;
+        let filename = string_builtin_argument(function, "filename", &values[0], span)?;
+        if filename.is_empty() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    "Argument #1 ($filename) must not be empty",
+                ),
+            ));
+        }
+        if !self.xmlreader_state(object, span)?.loaded {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(function, "Schema must be set prior to reading"),
+            ));
+        }
+        Ok(Value::Bool(false))
     }
 
     fn xmlreader_load_source(
@@ -62001,7 +62343,13 @@ impl Interpreter {
                 .call_uri_whatwg_url_method(object, method_name, args, span, caller_scope)
                 .map(|value| (value, None));
         }
-        if object.is_instance_of_class_name("XMLReader") {
+        if object.is_instance_of_class_name("XMLReader")
+            && self.instance_method_resolves_to_core_class(
+                &object,
+                method_name,
+                Self::resolved_method_is_core_xmlreader,
+            )
+        {
             return self
                 .call_xmlreader_method(object, method_name, args, span, caller_scope)
                 .map(|value| (value, None));
@@ -62052,16 +62400,6 @@ impl Interpreter {
             method
         };
 
-        if is_static {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    format!("{class_name}::{method_name}()"),
-                    "static method dispatch through object receivers is not implemented",
-                ),
-            ));
-        }
-
         if !self.method_visible_for_dispatch(
             Some(object.class_id()),
             class_id,
@@ -62089,6 +62427,34 @@ impl Interpreter {
                 return Ok((value, None));
             }
             return Err(self.method_visibility_error(&class_name, method_name, visibility, span));
+        }
+
+        if is_static {
+            if object.is_instance_of_class_name("XMLReader") {
+                let function =
+                    self.method_function(class_id, &class_name, &resolved_method_name, span)?;
+                let function = function.as_ref();
+                Self::ensure_user_function_expr_arity_unless_spread(function, args, span)?;
+                return self
+                    .call_source_aware_user_function_with_expr_args(
+                        function,
+                        args,
+                        span,
+                        caller_scope,
+                        None,
+                        Some(class_id),
+                        Some(object.class_id()),
+                        Vec::new(),
+                    )
+                    .map(|(value, source)| (value, source));
+            }
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{class_name}::{method_name}()"),
+                    "static method dispatch through object receivers is not implemented",
+                ),
+            ));
         }
 
         if self.resolved_method_is_core_array_object(class_id) {
@@ -70396,6 +70762,7 @@ impl Interpreter {
         }
         if self.is_xmlreader_class_id(class_id)
             && xmlreader_static_factory_method_name(method_name).is_some()
+            && self.method_resolves_to_core_xmlreader(class_id, method_name)
         {
             return self.call_xmlreader_static_method(
                 class_id,
@@ -70595,6 +70962,7 @@ impl Interpreter {
         }
         if self.is_xmlreader_class_id(receiver_class_id)
             && xmlreader_static_factory_method_name(method_name).is_some()
+            && self.method_resolves_to_core_xmlreader(receiver_class_id, method_name)
         {
             return self.call_xmlreader_static_method(
                 receiver_class_id,
@@ -130392,6 +130760,11 @@ fn reflection_internal_method_params(
             reflection_internal_optional_null_param("countryCode", "?string"),
         ];
     }
+    if class_name.eq_ignore_ascii_case("XMLReader") && method_name.eq_ignore_ascii_case("expand") {
+        return vec![reflection_internal_optional_null_param(
+            "baseNode", "?DOMNode",
+        )];
+    }
     if class_name.eq_ignore_ascii_case("SplFileObject") {
         if method_name.eq_ignore_ascii_case("fgetcsv")
             || method_name.eq_ignore_ascii_case("setCsvControl")
@@ -134741,9 +135114,20 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
         for prefix in [
             "unsupported call XMLReader::read(): ",
             "unsupported call XMLReader::next(): ",
+            "unsupported call XMLReader::open(): ",
+            "unsupported call XMLReader::setParserProperty(): ",
+            "unsupported call XMLReader::getParserProperty(): ",
+            "unsupported call XMLReader::setRelaxNGSchema(): ",
+            "unsupported call XMLReader::setSchema(): ",
         ] {
             if let Some(message) = error.message.strip_prefix(prefix) {
-                if message == "Data must be loaded before reading" {
+                if matches!(
+                    message,
+                    "Data must be loaded before reading"
+                        | "Unable to open source data"
+                        | "Cannot access parser properties before loading data"
+                        | "Schema must be set prior to reading"
+                ) {
                     return Some(("Error", message.to_string()));
                 }
             }
@@ -136496,19 +136880,36 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         ) => Some(format!("{function}: {message}")),
         (
             "XMLReader::XML()",
-            "Argument #1 ($source) must not be empty",
+            "Argument #1 ($source) must not be empty"
+                | "Argument #2 ($encoding) must not contain any null bytes"
+                | "Argument #2 ($encoding) must be a valid character encoding",
         )
         | (
             "XMLReader::open()",
-            "Argument #1 ($uri) must not be empty",
+            "Argument #1 ($uri) must not be empty"
+                | "Argument #2 ($encoding) must not contain any null bytes"
+                | "Argument #2 ($encoding) must be a valid character encoding",
+        )
+        | (
+            "XMLReader::fromStream()",
+            "Argument #2 ($encoding) must not contain any null bytes"
+                | "Argument #2 ($encoding) must be a valid character encoding",
         )
         | (
             "XMLReader::moveToAttribute()",
             "Argument #1 ($name) must not be empty",
         )
         | (
+            "XMLReader::moveToAttributeNs()",
+            "Argument #2 ($namespace) must not be empty",
+        )
+        | (
             "XMLReader::getAttribute()",
             "Argument #1 ($name) must not be empty",
+        )
+        | (
+            "XMLReader::getAttributeNs()",
+            "Argument #2 ($namespace) must not be empty",
         )
         | (
             "XMLReader::getParserProperty()",
@@ -136517,6 +136918,14 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         | (
             "XMLReader::setParserProperty()",
             "Argument #1 ($property) must be a valid parser property",
+        )
+        | (
+            "XMLReader::setRelaxNGSchema()",
+            "Argument #1 ($filename) must not be empty",
+        )
+        | (
+            "XMLReader::setSchema()",
+            "Argument #1 ($filename) must not be empty",
         ) => Some(format!("{function}: {message}")),
         (
             "ReflectionParameter::__construct()",
@@ -146169,8 +146578,69 @@ fn xmlreader_static_factory_method_name(method: &str) -> Option<&'static str> {
     match method.to_ascii_lowercase().as_str() {
         "fromstring" | "xml" => Some("XML"),
         "fromuri" | "open" => Some("open"),
+        "fromstream" => Some("fromStream"),
         _ => None,
     }
+}
+
+fn xmlreader_method_parameter_index(method_name: &str, name: &str) -> Option<usize> {
+    match method_name.to_ascii_lowercase().as_str() {
+        "open" | "fromuri" => match name {
+            "uri" => Some(0),
+            "encoding" => Some(1),
+            "flags" | "options" => Some(2),
+            _ => None,
+        },
+        "xml" | "fromstring" => match name {
+            "source" => Some(0),
+            "encoding" => Some(1),
+            "flags" | "options" => Some(2),
+            _ => None,
+        },
+        "fromstream" => match name {
+            "stream" => Some(0),
+            "encoding" => Some(1),
+            "flags" | "options" => Some(2),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn xmlreader_validate_encoding_argument(
+    function: &'static str,
+    value: Option<&Value>,
+    span: Span,
+) -> CompileResult<()> {
+    let Some(value) = value else {
+        return Ok(());
+    };
+    if matches!(value, Value::Null) {
+        return Ok(());
+    }
+    let encoding = string_builtin_argument(function, "encoding", value, span)?;
+    if encoding.contains('\0') {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                "Argument #2 ($encoding) must not contain any null bytes",
+            ),
+        ));
+    }
+    if !matches!(
+        encoding.to_ascii_lowercase().as_str(),
+        "" | "utf-8" | "utf8" | "us-ascii" | "iso-8859-1"
+    ) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                "Argument #2 ($encoding) must be a valid character encoding",
+            ),
+        ));
+    }
+    Ok(())
 }
 
 fn xmlreader_parser_property_argument(
@@ -146403,7 +146873,18 @@ fn xmlreader_parse_events(source: &str) -> Vec<BoundedXmlReaderEvent> {
         if xmlreader_starts_with(source, pos, "<?") {
             pos = xmlreader_find_after(source, pos + 2, "?>").unwrap_or(source.len());
         } else if xmlreader_starts_with(source, pos, "<!--") {
-            pos = xmlreader_find_after(source, pos + 4, "-->").unwrap_or(source.len());
+            let comment_start = pos + "<!--".len();
+            let Some(comment_end_relative) = source[comment_start..].find("-->") else {
+                break;
+            };
+            let comment_end = comment_start + comment_end_relative;
+            events.push(xmlreader_text_event(
+                XML_READER_COMMENT,
+                "#comment",
+                source[comment_start..comment_end].to_string(),
+                0,
+            ));
+            pos = comment_end + "-->".len();
         } else if xmlreader_starts_with(source, pos, "<!DOCTYPE") {
             pos = xmlreader_skip_doctype(source, pos).unwrap_or(source.len());
         } else if xmlreader_starts_with(source, pos, "<")
@@ -146545,6 +147026,7 @@ fn xmlreader_parse_element(
     let content_start = start_tag_end;
     let mut content_end = content_start;
     let mut string_value = String::new();
+    let mut closed = false;
     while pos < source.len() {
         if xmlreader_starts_with(source, pos, "</") {
             content_end = pos;
@@ -146554,10 +147036,23 @@ fn xmlreader_parse_element(
             if let Some(end_relative) = source[pos..].find('>') {
                 pos += end_relative + 1;
             }
+            closed = true;
             break;
         }
         if xmlreader_starts_with(source, pos, "<!--") {
-            pos = xmlreader_find_after(source, pos + 4, "-->").unwrap_or(source.len());
+            let comment_start = pos + "<!--".len();
+            let Some(comment_end_relative) = source[comment_start..].find("-->") else {
+                break;
+            };
+            let comment_end = comment_start + comment_end_relative;
+            events.push(xmlreader_text_event(
+                XML_READER_COMMENT,
+                "#comment",
+                source[comment_start..comment_end].to_string(),
+                depth + 1,
+            ));
+            pos = comment_end + "-->".len();
+            content_end = pos;
             continue;
         }
         if xmlreader_starts_with(source, pos, "<?") {
@@ -146623,7 +147118,10 @@ fn xmlreader_parse_element(
         event.outer_xml = source[start..pos.min(source.len())].to_string();
         event.inner_xml = source[content_start..content_end.min(source.len())].to_string();
         event.string_value = string_value.clone();
-        event.matching_end = Some(matching_end);
+        event.matching_end = closed.then_some(matching_end);
+    }
+    if !closed {
+        return (pos, string_value);
     }
     events.push(BoundedXmlReaderEvent {
         node_type: XML_READER_END_ELEMENT,

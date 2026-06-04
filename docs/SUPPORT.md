@@ -11384,16 +11384,22 @@
   readonly DOM property-hook write diagnostics, and native DOM/libxml
   execution remain unsupported.
   The XMLReader core class slice includes node-type and parser-property
-  constants, readonly metadata properties, simple `open()` / `XML()` source
-  loading, `read()` / `next()` event traversal, element/text/end-element event
-  metadata, simple namespace declaration inheritance, attribute cursor movement
-  and lookup by name/index/namespace, `moveToElement()`, `readInnerXml()`,
-  `readOuterXml()`, `readString()`, catchable empty-argument `ValueError`s,
-  missing-source warnings, and simple external-DTD default attributes through
+  constants, readonly metadata properties, simple `open()` / `XML()` /
+  `fromUri()` / `fromString()` / readable local-or-memory `fromStream()` source
+  loading, `read()` / `next()` event traversal, element/text/CDATA/comment/
+  end-element event metadata, simple namespace declaration inheritance,
+  attribute cursor movement and lookup by name/index/namespace,
+  `moveToElement()`, `readInnerXml()`, `readOuterXml()`, `readString()`,
+  catchable empty-argument and encoding `ValueError`s, missing-source warnings
+  or factory `Error`s, empty/preload `setSchema()` / `setRelaxNGSchema()`
+  diagnostics, userland static `open()` override dispatch, zero-argument
+  XMLReader subclass constructor execution after successful factory source
+  loading, and simple external-DTD default attributes through
   `XMLReader::DEFAULTATTRS`. Full libxml parser parity, malformed recovery,
-  entity expansion, validation, schema/RelaxNG behavior, stream contexts,
-  encoding conversion, broad DTD grammars, comment/PI event payload parity,
-  XMLReader subclass constructor side effects, and native lowering remain
+  entity expansion, validation, real schema/RelaxNG behavior, stream contexts
+  beyond readable local/memory payloads, encoding conversion, broad DTD
+  grammars, processing-instruction event payload parity, XMLReader subclass
+  constructor arguments/property-hook side effects, and native lowering remain
   unsupported.
   Simple class-body `use TraitName;`, repeated simple trait-use declarations,
   and `use TraitA, TraitB;` compose already-declared public trait constants and
