@@ -724,6 +724,7 @@ struct ResolvedConstant {
     declaring_class_id: Option<ClassId>,
     declaring_name: String,
     visibility: Visibility,
+    is_final: bool,
     type_decl: Option<TypeDecl>,
     value: Expr,
     kind: ConstantOwnerKind,
@@ -1287,6 +1288,7 @@ struct ReflectionClassConstantState {
     declaring_class_id: Option<ClassId>,
     name: String,
     visibility: Visibility,
+    is_final: bool,
     type_decl: Option<TypeDecl>,
     value: Expr,
     kind: ConstantOwnerKind,
@@ -1300,6 +1302,7 @@ impl ReflectionClassConstantState {
             declaring_class_id: resolved.declaring_class_id,
             name: requested_name.to_string(),
             visibility: resolved.visibility,
+            is_final: resolved.is_final,
             type_decl: resolved.type_decl,
             value: resolved.value,
             kind: resolved.kind,
@@ -60281,6 +60284,7 @@ impl Interpreter {
                     declaring_class_id: None,
                     declaring_name: trait_decl.name.clone(),
                     visibility: runtime_visibility(constant_decl.visibility),
+                    is_final: constant_decl.is_final,
                     type_decl: constant_decl.type_decl,
                     value: constant_decl.value,
                     kind: ConstantOwnerKind::Class,
@@ -60347,6 +60351,7 @@ impl Interpreter {
                             declaring_class_id: None,
                             name: constant.name,
                             visibility: runtime_visibility(constant.visibility),
+                            is_final: constant.is_final,
                             type_decl: constant.type_decl,
                             value: constant.value,
                             kind: ConstantOwnerKind::Class,
@@ -60406,6 +60411,7 @@ impl Interpreter {
             declaring_class_id: Some(class_id),
             name: metadata.name().to_string(),
             visibility: metadata.visibility(),
+            is_final: metadata.is_final(),
             type_decl: constant.type_decl.clone(),
             value: constant.value.clone(),
             kind: ConstantOwnerKind::Class,
@@ -60447,6 +60453,7 @@ impl Interpreter {
                 declaring_class_id: None,
                 name: constant.name.clone(),
                 visibility: Visibility::Public,
+                is_final: constant.is_final,
                 type_decl: constant.type_decl.clone(),
                 value: constant.value.clone(),
                 kind: ConstantOwnerKind::Interface,
@@ -63767,7 +63774,7 @@ impl Interpreter {
             }
             "isfinal" => {
                 expect_expr_arity("ReflectionClassConstant::isFinal", args.len(), 0, span)?;
-                Ok(Value::Bool(false))
+                Ok(Value::Bool(state.is_final))
             }
             "isdeprecated" => {
                 expect_expr_arity("ReflectionClassConstant::isDeprecated", args.len(), 0, span)?;
@@ -68766,6 +68773,7 @@ impl Interpreter {
                     declaring_class_id: Some(current_id),
                     declaring_name: class.name().to_string(),
                     visibility: metadata.visibility(),
+                    is_final: constant_decl.is_final,
                     type_decl: constant_decl.type_decl.clone(),
                     value: constant_decl.value.clone(),
                     kind: ConstantOwnerKind::Class,
@@ -68805,6 +68813,7 @@ impl Interpreter {
                     declaring_class_id: None,
                     declaring_name: interface.name.clone(),
                     visibility: Visibility::Public,
+                    is_final: constant_decl.is_final,
                     type_decl: constant_decl.type_decl.clone(),
                     value: constant_decl.value.clone(),
                     kind: ConstantOwnerKind::Interface,
@@ -68844,6 +68853,7 @@ impl Interpreter {
                 declaring_class_id: None,
                 declaring_name: interface.name.clone(),
                 visibility: Visibility::Public,
+                is_final: constant_decl.is_final,
                 type_decl: constant_decl.type_decl.clone(),
                 value: constant_decl.value.clone(),
                 kind: ConstantOwnerKind::Interface,
@@ -114610,6 +114620,17 @@ fn collect_class_constant_modifier_startup_diagnostics(
                 );
                 return;
             }
+            if constant.is_final && constant.visibility == ClassVisibility::Private {
+                diagnostics.set_fatal(
+                    format!(
+                        "Private constant {}::{} cannot be final as it is not visible to other classes",
+                        class.name, constant.name
+                    ),
+                    source_file,
+                    constant.span.line,
+                );
+                return;
+            }
         }
     }
 }
@@ -114693,6 +114714,19 @@ fn collect_class_constant_inheritance_startup_diagnostics(
 ) {
     let classes = top_level_class_startup_lookup(program);
     let interfaces = top_level_interface_startup_lookup(program);
+
+    for stmt in &program.statements {
+        let Stmt::Interface(interface) = stmt else {
+            continue;
+        };
+        if let Some((message, line)) =
+            interface_constant_inheritance_startup_diagnostic(&interfaces, interface)
+        {
+            diagnostics.set_fatal(message, source_file, line);
+            return;
+        }
+    }
+
     for stmt in &program.statements {
         let Stmt::Class(class) = stmt else {
             continue;
@@ -114701,10 +114735,24 @@ fn collect_class_constant_inheritance_startup_diagnostics(
             continue;
         }
 
+        if let Some((message, line)) =
+            class_constant_ambiguous_inheritance_startup_diagnostic(&classes, &interfaces, class)
+        {
+            diagnostics.set_fatal(message, source_file, line);
+            return;
+        }
+
         for constant in class.members.iter().filter_map(|member| match member {
             ClassMember::Constant(constant) => Some(constant),
             _ => None,
         }) {
+            if let Some((message, line)) =
+                class_interface_constant_startup_diagnostic(&classes, &interfaces, class, constant)
+            {
+                diagnostics.set_fatal(message, source_file, line);
+                return;
+            }
+
             let Some((parent, parent_constant)) =
                 inherited_startup_class_constant(&classes, class, &constant.name)
             else {
@@ -118252,6 +118300,313 @@ fn class_startup_constant(class: &ClassDecl, constant_name: &str) -> Option<Clas
     })
 }
 
+#[derive(Debug, Clone)]
+struct StartupInheritedConstant {
+    declaring_name: String,
+    name: String,
+    is_final: bool,
+    origin_key: String,
+}
+
+impl StartupInheritedConstant {
+    fn owner_display(&self) -> String {
+        format!("{}::{}", self.declaring_name, self.name)
+    }
+}
+
+fn interface_constant_inheritance_startup_diagnostic(
+    interfaces: &HashMap<String, &InterfaceDecl>,
+    interface: &InterfaceDecl,
+) -> Option<(String, usize)> {
+    let own_names = interface
+        .constants
+        .iter()
+        .map(|constant| constant.name.as_str())
+        .collect::<HashSet<_>>();
+    let mut inherited_by_name: HashMap<String, Vec<StartupInheritedConstant>> = HashMap::new();
+
+    for parent_name in &interface.parents {
+        let parent = interfaces
+            .get(&startup_class_lookup_key(parent_name))
+            .copied()?;
+        for constant in startup_interface_visible_constants(interfaces, parent)? {
+            if own_names.contains(constant.name.as_str()) {
+                continue;
+            }
+            inherited_by_name
+                .entry(constant.name.clone())
+                .or_default()
+                .push(constant);
+        }
+    }
+
+    for constants in inherited_by_name.values() {
+        if let Some((left, right)) = startup_ambiguous_constant_owners(constants) {
+            return Some((
+                format!(
+                    "Interface {} inherits both {left} and {right}, which is ambiguous",
+                    interface.name
+                ),
+                interface.span.line,
+            ));
+        }
+    }
+
+    None
+}
+
+fn class_constant_ambiguous_inheritance_startup_diagnostic(
+    classes: &HashMap<String, &ClassDecl>,
+    interfaces: &HashMap<String, &InterfaceDecl>,
+    class: &ClassDecl,
+) -> Option<(String, usize)> {
+    let own_names = class
+        .members
+        .iter()
+        .filter_map(|member| match member {
+            ClassMember::Constant(constant) => Some(constant.name.as_str()),
+            _ => None,
+        })
+        .collect::<HashSet<_>>();
+    let mut inherited_by_name: HashMap<String, Vec<StartupInheritedConstant>> = HashMap::new();
+
+    for constant in startup_parent_class_visible_constants(classes, class)? {
+        if own_names.contains(constant.name.as_str()) {
+            continue;
+        }
+        inherited_by_name
+            .entry(constant.name.clone())
+            .or_default()
+            .push(constant);
+    }
+
+    for constant in startup_class_interface_visible_constants(classes, interfaces, class)? {
+        if own_names.contains(constant.name.as_str()) {
+            continue;
+        }
+        inherited_by_name
+            .entry(constant.name.clone())
+            .or_default()
+            .push(constant);
+    }
+
+    for constants in inherited_by_name.values() {
+        if let Some((left, right)) = startup_ambiguous_constant_owners(constants) {
+            return Some((
+                format!(
+                    "Class {} inherits both {left} and {right}, which is ambiguous",
+                    class.name
+                ),
+                class.span.line,
+            ));
+        }
+    }
+
+    None
+}
+
+fn class_interface_constant_startup_diagnostic(
+    classes: &HashMap<String, &ClassDecl>,
+    interfaces: &HashMap<String, &InterfaceDecl>,
+    class: &ClassDecl,
+    constant: &ClassConstantDecl,
+) -> Option<(String, usize)> {
+    let interface_constants =
+        startup_class_interface_visible_constants(classes, interfaces, class)?;
+    let mut seen_origins = HashSet::new();
+    for interface_constant in interface_constants
+        .into_iter()
+        .filter(|item| item.name == constant.name)
+    {
+        if !seen_origins.insert(interface_constant.origin_key.clone()) {
+            continue;
+        }
+        if interface_constant.is_final {
+            return Some((
+                format!(
+                    "{}::{} cannot override final constant {}",
+                    class.name,
+                    constant.name,
+                    interface_constant.owner_display()
+                ),
+                constant.span.line,
+            ));
+        }
+        if constant.visibility != ClassVisibility::Public {
+            return Some((
+                format!(
+                    "Access level to {}::{} must be public (as in interface {})",
+                    class.name, constant.name, interface_constant.declaring_name
+                ),
+                constant.span.line,
+            ));
+        }
+    }
+
+    None
+}
+
+fn startup_parent_class_visible_constants(
+    classes: &HashMap<String, &ClassDecl>,
+    class: &ClassDecl,
+) -> Option<Vec<StartupInheritedConstant>> {
+    let mut constants = Vec::new();
+    let Some(mut parent_name) = class.parent.as_deref() else {
+        return Some(constants);
+    };
+    let mut shadowed = HashSet::new();
+    let mut visited = HashSet::new();
+
+    loop {
+        let key = startup_class_lookup_key(parent_name);
+        if !visited.insert(key.clone()) {
+            return None;
+        }
+        let parent = classes.get(&key).copied()?;
+        for constant in parent.members.iter().filter_map(|member| match member {
+            ClassMember::Constant(constant) => Some(constant),
+            _ => None,
+        }) {
+            if constant.visibility == ClassVisibility::Private
+                || !shadowed.insert(constant.name.clone())
+            {
+                continue;
+            }
+            constants.push(StartupInheritedConstant {
+                declaring_name: parent.name.clone(),
+                name: constant.name.clone(),
+                is_final: constant.is_final,
+                origin_key: format!(
+                    "{}::{}",
+                    startup_class_lookup_key(&parent.name),
+                    constant.name
+                ),
+            });
+        }
+        let Some(next_parent_name) = parent.parent.as_deref() else {
+            break;
+        };
+        parent_name = next_parent_name;
+    }
+
+    Some(constants)
+}
+
+fn startup_class_interface_visible_constants(
+    classes: &HashMap<String, &ClassDecl>,
+    interfaces: &HashMap<String, &InterfaceDecl>,
+    class: &ClassDecl,
+) -> Option<Vec<StartupInheritedConstant>> {
+    let mut constants = Vec::new();
+    let mut current = Some(class);
+    let mut visited_classes = HashSet::new();
+    let mut is_current_class = true;
+
+    while let Some(class_decl) = current {
+        let class_key = startup_class_lookup_key(&class_decl.name);
+        if !visited_classes.insert(class_key) {
+            return None;
+        }
+        let class_declared_constant_names = class_decl
+            .members
+            .iter()
+            .filter_map(|member| match member {
+                ClassMember::Constant(constant) => Some(constant.name.as_str()),
+                _ => None,
+            })
+            .collect::<HashSet<_>>();
+        for interface_name in &class_decl.interfaces {
+            let interface = interfaces
+                .get(&startup_class_lookup_key(interface_name))
+                .copied()?;
+            for constant in startup_interface_visible_constants(interfaces, interface)? {
+                if !is_current_class
+                    && class_declared_constant_names.contains(constant.name.as_str())
+                {
+                    continue;
+                }
+                constants.push(constant);
+            }
+        }
+        current = class_decl
+            .parent
+            .as_deref()
+            .map(startup_class_lookup_key)
+            .and_then(|key| classes.get(&key).copied());
+        is_current_class = false;
+    }
+
+    Some(constants)
+}
+
+fn startup_interface_visible_constants(
+    interfaces: &HashMap<String, &InterfaceDecl>,
+    interface: &InterfaceDecl,
+) -> Option<Vec<StartupInheritedConstant>> {
+    startup_interface_visible_constants_inner(interfaces, interface, &mut HashSet::new())
+}
+
+fn startup_interface_visible_constants_inner(
+    interfaces: &HashMap<String, &InterfaceDecl>,
+    interface: &InterfaceDecl,
+    path: &mut HashSet<String>,
+) -> Option<Vec<StartupInheritedConstant>> {
+    let key = startup_class_lookup_key(&interface.name);
+    if !path.insert(key.clone()) {
+        return None;
+    }
+
+    let own_names = interface
+        .constants
+        .iter()
+        .map(|constant| constant.name.as_str())
+        .collect::<HashSet<_>>();
+    let mut constants = interface
+        .constants
+        .iter()
+        .map(|constant| StartupInheritedConstant {
+            declaring_name: interface.name.clone(),
+            name: constant.name.clone(),
+            is_final: constant.is_final,
+            origin_key: format!(
+                "{}::{}",
+                startup_class_lookup_key(&interface.name),
+                constant.name
+            ),
+        })
+        .collect::<Vec<_>>();
+
+    for parent_name in &interface.parents {
+        let parent = interfaces
+            .get(&startup_class_lookup_key(parent_name))
+            .copied()?;
+        for constant in startup_interface_visible_constants_inner(interfaces, parent, path)? {
+            if !own_names.contains(constant.name.as_str()) {
+                constants.push(constant);
+            }
+        }
+    }
+
+    path.remove(&key);
+    Some(constants)
+}
+
+fn startup_ambiguous_constant_owners(
+    constants: &[StartupInheritedConstant],
+) -> Option<(String, String)> {
+    let mut seen = HashSet::new();
+    let mut owners = Vec::new();
+    for constant in constants {
+        if seen.insert(constant.origin_key.clone()) {
+            owners.push(constant.owner_display());
+            if owners.len() == 2 {
+                return Some((owners[0].clone(), owners[1].clone()));
+            }
+        }
+    }
+    None
+}
+
 fn inherited_property_startup_diagnostic_message(
     classes: &HashMap<String, &ClassDecl>,
     interfaces: &HashMap<String, &InterfaceDecl>,
@@ -118534,6 +118889,13 @@ fn inherited_class_constant_startup_diagnostic_message(
     parent_name: &str,
     parent_constant: &ClassConstantDecl,
 ) -> Option<String> {
+    if parent_constant.is_final {
+        return Some(format!(
+            "{}::{} cannot override final constant {}::{}",
+            class_name, constant.name, parent_name, parent_constant.name
+        ));
+    }
+
     if !startup_class_constant_types_are_compatible(
         classes,
         interfaces,
@@ -120311,6 +120673,7 @@ fn seed_core_class_constant_runtime_tables(
                 visibility: ClassVisibility::Public,
                 is_static: false,
                 is_abstract: false,
+                is_final: false,
                 is_readonly: false,
                 type_decl: None,
                 value: Expr::Int(value, span),
@@ -120344,6 +120707,7 @@ fn seed_core_class_constant_runtime_tables(
                     visibility: ClassVisibility::Public,
                     is_static: false,
                     is_abstract: false,
+                    is_final: false,
                     is_readonly: false,
                     type_decl: None,
                     value: Expr::Int(value, span),
@@ -120364,6 +120728,7 @@ fn seed_core_class_constant_runtime_tables(
                         visibility: ClassVisibility::Public,
                         is_static: false,
                         is_abstract: false,
+                        is_final: false,
                         is_readonly: false,
                         type_decl: None,
                         value: Expr::String(value.to_string(), span),
@@ -120387,6 +120752,7 @@ fn seed_core_class_constant_runtime_tables(
                     visibility: ClassVisibility::Public,
                     is_static: false,
                     is_abstract: false,
+                    is_final: false,
                     is_readonly: false,
                     type_decl: None,
                     value: Expr::Int(value, span),
@@ -120411,6 +120777,7 @@ fn seed_core_class_constant_runtime_tables(
                     visibility: ClassVisibility::Public,
                     is_static: false,
                     is_abstract: false,
+                    is_final: false,
                     is_readonly: false,
                     type_decl: None,
                     value: Expr::Int(value, span),
@@ -120435,6 +120802,7 @@ fn seed_core_class_constant_runtime_tables(
                     visibility: ClassVisibility::Public,
                     is_static: false,
                     is_abstract: false,
+                    is_final: false,
                     is_readonly: false,
                     type_decl: None,
                     value: Expr::Int(value, span),
@@ -120466,6 +120834,7 @@ fn seed_core_class_constant_runtime_tables(
                     visibility: ClassVisibility::Public,
                     is_static: false,
                     is_abstract: false,
+                    is_final: false,
                     is_readonly: false,
                     type_decl: None,
                     value: Expr::Int(value, span),
@@ -120489,6 +120858,7 @@ fn seed_core_class_constant_runtime_tables(
                         visibility: ClassVisibility::Public,
                         is_static: false,
                         is_abstract: false,
+                        is_final: false,
                         is_readonly: false,
                         type_decl: None,
                         value: Expr::Int(value, span),
@@ -120517,6 +120887,7 @@ fn seed_core_class_constant_runtime_tables(
                     visibility: ClassVisibility::Public,
                     is_static: false,
                     is_abstract: false,
+                    is_final: false,
                     is_readonly: false,
                     type_decl: None,
                     value: Expr::Int(value, span),
@@ -120543,6 +120914,7 @@ fn seed_core_class_constant_runtime_tables(
                     visibility: ClassVisibility::Public,
                     is_static: false,
                     is_abstract: false,
+                    is_final: false,
                     is_readonly: false,
                     type_decl: None,
                     value: Expr::Int(value, span),
@@ -120576,6 +120948,7 @@ fn seed_core_class_constant_runtime_tables(
                     visibility: ClassVisibility::Public,
                     is_static: false,
                     is_abstract: false,
+                    is_final: false,
                     is_readonly: false,
                     type_decl: None,
                     value: Expr::Int(value, span),
@@ -120600,6 +120973,7 @@ fn seed_core_class_constant_runtime_tables(
                     visibility: ClassVisibility::Public,
                     is_static: false,
                     is_abstract: false,
+                    is_final: false,
                     is_readonly: false,
                     type_decl: None,
                     value: Expr::Int(value, span),
@@ -120629,6 +121003,7 @@ fn seed_core_class_constant_runtime_tables(
                     visibility: ClassVisibility::Public,
                     is_static: false,
                     is_abstract: false,
+                    is_final: false,
                     is_readonly: false,
                     type_decl: None,
                     value: Expr::Int(value, span),
@@ -120647,6 +121022,7 @@ fn seed_core_class_constant_runtime_tables(
                 visibility: ClassVisibility::Public,
                 is_static: false,
                 is_abstract: false,
+                is_final: false,
                 is_readonly: false,
                 type_decl: None,
                 value: Expr::Int(PHP_REFLECTION_ATTRIBUTE_IS_INSTANCEOF, span),
@@ -120753,7 +121129,8 @@ fn register_class_members(
 
     for constant in composed_trait_constants(class, trait_lookup)? {
         let visibility = runtime_visibility(constant.visibility);
-        let metadata_constant = PhpClassConstantMetadata::new(&constant.name, visibility);
+        let metadata_constant =
+            PhpClassConstantMetadata::new(&constant.name, visibility).with_final(constant.is_final);
         classes
             .get_mut(id)
             .expect("declared class id should resolve to class metadata")
@@ -120878,7 +121255,8 @@ fn register_class_members(
             }
             ClassMember::Constant(constant) => {
                 let visibility = runtime_visibility(constant.visibility);
-                let metadata_constant = PhpClassConstantMetadata::new(&constant.name, visibility);
+                let metadata_constant = PhpClassConstantMetadata::new(&constant.name, visibility)
+                    .with_final(constant.is_final);
                 classes
                     .get_mut(id)
                     .expect("declared class id should resolve to class metadata")
@@ -124997,11 +125375,15 @@ fn directory_reflection_class_to_string() -> &'static str {
 }
 
 fn reflection_class_constant_modifier_mask(constant: &ReflectionClassConstantState) -> i64 {
-    match constant.visibility {
+    let mut mask = match constant.visibility {
         Visibility::Public => REFLECTION_MODIFIER_PUBLIC,
         Visibility::Protected => REFLECTION_MODIFIER_PROTECTED,
         Visibility::Private => REFLECTION_MODIFIER_PRIVATE,
+    };
+    if constant.is_final {
+        mask |= REFLECTION_MODIFIER_FINAL;
     }
+    mask
 }
 
 fn reflection_class_constant_matches_filter(

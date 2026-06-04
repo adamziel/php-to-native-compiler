@@ -3639,8 +3639,14 @@ and `constant(...)` resolves through the same class-constant visibility checks
 as direct `ClassName::CONST`, including catchable `Error` objects for invalid
 protected/private access. Private parent class constants are skipped during
 child-class lookup, so child reads of a private parent constant resolve as the
-child's undefined constant. Built-in error-level constants follow the current
-PHP 8.4+ mask surface where `E_ALL` excludes removed `E_STRICT`; bare
+child's undefined constant. Class and interface constant metadata records the
+bounded `final` modifier; startup validation rejects private final class
+constants, overrides of final class/interface constants, reduced inherited
+class-constant visibility, interface-constant visibility reductions, and
+ambiguous inherited constants from multiple interfaces or from both a class and
+an interface while deduplicating one common interface ancestor. Built-in
+error-level constants follow the current PHP 8.4+ mask surface where `E_ALL`
+excludes removed `E_STRICT`; bare
 `E_STRICT` reads route through the normal display-deprecation path. This does
 not model bare namespace constant fallback reads, autoload-triggered class
 discovery, broader `self`/`parent`/`static` string names, host extension

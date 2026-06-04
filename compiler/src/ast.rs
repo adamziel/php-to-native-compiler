@@ -1000,6 +1000,7 @@ pub struct ClassConstantDecl {
     pub visibility: ClassVisibility,
     pub is_static: bool,
     pub is_abstract: bool,
+    pub is_final: bool,
     pub is_readonly: bool,
     pub type_decl: Option<TypeDecl>,
     pub value: Expr,

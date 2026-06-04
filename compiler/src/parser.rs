@@ -861,6 +861,7 @@ impl Parser {
             visibility: ClassVisibility::Public,
             is_static: false,
             is_abstract: false,
+            is_final: false,
             is_readonly: modifiers.is_readonly,
             type_decl: None,
             value,
@@ -1243,10 +1244,10 @@ impl Parser {
                 "unsupported interface constant declaration: static interface constants are not implemented",
             ));
         }
-        if modifiers.is_abstract || modifiers.is_final {
+        if modifiers.is_abstract {
             return Err(self.error_at(
-                modifiers.abstract_or_final_span().unwrap_or(const_span),
-                "unsupported interface constant declaration: abstract/final interface constants are not implemented",
+                modifiers.abstract_span.unwrap_or(const_span),
+                "unsupported interface constant declaration: abstract interface constants are not implemented",
             ));
         }
         if !matches!(modifiers.visibility, ClassVisibility::Public) {
@@ -1287,6 +1288,7 @@ impl Parser {
             visibility: ClassVisibility::Public,
             is_static: false,
             is_abstract: false,
+            is_final: modifiers.is_final,
             is_readonly: modifiers.is_readonly,
             type_decl: None,
             value,
@@ -1645,13 +1647,6 @@ impl Parser {
 
         if self.match_identifier("const") {
             self.pending_doc_comment = None;
-            let const_span = self.previous().span;
-            if modifiers.is_final && !modifiers.has_diagnostics() {
-                return Err(self.error_at(
-                    modifiers.final_span.unwrap_or(const_span),
-                    unsupported_final_class_constant_message(),
-                ));
-            }
             let type_decl = if self.check_class_constant_type_declaration() {
                 Some(self.parse_type_decl(unsupported_class_constant_type_message())?)
             } else {
@@ -1670,6 +1665,7 @@ impl Parser {
                     visibility: modifiers.visibility,
                     is_static: modifiers.is_static,
                     is_abstract: modifiers.is_abstract,
+                    is_final: modifiers.is_final,
                     is_readonly: modifiers.is_readonly,
                     type_decl: type_decl.clone(),
                     value,
@@ -10046,10 +10042,6 @@ fn unsupported_class_member_modifier_message() -> &'static str {
 
 fn unsupported_abstract_final_property_message() -> &'static str {
     "unsupported abstract/final property declaration: abstract and final property modifiers are not implemented"
-}
-
-fn unsupported_final_class_constant_message() -> &'static str {
-    "unsupported final class constant declaration: final class constant modifiers are not implemented"
 }
 
 fn unsupported_readonly_class_member_modifier_message() -> &'static str {

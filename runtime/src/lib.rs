@@ -34462,6 +34462,7 @@ impl fmt::Display for ClassMemberKind {
 pub struct PhpClassConstantMetadata {
     name: String,
     visibility: Visibility,
+    is_final: bool,
 }
 
 impl PhpClassConstantMetadata {
@@ -34469,7 +34470,13 @@ impl PhpClassConstantMetadata {
         Self {
             name: name.into(),
             visibility,
+            is_final: false,
         }
+    }
+
+    pub fn with_final(mut self, is_final: bool) -> Self {
+        self.is_final = is_final;
+        self
     }
 
     pub fn name(&self) -> &str {
@@ -34478,6 +34485,10 @@ impl PhpClassConstantMetadata {
 
     pub fn visibility(&self) -> Visibility {
         self.visibility
+    }
+
+    pub fn is_final(&self) -> bool {
+        self.is_final
     }
 }
 

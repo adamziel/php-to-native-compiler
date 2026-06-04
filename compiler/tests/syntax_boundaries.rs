@@ -1221,34 +1221,11 @@ fn unsupported_abstract_final_property_declarations_have_stable_parse_errors() {
 }
 
 #[test]
-fn unsupported_final_class_constant_declarations_have_stable_parse_errors() {
-    let cases = [
-        (
-            "<?php\nclass Value {\n    final const ID = 1;\n}\n",
-            3,
-            5,
-            "unsupported final class constant declaration: final class constant modifiers are not implemented",
-        ),
-        (
-            "<?php\nclass Value {\n    public final const ID = 1;\n}\n",
-            3,
-            12,
-            "unsupported final class constant declaration: final class constant modifiers are not implemented",
-        ),
-        (
-            "<?php\nclass Value {\n    abstract final const ID = 1;\n}\n",
-            3,
-            14,
-            "unsupported final class constant declaration: final class constant modifiers are not implemented",
-        ),
-    ];
-
-    for (source, line, column, message) in cases {
-        let error = parse_error(source);
-        assert_eq!(error.line, line);
-        assert_eq!(error.column, column);
-        assert_eq!(error.message, message);
-    }
+fn final_class_constant_declarations_parse_for_startup_validation() {
+    parse(
+        "<?php\nclass Value {\n    final const ID = 1;\n    public final const NAME = 'value';\n}\ninterface Contract {\n    final public const TOKEN = 'contract';\n}\n",
+    )
+    .unwrap();
 }
 
 #[test]
@@ -1378,7 +1355,7 @@ fn emit_ir_rejects_asymmetric_property_visibility_at_parse_boundary() {
 }
 
 #[test]
-fn emit_ir_rejects_abstract_final_non_method_members_at_parse_boundary() {
+fn emit_ir_rejects_abstract_non_method_members_at_parse_boundary() {
     let property_error =
         php_compiler::emit_ir_source("<?php\nclass Value {\n    abstract $id;\n}\n").unwrap_err();
 
@@ -1386,16 +1363,6 @@ fn emit_ir_rejects_abstract_final_non_method_members_at_parse_boundary() {
     assert_eq!(
         property_error.message,
         "unsupported abstract/final property declaration: abstract and final property modifiers are not implemented"
-    );
-
-    let const_error =
-        php_compiler::emit_ir_source("<?php\nclass Value {\n    final const ID = 1;\n}\n")
-            .unwrap_err();
-
-    assert_eq!(const_error.phase, Phase::Parse);
-    assert_eq!(
-        const_error.message,
-        "unsupported final class constant declaration: final class constant modifiers are not implemented"
     );
 }
 

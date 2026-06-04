@@ -684,7 +684,7 @@ type declaration enforcement, cast behavior outside the current `(string)`,
 `(float)`/`(double)` slices plus the null/scalar/array `(array)` slice,
 full PHP `@expr` behavior beyond bounded suppression, including exact severity,
 recovery values, and `error_reporting()` mask interactions,
-typed/non-public/abstract/final or multi-constant interface
+typed/non-public/abstract/static or multi-constant interface
 declarations, full interface signature
 enforcement, broad built-in/internal interface method enforcement/catalogs
 beyond the current `Countable`, `Iterator`, and `IteratorAggregate` shape
@@ -743,7 +743,7 @@ intersection property type checks, parenthesized DNF-shaped typed property
 declarations, exact PHP union scalar coercion preference rules, readonly
 runtime write-once enforcement and reflection metadata, promoted
 constructor property semantics beyond bounded metadata/startup diagnostics,
-typed, final, or multi-declarator class constants, dynamic method names, dynamic
+class constants outside the bounded final/literal/type startup lanes, dynamic method names, dynamic
 property creation outside `stdClass` and `wpdb`, non-public dynamic property
 access outside valid method visibility contexts,
 nullsafe object access `?->`, PHP 8 `match` expressions,

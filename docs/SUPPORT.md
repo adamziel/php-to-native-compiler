@@ -3280,7 +3280,7 @@
   modifiers, final abstract methods, and final abstract classes report bounded
   PHP-shaped startup fatals before class member metadata is registered.
   Duplicate readonly/promoted-property modifiers, invalid abstract/final
-  properties, final class constants, and broader exact compile-time diagnostic
+  properties, readonly class constants, and broader exact compile-time diagnostic
   object parity remain outside this diagnostic slice. Top-level classes are
   pre-registered before execution. Braced nested declarations in control-flow
   bodies, function/method bodies, switch cases, and included files register
@@ -3509,14 +3509,22 @@
   declared or inherited visible static method from that receiver class, execute
   without `$this`, and preserve the receiver class as the called-class context
   for `static::` and `get_called_class()`.
-- class constants declared as `const NAME = value;` or
-  `public|protected|private const NAME = value;` with values from the current
-  constant-expression subset. A bounded typed class-constant parser/startup
+- class constants declared as `const NAME = value;`,
+  `public|protected|private const NAME = value;`, or final variants of those
+  public/protected declarations with values from the current
+  constant-expression subset. Private final class constants emit PHP-shaped
+  startup fatals, and overriding a final class constant reports PHP's
+  final-constant startup fatal. A bounded typed class-constant parser/startup
   lane accepts `public|protected|private const Type NAME = literal;` and
   comma-separated class constants sharing one type; immediate literal defaults
   are checked against the declared scalar/array/null/union subset, and
   `callable`, `void`, and `never` class-constant types emit PHP-shaped startup
-  fatals. `ClassName::CONST`, `self::CONST`, and
+  fatals. Public interface constants also accept `final`, can be inherited,
+  and block direct class overrides; ambiguous inherited constants from
+  multiple interfaces or from a class plus an interface report PHP-shaped
+  startup fatals, while a duplicated common interface ancestor is deduplicated.
+  Interface constant visibility is invariant for class implementations.
+  `ClassName::CONST`, `self::CONST`, and
   `parent::CONST` resolve declared or inherited constants case-sensitively,
   enforce public/protected/private visibility in the current class context,
   and return null, bool, int, float, string, or array values. Direct
@@ -7333,9 +7341,9 @@
   storage/enforcement, references, reflection, and native lowering exist,
   legacy `var $property` declarations are treated as public untyped instance
   properties in the same metadata/runtime slot model as `public $property`;
-  multiple property declarations, unsupported class
-  constant declaration forms such as final class constants and typed
-  class-constant runtime expression or inheritance checks,
+  multiple property declarations, class
+  constant declaration forms outside the bounded final/type lanes and typed
+  class-constant runtime expression checks,
   malformed `clone` expressions, dynamic `instanceof` class operands,
   unsupported magic static receiver forms outside the current `static::class`,
   `static::method(...)`, and `static::$prop` slices,
@@ -12138,7 +12146,8 @@
   non-constant instance property defaults, multiple properties in
   one declaration, per-property defaults in multi-property declarations,
   typed class constants beyond the bounded literal-startup lane,
-  static/interface/trait/final class constants, typed static properties,
+  typed/static/non-public/abstract/multi-constant interface declarations,
+  static class constants, trait constants, typed static properties,
   storage-removing static-property unset,
   and anonymous classes
 - object receiver class constants, `$object::class`, and broader `static::`

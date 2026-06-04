@@ -4539,7 +4539,7 @@ echo Plugin::NAME;
     );
     assert_eq!(
         ambiguous.message,
-        "unsupported call Plugin::NAME: interface constant resolution is ambiguous between Primary::NAME, Secondary::NAME"
+        "Class Plugin inherits both Primary::NAME and Secondary::NAME, which is ambiguous"
     );
 
     let ambiguous_defined = runtime_error(
@@ -4556,7 +4556,7 @@ var_dump(defined("Plugin::NAME"));
     );
     assert_eq!(
         ambiguous_defined.message,
-        "unsupported call Plugin::NAME: interface constant resolution is ambiguous between Primary::NAME, Secondary::NAME"
+        "Class Plugin inherits both Primary::NAME and Secondary::NAME, which is ambiguous"
     );
 }
 
@@ -14093,6 +14093,157 @@ fn class_constant_invalid_modifiers_and_visibility_reductions_are_startup_fatals
         7,
         "Access level to B::protectedConst must be protected (as in class A) or weaker",
     );
+}
+
+#[test]
+fn final_class_and_interface_constants_report_php_startup_diagnostics() {
+    let execution = run_source(
+        r#"<?php
+class Foo {
+    final const A = "foo";
+    final public const B = "bar";
+}
+
+$constant = new ReflectionClassConstant(Foo::class, "A");
+echo Foo::A, "|", Foo::B, "|", ($constant->isFinal() ? "final" : "open"), "|", $constant->getModifiers(), "\n";
+"#,
+    )
+    .unwrap();
+    assert_eq!(execution.stdout, "foo|bar|final|33\n");
+    assert_eq!(execution.exit_code, 0);
+
+    let cases = [
+        (
+            r#"<?php
+class Foo {
+    final const A = "foo";
+}
+class Bar extends Foo {
+    const A = "bar";
+}
+"#,
+            "Bar::A cannot override final constant Foo::A",
+        ),
+        (
+            r#"<?php
+class Foo {
+    private final const A = "foo";
+}
+"#,
+            "Private constant Foo::A cannot be final as it is not visible to other classes",
+        ),
+        (
+            r#"<?php
+interface I {
+    final public const X = 1;
+}
+class C implements I {
+    const X = 2;
+}
+"#,
+            "C::X cannot override final constant I::X",
+        ),
+        (
+            r#"<?php
+interface I {
+    final public const X = 1;
+}
+class C implements I {
+    private const X = 2;
+}
+"#,
+            "C::X cannot override final constant I::X",
+        ),
+        (
+            r#"<?php
+interface I1 {
+    const C = 1;
+}
+interface I2 {
+    const C = 1;
+}
+class C implements I1, I2 {
+}
+"#,
+            "Class C inherits both I1::C and I2::C, which is ambiguous",
+        ),
+        (
+            r#"<?php
+class C {
+    const C = 1;
+}
+interface I {
+    const C = 1;
+}
+class C2 extends C implements I {
+}
+"#,
+            "Class C2 inherits both C::C and I::C, which is ambiguous",
+        ),
+        (
+            r#"<?php
+interface I1 {
+    const C = 1;
+}
+interface I2 {
+    const C = 2;
+}
+interface I3 extends I1, I2 {
+}
+"#,
+            "Interface I3 inherits both I1::C and I2::C, which is ambiguous",
+        ),
+        (
+            r#"<?php
+interface I {
+    public const FOO = "foo";
+}
+class C implements I {
+    private const FOO = "foo";
+}
+"#,
+            "Access level to C::FOO must be public (as in interface I)",
+        ),
+    ];
+
+    for (source, message) in cases {
+        let error = runtime_error(source);
+        assert_eq!(error.message, message);
+    }
+
+    let common_ancestor = run_source(
+        r#"<?php
+interface EntityInterface {
+    final public const TEST = "this";
+}
+interface KeyInterface extends EntityInterface {
+}
+interface StringableInterface extends EntityInterface {
+}
+class SomeTestClass implements KeyInterface, StringableInterface {
+}
+"#,
+    )
+    .unwrap();
+    assert_eq!(common_ancestor.stdout, "");
+    assert_eq!(common_ancestor.exit_code, 0);
+
+    let parent_override = run_source(
+        r#"<?php
+interface Named {
+    const NAME = "interface";
+}
+class BaseName implements Named {
+    const NAME = "class";
+}
+class ChildName extends BaseName {
+}
+echo ChildName::NAME;
+"#,
+    )
+    .unwrap();
+    assert_eq!(parent_override.stdout, "class");
+    assert_eq!(parent_override.exit_code, 0);
 }
 
 #[test]
