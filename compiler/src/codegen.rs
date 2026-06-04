@@ -1801,6 +1801,7 @@ fn native_value_print_r_params(span: Span) -> [FunctionParam; 2] {
             promotion: None,
             promotion_set_visibility: None,
             promotion_readonly: false,
+            promotion_final: false,
             attributes: Vec::new(),
             span,
         },
@@ -1813,6 +1814,7 @@ fn native_value_print_r_params(span: Span) -> [FunctionParam; 2] {
             promotion: None,
             promotion_set_visibility: None,
             promotion_readonly: false,
+            promotion_final: false,
             attributes: Vec::new(),
             span,
         },
@@ -19283,6 +19285,7 @@ impl CNativeBuiltinSignature {
                 promotion: None,
                 promotion_set_visibility: None,
                 promotion_readonly: false,
+                promotion_final: false,
                 attributes: Vec::new(),
                 span,
             })
@@ -19297,6 +19300,7 @@ impl CNativeBuiltinSignature {
                 promotion: None,
                 promotion_set_visibility: None,
                 promotion_readonly: false,
+                promotion_final: false,
                 attributes: Vec::new(),
                 span,
             });
@@ -72908,6 +72912,7 @@ echo " 10" < "zeta";
             promotion: None,
             promotion_set_visibility: None,
             promotion_readonly: false,
+            promotion_final: false,
             attributes: Vec::new(),
             span: test_span(),
         }
@@ -72926,6 +72931,7 @@ echo " 10" < "zeta";
             promotion: None,
             promotion_set_visibility: None,
             promotion_readonly: false,
+            promotion_final: false,
             attributes: Vec::new(),
             span: test_span(),
         }
@@ -75652,6 +75658,7 @@ echo $call("Ada");
             promotion: None,
             promotion_set_visibility: None,
             promotion_readonly: false,
+            promotion_final: false,
             attributes: Vec::new(),
             span: test_span(),
         };

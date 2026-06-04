@@ -4,6 +4,36 @@
 
 Implemented:
 
+- Added bounded property-hook declaration metadata diagnostics on the
+  interpreter path. Class properties now retain final-property metadata,
+  promoted constructor properties accept the `final` modifier (including
+  `final $prop` as a public promoted property), explicit `set(...)` hook
+  parameter metadata is parsed for startup checks, variadic set parameters are
+  rejected, set-hook parameter types are checked contravariantly against the
+  property type, and inherited set hooks reject narrowed child `set` parameter
+  types. Final parent properties, including final promoted properties, now
+  report PHP-shaped startup fatals when redeclared by child properties.
+  Focused proof covers exact-current pre-patch selected PHPT at `0/14` and
+  post-patch selected PHPT at `14/14` for
+  `Zend/tests/property_hooks/abstract_prop_final.phpt`,
+  `Zend/tests/property_hooks/final_prop.phpt`,
+  `Zend/tests/property_hooks/final_prop_2.phpt`,
+  `Zend/tests/property_hooks/final_prop_promoted_1.phpt`,
+  `Zend/tests/property_hooks/final_prop_promoted_2.phpt`,
+  `Zend/tests/property_hooks/final_prop_promoted_3.phpt`,
+  `Zend/tests/property_hooks/final_prop_promoted_4.phpt`,
+  `Zend/tests/property_hooks/final_prop_promoted_5.phpt`,
+  `Zend/tests/property_hooks/set_value_parameter_type_variance_001.phpt`,
+  `Zend/tests/property_hooks/set_value_parameter_type_variance_002.phpt`,
+  `Zend/tests/property_hooks/set_value_parameter_type_variance_003.phpt`,
+  `Zend/tests/property_hooks/set_value_parameter_type_variance_005.phpt`,
+  `Zend/tests/property_hooks/set_value_parameter_type_variance_007.phpt`, and
+  `Zend/tests/property_hooks/set_variadic.phpt`, plus focused Rust
+  object-model coverage, build, fmt, and diff checks. Unsupported edges remain
+  executable hook body semantics, virtual/backed hook body classification,
+  autoload side effects during hook type compatibility, hook reflection
+  metadata, references/COW parity, and native lowering.
+
 - Added bounded runtime enforcement for asymmetric instance property setter
   visibility on the interpreter path. Declared `private(set)` /
   `protected(set)` metadata now reaches runtime object slots; direct writes,

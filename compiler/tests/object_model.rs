@@ -565,6 +565,107 @@ class ByValue implements Contract {
 }
 
 #[test]
+fn property_hook_set_parameter_metadata_is_validated() {
+    assert_php_startup_fatal(
+        r#"<?php
+class Test {
+    public string|array $prop {
+        set(string $prop) {}
+    }
+}
+"#,
+        "hook_set_param_variance.php",
+        4,
+        "Type of parameter $prop of hook Test::$prop::set must be compatible with property type",
+    );
+
+    assert_php_startup_fatal(
+        r#"<?php
+class Test {
+    public string $prop {
+        set($prop) {}
+    }
+}
+"#,
+        "hook_set_param_untyped.php",
+        4,
+        "Type of parameter $prop of hook Test::$prop::set must be compatible with property type",
+    );
+
+    let valid = run_source(
+        r#"<?php
+interface X {}
+interface Y extends X {}
+class Test {
+    public Y $prop {
+        set(X $prop) {}
+    }
+}
+echo "ok";
+"#,
+    )
+    .unwrap();
+    assert_eq!(valid.stdout, "ok");
+}
+
+#[test]
+fn final_property_metadata_blocks_inherited_redeclarations() {
+    assert_php_startup_fatal(
+        r#"<?php
+class A {
+    public final $prop;
+}
+class B extends A {
+    public $prop { get {} set {} }
+}
+"#,
+        "final_property_override.php",
+        5,
+        "Cannot override final property A::$prop",
+    );
+
+    assert_php_startup_fatal(
+        r#"<?php
+class A {
+    public function __construct(
+        final $prop
+    ) {}
+}
+class B extends A {
+    public $prop;
+}
+"#,
+        "final_promoted_property_override.php",
+        7,
+        "Cannot override final property A::$prop",
+    );
+
+    let valid = run_source(
+        r#"<?php
+class A {
+    public function __construct(
+        final $prop
+    ) {
+        echo __METHOD__ . "(): $prop\n";
+    }
+}
+class B extends A {
+    public function __construct($prop) {
+        echo __METHOD__ . "(): $prop\n";
+        parent::__construct($prop);
+    }
+}
+new B("test");
+"#,
+    )
+    .unwrap();
+    assert_eq!(
+        valid.stdout,
+        "B::__construct(): test\nA::__construct(): test\n"
+    );
+}
+
+#[test]
 fn class_declarations_record_single_parent_metadata() {
     let source = r#"<?php
 class Base {}

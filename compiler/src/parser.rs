@@ -8,10 +8,10 @@ use crate::ast::{
     Expr, ForAction, ForeachListItem, ForeachListKey, ForeachValueTarget, FunctionDecl,
     FunctionParam, IncrementDecrementOp, IncrementDecrementPosition, InterfaceDecl,
     InterfaceMethodDecl, ListAssignmentItem, ListAssignmentKey, ListAssignmentTarget, MatchArm,
-    NewClassName, Program, PropertyHookDecl, PropertyHookKind, ReferenceSource, Span,
-    StaticLocalDeclarator, Stmt, SwitchCase, TraitDecl, TraitMethodAliasDecl,
-    TraitMethodPrecedenceDecl, TraitMethodVisibilityDecl, TraitUseDecl, TypeDecl, UnaryOp,
-    UnsetTarget, UseImport, UseImportKind,
+    NewClassName, Program, PropertyHookDecl, PropertyHookKind, PropertyHookParameterDecl,
+    ReferenceSource, Span, StaticLocalDeclarator, Stmt, SwitchCase, TraitDecl,
+    TraitMethodAliasDecl, TraitMethodPrecedenceDecl, TraitMethodVisibilityDecl, TraitUseDecl,
+    TypeDecl, UnaryOp, UnsetTarget, UseImport, UseImportKind,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::lexer::{tokenize, AttributeToken, Token, TokenKind};
@@ -368,7 +368,7 @@ impl Parser {
                 self.consume_doc_comments_and_attributes();
                 self.pending_doc_comment = None;
                 let attributes = self.take_pending_attributes();
-                let (promotion, promotion_set_visibility, promotion_readonly) =
+                let (promotion, promotion_set_visibility, promotion_readonly, promotion_final) =
                     if self.check(is_promoted_property_parameter_start) {
                         if !allow_promoted_properties {
                             return Err(self.error_at(
@@ -378,7 +378,7 @@ impl Parser {
                         }
                         self.parse_promoted_property_visibility()?
                     } else {
-                        (None, None, false)
+                        (None, None, false, false)
                     };
                 if self.check(is_promoted_property_parameter_start) {
                     return Err(self.error_at(
@@ -414,6 +414,13 @@ impl Parser {
                     }
                     None
                 };
+                if promotion.is_some() && self.match_token(|kind| matches!(kind, TokenKind::LBrace))
+                {
+                    self.skip_balanced_block_after_open(
+                        span,
+                        "expected '}' after promoted property hook block",
+                    )?;
+                }
 
                 params.push(FunctionParam {
                     name,
@@ -424,6 +431,7 @@ impl Parser {
                     promotion,
                     promotion_set_visibility,
                     promotion_readonly,
+                    promotion_final,
                     attributes,
                     span,
                 });
@@ -448,10 +456,11 @@ impl Parser {
 
     fn parse_promoted_property_visibility(
         &mut self,
-    ) -> CompileResult<(Option<ClassVisibility>, Option<ClassVisibility>, bool)> {
+    ) -> CompileResult<(Option<ClassVisibility>, Option<ClassVisibility>, bool, bool)> {
         let mut visibility = None;
         let mut set_visibility = None;
         let mut is_readonly = false;
+        let mut is_final = false;
         loop {
             if let Some(next_set_visibility) = self.match_asymmetric_property_visibility_modifier()
             {
@@ -506,10 +515,20 @@ impl Parser {
                     is_readonly = true;
                     self.advance();
                 }
+                TokenKind::Final => {
+                    if is_final {
+                        return Err(self.error_at(
+                            self.peek().span,
+                            parse_fatal_message("Multiple final modifiers are not allowed"),
+                        ));
+                    }
+                    is_final = true;
+                    self.advance();
+                }
                 _ => break,
             }
         }
-        if visibility.is_none() && set_visibility.is_some() {
+        if visibility.is_none() && (set_visibility.is_some() || is_final) {
             visibility = Some(ClassVisibility::Public);
         }
         if visibility.is_none() && !is_readonly {
@@ -518,7 +537,7 @@ impl Parser {
                 unsupported_promoted_property_parameter_message(),
             ));
         }
-        Ok((visibility, set_visibility, is_readonly))
+        Ok((visibility, set_visibility, is_readonly, is_final))
     }
 
     fn parse_type_decl(&mut self, message: &'static str) -> CompileResult<TypeDecl> {
@@ -949,6 +968,7 @@ impl Parser {
             set_visibility: modifiers.set_visibility,
             is_static: modifiers.is_static,
             is_readonly: modifiers.is_readonly,
+            is_final: false,
             is_abstract: false,
             type_decl,
             default,
@@ -1406,6 +1426,7 @@ impl Parser {
             set_visibility: modifiers.set_visibility,
             is_static: false,
             is_readonly: modifiers.is_readonly,
+            is_final: false,
             is_abstract: true,
             type_decl,
             default: None,
@@ -1780,6 +1801,7 @@ impl Parser {
                     set_visibility: modifiers.set_visibility,
                     is_static: modifiers.is_static,
                     is_readonly: modifiers.is_readonly,
+                    is_final: modifiers.is_final,
                     is_abstract: modifiers.is_abstract,
                     type_decl: Some(type_decl.clone()),
                     default,
@@ -1846,6 +1868,7 @@ impl Parser {
                     set_visibility: modifiers.set_visibility,
                     is_static: modifiers.is_static,
                     is_readonly: modifiers.is_readonly,
+                    is_final: modifiers.is_final,
                     is_abstract: modifiers.is_abstract,
                     type_decl: None,
                     default,
@@ -1932,13 +1955,11 @@ impl Parser {
         if modifiers.is_abstract {
             return Some(self.error_at(
                 property.span,
-                parse_fatal_message("Only hooked properties may be declared abstract"),
-            ));
-        }
-        if modifiers.is_final {
-            return Some(self.error_at(
-                modifiers.final_span.unwrap_or(property.span),
-                unsupported_abstract_final_property_message(),
+                parse_fatal_message(if modifiers.is_final {
+                    "Cannot use the final modifier on an abstract property"
+                } else {
+                    "Only hooked properties may be declared abstract"
+                }),
             ));
         }
         None
@@ -1973,6 +1994,12 @@ impl Parser {
             return Err(self.error_at(
                 property_span,
                 parse_fatal_message("Property hook cannot be both abstract and private"),
+            ));
+        }
+        if modifiers.is_abstract && modifiers.is_final {
+            return Err(self.error_at(
+                property_span,
+                parse_fatal_message("Cannot use the final modifier on an abstract property"),
             ));
         }
 
@@ -2081,13 +2108,21 @@ impl Parser {
                     parse_fatal_message(&format!("Cannot redeclare property hook \"{hook_key}\"")),
                 ));
             }
+            let is_set_hook = hook_key == "set";
             hook_names.push(hook_key);
             hook_count += 1;
             last_hook_name = hook_name.to_ascii_lowercase();
 
-            if self.match_token(|kind| matches!(kind, TokenKind::LParen)) {
-                self.skip_parenthesized_group_after_open(hook_span)?;
-            }
+            let value_parameter = if self.match_token(|kind| matches!(kind, TokenKind::LParen)) {
+                if is_set_hook {
+                    self.parse_property_hook_set_parameter_after_open(class_name, property_name)?
+                } else {
+                    self.skip_parenthesized_group_after_open(hook_span)?;
+                    None
+                }
+            } else {
+                None
+            };
 
             let has_body = if self.match_token(|kind| matches!(kind, TokenKind::FatArrow)) {
                 self.skip_property_hook_arrow_body()?;
@@ -2120,6 +2155,7 @@ impl Parser {
                 by_reference,
                 is_abstract,
                 has_body,
+                value_parameter,
                 span: hook_span,
             });
         }
@@ -2145,6 +2181,57 @@ impl Parser {
         }
 
         Ok(hooks)
+    }
+
+    fn parse_property_hook_set_parameter_after_open(
+        &mut self,
+        class_name: &str,
+        property_name: &str,
+    ) -> CompileResult<Option<PropertyHookParameterDecl>> {
+        if self.match_token(|kind| matches!(kind, TokenKind::RParen)) {
+            return Ok(None);
+        }
+
+        let type_decl = if self.check(is_parameter_type_start) {
+            Some(self.parse_type_decl(unsupported_parameter_type_message())?)
+        } else {
+            None
+        };
+        self.match_token(|kind| matches!(kind, TokenKind::Ampersand));
+        let is_variadic = self.match_token(|kind| matches!(kind, TokenKind::Ellipsis));
+        let (name, span) =
+            self.consume_variable_with_span("expected property hook parameter name")?;
+        if is_variadic {
+            return Err(self.error_at(
+                span,
+                parse_fatal_message(&format!(
+                    "Parameter ${name} of set hook {class_name}::${property_name} must not be variadic"
+                )),
+            ));
+        }
+        if self.match_token(|kind| matches!(kind, TokenKind::Equal)) {
+            let default = self.parse_expression()?;
+            self.ensure_supported_default_expr(&default)?;
+        }
+        if self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
+            return Err(self.error_at(
+                self.previous().span,
+                parse_fatal_message(&format!(
+                    "set hook of property {class_name}::${property_name} accepts at most one parameter"
+                )),
+            ));
+        }
+        self.consume_keyword(
+            TokenKind::RParen,
+            "expected ')' after property hook parameter",
+        )?;
+
+        Ok(Some(PropertyHookParameterDecl {
+            name,
+            type_decl,
+            is_variadic,
+            span,
+        }))
     }
 
     fn skip_parenthesized_group_after_open(&mut self, span: Span) -> CompileResult<()> {
@@ -10359,7 +10446,11 @@ fn is_parameter_type_start(kind: &TokenKind) -> bool {
 fn is_promoted_property_parameter_start(kind: &TokenKind) -> bool {
     matches!(
         kind,
-        TokenKind::Public | TokenKind::Protected | TokenKind::Private | TokenKind::Readonly
+        TokenKind::Public
+            | TokenKind::Protected
+            | TokenKind::Private
+            | TokenKind::Readonly
+            | TokenKind::Final
     )
 }
 

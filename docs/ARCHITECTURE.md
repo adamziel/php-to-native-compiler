@@ -4539,11 +4539,13 @@ and private names as `\0ClassName\0name` using the declaring class name. It
 preserves existing reference-backed slots and omits the internal bounded
 `ArrayObject` / `ArrayIterator` storage property that is represented separately
 by the interpreter storage table. Dynamic public properties created through the
-supported write paths are included. Readonly property metadata/enforcement,
-promoted constructor property runtime behavior beyond bounded declaration
-diagnostics, asymmetric set-visibility runtime enforcement, trait/interface
-properties, broad magic property hooks, full reference/COW identity, and native
-lowering remain outside the current object model.
+supported write paths are included. Property metadata carries the bounded
+final-property flag and explicit `set(...)` hook parameter metadata needed by
+startup diagnostics, so final inherited properties and narrowed set-hook
+parameter types can be rejected before execution. Hook bodies are still skipped
+for execution; virtual/backed hook body classification, hook reflection parity,
+full reference/COW identity, and native lowering remain outside the current
+object model.
 `is_a($object_or_class, $class_name[, $allow_string])` checks exact-class,
 single-parent ancestor, and recorded `implements` metadata relationships
 against the current metadata table.

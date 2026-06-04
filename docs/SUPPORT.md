@@ -3496,7 +3496,15 @@
   matching hooked declarations satisfy the corresponding requirement, readonly
   properties do not satisfy `set`, and `&get` interface requirements reject
   concrete by-value `get` hooks. Missing hooks report PHP-shaped abstract
-  method startup fatals such as `I::$prop::get`.
+  method startup fatals such as `I::$prop::get`. Explicit `set(...)` hook
+  parameters are retained for declaration diagnostics: variadic set parameters
+  are rejected, the set parameter type must accept the declared property type
+  in the current bounded class/interface type relationship model, and child
+  hooked properties may not narrow an inherited explicit set parameter type.
+  Class properties may be declared `final`; final promoted constructor
+  properties, including `final $prop`, are registered as public final
+  promoted properties, and child property redeclarations of inherited final
+  properties report PHP-shaped startup fatals.
   Public interface
   constants declared as `const NAME = ...` or `public const NAME = ...` with
   the current class-constant expression subset resolve through `InterfaceName::CONST`,
@@ -3512,7 +3520,8 @@
   typed/non-public/abstract/final or multi-constant interface
   declarations, exact PHP ambiguous-interface-constant diagnostics, broad
   built-in/internal interface inheritance catalogs, named arguments,
-  executable property hook body semantics, virtual hooked properties,
+  executable property hook body semantics, virtual/backed hook body
+  classification, autoload side effects during hook type compatibility,
   reference-return hook dispatch, hook reflection metadata,
   trait composition beyond the current method alias/visibility,
   bounded `insteadof`, PHP-shaped conflict diagnostic, and property

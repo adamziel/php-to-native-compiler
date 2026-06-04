@@ -34693,6 +34693,7 @@ pub struct PhpPropertyMetadata {
     is_static: bool,
     type_decl: Option<String>,
     is_readonly: bool,
+    is_final: bool,
 }
 
 impl PhpPropertyMetadata {
@@ -34704,6 +34705,7 @@ impl PhpPropertyMetadata {
             is_static: false,
             type_decl: None,
             is_readonly: false,
+            is_final: false,
         }
     }
 
@@ -34715,6 +34717,7 @@ impl PhpPropertyMetadata {
             is_static: true,
             type_decl: None,
             is_readonly: false,
+            is_final: false,
         }
     }
 
@@ -34730,6 +34733,11 @@ impl PhpPropertyMetadata {
 
     pub fn readonly(mut self) -> Self {
         self.is_readonly = true;
+        self
+    }
+
+    pub fn with_final(mut self, is_final: bool) -> Self {
+        self.is_final = is_final;
         self
     }
 
@@ -34755,6 +34763,10 @@ impl PhpPropertyMetadata {
 
     pub fn is_readonly(&self) -> bool {
         self.is_readonly
+    }
+
+    pub fn is_final(&self) -> bool {
+        self.is_final
     }
 }
 

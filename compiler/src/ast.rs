@@ -1023,12 +1023,21 @@ impl PropertyHookKind {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PropertyHookDecl {
     pub kind: PropertyHookKind,
     pub by_reference: bool,
     pub is_abstract: bool,
     pub has_body: bool,
+    pub value_parameter: Option<PropertyHookParameterDecl>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PropertyHookParameterDecl {
+    pub name: String,
+    pub type_decl: Option<TypeDecl>,
+    pub is_variadic: bool,
     pub span: Span,
 }
 
@@ -1039,6 +1048,7 @@ pub struct ClassPropertyDecl {
     pub set_visibility: Option<ClassVisibility>,
     pub is_static: bool,
     pub is_readonly: bool,
+    pub is_final: bool,
     pub is_abstract: bool,
     pub type_decl: Option<TypeDecl>,
     pub default: Option<Expr>,
@@ -1093,6 +1103,7 @@ pub struct FunctionParam {
     pub promotion: Option<ClassVisibility>,
     pub promotion_set_visibility: Option<ClassVisibility>,
     pub promotion_readonly: bool,
+    pub promotion_final: bool,
     pub attributes: Vec<AttributeDecl>,
     pub span: Span,
 }

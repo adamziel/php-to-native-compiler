@@ -120939,6 +120939,10 @@ fn magic_method_startup_diagnostics(
     }
 
     if !diagnostics.has_fatal() {
+        collect_property_hook_startup_diagnostics(&mut diagnostics, program, source_file);
+    }
+
+    if !diagnostics.has_fatal() {
         collect_class_constant_modifier_startup_diagnostics(&mut diagnostics, program, source_file);
     }
 
@@ -122306,6 +122310,112 @@ fn asymmetric_property_visibility_startup_diagnostic(
         ));
     }
     None
+}
+
+fn collect_property_hook_startup_diagnostics(
+    diagnostics: &mut MagicMethodStartupDiagnostics,
+    program: &Program,
+    source_file: Option<&str>,
+) {
+    let classes = top_level_class_startup_lookup(program);
+    let interfaces = top_level_interface_startup_lookup(program);
+    for stmt in &program.statements {
+        match stmt {
+            Stmt::Class(class) if !class.is_nested => {
+                for property in declared_class_properties_in_source_order(class) {
+                    if let Some((message, line)) = property_hook_startup_diagnostic(
+                        &classes,
+                        &interfaces,
+                        &class.name,
+                        &property,
+                    ) {
+                        diagnostics.set_fatal(message, source_file, line);
+                        return;
+                    }
+                }
+            }
+            Stmt::Trait(trait_decl) => {
+                for property in &trait_decl.properties {
+                    if let Some((message, line)) = property_hook_startup_diagnostic(
+                        &classes,
+                        &interfaces,
+                        &trait_decl.name,
+                        property,
+                    ) {
+                        diagnostics.set_fatal(message, source_file, line);
+                        return;
+                    }
+                }
+            }
+            Stmt::Interface(interface) => {
+                for property in &interface.properties {
+                    if let Some((message, line)) = property_hook_startup_diagnostic(
+                        &classes,
+                        &interfaces,
+                        &interface.name,
+                        property,
+                    ) {
+                        diagnostics.set_fatal(message, source_file, line);
+                        return;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn property_hook_startup_diagnostic(
+    classes: &HashMap<String, &ClassDecl>,
+    interfaces: &HashMap<String, &InterfaceDecl>,
+    class_name: &str,
+    property: &ClassPropertyDecl,
+) -> Option<(String, usize)> {
+    let set_parameter = property_set_hook_value_parameter(property)?;
+    if property_set_hook_parameter_accepts_property_type(
+        classes,
+        interfaces,
+        property.type_decl.as_ref().map(|decl| decl.text.as_str()),
+        set_parameter
+            .type_decl
+            .as_ref()
+            .map(|decl| decl.text.as_str()),
+    ) {
+        return None;
+    }
+
+    Some((
+        format!(
+            "Type of parameter ${} of hook {class_name}::${}::set must be compatible with property type",
+            set_parameter.name, property.name
+        ),
+        set_parameter.span.line,
+    ))
+}
+
+fn property_set_hook_value_parameter(
+    property: &ClassPropertyDecl,
+) -> Option<&crate::ast::PropertyHookParameterDecl> {
+    property
+        .hooks
+        .iter()
+        .find(|hook| hook.kind == PropertyHookKind::Set)
+        .and_then(|hook| hook.value_parameter.as_ref())
+}
+
+fn property_set_hook_parameter_accepts_property_type(
+    classes: &HashMap<String, &ClassDecl>,
+    interfaces: &HashMap<String, &InterfaceDecl>,
+    property_type: Option<&str>,
+    parameter_type: Option<&str>,
+) -> bool {
+    match (property_type, parameter_type) {
+        (None, None) => true,
+        (Some(property_type), Some(parameter_type)) => {
+            startup_type_name_is_subtype_of(classes, interfaces, property_type, parameter_type)
+        }
+        _ => false,
+    }
 }
 
 fn attribute_display_name(name: &str) -> &str {
@@ -125476,6 +125586,13 @@ fn inherited_property_startup_diagnostic_message(
     parent_name: &str,
     parent_property: &ClassPropertyDecl,
 ) -> Option<String> {
+    if parent_property.is_final {
+        return Some(format!(
+            "Cannot override final property {parent_name}::${}",
+            property.name
+        ));
+    }
+
     if parent_property.is_readonly != property.is_readonly {
         if property.is_readonly
             && parent_property
@@ -125514,6 +125631,17 @@ fn inherited_property_startup_diagnostic_message(
     }
 
     if let Some(message) = inherited_property_set_visibility_diagnostic_message(
+        class_name,
+        property,
+        parent_name,
+        parent_property,
+    ) {
+        return Some(message);
+    }
+
+    if let Some(message) = inherited_property_set_hook_parameter_diagnostic_message(
+        classes,
+        interfaces,
         class_name,
         property,
         parent_name,
@@ -125579,6 +125707,62 @@ fn inherited_property_set_visibility_diagnostic_message(
         )),
         _ => None,
     }
+}
+
+fn inherited_property_set_hook_parameter_diagnostic_message(
+    classes: &HashMap<String, &ClassDecl>,
+    interfaces: &HashMap<String, &InterfaceDecl>,
+    class_name: &str,
+    property: &ClassPropertyDecl,
+    parent_name: &str,
+    parent_property: &ClassPropertyDecl,
+) -> Option<String> {
+    let parent_parameter = property_set_hook_value_parameter(parent_property)?;
+    let child_parameter = property_set_hook_value_parameter(property)?;
+    if property_set_hook_parameter_accepts_inherited_parameter(
+        classes,
+        interfaces,
+        parent_parameter
+            .type_decl
+            .as_ref()
+            .map(|decl| decl.text.as_str()),
+        child_parameter
+            .type_decl
+            .as_ref()
+            .map(|decl| decl.text.as_str()),
+    ) {
+        return None;
+    }
+
+    Some(format!(
+        "Declaration of {class_name}::${}::set({} ${}): void must be compatible with {parent_name}::${}::set({} ${}): void",
+        property.name,
+        property_hook_parameter_type_display(child_parameter.type_decl.as_ref()),
+        child_parameter.name,
+        parent_property.name,
+        property_hook_parameter_type_display(parent_parameter.type_decl.as_ref()),
+        parent_parameter.name,
+    ))
+}
+
+fn property_set_hook_parameter_accepts_inherited_parameter(
+    classes: &HashMap<String, &ClassDecl>,
+    interfaces: &HashMap<String, &InterfaceDecl>,
+    parent_parameter_type: Option<&str>,
+    child_parameter_type: Option<&str>,
+) -> bool {
+    match (parent_parameter_type, child_parameter_type) {
+        (None, None) => true,
+        (Some(parent_type), Some(child_type)) => {
+            startup_type_name_is_subtype_of(classes, interfaces, parent_type, child_type)
+        }
+        (Some(_), None) => true,
+        (None, Some(_)) => false,
+    }
+}
+
+fn property_hook_parameter_type_display(type_decl: Option<&TypeDecl>) -> &str {
+    type_decl.map(|decl| decl.text.as_str()).unwrap_or("mixed")
 }
 
 fn startup_property_types_are_invariantly_compatible(
@@ -128118,6 +128302,7 @@ fn register_class_members(
             PhpPropertyMetadata::instance(&effective_property.name, visibility)
         }
         .with_set_visibility(effective_property.set_visibility.map(runtime_visibility))
+        .with_final(effective_property.is_final)
         .with_type_decl(
             effective_property
                 .type_decl
@@ -128206,6 +128391,7 @@ fn register_class_members(
                     PhpPropertyMetadata::instance(&effective_property.name, visibility)
                 }
                 .with_set_visibility(effective_property.set_visibility.map(runtime_visibility))
+                .with_final(effective_property.is_final)
                 .with_type_decl(
                     effective_property
                         .type_decl
@@ -128259,6 +128445,7 @@ fn register_class_members(
                             .with_set_visibility(
                                 effective_property.set_visibility.map(runtime_visibility),
                             )
+                            .with_final(effective_property.is_final)
                             .with_type_decl(
                                 effective_property
                                     .type_decl
@@ -128797,6 +128984,7 @@ fn promoted_property_from_param(param: &FunctionParam) -> Option<ClassPropertyDe
         set_visibility: param.promotion_set_visibility,
         is_static: false,
         is_readonly: param.promotion_readonly,
+        is_final: param.promotion_final,
         is_abstract: false,
         type_decl: param.type_decl.clone(),
         default: None,
@@ -128827,6 +129015,7 @@ fn trait_properties_are_compatible(left: &ClassPropertyDecl, right: &ClassProper
         && left.set_visibility == right.set_visibility
         && left.is_static == right.is_static
         && left.is_readonly == right.is_readonly
+        && left.is_final == right.is_final
         && left.type_decl.as_ref().map(|decl| decl.text.as_str())
             == right.type_decl.as_ref().map(|decl| decl.text.as_str())
         && left.is_abstract == right.is_abstract
@@ -134814,6 +135003,17 @@ fn validate_inherited_property_compatibility(
             if parent_property.visibility() == Visibility::Private {
                 current = parent.parent_id();
                 continue;
+            }
+
+            if parent_property.is_final() {
+                return Err(RuntimeError::unsupported_class_inheritance(
+                    class_name,
+                    format!(
+                        "cannot override final property {}::${}",
+                        parent.name(),
+                        property.name
+                    ),
+                ));
             }
 
             if parent_property.is_static() != property.is_static {
@@ -192581,6 +192781,7 @@ echo $items["shared"]["leaf"] . "|" . $shared . "|" . $items["plain"]["leaf"] . 
                 promotion: None,
                 promotion_set_visibility: None,
                 promotion_readonly: false,
+                promotion_final: false,
                 attributes: Vec::new(),
                 span,
             }],
@@ -193942,6 +194143,7 @@ echo $items["shared"]["leaf"] . "|" . $shared . "|" . $items["plain"]["leaf"] . 
                 promotion: None,
                 promotion_set_visibility: None,
                 promotion_readonly: false,
+                promotion_final: false,
                 attributes: Vec::new(),
                 span,
             }],
