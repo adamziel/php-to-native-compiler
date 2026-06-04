@@ -1,6 +1,6 @@
 # PHP Native Compiler PHPT Progress
 
-Updated: 2026-06-04 06:50 CEST
+Updated: 2026-06-04 06:58 CEST
 
 Primary/public branch: `origin/master`
 Latest accepted public-score source:
@@ -19,10 +19,10 @@ denominators that exclude BORKED rows are not public progress.
 Current public score: **7376 / 20294 pinned runnable PHPTs = 36.35%**.
 
 Latest pushed source checkpoint:
-`01afaf19e44c2d4a23023469a0a1122ed81f7d90 fix: parse numeric literal separators`
+`f4be414cce658cfc8c6f77ad5a17146a97c66e22 fix: materialize first-class callable constants`
 
 Current score-gate target:
-No full score gate is currently running for latest source `01afaf19`.
+No full score gate is currently running for latest source `f4be414c`.
 The latest accepted full gate is
 `state/logs/phpt-full-current-score-20260604T043544Z-php-src-f97ff59-public-0086ba77-source-0086ba77`.
 It completed `FINAL / GATE-AGGREGATE-COMPLETE / ZERO-PASS-REGRESSIONS`
@@ -40,14 +40,16 @@ latest-published PASS regressions.
 
 Unpublished source progress since the accepted public score source:
 
-- Latest pushed source head is `01afaf19e44c2d4a23023469a0a1122ed81f7d90`
-  (`fix: parse numeric literal separators`), which is newer than the accepted
-  `0086ba77` full gate and is not included in the public score above.
-- There is `1` score-relevant source commit after the accepted public-score
+- Latest pushed source head is `f4be414cce658cfc8c6f77ad5a17146a97c66e22`
+  (`fix: materialize first-class callable constants`), which is newer than the
+  accepted `0086ba77` full gate and is not included in the public score above.
+- There are `2` score-relevant source commits after the accepted public-score
   source: `01afaf19e44c2d4a23023469a0a1122ed81f7d90`
-  (`fix: parse numeric literal separators`).
+  (`fix: parse numeric literal separators`) and
+  `f4be414cce658cfc8c6f77ad5a17146a97c66e22`
+  (`fix: materialize first-class callable constants`).
 - Staged focused selected-PHPT proof after the latest accepted public-score
-  source totals `11` selected rows across `1` integrated source artifact.
+  source totals `24` selected rows across `2` integrated source artifacts.
   These are source/staging facts, not a public score update unless a full
   pinned PHPT gate accepts them.
 - The numeric literal separator packet moved selected PHPT `0/11 -> 11/11`
@@ -64,6 +66,23 @@ Unpublished source progress since the accepted public score source:
   and `Zend/tests/numeric_literal_separator/numeric_literal_separator_009.phpt`.
   It also preserved the latest-published PASS scout `8/8`, passed focused
   Rust coverage, build, fmt, diff checks, and production row-name leakage scan.
+- The first-class callable constexpr packet moved selected PHPT
+  `0/13 -> 13/13` for
+  `Zend/tests/first_class_callable/constexpr/basic.phpt`,
+  `Zend/tests/first_class_callable/constexpr/case_insensitive.phpt`,
+  `Zend/tests/first_class_callable/constexpr/class_const.phpt`,
+  `Zend/tests/first_class_callable/constexpr/default_args.phpt`,
+  `Zend/tests/first_class_callable/constexpr/error_unknown_function.phpt`,
+  `Zend/tests/first_class_callable/constexpr/error_unknown_method.phpt`,
+  `Zend/tests/first_class_callable/constexpr/error_unknown_class.phpt`,
+  `Zend/tests/first_class_callable/constexpr/namespace_001.phpt`,
+  `Zend/tests/first_class_callable/constexpr/namespace_002.phpt`,
+  `Zend/tests/first_class_callable/constexpr/namespace_003.phpt`,
+  `Zend/tests/first_class_callable/constexpr/static_call.phpt`,
+  `Zend/tests/first_class_callable/constexpr/static_call_self.phpt`, and
+  `Zend/tests/first_class_callable/constexpr/userland.phpt`. It also
+  preserved the latest-published PASS scout `8/8`, passed focused Rust
+  coverage, build, fmt, diff checks, and production row-name leakage scan.
 - The `c12ecf1b` full gate is blocked:
   `state/logs/phpt-full-current-score-20260604T034027Z-php-src-f97ff59-public-c12ecf1b-source-c12ecf1b`
   against the accepted `21abc76f` PASS baseline with `7275` normalized rows.
