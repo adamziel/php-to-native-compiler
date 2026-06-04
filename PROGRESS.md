@@ -1,6 +1,6 @@
 # PHP Native Compiler PHPT Progress
 
-Updated: 2026-06-04 03:06 CEST
+Updated: 2026-06-04 04:06 CEST
 
 Primary/public branch: `origin/master`
 Latest accepted public-score source:
@@ -19,11 +19,14 @@ denominators that exclude BORKED rows are not public progress.
 Current public score: **7119 / 20294 pinned runnable PHPTs = 35.08%**.
 
 Latest pushed source checkpoint:
-`3b156157501b71f0e6c96d000ad3305197a238f2 fix: report access modifier diagnostics`
+`00a8fa105f5bf3d12aefaeed717b2dfd33bdcf56 fix: preserve round integer half boundaries`
 
 Next score-gate target:
-`3b156157501b71f0e6c96d000ad3305197a238f2 fix: report access modifier diagnostics`
-after the active latest-published PASS regression is repaired or adjudicated.
+`00a8fa105f5bf3d12aefaeed717b2dfd33bdcf56 fix: preserve round integer half boundaries`
+is already under a fresh full pinned PHPT gate:
+`state/logs/phpt-full-current-score-20260604T020445Z-php-src-f97ff59-public-00a8fa10-source-00a8fa10`.
+Latest cadence shows `RUNNING / BUILDING-RELEASE`; PASS regressions are
+unknown, so this is not a public score update.
 
 The accepted source checkpoint chain through semantic source `3a003811` has
 been pushed to `origin/master` and is now reflected in the public score above.
@@ -32,28 +35,38 @@ post-`4cbed170` source chain into a public PHPT movement of `7090 -> 7119`
 passed pinned rows, a net gain of `29` public PHPT passes, with zero
 latest-published PASS regressions.
 
-The newer full pinned gate at checkpoint `52a79aa1` completed
+The newer full pinned gate at checkpoint `d1022750` completed
 `FINAL / BLOCKED-PASS-REGRESSIONS` and is not publication evidence. Its
-public-comparable aggregate was `7138 / 20294 = 35.17%`, but it had one
-latest-published PASS regression, so the public score remains
-`7119 / 20294 = 35.08%`.
+public-comparable aggregate was `7168 / 20294 = 35.32%`, with `7164`
+normalized current PASS rows, but it had one latest-published PASS regression,
+`php-src/ext/standard/tests/math/round_gh12143_expand_rounding_target.phpt`.
+That regression has selected-PHPT repair proof at source `00a8fa10`, but the
+public score remains `7119 / 20294 = 35.08%` until the current `00a8fa10`
+full gate completes with zero latest-published PASS regressions.
 
 Unpublished source progress since the accepted public score source:
 
-- Latest pushed source head is `3b156157501b71f0e6c96d000ad3305197a238f2`
-  (`fix: report access modifier diagnostics`), pushed to `origin/master`.
-- There are `3` commits after the accepted public-score checkpoint, including
-  `2` score-relevant source commits:
+- Latest pushed source head is `00a8fa105f5bf3d12aefaeed717b2dfd33bdcf56`
+  (`fix: preserve round integer half boundaries`), pushed to `origin/master`.
+- There are `9` commits after the accepted public-score checkpoint, including
+  `7` score-relevant source commits:
   `397461985bdf64b947776851c1ce7e48a5998515` (`fix: add bounded directory
   iterator metadata`) and
   `3b156157501b71f0e6c96d000ad3305197a238f2` (`fix: report access modifier
-  diagnostics`). The intervening `52a79aa1` commit is docs-only publication.
+  diagnostics`), `9eb1e4d149a047f2da9605b8a0287d95dd85a6d6`
+  (`fix: support scalar exponentiation rounding`),
+  `d10227505c389cec2047ff7ffe2a41979f60f760` (`fix: preserve array iterator
+  dump handles`), `9c0a304ffcf6b6ab2f5da18977839f716160cac1`
+  (`fix: emit deprecated trait diagnostics`),
+  `191897fd444c2c65af82d524f000f41c037d1163` (`fix: report magic method
+  declaration diagnostics`), and
+  `00a8fa105f5bf3d12aefaeed717b2dfd33bdcf56` (`fix: preserve round integer
+  half boundaries`). The intervening `52a79aa1` and `f2135f17` commits are
+  docs-only publication/progress commits.
 - Staged focused selected-PHPT proof after the latest accepted public-score
-  checkpoint totals `20` selected rows across `2` integrated source artifacts.
-  These are source/staging facts, not a public score update. The `39746198`
-  DirectoryIterator/SplFileInfo packet is included in the blocked `52a79aa1`
-  full gate; the `3b156157` access-modifier diagnostics packet is newer than
-  that gate and still lacks a full pinned gate.
+  checkpoint totals `50` selected rows. These are source/staging facts, not a
+  public score update; the current `00a8fa10` full pinned gate is still
+  running.
 - The DirectoryIterator/SplFileInfo source packet moved selected PHPT
   `0/10 -> 10/10` for `ext/spl/tests/DirectoryIterator_empty_constructor.phpt`,
   `ext/spl/tests/DirectoryIterator_getBasename_basic_test.phpt`,
@@ -80,17 +93,35 @@ Unpublished source progress since the accepted public score source:
   `Zend/tests/access_modifiers/access_modifiers_013.phpt`. It also preserved
   an eight-row latest-published PASS scout including `bug60598.phpt` and
   `semi_reserved_005.phpt`.
-- The active publication blocker is the blocked `52a79aa1` full gate:
+- The scalar exponentiation/rounding source packet moved selected PHPT
+  `0/10 -> 10/10` across `fpow.phpt`, `pow-operator.phpt`,
+  `pow_divisionbyzero.phpt`, and selected `round_*` standard math rows.
+- The ArrayObject PASS-regression repair source packet moved selected PHPT
+  `0/1 -> 1/1` for
+  `ext/spl/tests/ArrayObject/arrayObject_getIteratorClass_basic1.phpt`.
+- The Deprecated diagnostics source packet moved selected PHPT
+  `0/13 -> 13/13` across selected `Zend/tests/attributes/deprecated/*` rows.
+- The magic-method declaration diagnostics source packet moved selected PHPT
+  `0/15 -> 15/15` across selected `Zend/tests/magic_methods/*` and
+  `Zend/tests/errmsg/*` rows.
+- The round GH-12143 PASS-regression repair source packet moved selected PHPT
+  `0/1 -> 1/1` for
+  `ext/standard/tests/math/round_gh12143_expand_rounding_target.phpt` and
+  launched the current `00a8fa10` full pinned gate.
+- The previous publication blocker was the blocked `52a79aa1` full gate:
   `state/logs/phpt-full-current-score-20260604T005236Z-php-src-f97ff59-public-52a79aa1-source-52a79aa1`
   had `1` latest-published PASS regression,
   `php-src/ext/spl/tests/ArrayObject/arrayObject_getIteratorClass_basic1.phpt`.
   Its normalized PASS comparison was `7115` baseline rows to `7134` current
-  rows with `1` regression, so it cannot move the public score.
+  rows with `1` regression, so it cannot move the public score. The row now has
+  selected repair proof at source `d1022750`.
 - The prior score-gate checkpoint
   `28662f8a482521f65fcbdc1b415163afbf65efd9` is not publication evidence
   because its gate is missing result files. The earlier `b2914aff` full gate
   remains blocked by the latest-published PASS regression
   `php-src/Zend/tests/bug60598.phpt`.
+- Outstanding publication blocker: no newer public score is authorized while
+  the `00a8fa10` full gate is still running with unknown PASS-regression state.
 
 Accepted public gate: checkpoint `5753eadf` completed the pinned full PHPT
 gate with `7119 / 20294 = 35.08%` and zero latest-published PASS regressions
@@ -217,10 +248,9 @@ stream/INI/array focused batch covering `bug71884.phpt`,
 the aggregate had `5513` passed rows, `5509` normalized current passes, and
 `0` PASS regressions.
 
-Current source-head note: no post-`dcd07a3c` source checkpoint is reflected in
-the public score as of this update. The local supervisor notes below are
-historical pre-gate proof and are superseded for score accounting by the
-`dcd07a3c` public gate.
+Historical source-head note: the local supervisor notes below are older
+pre-gate proof retained for chronology. Current source and public score
+accounting are recorded in the current-state section above.
 
 Local source checkpoint note: checkpoint `1efcacf6` passed
 `tools/checkpoint.sh` for the next post-public focused source batch. It covers
