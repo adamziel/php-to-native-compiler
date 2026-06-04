@@ -7261,19 +7261,25 @@
   slice includes `gmp_add()`, `gmp_sub()`, `gmp_mul()`, `gmp_cmp()`,
   `gmp_mod()`, `gmp_div_q()`, `gmp_div_r()`, `gmp_gcd()`, `gmp_lcm()`,
   `gmp_pow()`, `gmp_sqrt()`, `gmp_sqrtrem()`, `gmp_fact()`,
-  `gmp_nextprime()`, and `gmp_perfect_square()` for current int/string/GMP
-  operands, including the three `GMP_ROUND_*` constants and selected
+  `gmp_nextprime()`, `gmp_perfect_square()`, `gmp_gcdext()`,
+  `gmp_invert()`, `gmp_jacobi()`, `gmp_legendre()`, `gmp_kronecker()`,
+  `gmp_root()`, `gmp_rootrem()`, `gmp_perfect_power()`,
+  `gmp_prob_prime()`, and `gmp_binomial()` for current int/string/GMP
+  operands, plus bounded binary `+`, `-`, and `*` when either operand is a
+  `GMP` object. This includes the three `GMP_ROUND_*` constants and selected
   `ValueError`/`DivisionByZeroError` surfaces. The bounded bit slice includes
   `gmp_and()`, `gmp_or()`, `gmp_xor()`, `gmp_com()`, `gmp_setbit()`,
   `gmp_clrbit()`, `gmp_testbit()`, `gmp_scan0()`, `gmp_scan1()`,
   `gmp_popcount()`, and `gmp_hamdist()` over current int/string/GMP operands,
   with `gmp_setbit()` and `gmp_clrbit()` mutating only GMP objects and selected
   `ValueError`/`TypeError` surfaces. Exact `gmp_div_qr()` object-handle reuse
-  parity, unbounded bit indexes, GMP import/export/random functions,
-  serialization/cloning, operator overloading, exact base conversion beyond the
-  covered rows, binary-string/non-ASCII parsing parity, unbounded
-  exponent/factorial inputs, references/copy-on-write, and native lowering
-  remain unsupported.
+  parity, exact probabilistic primality repetition parity, operands beyond the
+  current decimal and i128 helper bounds, unbounded bit indexes, GMP
+  import/export/random functions, serialization/cloning, operator overloading
+  beyond `+`/`-`/`*`, exact base conversion beyond the covered rows,
+  binary-string/non-ASCII parsing parity, unbounded exponent/factorial/root and
+  binomial inputs, references/copy-on-write, and native lowering remain
+  unsupported.
   `extension_loaded($name)` accepts scalar/null string-compatible extension
   names and supported visible `__toString()` objects through a bounded
   PHP-internal string boundary, including PHP-shaped null-to-string

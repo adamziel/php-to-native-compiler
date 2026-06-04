@@ -2754,18 +2754,24 @@ arithmetic helper layer reuses the same decimal digits for current
 int/string/GMP `gmp_add()`, `gmp_sub()`, `gmp_mul()`, `gmp_cmp()`,
 `gmp_mod()`, `gmp_div_q()`, `gmp_div_r()`, `gmp_gcd()`, `gmp_lcm()`,
 `gmp_pow()`, `gmp_sqrt()`, `gmp_sqrtrem()`, `gmp_fact()`,
-`gmp_nextprime()`, and `gmp_perfect_square()` calls. A bounded bit helper layer
-converts current GMP integers through little-endian two's-complement bytes for
-`gmp_and()`, `gmp_or()`, `gmp_xor()`, `gmp_com()`, `gmp_testbit()`,
-`gmp_scan0()`, `gmp_scan1()`, `gmp_popcount()`, and `gmp_hamdist()`.
-`gmp_setbit()` and `gmp_clrbit()` require a GMP object and write the updated
-normalized decimal string back into its `num` storage. Error objects retain
-pending internal call-frame arguments for catchable traces, and released catch
-variables retire trace-held reusable GMP temporaries before the error handle so
-selected object-handle output remains PHP-shaped. Exact `gmp_div_qr()`
-object-handle reuse, unbounded bit indexes, GMP import/export/random functions,
-operator overloading, serialization/cloning parity, references/copy-on-write
-identity, and native lowering remain outside this lane.
+`gmp_nextprime()`, `gmp_perfect_square()`, `gmp_gcdext()`, `gmp_invert()`,
+`gmp_jacobi()`, `gmp_legendre()`, `gmp_kronecker()`, `gmp_root()`,
+`gmp_rootrem()`, `gmp_perfect_power()`, `gmp_prob_prime()`, and
+`gmp_binomial()` calls. When either operand is a GMP object, binary `+`, `-`,
+and `*` reuse the same parser and materialize a fresh GMP result. A bounded bit
+helper layer converts current GMP integers through little-endian
+two's-complement bytes for `gmp_and()`, `gmp_or()`, `gmp_xor()`, `gmp_com()`,
+`gmp_testbit()`, `gmp_scan0()`, `gmp_scan1()`, `gmp_popcount()`, and
+`gmp_hamdist()`. `gmp_setbit()` and `gmp_clrbit()` require a GMP object and
+write the updated normalized decimal string back into its `num` storage. Error
+objects retain pending internal call-frame arguments for catchable traces, and
+released catch variables retire trace-held reusable GMP temporaries before the
+error handle so selected object-handle output remains PHP-shaped. Exact
+`gmp_div_qr()` object-handle reuse, exact probabilistic primality repetition
+parity, operands outside the current decimal and i128 helper bounds, unbounded
+bit indexes, GMP import/export/random functions, operator overloading beyond
+`+`/`-`/`*`, serialization/cloning parity, references/copy-on-write identity,
+and native lowering remain outside this lane.
 Non-BcMath scalar `**` and `**=` stay on the interpreter path and reuse the
 standard math `pow()` helper so scalar exponentiation shares the same coercion,
 deprecation, and int-vs-float result rules as `pow()`. Native lowering still

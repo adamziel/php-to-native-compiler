@@ -199,3 +199,69 @@ try {
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
 }
+
+#[test]
+fn gmp_number_theory_helpers_are_supported() {
+    let execution = run_source(
+        r#"<?php
+var_dump(function_exists("gmp_root"));
+$r = gmp_gcdext(123, 45);
+$check = gmp_add(gmp_mul(123, $r["s"]), gmp_mul(45, $r["t"]));
+echo gmp_strval($r["g"]), ":", gmp_strval($check), "\n";
+echo gmp_strval(gmp_invert(123123, 5467624)), "\n";
+var_dump(gmp_invert(123123, "3333334345467624"));
+echo gmp_jacobi(7, 23), ":", gmp_legendre(7, 23), ":", gmp_kronecker(-23, 12), "\n";
+echo gmp_strval(gmp_root(1000, 3)), "\n";
+$rootrem = gmp_rootrem(100, 3);
+echo gmp_strval($rootrem[0]), ":", gmp_strval($rootrem[1]), "\n";
+var_dump(gmp_perfect_power(gmp_init("7442665456261594668083173595997")));
+var_dump(gmp_perfect_power(gmp_init("7442665456261594668083173595997") + 1));
+var_dump(gmp_prob_prime(-31));
+echo gmp_strval(gmp_binomial(10, 5)), ":", gmp_strval(gmp_binomial(-2, 6)), "\n";
+try {
+    gmp_invert(1, 0);
+} catch (DivisionByZeroError $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+try {
+    gmp_root(-100, 4);
+} catch (ValueError $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+try {
+    gmp_binomial(5, -2);
+} catch (ValueError $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+try {
+    gmp_gcdext(array(), array());
+} catch (TypeError $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "bool(true)\n",
+            "3:3\n",
+            "2293131\n",
+            "bool(false)\n",
+            "-1:-1:1\n",
+            "10\n",
+            "4:36\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "int(2)\n",
+            "252:7\n",
+            "DivisionByZeroError:Division by zero\n",
+            "ValueError:gmp_root(): Argument #2 ($nth) must be odd if argument #1 ($a) is negative\n",
+            "ValueError:gmp_binomial(): Argument #2 ($k) must be between 0 and 4096\n",
+            "TypeError:gmp_gcdext(): Argument #1 ($num1) must be of type GMP|string|int, array given\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}

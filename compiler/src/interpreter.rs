@@ -107557,6 +107557,16 @@ impl Interpreter {
             "gmp_fact" => self.call_gmp_fact(&args, span),
             "gmp_nextprime" => self.call_gmp_nextprime(&args, span),
             "gmp_perfect_square" => self.call_gmp_perfect_square(&args, span),
+            "gmp_gcdext" => self.call_gmp_gcdext(&args, span),
+            "gmp_invert" => self.call_gmp_invert(&args, span),
+            "gmp_jacobi" => self.call_gmp_jacobi(&args, span),
+            "gmp_legendre" => self.call_gmp_legendre(&args, span),
+            "gmp_kronecker" => self.call_gmp_kronecker(&args, span),
+            "gmp_root" => self.call_gmp_root(&args, span),
+            "gmp_rootrem" => self.call_gmp_rootrem(&args, span),
+            "gmp_perfect_power" => self.call_gmp_perfect_power(&args, span),
+            "gmp_prob_prime" => self.call_gmp_prob_prime(&args, span),
+            "gmp_binomial" => self.call_gmp_binomial(&args, span),
             "gmp_and" => self.call_gmp_bitwise_binary("gmp_and()", &args, span, GmpBitwiseOp::And),
             "gmp_or" => self.call_gmp_bitwise_binary("gmp_or()", &args, span, GmpBitwiseOp::Or),
             "gmp_xor" => self.call_gmp_bitwise_binary("gmp_xor()", &args, span, GmpBitwiseOp::Xor),
@@ -118505,6 +118515,10 @@ impl Interpreter {
             return Ok(result);
         }
 
+        if let Some(result) = self.apply_gmp_binary_operator(op, &left, &right, span)? {
+            return Ok(result);
+        }
+
         if let Some(result) =
             self.apply_bcmath_number_comparison_operator(op, &left, &right, span)?
         {
@@ -118545,13 +118559,6 @@ impl Interpreter {
             BinaryOp::StrictNe => left
                 .php_identical_checked(&right)
                 .map(|identical| Value::Bool(!identical)),
-            BinaryOp::Spaceship => left.php_ordering_checked(&right).map(|ordering| {
-                Value::Int(match ordering {
-                    Ordering::Less => -1,
-                    Ordering::Equal => 0,
-                    Ordering::Greater => 1,
-                })
-            }),
             BinaryOp::NullCoalesce => unreachable!("null coalescing is evaluated lazily"),
             BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::LogicalXor => {
                 unreachable!("logical operators are evaluated before binary application")
@@ -130246,6 +130253,59 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
             "bool",
             vec![reflection_internal_param("num", "GMP|string|int")],
         ),
+        "gmp_gcdext" => (
+            "array",
+            vec![
+                reflection_internal_param("num1", "GMP|string|int"),
+                reflection_internal_param("num2", "GMP|string|int"),
+            ],
+        ),
+        "gmp_invert" => (
+            "GMP|false",
+            vec![
+                reflection_internal_param("num1", "GMP|string|int"),
+                reflection_internal_param("num2", "GMP|string|int"),
+            ],
+        ),
+        "gmp_jacobi" | "gmp_legendre" | "gmp_kronecker" => (
+            "int",
+            vec![
+                reflection_internal_param("num1", "GMP|string|int"),
+                reflection_internal_param("num2", "GMP|string|int"),
+            ],
+        ),
+        "gmp_root" => (
+            "GMP",
+            vec![
+                reflection_internal_param("num", "GMP|string|int"),
+                reflection_internal_param("nth", "int"),
+            ],
+        ),
+        "gmp_rootrem" => (
+            "array",
+            vec![
+                reflection_internal_param("num", "GMP|string|int"),
+                reflection_internal_param("nth", "int"),
+            ],
+        ),
+        "gmp_perfect_power" => (
+            "bool",
+            vec![reflection_internal_param("num", "GMP|string|int")],
+        ),
+        "gmp_prob_prime" => (
+            "int",
+            vec![
+                reflection_internal_param("num", "GMP|string|int"),
+                reflection_internal_optional_int_param("repetitions", 10),
+            ],
+        ),
+        "gmp_binomial" => (
+            "GMP",
+            vec![
+                reflection_internal_param("num", "GMP|string|int"),
+                reflection_internal_param("k", "int"),
+            ],
+        ),
         "gmp_and" | "gmp_or" | "gmp_xor" => (
             "GMP",
             vec![
@@ -135619,6 +135679,7 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             }
             "unsupported call bcdiv(): Division by zero"
             | "unsupported call bcdivmod(): Division by zero"
+            | "unsupported call gmp_invert(): Division by zero"
             | "unsupported call gmp_div_q(): Argument #2 ($num2) Division by zero"
             | "unsupported call gmp_div_r(): Argument #2 ($num2) Division by zero"
             | "unsupported call gmp_div_qr(): Argument #2 ($num2) Division by zero"
@@ -135630,7 +135691,9 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
                     .strip_prefix("unsupported call ")
                     .and_then(|message| message.split_once(": "))
                     .unwrap_or(("", "Division by zero"));
-                let message = if function.starts_with("gmp_") {
+                let message = if function == "gmp_invert()" {
+                    message.to_string()
+                } else if function.starts_with("gmp_") {
                     format!("{function}: {message}")
                 } else {
                     message.to_string()
@@ -137340,6 +137403,16 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
             | "gmp_fact()"
             | "gmp_nextprime()"
             | "gmp_perfect_square()"
+            | "gmp_gcdext()"
+            | "gmp_invert()"
+            | "gmp_jacobi()"
+            | "gmp_legendre()"
+            | "gmp_kronecker()"
+            | "gmp_root()"
+            | "gmp_rootrem()"
+            | "gmp_perfect_power()"
+            | "gmp_prob_prime()"
+            | "gmp_binomial()"
             | "gmp_and()"
             | "gmp_or()"
             | "gmp_xor()"
@@ -137359,7 +137432,9 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
                 " must be one of GMP_ROUND_ZERO, GMP_ROUND_PLUSINF, or GMP_ROUND_MINUSINF",
             )
             || message.contains(" must be greater than or equal to 0")
-            || message.contains(" must be between 0 and ") =>
+            || message.contains(" must be between 0 and ")
+            || message.contains(" must be between 1 and ")
+            || message.contains(" must be odd if argument #1 ") =>
         {
             Some(format!("{function}: {message}"))
         }
@@ -138327,6 +138402,16 @@ fn is_builtin(name: &str) -> bool {
             | "gmp_fact"
             | "gmp_nextprime"
             | "gmp_perfect_square"
+            | "gmp_gcdext"
+            | "gmp_invert"
+            | "gmp_jacobi"
+            | "gmp_legendre"
+            | "gmp_kronecker"
+            | "gmp_root"
+            | "gmp_rootrem"
+            | "gmp_perfect_power"
+            | "gmp_prob_prime"
+            | "gmp_binomial"
             | "gmp_and"
             | "gmp_or"
             | "gmp_xor"
@@ -173928,6 +174013,39 @@ impl Interpreter {
         Ok(Some(Value::Object(object)))
     }
 
+    fn apply_gmp_binary_operator(
+        &mut self,
+        op: BinaryOp,
+        left: &Value,
+        right: &Value,
+        span: Span,
+    ) -> CompileResult<Option<Value>> {
+        let operation = match op {
+            BinaryOp::Add => GmpBinaryOp::Add,
+            BinaryOp::Sub => GmpBinaryOp::Sub,
+            BinaryOp::Mul => GmpBinaryOp::Mul,
+            _ => return Ok(None),
+        };
+        if !Self::value_is_gmp(left) && !Self::value_is_gmp(right) {
+            return Ok(None);
+        }
+
+        let function = match operation {
+            GmpBinaryOp::Add => "gmp_add()",
+            GmpBinaryOp::Sub => "gmp_sub()",
+            GmpBinaryOp::Mul => "gmp_mul()",
+        };
+        let left_decimal = self.gmp_decimal_argument(function, 1, "num1", left, 0, span)?;
+        let right_decimal = self.gmp_decimal_argument(function, 2, "num2", right, 0, span)?;
+        let result = match operation {
+            GmpBinaryOp::Add => left_decimal.add(&right_decimal),
+            GmpBinaryOp::Sub => left_decimal.sub(&right_decimal),
+            GmpBinaryOp::Mul => left_decimal.mul(&right_decimal),
+        };
+        self.gmp_object(result.integer_part(), span)
+            .map(|object| Some(Value::Object(object)))
+    }
+
     fn apply_bcmath_number_comparison_operator(
         &self,
         op: BinaryOp,
@@ -174113,6 +174231,10 @@ impl Interpreter {
 
     fn value_is_bcmath_number(value: &Value) -> bool {
         matches!(value, Value::Object(object) if object.class_name().eq_ignore_ascii_case("BcMath\\Number"))
+    }
+
+    fn value_is_gmp(value: &Value) -> bool {
+        matches!(value, Value::Object(object) if object.class_name().eq_ignore_ascii_case("GMP"))
     }
 
     fn retire_bcmath_number_operator_operand(
@@ -175025,6 +175147,150 @@ impl Interpreter {
         ))
     }
 
+    fn call_gmp_gcdext(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("gmp_gcdext", args, 2, span)?;
+        let left = self.gmp_i128_argument("gmp_gcdext()", 1, "num1", &args[0], span)?;
+        let right = self.gmp_i128_argument("gmp_gcdext()", 2, "num2", &args[1], span)?;
+        let (gcd, mut s, mut t) = gmp_extended_gcd_i128(left.abs(), right.abs());
+        if left < 0 {
+            s = -s;
+        }
+        if right < 0 {
+            t = -t;
+        }
+
+        let mut result = PhpArray::new();
+        result.insert(
+            ArrayKey::String("g".to_string()),
+            Value::Object(self.gmp_object(gmp_decimal_from_i128(gcd), span)?),
+        );
+        result.insert(
+            ArrayKey::String("s".to_string()),
+            Value::Object(self.gmp_object(gmp_decimal_from_i128(s), span)?),
+        );
+        result.insert(
+            ArrayKey::String("t".to_string()),
+            Value::Object(self.gmp_object(gmp_decimal_from_i128(t), span)?),
+        );
+        Ok(Value::Array(result))
+    }
+
+    fn call_gmp_invert(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("gmp_invert", args, 2, span)?;
+        let value = self.gmp_i128_argument("gmp_invert()", 1, "num1", &args[0], span)?;
+        let modulus = self.gmp_i128_argument("gmp_invert()", 2, "num2", &args[1], span)?;
+        if modulus == 0 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call("gmp_invert()", "Division by zero"),
+            ));
+        }
+        if modulus < 0 {
+            return Ok(Value::Bool(false));
+        }
+
+        let (gcd, inverse, _) = gmp_extended_gcd_i128(value, modulus);
+        if gcd != 1 {
+            return Ok(Value::Bool(false));
+        }
+        let inverse = inverse.rem_euclid(modulus);
+        self.gmp_object(gmp_decimal_from_i128(inverse), span)
+            .map(Value::Object)
+    }
+
+    fn call_gmp_jacobi(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("gmp_jacobi", args, 2, span)?;
+        let left = self.gmp_i128_argument("gmp_jacobi()", 1, "num1", &args[0], span)?;
+        let right = self.gmp_i128_argument("gmp_jacobi()", 2, "num2", &args[1], span)?;
+        Ok(Value::Int(gmp_jacobi_i128(left, right)))
+    }
+
+    fn call_gmp_legendre(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("gmp_legendre", args, 2, span)?;
+        let left = self.gmp_i128_argument("gmp_legendre()", 1, "num1", &args[0], span)?;
+        let right = self.gmp_i128_argument("gmp_legendre()", 2, "num2", &args[1], span)?;
+        Ok(Value::Int(gmp_jacobi_i128(left, right)))
+    }
+
+    fn call_gmp_kronecker(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("gmp_kronecker", args, 2, span)?;
+        let left = self.gmp_i128_argument("gmp_kronecker()", 1, "num1", &args[0], span)?;
+        let right = self.gmp_i128_argument("gmp_kronecker()", 2, "num2", &args[1], span)?;
+        Ok(Value::Int(gmp_kronecker_i128(left, right)))
+    }
+
+    fn call_gmp_root(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("gmp_root", args, 2, span)?;
+        let value = self.gmp_decimal_argument("gmp_root()", 1, "num", &args[0], 0, span)?;
+        let nth = gmp_nth_argument("gmp_root()", &args[1], span)?;
+        let root = gmp_nth_root_decimal(&value, nth, "gmp_root()", span)?;
+        self.gmp_object(root, span).map(Value::Object)
+    }
+
+    fn call_gmp_rootrem(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("gmp_rootrem", args, 2, span)?;
+        let value = self.gmp_decimal_argument("gmp_rootrem()", 1, "num", &args[0], 0, span)?;
+        let nth = gmp_nth_argument("gmp_rootrem()", &args[1], span)?;
+        let root = gmp_nth_root_decimal(&value, nth, "gmp_rootrem()", span)?;
+        let power = root.pow_u64(nth);
+        let remainder = value.sub(&power).integer_part();
+        let mut result = PhpArray::new();
+        result
+            .append(Value::Object(self.gmp_object(root, span)?))
+            .map_err(|error| runtime_error(span, error))?;
+        result
+            .append(Value::Object(self.gmp_object(remainder, span)?))
+            .map_err(|error| runtime_error(span, error))?;
+        Ok(Value::Array(result))
+    }
+
+    fn call_gmp_perfect_power(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("gmp_perfect_power", args, 1, span)?;
+        let value =
+            self.gmp_decimal_argument("gmp_perfect_power()", 1, "num", &args[0], 0, span)?;
+        Ok(Value::Bool(gmp_decimal_is_perfect_power(&value)))
+    }
+
+    fn call_gmp_prob_prime(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "gmp_prob_prime()",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+        let value = self.gmp_i128_argument("gmp_prob_prime()", 1, "num", &args[0], span)?;
+        if let Some(repetitions) = args.get(1) {
+            let _ =
+                php_internal_int_argument("gmp_prob_prime()", 2, "repetitions", repetitions, span)?;
+        }
+        Ok(Value::Int(if gmp_is_prime_i128(value.abs()) {
+            2
+        } else {
+            0
+        }))
+    }
+
+    fn call_gmp_binomial(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("gmp_binomial", args, 2, span)?;
+        let n = self.gmp_i128_argument("gmp_binomial()", 1, "num", &args[0], span)?;
+        let k = php_internal_int_argument("gmp_binomial()", 2, "k", &args[1], span)?;
+        if k < 0 || k as u64 > GMP_BINOMIAL_K_LIMIT {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "gmp_binomial()",
+                    format!("Argument #2 ($k) must be between 0 and {GMP_BINOMIAL_K_LIMIT}"),
+                ),
+            ));
+        }
+        let result = gmp_binomial_decimal(n, k as u64);
+        self.gmp_object(result, span).map(Value::Object)
+    }
+
     fn call_gmp_bitwise_binary(
         &mut self,
         function: &'static str,
@@ -175219,6 +175485,28 @@ impl Interpreter {
                 .ok_or_else(|| gmp_integer_string_error(function, position, parameter, span)),
             _ => Err(gmp_type_error(function, position, parameter, value, span)),
         }
+    }
+
+    fn gmp_i128_argument(
+        &self,
+        function: &str,
+        position: usize,
+        parameter: &str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<i128> {
+        let decimal = self.gmp_decimal_argument(function, position, parameter, value, 0, span)?;
+        gmp_decimal_to_i128_checked(&decimal).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    format!(
+                        "Argument #{position} (${parameter}) is too large for the current subset"
+                    ),
+                ),
+            )
+        })
     }
 
     fn call_bcround(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -184616,6 +184904,8 @@ const BCMATH_ROUNDING_MODE_CASES: [BcRoundingMode; 8] = [
 const BCMATH_POW_EXPONENT_LIMIT: u64 = 4096;
 const GMP_POW_EXPONENT_LIMIT: u64 = 4096;
 const GMP_FACTORIAL_LIMIT: u64 = 4096;
+const GMP_ROOT_LIMIT: u64 = 4096;
+const GMP_BINOMIAL_K_LIMIT: u64 = 4096;
 const GMP_BIT_INDEX_WORD_LIMIT: i64 = 4096;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -185757,6 +186047,348 @@ fn gmp_is_prime_i64(value: i64) -> bool {
         divisor += 2;
     }
     true
+}
+
+fn gmp_decimal_to_i128_checked(decimal: &BcDecimal) -> Option<i128> {
+    decimal.format_with_scale(0).parse::<i128>().ok()
+}
+
+fn gmp_decimal_from_i128(value: i128) -> BcDecimal {
+    BcDecimal::parse(&value.to_string()).expect("i128 decimal string parses as BcDecimal")
+}
+
+fn gmp_extended_gcd_i128(left: i128, right: i128) -> (i128, i128, i128) {
+    if left == 0 && right == 0 {
+        return (0, 0, 0);
+    }
+
+    let mut old_r = left;
+    let mut r = right;
+    let mut old_s = 1_i128;
+    let mut s = 0_i128;
+    let mut old_t = 0_i128;
+    let mut t = 1_i128;
+    while r != 0 {
+        let quotient = old_r / r;
+        let next_r = old_r - quotient * r;
+        old_r = r;
+        r = next_r;
+
+        let next_s = old_s - quotient * s;
+        old_s = s;
+        s = next_s;
+
+        let next_t = old_t - quotient * t;
+        old_t = t;
+        t = next_t;
+    }
+
+    if old_r < 0 {
+        (-old_r, -old_s, -old_t)
+    } else {
+        (old_r, old_s, old_t)
+    }
+}
+
+fn gmp_jacobi_i128(left: i128, right: i128) -> i64 {
+    if right <= 0 || right % 2 == 0 {
+        return 0;
+    }
+
+    let mut a = left.rem_euclid(right);
+    let mut n = right;
+    let mut result = 1_i64;
+    while a != 0 {
+        while a % 2 == 0 {
+            a /= 2;
+            let residue = n.rem_euclid(8);
+            if residue == 3 || residue == 5 {
+                result = -result;
+            }
+        }
+        std::mem::swap(&mut a, &mut n);
+        if a.rem_euclid(4) == 3 && n.rem_euclid(4) == 3 {
+            result = -result;
+        }
+        a = a.rem_euclid(n);
+    }
+
+    if n == 1 {
+        result
+    } else {
+        0
+    }
+}
+
+fn gmp_kronecker_i128(left: i128, right: i128) -> i64 {
+    if right == 0 {
+        return if left.abs() == 1 { 1 } else { 0 };
+    }
+    if right < 0 {
+        let sign = if left < 0 { -1 } else { 1 };
+        return sign * gmp_kronecker_i128(left, -right);
+    }
+
+    let mut odd = right;
+    let mut result = 1_i64;
+    while odd % 2 == 0 {
+        if left % 2 == 0 {
+            return 0;
+        }
+        let residue = left.rem_euclid(8);
+        if residue == 3 || residue == 5 {
+            result = -result;
+        }
+        odd /= 2;
+    }
+    if odd == 1 {
+        result
+    } else {
+        result * gmp_jacobi_i128(left, odd)
+    }
+}
+
+fn gmp_nth_argument(function: &str, value: &Value, span: Span) -> CompileResult<u64> {
+    let nth = php_internal_int_argument(function, 2, "nth", value, span)?;
+    if nth < 1 || nth as u64 > GMP_ROOT_LIMIT {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!("Argument #2 ($nth) must be between 1 and {GMP_ROOT_LIMIT}"),
+            ),
+        ));
+    }
+    Ok(nth as u64)
+}
+
+fn gmp_nth_root_decimal(
+    value: &BcDecimal,
+    nth: u64,
+    function: &'static str,
+    span: Span,
+) -> CompileResult<BcDecimal> {
+    if value.negative && nth % 2 == 0 {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                "Argument #2 ($nth) must be odd if argument #1 ($a) is negative",
+            ),
+        ));
+    }
+
+    let digits = decimal_nth_root_abs(&value.digits_at_scale(0), nth);
+    Ok(BcDecimal {
+        negative: value.negative && !digits_are_zero(&digits),
+        digits,
+        scale: 0,
+    }
+    .normalized())
+}
+
+fn decimal_nth_root_abs(digits: &[u8], nth: u64) -> Vec<u8> {
+    debug_assert!(nth >= 1);
+    let mut digits = digits.to_vec();
+    normalize_decimal_digits(&mut digits);
+    if nth == 1 || digits_are_zero(&digits) {
+        return digits;
+    }
+
+    let high_zeroes = digits.len().div_ceil(nth as usize);
+    let mut low = vec![0];
+    let mut high = Vec::with_capacity(high_zeroes + 1);
+    high.push(1);
+    high.extend(std::iter::repeat(0).take(high_zeroes));
+
+    loop {
+        let next = decimal_add_small_abs(&low, 1);
+        if decimal_cmp_abs(&next, &high) != Ordering::Less {
+            break;
+        }
+        let mid = decimal_half_floor_abs(&decimal_add_abs(&low, &high));
+        match decimal_pow_abs_cmp(&mid, nth, &digits) {
+            Ordering::Greater => high = mid,
+            Ordering::Equal | Ordering::Less => low = mid,
+        }
+    }
+
+    low
+}
+
+fn decimal_half_floor_abs(digits: &[u8]) -> Vec<u8> {
+    decimal_div_mod_small_abs(digits, 2).0
+}
+
+fn decimal_pow_abs_cmp(base: &[u8], exponent: u64, limit: &[u8]) -> Ordering {
+    let mut result = vec![1];
+    for _ in 0..exponent {
+        result = decimal_mul_abs(&result, base);
+        if decimal_cmp_abs(&result, limit) == Ordering::Greater {
+            return Ordering::Greater;
+        }
+    }
+    decimal_cmp_abs(&result, limit)
+}
+
+fn gmp_decimal_is_perfect_power(value: &BcDecimal) -> bool {
+    let abs_digits = value.digits_at_scale(0);
+    if digits_are_zero(&abs_digits) || abs_digits.as_slice() == [1] {
+        return true;
+    }
+
+    let max_exponent = (abs_digits.len() as u64).saturating_mul(4).max(2);
+    for exponent in 2..=max_exponent {
+        if value.negative && exponent % 2 == 0 {
+            continue;
+        }
+        let root = decimal_nth_root_abs(&abs_digits, exponent);
+        if root.as_slice() == [0] || root.as_slice() == [1] {
+            continue;
+        }
+        if decimal_pow_abs_cmp(&root, exponent, &abs_digits) == Ordering::Equal {
+            return true;
+        }
+    }
+    false
+}
+
+fn gmp_is_prime_i128(value: i128) -> bool {
+    if value < 2 {
+        return false;
+    }
+    let value = value as u128;
+    const SMALL_PRIMES: [u128; 12] = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37];
+    for prime in SMALL_PRIMES {
+        if value == prime {
+            return true;
+        }
+        if value % prime == 0 {
+            return false;
+        }
+    }
+
+    let mut d = value - 1;
+    let mut shifts = 0;
+    while d % 2 == 0 {
+        d /= 2;
+        shifts += 1;
+    }
+
+    for base in SMALL_PRIMES {
+        if base >= value {
+            continue;
+        }
+        let mut x = mod_pow_u128(base, d, value);
+        if x == 1 || x == value - 1 {
+            continue;
+        }
+        let mut witnessed = false;
+        for _ in 1..shifts {
+            x = mod_mul_u128(x, x, value);
+            if x == value - 1 {
+                witnessed = true;
+                break;
+            }
+        }
+        if !witnessed {
+            return false;
+        }
+    }
+    true
+}
+
+fn mod_pow_u128(mut base: u128, mut exponent: u128, modulus: u128) -> u128 {
+    let mut result = 1 % modulus;
+    base %= modulus;
+    while exponent > 0 {
+        if exponent & 1 == 1 {
+            result = mod_mul_u128(result, base, modulus);
+        }
+        exponent >>= 1;
+        if exponent > 0 {
+            base = mod_mul_u128(base, base, modulus);
+        }
+    }
+    result
+}
+
+fn mod_mul_u128(mut left: u128, mut right: u128, modulus: u128) -> u128 {
+    let mut result = 0;
+    left %= modulus;
+    while right > 0 {
+        if right & 1 == 1 {
+            result = mod_add_u128(result, left, modulus);
+        }
+        right >>= 1;
+        if right > 0 {
+            left = mod_add_u128(left, left, modulus);
+        }
+    }
+    result
+}
+
+fn mod_add_u128(left: u128, right: u128, modulus: u128) -> u128 {
+    debug_assert!(left < modulus && right < modulus);
+    if left >= modulus - right {
+        left - (modulus - right)
+    } else {
+        left + right
+    }
+}
+
+fn gmp_binomial_decimal(n: i128, k: u64) -> BcDecimal {
+    if k == 0 {
+        return BcDecimal::one();
+    }
+
+    let (top, choose, negative) = if n >= 0 {
+        let n = n as u128;
+        if u128::from(k) > n {
+            return BcDecimal::zero();
+        }
+        let mirrored = (n - u128::from(k)).min(u128::from(k));
+        (n, mirrored as u64, false)
+    } else {
+        let top = u128::from(k) + n.unsigned_abs() - 1;
+        (top, k, k % 2 == 1)
+    };
+
+    let mut digits = vec![1];
+    for i in 1..=choose {
+        let factor = top - u128::from(choose) + u128::from(i);
+        digits = decimal_mul_u128_abs(&digits, factor);
+        let (quotient, remainder) = decimal_div_mod_small_abs(&digits, i as u16);
+        debug_assert_eq!(remainder, 0);
+        digits = quotient;
+    }
+
+    BcDecimal {
+        negative,
+        digits,
+        scale: 0,
+    }
+    .normalized()
+}
+
+fn decimal_mul_u128_abs(digits: &[u8], factor: u128) -> Vec<u8> {
+    if factor == 0 || digits_are_zero(digits) {
+        return vec![0];
+    }
+    let mut result = Vec::with_capacity(digits.len() + 39);
+    let mut carry = 0_u128;
+    for digit in digits.iter().rev() {
+        let product = u128::from(*digit) * factor + carry;
+        result.push((product % 10) as u8);
+        carry = product / 10;
+    }
+    while carry > 0 {
+        result.push((carry % 10) as u8);
+        carry /= 10;
+    }
+    result.reverse();
+    normalize_decimal_digits(&mut result);
+    result
 }
 
 fn decimal_pow_mod_abs(base: &[u8], mut exponent: u64, modulus: &[u8]) -> Vec<u8> {
