@@ -1059,10 +1059,13 @@ PHP 8 `match` expressions remain a parser boundary rather than an AST node
 until the expression model has strict arm matching, default/exhaustiveness
 handling, throw-arm behavior, value evaluation ordering, reference/COW
 interactions, and native lowering.
-Parenthesized DNF-shaped type declarations such as `(A&B)|C` are also kept at
-a parse boundary for parameters, return types, and typed properties until the
-type metadata model can represent those shapes without implying runtime
-enforcement.
+Parenthesized DNF-shaped type declarations such as `(A&B)|C` are accepted as
+raw type metadata for parameters, return types, and typed properties on the
+interpreter path. Runtime declaration enforcement and signature checks use a
+bounded top-level splitter that preserves intersection arms inside union
+members, renders PHP-facing diagnostic text with intersection parentheses, and
+leaves broader namespace/import-aware type resolution, reflection DNF objects,
+and native lowering as separate boundaries.
 Top-level trait declarations are parsed as metadata for empty traits,
 supported properties, simple public instance methods, and simple public static
 methods. A class body may use already-declared traits
@@ -1167,15 +1170,19 @@ the inherited method, must keep the inherited by-reference passing mode, may
 not add a parameter type where the parent method is untyped, must keep
 compatible parameter types when both sides are typed, and must keep compatible
 typed parent return declarations. Compatible typed relationships include exact
-text case-insensitively, simple nullable/union builtin subset checks, and simple
+text case-insensitively, simple nullable/union builtin subset checks, simple
 declared class/interface contravariant parameter and covariant return
-relationships when both type names resolve through current metadata. When a
+relationships when both type names resolve through current metadata, and
+bounded DNF or pure-intersection relationships whose top-level members resolve
+through current builtin, object/class/interface, `iterable`, and `Traversable`
+metadata. When a
 failed subtype relation contains an unavailable class-like type, compatibility
 uses the unresolved-class fatal only if that missing class could affect the
 relation; builtin/class mismatches remain ordinary declaration incompatibility
 fatals. The same bounded type-relation helpers expand the `iterable` alias to
-`Traversable|array` for reached union redundancy diagnostics and typed-property
-invariance, so duplicate iterable aliases and `object|iterable` versus
+`Traversable|array` for reached union redundancy diagnostics, DNF diagnostic
+rendering, and typed-property invariance, so duplicate iterable aliases,
+commuted intersection arms inside union members, and `object|iterable` versus
 `object|array` comparisons share one canonicalization path. Public interface
 constants declared
 as `const NAME = ...` or
@@ -1185,8 +1192,8 @@ implementing-class class-constant lookup. Missing or cyclic parent interface
 inheritance remains a stable runtime boundary.
 typed/static/non-public/abstract/final or multi-constant interface
 declarations, full variance/signature enforcement, namespace-aware type-name
-resolution, DNF/intersection/union canonicalization beyond the bounded pure
-intersection and iterable-alias lanes, broad variadic runtime
+resolution, DNF/intersection/union canonicalization beyond the bounded
+top-level metadata lane, broad variadic runtime
 type-enforcement diagnostics and traces, built-in/internal interface
 inheritance catalogs, exact PHP diagnostics, and native lowering remain
 explicit boundaries.
@@ -4436,12 +4443,13 @@ child are flattened into both relationship metadata and method-presence checks.
 Implementations may omit an interface parameter type or repeat the same type
 text case-insensitively, but may not add a parameter type to an untyped
 interface parameter or substitute a different type for a typed interface
-parameter. The relation also covers bounded nullable/union builtin checks and
-pure-intersection declared class/interface checks, including intersections
-that satisfy `object`, `iterable`, and `Traversable` bounds. Implementations
-may add a return type to an untyped interface method, but a typed interface
-method requires the implementation to declare the same return type text
-case-insensitively or a narrower bounded pure-intersection relationship.
+parameter. The relation also covers bounded nullable/union builtin checks,
+pure-intersection declared class/interface checks, and top-level DNF unions of
+intersection arms, including intersections that satisfy `object`, `iterable`,
+and `Traversable` bounds. Implementations may add a return type to an untyped
+interface method, but a typed interface method requires the implementation to
+declare the same return type text case-insensitively or a narrower bounded
+DNF/pure-intersection relationship.
 Class parent and `implements` metadata is predeclared after name registration
 so interface-inheritance validation can use class/interface subtype facts
 before members are registered. Public static methods satisfy only static
@@ -4450,9 +4458,9 @@ requirements. Ancestor/descendant duplicate inherited interface method pairs
 are skipped after the descendant override has already been validated. This is
 a bounded compatibility check only; full parameter variance, broader return
 type covariance/contravariance, unrestricted type subtyping,
-alias/import resolution, parenthesized DNF or namespace-aware
-union/intersection canonicalization, cyclic parent-interface inheritance beyond
-stable rejection, broad
+alias/import resolution, parenthesized DNF beyond the bounded top-level
+metadata lane, namespace-aware union/intersection canonicalization,
+cyclic parent-interface inheritance beyond stable rejection, broad
 built-in/internal interface method enforcement beyond the current
 `Countable`, `Iterator`, and `IteratorAggregate` shape checks, exact PHP error
 objects, autoload behavior, and native lowering remain separate work. A bounded

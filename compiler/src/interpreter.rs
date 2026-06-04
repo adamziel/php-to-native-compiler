@@ -93588,13 +93588,11 @@ impl Interpreter {
                 )
             );
         }
-        if trimmed.contains('|')
-            && !trimmed.contains('&')
-            && !trimmed.contains('(')
-            && !trimmed.contains(')')
-        {
-            return trimmed
-                .split('|')
+        let stripped = strip_wrapping_type_parens(trimmed);
+        let union_parts = split_type_decl_top_level(stripped, '|');
+        if union_parts.len() > 1 {
+            return union_members_in_php_display_order(union_parts)
+                .into_iter()
                 .map(|member| {
                     self.call_type_error_type_text_from_str(
                         member,
@@ -93602,16 +93600,21 @@ impl Interpreter {
                         called_class_context,
                     )
                 })
+                .map(|member| {
+                    if member.contains('&') {
+                        format!("({member})")
+                    } else {
+                        member
+                    }
+                })
                 .collect::<Vec<_>>()
                 .join("|");
         }
-        if trimmed.contains('&')
-            && !trimmed.contains('|')
-            && !trimmed.contains('(')
-            && !trimmed.contains(')')
-        {
-            return trimmed
-                .split('&')
+
+        let intersection_parts = split_type_decl_top_level(stripped, '&');
+        if intersection_parts.len() > 1 {
+            return intersection_parts
+                .into_iter()
                 .map(|member| {
                     self.call_type_error_type_text_from_str(
                         member,
@@ -93623,9 +93626,9 @@ impl Interpreter {
                 .join("&");
         }
 
-        let normalized = trimmed
+        let normalized = stripped
             .strip_prefix('\\')
-            .unwrap_or(trimmed)
+            .unwrap_or(stripped)
             .to_ascii_lowercase();
         match normalized.as_str() {
             "self" => class_context
@@ -93643,7 +93646,8 @@ impl Interpreter {
                 .and_then(|class_id| self.classes.get(class_id))
                 .map(|class| class.name().to_string())
                 .unwrap_or_else(|| type_text.to_string()),
-            _ => type_text.to_string(),
+            "iterable" => "Traversable|array".to_string(),
+            _ => stripped.to_string(),
         }
     }
 
@@ -120178,12 +120182,6 @@ fn startup_type_name_is_subtype_of(
         });
     }
 
-    if let Some(sub_members) = signature_intersection_members(subtype) {
-        return sub_members.iter().any(|subtype| {
-            startup_type_name_is_subtype_of(classes, interfaces, subtype, supertype)
-        });
-    }
-
     if let Some(subtypes) = signature_union_members(subtype) {
         return subtypes.iter().all(|subtype| {
             startup_type_name_is_subtype_of(classes, interfaces, subtype, supertype)
@@ -120197,6 +120195,12 @@ fn startup_type_name_is_subtype_of(
 
     if let Some(supertypes) = signature_union_members(supertype) {
         return supertypes.iter().any(|supertype| {
+            startup_type_name_is_subtype_of(classes, interfaces, subtype, supertype)
+        });
+    }
+
+    if let Some(sub_members) = signature_intersection_members(subtype) {
+        return sub_members.iter().any(|subtype| {
             startup_type_name_is_subtype_of(classes, interfaces, subtype, supertype)
         });
     }
@@ -121734,23 +121738,19 @@ fn validate_child_interface_method_compatibility(
                     Some(child_context),
                 ) =>
             {
-                let rendered_parent_type =
-                    render_signature_type_text(parent_type, Some(parent_context));
-                let rendered_child_type =
-                    render_signature_type_text(child_type, Some(child_context));
                 return Err(runtime_error(
                     interface.span,
-                    RuntimeError::unsupported_class_inheritance(
+                    incompatible_declaration_error(
                         &interface.name,
-                        format!(
-                            "interface method {}::{}() parameter ${} type {} is incompatible with parent interface method {}::{}() parameter type {}",
+                        function_decl_compatibility_signature_with_context(
                             child_interface_name,
-                            child_method.function.name,
-                            child_param.name,
-                            rendered_child_type,
+                            &child_method.function,
+                            Some(child_context),
+                        ),
+                        function_decl_compatibility_signature_with_context(
                             parent_interface_name,
-                            parent_method.function.name,
-                            rendered_parent_type
+                            &parent_method.function,
+                            Some(parent_context),
                         ),
                     ),
                 ));
@@ -121795,20 +121795,19 @@ fn validate_child_interface_method_compatibility(
                 Some(child_context),
             ) =>
         {
-            let rendered_parent_type = render_signature_type_text(parent_type, Some(parent_context));
-            let rendered_child_type = render_signature_type_text(child_type, Some(child_context));
             Err(runtime_error(
                 interface.span,
-                RuntimeError::unsupported_class_inheritance(
+                incompatible_declaration_error(
                     &interface.name,
-                    format!(
-                        "interface method {}::{}() return type {} is incompatible with parent interface method {}::{}() return type {}",
+                    function_decl_compatibility_signature_with_context(
                         child_interface_name,
-                        child_method.function.name,
-                        rendered_child_type,
+                        &child_method.function,
+                        Some(child_context),
+                    ),
+                    function_decl_compatibility_signature_with_context(
                         parent_interface_name,
-                        parent_method.function.name,
-                        rendered_parent_type
+                        &parent_method.function,
+                        Some(parent_context),
                     ),
                 ),
             ))
@@ -124176,32 +124175,35 @@ fn render_signature_type_text(
     if let Some(nullable) = trimmed.strip_prefix('?') {
         return format!("?{}", render_signature_type_text(nullable.trim(), context));
     }
-    if trimmed.contains('|')
-        && !trimmed.contains('&')
-        && !trimmed.contains('(')
-        && !trimmed.contains(')')
-    {
-        return trimmed
-            .split('|')
+    let stripped = strip_wrapping_type_parens(trimmed);
+    let union_parts = split_type_decl_top_level(stripped, '|');
+    if union_parts.len() > 1 {
+        return union_members_in_php_display_order(union_parts)
+            .into_iter()
             .map(|member| render_signature_type_text(member, context))
+            .map(|member| {
+                if member.contains('&') {
+                    format!("({member})")
+                } else {
+                    member
+                }
+            })
             .collect::<Vec<_>>()
             .join("|");
     }
-    if trimmed.contains('&')
-        && !trimmed.contains('|')
-        && !trimmed.contains('(')
-        && !trimmed.contains(')')
-    {
-        return trimmed
-            .split('&')
+
+    let intersection_parts = split_type_decl_top_level(stripped, '&');
+    if intersection_parts.len() > 1 {
+        return intersection_parts
+            .into_iter()
             .map(|member| render_signature_type_text(member, context))
             .collect::<Vec<_>>()
             .join("&");
     }
 
-    let normalized = trimmed
+    let normalized = stripped
         .strip_prefix('\\')
-        .unwrap_or(trimmed)
+        .unwrap_or(stripped)
         .to_ascii_lowercase();
     match normalized.as_str() {
         "self" => context
@@ -124212,7 +124214,53 @@ fn render_signature_type_text(
             .map(str::to_string)
             .unwrap_or_else(|| type_text.to_string()),
         "static" => type_text.to_string(),
-        _ => type_text.to_string(),
+        "iterable" => "Traversable|array".to_string(),
+        _ => stripped.to_string(),
+    }
+}
+
+fn render_php_type_text(type_text: &str) -> String {
+    let trimmed = type_text.trim();
+    if trimmed.is_empty() {
+        return type_text.to_string();
+    }
+    if let Some(nullable) = trimmed.strip_prefix('?') {
+        return format!("?{}", render_php_type_text(nullable.trim()));
+    }
+    let stripped = strip_wrapping_type_parens(trimmed);
+    let union_parts = split_type_decl_top_level(stripped, '|');
+    if union_parts.len() > 1 {
+        return union_members_in_php_display_order(union_parts)
+            .into_iter()
+            .map(render_php_type_text)
+            .map(|member| {
+                if member.contains('&') {
+                    format!("({member})")
+                } else {
+                    member
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("|");
+    }
+
+    let intersection_parts = split_type_decl_top_level(stripped, '&');
+    if intersection_parts.len() > 1 {
+        return intersection_parts
+            .into_iter()
+            .map(render_php_type_text)
+            .collect::<Vec<_>>()
+            .join("&");
+    }
+
+    let normalized = stripped
+        .strip_prefix('\\')
+        .unwrap_or(stripped)
+        .to_ascii_lowercase();
+    if normalized == "iterable" {
+        "Traversable|array".to_string()
+    } else {
+        stripped.to_string()
     }
 }
 
@@ -127777,6 +127825,13 @@ fn unavailable_class_for_failed_signature_subtype_check(
         return None;
     };
     let Some(supertype_class_like) = simple_class_like_signature_type(supertype.as_ref()) else {
+        if normalized_builtin_signature_type(supertype.as_ref()).is_some_and(|ty| ty == "object") {
+            return unavailable_resolved_signature_class_name(
+                classes,
+                interface_lookup,
+                subtype_class_like,
+            );
+        }
         return None;
     };
 
@@ -127806,6 +127861,14 @@ fn unavailable_resolved_signature_class_name(
     Some(class_like.to_string())
 }
 
+fn signature_class_like_type_is_available(
+    classes: &PhpClassTable,
+    interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
+    class_like: &str,
+) -> bool {
+    unavailable_resolved_signature_class_name(classes, interface_lookup, class_like).is_none()
+}
+
 fn type_name_is_subtype_of(
     classes: &PhpClassTable,
     interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
@@ -127828,19 +127891,6 @@ fn type_name_is_subtype_of_with_context(
 
     if let Some(super_members) = signature_intersection_members(supertype) {
         return super_members.iter().all(|supertype| {
-            type_name_is_subtype_of_with_context(
-                classes,
-                interface_lookup,
-                subtype,
-                subtype_context,
-                supertype,
-                supertype_context,
-            )
-        });
-    }
-
-    if let Some(sub_members) = signature_intersection_members(subtype) {
-        return sub_members.iter().any(|subtype| {
             type_name_is_subtype_of_with_context(
                 classes,
                 interface_lookup,
@@ -127885,6 +127935,19 @@ fn type_name_is_subtype_of_with_context(
 
     if let Some(supertypes) = signature_union_members(supertype) {
         return supertypes.iter().any(|supertype| {
+            type_name_is_subtype_of_with_context(
+                classes,
+                interface_lookup,
+                subtype,
+                subtype_context,
+                supertype,
+                supertype_context,
+            )
+        });
+    }
+
+    if let Some(sub_members) = signature_intersection_members(subtype) {
+        return sub_members.iter().any(|subtype| {
             type_name_is_subtype_of_with_context(
                 classes,
                 interface_lookup,
@@ -127956,8 +128019,10 @@ fn type_name_is_subtype_of_with_context(
         return false;
     };
     let Some(supertype) = simple_class_like_signature_type(supertype.as_ref()) else {
-        return normalized_builtin_signature_type(supertype.as_ref())
-            .is_some_and(|ty| ty == "object");
+        return normalized_builtin_signature_type(supertype.as_ref()).is_some_and(|ty| {
+            ty == "object"
+                && signature_class_like_type_is_available(classes, interface_lookup, subtype)
+        });
     };
 
     let subtype_class_id = classes.lookup_class_id(subtype);
@@ -128055,34 +128120,58 @@ fn signature_type_resolves_to_context_self(
     }
 }
 
-fn signature_intersection_members(type_name: &str) -> Option<Vec<&str>> {
-    let type_name = type_name.trim();
-    if type_name.contains('&')
-        && !type_name.contains('|')
-        && !type_name.contains('(')
-        && !type_name.contains(')')
-    {
-        return Some(type_name.split('&').map(str::trim).collect());
+fn union_members_in_php_display_order(parts: Vec<&str>) -> Vec<&str> {
+    let has_builtin = parts
+        .iter()
+        .any(|part| signature_union_arm_is_builtin(part));
+    let has_non_builtin = parts
+        .iter()
+        .any(|part| !signature_union_arm_is_builtin(part));
+    if !has_builtin || !has_non_builtin {
+        return parts;
     }
 
-    None
+    let mut ordered = parts
+        .iter()
+        .copied()
+        .filter(|part| !signature_union_arm_is_builtin(part))
+        .collect::<Vec<_>>();
+    ordered.extend(
+        parts
+            .iter()
+            .copied()
+            .filter(|part| signature_union_arm_is_builtin(part)),
+    );
+    ordered
+}
+
+fn signature_union_arm_is_builtin(type_name: &str) -> bool {
+    let type_name = strip_wrapping_type_parens(type_name.trim());
+    if split_type_decl_top_level(type_name, '&').len() > 1
+        || split_type_decl_top_level(type_name, '|').len() > 1
+    {
+        return false;
+    }
+    let type_name = type_name.strip_prefix('?').unwrap_or(type_name).trim();
+    normalized_builtin_signature_type(type_name).is_some()
+}
+
+fn signature_intersection_members(type_name: &str) -> Option<Vec<&str>> {
+    let type_name = strip_wrapping_type_parens(type_name.trim());
+    if split_type_decl_top_level(type_name, '|').len() > 1 {
+        return None;
+    }
+    let members = split_type_decl_top_level(type_name, '&');
+    (members.len() > 1).then(|| members.into_iter().map(str::trim).collect())
 }
 
 fn signature_union_members(type_name: &str) -> Option<Vec<&str>> {
-    let type_name = type_name.trim();
+    let type_name = strip_wrapping_type_parens(type_name.trim());
     if let Some(nullable) = type_name.strip_prefix('?') {
         return Some(vec![nullable.trim(), "null"]);
     }
-
-    if type_name.contains('|')
-        && !type_name.contains('&')
-        && !type_name.contains('(')
-        && !type_name.contains(')')
-    {
-        return Some(type_name.split('|').map(str::trim).collect());
-    }
-
-    None
+    let members = split_type_decl_top_level(type_name, '|');
+    (members.len() > 1).then(|| members.into_iter().map(str::trim).collect())
 }
 
 fn resolve_relative_signature_type<'a>(
@@ -131979,6 +132068,7 @@ fn typed_property_reference_type_error_message(error: &Diagnostic) -> Option<Str
     if let Some(rest) = message.strip_prefix("typed property ") {
         if let Some((property, rest)) = rest.split_once(" expects ") {
             if let Some((type_decl, actual)) = rest.rsplit_once(", got ") {
+                let type_decl = render_php_type_text(type_decl);
                 return Some(format!(
                     "Cannot assign {actual} to property {property} of type {type_decl}"
                 ));
@@ -178713,15 +178803,15 @@ fn parameter_has_implicit_nullable_default(param: &FunctionParam) -> bool {
 
 fn parameter_type_error_type_text(type_decl: &TypeDecl, param: &FunctionParam) -> String {
     if !parameter_has_implicit_nullable_default(param) {
-        return type_decl.text.clone();
+        return render_php_type_text(&type_decl.text);
     }
     if type_decl.text.contains('&') && !type_decl.text.contains('|') {
-        return format!("({})|null", type_decl.text);
+        return format!("({})|null", render_php_type_text(&type_decl.text));
     }
     if !type_decl.text.contains('|') {
-        return format!("?{}", type_decl.text);
+        return format!("?{}", render_php_type_text(&type_decl.text));
     }
-    format!("{}|null", type_decl.text)
+    format!("{}|null", render_php_type_text(&type_decl.text))
 }
 
 fn type_decl_text_allows_null(type_decl: &str) -> bool {

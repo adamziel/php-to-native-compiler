@@ -17237,6 +17237,105 @@ echo method_exists(new IterableChild(), "values") ? "iterable" : "missing";
 }
 
 #[test]
+fn dnf_signature_variance_and_type_errors_use_php_canonical_type_text() {
+    let diagnostics = run_source(
+        r#"<?php
+interface X {}
+interface Y {}
+class Both implements X, Y {}
+class Other {}
+function accepts_null(null|(X&Y) $value) {}
+function accepts_int(int|(X&Y) $value) {}
+class Box {
+    public null|(X&Y) $nullable;
+    public int|(X&Y) $numbered;
+}
+$box = new Box();
+try { accepts_null(new Other()); } catch (TypeError $e) { echo $e->getMessage(), "\n"; }
+try { accepts_int(new Other()); } catch (TypeError $e) { echo $e->getMessage(), "\n"; }
+try { $box->nullable = new Other(); } catch (TypeError $e) { echo $e->getMessage(), "\n"; }
+try { $box->numbered = new Other(); } catch (TypeError $e) { echo $e->getMessage(), "\n"; }
+"#,
+    )
+    .unwrap();
+    assert!(diagnostics
+        .stdout
+        .contains("accepts_null(): Argument #1 ($value) must be of type (X&Y)|null, Other given"));
+    assert!(diagnostics
+        .stdout
+        .contains("accepts_int(): Argument #1 ($value) must be of type (X&Y)|int, Other given"));
+    assert!(diagnostics
+        .stdout
+        .contains("Cannot assign Other to property Box::$nullable of type (X&Y)|null"));
+    assert!(diagnostics
+        .stdout
+        .contains("Cannot assign Other to property Box::$numbered of type (X&Y)|int"));
+
+    let valid_variance = run_source(
+        r#"<?php
+interface X {}
+interface Y {}
+interface Z {}
+interface IA {}
+interface IB {}
+class TestOne implements X, Y {}
+class TestTwo implements X, Y {}
+class Both implements X, Y, Z {}
+class A {}
+class B extends A {}
+abstract class MyIterator implements Traversable {}
+
+interface ParentContract {
+    public function foo(TestOne|TestTwo $param): (X&Y)|Z;
+}
+interface ChildContract extends ParentContract {
+    public function foo((X&Y)|Z $param): TestOne|TestTwo;
+}
+class ParentProperties {
+    public X|(IA&IB) $same;
+    public (A&B)|Z $reduced;
+}
+class ChildProperties extends ParentProperties {
+    public (IB&IA)|X $same;
+    public B|Z $reduced;
+}
+class IterableBase {
+    public function values(): iterable|string {}
+}
+class IterableChild extends IterableBase {
+    public function values(): (X&MyIterator)|string {}
+}
+echo interface_exists("ChildContract") ? "interface\n" : "missing\n";
+echo class_exists("ChildProperties") ? "properties\n" : "missing\n";
+echo method_exists(new IterableChild(), "values") ? "iterable" : "missing";
+"#,
+    )
+    .unwrap();
+    assert_eq!(valid_variance.stdout, "interface\nproperties\niterable");
+    assert_eq!(valid_variance.exit_code, 0);
+
+    assert_php_startup_fatal(
+        r#"<?php
+class Test { function method(): object {} }
+class Test2 extends Test { function method(): X&Y {} }
+"#,
+        "Zend/tests/type_declarations/intersection_types/variance/invalid4.php",
+        3,
+        "Could not check compatibility between Test2::method(): X&Y and Test::method(): object, because class X is not available",
+    );
+
+    assert_php_startup_fatal(
+        r#"<?php
+class Test { function method(): iterable|int {} }
+class Test2 extends Test { function method(): int|(X&MyIterator) {} }
+"#,
+        "Zend/tests/type_declarations/dnf_types/variance/valid9.php",
+        3,
+        "Could not check compatibility between Test2::method(): (X&MyIterator)|int and Test::method(): Traversable|array|int, because class X is not available",
+    );
+}
+
+#[test]
 fn mixed_return_variance_rejects_void_override() {
     let accepted_value_types = run_source(
         r#"<?php

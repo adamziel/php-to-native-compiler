@@ -2903,7 +2903,11 @@
   type metadata includes `mixed`, `null`, `true`, `false`, `bool`, `int`,
   `float`, `string`, `array`, `object`, nullable forms, unions,
   intersections, and class/interface object names visible on runtime object
-  metadata. Scalar parameters and returns use the current weak coercion model,
+  metadata. Parenthesized DNF unions of intersection arms are also executable
+  in the bounded interpreter diagnostics slice for parameters, returns, and
+  typed properties, with PHP-facing error text preserving intersection-arm
+  parentheses and alias display. Scalar parameters and returns use the current
+  weak coercion model,
   including PHP's float-to-int / float-string-to-int deprecation diagnostics
   for lossy finite real floats and numeric strings coerced through exact weak
   `int` parameters and returns. Weak `int|string` unions defer
@@ -2919,7 +2923,9 @@
   non-nullable type and an explicit `= null` default are accepted as
   implicitly nullable on the interpreter call path, emit PHP's startup
   `Deprecated` diagnostic, and render pure-intersection error types as
-  `(A&B)|null`. `void` return types reject value returns at declaration startup;
+  `(A&B)|null`; DNF unions that contain intersection arms use the same
+  canonical runtime and typed-property error text. `void` return types reject
+  value returns at declaration startup;
   `never` return types are accepted for bodies that throw before returning and
   reject explicit value returns at declaration startup. Class, interface, and
   trait startup diagnostics enforce bounded magic-method return declarations:
@@ -3331,8 +3337,12 @@
   inherited parameter type, use the same type text case-insensitively, use a
   broader simple declared class/interface type, or use a simple nullable/union
   builtin relationship when the current subset checks prove the inherited type
-  is covered. They may not add a type where the inherited parameter is untyped
-  or change a typed inherited parameter to an unrelated type. If a failed
+  is covered. Bounded DNF and pure-intersection relationships whose top-level
+  union/intersection members resolve through the current builtin,
+  object/class/interface, `iterable`, and `Traversable` metadata are checked
+  through the same compatibility path, including commuted intersection arms
+  inside union members. They may not add a type where the inherited parameter
+  is untyped or change a typed inherited parameter to an unrelated type. If a failed
   relationship depends on an unavailable class-like type, startup reports the
   bounded `Could not check compatibility... because class ... is not available`
   fatal; failures already proven by builtin/class mismatches, such as `array`
@@ -3341,7 +3351,9 @@
   inherited method return type metadata, child methods may add a return type
   when the inherited method is untyped; typed inherited methods accept the same
   return type text case-insensitively or a narrower bounded relationship,
-  including value-return types under `mixed` but not `void`.
+  including value-return types under `mixed` but not `void`, pure intersections
+  that satisfy object/interface bounds, and the same bounded DNF union of
+  intersection arms.
   Private parent methods remain separately redeclarable.
 - object instantiation with `new ClassName(...)` for declared classes, plus
   `new $class(...)` when `$class` is a direct variable containing a string class
@@ -3406,13 +3418,17 @@
   for the bounded declared class/interface subset as well: an intersection may
   narrow a return type, broaden a parameter type when the inherited union
   members all satisfy the intersection, and satisfy `object` or `iterable`
-  through object/interface and `Traversable` metadata. Implementations may not
-  add a type where the interface parameter is untyped or change a typed
+  through object/interface and `Traversable` metadata. Parenthesized DNF unions
+  of intersection arms are accepted in the same bounded compatibility slice for
+  parameters, returns, and invariant properties, including commuted
+  intersections inside otherwise matching union declarations. Implementations
+  may not add a type where the interface parameter is untyped or change a typed
   interface parameter to an unrelated type. For interface method return type
   metadata, implementations may add a return type when the interface method is
   untyped, but a typed interface method requires the implementation to declare
   the same return type text case-insensitively or a narrower bounded
-  relationship, including value-return types under `mixed` but not `void`.
+  relationship, including value-return types under `mixed` but not `void` and
+  the same bounded DNF/intersection relationships.
   Child interfaces that redeclare inherited methods and simple multi-parent
   inherited method conflicts are
   checked with those same bounded staticness, required-parameter,
@@ -3427,8 +3443,8 @@
   `defined()`/`constant()` string lookups. Missing or cyclic parent interface
   inheritance reports stable runtime boundaries. Full PHP method signature
   variance beyond the current simple declared class/interface, nullable/union
-  builtin, and pure-intersection metadata checks, namespace-aware type-name
-  resolution, type aliases, DNF/intersection/union canonicalization, broad
+  builtin, pure-intersection, and bounded DNF metadata checks,
+  namespace-aware type-name resolution, type aliases, broad
   variadic runtime
   type-enforcement diagnostics and traces,
   typed/non-public/abstract/final or multi-constant interface
@@ -7874,7 +7890,8 @@
   beyond the current metadata in typed-property
   compatibility checks, arbitrary typed-property reference writes through
   complex alias paths, readonly properties, property hooks, static typed
-  property unset, parenthesized DNF property types, exact PHP union scalar
+  property unset, parenthesized DNF property behavior beyond the bounded
+  top-level union-of-intersections metadata lane, exact PHP union scalar
   coercion preference rules, full iterable parameter/return enforcement,
   generator-return execution, namespace/import alias resolution for type names,
   and native lowering remain unsupported.
@@ -8079,8 +8096,9 @@
   compatibility check only, not full parameter type compatibility, broader
   return type covariance/contravariance, full signature variance, unrestricted
   class or interface type subtyping, type-alias/import resolution,
-  parenthesized DNF or namespace-aware union/intersection canonicalization, or
-  exact PHP error-object behavior.
+  parenthesized DNF beyond the bounded top-level metadata lane,
+  namespace-aware union/intersection canonicalization, or exact PHP
+  error-object behavior.
   Unresolved interface names remain relationship metadata only. Most
   built-in/internal interface names are still metadata-only, except for the
   bounded `Countable`, `Iterator`, and `IteratorAggregate` concrete-class
@@ -9832,10 +9850,10 @@
   parameters after default parameters are also rejected instead of modeling
   PHP's deprecation and implicit-required behavior. Empty parameter slots such
   as `function f(,)` remain rejected. Parameter and return type declarations,
-  including nullable, union, intersection, and namespace-qualified names, are
-  accepted except parenthesized DNF-shaped declarations such as `(A&B)|C`,
-  which fail with a stable parse diagnostic. Invoked by-value call paths
-  enforce the bounded scalar/array/object/class subset documented above.
+  including nullable, union, intersection, parenthesized DNF unions of
+  intersection arms, and namespace-qualified names, are accepted. Invoked
+  by-value call paths enforce the bounded scalar/array/object/class subset
+  documented above.
   Typed by-reference parameters, unsupported pseudo-types, exact `TypeError`
   behavior beyond the documented return-type mismatch slice, `strict_types`,
   variance beyond existing metadata compatibility checks, and native lowering
@@ -13089,14 +13107,16 @@
   model section, including weak scalar coercions and inherited class-name plus
   declared user-interface object assignment checks; broader built-in/internal
   interface catalog behavior, exact PHP union scalar coercion preference rules,
-  parenthesized DNF property types, non-public reflection property value
-  access, dynamic reflection property value access, complex reference/COW
-  interactions, and native lowering remain unsupported. Property file/line metadata and
-  parameter source-file, line, or doc-comment metadata remain unsupported.
+  parenthesized DNF reflection-object fidelity beyond bounded metadata,
+  non-public reflection property value access, dynamic reflection property
+  value access, complex reference/COW interactions, and native lowering remain
+  unsupported. Property file/line metadata and parameter source-file, line, or
+  doc-comment metadata remain unsupported.
   Parameter/return type reflection remains metadata only and does not enforce
   call arguments or return values.
-  Parenthesized DNF parameter/return types, callable/iterable/object special
-  PHP edge cases beyond the current parsed-name metadata, attributes beyond
+  Broader parenthesized DNF parameter/return reflection fidelity,
+  callable/iterable/object special PHP edge cases beyond the current
+  parsed-name metadata, attributes beyond
   the supported `getAttributes()` / `ReflectionAttribute` metadata and
   instantiation subset,
   exact parameter/property docblock association across attributes and unusual trivia,
