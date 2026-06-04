@@ -1,6 +1,6 @@
 # PHP Native Compiler PHPT Progress
 
-Updated: 2026-06-04 23:33 CEST
+Updated: 2026-06-05 00:05 CEST
 
 Primary/public branch: `origin/master`
 Latest accepted public-score source:
@@ -19,7 +19,7 @@ denominators that exclude BORKED rows are not public progress.
 Current public score: **7873 / 20294 pinned runnable PHPTs = 38.79%**.
 
 Latest pushed source checkpoint:
-`2ecb075047bc3d95650decd84231eb928d39f7d1 fix: support gd image diagnostics`
+`b180bf06f086f498e1dcd5f4d645714e2f776333 fix: support typed class-like constants`
 
 Current score-gate status:
 Accepted public gate:
@@ -32,7 +32,7 @@ the accepted `6c038019` PASS baseline. It reported public-comparable
 `7873 / 20294 = 38.79%`, `7869` normalized current passes, `0`
 latest-published PASS regressions, and `0` invalid proof-marker hits. This
 gate converts the post-`6c038019` source chain through `0b917f67` into public
-PHPT progress. Newer source commits through `2ecb0750` are staged after this
+PHPT progress. Newer source commits through `b180bf06` are staged after this
 accepted public source and are not included in the public score above.
 
 Latest non-public full gate:
@@ -42,7 +42,7 @@ accepted `0b917f67` PASS baseline. The repaired runner captured
 `signal-events.tsv`, shard signal events, and shard exit codes; all 12 shard
 exits were `143` after TERM. It produced no accepted aggregate current-pass or
 latest-published PASS-regression publication artifacts. Current source later
-advanced to `2ecb0750`. This gate does not authorize a public score change or
+advanced to `b180bf06`. This gate does not authorize a public score change or
 publish source commits after `0b917f67`.
 
 Recent non-public gate history: the `6bca3d9c` gate at `203538Z` also ended
@@ -107,10 +107,10 @@ passes, with zero latest-published PASS regressions.
 
 Unpublished source progress since the accepted public score source:
 
-- Latest pushed source head is `2ecb075047bc3d95650decd84231eb928d39f7d1`
-  (`fix: support gd image diagnostics`), which is newer than the
+- Latest pushed source head is `b180bf06f086f498e1dcd5f4d645714e2f776333`
+  (`fix: support typed class-like constants`), which is newer than the
   accepted `0b917f67` full gate and is not included in the public score above.
-- There are `25` score-relevant source commits after the accepted public-score
+- There are `26` score-relevant source commits after the accepted public-score
   source: `88071e97e22d6b840ab9ebbc248a67a55e5b6926`
   (`fix: reject invalid property hooks`),
   `1b3c4f4dad1eef590cfec69504dd16c4e55e0743`
@@ -158,11 +158,13 @@ Unpublished source progress since the accepted public score source:
   `eab7db21e00e706eca24aec5598254aa6d1fd3b0`
   (`fix: support html entity encoding edges`),
   `ac0c019764ce7b9469ed2b87811fa55481849ea9`
-  (`fix: support function argument diagnostics`), and
+  (`fix: support function argument diagnostics`),
   `2ecb075047bc3d95650decd84231eb928d39f7d1`
-  (`fix: support gd image diagnostics`).
+  (`fix: support gd image diagnostics`), and
+  `b180bf06f086f498e1dcd5f4d645714e2f776333`
+  (`fix: support typed class-like constants`).
 - Staged focused selected-PHPT proof after the latest accepted public-score
-  source totals `346` selected rows across `28` integrated status artifacts.
+  source totals `356` selected rows across `29` integrated status artifacts.
   These are source/staging facts, not a public score update unless a full
   pinned PHPT gate accepts them.
 - The staged packets are property-hook diagnostics `0/16 -> 16/16`, GMP
@@ -183,17 +185,19 @@ Unpublished source progress since the accepted public score source:
   method/property rows `1/16 -> 16/16` with direct selected movement `+15`,
   JSON throw/core-edge rows `0/11 -> 11/11`, password/bcrypt helper rows
   `0/12 -> 12/12`, HTML entity encoding rows `0/11 -> 11/11`,
-  function-argument diagnostics rows `0/10 -> 10/10`, and GD image
-  diagnostics rows `0/13 -> 13/13`.
+  function-argument diagnostics rows `0/10 -> 10/10`, GD image diagnostics
+  rows `0/13 -> 13/13`, and typed class-like constant rows
+  `0/10 -> 10/10`.
   They preserved latest-published PASS scouts in the accepted integration
   artifacts and passed focused Rust, build, fmt, diff, php-src cleanliness, and
   production row-name leakage checks.
-- Outstanding publication blocker: cadence reports `SCORE-GATE-BLOCKED-DISK`
-  with disk (`12` GiB) below the 35 GiB floor after the `eab7db21` full gate
-  ended `FINAL / RUNNER-INTERRUPTED-TERM`. No full gate has accepted staged
-  source through `2ecb0750` after `0b917f67`, and no staged source can move the
-  public score unless a fresh/current full pinned PHPT gate completes with zero
-  latest-published PASS regressions.
+- Outstanding publication blocker: the latest full gate is still the
+  `eab7db21` `FINAL / RUNNER-INTERRUPTED-TERM` attempt and produced no
+  accepted aggregate/current-pass/PASS-regression publication artifacts.
+  Refreshed cadence now reports `SCORE-GATE-READY` with disk above the 35 GiB
+  floor, but no full gate has accepted staged source through `b180bf06` after
+  `0b917f67`; no staged source can move the public score unless a fresh/current
+  full pinned PHPT gate completes with zero latest-published PASS regressions.
 
 Accepted source proof included in the `0b917f67` public gate:
 
@@ -955,17 +959,17 @@ regressions.
 
 ## Current Public Gate
 
-Published gate: current score gate `e3813529`.
+Published gate: current score gate `0b917f67`.
 
 - Gate run:
-  `phpt-full-current-score-20260604T103438Z-php-src-f97ff59-public-e3813529-source-e3813529`
-- Source: `e38135290f48e7f97dec2e99e673c6466a950f3e fix: implement trait constant semantics`
-- Score: **7685 / 20294 pinned runnable PHPTs = 37.87%**
+  `phpt-full-current-score-20260604T135138Z-php-src-f97ff59-public-0b917f67-source-0b917f67`
+- Source: `0b917f67a37d9ca9779d77f87173b628431c2425 fix: respect private instance property shadows`
+- Score: **7873 / 20294 pinned runnable PHPTs = 38.79%**
 - Regression result: zero latest-published PASS regressions against the
-  `dcf615c9` PASS baseline.
-- Gate notes: the aggregate had `7685` public-comparable passes, `7681`
+  `6c038019` PASS baseline.
+- Gate notes: the aggregate had `7873` public-comparable passes, `7869`
   normalized current passes, `0` PASS regressions, and `0` invalid
-  proof-marker hits. Newer source `6c038019` is staged after this accepted
+  proof-marker hits. Newer source `b180bf06` is staged after this accepted
   gate and awaits a future full pinned PHPT gate.
 
 No focused PHPT run, source checkpoint, status note, PR, or candidate gate
@@ -1309,7 +1313,10 @@ Current rejected, reverted, stale, or still-pending Batch024 candidates:
 | Batch024 next14 | 5513 / 20294 | 27.17% | 0 PASS regressions; stream/INI/array rows |
 | Batch024 current-score `12c1be0a` | 5690 / 20294 | 28.04% | 0 PASS regressions; +177 public PHPT passes |
 | Previous accepted score gate `0086ba77` | 7376 / 20294 | 36.35% | 0 PASS regressions; +97 public PHPT passes over `21abc76f` |
-| Current accepted score gate `dcf615c9` | 7636 / 20294 | 37.63% | 0 PASS regressions; +260 public PHPT passes over `0086ba77` |
+| Accepted score gate `dcf615c9` | 7636 / 20294 | 37.63% | 0 PASS regressions; +260 public PHPT passes over `0086ba77` |
+| Accepted score gate `e3813529` | 7685 / 20294 | 37.87% | 0 PASS regressions; +49 public PHPT passes over `dcf615c9` |
+| Accepted score gate `6c038019` | 7703 / 20294 | 37.96% | 0 PASS regressions; +18 public PHPT passes over `e3813529` |
+| Current accepted score gate `0b917f67` | 7873 / 20294 | 38.79% | 0 PASS regressions; +170 public PHPT passes over `6c038019` |
 
 ## Operating Rules / Gates
 
@@ -1335,10 +1342,16 @@ Current rejected, reverted, stale, or still-pending Batch024 candidates:
 - PHPT wrapper:
   `/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper`
 - Current accepted gate evidence:
-  `/home/claude/supervised-php-compiler/state/logs/phpt-full-current-score-20260604T095029Z-php-src-f97ff59-public-dcf615c9-source-dcf615c9`
-- Previous blocked score-gate candidate evidence:
-  `/home/claude/supervised-php-compiler/state/logs/phpt-full-current-score-20260604T091955Z-php-src-f97ff59-public-593c0625-source-593c0625`
+  `/home/claude/supervised-php-compiler/state/logs/phpt-full-current-score-20260604T135138Z-php-src-f97ff59-public-0b917f67-source-0b917f67`
+- Latest non-public full gate evidence:
+  `/home/claude/supervised-php-compiler/state/logs/phpt-full-current-score-20260604T205049Z-php-src-f97ff59-public-eab7db21-source-eab7db21`
 - Previous accepted gate evidence:
+  `/home/claude/supervised-php-compiler/state/logs/phpt-full-current-score-20260604T110314Z-php-src-f97ff59-public-6c038019-source-6c038019`
+- Earlier accepted gate evidence:
+  `/home/claude/supervised-php-compiler/state/logs/phpt-full-current-score-20260604T103438Z-php-src-f97ff59-public-e3813529-source-e3813529`
+- Earlier accepted gate evidence:
+  `/home/claude/supervised-php-compiler/state/logs/phpt-full-current-score-20260604T095029Z-php-src-f97ff59-public-dcf615c9-source-dcf615c9`
+- Earlier accepted gate evidence:
   `/home/claude/supervised-php-compiler/state/logs/phpt-full-current-score-20260604T043544Z-php-src-f97ff59-public-0086ba77-source-0086ba77`
 - Earlier accepted gate evidence:
   `/home/claude/supervised-php-compiler/state/logs/phpt-full-current-score-20260604T030645Z-php-src-f97ff59-public-21abc76f-source-21abc76f`
