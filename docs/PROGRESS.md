@@ -4,6 +4,31 @@
 
 Implemented:
 
+- Added a bounded DateTime interval-arithmetic correction for DST-crossing
+  diffs and massive signed proleptic years on the interpreter path. The local
+  civil-date conversion now round-trips negative-era dates with Euclidean
+  division, and `DateTime::diff()` / `date_diff()` share a single bounded
+  component path that adjusts zero-day named-zone and fixed/abbreviation
+  timezone spans by endpoint offset deltas while preserving named-zone
+  multi-day wall-calendar components. Focused proof covers exact-current
+  pre-patch selected PHPT at `0/12` and post-patch selected PHPT at `12/12`
+  for `ext/date/tests/DateTime_diff-fall-type2-type2.phpt`,
+  `ext/date/tests/DateTime_diff-fall-type2-type3.phpt`,
+  `ext/date/tests/DateTime_diff-fall-type3-type2.phpt`,
+  `ext/date/tests/DateTime_diff-fall-type3-type3.phpt`,
+  `ext/date/tests/DateTime_diff-spring-type2-type2.phpt`,
+  `ext/date/tests/DateTime_diff-spring-type2-type3.phpt`,
+  `ext/date/tests/DateTime_diff-spring-type3-type2.phpt`,
+  `ext/date/tests/DateTime_diff-spring-type3-type3.phpt`,
+  `ext/date/tests/DateTime_add-massive.phpt`,
+  `ext/date/tests/DateTime_days-massive.phpt`,
+  `ext/date/tests/DateTime_diff-massive.phpt`, and
+  `ext/date/tests/DateTime_sub-massive.phpt`, plus focused Rust DateTime
+  guards, build, fmt, and diff checks. Unsupported edges remain broad timelib
+  diff semantics outside the represented bounded timezone table, named-zone
+  historical transition data beyond documented rows, exact DateInterval
+  reference/COW behavior, and native lowering.
+
 - Moved a focused `Zend/tests/class_name` PHPT cluster from `0/14` to
   `14/14` on the interpreter path. The parser now flattens top-level
   bracketed named/global namespace blocks with block-local namespace/import

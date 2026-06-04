@@ -1445,15 +1445,23 @@ echo $end->diff($start)->format("P%R%yY%mM%dDT%hH%iM%sS days=%a"), "\n";
 
 $start = new DateTime("2010-03-13 18:38:28 EST");
 $end = new DateTime("2010-03-14 03:16:55 EDT");
-echo $start->diff($end)->format("days=%a"), "\n";
+echo $start->diff($end)->format("P%R%yY%mM%dDT%hH%iM%sS days=%a"), "\n";
 
 $start = new DateTime("2010-11-06 18:38:28 EDT");
 $end = new DateTime("2010-11-07 03:16:55 EST");
-echo $start->diff($end)->format("days=%a"), "\n";
+echo $start->diff($end)->format("P%R%yY%mM%dDT%hH%iM%sS days=%a"), "\n";
 
 $start = new DateTime("2010-11-07 00:10:20 EDT");
 $end = new DateTime("2010-11-08 19:59:59 EST");
-echo $start->diff($end)->format("days=%a"), "\n";
+echo $start->diff($end)->format("P%R%yY%mM%dDT%hH%iM%sS days=%a"), "\n";
+
+$start = new DateTime("2010-03-13 18:38:28");
+$end = new DateTime("2010-03-14 03:16:55");
+echo $start->diff($end)->format("P%R%yY%mM%dDT%hH%iM%sS days=%a"), "\n";
+
+$start = new DateTime("2010-03-13 18:38:28");
+$end = new DateTime("2010-03-15 19:59:59");
+echo $start->diff($end)->format("P%R%yY%mM%dDT%hH%iM%sS days=%a"), "\n";
 
 $start = new DateTime("2010-11-07 01:59:59 EDT");
 $end = new DateTime("2010-11-07 01:00:00 EST");
@@ -1472,11 +1480,56 @@ echo $end->diff($start)->format("P%R%yY%mM%dDT%hH%iM%sS days=%a"), "\n";
             "P+0Y1M0DT0H0M0S days=28\n",
             "P+6Y11M30DT0H0M0S days=2556\n",
             "P-6Y11M28DT0H0M0S days=2556\n",
-            "days=0\n",
-            "days=0\n",
-            "days=1\n",
+            "P+0Y0M0DT7H38M27S days=0\n",
+            "P+0Y0M0DT9H38M27S days=0\n",
+            "P+0Y0M1DT20H49M39S days=1\n",
+            "P+0Y0M0DT7H38M27S days=0\n",
+            "P+0Y0M2DT1H21M31S days=2\n",
             "P+0Y0M0DT0H0M1S days=0\n",
             "P-0Y0M0DT0H0M1S days=0\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn datetime_interval_arithmetic_handles_massive_signed_years() {
+    let execution = run_source(
+        r#"<?php
+date_default_timezone_set("America/New_York");
+
+$end = new DateTime();
+$end->setDate(333333, 1, 1);
+$end->setTime(16, 18, 2);
+
+$start = new DateTime();
+$start->setDate(-333333, 1, 1);
+$start->setTime(16, 18, 2);
+
+echo $start->format("Y-m-d H:i:s T"), "|", $end->format("Y-m-d H:i:s T"), "\n";
+echo $start->diff($end)->format("P%R%yY%mM%dDT%hH%iM%sS days=%a"), "\n";
+echo $end->diff($start)->format("P%R%yY%mM%dDT%hH%iM%sS days=%a"), "\n";
+
+$added = clone $start;
+$added->add(new DateInterval("P666666Y"));
+echo $added->format("Y-m-d H:i:s T"), "\n";
+
+$subtracted = clone $end;
+$subtracted->sub(new DateInterval("P666666Y"));
+echo $subtracted->format("Y-m-d H:i:s T"), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "-333333-01-01 16:18:02 EST|333333-01-01 16:18:02 EST\n",
+            "P+666666Y0M0DT0H0M0S days=243494757\n",
+            "P-666666Y0M0DT0H0M0S days=243494757\n",
+            "333333-01-01 16:18:02 EST\n",
+            "-333333-01-01 16:18:02 EST\n",
         )
     );
     assert_eq!(execution.stderr, "");

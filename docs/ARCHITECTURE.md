@@ -4686,6 +4686,12 @@ RFC-ish timezone suffix, compact textual, month/year, ordinal textual,
 named-time, and weekday-prefixed forms. Broad timelib grammar, parser
 error-state history, and object-handle reuse behavior remain outside that
 runtime parser boundary.
+DateTime interval arithmetic stays in the same bounded local timestamp model:
+calendar components are borrowed in local civil time, fixed/abbreviation and
+same-civil-day named-zone transition spans are adjusted by endpoint offset
+deltas, multi-day named-zone spans preserve wall-calendar components for the
+covered rows, and the proleptic-Gregorian civil-day conversion uses Euclidean
+era division so negative years round-trip with the inverse day calculation.
 `DatePeriod` follows the same bounded runtime-metadata pattern as the current
 DateTime family. The runtime class table exposes the core class, constants,
 readonly public metadata fields, and the selected constructor/static/instance

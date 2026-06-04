@@ -157797,7 +157797,7 @@ fn format_cookie_expires(timestamp: i64) -> String {
 
 fn civil_from_days(days_since_epoch: i64) -> (i64, i64, i64) {
     let z = days_since_epoch + 719_468;
-    let era = if z >= 0 { z } else { z - 146_096 }.div_euclid(146_097);
+    let era = z.div_euclid(146_097);
     let doe = z - era * 146_097;
     let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096).div_euclid(365);
     let y = yoe + era * 400;
@@ -173563,20 +173563,13 @@ fn bounded_datetime_diff_interval(
         target.timezone.offset_at_timestamp(target.timestamp),
     );
 
-    let (years, months, days, hours, minutes, seconds) = if let Some(components) =
-        bounded_same_civil_day_transition_diff_components(
-            source,
-            target,
-            source_parts,
-            target_parts,
-            source_before_target,
-        ) {
-        components
-    } else if source_before_target {
-        bounded_datetime_forward_diff_components(source_parts, target_parts)
-    } else {
-        bounded_datetime_backward_diff_components(source_parts, target_parts)
-    };
+    let (years, months, days, hours, minutes, seconds) = bounded_datetime_diff_components(
+        source,
+        target,
+        source_parts,
+        target_parts,
+        source_before_target,
+    );
     let total_days = bounded_datetime_diff_total_days(
         source_parts,
         target_parts,
@@ -173632,20 +173625,13 @@ fn bounded_datetime_diff_interval_without_fraction(
         target.timezone.offset_at_timestamp(target.timestamp),
     );
 
-    let (years, months, days, hours, minutes, seconds) = if let Some(components) =
-        bounded_same_civil_day_transition_diff_components(
-            source,
-            target,
-            source_parts,
-            target_parts,
-            source_before_target,
-        ) {
-        components
-    } else if source_before_target {
-        bounded_datetime_forward_diff_components(source_parts, target_parts)
-    } else {
-        bounded_datetime_backward_diff_components(source_parts, target_parts)
-    };
+    let (years, months, days, hours, minutes, seconds) = bounded_datetime_diff_components(
+        source,
+        target,
+        source_parts,
+        target_parts,
+        source_before_target,
+    );
     let total_days = bounded_datetime_diff_total_days(
         source_parts,
         target_parts,
@@ -173740,6 +173726,76 @@ fn borrow_one_second_from_diff_components(
         *minutes = 59;
         *seconds = 59;
     }
+}
+
+fn bounded_datetime_diff_components(
+    source: &BoundedDateTimeObjectState,
+    target: &BoundedDateTimeObjectState,
+    source_parts: BoundedDateTimeParts,
+    target_parts: BoundedDateTimeParts,
+    source_before_target: bool,
+) -> (i64, i64, i64, i64, i64, i64) {
+    if let Some(components) = bounded_same_civil_day_transition_diff_components(
+        source,
+        target,
+        source_parts,
+        target_parts,
+        source_before_target,
+    ) {
+        return components;
+    }
+
+    let components = if source_before_target {
+        bounded_datetime_forward_diff_components(source_parts, target_parts)
+    } else {
+        bounded_datetime_backward_diff_components(source_parts, target_parts)
+    };
+    adjust_datetime_diff_components_for_offset_delta(
+        components,
+        source_parts.offset,
+        target_parts.offset,
+        source_before_target,
+        source.timezone.fixed_offset.is_none() && target.timezone.fixed_offset.is_none(),
+    )
+    .unwrap_or(components)
+}
+
+fn adjust_datetime_diff_components_for_offset_delta(
+    components: (i64, i64, i64, i64, i64, i64),
+    source_offset: i64,
+    target_offset: i64,
+    source_before_target: bool,
+    both_named_zones: bool,
+) -> Option<(i64, i64, i64, i64, i64, i64)> {
+    let (years, months, days, hours, minutes, seconds) = components;
+    let offset_delta = if source_before_target {
+        target_offset.checked_sub(source_offset)?
+    } else {
+        source_offset.checked_sub(target_offset)?
+    };
+    if offset_delta == 0 {
+        return Some(components);
+    }
+    if both_named_zones && (years != 0 || months != 0 || days != 0) {
+        return Some(components);
+    }
+
+    let total_seconds = days
+        .checked_mul(86_400)?
+        .checked_add(hours.checked_mul(3_600)?)?
+        .checked_add(minutes.checked_mul(60)?)?
+        .checked_add(seconds)?
+        .checked_sub(offset_delta)?;
+    if total_seconds < 0 {
+        return None;
+    }
+
+    let days = total_seconds / 86_400;
+    let remainder = total_seconds % 86_400;
+    let hours = remainder / 3_600;
+    let minutes = (remainder % 3_600) / 60;
+    let seconds = remainder % 60;
+    Some((years, months, days, hours, minutes, seconds))
 }
 
 fn bounded_same_civil_day_transition_diff_components(

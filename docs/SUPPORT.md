@@ -6690,9 +6690,15 @@
   `DateTimeImmutable::diff()`, and `date_diff()` produce bounded
   `DateInterval` objects for initialized mutable/immutable DateTime operands,
   with directional local-calendar month/day borrowing for forward and reverse
-  intervals, fractional `f` metadata from microsecond differences, and `%a` /
-  `days` metadata derived from absolute local civil-day distance in the covered
-  bounded rows. Supported formatting includes
+  intervals, fractional `f` metadata from microsecond differences, bounded
+  endpoint-offset adjustment for fixed/abbreviation timezone spans and
+  same-civil-day named-zone DST transition spans, named-zone multi-day
+  wall-calendar components in the covered US/Eastern rows, and `%a` / `days`
+  metadata derived from absolute local civil-day distance in the covered
+  bounded rows. The shared civil-date conversion supports the covered massive
+  signed proleptic-Gregorian year rows for `setDate()`, `add()`, `sub()`, and
+  `diff()` while still rejecting arithmetic overflow outside the bounded
+  timestamp subset. Supported formatting includes
   `%Y/%M/%D/%H/%I/%S`, lowercase component tokens, `%R/%r`, `%a`, `%%`, and
   unknown percent-token preservation through `DateInterval::format()` and
   `date_interval_format()`. Ordinary diff/ISO `DateInterval` object display
