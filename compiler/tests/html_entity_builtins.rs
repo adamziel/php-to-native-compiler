@@ -121,6 +121,39 @@ echo html_entity_decode("&#x20AC;&#x2019;", ENT_QUOTES, "Windows-1252") === "\x8
 }
 
 #[test]
+fn html_entities_use_internal_encoding_for_explicit_empty_encoding() {
+    let execution = run_source(
+        r#"<?php
+ini_set("internal_encoding", "cp1252");
+echo mb_internal_encoding(), "\n";
+echo htmlentities("\x82\x86\x99\x9f", ENT_QUOTES, ""), "\n";
+ini_set("internal_encoding", "ISO-8859-15");
+echo htmlentities("\xbc\xbd\xbe", ENT_QUOTES, ""), "\n";
+ini_set("internal_encoding", "EUC-JP");
+var_dump(htmlentities("\xa1\xa2\xa1\xa3\xa1\xa4", ENT_QUOTES, ""));
+ini_set("internal_encoding", "");
+ini_set("default_charset", "Shift_JIS");
+var_dump(bin2hex(htmlentities("\x81\x41\x81\x42\x81\x43", ENT_QUOTES, "")));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "Windows-1252\n",
+            "&sbquo;&dagger;&trade;&Yuml;\n",
+            "&OElig;&oelig;&Yuml;\n",
+            "\nNotice: htmlentities(): Only basic entities substitution is supported for multi-byte encodings other than UTF-8; functionality is equivalent to htmlspecialchars in Command line code on line 8\n",
+            "string(6) \"������\"\n",
+            "\nNotice: htmlentities(): Only basic entities substitution is supported for multi-byte encodings other than UTF-8; functionality is equivalent to htmlspecialchars in Command line code on line 11\n",
+            "string(12) \"814181428143\"\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn htmlentities_respects_quote_modes_and_invalid_utf8_flags() {
     let execution = run_source(
         r#"<?php
@@ -135,6 +168,28 @@ echo htmlentities("\x80", ENT_QUOTES | ENT_IGNORE, "UTF-8") === "" ? "ignore" : 
     .unwrap();
 
     assert_eq!(execution.stdout, "'\n'\n&#039;\nempty\nefbfbd\nignore");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn html_entities_respect_invalid_entity_and_disallowed_codepoint_boundaries() {
+    let execution = run_source(
+        r#"<?php
+echo htmlentities("&9; &kff;", ENT_QUOTES, "UTF-8", false), "\n";
+echo bin2hex(htmlspecialchars("\xE3\x80\"", ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8")), "\n";
+echo html_entity_decode("&#x7F;", ENT_QUOTES | ENT_HTML401, "UTF-8"), "\n";
+echo html_entity_decode("&#x0C;", ENT_QUOTES | ENT_HTML5, "UTF-8") === "\x0c" ? "form-feed\n" : "bad\n";
+echo bin2hex(htmlentities("\x00", ENT_HTML401 | ENT_DISALLOWED, "UTF-8")), "\n";
+echo htmlentities("\x09", ENT_HTML5 | ENT_DISALLOWED, "UTF-8"), "\n";
+echo bin2hex(htmlentities("\xef\xbf\xbe", ENT_HTML5 | ENT_DISALLOWED, "UTF-8")), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "&amp;9; &amp;kff;\nefbfbd2671756f743b\n&#x7F;\nform-feed\nefbfbd\n&Tab;\nefbfbd\n"
+    );
     assert_eq!(execution.exit_code, 0);
 }
 

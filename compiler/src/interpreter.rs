@@ -109599,6 +109599,7 @@ impl Interpreter {
                 true,
                 span,
             ),
+            "mb_internal_encoding" => call_mb_internal_encoding(self, &args, span),
             "mb_http_output" => call_mb_http_output(self, &args, span),
             "mb_output_handler" => call_mb_output_handler(self, &args, span),
             "str_split" => call_str_split(&args, span),
@@ -132639,6 +132640,12 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_null_param("encoding", "?string"),
             ],
         ),
+        "mb_internal_encoding" => (
+            "string|bool",
+            vec![reflection_internal_optional_null_param(
+                "encoding", "?string",
+            )],
+        ),
         "mb_http_output" => (
             "string|bool",
             vec![reflection_internal_optional_null_param(
@@ -141698,6 +141705,7 @@ fn is_builtin(name: &str) -> bool {
             | "mb_strrichr"
             | "mb_strtolower"
             | "mb_strtoupper"
+            | "mb_internal_encoding"
             | "mb_http_output"
             | "mb_output_handler"
             | "str_split"
@@ -154493,6 +154501,12 @@ enum HtmlEncoding {
     SingleByte(&'static [(u8, u32)]),
 }
 
+impl HtmlEncoding {
+    fn is_basic_only(self) -> bool {
+        matches!(self, HtmlEncoding::BasicOnly)
+    }
+}
+
 fn html_quote_mode(flags: i64) -> HtmlQuoteMode {
     if flags & PHP_ENT_QUOTES == PHP_ENT_QUOTES {
         HtmlQuoteMode::Both
@@ -154545,16 +154559,32 @@ fn html_encoding_arg(
     function: &str,
     span: Span,
 ) -> CompileResult<HtmlEncoding> {
+    let explicit_empty = matches!(args.get(index), Some(value) if !matches!(value, Value::Null));
     let mut bytes = match args.get(index) {
-        Some(Value::Null) | None => Vec::new(),
+        Some(Value::Null) | None => interpreter
+            .ini_value("default_charset")
+            .unwrap_or_default()
+            .into_bytes(),
         Some(value) => string_compare_argument_bytes(function, "encoding", value, span)?,
     };
 
-    if bytes.is_empty() {
+    if bytes.is_empty() && explicit_empty {
+        bytes = interpreter
+            .ini_values
+            .get("internal_encoding")
+            .filter(|value| !value.is_empty())
+            .cloned()
+            .unwrap_or_default()
+            .into_bytes();
+    }
+    if bytes.is_empty() && explicit_empty {
         bytes = interpreter
             .ini_value("default_charset")
-            .unwrap_or_else(|| "UTF-8".to_string())
+            .unwrap_or_default()
             .into_bytes();
+    }
+    if bytes.is_empty() {
+        bytes = b"UTF-8".to_vec();
     }
 
     if let Some(encoding) = html_encoding_from_label(&bytes) {
@@ -154602,14 +154632,16 @@ fn html_encoding_from_label(bytes: &[u8]) -> Option<HtmlEncoding> {
 fn html_entity_encode_table(flags: i64) -> &'static [HtmlEntityTranslation] {
     match html_document_type(flags) {
         HtmlDocumentType::Html401 | HtmlDocumentType::Xhtml => HTML4_ENCODE_ENTITIES,
-        HtmlDocumentType::Xml1 | HtmlDocumentType::Html5 => &[],
+        HtmlDocumentType::Html5 => HTML5_ENCODE_ENTITIES,
+        HtmlDocumentType::Xml1 => &[],
     }
 }
 
 fn html_entity_decode_table(flags: i64) -> &'static [HtmlEntityTranslation] {
     match html_document_type(flags) {
         HtmlDocumentType::Html401 | HtmlDocumentType::Xhtml => HTML4_DECODE_ENTITIES,
-        HtmlDocumentType::Xml1 | HtmlDocumentType::Html5 => &[],
+        HtmlDocumentType::Html5 => HTML5_DECODE_ENTITIES,
+        HtmlDocumentType::Xml1 => &[],
     }
 }
 
@@ -154769,10 +154801,10 @@ fn call_htmlspecialchars(
 
     let value = string_compare_argument_bytes("htmlspecialchars()", "string", &args[0], span)?;
     let flags = html_default_flags(args, 1, "htmlspecialchars()", span)?;
-    html_encoding_arg(interpreter, args, 2, "htmlspecialchars()", span)?;
+    let encoding = html_encoding_arg(interpreter, args, 2, "htmlspecialchars()", span)?;
     let double_encode = args.get(3).map(Value::is_truthy).unwrap_or(true);
     Ok(interpreter_value_from_php_string_bytes(
-        htmlspecialchars_encode_bytes(&value, flags, double_encode),
+        html_encode_bytes_with_encoding(&value, flags, double_encode, encoding, false),
     ))
 }
 
@@ -154795,9 +154827,15 @@ fn call_htmlentities(
     let value = string_compare_argument_bytes("htmlentities()", "string", &args[0], span)?;
     let flags = html_default_flags(args, 1, "htmlentities()", span)?;
     let encoding = html_encoding_arg(interpreter, args, 2, "htmlentities()", span)?;
+    if encoding.is_basic_only() {
+        interpreter.emit_display_notice(
+            "htmlentities(): Only basic entities substitution is supported for multi-byte encodings other than UTF-8; functionality is equivalent to htmlspecialchars",
+            span,
+        )?;
+    }
     let double_encode = args.get(3).map(Value::is_truthy).unwrap_or(true);
     Ok(interpreter_value_from_php_string_bytes(
-        htmlentities_encode_bytes(&value, flags, double_encode, encoding),
+        html_encode_bytes_with_encoding(&value, flags, double_encode, encoding, true),
     ))
 }
 
@@ -155198,72 +155236,16 @@ fn strip_tags_html_tag_name(value: &[u8], mut index: usize) -> Option<(String, u
     Some((name, index, boundary_valid))
 }
 
-fn htmlspecialchars_encode_bytes(value: &[u8], flags: i64, double_encode: bool) -> Vec<u8> {
-    html_encode_bytes(value, flags, double_encode, false)
-}
-
-fn htmlentities_encode_bytes(
-    value: &[u8],
-    flags: i64,
-    double_encode: bool,
-    encoding: HtmlEncoding,
-) -> Vec<u8> {
-    html_encode_bytes_with_encoding(value, flags, double_encode, encoding)
-}
-
-fn html_encode_bytes(value: &[u8], flags: i64, double_encode: bool, all_entities: bool) -> Vec<u8> {
-    if all_entities {
-        return html_encode_bytes_with_encoding(value, flags, double_encode, HtmlEncoding::Utf8);
-    }
-
-    let mut output = Vec::with_capacity(value.len());
-    let quote_mode = html_quote_mode(flags);
-    let mut index = 0;
-    while index < value.len() {
-        let byte = value[index];
-        match byte {
-            b'&' if !double_encode && html_entity_like_end(value, index).is_some() => {
-                output.push(byte);
-                index += 1;
-            }
-            b'&' => {
-                output.extend_from_slice(b"&amp;");
-                index += 1;
-            }
-            b'<' => {
-                output.extend_from_slice(b"&lt;");
-                index += 1;
-            }
-            b'>' => {
-                output.extend_from_slice(b"&gt;");
-                index += 1;
-            }
-            b'\"' if matches!(quote_mode, HtmlQuoteMode::Double | HtmlQuoteMode::Both) => {
-                output.extend_from_slice(b"&quot;");
-                index += 1;
-            }
-            b'\'' if matches!(quote_mode, HtmlQuoteMode::Both) => {
-                output.extend_from_slice(html_single_quote_entity(flags));
-                index += 1;
-            }
-            _ => {
-                output.push(byte);
-                index += 1;
-            }
-        }
-    }
-    output
-}
-
 fn html_encode_bytes_with_encoding(
     value: &[u8],
     flags: i64,
     double_encode: bool,
     encoding: HtmlEncoding,
+    all_entities: bool,
 ) -> Vec<u8> {
     let mut output = Vec::with_capacity(value.len());
     let quote_mode = html_quote_mode(flags);
-    let table = if encoding == HtmlEncoding::BasicOnly {
+    let table = if !all_entities || encoding == HtmlEncoding::BasicOnly {
         &[][..]
     } else {
         html_entity_encode_table(flags)
@@ -155273,7 +155255,9 @@ fn html_encode_bytes_with_encoding(
     while index < value.len() {
         let byte = value[index];
         match byte {
-            b'&' if !double_encode && html_entity_like_end(value, index).is_some() => {
+            b'&' if !double_encode
+                && html_preserved_entity_end(value, index, flags, all_entities).is_some() =>
+            {
                 output.push(byte);
                 index += 1;
             }
@@ -155298,28 +155282,52 @@ fn html_encode_bytes_with_encoding(
                 index += 1;
             }
             _ => {
-                if matches!(encoding, HtmlEncoding::Utf8)
-                    && byte >= 0x80
-                    && html_utf8_codepoint_at(value, index).is_none()
-                {
-                    if flags & PHP_ENT_IGNORE == PHP_ENT_IGNORE {
-                        index += 1;
-                    } else if flags & PHP_ENT_SUBSTITUTE == PHP_ENT_SUBSTITUTE {
-                        output.extend_from_slice("\u{fffd}".as_bytes());
-                        index += 1;
-                    } else {
-                        return Vec::new();
+                let codepoint = if matches!(encoding, HtmlEncoding::Utf8) {
+                    match html_utf8_codepoint_at(value, index) {
+                        Some((consumed, codepoint)) => Some((consumed, codepoint)),
+                        None if byte >= 0x80 => {
+                            let consumed = html_invalid_utf8_advance(value, index);
+                            if flags & PHP_ENT_IGNORE == PHP_ENT_IGNORE {
+                                index += consumed;
+                            } else if flags & PHP_ENT_SUBSTITUTE == PHP_ENT_SUBSTITUTE {
+                                output.extend_from_slice("\u{fffd}".as_bytes());
+                                index += consumed;
+                            } else {
+                                return Vec::new();
+                            }
+                            continue;
+                        }
+                        None => Some((1, u32::from(byte))),
                     }
+                } else {
+                    html_input_codepoint_at(value, index, encoding)
+                };
+
+                let Some((consumed, codepoint)) = codepoint else {
+                    output.push(byte);
+                    index += 1;
+                    continue;
+                };
+
+                if flags & PHP_ENT_DISALLOWED == PHP_ENT_DISALLOWED
+                    && !html_codepoint_allowed_in_encoded_input(
+                        codepoint,
+                        html_document_type(flags),
+                    )
+                {
+                    output.extend_from_slice("\u{fffd}".as_bytes());
+                    index += consumed;
                     continue;
                 }
+
                 if let Some((consumed, entity)) =
                     html_entity_at_input(value, index, encoding, table, extra_table, quote_mode)
                 {
                     output.extend_from_slice(entity.as_bytes());
                     index += consumed;
                 } else {
-                    output.push(byte);
-                    index += 1;
+                    output.extend_from_slice(&value[index..index + consumed]);
+                    index += consumed;
                 }
             }
         }
@@ -155327,7 +155335,33 @@ fn html_encode_bytes_with_encoding(
     output
 }
 
-fn html_entity_like_end(value: &[u8], amp_index: usize) -> Option<usize> {
+fn html_invalid_utf8_advance(value: &[u8], index: usize) -> usize {
+    let Some(first) = value.get(index).copied() else {
+        return 0;
+    };
+    let width = match first {
+        0xc2..=0xdf => 2,
+        0xe0..=0xef => 3,
+        0xf0..=0xf4 => 4,
+        _ => return 1,
+    };
+    let mut consumed = 1;
+    while consumed < width
+        && value
+            .get(index + consumed)
+            .is_some_and(|byte| matches!(*byte, 0x80..=0xbf))
+    {
+        consumed += 1;
+    }
+    consumed
+}
+
+fn html_preserved_entity_end(
+    value: &[u8],
+    amp_index: usize,
+    flags: i64,
+    all_entities: bool,
+) -> Option<usize> {
     let mut index = amp_index + 1;
     if value.get(index) == Some(&b'#') {
         index += 1;
@@ -155337,20 +155371,54 @@ fn html_entity_like_end(value: &[u8], amp_index: usize) -> Option<usize> {
             while matches!(value.get(index), Some(byte) if byte.is_ascii_hexdigit()) {
                 index += 1;
             }
-            return (index > start && value.get(index) == Some(&b';')).then_some(index);
+            let digits = std::str::from_utf8(value.get(start..index)?).ok()?;
+            let valid = index > start
+                && value.get(index) == Some(&b';')
+                && u32::from_str_radix(digits, 16)
+                    .ok()
+                    .is_some_and(|codepoint| codepoint <= 0x10ffff);
+            return valid.then_some(index);
         }
         let start = index;
         while matches!(value.get(index), Some(byte) if byte.is_ascii_digit()) {
             index += 1;
         }
-        return (index > start && value.get(index) == Some(&b';')).then_some(index);
+        let digits = std::str::from_utf8(value.get(start..index)?).ok()?;
+        let valid = index > start
+            && value.get(index) == Some(&b';')
+            && digits
+                .parse::<u32>()
+                .ok()
+                .is_some_and(|codepoint| codepoint <= 0x10ffff);
+        return valid.then_some(index);
     }
 
-    let start = index;
+    if !value
+        .get(index)
+        .is_some_and(|byte| byte.is_ascii_alphabetic())
+    {
+        return None;
+    }
     while matches!(value.get(index), Some(byte) if byte.is_ascii_alphanumeric()) {
         index += 1;
     }
-    (index > start && value.get(index) == Some(&b';')).then_some(index)
+    if value.get(index) != Some(&b';') {
+        return None;
+    }
+    let entity = std::str::from_utf8(value.get(amp_index..=index)?).ok()?;
+    if HTML_BASIC_DECODE_ENTITIES
+        .iter()
+        .any(|(candidate, _)| *candidate == entity)
+        || (all_entities
+            && html_entity_encode_table(flags)
+                .iter()
+                .chain(html_entity_decode_table(flags).iter())
+                .any(|translation| translation.entity == entity))
+    {
+        Some(index)
+    } else {
+        None
+    }
 }
 
 fn html_decode_bytes(
@@ -155425,7 +155493,7 @@ fn html_decode_entity_at(
     }
 
     html_numeric_entity_at(value, amp_index).and_then(|(consumed, codepoint)| {
-        if html_numeric_decode_allowed(codepoint, quote_mode, all_entities) {
+        if html_numeric_decode_allowed(codepoint, flags, quote_mode, all_entities) {
             html_encode_codepoints(&[codepoint], encoding).map(|decoded| (consumed, decoded))
         } else {
             None
@@ -155459,6 +155527,7 @@ fn html_numeric_entity_at(value: &[u8], amp_index: usize) -> Option<(usize, u32)
 
 fn html_numeric_decode_allowed(
     codepoint: u32,
+    flags: i64,
     quote_mode: HtmlQuoteMode,
     all_entities: bool,
 ) -> bool {
@@ -155467,10 +155536,50 @@ fn html_numeric_decode_allowed(
         39 => matches!(quote_mode, HtmlQuoteMode::Both),
         38 | 60 | 62 => true,
         _ => {
-            all_entities
-                && (codepoint == 9 || codepoint == 10 || codepoint == 13 || codepoint >= 32)
+            all_entities && html_codepoint_allowed_in_document(codepoint, html_document_type(flags))
         }
     }
+}
+
+fn html_codepoint_allowed_in_document(codepoint: u32, document_type: HtmlDocumentType) -> bool {
+    if codepoint > 0x10ffff || (0xd800..=0xdfff).contains(&codepoint) {
+        return false;
+    }
+
+    match document_type {
+        HtmlDocumentType::Html401 => {
+            matches!(codepoint, 0x09 | 0x0a | 0x0d)
+                || (0x20..=0x7e).contains(&codepoint)
+                || codepoint >= 0xa0
+        }
+        HtmlDocumentType::Xhtml | HtmlDocumentType::Xml1 => {
+            (matches!(codepoint, 0x09 | 0x0a | 0x0d)
+                || (0x20..=0xfffd).contains(&codepoint)
+                || (0x10000..=0x10ffff).contains(&codepoint))
+                && !matches!(codepoint, 0xfffe | 0xffff)
+        }
+        HtmlDocumentType::Html5 => {
+            (matches!(codepoint, 0x09 | 0x0a | 0x0c)
+                || (0x20..=0x7e).contains(&codepoint)
+                || (0xa0..=0xd7ff).contains(&codepoint)
+                || (0xe000..=0x10ffff).contains(&codepoint))
+                && !html_is_noncharacter(codepoint)
+        }
+    }
+}
+
+fn html_codepoint_allowed_in_encoded_input(
+    codepoint: u32,
+    document_type: HtmlDocumentType,
+) -> bool {
+    if matches!(document_type, HtmlDocumentType::Html5) && codepoint == 0x0d {
+        return true;
+    }
+    html_codepoint_allowed_in_document(codepoint, document_type)
+}
+
+fn html_is_noncharacter(codepoint: u32) -> bool {
+    (0xfdd0..=0xfdef).contains(&codepoint) || (codepoint & 0xfffe == 0xfffe)
 }
 
 static HTML_BASIC_DECODE_ENTITIES: &[(&str, &str)] = &[
@@ -155480,6 +155589,36 @@ static HTML_BASIC_DECODE_ENTITIES: &[(&str, &str)] = &[
     ("&amp;", "&"),
     ("&lt;", "<"),
     ("&gt;", ">"),
+];
+
+static HTML5_ENCODE_ENTITIES: &[HtmlEntityTranslation] = &[
+    HtmlEntityTranslation {
+        codepoints: &[9],
+        entity: "&Tab;",
+    },
+    HtmlEntityTranslation {
+        codepoints: &[10],
+        entity: "&NewLine;",
+    },
+    HtmlEntityTranslation {
+        codepoints: &[160],
+        entity: "&nbsp;",
+    },
+];
+
+static HTML5_DECODE_ENTITIES: &[HtmlEntityTranslation] = &[
+    HtmlEntityTranslation {
+        codepoints: &[9],
+        entity: "&Tab;",
+    },
+    HtmlEntityTranslation {
+        codepoints: &[10],
+        entity: "&NewLine;",
+    },
+    HtmlEntityTranslation {
+        codepoints: &[160],
+        entity: "&nbsp;",
+    },
 ];
 
 fn call_ucwords(interpreter: &mut Interpreter, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -157684,6 +157823,31 @@ fn mb_scalar_encoding_name(encoding: &str) -> Option<MbScalarEncoding> {
     }
 }
 
+fn mb_internal_encoding_canonical(encoding: &str) -> Option<&'static str> {
+    let normalized = encoding
+        .chars()
+        .filter(|ch| !matches!(ch, '-' | '_' | ' '))
+        .flat_map(char::to_lowercase)
+        .collect::<String>();
+
+    match normalized.as_str() {
+        "" | "utf8" => Some("UTF-8"),
+        "ascii" | "usascii" => Some("ASCII"),
+        "8bit" => Some("8bit"),
+        "iso88591" | "latin1" => Some("ISO-8859-1"),
+        "iso88595" => Some("ISO-8859-5"),
+        "iso885915" => Some("ISO-8859-15"),
+        "1251" | "cp1251" | "windows1251" | "win1251" => Some("Windows-1251"),
+        "1252" | "cp1252" | "windows1252" | "win1252" => Some("Windows-1252"),
+        "866" | "cp866" | "ibm866" => Some("CP866"),
+        "koi8r" => Some("KOI8-R"),
+        "macroman" | "macintosh" => Some("MacRoman"),
+        "eucjp" | "eucjpwin" => Some("EUC-JP"),
+        "sjis" | "shiftjis" => Some("SJIS"),
+        _ => None,
+    }
+}
+
 fn mb_scalar_encoding(
     interpreter: &mut Interpreter,
     function: &'static str,
@@ -157712,6 +157876,47 @@ fn mb_scalar_encoding(
             ),
         )
     })
+}
+
+fn call_mb_internal_encoding(
+    interpreter: &mut Interpreter,
+    args: &[Value],
+    span: Span,
+) -> CompileResult<Value> {
+    if args.len() > 1 {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "mb_internal_encoding()",
+                ArityExpectation::Between { min: 0, max: 1 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let Some(value) = args.first() else {
+        return Ok(Value::String(interpreter.mb_internal_encoding_name()));
+    };
+    if matches!(value, Value::Null) {
+        return Ok(Value::String(interpreter.mb_internal_encoding_name()));
+    }
+
+    let encoding = interpreter.php_string_argument_with_magic_type(
+        "mb_internal_encoding()",
+        1,
+        "encoding",
+        "?string",
+        false,
+        value,
+        span,
+    )?;
+    let Some(canonical) = mb_internal_encoding_canonical(&encoding) else {
+        return Ok(Value::Bool(false));
+    };
+    interpreter
+        .ini_values
+        .insert("internal_encoding".to_string(), canonical.to_string());
+    Ok(Value::Bool(true))
 }
 
 fn mb_output_encoding_canonical(name: &str) -> Option<&'static str> {
@@ -181580,6 +181785,14 @@ impl Interpreter {
             .as_deref()
             .and_then(mb_scalar_encoding_name)
             .unwrap_or(MbScalarEncoding::Utf8)
+    }
+
+    fn mb_internal_encoding_name(&self) -> String {
+        self.ini_value("internal_encoding")
+            .as_deref()
+            .and_then(mb_internal_encoding_canonical)
+            .unwrap_or("UTF-8")
+            .to_string()
     }
 }
 

@@ -7,7 +7,7 @@ documented in `docs/SUPPORT.md`: `mb_strlen()`, `mb_substr()`, `mb_strcut()`,
 `mb_substr_count()`, `mb_strpos()`, `mb_stripos()`, `mb_strrpos()`,
 `mb_strripos()`, `mb_strstr()`, `mb_stristr()`, `mb_strrchr()`,
 `mb_strrichr()`, `mb_strtolower()`, `mb_strtoupper()`, `mb_http_output()`,
-and `mb_output_handler()`.
+`mb_internal_encoding()`, and `mb_output_handler()`.
 
 `mb_strcut()` uses byte offsets and byte lengths, rounds UTF-8 cuts to scalar
 boundaries so it does not split a character, and falls back to byte slicing for
@@ -25,6 +25,11 @@ default encoding, scalar operands stringify into the existing encoding lookup,
 supported visible `__toString()` objects are accepted, and arrays,
 non-stringable objects, closures, and resources raise catchable `?string`
 `TypeError`s.
+
+`mb_internal_encoding()` gets and sets the bounded internal encoding label used
+by the scalar mb helpers. The HTML entity helpers also consult it for explicit
+empty encoding arguments before falling back to `default_charset` and then
+UTF-8.
 
 `mb_http_output()` gets and sets the bounded request-local `output_encoding`
 value for `pass`, `UTF-8`, and `EUC-JP`. `mb_output_handler()` is available as

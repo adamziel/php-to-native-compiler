@@ -3843,17 +3843,22 @@
 - HTML entity builtins `htmlspecialchars`, `htmlentities`,
   `htmlspecialchars_decode`, `html_entity_decode`, and
   `get_html_translation_table` cover byte-string special-character handling,
-  quote-style flags, double-encode preservation, table-driven HTML4 named
-  entity encode/decode for UTF-8, bounded single-byte charset encode/decode
+  quote-style flags, double-encode preservation that only preserves valid
+  entity references, table-driven HTML4 named entity encode/decode for UTF-8,
+  bounded HTML5 `&Tab;`, `&NewLine;`, and `&nbsp;` handling, bounded
+  single-byte charset encode/decode
   for ISO-8859-1, ISO-8859-5, ISO-8859-15, Windows-1251/1252, CP866, KOI8-R,
-  and MacRoman, bounded `default_charset` fallback, invalid UTF-8
-  empty/substitute/ignore behavior for `htmlentities()`, internal metadata,
-  and the `HTML_*` / `ENT_*` constants. Shift-JIS and EUC-JP names are
-  recognized as basic-character-only entity contexts. HTML5/XML full named
-  tables, full legacy encoding parity, exact control-character numeric decode
-  boundaries, binary array-key fidelity for translation-table entries,
-  source-file parsing for non-UTF-8 PHP test files, and native lowering remain
-  unsupported.
+  and MacRoman, bounded `default_charset` fallback, explicit empty encoding
+  fallback through `internal_encoding` and then `default_charset`, invalid
+  UTF-8 empty/substitute/ignore behavior for `htmlentities()` and
+  `htmlspecialchars()`, bounded ENT_DISALLOWED replacement for UTF-8 HTML4,
+  XHTML, HTML5, and XML document modes, internal metadata, and the `HTML_*` /
+  `ENT_*` constants. Shift-JIS and EUC-JP names are recognized as
+  basic-character-only entity contexts and emit PHP-shaped `htmlentities()`
+  notices. HTML5/XML full named tables, full legacy encoding parity, broad
+  multibyte validation/substitution for Shift-JIS/EUC-JP, binary array-key
+  fidelity for translation-table entries, source-file parsing for non-UTF-8
+  PHP test files, and native lowering remain unsupported.
   `strip_tags()` covers the current byte-string HTML/PHP/comment removal
   subset, allowed tag names from string and array forms, NUL removal, quoted
   attribute `>` handling, XML processing-instruction spans beginning with
@@ -4797,8 +4802,9 @@
   by the focused standard-library rows. `mb_strlen()`, `mb_substr()`,
   `mb_strcut()`, `mb_substr_count()`, `mb_strpos()`,
   `mb_stripos()`, `mb_strrpos()`, `mb_strripos()`, `mb_strstr()`,
-  `mb_stristr()`, `mb_strrchr()`, `mb_strrichr()`, `mb_strtolower()`, and
-  `mb_strtoupper()` support the bounded UTF-8 and single-byte scalar cases
+  `mb_stristr()`, `mb_strrchr()`, `mb_strrichr()`, `mb_strtolower()`,
+  `mb_strtoupper()`, and `mb_internal_encoding()` support the bounded UTF-8
+  and single-byte scalar cases
   used by the current mbstring focused rows, including UTF-8 character
   offsets/windows, byte-window `mb_strcut()` calls that round UTF-8 cut
   boundaries without splitting scalars, negative start/length handling in the
@@ -4809,6 +4815,9 @@
   `ini_set("internal_encoding", ...)` default encoding lookup, PHP-shaped
   unknown-encoding and out-of-range offset `ValueError`s, and supported
   visible `__toString()` objects for optional nullable `$encoding` operands.
+  `mb_internal_encoding()` gets and sets the bounded internal encoding label
+  shared by the scalar mb helpers and the explicit-empty HTML entity encoding
+  fallback.
   `mb_http_output()` gets and sets the bounded request-local `output_encoding`
   value for `pass`, `UTF-8`, and `EUC-JP`. `mb_output_handler()` is registered
   as a callable output-buffer handler and preserves raw output-buffer bytes;
