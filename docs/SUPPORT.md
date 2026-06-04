@@ -7312,10 +7312,20 @@
   positive/negative powers, and supports pre/post `++` and `--` on
   `BcMath\Number`. Non-BcMath scalar exponentiation falls through to the
   standard math `pow()` subset above, while `pow()` with a Number operand
-  returns a `BcMath\Number`. Exact invalid-operand diagnostic parity beyond the
-  covered scalar/Number operands, unbounded scales/exponents, exact object
-  lifetime timing outside the documented reusable temporary lanes,
-  references/copy-on-write, and native lowering remain unsupported.
+  returns a `BcMath\Number`. The covered Number method argument surface emits
+  catchable PHP-shaped errors for malformed numeric strings, invalid
+  numeric/scale argument types, division/modulo zero, and selected powmod
+  argument failures; finite fractional floats use the existing lossy
+  float-to-int deprecation path, and null numeric arguments emit the PHP
+  null-parameter deprecation before coercing to zero. Number binary operators
+  use PHP-shaped invalid operand diagnostics for covered array/object/null
+  operands, non-numeric string operands, and finite fractional float operands.
+  Number comparison operators treat null as numeric zero and return false for
+  the covered invalid string/array/object/resource operands. Exact invalid
+  operand diagnostic parity outside these covered Number method/operator
+  surfaces, unbounded scales/exponents, exact object lifetime timing outside
+  the documented reusable temporary lanes, references/copy-on-write, and native
+  lowering remain unsupported.
   GMP support is a bounded interpreter-only integer object lane. The supported
   runtime surface includes `extension_loaded("gmp")`, `new GMP(...)`,
   `gmp_init()`, `gmp_strval()`, `gmp_intval()`, `gmp_abs()`, `gmp_neg()`, and

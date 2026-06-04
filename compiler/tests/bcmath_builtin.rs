@@ -381,6 +381,69 @@ try {
 }
 
 #[test]
+fn bcmath_number_invalid_operands_are_catchable_and_coerced_like_php() {
+    let execution = run_source(
+        r#"<?php
+function show($e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+
+$num = new BcMath\Number("10");
+try { $num->add("not-a-number"); } catch (Throwable $e) { show($e); }
+try { $num->add([]); } catch (Throwable $e) { show($e); }
+try { $num->add(1, []); } catch (Throwable $e) { show($e); }
+$num->add(0.1);
+$num->add(null);
+try { $num->div(0.1); } catch (Throwable $e) { show($e); }
+try { $num + []; } catch (Throwable $e) { show($e); }
+try { $num + "not-a-number"; } catch (Throwable $e) { show($e); }
+$num + 1.01;
+var_dump($num > null);
+var_dump($num < "not-a-number");
+var_dump("not-a-number" > $num);
+"#,
+    )
+    .unwrap();
+
+    assert!(
+        execution
+            .stdout
+            .contains("ValueError:BcMath\\Number::add(): Argument #1 ($num) is not well-formed\n"),
+        "stdout:\n{}",
+        execution.stdout
+    );
+    assert!(execution.stdout.contains(
+        "TypeError:BcMath\\Number::add(): Argument #1 ($num) must be of type int, string, or BcMath\\Number, array given\n"
+    ));
+    assert!(execution.stdout.contains(
+        "TypeError:BcMath\\Number::add(): Argument #2 ($scale) must be of type ?int, array given\n"
+    ));
+    assert!(execution
+        .stdout
+        .contains("Deprecated: Implicit conversion from float 0.1 to int loses precision"));
+    assert!(execution.stdout.contains(
+        "Deprecated: BcMath\\Number::add(): Passing null to parameter #1 ($num) of type BcMath\\Number|string|int is deprecated"
+    ));
+    assert!(execution
+        .stdout
+        .contains("DivisionByZeroError:Division by zero\n"));
+    assert!(execution
+        .stdout
+        .contains("TypeError:Unsupported operand types: BcMath\\Number + array\n"));
+    assert!(execution
+        .stdout
+        .contains("TypeError:Right string operand cannot be converted to BcMath\\Number\n"));
+    assert!(execution
+        .stdout
+        .contains("Deprecated: Implicit conversion from float 1.01 to int loses precision"));
+    assert!(execution
+        .stdout
+        .ends_with("bool(true)\nbool(false)\nbool(false)\n"));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn bcmath_number_readonly_properties_can_be_read_by_reference_as_values() {
     let execution = run_source(
         r#"<?php
@@ -458,8 +521,8 @@ echo (string) $float, "|", $float->scale, "\n";
             "\n",
             "Warning: Undefined property: BcMath\\Number::$missing in Command line code on line 8\n",
             "NULL\n",
-            "Error:Cannot modify readonly property BcMath\\Number::$value\n",
-            "Error:Cannot unset readonly property BcMath\\Number::$scale\n",
+            "Error:Cannot modify protected(set) readonly property BcMath\\Number::$value from global scope\n",
+            "Error:Cannot unset protected(set) readonly property BcMath\\Number::$scale from global scope\n",
             "Error:Cannot create dynamic property BcMath\\Number::$dynamic\n",
             "Error:Cannot modify readonly property BcMath\\Number::$value\n",
             "ValueError:BcMath\\Number::__construct(): Argument #1 ($num) is not well-formed\n",

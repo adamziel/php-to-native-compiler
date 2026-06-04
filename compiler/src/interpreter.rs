@@ -138385,6 +138385,10 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             return Some((class_name, message));
         }
 
+        if let Some((class_name, message)) = bcmath_number_php_error_class_and_message(error) {
+            return Some((class_name, message));
+        }
+
         let array_access_message = error
             .message
             .strip_prefix("invalid array access: ")
@@ -139843,6 +139847,57 @@ fn gmp_operator_php_error_class_and_message(error: &Diagnostic) -> Option<(&'sta
     if message.starts_with("Number must be of type GMP|string|int, ") {
         return Some(("TypeError", message.to_string()));
     }
+    None
+}
+
+fn bcmath_number_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static str, String)> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+    if matches!(
+        error.message.as_str(),
+        "Left string operand cannot be converted to BcMath\\Number"
+            | "Right string operand cannot be converted to BcMath\\Number"
+    ) {
+        return Some(("TypeError", error.message.clone()));
+    }
+
+    let (function, message) = error
+        .message
+        .strip_prefix("unsupported call ")?
+        .split_once(": ")?;
+    if !matches!(
+        function,
+        "BcMath\\Number::__construct()"
+            | "BcMath\\Number::add()"
+            | "BcMath\\Number::sub()"
+            | "BcMath\\Number::mul()"
+            | "BcMath\\Number::div()"
+            | "BcMath\\Number::mod()"
+            | "BcMath\\Number::pow()"
+            | "BcMath\\Number::powmod()"
+            | "BcMath\\Number::sqrt()"
+            | "BcMath\\Number::compare()"
+            | "BcMath\\Number::divmod()"
+    ) {
+        return None;
+    }
+
+    if message.contains("must be of type int, string, or BcMath\\Number, ")
+        || message.contains("must be of type ?int, ")
+    {
+        return Some(("TypeError", format!("{function}: {message}")));
+    }
+
+    if message.contains(" is not well-formed")
+        || message.contains(" cannot have a fractional part")
+        || message.contains(" is too large")
+        || message.contains(" must be greater than or equal to 0")
+        || message.contains(" must be between 0 and 2147483647")
+    {
+        return Some(("ValueError", format!("{function}: {message}")));
+    }
+
     None
 }
 
@@ -171422,18 +171477,20 @@ fn php_pow_result(
     if Interpreter::value_is_bcmath_number(base_value)
         || Interpreter::value_is_bcmath_number(exponent_value)
     {
-        let base = interpreter.bcmath_number_decimal_argument(
-            "BcMath\\Number operator",
-            1,
-            "num1",
+        let base = interpreter.bcmath_number_operator_decimal_argument(
+            BinaryOp::Pow,
             base_value,
+            exponent_value,
+            base_value,
+            BcNumberOperandSide::Left,
             span,
         )?;
-        let exponent = interpreter.bcmath_number_decimal_argument(
-            "BcMath\\Number operator",
-            2,
-            "num2",
+        let exponent = interpreter.bcmath_number_operator_decimal_argument(
+            BinaryOp::Pow,
+            base_value,
             exponent_value,
+            exponent_value,
+            BcNumberOperandSide::Right,
             span,
         )?;
         let result = Interpreter::bcmath_number_operator_pow_result(&base, &exponent, span)?;
@@ -177319,7 +177376,9 @@ impl Interpreter {
         let right = self.bcmath_number_decimal_argument(function, 1, "num", &args[0], span)?;
         let explicit_scale = match args.get(1) {
             Some(Value::Null) | None => None,
-            Some(value) => Some(bcmath_scale_argument(function, 2, "scale", value, span)?),
+            Some(value) => {
+                Some(self.bcmath_number_scale_argument(function, 2, "scale", value, span)?)
+            }
         };
         let result = match op {
             BcNumberBinaryOp::Add => left.add(&right),
@@ -177367,10 +177426,22 @@ impl Interpreter {
             return Ok(None);
         }
 
-        let left_decimal =
-            self.bcmath_number_decimal_argument("BcMath\\Number operator", 1, "num1", left, span)?;
-        let right_decimal =
-            self.bcmath_number_decimal_argument("BcMath\\Number operator", 2, "num2", right, span)?;
+        let left_decimal = self.bcmath_number_operator_decimal_argument(
+            op,
+            left,
+            right,
+            left,
+            BcNumberOperandSide::Left,
+            span,
+        )?;
+        let right_decimal = self.bcmath_number_operator_decimal_argument(
+            op,
+            left,
+            right,
+            right,
+            BcNumberOperandSide::Right,
+            span,
+        )?;
 
         let result = match operation {
             BcNumberBinaryOp::Add => left_decimal.add(&right_decimal),
@@ -177673,7 +177744,7 @@ impl Interpreter {
     }
 
     fn apply_bcmath_number_comparison_operator(
-        &self,
+        &mut self,
         op: BinaryOp,
         left: &Value,
         right: &Value,
@@ -177695,20 +177766,22 @@ impl Interpreter {
             return Ok(None);
         }
 
-        let left_decimal = self.bcmath_number_decimal_argument(
-            "BcMath\\Number comparison",
-            1,
-            "num1",
-            left,
-            span,
-        )?;
-        let right_decimal = self.bcmath_number_decimal_argument(
-            "BcMath\\Number comparison",
-            2,
-            "num2",
-            right,
-            span,
-        )?;
+        let left_decimal = self.bcmath_number_comparison_operand(left, span)?;
+        let right_decimal = self.bcmath_number_comparison_operand(right, span)?;
+        let (left_decimal, right_decimal) = match (left_decimal, right_decimal) {
+            (
+                BcNumberComparisonOperand::Decimal(left_decimal),
+                BcNumberComparisonOperand::Decimal(right_decimal),
+            ) => (left_decimal, right_decimal),
+            _ => {
+                let value = match op {
+                    BinaryOp::Ne => Value::Bool(true),
+                    BinaryOp::Spaceship => Value::Int(1),
+                    _ => Value::Bool(false),
+                };
+                return Ok(Some(value));
+            }
+        };
         let scale = left_decimal.scale.max(right_decimal.scale);
         let ordering = left_decimal.compare_at_scale(&right_decimal, scale);
         let value = match op {
@@ -177720,6 +177793,126 @@ impl Interpreter {
             _ => Self::comparison_result_value(op, ordering),
         };
         Ok(Some(value))
+    }
+
+    fn bcmath_number_operator_decimal_argument(
+        &mut self,
+        op: BinaryOp,
+        left: &Value,
+        right: &Value,
+        value: &Value,
+        side: BcNumberOperandSide,
+        span: Span,
+    ) -> CompileResult<BcDecimal> {
+        match value {
+            Value::Object(object) if object.class_name().eq_ignore_ascii_case("BcMath\\Number") => {
+                self.bcmath_number_object_decimal(object, span)
+            }
+            Value::String(value) => BcDecimal::parse(value)
+                .ok_or_else(|| Self::bcmath_number_string_operand_error(side, span)),
+            Value::BinaryString(value) => {
+                let text = String::from_utf8(value.clone())
+                    .map_err(|_| Self::bcmath_number_string_operand_error(side, span))?;
+                BcDecimal::parse(&text)
+                    .ok_or_else(|| Self::bcmath_number_string_operand_error(side, span))
+            }
+            Value::Int(value) => BcDecimal::parse(&value.to_string())
+                .ok_or_else(|| Self::bcmath_number_string_operand_error(side, span)),
+            Value::Float(value) => {
+                self.emit_float_to_int_diagnostic_for_float(*value, span)?;
+                let integer = php_float_to_internal_i64(*value).ok_or_else(|| {
+                    Self::bcmath_number_unsupported_operand_types_error(op, left, right, span)
+                })?;
+                BcDecimal::parse(&integer.to_string())
+                    .ok_or_else(|| Self::bcmath_number_string_operand_error(side, span))
+            }
+            _ => Err(Self::bcmath_number_unsupported_operand_types_error(
+                op, left, right, span,
+            )),
+        }
+    }
+
+    fn bcmath_number_comparison_operand(
+        &mut self,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<BcNumberComparisonOperand> {
+        let decimal = match value {
+            Value::Object(object) if object.class_name().eq_ignore_ascii_case("BcMath\\Number") => {
+                self.bcmath_number_object_decimal(object, span)?
+            }
+            Value::Null => BcDecimal::zero(),
+            Value::Int(value) => BcDecimal::parse(&value.to_string())
+                .ok_or_else(|| bcmath_number_error("BcMath\\Number comparison", 1, "num", span))?,
+            Value::Float(value) => {
+                self.emit_float_to_int_diagnostic_for_float(*value, span)?;
+                let Some(integer) = php_float_to_internal_i64(*value) else {
+                    return Ok(BcNumberComparisonOperand::Invalid);
+                };
+                BcDecimal::parse(&integer.to_string()).ok_or_else(|| {
+                    bcmath_number_error("BcMath\\Number comparison", 1, "num", span)
+                })?
+            }
+            Value::String(text) => match BcDecimal::parse(text) {
+                Some(decimal) => decimal,
+                None => return Ok(BcNumberComparisonOperand::Invalid),
+            },
+            Value::BinaryString(bytes) => {
+                let Ok(text) = String::from_utf8(bytes.clone()) else {
+                    return Ok(BcNumberComparisonOperand::Invalid);
+                };
+                match BcDecimal::parse(&text) {
+                    Some(decimal) => decimal,
+                    None => return Ok(BcNumberComparisonOperand::Invalid),
+                }
+            }
+            _ => return Ok(BcNumberComparisonOperand::Invalid),
+        };
+        Ok(BcNumberComparisonOperand::Decimal(decimal))
+    }
+
+    fn bcmath_number_string_operand_error(side: BcNumberOperandSide, span: Span) -> Diagnostic {
+        let side = match side {
+            BcNumberOperandSide::Left => "Left",
+            BcNumberOperandSide::Right => "Right",
+        };
+        Diagnostic::new(
+            Phase::Runtime,
+            span.line,
+            span.column,
+            format!("{side} string operand cannot be converted to BcMath\\Number"),
+        )
+    }
+
+    fn bcmath_number_unsupported_operand_types_error(
+        op: BinaryOp,
+        left: &Value,
+        right: &Value,
+        span: Span,
+    ) -> Diagnostic {
+        Diagnostic::new(
+            Phase::Runtime,
+            span.line,
+            span.column,
+            format!(
+                "Unsupported operand types: {} {} {}",
+                php_type_error_given(left),
+                Self::bcmath_number_operator_symbol(op),
+                php_type_error_given(right)
+            ),
+        )
+    }
+
+    fn bcmath_number_operator_symbol(op: BinaryOp) -> &'static str {
+        match op {
+            BinaryOp::Pow => "**",
+            BinaryOp::Add => "+",
+            BinaryOp::Sub => "-",
+            BinaryOp::Mul => "*",
+            BinaryOp::Div => "/",
+            BinaryOp::Mod => "%",
+            _ => "?",
+        }
     }
 
     fn bcmath_number_operator_div_result(
@@ -177927,7 +178120,7 @@ impl Interpreter {
         )?;
         let explicit_scale = match args.get(1) {
             Some(Value::Null) | None => None,
-            Some(value) => Some(bcmath_scale_argument(
+            Some(value) => Some(self.bcmath_number_scale_argument(
                 "BcMath\\Number::pow()",
                 2,
                 "scale",
@@ -178014,9 +178207,13 @@ impl Interpreter {
 
         let scale = match args.get(2) {
             Some(Value::Null) | None => self.bcmath_default_scale(),
-            Some(value) => {
-                bcmath_scale_argument("BcMath\\Number::powmod()", 3, "scale", value, span)?
-            }
+            Some(value) => self.bcmath_number_scale_argument(
+                "BcMath\\Number::powmod()",
+                3,
+                "scale",
+                value,
+                span,
+            )?,
         };
         let base = self.bcmath_number_object_decimal(&object, span)?;
         let exponent_decimal = self.bcmath_number_decimal_argument(
@@ -178100,9 +178297,13 @@ impl Interpreter {
                 let value = self.bcmath_number_object_decimal(&object, span)?;
                 Self::bcmath_number_default_sqrt_scale(&value)
             }
-            Some(value) => {
-                bcmath_scale_argument("BcMath\\Number::sqrt()", 1, "scale", value, span)?
-            }
+            Some(value) => self.bcmath_number_scale_argument(
+                "BcMath\\Number::sqrt()",
+                1,
+                "scale",
+                value,
+                span,
+            )?,
         };
         let value = self.bcmath_number_object_decimal(&object, span)?;
         if value.negative {
@@ -178213,9 +178414,13 @@ impl Interpreter {
         )?;
         let scale = match args.get(1) {
             Some(Value::Null) | None => left.scale.max(right.scale),
-            Some(value) => {
-                bcmath_scale_argument("BcMath\\Number::compare()", 2, "scale", value, span)?
-            }
+            Some(value) => self.bcmath_number_scale_argument(
+                "BcMath\\Number::compare()",
+                2,
+                "scale",
+                value,
+                span,
+            )?,
         };
         Ok(Value::Int(match left.compare_at_scale(&right, scale) {
             Ordering::Less => -1,
@@ -178243,9 +178448,13 @@ impl Interpreter {
         let left = self.bcmath_number_object_decimal(&object, span)?;
         let scale = match args.get(1) {
             Some(Value::Null) | None => left.scale,
-            Some(value) => {
-                bcmath_scale_argument("BcMath\\Number::divmod()", 2, "scale", value, span)?
-            }
+            Some(value) => self.bcmath_number_scale_argument(
+                "BcMath\\Number::divmod()",
+                2,
+                "scale",
+                value,
+                span,
+            )?,
         };
         let right = self.bcmath_number_decimal_argument(
             "BcMath\\Number::divmod()",
@@ -178373,19 +178582,109 @@ impl Interpreter {
     }
 
     fn bcmath_number_decimal_argument(
-        &self,
+        &mut self,
         function: &str,
         position: usize,
         parameter: &str,
         value: &Value,
         span: Span,
     ) -> CompileResult<BcDecimal> {
-        if let Value::Object(object) = value {
-            if object.class_name().eq_ignore_ascii_case("BcMath\\Number") {
-                return self.bcmath_number_object_decimal(object, span);
+        match value {
+            Value::Object(object) if object.class_name().eq_ignore_ascii_case("BcMath\\Number") => {
+                self.bcmath_number_object_decimal(object, span)
             }
+            Value::String(value) => BcDecimal::parse(value)
+                .ok_or_else(|| bcmath_number_error(function, position, parameter, span)),
+            Value::BinaryString(value) => {
+                let text = String::from_utf8(value.clone())
+                    .map_err(|_| bcmath_number_error(function, position, parameter, span))?;
+                BcDecimal::parse(&text)
+                    .ok_or_else(|| bcmath_number_error(function, position, parameter, span))
+            }
+            Value::Null => {
+                self.emit_display_diagnostic(
+                    "Deprecated",
+                    PHP_E_DEPRECATED,
+                    format!(
+                        "{function}: Passing null to parameter #{position} (${parameter}) of type BcMath\\Number|string|int is deprecated"
+                    ),
+                    span,
+                )?;
+                Ok(BcDecimal::zero())
+            }
+            Value::Bool(value) => BcDecimal::parse(if *value { "1" } else { "0" })
+                .ok_or_else(|| bcmath_number_error(function, position, parameter, span)),
+            Value::Int(value) => BcDecimal::parse(&value.to_string())
+                .ok_or_else(|| bcmath_number_error(function, position, parameter, span)),
+            Value::Float(float) => {
+                self.emit_float_to_int_diagnostic_for_float(*float, span)?;
+                let integer = php_float_to_internal_i64(*float).ok_or_else(|| {
+                    bcmath_number_type_error(function, position, parameter, value, span)
+                })?;
+                BcDecimal::parse(&integer.to_string())
+                    .ok_or_else(|| bcmath_number_error(function, position, parameter, span))
+            }
+            Value::Array(_) | Value::Object(_) | Value::Closure(_) | Value::Resource(_) => Err(
+                bcmath_number_type_error(function, position, parameter, value, span),
+            ),
         }
-        bcmath_number_argument(function, position, parameter, value, span)
+    }
+
+    fn bcmath_number_scale_argument(
+        &mut self,
+        function: &str,
+        position: usize,
+        parameter: &str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<usize> {
+        let scale = match value {
+            Value::Null => return Ok(0),
+            Value::Bool(value) => usize::from(*value),
+            Value::Int(value) if *value >= 0 => *value as usize,
+            Value::Float(value) if value.is_finite() && *value >= 0.0 => {
+                self.emit_float_to_int_diagnostic_for_float(*value, span)?;
+                php_float_to_internal_i64(*value)
+                    .and_then(|value| usize::try_from(value).ok())
+                    .ok_or_else(|| bcmath_scale_error(function, position, parameter, span))?
+            }
+            Value::String(value) => parse_bcmath_scale_text(value)
+                .ok_or_else(|| bcmath_scale_error(function, position, parameter, span))?,
+            Value::BinaryString(value) => std::str::from_utf8(value)
+                .ok()
+                .and_then(parse_bcmath_scale_text)
+                .ok_or_else(|| bcmath_scale_error(function, position, parameter, span))?,
+            Value::Array(_) | Value::Object(_) | Value::Closure(_) | Value::Resource(_) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        function,
+                        format!(
+                            "Argument #{position} (${parameter}) must be of type ?int, {} given",
+                            php_type_error_given(value)
+                        ),
+                    ),
+                ));
+            }
+            _ => return Err(bcmath_scale_error(function, position, parameter, span)),
+        };
+
+        if scale > i32::MAX as usize {
+            return Err(bcmath_scale_error(function, position, parameter, span));
+        }
+
+        if scale > 10_000 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    format!(
+                        "Argument #{position} (${parameter}) scale above 10000 is not supported in the current subset"
+                    ),
+                ),
+            ));
+        }
+        Ok(scale)
     }
 
     fn instantiate_gmp(
@@ -188482,6 +188781,17 @@ enum BcNumberBinaryOp {
 }
 
 #[derive(Clone, Copy)]
+enum BcNumberOperandSide {
+    Left,
+    Right,
+}
+
+enum BcNumberComparisonOperand {
+    Decimal(BcDecimal),
+    Invalid,
+}
+
+#[derive(Clone, Copy)]
 enum GmpBinaryOp {
     Add,
     Sub,
@@ -190367,6 +190677,25 @@ fn bcmath_number_error(function: &str, position: usize, parameter: &str, span: S
         RuntimeError::unsupported_call(
             function,
             format!("Argument #{position} (${parameter}) is not well-formed"),
+        ),
+    )
+}
+
+fn bcmath_number_type_error(
+    function: &str,
+    position: usize,
+    parameter: &str,
+    value: &Value,
+    span: Span,
+) -> Diagnostic {
+    runtime_error(
+        span,
+        RuntimeError::unsupported_call(
+            function,
+            format!(
+                "Argument #{position} (${parameter}) must be of type int, string, or BcMath\\Number, {} given",
+                php_type_error_given(value)
+            ),
         ),
     )
 }
