@@ -231,6 +231,7 @@ const PHP_JSON_ERROR_INF_OR_NAN: i64 = 7;
 const PHP_JSON_ERROR_UNSUPPORTED_TYPE: i64 = 8;
 const PHP_JSON_ERROR_INVALID_PROPERTY_NAME: i64 = 9;
 const PHP_JSON_ERROR_UTF16: i64 = 10;
+const PHP_PASSWORD_BCRYPT_DEFAULT_COST: i64 = 12;
 const APPEND_OFFSET_READ_FATAL_MESSAGE: &str = "Cannot use [] for reading";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -110179,6 +110180,39 @@ impl Interpreter {
             }
             "uniqid" => call_uniqid(&args, span),
             "crypt" => call_crypt(&args, span),
+            "password_hash" => {
+                let result = self.call_password_hash(&args, span);
+                if let Err(error) = &result {
+                    self.record_password_internal_call_frame("password_hash", span, &args, error);
+                }
+                result
+            }
+            "password_verify" => {
+                let result = self.call_password_verify(&args, span);
+                if let Err(error) = &result {
+                    self.record_password_internal_call_frame("password_verify", span, &args, error);
+                }
+                result
+            }
+            "password_get_info" => {
+                let result = self.call_password_get_info(&args, span);
+                if let Err(error) = &result {
+                    self.record_password_internal_call_frame("password_get_info", span, &args, error);
+                }
+                result
+            }
+            "password_needs_rehash" => {
+                let result = self.call_password_needs_rehash(&args, span);
+                if let Err(error) = &result {
+                    self.record_password_internal_call_frame(
+                        "password_needs_rehash",
+                        span,
+                        &args,
+                        error,
+                    );
+                }
+                result
+            }
             "hash_init" => call_hash_init(self, &args, span),
             "hash_update" => self.call_hash_update(&args, span),
             "hash_final" => self.call_hash_final(&args, span),
@@ -132325,6 +132359,30 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_param("salt", "string"),
             ],
         ),
+        "password_hash" => (
+            "string",
+            vec![
+                reflection_internal_sensitive_param("password", "string"),
+                reflection_internal_param("algo", "string|int|null"),
+                reflection_internal_optional_empty_array_param("options", "array"),
+            ],
+        ),
+        "password_verify" => (
+            "bool",
+            vec![
+                reflection_internal_sensitive_param("password", "string"),
+                reflection_internal_param("hash", "string"),
+            ],
+        ),
+        "password_get_info" => ("array", vec![reflection_internal_param("hash", "string")]),
+        "password_needs_rehash" => (
+            "bool",
+            vec![
+                reflection_internal_param("hash", "string"),
+                reflection_internal_param("algo", "string|int|null"),
+                reflection_internal_optional_empty_array_param("options", "array"),
+            ],
+        ),
         "md5" => (
             "string",
             vec![
@@ -134001,6 +134059,14 @@ fn reflection_internal_param(name: &str, type_decl: &str) -> ReflectionParameter
         default_constant_name: None,
         attributes: Vec::new(),
     }
+}
+
+fn reflection_internal_sensitive_param(name: &str, type_decl: &str) -> ReflectionParameterMetadata {
+    let mut param = reflection_internal_param(name, type_decl);
+    param
+        .attributes
+        .push(AttributeDecl::new("SensitiveParameter".to_string(), None));
+    param
 }
 
 fn reflection_internal_reference_param(name: &str, type_decl: &str) -> ReflectionParameterMetadata {
@@ -138533,6 +138599,10 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
         return Some((class_name, message));
     }
 
+    if let Some((class_name, message)) = password_php_error_class_and_message(error) {
+        return Some((class_name, message));
+    }
+
     if let Some(message) = chunk_split_argument_count_error_message(error) {
         return Some(("ArgumentCountError", message));
     }
@@ -139600,6 +139670,51 @@ fn func_get_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static 
     }
 }
 
+fn password_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static str, String)> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+
+    for (callable, min) in [("password_hash", 2usize), ("password_needs_rehash", 2usize)] {
+        let prefix =
+            format!("arity mismatch for {callable}(): expected at least {min} argument(s), got ");
+        if let Some(actual) = error
+            .message
+            .strip_prefix(&prefix)
+            .and_then(|actual| actual.parse::<usize>().ok())
+        {
+            if actual < min {
+                return Some((
+                    "ArgumentCountError",
+                    format!("{callable}() expects at least {min} arguments, {actual} given"),
+                ));
+            }
+        }
+    }
+
+    for (callable, expected) in [("password_verify", 2usize), ("password_get_info", 1usize)] {
+        let prefix =
+            format!("arity mismatch for {callable}(): expected {expected} argument(s), got ");
+        if let Some(actual) = error
+            .message
+            .strip_prefix(&prefix)
+            .and_then(|actual| actual.parse::<usize>().ok())
+        {
+            let noun = if expected == 1 {
+                "argument"
+            } else {
+                "arguments"
+            };
+            return Some((
+                "ArgumentCountError",
+                format!("{callable}() expects exactly {expected} {noun}, {actual} given"),
+            ));
+        }
+    }
+
+    None
+}
+
 fn chunk_split_argument_count_error_message(error: &Diagnostic) -> Option<String> {
     if error.phase != Phase::Runtime {
         return None;
@@ -140571,6 +140686,10 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
             "Argument #3 ($length) must be greater than or equal to 0",
         )
         | (
+            "password_hash()" | "password_needs_rehash()",
+            "Argument #2 ($algo) must be a valid password hashing algorithm",
+        )
+        | (
             "hash_pbkdf2()",
             "Argument #1 ($algo) must be a valid cryptographic hashing algorithm",
         )
@@ -140599,6 +140718,12 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         ) => {
             Some(format!("{function}: {message}"))
         },
+        ("password_hash()", message)
+            if message.starts_with("Invalid bcrypt cost parameter specified:")
+                || message == "Bcrypt password must not contain null character" =>
+        {
+            Some(message.to_string())
+        }
         ("hash_hkdf()", message)
             if message.starts_with("Argument #3 ($length) must be less than or equal to ") =>
         {
@@ -141911,6 +142036,10 @@ fn is_builtin(name: &str) -> bool {
             | "lcg_value"
             | "uniqid"
             | "crypt"
+            | "password_hash"
+            | "password_verify"
+            | "password_get_info"
+            | "password_needs_rehash"
             | "hash_init"
             | "hash_update"
             | "hash_final"
@@ -144068,6 +144197,9 @@ const BUILTIN_GLOBAL_CONSTANT_NAMES: &[&str] = &[
     "INI_SCANNER_NORMAL",
     "INI_SCANNER_RAW",
     "INI_SCANNER_TYPED",
+    "PASSWORD_DEFAULT",
+    "PASSWORD_BCRYPT",
+    "PASSWORD_BCRYPT_DEFAULT_COST",
     "JSON_HEX_TAG",
     "JSON_HEX_AMP",
     "JSON_HEX_APOS",
@@ -144547,6 +144679,9 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "INI_SCANNER_NORMAL" => Some(Value::Int(PHP_INI_SCANNER_NORMAL)),
         "INI_SCANNER_RAW" => Some(Value::Int(PHP_INI_SCANNER_RAW)),
         "INI_SCANNER_TYPED" => Some(Value::Int(PHP_INI_SCANNER_TYPED)),
+        "PASSWORD_DEFAULT" => Some(Value::String("2y".to_string())),
+        "PASSWORD_BCRYPT" => Some(Value::String("2y".to_string())),
+        "PASSWORD_BCRYPT_DEFAULT_COST" => Some(Value::Int(PHP_PASSWORD_BCRYPT_DEFAULT_COST)),
         "JSON_HEX_TAG" => Some(Value::Int(PHP_JSON_HEX_TAG)),
         "JSON_HEX_AMP" => Some(Value::Int(PHP_JSON_HEX_AMP)),
         "JSON_HEX_APOS" => Some(Value::Int(PHP_JSON_HEX_APOS)),
@@ -173272,20 +173407,389 @@ impl Interpreter {
     }
 }
 
+impl Interpreter {
+    fn call_password_hash(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.len() < 2 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "password_hash()",
+                    ArityExpectation::AtLeast(2),
+                    args.len(),
+                ),
+            ));
+        }
+        if args.len() > 3 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "password_hash()",
+                    ArityExpectation::Between { min: 2, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let password =
+            password_string_argument_bytes("password_hash()", 1, "password", &args[0], span)?;
+        let options = password_options_array("password_hash()", args.get(2), span)?;
+        let algorithm = password_algorithm_argument("password_hash()", &args[1], span)?;
+        if algorithm != PasswordAlgorithm::Bcrypt {
+            return Err(password_invalid_algorithm_error("password_hash()", span));
+        }
+        if options.is_some_and(|options| options.contains_key("salt")) {
+            self.emit_display_warning(
+                "password_hash(): The \"salt\" option has been ignored, since providing a custom salt is no longer supported",
+                span,
+            )?;
+        }
+        let cost = password_bcrypt_cost(options);
+        if !(4..=31).contains(&cost) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "password_hash()",
+                    format!("Invalid bcrypt cost parameter specified: {cost}"),
+                ),
+            ));
+        }
+        if password.contains(&0) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "password_hash()",
+                    "Bcrypt password must not contain null character",
+                ),
+            ));
+        }
+
+        let hash = bcrypt::hash_with_result(&password, cost as u32)
+            .map_err(|error| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "password_hash()",
+                        format!("bcrypt hashing failed: {error}"),
+                    ),
+                )
+            })?
+            .format_for_version(bcrypt::Version::TwoY);
+        Ok(Value::String(hash))
+    }
+
+    fn call_password_verify(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("password_verify", args, 2, span)?;
+
+        let password =
+            password_string_argument_bytes("password_verify()", 1, "password", &args[0], span)?;
+        let hash = if matches!(args[1], Value::Null) {
+            self.emit_display_diagnostic(
+                "Deprecated",
+                PHP_E_DEPRECATED,
+                "password_verify(): Passing null to parameter #2 ($hash) of type string is deprecated",
+                span,
+            )?;
+            String::new()
+        } else {
+            password_string_argument("password_verify()", 2, "hash", &args[1], span)?
+        };
+
+        Ok(Value::Bool(password_verify_with_crypt(&password, &hash)))
+    }
+
+    fn call_password_get_info(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("password_get_info", args, 1, span)?;
+
+        let hash = password_string_argument("password_get_info()", 1, "hash", &args[0], span)?;
+        Ok(Value::Array(password_info_array(password_bcrypt_info(
+            &hash,
+        ))))
+    }
+
+    fn call_password_needs_rehash(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.len() < 2 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "password_needs_rehash()",
+                    ArityExpectation::AtLeast(2),
+                    args.len(),
+                ),
+            ));
+        }
+        if args.len() > 3 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "password_needs_rehash()",
+                    ArityExpectation::Between { min: 2, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let hash = password_string_argument("password_needs_rehash()", 1, "hash", &args[0], span)?;
+        let algorithm = password_algorithm_argument("password_needs_rehash()", &args[1], span)?;
+        if algorithm != PasswordAlgorithm::Bcrypt {
+            return Ok(Value::Bool(true));
+        }
+        let options = password_options_array("password_needs_rehash()", args.get(2), span)?;
+        let cost = password_bcrypt_cost(options);
+        let Some(info) = password_bcrypt_info(&hash) else {
+            return Ok(Value::Bool(true));
+        };
+        Ok(Value::Bool(info.cost != cost))
+    }
+
+    fn record_password_internal_call_frame(
+        &mut self,
+        callable: &str,
+        span: Span,
+        args: &[Value],
+        error: &Diagnostic,
+    ) {
+        let trace_args = self
+            .password_internal_trace_args(callable, args, span)
+            .unwrap_or_else(|_| args.to_vec());
+        self.record_pending_uncaught_internal_call_frame(callable, span, &trace_args, error);
+    }
+
+    fn password_internal_trace_args(
+        &mut self,
+        callable: &str,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<Vec<Value>> {
+        let mut output = Vec::with_capacity(args.len());
+        for (index, value) in args.iter().enumerate() {
+            if matches!(callable, "password_hash" | "password_verify") && index == 0 {
+                output.push(Value::Object(
+                    self.create_sensitive_parameter_value_object(value.clone(), span)?,
+                ));
+            } else {
+                output.push(value.clone());
+            }
+        }
+        Ok(output)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PasswordAlgorithm {
+    Bcrypt,
+    Unknown,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct PasswordBcryptInfo {
+    cost: i64,
+}
+
+fn password_string_argument(
+    function: &'static str,
+    position: usize,
+    name: &'static str,
+    value: &Value,
+    span: Span,
+) -> CompileResult<String> {
+    let bytes = password_string_argument_bytes(function, position, name, value, span)?;
+    String::from_utf8(bytes).map_err(|_| {
+        runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!("Argument #{position} (${name}) must be a valid string"),
+            ),
+        )
+    })
+}
+
+fn password_string_argument_bytes(
+    function: &'static str,
+    position: usize,
+    name: &'static str,
+    value: &Value,
+    span: Span,
+) -> CompileResult<Vec<u8>> {
+    match value {
+        Value::String(value) => Ok(value.as_bytes().to_vec()),
+        Value::BinaryString(value) => Ok(value.clone()),
+        Value::Array(_) | Value::Object(_) | Value::Closure(_) | Value::Resource(_) => {
+            Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    format!(
+                        "Argument #{position} (${name}) must be of type string, {} given",
+                        php_type_error_given(value)
+                    ),
+                ),
+            ))
+        }
+        other => other
+            .try_echo_bytes()
+            .map_err(|error| runtime_error(span, error)),
+    }
+}
+
+fn password_algorithm_argument(
+    function: &'static str,
+    value: &Value,
+    span: Span,
+) -> CompileResult<PasswordAlgorithm> {
+    match value {
+        Value::String(value) => password_algorithm_from_string(function, value, span),
+        Value::BinaryString(value) => match std::str::from_utf8(value) {
+            Ok(value) => password_algorithm_from_string(function, value, span),
+            Err(_) => Err(password_invalid_algorithm_error(function, span)),
+        },
+        Value::Int(1) => Ok(PasswordAlgorithm::Bcrypt),
+        Value::Int(_) | Value::Null => Ok(PasswordAlgorithm::Unknown),
+        Value::Bool(true) => Ok(PasswordAlgorithm::Bcrypt),
+        Value::Bool(false) => Ok(PasswordAlgorithm::Unknown),
+        Value::Float(value) if value.is_finite() && value.trunc() == 1.0 => {
+            Ok(PasswordAlgorithm::Bcrypt)
+        }
+        Value::Float(_) => Ok(PasswordAlgorithm::Unknown),
+        Value::Array(_) | Value::Object(_) | Value::Closure(_) | Value::Resource(_) => {
+            Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    format!(
+                        "Argument #2 ($algo) must be of type string|int|null, {} given",
+                        php_type_error_given(value)
+                    ),
+                ),
+            ))
+        }
+    }
+}
+
+fn password_algorithm_from_string(
+    function: &'static str,
+    value: &str,
+    span: Span,
+) -> CompileResult<PasswordAlgorithm> {
+    if value == "2y" {
+        Ok(PasswordAlgorithm::Bcrypt)
+    } else {
+        Err(password_invalid_algorithm_error(function, span))
+    }
+}
+
+fn password_invalid_algorithm_error(function: &'static str, span: Span) -> Diagnostic {
+    runtime_error(
+        span,
+        RuntimeError::unsupported_call(
+            function,
+            "Argument #2 ($algo) must be a valid password hashing algorithm",
+        ),
+    )
+}
+
+fn password_options_array<'a>(
+    function: &'static str,
+    value: Option<&'a Value>,
+    span: Span,
+) -> CompileResult<Option<&'a PhpArray>> {
+    match value {
+        None => Ok(None),
+        Some(Value::Array(options)) => Ok(Some(options)),
+        Some(other) => Err(php_internal_array_type_error(
+            function, 3, "options", other, span,
+        )),
+    }
+}
+
+fn password_bcrypt_cost(options: Option<&PhpArray>) -> i64 {
+    options
+        .and_then(|options| options.get("cost"))
+        .map(password_option_cost_value)
+        .unwrap_or(PHP_PASSWORD_BCRYPT_DEFAULT_COST)
+}
+
+fn password_option_cost_value(value: &Value) -> i64 {
+    php_internal_coerced_int(value).unwrap_or(0)
+}
+
+fn password_bcrypt_info(hash: &str) -> Option<PasswordBcryptInfo> {
+    if hash.len() != 60 {
+        return None;
+    }
+    let bytes = hash.as_bytes();
+    if bytes.first() != Some(&b'$') || bytes.get(3) != Some(&b'$') || bytes.get(6) != Some(&b'$') {
+        return None;
+    }
+    if &bytes[1..3] != b"2y" {
+        return None;
+    }
+    let cost_tens = bytes[4];
+    let cost_ones = bytes[5];
+    if !cost_tens.is_ascii_digit() || !cost_ones.is_ascii_digit() {
+        return None;
+    }
+    let cost = i64::from((cost_tens - b'0') * 10 + (cost_ones - b'0'));
+    if !(4..=31).contains(&cost) {
+        return None;
+    }
+    if !bytes[7..].iter().all(|byte| is_crypt_salt64(*byte)) {
+        return None;
+    }
+    Some(PasswordBcryptInfo { cost })
+}
+
+fn password_info_array(info: Option<PasswordBcryptInfo>) -> PhpArray {
+    let mut output = PhpArray::new();
+    match info {
+        Some(info) => {
+            output.insert("algo", Value::String("2y".to_string()));
+            output.insert("algoName", Value::String("bcrypt".to_string()));
+            let mut options = PhpArray::new();
+            options.insert("cost", Value::Int(info.cost));
+            output.insert("options", Value::Array(options));
+        }
+        None => {
+            output.insert("algo", Value::Null);
+            output.insert("algoName", Value::String("unknown".to_string()));
+            output.insert("options", Value::Array(PhpArray::new()));
+        }
+    }
+    output
+}
+
+fn password_verify_with_crypt(password: &[u8], hash: &str) -> bool {
+    if hash.is_empty() || hash.as_bytes().contains(&0) {
+        return false;
+    }
+    crypt_unix_hash(password, hash)
+        .as_deref()
+        .is_some_and(|computed| computed == hash)
+}
+
+fn crypt_unix_hash(password: &[u8], salt_or_hash: &str) -> Option<String> {
+    crypt3_rs::unix::crypt(password, salt_or_hash)
+        .ok()
+        .map(|hash| hash.to_string())
+}
+
 fn call_crypt(args: &[Value], span: Span) -> CompileResult<Value> {
     expect_arity("crypt", args, 2, span)?;
 
-    let _string = string_builtin_argument("crypt()", "string", &args[0], span)?;
+    let string = string_builtin_argument("crypt()", "string", &args[0], span)?;
     let salt = string_builtin_argument("crypt()", "salt", &args[1], span)?;
     if let Some(marker) = crypt_invalid_salt_fallback_marker(&salt) {
         return Ok(Value::String(marker.to_string()));
+    }
+    if let Some(hash) = crypt_unix_hash(string.as_bytes(), &salt) {
+        return Ok(Value::String(hash));
     }
 
     Err(runtime_error(
         span,
         RuntimeError::unsupported_call(
             "crypt()",
-            "only invalid salt fallback markers are implemented in the current subset",
+            "only DES, MD5-crypt, SHA-256, SHA-512, and bcrypt crypt salts are implemented in the current subset",
         ),
     ))
 }

@@ -4872,9 +4872,25 @@
   `crypt($string, $salt)` supports PHP invalid-salt fallback markers for the
   bounded DES, extended-DES, modular, and bcrypt salt-validation cases reached
   by focused PHPT rows, including `*0` -> `*1` fallback toggling. Valid DES,
-  extended DES, MD5-crypt, Blowfish/bcrypt, SHA-256, SHA-512, platform/provider
-  policy, cryptographic guarantees, exact diagnostics, and native lowering
-  remain unsupported.
+  MD5-crypt, SHA-256, SHA-512, and bcrypt crypt salts are recalculated through
+  the bounded pure-Rust interpreter path. Extended DES execution,
+  platform/provider policy, cryptographic guarantees, exact diagnostics, and
+  native lowering remain unsupported.
+  `PASSWORD_DEFAULT`, `PASSWORD_BCRYPT`, and
+  `PASSWORD_BCRYPT_DEFAULT_COST` are exposed on the interpreter path.
+  `password_hash($password, $algo, $options = [])` supports bcrypt/`2y`
+  hashing, legacy integer algorithm `1`, the default cost, validated `cost`
+  options, PHP's ignored custom-salt warning, null-byte password `ValueError`s,
+  catchable argument diagnostics, and sensitive-parameter trace masking.
+  `password_verify($password, $hash)` verifies implemented Unix crypt hashes
+  including DES, MD5-crypt, SHA-256, SHA-512, and bcrypt, and masks the
+  password argument in internal stack traces.
+  `password_get_info($hash)` and
+  `password_needs_rehash($hash, $algo, $options = [])` parse bounded 60-byte
+  `$2y$` bcrypt metadata and compare requested costs. Argon2, the full password
+  algorithm registry, provider/platform parity, exact cryptographic guarantees,
+  custom salt support beyond the ignored-salt warning, complete scalar/null
+  deprecation parity, and native lowering remain unsupported.
   `hash($algo, $data, $binary = false, $options = [])` supports scalar/null
   string-convertible data for `md2`, `md4`, `md5`, `sha1`, `sha224`,
   `sha256`, `sha384`, `sha512/224`, `sha512/256`, `sha512`, `sha3-224`,

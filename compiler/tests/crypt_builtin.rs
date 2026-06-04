@@ -1,4 +1,3 @@
-use php_compiler::error::Phase;
 use php_compiler::run_source;
 
 #[test]
@@ -49,20 +48,17 @@ foreach ($cases as $case) {
 }
 
 #[test]
-fn crypt_rejects_algorithm_salts_outside_current_boundary() {
-    let error = run_source("<?php\ncrypt('a', 'ab');\n").unwrap_err();
-    assert_eq!(error.phase, Phase::Runtime);
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 1);
-    assert_eq!(
-        error.message,
-        "unsupported call crypt(): only invalid salt fallback markers are implemented in the current subset"
-    );
+fn crypt_supports_des_and_bcrypt_recalculation() {
+    let execution = run_source(
+        r#"<?php
+$des = crypt("rasmuslerdorf", "rl.3StKT.4T8M");
+echo strlen($des), ":", $des === "rl.3StKT.4T8M" ? "yes" : "no", "\n";
+$bcrypt = '$2a$07$usesomesillystringfore2uDLvp1Ii2e./U9C8sBjqp8I90dH6hi';
+echo crypt("rasmuslerdorf", $bcrypt) === $bcrypt ? "yes" : "no";
+"#,
+    )
+    .unwrap();
 
-    let error =
-        run_source("<?php\ncrypt('secret', '$2y$07$usesomesillystringforsalt$');\n").unwrap_err();
-    assert_eq!(
-        error.message,
-        "unsupported call crypt(): only invalid salt fallback markers are implemented in the current subset"
-    );
+    assert_eq!(execution.stdout, "13:yes\nyes");
+    assert_eq!(execution.exit_code, 0);
 }
