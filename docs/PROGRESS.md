@@ -1,5 +1,30 @@
 # Progress Log
 
+## 2026-06-05
+
+Implemented:
+
+- Added bounded `phpc run` support for `strtoupper()` beside the existing
+  `strtolower()` string-case slice. Direct and string-valued dynamic calls now
+  accept one current scalar/null string-convertible value, apply ASCII
+  uppercase mapping over runtime UTF-8 strings, publish `ReflectionFunction`
+  parameter metadata, and report stable arity/array diagnostics. The native
+  known-function metadata table now also folds `function_exists("strtoupper")`
+  and `is_callable("strtoupper")` consistently with the existing string-result
+  lowering. CLI coverage lives in
+  `tests/fixtures/milestone774/strtoupper_ascii.php`. Locale-sensitive casing,
+  full Unicode case folding, binary string edge cases beyond valid UTF-8
+  runtime strings, array/object/resource coercions, exact PHP diagnostics, and
+  broader native parity beyond the existing string-result lowering remain
+  unsupported.
+  Focused verification:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-developer-85-strtoupper CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test string_case_builtin -- --test-threads=1`,
+  `cargo fmt --check`,
+  `CARGO_TARGET_DIR=/tmp/phpc-target-developer-85-strtoupper CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone774`,
+  `CARGO_TARGET_DIR=/tmp/phpc-target-developer-85-strtoupper CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone774`,
+  and
+  `git diff --check -- compiler/src/interpreter.rs compiler/src/codegen.rs compiler/tests/string_case_builtin.rs tests/fixtures/milestone774/strtoupper_ascii.php tests/fixtures/milestone774/strtoupper_ascii.stdout tests/fixtures/milestone774/strtoupper_ascii.cli docs/SUPPORT.md docs/PROGRESS.md`.
+
 ## 2026-05-27
 
 Implemented:

@@ -76060,6 +76060,7 @@ impl Interpreter {
             "addcslashes" => self.call_addcslashes(&args, span),
             "stripcslashes" => self.call_stripcslashes(&args, span),
             "strtolower" => call_strtolower(&args, span),
+            "strtoupper" => call_strtoupper(&args, span),
             "trim" => call_trim(&args, span),
             "ltrim" => call_ltrim(&args, span),
             "rtrim" => call_rtrim(&args, span),
@@ -89584,7 +89585,7 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_param("characters", "string"),
             ],
         ),
-        "strtolower" => (
+        "strtolower" | "strtoupper" => (
             "string",
             vec![reflection_internal_param("string", "string")],
         ),
@@ -92906,6 +92907,7 @@ fn is_builtin(name: &str) -> bool {
             | "addcslashes"
             | "stripcslashes"
             | "strtolower"
+            | "strtoupper"
             | "trim"
             | "ltrim"
             | "rtrim"
@@ -102409,6 +102411,23 @@ fn call_strtolower(args: &[Value], span: Span) -> CompileResult<Value> {
         .map_err(|error| runtime_error(span, error))?;
 
     Ok(Value::String(value.to_ascii_lowercase()))
+}
+
+fn call_strtoupper(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("strtoupper", args, 1, span)?;
+
+    if matches!(args[0], Value::Array(_)) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call("strtoupper()", "arrays are not supported"),
+        ));
+    }
+
+    let value = args[0]
+        .try_echo_string()
+        .map_err(|error| runtime_error(span, error))?;
+
+    Ok(Value::String(value.to_ascii_uppercase()))
 }
 
 const PHP_DEFAULT_TRIM_MASK_BYTES: &[u8] = b" \n\r\t\x0b\0";

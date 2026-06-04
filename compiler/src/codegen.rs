@@ -66271,6 +66271,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "addcslashes",
     "stripcslashes",
     "strtolower",
+    "strtoupper",
     "trim",
     "ltrim",
     "rtrim",
