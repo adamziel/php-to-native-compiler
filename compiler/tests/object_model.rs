@@ -16462,35 +16462,22 @@ echo "|after-unset";
 }
 
 #[test]
-fn destructor_declarations_validate_public_non_static_parameterless_shape() {
-    let private_destructor = runtime_error(
+fn destructor_declarations_validate_non_static_parameterless_shape() {
+    let non_public_destructors = run_source(
         r#"<?php
 class PrivateDestructor {
     private function __destruct() {}
 }
-echo "unreachable";
-"#,
-    );
-    assert_eq!(private_destructor.line, 3);
-    assert_eq!(private_destructor.column, 13);
-    assert_eq!(
-        private_destructor.message,
-        "unsupported class inheritance for PrivateDestructor: destructor PrivateDestructor::__destruct() must be public in the current subset"
-    );
 
-    let protected_destructor = runtime_error(
-        r#"<?php
 class ProtectedDestructor {
     protected function __destruct() {}
 }
+echo "registered";
 "#,
-    );
-    assert_eq!(protected_destructor.line, 3);
-    assert_eq!(protected_destructor.column, 15);
-    assert_eq!(
-        protected_destructor.message,
-        "unsupported class inheritance for ProtectedDestructor: destructor ProtectedDestructor::__destruct() must be public in the current subset"
-    );
+    )
+    .unwrap();
+    assert_eq!(non_public_destructors.stdout, "registered");
+    assert_eq!(non_public_destructors.exit_code, 0);
 
     let static_destructor = runtime_error(
         r#"<?php
@@ -17329,6 +17316,161 @@ echo $default->label();
 
     assert_eq!(execution.stdout, "base:12\nbase:5");
     assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn constructor_visibility_errors_are_php_shaped() {
+    let protected = run_source_with_source_file(
+        r#"<?php
+class Secret {
+    protected function __construct() {}
+}
+
+new Secret();
+"#,
+        "/tmp/protected_ctor.php",
+    )
+    .unwrap();
+    assert!(protected.stdout.contains(
+        "Fatal error: Uncaught Error: Call to protected Secret::__construct() from global scope in /tmp/protected_ctor.php:"
+    ));
+    assert!(protected
+        .stdout
+        .contains("\nStack trace:\n#0 {main}\n  thrown in /tmp/protected_ctor.php on line "));
+    assert_eq!(protected.stderr, "");
+    assert_eq!(protected.exit_code, 255);
+
+    let private_parent = run_source_with_source_file(
+        r#"<?php
+class TestPriv {
+    private function __construct() {
+        echo __METHOD__ . "()\n";
+    }
+
+    static function f() {
+        new TestPriv();
+    }
+}
+
+TestPriv::f();
+
+class DerivedPriv extends TestPriv {
+    function __construct() {
+        echo __METHOD__ . "()\n";
+        parent::__construct();
+    }
+
+    static function f() {
+        new DerivedPriv();
+    }
+}
+
+DerivedPriv::f();
+"#,
+        "/tmp/ctor_visibility.php",
+    )
+    .unwrap();
+    assert!(private_parent.stdout.starts_with(
+        "TestPriv::__construct()\nDerivedPriv::__construct()\n\nFatal error: Uncaught Error: Cannot call private TestPriv::__construct() in /tmp/ctor_visibility.php:"
+    ));
+    assert!(private_parent
+        .stdout
+        .contains(": DerivedPriv->__construct()"));
+    assert!(private_parent.stdout.contains(": DerivedPriv::f()"));
+    assert_eq!(private_parent.stderr, "");
+    assert_eq!(private_parent.exit_code, 255);
+}
+
+#[test]
+fn non_public_destructors_fatal_on_release_and_warn_at_shutdown() {
+    let explicit_release = run_source_with_source_file(
+        r#"<?php
+class Base {
+    private function __destruct() {
+        echo "base\n";
+    }
+}
+
+class Derived extends Base {}
+
+$obj = new Derived();
+unset($obj);
+"#,
+        "/tmp/private_destructor_release.php",
+    )
+    .unwrap();
+    assert!(explicit_release.stdout.contains(
+        "Fatal error: Uncaught Error: Call to private Derived::__destruct() from global scope in /tmp/private_destructor_release.php:"
+    ));
+    assert!(!explicit_release.stdout.contains("base\n"));
+    assert_eq!(explicit_release.stderr, "");
+    assert_eq!(explicit_release.exit_code, 255);
+
+    let assignment_release = run_source_with_source_file(
+        r#"<?php
+class AssignedDrop {
+    protected function __destruct() {
+        echo "should-not-run\n";
+    }
+}
+
+$obj = new AssignedDrop();
+$obj = null;
+echo "after\n";
+"#,
+        "/tmp/protected_destructor_assignment.php",
+    )
+    .unwrap();
+    assert!(assignment_release.stdout.contains(
+        "Fatal error: Uncaught Error: Call to protected AssignedDrop::__destruct() from global scope in /tmp/protected_destructor_assignment.php:"
+    ));
+    assert!(!assignment_release.stdout.contains("after\n"));
+    assert_eq!(assignment_release.stderr, "");
+    assert_eq!(assignment_release.exit_code, 255);
+
+    let shutdown = run_source_with_source_file(
+        r#"<?php
+class Box {
+    protected function __destruct() {
+        echo "should-not-run\n";
+    }
+}
+
+$box = new Box();
+echo "done\n";
+"#,
+        "/tmp/protected_destructor_shutdown.php",
+    )
+    .unwrap();
+    assert_eq!(
+        shutdown.stdout,
+        "done\n\nWarning: Call to protected Box::__destruct() from global scope during shutdown ignored in Unknown on line 0\n"
+    );
+    assert_eq!(shutdown.stderr, "");
+    assert_eq!(shutdown.exit_code, 0);
+
+    let public_child = run_source(
+        r#"<?php
+class Base {
+    private function __destruct() {
+        echo "base\n";
+    }
+}
+
+class Derived extends Base {
+    public function __destruct() {
+        echo "derived";
+    }
+}
+
+$obj = new Derived();
+echo "done\n";
+"#,
+    )
+    .unwrap();
+    assert_eq!(public_child.stdout, "done\nderived");
+    assert_eq!(public_child.stderr, "");
+    assert_eq!(public_child.exit_code, 0);
 }
 
 #[test]
@@ -18501,11 +18643,8 @@ class Child extends Base {
     );
 
     assert_eq!(error.line, 9);
-    assert_eq!(error.column, 12);
-    assert_eq!(
-        error.message,
-        "unsupported class inheritance for Child: cannot override final method Base::seal()"
-    );
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, "Cannot override final method Base::seal()");
 }
 
 #[test]

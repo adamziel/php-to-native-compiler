@@ -3406,15 +3406,20 @@
   inherited public instance `__construct` methods execute with scoped `$this`,
   positional arguments, the current default-parameter subset, and constructor
   stack frames for uncaught PHP error fatals raised from the executed
-  constructor body. Successfully
-  allocated objects whose class declares or inherits a public non-static
-  no-argument `__destruct` method run that destructor during normal script
-  shutdown, including after `exit`, in reverse allocation order for the current
-  allocated-object queue; cloned objects without `__clone` are also queued for
-  the same shutdown destructor path. User-declared destructors are validated
-  at class registration for the current supported public non-static
-  parameterless shape; non-public, static, or parameterized destructors report
-  stable runtime boundaries before object allocation. Dynamic class
+  constructor body. Inaccessible private/protected constructors reached through
+  `new ClassName(...)` or explicit `parent::__construct(...)` report
+  PHP-shaped uncaught `Error` fatals in the covered visibility contexts.
+  Successfully allocated objects whose class declares or inherits a non-static
+  no-argument `__destruct` method are tracked for destruction. Public
+  destructors run during explicit release by `unset($object)` or direct
+  variable overwrite when no live root remains, and during normal script
+  shutdown, including after `exit`, in reverse allocation order for the
+  current allocated-object queue; cloned objects without `__clone` are also
+  queued for the same shutdown destructor path. Non-public destructors may be
+  declared: explicit release reports PHP-shaped uncaught `Error` visibility
+  fatals, while shutdown emits PHP's ignored non-public destructor warning and
+  skips the body. Static or parameterized destructors still report stable
+  runtime boundaries before object allocation. Dynamic class
   variables with non-string values report a stable runtime boundary, and
   dynamic strings still missing after the current bounded autoload callback path
   use the current undefined-class diagnostic. Instantiating a declared
@@ -8041,11 +8046,13 @@
   public/protected/private visibility checks.
   Protected constructors are callable from same-class or child-class method
   context through ordinary `new ClassName(...)` expressions.
-  Undefined classes, constructor arguments for classes without constructors,
-  private constructors without same-class construction context, protected
-  constructors outside same-class/child-class construction context, top-level
-  parent calls, parent calls in classes without parents, and static parent
-  methods fail with stable runtime diagnostics. Public instance property reads
+  Undefined classes and constructor arguments for classes without constructors
+  fail with stable runtime diagnostics. Private constructors without
+  same-class construction context and protected constructors outside
+  same-class/child-class construction context fail with PHP-shaped uncaught
+  `Error` visibility diagnostics. Top-level parent calls, parent calls in
+  classes without parents, and static parent methods fail with stable runtime
+  diagnostics. Public instance property reads
   and direct-variable writes work by static property name; property names are case-sensitive, and
   writes mutate the current object value stored in that variable.
   `isset($object->name)` works for direct object-variable operands and returns
@@ -12155,18 +12162,19 @@
   inherited public constructors and explicit public/protected
   `parent::__construct(...)` calls from instance context, execute in
   `phpc run` with scoped `$this`. Protected constructors are callable from
-  same-class or child-class method context through `new ClassName(...)`.
-  Public non-static no-argument `__destruct` methods, including inherited
-  destructors, execute during normal shutdown for successfully allocated or
-  cloned objects that reached the current allocation tracker. Declarations of
-  non-public, static, or parameterized destructors are rejected at class
-  registration with stable runtime diagnostics instead of being deferred to
-  shutdown.
-  Constructor arguments for classes without a constructor, private
-  constructors without same-class construction context, protected constructors
-  outside same-class/child-class construction context, static constructors,
-  exact PHP fatal wording for destructor declaration errors, destructor
-  execution on runtime-error paths, cyclic garbage collection, exact object
+  same-class or child-class method context through `new ClassName(...)`;
+  inaccessible private/protected constructor calls report PHP-shaped
+  uncaught `Error` visibility fatals. Non-static no-argument `__destruct`
+  methods, including inherited destructors, are tracked for successfully
+  allocated or cloned objects. Public destructors run on covered explicit
+  release and normal shutdown. Non-public destructors register, but explicit
+  release reports PHP-shaped uncaught `Error` visibility fatals, while
+  shutdown emits the ignored non-public destructor warning and skips the body.
+  Static or parameterized destructors are rejected at class registration with
+  stable runtime diagnostics.
+  Constructor arguments for classes without a constructor, static constructors,
+  destructor execution on uncaught runtime-error paths beyond the current
+  shutdown slice, cyclic garbage collection, exact object
   lifetime and handle-reuse ordering, constructor promotion, explicit parent
   calls outside active child instance context, named arguments,
   references/copy-on-write, exact PHP `Error`/`TypeError` object behavior, and
@@ -12401,9 +12409,8 @@
   instance method execution currently fail with stable runtime diagnostics
 - non-public object property access and property writes to lvalues other than a
   direct variable
-- constructor arguments for classes without a declared constructor, non-public
-  constructors, and static constructors currently fail with stable runtime
-  diagnostics
+- constructor arguments for classes without a declared constructor and static
+  constructors currently fail with stable runtime diagnostics
 - unsupported class forms including nested/conditional declarations, broader
   inheritance rules beyond the current single-parent metadata chain,
   typed/static/non-public/abstract/final or multi-constant interface

@@ -345,6 +345,10 @@ fn class_registration_startup_fatal_message(error: &Diagnostic) -> Option<String
         return Some(format!("Could not check compatibility between {message}"));
     }
 
+    if let Some(method) = reason.strip_prefix("cannot override final method ") {
+        return Some(format!("Cannot override final method {method}"));
+    }
+
     if let Some(parent) = reason.strip_prefix("cannot extend final class ") {
         return Some(format!(
             "Class {class_name} cannot extend final class {parent}"
@@ -921,6 +925,12 @@ struct PendingUncaughtCallFrame {
     function_line: usize,
     call_line: usize,
     args: Vec<Value>,
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum DestructorInvocation {
+    Immediate,
+    Shutdown,
 }
 
 #[derive(Debug, Clone)]
@@ -28060,6 +28070,26 @@ impl Interpreter {
         ));
     }
 
+    fn emit_shutdown_warning_without_prefix(&mut self, message: impl AsRef<str>) {
+        if self.error_reporting_mask & PHP_E_WARNING == 0 {
+            return;
+        }
+        let current_output_is_empty = self.stdout.is_empty()
+            && self
+                .output_buffers
+                .iter()
+                .all(|buffer| buffer.contents.is_empty());
+        let mut output = String::new();
+        if !current_output_is_empty {
+            output.push('\n');
+        }
+        output.push_str(&format!(
+            "Warning: {} in Unknown on line 0\n",
+            message.as_ref()
+        ));
+        self.append_output(&output);
+    }
+
     fn emit_disable_functions_startup_warnings(&mut self) {
         let Some(value) = self.ini_value("disable_functions") else {
             return;
@@ -33609,20 +33639,10 @@ impl Interpreter {
         }
 
         if !self.can_call_constructor(constructor_class_id, constructor_visibility) {
-            let reason = match constructor_visibility {
-                Visibility::Private => format!(
-                    "private constructor {}::__construct() requires same-class construction context",
-                    constructor_class_name
-                ),
-                Visibility::Protected => format!(
-                    "protected constructor {}::__construct() requires same-class or child-class construction context",
-                    constructor_class_name
-                ),
-                Visibility::Public => unreachable!("public constructors are always callable"),
-            };
-            return Err(runtime_error(
+            return Err(self.constructor_visibility_error(
+                &constructor_class_name,
+                constructor_visibility,
                 span,
-                RuntimeError::unsupported_object_instantiation(declared_class_name, reason),
             ));
         }
 
@@ -34175,16 +34195,14 @@ impl Interpreter {
     }
 
     fn track_allocated_object(&mut self, object: &PhpObject) {
-        if self.object_has_supported_public_destructor(object) {
+        if self.object_has_supported_destructor(object) {
             self.allocated_objects.push(object.clone());
         }
     }
 
-    fn object_has_supported_public_destructor(&self, object: &PhpObject) -> bool {
+    fn object_has_supported_destructor(&self, object: &PhpObject) -> bool {
         self.resolve_instance_method(object.class_id(), "__destruct")
-            .is_some_and(|(_, _, _, visibility, is_static)| {
-                visibility == Visibility::Public && !is_static
-            })
+            .is_some_and(|(_, _, _, _, is_static)| !is_static)
     }
 
     fn retire_unrooted_temporary_object_handle(
@@ -34214,8 +34232,8 @@ impl Interpreter {
             return Ok(());
         }
 
-        if self.object_has_supported_public_destructor(object) {
-            self.finalize_object_destructor(object.clone())?;
+        if self.object_has_supported_destructor(object) {
+            self.finalize_object_destructor(object.clone(), DestructorInvocation::Immediate)?;
             if self.live_roots_contain_object_id(object_id, scope) {
                 return Ok(());
             }
@@ -34462,7 +34480,7 @@ impl Interpreter {
             return self.retire_reusable_unrooted_temporary_object_handle(&object, scope);
         }
 
-        if !self.object_has_supported_public_destructor(&object) {
+        if !self.object_has_supported_destructor(&object) {
             return Ok(());
         }
 
@@ -34474,7 +34492,7 @@ impl Interpreter {
             return Ok(());
         }
 
-        self.finalize_object_destructor(object)
+        self.finalize_object_destructor(object, DestructorInvocation::Immediate)
     }
 
     fn finalize_released_array_values(
@@ -34723,7 +34741,11 @@ impl Interpreter {
         }
     }
 
-    fn finalize_object_destructor(&mut self, object: PhpObject) -> CompileResult<()> {
+    fn finalize_object_destructor(
+        &mut self,
+        object: PhpObject,
+        invocation: DestructorInvocation,
+    ) -> CompileResult<()> {
         if !self.finalized_objects.insert(object.id()) {
             return Ok(());
         }
@@ -34749,7 +34771,24 @@ impl Interpreter {
             ));
         }
 
-        self.ensure_instance_method_visible(class_id, &class_name, &method_name, visibility, span)?;
+        if visibility != Visibility::Public {
+            let message = destructor_visibility_error_message(
+                object.class_name(),
+                visibility,
+                invocation == DestructorInvocation::Shutdown,
+            );
+            if invocation == DestructorInvocation::Shutdown {
+                self.emit_shutdown_warning_without_prefix(message);
+                return Ok(());
+            }
+            return Err(Diagnostic::new(
+                Phase::Runtime,
+                span.line,
+                span.column,
+                message,
+            ));
+        }
+
         let function = self.method_function(class_id, &class_name, &method_name, span)?;
         let function = function.as_ref();
         ensure_user_function_arity(function, 0, span)?;
@@ -34770,7 +34809,7 @@ impl Interpreter {
 
     fn run_shutdown_destructors(&mut self) -> CompileResult<()> {
         while let Some(object) = self.allocated_objects.pop() {
-            self.finalize_object_destructor(object)?;
+            self.finalize_object_destructor(object, DestructorInvocation::Shutdown)?;
         }
 
         Ok(())
@@ -43061,7 +43100,8 @@ impl Interpreter {
                 }
                 if let Some(released_value) = released_value {
                     self.retire_released_bcmath_number_handle(released_value.clone(), scope)?;
-                    self.retire_released_array_object_handle(released_value, scope)?;
+                    self.retire_released_array_object_handle(released_value.clone(), scope)?;
+                    self.finalize_released_value(Some(released_value), scope)?;
                 }
                 let array_literal_references_for_value = array_literal_references.clone();
                 for reference in array_literal_references {
@@ -68778,6 +68818,13 @@ impl Interpreter {
         };
 
         if !self.method_visible_for_dispatch(None, class_id, method_name, visibility) {
+            if method_name.eq_ignore_ascii_case("__construct") {
+                return Err(cannot_call_constructor_visibility_error(
+                    &class_name,
+                    visibility,
+                    span,
+                ));
+            }
             return match self.call_missing_static_method_via_magic(
                 parent_class_id,
                 method_name,
@@ -73455,6 +73502,33 @@ impl Interpreter {
             span.column,
             format!("Call to {visibility} method {class_name}::{method_name}() from {scope}"),
         )
+    }
+
+    fn constructor_visibility_error(
+        &self,
+        class_name: &str,
+        visibility: Visibility,
+        span: Span,
+    ) -> Diagnostic {
+        Diagnostic::new(
+            Phase::Runtime,
+            span.line,
+            span.column,
+            format!(
+                "Call to {} {class_name}::__construct() from {}",
+                visibility_label(visibility),
+                self.visibility_error_scope()
+            ),
+        )
+    }
+
+    fn visibility_error_scope(&self) -> String {
+        self.class_context
+            .last()
+            .copied()
+            .and_then(|class_id| self.classes.get(class_id))
+            .map(|class| format!("scope {}", class.name()))
+            .unwrap_or_else(|| "global scope".to_string())
     }
 
     fn evaluate_array_key(
@@ -130809,20 +130883,10 @@ fn method_static_name(is_static: bool) -> &'static str {
 fn validate_destructor_method_shape(
     class_name: &str,
     method: &ClassMethodDecl,
-    visibility: Visibility,
+    _visibility: Visibility,
 ) -> RuntimeResult<()> {
     if !method.function.name.eq_ignore_ascii_case("__destruct") {
         return Ok(());
-    }
-
-    if visibility != Visibility::Public {
-        return Err(RuntimeError::unsupported_class_inheritance(
-            class_name,
-            format!(
-                "destructor {}::__destruct() must be public in the current subset",
-                class_name
-            ),
-        ));
     }
 
     if method.is_static {
@@ -132926,6 +132990,38 @@ fn cannot_call_constructor_error(span: Span) -> Diagnostic {
     )
 }
 
+fn cannot_call_constructor_visibility_error(
+    class_name: &str,
+    visibility: Visibility,
+    span: Span,
+) -> Diagnostic {
+    Diagnostic::new(
+        Phase::Runtime,
+        span.line,
+        span.column,
+        format!(
+            "Cannot call {} {class_name}::__construct()",
+            visibility_label(visibility)
+        ),
+    )
+}
+
+fn destructor_visibility_error_message(
+    class_name: &str,
+    visibility: Visibility,
+    during_shutdown: bool,
+) -> String {
+    let suffix = if during_shutdown {
+        " during shutdown ignored"
+    } else {
+        ""
+    };
+    format!(
+        "Call to {} {class_name}::__destruct() from global scope{suffix}",
+        visibility_label(visibility)
+    )
+}
+
 fn this_not_in_object_context_error(span: Span) -> Diagnostic {
     Diagnostic::new(
         Phase::Runtime,
@@ -133368,6 +133464,14 @@ fn class_constant_visibility_error_message(
     }
 }
 
+fn visibility_label(visibility: Visibility) -> &'static str {
+    match visibility {
+        Visibility::Private => "private",
+        Visibility::Protected => "protected",
+        Visibility::Public => "public",
+    }
+}
+
 fn trait_constant_direct_access_error(class_name: &str, constant: &str, span: Span) -> Diagnostic {
     Diagnostic::new(
         Phase::Runtime,
@@ -133663,6 +133767,13 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             || error
                 .message
                 .starts_with("Cannot access protected property ")
+        {
+            return Some(("Error", error.message.clone()));
+        }
+
+        if is_magic_method_visibility_error_message(&error.message)
+            || error.message.starts_with("Cannot call private ")
+            || error.message.starts_with("Cannot call protected ")
         {
             return Some(("Error", error.message.clone()));
         }
@@ -134325,6 +134436,17 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
     }
 
     None
+}
+
+fn is_magic_method_visibility_error_message(message: &str) -> bool {
+    let Some(rest) = message
+        .strip_prefix("Call to private ")
+        .or_else(|| message.strip_prefix("Call to protected "))
+    else {
+        return false;
+    };
+
+    rest.contains("::__construct() from ") || rest.contains("::__destruct() from ")
 }
 
 const ASSERTION_ERROR_DIAGNOSTIC_PREFIX: &str = "unsupported call assert(): AssertionError: ";
