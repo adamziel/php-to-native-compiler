@@ -1241,27 +1241,14 @@ fn final_class_constant_declarations_parse_for_startup_validation() {
 }
 
 #[test]
-fn unsupported_typed_property_declarations_keep_stable_parse_errors() {
+fn parenthesized_dnf_typed_property_declarations_parse_for_metadata() {
     let cases = [
-        (
-            "<?php\nclass Value {\n    public (Countable&Iterator)|ArrayAccess $id;\n}\n",
-            3,
-            12,
-            "unsupported DNF type declaration: parenthesized union/intersection type declarations are not implemented",
-        ),
-        (
-            "<?php\nclass Value {\n    public static (Countable&Iterator)|ArrayAccess $id;\n}\n",
-            3,
-            19,
-            "unsupported DNF type declaration: parenthesized union/intersection type declarations are not implemented",
-        ),
+        "<?php\nclass Value {\n    public (Countable&Iterator)|ArrayAccess $id;\n}\n",
+        "<?php\nclass Value {\n    public static (Countable&Iterator)|ArrayAccess $id;\n}\n",
     ];
 
-    for (source, line, column, message) in cases {
-        let error = parse_error(source);
-        assert_eq!(error.line, line);
-        assert_eq!(error.column, column);
-        assert_eq!(error.message, message);
+    for source in cases {
+        parse(source).unwrap();
     }
 }
 

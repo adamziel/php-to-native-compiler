@@ -534,7 +534,12 @@ impl Parser {
             return self.parse_type_name(text, message);
         }
 
-        Err(self.error_at(self.previous().span, unsupported_dnf_type_message()))
+        text.push('(');
+        let inner = self.parse_type_decl(message)?;
+        text.push_str(&inner.text);
+        self.consume_keyword(TokenKind::RParen, "expected ')' after type declaration")?;
+        text.push(')');
+        Ok(())
     }
 
     fn parse_type_name(&mut self, text: &mut String, message: &'static str) -> CompileResult<()> {
@@ -10283,10 +10288,6 @@ fn unsupported_property_type_message() -> &'static str {
 
 fn unsupported_class_constant_type_message() -> &'static str {
     "unsupported class constant type declaration: expected class constant type name"
-}
-
-fn unsupported_dnf_type_message() -> &'static str {
-    "unsupported DNF type declaration: parenthesized union/intersection type declarations are not implemented"
 }
 
 fn unsupported_multiple_properties_message() -> &'static str {
