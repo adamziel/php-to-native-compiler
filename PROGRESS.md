@@ -463,7 +463,18 @@ Accepted source proof included in the `dcf615c9` public gate:
   remains blocked by the latest-published PASS regression
   `php-src/Zend/tests/bug60598.phpt`.
 
-Accepted public gate: checkpoint `dcf615c9` completed the pinned full PHPT
+Accepted public gate: checkpoint `e3813529` completed the pinned full PHPT
+gate with `7685 / 20294 = 37.87%` and zero latest-published PASS regressions
+against the `dcf615c9` baseline. Full gate evidence is in
+`state/logs/phpt-full-current-score-20260604T103438Z-php-src-f97ff59-public-e3813529-source-e3813529`;
+the aggregate had `7685` passed rows, `7681` normalized current passes, and
+`0` PASS regressions. The accepted PASS baseline is
+`state/logs/phpt-full-current-score-20260604T103438Z-php-src-f97ff59-public-e3813529-source-e3813529/current-passes.normalized.txt`
+with `7681` rows and SHA-256
+`fdc72e8355f4dcbb3be9c6629c00e492b797fe2b1a1403a1261494c836183a2a`.
+The invalid-proof-marker summary reported `0` hits.
+
+Previous accepted public gate: checkpoint `dcf615c9` completed the pinned full PHPT
 gate with `7636 / 20294 = 37.63%` and zero latest-published PASS regressions
 against the `0086ba77` baseline. Full gate evidence is in
 `state/logs/phpt-full-current-score-20260604T095029Z-php-src-f97ff59-public-dcf615c9-source-dcf615c9`;
