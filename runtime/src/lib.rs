@@ -39723,6 +39723,231 @@ impl NativeValueComparisonContext {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct RuntimeGmpDecimal {
+    negative: bool,
+    digits: Vec<u8>,
+}
+
+fn php_gmp_value_ordering(left: &Value, right: &Value) -> RuntimeResult<Option<Ordering>> {
+    if !value_is_gmp_object(left) && !value_is_gmp_object(right) {
+        return Ok(None);
+    }
+
+    let left = runtime_gmp_decimal_from_value(left)?;
+    let right = runtime_gmp_decimal_from_value(right)?;
+    Ok(Some(runtime_gmp_decimal_compare(&left, &right)))
+}
+
+fn value_is_gmp_object(value: &Value) -> bool {
+    matches!(value, Value::Object(object) if object.class_name().eq_ignore_ascii_case("GMP"))
+}
+
+fn runtime_gmp_decimal_from_value(value: &Value) -> RuntimeResult<RuntimeGmpDecimal> {
+    match value {
+        Value::Object(object) if object.class_name().eq_ignore_ascii_case("GMP") => {
+            runtime_gmp_decimal_from_object(object)
+        }
+        Value::Int(value) => runtime_gmp_decimal_from_integer_string(&value.to_string()),
+        Value::String(value) => runtime_gmp_decimal_from_integer_string(value),
+        Value::BinaryString(value) => {
+            let value =
+                std::str::from_utf8(value).map_err(|_| runtime_gmp_integer_string_error())?;
+            runtime_gmp_decimal_from_integer_string(value)
+        }
+        Value::Null => Ok(RuntimeGmpDecimal {
+            negative: false,
+            digits: vec![0],
+        }),
+        _ => Err(runtime_gmp_type_error(value)),
+    }
+}
+
+fn runtime_gmp_decimal_from_object(object: &PhpObject) -> RuntimeResult<RuntimeGmpDecimal> {
+    let Value::String(value) = object.read_public_property("num")? else {
+        return Err(runtime_gmp_integer_string_error());
+    };
+    runtime_gmp_decimal_from_integer_string(&value)
+}
+
+fn runtime_gmp_decimal_from_integer_string(value: &str) -> RuntimeResult<RuntimeGmpDecimal> {
+    let value = value.trim_matches(runtime_gmp_integer_whitespace);
+    if value.is_empty() {
+        return Err(runtime_gmp_integer_string_error());
+    }
+
+    let (negative, rest) = match value.as_bytes()[0] {
+        b'-' => (true, &value[1..]),
+        b'+' => return Err(runtime_gmp_integer_string_error()),
+        _ => (false, value),
+    };
+    if rest.is_empty() {
+        return Err(runtime_gmp_integer_string_error());
+    }
+
+    let (base, digits) = runtime_gmp_integer_digits_for_base(rest);
+    if digits.is_empty() {
+        return Err(runtime_gmp_integer_string_error());
+    }
+
+    let mut decimal_digits = vec![0];
+    for byte in digits.bytes() {
+        let Some(digit) = runtime_gmp_digit_value(byte, base) else {
+            return Err(runtime_gmp_integer_string_error());
+        };
+        decimal_digits = runtime_decimal_add_small_abs(
+            &runtime_decimal_mul_small_abs(&decimal_digits, u16::from(base)),
+            u16::from(digit),
+        );
+    }
+
+    runtime_normalize_decimal_digits(&mut decimal_digits);
+    let negative = negative && !runtime_digits_are_zero(&decimal_digits);
+    Ok(RuntimeGmpDecimal {
+        negative,
+        digits: decimal_digits,
+    })
+}
+
+fn runtime_gmp_integer_digits_for_base(value: &str) -> (u8, &str) {
+    if let Some(rest) = value
+        .strip_prefix("0x")
+        .or_else(|| value.strip_prefix("0X"))
+    {
+        return (16, rest);
+    }
+    if let Some(rest) = value
+        .strip_prefix("0b")
+        .or_else(|| value.strip_prefix("0B"))
+    {
+        return (2, rest);
+    }
+    if let Some(rest) = value
+        .strip_prefix("0o")
+        .or_else(|| value.strip_prefix("0O"))
+    {
+        return (8, rest);
+    }
+    if value.len() > 1 && value.starts_with('0') {
+        return (8, value);
+    }
+    (10, value)
+}
+
+fn runtime_gmp_digit_value(byte: u8, base: u8) -> Option<u8> {
+    let value = match byte {
+        b'0'..=b'9' => byte - b'0',
+        b'a'..=b'z' => 10 + byte - b'a',
+        b'A'..=b'Z' if base <= 36 => 10 + byte - b'A',
+        b'A'..=b'Z' => 36 + byte - b'A',
+        _ => return None,
+    };
+    (value < base).then_some(value)
+}
+
+fn runtime_gmp_integer_whitespace(ch: char) -> bool {
+    matches!(ch, ' ' | '\t' | '\n' | '\r' | '\u{0b}' | '\u{0c}')
+}
+
+fn runtime_gmp_decimal_compare(left: &RuntimeGmpDecimal, right: &RuntimeGmpDecimal) -> Ordering {
+    match (left.negative, right.negative) {
+        (true, false) => Ordering::Less,
+        (false, true) => Ordering::Greater,
+        (true, true) => runtime_decimal_cmp_abs(&right.digits, &left.digits),
+        (false, false) => runtime_decimal_cmp_abs(&left.digits, &right.digits),
+    }
+}
+
+fn runtime_decimal_cmp_abs(left: &[u8], right: &[u8]) -> Ordering {
+    let mut left = left.to_vec();
+    let mut right = right.to_vec();
+    runtime_normalize_decimal_digits(&mut left);
+    runtime_normalize_decimal_digits(&mut right);
+    left.len()
+        .cmp(&right.len())
+        .then_with(|| left.as_slice().cmp(right.as_slice()))
+}
+
+fn runtime_decimal_mul_small_abs(digits: &[u8], factor: u16) -> Vec<u8> {
+    if factor == 0 || runtime_digits_are_zero(digits) {
+        return vec![0];
+    }
+
+    let mut result = Vec::with_capacity(digits.len() + 3);
+    let mut carry = 0u16;
+    for digit in digits.iter().rev() {
+        let product = u16::from(*digit) * factor + carry;
+        result.push((product % 10) as u8);
+        carry = product / 10;
+    }
+    while carry > 0 {
+        result.push((carry % 10) as u8);
+        carry /= 10;
+    }
+    result.reverse();
+    runtime_normalize_decimal_digits(&mut result);
+    result
+}
+
+fn runtime_decimal_add_small_abs(digits: &[u8], addend: u16) -> Vec<u8> {
+    let mut result = digits.to_vec();
+    let mut carry = addend;
+    let mut index = result.len();
+    while carry > 0 {
+        if index == 0 {
+            result.insert(0, (carry % 10) as u8);
+            carry /= 10;
+            continue;
+        }
+        index -= 1;
+        let sum = u16::from(result[index]) + (carry % 10);
+        result[index] = (sum % 10) as u8;
+        carry = carry / 10 + sum / 10;
+    }
+    runtime_normalize_decimal_digits(&mut result);
+    result
+}
+
+fn runtime_normalize_decimal_digits(digits: &mut Vec<u8>) {
+    if let Some(first_non_zero) = digits.iter().position(|digit| *digit != 0) {
+        if first_non_zero > 0 {
+            digits.drain(..first_non_zero);
+        }
+    } else {
+        digits.clear();
+        digits.push(0);
+    }
+}
+
+fn runtime_digits_are_zero(digits: &[u8]) -> bool {
+    digits.iter().all(|digit| *digit == 0)
+}
+
+fn runtime_gmp_integer_string_error() -> RuntimeError {
+    RuntimeError::unsupported_call("GMP operator", "Number is not an integer string")
+}
+
+fn runtime_gmp_type_error(value: &Value) -> RuntimeError {
+    RuntimeError::unsupported_call(
+        "GMP operator",
+        format!(
+            "Number must be of type GMP|string|int, {} given",
+            php_runtime_type_error_given(value)
+        ),
+    )
+}
+
+fn php_runtime_type_error_given(value: &Value) -> String {
+    match value {
+        Value::Null => "null".to_string(),
+        Value::Bool(true) => "true".to_string(),
+        Value::Bool(false) => "false".to_string(),
+        Value::Object(object) => object.class_name().to_string(),
+        Value::Closure(_) => "Closure".to_string(),
+        other => other.type_name().to_string(),
+    }
+}
+
 fn coerce_typed_property_value(property: &ObjectProperty, value: Value) -> RuntimeResult<Value> {
     let Some(type_decl) = property.type_decl.as_deref() else {
         return Ok(value);
@@ -40835,6 +41060,10 @@ impl Value {
         op: Comparison,
         context: &mut NativeValueComparisonContext,
     ) -> RuntimeResult<bool> {
+        if let Some(ordering) = php_gmp_value_ordering(self, other)? {
+            return Ok(comparison_matches_ordering(ordering, op));
+        }
+
         match (self, other) {
             (Value::Array(left), Value::Array(right)) => match op {
                 Comparison::Eq => left.php_equality_checked_with_context(right, context),
@@ -40906,6 +41135,10 @@ impl Value {
         other: &Value,
         context: &mut NativeValueComparisonContext,
     ) -> RuntimeResult<Ordering> {
+        if let Some(ordering) = php_gmp_value_ordering(self, other)? {
+            return Ok(ordering);
+        }
+
         match (self, other) {
             (Value::Array(left), Value::Array(right)) => {
                 left.php_ordering_checked_with_context(right, context)

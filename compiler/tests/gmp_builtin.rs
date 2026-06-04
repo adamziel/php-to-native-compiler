@@ -201,6 +201,78 @@ try {
 }
 
 #[test]
+fn gmp_operator_overloads_and_ordering_are_supported() {
+    let execution = run_source(
+        r#"<?php
+$a = gmp_init(42);
+$b = gmp_init(17);
+echo gmp_strval($a / $b), "\n";
+echo gmp_strval($a % $b), "\n";
+echo gmp_strval($a ** "3"), "\n";
+echo gmp_strval($a | $b), ":", gmp_strval($a & $b), ":", gmp_strval($a ^ $b), "\n";
+echo gmp_strval($a << 2), ":", gmp_strval(-$a >> 2), "\n";
+var_dump($a > null);
+try {
+    $a == "not-int";
+} catch (ValueError $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+try {
+    $a + [];
+} catch (TypeError $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+try {
+    $a ** [];
+} catch (TypeError $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+$values = [gmp_init(0), -3, gmp_init(2), 1];
+sort($values);
+foreach ($values as $value) {
+    echo is_object($value) ? "G" : "I", gmp_strval($value), ",";
+}
+echo "\n";
+$min = min(gmp_init(3), 4);
+$max = max(gmp_init(3), 4);
+echo is_object($min) ? "G" : "I", gmp_strval($min), "\n";
+echo is_object($max) ? "G" : "I", gmp_strval($max), "\n";
+var_dump(array_sum([gmp_init((string) (PHP_INT_MAX - 1)), 1]) === PHP_INT_MAX);
+$a += 1;
+echo gmp_strval($a), "\n";
+$a -= 1;
+echo gmp_strval($a), "\n";
+echo gmp_strval(++$a), ":", gmp_strval($a++), ":", gmp_strval($a), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "2\n",
+            "8\n",
+            "74088\n",
+            "59:0:59\n",
+            "168:-11\n",
+            "bool(true)\n",
+            "ValueError:Number is not an integer string\n",
+            "TypeError:Number must be of type GMP|string|int, array given\n",
+            "TypeError:Unsupported operand types: GMP ** array\n",
+            "I-3,G0,I1,G2,\n",
+            "G3\n",
+            "I4\n",
+            "bool(true)\n",
+            "43\n",
+            "42\n",
+            "43:43:44\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn gmp_number_theory_helpers_are_supported() {
     let execution = run_source(
         r#"<?php

@@ -7308,15 +7308,25 @@
   binary/octal/decimal/hex input prefixes, selected explicit base parsing, and
   string/echo/int/float/bool casts for `GMP` objects. The bounded arithmetic
   slice includes `gmp_add()`, `gmp_sub()`, `gmp_mul()`, `gmp_cmp()`,
-  `gmp_mod()`, `gmp_div_q()`, `gmp_div_r()`, `gmp_gcd()`, `gmp_lcm()`,
-  `gmp_pow()`, `gmp_sqrt()`, `gmp_sqrtrem()`, `gmp_fact()`,
+  `gmp_mod()`, `gmp_div()`, `gmp_div_q()`, `gmp_div_r()`, `gmp_gcd()`,
+  `gmp_lcm()`, `gmp_pow()`, `gmp_sqrt()`, `gmp_sqrtrem()`, `gmp_fact()`,
   `gmp_nextprime()`, `gmp_perfect_square()`, `gmp_gcdext()`,
   `gmp_invert()`, `gmp_jacobi()`, `gmp_legendre()`, `gmp_kronecker()`,
   `gmp_root()`, `gmp_rootrem()`, `gmp_perfect_power()`,
   `gmp_prob_prime()`, and `gmp_binomial()` for current int/string/GMP
-  operands, plus bounded binary `+`, `-`, and `*` when either operand is a
-  `GMP` object. This includes the three `GMP_ROUND_*` constants and selected
-  `ValueError`/`DivisionByZeroError` surfaces. The bounded bit slice includes
+  operands. GMP operator overloading covers unary `+`, unary `-`, unary `~`,
+  pre/post `++` and `--`, binary `+`, `-`, `*`, `/`, `%`, `**`, `|`, `&`,
+  `^`, `<<`, and `>>` when either operand is a `GMP` object, plus `pow()`
+  with a `GMP` operand. The operator lane accepts `GMP` objects, integers,
+  integer strings/binary strings, and finite floats through PHP's integer
+  coercion, including fractional-float deprecations; invalid integer strings
+  surface `ValueError`, invalid arithmetic/bitwise operands surface
+  `TypeError`, and invalid `**`/shift operands use PHP's unsupported-operand
+  `TypeError` shape for the covered rows. Loose equality, ordering, spaceship,
+  `sort()`, `min()`, and `max()` compare `GMP` objects against the covered
+  GMP/int/integer-string/null operands. This includes the three `GMP_ROUND_*`
+  constants and selected `ValueError`/`DivisionByZeroError` surfaces. The
+  bounded bit slice includes
   `gmp_and()`, `gmp_or()`, `gmp_xor()`, `gmp_com()`, `gmp_setbit()`,
   `gmp_clrbit()`, `gmp_testbit()`, `gmp_scan0()`, `gmp_scan1()`,
   `gmp_popcount()`, and `gmp_hamdist()` over current int/string/GMP operands,
@@ -7324,8 +7334,8 @@
   `ValueError`/`TypeError` surfaces. Exact `gmp_div_qr()` object-handle reuse
   parity, exact probabilistic primality repetition parity, operands beyond the
   current decimal and i128 helper bounds, unbounded bit indexes, GMP
-  import/export/random functions, serialization/cloning, operator overloading
-  beyond `+`/`-`/`*`, exact base conversion beyond the covered rows,
+  import/export/random functions, serialization/cloning, object/stringable
+  coercion for GMP operators, exact base conversion beyond the covered rows,
   binary-string/non-ASCII parsing parity, unbounded exponent/factorial/root and
   binomial inputs, references/copy-on-write, and native lowering remain
   unsupported.
@@ -11926,12 +11936,13 @@
   `array_count_values` is also available through string-valued dynamic
   function calls.
   `array_sum($array)` accepts arrays only, treats `null` and `false` as zero,
-  `true` as one, integers and floats as themselves, and well-formed numeric
-  strings through the current numeric-string parser. Pure integer inputs return
-  an integer result unless checked integer addition overflows, at which point
+  `true` as one, integers and floats as themselves, well-formed numeric
+  strings through the current numeric-string parser, and `GMP` objects through
+  the current bounded GMP-to-integer path. Pure integer inputs return an
+  integer result unless checked integer addition overflows, at which point
   the result is promoted to float; any float-valued input or float numeric
   string also produces a float result. Empty arrays return integer zero.
-  Non-array operands, non-numeric strings, arrays, objects, and future
+  Non-array operands, non-numeric strings, arrays, non-GMP objects, and future
   resources inside the input fail with stable project diagnostics instead of
   PHP's warning/recovery behavior. References, copy-on-write containers, exact
   native `TypeError` objects, object/resource value recovery, PHP warning

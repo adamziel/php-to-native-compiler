@@ -49240,8 +49240,10 @@ impl Interpreter {
     ) -> CompileResult<Value> {
         let (place, left) = self.read_compound_assignment_left(target, span, scope)?;
         let right = self.evaluate(expr, scope)?;
+        let previous_left = left.clone();
         let value = self.apply_compound_assignment_op(left, op, right, span, scope)?;
         self.write_compound_assignment_place(place, value.clone(), span, scope)?;
+        self.retire_gmp_operator_operand(&previous_left, scope)?;
         Ok(value)
     }
 
@@ -50076,6 +50078,12 @@ impl Interpreter {
             return Ok(interpreter_value_from_php_string_bytes(bytes));
         }
 
+        if let Some(binary_op) = Self::compound_assignment_gmp_binary_op(op) {
+            if let Some(result) = self.apply_gmp_binary_operator(binary_op, &left, &right, span)? {
+                return Ok(result);
+            }
+        }
+
         self.emit_float_string_to_int_compound_deprecations(op, &left, &right, span)?;
 
         if let Some(binary_op) = Self::compound_assignment_bcmath_binary_op(op) {
@@ -50129,6 +50137,23 @@ impl Interpreter {
         }
     }
 
+    fn compound_assignment_gmp_binary_op(op: CompoundAssignOp) -> Option<BinaryOp> {
+        match op {
+            CompoundAssignOp::Add => Some(BinaryOp::Add),
+            CompoundAssignOp::Sub => Some(BinaryOp::Sub),
+            CompoundAssignOp::Mul => Some(BinaryOp::Mul),
+            CompoundAssignOp::Div => Some(BinaryOp::Div),
+            CompoundAssignOp::Mod => Some(BinaryOp::Mod),
+            CompoundAssignOp::Pow => Some(BinaryOp::Pow),
+            CompoundAssignOp::BitwiseAnd => Some(BinaryOp::BitwiseAnd),
+            CompoundAssignOp::BitwiseOr => Some(BinaryOp::BitwiseOr),
+            CompoundAssignOp::BitwiseXor => Some(BinaryOp::BitwiseXor),
+            CompoundAssignOp::ShiftLeft => Some(BinaryOp::ShiftLeft),
+            CompoundAssignOp::ShiftRight => Some(BinaryOp::ShiftRight),
+            CompoundAssignOp::Concat => None,
+        }
+    }
+
     fn emit_float_string_to_int_compound_deprecations(
         &mut self,
         op: CompoundAssignOp,
@@ -50163,8 +50188,10 @@ impl Interpreter {
         scope: &mut SymbolTable,
     ) -> CompileResult<()> {
         let (place, value) = self.read_increment_decrement_left(target, span, scope)?;
+        let previous = value.clone();
         let updated = self.increment_decrement_value(value, op, span)?;
         self.write_compound_assignment_place(place, updated, span, scope)?;
+        self.retire_gmp_operator_operand(&previous, scope)?;
         Ok(())
     }
 
@@ -50179,6 +50206,9 @@ impl Interpreter {
         let (place, previous) = self.read_increment_decrement_left(target, span, scope)?;
         let updated = self.increment_decrement_value(previous.clone(), op, span)?;
         self.write_compound_assignment_place(place, updated.clone(), span, scope)?;
+        if matches!(position, IncrementDecrementPosition::Pre) {
+            self.retire_gmp_operator_operand(&previous, scope)?;
+        }
 
         Ok(match position {
             IncrementDecrementPosition::Pre => updated,
@@ -50464,6 +50494,17 @@ impl Interpreter {
                     };
                     return self
                         .bcmath_number_object(updated, None, span)
+                        .map(Value::Object);
+                }
+                if object.class_name().eq_ignore_ascii_case("GMP") {
+                    let decimal = self.gmp_object_decimal(&object, span)?;
+                    let one = BcDecimal::one();
+                    let updated = match op {
+                        IncrementDecrementOp::Increment => decimal.add(&one),
+                        IncrementDecrementOp::Decrement => decimal.sub(&one),
+                    };
+                    return self
+                        .gmp_object(updated.integer_part(), span)
                         .map(Value::Object);
                 }
                 return Err(increment_decrement_type_error(
@@ -108509,6 +108550,7 @@ impl Interpreter {
             "gmp_mul" => self.call_gmp_binary("gmp_mul()", &args, span, GmpBinaryOp::Mul),
             "gmp_cmp" => self.call_gmp_cmp(&args, span),
             "gmp_mod" => self.call_gmp_mod(&args, span),
+            "gmp_div" => self.call_gmp_div(&args, span),
             "gmp_div_q" => self.call_gmp_div_q(&args, span),
             "gmp_div_r" => self.call_gmp_div_r(&args, span),
             "gmp_div_qr" => self.call_gmp_div_qr(&args, span),
@@ -114246,6 +114288,12 @@ impl Interpreter {
                 Ok(ArrayNumericNumber::Int(id))
             }
             Value::Object(object) => {
+                if object.class_name().eq_ignore_ascii_case("GMP") {
+                    let decimal = self.gmp_object_decimal(&object, span)?;
+                    return Ok(ArrayNumericNumber::Int(gmp_decimal_to_i64_wrapping(
+                        &decimal,
+                    )));
+                }
                 self.emit_array_numeric_unsupported_type_warning(
                     callable,
                     operation,
@@ -119809,6 +119857,21 @@ impl Interpreter {
     }
 
     fn apply_unary(&mut self, op: UnaryOp, value: Value, span: Span) -> CompileResult<Value> {
+        if let Value::Object(object) = &value {
+            if object.class_name().eq_ignore_ascii_case("GMP") {
+                let decimal = self.gmp_object_decimal(object, span)?;
+                let result = match op {
+                    UnaryOp::Plus => Some(decimal),
+                    UnaryOp::Negate => Some(decimal.clone().with_sign(!decimal.negative)),
+                    UnaryOp::BitwiseNot => Some(gmp_bitwise_not_decimal(&decimal)),
+                    UnaryOp::Not => None,
+                };
+                if let Some(result) = result {
+                    return self.gmp_object(result, span).map(Value::Object);
+                }
+            }
+        }
+
         if matches!(op, UnaryOp::Negate) {
             if let Some(number) = arithmetic_number_with_optional_leading_numeric(&value) {
                 if number.leading_numeric {
@@ -131225,7 +131288,7 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_param("num2", "GMP|string|int"),
             ],
         ),
-        "gmp_div_q" | "gmp_div_r" | "gmp_div_qr" => (
+        "gmp_div" | "gmp_div_q" | "gmp_div_r" | "gmp_div_qr" => (
             if name == "gmp_div_qr" { "array" } else { "GMP" },
             vec![
                 reflection_internal_param("num1", "GMP|string|int"),
@@ -136810,6 +136873,10 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             return Some(("TypeError", error.message.clone()));
         }
 
+        if let Some((class_name, message)) = gmp_operator_php_error_class_and_message(error) {
+            return Some((class_name, message));
+        }
+
         let array_access_message = error
             .message
             .strip_prefix("invalid array access: ")
@@ -136954,6 +137021,7 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             "unsupported call bcdiv(): Division by zero"
             | "unsupported call bcdivmod(): Division by zero"
             | "unsupported call gmp_invert(): Division by zero"
+            | "unsupported call gmp_div(): Argument #2 ($num2) Division by zero"
             | "unsupported call gmp_div_q(): Argument #2 ($num2) Division by zero"
             | "unsupported call gmp_div_r(): Argument #2 ($num2) Division by zero"
             | "unsupported call gmp_div_qr(): Argument #2 ($num2) Division by zero"
@@ -138245,6 +138313,31 @@ fn format_callback_arity_callable(callable: &str, error: &Diagnostic) -> String 
     callable.to_string()
 }
 
+fn gmp_operator_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static str, String)> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+    let message = error
+        .message
+        .strip_prefix("unsupported call GMP operator: ")?;
+    if message == "Division by zero" {
+        return Some(("DivisionByZeroError", message.to_string()));
+    }
+    if message == "Modulo by zero" {
+        return Some(("DivisionByZeroError", message.to_string()));
+    }
+    if message == "Number is not an integer string"
+        || message.starts_with("Exponent must be between 0 and ")
+        || message.starts_with("Shift must be between 0 and ")
+    {
+        return Some(("ValueError", message.to_string()));
+    }
+    if message.starts_with("Number must be of type GMP|string|int, ") {
+        return Some(("TypeError", message.to_string()));
+    }
+    None
+}
+
 fn value_error_message(error: &Diagnostic) -> Option<String> {
     if error.phase != Phase::Runtime {
         return None;
@@ -138722,6 +138815,7 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
             | "gmp_mul()"
             | "gmp_cmp()"
             | "gmp_mod()"
+            | "gmp_div()"
             | "gmp_div_q()"
             | "gmp_div_r()"
             | "gmp_div_qr()"
@@ -139727,6 +139821,7 @@ fn is_builtin(name: &str) -> bool {
             | "gmp_mul"
             | "gmp_cmp"
             | "gmp_mod"
+            | "gmp_div"
             | "gmp_div_q"
             | "gmp_div_r"
             | "gmp_div_qr"
@@ -169838,6 +169933,26 @@ fn php_pow_result(
         return Ok(Value::Object(object));
     }
 
+    if Interpreter::value_is_gmp(base_value) || Interpreter::value_is_gmp(exponent_value) {
+        let base = interpreter.gmp_operator_decimal_or_operand_error(
+            BinaryOp::Pow,
+            base_value,
+            exponent_value,
+            base_value,
+            span,
+        )?;
+        let exponent = interpreter.gmp_operator_decimal_or_operand_error(
+            BinaryOp::Pow,
+            base_value,
+            exponent_value,
+            exponent_value,
+            span,
+        )?;
+        let result = Interpreter::gmp_operator_pow_result(&base, &exponent, span)?;
+        let object = interpreter.gmp_object(result, span)?;
+        return Ok(Value::Object(object));
+    }
+
     let base = pow_number_arg(base_value)
         .ok_or_else(|| pow_unsupported_operand_types(base_value, exponent_value, span))?;
     let exponent = pow_number_arg(exponent_value)
@@ -175787,26 +175902,266 @@ impl Interpreter {
             BinaryOp::Add => GmpBinaryOp::Add,
             BinaryOp::Sub => GmpBinaryOp::Sub,
             BinaryOp::Mul => GmpBinaryOp::Mul,
+            BinaryOp::Div => GmpBinaryOp::Div,
+            BinaryOp::Mod => GmpBinaryOp::Mod,
+            BinaryOp::Pow => GmpBinaryOp::Pow,
+            BinaryOp::BitwiseAnd => {
+                return self.apply_gmp_bitwise_operator(op, left, right, span, GmpBitwiseOp::And)
+            }
+            BinaryOp::BitwiseOr => {
+                return self.apply_gmp_bitwise_operator(op, left, right, span, GmpBitwiseOp::Or)
+            }
+            BinaryOp::BitwiseXor => {
+                return self.apply_gmp_bitwise_operator(op, left, right, span, GmpBitwiseOp::Xor)
+            }
+            BinaryOp::ShiftLeft => GmpBinaryOp::ShiftLeft,
+            BinaryOp::ShiftRight => GmpBinaryOp::ShiftRight,
             _ => return Ok(None),
         };
         if !Self::value_is_gmp(left) && !Self::value_is_gmp(right) {
             return Ok(None);
         }
 
-        let function = match operation {
-            GmpBinaryOp::Add => "gmp_add()",
-            GmpBinaryOp::Sub => "gmp_sub()",
-            GmpBinaryOp::Mul => "gmp_mul()",
+        let left_decimal = match operation {
+            GmpBinaryOp::Pow | GmpBinaryOp::ShiftLeft | GmpBinaryOp::ShiftRight => {
+                self.gmp_operator_decimal_or_operand_error(op, left, right, left, span)?
+            }
+            _ => self.gmp_operator_decimal_argument(left, span)?,
         };
-        let left_decimal = self.gmp_decimal_argument(function, 1, "num1", left, 0, span)?;
-        let right_decimal = self.gmp_decimal_argument(function, 2, "num2", right, 0, span)?;
+        let right_decimal = match operation {
+            GmpBinaryOp::Pow | GmpBinaryOp::ShiftLeft | GmpBinaryOp::ShiftRight => {
+                self.gmp_operator_decimal_or_operand_error(op, left, right, right, span)?
+            }
+            _ => self.gmp_operator_decimal_argument(right, span)?,
+        };
         let result = match operation {
             GmpBinaryOp::Add => left_decimal.add(&right_decimal),
             GmpBinaryOp::Sub => left_decimal.sub(&right_decimal),
             GmpBinaryOp::Mul => left_decimal.mul(&right_decimal),
+            GmpBinaryOp::Div => {
+                if right_decimal.is_zero() {
+                    return Err(Self::gmp_operator_division_by_zero_error(span));
+                }
+                gmp_div_qr_decimal(&left_decimal, &right_decimal, GmpDivRoundingMode::Zero).0
+            }
+            GmpBinaryOp::Mod => {
+                if right_decimal.is_zero() {
+                    return Err(Self::gmp_operator_modulo_by_zero_error(span));
+                }
+                gmp_mod_decimal(&left_decimal, &right_decimal)
+            }
+            GmpBinaryOp::Pow => Self::gmp_operator_pow_result(&left_decimal, &right_decimal, span)?,
+            GmpBinaryOp::ShiftLeft => {
+                Self::gmp_operator_shift_result(&left_decimal, &right_decimal, true, span)?
+            }
+            GmpBinaryOp::ShiftRight => {
+                Self::gmp_operator_shift_result(&left_decimal, &right_decimal, false, span)?
+            }
         };
         self.gmp_object(result.integer_part(), span)
             .map(|object| Some(Value::Object(object)))
+    }
+
+    fn apply_gmp_bitwise_operator(
+        &mut self,
+        op: BinaryOp,
+        left: &Value,
+        right: &Value,
+        span: Span,
+        bitwise_op: GmpBitwiseOp,
+    ) -> CompileResult<Option<Value>> {
+        if !Self::value_is_gmp(left) && !Self::value_is_gmp(right) {
+            return Ok(None);
+        }
+
+        let left_decimal = self.gmp_operator_decimal_argument(left, span)?;
+        let right_decimal = self.gmp_operator_decimal_argument(right, span)?;
+        let result = match op {
+            BinaryOp::BitwiseAnd | BinaryOp::BitwiseOr | BinaryOp::BitwiseXor => {
+                gmp_bitwise_binary_decimal(&left_decimal, &right_decimal, bitwise_op)
+            }
+            _ => unreachable!("GMP bitwise dispatcher only receives bitwise operators"),
+        };
+        self.gmp_object(result, span)
+            .map(|object| Some(Value::Object(object)))
+    }
+
+    fn gmp_operator_decimal_or_operand_error(
+        &mut self,
+        op: BinaryOp,
+        left: &Value,
+        right: &Value,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<BcDecimal> {
+        match value {
+            Value::Null
+            | Value::Bool(_)
+            | Value::Array(_)
+            | Value::Object(_)
+            | Value::Closure(_)
+            | Value::Resource(_)
+                if !Self::value_is_gmp(value) =>
+            {
+                Err(Self::gmp_operator_unsupported_operand_types_error(
+                    op, left, right, span,
+                ))
+            }
+            _ => self.gmp_operator_decimal_argument(value, span),
+        }
+    }
+
+    fn gmp_operator_decimal_argument(
+        &mut self,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<BcDecimal> {
+        match value {
+            Value::Object(object) if object.class_name().eq_ignore_ascii_case("GMP") => {
+                self.gmp_object_decimal(object, span)
+            }
+            Value::String(value) => {
+                gmp_parse_integer_string("GMP operator", 1, "num", value, 0, span)
+                    .map_err(|_| Self::gmp_operator_integer_string_error(span))
+            }
+            Value::BinaryString(value) => {
+                let value = String::from_utf8(value.clone())
+                    .map_err(|_| Self::gmp_operator_integer_string_error(span))?;
+                gmp_parse_integer_string("GMP operator", 1, "num", &value, 0, span)
+                    .map_err(|_| Self::gmp_operator_integer_string_error(span))
+            }
+            Value::Int(value) => BcDecimal::parse(&value.to_string())
+                .ok_or_else(|| Self::gmp_operator_integer_string_error(span)),
+            Value::Float(float) => {
+                self.emit_float_to_int_diagnostic_for_float(*float, span)?;
+                let integer = php_float_to_internal_i64(*float)
+                    .ok_or_else(|| Self::gmp_operator_type_error(value, span))?;
+                BcDecimal::parse(&integer.to_string())
+                    .ok_or_else(|| Self::gmp_operator_integer_string_error(span))
+            }
+            _ => Err(Self::gmp_operator_type_error(value, span)),
+        }
+    }
+
+    fn gmp_operator_pow_result(
+        base: &BcDecimal,
+        exponent: &BcDecimal,
+        span: Span,
+    ) -> CompileResult<BcDecimal> {
+        let exponent = Self::gmp_operator_bounded_nonnegative_u64(
+            "Exponent",
+            exponent,
+            GMP_POW_EXPONENT_LIMIT,
+            span,
+        )?;
+        Ok(base.pow_u64(exponent).integer_part())
+    }
+
+    fn gmp_operator_shift_result(
+        value: &BcDecimal,
+        shift: &BcDecimal,
+        left_shift: bool,
+        span: Span,
+    ) -> CompileResult<BcDecimal> {
+        let max_shift = (GMP_BIT_INDEX_WORD_LIMIT as u64)
+            .checked_mul(8)
+            .and_then(|value| value.checked_sub(1))
+            .expect("GMP shift limit is positive");
+        let shift = Self::gmp_operator_bounded_nonnegative_u64("Shift", shift, max_shift, span)?;
+        let two = BcDecimal::parse("2").expect("literal two parses as BcDecimal");
+        let factor = two.pow_u64(shift);
+        if left_shift {
+            return Ok(value.mul(&factor).integer_part());
+        }
+        Ok(gmp_div_qr_decimal(value, &factor, GmpDivRoundingMode::MinusInf).0)
+    }
+
+    fn gmp_operator_bounded_nonnegative_u64(
+        label: &'static str,
+        decimal: &BcDecimal,
+        limit: u64,
+        span: Span,
+    ) -> CompileResult<u64> {
+        match decimal.format_with_scale(0).parse::<u64>().ok() {
+            Some(value) if !decimal.negative && value <= limit => Ok(value),
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "GMP operator",
+                    format!("{label} must be between 0 and {limit}"),
+                ),
+            )),
+        }
+    }
+
+    fn gmp_operator_integer_string_error(span: Span) -> Diagnostic {
+        runtime_error(
+            span,
+            RuntimeError::unsupported_call("GMP operator", "Number is not an integer string"),
+        )
+    }
+
+    fn gmp_operator_type_error(value: &Value, span: Span) -> Diagnostic {
+        runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "GMP operator",
+                format!(
+                    "Number must be of type GMP|string|int, {} given",
+                    php_type_error_given(value)
+                ),
+            ),
+        )
+    }
+
+    fn gmp_operator_division_by_zero_error(span: Span) -> Diagnostic {
+        runtime_error(
+            span,
+            RuntimeError::unsupported_call("GMP operator", "Division by zero"),
+        )
+    }
+
+    fn gmp_operator_modulo_by_zero_error(span: Span) -> Diagnostic {
+        runtime_error(
+            span,
+            RuntimeError::unsupported_call("GMP operator", "Modulo by zero"),
+        )
+    }
+
+    fn gmp_operator_unsupported_operand_types_error(
+        op: BinaryOp,
+        left: &Value,
+        right: &Value,
+        span: Span,
+    ) -> Diagnostic {
+        Diagnostic::new(
+            Phase::Runtime,
+            span.line,
+            span.column,
+            format!(
+                "Unsupported operand types: {} {} {}",
+                php_type_error_given(left),
+                Self::gmp_operator_symbol(op),
+                php_type_error_given(right)
+            ),
+        )
+    }
+
+    fn gmp_operator_symbol(op: BinaryOp) -> &'static str {
+        match op {
+            BinaryOp::Pow => "**",
+            BinaryOp::ShiftLeft => "<<",
+            BinaryOp::ShiftRight => ">>",
+            BinaryOp::Add => "+",
+            BinaryOp::Sub => "-",
+            BinaryOp::Mul => "*",
+            BinaryOp::Div => "/",
+            BinaryOp::Mod => "%",
+            BinaryOp::BitwiseAnd => "&",
+            BinaryOp::BitwiseOr => "|",
+            BinaryOp::BitwiseXor => "^",
+            _ => "?",
+        }
     }
 
     fn apply_bcmath_number_comparison_operator(
@@ -176009,6 +176364,21 @@ impl Interpreter {
             return Ok(());
         };
         if !object.class_name().eq_ignore_ascii_case("BcMath\\Number") {
+            return Ok(());
+        }
+
+        self.retire_reusable_unrooted_temporary_object_handle(object, scope)
+    }
+
+    fn retire_gmp_operator_operand(
+        &mut self,
+        value: &Value,
+        scope: &SymbolTable,
+    ) -> CompileResult<()> {
+        let Value::Object(object) = value else {
+            return Ok(());
+        };
+        if !object.class_name().eq_ignore_ascii_case("GMP") {
             return Ok(());
         }
 
@@ -176678,6 +177048,13 @@ impl Interpreter {
             GmpBinaryOp::Add => left.add(&right),
             GmpBinaryOp::Sub => left.sub(&right),
             GmpBinaryOp::Mul => left.mul(&right),
+            GmpBinaryOp::Div
+            | GmpBinaryOp::Mod
+            | GmpBinaryOp::Pow
+            | GmpBinaryOp::ShiftLeft
+            | GmpBinaryOp::ShiftRight => {
+                unreachable!("named GMP binary helpers do not dispatch operator-only variants")
+            }
         };
         self.gmp_object(result.integer_part(), span)
             .map(Value::Object)
@@ -176711,6 +177088,11 @@ impl Interpreter {
 
     fn call_gmp_div_q(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         let (quotient, _) = self.gmp_div_qr_decimal("gmp_div_q()", args, span)?;
+        self.gmp_object(quotient, span).map(Value::Object)
+    }
+
+    fn call_gmp_div(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        let (quotient, _) = self.gmp_div_qr_decimal("gmp_div()", args, span)?;
         self.gmp_object(quotient, span).map(Value::Object)
     }
 
@@ -186596,6 +186978,11 @@ enum GmpBinaryOp {
     Add,
     Sub,
     Mul,
+    Div,
+    Mod,
+    Pow,
+    ShiftLeft,
+    ShiftRight,
 }
 
 #[derive(Clone, Copy)]
