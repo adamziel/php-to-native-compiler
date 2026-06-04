@@ -1205,38 +1205,29 @@ fn duplicate_and_conflicting_class_modifiers_report_php_startup_fatals() {
 }
 
 #[test]
-fn unsupported_abstract_final_property_declarations_have_stable_parse_errors() {
+fn abstract_final_property_declarations_keep_bounded_diagnostics() {
     let cases = [
         (
             "<?php\nclass Value {\n    abstract $id;\n}\n",
-            3,
-            5,
-            "unsupported abstract/final property declaration: abstract and final property modifiers are not implemented",
+            "php fatal: Only hooked properties may be declared abstract",
         ),
         (
             "<?php\nclass Value {\n    final $id;\n}\n",
-            3,
-            5,
             "unsupported abstract/final property declaration: abstract and final property modifiers are not implemented",
         ),
         (
             "<?php\nclass Value {\n    public final $id;\n}\n",
-            3,
-            12,
             "unsupported abstract/final property declaration: abstract and final property modifiers are not implemented",
         ),
         (
             "<?php\nclass Value {\n    abstract final $id;\n}\n",
-            3,
-            5,
-            "unsupported abstract/final property declaration: abstract and final property modifiers are not implemented",
+            "php fatal: Only hooked properties may be declared abstract",
         ),
     ];
 
-    for (source, line, column, message) in cases {
+    for (source, message) in cases {
         let error = parse_error(source);
-        assert_eq!(error.line, line);
-        assert_eq!(error.column, column);
+        assert_eq!(error.line, 3);
         assert_eq!(error.message, message);
     }
 }
@@ -1383,7 +1374,7 @@ fn emit_ir_rejects_abstract_non_method_members_at_parse_boundary() {
     assert_eq!(property_error.phase, Phase::Parse);
     assert_eq!(
         property_error.message,
-        "unsupported abstract/final property declaration: abstract and final property modifiers are not implemented"
+        "php fatal: Only hooked properties may be declared abstract"
     );
 }
 

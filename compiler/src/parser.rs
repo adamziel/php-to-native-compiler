@@ -534,21 +534,7 @@ impl Parser {
             return self.parse_type_name(text, message);
         }
 
-        text.push('(');
-        self.parse_type_name(text, message)?;
-        while self.match_token(|kind| matches!(kind, TokenKind::Ampersand)) {
-            if matches!(self.peek().kind, TokenKind::Variable(_)) {
-                return Err(self.error_at(self.previous().span, unsupported_dnf_type_message()));
-            }
-            text.push('&');
-            self.parse_type_name(text, message)?;
-        }
-        self.consume_keyword(
-            TokenKind::RParen,
-            "expected ')' after parenthesized intersection type",
-        )?;
-        text.push(')');
-        Ok(())
+        Err(self.error_at(self.previous().span, unsupported_dnf_type_message()))
     }
 
     fn parse_type_name(&mut self, text: &mut String, message: &'static str) -> CompileResult<()> {
@@ -690,7 +676,7 @@ impl Parser {
                 self.pending_attributes.clear();
                 trait_uses.extend(self.parse_class_trait_use()?);
             } else {
-                let (parsed_members, mut member_diagnostics) = self.parse_class_member()?;
+                let (parsed_members, mut member_diagnostics) = self.parse_class_member(&name)?;
                 members.extend(parsed_members);
                 diagnostics.append(&mut member_diagnostics);
             }
@@ -1229,7 +1215,7 @@ impl Parser {
             if self.check_interface_constant_declaration() {
                 constants.push(self.parse_interface_constant(&name)?);
             } else if self.check_interface_property_declaration() {
-                properties.push(self.parse_interface_property()?);
+                properties.push(self.parse_interface_property(&name)?);
             } else {
                 methods.push(self.parse_interface_method(&name)?);
             }
@@ -1320,7 +1306,10 @@ impl Parser {
         })
     }
 
-    fn parse_interface_property(&mut self) -> CompileResult<ClassPropertyDecl> {
+    fn parse_interface_property(
+        &mut self,
+        interface_name: &str,
+    ) -> CompileResult<ClassPropertyDecl> {
         let modifiers = self.parse_class_member_modifiers()?;
         let attributes = self.take_pending_attributes();
         let doc_comment = self.pending_doc_comment.take();
@@ -1331,17 +1320,23 @@ impl Parser {
             ));
         }
         if modifiers.is_abstract || modifiers.is_final {
+            let message = if modifiers.is_final {
+                "Property in interface cannot be final".to_string()
+            } else {
+                "Property in interface cannot be explicitly abstract. All interface members are implicitly abstract"
+                    .to_string()
+            };
             return Err(self.error_at(
                 modifiers
                     .abstract_or_final_span()
                     .unwrap_or_else(|| self.peek().span),
-                unsupported_abstract_final_property_message(),
+                parse_fatal_message(&message),
             ));
         }
         if !matches!(modifiers.visibility, ClassVisibility::Public) {
             return Err(self.error_at(
                 self.previous().span,
-                "unsupported interface property declaration: only public interface properties are implemented",
+                parse_fatal_message("Property in interface cannot be protected or private"),
             ));
         }
 
@@ -1367,10 +1362,18 @@ impl Parser {
         if !self.check(|kind| matches!(kind, TokenKind::LBrace)) {
             return Err(self.error_at(
                 span,
-                "php fatal: Interfaces may only include hooked properties",
+                parse_fatal_message("Interfaces may only include hooked properties"),
             ));
         }
-        self.parse_interface_property_hook_block()?;
+        self.parse_property_hook_block_for_diagnostics(
+            interface_name,
+            &name,
+            span,
+            &modifiers,
+            true,
+            false,
+            self.peek().span,
+        )?;
 
         Ok(ClassPropertyDecl {
             name,
@@ -1383,48 +1386,6 @@ impl Parser {
             doc_comment,
             span,
         })
-    }
-
-    fn parse_interface_property_hook_block(&mut self) -> CompileResult<()> {
-        self.consume_keyword(
-            TokenKind::LBrace,
-            "expected '{' before interface property hook block",
-        )?;
-        while !self.check(|kind| matches!(kind, TokenKind::RBrace | TokenKind::Eof)) {
-            self.consume_doc_comments_and_attributes();
-            self.pending_doc_comment = None;
-            self.pending_attributes.clear();
-            self.parse_interface_property_hook_declaration()?;
-        }
-        self.pending_doc_comment = None;
-        self.pending_attributes.clear();
-        self.consume_keyword(
-            TokenKind::RBrace,
-            "expected '}' after interface property hook block",
-        )?;
-        Ok(())
-    }
-
-    fn parse_interface_property_hook_declaration(&mut self) -> CompileResult<()> {
-        let hook_span = self.peek().span;
-        let hook_name = self.consume_identifier("expected interface property hook name")?;
-        if !hook_name.eq_ignore_ascii_case("get") && !hook_name.eq_ignore_ascii_case("set") {
-            return Err(self.error_at(
-                hook_span,
-                "unsupported interface property hook declaration: only get/set interface property hooks are implemented",
-            ));
-        }
-        if self.check(|kind| matches!(kind, TokenKind::LBrace)) {
-            return Err(self.error_at(
-                self.peek().span,
-                "unsupported interface property hook declaration: hook bodies are not implemented",
-            ));
-        }
-        self.consume_keyword(
-            TokenKind::Semicolon,
-            "expected ';' after interface property hook declaration",
-        )?;
-        Ok(())
     }
 
     fn parse_interface_method(
@@ -1679,6 +1640,7 @@ impl Parser {
 
     fn parse_class_member(
         &mut self,
+        class_name: &str,
     ) -> CompileResult<(Vec<ClassMember>, Vec<ClassDiagnosticDecl>)> {
         let mut modifiers = self.parse_class_member_modifiers()?;
         let attributes = self.take_pending_attributes();
@@ -1764,17 +1726,6 @@ impl Parser {
         let mut doc_comment = self.pending_doc_comment.take();
 
         if self.check_unsupported_property_type_declaration() {
-            if (modifiers.is_abstract || modifiers.is_final) && !modifiers.has_diagnostics() {
-                return Err(self.error_at(
-                    modifiers
-                        .abstract_or_final_span()
-                        .unwrap_or_else(|| self.peek().span),
-                    unsupported_abstract_final_property_message(),
-                ));
-            }
-            if let Some(hook_span) = self.property_hook_span_before_member_end() {
-                return Err(self.error_at(hook_span, unsupported_property_hook_message()));
-            }
             let type_decl = self.parse_type_decl(unsupported_property_type_message())?;
             let mut properties = Vec::new();
             loop {
@@ -1811,7 +1762,24 @@ impl Parser {
                 }
             }
             if self.check(|kind| matches!(kind, TokenKind::LBrace)) {
-                return Err(self.error_at(self.peek().span, unsupported_property_hook_message()));
+                let hook_span = self.peek().span;
+                let property = first_property_member(&properties);
+                self.parse_property_hook_block_for_diagnostics(
+                    class_name,
+                    &property.name,
+                    property.span,
+                    &modifiers,
+                    false,
+                    property.default.is_some(),
+                    hook_span,
+                )?;
+                return Err(self.error_at(hook_span, unsupported_property_hook_message()));
+            }
+            if let Some(error) = self.property_modifier_diagnostic_without_hooks(
+                first_property_member(&properties),
+                &modifiers,
+            ) {
+                return Err(error);
             }
             self.consume_keyword(
                 TokenKind::Semicolon,
@@ -1821,14 +1789,6 @@ impl Parser {
         }
 
         if self.check(|kind| matches!(kind, TokenKind::Variable(_))) {
-            if (modifiers.is_abstract || modifiers.is_final) && !modifiers.has_diagnostics() {
-                return Err(self.error_at(
-                    modifiers
-                        .abstract_or_final_span()
-                        .unwrap_or_else(|| self.peek().span),
-                    unsupported_abstract_final_property_message(),
-                ));
-            }
             let mut properties = Vec::new();
             loop {
                 if doc_comment.is_none() {
@@ -1863,7 +1823,24 @@ impl Parser {
                 }
             }
             if self.check(|kind| matches!(kind, TokenKind::LBrace)) {
-                return Err(self.error_at(self.peek().span, unsupported_property_hook_message()));
+                let hook_span = self.peek().span;
+                let property = first_property_member(&properties);
+                self.parse_property_hook_block_for_diagnostics(
+                    class_name,
+                    &property.name,
+                    property.span,
+                    &modifiers,
+                    false,
+                    property.default.is_some(),
+                    hook_span,
+                )?;
+                return Err(self.error_at(hook_span, unsupported_property_hook_message()));
+            }
+            if let Some(error) = self.property_modifier_diagnostic_without_hooks(
+                first_property_member(&properties),
+                &modifiers,
+            ) {
+                return Err(error);
             }
             self.consume_keyword(
                 TokenKind::Semicolon,
@@ -1874,6 +1851,263 @@ impl Parser {
 
         let token = self.peek().clone();
         Err(self.error_at(token.span, unsupported_class_member_message(&token.kind)))
+    }
+
+    fn property_modifier_diagnostic_without_hooks(
+        &self,
+        property: &ClassPropertyDecl,
+        modifiers: &ClassMemberModifiers,
+    ) -> Option<Diagnostic> {
+        if modifiers.has_diagnostics() {
+            return None;
+        }
+        if modifiers.is_final && matches!(modifiers.visibility, ClassVisibility::Private) {
+            return Some(self.error_at(
+                property.span,
+                parse_fatal_message("Property cannot be both final and private"),
+            ));
+        }
+        if modifiers.is_abstract {
+            return Some(self.error_at(
+                property.span,
+                parse_fatal_message("Only hooked properties may be declared abstract"),
+            ));
+        }
+        if modifiers.is_final {
+            return Some(self.error_at(
+                modifiers.final_span.unwrap_or(property.span),
+                unsupported_abstract_final_property_message(),
+            ));
+        }
+        None
+    }
+
+    fn parse_property_hook_block_for_diagnostics(
+        &mut self,
+        class_name: &str,
+        property_name: &str,
+        property_span: Span,
+        modifiers: &ClassMemberModifiers,
+        is_interface: bool,
+        has_default: bool,
+        hook_block_span: Span,
+    ) -> CompileResult<()> {
+        if modifiers.is_static {
+            return Err(self.error_at(
+                hook_block_span,
+                parse_fatal_message("Cannot declare hooks for static property"),
+            ));
+        }
+        if !is_interface
+            && modifiers.is_abstract
+            && matches!(modifiers.visibility, ClassVisibility::Private)
+        {
+            return Err(self.error_at(
+                property_span,
+                parse_fatal_message("Property hook cannot be both abstract and private"),
+            ));
+        }
+
+        self.consume_keyword(TokenKind::LBrace, "expected property hook block")?;
+        if self.check(|kind| matches!(kind, TokenKind::RBrace)) {
+            return Err(self.error_at(
+                hook_block_span,
+                parse_fatal_message("Property hook list must not be empty"),
+            ));
+        }
+
+        let mut hook_names = Vec::new();
+        let mut abstract_hook_count = 0usize;
+        let mut hook_count = 0usize;
+        while !self.check(|kind| matches!(kind, TokenKind::RBrace | TokenKind::Eof)) {
+            self.consume_doc_comments_and_attributes();
+            self.pending_doc_comment = None;
+            self.pending_attributes.clear();
+
+            let mut hook_is_static = false;
+            let mut hook_is_abstract = false;
+            let mut hook_is_final = false;
+            let mut hook_visibility = None;
+            loop {
+                match &self.peek().kind {
+                    TokenKind::Static => {
+                        hook_is_static = true;
+                        self.advance();
+                    }
+                    TokenKind::Abstract => {
+                        hook_is_abstract = true;
+                        self.advance();
+                    }
+                    TokenKind::Final => {
+                        hook_is_final = true;
+                        self.advance();
+                    }
+                    TokenKind::Public => {
+                        hook_visibility = Some(("public", self.peek().span));
+                        self.advance();
+                    }
+                    TokenKind::Protected => {
+                        hook_visibility = Some(("protected", self.peek().span));
+                        self.advance();
+                    }
+                    TokenKind::Private => {
+                        hook_visibility = Some(("private", self.peek().span));
+                        self.advance();
+                    }
+                    _ => break,
+                }
+            }
+
+            let hook_span = self.peek().span;
+            let hook_name = self.consume_identifier("expected property hook name")?;
+            if hook_is_static {
+                return Err(self.error_at(
+                    hook_span,
+                    parse_fatal_message("Cannot use the static modifier on a property hook"),
+                ));
+            }
+            if let Some((visibility, span)) = hook_visibility {
+                return Err(self.error_at(
+                    span,
+                    parse_fatal_message(&format!(
+                        "Cannot use the {visibility} modifier on a property hook"
+                    )),
+                ));
+            }
+            if (is_interface || modifiers.is_abstract) && hook_is_final {
+                return Err(self.error_at(
+                    hook_span,
+                    parse_fatal_message("Property hook cannot be both abstract and final"),
+                ));
+            }
+            if matches!(modifiers.visibility, ClassVisibility::Private) && hook_is_final {
+                return Err(self.error_at(
+                    hook_span,
+                    parse_fatal_message("Property hook cannot be both final and private"),
+                ));
+            }
+
+            let hook_key = hook_name.to_ascii_lowercase();
+            if hook_key != "get" && hook_key != "set" {
+                return Err(self.error_at(
+                    hook_span,
+                    parse_fatal_message(&format!(
+                        "Unknown hook \"{hook_name}\" for property {class_name}::${property_name}, expected \"get\" or \"set\""
+                    )),
+                ));
+            }
+            if hook_key == "get" && self.check(|kind| matches!(kind, TokenKind::LParen)) {
+                return Err(self.error_at(
+                    self.peek().span,
+                    parse_fatal_message(&format!(
+                        "get hook of property {class_name}::${property_name} must not have a parameter list"
+                    )),
+                ));
+            }
+            if hook_names.iter().any(|name| name == &hook_key) {
+                return Err(self.error_at(
+                    hook_span,
+                    parse_fatal_message(&format!("Cannot redeclare property hook \"{hook_key}\"")),
+                ));
+            }
+            hook_names.push(hook_key);
+            hook_count += 1;
+
+            if self.match_token(|kind| matches!(kind, TokenKind::LParen)) {
+                self.skip_parenthesized_group_after_open(hook_span)?;
+            }
+
+            let has_body = if self.match_token(|kind| matches!(kind, TokenKind::FatArrow)) {
+                self.skip_property_hook_arrow_body()?;
+                true
+            } else if self.match_token(|kind| matches!(kind, TokenKind::LBrace)) {
+                self.skip_balanced_block_after_open(
+                    hook_span,
+                    "expected '}' after property hook body",
+                )?;
+                true
+            } else {
+                self.consume_keyword(
+                    TokenKind::Semicolon,
+                    "expected ';' after property hook declaration",
+                )?;
+                false
+            };
+
+            if hook_is_abstract || (!has_body && (is_interface || modifiers.is_abstract)) {
+                abstract_hook_count += 1;
+            }
+        }
+
+        self.consume_keyword(TokenKind::RBrace, "expected '}' after property hook block")?;
+        if modifiers.is_abstract && abstract_hook_count == 0 {
+            return Err(self.error_at(
+                property_span,
+                parse_fatal_message(&format!(
+                    "Abstract property {class_name}::${property_name} must specify at least one abstract hook"
+                )),
+            ));
+        }
+        if has_default && hook_count > 0 {
+            return Err(self.error_at(
+                property_span,
+                parse_fatal_message(&format!(
+                    "Cannot specify default value for virtual hooked property {class_name}::${property_name}"
+                )),
+            ));
+        }
+
+        Ok(())
+    }
+
+    fn skip_parenthesized_group_after_open(&mut self, span: Span) -> CompileResult<()> {
+        let mut depth = 1usize;
+        while depth > 0 {
+            let token = self.advance().clone();
+            match token.kind {
+                TokenKind::LParen => depth += 1,
+                TokenKind::RParen => depth -= 1,
+                TokenKind::Eof => {
+                    return Err(self.error_at(span, "expected ')' after property hook parameters"));
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    fn skip_property_hook_arrow_body(&mut self) -> CompileResult<()> {
+        let mut paren_depth = 0usize;
+        let mut bracket_depth = 0usize;
+        let mut brace_depth = 0usize;
+        loop {
+            let token = self.advance().clone();
+            match token.kind {
+                TokenKind::Semicolon
+                    if paren_depth == 0 && bracket_depth == 0 && brace_depth == 0 =>
+                {
+                    return Ok(());
+                }
+                TokenKind::LParen => paren_depth += 1,
+                TokenKind::RParen => paren_depth = paren_depth.saturating_sub(1),
+                TokenKind::LBracket => bracket_depth += 1,
+                TokenKind::RBracket => bracket_depth = bracket_depth.saturating_sub(1),
+                TokenKind::LBrace => brace_depth += 1,
+                TokenKind::RBrace => {
+                    if brace_depth == 0 {
+                        return Err(self
+                            .error_at(token.span, "expected ';' after property hook arrow body"));
+                    }
+                    brace_depth -= 1;
+                }
+                TokenKind::Eof => {
+                    return Err(
+                        self.error_at(token.span, "expected ';' after property hook arrow body")
+                    );
+                }
+                _ => {}
+            }
+        }
     }
 
     fn parse_class_member_modifiers(&mut self) -> CompileResult<ClassMemberModifiers> {
@@ -10204,6 +10438,16 @@ fn parse_fatal_message(message: &str) -> String {
     format!("php fatal: {message}")
 }
 
+fn first_property_member(members: &[ClassMember]) -> &ClassPropertyDecl {
+    match members
+        .first()
+        .expect("property declaration should contain at least one property")
+    {
+        ClassMember::Property(property) => property,
+        _ => unreachable!("property declaration should only contain property members"),
+    }
+}
+
 fn unsupported_reference_assignment_source_message() -> &'static str {
     "unsupported reference assignment: only direct variable, direct/nested/append array-offset, expression-root array-offset/append, direct/nested/append object-property array-offset, bounded non-direct object-property array-offset, object-property, static property, direct/dynamic function-call, and method-call reference sources are parsed before reference semantics exist"
 }
@@ -10507,20 +10751,5 @@ impl Parser {
             .iter()
             .take_while(|token| !matches!(token.kind, TokenKind::Semicolon | TokenKind::RBrace))
             .any(|token| matches!(token.kind, TokenKind::Variable(_)))
-    }
-
-    fn property_hook_span_before_member_end(&self) -> Option<Span> {
-        let mut saw_variable = false;
-        for token in self.tokens[self.current..]
-            .iter()
-            .take_while(|token| !matches!(token.kind, TokenKind::Semicolon | TokenKind::RBrace))
-        {
-            match &token.kind {
-                TokenKind::Variable(_) => saw_variable = true,
-                TokenKind::LBrace if saw_variable => return Some(token.span),
-                _ => {}
-            }
-        }
-        None
     }
 }

@@ -8039,6 +8039,16 @@
   coercion preference rules, full iterable parameter/return enforcement,
   generator-return execution, namespace/import alias resolution for type names,
   and native lowering remain unsupported.
+  Property hook declarations are not executable and do not create hook
+  metadata, but the parser emits PHP-shaped fatal diagnostics for a bounded
+  invalid-declaration slice: empty hook lists, duplicate or unknown hook names,
+  explicit/static/final hook modifiers that PHP rejects, static hooked
+  properties, explicit abstract/final/non-public interface properties,
+  abstract/final/private hook conflicts, abstract hook bodies without an
+  abstract hook, and `get()` parameter lists. Valid hook behavior, backing and
+  virtual property semantics, abstract hook implementation checks, inheritance
+  compatibility, reflection metadata, property attributes, asymmetric
+  visibility, references/COW, and native lowering remain unsupported.
   Methods
   whose parameters/bodies use the existing function parser subset, including
   optional trailing commas after the final real parameter. `new

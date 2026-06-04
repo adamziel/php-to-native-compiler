@@ -362,6 +362,74 @@ echo "ready\n";
 }
 
 #[test]
+fn property_hook_invalid_declarations_emit_php_fatals() {
+    let cases = [
+        (
+            "<?php\nclass Test {\n    public $prop {}\n}\n",
+            "Property hook list must not be empty",
+        ),
+        (
+            "<?php\nclass Test {\n    public $prop { get {} get {} }\n}\n",
+            "Cannot redeclare property hook \"get\"",
+        ),
+        (
+            "<?php\nclass Test {\n    public static $prop { get; set; }\n}\n",
+            "Cannot declare hooks for static property",
+        ),
+        (
+            "<?php\nclass Test {\n    public $prop { static get {} }\n}\n",
+            "Cannot use the static modifier on a property hook",
+        ),
+        (
+            "<?php\nclass Test {\n    private $prop { public get; }\n}\n",
+            "Cannot use the public modifier on a property hook",
+        ),
+        (
+            "<?php\nclass Test {\n    private $prop { final get; }\n}\n",
+            "Property hook cannot be both final and private",
+        ),
+        (
+            "<?php\nclass Test {\n    public abstract $prop { final get; }\n}\n",
+            "Property hook cannot be both abstract and final",
+        ),
+        (
+            "<?php\nclass Test {\n    public abstract $prop { get {} }\n}\n",
+            "Abstract property Test::$prop must specify at least one abstract hook",
+        ),
+        (
+            "<?php\nclass Test {\n    public $prop { get() {} }\n}\n",
+            "get hook of property Test::$prop must not have a parameter list",
+        ),
+        (
+            "<?php\nclass Test {\n    public $prop { foobar {} }\n}\n",
+            "Unknown hook \"foobar\" for property Test::$prop, expected \"get\" or \"set\"",
+        ),
+        (
+            "<?php\ninterface I {\n    final public $prop { get; set; }\n}\n",
+            "Property in interface cannot be final",
+        ),
+        (
+            "<?php\ninterface I {\n    public abstract $prop { get; }\n}\n",
+            "Property in interface cannot be explicitly abstract. All interface members are implicitly abstract",
+        ),
+        (
+            "<?php\ninterface I {\n    protected $prop { get; set; }\n}\n",
+            "Property in interface cannot be protected or private",
+        ),
+        (
+            "<?php\ninterface I {\n    public $prop { final get; }\n}\n",
+            "Property hook cannot be both abstract and final",
+        ),
+    ];
+
+    for (source, message) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, 3);
+        assert_eq!(error.message, format!("php fatal: {message}"));
+    }
+}
+
+#[test]
 fn class_declarations_record_single_parent_metadata() {
     let source = r#"<?php
 class Base {}
