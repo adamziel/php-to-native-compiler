@@ -46084,10 +46084,7 @@ impl Interpreter {
                 )? {
                     return Ok(result);
                 }
-                Err(RuntimeError::unsupported_call(
-                    "operator **=",
-                    "non-BcMath\\Number exponentiation assignment is not implemented in the current subset",
-                ))
+                return php_pow_result(self, &left, &right, span);
             }
             CompoundAssignOp::Concat => {
                 unreachable!("concatenation is handled before runtime helpers")
@@ -110975,10 +110972,7 @@ impl Interpreter {
             BinaryOp::Mul => left.php_mul(&right),
             BinaryOp::Div => left.php_div(&right),
             BinaryOp::Mod => left.php_mod(&right),
-            BinaryOp::Pow => Err(RuntimeError::unsupported_call(
-                "operator **",
-                "non-BcMath\\Number exponentiation is not implemented in the current subset",
-            )),
+            BinaryOp::Pow => return php_pow_result(self, &left, &right, span),
             BinaryOp::Concat => unreachable!("concatenation is handled before runtime helpers"),
             BinaryOp::Eq => left
                 .php_cmp_checked(&right, Comparison::Eq)
@@ -152277,7 +152271,7 @@ impl Interpreter {
             SprintfPlaceholderKind::Float => {
                 let value = self.sprintf_float_argument(function, value, span)?;
                 let precision = self.sprintf_float_precision(function, precision, span)?;
-                if placeholder.show_plus && value >= 0.0 {
+                if placeholder.show_plus && value.is_sign_positive() {
                     format!("+{value:.precision$}")
                 } else {
                     format!("{value:.precision$}")
@@ -152293,7 +152287,7 @@ impl Interpreter {
                         format!("{value:.precision$e}")
                     };
                 let formatted = normalize_sprintf_exponent(formatted);
-                if placeholder.show_plus && value >= 0.0 {
+                if placeholder.show_plus && value.is_sign_positive() {
                     format!("+{formatted}")
                 } else {
                     formatted
@@ -152304,7 +152298,7 @@ impl Interpreter {
                 let precision = self.sprintf_general_precision(function, precision, span)?;
                 let upper = matches!(placeholder.kind, SprintfPlaceholderKind::GeneralUpper);
                 let formatted = format_sprintf_general_float(value, precision, upper);
-                if placeholder.show_plus && value >= 0.0 {
+                if placeholder.show_plus && value.is_sign_positive() {
                     format!("+{formatted}")
                 } else {
                     formatted
@@ -152872,7 +152866,11 @@ fn format_sprintf_general_float(
         unreachable!("default precision handled above")
     };
     if value == 0.0 {
-        return "0".to_string();
+        return if value.is_sign_negative() {
+            "-0".to_string()
+        } else {
+            "0".to_string()
+        };
     }
 
     let abs = value.abs();
@@ -153105,7 +153103,11 @@ fn php_default_precision_float_string(value: f64) -> String {
         };
     }
     if value == 0.0 {
-        return "0".to_string();
+        return if value.is_sign_negative() {
+            "-0".to_string()
+        } else {
+            "0".to_string()
+        };
     }
 
     let abs = value.abs();
@@ -156144,79 +156146,76 @@ fn round_float_value(value: f64, precision: i64, mode: BcRoundingMode) -> f64 {
     }
 
     let precision = precision.clamp(-308, 308) as i32;
-    let scale = 10_f64.powi(precision.unsigned_abs() as i32);
-    if !scale.is_finite() || scale == 0.0 {
-        return if precision < 0 {
-            signed_zero_like(value)
-        } else {
-            value
-        };
-    }
-
-    let shifted = if precision >= 0 {
-        value * scale
-    } else {
-        value / scale
-    };
-    if !shifted.is_finite() {
+    let Some(decimal) = bc_decimal_from_float_shortest(value) else {
         return value;
-    }
-
-    let rounded = round_shifted_float(shifted, mode);
-    let result = if precision >= 0 {
-        rounded / scale
-    } else {
-        rounded * scale
     };
-    if result == 0.0 {
-        signed_zero_like(value)
+    let rounded = decimal.round(precision, mode);
+    let output_scale = precision.max(0) as usize;
+    let Ok(result) = rounded.format_with_scale(output_scale).parse::<f64>() else {
+        return value;
+    };
+    if result == 0.0 && value.is_sign_negative() {
+        -0.0
     } else {
         result
     }
 }
 
-fn signed_zero_like(value: f64) -> f64 {
-    if value.is_sign_negative() {
-        -0.0
-    } else {
-        0.0
-    }
+fn bc_decimal_from_float_shortest(value: f64) -> Option<BcDecimal> {
+    let text = value.to_string();
+    let decimal = expand_scientific_decimal_text(&text)?;
+    BcDecimal::parse(&decimal)
 }
 
-fn round_shifted_float(value: f64, mode: BcRoundingMode) -> f64 {
-    match mode {
-        BcRoundingMode::PositiveInfinity => value.ceil(),
-        BcRoundingMode::NegativeInfinity => value.floor(),
-        BcRoundingMode::TowardsZero => value.trunc(),
-        BcRoundingMode::AwayFromZero => {
-            if value.is_sign_negative() {
-                value.floor()
-            } else {
-                value.ceil()
+fn expand_scientific_decimal_text(text: &str) -> Option<String> {
+    let Some(exponent_index) = text.find(['e', 'E']) else {
+        return Some(text.to_string());
+    };
+    let (mantissa, exponent) = text.split_at(exponent_index);
+    let exponent = exponent[1..].parse::<i32>().ok()?;
+    let (sign, mantissa) = match mantissa.as_bytes().first().copied() {
+        Some(b'-') | Some(b'+') => (&mantissa[..1], &mantissa[1..]),
+        _ => ("", mantissa),
+    };
+
+    let mut scale = 0i64;
+    let mut digits = String::new();
+    let mut saw_dot = false;
+    for byte in mantissa.bytes() {
+        match byte {
+            b'0'..=b'9' => {
+                digits.push(char::from(byte));
+                if saw_dot {
+                    scale += 1;
+                }
             }
-        }
-        BcRoundingMode::HalfAwayFromZero
-        | BcRoundingMode::HalfTowardsZero
-        | BcRoundingMode::HalfEven
-        | BcRoundingMode::HalfOdd => {
-            let sign = if value.is_sign_negative() { -1.0 } else { 1.0 };
-            let abs = value.abs();
-            let floor = abs.floor();
-            let fraction = abs - floor;
-            let increment = match mode {
-                BcRoundingMode::HalfAwayFromZero => fraction >= 0.5,
-                BcRoundingMode::HalfTowardsZero => fraction > 0.5,
-                BcRoundingMode::HalfEven => {
-                    fraction > 0.5 || (fraction == 0.5 && floor.rem_euclid(2.0) != 0.0)
-                }
-                BcRoundingMode::HalfOdd => {
-                    fraction > 0.5 || (fraction == 0.5 && floor.rem_euclid(2.0) == 0.0)
-                }
-                _ => unreachable!("outer match restricts half modes"),
-            };
-            sign * if increment { floor + 1.0 } else { floor }
+            b'.' if !saw_dot => saw_dot = true,
+            _ => return None,
         }
     }
+    if digits.is_empty() {
+        return None;
+    }
+
+    let decimal_point = i64::try_from(digits.len()).ok()? - scale + i64::from(exponent);
+    let mut output = String::new();
+    output.push_str(sign);
+    if decimal_point <= 0 {
+        output.push_str("0.");
+        output.extend(std::iter::repeat('0').take(decimal_point.unsigned_abs() as usize));
+        output.push_str(&digits);
+    } else if usize::try_from(decimal_point).ok()? >= digits.len() {
+        output.push_str(&digits);
+        output.extend(
+            std::iter::repeat('0').take(usize::try_from(decimal_point).ok()? - digits.len()),
+        );
+    } else {
+        let split = usize::try_from(decimal_point).ok()?;
+        output.push_str(&digits[..split]);
+        output.push('.');
+        output.push_str(&digits[split..]);
+    }
+    Some(output)
 }
 
 fn call_clamp(args: &[Value], span: Span) -> CompileResult<Value> {
@@ -156769,15 +156768,23 @@ fn php_math_argument_type_error(
 
 fn call_pow(interpreter: &mut Interpreter, args: &[Value], span: Span) -> CompileResult<Value> {
     expect_arity("pow", args, 2, span)?;
+    php_pow_result(interpreter, &args[0], &args[1], span)
+}
 
-    let base = pow_number_arg(&args[0])
-        .ok_or_else(|| pow_unsupported_operand_types(&args[0], &args[1], span))?;
-    let exponent = pow_number_arg(&args[1])
-        .ok_or_else(|| pow_unsupported_operand_types(&args[0], &args[1], span))?;
+fn php_pow_result(
+    interpreter: &mut Interpreter,
+    base_value: &Value,
+    exponent_value: &Value,
+    span: Span,
+) -> CompileResult<Value> {
+    let base = pow_number_arg(base_value)
+        .ok_or_else(|| pow_unsupported_operand_types(base_value, exponent_value, span))?;
+    let exponent = pow_number_arg(exponent_value)
+        .ok_or_else(|| pow_unsupported_operand_types(base_value, exponent_value, span))?;
 
     let base_float = base.as_f64();
     let exponent_float = exponent.as_f64();
-    if base_float == 0.0 && exponent_float.is_sign_negative() {
+    if base_float == 0.0 && exponent_float < 0.0 {
         interpreter.emit_display_diagnostic(
             "Deprecated",
             PHP_E_DEPRECATED,
@@ -177384,6 +177391,30 @@ echo $items["shared"]["leaf"] . "|" . $shared . "|" . $items["plain"]["leaf"] . 
 
         assert!(!symbols.is_set_static("name"));
         assert!(symbols.read_static("name", span).is_err());
+    }
+
+    #[test]
+    fn round_float_value_matches_php_decimal_edges() {
+        assert_eq!(
+            round_float_value(0.285, 2, BcRoundingMode::HalfAwayFromZero),
+            0.29
+        );
+        assert_eq!(
+            round_float_value(0.49999999999999994, 0, BcRoundingMode::HalfAwayFromZero),
+            0.0
+        );
+        let negative_zero =
+            round_float_value(-0.49999999999999994, 0, BcRoundingMode::HalfAwayFromZero);
+        assert_eq!(negative_zero, 0.0);
+        assert!(negative_zero.is_sign_negative());
+        assert_eq!(
+            round_float_value(1e-24, 24, BcRoundingMode::HalfAwayFromZero),
+            1e-24
+        );
+        assert_eq!(
+            round_float_value(1e24, -24, BcRoundingMode::HalfAwayFromZero),
+            1e24
+        );
     }
 
     #[test]

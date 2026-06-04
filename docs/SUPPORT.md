@@ -6960,13 +6960,17 @@
   the covered int-like/null/bool/numeric-string operands, large integral
   exponent overflow/underflow, negative-zero float results, and catchable
   unsupported-operand `TypeError` messages for the covered string, array,
-  object, and resource operands.
+  object, and resource operands. Interpreter scalar exponentiation syntax
+  (`**` and `**=`) reuses the same bounded `pow()` semantics for current
+  non-BcMath scalar operands, including zero-base negative-exponent
+  deprecations. `round()` uses bounded decimal rounding over shortest
+  round-trip float text for the covered precision/mode cases and preserves
+  signed zero in float string conversion.
   `deg2rad()` and `rad2deg()` use PHP's multiplication/division operation
   order for the covered PHPT precision-sensitive cases. Locale-sensitive
   parsing, exact warnings for all malformed numeric inputs, general
-  exponentiation operator semantics outside the bounded BcMath `Number` lane,
-  broad libm/platform parity outside the covered rows, and native lowering
-  remain unsupported.
+  decimal-rounding/libm platform parity outside the covered rows, and native
+  lowering remain unsupported.
   BcMath decimal helpers are interpreter-only. The supported runtime surface
   includes the current `bcadd`/`bcsub`/`bcmul`/`bcdiv`/`bcmod`/`bcpow` helper
   subset, current `BcMath\Number` methods, and binary `+`, `-`, `*`, `/`, `%`,
@@ -6974,10 +6978,11 @@
   `BcMath\Number`. The operator lane accepts the current int, string, and
   `BcMath\Number` operands, returns a new `BcMath\Number`, preserves the covered
   value/scale behavior for division and positive/negative powers, and supports
-  pre/post `++` and `--` on `BcMath\Number`. Generic non-BcMath
-  exponentiation, exact invalid-operand diagnostic parity beyond the covered
-  scalar/Number operands, unbounded scales/exponents, exact object lifetime
-  timing, references/copy-on-write, and native lowering remain unsupported.
+  pre/post `++` and `--` on `BcMath\Number`. Non-BcMath scalar exponentiation
+  falls through to the standard math `pow()` subset above. Exact
+  invalid-operand diagnostic parity beyond the covered scalar/Number operands,
+  unbounded scales/exponents, exact object lifetime timing,
+  references/copy-on-write, and native lowering remain unsupported.
   `extension_loaded($name)` accepts scalar/null string-compatible extension
   names and supported visible `__toString()` objects through a bounded
   PHP-internal string boundary, including PHP-shaped null-to-string
@@ -7224,10 +7229,9 @@
   statement runtime; labels in the active statement list can be reached from
   nested statements that propagate the jump outward
 - exponentiation syntax `**` and `**=` parses for the current expression and
-  compound-assignment lanes. Runtime execution is limited to the documented
-  BcMath `Number` operator subset; other operands fail at the current
-  non-BcMath exponentiation runtime boundary, and native lowering rejects the
-  operator.
+  compound-assignment lanes. Runtime execution covers the documented BcMath
+  `Number` operator subset and the current non-BcMath scalar `pow()` subset;
+  native lowering rejects the operator.
 - explicit parse diagnostics for unsupported unparenthesized nested ternary
   expressions
 - explicit parse diagnostics for unsupported assignment-expression forms

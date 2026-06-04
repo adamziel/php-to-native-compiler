@@ -2663,6 +2663,11 @@ Division and negative powers use bounded scale search for the covered PHPT rows;
 unbounded scales/exponents, exact invalid-operand diagnostic parity, references
 and copy-on-write identity, full object lifetime timing, and native lowering
 remain outside this lane.
+Non-BcMath scalar `**` and `**=` stay on the interpreter path and reuse the
+standard math `pow()` helper so scalar exponentiation shares the same coercion,
+deprecation, and int-vs-float result rules as `pow()`. Native lowering still
+rejects exponentiation until generated code has the same boxed-value and
+diagnostic surface.
 Native lowering accepts string concatenation only when both operands are
 already lowerable strings in the straight-line subset, including ternary
 operands that prove one static string result, folding the result into a
