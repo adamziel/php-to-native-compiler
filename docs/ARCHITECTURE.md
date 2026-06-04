@@ -4524,9 +4524,10 @@ preserves existing reference-backed slots and omits the internal bounded
 `ArrayObject` / `ArrayIterator` storage property that is represented separately
 by the interpreter storage table. Dynamic public properties created through the
 supported write paths are included. Readonly property metadata/enforcement,
-promoted constructor properties, trait/interface properties, broad magic
-property hooks, full reference/COW identity, and native lowering remain outside
-the current object model.
+promoted constructor property runtime behavior beyond bounded declaration
+diagnostics, asymmetric set-visibility runtime enforcement, trait/interface
+properties, broad magic property hooks, full reference/COW identity, and native
+lowering remain outside the current object model.
 `is_a($object_or_class, $class_name[, $allow_string])` checks exact-class,
 single-parent ancestor, and recorded `implements` metadata relationships
 against the current metadata table.
@@ -4857,8 +4858,12 @@ constant public/protected/private/static/final/abstract/readonly/virtual and
 asymmetric-set bits used by current public PHPT rows. Readonly
 class/property declarations are parsed for bounded startup diagnostics, but
 runtime write-once enforcement and reflection readonly metadata remain outside
-this metadata lane. Property hooks and asymmetric visibility remain
-unsupported even though those constants and modifier names are available.
+this metadata lane. Asymmetric property set visibility is parsed into AST
+metadata for bounded declaration and inheritance startup diagnostics; runtime
+write enforcement, exact user-declaration reflection parity, and native
+lowering remain outside this lane. Property hooks remain unsupported beyond
+declaration diagnostics even though their constants and modifier names are
+available.
 Property file/line metadata, attributes and exact
 docblock association across unusual trivia, parenthesized DNF property types,
 uninitialized/unset/non-public dynamic slots, exact PHP union scalar coercion

@@ -58,6 +58,7 @@ enum SwitchBodyKind {
 #[derive(Debug, Clone)]
 struct ClassMemberModifiers {
     visibility: ClassVisibility,
+    set_visibility: Option<ClassVisibility>,
     is_static: bool,
     is_abstract: bool,
     is_final: bool,
@@ -366,7 +367,7 @@ impl Parser {
                 self.consume_doc_comments_and_attributes();
                 self.pending_doc_comment = None;
                 let attributes = self.take_pending_attributes();
-                let (promotion, promotion_readonly) =
+                let (promotion, promotion_set_visibility, promotion_readonly) =
                     if self.check(is_promoted_property_parameter_start) {
                         if !allow_promoted_properties {
                             return Err(self.error_at(
@@ -376,7 +377,7 @@ impl Parser {
                         }
                         self.parse_promoted_property_visibility()?
                     } else {
-                        (None, false)
+                        (None, None, false)
                     };
                 if self.check(is_promoted_property_parameter_start) {
                     return Err(self.error_at(
@@ -420,6 +421,7 @@ impl Parser {
                     is_variadic,
                     default,
                     promotion,
+                    promotion_set_visibility,
                     promotion_readonly,
                     attributes,
                     span,
@@ -445,10 +447,23 @@ impl Parser {
 
     fn parse_promoted_property_visibility(
         &mut self,
-    ) -> CompileResult<(Option<ClassVisibility>, bool)> {
+    ) -> CompileResult<(Option<ClassVisibility>, Option<ClassVisibility>, bool)> {
         let mut visibility = None;
+        let mut set_visibility = None;
         let mut is_readonly = false;
         loop {
+            if let Some(next_set_visibility) = self.match_asymmetric_property_visibility_modifier()
+            {
+                if set_visibility.is_some() {
+                    return Err(self.error_at(
+                        self.previous().span,
+                        parse_fatal_message("Multiple access type modifiers are not allowed"),
+                    ));
+                }
+                set_visibility = Some(next_set_visibility);
+                continue;
+            }
+
             match self.peek().kind {
                 TokenKind::Public => {
                     if visibility.is_some() {
@@ -493,13 +508,16 @@ impl Parser {
                 _ => break,
             }
         }
+        if visibility.is_none() && set_visibility.is_some() {
+            visibility = Some(ClassVisibility::Public);
+        }
         if visibility.is_none() && !is_readonly {
             return Err(self.error_at(
                 self.peek().span,
                 unsupported_promoted_property_parameter_message(),
             ));
         }
-        Ok((visibility, is_readonly))
+        Ok((visibility, set_visibility, is_readonly))
     }
 
     fn parse_type_decl(&mut self, message: &'static str) -> CompileResult<TypeDecl> {
@@ -927,6 +945,7 @@ impl Parser {
         Ok(ClassPropertyDecl {
             name,
             visibility: modifiers.visibility,
+            set_visibility: modifiers.set_visibility,
             is_static: modifiers.is_static,
             is_readonly: modifiers.is_readonly,
             type_decl,
@@ -1383,6 +1402,7 @@ impl Parser {
         Ok(ClassPropertyDecl {
             name,
             visibility: ClassVisibility::Public,
+            set_visibility: modifiers.set_visibility,
             is_static: false,
             is_readonly: modifiers.is_readonly,
             type_decl,
@@ -1754,6 +1774,7 @@ impl Parser {
                 properties.push(ClassMember::Property(ClassPropertyDecl {
                     name,
                     visibility: modifiers.visibility,
+                    set_visibility: modifiers.set_visibility,
                     is_static: modifiers.is_static,
                     is_readonly: modifiers.is_readonly,
                     type_decl: Some(type_decl.clone()),
@@ -1781,6 +1802,7 @@ impl Parser {
                 return Err(self.error_at(hook_span, unsupported_property_hook_message()));
             }
             if let Some(error) = self.property_modifier_diagnostic_without_hooks(
+                class_name,
                 first_property_member(&properties),
                 &modifiers,
             ) {
@@ -1815,6 +1837,7 @@ impl Parser {
                 properties.push(ClassMember::Property(ClassPropertyDecl {
                     name,
                     visibility: modifiers.visibility,
+                    set_visibility: modifiers.set_visibility,
                     is_static: modifiers.is_static,
                     is_readonly: modifiers.is_readonly,
                     type_decl: None,
@@ -1842,6 +1865,7 @@ impl Parser {
                 return Err(self.error_at(hook_span, unsupported_property_hook_message()));
             }
             if let Some(error) = self.property_modifier_diagnostic_without_hooks(
+                class_name,
                 first_property_member(&properties),
                 &modifiers,
             ) {
@@ -1860,6 +1884,7 @@ impl Parser {
 
     fn property_modifier_diagnostic_without_hooks(
         &self,
+        class_name: &str,
         property: &ClassPropertyDecl,
         modifiers: &ClassMemberModifiers,
     ) -> Option<Diagnostic> {
@@ -1871,6 +1896,29 @@ impl Parser {
                 property.span,
                 parse_fatal_message("Property cannot be both final and private"),
             ));
+        }
+        if modifiers.set_visibility.is_some() && property.type_decl.is_none() {
+            return Some(self.error_at(
+                property.span,
+                parse_fatal_message(&format!(
+                    "Property with asymmetric visibility {class_name}::${} must have type",
+                    property.name
+                )),
+            ));
+        }
+        if let Some(set_visibility) = modifiers.set_visibility {
+            if property_set_visibility_is_wider_than_get_visibility(
+                modifiers.visibility,
+                set_visibility,
+            ) {
+                return Some(self.error_at(
+                    property.span,
+                    parse_fatal_message(&format!(
+                        "Visibility of property {class_name}::${} must not be weaker than set visibility",
+                        property.name
+                    )),
+                ));
+            }
         }
         if modifiers.is_abstract {
             return Some(self.error_at(
@@ -1924,6 +1972,7 @@ impl Parser {
         let mut hook_names = Vec::new();
         let mut abstract_hook_count = 0usize;
         let mut hook_count = 0usize;
+        let mut last_hook_name = String::new();
         while !self.check(|kind| matches!(kind, TokenKind::RBrace | TokenKind::Eof)) {
             self.consume_doc_comments_and_attributes();
             self.pending_doc_comment = None;
@@ -2017,6 +2066,7 @@ impl Parser {
             }
             hook_names.push(hook_key);
             hook_count += 1;
+            last_hook_name = hook_name.to_ascii_lowercase();
 
             if self.match_token(|kind| matches!(kind, TokenKind::LParen)) {
                 self.skip_parenthesized_group_after_open(hook_span)?;
@@ -2060,6 +2110,16 @@ impl Parser {
                     "Cannot specify default value for virtual hooked property {class_name}::${property_name}"
                 )),
             ));
+        }
+        if modifiers.set_visibility.is_some() && hook_count == 1 && !has_default {
+            if last_hook_name == "get" || last_hook_name == "set" {
+                return Err(self.error_at(
+                    property_span,
+                    parse_fatal_message(&format!(
+                        "{last_hook_name}-only virtual property {class_name}::${property_name} must not specify asymmetric visibility"
+                    )),
+                ));
+            }
         }
 
         Ok(())
@@ -2117,6 +2177,7 @@ impl Parser {
 
     fn parse_class_member_modifiers(&mut self) -> CompileResult<ClassMemberModifiers> {
         let mut visibility = None;
+        let mut set_visibility = None;
         let mut is_static = false;
         let mut is_abstract = false;
         let mut is_final = false;
@@ -2126,11 +2187,16 @@ impl Parser {
         let mut diagnostics = Vec::new();
 
         loop {
-            if self.check_asymmetric_property_visibility_modifier() {
-                return Err(self.error_at(
-                    self.peek().span,
-                    unsupported_asymmetric_property_visibility_message(),
-                ));
+            if let Some(next_set_visibility) = self.match_asymmetric_property_visibility_modifier()
+            {
+                if set_visibility.is_some() {
+                    return Err(self.error_at(
+                        self.previous().span,
+                        parse_fatal_message("Multiple access type modifiers are not allowed"),
+                    ));
+                }
+                set_visibility = Some(next_set_visibility);
+                continue;
             }
 
             let modifier = match &self.peek().kind {
@@ -2204,8 +2270,13 @@ impl Parser {
             break;
         }
 
+        if visibility.is_none() && set_visibility.is_some() {
+            visibility = Some(ClassVisibility::Public);
+        }
+
         Ok(ClassMemberModifiers {
             visibility: visibility.unwrap_or(ClassVisibility::Public),
+            set_visibility,
             is_static,
             is_abstract,
             is_final,
@@ -10614,8 +10685,19 @@ fn unsupported_readonly_class_member_modifier_message() -> &'static str {
     "unsupported readonly class member modifier: readonly methods and readonly class constants are not implemented"
 }
 
-fn unsupported_asymmetric_property_visibility_message() -> &'static str {
-    "unsupported asymmetric property visibility: PHP 8 set-visibility modifiers such as private(set) and protected(set) require property visibility metadata, typed-property storage and enforcement, reflection behavior, and native lowering"
+fn property_set_visibility_is_wider_than_get_visibility(
+    get_visibility: ClassVisibility,
+    set_visibility: ClassVisibility,
+) -> bool {
+    class_visibility_rank(set_visibility) < class_visibility_rank(get_visibility)
+}
+
+fn class_visibility_rank(visibility: ClassVisibility) -> u8 {
+    match visibility {
+        ClassVisibility::Public => 0,
+        ClassVisibility::Protected => 1,
+        ClassVisibility::Private => 2,
+    }
 }
 
 fn unsupported_trait_use_message() -> &'static str {
@@ -10723,16 +10805,27 @@ impl Parser {
         Some(visibility)
     }
 
-    fn check_asymmetric_property_visibility_modifier(&self) -> bool {
-        matches!(
-            self.peek().kind,
-            TokenKind::Public | TokenKind::Protected | TokenKind::Private
-        ) && matches!(self.peek_next().kind, TokenKind::LParen)
-            && matches!(
+    fn match_asymmetric_property_visibility_modifier(&mut self) -> Option<ClassVisibility> {
+        let visibility = match self.peek().kind {
+            TokenKind::Public => ClassVisibility::Public,
+            TokenKind::Protected => ClassVisibility::Protected,
+            TokenKind::Private => ClassVisibility::Private,
+            _ => return None,
+        };
+        if !matches!(self.peek_next().kind, TokenKind::LParen)
+            || !matches!(
                 &self.peek_n(2).kind,
                 TokenKind::Identifier(name) if name.eq_ignore_ascii_case("set")
             )
-            && matches!(self.peek_n(3).kind, TokenKind::RParen)
+            || !matches!(self.peek_n(3).kind, TokenKind::RParen)
+        {
+            return None;
+        }
+        self.advance();
+        self.advance();
+        self.advance();
+        self.advance();
+        Some(visibility)
     }
 
     fn check_unsupported_property_type_declaration(&self) -> bool {

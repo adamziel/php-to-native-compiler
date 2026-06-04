@@ -3806,6 +3806,92 @@ new Service("value");
 }
 
 #[test]
+fn asymmetric_property_visibility_inheritance_and_promoted_diagnostics() {
+    let valid = run_source(
+        r#"<?php
+class PrivateValue {
+    private private(set) string $value;
+}
+class ProtectedValue {
+    protected protected(set) string $value;
+}
+echo "Done";
+"#,
+    )
+    .unwrap();
+    assert_eq!(valid.stdout, "Done");
+    assert_eq!(valid.exit_code, 0);
+
+    assert_php_startup_fatal(
+        r#"<?php
+class Value {
+    public function __construct(
+        public private(set) $id,
+    ) {}
+}
+"#,
+        "asym_ctor_missing_declared_type.php",
+        4,
+        "Property with asymmetric visibility Value::$id must have type",
+    );
+
+    assert_php_startup_fatal(
+        r#"<?php
+class Value {
+    public function __construct(
+        private protected(set) string $id,
+    ) {}
+}
+"#,
+        "asym_ctor_invalid_set_scope.php",
+        4,
+        "Visibility of property Value::$id must not be weaker than set visibility",
+    );
+
+    assert_php_startup_fatal(
+        r#"<?php
+class A {
+    public private(set) string $foo;
+}
+class B extends A {
+    public string $foo;
+}
+        "#,
+        "asym_inherited_final_set_visibility.php",
+        5,
+        "Cannot override final property A::$foo",
+    );
+
+    assert_php_startup_fatal(
+        r#"<?php
+class A {
+    public protected(set) string $foo;
+}
+class B extends A {
+    public private(set) string $foo;
+}
+        "#,
+        "asym_inherited_set_scope_tightening.php",
+        5,
+        "Set access level of B::$foo must be protected(set) (as in class A) or weaker",
+    );
+
+    assert_php_startup_fatal(
+        r#"<?php
+class A {
+    public string $foo;
+}
+class B extends A {
+    public protected(set) string $foo;
+}
+        "#,
+        "asym_inherited_public_parent_set_scope.php",
+        5,
+        "Set access level of B::$foo must be omitted (as in class A)",
+    );
+}
+
+#[test]
 fn method_override_attribute_validates_class_interface_trait_and_constructor_methods() {
     let parent_method = run_source(
         r#"<?php

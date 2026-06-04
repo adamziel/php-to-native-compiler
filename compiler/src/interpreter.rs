@@ -120067,6 +120067,14 @@ fn magic_method_startup_diagnostics(
     }
 
     if !diagnostics.has_fatal() {
+        collect_asymmetric_property_visibility_startup_diagnostics(
+            &mut diagnostics,
+            program,
+            source_file,
+        );
+    }
+
+    if !diagnostics.has_fatal() {
         collect_class_constant_modifier_startup_diagnostics(&mut diagnostics, program, source_file);
     }
 
@@ -121375,6 +121383,67 @@ fn readonly_property_startup_diagnostic(
         return Some((
             format!(
                 "Readonly property {class_name}::${} cannot have default value",
+                property.name
+            ),
+            property.span.line,
+        ));
+    }
+    None
+}
+
+fn collect_asymmetric_property_visibility_startup_diagnostics(
+    diagnostics: &mut MagicMethodStartupDiagnostics,
+    program: &Program,
+    source_file: Option<&str>,
+) {
+    for stmt in &program.statements {
+        match stmt {
+            Stmt::Class(class) if !class.is_nested => {
+                for property in declared_class_properties_in_source_order(class) {
+                    if let Some((message, line)) =
+                        asymmetric_property_visibility_startup_diagnostic(&class.name, &property)
+                    {
+                        diagnostics.set_fatal(message, source_file, line);
+                        return;
+                    }
+                }
+            }
+            Stmt::Trait(trait_decl) => {
+                for property in &trait_decl.properties {
+                    if let Some((message, line)) = asymmetric_property_visibility_startup_diagnostic(
+                        &trait_decl.name,
+                        property,
+                    ) {
+                        diagnostics.set_fatal(message, source_file, line);
+                        return;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn asymmetric_property_visibility_startup_diagnostic(
+    class_name: &str,
+    property: &ClassPropertyDecl,
+) -> Option<(String, usize)> {
+    let set_visibility = property.set_visibility?;
+    if property.type_decl.is_none() {
+        return Some((
+            format!(
+                "Property with asymmetric visibility {class_name}::${} must have type",
+                property.name
+            ),
+            property.span.line,
+        ));
+    }
+    if class_property_visibility_rank(set_visibility)
+        < class_property_visibility_rank(property.visibility)
+    {
+        return Some((
+            format!(
+                "Visibility of property {class_name}::${} must not be weaker than set visibility",
                 property.name
             ),
             property.span.line,
@@ -124687,6 +124756,15 @@ fn inherited_property_startup_diagnostic_message(
         ));
     }
 
+    if let Some(message) = inherited_property_set_visibility_diagnostic_message(
+        class_name,
+        property,
+        parent_name,
+        parent_property,
+    ) {
+        return Some(message);
+    }
+
     let parent_type = class_property_type_text(parent_property);
     let child_type = class_property_type_text(property);
     if !startup_property_types_are_invariantly_compatible(
@@ -124721,6 +124799,29 @@ fn inherited_property_startup_diagnostic_message(
     }
 
     None
+}
+
+fn inherited_property_set_visibility_diagnostic_message(
+    class_name: &str,
+    property: &ClassPropertyDecl,
+    parent_name: &str,
+    parent_property: &ClassPropertyDecl,
+) -> Option<String> {
+    match (parent_property.set_visibility, property.set_visibility) {
+        (Some(ClassVisibility::Private), _) => Some(format!(
+            "Cannot override final property {parent_name}::${}",
+            property.name
+        )),
+        (Some(ClassVisibility::Protected), Some(ClassVisibility::Private)) => Some(format!(
+            "Set access level of {class_name}::${} must be protected(set) (as in class {parent_name}) or weaker",
+            property.name
+        )),
+        (None, Some(_)) | (Some(ClassVisibility::Public), Some(_)) => Some(format!(
+            "Set access level of {class_name}::${} must be omitted (as in class {parent_name})",
+            property.name
+        )),
+        _ => None,
+    }
 }
 
 fn startup_property_types_are_invariantly_compatible(
@@ -127934,6 +128035,7 @@ fn promoted_property_from_param(param: &FunctionParam) -> Option<ClassPropertyDe
     Some(ClassPropertyDecl {
         name: param.name.clone(),
         visibility: param.promotion?,
+        set_visibility: param.promotion_set_visibility,
         is_static: false,
         is_readonly: param.promotion_readonly,
         type_decl: param.type_decl.clone(),
@@ -127961,6 +128063,7 @@ fn declared_trait_properties(trait_decl: &TraitDecl) -> HashMap<String, ClassPro
 
 fn trait_properties_are_compatible(left: &ClassPropertyDecl, right: &ClassPropertyDecl) -> bool {
     left.visibility == right.visibility
+        && left.set_visibility == right.set_visibility
         && left.is_static == right.is_static
         && left.is_readonly == right.is_readonly
         && left.type_decl.as_ref().map(|decl| decl.text.as_str())
@@ -190631,6 +190734,7 @@ echo $items["shared"]["leaf"] . "|" . $shared . "|" . $items["plain"]["leaf"] . 
                 is_variadic: false,
                 default: None,
                 promotion: None,
+                promotion_set_visibility: None,
                 promotion_readonly: false,
                 attributes: Vec::new(),
                 span,
@@ -191991,6 +192095,7 @@ echo $items["shared"]["leaf"] . "|" . $shared . "|" . $items["plain"]["leaf"] . 
                 is_variadic: false,
                 default: None,
                 promotion: None,
+                promotion_set_visibility: None,
                 promotion_readonly: false,
                 attributes: Vec::new(),
                 span,

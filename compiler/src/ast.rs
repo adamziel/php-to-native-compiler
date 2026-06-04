@@ -1012,6 +1012,7 @@ pub struct ClassConstantDecl {
 pub struct ClassPropertyDecl {
     pub name: String,
     pub visibility: ClassVisibility,
+    pub set_visibility: Option<ClassVisibility>,
     pub is_static: bool,
     pub is_readonly: bool,
     pub type_decl: Option<TypeDecl>,
@@ -1064,6 +1065,7 @@ pub struct FunctionParam {
     pub is_variadic: bool,
     pub default: Option<Expr>,
     pub promotion: Option<ClassVisibility>,
+    pub promotion_set_visibility: Option<ClassVisibility>,
     pub promotion_readonly: bool,
     pub attributes: Vec<AttributeDecl>,
     pub span: Span,

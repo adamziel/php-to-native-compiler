@@ -890,6 +890,7 @@ pub fn trait_properties_are_compatible(
     right: &ClassPropertyDecl,
 ) -> bool {
     left.visibility == right.visibility
+        && left.set_visibility == right.set_visibility
         && left.is_static == right.is_static
         && left.type_decl.as_ref().map(|decl| decl.text.as_str())
             == right.type_decl.as_ref().map(|decl| decl.text.as_str())

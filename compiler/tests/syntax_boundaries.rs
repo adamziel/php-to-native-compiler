@@ -1309,48 +1309,62 @@ fn emit_ir_rejects_property_hook_declarations_at_parse_boundary() {
 }
 
 #[test]
-fn unsupported_asymmetric_property_visibility_has_stable_parse_errors() {
+fn asymmetric_property_visibility_declaration_diagnostics_are_php_shaped() {
     let cases = [
         (
-            "<?php\nclass Value {\n    public private(set) string $id;\n}\n",
+            "<?php\nclass Value {\n    public private(set) $id;\n}\n",
             3,
-            12,
+            "php fatal: Property with asymmetric visibility Value::$id must have type",
         ),
         (
-            "<?php\nclass Value {\n    protected private(SET) string $id;\n}\n",
+            "<?php\nclass Value {\n    private protected(set) string $id;\n}\n",
             3,
-            15,
+            "php fatal: Visibility of property Value::$id must not be weaker than set visibility",
         ),
         (
-            "<?php\nclass Value {\n    public static protected(set) string $id;\n}\n",
+            "<?php\nclass Value {\n    private(set) protected(set) string $id;\n}\n",
             3,
-            19,
+            "php fatal: Multiple access type modifiers are not allowed",
+        ),
+        (
+            "<?php\nclass Value {\n    public private(set) int $id { get => 42; }\n}\n",
+            3,
+            "php fatal: get-only virtual property Value::$id must not specify asymmetric visibility",
+        ),
+        (
+            "<?php\nclass Value {\n    public private(set) int $id { set {} }\n}\n",
+            3,
+            "php fatal: set-only virtual property Value::$id must not specify asymmetric visibility",
         ),
     ];
 
-    for (source, line, column) in cases {
+    for (source, line, message) in cases {
         let error = parse_error(source);
         assert_eq!(error.line, line);
-        assert_eq!(error.column, column);
-        assert_eq!(
-            error.message,
-            "unsupported asymmetric property visibility: PHP 8 set-visibility modifiers such as private(set) and protected(set) require property visibility metadata, typed-property storage and enforcement, reflection behavior, and native lowering"
-        );
+        assert_eq!(error.message, message);
     }
 }
 
 #[test]
-fn emit_ir_rejects_asymmetric_property_visibility_at_parse_boundary() {
+fn asymmetric_property_visibility_valid_declarations_parse_for_runtime_metadata() {
+    let execution = run_source(
+        "<?php\nclass Value {\n    public private(set) string $id;\n    private private(set) string $secret;\n    protected protected(set) string $token;\n}\necho \"Done\";\n",
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "Done");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn emit_ir_rejects_asymmetric_property_visibility_after_parse_boundary() {
     let error = php_compiler::emit_ir_source(
         "<?php\nclass Value {\n    public private(set) string $id;\n}\n",
     )
     .unwrap_err();
 
-    assert_eq!(error.phase, Phase::Parse);
-    assert_eq!(
-        error.message,
-        "unsupported asymmetric property visibility: PHP 8 set-visibility modifiers such as private(set) and protected(set) require property visibility metadata, typed-property storage and enforcement, reflection behavior, and native lowering"
-    );
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, LLVM_OBJECT_CLASS_REJECTION);
 }
 
 #[test]

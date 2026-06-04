@@ -7585,9 +7585,13 @@
   `abstract`/`final`/`readonly` class member modifiers beyond bounded startup
   diagnostics, full readonly property initialization rules, write-once
   enforcement, reflection behavior, and native lowering exist,
-  asymmetric PHP 8 property set-visibility modifiers such as `private(set)`
-  and `protected(set)` before property visibility metadata, broader
-  typed-property write rules, reflection behavior, and native lowering exist,
+  asymmetric PHP 8 property set-visibility declarations are parsed for a
+  bounded declaration/startup diagnostic subset covering typed declarations,
+  duplicate set modifiers, virtual get-only/set-only restrictions, promoted
+  parameter declaration checks, and simple inheritance set-visibility
+  compatibility. Runtime write/unset/reference enforcement, broader
+  typed-property write rules, reflection behavior for user-declared
+  set-visibility metadata, and native lowering remain unsupported,
   PHP property hook declarations such as `public string $name { get => ...; }`
   before hook metadata, backing/virtual property behavior, typed-property
   storage/enforcement, references, reflection, and native lowering exist,
@@ -11356,9 +11360,11 @@
   diagnostics and reflected through `ReflectionClass::isReadOnly()`,
   `ReflectionClass::getModifiers()`, `ReflectionProperty::getModifiers()`,
   modifier-name mapping, and bounded `__toString()` output. Runtime write-once
-  enforcement remains unsupported. Property hooks/asymmetric visibility remain
-  unsupported even where the compatibility constants and modifier-name mapping
-  exist.
+  enforcement remains unsupported. Asymmetric property set-visibility
+  declarations have bounded parser/startup diagnostics, but runtime
+  enforcement and user-declaration reflection parity remain unsupported even
+  where the compatibility constants and modifier-name mapping exist. Property
+  hooks remain unsupported beyond declaration diagnostics.
   `get_declared_classes()` returns a zero-indexed array containing the current
   metadata-only core class seeds followed by the parsed program's declared
   class names in declaration order.
@@ -12207,10 +12213,12 @@
   full method signature compatibility beyond inherited required-parameter count
   increases, readonly class semantics beyond bounded startup diagnostics,
   readonly property runtime enforcement and reflection metadata,
-  typed property storage and enforcement,
-  asymmetric property set visibility such as `private(set)` and
-  `protected(set)`,
-  promoted constructor properties,
+  typed property storage and enforcement beyond the current bounded property
+  type checks,
+  asymmetric property set visibility runtime enforcement and reflection parity
+  beyond the current declaration/startup diagnostic subset for `private(set)`,
+  `protected(set)`, and `public(set)`,
+  promoted constructor properties beyond bounded declaration diagnostics,
   property initialization rules beyond the current untyped constant-expression
   default subset, inheritance interactions,
   multiple properties in one declaration, per-property defaults in

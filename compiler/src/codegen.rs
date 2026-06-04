@@ -1799,6 +1799,7 @@ fn native_value_print_r_params(span: Span) -> [FunctionParam; 2] {
             is_variadic: false,
             default: None,
             promotion: None,
+            promotion_set_visibility: None,
             promotion_readonly: false,
             attributes: Vec::new(),
             span,
@@ -1810,6 +1811,7 @@ fn native_value_print_r_params(span: Span) -> [FunctionParam; 2] {
             is_variadic: false,
             default: Some(Expr::Bool(false, span)),
             promotion: None,
+            promotion_set_visibility: None,
             promotion_readonly: false,
             attributes: Vec::new(),
             span,
@@ -8228,6 +8230,10 @@ fn readonly_class_native_metadata_span(class: &ClassDecl) -> Option<Span> {
         .or_else(|| class.members.iter().find_map(readonly_class_member_span))
 }
 
+fn asymmetric_class_native_metadata_span(class: &ClassDecl) -> Option<Span> {
+    class.members.iter().find_map(asymmetric_class_member_span)
+}
+
 fn readonly_trait_native_metadata_span(trait_decl: &TraitDecl) -> Option<Span> {
     readonly_trait_use_native_metadata_span(&trait_decl.trait_uses)
         .or_else(|| {
@@ -8248,6 +8254,13 @@ fn readonly_trait_native_metadata_span(trait_decl: &TraitDecl) -> Option<Span> {
                 .iter()
                 .find_map(readonly_class_method_span)
         })
+}
+
+fn asymmetric_trait_native_metadata_span(trait_decl: &TraitDecl) -> Option<Span> {
+    trait_decl
+        .properties
+        .iter()
+        .find_map(|property| property.set_visibility.map(|_| property.span))
 }
 
 fn readonly_trait_use_native_metadata_span(
@@ -8272,6 +8285,18 @@ fn readonly_class_member_span(member: &ClassMember) -> Option<Span> {
         ClassMember::Property(property) => property.is_readonly.then_some(property.span),
         ClassMember::Constant(constant) => constant.is_readonly.then_some(constant.span),
         ClassMember::Method(method) => readonly_class_method_span(method),
+    }
+}
+
+fn asymmetric_class_member_span(member: &ClassMember) -> Option<Span> {
+    match member {
+        ClassMember::Property(property) => property.set_visibility.map(|_| property.span),
+        ClassMember::Method(method) => method
+            .function
+            .params
+            .iter()
+            .find_map(|param| param.promotion_set_visibility.map(|_| param.span)),
+        ClassMember::Constant(_) => None,
     }
 }
 
@@ -11699,6 +11724,9 @@ impl LlvmGenerator {
                     return Err(self.unsupported(class.span, LLVM_OBJECT_CLASS_REJECTION));
                 }
                 if let Some(span) = readonly_class_native_metadata_span(class) {
+                    return Err(self.unsupported(span, LLVM_OBJECT_CLASS_REJECTION));
+                }
+                if let Some(span) = asymmetric_class_native_metadata_span(class) {
                     return Err(self.unsupported(span, LLVM_OBJECT_CLASS_REJECTION));
                 }
                 self.emit_llvm_user_class_declaration(class);
@@ -19253,6 +19281,7 @@ impl CNativeBuiltinSignature {
                 is_variadic: false,
                 default: self.fixed_param_defaults[index].map(|default| default.to_expr(span)),
                 promotion: None,
+                promotion_set_visibility: None,
                 promotion_readonly: false,
                 attributes: Vec::new(),
                 span,
@@ -19266,6 +19295,7 @@ impl CNativeBuiltinSignature {
                 is_variadic: true,
                 default: None,
                 promotion: None,
+                promotion_set_visibility: None,
                 promotion_readonly: false,
                 attributes: Vec::new(),
                 span,
@@ -21716,6 +21746,9 @@ impl CGenerator {
             if let Some(span) = readonly_trait_native_metadata_span(trait_decl) {
                 return Err(self.unsupported(span, ASSEMBLY_TRAIT_REJECTION));
             }
+            if let Some(span) = asymmetric_trait_native_metadata_span(trait_decl) {
+                return Err(self.unsupported(span, ASSEMBLY_TRAIT_REJECTION));
+            }
             let key = trait_semantics::trait_key(&trait_decl.name);
             if self.declared_traits.contains_key(&key) {
                 return Err(self.unsupported(trait_decl.span, ASSEMBLY_TRAIT_REJECTION));
@@ -21829,6 +21862,9 @@ impl CGenerator {
             return Err(self.unsupported(class.span, ASSEMBLY_OBJECT_CLASS_REJECTION));
         }
         if let Some(span) = readonly_class_native_metadata_span(class) {
+            return Err(self.unsupported(span, ASSEMBLY_OBJECT_CLASS_REJECTION));
+        }
+        if let Some(span) = asymmetric_class_native_metadata_span(class) {
             return Err(self.unsupported(span, ASSEMBLY_OBJECT_CLASS_REJECTION));
         }
 
@@ -72862,6 +72898,7 @@ echo " 10" < "zeta";
             is_variadic,
             default: None,
             promotion: None,
+            promotion_set_visibility: None,
             promotion_readonly: false,
             attributes: Vec::new(),
             span: test_span(),
@@ -72879,6 +72916,7 @@ echo " 10" < "zeta";
             is_variadic: false,
             default: None,
             promotion: None,
+            promotion_set_visibility: None,
             promotion_readonly: false,
             attributes: Vec::new(),
             span: test_span(),
@@ -75604,6 +75642,7 @@ echo $call("Ada");
             is_variadic: false,
             default: None,
             promotion: None,
+            promotion_set_visibility: None,
             promotion_readonly: false,
             attributes: Vec::new(),
             span: test_span(),
