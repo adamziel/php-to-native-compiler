@@ -3744,10 +3744,16 @@
 - bare reads of runtime-defined unqualified constants over the same current
   name/value subset; array constant values are cloned on lookup
 - namespace-qualified constant reads such as `App\VERSION` and
-  `namespace\VERSION`, and leading-backslash fully-qualified constant reads
-  such as `\PHP_VERSION`, stop at dedicated parse diagnostics until
-  namespace-aware constant lookup, fallback behavior, constant imports, exact
-  PHP diagnostics, and native lowering exist
+  `namespace\VERSION`, plus leading-backslash fully-qualified constant reads
+  such as `\PHP_VERSION`, on the interpreter path. Relative qualified names
+  resolve under the active namespace, `namespace\VERSION` resolves to the
+  active namespace, and leading-backslash names are exact global names. These
+  direct qualified reads do not perform unqualified global fallback; namespace
+  prefixes compare ASCII case-insensitively while the final constant segment
+  remains exact. Missing qualified names raise catchable PHP-shaped
+  `Undefined constant "Name"` errors. Exact import expansion for qualified
+  constant names, autoload-driven discovery, reference/copy-on-write behavior,
+  and native lowering remain unsupported.
 - top-level single and grouped `const NAME = value;` declarations for
   unqualified names at global scope and names resolved under the active
   unbracketed namespace. Values use the current constant-expression subset:
@@ -7318,15 +7324,15 @@
   qualified function calls. Each namespace declaration or bracketed namespace
   block starts a fresh lexical import segment. Class declarations and
   class-like references in `extends`,
-  `new`, `instanceof`, static members, and `ClassName::class` resolve through
-  the current namespace and class-import table. Namespace-scoped function and
-  supported constant declarations register under their resolved names;
+  `new`, `instanceof`, static members, `ClassName::class`, and supported type
+  declarations resolve through the current namespace and class-import table.
+  Namespace-scoped function and supported constant declarations register under
+  their resolved names;
   unqualified, qualified, namespace-relative, fully-qualified, and imported
   direct function calls resolve through the bounded namespace/function tables.
 - explicit parse diagnostics for unsupported namespace forms and imports:
-  grouped imports, namespace-qualified constant reads, and leading-backslash
-  fully-qualified constant reads. Invalid mixed or nested namespace forms still
-  remain outside exact PHP diagnostic parity.
+  grouped imports. Invalid mixed or nested namespace forms still remain outside
+  exact PHP diagnostic parity.
 - bounded magic class names in `new` expressions such as `new self()`,
   `new parent()`, and `new static()` in active class/method contexts;
   contextless magic class-name instantiation remains a stable runtime boundary
@@ -13176,8 +13182,8 @@
   version coupling, SAPI/build metadata beyond the deterministic `cli` string,
   full extension constant catalogs, unsupported `define(...)` names
   or values, case-insensitive legacy constants, bare namespace constant
-  fallback reads, namespace-qualified constant reads, fully-qualified constant
-  reads, nested `const` declarations, dynamic declaration values,
+  fallback edges outside the documented interpreter slice, nested `const`
+  declarations, dynamic declaration values,
   broader `constant()`/`defined()` lookup for class constants, names lexed as
   language keywords or literals for bare reads, magic constants other than
   `__LINE__`, `__FILE__`, `__DIR__`, `__FUNCTION__`, and `__METHOD__`,
@@ -13186,9 +13192,8 @@
 - namespace-aware behavior beyond the current class-name plus
   function/constant declaration/import/call slice, including bracketed/global
   namespaces, grouped imports with a dedicated parse diagnostic,
-  namespace-qualified constant reads, fully-qualified constant reads,
-  string-name import expansion, `__NAMESPACE__`, autoload-aware lookup, and
-  native lowering
+  string-name import expansion, qualified constant import expansion,
+  `__NAMESPACE__`, autoload-aware lookup, and native lowering
 - closure invocation, explicit and implicit capture binding/execution, and
   callable integration
 - configurable recursion/call-stack limits matching PHP deployments

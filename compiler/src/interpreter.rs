@@ -11706,7 +11706,7 @@ impl ConstantTable {
     ) -> RuntimeResult<()> {
         let canonical_name = normalize_runtime_constant_lookup_name(name).unwrap_or(name);
         if builtin_global_constant_value(canonical_name).is_some()
-            || self.values.contains_key(canonical_name)
+            || self.storage_key(canonical_name).is_some()
         {
             return Err(RuntimeError::duplicate_constant(canonical_name));
         }
@@ -11718,22 +11718,36 @@ impl ConstantTable {
 
     fn get(&self, name: &str) -> Option<Value> {
         let canonical_name = normalize_runtime_constant_lookup_name(name)?;
-        self.values
-            .get(canonical_name)
+        self.storage_key(canonical_name)
+            .and_then(|key| self.values.get(key))
             .cloned()
             .or_else(|| builtin_global_constant_value(canonical_name))
     }
 
     fn contains(&self, name: &str) -> bool {
         normalize_runtime_constant_lookup_name(name).is_some_and(|canonical_name| {
-            self.values.contains_key(canonical_name)
+            self.storage_key(canonical_name).is_some()
                 || builtin_global_constant_value(canonical_name).is_some()
         })
     }
 
     fn metadata(&self, name: &str) -> Option<&RuntimeConstantMetadata> {
         let canonical_name = normalize_runtime_constant_lookup_name(name)?;
-        self.metadata.get(canonical_name)
+        let key = self.storage_key(canonical_name)?;
+        self.metadata.get(key)
+    }
+
+    fn storage_key(&self, canonical_name: &str) -> Option<&str> {
+        if let Some((key, _)) = self.values.get_key_value(canonical_name) {
+            return Some(key.as_str());
+        }
+        if !canonical_name.contains('\\') {
+            return None;
+        }
+        self.values
+            .keys()
+            .find(|stored| runtime_constant_names_match(stored, canonical_name))
+            .map(String::as_str)
     }
 }
 
@@ -130330,12 +130344,13 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             return Some(("TypeError", error.message.clone()));
         }
 
-        if let Some(name) = error
-            .message
-            .strip_prefix("undefined constant ")
-            .filter(|name| name.contains("::"))
-        {
-            return Some(("Error", format!("Undefined constant {name}")));
+        if let Some(name) = error.message.strip_prefix("undefined constant ") {
+            if name.contains("::") {
+                return Some(("Error", format!("Undefined constant {name}")));
+            }
+            if name.contains('\\') {
+                return Some(("Error", format!("Undefined constant \"{name}\"")));
+            }
         }
 
         if let Some(message) = error.message.strip_prefix("ReflectionException: ") {
@@ -136202,6 +136217,19 @@ fn normalize_runtime_constant_lookup_name(name: &str) -> Option<&str> {
     } else {
         None
     }
+}
+
+fn runtime_constant_names_match(stored: &str, lookup: &str) -> bool {
+    if stored == lookup {
+        return true;
+    }
+    let Some((stored_namespace, stored_name)) = stored.rsplit_once('\\') else {
+        return false;
+    };
+    let Some((lookup_namespace, lookup_name)) = lookup.rsplit_once('\\') else {
+        return false;
+    };
+    stored_name == lookup_name && stored_namespace.eq_ignore_ascii_case(lookup_namespace)
 }
 
 fn normalize_runtime_class_constant_lookup_name(name: &str) -> Option<(&str, &str)> {

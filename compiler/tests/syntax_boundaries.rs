@@ -998,28 +998,33 @@ $e = \strlen();
 }
 
 #[test]
-fn namespace_qualified_constant_reads_keep_parse_boundary_but_global_builtins_execute() {
-    let cases = [
-        (
-            "<?php\n$value = App\\VERSION;\n",
-            2,
-            10,
-            "unsupported namespace-qualified constant name: namespace-aware constant lookup, fallback behavior, constant imports, and native lowering are not implemented",
-        ),
-        (
-            "<?php\n$value = namespace\\VERSION;\n",
-            2,
-            10,
-            "unsupported namespace-qualified constant name: namespace-aware constant lookup, fallback behavior, constant imports, and native lowering are not implemented",
-        ),
-    ];
+fn namespace_qualified_constant_reads_parse_to_exact_global_constant_names() {
+    let program = parse(
+        r#"<?php
+namespace Root;
+$a = App\VERSION;
+$b = namespace\VERSION;
+$c = \PHP_VERSION;
+"#,
+    )
+    .unwrap();
 
-    for (source, line, column, message) in cases {
-        let error = parse_error(source);
-        assert_eq!(error.line, line);
-        assert_eq!(error.column, column);
-        assert_eq!(error.message, message);
-    }
+    let names: Vec<&str> = program
+        .statements
+        .iter()
+        .filter_map(|stmt| match stmt {
+            Stmt::Assign {
+                expr: Expr::GlobalConstant { name, .. },
+                ..
+            } => Some(name.as_str()),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(
+        names,
+        ["\\Root\\App\\VERSION", "\\Root\\VERSION", "\\PHP_VERSION"]
+    );
 
     let execution = run_source("<?php\necho \\PHP_VERSION;\n").unwrap();
     assert_eq!(execution.stdout, "8.3.0");

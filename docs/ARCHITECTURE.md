@@ -3642,7 +3642,14 @@ Runtime-backed constant behavior currently lives in the interpreter's
 declarations store canonical qualified names such as
 `Sodium\CRYPTO_AUTH_BYTES`. String-name `defined(...)` and `constant(...)`
 lookups accept qualified names with an optional leading global namespace
-separator and answer from that deterministic table. Runtime string lookups for
+separator and answer from that deterministic table. Direct
+namespace-qualified reads such as `App\VERSION`, namespace-relative reads such
+as `namespace\VERSION`, and leading-backslash fully-qualified reads such as
+`\PHP_VERSION` lower to exact global constant lookups in `phpc run`.
+Namespace prefixes in user/runtime constant names compare ASCII
+case-insensitively while the final constant segment remains exact, matching the
+covered PHP namespace-constant diagnostics without adding unqualified fallback
+to direct qualified names. Runtime string lookups for
 declared class constants use the interpreter class metadata instead:
 `ClassName::CONST` and `\ClassName::CONST` are split at runtime,
 `defined(...)` reports true only for public declared or inherited constants,
@@ -3659,9 +3666,10 @@ an interface while deduplicating one common interface ancestor. Built-in
 error-level constants follow the current PHP 8.4+ mask surface where `E_ALL`
 excludes removed `E_STRICT`; bare
 `E_STRICT` reads route through the normal display-deprecation path. This does
-not model bare namespace constant fallback reads, autoload-triggered class
+not model qualified constant import expansion, autoload-triggered class
 discovery, broader `self`/`parent`/`static` string names, host extension
-loading, full extension constant inventories, or native lowering.
+loading, full extension constant inventories, reference/copy-on-write constant
+values, or native lowering.
 Direct `defined($name)` calls include the deterministic `PHP_VERSION_ID`,
 `PHP_VERSION`, and 64-bit `PHP_INT_MAX` compatibility-target constants in the
 built-in answer table. Bare global constant reads and `constant($name)` still
@@ -4274,14 +4282,13 @@ callable-name output, `__callStatic` execution, and namespace/autoload-aware
 callable resolution are still outside the implemented dynamic-call subset.
 Constant names that are lexed as language keywords or
 literals cannot be read bare, and case-insensitive legacy constants, extension
-constants, namespace-qualified constants, nested or namespace-aware `const`
-declarations, dynamic `const` values, class constants through
+constants, nested `const` declarations, dynamic `const` values, class constants through
 `constant(...)`/unsupported `defined(...)` forms, typed class constants beyond
 the bounded literal-startup lane, `static::CONST`, references/copy-on-write for constant values,
 and broader constant lowering are still outside the implemented constant
 subset. Namespace-qualified and leading-backslash fully-qualified constant
-reads stop at dedicated parse diagnostics until namespace-aware constant-table
-lookup, fallback behavior, imports, and native lowering exist. Direct
+reads use the interpreter constant table but remain rejected by native lowering
+until native code has namespace-aware constant tables and exact diagnostics. Direct
 `ClassName::CONST`, `self::CONST`, and `parent::CONST`
 execution use class metadata instead of the global constant table. Native
 lowering currently folds only direct
@@ -4301,20 +4308,21 @@ calls. Each namespace declaration or bracketed namespace block starts a fresh
 lexical import segment; bracketed blocks are flattened into ordinary execution
 statements while restoring the previous namespace/import context after the
 block. Class declarations and class-like references in `extends`, `new`,
-`instanceof`, static members, and `ClassName::class` are stored as canonical
-names without a leading slash and resolved through the lexical namespace/import
-table. Namespace and `use` statements are execution no-ops in `phpc run`
+`instanceof`, static members, `ClassName::class`, and supported type
+declarations are stored as canonical names without a leading slash and
+resolved through the lexical namespace/import table. Namespace and `use`
+statements are execution no-ops in `phpc run`
 because the parser has already resolved the covered names in the AST.
 Class inheritance uses the same resolved class-like names. Parent classes must
 already be present in the interpreter's class metadata table from the current
 program or from an executed include/require path; class lookup does not invoke
 autoload callbacks.
 
-Unsupported namespace/import behavior remains: namespace-qualified constant
-reads, leading-backslash fully-qualified constant reads, grouped imports,
+Unsupported namespace/import behavior remains: grouped imports,
 invalid mixed/nested namespace-form validation, string-name import expansion,
-trait `use` execution, autoload interaction, exact PHP diagnostics,
-partial-output behavior, and namespace-aware native lowering. The native path
+qualified constant import expansion, trait `use` execution, autoload
+interaction, exact PHP diagnostics, partial-output behavior, and
+namespace-aware native lowering. The native path
 rejects namespace declarations/imports before scalar folding or backend
 execution until native symbol tables and namespace context exist.
 

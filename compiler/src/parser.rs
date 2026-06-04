@@ -7317,10 +7317,11 @@ impl Parser {
                         return self.reject_unsupported_static_member_access(Some(&resolved));
                     }
                     if !self.check(|kind| matches!(kind, TokenKind::LParen)) {
-                        return Err(self.error_at(
-                            token.span,
-                            unsupported_namespace_qualified_constant_name_message(),
-                        ));
+                        let name = self.resolve_exact_namespace_qualified_constant_name(&qualified);
+                        return Ok(Expr::GlobalConstant {
+                            name,
+                            span: token.span,
+                        });
                     }
                     let name =
                         self.resolve_function_call_name(FunctionCallName::Qualified(qualified));
@@ -7374,10 +7375,11 @@ impl Parser {
                     return self.reject_unsupported_static_member_access(Some(&resolved));
                 }
                 if !self.check(|kind| matches!(kind, TokenKind::LParen)) {
-                    return Err(self.error_at(
-                        token.span,
-                        unsupported_namespace_qualified_constant_name_message(),
-                    ));
+                    let name = self.resolve_exact_namespace_relative_constant_name(&suffix);
+                    return Ok(Expr::GlobalConstant {
+                        name,
+                        span: token.span,
+                    });
                 }
                 let name =
                     self.resolve_function_call_name(FunctionCallName::NamespaceRelative(suffix));
@@ -9199,6 +9201,24 @@ impl Parser {
         }
     }
 
+    fn resolve_exact_namespace_qualified_constant_name(&self, name: &str) -> String {
+        let resolved = if self.current_namespace.is_empty() {
+            name.to_string()
+        } else {
+            format!("{}\\{}", self.current_namespace, name)
+        };
+        format!("\\{}", resolved.trim_start_matches('\\'))
+    }
+
+    fn resolve_exact_namespace_relative_constant_name(&self, suffix: &str) -> String {
+        let resolved = if self.current_namespace.is_empty() {
+            suffix.to_string()
+        } else {
+            format!("{}\\{}", self.current_namespace, suffix)
+        };
+        format!("\\{}", resolved.trim_start_matches('\\'))
+    }
+
     fn resolve_function_call_name(&self, name: FunctionCallName) -> String {
         match name {
             FunctionCallName::Unqualified(name) => {
@@ -9265,6 +9285,9 @@ impl Parser {
             if Self::is_special_type_decl_name(stripped) {
                 return raw.to_string();
             }
+        }
+        if let Some(suffix) = raw.strip_prefix("namespace\\") {
+            return self.resolve_relative_namespace_class_name(suffix);
         }
         if Self::is_special_type_decl_name(raw) {
             raw.to_string()
@@ -10058,14 +10081,6 @@ fn unsupported_nested_const_declaration_message() -> &'static str {
 
 fn unsupported_namespace_const_declaration_message() -> &'static str {
     "unsupported const declaration: namespace-qualified constant declarations are not implemented"
-}
-
-fn unsupported_namespace_qualified_constant_name_message() -> &'static str {
-    "unsupported namespace-qualified constant name: namespace-aware constant lookup, fallback behavior, constant imports, and native lowering are not implemented"
-}
-
-fn unsupported_fully_qualified_constant_name_message() -> &'static str {
-    "unsupported fully-qualified constant name: leading global namespace constant reads require exact constant-table lookup, namespace fallback bypass, import interaction, and native lowering"
 }
 
 fn unsupported_array_destructuring_assignment_message() -> &'static str {

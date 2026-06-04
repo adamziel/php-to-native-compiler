@@ -260,6 +260,28 @@ class Box {
 }
 
 #[test]
+fn namespace_relative_type_declarations_resolve_to_active_namespace() {
+    let execution = run_source(
+        r#"<?php
+namespace App\Demo;
+
+class Thing {}
+
+function accepts(namespace\Thing $value) {
+    return "ok";
+}
+
+echo accepts(new namespace\Thing());
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "ok");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn namespace_relative_class_names_resolve_against_current_namespace() {
     let execution = run_source(
         r#"<?php
@@ -848,6 +870,38 @@ echo MISSING_ALIAS;
 
     let _ = fs::remove_file(main);
     let _ = fs::remove_dir(root);
+}
+
+#[test]
+fn namespace_qualified_constant_reads_resolve_exact_runtime_constants() {
+    let execution = run_source(
+        r#"<?php
+namespace App\Demo;
+
+const LOCAL = "local";
+const MixedCase = "case-sensitive-tail";
+define('App\\Demo\\FROM_DEFINE', "defined");
+define('GLOBAL_ONLY', "global");
+
+echo namespace\LOCAL, "\n";
+echo \App\Demo\FROM_DEFINE, "\n";
+echo defined('app\\demo\\MixedCase') ? "namespace-case" : "missing", "\n";
+echo defined('App\\Demo\\mixedcase') ? "wrong" : "tail-exact", "\n";
+try {
+    echo namespace\GLOBAL_ONLY;
+} catch (\Error $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "local\ndefined\nnamespace-case\ntail-exact\nUndefined constant \"App\\Demo\\GLOBAL_ONLY\""
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
