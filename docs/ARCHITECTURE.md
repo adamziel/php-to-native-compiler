@@ -3480,6 +3480,19 @@ string, or `false` when the host cannot provide one. It does not model exact
 controlling-terminal policy across sessions or SAPIs, non-Unix fallback
 behavior, non-UTF-8 terminal path output, POSIX errno mutation, broader POSIX
 terminal functions, or native runtime lookup.
+The adjacent POSIX access/fd/process metadata lane keeps errno in the existing
+request-local `posix_last_error` slot. `posix_access()` validates only the
+`POSIX_F_OK`/`R_OK`/`W_OK`/`X_OK` bitmask before host `access(2)`;
+`posix_isatty()` and `posix_ttyname()` share a bounded weak
+int-or-resource file-descriptor boundary that emits PHP-shaped deprecations and
+warnings before returning `false` with `EBADF`; `posix_kill()` and
+`posix_setpgid()` validate ranges and report selected false/errno outcomes
+without sending signals or mutating process groups. `posix_sysconf()` delegates
+only the represented `_SC_NPROCESSORS_ONLN` and `_SC_OPEN_MAX` names, and
+`posix_times()` materializes the host `times(2)` tick fields into a PHP array.
+Actual signal delivery, process-group mutation, exact tty path discovery,
+user-space/proc stream resource handling, broad `sysconf()` names, complete
+errno lifecycle parity, and native runtime lookup remain outside this lane.
 `getprotobyname()`, `getprotobynumber()`, `getservbyname()`, and
 `getservbyport()` are interpreter-only network database compatibility
 boundaries backed by deterministic protocol and TCP service tables rather than
@@ -4690,7 +4703,9 @@ the existing builtin dispatcher for `strlen`, `strtolower`, `trim`, `ltrim`,
 `rtrim`, `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`,
 `strpos`, `substr`, `sprintf`, `implode`, `basename`, `dirname`, `defined`,
 `function_exists`, `count`, `sizeof`, `get_current_user`, `posix_ctermid`,
-`posix_getpwuid`, `posix_getgrgid`, `getmypid`, and `php_sapi_name`. Closure expressions also register a
+`posix_access`, `posix_isatty`, `posix_ttyname`, `posix_getpwuid`,
+`posix_getgrgid`, `posix_kill`, `posix_setpgid`, `posix_sysconf`,
+`posix_times`, `getmypid`, and `php_sapi_name`. Closure expressions also register a
 request-local `ReflectionFunction` metadata snapshot, parsed body, and captured
 by-value snapshot keyed by closure id, so direct closure invocation,
 closure-valued `call_user_func()`/`call_user_func_array()` callbacks, and

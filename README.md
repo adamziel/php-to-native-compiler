@@ -190,7 +190,13 @@ include/require reads also populate bounded request-local realpath-cache
 entries for the resolved target path.
 `realpath_cache_size()` reports `0` for an empty bounded realpath cache and a
 deterministic positive request-local size for cached resolved UTF-8 paths;
-exact PHP memory-byte accounting remains unsupported. Bounded
+exact PHP memory-byte accounting remains unsupported. POSIX metadata helpers
+cover bounded `posix_access()` flag validation and host access checks,
+`posix_isatty()` / `posix_ttyname()` weak fd diagnostics with request-local
+`EBADF` errno state, `posix_kill()` / `posix_setpgid()` validation plus
+false/errno diagnostics without host signal or process-group mutation,
+`posix_sysconf()` for `POSIX_SC_NPROCESSORS_ONLN` and
+`POSIX_SC_OPEN_MAX`, and host `posix_times()` tick arrays. Bounded
 `register_shutdown_function()` callbacks run supported string and public
 array-callable callbacks with by-value extra arguments during normal shutdown
 and after the bounded `exit()` path, before object destructors and final
@@ -205,6 +211,9 @@ parsing, runtime temporary upload creation, host upload validation,
 permissions/locking, realpath-cache ancestor entries and broader
 `open_basedir` policy beyond covered local filesystem helpers,
 stat-cache/realpath-cache state beyond those local read/mutation paths,
+actual signal delivery, process-group mutation, exact tty detection/path
+discovery, user-space/proc stream resource handling, broad `sysconf()` names,
+full POSIX errno lifecycle parity,
 closure shutdown callback execution,
 invokable-object shutdown callbacks, exact warning text and error-handler
 integration beyond the documented `file_get_contents()` and local `fopen()`

@@ -3739,6 +3739,22 @@
   String-valued dynamic calls, `function_exists()`, `is_callable()`,
   `extension_loaded("posix")`, and `ReflectionFunction` metadata recognize the
   builtin as a POSIX-extension function.
+- Bounded POSIX access and process/terminal metadata helpers in `phpc run`:
+  `posix_access($filename, $flags = 0)` accepts local string filenames,
+  exposes `POSIX_F_OK`, `POSIX_R_OK`, `POSIX_W_OK`, and `POSIX_X_OK`, and
+  raises a catchable PHP-shaped `ValueError` for flags outside that bitmask.
+  `posix_isatty($file_descriptor)` and `posix_ttyname($file_descriptor)` cover
+  the reached weak int-or-resource argument diagnostics, deprecations, false
+  return values, and `EBADF` errno state for CLI standard streams and integer
+  descriptors. `posix_kill($process_id, $signal)` and
+  `posix_setpgid($process_id, $process_group_id)` cover bounded validation,
+  `false`/errno diagnostics, `SIGTERM`/`SIGKILL` constants, and the selected
+  catchable range errors without sending host signals or mutating process
+  groups. `posix_sysconf($conf_id)` exposes
+  `POSIX_SC_NPROCESSORS_ONLN` and `POSIX_SC_OPEN_MAX`, and `posix_times()`
+  returns the host `times(2)` tick array. String-valued dynamic calls,
+  `function_exists()`, `is_callable()`, and `ReflectionFunction` metadata
+  recognize these builtins as POSIX-extension functions.
 - `getmypid()` with no arguments, returning the current `phpc run` process id
   as an integer. String-valued dynamic calls, `function_exists()`,
   `is_callable()`, and `ReflectionFunction` metadata recognize the builtin.
@@ -3965,7 +3981,7 @@
   `get_include_path`, `set_include_path`, `min`, `rand`, `mt_rand`,
   `getrandmax`, `mt_getrandmax`, `srand`, `mt_srand`, `random_int`,
   `random_bytes`, `lcg_value`, `array_rand`, `uniqid`,
-  `crypt`, `hash`, `hash_algos`, `hash_hmac_algos`, `hash_hmac`, `hash_pbkdf2`, `hash_equals`, `md5`, `md5_file`, `get_current_user`, `posix_ctermid`, `posix_getpwuid`, `posix_getgrgid`, `umask`, `getmypid`, `isset`, `empty`, `count`, `sizeof`, `compact`, `define`, `constant`, `defined`,
+  `crypt`, `hash`, `hash_algos`, `hash_hmac_algos`, `hash_hmac`, `hash_pbkdf2`, `hash_equals`, `md5`, `md5_file`, `get_current_user`, `posix_ctermid`, `posix_access`, `posix_isatty`, `posix_ttyname`, `posix_getpwuid`, `posix_getgrgid`, `posix_kill`, `posix_setpgid`, `posix_sysconf`, `posix_times`, `umask`, `getmypid`, `isset`, `empty`, `count`, `sizeof`, `compact`, `define`, `constant`, `defined`,
   `array_key_exists`, `key_exists`, `array_key_first`, `array_key_last`, `current`,
   `array_is_list`, `array_values`, `array_keys`, `array_rand`, `array_reverse`, `array_slice`, `array_chunk`,
   `array_pad`, `array_merge`, `array_replace`, `array_combine`,
@@ -10922,10 +10938,12 @@
   until native source-file stat metadata, SAPI source identity, platform UID/GID
   policy, references/copy-on-write, and exact native diagnostics exist, while
   native function-table introspection recognizes the names.
-  `posix_ctermid`, `posix_getpwuid`, and `posix_getgrgid` accept the same
-  current POSIX metadata subsets as the builtin section above; direct native
-  calls still reject under the function-call boundary until native
-  terminal/account/group database lookup policy, platform identity APIs,
+  `posix_ctermid`, `posix_access`, `posix_isatty`, `posix_ttyname`,
+  `posix_getpwuid`, `posix_getgrgid`, `posix_kill`, `posix_setpgid`,
+  `posix_sysconf`, and `posix_times` accept the same current POSIX metadata
+  subsets as the builtin section above; direct native calls still reject under
+  the function-call boundary until native terminal/account/group database
+  lookup policy, platform identity APIs, process signaling/group mutation,
   references/copy-on-write, and exact native diagnostics exist, while native
   function-table introspection recognizes the names.
   `umask` accepts the same request-local metadata subset as the builtin
@@ -11219,7 +11237,9 @@
   `strpos`, `stripos`, `strrpos`, `strripos`, `substr`, `str_shuffle`, `printf`, `fprintf`, `sprintf`, `vprintf`, `vfprintf`, `implode`, `basename`, `dirname`, `number_format`, `defined`,
   `function_exists`, `is_array`, `is_object`, `is_string`, `is_scalar`,
   `count`, `sizeof`, `array_key_exists`, `is_callable`, `get_current_user`,
-  `posix_ctermid`, `posix_getpwuid`, `posix_getgrgid`, `getmypid`, and `php_sapi_name`, exposes
+  `posix_ctermid`, `posix_access`, `posix_isatty`, `posix_ttyname`,
+  `posix_getpwuid`, `posix_getgrgid`, `posix_kill`, `posix_setpgid`,
+  `posix_sysconf`, `posix_times`, `getmypid`, and `php_sapi_name`, exposes
   their name, false file/start/end/doc-comment metadata, current
   parameter/default metadata, return type, by-reference-return predicate, and
   a request-local `ReflectionExtension` object through `getExtension()`, and
@@ -13393,8 +13413,10 @@
   `str_increment`, `str_decrement`, `trim`, `ltrim`, `rtrim`,
   `strcmp`, `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`, `strpos`, `stripos`, `strrpos`, `strripos`,
   `substr`, `str_shuffle`, `printf`, `fprintf`, `sprintf`, `vprintf`, `vfprintf`, `implode`, `basename`, `dirname`, `number_format`, `defined`,
-  `function_exists`, `get_current_user`, `posix_ctermid`, `posix_getpwuid`,
-  `posix_getgrgid`, `umask`, `getmypid`, and `php_sapi_name`. Closure metadata
+  `function_exists`, `get_current_user`, `posix_ctermid`, `posix_access`,
+  `posix_isatty`, `posix_ttyname`, `posix_getpwuid`, `posix_getgrgid`,
+  `posix_kill`, `posix_setpgid`, `posix_sysconf`, `posix_times`, `umask`,
+  `getmypid`, and `php_sapi_name`. Closure metadata
   is supported for current closure values. The supported metadata methods are
   the location-qualified name, file/start/end/doc-comment, parameter-list,
   return-type, by-reference-return, static-closure predicate, closure
@@ -14010,13 +14032,16 @@
   effective UID versus script-owner policy variants, account database changes
   during a request, exact diagnostics, and native lowering beyond
   function-table introspection
-- `posix_ctermid()`, `posix_getpwuid()`, and `posix_getgrgid()` behavior
-  beyond the current local terminal-path and `/etc/passwd`/`/etc/group`
+- `posix_ctermid()`, `posix_access()`, `posix_isatty()`, `posix_ttyname()`,
+  `posix_getpwuid()`, `posix_getgrgid()`, `posix_kill()`, `posix_setpgid()`,
+  `posix_sysconf()`, and `posix_times()` behavior beyond the current local
+  terminal-path, access/fd/process metadata, and `/etc/passwd`/`/etc/group`
   text-file slices: exact controlling-terminal policy across sessions/SAPIs,
   non-Unix fallback behavior, non-UTF-8 terminal/account/group data, NSS, LDAP,
-  shadow/group database backends outside those files, exact platform-specific
-  diagnostics, the rest of the POSIX extension, and native lowering beyond
-  function-table introspection
+  shadow/group database backends outside those files, actual signal delivery,
+  process-group mutation, user-space/proc stream resources, broad `sysconf()`
+  names, exact platform-specific diagnostics, the rest of the POSIX extension,
+  and native lowering beyond function-table introspection
 - `umask()` behavior beyond the current request-local metadata slice:
   process-wide host umask mutation, non-Unix permission parity, exact default
   process mask discovery beyond the bounded initial `0022` value, creation
@@ -14196,6 +14221,16 @@ Unsupported code should fail with an explicit parse, runtime, or codegen error.
   Exact controlling-terminal policy across sessions/SAPIs, non-Unix fallback
   behavior, non-UTF-8 terminal path output, errno mutation, broader POSIX
   terminal functions, and native lowering remain unsupported.
+- POSIX access, terminal-fd, process-diagnostic, `sysconf()`, and `times()`
+  metadata in `phpc run`: the current subset covers `posix_access()` flag
+  bitmask validation and host `access(2)` checks, `posix_isatty()` /
+  `posix_ttyname()` weak fd argument diagnostics and bounded `EBADF` false
+  returns, `posix_kill()` / `posix_setpgid()` validation plus selected errno
+  diagnostics, `POSIX_SC_NPROCESSORS_ONLN` / `POSIX_SC_OPEN_MAX`, and
+  `posix_times()` host tick arrays. Actual signal delivery, process-group
+  mutation, exact tty detection/path discovery, user-space/proc stream resource
+  handling, broad `sysconf()` names, full errno lifecycle parity, non-Unix
+  behavior, and native lowering remain unsupported.
 - Additional local filesystem link helpers in `phpc run`: `readlink()` returns
   UTF-8 local symlink targets and reports invalid local paths as inline PHP
   warnings plus `false`; `symlink()` creates bounded local symbolic links,

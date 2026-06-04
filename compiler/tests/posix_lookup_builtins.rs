@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use php_compiler::error::Phase;
-use php_compiler::{emit_ir_source, run_source_with_source_file};
+use php_compiler::{emit_ir_source, run_source, run_source_with_source_file};
 
 const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
 
@@ -173,6 +173,111 @@ try {
         execution.stdout,
         "known|bool(false)\n|pgid|sid|uname|1/1/process_id/posix/return|ValueError: posix_getsid(): Argument #1 ($process_id) must be between 0 and 2147483647"
     );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn posix_access_terminal_process_and_times_metadata_cover_current_rows() {
+    let source = r#"<?php
+foreach ([-1, 01000, 02000] as $flags) {
+    try {
+        posix_access(__FILE__, $flags);
+    } catch (ValueError $e) {
+        echo "flag;";
+    }
+}
+echo posix_access(__FILE__, POSIX_F_OK) ? "exists;" : "missing;";
+echo posix_access(__FILE__, POSIX_R_OK | POSIX_W_OK) ? "rw;" : "no-rw;";
+var_dump(posix_isatty(STDIN));
+var_dump(posix_ttyname(STDIN));
+posix_kill((2 ** 22) + 1, 9);
+echo "errno=", posix_errno(), ";";
+try {
+    posix_kill(PHP_INT_MAX, SIGTERM);
+} catch (ValueError $e) {
+    echo "kill-range;";
+}
+try {
+    posix_setpgid(-2, 1);
+} catch (ValueError $e) {
+    echo "setpid;";
+}
+try {
+    posix_setpgid(1, -2);
+} catch (ValueError $e) {
+    echo "setpgid;";
+}
+var_dump(posix_getpgid(-99));
+$nproc = posix_sysconf(POSIX_SC_NPROCESSORS_ONLN);
+$open = posix_sysconf(POSIX_SC_OPEN_MAX);
+echo is_int($nproc) && $nproc > 0 ? "nproc;" : "bad-nproc;";
+echo is_int($open) && $open >= 256 ? "open;" : "bad-open;";
+$times = posix_times();
+echo is_array($times)
+    && is_int($times["ticks"])
+    && is_int($times["utime"])
+    && is_int($times["stime"])
+    && is_int($times["cutime"])
+    && is_int($times["cstime"])
+    ? "times"
+    : "bad-times";
+"#;
+    let path = temp_source_path("posix-terminal-process");
+    fs::write(&path, source).expect("temporary POSIX terminal/process source is written");
+
+    let execution = run_source_with_source_file(source, path.display().to_string()).unwrap();
+    let _ = fs::remove_file(path);
+
+    assert_eq!(
+        execution.stdout,
+        "flag;flag;flag;exists;rw;bool(false)\nbool(false)\nerrno=3;kill-range;setpid;setpgid;bool(false)\nnproc;open;times"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn posix_fd_helpers_emit_php_shaped_weak_argument_warnings() {
+    let execution = run_source(
+        r#"<?php
+class PosixStringable {
+    public function __toString() {
+        return "1";
+    }
+}
+foreach ([null, 5.5, "5.5", "Hello", [], new PosixStringable()] as $value) {
+    var_dump(posix_isatty($value));
+}
+var_dump(posix_ttyname(new PosixStringable()));
+"#,
+    )
+    .unwrap();
+
+    assert!(execution.stdout.contains(
+        "Deprecated: posix_isatty(): Passing null to parameter #1 ($file_descriptor) of type int is deprecated"
+    ));
+    assert!(execution
+        .stdout
+        .contains("Deprecated: Implicit conversion from float 5.5 to int loses precision"));
+    assert!(execution.stdout.contains(
+        "Deprecated: Implicit conversion from float-string \"5.5\" to int loses precision"
+    ));
+    assert!(execution.stdout.contains(
+        "Warning: posix_isatty(): Argument #1 ($file_descriptor) must be of type int|resource, string given"
+    ));
+    assert!(execution.stdout.contains(
+        "Warning: posix_isatty(): Argument #1 ($file_descriptor) must be of type int|resource, array given"
+    ));
+    assert!(execution.stdout.contains(
+        "Warning: posix_isatty(): Argument #1 ($file_descriptor) must be of type int|resource, PosixStringable given"
+    ));
+    assert!(execution.stdout.contains(
+        "Warning: posix_ttyname(): Argument #1 ($file_descriptor) must be of type int|resource, PosixStringable given"
+    ));
+    assert!(execution
+        .stdout
+        .contains("Warning: Object of class PosixStringable could not be converted to int"));
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
 }

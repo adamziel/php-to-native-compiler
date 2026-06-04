@@ -127,6 +127,8 @@ const PHP_FIRST_USER_RESOURCE_ID: i64 = 4;
 const PHP_DEFAULT_REQUEST_UMASK: i64 = 0o022;
 const PHP_POSIX_ERRNO_NONE: i64 = 0;
 const PHP_POSIX_EPERM: i64 = 1;
+const PHP_POSIX_ESRCH: i64 = 3;
+const PHP_POSIX_EBADF: i64 = 9;
 const PHP_POSIX_EINVAL: i64 = 22;
 const ARRAY_PAD_MAX_PADDING: u64 = 1_048_576;
 const PHP_OUTPUT_HANDLER_START: i64 = 1;
@@ -107844,6 +107846,8 @@ impl Interpreter {
             ),
             "posix_ctermid" => call_posix_ctermid(&args, span),
             "posix_access" => call_posix_access(&args, span),
+            "posix_isatty" => self.call_posix_isatty(&args, span),
+            "posix_ttyname" => self.call_posix_ttyname(&args, span),
             "posix_getuid" => call_posix_getuid(&args, span),
             "posix_geteuid" => call_posix_geteuid(&args, span),
             "posix_getgid" => call_posix_getgid(&args, span),
@@ -107878,6 +107882,10 @@ impl Interpreter {
             "posix_seteuid" => call_posix_seteuid(&args, span),
             "posix_setegid" => call_posix_setegid(&args, span),
             "posix_uname" => call_posix_uname(&args, span),
+            "posix_kill" => self.call_posix_kill(&args, span),
+            "posix_setpgid" => self.call_posix_setpgid(&args, span),
+            "posix_sysconf" => self.call_posix_sysconf(&args, span),
+            "posix_times" => self.call_posix_times(&args, span),
             "posix_errno" | "posix_get_last_error" => {
                 expect_arity(name, &args, 0, span)?;
                 Ok(Value::Int(self.posix_last_error))
@@ -131423,6 +131431,14 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_int_param("flags", 0),
             ],
         ),
+        "posix_isatty" => (
+            "bool",
+            vec![reflection_internal_param("file_descriptor", "int")],
+        ),
+        "posix_ttyname" => (
+            "string|false",
+            vec![reflection_internal_param("file_descriptor", "int")],
+        ),
         "posix_getuid" | "posix_geteuid" | "posix_getgid" | "posix_getegid" | "posix_getpid"
         | "posix_getppid" | "posix_getpgrp" => ("int", vec![]),
         "posix_getpgid" | "posix_getsid" => (
@@ -131453,6 +131469,22 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
         "posix_setuid" | "posix_seteuid" => {
             ("bool", vec![reflection_internal_param("user_id", "int")])
         }
+        "posix_kill" => (
+            "bool",
+            vec![
+                reflection_internal_param("process_id", "int"),
+                reflection_internal_param("signal", "int"),
+            ],
+        ),
+        "posix_setpgid" => (
+            "bool",
+            vec![
+                reflection_internal_param("process_id", "int"),
+                reflection_internal_param("process_group_id", "int"),
+            ],
+        ),
+        "posix_sysconf" => ("int", vec![reflection_internal_param("conf_id", "int")]),
+        "posix_times" => ("array|false", vec![]),
         "posix_errno" | "posix_get_last_error" => ("int", vec![]),
         "posix_strerror" => (
             "string",
@@ -137974,6 +138006,21 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         {
             Some(format!("{function}: {message}"))
         }
+        (
+            "posix_access()",
+            "Argument #2 ($flags) must be a bitmask of POSIX_F_OK, POSIX_R_OK, POSIX_W_OK, and POSIX_X_OK",
+        ) => Some(format!("{function}: {message}")),
+        ("posix_kill()", message)
+            if message.starts_with("Argument #1 ($process_id) must be between ") =>
+        {
+            Some(format!("{function}: {message}"))
+        }
+        ("posix_setpgid()", message)
+            if message.starts_with("Argument #")
+                && message.contains(" must be between 0 and ") =>
+        {
+            Some(format!("{function}: {message}"))
+        }
         ("unserialize()", message)
             if message
                 .starts_with("Option \"allowed_classes\" must be an array of class names, \"") =>
@@ -139280,6 +139327,8 @@ fn is_builtin(name: &str) -> bool {
             | "getmygid"
             | "posix_ctermid"
             | "posix_access"
+            | "posix_isatty"
+            | "posix_ttyname"
             | "posix_getuid"
             | "posix_geteuid"
             | "posix_getgid"
@@ -139299,6 +139348,10 @@ fn is_builtin(name: &str) -> bool {
             | "posix_seteuid"
             | "posix_setegid"
             | "posix_uname"
+            | "posix_kill"
+            | "posix_setpgid"
+            | "posix_sysconf"
+            | "posix_times"
             | "posix_errno"
             | "posix_get_last_error"
             | "posix_strerror"
@@ -141620,6 +141673,14 @@ const BUILTIN_GLOBAL_CONSTANT_NAMES: &[&str] = &[
     "STDIN",
     "STDOUT",
     "STDERR",
+    "POSIX_F_OK",
+    "POSIX_R_OK",
+    "POSIX_W_OK",
+    "POSIX_X_OK",
+    "POSIX_SC_NPROCESSORS_ONLN",
+    "POSIX_SC_OPEN_MAX",
+    "SIGTERM",
+    "SIGKILL",
     "DIRECTORY_SEPARATOR",
     "PATH_SEPARATOR",
     "FILE_USE_INCLUDE_PATH",
@@ -142089,6 +142150,16 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "STDIN" => Some(Value::Resource(1)),
         "STDOUT" => Some(Value::Resource(2)),
         "STDERR" => Some(Value::Resource(3)),
+        "POSIX_F_OK" => Some(Value::Int(i64::from(posix_constant_f_ok()))),
+        "POSIX_R_OK" => Some(Value::Int(i64::from(posix_constant_r_ok()))),
+        "POSIX_W_OK" => Some(Value::Int(i64::from(posix_constant_w_ok()))),
+        "POSIX_X_OK" => Some(Value::Int(i64::from(posix_constant_x_ok()))),
+        "POSIX_SC_NPROCESSORS_ONLN" => {
+            Some(Value::Int(i64::from(posix_sysconf_nprocessors_onln())))
+        }
+        "POSIX_SC_OPEN_MAX" => Some(Value::Int(i64::from(posix_sysconf_open_max()))),
+        "SIGTERM" => Some(Value::Int(i64::from(posix_signal_term()))),
+        "SIGKILL" => Some(Value::Int(i64::from(posix_signal_kill()))),
         "DIRECTORY_SEPARATOR" => Some(Value::String(std::path::MAIN_SEPARATOR.to_string())),
         "PATH_SEPARATOR" => Some(Value::String(INCLUDE_PATH_SEPARATOR.to_string())),
         "FILE_USE_INCLUDE_PATH" => Some(Value::Int(PHP_FILE_USE_INCLUDE_PATH)),
@@ -167519,9 +167590,26 @@ fn call_posix_access(args: &[Value], span: Span) -> CompileResult<Value> {
         None => 0,
     };
     let Ok(flags) = i32::try_from(flags) else {
-        return Ok(Value::Bool(false));
+        return Err(posix_access_flags_value_error(span));
     };
+    if flags < 0 || flags & !posix_access_allowed_flags() != 0 {
+        return Err(posix_access_flags_value_error(span));
+    }
     Ok(Value::Bool(posix_access_value(&path, flags)))
+}
+
+fn posix_access_flags_value_error(span: Span) -> Diagnostic {
+    runtime_error(
+        span,
+        RuntimeError::unsupported_call(
+            "posix_access()",
+            "Argument #2 ($flags) must be a bitmask of POSIX_F_OK, POSIX_R_OK, POSIX_W_OK, and POSIX_X_OK",
+        ),
+    )
+}
+
+fn posix_access_allowed_flags() -> i32 {
+    posix_constant_r_ok() | posix_constant_w_ok() | posix_constant_x_ok()
 }
 
 fn call_posix_getuid(args: &[Value], span: Span) -> CompileResult<Value> {
@@ -167575,7 +167663,13 @@ fn call_posix_getpgrp(args: &[Value], span: Span) -> CompileResult<Value> {
 
 fn call_posix_getpgid(args: &[Value], span: Span) -> CompileResult<Value> {
     expect_arity("posix_getpgid", args, 1, span)?;
-    let pid = posix_process_id_argument("posix_getpgid()", &args[0], span)?;
+    let pid = php_internal_int_argument("posix_getpgid()", 1, "process_id", &args[0], span)?;
+    let Ok(pid) = i32::try_from(pid) else {
+        return Ok(Value::Bool(false));
+    };
+    if pid < 0 {
+        return Ok(Value::Bool(false));
+    }
     Ok(posix_getpgid_value(pid)
         .map(Value::Int)
         .unwrap_or(Value::Bool(false)))
@@ -167618,6 +167712,245 @@ fn posix_access_value(path: &str, flags: i32) -> bool {
 #[cfg(not(unix))]
 fn posix_access_value(_path: &str, _flags: i32) -> bool {
     false
+}
+
+impl Interpreter {
+    fn call_posix_isatty(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("posix_isatty", args, 1, span)?;
+        let Some(_fd) =
+            self.posix_file_descriptor_argument("posix_isatty()", &args[0], false, span)?
+        else {
+            return Ok(Value::Bool(false));
+        };
+
+        self.posix_last_error = PHP_POSIX_EBADF;
+        Ok(Value::Bool(false))
+    }
+
+    fn call_posix_ttyname(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("posix_ttyname", args, 1, span)?;
+        let Some(_fd) =
+            self.posix_file_descriptor_argument("posix_ttyname()", &args[0], true, span)?
+        else {
+            return Ok(Value::Bool(false));
+        };
+
+        self.posix_last_error = PHP_POSIX_EBADF;
+        Ok(Value::Bool(false))
+    }
+
+    fn call_posix_kill(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("posix_kill", args, 2, span)?;
+        let pid = php_internal_int_argument("posix_kill()", 1, "process_id", &args[0], span)?;
+        if !(i64::from(i32::MIN)..=i64::from(i32::MAX)).contains(&pid) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "posix_kill()",
+                    format!(
+                        "Argument #1 ($process_id) must be between {} and {}",
+                        i32::MIN,
+                        i32::MAX
+                    ),
+                ),
+            ));
+        }
+
+        let signal = php_internal_int_argument("posix_kill()", 2, "signal", &args[1], span)?;
+        if !posix_signal_is_supported(signal) {
+            self.posix_last_error = PHP_POSIX_EINVAL;
+            return Ok(Value::Bool(false));
+        }
+        if pid < 0 {
+            self.posix_last_error = PHP_POSIX_EINVAL;
+            return Ok(Value::Bool(false));
+        }
+
+        let current_pid = posix_getpid_value().unwrap_or(0);
+        if pid == current_pid && signal == 0 {
+            self.posix_last_error = PHP_POSIX_ERRNO_NONE;
+            Ok(Value::Bool(true))
+        } else {
+            self.posix_last_error = PHP_POSIX_ESRCH;
+            Ok(Value::Bool(false))
+        }
+    }
+
+    fn call_posix_setpgid(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("posix_setpgid", args, 2, span)?;
+        let _pid = posix_nonnegative_process_id_argument(
+            "posix_setpgid()",
+            1,
+            "process_id",
+            &args[0],
+            span,
+        )?;
+        let _pgid = posix_nonnegative_process_id_argument(
+            "posix_setpgid()",
+            2,
+            "process_group_id",
+            &args[1],
+            span,
+        )?;
+        self.posix_last_error = PHP_POSIX_EPERM;
+        Ok(Value::Bool(false))
+    }
+
+    fn call_posix_sysconf(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("posix_sysconf", args, 1, span)?;
+        let name = php_internal_int_argument("posix_sysconf()", 1, "conf_id", &args[0], span)?;
+        if name == -1 {
+            self.posix_last_error = PHP_POSIX_ERRNO_NONE;
+            return Ok(Value::Int(-1));
+        }
+
+        let Ok(name) = i32::try_from(name) else {
+            self.posix_last_error = PHP_POSIX_EINVAL;
+            return Ok(Value::Int(-1));
+        };
+        let value = posix_sysconf_value(name).unwrap_or(-1);
+        self.posix_last_error = if value == -1 {
+            PHP_POSIX_EINVAL
+        } else {
+            PHP_POSIX_ERRNO_NONE
+        };
+        Ok(Value::Int(value))
+    }
+
+    fn call_posix_times(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("posix_times", args, 0, span)?;
+        let Some(times) = posix_times_value() else {
+            return Ok(Value::Bool(false));
+        };
+
+        let mut array = PhpArray::new();
+        array.insert("ticks", Value::Int(times.ticks));
+        array.insert("utime", Value::Int(times.utime));
+        array.insert("stime", Value::Int(times.stime));
+        array.insert("cutime", Value::Int(times.cutime));
+        array.insert("cstime", Value::Int(times.cstime));
+        Ok(Value::Array(array))
+    }
+
+    fn posix_file_descriptor_argument(
+        &mut self,
+        function: &'static str,
+        value: &Value,
+        object_int_cast_warning: bool,
+        span: Span,
+    ) -> CompileResult<Option<i64>> {
+        if let Value::Resource(id) = value {
+            if self.value_is_open_resource(value) {
+                return Ok(Some(*id));
+            }
+            self.emit_display_warning(
+                format!("{function}: supplied resource is not a valid stream resource"),
+                span,
+            )?;
+            self.posix_last_error = PHP_POSIX_EBADF;
+            return Ok(None);
+        }
+
+        let Some(fd) = self.posix_file_descriptor_int_like_argument(function, value, span)? else {
+            if object_int_cast_warning {
+                if let Value::Object(object) = value {
+                    if !object.class_name().eq_ignore_ascii_case("GMP") {
+                        self.emit_display_warning(
+                            format!(
+                                "Object of class {} could not be converted to int",
+                                object.class_name()
+                            ),
+                            span,
+                        )?;
+                    }
+                }
+            }
+            self.posix_last_error = PHP_POSIX_EBADF;
+            return Ok(None);
+        };
+
+        let max = posix_file_descriptor_max();
+        if fd < 0 || fd > max {
+            self.emit_display_warning(
+                format!("{function}: Argument #1 ($file_descriptor) must be between 0 and {max}"),
+                span,
+            )?;
+            self.posix_last_error = PHP_POSIX_EBADF;
+            return Ok(None);
+        }
+
+        Ok(Some(fd))
+    }
+
+    fn posix_file_descriptor_int_like_argument(
+        &mut self,
+        function: &'static str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<Option<i64>> {
+        match value {
+            Value::Null => {
+                self.emit_display_diagnostic(
+                    "Deprecated",
+                    PHP_E_DEPRECATED,
+                    format!(
+                        "{function}: Passing null to parameter #1 ($file_descriptor) of type int is deprecated"
+                    ),
+                    span,
+                )?;
+                Ok(Some(0))
+            }
+            Value::Bool(value) => Ok(Some(i64::from(*value))),
+            Value::Int(value) => Ok(Some(*value)),
+            Value::Float(value) => {
+                if value.is_finite()
+                    && (value.trunc() != *value || php_float_to_int_is_not_representable(*value))
+                {
+                    self.emit_display_diagnostic(
+                        "Deprecated",
+                        PHP_E_DEPRECATED,
+                        format!(
+                            "Implicit conversion from float {} to int loses precision",
+                            format_php_float_to_int_deprecation_value(*value)
+                        ),
+                        span,
+                    )?;
+                }
+                Ok(php_float_to_internal_i64(*value))
+            }
+            Value::String(_) | Value::BinaryString(_) => {
+                if let Some(message) = float_string_to_int_deprecation_message(value) {
+                    self.emit_display_diagnostic("Deprecated", PHP_E_DEPRECATED, message, span)?;
+                }
+                if let Some(value) = php_internal_coerced_int(value) {
+                    Ok(Some(value))
+                } else {
+                    self.emit_posix_file_descriptor_type_warning(function, value, span)?;
+                    Ok(None)
+                }
+            }
+            Value::Array(_) | Value::Object(_) | Value::Closure(_) => {
+                self.emit_posix_file_descriptor_type_warning(function, value, span)?;
+                Ok(None)
+            }
+            Value::Resource(_) => unreachable!("resources are handled before scalar coercion"),
+        }
+    }
+
+    fn emit_posix_file_descriptor_type_warning(
+        &mut self,
+        function: &str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<()> {
+        self.emit_display_warning(
+            format!(
+                "{function}: Argument #1 ($file_descriptor) must be of type int|resource, {} given",
+                php_type_error_given(value)
+            ),
+            span,
+        )
+    }
 }
 
 #[cfg(unix)]
@@ -167802,6 +168135,153 @@ fn posix_process_id_argument(function: &str, value: &Value, span: Span) -> Compi
         ));
     }
     Ok(pid as i32)
+}
+
+fn posix_nonnegative_process_id_argument(
+    function: &str,
+    position: usize,
+    name: &str,
+    value: &Value,
+    span: Span,
+) -> CompileResult<i32> {
+    let pid = php_internal_int_argument(function, position, name, value, span)?;
+    if !(0..=i64::from(i32::MAX)).contains(&pid) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!(
+                    "Argument #{position} (${name}) must be between 0 and {}",
+                    i32::MAX
+                ),
+            ),
+        ));
+    }
+    Ok(pid as i32)
+}
+
+fn posix_signal_is_supported(signal: i64) -> bool {
+    (0..=64).contains(&signal)
+}
+
+fn posix_file_descriptor_max() -> i64 {
+    i64::from(i32::MAX)
+}
+
+fn posix_constant_f_ok() -> i32 {
+    0
+}
+
+#[cfg(unix)]
+fn posix_constant_r_ok() -> i32 {
+    libc::R_OK
+}
+
+#[cfg(not(unix))]
+fn posix_constant_r_ok() -> i32 {
+    4
+}
+
+#[cfg(unix)]
+fn posix_constant_w_ok() -> i32 {
+    libc::W_OK
+}
+
+#[cfg(not(unix))]
+fn posix_constant_w_ok() -> i32 {
+    2
+}
+
+#[cfg(unix)]
+fn posix_constant_x_ok() -> i32 {
+    libc::X_OK
+}
+
+#[cfg(not(unix))]
+fn posix_constant_x_ok() -> i32 {
+    1
+}
+
+#[cfg(unix)]
+fn posix_signal_term() -> i32 {
+    libc::SIGTERM
+}
+
+#[cfg(not(unix))]
+fn posix_signal_term() -> i32 {
+    15
+}
+
+#[cfg(unix)]
+fn posix_signal_kill() -> i32 {
+    libc::SIGKILL
+}
+
+#[cfg(not(unix))]
+fn posix_signal_kill() -> i32 {
+    9
+}
+
+#[cfg(unix)]
+fn posix_sysconf_nprocessors_onln() -> i32 {
+    libc::_SC_NPROCESSORS_ONLN
+}
+
+#[cfg(not(unix))]
+fn posix_sysconf_nprocessors_onln() -> i32 {
+    84
+}
+
+#[cfg(unix)]
+fn posix_sysconf_open_max() -> i32 {
+    libc::_SC_OPEN_MAX
+}
+
+#[cfg(not(unix))]
+fn posix_sysconf_open_max() -> i32 {
+    4
+}
+
+#[cfg(unix)]
+fn posix_sysconf_value(name: i32) -> Option<i64> {
+    let value = unsafe { libc::sysconf(name as libc::c_int) };
+    Some(value as i64)
+}
+
+#[cfg(not(unix))]
+fn posix_sysconf_value(_name: i32) -> Option<i64> {
+    None
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PosixTimesValue {
+    ticks: i64,
+    utime: i64,
+    stime: i64,
+    cutime: i64,
+    cstime: i64,
+}
+
+#[cfg(unix)]
+fn posix_times_value() -> Option<PosixTimesValue> {
+    let mut tms = std::mem::MaybeUninit::<libc::tms>::zeroed();
+    let ticks = unsafe { libc::times(tms.as_mut_ptr()) };
+    if ticks == -1 {
+        return None;
+    }
+    let tms = unsafe { tms.assume_init() };
+    Some(PosixTimesValue {
+        ticks: ticks as i64,
+        utime: tms.tms_utime as i64,
+        stime: tms.tms_stime as i64,
+        cutime: tms.tms_cutime as i64,
+        cstime: tms.tms_cstime as i64,
+    })
+}
+
+#[cfg(not(unix))]
+fn posix_times_value() -> Option<PosixTimesValue> {
+    None
 }
 
 #[cfg(unix)]
