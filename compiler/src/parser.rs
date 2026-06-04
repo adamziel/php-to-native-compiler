@@ -3855,7 +3855,7 @@ impl Parser {
             if !self.match_token(|kind| matches!(kind, TokenKind::Equal)) {
                 return Err(self.error_at(
                     target.span(),
-                    unsupported_array_destructuring_assignment_message(),
+                    "syntax error, unexpected token \")\", expecting \"=\"",
                 ));
             }
             let span = target.span();
@@ -4285,13 +4285,18 @@ impl Parser {
     fn parse_list_assignment_target(&mut self) -> CompileResult<AssignTarget> {
         let span = self.advance().span;
         self.consume_keyword(TokenKind::LParen, "expected '(' after list")?;
-        let items = self.parse_list_assignment_items(span, TokenKind::RParen)?;
+        let items =
+            self.parse_list_assignment_items(span, TokenKind::RParen, ListAssignmentSyntax::Long)?;
         Ok(AssignTarget::List { items, span })
     }
 
     fn parse_short_list_assignment_target(&mut self) -> CompileResult<AssignTarget> {
         let span = self.advance().span;
-        let items = self.parse_list_assignment_items(span, TokenKind::RBracket)?;
+        let items = self.parse_list_assignment_items(
+            span,
+            TokenKind::RBracket,
+            ListAssignmentSyntax::Short,
+        )?;
         Ok(AssignTarget::List { items, span })
     }
 
@@ -4299,8 +4304,9 @@ impl Parser {
         &mut self,
         span: Span,
         closing_token: TokenKind,
+        syntax: ListAssignmentSyntax,
     ) -> CompileResult<ListAssignmentTarget> {
-        let items = self.parse_list_assignment_items(span, closing_token)?;
+        let items = self.parse_list_assignment_items(span, closing_token, syntax)?;
         Ok(ListAssignmentTarget::List { items, span })
     }
 
@@ -4308,10 +4314,11 @@ impl Parser {
         &mut self,
         span: Span,
         closing_token: TokenKind,
+        syntax: ListAssignmentSyntax,
     ) -> CompileResult<Vec<ListAssignmentItem>> {
         let mut items = Vec::new();
         if self.check(|kind| same_token_kind(kind, &closing_token)) {
-            return Err(self.error_at(span, unsupported_array_destructuring_assignment_message()));
+            return Err(self.error_at(span, parse_fatal_message("Cannot use empty list")));
         }
 
         loop {
@@ -4327,7 +4334,21 @@ impl Parser {
             }
 
             let key = self.parse_list_assignment_key()?;
-            let target = self.parse_list_assignment_item_target()?;
+            if key.is_some()
+                && self.check(|kind| {
+                    matches!(kind, TokenKind::Comma) || same_token_kind(kind, &closing_token)
+                })
+            {
+                items.push(ListAssignmentItem { key, target: None });
+                if !self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
+                    break;
+                }
+                if self.check(|kind| same_token_kind(kind, &closing_token)) {
+                    break;
+                }
+                continue;
+            }
+            let target = self.parse_list_assignment_item_target(syntax)?;
             if !self.check(|kind| {
                 matches!(kind, TokenKind::Comma) || same_token_kind(kind, &closing_token)
             }) {
@@ -4349,13 +4370,23 @@ impl Parser {
             }
         }
 
-        if items.iter().all(|item| item.target.is_none()) {
-            return Err(self.error_at(span, unsupported_array_destructuring_assignment_message()));
-        }
         let has_keyed_items = items.iter().any(|item| item.key.is_some());
         let has_unkeyed_items = items.iter().any(|item| item.key.is_none());
+        let has_skipped_items = items.iter().any(|item| item.target.is_none());
+        if has_keyed_items && has_skipped_items {
+            return Err(self.error_at(
+                span,
+                parse_fatal_message("Cannot use empty array entries in keyed array assignment"),
+            ));
+        }
+        if items.iter().all(|item| item.target.is_none()) {
+            return Err(self.error_at(span, parse_fatal_message("Cannot use empty list")));
+        }
         if has_keyed_items && has_unkeyed_items {
-            return Err(self.error_at(span, unsupported_array_destructuring_assignment_message()));
+            return Err(self.error_at(
+                span,
+                parse_fatal_message("Cannot mix keyed and unkeyed array entries in assignments"),
+            ));
         }
 
         let message = if same_token_kind(&closing_token, &TokenKind::RParen) {
@@ -4397,11 +4428,22 @@ impl Parser {
                 TokenKind::FatArrow,
                 "expected '=>' in list assignment target",
             )?;
+        } else if matches!(
+            self.tokens.get(self.current + 1).map(|token| &token.kind),
+            Some(TokenKind::FatArrow)
+        ) {
+            return Err(self.error_at(
+                self.peek().span,
+                unsupported_array_destructuring_assignment_message(),
+            ));
         }
         Ok(key)
     }
 
-    fn parse_list_assignment_item_target(&mut self) -> CompileResult<ListAssignmentTarget> {
+    fn parse_list_assignment_item_target(
+        &mut self,
+        syntax: ListAssignmentSyntax,
+    ) -> CompileResult<ListAssignmentTarget> {
         match self.peek().kind.clone() {
             TokenKind::Variable(name) => {
                 let span = self.advance().span;
@@ -4409,16 +4451,47 @@ impl Parser {
             }
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("list") => {
                 let span = self.advance().span;
+                if syntax == ListAssignmentSyntax::Short {
+                    return Err(
+                        self.error_at(span, parse_fatal_message("Cannot mix [] and list()"))
+                    );
+                }
                 self.consume_keyword(TokenKind::LParen, "expected '(' after list")?;
-                self.parse_nested_list_assignment_target(span, TokenKind::RParen)
+                self.parse_nested_list_assignment_target(
+                    span,
+                    TokenKind::RParen,
+                    ListAssignmentSyntax::Long,
+                )
+            }
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("array") => {
+                let span = self.advance().span;
+                if self.check(|kind| matches!(kind, TokenKind::LParen)) {
+                    return Err(self.error_at(
+                        span,
+                        parse_fatal_message("Cannot assign to array(), use [] instead"),
+                    ));
+                }
+                Err(self.error_at(
+                    span,
+                    parse_fatal_message("Assignments can only happen to writable values"),
+                ))
             }
             TokenKind::LBracket => {
                 let span = self.advance().span;
-                self.parse_nested_list_assignment_target(span, TokenKind::RBracket)
+                if syntax == ListAssignmentSyntax::Long {
+                    return Err(
+                        self.error_at(span, parse_fatal_message("Cannot mix [] and list()"))
+                    );
+                }
+                self.parse_nested_list_assignment_target(
+                    span,
+                    TokenKind::RBracket,
+                    ListAssignmentSyntax::Short,
+                )
             }
             _ => Err(self.error_at(
                 self.peek().span,
-                unsupported_array_destructuring_assignment_message(),
+                parse_fatal_message("Assignments can only happen to writable values"),
             )),
         }
     }
@@ -7218,7 +7291,7 @@ impl Parser {
                 {
                     return Err(self.error_at(
                         token.span,
-                        unsupported_array_destructuring_assignment_message(),
+                        "syntax error, unexpected token \")\", expecting \"=\"",
                     ));
                 }
                 if name.eq_ignore_ascii_case("unset")
@@ -7931,6 +8004,12 @@ impl Parser {
 
         loop {
             self.reject_unsupported_array_item_syntax()?;
+            if self.check(|kind| matches!(kind, TokenKind::Comma)) {
+                return Err(self.error_at(
+                    self.peek().span,
+                    parse_fatal_message("Cannot use empty array elements in arrays"),
+                ));
+            }
             if self.match_token(|kind| matches!(kind, TokenKind::Ellipsis)) {
                 let spread_span = self.previous().span;
                 let value = self.parse_expression()?;
@@ -9552,6 +9631,12 @@ enum ArrayLiteralDelimiter {
     Long,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ListAssignmentSyntax {
+    Short,
+    Long,
+}
+
 #[derive(Debug, Clone, Copy)]
 enum SwitchLabel {
     Case(Span),
@@ -9973,7 +10058,11 @@ fn unsupported_fully_qualified_constant_name_message() -> &'static str {
 }
 
 fn unsupported_array_destructuring_assignment_message() -> &'static str {
-    "unsupported array destructuring: statement-form list(...) = expr and [...] = expr support variable, skipped, nested, and literal int/string keyed targets; expression-position list(...), mixed keyed/unkeyed lists, reference, dynamic-key, and non-variable targets are not implemented"
+    "unsupported array destructuring: statement-form list(...) = expr and [...] = expr support variable, skipped, nested, and literal int/string keyed targets; dynamic-key and complex writable targets outside direct variables and nested lists are not implemented"
+}
+
+fn parse_fatal_message(message: &str) -> String {
+    format!("php fatal: {message}")
 }
 
 fn unsupported_reference_assignment_source_message() -> &'static str {

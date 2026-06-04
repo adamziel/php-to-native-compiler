@@ -53,6 +53,17 @@ impl Diagnostic {
     }
 
     pub fn cli_display(&self) -> String {
+        if matches!(self.phase, Phase::Parse) {
+            if let Some(message) = self.message.strip_prefix("php fatal: ") {
+                let file = self
+                    .file
+                    .as_ref()
+                    .map(|file| file.display().to_string())
+                    .unwrap_or_else(|| "Command line code".to_string());
+                return format!("Fatal error: {message} in {file} on line {}", self.line);
+            }
+        }
+
         if matches!(self.phase, Phase::Parse) && self.message.starts_with("syntax error,") {
             let file = self
                 .file

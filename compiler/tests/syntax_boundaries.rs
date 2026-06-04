@@ -236,18 +236,34 @@ $items = [&$key => "value"];
 
 #[test]
 fn unsupported_array_destructuring_assignments_have_stable_parse_errors() {
-    let message = "unsupported array destructuring: statement-form list(...) = expr and [...] = expr support variable, skipped, nested, and literal int/string keyed targets; expression-position list(...), mixed keyed/unkeyed lists, reference, dynamic-key, and non-variable targets are not implemented";
+    let unsupported = "unsupported array destructuring: statement-form list(...) = expr and [...] = expr support variable, skipped, nested, and literal int/string keyed targets; dynamic-key and complex writable targets outside direct variables and nested lists are not implemented";
     let cases = [
+        ("<?php\n[$key => $value] = $items;\n", 2, 2, unsupported),
+        ("<?php\nlist($first[0]) = [1];\n", 2, 12, unsupported),
+        (
+            "<?php\necho list($first);\n",
+            2,
+            6,
+            "syntax error, unexpected token \")\", expecting \"=\"",
+        ),
+        (
+            "<?php\nlist(,) = [1, 2];\n",
+            2,
+            1,
+            "php fatal: Cannot use empty list",
+        ),
+        (
+            "<?php\nlist(&$first) = [1];\n",
+            2,
+            6,
+            "php fatal: Assignments can only happen to writable values",
+        ),
         (
             "<?php\n[$first, 'second' => $second] = [1, 2];\n",
             2,
             1,
-            message,
+            "php fatal: Cannot mix keyed and unkeyed array entries in assignments",
         ),
-        ("<?php\necho list($first);\n", 2, 6, message),
-        ("<?php\nlist($first[0]) = [1];\n", 2, 12, message),
-        ("<?php\nlist(,) = [1, 2];\n", 2, 1, message),
-        ("<?php\nlist(&$first) = [1];\n", 2, 6, message),
     ];
 
     for (source, line, column, message) in cases {
@@ -265,7 +281,7 @@ fn emit_ir_rejects_array_destructuring_assignment_at_parse_boundary() {
     assert_eq!(error.phase, Phase::Parse);
     assert_eq!(
         error.message,
-        "unsupported array destructuring: statement-form list(...) = expr and [...] = expr support variable, skipped, nested, and literal int/string keyed targets; expression-position list(...), mixed keyed/unkeyed lists, reference, dynamic-key, and non-variable targets are not implemented"
+        "php fatal: Assignments can only happen to writable values"
     );
 }
 

@@ -1902,11 +1902,17 @@
   right. Missing array keys emit PHP-style `Undefined array key ...` warnings
   and assign `null`; `null` right-hand sides assign `null` without warnings;
   scalar/resource right-hand sides emit PHP-style `Cannot use ... as array`
-  warnings for reached slots and assign `null`. Reference destructuring,
-  expression-position destructuring, dynamic key expressions, mixed
-  keyed/unkeyed list entries at the same nesting level, non-variable targets
-  such as `$array[]`, object/ArrayAccess destructuring sources, exact
-  reference/COW semantics, and native lowering remain unsupported.
+  warnings for reached slots and assign `null`; non-`ArrayAccess` object and
+  closure right-hand sides raise PHP's object-as-array fatal. Static invalid
+  destructuring forms in the covered parser slice also report PHP-shaped fatal
+  or parse diagnostics for empty lists, empty keyed entries, mixed
+  keyed/unkeyed entries, empty array literal elements, `list(...)`/`[...]`
+  syntax mixing, non-writable static targets, and nested `array(...)` targets.
+  Reference destructuring, dynamic key expressions, array/object/`ArrayAccess`
+  destructuring target writes such as string offsets, `__set`, and
+  `ArrayAccess::offsetSet`, ArrayAccess-source destructuring semantics, exact
+  reference/COW semantics, broader compile-time fatal ordering, and native
+  lowering remain unsupported.
 - direct object-offset `ArrayAccess` over current object variables whose class
   metadata records `implements ArrayAccess`. Direct reads call visible
   non-static `offsetGet($key)`, direct writes and append writes call
@@ -12022,10 +12028,11 @@
   reference storage beyond null-only ABI shapes, WordPress host-state ABI, and
   C fallback assembly helper calls remain unsupported.
 - Array gaps: Traversable/object array unpacking, reference array keys,
-  expression-position `list(...)`, and reference, dynamic-key, mixed
-  keyed/unkeyed, non-variable, or object/ArrayAccess-source destructuring
-  semantics remain unsupported; unsupported reference-key and destructuring
-  forms are rejected with stable parse diagnostics.
+  reference destructuring, dynamic-key destructuring, ArrayAccess-source
+  destructuring, destructuring target writes beyond direct variables and nested
+  lists, broader exact compile-time fatal ordering, and native lowering remain
+  unsupported; unsupported reference-key and destructuring forms are rejected
+  with stable parse diagnostics or the covered PHP-shaped static fatals.
   Array literal reference values are parsed and
   evaluated by current value only; real aliases, reference containers, and
   copy-on-write are not implemented. Object-property reference-assignment

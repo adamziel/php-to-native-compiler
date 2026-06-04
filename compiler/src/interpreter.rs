@@ -46501,6 +46501,25 @@ impl Interpreter {
                 }
             }
             Value::Null => Ok(Value::Null),
+            Value::Object(object)
+                if !self
+                    .classes
+                    .implements_interface(object.class_id(), "ArrayAccess") =>
+            {
+                Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_array_access(format!(
+                        "Cannot use object of type {} as array",
+                        object.class_name()
+                    )),
+                ))
+            }
+            Value::Closure(_) => Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access(
+                    "Cannot use object of type Closure as array".to_string(),
+                ),
+            )),
             other => {
                 self.emit_display_warning(
                     format!("Cannot use {} as array", other.type_name()),

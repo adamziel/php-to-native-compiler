@@ -130,7 +130,7 @@ $data = [
 
 list(
     "names" => list("first" => $first, "last" => $last),
-    "values" => [$one, $two],
+    "values" => list($one, $two),
     "missing" => $missing
 ) = $data;
 
@@ -166,6 +166,57 @@ echo $a, "|", $b, "|", $c;
 }
 
 #[test]
+fn list_assignment_rejects_static_invalid_target_shapes_with_php_fatals() {
+    assert_parse_error("<?php\nlist() = [];\n", "php fatal: Cannot use empty list");
+    assert_parse_error(
+        "<?php\n[1] = [1];\n",
+        "php fatal: Assignments can only happen to writable values",
+    );
+    assert_parse_error(
+        "<?php\nlist([$a]) = [[1]];\n",
+        "php fatal: Cannot mix [] and list()",
+    );
+    assert_parse_error(
+        "<?php\n[list($a)] = [[1]];\n",
+        "php fatal: Cannot mix [] and list()",
+    );
+    assert_parse_error(
+        "<?php\nlist(array($a)) = [[1]];\n",
+        "php fatal: Cannot assign to array(), use [] instead",
+    );
+    assert_parse_error(
+        "<?php\n[\"x\" => ,] = [];\n",
+        "php fatal: Cannot use empty array entries in keyed array assignment",
+    );
+    assert_parse_error(
+        "<?php\n[\"x\" => $a, $b] = [];\n",
+        "php fatal: Cannot mix keyed and unkeyed array entries in assignments",
+    );
+}
+
+#[test]
+fn array_literals_reject_empty_elements_with_php_fatal() {
+    assert_parse_error(
+        "<?php\n$values = array(1,,2);\n",
+        "php fatal: Cannot use empty array elements in arrays",
+    );
+    assert_parse_error(
+        "<?php\n$values = [1,,2];\n",
+        "php fatal: Cannot use empty array elements in arrays",
+    );
+}
+
+#[test]
+fn list_assignment_rejects_non_arrayaccess_object_sources_as_fatal_array_access() {
+    let execution = run_source("<?php\nlist($a, $b) = function () {};\n").unwrap();
+
+    assert_eq!(execution.exit_code, 255);
+    assert!(execution.stdout.starts_with(
+        "Fatal error: Uncaught Error: Cannot use object of type Closure as array in Command line code:2"
+    ));
+}
+
+#[test]
 fn emit_ir_rejects_list_assignment_until_native_array_destructuring_exists() {
     let error = emit_ir_source("<?php\nlist($a, $b) = [1, 2];\n").unwrap_err();
 
@@ -180,4 +231,11 @@ fn emit_ir_rejects_list_assignment_until_native_array_destructuring_exists() {
     assert_eq!(short_error.line, 2);
     assert_eq!(short_error.column, 1);
     assert_eq!(short_error.message, LLVM_ARRAY_DESTRUCTURING_REJECTION);
+}
+
+fn assert_parse_error(source: &str, expected_message: &str) {
+    let error = run_source(source).unwrap_err();
+
+    assert_eq!(error.phase, Phase::Parse);
+    assert_eq!(error.message, expected_message);
 }

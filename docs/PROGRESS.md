@@ -73,11 +73,36 @@ Implemented:
   `Zend/tests/list/list_keyed_trailing_comma.phpt`,
   `Zend/tests/list/list_keyed_undefined.phpt`,
   `Zend/tests/list/list_mixed_nested_keyed_unkeyed.phpt`, and
-  `Zend/tests/list/list_self_assign.phpt`. Unsupported edges remain
-  reference destructuring, expression-position destructuring, dynamic key
-  expressions, mixed keyed/unkeyed entries at one nesting level, non-variable
-  targets such as `$array[]`, ArrayAccess/object destructuring sources, exact
-  reference/COW semantics, and native lowering.
+  `Zend/tests/list/list_self_assign.phpt`. Unsupported execution edges remain
+  reference destructuring, dynamic key expressions, broader non-variable target
+  writes such as `$array[]`, ArrayAccess-source destructuring semantics, exact
+  reference/COW semantics, and native lowering; later static invalid-form fatal
+  coverage is listed below.
+
+- Tightened PHP-shaped fatal handling for static invalid array/list
+  destructuring forms on the interpreter path. The parser now reports the
+  covered PHP fatal or parse surfaces for empty `list()` assignments,
+  expression-position `list(...)`, empty array literal elements, empty keyed
+  destructuring entries, mixed keyed/unkeyed destructuring entries, nested
+  `list(...)`/`[...]` syntax mixing, non-writable static destructuring
+  targets, and nested `array(...)` targets. Non-`ArrayAccess` object and
+  closure right-hand sides now raise PHP's object-as-array fatal instead of
+  warning and assigning `null`. Focused proof covers exact-current pre-patch
+  selected PHPT at `0/11` and post-patch selected PHPT at `11/11` for
+  `Zend/tests/list/list_007.phpt`, `Zend/tests/list/list_008.phpt`,
+  `Zend/tests/list/list_010.phpt`, `Zend/tests/list/list_011.phpt`,
+  `Zend/tests/list/list_012.phpt`, `Zend/tests/list/list_013.phpt`,
+  `Zend/tests/list/list_014.phpt`,
+  `Zend/tests/list/list_empty_error.phpt`,
+  `Zend/tests/list/list_empty_error_keyed.phpt`,
+  `Zend/tests/list/list_keyed_leading_comma.phpt`, and
+  `Zend/tests/list/list_mixed_keyed_unkeyed.phpt`; focused Rust
+  list-assignment coverage, build, fmt, and pinned wrapper proof.
+  Unsupported edges remain reference destructuring, dynamic key expressions,
+  array/object/`ArrayAccess` destructuring target writes such as string
+  offsets, `__set`, `ArrayAccess::offsetSet`, broader exact compile-time fatal
+  ordering beyond the covered static forms, reference/COW semantics, and native
+  lowering.
 
 - Added a bounded `strtotime()` absolute-format/timezone parser lane on the
   interpreter path. `strtotime()` now accepts `now` with the supplied base
