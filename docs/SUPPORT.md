@@ -6609,9 +6609,11 @@
   value or `null`. Top-level uncaught `Throwable` objects invoke the current
   non-null handler before shutdown callbacks, destructors, and final
   output-buffer flushing. Invalid handler registration reports the PHP-shaped
-  catchable `TypeError` message for the covered callback forms.
-  Handler-thrown exceptions, first-class callable method closures,
-  by-reference handler parameters, exact internal-function stack frames,
+  catchable `TypeError` message for the covered callback forms. Supported
+  string user-function handlers that throw a Throwable render the uncaught
+  handler exception with the internal callback stack-frame shape.
+  Handler-thrown stack parity for closure and array callback forms,
+  first-class callable method closures, by-reference handler parameters,
   active-handler stack mutation edge cases, and native lowering remain
   unsupported.
   `ob_start($callback = null, $chunk_size = 0, $flags =
@@ -12614,19 +12616,25 @@
   differences, references/copy-on-write, and native lowering are not
   implemented.
 - exception execution beyond the current statement boundaries: reached
-  `throw expr;` statements fail with a stable runtime diagnostic before
-  evaluating the operand; reached `try` blocks execute only the normal no-throw
-  path, skip catch bodies without a thrown exception, and run finally bodies
-  after normal try completion. Throw expressions, malformed try syntax, and
-  standalone `catch`/`finally` still fail with stable parse diagnostics.
+  `throw expr;` statements evaluate the operand, reject non-object and
+  non-Throwable operands with PHP-shaped uncaught `Error` fatals, and propagate
+  supported Throwable objects through local `try`/`catch` matching. Covered
+  user-function and callback boundaries preserve the original thrown object so
+  custom subclasses can be caught by class name, and `finally` bodies run along
+  the current bounded interpreter paths. Throw expressions, malformed try
+  syntax, and standalone `catch`/`finally` still fail with stable parse
+  diagnostics.
   `Exception` is seeded as a bounded built-in class: `class_exists`,
   `get_declared_classes`, no-argument `new Exception()`, constructor
   arguments for message/code/previous, and user classes extending
-  `Exception` work through the current object metadata model. Constructed
-  `Exception` objects initialize bounded `message`, `code`, `file`, `line`,
-  and `previous` state, and expose `getMessage()`, `getCode()`, `getFile()`,
-  `getLine()`, `getPrevious()`, bounded structured `getTrace()` frame arrays,
-  and a bounded `getTraceAsString()`.
+  `Exception` work through the current object metadata model, including user
+  methods declared on Throwable subclasses. Constructed `Exception` objects
+  initialize bounded `message`, `code`, `file`, `line`, and `previous` state,
+  and expose `getMessage()`, `getCode()`, `getFile()`, `getLine()`,
+  `getPrevious()`, bounded structured `getTrace()` frame arrays, and a bounded
+  `getTraceAsString()`. Non-stringable Throwable constructor message operands
+  surface PHP-shaped uncaught `TypeError` fatals with bounded constructor stack
+  frames.
   `ErrorException` additionally supports bounded message/code/severity/
   filename/line/previous construction and `getSeverity()`. Caught core
   `Error`/`TypeError`-style objects expose the same bounded file/line/
@@ -12648,13 +12656,13 @@
   `get_parent_class()`, `is_a()`, `is_subclass_of()`, and `ReflectionClass`
   metadata checks.
   `Throwable` interface parity, full debug-backtrace option/class/object
-  fields, exact internal stack frames, exact `__toString()` frames, precise
-  function-local object lifetime/refcount ordering for
-  `SensitiveParameterValue` trace wrappers, callable user methods on core
-  Throwable subclasses, full stack unwinding parity, multi-catch semantics
-  beyond parsed type lists, finally execution during exception/error
-  unwinding, exact native error objects, references/copy-on-write, and native
-  lowering do not exist yet.
+  fields, exact internal stack frames outside the covered handler/constructor
+  surfaces, exact `__toString()` frames, precise function-local object
+  lifetime/refcount ordering for
+  `SensitiveParameterValue` trace wrappers, full core Throwable
+  override/finality parity beyond normal method dispatch, full stack unwinding
+  parity, multi-catch semantics beyond parsed type lists, exact native error
+  objects, references/copy-on-write, and native lowering do not exist yet.
 - PHP 8 `match` expressions currently fail with a stable parse diagnostic
   before expression-form branching exists. Strict arm matching, default arms,
   exhaustiveness errors, thrown expressions inside arms, value evaluation

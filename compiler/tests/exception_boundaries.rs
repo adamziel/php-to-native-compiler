@@ -202,6 +202,128 @@ echo "after";
 }
 
 #[test]
+fn custom_exception_thrown_from_user_function_preserves_object_for_catch() {
+    let execution = run_source(
+        r#"<?php
+class CustomException extends Exception {
+    public $label = "kept";
+}
+function throw_custom() {
+    throw new CustomException("boom");
+}
+try {
+    throw_custom();
+} catch (CustomException $e) {
+    echo get_class($e), "|", $e->getMessage(), "|", $e->label;
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "CustomException|boom|kept");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn custom_exception_thrown_from_error_handler_preserves_object_for_catch() {
+    let execution = run_source(
+        r#"<?php
+class WarningException extends Exception {
+    public function __construct(public $errno, public $messageText) {}
+}
+set_error_handler(function($errno, $message) {
+    throw new WarningException($errno, $message);
+});
+try {
+    trigger_error("promoted", E_USER_WARNING);
+} catch (WarningException $e) {
+    echo $e->errno, "|", $e->messageText;
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "512|promoted");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn throwable_subclass_user_methods_are_dispatched_before_core_methods() {
+    let execution = run_source(
+        r#"<?php
+class MyException extends Exception {
+    public function __construct(public $error) {}
+    public function getException() { return $this->error; }
+}
+$e = new MyException("kept");
+echo $e->getException();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "kept");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn custom_assertion_exception_renders_as_uncaught_throwable() {
+    let execution = run_source(
+        r#"<?php
+class CustomAssertionException extends Exception {}
+assert(false, new CustomAssertionException("asserted"));
+"#,
+    )
+    .unwrap();
+
+    assert!(execution.stdout.starts_with(
+        "Fatal error: Uncaught CustomAssertionException: asserted in Command line code:3"
+    ));
+    assert_eq!(execution.exit_code, 255);
+}
+
+#[test]
+fn invalid_throw_operands_raise_php_shaped_errors() {
+    let non_object = run_source(
+        r#"<?php
+throw 1;
+"#,
+    )
+    .unwrap();
+    assert!(non_object
+        .stdout
+        .starts_with("Fatal error: Uncaught Error: Can only throw objects"));
+    assert_eq!(non_object.exit_code, 255);
+
+    let non_throwable = run_source(
+        r#"<?php
+class Box {}
+throw new Box();
+"#,
+    )
+    .unwrap();
+    assert!(non_throwable.stdout.starts_with(
+        "Fatal error: Uncaught Error: Cannot throw objects that do not implement Throwable"
+    ));
+    assert_eq!(non_throwable.exit_code, 255);
+}
+
+#[test]
+fn throwable_constructor_message_type_errors_are_php_shaped() {
+    let execution = run_source(
+        r#"<?php
+class CustomError extends Error {}
+throw new CustomError(new stdClass());
+"#,
+    )
+    .unwrap();
+
+    assert!(execution.stdout.starts_with(
+        "Fatal error: Uncaught TypeError: Error::__construct(): Argument #1 ($message) must be of type string, stdClass given"
+    ));
+    assert_eq!(execution.exit_code, 255);
+}
+
+#[test]
 fn include_statement_throw_can_be_caught_by_caller_try() {
     let suffix = SystemTime::now()
         .duration_since(UNIX_EPOCH)

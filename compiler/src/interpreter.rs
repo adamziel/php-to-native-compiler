@@ -664,6 +664,12 @@ impl ActiveMagicProperty {
     }
 }
 
+#[derive(Clone)]
+struct PendingUncaughtThrow {
+    object: PhpObject,
+    span: Span,
+}
+
 struct Interpreter {
     functions: HashMap<String, Rc<FunctionDecl>>,
     function_source_files: HashMap<String, Option<String>>,
@@ -720,6 +726,7 @@ struct Interpreter {
     active_deprecated_constant_diagnostics: Vec<String>,
     exception_handlers: Vec<Value>,
     exception_handler_active: bool,
+    pending_uncaught_throw: Option<PendingUncaughtThrow>,
     shutdown_callbacks: Vec<ShutdownCallback>,
     shutdown_callback_index: usize,
     autoload_callbacks: Vec<AutoloadCallback>,
@@ -12301,6 +12308,7 @@ impl Interpreter {
             active_deprecated_constant_diagnostics: Vec::new(),
             exception_handlers: Vec::new(),
             exception_handler_active: false,
+            pending_uncaught_throw: None,
             shutdown_callbacks: Vec::new(),
             shutdown_callback_index: 0,
             autoload_callbacks: Vec::new(),
@@ -16358,7 +16366,7 @@ impl Interpreter {
     }
 
     fn array_copy_return_body_flow_result(
-        &self,
+        &mut self,
         flow: ArrayCopyReturnBodyFlow,
     ) -> CompileResult<(Flow, Option<ArrayCopySource>)> {
         match flow {
@@ -16614,15 +16622,22 @@ impl Interpreter {
                 self.tick(stmt.span())?;
                 let try_flow = match self.execute_array_copy_return_statement_list(body, scope) {
                     Ok(flow) => flow,
-                    Err(error) if catchable_php_error_message(&error).is_some() => {
-                        match self.execute_catchable_php_error_array_copy_return_catch_flow(
-                            &error, catches, scope,
-                        )? {
-                            Some(flow) => flow,
-                            None => return Err(error),
+                    Err(error) => {
+                        if let Some((object, span)) =
+                            self.take_pending_uncaught_throw_for_error(&error)
+                        {
+                            self.execute_array_copy_return_catch_flow(object, span, catches, scope)?
+                        } else if catchable_php_error_message(&error).is_some() {
+                            match self.execute_catchable_php_error_array_copy_return_catch_flow(
+                                &error, catches, scope,
+                            )? {
+                                Some(flow) => flow,
+                                None => return Err(error),
+                            }
+                        } else {
+                            return Err(error);
                         }
                     }
-                    Err(error) => return Err(error),
                 };
                 let try_flow = match try_flow {
                     ArrayCopyReturnBodyFlow::Throw { object, span } => {
@@ -28064,11 +28079,15 @@ impl Interpreter {
                 if let Some(message) = class_name_resolution_fatal_message(&error) {
                     return self.fatal_runtime_message_execution(&error, &message);
                 }
+                if let Some((object, span)) = self.take_pending_uncaught_throw_for_error(&error) {
+                    return self.uncaught_throw_execution(&object, span);
+                }
                 if let Some((error_class_name, error_message)) =
                     catchable_php_error_class_and_message(&error)
                 {
                     if error_class_name == "TypeError"
                         && is_call_argument_type_error_message(&error_message)
+                        && !is_throwable_constructor_argument_type_error_message(&error_message)
                     {
                         return self.uncaught_call_argument_type_error_execution(
                             &error,
@@ -30102,13 +30121,18 @@ impl Interpreter {
                 self.execute_catch_flow(object, span, catches, scope)?
             }
             Ok(flow) => flow,
-            Err(error) if catchable_php_error_message(&error).is_some() => {
-                match self.execute_catchable_php_error_catch_flow(&error, catches, scope)? {
-                    Some(flow) => flow,
-                    None => return Err(error),
+            Err(error) => {
+                if let Some((object, span)) = self.take_pending_uncaught_throw_for_error(&error) {
+                    self.execute_catch_flow(object, span, catches, scope)?
+                } else if catchable_php_error_message(&error).is_some() {
+                    match self.execute_catchable_php_error_catch_flow(&error, catches, scope)? {
+                        Some(flow) => flow,
+                        None => return Err(error),
+                    }
+                } else {
+                    return Err(error);
                 }
             }
-            Err(error) => return Err(error),
         };
         if let Some(finally_body) = finally_body {
             let finally_flow = self.execute_statements(finally_body, scope)?;
@@ -30186,10 +30210,7 @@ impl Interpreter {
         let Value::Object(object) = thrown else {
             return Err(runtime_error(
                 span,
-                RuntimeError::unsupported_call(
-                    "throw",
-                    format!("throwing {} values is not implemented", thrown.type_name()),
-                ),
+                RuntimeError::unsupported_call("throw", "Can only throw objects"),
             ));
         };
         if !Self::is_throwable_object(&object) {
@@ -30197,10 +30218,7 @@ impl Interpreter {
                 span,
                 RuntimeError::unsupported_call(
                     "throw",
-                    format!(
-                        "objects of class {} do not implement Throwable in the current subset",
-                        object.class_name()
-                    ),
+                    "Cannot throw objects that do not implement Throwable",
                 ),
             ));
         }
@@ -30276,16 +30294,35 @@ impl Interpreter {
         object: &PhpObject,
         span: Span,
     ) -> CompileResult<Execution> {
-        if self.call_exception_handler_for_throw(object, span)? {
-            self.run_shutdown_callbacks()?;
-            self.run_shutdown_destructors()?;
-            self.flush_output_buffers()?;
-            return Ok(Execution {
-                stdout: self.stdout.clone(),
-                stdout_bytes: self.execution_stdout_bytes(),
-                stderr: self.stderr.clone(),
-                exit_code: self.exit_signal.unwrap_or(0),
-            });
+        match self.call_exception_handler_for_throw(object, span) {
+            Ok(true) => {
+                self.run_shutdown_callbacks()?;
+                self.run_shutdown_destructors()?;
+                self.flush_output_buffers()?;
+                return Ok(Execution {
+                    stdout: self.stdout.clone(),
+                    stdout_bytes: self.execution_stdout_bytes(),
+                    stderr: self.stderr.clone(),
+                    exit_code: self.exit_signal.unwrap_or(0),
+                });
+            }
+            Ok(false) => {}
+            Err(error) => {
+                if let Some((handler_object, handler_span)) =
+                    self.take_pending_uncaught_throw_for_error(&error)
+                {
+                    self.emit_uncaught_throw_fatal(&handler_object, handler_span);
+                    self.exit_signal = Some(255);
+                    self.flush_output_buffers()?;
+                    return Ok(Execution {
+                        stdout: self.stdout.clone(),
+                        stdout_bytes: self.execution_stdout_bytes(),
+                        stderr: self.stderr.clone(),
+                        exit_code: self.exit_signal.unwrap_or(255),
+                    });
+                }
+                return Err(error);
+            }
         }
 
         self.emit_uncaught_throw_fatal(object, span);
@@ -30334,7 +30371,23 @@ impl Interpreter {
                 if let Some(callable) = self.lookup_function(&name) {
                     return match callable {
                         Callable::User(function) => {
-                            self.call_user_function_with_values(function, args, span)
+                            let trace_args = args.clone();
+                            let trace_callable = self.pending_uncaught_user_call_callable(
+                                function.as_ref(),
+                                None,
+                                None,
+                            );
+                            let trace_function_line = function.span.line;
+                            let result = self.call_user_function_with_values(function, args, span);
+                            if let Err(error) = &result {
+                                self.record_pending_uncaught_internal_callback_frame(
+                                    trace_callable,
+                                    trace_function_line,
+                                    &trace_args,
+                                    error,
+                                );
+                            }
+                            result
                         }
                         Callable::Builtin(key) => self.call_builtin(&key, args, span),
                     };
@@ -30460,13 +30513,38 @@ impl Interpreter {
         ))
     }
 
-    fn uncaught_throw_error(&self, object: &PhpObject, span: Span) -> Diagnostic {
+    fn take_pending_uncaught_throw_for_error(
+        &mut self,
+        error: &Diagnostic,
+    ) -> Option<(PhpObject, Span)> {
+        if error.phase != Phase::Runtime
+            || !error
+                .message
+                .starts_with("unsupported call throw: uncaught ")
+        {
+            return None;
+        }
+
+        let pending = self.pending_uncaught_throw.take()?;
+        if pending.span.line == error.line && pending.span.column == error.column {
+            Some((pending.object, pending.span))
+        } else {
+            self.pending_uncaught_throw = Some(pending);
+            None
+        }
+    }
+
+    fn uncaught_throw_error(&mut self, object: &PhpObject, span: Span) -> Diagnostic {
         let message = self.throwable_message_for_fatal(object);
         let message_suffix = if message.is_empty() {
             String::new()
         } else {
             format!(": {message}")
         };
+        self.pending_uncaught_throw = Some(PendingUncaughtThrow {
+            object: object.clone(),
+            span,
+        });
         runtime_error(
             span,
             RuntimeError::unsupported_call(
@@ -30592,12 +30670,20 @@ impl Interpreter {
 
         let mut trace = String::new();
         for (index, frame) in frames.iter().enumerate() {
-            trace.push_str(&format!(
-                "#{index} {file}({}): {}({})\n",
-                frame.call_line,
-                frame.display_callable(file),
-                format_stack_trace_args(&frame.args)
-            ));
+            if frame.call_line == 0 {
+                trace.push_str(&format!(
+                    "#{index} [internal function]: {}({})\n",
+                    frame.display_callable(file),
+                    format_stack_trace_args(&frame.args)
+                ));
+            } else {
+                trace.push_str(&format!(
+                    "#{index} {file}({}): {}({})\n",
+                    frame.call_line,
+                    frame.display_callable(file),
+                    format_stack_trace_args(&frame.args)
+                ));
+            }
         }
         trace.push_str(&format!("#{} {{main}}", frames.len()));
         trace
@@ -30740,6 +30826,25 @@ impl Interpreter {
                 function_name,
                 function_line,
                 call_line: call_span.line,
+                args: args.to_vec(),
+            });
+    }
+
+    fn record_pending_uncaught_internal_callback_frame(
+        &mut self,
+        function_name: String,
+        function_line: usize,
+        args: &[Value],
+        error: &Diagnostic,
+    ) {
+        if catchable_php_error_message(error).is_none() {
+            return;
+        }
+        self.pending_uncaught_call_frames
+            .push(PendingUncaughtCallFrame {
+                function_name,
+                function_line,
+                call_line: 0,
                 args: args.to_vec(),
             });
     }
@@ -35157,6 +35262,25 @@ impl Interpreter {
         false
     }
 
+    fn resolved_method_is_core_throwable(&self, class_id: ClassId) -> bool {
+        ["Exception", "Error", "ErrorException"]
+            .iter()
+            .filter_map(|class_name| self.classes.lookup_class_id(class_name))
+            .any(|core_id| class_id == core_id)
+    }
+
+    fn throwable_constructor_class_name(&self, class_id: ClassId) -> &'static str {
+        for class_name in ["ErrorException", "Error", "Exception"] {
+            let Some(root_id) = self.classes.lookup_class_id(class_name) else {
+                continue;
+            };
+            if class_id == root_id || self.classes.is_subclass_of(class_id, root_id) {
+                return class_name;
+            }
+        }
+        "Exception"
+    }
+
     fn initialize_core_exception_object(
         &mut self,
         object: &PhpObject,
@@ -35166,9 +35290,16 @@ impl Interpreter {
         span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<()> {
-        if declared_class_name.eq_ignore_ascii_case("ErrorException") {
-            return self
-                .initialize_core_error_exception_object(object, class_id, args, span, scope);
+        let constructor_class_name = self.throwable_constructor_class_name(class_id);
+        if constructor_class_name == "ErrorException" {
+            return self.initialize_core_error_exception_object(
+                object,
+                class_id,
+                constructor_class_name,
+                args,
+                span,
+                scope,
+            );
         }
         if args.len() > 3 {
             return Err(runtime_error(
@@ -35181,7 +35312,9 @@ impl Interpreter {
         }
 
         let message = match args.first() {
-            Some(expr) => self.evaluate_exception_message_argument(expr, scope)?,
+            Some(expr) => {
+                self.evaluate_exception_message_argument(constructor_class_name, expr, span, scope)?
+            }
             None => String::new(),
         };
         let code = match args.get(1) {
@@ -35237,6 +35370,7 @@ impl Interpreter {
         &mut self,
         object: &PhpObject,
         class_id: ClassId,
+        constructor_class_name: &str,
         args: &[Expr],
         span: Span,
         scope: &mut SymbolTable,
@@ -35252,7 +35386,9 @@ impl Interpreter {
         }
 
         let message = match args.first() {
-            Some(expr) => self.evaluate_exception_message_argument(expr, scope)?,
+            Some(expr) => {
+                self.evaluate_exception_message_argument(constructor_class_name, expr, span, scope)?
+            }
             None => String::new(),
         };
         let code = match args.get(1) {
@@ -35336,7 +35472,9 @@ impl Interpreter {
 
     fn evaluate_exception_message_argument(
         &mut self,
+        constructor_class_name: &str,
         expr: &Expr,
+        call_span: Span,
         scope: &mut SymbolTable,
     ) -> CompileResult<String> {
         match self.evaluate(expr, scope)? {
@@ -35347,16 +35485,27 @@ impl Interpreter {
             Value::Float(value) => Ok(value.to_string()),
             Value::String(value) => Ok(value),
             Value::BinaryString(bytes) => Ok(String::from_utf8_lossy(&bytes).into_owned()),
-            other => Err(runtime_error(
-                expr.span(),
-                RuntimeError::unsupported_object_instantiation(
-                    "Exception",
-                    format!(
-                        "message argument must be scalar in the current subset, got {}",
-                        other.type_name()
+            other => {
+                let error = runtime_error(
+                    expr.span(),
+                    RuntimeError::unsupported_object_instantiation(
+                        constructor_class_name,
+                        format!(
+                            "{constructor_class_name}::__construct(): Argument #1 ($message) must be of type string, {} given",
+                            php_type_error_given(&other)
+                        ),
                     ),
-                ),
-            )),
+                );
+                let trace_args = vec![other];
+                self.record_pending_uncaught_call_frame(
+                    format!("{constructor_class_name}->__construct"),
+                    call_span.line,
+                    call_span,
+                    &trace_args,
+                    &error,
+                );
+                Err(error)
+            }
         }
     }
 
@@ -62089,8 +62238,13 @@ impl Interpreter {
                 ));
             }
         };
-        if object.is_instance_of_class_name("Error")
-            || object.is_instance_of_class_name("Exception")
+        if (object.is_instance_of_class_name("Error")
+            || object.is_instance_of_class_name("Exception"))
+            && self.instance_method_resolves_to_core_class(
+                &object,
+                method_name,
+                Self::resolved_method_is_core_throwable,
+            )
         {
             return self
                 .call_core_error_method(object, method_name, args, span)
@@ -92521,15 +92675,23 @@ impl Interpreter {
                 .execute_reference_return_assignment_statement_list(function, body, scope)
             {
                 Ok(flow) => flow,
-                Err(error) if catchable_php_error_message(&error).is_some() => {
-                    match self.execute_catchable_php_error_reference_return_catch_flow(
-                        function, &error, catches, scope,
-                    )? {
-                        Some(flow) => flow,
-                        None => return Err(error),
+                Err(error) => {
+                    if let Some((object, span)) = self.take_pending_uncaught_throw_for_error(&error)
+                    {
+                        self.execute_reference_return_assignment_catch_flow(
+                            function, object, span, catches, scope,
+                        )?
+                    } else if catchable_php_error_message(&error).is_some() {
+                        match self.execute_catchable_php_error_reference_return_catch_flow(
+                            function, &error, catches, scope,
+                        )? {
+                            Some(flow) => flow,
+                            None => return Err(error),
+                        }
+                    } else {
+                        return Err(error);
                     }
                 }
-                Err(error) => return Err(error),
             };
             let try_flow = match try_flow {
                 ReferenceReturnBodyFlow::Throw { object, span } => self
@@ -135192,6 +135354,14 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
         return Some(thrown);
     }
 
+    if let Some(message) = invalid_throw_php_error_message(error) {
+        return Some(("Error", message));
+    }
+
+    if let Some(message) = throwable_constructor_type_error_message(error) {
+        return Some(("TypeError", message));
+    }
+
     if is_datetimezone_invalid_serialization_error(error) {
         return Some((
             "Error",
@@ -136265,6 +136435,38 @@ fn catchable_uncaught_throw_class_and_message(
     }
 
     None
+}
+
+fn invalid_throw_php_error_message(error: &Diagnostic) -> Option<String> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+    error
+        .message
+        .strip_prefix("unsupported call throw: ")
+        .and_then(|message| match message {
+            "Can only throw objects" | "Cannot throw objects that do not implement Throwable" => {
+                Some(message.to_string())
+            }
+            _ => None,
+        })
+}
+
+fn throwable_constructor_type_error_message(error: &Diagnostic) -> Option<String> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+    let (_, message) = error
+        .message
+        .strip_prefix("unsupported object instantiation for ")
+        .and_then(|message| message.split_once(": "))?;
+    is_throwable_constructor_argument_type_error_message(message).then(|| message.to_string())
+}
+
+fn is_throwable_constructor_argument_type_error_message(message: &str) -> bool {
+    message.starts_with("Exception::__construct(): Argument #1 ($message) ")
+        || message.starts_with("Error::__construct(): Argument #1 ($message) ")
+        || message.starts_with("ErrorException::__construct(): Argument #1 ($message) ")
 }
 
 fn func_get_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static str, String)> {
