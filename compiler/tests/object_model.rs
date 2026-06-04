@@ -377,6 +377,10 @@ fn property_hook_invalid_declarations_emit_php_fatals() {
             "Cannot declare hooks for static property",
         ),
         (
+            "<?php\nclass Test {\n    public readonly int $prop { get; set; }\n}\n",
+            "Hooked properties cannot be readonly",
+        ),
+        (
             "<?php\nclass Test {\n    public $prop { static get {} }\n}\n",
             "Cannot use the static modifier on a property hook",
         ),
@@ -427,6 +431,116 @@ fn property_hook_invalid_declarations_emit_php_fatals() {
         assert_eq!(error.line, 3);
         assert_eq!(error.message, format!("php fatal: {message}"));
     }
+}
+
+#[test]
+fn property_hook_declarations_are_metadata_and_store_backing_properties() {
+    let execution = run_source(
+        r#"<?php
+abstract class Base {
+    public abstract $prop {
+        get;
+        set {}
+    }
+}
+
+class Child extends Base {
+    public $prop = 42 {
+        get {}
+    }
+}
+
+$child = new Child();
+echo $child->prop;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "42");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn abstract_property_hook_requirements_are_enforced() {
+    let missing_parent_hook = runtime_error(
+        r#"<?php
+abstract class Base {
+    public abstract $prop {
+        get;
+        set {}
+    }
+}
+
+class Child extends Base {}
+"#,
+    );
+    assert_eq!(
+        missing_parent_hook.message,
+        "Class Child contains 1 abstract method and must therefore be declared abstract or implement the remaining method (Base::$prop::get)"
+    );
+
+    let missing_own_hooks = runtime_error(
+        r#"<?php
+class Broken {
+    abstract public $prop { get; set; }
+}
+"#,
+    );
+    assert_eq!(
+        missing_own_hooks.message,
+        "Class Broken contains 2 abstract methods and must therefore be declared abstract or implement the remaining methods (Broken::$prop::get, Broken::$prop::set)"
+    );
+}
+
+#[test]
+fn interface_property_hook_requirements_are_enforced() {
+    let missing = runtime_error(
+        r#"<?php
+interface Contract {
+    public $prop { get; set; }
+}
+
+class Missing implements Contract {}
+"#,
+    );
+    assert_eq!(
+        missing.message,
+        "Class Missing contains 2 abstract methods and must therefore be declared abstract or implement the remaining methods (Contract::$prop::get, Contract::$prop::set)"
+    );
+
+    let readonly_set = runtime_error(
+        r#"<?php
+interface Contract {
+    public int $prop { get; set; }
+}
+
+class ReadonlySet implements Contract {
+    public function __construct(public readonly int $prop) {}
+}
+"#,
+    );
+    assert_eq!(
+        readonly_set.message,
+        "Set access level of ReadonlySet::$prop must be omitted (as in class Contract)"
+    );
+
+    let by_value_get = runtime_error(
+        r#"<?php
+interface Contract {
+    public $prop { &get; }
+}
+
+class ByValue implements Contract {
+    public $prop {
+        get => $this->prop;
+    }
+}
+"#,
+    );
+    assert_eq!(
+        by_value_get.message,
+        "Declaration of ByValue::$prop::get() must be compatible with &Contract::$prop::get()"
+    );
 }
 
 #[test]

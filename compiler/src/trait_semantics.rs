@@ -894,6 +894,8 @@ pub fn trait_properties_are_compatible(
         && left.is_static == right.is_static
         && left.type_decl.as_ref().map(|decl| decl.text.as_str())
             == right.type_decl.as_ref().map(|decl| decl.text.as_str())
+        && left.is_abstract == right.is_abstract
+        && left.hooks == right.hooks
         && optional_default_exprs_are_compatible(left.default.as_ref(), right.default.as_ref())
 }
 

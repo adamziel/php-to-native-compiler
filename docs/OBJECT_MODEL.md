@@ -112,7 +112,14 @@ missing required declared-interface methods, non-public implementations,
 class-extends-interface declarations, class-implements-class/trait
 declarations, and interface-extends-class/trait declarations surface bounded
 PHP-shaped startup fatals. Relationship checks also recognize the parent
-interfaces. Public interface
+interfaces. Public class and interface property hook declarations are recorded
+as declaration metadata for the current abstract/interface implementation
+checks. Hook bodies are not executed: backed hooked properties keep ordinary
+property-slot storage/default behavior, plain properties satisfy `get` and
+non-readonly `set` requirements, concrete matching hooked declarations satisfy
+their corresponding requirement, and missing hooks report PHP-shaped
+abstract-method startup fatals such as `I::$prop::get`.
+Public interface
 constants declared as `const NAME = ...` or `public const NAME = ...` resolve
 through `InterfaceName::CONST`, inherited parent interfaces, implementing
 classes, `self::CONST`/`static::CONST` in implementing class methods, and
@@ -518,7 +525,9 @@ abstract-method enforcement, method visibility compatibility enforcement,
 readonly class and property semantics, constructor promotion, typed properties,
 instance property default values, multiple properties in one declaration, typed
 or multi-declarator class constants, typed static properties, late static
-binding, magic methods beyond the current direct missing-property
+binding, executable property hook bodies, virtual hooked properties,
+reference-return hook dispatch, hook reflection metadata, magic methods beyond
+the current direct missing-property
 `__get`/`__isset`/`__set` slice, namespaces,
 autoloading beyond string user-function callbacks for `class_exists()`,
 `interface_exists()`, `trait_exists()`, missing `new` class instantiation, and

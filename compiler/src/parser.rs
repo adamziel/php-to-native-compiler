@@ -8,9 +8,10 @@ use crate::ast::{
     Expr, ForAction, ForeachListItem, ForeachListKey, ForeachValueTarget, FunctionDecl,
     FunctionParam, IncrementDecrementOp, IncrementDecrementPosition, InterfaceDecl,
     InterfaceMethodDecl, ListAssignmentItem, ListAssignmentKey, ListAssignmentTarget, MatchArm,
-    NewClassName, Program, ReferenceSource, Span, StaticLocalDeclarator, Stmt, SwitchCase,
-    TraitDecl, TraitMethodAliasDecl, TraitMethodPrecedenceDecl, TraitMethodVisibilityDecl,
-    TraitUseDecl, TypeDecl, UnaryOp, UnsetTarget, UseImport, UseImportKind,
+    NewClassName, Program, PropertyHookDecl, PropertyHookKind, ReferenceSource, Span,
+    StaticLocalDeclarator, Stmt, SwitchCase, TraitDecl, TraitMethodAliasDecl,
+    TraitMethodPrecedenceDecl, TraitMethodVisibilityDecl, TraitUseDecl, TypeDecl, UnaryOp,
+    UnsetTarget, UseImport, UseImportKind,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::lexer::{tokenize, AttributeToken, Token, TokenKind};
@@ -948,8 +949,10 @@ impl Parser {
             set_visibility: modifiers.set_visibility,
             is_static: modifiers.is_static,
             is_readonly: modifiers.is_readonly,
+            is_abstract: false,
             type_decl,
             default,
+            hooks: Vec::new(),
             attributes,
             doc_comment,
             span,
@@ -1389,7 +1392,7 @@ impl Parser {
                 parse_fatal_message("Interfaces may only include hooked properties"),
             ));
         }
-        self.parse_property_hook_block_for_diagnostics(
+        let hooks = self.parse_property_hook_block_for_diagnostics(
             interface_name,
             &name,
             span,
@@ -1405,8 +1408,10 @@ impl Parser {
             set_visibility: modifiers.set_visibility,
             is_static: false,
             is_readonly: modifiers.is_readonly,
+            is_abstract: true,
             type_decl,
             default: None,
+            hooks,
             attributes,
             doc_comment,
             span,
@@ -1777,8 +1782,10 @@ impl Parser {
                     set_visibility: modifiers.set_visibility,
                     is_static: modifiers.is_static,
                     is_readonly: modifiers.is_readonly,
+                    is_abstract: modifiers.is_abstract,
                     type_decl: Some(type_decl.clone()),
                     default,
+                    hooks: Vec::new(),
                     attributes: attributes.clone(),
                     doc_comment: doc_comment.take(),
                     span,
@@ -1790,7 +1797,7 @@ impl Parser {
             if self.check(|kind| matches!(kind, TokenKind::LBrace)) {
                 let hook_span = self.peek().span;
                 let property = first_property_member(&properties);
-                self.parse_property_hook_block_for_diagnostics(
+                let hooks = self.parse_property_hook_block_for_diagnostics(
                     class_name,
                     &property.name,
                     property.span,
@@ -1799,7 +1806,8 @@ impl Parser {
                     property.default.is_some(),
                     hook_span,
                 )?;
-                return Err(self.error_at(hook_span, unsupported_property_hook_message()));
+                first_property_member_mut(&mut properties).hooks = hooks;
+                return Ok((properties, modifiers.diagnostics));
             }
             if let Some(error) = self.property_modifier_diagnostic_without_hooks(
                 class_name,
@@ -1840,8 +1848,10 @@ impl Parser {
                     set_visibility: modifiers.set_visibility,
                     is_static: modifiers.is_static,
                     is_readonly: modifiers.is_readonly,
+                    is_abstract: modifiers.is_abstract,
                     type_decl: None,
                     default,
+                    hooks: Vec::new(),
                     attributes: attributes.clone(),
                     doc_comment: doc_comment.take(),
                     span,
@@ -1853,7 +1863,7 @@ impl Parser {
             if self.check(|kind| matches!(kind, TokenKind::LBrace)) {
                 let hook_span = self.peek().span;
                 let property = first_property_member(&properties);
-                self.parse_property_hook_block_for_diagnostics(
+                let hooks = self.parse_property_hook_block_for_diagnostics(
                     class_name,
                     &property.name,
                     property.span,
@@ -1862,7 +1872,8 @@ impl Parser {
                     property.default.is_some(),
                     hook_span,
                 )?;
-                return Err(self.error_at(hook_span, unsupported_property_hook_message()));
+                first_property_member_mut(&mut properties).hooks = hooks;
+                return Ok((properties, modifiers.diagnostics));
             }
             if let Some(error) = self.property_modifier_diagnostic_without_hooks(
                 class_name,
@@ -1944,11 +1955,17 @@ impl Parser {
         is_interface: bool,
         has_default: bool,
         hook_block_span: Span,
-    ) -> CompileResult<()> {
+    ) -> CompileResult<Vec<PropertyHookDecl>> {
         if modifiers.is_static {
             return Err(self.error_at(
                 hook_block_span,
                 parse_fatal_message("Cannot declare hooks for static property"),
+            ));
+        }
+        if modifiers.is_readonly {
+            return Err(self.error_at(
+                property_span,
+                parse_fatal_message("Hooked properties cannot be readonly"),
             ));
         }
         if !is_interface
@@ -1973,6 +1990,7 @@ impl Parser {
         let mut abstract_hook_count = 0usize;
         let mut hook_count = 0usize;
         let mut last_hook_name = String::new();
+        let mut hooks = Vec::new();
         while !self.check(|kind| matches!(kind, TokenKind::RBrace | TokenKind::Eof)) {
             self.consume_doc_comments_and_attributes();
             self.pending_doc_comment = None;
@@ -2013,6 +2031,7 @@ impl Parser {
             }
 
             let hook_span = self.peek().span;
+            let by_reference = self.match_token(|kind| matches!(kind, TokenKind::Ampersand));
             let hook_name = self.consume_identifier("expected property hook name")?;
             if hook_is_static {
                 return Err(self.error_at(
@@ -2089,9 +2108,22 @@ impl Parser {
                 false
             };
 
-            if hook_is_abstract || (!has_body && (is_interface || modifiers.is_abstract)) {
+            let is_abstract =
+                hook_is_abstract || (!has_body && (is_interface || modifiers.is_abstract));
+            if is_abstract {
                 abstract_hook_count += 1;
             }
+            hooks.push(PropertyHookDecl {
+                kind: if hook_name.eq_ignore_ascii_case("get") {
+                    PropertyHookKind::Get
+                } else {
+                    PropertyHookKind::Set
+                },
+                by_reference,
+                is_abstract,
+                has_body,
+                span: hook_span,
+            });
         }
 
         self.consume_keyword(TokenKind::RBrace, "expected '}' after property hook block")?;
@@ -2100,14 +2132,6 @@ impl Parser {
                 property_span,
                 parse_fatal_message(&format!(
                     "Abstract property {class_name}::${property_name} must specify at least one abstract hook"
-                )),
-            ));
-        }
-        if has_default && hook_count > 0 {
-            return Err(self.error_at(
-                property_span,
-                parse_fatal_message(&format!(
-                    "Cannot specify default value for virtual hooked property {class_name}::${property_name}"
                 )),
             ));
         }
@@ -2122,7 +2146,7 @@ impl Parser {
             }
         }
 
-        Ok(())
+        Ok(hooks)
     }
 
     fn skip_parenthesized_group_after_open(&mut self, span: Span) -> CompileResult<()> {
@@ -10513,6 +10537,16 @@ fn parse_fatal_message(message: &str) -> String {
 fn first_property_member(members: &[ClassMember]) -> &ClassPropertyDecl {
     match members
         .first()
+        .expect("property declaration should contain at least one property")
+    {
+        ClassMember::Property(property) => property,
+        _ => unreachable!("property declaration should only contain property members"),
+    }
+}
+
+fn first_property_member_mut(members: &mut [ClassMember]) -> &mut ClassPropertyDecl {
+    match members
+        .first_mut()
         .expect("property declaration should contain at least one property")
     {
         ClassMember::Property(property) => property,

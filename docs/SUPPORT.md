@@ -3480,6 +3480,15 @@
   parameter-type, and return-type metadata rules before class registration;
   ancestor/descendant duplicate inherited interface pairs are skipped after the
   descendant interface has already validated its override.
+  Public hooked property declarations are parsed as declaration metadata on
+  classes and interfaces. Hook bodies are skipped and backed class properties
+  still use the ordinary property slot/default path, but abstract class hooks
+  and interface hooks participate in bounded implementation checks: a plain
+  property satisfies `get`, a writable plain property satisfies `set`, concrete
+  matching hooked declarations satisfy the corresponding requirement, readonly
+  properties do not satisfy `set`, and `&get` interface requirements reject
+  concrete by-value `get` hooks. Missing hooks report PHP-shaped abstract
+  method startup fatals such as `I::$prop::get`.
   Public interface
   constants declared as `const NAME = ...` or `public const NAME = ...` with
   the current class-constant expression subset resolve through `InterfaceName::CONST`,
@@ -3495,6 +3504,8 @@
   typed/non-public/abstract/final or multi-constant interface
   declarations, exact PHP ambiguous-interface-constant diagnostics, broad
   built-in/internal interface inheritance catalogs, named arguments,
+  executable property hook body semantics, virtual hooked properties,
+  reference-return hook dispatch, hook reflection metadata,
   trait composition beyond the current public-method and simple-alias slice,
   exact PHP `Error` objects, and readonly class semantics
   are not implemented.
@@ -7592,9 +7603,10 @@
   compatibility. Runtime write/unset/reference enforcement, broader
   typed-property write rules, reflection behavior for user-declared
   set-visibility metadata, and native lowering remain unsupported,
-  PHP property hook declarations such as `public string $name { get => ...; }`
-  before hook metadata, backing/virtual property behavior, typed-property
-  storage/enforcement, references, reflection, and native lowering exist,
+  executable PHP property hook behavior beyond declaration metadata and
+  bounded abstract/interface implementation checks, including virtual property
+  storage, hook body dispatch, reference-return hooks, hook reflection,
+  typed-property hook enforcement, references, and native lowering,
   legacy `var $property` declarations are treated as public untyped instance
   properties in the same metadata/runtime slot model as `public $property`;
   multiple property declarations, class

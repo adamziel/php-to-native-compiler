@@ -1008,6 +1008,30 @@ pub struct ClassConstantDecl {
     pub span: Span,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PropertyHookKind {
+    Get,
+    Set,
+}
+
+impl PropertyHookKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Get => "get",
+            Self::Set => "set",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PropertyHookDecl {
+    pub kind: PropertyHookKind,
+    pub by_reference: bool,
+    pub is_abstract: bool,
+    pub has_body: bool,
+    pub span: Span,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClassPropertyDecl {
     pub name: String,
@@ -1015,8 +1039,10 @@ pub struct ClassPropertyDecl {
     pub set_visibility: Option<ClassVisibility>,
     pub is_static: bool,
     pub is_readonly: bool,
+    pub is_abstract: bool,
     pub type_decl: Option<TypeDecl>,
     pub default: Option<Expr>,
+    pub hooks: Vec<PropertyHookDecl>,
     pub attributes: Vec<AttributeDecl>,
     pub doc_comment: Option<String>,
     pub span: Span,

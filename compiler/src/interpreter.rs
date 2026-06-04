@@ -47,9 +47,9 @@ use crate::ast::{
     ForeachValueTarget, FunctionDecl, FunctionParam, IncrementDecrementOp,
     IncrementDecrementPosition, InterfaceDecl, InterfaceMethodDecl, InterpolatedAccessSegment,
     InterpolatedArrayKey, InterpolatedStringPart, ListAssignmentItem, ListAssignmentKey,
-    ListAssignmentTarget, MatchArm, NewClassName, Program, ReferenceSource, Span,
-    StaticLocalDeclarator, Stmt, SwitchCase, TraitDecl, TraitUseDecl, TypeDecl, UnaryOp,
-    UnsetTarget,
+    ListAssignmentTarget, MatchArm, NewClassName, Program, PropertyHookDecl, PropertyHookKind,
+    ReferenceSource, Span, StaticLocalDeclarator, Stmt, SwitchCase, TraitDecl, TraitUseDecl,
+    TypeDecl, UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::html_entities_generated::{
@@ -444,6 +444,24 @@ fn class_registration_startup_fatal_message(error: &Diagnostic) -> Option<String
         ));
     }
 
+    if let Some((property, interface)) = reason
+        .strip_prefix("property set access level of ")
+        .and_then(|reason| reason.split_once(" must be omitted as in interface "))
+    {
+        return Some(format!(
+            "Set access level of {property} must be omitted (as in class {interface})"
+        ));
+    }
+
+    if let Some((declaration, requirement)) = reason
+        .strip_prefix("property hook declaration ")
+        .and_then(|reason| reason.split_once(" must be compatible with "))
+    {
+        return Some(format!(
+            "Declaration of {declaration} must be compatible with {requirement}"
+        ));
+    }
+
     if let Some(message) = class_method_visibility_startup_fatal_message(reason) {
         return Some(message);
     }
@@ -501,6 +519,35 @@ fn class_registration_startup_fatal_message(error: &Diagnostic) -> Option<String
         ));
     }
 
+    if let Some(message) = class_declared_abstract_method_startup_message(class_name, reason) {
+        return Some(message);
+    }
+
+    if let Some((missing_count, missing_methods)) =
+        class_missing_abstract_methods_from_startup_reason(class_name, reason)
+    {
+        let method_word = if missing_count == 1 {
+            "method"
+        } else {
+            "methods"
+        };
+        let remaining_word = if missing_count == 1 {
+            "method"
+        } else {
+            "methods"
+        };
+        return Some(format!(
+            "Class {class_name} contains {missing_count} abstract {method_word} and must therefore be declared abstract or implement the remaining {remaining_word} ({missing_methods})"
+        ));
+    }
+
+    None
+}
+
+fn class_declared_abstract_method_startup_message(
+    class_name: &str,
+    reason: &str,
+) -> Option<String> {
     let missing = reason.strip_prefix(&format!(
         "concrete class {class_name} must implement abstract method "
     ))?;
@@ -567,23 +614,69 @@ fn class_missing_interface_methods_from_startup_reason<'a>(
         })?;
     let mut method_list = Vec::new();
     for method in missing.split(", ") {
-        let method = method.strip_suffix("()")?;
-        let (interface_name, method_name) = method.split_once("::")?;
-        if interface_name.contains("::")
-            || method_name.contains("::")
-            || method_name
-                .chars()
-                .any(|ch| ch.is_whitespace() || matches!(ch, '(' | ')' | ';'))
-        {
-            return None;
-        }
-        method_list.push(method);
+        method_list.push(startup_missing_method_item(method)?);
     }
     if method_list.is_empty() {
         return None;
     }
     let count = method_list.len();
     Some((count, method_list.join(", ")))
+}
+
+fn class_missing_abstract_methods_from_startup_reason(
+    class_name: &str,
+    reason: &str,
+) -> Option<(usize, String)> {
+    let missing = reason
+        .strip_prefix(&format!(
+            "concrete class {class_name} must implement abstract method "
+        ))
+        .or_else(|| {
+            reason.strip_prefix(&format!(
+                "concrete class {class_name} must implement abstract methods "
+            ))
+        })?;
+    let mut method_list = Vec::new();
+    for method in missing.split(", ") {
+        method_list.push(startup_missing_method_item(method)?);
+    }
+    if method_list.is_empty() {
+        return None;
+    }
+    let count = method_list.len();
+    Some((count, method_list.join(", ")))
+}
+
+fn startup_missing_method_item(method: &str) -> Option<String> {
+    let method = method.strip_suffix("()").unwrap_or(method);
+    let (class_like, member_name) = method.split_once("::")?;
+    if class_like.contains("::")
+        || class_like
+            .chars()
+            .any(|ch| ch.is_whitespace() || matches!(ch, '(' | ')' | ';'))
+    {
+        return None;
+    }
+    if let Some((property_name, hook_name)) = member_name.split_once("::") {
+        if !property_name.starts_with('$')
+            || property_name.len() == 1
+            || !matches!(hook_name, "get" | "set")
+            || property_name
+                .chars()
+                .any(|ch| ch.is_whitespace() || matches!(ch, '(' | ')' | ';'))
+        {
+            return None;
+        }
+        return Some(method.to_string());
+    }
+
+    if member_name
+        .chars()
+        .any(|ch| ch.is_whitespace() || matches!(ch, '(' | ')' | ';'))
+    {
+        return None;
+    }
+    Some(method.to_string())
 }
 
 fn class_missing_trait_methods_from_startup_reason<'a>(
@@ -12202,6 +12295,7 @@ impl Interpreter {
             &interfaces,
         )?;
 
+        let class_lookup = top_level_class_startup_lookup(program);
         for stmt in &program.statements {
             if let Stmt::Class(class) = stmt {
                 if class.is_nested {
@@ -12215,6 +12309,7 @@ impl Interpreter {
                     &method_signatures,
                     &interface_lookup,
                     &trait_lookup,
+                    &class_lookup,
                     class,
                 )?;
                 register_class_member_runtime_tables(
@@ -27749,6 +27844,7 @@ impl Interpreter {
             &self.interfaces,
         )?;
 
+        let class_lookup = top_level_class_startup_lookup(program);
         for stmt in &program.statements {
             let Stmt::Class(class) = stmt else {
                 continue;
@@ -27765,6 +27861,7 @@ impl Interpreter {
                 &self.method_signatures,
                 &self.interface_lookup,
                 &self.trait_lookup,
+                &class_lookup,
                 class,
             )?;
             register_class_member_runtime_tables(
@@ -27870,6 +27967,7 @@ impl Interpreter {
             &self.method_signatures,
             &self.interface_lookup,
             &self.trait_lookup,
+            &HashMap::new(),
             class,
         ) {
             self.abstract_classes.remove(&class_id);
@@ -124892,6 +124990,14 @@ fn inherited_property_startup_diagnostic_message(
     parent_property: &ClassPropertyDecl,
 ) -> Option<String> {
     if parent_property.is_readonly != property.is_readonly {
+        if property.is_readonly
+            && parent_property
+                .hooks
+                .iter()
+                .any(|hook| hook.kind == PropertyHookKind::Set && hook.is_abstract)
+        {
+            return None;
+        }
         let parent_readonly = if parent_property.is_readonly {
             "readonly"
         } else {
@@ -127430,6 +127536,7 @@ fn register_class_members(
     method_signatures: &HashMap<(ClassId, String), MethodSignature>,
     interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
     trait_lookup: &HashMap<String, Rc<TraitDecl>>,
+    class_lookup: &HashMap<String, &ClassDecl>,
     class: &ClassDecl,
 ) -> CompileResult<ClassId> {
     let id = classes
@@ -127753,6 +127860,10 @@ fn register_class_members(
     )
     .map_err(|error| runtime_error(class.span, error))?;
     validate_abstract_method_implementation(classes, abstract_methods, id, class)
+        .map_err(|error| runtime_error(class.span, error))?;
+    validate_abstract_property_hook_implementation(class_lookup, class)
+        .map_err(|error| runtime_error(class.span, error))?;
+    validate_interface_property_hook_implementation(classes, interface_lookup, id, class)
         .map_err(|error| runtime_error(class.span, error))?;
     validate_interface_method_implementation(
         classes,
@@ -128202,8 +128313,10 @@ fn promoted_property_from_param(param: &FunctionParam) -> Option<ClassPropertyDe
         set_visibility: param.promotion_set_visibility,
         is_static: false,
         is_readonly: param.promotion_readonly,
+        is_abstract: false,
         type_decl: param.type_decl.clone(),
         default: None,
+        hooks: Vec::new(),
         attributes: param.attributes.clone(),
         doc_comment: None,
         span: param.span,
@@ -128232,6 +128345,8 @@ fn trait_properties_are_compatible(left: &ClassPropertyDecl, right: &ClassProper
         && left.is_readonly == right.is_readonly
         && left.type_decl.as_ref().map(|decl| decl.text.as_str())
             == right.type_decl.as_ref().map(|decl| decl.text.as_str())
+        && left.is_abstract == right.is_abstract
+        && left.hooks == right.hooks
         && optional_default_exprs_are_compatible(left.default.as_ref(), right.default.as_ref())
 }
 
@@ -128450,6 +128565,36 @@ fn collect_interface_methods<'a>(
     }
     for method in &interface.methods {
         methods.push((interface.name.clone(), method));
+    }
+}
+
+fn expanded_interface_properties<'a>(
+    interface_lookup: &'a HashMap<String, Rc<InterfaceDecl>>,
+    interface: &'a InterfaceDecl,
+) -> Vec<(String, &'a ClassPropertyDecl)> {
+    let mut properties = Vec::new();
+    let mut visited = HashSet::new();
+    collect_interface_properties(interface_lookup, interface, &mut properties, &mut visited);
+    properties
+}
+
+fn collect_interface_properties<'a>(
+    interface_lookup: &'a HashMap<String, Rc<InterfaceDecl>>,
+    interface: &'a InterfaceDecl,
+    properties: &mut Vec<(String, &'a ClassPropertyDecl)>,
+    visited: &mut HashSet<String>,
+) {
+    let key = interface.name.to_ascii_lowercase();
+    if !visited.insert(key) {
+        return;
+    }
+    for parent_name in &interface.parents {
+        if let Some(parent) = interface_lookup.get(&parent_name.to_ascii_lowercase()) {
+            collect_interface_properties(interface_lookup, parent, properties, visited);
+        }
+    }
+    for property in &interface.properties {
+        properties.push((interface.name.clone(), property));
     }
 }
 
@@ -132865,6 +133010,221 @@ fn has_concrete_method_implementation(
     }
 
     false
+}
+
+fn validate_abstract_property_hook_implementation(
+    class_lookup: &HashMap<String, &ClassDecl>,
+    class: &ClassDecl,
+) -> RuntimeResult<()> {
+    if class.is_abstract {
+        return Ok(());
+    }
+
+    let mut available_properties = declared_class_properties(class);
+    let mut missing = Vec::new();
+    for property in declared_class_properties_in_source_order(class) {
+        for hook in property.hooks.iter().filter(|hook| hook.is_abstract) {
+            missing.push(property_hook_requirement_name(
+                &class.name,
+                &property.name,
+                hook.kind,
+            ));
+        }
+    }
+
+    let mut visited = HashSet::new();
+    let mut current = class
+        .parent
+        .as_ref()
+        .and_then(|parent| class_lookup.get(&startup_class_lookup_key(parent)).copied());
+    while let Some(parent) = current {
+        let parent_key = startup_class_lookup_key(&parent.name);
+        if !visited.insert(parent_key) {
+            break;
+        }
+
+        let parent_properties = declared_class_properties_in_source_order(parent);
+        for property in &parent_properties {
+            for hook in property.hooks.iter().filter(|hook| hook.is_abstract) {
+                if property_hook_requirement_satisfied(
+                    available_properties.get(&property.name),
+                    hook,
+                ) {
+                    continue;
+                }
+                missing.push(property_hook_requirement_name(
+                    &parent.name,
+                    &property.name,
+                    hook.kind,
+                ));
+            }
+        }
+        for property in parent_properties {
+            available_properties
+                .entry(property.name.clone())
+                .or_insert(property);
+        }
+        current = parent
+            .parent
+            .as_ref()
+            .and_then(|parent| class_lookup.get(&startup_class_lookup_key(parent)).copied());
+    }
+
+    if missing.is_empty() {
+        return Ok(());
+    }
+
+    let method_list = missing.join(", ");
+    let method_word = if missing.len() == 1 {
+        "method"
+    } else {
+        "methods"
+    };
+    Err(RuntimeError::unsupported_class_inheritance(
+        &class.name,
+        format!(
+            "concrete class {} must implement abstract {method_word} {method_list}",
+            class.name
+        ),
+    ))
+}
+
+fn validate_interface_property_hook_implementation(
+    classes: &PhpClassTable,
+    interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
+    class_id: ClassId,
+    class: &ClassDecl,
+) -> RuntimeResult<()> {
+    if class.is_abstract {
+        return Ok(());
+    }
+
+    let class_properties = declared_class_properties(class);
+    let mut missing = Vec::new();
+    let mut covered_names = HashSet::new();
+    for interface_name in implemented_interface_names(classes, class_id) {
+        let Some(interface) = interface_lookup.get(&interface_name.to_ascii_lowercase()) else {
+            continue;
+        };
+
+        for (property_interface_name, property) in
+            expanded_interface_properties(interface_lookup, interface)
+        {
+            for hook in &property.hooks {
+                if !covered_names.insert(format!(
+                    "{}::{}::{}",
+                    property_interface_name.to_ascii_lowercase(),
+                    property.name,
+                    hook.kind.as_str()
+                )) {
+                    continue;
+                }
+
+                let implementation = class_properties.get(&property.name);
+                if property_hook_requirement_satisfied(implementation, hook) {
+                    continue;
+                }
+
+                if let Some(implementation) = implementation {
+                    if hook.kind == PropertyHookKind::Set && implementation.is_readonly {
+                        return Err(RuntimeError::unsupported_class_inheritance(
+                            &class.name,
+                            format!(
+                                "property set access level of {}::${} must be omitted as in interface {}",
+                                class.name, implementation.name, property_interface_name
+                            ),
+                        ));
+                    }
+                    if property_hook_by_reference_mismatch(implementation, hook) {
+                        return Err(RuntimeError::unsupported_class_inheritance(
+                            &class.name,
+                            format!(
+                                "property hook declaration {}::${}::{}() must be compatible with {}{}::${}::{}()",
+                                class.name,
+                                implementation.name,
+                                hook.kind.as_str(),
+                                if hook.by_reference { "&" } else { "" },
+                                property_interface_name,
+                                property.name,
+                                hook.kind.as_str()
+                            ),
+                        ));
+                    }
+                }
+
+                missing.push(property_hook_requirement_name(
+                    &property_interface_name,
+                    &property.name,
+                    hook.kind,
+                ));
+            }
+        }
+    }
+
+    if missing.is_empty() {
+        return Ok(());
+    }
+
+    let method_list = missing.join(", ");
+    let method_word = if missing.len() == 1 {
+        "method"
+    } else {
+        "methods"
+    };
+    Err(RuntimeError::unsupported_class_inheritance(
+        &class.name,
+        format!(
+            "concrete class {} must implement interface {method_word} {method_list}",
+            class.name
+        ),
+    ))
+}
+
+fn property_hook_requirement_satisfied(
+    property: Option<&ClassPropertyDecl>,
+    requirement: &PropertyHookDecl,
+) -> bool {
+    let Some(property) = property else {
+        return false;
+    };
+    if property.hooks.is_empty() {
+        return match requirement.kind {
+            PropertyHookKind::Get => true,
+            PropertyHookKind::Set => !property.is_readonly,
+        };
+    }
+
+    property.hooks.iter().any(|hook| {
+        hook.kind == requirement.kind
+            && hook.has_body
+            && !hook.is_abstract
+            && (!requirement.by_reference || hook.by_reference)
+    })
+}
+
+fn property_hook_by_reference_mismatch(
+    property: &ClassPropertyDecl,
+    requirement: &PropertyHookDecl,
+) -> bool {
+    requirement.kind == PropertyHookKind::Get
+        && requirement.by_reference
+        && property.hooks.iter().any(|hook| {
+            hook.kind == PropertyHookKind::Get
+                && hook.has_body
+                && !hook.is_abstract
+                && !hook.by_reference
+        })
+}
+
+fn property_hook_requirement_name(
+    declaring_class: &str,
+    property_name: &str,
+    hook_kind: PropertyHookKind,
+) -> String {
+    format!(
+        "{declaring_class}::${property_name}::{}",
+        hook_kind.as_str()
+    )
 }
 
 fn validate_final_method_override(

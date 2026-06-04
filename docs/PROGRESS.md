@@ -4,6 +4,39 @@
 
 Implemented:
 
+- Added bounded class/interface property-hook declaration metadata on the
+  interpreter path. Class and interface hooked properties now parse and keep
+  hook metadata for abstract/interface implementation checks while hook bodies
+  remain skipped and backed properties use the ordinary property storage/default
+  path. Concrete classes now report PHP-shaped startup fatals for missing
+  abstract class hooks and interface hooks, readonly properties no longer
+  satisfy `set`, and `&get` interface requirements reject concrete by-value
+  `get` hooks. Focused exact-current PHPT proof moved the selected
+  `Zend/tests/property_hooks` packet from pre-patch `7/23` PASS to post-patch
+  `21/23` PASS for `abstract_hook.phpt`,
+  `abstract_hook_not_implemented.phpt`, `abstract_prop_hooks.phpt`,
+  `abstract_prop_not_implemented.phpt`, `abstract_prop_plain.phpt`,
+  `abstract_get_set_readonly.phpt`, `interface.phpt`,
+  `interface_get_only.phpt`, `interface_set_only.phpt`,
+  `interface_not_implemented.phpt`, `interface_get_set_readonly.phpt`,
+  `interface_get_only_readonly.phpt`, `interface_explicit_abstract.phpt`,
+  `interface_invalid_explicitly_abstract.phpt`, `interface_not_public.phpt`,
+  `interface_final_hook.phpt`, `interface_final_prop.phpt`,
+  `interface_get_by_ref_plain.phpt`, `interface_get_by_ref_backed.phpt`,
+  `interface_get_by_ref_virtual.phpt`,
+  `get_by_ref_implemented_by_plain.phpt`,
+  `get_by_ref_implemented_by_val.phpt`, and `readonly.phpt`. Remaining selected
+  failures are executable reference/virtual hook behavior in
+  `get_by_ref_implemented_by_plain.phpt` and
+  `interface_get_by_ref_virtual.phpt`. Focused integration proof covered the
+  property-hook Rust guard, adjacent asymmetric-visibility Rust guards, patched
+  debug build, selected property-hook PHPT post-patch `21/23`, latest-published
+  BcMath PASS scout `8/8`, `cargo fmt --all -- --check`, and
+  `git diff --check`.
+  Unsupported edges remain executable hook body semantics, virtual hooked
+  properties, reference-return hook dispatch, hook reflection metadata,
+  typed-property hook enforcement, references/COW parity, and native lowering.
+
 - Added a bounded SPL `RegexIterator` lane on the interpreter path. Core
   metadata now declares `RegexIterator` as an `Iterator` with the reached mode
   and flag constants, and runtime state now stores the inner iterator, regex,
