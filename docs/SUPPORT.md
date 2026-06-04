@@ -10998,10 +10998,13 @@
   boundary. Direct string conversion and explicit `__toString()` calls render
   bounded userland class and trait metadata, including source span, constants,
   static and instance properties, static and instance methods, inherited
-  non-private metadata, typed/uninitialized properties, and implicit nullable
-  parameter display. `isReadOnly()` currently returns false because readonly
-  class declarations are parsed only for bounded startup diagnostics, not
-  reflection readonly metadata.
+  non-private metadata, typed/uninitialized properties, readonly class and
+  property modifiers, typed class constants, method inheritance/override/
+  prototype labels, and implicit nullable parameter display. Object-backed
+  `ReflectionObject::__toString()` uses the same bounded class metadata plus a
+  dynamic-property section for initialized public dynamic properties whose
+  names do not collide with declared properties in the reflected class
+  hierarchy.
   `new ReflectionMethod($object_or_class, $method)` and
   `new ReflectionMethod("ClassName::methodName")` create a bounded
   metadata object for methods declared in the current user class, interface,
@@ -11026,7 +11029,11 @@
   declaration and closing brace, and `getDocComment()` returns the directly
   preceding `/** ... */` docblock or `false`. Interface and trait method
   reflection keeps parsed line/doc-comment metadata in the current request but
-  does not yet persist declaration source-file paths. Trait adaptations,
+  does not yet persist declaration source-file paths. Direct string conversion
+  and explicit `__toString()` calls render bounded method metadata, including
+  visibility, static/final/abstract flags, source span, parameters, and class
+  inheritance/override/prototype labels for the current user-class hierarchy.
+  Trait adaptations,
   internal method prototypes, tentative return type metadata, and exact engine
   tie-breaking for multiple prototype candidates remain unsupported.
   `ReflectionMethod::invoke($object, ...$args)` and
@@ -11064,8 +11071,10 @@
   `getDocComment()`, `getParameters()`, `getNumberOfParameters()`,
   `getNumberOfRequiredParameters()`, `isVariadic()`, `hasReturnType()`,
   `getReturnType()`, `returnsReference()`, `getExtension()`, and
-  `__toString()` over parsed user-function metadata. `getExtension()` returns
-  `null` for user functions.
+  `__toString()` over parsed user-function metadata, including doc comments,
+  omitted empty parameter blocks, and structural display for scalar, array,
+  constant, and simple unary/binary parameter default expressions.
+  `getExtension()` returns `null` for user functions.
   `getFileName()`
   returns the current CLI/fixture source path for declarations loaded from a
   known file and `false` for source strings without one; line numbers come from
@@ -11203,9 +11212,8 @@
   property path. Non-public property value access, uninitialized/unset or
   non-public dynamic slots, exact `ReflectionException` and `TypeError` text,
   property aliases/references/COW side effects, readonly property write-once
-  enforcement and reflection modifier reporting, asymmetric
-  visibility/property-hook behavior, and native lowering remain unsupported
-  for reflection property value access.
+  enforcement, asymmetric visibility/property-hook behavior, and native
+  lowering remain unsupported for reflection property value access.
   `Reflection::getModifierNames()` accepts int-like scalar masks and returns
   PHP-ordered names for the currently supported reflection modifier bits:
   `abstract`, `final`, `public`, `protected`, `private`, `static`,
@@ -11241,8 +11249,10 @@
   catalogs, exact invalid-input diagnostics for every constructor shape, and
   native lowering remain unsupported.
   Readonly class/property declarations are parsed for bounded startup
-  diagnostics, but runtime write-once enforcement and reflection readonly
-  metadata remain unsupported. Property hooks/asymmetric visibility remain
+  diagnostics and reflected through `ReflectionClass::isReadOnly()`,
+  `ReflectionClass::getModifiers()`, `ReflectionProperty::getModifiers()`,
+  modifier-name mapping, and bounded `__toString()` output. Runtime write-once
+  enforcement remains unsupported. Property hooks/asymmetric visibility remain
   unsupported even where the compatibility constants and modifier-name mapping
   exist.
   `get_declared_classes()` returns a zero-indexed array containing the current

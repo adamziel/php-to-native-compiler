@@ -588,6 +588,7 @@ struct Interpreter {
     method_signatures: HashMap<(ClassId, String), MethodSignature>,
     abstract_classes: HashSet<ClassId>,
     final_classes: HashSet<ClassId>,
+    readonly_classes: HashSet<ClassId>,
     abstract_methods: HashSet<(ClassId, String)>,
     final_methods: HashMap<(ClassId, String), String>,
     interfaces: Vec<Rc<InterfaceDecl>>,
@@ -653,6 +654,7 @@ struct Interpreter {
     mysqli_insert_ids: HashMap<i64, i64>,
     mysqli_statements: HashMap<i64, MysqliStatementState>,
     reflection_classes: HashMap<i64, ReflectionClassState>,
+    reflection_object_targets: HashMap<i64, PhpObject>,
     reflection_functions: HashMap<i64, ReflectionFunctionState>,
     closure_reflection_functions: HashMap<i64, ReflectionFunctionState>,
     closure_functions: HashMap<i64, Rc<FunctionDecl>>,
@@ -1295,6 +1297,7 @@ struct ClassLikeSourceMetadata {
 struct PropertySourceMetadata {
     doc_comment: Option<String>,
     attributes: Vec<AttributeDecl>,
+    is_readonly: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -1379,6 +1382,7 @@ struct ReflectionPropertyState {
     visibility: Visibility,
     is_static: bool,
     is_dynamic: bool,
+    is_readonly: bool,
     has_default: bool,
     type_decl: Option<String>,
     attributes: Vec<AttributeDecl>,
@@ -11899,6 +11903,7 @@ impl Interpreter {
         let mut method_signatures = HashMap::new();
         let mut abstract_classes = HashSet::new();
         let mut final_classes = HashSet::new();
+        let mut readonly_classes = HashSet::new();
         let mut abstract_methods = HashSet::new();
         let mut final_methods = HashMap::new();
         let mut class_constants = HashMap::new();
@@ -11943,6 +11948,9 @@ impl Interpreter {
                     );
                     if class.is_final {
                         final_classes.insert(class_id);
+                    }
+                    if class.is_readonly {
+                        readonly_classes.insert(class_id);
                     }
                     register_final_method_markers(&mut final_methods, class_id, class);
                 }
@@ -12074,6 +12082,7 @@ impl Interpreter {
             method_signatures,
             abstract_classes,
             final_classes,
+            readonly_classes,
             abstract_methods,
             final_methods,
             interfaces,
@@ -12139,6 +12148,7 @@ impl Interpreter {
             mysqli_insert_ids: HashMap::new(),
             mysqli_statements: HashMap::new(),
             reflection_classes: HashMap::new(),
+            reflection_object_targets: HashMap::new(),
             reflection_functions: HashMap::new(),
             closure_reflection_functions: HashMap::new(),
             closure_functions: HashMap::new(),
@@ -26718,6 +26728,9 @@ impl Interpreter {
                     if class.is_final {
                         self.final_classes.insert(class_id);
                     }
+                    if class.is_readonly {
+                        self.readonly_classes.insert(class_id);
+                    }
                     register_final_method_markers(&mut self.final_methods, class_id, class);
                 }
                 Stmt::Interface(interface) => {
@@ -26878,9 +26891,13 @@ impl Interpreter {
         if class.is_final {
             self.final_classes.insert(class_id);
         }
+        if class.is_readonly {
+            self.readonly_classes.insert(class_id);
+        }
         if let Err(error) = self.autoload_missing_class_dependencies(class) {
             self.abstract_classes.remove(&class_id);
             self.final_classes.remove(&class_id);
+            self.readonly_classes.remove(&class_id);
             self.class_source_metadata.remove(&class_id);
             self.classes.remove_last_declared_class(class_id);
             return Err(error);
@@ -26897,6 +26914,7 @@ impl Interpreter {
         ) {
             self.abstract_classes.remove(&class_id);
             self.final_classes.remove(&class_id);
+            self.readonly_classes.remove(&class_id);
             self.class_source_metadata.remove(&class_id);
             self.classes.remove_last_declared_class(class_id);
             return Err(error);
@@ -26928,6 +26946,7 @@ impl Interpreter {
             );
             self.abstract_classes.remove(&class_id);
             self.final_classes.remove(&class_id);
+            self.readonly_classes.remove(&class_id);
             self.final_methods
                 .retain(|(declaring_class_id, _), _| *declaring_class_id != class_id);
             self.class_source_metadata.remove(&class_id);
@@ -26951,6 +26970,7 @@ impl Interpreter {
                 .retain(|(declaring_class_id, _), _| *declaring_class_id != class_id);
             self.abstract_classes.remove(&class_id);
             self.final_classes.remove(&class_id);
+            self.readonly_classes.remove(&class_id);
             self.final_methods
                 .retain(|(declaring_class_id, _), _| *declaring_class_id != class_id);
             self.class_source_metadata.remove(&class_id);
@@ -50828,13 +50848,19 @@ impl Interpreter {
             ));
         }
 
+        let reflected_object = match &target {
+            Value::Object(object) => Some(object.clone()),
+            Value::Closure(_) => None,
+            _ => unreachable!("ReflectionObject target type checked above"),
+        };
         let state = self.resolve_reflection_class_target(&target, span)?;
-        self.create_reflection_object_object(state, span)
+        self.create_reflection_object_object(state, reflected_object, span)
     }
 
     fn create_reflection_object_object(
         &mut self,
         state: ReflectionClassState,
+        reflected_object: Option<PhpObject>,
         span: Span,
     ) -> CompileResult<Value> {
         let class_id = self
@@ -50859,6 +50885,10 @@ impl Interpreter {
             object_id,
         );
         self.assign_reflection_object_state(&object, state, span)?;
+        if let Some(reflected_object) = reflected_object {
+            self.reflection_object_targets
+                .insert(object.id(), reflected_object);
+        }
         Ok(Value::Object(object))
     }
 
@@ -50872,6 +50902,7 @@ impl Interpreter {
             .write_public_property("name", Value::String(state.name.clone()))
             .map_err(|error| runtime_error(span, error))?;
         self.reflection_classes.insert(object.id(), state);
+        self.reflection_object_targets.remove(&object.id());
         Ok(())
     }
 
@@ -51809,6 +51840,7 @@ impl Interpreter {
                 visibility: Visibility::Public,
                 is_static: false,
                 is_dynamic: true,
+                is_readonly: false,
                 has_default: false,
                 type_decl: None,
                 attributes: Vec::new(),
@@ -58716,6 +58748,26 @@ impl Interpreter {
         }
 
         if method_name.eq_ignore_ascii_case("__toString") && args.is_empty() {
+            if object.class_name().eq_ignore_ascii_case("ReflectionObject") {
+                let state = self
+                    .reflection_classes
+                    .get(&object.id())
+                    .cloned()
+                    .ok_or_else(|| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "ReflectionObject::__toString()",
+                                "missing ReflectionObject runtime metadata",
+                            ),
+                        )
+                    })?;
+                let reflected_object = self.reflection_object_targets.get(&object.id()).cloned();
+                return self
+                    .reflection_object_to_string(&state, reflected_object.as_ref(), span)
+                    .map(Value::String)
+                    .map(Some);
+            }
             if object.is_instance_of_class_name("ReflectionClass") {
                 let state = self
                     .reflection_classes
@@ -58732,6 +58784,25 @@ impl Interpreter {
                     })?;
                 return self
                     .reflection_class_to_string(&state, span)
+                    .map(Value::String)
+                    .map(Some);
+            }
+            if object.class_name().eq_ignore_ascii_case("ReflectionMethod") {
+                let state = self
+                    .reflection_methods
+                    .get(&object.id())
+                    .cloned()
+                    .ok_or_else(|| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "ReflectionMethod::__toString()",
+                                "missing ReflectionMethod runtime metadata",
+                            ),
+                        )
+                    })?;
+                return self
+                    .reflection_method_to_string(&state, span)
                     .map(Value::String)
                     .map(Some);
             }
@@ -60470,8 +60541,17 @@ impl Interpreter {
                         ),
                     ));
                 }
+                let reflected_object = match &target {
+                    Value::Object(object) => Some(object.clone()),
+                    Value::Closure(_) => None,
+                    _ => unreachable!("ReflectionObject target type checked above"),
+                };
                 let state = self.resolve_reflection_class_target(&target, span)?;
                 self.assign_reflection_object_state(&object, state, span)?;
+                if let Some(reflected_object) = reflected_object {
+                    self.reflection_object_targets
+                        .insert(object.id(), reflected_object);
+                }
                 Ok(Value::Null)
             }
             "__construct" => {
@@ -60485,8 +60565,15 @@ impl Interpreter {
             }
             "__tostring" => {
                 expect_expr_arity("ReflectionClass::__toString", args.len(), 0, span)?;
-                self.reflection_class_to_string(&state, span)
-                    .map(Value::String)
+                if object.class_name().eq_ignore_ascii_case("ReflectionObject") {
+                    let reflected_object =
+                        self.reflection_object_targets.get(&object.id()).cloned();
+                    self.reflection_object_to_string(&state, reflected_object.as_ref(), span)
+                        .map(Value::String)
+                } else {
+                    self.reflection_class_to_string(&state, span)
+                        .map(Value::String)
+                }
             }
             "getname" => {
                 expect_expr_arity("ReflectionClass::getName", args.len(), 0, span)?;
@@ -60585,7 +60672,7 @@ impl Interpreter {
             }
             "isreadonly" => {
                 expect_expr_arity("ReflectionClass::isReadOnly", args.len(), 0, span)?;
-                Ok(Value::Bool(false))
+                Ok(Value::Bool(self.reflection_class_is_readonly(&state)))
             }
             "iscloneable" => {
                 expect_expr_arity("ReflectionClass::isCloneable", args.len(), 0, span)?;
@@ -61291,6 +61378,12 @@ impl Interpreter {
             .is_some_and(|class_id| self.final_classes.contains(&class_id))
     }
 
+    fn reflection_class_is_readonly(&self, state: &ReflectionClassState) -> bool {
+        state
+            .class_id
+            .is_some_and(|class_id| self.readonly_classes.contains(&class_id))
+    }
+
     fn reflection_class_modifier_mask(&self, state: &ReflectionClassState) -> i64 {
         let mut mask = 0;
         if self.reflection_class_is_final(state) {
@@ -61298,6 +61391,9 @@ impl Interpreter {
         }
         if self.reflection_class_is_abstract(state) {
             mask |= REFLECTION_MODIFIER_EXPLICIT_ABSTRACT;
+        }
+        if self.reflection_class_is_readonly(state) {
+            mask |= REFLECTION_MODIFIER_CLASS_READONLY;
         }
         mask
     }
@@ -61956,9 +62052,29 @@ impl Interpreter {
         state: &ReflectionClassState,
         span: Span,
     ) -> CompileResult<String> {
+        self.reflection_class_like_to_string(state, false, None, span)
+    }
+
+    fn reflection_object_to_string(
+        &mut self,
+        state: &ReflectionClassState,
+        reflected_object: Option<&PhpObject>,
+        span: Span,
+    ) -> CompileResult<String> {
+        self.reflection_class_like_to_string(state, true, reflected_object, span)
+    }
+
+    fn reflection_class_like_to_string(
+        &mut self,
+        state: &ReflectionClassState,
+        object_output: bool,
+        reflected_object: Option<&PhpObject>,
+        span: Span,
+    ) -> CompileResult<String> {
         if !self.reflection_class_is_user_defined(state) {
             if state.kind == ReflectionClassKind::Class
                 && state.name.eq_ignore_ascii_case("Directory")
+                && !object_output
             {
                 return Ok(directory_reflection_class_to_string().to_string());
             }
@@ -61971,7 +62087,11 @@ impl Interpreter {
             ));
         }
 
-        let mut output = self.reflection_class_to_string_header(state);
+        let mut output = if object_output {
+            self.reflection_object_to_string_header(state)
+        } else {
+            self.reflection_class_to_string_header(state)
+        };
         if let Some(file_name) = state.file_name.as_deref() {
             output.push_str(&format!(
                 "  @@ {file_name} {}-{}\n",
@@ -62011,6 +62131,7 @@ impl Interpreter {
                         visibility: runtime_visibility(property.visibility),
                         is_static: property.is_static,
                         is_dynamic: false,
+                        is_readonly: property.is_readonly,
                         has_default: property.default.is_some(),
                         type_decl: property.type_decl.map(|decl| decl.text),
                         attributes: property.attributes,
@@ -62064,6 +62185,22 @@ impl Interpreter {
         }
         output.push_str("  }\n\n");
 
+        if object_output {
+            let dynamic_properties = reflected_object
+                .map(|object| self.reflection_object_dynamic_properties(state, object))
+                .unwrap_or_default();
+            output.push_str(&format!(
+                "  - Dynamic properties [{}] {{\n",
+                dynamic_properties.len()
+            ));
+            for property in &dynamic_properties {
+                output.push_str("    ");
+                output.push_str(&self.reflection_class_property_to_string(property, span)?);
+                output.push('\n');
+            }
+            output.push_str("  }\n\n");
+        }
+
         output.push_str(&format!("  - Methods [{}] {{\n", instance_methods.len()));
         for (index, method) in instance_methods.iter().enumerate() {
             if index > 0 {
@@ -62074,6 +62211,56 @@ impl Interpreter {
         }
         output.push_str("  }\n}\n");
         Ok(output)
+    }
+
+    fn reflection_object_dynamic_properties(
+        &self,
+        state: &ReflectionClassState,
+        object: &PhpObject,
+    ) -> Vec<ReflectionPropertyState> {
+        let declared_names = state
+            .class_id
+            .map(|class_id| self.reflection_declared_property_names(class_id))
+            .unwrap_or_default();
+        object
+            .properties()
+            .into_iter()
+            .filter(|property| {
+                property.visibility() == Visibility::Public
+                    && property.is_initialized()
+                    && !property.is_unset()
+                    && !declared_names.contains(property.name())
+            })
+            .map(|property| ReflectionPropertyState {
+                declaring_class_name: object.class_name().to_string(),
+                declaring_kind: ReflectionClassKind::Class,
+                declaring_class_id: Some(object.class_id()),
+                name: property.name().to_string(),
+                doc_comment: None,
+                visibility: Visibility::Public,
+                is_static: false,
+                is_dynamic: true,
+                is_readonly: false,
+                has_default: false,
+                type_decl: None,
+                attributes: Vec::new(),
+            })
+            .collect()
+    }
+
+    fn reflection_declared_property_names(&self, class_id: ClassId) -> HashSet<String> {
+        let mut names = HashSet::new();
+        let mut current = Some(class_id);
+        while let Some(current_id) = current {
+            let Some(class) = self.classes.get(current_id) else {
+                break;
+            };
+            for property in class.properties() {
+                names.insert(property.name().to_string());
+            }
+            current = class.parent_id();
+        }
+        names
     }
 
     fn reflection_class_to_string_header(&self, state: &ReflectionClassState) -> String {
@@ -62089,6 +62276,11 @@ impl Interpreter {
                 } else {
                     ""
                 };
+                let readonly_prefix = if self.reflection_class_is_readonly(state) {
+                    "readonly "
+                } else {
+                    ""
+                };
                 let parent = state
                     .class_id
                     .and_then(|class_id| self.classes.get(class_id))
@@ -62097,7 +62289,7 @@ impl Interpreter {
                     .map(|parent| format!(" extends {}", parent.name()))
                     .unwrap_or_default();
                 format!(
-                    "Class [ <user> {abstract_prefix}{final_prefix}class {}{parent} ] {{\n",
+                    "Class [ <user> {abstract_prefix}{final_prefix}{readonly_prefix}class {}{parent} ] {{\n",
                     state.name
                 )
             }
@@ -62117,7 +62309,11 @@ impl Interpreter {
     ) -> CompileResult<String> {
         let value = self.evaluate_reflection_class_constant_value(state, span)?;
         let visibility = reflection_visibility_name(state.visibility);
-        let type_name = reflection_class_constant_type_name(&value);
+        let type_name = state
+            .type_decl
+            .as_ref()
+            .map(|decl| decl.text.as_str())
+            .unwrap_or_else(|| reflection_class_constant_type_name(&value));
         let rendered = reflection_class_constant_display_value(&value);
         Ok(format!(
             "Constant [ {visibility} {type_name} {} ] {{ {rendered} }}",
@@ -62132,6 +62328,12 @@ impl Interpreter {
     ) -> CompileResult<String> {
         let visibility = reflection_visibility_name(state.visibility);
         let static_marker = if state.is_static { " static" } else { "" };
+        let dynamic_marker = if state.is_dynamic { " <dynamic>" } else { "" };
+        let readonly_marker = if state.is_readonly {
+            " protected(set) readonly"
+        } else {
+            ""
+        };
         let type_marker = state
             .type_decl
             .as_deref()
@@ -62148,7 +62350,7 @@ impl Interpreter {
             String::new()
         };
         Ok(format!(
-            "Property [ {visibility}{static_marker}{type_marker} ${}{default} ]",
+            "Property [{dynamic_marker} {visibility}{static_marker}{readonly_marker}{type_marker} ${}{default} ]",
             state.name
         ))
     }
@@ -62737,6 +62939,8 @@ impl Interpreter {
                         visibility: property.visibility(),
                         is_static: property.is_static(),
                         is_dynamic: false,
+                        is_readonly: property.is_readonly()
+                            || source_metadata.is_some_and(|metadata| metadata.is_readonly),
                         has_default: self
                             .reflection_property_metadata_has_default(class.id(), property),
                         type_decl: property.type_decl().map(str::to_string),
@@ -62777,6 +62981,7 @@ impl Interpreter {
                 visibility: runtime_visibility(property.visibility),
                 is_static: property.is_static,
                 is_dynamic: false,
+                is_readonly: property.is_readonly,
                 has_default: property.default.is_some(),
                 type_decl: property.type_decl.map(|decl| decl.text),
                 attributes: property.attributes,
@@ -62811,6 +63016,8 @@ impl Interpreter {
                     visibility: property.visibility(),
                     is_static: property.is_static(),
                     is_dynamic: false,
+                    is_readonly: property.is_readonly()
+                        || source_metadata.is_some_and(|metadata| metadata.is_readonly),
                     has_default: self
                         .reflection_property_metadata_has_default(class.id(), property),
                     type_decl: property.type_decl().map(str::to_string),
@@ -63260,7 +63467,17 @@ impl Interpreter {
             return Ok(output);
         }
 
-        let mut output = format!("Function [ <{kind}> function {} ] {{\n", state.name);
+        let mut output = String::new();
+        if !state.is_internal {
+            if let Some(doc_comment) = state.doc_comment.as_deref() {
+                output.push_str(doc_comment);
+                output.push('\n');
+            }
+        }
+        output.push_str(&format!(
+            "Function [ <{kind}> function {} ] {{\n",
+            state.name
+        ));
         if !state.is_internal {
             if let Some(file_name) = state.file_name.as_deref() {
                 output.push_str(&format!(
@@ -63268,20 +63485,25 @@ impl Interpreter {
                     state.start_line, state.end_line
                 ));
             }
-            output.push('\n');
+            if !state.params.is_empty() {
+                output.push('\n');
+            }
         }
-        output.push_str(&format!("  - Parameters [{}] {{\n", state.params.len()));
-        for (position, parameter) in state.params.iter().cloned().enumerate() {
-            let parameter_state = ReflectionParameterState {
-                declaring: ReflectionParameterDeclaring::Function(state.clone()),
-                parameter,
-                position,
-            };
-            output.push_str("    ");
-            output.push_str(&self.reflection_parameter_to_string(&parameter_state, span)?);
-            output.push('\n');
+        if !state.params.is_empty() {
+            output.push_str(&format!("  - Parameters [{}] {{\n", state.params.len()));
+            for (position, parameter) in state.params.iter().cloned().enumerate() {
+                let parameter_state = ReflectionParameterState {
+                    declaring: ReflectionParameterDeclaring::Function(state.clone()),
+                    parameter,
+                    position,
+                };
+                output.push_str("    ");
+                output.push_str(&self.reflection_parameter_to_string(&parameter_state, span)?);
+                output.push('\n');
+            }
+            output.push_str("  }\n");
         }
-        output.push_str("  }\n}\n");
+        output.push_str("}\n");
         Ok(output)
     }
 
@@ -63290,19 +63512,7 @@ impl Interpreter {
         state: &ReflectionMethodState,
         span: Span,
     ) -> CompileResult<String> {
-        let kind = if state.is_internal {
-            "internal:Reflection".to_string()
-        } else if let (Some(reflected_class_id), Some(declaring_class_id)) =
-            (state.reflected_class_id, state.declaring_class_id)
-        {
-            if reflected_class_id != declaring_class_id {
-                format!("user, inherits {}", state.declaring_class_name)
-            } else {
-                "user".to_string()
-            }
-        } else {
-            "user".to_string()
-        };
+        let kind = self.reflection_method_to_string_traits(state);
         let traits = if state.name.eq_ignore_ascii_case("__construct") {
             format!("{kind}, ctor")
         } else {
@@ -63344,6 +63554,75 @@ impl Interpreter {
         }
         output.push_str("}\n");
         Ok(output)
+    }
+
+    fn reflection_method_to_string_traits(&self, state: &ReflectionMethodState) -> String {
+        if state.is_internal {
+            return "internal:Reflection".to_string();
+        }
+
+        let mut traits = vec!["user".to_string()];
+        if let (Some(reflected_class_id), Some(declaring_class_id)) =
+            (state.reflected_class_id, state.declaring_class_id)
+        {
+            if reflected_class_id != declaring_class_id {
+                traits.push(format!("inherits {}", state.declaring_class_name));
+            } else if let Some(overwritten) = self.reflection_method_overwritten_class_name(state) {
+                traits.push(format!("overwrites {overwritten}"));
+            }
+
+            if let Some(prototype) = self.reflection_method_prototype_class_name(state) {
+                traits.push(format!("prototype {prototype}"));
+            }
+        }
+        traits.join(", ")
+    }
+
+    fn reflection_method_overwritten_class_name(
+        &self,
+        state: &ReflectionMethodState,
+    ) -> Option<String> {
+        if state.visibility == Visibility::Private {
+            return None;
+        }
+        let declaring_class_id = state.declaring_class_id?;
+        let class = self.classes.get(declaring_class_id)?;
+        let mut current = class.parent_id();
+        while let Some(current_id) = current {
+            let current_class = self.classes.get(current_id)?;
+            if current_class
+                .method(&state.name)
+                .is_some_and(|method| method.visibility() != Visibility::Private)
+            {
+                return Some(current_class.name().to_string());
+            }
+            current = current_class.parent_id();
+        }
+        None
+    }
+
+    fn reflection_method_prototype_class_name(
+        &self,
+        state: &ReflectionMethodState,
+    ) -> Option<String> {
+        if state.visibility == Visibility::Private {
+            return None;
+        }
+        let declaring_class_id = state.declaring_class_id?;
+        let class = self.classes.get(declaring_class_id)?;
+        let mut current = class.parent_id();
+        let mut prototype = None;
+        while let Some(current_id) = current {
+            let current_class = self.classes.get(current_id)?;
+            if current_class
+                .method(&state.name)
+                .is_some_and(|method| method.visibility() != Visibility::Private)
+            {
+                prototype = Some(current_class.name().to_string());
+            }
+            current = current_class.parent_id();
+        }
+        prototype
     }
 
     fn call_reflection_method_method(
@@ -65825,21 +66104,11 @@ impl Interpreter {
         let default = if let Some(default_name) = state.parameter.default_constant_name.as_deref() {
             format!(" = {default_name}")
         } else if let Some(default) = state.parameter.default.as_ref() {
-            let mut default_scope = SymbolTable::new();
-            let default = self.evaluate(default, &mut default_scope)?;
-            let default = match (&state.declaring, &default) {
-                (ReflectionParameterDeclaring::Function(function), Value::Null)
-                    if function.is_internal =>
-                {
-                    "null".to_string()
-                }
-                (ReflectionParameterDeclaring::Method(method), Value::Null)
-                    if method.is_internal =>
-                {
-                    "null".to_string()
-                }
-                _ => reflection_value_export_short(&default),
+            let internal_null = match &state.declaring {
+                ReflectionParameterDeclaring::Function(function) => function.is_internal,
+                ReflectionParameterDeclaring::Method(method) => method.is_internal,
             };
+            let default = reflection_parameter_default_expr_to_string(default, internal_null);
             format!(" = {default}")
         } else {
             String::new()
@@ -73395,6 +73664,48 @@ impl Interpreter {
                     None,
                     Vec::new(),
                 )
+            }
+        }
+    }
+
+    fn reflection_object_to_string_header(&self, state: &ReflectionClassState) -> String {
+        match state.kind {
+            ReflectionClassKind::Class => {
+                let abstract_prefix = if self.reflection_class_is_abstract(state) {
+                    "abstract "
+                } else {
+                    ""
+                };
+                let final_prefix = if self.reflection_class_is_final(state) {
+                    "final "
+                } else {
+                    ""
+                };
+                let readonly_prefix = if self.reflection_class_is_readonly(state) {
+                    "readonly "
+                } else {
+                    ""
+                };
+                let parent = state
+                    .class_id
+                    .and_then(|class_id| self.classes.get(class_id))
+                    .and_then(|class| class.parent_id())
+                    .and_then(|parent_id| self.classes.get(parent_id))
+                    .map(|parent| format!(" extends {}", parent.name()))
+                    .unwrap_or_default();
+                format!(
+                    "Object of class [ <user> {abstract_prefix}{final_prefix}{readonly_prefix}class {}{parent} ] {{\n",
+                    state.name
+                )
+            }
+            ReflectionClassKind::Interface => {
+                format!(
+                    "Object of interface [ <user> interface {} ] {{\n",
+                    state.name
+                )
+            }
+            ReflectionClassKind::Trait => {
+                format!("Object of trait [ <user> trait {} ] {{\n", state.name)
             }
         }
     }
@@ -123445,7 +123756,7 @@ fn register_class_member_runtime_tables(
     for property in composed_trait_properties(class, trait_lookup)? {
         property_source_metadata.insert(
             (class_id, property.name.clone()),
-            property_source_metadata_from_decl(&property),
+            property_source_metadata_from_decl_for_class(&property, class.is_readonly),
         );
         if property.is_static && (property.type_decl.is_none() || property.default.is_some()) {
             static_properties.insert(
@@ -123479,7 +123790,7 @@ fn register_class_member_runtime_tables(
             ClassMember::Property(property) if property.is_static => {
                 property_source_metadata.insert(
                     (class_id, property.name.clone()),
-                    property_source_metadata_from_decl(property),
+                    property_source_metadata_from_decl_for_class(property, class.is_readonly),
                 );
                 if property.type_decl.is_none() || property.default.is_some() {
                     static_properties.insert(
@@ -123493,7 +123804,7 @@ fn register_class_member_runtime_tables(
                 for property in promoted_properties_from_method(method) {
                     property_source_metadata.insert(
                         (class_id, property.name.clone()),
-                        property_source_metadata_from_decl(&property),
+                        property_source_metadata_from_decl_for_class(&property, class.is_readonly),
                     );
                 }
                 let key = (class_id, method.function.name.to_ascii_lowercase());
@@ -123512,7 +123823,7 @@ fn register_class_member_runtime_tables(
             ClassMember::Property(property) => {
                 property_source_metadata.insert(
                     (class_id, property.name.clone()),
-                    property_source_metadata_from_decl(property),
+                    property_source_metadata_from_decl_for_class(property, class.is_readonly),
                 );
             }
         }
@@ -124030,6 +124341,7 @@ fn register_class_members(
 
     let class_properties = declared_class_properties(class);
     for property in composed_trait_properties(class, trait_lookup)? {
+        let effective_property = class_effective_property(class, property.clone());
         if let Some(class_property) = class_properties.get(&property.name) {
             if trait_properties_are_compatible(&property, class_property) {
                 continue;
@@ -124055,12 +124367,22 @@ fn register_class_members(
         validate_property_override_attribute(classes, interface_lookup, id, &class.name, &property)
             .map_err(|error| runtime_error(property.span, error))?;
 
-        let metadata_property = if property.is_static {
-            PhpPropertyMetadata::static_property(&property.name, visibility)
+        let metadata_property = if effective_property.is_static {
+            PhpPropertyMetadata::static_property(&effective_property.name, visibility)
         } else {
-            PhpPropertyMetadata::instance(&property.name, visibility)
+            PhpPropertyMetadata::instance(&effective_property.name, visibility)
         }
-        .with_type_decl(property.type_decl.as_ref().map(|decl| decl.text.clone()));
+        .with_type_decl(
+            effective_property
+                .type_decl
+                .as_ref()
+                .map(|decl| decl.text.clone()),
+        );
+        let metadata_property = if effective_property.is_readonly {
+            metadata_property.readonly()
+        } else {
+            metadata_property
+        };
         classes
             .get_mut(id)
             .expect("declared class id should resolve to class metadata")
@@ -124113,13 +124435,14 @@ fn register_class_members(
     for member in &class.members {
         match member {
             ClassMember::Property(property) => {
+                let effective_property = class_effective_property(class, property.clone());
                 let visibility = runtime_visibility(property.visibility);
                 validate_inherited_property_compatibility(
                     classes,
                     interface_lookup,
                     id,
                     &class.name,
-                    property,
+                    &effective_property,
                 )
                 .map_err(|error| runtime_error(property.span, error))?;
                 validate_property_override_attribute(
@@ -124127,16 +124450,26 @@ fn register_class_members(
                     interface_lookup,
                     id,
                     &class.name,
-                    property,
+                    &effective_property,
                 )
                 .map_err(|error| runtime_error(property.span, error))?;
 
-                let metadata_property = if property.is_static {
-                    PhpPropertyMetadata::static_property(&property.name, visibility)
+                let metadata_property = if effective_property.is_static {
+                    PhpPropertyMetadata::static_property(&effective_property.name, visibility)
                 } else {
-                    PhpPropertyMetadata::instance(&property.name, visibility)
+                    PhpPropertyMetadata::instance(&effective_property.name, visibility)
                 }
-                .with_type_decl(property.type_decl.as_ref().map(|decl| decl.text.clone()));
+                .with_type_decl(
+                    effective_property
+                        .type_decl
+                        .as_ref()
+                        .map(|decl| decl.text.clone()),
+                );
+                let metadata_property = if effective_property.is_readonly {
+                    metadata_property.readonly()
+                } else {
+                    metadata_property
+                };
                 classes
                     .get_mut(id)
                     .expect("declared class id should resolve to class metadata")
@@ -124155,13 +124488,14 @@ fn register_class_members(
             }
             ClassMember::Method(method) => {
                 for property in promoted_properties_from_method(method) {
+                    let effective_property = class_effective_property(class, property.clone());
                     let visibility = runtime_visibility(property.visibility);
                     validate_inherited_property_compatibility(
                         classes,
                         interface_lookup,
                         id,
                         &class.name,
-                        &property,
+                        &effective_property,
                     )
                     .map_err(|error| runtime_error(property.span, error))?;
                     validate_property_override_attribute(
@@ -124169,14 +124503,23 @@ fn register_class_members(
                         interface_lookup,
                         id,
                         &class.name,
-                        &property,
+                        &effective_property,
                     )
                     .map_err(|error| runtime_error(property.span, error))?;
 
                     let metadata_property =
-                        PhpPropertyMetadata::instance(&property.name, visibility).with_type_decl(
-                            property.type_decl.as_ref().map(|decl| decl.text.clone()),
-                        );
+                        PhpPropertyMetadata::instance(&effective_property.name, visibility)
+                            .with_type_decl(
+                                effective_property
+                                    .type_decl
+                                    .as_ref()
+                                    .map(|decl| decl.text.clone()),
+                            );
+                    let metadata_property = if effective_property.is_readonly {
+                        metadata_property.readonly()
+                    } else {
+                        metadata_property
+                    };
                     classes
                         .get_mut(id)
                         .expect("declared class id should resolve to class metadata")
@@ -125874,10 +126217,14 @@ fn class_like_source_metadata_from_enum(
     }
 }
 
-fn property_source_metadata_from_decl(property: &ClassPropertyDecl) -> PropertySourceMetadata {
+fn property_source_metadata_from_decl_for_class(
+    property: &ClassPropertyDecl,
+    class_is_readonly: bool,
+) -> PropertySourceMetadata {
     PropertySourceMetadata {
         doc_comment: property.doc_comment.clone(),
         attributes: property.attributes.clone(),
+        is_readonly: property.is_readonly || class_is_readonly,
     }
 }
 
@@ -125986,6 +126333,112 @@ fn reflection_default_constant_name(expr: &Expr) -> Option<String> {
         Expr::ParentClassConstant { constant, .. } => Some(format!("parent::{constant}")),
         Expr::LateStaticClassConstant { constant, .. } => Some(format!("static::{constant}")),
         _ => None,
+    }
+}
+
+fn reflection_parameter_default_expr_to_string(expr: &Expr, internal_null: bool) -> String {
+    match expr {
+        Expr::Null(_) if internal_null => "null".to_string(),
+        Expr::Null(_) => "NULL".to_string(),
+        Expr::Bool(true, _) => "true".to_string(),
+        Expr::Bool(false, _) => "false".to_string(),
+        Expr::Int(value, _) => value.to_string(),
+        Expr::Float(value, _) => Value::Float(*value).echo_string(),
+        Expr::String(value, _) => format!("'{}'", reflection_quote_string(value)),
+        Expr::Array { items, .. } => reflection_parameter_default_array_to_string(items),
+        Expr::Unary { op, expr, .. } => match op {
+            UnaryOp::Plus => format!(
+                "+{}",
+                reflection_parameter_default_expr_to_string(expr, internal_null)
+            ),
+            UnaryOp::Negate => format!(
+                "-{}",
+                reflection_parameter_default_expr_to_string(expr, internal_null)
+            ),
+            UnaryOp::Not => format!(
+                "!{}",
+                reflection_parameter_default_expr_to_string(expr, internal_null)
+            ),
+            UnaryOp::BitwiseNot => format!(
+                "~{}",
+                reflection_parameter_default_expr_to_string(expr, internal_null)
+            ),
+        },
+        Expr::Binary {
+            left, op, right, ..
+        } => format!(
+            "{} {} {}",
+            reflection_parameter_default_expr_to_string(left, internal_null),
+            reflection_binary_op_symbol(*op),
+            reflection_parameter_default_expr_to_string(right, internal_null)
+        ),
+        Expr::GlobalConstant { name, .. } => name.clone(),
+        Expr::ClassConstant {
+            class_name,
+            constant,
+            ..
+        } => format!("{class_name}::{constant}"),
+        Expr::SelfClassConstant { constant, .. } => format!("self::{constant}"),
+        Expr::ParentClassConstant { constant, .. } => format!("parent::{constant}"),
+        Expr::LateStaticClassConstant { constant, .. } => format!("static::{constant}"),
+        Expr::ClassNameConstant { class_name, .. } => format!("{class_name}::class"),
+        Expr::SelfClassNameConstant { .. } => "self::class".to_string(),
+        Expr::ParentClassNameConstant { .. } => "parent::class".to_string(),
+        Expr::StaticClassNameConstant { .. } => "static::class".to_string(),
+        _ => "<expr>".to_string(),
+    }
+}
+
+fn reflection_parameter_default_array_to_string(items: &[ArrayItem]) -> String {
+    if items.is_empty() {
+        return "[]".to_string();
+    }
+    let rendered = items
+        .iter()
+        .map(|item| {
+            let value = reflection_parameter_default_expr_to_string(&item.value, false);
+            item.key
+                .as_ref()
+                .map(|key| {
+                    format!(
+                        "{} => {value}",
+                        reflection_parameter_default_expr_to_string(key, false)
+                    )
+                })
+                .unwrap_or(value)
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("[{rendered}]")
+}
+
+fn reflection_binary_op_symbol(op: BinaryOp) -> &'static str {
+    match op {
+        BinaryOp::Add => "+",
+        BinaryOp::Sub => "-",
+        BinaryOp::Mul => "*",
+        BinaryOp::Div => "/",
+        BinaryOp::Mod => "%",
+        BinaryOp::Pow => "**",
+        BinaryOp::Concat => ".",
+        BinaryOp::Eq => "==",
+        BinaryOp::Ne => "!=",
+        BinaryOp::StrictEq => "===",
+        BinaryOp::StrictNe => "!==",
+        BinaryOp::Lt => "<",
+        BinaryOp::Le => "<=",
+        BinaryOp::Gt => ">",
+        BinaryOp::Ge => ">=",
+        BinaryOp::Spaceship => "<=>",
+        BinaryOp::NullCoalesce => "??",
+        BinaryOp::LogicalAnd => "&&",
+        BinaryOp::LogicalOr => "||",
+        BinaryOp::LogicalXor => "xor",
+        BinaryOp::BitwiseAnd => "&",
+        BinaryOp::BitwiseOr => "|",
+        BinaryOp::BitwiseXor => "^",
+        BinaryOp::ShiftLeft => "<<",
+        BinaryOp::ShiftRight => ">>",
     }
 }
 
@@ -128502,6 +128955,9 @@ fn reflection_property_modifier_mask(property: &ReflectionPropertyState) -> i64 
     };
     if property.is_static {
         mask |= REFLECTION_MODIFIER_STATIC;
+    }
+    if property.is_readonly {
+        mask |= REFLECTION_MODIFIER_PROPERTY_READONLY;
     }
     mask
 }
