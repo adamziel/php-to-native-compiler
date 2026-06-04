@@ -3519,6 +3519,20 @@
   nested bucket in `__call()` update the original reference cell while plain
   buckets remain copy-on-write. Malformed public `__call` metadata is rejected
   by the shared runtime callable validator before magic `$args` packing.
+  Missing `self::`, `parent::`, `static::`, named class, dynamic object, and
+  dynamic class-string static method syntax also uses a compatible current
+  `$this` object's public non-static `__call()` before considering public
+  static `__callStatic()`. If no compatible current object exists, missing
+  static syntax uses public static `__callStatic()` when declared or inherited;
+  otherwise it reports the normal undefined-method/callback error instead of
+  treating non-static `__call()` as statically callable. Inaccessible static
+  syntax can fall back to public static `__callStatic()` in the covered
+  interpreter slice. Static `__construct()` calls are rejected with PHP's
+  `Cannot call constructor` error and do not dispatch through magic. Dynamic
+  static method names truncate at the first NUL byte before lookup/magic
+  packing. Object array callbacks through `call_user_func_array()` can also
+  route missing methods through public non-static `__call()` with positional
+  `$args`.
 - bounded object string conversion through visible non-static `__toString()`
   for `echo $object`, `print $object`, `(string) $object`, binary
   concatenation, and concat compound assignment `.=` over the current
@@ -8284,7 +8298,9 @@
   `$this` binding. Named `ClassName::method(...)`, dynamic
   `$object::method(...)`/`$className::method(...)`, `self::method(...)`, and
   `parent::method(...)` static method dispatch is supported for the current
-  visible declared/inherited static-method subset.
+  visible declared/inherited static-method subset, plus the bounded
+  missing/inaccessible magic fallback described in the instance method section
+  above.
   Dynamic instance property names are supported only for existing public slots
   on current object values, public dynamic slots on `stdClass`, public dynamic
   slots on the WordPress `wpdb` compatibility class, and public dynamic slots

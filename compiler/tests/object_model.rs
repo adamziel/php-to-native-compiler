@@ -1696,6 +1696,131 @@ echo $object::route("object", 4);
 }
 
 #[test]
+fn static_syntax_missing_methods_prefer_current_this_magic_call() {
+    let source = r#"<?php
+class Router {
+    public function __call($method, $args) {
+        echo "call:$method:" . count($args) . "\n";
+    }
+
+    public static function __callStatic($method, $args) {
+        echo "static:$method:" . count($args) . "\n";
+    }
+
+    public function run() {
+        self::one(1);
+        Router::two(1, 2);
+        $this::three();
+        call_user_func(array("Router", "four"), 4);
+        call_user_func("Router::five");
+    }
+}
+
+$router = new Router();
+$router->run();
+Router::six(6);
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "call:one:1\n",
+            "call:two:2\n",
+            "call:three:0\n",
+            "call:four:1\n",
+            "call:five:0\n",
+            "static:six:1\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn inaccessible_static_syntax_methods_fall_back_to_call_static() {
+    let source = r#"<?php
+class Hidden {
+    private static function hiddenStatic() {}
+    protected function hiddenInstance() {}
+
+    public static function __callStatic($method, $args) {
+        echo "static:$method:" . count($args) . "\n";
+    }
+}
+
+$object = new Hidden();
+$object::hiddenStatic(1);
+$object::hiddenInstance(1, 2);
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "static:hiddenStatic:1\nstatic:hiddenInstance:2\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn call_user_func_array_object_callback_uses_magic_call() {
+    let source = r#"<?php
+class Router {
+    public function __call($method, $args) {
+        echo "call:$method:" . count($args) . "\n";
+    }
+}
+
+$router = new Router();
+call_user_func_array(array($router, "route"), array(1, 2));
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.stdout, "call:route:2\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn dynamic_static_magic_method_names_truncate_at_nul() {
+    let source = r#"<?php
+class Router {
+    public static function __callStatic($method, $args) {
+        var_dump($method);
+    }
+}
+
+$class = "Router";
+$method = "\0suffix";
+$class::$method();
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.stdout, "string(0) \"\"\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn static_constructor_call_bypasses_call_static() {
+    let execution = run_source(
+        r#"<?php
+class Router {
+    public static function __callStatic($method, $args) {
+        echo "unreached";
+    }
+}
+
+Router::__construct();
+"#,
+    )
+    .unwrap();
+
+    assert!(execution
+        .stdout
+        .contains("Fatal error: Uncaught Error: Cannot call constructor"));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 255);
+}
+
+#[test]
 fn invalid_magic_call_signature_emits_php_startup_fatal() {
     let execution = run_source_with_source_file(
         r#"<?php

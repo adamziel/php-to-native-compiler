@@ -4,6 +4,35 @@
 
 Implemented:
 
+- Added a bounded magic-method dispatch correction for static-syntax and
+  array-callback missing-method calls on the interpreter path. Missing
+  `self::` / `parent::` / `static::` / `Class::` / `$object::` /
+  `$className::` calls now prefer a compatible current `$this` object's
+  public non-static `__call()` before `__callStatic()`, inaccessible static
+  method syntax can fall back to public static `__callStatic()`, static
+  constructor calls report PHP's `Cannot call constructor` error instead of
+  dispatching through magic, object `call_user_func_array()` callbacks can
+  route missing methods through `__call()`, and dynamic static method names
+  truncate at NUL before magic dispatch. Focused proof covers exact-current
+  pre-patch selected PHPT at `0/12` and post-patch selected PHPT at `12/12`
+  for `Zend/tests/magic_methods/bug19859.phpt`,
+  `Zend/tests/magic_methods/bug42937.phpt`,
+  `Zend/tests/magic_methods/bug45186.phpt`,
+  `Zend/tests/magic_methods/bug45186_2.phpt`,
+  `Zend/tests/magic_methods/bug46238.phpt`,
+  `Zend/tests/magic_methods/bug47801.phpt`,
+  `Zend/tests/magic_methods/bug48533.phpt`,
+  `Zend/tests/magic_methods/bug53826.phpt`,
+  `Zend/tests/magic_methods/bug77339.phpt`,
+  `Zend/tests/magic_methods/call_static_003.phpt`,
+  `Zend/tests/magic_methods/call_static_006.phpt`, and
+  `Zend/tests/magic_methods/call_static_007.phpt`, plus focused Rust
+  object-model guards, build, fmt, and diff checks. Unsupported edges remain
+  trampoline closures with named arguments, complete callable deprecation and
+  autoload parity, broad magic method side effects outside the executed
+  interpreter subset, references/COW beyond documented paths, and native
+  lowering.
+
 - Added a bounded `DateTime::createFromFormat()` /
   `DateTimeImmutable::createFromFormat()` / `date_parse_from_format()`
   format-edge lane on the interpreter path. The shared parser now carries both

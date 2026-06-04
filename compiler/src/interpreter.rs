@@ -59086,7 +59086,11 @@ impl Interpreter {
         scope: &mut SymbolTable,
     ) -> CompileResult<String> {
         match self.evaluate(method, scope)? {
-            Value::String(value) => Ok(value),
+            Value::String(value) => Ok(value
+                .split_once('\0')
+                .map(|(prefix, _)| prefix)
+                .unwrap_or(&value)
+                .to_string()),
             Value::Int(value) => Ok(value.to_string()),
             other => Err(runtime_error(
                 span,
@@ -66751,6 +66755,38 @@ impl Interpreter {
         )
     }
 
+    fn call_missing_instance_method_with_values_via_magic(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        args: Vec<Value>,
+        span: Span,
+    ) -> CompileResult<Option<Value>> {
+        if self
+            .resolve_instance_method(object.class_id(), "__call")
+            .is_none()
+        {
+            return Ok(None);
+        }
+
+        let mut argument_array = PhpArray::new();
+        for value in args {
+            argument_array
+                .append(value)
+                .map_err(|error| runtime_error(span, error))?;
+        }
+
+        self.call_magic_instance_method_with_values(
+            object,
+            "__call",
+            vec![
+                Value::String(method_name.to_string()),
+                Value::Array(argument_array),
+            ],
+            span,
+        )
+    }
+
     fn call_missing_instance_method_reference_return_via_magic(
         &mut self,
         object: PhpObject,
@@ -66817,10 +66853,12 @@ impl Interpreter {
             ));
         };
 
-        let parent_class = self
+        let parent_class_name = self
             .classes
             .get(parent_class_id)
-            .expect("parent class id should resolve to class metadata");
+            .expect("parent class id should resolve to class metadata")
+            .name()
+            .to_string();
         if self.resolved_method_is_core_datetimezone(parent_class_id) {
             let this_object = match caller_scope.read_named("this") {
                 Some(Value::Object(object)) => object.clone(),
@@ -66828,7 +66866,7 @@ impl Interpreter {
                     return Err(runtime_error(
                         span,
                         RuntimeError::unsupported_call(
-                            format!("{}::{method_name}()", parent_class.name()),
+                            format!("{parent_class_name}::{method_name}()"),
                             "non-static method dispatch through parent:: requires current $this object context",
                         ),
                     ));
@@ -66849,7 +66887,7 @@ impl Interpreter {
                     return Err(runtime_error(
                         span,
                         RuntimeError::unsupported_call(
-                            format!("{}::{method_name}()", parent_class.name()),
+                            format!("{parent_class_name}::{method_name}()"),
                             "non-static method dispatch through parent:: requires current $this object context",
                         ),
                     ));
@@ -66864,7 +66902,7 @@ impl Interpreter {
                     return Err(runtime_error(
                         span,
                         RuntimeError::unsupported_call(
-                            format!("{}::{method_name}()", parent_class.name()),
+                            format!("{parent_class_name}::{method_name}()"),
                             "non-static method dispatch through parent:: requires current $this object context",
                         ),
                     ));
@@ -66881,16 +66919,37 @@ impl Interpreter {
         let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
             self.resolve_instance_method(parent_class_id, method_name)
         else {
-            return Err(runtime_error(
+            return match self.call_missing_static_method_via_magic(
+                parent_class_id,
+                method_name,
+                args,
                 span,
-                RuntimeError::undefined_function(format!(
-                    "{}::{method_name}()",
-                    parent_class.name()
+                caller_scope,
+            )? {
+                Some(value) => Ok(value),
+                None => Err(runtime_error(
+                    span,
+                    RuntimeError::undefined_function(format!(
+                        "{parent_class_name}::{method_name}()"
+                    )),
                 )),
-            ));
+            };
         };
 
-        self.ensure_instance_method_visible(class_id, &class_name, method_name, visibility, span)?;
+        if !self.method_visible_for_dispatch(None, class_id, method_name, visibility) {
+            return match self.call_missing_static_method_via_magic(
+                parent_class_id,
+                method_name,
+                args,
+                span,
+                caller_scope,
+            )? {
+                Some(value) => Ok(value),
+                None => {
+                    Err(self.method_visibility_error(&class_name, method_name, visibility, span))
+                }
+            };
+        }
 
         if self.resolved_method_is_core_spl_object_storage(class_id) {
             let this_object = match caller_scope.read_named("this") {
@@ -67531,6 +67590,29 @@ impl Interpreter {
             };
         };
 
+        if !self.method_visible_for_dispatch(
+            Some(class_id),
+            declaring_class_id,
+            method_name,
+            visibility,
+        ) {
+            return match self.call_missing_static_method_via_magic(
+                class_id,
+                method_name,
+                args,
+                span,
+                caller_scope,
+            )? {
+                Some(value) => Ok(value),
+                None => Err(self.method_visibility_error(
+                    &declaring_class_name,
+                    method_name,
+                    visibility,
+                    span,
+                )),
+            };
+        }
+
         if is_static {
             self.ensure_instance_method_visible_for_receiver(
                 Some(class_id),
@@ -67586,6 +67668,10 @@ impl Interpreter {
                     Vec::new(),
                 )
                 .map(|(value, _)| value);
+        }
+
+        if method_name.eq_ignore_ascii_case("__construct") {
+            return Err(cannot_call_constructor_error(span));
         }
 
         self.ensure_instance_method_visible_for_receiver(
@@ -67692,16 +67778,33 @@ impl Interpreter {
             };
         };
 
-        self.ensure_instance_method_visible_for_receiver(
+        if !self.method_visible_for_dispatch(
             Some(receiver_class_id),
             declaring_class_id,
-            &declaring_class_name,
             method_name,
             visibility,
-            span,
-        )?;
+        ) {
+            return match self.call_missing_static_method_via_magic(
+                receiver_class_id,
+                method_name,
+                args,
+                span,
+                caller_scope,
+            )? {
+                Some(value) => Ok(value),
+                None => Err(self.method_visibility_error(
+                    &declaring_class_name,
+                    method_name,
+                    visibility,
+                    span,
+                )),
+            };
+        }
 
         if !is_static {
+            if method_name.eq_ignore_ascii_case("__construct") {
+                return Err(cannot_call_constructor_error(span));
+            }
             return Err(non_static_method_called_statically_error(
                 &declaring_class_name,
                 method_name,
@@ -67762,22 +67865,27 @@ impl Interpreter {
         span: Span,
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<Option<Value>> {
+        if method_name.eq_ignore_ascii_case("__construct") {
+            return Err(cannot_call_constructor_error(span));
+        }
+
+        if let Some(object) =
+            self.current_this_for_static_magic_instance_dispatch(receiver_class_id, caller_scope)
+        {
+            if let Some(value) = self.call_missing_instance_method_via_magic(
+                object,
+                method_name,
+                args,
+                span,
+                caller_scope,
+            )? {
+                return Ok(Some(value));
+            }
+        }
+
         let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
             self.resolve_instance_method(receiver_class_id, "__callStatic")
         else {
-            if has_public_non_static_magic_call(&self.classes, receiver_class_id) {
-                let receiver_class_name = self
-                    .classes
-                    .get(receiver_class_id)
-                    .expect("receiver class id should resolve to class metadata")
-                    .name()
-                    .to_string();
-                return Err(non_static_method_called_statically_error(
-                    &receiver_class_name,
-                    method_name,
-                    span,
-                ));
-            }
             return Ok(None);
         };
 
@@ -67829,23 +67937,17 @@ impl Interpreter {
         span: Span,
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<Option<Value>> {
-        if self
-            .resolve_instance_method(receiver_class_id, "__callStatic")
-            .is_none()
+        if method_name.eq_ignore_ascii_case("__construct") {
+            return Err(cannot_call_constructor_error(span));
+        }
+
+        let current_this =
+            self.current_this_for_static_magic_instance_dispatch(receiver_class_id, caller_scope);
+        if current_this.is_none()
+            && self
+                .resolve_instance_method(receiver_class_id, "__callStatic")
+                .is_none()
         {
-            if has_public_non_static_magic_call(&self.classes, receiver_class_id) {
-                let receiver_class_name = self
-                    .classes
-                    .get(receiver_class_id)
-                    .expect("receiver class id should resolve to class metadata")
-                    .name()
-                    .to_string();
-                return Err(non_static_method_called_statically_error(
-                    &receiver_class_name,
-                    method_name,
-                    span,
-                ));
-            }
             return Ok(None);
         }
 
@@ -67857,6 +67959,14 @@ impl Interpreter {
             ));
         };
         let values = Self::call_user_func_array_positional_values(argument_array, span)?;
+        if let Some(object) = current_this {
+            return self.call_missing_instance_method_with_values_via_magic(
+                object,
+                method_name,
+                values,
+                span,
+            );
+        }
         self.call_missing_static_method_with_values_via_magic(
             receiver_class_id,
             method_name,
@@ -67872,23 +67982,14 @@ impl Interpreter {
         args: Vec<Value>,
         span: Span,
     ) -> CompileResult<Option<Value>> {
+        if method_name.eq_ignore_ascii_case("__construct") {
+            return Err(cannot_call_constructor_error(span));
+        }
+
         if self
             .resolve_instance_method(receiver_class_id, "__callStatic")
             .is_none()
         {
-            if has_public_non_static_magic_call(&self.classes, receiver_class_id) {
-                let receiver_class_name = self
-                    .classes
-                    .get(receiver_class_id)
-                    .expect("receiver class id should resolve to class metadata")
-                    .name()
-                    .to_string();
-                return Err(non_static_method_called_statically_error(
-                    &receiver_class_name,
-                    method_name,
-                    span,
-                ));
-            }
             return Ok(None);
         }
 
@@ -67957,6 +68058,28 @@ impl Interpreter {
             None,
         )
         .map(Some)
+    }
+
+    fn current_this_for_static_magic_instance_dispatch(
+        &self,
+        receiver_class_id: ClassId,
+        caller_scope: &SymbolTable,
+    ) -> Option<PhpObject> {
+        let Some(Value::Object(object)) = caller_scope.read_named("this") else {
+            return None;
+        };
+        let object_class_id = object.class_id();
+        let object_matches_receiver = object_class_id == receiver_class_id
+            || self
+                .classes
+                .is_subclass_of(object_class_id, receiver_class_id);
+        if object_matches_receiver
+            && has_public_non_static_magic_call(&self.classes, object_class_id)
+        {
+            Some(object)
+        } else {
+            None
+        }
     }
 
     fn evaluate_interpolated_string(
@@ -69881,7 +70004,20 @@ impl Interpreter {
             };
         };
 
-        self.ensure_instance_method_visible(class_id, &class_name, method_name, visibility, span)?;
+        if !self.method_visible_for_dispatch(None, class_id, method_name, visibility) {
+            return match self.call_missing_static_method_via_magic(
+                current_class_id,
+                method_name,
+                args,
+                span,
+                caller_scope,
+            )? {
+                Some(value) => Ok(value),
+                None => {
+                    Err(self.method_visibility_error(&class_name, method_name, visibility, span))
+                }
+            };
+        }
 
         let called_class_id = self
             .called_class_context
@@ -70021,7 +70157,20 @@ impl Interpreter {
             };
         };
 
-        self.ensure_instance_method_visible(class_id, &class_name, method_name, visibility, span)?;
+        if !self.method_visible_for_dispatch(None, class_id, method_name, visibility) {
+            return match self.call_missing_static_method_via_magic(
+                called_class_id,
+                method_name,
+                args,
+                span,
+                caller_scope,
+            )? {
+                Some(value) => Ok(value),
+                None => {
+                    Err(self.method_visibility_error(&class_name, method_name, visibility, span))
+                }
+            };
+        }
 
         if !is_static {
             return Err(runtime_error(
@@ -70191,6 +70340,147 @@ impl Interpreter {
             Some(Value::Object(object)) => Ok(object.clone()),
             _ => Err(this_not_in_object_context_error(span)),
         }
+    }
+
+    fn call_scoped_array_callable_missing_method_via_magic(
+        &mut self,
+        _context: &str,
+        target: &Value,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Option<Value>> {
+        let target_scope = match target {
+            Value::String(name) if name.eq_ignore_ascii_case("self") => {
+                Some(ScopedArrayCallableKind::SelfScope)
+            }
+            Value::String(name) if name.eq_ignore_ascii_case("parent") => {
+                Some(ScopedArrayCallableKind::ParentScope)
+            }
+            _ => None,
+        };
+        let method_scope = Self::scoped_array_callable_method(method_name);
+        let Some((kind, lookup_method_name, method_uses_scope)) = method_scope
+            .map(|(kind, method)| (kind, method, true))
+            .or_else(|| target_scope.map(|kind| (kind, method_name, false)))
+        else {
+            return Ok(None);
+        };
+
+        let (lookup_class_id, target_label, instance_object, allow_static_magic) = match target {
+            Value::Object(object) => {
+                let target_class = self
+                    .classes
+                    .get(object.class_id())
+                    .expect("object class id should resolve to class metadata");
+                let lookup_class_id = match kind {
+                    ScopedArrayCallableKind::SelfScope => object.class_id(),
+                    ScopedArrayCallableKind::ParentScope => {
+                        let Some(parent_id) = target_class.parent_id() else {
+                            return Ok(None);
+                        };
+                        parent_id
+                    }
+                };
+                let instance_object =
+                    has_public_non_static_magic_call(&self.classes, object.class_id())
+                        .then(|| object.clone());
+                (
+                    lookup_class_id,
+                    target_class.name().to_string(),
+                    instance_object,
+                    false,
+                )
+            }
+            Value::String(class_name) if target_scope.is_some() && !method_uses_scope => {
+                let Some(current_class_id) = self.class_context.last().copied() else {
+                    return Ok(None);
+                };
+                let current_class = self
+                    .classes
+                    .get(current_class_id)
+                    .expect("current class id should resolve to class metadata");
+                let lookup_class_id = match kind {
+                    ScopedArrayCallableKind::SelfScope => current_class_id,
+                    ScopedArrayCallableKind::ParentScope => {
+                        let Some(parent_id) = current_class.parent_id() else {
+                            return Ok(None);
+                        };
+                        parent_id
+                    }
+                };
+                let instance_object = self
+                    .current_this_for_static_magic_instance_dispatch(lookup_class_id, caller_scope);
+                (lookup_class_id, class_name.clone(), instance_object, true)
+            }
+            Value::String(class_name) => {
+                let Some(class_id) = self.classes.lookup_class_id(class_name) else {
+                    return Ok(None);
+                };
+                let target_class = self
+                    .classes
+                    .get(class_id)
+                    .expect("class id should resolve to class metadata");
+                let lookup_class_id = match kind {
+                    ScopedArrayCallableKind::SelfScope => class_id,
+                    ScopedArrayCallableKind::ParentScope => {
+                        let Some(parent_id) = target_class.parent_id() else {
+                            return Ok(None);
+                        };
+                        parent_id
+                    }
+                };
+                (lookup_class_id, target_class.name().to_string(), None, true)
+            }
+            _ => return Ok(None),
+        };
+
+        let resolved = if matches!(target, Value::Object(_)) {
+            self.resolve_instance_method_for_current_object_scope(
+                lookup_class_id,
+                lookup_method_name,
+            )
+        } else {
+            self.resolve_instance_method(lookup_class_id, lookup_method_name)
+        };
+        if resolved.is_some() {
+            return Ok(None);
+        }
+
+        let has_static_magic = allow_static_magic
+            && self
+                .resolve_instance_method(lookup_class_id, "__callStatic")
+                .is_some();
+        if instance_object.is_none() && !has_static_magic {
+            return Ok(None);
+        }
+
+        self.emit_scoped_array_callable_deprecation(
+            &target_label,
+            method_name,
+            kind,
+            method_uses_scope,
+            span,
+        )?;
+
+        if let Some(object) = instance_object {
+            return self.call_missing_instance_method_via_magic(
+                object,
+                lookup_method_name,
+                args,
+                span,
+                caller_scope,
+            );
+        }
+
+        self.call_missing_static_method_via_magic(
+            lookup_class_id,
+            lookup_method_name,
+            args,
+            span,
+            caller_scope,
+        )
     }
 
     fn invalid_callback_error(context: &str, detail: impl AsRef<str>, span: Span) -> Diagnostic {
@@ -70434,12 +70724,13 @@ impl Interpreter {
                 }
                 Value::String(class_name) if target_scope.is_some() && !method_uses_scope => {
                     let current_class_id = self.class_context.last().copied().ok_or_else(|| {
-                        runtime_error(
-                            span,
-                            RuntimeError::unsupported_call(
-                                format!("{}::{lookup_method_name}()", kind.label()),
-                                "self and parent callables require method or static class context",
+                        Self::invalid_callback_error(
+                            context,
+                            format!(
+                                "cannot access \"{}\" when no class scope is active",
+                                kind.label()
                             ),
+                            span,
                         )
                     })?;
                     let current_class = self
@@ -72490,7 +72781,11 @@ impl Interpreter {
 
     fn dynamic_static_method_name_from_value(value: Value, span: Span) -> CompileResult<String> {
         match value {
-            Value::String(name) => Ok(name),
+            Value::String(name) => Ok(name
+                .split_once('\0')
+                .map(|(prefix, _)| prefix)
+                .unwrap_or(&name)
+                .to_string()),
             _ => Err(method_name_must_be_string_error(span)),
         }
     }
@@ -74695,6 +74990,16 @@ impl Interpreter {
         let Some((target, method_name)) = array_callable_parts(callback) else {
             return Err(Self::invalid_array_callback_error(context, callback, span));
         };
+        if let Some(value) = self.call_scoped_array_callable_missing_method_via_magic(
+            context,
+            target,
+            method_name,
+            args,
+            span,
+            caller_scope,
+        )? {
+            return Ok(value);
+        }
         if let Some(resolution) = self.resolve_scoped_array_callable_method(
             context,
             target,
@@ -74769,6 +75074,13 @@ impl Interpreter {
                         caller_scope,
                     )? {
                         Some(value) => Ok(value),
+                        None if context == "call_user_func()" => Err(Self::invalid_callback_error(
+                            context,
+                            format!(
+                                "class {receiver_class_name} does not have a method \"{method_name}\""
+                            ),
+                            span,
+                        )),
                         None => Err(runtime_error(
                             span,
                             RuntimeError::undefined_function(format!(
@@ -74865,6 +75177,13 @@ impl Interpreter {
                         caller_scope,
                     )? {
                         Some(value) => Ok(value),
+                        None if context == "call_user_func()" => Err(Self::invalid_callback_error(
+                            context,
+                            format!(
+                                "class {receiver_class_name} does not have a method \"{method_name}\""
+                            ),
+                            span,
+                        )),
                         None => Err(runtime_error(
                             span,
                             RuntimeError::undefined_function(format!(
@@ -74949,6 +75268,16 @@ impl Interpreter {
         let Some((target, method_name)) = array_callable_parts(callback) else {
             return Err(Self::invalid_array_callback_error(context, callback, span));
         };
+        if let Some(value) = self.call_scoped_array_callable_missing_method_via_magic(
+            context,
+            target,
+            method_name,
+            args,
+            span,
+            caller_scope,
+        )? {
+            return Ok((value, None));
+        }
         if let Some(resolution) = self.resolve_scoped_array_callable_method(
             context,
             target,
@@ -75018,6 +75347,13 @@ impl Interpreter {
                         caller_scope,
                     )? {
                         Some(value) => Ok((value, None)),
+                        None if context == "call_user_func()" => Err(Self::invalid_callback_error(
+                            context,
+                            format!(
+                                "class {receiver_class_name} does not have a method \"{method_name}\""
+                            ),
+                            span,
+                        )),
                         None => Err(runtime_error(
                             span,
                             RuntimeError::undefined_function(format!(
@@ -75109,6 +75445,13 @@ impl Interpreter {
                         caller_scope,
                     )? {
                         Some(value) => Ok((value, None)),
+                        None if context == "call_user_func()" => Err(Self::invalid_callback_error(
+                            context,
+                            format!(
+                                "class {receiver_class_name} does not have a method \"{method_name}\""
+                            ),
+                            span,
+                        )),
                         None => Err(runtime_error(
                             span,
                             RuntimeError::undefined_function(format!(
@@ -78310,10 +78653,12 @@ impl Interpreter {
 
         match target {
             Value::Object(object) => {
-                let receiver_class = self
+                let receiver_class_name = self
                     .classes
                     .get(object.class_id())
-                    .expect("object class id should resolve to class metadata");
+                    .expect("object class id should resolve to class metadata")
+                    .name()
+                    .to_string();
                 let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
                     self.resolve_instance_method_for_current_object_scope(
                         object.class_id(),
@@ -78323,8 +78668,7 @@ impl Interpreter {
                     return Err(runtime_error(
                         span,
                         RuntimeError::undefined_function(format!(
-                            "{}::{method_name}()",
-                            receiver_class.name()
+                            "{receiver_class_name}::{method_name}()"
                         )),
                     ));
                 };
@@ -107534,23 +107878,37 @@ impl Interpreter {
 
         match target {
             Value::Object(object) => {
-                let receiver_class = self
+                let receiver_class_name = self
                     .classes
                     .get(object.class_id())
-                    .expect("object class id should resolve to class metadata");
+                    .expect("object class id should resolve to class metadata")
+                    .name()
+                    .to_string();
                 let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
                     self.resolve_instance_method_for_current_object_scope(
                         object.class_id(),
                         method_name,
                     )
                 else {
-                    return Err(runtime_error(
+                    let values = self.evaluate_call_user_func_array_arguments(
+                        argument_expr,
                         span,
-                        RuntimeError::undefined_function(format!(
-                            "{}::{method_name}()",
-                            receiver_class.name()
+                        caller_scope,
+                    )?;
+                    return match self.call_missing_instance_method_with_values_via_magic(
+                        object.clone(),
+                        method_name,
+                        values,
+                        span,
+                    )? {
+                        Some(value) => Ok(value),
+                        None => Err(runtime_error(
+                            span,
+                            RuntimeError::undefined_function(format!(
+                                "{receiver_class_name}::{method_name}()"
+                            )),
                         )),
-                    ));
+                    };
                 };
                 self.ensure_instance_method_visible(
                     class_id,
@@ -107730,23 +108088,37 @@ impl Interpreter {
 
         match target {
             Value::Object(object) => {
-                let receiver_class = self
+                let receiver_class_name = self
                     .classes
                     .get(object.class_id())
-                    .expect("object class id should resolve to class metadata");
+                    .expect("object class id should resolve to class metadata")
+                    .name()
+                    .to_string();
                 let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
                     self.resolve_instance_method_for_current_object_scope(
                         object.class_id(),
                         method_name,
                     )
                 else {
-                    return Err(runtime_error(
+                    let values = self.evaluate_call_user_func_array_arguments(
+                        argument_expr,
                         span,
-                        RuntimeError::undefined_function(format!(
-                            "{}::{method_name}()",
-                            receiver_class.name()
+                        caller_scope,
+                    )?;
+                    return match self.call_missing_instance_method_with_values_via_magic(
+                        object.clone(),
+                        method_name,
+                        values,
+                        span,
+                    )? {
+                        Some(value) => Ok((value, None)),
+                        None => Err(runtime_error(
+                            span,
+                            RuntimeError::undefined_function(format!(
+                                "{receiver_class_name}::{method_name}()"
+                            )),
                         )),
-                    ));
+                    };
                 };
                 self.ensure_instance_method_visible(
                     class_id,
@@ -108031,7 +108403,7 @@ impl Interpreter {
                         span,
                     )? {
                         Some(value) => Ok(value),
-                        None if matches!(context, "array_map()" | "array_filter()") => Err(Self::invalid_callback_error(
+                        None if matches!(context, "call_user_func()" | "array_map()" | "array_filter()") => Err(Self::invalid_callback_error(
                             context,
                             format!(
                                 "class {receiver_class_name} does not have a method \"{method_name}\""
@@ -129855,6 +130227,15 @@ fn non_static_method_called_statically_error(
     )
 }
 
+fn cannot_call_constructor_error(span: Span) -> Diagnostic {
+    Diagnostic::new(
+        Phase::Runtime,
+        span.line,
+        span.column,
+        "Cannot call constructor",
+    )
+}
+
 fn this_not_in_object_context_error(span: Span) -> Diagnostic {
     Diagnostic::new(
         Phase::Runtime,
@@ -130573,6 +130954,10 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
         }
 
         if error.message.starts_with("Cannot call abstract method ") {
+            return Some(("Error", error.message.clone()));
+        }
+
+        if error.message == "Cannot call constructor" {
             return Some(("Error", error.message.clone()));
         }
 
