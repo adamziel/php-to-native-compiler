@@ -2742,6 +2742,26 @@ destructuring replacements, and explicit unsets can return handles to the
 reusable pool after the live-root scan. Unbounded scales/exponents, exact
 invalid-operand diagnostic parity, references and copy-on-write identity, full
 object lifetime timing, and native lowering remain outside this lane.
+GMP uses a separate bounded interpreter lane backed by the same decimal digit
+model but stores each `GMP` object as a normalized public decimal string `num`
+property. `gmp_init()`, `new GMP(...)`, `gmp_strval()`, `gmp_intval()`,
+`gmp_abs()`, `gmp_neg()`, `gmp_sign()`, and scalar casts route through one
+integer parser that handles current int/string/GMP operands, leading ASCII
+numeric whitespace, autodetected binary/octal/decimal/hex prefixes, and the
+selected explicit-base cases. GMP objects also participate in the reusable
+temporary object handle path for stable direct `var_dump()` output. A bounded
+arithmetic helper layer reuses the same decimal digits for current
+int/string/GMP `gmp_add()`, `gmp_sub()`, `gmp_mul()`, `gmp_cmp()`,
+`gmp_mod()`, `gmp_div_q()`, `gmp_div_r()`, `gmp_gcd()`, `gmp_lcm()`,
+`gmp_pow()`, `gmp_sqrt()`, `gmp_sqrtrem()`, `gmp_fact()`,
+`gmp_nextprime()`, and `gmp_perfect_square()` calls. Error objects retain
+pending internal call-frame arguments for catchable traces, and released
+catch variables retire trace-held reusable GMP temporaries before the error
+handle so selected object-handle output remains PHP-shaped. Exact
+`gmp_div_qr()` object-handle reuse, GMP bitwise/import/export/random
+functions, operator overloading, serialization/cloning parity,
+references/copy-on-write identity, and native lowering remain outside this
+lane.
 Non-BcMath scalar `**` and `**=` stay on the interpreter path and reuse the
 standard math `pow()` helper so scalar exponentiation shares the same coercion,
 deprecation, and int-vs-float result rules as `pow()`. Native lowering still

@@ -7251,14 +7251,32 @@
   covered scalar/Number operands, unbounded scales/exponents, exact object
   lifetime timing outside the documented reusable temporary lanes,
   references/copy-on-write, and native lowering remain unsupported.
+  GMP support is a bounded interpreter-only integer object lane. The supported
+  runtime surface includes `extension_loaded("gmp")`, `new GMP(...)`,
+  `gmp_init()`, `gmp_strval()`, `gmp_intval()`, `gmp_abs()`, `gmp_neg()`, and
+  `gmp_sign()` over current int, string, and `GMP` operands, with normalized
+  decimal-string `num` object storage, leading ASCII whitespace, autodetected
+  binary/octal/decimal/hex input prefixes, selected explicit base parsing, and
+  string/echo/int/float/bool casts for `GMP` objects. The bounded arithmetic
+  slice includes `gmp_add()`, `gmp_sub()`, `gmp_mul()`, `gmp_cmp()`,
+  `gmp_mod()`, `gmp_div_q()`, `gmp_div_r()`, `gmp_gcd()`, `gmp_lcm()`,
+  `gmp_pow()`, `gmp_sqrt()`, `gmp_sqrtrem()`, `gmp_fact()`,
+  `gmp_nextprime()`, and `gmp_perfect_square()` for current int/string/GMP
+  operands, including the three `GMP_ROUND_*` constants and selected
+  `ValueError`/`DivisionByZeroError` surfaces. Exact `gmp_div_qr()`
+  object-handle reuse parity, GMP bitwise/import/export/random functions,
+  serialization/cloning, operator overloading, exact base conversion beyond the
+  covered rows, binary-string/non-ASCII parsing parity, unbounded
+  exponent/factorial inputs, references/copy-on-write, and native lowering
+  remain unsupported.
   `extension_loaded($name)` accepts scalar/null string-compatible extension
   names and supported visible `__toString()` objects through a bounded
   PHP-internal string boundary, including PHP-shaped null-to-string
   deprecations and catchable `TypeError`s for arrays, resources, closures, and
   non-stringable objects. It answers from a deterministic bounded
   compiler/runtime compatibility registry: at runtime `true` for
-  `get_loaded_extensions()` entries including `bcmath`, `filter`, `json`,
-  `hash`, `pdo`, `pdo_mysql`, and `posix`, and `false` for other names,
+  `get_loaded_extensions()` entries including `bcmath`, `filter`, `gmp`,
+  `json`, `hash`, `pdo`, `pdo_mysql`, and `posix`, and `false` for other names,
   including WordPress probe names such as `mbstring` and `sodium`, without
   querying host PHP modules, `php.ini`, SAPI state, or dynamically loading
   extensions.

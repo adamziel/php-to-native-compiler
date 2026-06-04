@@ -32298,9 +32298,21 @@ impl PhpClassTable {
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
                 .expect("BcMath\\Number core metadata should not duplicate methods");
         }
+        let gmp_id = classes
+            .declare_class("GMP")
+            .expect("core class table should contain BcMath\\Number before GMP");
+        let gmp = classes
+            .get_mut(gmp_id)
+            .expect("declared GMP class id should resolve");
+        gmp.add_property(PhpPropertyMetadata::instance("num", Visibility::Public))
+            .expect("GMP core metadata should not duplicate num");
+        for method in ["__construct", "__toString"] {
+            gmp.add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("GMP core metadata should not duplicate methods");
+        }
         let date_error_id = classes
             .declare_class("DateError")
-            .expect("core class table should contain BcMath\\Number before DateError");
+            .expect("core class table should contain GMP before DateError");
         classes
             .set_parent(date_error_id, error_id)
             .expect("DateError should extend Error");
@@ -38640,6 +38652,7 @@ impl PhpObject {
 
     fn forbids_dynamic_public_properties_as_error(&self) -> bool {
         self.class_name.eq_ignore_ascii_case("BcMath\\Number")
+            || self.class_name.eq_ignore_ascii_case("GMP")
             || self
                 .class_name
                 .eq_ignore_ascii_case("SensitiveParameterValue")

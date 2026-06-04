@@ -63,7 +63,7 @@ use crate::parser::parse_source;
 use crate::php_tokenizer::{self, PhpTokenizerToken};
 use crate::trait_semantics;
 
-pub const MAX_USER_FUNCTION_CALL_DEPTH: usize = 64;
+pub const MAX_USER_FUNCTION_CALL_DEPTH: usize = 4096;
 const SESSION_NOCACHE_HEADERS: [&str; 3] = [
     "Expires: Thu, 19 Nov 1981 08:52:00 GMT",
     "Cache-Control: no-store, no-cache, must-revalidate",
@@ -12515,6 +12515,12 @@ impl Interpreter {
             .is_some_and(|number_id| class_id == number_id)
     }
 
+    fn is_gmp_class_id(&self, class_id: ClassId) -> bool {
+        self.classes
+            .lookup_class_id("GMP")
+            .is_some_and(|gmp_id| class_id == gmp_id)
+    }
+
     fn is_spl_object_storage_class_id(&self, class_id: ClassId) -> bool {
         self.classes
             .lookup_class_id("SplObjectStorage")
@@ -16666,7 +16672,9 @@ impl Interpreter {
                 continue;
             }
             if let Some(variable) = &catch.variable {
+                let released_value = scope.read_storage_named(variable);
                 scope.write_static(variable, Value::Object(object));
+                self.finalize_released_value(released_value, scope)?;
             }
             return self.execute_array_copy_return_statement_list(&catch.body, scope);
         }
@@ -16696,7 +16704,9 @@ impl Interpreter {
             }
             self.clear_pending_uncaught_call_frames();
             if let Some(variable) = &catch.variable {
+                let released_value = scope.read_storage_named(variable);
                 scope.write_static(variable, Value::Object(error_object.clone()));
+                self.finalize_released_value(released_value, scope)?;
             }
             return self
                 .execute_array_copy_return_statement_list(&catch.body, scope)
@@ -30107,7 +30117,9 @@ impl Interpreter {
                 continue;
             }
             if let Some(variable) = &catch.variable {
+                let released_value = scope.read_storage_named(variable);
                 scope.write_static(variable, Value::Object(object));
+                self.finalize_released_value(released_value, scope)?;
             }
             return self.execute_statements(&catch.body, scope);
         }
@@ -30137,7 +30149,9 @@ impl Interpreter {
             }
             self.clear_pending_uncaught_call_frames();
             if let Some(variable) = &catch.variable {
+                let released_value = scope.read_storage_named(variable);
                 scope.write_static(variable, Value::Object(error_object.clone()));
+                self.finalize_released_value(released_value, scope)?;
             }
             return self.execute_statements(&catch.body, scope).map(Some);
         }
@@ -33449,6 +33463,9 @@ impl Interpreter {
         if declared_class_name.eq_ignore_ascii_case("BcMath\\Number") {
             return self.instantiate_bcmath_number(args, span, scope);
         }
+        if declared_class_name.eq_ignore_ascii_case("GMP") {
+            return self.instantiate_gmp(args, span, scope);
+        }
         if declared_class_name.eq_ignore_ascii_case("HashContext") {
             return Err(Diagnostic::new(
                 Phase::Runtime,
@@ -34519,6 +34536,7 @@ impl Interpreter {
             || self.is_spl_directory_iterator_class_id(object.class_id())
             || self.is_array_object_class_id(object.class_id())
             || self.is_bcmath_number_class_id(object.class_id())
+            || self.is_gmp_class_id(object.class_id())
     }
 
     fn retire_reusable_temporary_objects_in_value(
@@ -34585,6 +34603,28 @@ impl Interpreter {
         };
 
         if self.is_bcmath_number_class_id(object.class_id()) {
+            return self.retire_reusable_unrooted_temporary_object_handle(&object, scope);
+        }
+
+        if self.is_gmp_class_id(object.class_id()) {
+            return self.retire_reusable_unrooted_temporary_object_handle(&object, scope);
+        }
+
+        if object.is_instance_of_class_name("Exception")
+            || object.is_instance_of_class_name("Error")
+        {
+            if self.live_roots_contain_object_id(object.id(), scope) {
+                return Ok(());
+            }
+            let mut visited = HashSet::new();
+            if let Some(frames) = self.throwable_traces.remove(&object.id()) {
+                for frame in frames {
+                    for arg in frame.args {
+                        self.retire_reusable_temporary_objects_in_value(&arg, scope, &mut visited)?;
+                    }
+                }
+            }
+            self.throwable_string_traces.remove(&object.id());
             return self.retire_reusable_unrooted_temporary_object_handle(&object, scope);
         }
 
@@ -61940,6 +61980,14 @@ impl Interpreter {
             }
             return result.map(|value| (value, None));
         }
+        if object.class_name().eq_ignore_ascii_case("GMP") {
+            let receiver = object.clone();
+            let result = self.call_gmp_method(object, method_name, args, span, caller_scope);
+            if result.is_ok() {
+                self.retire_reusable_unrooted_temporary_object_handle(&receiver, caller_scope)?;
+            }
+            return result.map(|value| (value, None));
+        }
         if object
             .class_name()
             .eq_ignore_ascii_case("Uri\\Rfc3986\\Uri")
@@ -76015,6 +76063,14 @@ impl Interpreter {
                         caller_scope,
                     );
                 }
+                if key.starts_with("gmp_") {
+                    return self.call_builtin_with_reusable_temporary_argument_retirement(
+                        &key,
+                        values,
+                        span,
+                        caller_scope,
+                    );
+                }
                 self.call_builtin(&key, values, span)
             }
             Callable::User(function) => {
@@ -76239,6 +76295,14 @@ impl Interpreter {
                 }
                 if key == "var_dump" {
                     return self.call_var_dump_with_temporary_argument_retirement(
+                        values,
+                        span,
+                        caller_scope,
+                    );
+                }
+                if key.starts_with("gmp_") {
+                    return self.call_builtin_with_reusable_temporary_argument_retirement(
+                        &key,
                         values,
                         span,
                         caller_scope,
@@ -92159,7 +92223,9 @@ impl Interpreter {
                 continue;
             }
             if let Some(variable) = &catch.variable {
+                let released_value = scope.read_storage_named(variable);
                 scope.write_static(variable, Value::Object(object));
+                self.finalize_released_value(released_value, scope)?;
             }
             return self.execute_reference_return_assignment_statement_list(
                 function,
@@ -92194,7 +92260,9 @@ impl Interpreter {
             }
             self.clear_pending_uncaught_call_frames();
             if let Some(variable) = &catch.variable {
+                let released_value = scope.read_storage_named(variable);
                 scope.write_static(variable, Value::Object(error_object.clone()));
+                self.finalize_released_value(released_value, scope)?;
             }
             return self
                 .execute_reference_return_assignment_statement_list(function, &catch.body, scope)
@@ -107099,6 +107167,28 @@ impl Interpreter {
             "bcfloor" => call_bcfloor(&args, span),
             "bcround" => self.call_bcround(&args, span),
             "bcsqrt" => self.call_bcsqrt(&args, span),
+            "gmp_init" => self.call_gmp_init(&args, span),
+            "gmp_strval" => self.call_gmp_strval(&args, span),
+            "gmp_intval" => self.call_gmp_intval(&args, span),
+            "gmp_abs" => self.call_gmp_abs(&args, span),
+            "gmp_neg" => self.call_gmp_neg(&args, span),
+            "gmp_sign" => self.call_gmp_sign(&args, span),
+            "gmp_add" => self.call_gmp_binary("gmp_add()", &args, span, GmpBinaryOp::Add),
+            "gmp_sub" => self.call_gmp_binary("gmp_sub()", &args, span, GmpBinaryOp::Sub),
+            "gmp_mul" => self.call_gmp_binary("gmp_mul()", &args, span, GmpBinaryOp::Mul),
+            "gmp_cmp" => self.call_gmp_cmp(&args, span),
+            "gmp_mod" => self.call_gmp_mod(&args, span),
+            "gmp_div_q" => self.call_gmp_div_q(&args, span),
+            "gmp_div_r" => self.call_gmp_div_r(&args, span),
+            "gmp_div_qr" => self.call_gmp_div_qr(&args, span),
+            "gmp_gcd" => self.call_gmp_gcd(&args, span),
+            "gmp_lcm" => self.call_gmp_lcm(&args, span),
+            "gmp_pow" => self.call_gmp_pow(&args, span),
+            "gmp_sqrt" => self.call_gmp_sqrt(&args, span),
+            "gmp_sqrtrem" => self.call_gmp_sqrtrem(&args, span),
+            "gmp_fact" => self.call_gmp_fact(&args, span),
+            "gmp_nextprime" => self.call_gmp_nextprime(&args, span),
+            "gmp_perfect_square" => self.call_gmp_perfect_square(&args, span),
             "version_compare" => call_version_compare(&args, span),
             "microtime" => call_microtime(&args, span),
             "gettimeofday" => self.call_gettimeofday(&args, span),
@@ -117229,6 +117319,9 @@ impl Interpreter {
             if object.class_name().eq_ignore_ascii_case("BcMath\\Number") {
                 return self.bcmath_number_object_string(&object, span);
             }
+            if object.class_name().eq_ignore_ascii_case("GMP") {
+                return self.gmp_object_string(&object, span);
+            }
             if let Some(output) =
                 self.object_to_string_with_magic(object.clone(), "object-to-string", span)?
             {
@@ -117260,6 +117353,11 @@ impl Interpreter {
                     .bcmath_number_object_string(&object, span)
                     .map(String::into_bytes);
             }
+            if object.class_name().eq_ignore_ascii_case("GMP") {
+                return self
+                    .gmp_object_string(&object, span)
+                    .map(String::into_bytes);
+            }
             if let Some(output) =
                 self.object_to_string_with_magic(object.clone(), "object-to-string", span)?
             {
@@ -117280,6 +117378,11 @@ impl Interpreter {
             if object.class_name().eq_ignore_ascii_case("BcMath\\Number") {
                 return self
                     .bcmath_number_object_decimal(object, span)
+                    .map(|decimal| !decimal.is_zero());
+            }
+            if object.class_name().eq_ignore_ascii_case("GMP") {
+                return self
+                    .gmp_object_decimal(object, span)
                     .map(|decimal| !decimal.is_zero());
             }
         }
@@ -117530,6 +117633,9 @@ impl Interpreter {
                     return self
                         .bcmath_number_object_string(&object, span)
                         .map(Value::String);
+                }
+                if object.class_name().eq_ignore_ascii_case("GMP") {
+                    return self.gmp_object_string(&object, span).map(Value::String);
                 }
                 if let Some(output) =
                     self.object_to_string_with_magic(object.clone(), "(string)", span)?
@@ -117900,6 +118006,10 @@ impl Interpreter {
             Value::BinaryString(value) => cast_binary_string_to_int(&value, span),
             Value::Array(value) => Ok(Value::Int(if value.is_empty() { 0 } else { 1 })),
             Value::Object(object) => {
+                if object.class_name().eq_ignore_ascii_case("GMP") {
+                    let decimal = self.gmp_object_decimal(&object, span)?;
+                    return Ok(Value::Int(gmp_decimal_to_i64_wrapping(&decimal)));
+                }
                 self.emit_display_warning(
                     format!(
                         "Object of class {} could not be converted to int",
@@ -117935,6 +118045,17 @@ impl Interpreter {
             Value::BinaryString(value) => cast_binary_string_to_float(&value, span),
             Value::Array(value) => Ok(Value::Float(if value.is_empty() { 0.0 } else { 1.0 })),
             Value::Object(object) => {
+                if object.class_name().eq_ignore_ascii_case("GMP") {
+                    let text = self.gmp_object_string(&object, span)?;
+                    let value = text.parse::<f64>().unwrap_or_else(|_| {
+                        if text.starts_with('-') {
+                            f64::NEG_INFINITY
+                        } else {
+                            f64::INFINITY
+                        }
+                    });
+                    return Ok(Value::Float(value));
+                }
                 self.emit_display_warning(
                     format!(
                         "Object of class {} could not be converted to float",
@@ -129676,6 +129797,76 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_null_param("scale", "int"),
             ],
         ),
+        "gmp_init" => (
+            "GMP",
+            vec![
+                reflection_internal_param("num", "GMP|string|int"),
+                reflection_internal_optional_int_param("base", 0),
+            ],
+        ),
+        "gmp_strval" => (
+            "string",
+            vec![
+                reflection_internal_param("num", "GMP|string|int"),
+                reflection_internal_optional_int_param("base", 10),
+            ],
+        ),
+        "gmp_intval" | "gmp_sign" => (
+            "int",
+            vec![reflection_internal_param("num", "GMP|string|int")],
+        ),
+        "gmp_abs" | "gmp_neg" => (
+            "GMP",
+            vec![reflection_internal_param("num", "GMP|string|int")],
+        ),
+        "gmp_add" | "gmp_sub" | "gmp_mul" | "gmp_gcd" | "gmp_lcm" => (
+            "GMP",
+            vec![
+                reflection_internal_param("num1", "GMP|string|int"),
+                reflection_internal_param("num2", "GMP|string|int"),
+            ],
+        ),
+        "gmp_cmp" => (
+            "int",
+            vec![
+                reflection_internal_param("num1", "GMP|string|int"),
+                reflection_internal_param("num2", "GMP|string|int"),
+            ],
+        ),
+        "gmp_mod" => (
+            "GMP",
+            vec![
+                reflection_internal_param("num1", "GMP|string|int"),
+                reflection_internal_param("num2", "GMP|string|int"),
+            ],
+        ),
+        "gmp_div_q" | "gmp_div_r" | "gmp_div_qr" => (
+            if name == "gmp_div_qr" { "array" } else { "GMP" },
+            vec![
+                reflection_internal_param("num1", "GMP|string|int"),
+                reflection_internal_param("num2", "GMP|string|int"),
+                reflection_internal_optional_int_param("rounding_mode", GMP_ROUND_ZERO),
+            ],
+        ),
+        "gmp_pow" => (
+            "GMP",
+            vec![
+                reflection_internal_param("num", "GMP|string|int"),
+                reflection_internal_param("exponent", "int"),
+            ],
+        ),
+        "gmp_sqrt" | "gmp_fact" | "gmp_nextprime" => (
+            "GMP",
+            vec![reflection_internal_param("num", "GMP|string|int")],
+        ),
+        "gmp_sqrtrem" => (
+            "array",
+            vec![reflection_internal_param("num", "GMP|string|int")],
+        ),
+        "gmp_perfect_square" => (
+            "bool",
+            vec![reflection_internal_param("num", "GMP|string|int")],
+        ),
         "strval" => ("string", vec![reflection_internal_param("value", "mixed")]),
         "boolval" => ("bool", vec![reflection_internal_param("value", "mixed")]),
         "intval" => (
@@ -134982,10 +135173,23 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             }
             "unsupported call bcdiv(): Division by zero"
             | "unsupported call bcdivmod(): Division by zero"
+            | "unsupported call gmp_div_q(): Argument #2 ($num2) Division by zero"
+            | "unsupported call gmp_div_r(): Argument #2 ($num2) Division by zero"
+            | "unsupported call gmp_div_qr(): Argument #2 ($num2) Division by zero"
             | "unsupported call intdiv(): Division by zero"
             | "unsupported call BcMath\\Number::div(): Division by zero"
             | "unsupported call BcMath\\Number::divmod(): Division by zero" => {
-                return Some(("DivisionByZeroError", "Division by zero".to_string()));
+                let (function, message) = error
+                    .message
+                    .strip_prefix("unsupported call ")
+                    .and_then(|message| message.split_once(": "))
+                    .unwrap_or(("", "Division by zero"));
+                let message = if function.starts_with("gmp_") {
+                    format!("{function}: {message}")
+                } else {
+                    message.to_string()
+                };
+                return Some(("DivisionByZeroError", message.to_string()));
             }
             "unsupported call intdiv(): Division of PHP_INT_MIN by -1 is not an integer" => {
                 return Some((
@@ -135002,9 +135206,20 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             }
             "unsupported call bcmod(): Modulo by zero"
             | "unsupported call bcpowmod(): Modulo by zero"
+            | "unsupported call gmp_mod(): Argument #2 ($num2) Modulo by zero"
             | "unsupported call BcMath\\Number::mod(): Modulo by zero"
             | "unsupported call BcMath\\Number::powmod(): Modulo by zero" => {
-                return Some(("DivisionByZeroError", "Modulo by zero".to_string()));
+                let (function, message) = error
+                    .message
+                    .strip_prefix("unsupported call ")
+                    .and_then(|message| message.split_once(": "))
+                    .unwrap_or(("", "Modulo by zero"));
+                let message = if function.starts_with("gmp_") {
+                    format!("{function}: {message}")
+                } else {
+                    message.to_string()
+                };
+                return Some(("DivisionByZeroError", message.to_string()));
             }
             "unsupported call bcpow(): Negative power of zero"
             | "unsupported call BcMath\\Number::pow(): Negative power of zero" => {
@@ -136631,6 +136846,42 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
             Some(format!("{function}: {message}"))
         }
         (
+            "gmp_init()"
+            | "GMP::__construct()"
+            | "gmp_strval()"
+            | "gmp_intval()"
+            | "gmp_abs()"
+            | "gmp_neg()"
+            | "gmp_sign()"
+            | "gmp_add()"
+            | "gmp_sub()"
+            | "gmp_mul()"
+            | "gmp_cmp()"
+            | "gmp_mod()"
+            | "gmp_div_q()"
+            | "gmp_div_r()"
+            | "gmp_div_qr()"
+            | "gmp_gcd()"
+            | "gmp_lcm()"
+            | "gmp_pow()"
+            | "gmp_sqrt()"
+            | "gmp_sqrtrem()"
+            | "gmp_fact()"
+            | "gmp_nextprime()"
+            | "gmp_perfect_square()",
+            message,
+        ) if message.contains(" is not an integer string")
+            || message.contains(" must be 0 or between 2 and 62")
+            || message.contains(" must be between 2 and 62, or -2 and -36")
+            || message.contains(
+                " must be one of GMP_ROUND_ZERO, GMP_ROUND_PLUSINF, or GMP_ROUND_MINUSINF",
+            )
+            || message.contains(" must be greater than or equal to 0")
+            || message.contains(" must be between 0 and ") =>
+        {
+            Some(format!("{function}: {message}"))
+        }
+        (
             "filter_var()",
             "filter_var(): \"regexp\" option is missing"
                 | "filter_var(): \"decimal\" option must be one character long"
@@ -137572,6 +137823,28 @@ fn is_builtin(name: &str) -> bool {
             | "bcfloor"
             | "bcround"
             | "bcsqrt"
+            | "gmp_init"
+            | "gmp_strval"
+            | "gmp_intval"
+            | "gmp_abs"
+            | "gmp_neg"
+            | "gmp_sign"
+            | "gmp_add"
+            | "gmp_sub"
+            | "gmp_mul"
+            | "gmp_cmp"
+            | "gmp_mod"
+            | "gmp_div_q"
+            | "gmp_div_r"
+            | "gmp_div_qr"
+            | "gmp_gcd"
+            | "gmp_lcm"
+            | "gmp_pow"
+            | "gmp_sqrt"
+            | "gmp_sqrtrem"
+            | "gmp_fact"
+            | "gmp_nextprime"
+            | "gmp_perfect_square"
             | "version_compare"
             | "microtime"
             | "gettimeofday"
@@ -139706,6 +139979,9 @@ const PHP_ROUND_HALF_UP: i64 = 1;
 const PHP_ROUND_HALF_DOWN: i64 = 2;
 const PHP_ROUND_HALF_EVEN: i64 = 3;
 const PHP_ROUND_HALF_ODD: i64 = 4;
+const GMP_ROUND_ZERO: i64 = 0;
+const GMP_ROUND_PLUSINF: i64 = 1;
+const GMP_ROUND_MINUSINF: i64 = 2;
 const PHP_ASSERT_ACTIVE: i64 = 1;
 const PHP_ASSERT_CALLBACK: i64 = 2;
 const PHP_ASSERT_BAIL: i64 = 3;
@@ -139741,6 +140017,9 @@ const BUILTIN_GLOBAL_CONSTANT_NAMES: &[&str] = &[
     "PHP_ROUND_HALF_DOWN",
     "PHP_ROUND_HALF_EVEN",
     "PHP_ROUND_HALF_ODD",
+    "GMP_ROUND_ZERO",
+    "GMP_ROUND_PLUSINF",
+    "GMP_ROUND_MINUSINF",
     "ASSERT_ACTIVE",
     "ASSERT_CALLBACK",
     "ASSERT_BAIL",
@@ -140206,6 +140485,9 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "PHP_ROUND_HALF_DOWN" => Some(Value::Int(PHP_ROUND_HALF_DOWN)),
         "PHP_ROUND_HALF_EVEN" => Some(Value::Int(PHP_ROUND_HALF_EVEN)),
         "PHP_ROUND_HALF_ODD" => Some(Value::Int(PHP_ROUND_HALF_ODD)),
+        "GMP_ROUND_ZERO" => Some(Value::Int(GMP_ROUND_ZERO)),
+        "GMP_ROUND_PLUSINF" => Some(Value::Int(GMP_ROUND_PLUSINF)),
+        "GMP_ROUND_MINUSINF" => Some(Value::Int(GMP_ROUND_MINUSINF)),
         "ASSERT_ACTIVE" => Some(Value::Int(PHP_ASSERT_ACTIVE)),
         "ASSERT_CALLBACK" => Some(Value::Int(PHP_ASSERT_CALLBACK)),
         "ASSERT_BAIL" => Some(Value::Int(PHP_ASSERT_BAIL)),
@@ -161143,6 +161425,27 @@ impl Interpreter {
         result
     }
 
+    fn call_builtin_with_reusable_temporary_argument_retirement(
+        &mut self,
+        key: &str,
+        args: Vec<Value>,
+        span: Span,
+        caller_scope: &SymbolTable,
+    ) -> CompileResult<Value> {
+        let temporary_arguments = args.clone();
+        let result = self.call_builtin(key, args, span);
+        match result {
+            Ok(value) => {
+                self.retire_reusable_temporary_object_arguments(
+                    &temporary_arguments,
+                    caller_scope,
+                )?;
+                Ok(value)
+            }
+            Err(error) => Err(error),
+        }
+    }
+
     fn json_encode_value(
         &mut self,
         value: &Value,
@@ -173740,6 +174043,474 @@ impl Interpreter {
         bcmath_number_argument(function, position, parameter, value, span)
     }
 
+    fn instantiate_gmp(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if args.len() > 2 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "GMP::__construct()",
+                    ArityExpectation::Between { min: 0, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let values = args
+            .iter()
+            .map(|arg| self.evaluate(arg, scope))
+            .collect::<CompileResult<Vec<_>>>()?;
+        let decimal = self.gmp_constructor_decimal("GMP::__construct()", &values, span)?;
+        self.gmp_object(decimal, span).map(Value::Object)
+    }
+
+    fn call_gmp_method(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let values = args
+            .iter()
+            .map(|arg| self.evaluate(arg, scope))
+            .collect::<CompileResult<Vec<_>>>()?;
+        match method_name.to_ascii_lowercase().as_str() {
+            "__construct" => {
+                let decimal = self.gmp_constructor_decimal("GMP::__construct()", &values, span)?;
+                object
+                    .write_public_property("num", Value::String(decimal.format_with_scale(0)))
+                    .map_err(|error| runtime_error(span, error))?;
+                Ok(Value::Null)
+            }
+            "__tostring" => {
+                expect_arity("GMP::__toString", &values, 0, span)?;
+                self.gmp_object_string(&object, span).map(Value::String)
+            }
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!("GMP::{method_name}()")),
+            )),
+        }
+    }
+
+    fn gmp_constructor_decimal(
+        &self,
+        function: &str,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<BcDecimal> {
+        if args.len() > 2 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    function,
+                    ArityExpectation::Between { min: 0, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+        let Some(value) = args.first() else {
+            return Ok(BcDecimal::zero());
+        };
+        let base = match args.get(1) {
+            Some(base) => gmp_init_base_argument(function, base, span)?,
+            None => 0,
+        };
+        self.gmp_decimal_argument(function, 1, "num", value, base, span)
+    }
+
+    fn call_gmp_init(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "gmp_init()",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+        let base = match args.get(1) {
+            Some(base) => gmp_init_base_argument("gmp_init()", base, span)?,
+            None => 0,
+        };
+        let decimal = self.gmp_decimal_argument("gmp_init()", 1, "num", &args[0], base, span)?;
+        self.gmp_object(decimal, span).map(Value::Object)
+    }
+
+    fn call_gmp_strval(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "gmp_strval()",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let decimal = self.gmp_decimal_argument("gmp_strval()", 1, "num", &args[0], 0, span)?;
+        let base = match args.get(1) {
+            Some(base) => gmp_strval_base_argument("gmp_strval()", base, span)?,
+            None => 10,
+        };
+        Ok(Value::String(gmp_format_decimal_base(&decimal, base)))
+    }
+
+    fn call_gmp_intval(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("gmp_intval", args, 1, span)?;
+        let decimal = self.gmp_decimal_argument("gmp_intval()", 1, "num", &args[0], 0, span)?;
+        Ok(Value::Int(gmp_decimal_to_i64_wrapping(&decimal)))
+    }
+
+    fn call_gmp_abs(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("gmp_abs", args, 1, span)?;
+        let decimal = self
+            .gmp_decimal_argument("gmp_abs()", 1, "num", &args[0], 0, span)?
+            .with_sign(false);
+        self.gmp_object(decimal, span).map(Value::Object)
+    }
+
+    fn call_gmp_neg(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("gmp_neg", args, 1, span)?;
+        let decimal = self.gmp_decimal_argument("gmp_neg()", 1, "num", &args[0], 0, span)?;
+        let decimal = decimal.clone().with_sign(!decimal.negative);
+        self.gmp_object(decimal, span).map(Value::Object)
+    }
+
+    fn call_gmp_sign(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("gmp_sign", args, 1, span)?;
+        let decimal = self.gmp_decimal_argument("gmp_sign()", 1, "num", &args[0], 0, span)?;
+        Ok(Value::Int(if decimal.is_zero() {
+            0
+        } else if decimal.negative {
+            -1
+        } else {
+            1
+        }))
+    }
+
+    fn call_gmp_binary(
+        &mut self,
+        function: &'static str,
+        args: &[Value],
+        span: Span,
+        op: GmpBinaryOp,
+    ) -> CompileResult<Value> {
+        expect_arity(function.trim_end_matches("()"), args, 2, span)?;
+        let left = self.gmp_decimal_argument(function, 1, "num1", &args[0], 0, span)?;
+        let right = self.gmp_decimal_argument(function, 2, "num2", &args[1], 0, span)?;
+        let result = match op {
+            GmpBinaryOp::Add => left.add(&right),
+            GmpBinaryOp::Sub => left.sub(&right),
+            GmpBinaryOp::Mul => left.mul(&right),
+        };
+        self.gmp_object(result.integer_part(), span)
+            .map(Value::Object)
+    }
+
+    fn call_gmp_cmp(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("gmp_cmp", args, 2, span)?;
+        let left = self.gmp_decimal_argument("gmp_cmp()", 1, "num1", &args[0], 0, span)?;
+        let right = self.gmp_decimal_argument("gmp_cmp()", 2, "num2", &args[1], 0, span)?;
+        Ok(Value::Int(match left.compare_at_scale(&right, 0) {
+            Ordering::Less => -1,
+            Ordering::Equal => 0,
+            Ordering::Greater => 1,
+        }))
+    }
+
+    fn call_gmp_mod(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("gmp_mod", args, 2, span)?;
+        let left = self.gmp_decimal_argument("gmp_mod()", 1, "num1", &args[0], 0, span)?;
+        let right = self.gmp_decimal_argument("gmp_mod()", 2, "num2", &args[1], 0, span)?;
+        if right.is_zero() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call("gmp_mod()", "Argument #2 ($num2) Modulo by zero"),
+            ));
+        }
+
+        self.gmp_object(gmp_mod_decimal(&left, &right), span)
+            .map(Value::Object)
+    }
+
+    fn call_gmp_div_q(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        let (quotient, _) = self.gmp_div_qr_decimal("gmp_div_q()", args, span)?;
+        self.gmp_object(quotient, span).map(Value::Object)
+    }
+
+    fn call_gmp_div_r(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        let (_, remainder) = self.gmp_div_qr_decimal("gmp_div_r()", args, span)?;
+        self.gmp_object(remainder, span).map(Value::Object)
+    }
+
+    fn call_gmp_div_qr(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        let (quotient, remainder) = self.gmp_div_qr_decimal("gmp_div_qr()", args, span)?;
+        let quotient = self.gmp_object(quotient, span)?;
+        let remainder = self.gmp_object(remainder, span)?;
+        let mut result = PhpArray::new();
+        result
+            .append(Value::Object(quotient))
+            .map_err(|error| runtime_error(span, error))?;
+        result
+            .append(Value::Object(remainder))
+            .map_err(|error| runtime_error(span, error))?;
+        Ok(Value::Array(result))
+    }
+
+    fn gmp_div_qr_decimal(
+        &self,
+        function: &'static str,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<(BcDecimal, BcDecimal)> {
+        if !(2..=3).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    function,
+                    ArityExpectation::Between { min: 2, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+        let left = self.gmp_decimal_argument(function, 1, "num1", &args[0], 0, span)?;
+        let right = self.gmp_decimal_argument(function, 2, "num2", &args[1], 0, span)?;
+        if right.is_zero() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(function, "Argument #2 ($num2) Division by zero"),
+            ));
+        }
+        let rounding = match args.get(2) {
+            Some(value) => gmp_rounding_mode_argument(function, value, span)?,
+            None => GmpDivRoundingMode::Zero,
+        };
+        Ok(gmp_div_qr_decimal(&left, &right, rounding))
+    }
+
+    fn call_gmp_gcd(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("gmp_gcd", args, 2, span)?;
+        let left = self.gmp_decimal_argument("gmp_gcd()", 1, "num1", &args[0], 0, span)?;
+        let right = self.gmp_decimal_argument("gmp_gcd()", 2, "num2", &args[1], 0, span)?;
+        self.gmp_object(
+            BcDecimal {
+                negative: false,
+                digits: gmp_gcd_digits(&left.digits_at_scale(0), &right.digits_at_scale(0)),
+                scale: 0,
+            }
+            .normalized(),
+            span,
+        )
+        .map(Value::Object)
+    }
+
+    fn call_gmp_lcm(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("gmp_lcm", args, 2, span)?;
+        let left = self.gmp_decimal_argument("gmp_lcm()", 1, "num1", &args[0], 0, span)?;
+        let right = self.gmp_decimal_argument("gmp_lcm()", 2, "num2", &args[1], 0, span)?;
+        if left.is_zero() || right.is_zero() {
+            return self.gmp_object(BcDecimal::zero(), span).map(Value::Object);
+        }
+
+        let left_digits = left.digits_at_scale(0);
+        let right_digits = right.digits_at_scale(0);
+        let gcd = gmp_gcd_digits(&left_digits, &right_digits);
+        let product = decimal_mul_abs(&left_digits, &right_digits);
+        let digits = decimal_div_abs(&product, &gcd);
+        self.gmp_object(
+            BcDecimal {
+                negative: false,
+                digits,
+                scale: 0,
+            }
+            .normalized(),
+            span,
+        )
+        .map(Value::Object)
+    }
+
+    fn call_gmp_pow(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("gmp_pow", args, 2, span)?;
+        let base = self.gmp_decimal_argument("gmp_pow()", 1, "num", &args[0], 0, span)?;
+        let exponent = php_internal_int_argument("gmp_pow()", 2, "exponent", &args[1], span)?;
+        if exponent < 0 || exponent as u64 > GMP_POW_EXPONENT_LIMIT {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "gmp_pow()",
+                    format!(
+                        "Argument #2 ($exponent) must be between 0 and {GMP_POW_EXPONENT_LIMIT}"
+                    ),
+                ),
+            ));
+        }
+
+        self.gmp_object(base.pow_u64(exponent as u64).integer_part(), span)
+            .map(Value::Object)
+    }
+
+    fn call_gmp_sqrt(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("gmp_sqrt", args, 1, span)?;
+        let value = self.gmp_decimal_argument("gmp_sqrt()", 1, "num", &args[0], 0, span)?;
+        if value.negative {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "gmp_sqrt()",
+                    "Argument #1 ($num) must be greater than or equal to 0",
+                ),
+            ));
+        }
+
+        self.gmp_object(value.sqrt(0), span).map(Value::Object)
+    }
+
+    fn call_gmp_sqrtrem(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("gmp_sqrtrem", args, 1, span)?;
+        let value = self.gmp_decimal_argument("gmp_sqrtrem()", 1, "num", &args[0], 0, span)?;
+        if value.negative {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "gmp_sqrtrem()",
+                    "Argument #1 ($num) must be greater than or equal to 0",
+                ),
+            ));
+        }
+
+        let root = value.sqrt(0);
+        let remainder = value.sub(&root.mul(&root)).integer_part();
+        let root = self.gmp_object(root, span)?;
+        let remainder = self.gmp_object(remainder, span)?;
+        let mut result = PhpArray::new();
+        result
+            .append(Value::Object(root))
+            .map_err(|error| runtime_error(span, error))?;
+        result
+            .append(Value::Object(remainder))
+            .map_err(|error| runtime_error(span, error))?;
+        Ok(Value::Array(result))
+    }
+
+    fn call_gmp_fact(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("gmp_fact", args, 1, span)?;
+        let value = self.gmp_decimal_argument("gmp_fact()", 1, "num", &args[0], 0, span)?;
+        let value =
+            gmp_bounded_nonnegative_u64("gmp_fact()", 1, "num", &value, GMP_FACTORIAL_LIMIT, span)?;
+        self.gmp_object(gmp_factorial_decimal(value), span)
+            .map(Value::Object)
+    }
+
+    fn call_gmp_nextprime(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("gmp_nextprime", args, 1, span)?;
+        let value = self.gmp_decimal_argument("gmp_nextprime()", 1, "num", &args[0], 0, span)?;
+        let value = gmp_decimal_to_i64_checked(&value).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "gmp_nextprime()",
+                    "Argument #1 ($num) is too large for the current subset",
+                ),
+            )
+        })?;
+        let next = gmp_next_prime_i64(value);
+        self.gmp_object(
+            BcDecimal::parse(&next.to_string()).expect("prime integer parses as BcDecimal"),
+            span,
+        )
+        .map(Value::Object)
+    }
+
+    fn call_gmp_perfect_square(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("gmp_perfect_square", args, 1, span)?;
+        let value =
+            self.gmp_decimal_argument("gmp_perfect_square()", 1, "num", &args[0], 0, span)?;
+        if value.negative {
+            return Ok(Value::Bool(false));
+        }
+        let root = value.sqrt(0);
+        Ok(Value::Bool(
+            root.mul(&root).compare_at_scale(&value, 0) == Ordering::Equal,
+        ))
+    }
+
+    fn gmp_object(&mut self, decimal: BcDecimal, span: Span) -> CompileResult<PhpObject> {
+        let class_id = self
+            .classes
+            .lookup_class_id("GMP")
+            .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class("GMP")))?;
+        let object_id = self.allocate_object_id();
+        let class = self
+            .classes
+            .get(class_id)
+            .expect("GMP class id should resolve");
+        let object = PhpObject::from_class_with_id(class, object_id);
+        object
+            .write_public_property("num", Value::String(decimal.format_with_scale(0)))
+            .map_err(|error| runtime_error(span, error))?;
+        Ok(object)
+    }
+
+    fn gmp_object_string(&self, object: &PhpObject, span: Span) -> CompileResult<String> {
+        match object
+            .read_public_property("num")
+            .map_err(|error| runtime_error(span, error))?
+        {
+            Value::String(value) => Ok(value),
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "GMP::__toString()",
+                    format!(
+                        "stored num property must be string, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
+    }
+
+    fn gmp_object_decimal(&self, object: &PhpObject, span: Span) -> CompileResult<BcDecimal> {
+        let value = self.gmp_object_string(object, span)?;
+        gmp_parse_integer_string("GMP", 1, "num", &value, 10, span)
+    }
+
+    fn gmp_decimal_argument(
+        &self,
+        function: &str,
+        position: usize,
+        parameter: &str,
+        value: &Value,
+        base: i64,
+        span: Span,
+    ) -> CompileResult<BcDecimal> {
+        match value {
+            Value::Object(object) if object.class_name().eq_ignore_ascii_case("GMP") => {
+                self.gmp_object_decimal(object, span)
+            }
+            Value::String(value) => {
+                gmp_parse_integer_string(function, position, parameter, value, base, span)
+            }
+            Value::BinaryString(value) => {
+                let value = String::from_utf8(value.clone())
+                    .map_err(|_| gmp_integer_string_error(function, position, parameter, span))?;
+                gmp_parse_integer_string(function, position, parameter, &value, base, span)
+            }
+            Value::Int(value) => BcDecimal::parse(&value.to_string())
+                .ok_or_else(|| gmp_integer_string_error(function, position, parameter, span)),
+            _ => Err(gmp_type_error(function, position, parameter, value, span)),
+        }
+    }
+
     fn call_bcround(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         if !(1..=3).contains(&args.len()) {
             return Err(runtime_error(
@@ -181254,6 +182025,7 @@ const OPCACHE_DIRECTIVES: &[&str] = &[
 const COMPAT_LOADED_EXTENSIONS: &[&str] = &[
     "bcmath",
     "filter",
+    "gmp",
     "json",
     "hash",
     "pdo",
@@ -183058,6 +183830,20 @@ enum BcNumberBinaryOp {
     Pow,
 }
 
+#[derive(Clone, Copy)]
+enum GmpBinaryOp {
+    Add,
+    Sub,
+    Mul,
+}
+
+#[derive(Clone, Copy)]
+enum GmpDivRoundingMode {
+    Zero,
+    PlusInf,
+    MinusInf,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum BcRoundingMode {
     HalfAwayFromZero,
@@ -183111,6 +183897,8 @@ const BCMATH_ROUNDING_MODE_CASES: [BcRoundingMode; 8] = [
 ];
 
 const BCMATH_POW_EXPONENT_LIMIT: u64 = 4096;
+const GMP_POW_EXPONENT_LIMIT: u64 = 4096;
+const GMP_FACTORIAL_LIMIT: u64 = 4096;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct BcDecimal {
@@ -183681,6 +184469,388 @@ fn decimal_div_mod_abs(numerator: &[u8], denominator: &[u8]) -> (Vec<u8>, Vec<u8
     normalize_decimal_digits(&mut quotient);
     normalize_decimal_digits(&mut remainder);
     (quotient, remainder)
+}
+
+fn decimal_div_mod_small_abs(digits: &[u8], divisor: u16) -> (Vec<u8>, u16) {
+    debug_assert!(divisor > 0);
+    let mut quotient = Vec::with_capacity(digits.len());
+    let mut remainder = 0u16;
+    for digit in digits {
+        let value = remainder * 10 + u16::from(*digit);
+        quotient.push((value / divisor) as u8);
+        remainder = value % divisor;
+    }
+    normalize_decimal_digits(&mut quotient);
+    (quotient, remainder)
+}
+
+fn gmp_init_base_argument(function: &str, value: &Value, span: Span) -> CompileResult<i64> {
+    let base = php_internal_int_argument(function, 2, "base", value, span)?;
+    if base == 0 || (2..=62).contains(&base) {
+        Ok(base)
+    } else {
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                "Argument #2 ($base) must be 0 or between 2 and 62",
+            ),
+        ))
+    }
+}
+
+fn gmp_strval_base_argument(function: &str, value: &Value, span: Span) -> CompileResult<i64> {
+    let base = php_internal_int_argument(function, 2, "base", value, span)?;
+    if (2..=62).contains(&base) || (-36..=-2).contains(&base) {
+        Ok(base)
+    } else {
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                "Argument #2 ($base) must be between 2 and 62, or -2 and -36",
+            ),
+        ))
+    }
+}
+
+fn gmp_parse_integer_string(
+    function: &str,
+    position: usize,
+    parameter: &str,
+    text: &str,
+    base: i64,
+    span: Span,
+) -> CompileResult<BcDecimal> {
+    let text = text.trim_matches(gmp_integer_whitespace);
+    if text.is_empty() {
+        return Err(gmp_integer_string_error(
+            function, position, parameter, span,
+        ));
+    }
+
+    let (negative, rest) = match text.as_bytes()[0] {
+        b'-' => (true, &text[1..]),
+        b'+' => {
+            return Err(gmp_integer_string_error(
+                function, position, parameter, span,
+            ))
+        }
+        _ => (false, text),
+    };
+    if rest.is_empty() {
+        return Err(gmp_integer_string_error(
+            function, position, parameter, span,
+        ));
+    }
+
+    let (active_base, digits) = gmp_integer_digits_for_base(rest, base);
+    if digits.is_empty() {
+        return Err(gmp_integer_string_error(
+            function, position, parameter, span,
+        ));
+    }
+
+    let mut decimal = BcDecimal::zero();
+    for byte in digits.bytes() {
+        let Some(digit) = gmp_digit_value(byte, active_base) else {
+            return Err(gmp_integer_string_error(
+                function, position, parameter, span,
+            ));
+        };
+        decimal = BcDecimal {
+            negative: false,
+            digits: decimal_add_small_abs(
+                &decimal_mul_small_abs(&decimal.digits, active_base as u16),
+                digit as u16,
+            ),
+            scale: 0,
+        }
+        .normalized();
+    }
+
+    Ok(decimal.with_sign(negative))
+}
+
+fn gmp_integer_digits_for_base(text: &str, base: i64) -> (u8, &str) {
+    if base == 0 {
+        if let Some(rest) = text.strip_prefix("0x").or_else(|| text.strip_prefix("0X")) {
+            return (16, rest);
+        }
+        if let Some(rest) = text.strip_prefix("0b").or_else(|| text.strip_prefix("0B")) {
+            return (2, rest);
+        }
+        if let Some(rest) = text.strip_prefix("0o").or_else(|| text.strip_prefix("0O")) {
+            return (8, rest);
+        }
+        if text.len() > 1 && text.starts_with('0') {
+            return (8, text);
+        }
+        return (10, text);
+    }
+
+    let base = base as u8;
+    let digits = if base == 16 {
+        text.strip_prefix("0x")
+            .or_else(|| text.strip_prefix("0X"))
+            .unwrap_or(text)
+    } else if base == 8 {
+        text.strip_prefix("0o")
+            .or_else(|| text.strip_prefix("0O"))
+            .unwrap_or(text)
+    } else if base == 2 {
+        text.strip_prefix("0b")
+            .or_else(|| text.strip_prefix("0B"))
+            .unwrap_or(text)
+    } else {
+        text
+    };
+    (base, digits)
+}
+
+fn gmp_integer_whitespace(ch: char) -> bool {
+    matches!(ch, ' ' | '\t' | '\n' | '\r' | '\u{0b}' | '\u{0c}')
+}
+
+fn gmp_digit_value(byte: u8, base: u8) -> Option<u8> {
+    let value = match byte {
+        b'0'..=b'9' => byte - b'0',
+        b'a'..=b'z' => 10 + byte - b'a',
+        b'A'..=b'Z' if base <= 36 => 10 + byte - b'A',
+        b'A'..=b'Z' => 36 + byte - b'A',
+        _ => return None,
+    };
+    (value < base).then_some(value)
+}
+
+fn gmp_format_decimal_base(decimal: &BcDecimal, base: i64) -> String {
+    if base == 10 {
+        return decimal.format_with_scale(0);
+    }
+
+    let base = base.unsigned_abs() as u16;
+    let mut digits = decimal.digits_at_scale(0);
+    let mut output = Vec::new();
+    loop {
+        let (quotient, remainder) = decimal_div_mod_small_abs(&digits, base);
+        output.push(gmp_output_digit(remainder as u8));
+        digits = quotient;
+        if digits_are_zero(&digits) {
+            break;
+        }
+    }
+    output.reverse();
+
+    let mut text = String::new();
+    if decimal.negative && !decimal.is_zero() {
+        text.push('-');
+    }
+    text.extend(output);
+    text
+}
+
+fn gmp_output_digit(digit: u8) -> char {
+    match digit {
+        0..=9 => char::from(b'0' + digit),
+        10..=35 => char::from(b'a' + digit - 10),
+        36..=61 => char::from(b'A' + digit - 36),
+        _ => unreachable!("validated GMP bases only produce digits below 62"),
+    }
+}
+
+fn gmp_decimal_to_i64_wrapping(decimal: &BcDecimal) -> i64 {
+    let mut value = 0i128;
+    for digit in decimal.digits_at_scale(0) {
+        value = value.wrapping_mul(10).wrapping_add(i128::from(digit));
+    }
+    if decimal.negative {
+        value = value.wrapping_neg();
+    }
+    value as i64
+}
+
+fn gmp_integer_string_error(
+    function: &str,
+    position: usize,
+    parameter: &str,
+    span: Span,
+) -> Diagnostic {
+    runtime_error(
+        span,
+        RuntimeError::unsupported_call(
+            function,
+            format!("Argument #{position} (${parameter}) is not an integer string"),
+        ),
+    )
+}
+
+fn gmp_type_error(
+    function: &str,
+    position: usize,
+    parameter: &str,
+    value: &Value,
+    span: Span,
+) -> Diagnostic {
+    runtime_error(
+        span,
+        RuntimeError::unsupported_call(
+            function,
+            format!(
+                "Argument #{position} (${parameter}) must be of type GMP|string|int, {} given",
+                php_type_error_given(value)
+            ),
+        ),
+    )
+}
+
+fn gmp_rounding_mode_argument(
+    function: &str,
+    value: &Value,
+    span: Span,
+) -> CompileResult<GmpDivRoundingMode> {
+    match php_internal_int_argument(function, 3, "rounding_mode", value, span)? {
+        GMP_ROUND_ZERO => Ok(GmpDivRoundingMode::Zero),
+        GMP_ROUND_PLUSINF => Ok(GmpDivRoundingMode::PlusInf),
+        GMP_ROUND_MINUSINF => Ok(GmpDivRoundingMode::MinusInf),
+        _ => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                "Argument #3 ($rounding_mode) must be one of GMP_ROUND_ZERO, GMP_ROUND_PLUSINF, or GMP_ROUND_MINUSINF",
+            ),
+        )),
+    }
+}
+
+fn gmp_mod_decimal(left: &BcDecimal, right: &BcDecimal) -> BcDecimal {
+    let right_digits = right.digits_at_scale(0);
+    let mut remainder = decimal_mod_abs(&left.digits_at_scale(0), &right_digits);
+    if left.negative && !digits_are_zero(&remainder) {
+        remainder = decimal_sub_abs(&right_digits, &remainder);
+    }
+    BcDecimal {
+        negative: false,
+        digits: remainder,
+        scale: 0,
+    }
+    .normalized()
+}
+
+fn gmp_div_qr_decimal(
+    left: &BcDecimal,
+    right: &BcDecimal,
+    rounding: GmpDivRoundingMode,
+) -> (BcDecimal, BcDecimal) {
+    let (mut quotient_digits, remainder_digits) =
+        decimal_div_mod_abs(&left.digits_at_scale(0), &right.digits_at_scale(0));
+    let quotient_negative = left.negative ^ right.negative;
+    let has_remainder = !digits_are_zero(&remainder_digits);
+    let increment = has_remainder
+        && match rounding {
+            GmpDivRoundingMode::Zero => false,
+            GmpDivRoundingMode::PlusInf => !quotient_negative,
+            GmpDivRoundingMode::MinusInf => quotient_negative,
+        };
+    if increment {
+        quotient_digits = decimal_add_small_abs(&quotient_digits, 1);
+    }
+
+    let quotient = BcDecimal {
+        negative: quotient_negative && !digits_are_zero(&quotient_digits),
+        digits: quotient_digits,
+        scale: 0,
+    }
+    .normalized();
+    let remainder = left.sub(&quotient.mul(right)).integer_part();
+    (quotient, remainder)
+}
+
+fn gmp_gcd_digits(left: &[u8], right: &[u8]) -> Vec<u8> {
+    let mut left = left.to_vec();
+    let mut right = right.to_vec();
+    normalize_decimal_digits(&mut left);
+    normalize_decimal_digits(&mut right);
+    while !digits_are_zero(&right) {
+        let remainder = decimal_mod_abs(&left, &right);
+        left = right;
+        right = remainder;
+    }
+    left
+}
+
+fn gmp_decimal_to_i64_checked(decimal: &BcDecimal) -> Option<i64> {
+    decimal.format_with_scale(0).parse::<i64>().ok()
+}
+
+fn gmp_bounded_nonnegative_u64(
+    function: &str,
+    position: usize,
+    parameter: &str,
+    decimal: &BcDecimal,
+    limit: u64,
+    span: Span,
+) -> CompileResult<u64> {
+    let value = decimal.format_with_scale(0).parse::<u64>().ok();
+    match value {
+        Some(value) if !decimal.negative && value <= limit => Ok(value),
+        _ => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!("Argument #{position} (${parameter}) must be between 0 and {limit}"),
+            ),
+        )),
+    }
+}
+
+fn gmp_factorial_decimal(value: u64) -> BcDecimal {
+    let mut digits = vec![1];
+    for factor in 2..=value {
+        digits = decimal_mul_small_abs(&digits, factor as u16);
+    }
+    BcDecimal {
+        negative: false,
+        digits,
+        scale: 0,
+    }
+    .normalized()
+}
+
+fn gmp_next_prime_i64(value: i64) -> i64 {
+    if value < 2 {
+        return 2;
+    }
+    let mut candidate = value.saturating_add(1);
+    if candidate <= 2 {
+        return 2;
+    }
+    if candidate % 2 == 0 {
+        candidate = candidate.saturating_add(1);
+    }
+    while !gmp_is_prime_i64(candidate) {
+        candidate = candidate.saturating_add(2);
+    }
+    candidate
+}
+
+fn gmp_is_prime_i64(value: i64) -> bool {
+    if value < 2 {
+        return false;
+    }
+    if value == 2 || value == 3 {
+        return true;
+    }
+    if value % 2 == 0 {
+        return false;
+    }
+    let mut divisor = 3_i64;
+    while divisor <= value / divisor {
+        if value % divisor == 0 {
+            return false;
+        }
+        divisor += 2;
+    }
+    true
 }
 
 fn decimal_pow_mod_abs(base: &[u8], mut exponent: u64, modulus: &[u8]) -> Vec<u8> {
