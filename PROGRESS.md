@@ -1,13 +1,13 @@
 # PHP Native Compiler PHPT Progress
 
-Updated: 2026-06-04 05:10 CEST
+Updated: 2026-06-04 05:22 CEST
 
 Primary/public branch: `origin/master`
 Latest accepted public-score source:
-`13a0caf90de543696ca031ae9c2141b8bc70d639 fix: support sensitive parameter traces`
+`21abc76f24c1fbc242e659280341085db854de52 fix: support assert option diagnostics`
 
 Semantic source for current published score:
-`13a0caf90de543696ca031ae9c2141b8bc70d639 fix: support sensitive parameter traces`
+`21abc76f24c1fbc242e659280341085db854de52 fix: support assert option diagnostics`
 
 Public PHPT metric:
 
@@ -16,71 +16,49 @@ Public PHPT metric:
 Pinned denominator: `20294` total pinned runnable php-src PHPTs. Raw runner
 denominators that exclude BORKED rows are not public progress.
 
-Current public score: **7240 / 20294 pinned runnable PHPTs = 35.68%**.
+Current public score: **7279 / 20294 pinned runnable PHPTs = 35.87%**.
 
 Latest pushed source checkpoint:
-`21abc76f24c1fbc242e659280341085db854de52 fix: support assert option diagnostics`
+`e2c610c753d35f043d91f4483bb2cdd4662ae12c fix: support bounded strtotime absolute forms`
 
 Next score-gate target:
-`21abc76f24c1fbc242e659280341085db854de52 fix: support assert option diagnostics`.
-A full pinned PHPT gate for this source is running; it is not publication
-evidence until it completes with zero latest-published PASS regressions.
+`e2c610c753d35f043d91f4483bb2cdd4662ae12c fix: support bounded strtotime absolute forms`
+once cadence requires the next full pinned PHPT gate.
 
-The accepted source checkpoint chain through semantic source `13a0caf9` has
+The accepted source checkpoint chain through semantic source `21abc76f` has
 been pushed to `origin/master` and is now reflected in the public score above.
-The completed score gate at checkpoint `96ed077d` converted the
+The completed score gate at checkpoint `21abc76f` converted the post-`96ed077d`
+source chain into a public PHPT movement of `7240 -> 7279` passed pinned rows,
+a net gain of `39` public PHPT passes, with zero latest-published PASS
+regressions. The previous score gate at checkpoint `96ed077d` converted the
 post-`00a8fa10` source chain into a public PHPT movement of `7201 -> 7240`
-passed pinned rows, a net gain of `39` public PHPT passes, with zero
+passed pinned rows, also a net gain of `39` public PHPT passes, with zero
 latest-published PASS regressions.
 
 Unpublished source progress since the accepted public score source:
 
-- Latest pushed source head is `21abc76f24c1fbc242e659280341085db854de52`
-  (`fix: support assert option diagnostics`), pushed to `origin/master`.
-- There are `2` score-relevant source commits after the accepted public-score
-  source: `980cf9c4280bd64bb76b4b01ef5d01eff0a9a9cb`
-  (`fix: support bounded strtotime forms`) and
-  `21abc76f24c1fbc242e659280341085db854de52`
-  (`fix: support assert option diagnostics`).
+- Latest pushed source head is `e2c610c753d35f043d91f4483bb2cdd4662ae12c`
+  (`fix: support bounded strtotime absolute forms`), pushed to
+  `origin/master`.
+- There is `1` score-relevant source commit after the accepted public-score
+  source: `e2c610c753d35f043d91f4483bb2cdd4662ae12c`
+  (`fix: support bounded strtotime absolute forms`).
 - Staged focused selected-PHPT proof after the latest accepted public-score
-  source totals `27` selected rows across `2` integrated source artifacts:
-  DateTime `strtotime()` `+12` and assert option diagnostics `+15`.
-  Cadence currently reports `15` artifact-window rows across `1` artifact
-  because the DateTime integration artifact was written before the `96ed077d`
-  public-gate window reset. These are source/staging facts, not a public score
-  update until a future full pinned PHPT gate accepts them.
-- The DateTime `strtotime()` packet moved selected PHPT `0/12 -> 12/12` for
-  `ext/date/tests/bug14561.phpt`, `ext/date/tests/bug26198.phpt`,
-  `ext/date/tests/bug28024.phpt`, `ext/date/tests/bug28599.phpt`,
-  `ext/date/tests/bug29150.phpt`, `ext/date/tests/bug33056.phpt`,
-  `ext/date/tests/bug34676.phpt`, `ext/date/tests/bug35414.phpt`,
-  `ext/date/tests/bug36510.phpt`, `ext/date/tests/bug38229.phpt`,
-  `ext/date/tests/bug74057.phpt`, and
-  `ext/date/tests/strtotime-relative.phpt`. It also preserved a five-row
-  latest-published non-date PASS scout.
-- The assert option diagnostics packet moved selected PHPT `0/15 -> 15/15`
-  for `ext/standard/tests/assert/assert.phpt`,
-  `ext/standard/tests/assert/assert03.phpt`,
-  `ext/standard/tests/assert/assert04.phpt`,
-  `ext/standard/tests/assert/assert_basic.phpt`,
-  `ext/standard/tests/assert/assert_basic1.phpt`,
-  `ext/standard/tests/assert/assert_basic2.phpt`,
-  `ext/standard/tests/assert/assert_basic3.phpt`,
-  `ext/standard/tests/assert/assert_basic4.phpt`,
-  `ext/standard/tests/assert/assert_basic5.phpt`,
-  `ext/standard/tests/assert/assert_closures.phpt`,
-  `ext/standard/tests/assert/assert_error2.phpt`,
-  `ext/standard/tests/assert/assert_options_error.phpt`,
-  `ext/standard/tests/assert/assert_return_value.phpt`,
-  `ext/standard/tests/assert/assert_variation.phpt`, and
-  `ext/standard/tests/assert/assert_warnings.phpt`. It also preserved an
-  eight-row latest-published PASS scout.
-- The active full pinned PHPT gate for source `21abc76f` is
-  `state/logs/phpt-full-current-score-20260604T030645Z-php-src-f97ff59-public-21abc76f-source-21abc76f`.
-  It uses the accepted `96ed077d` PASS baseline with `7236` rows and SHA-256
-  `b91a188270d1704b610e00b65f8f495f5ee2f91ccd0d91ce13f440b742f0d40b`.
-  Latest cadence/readback is `RUNNING / BUILDING-RELEASE`; PASS regressions
-  are unknown, so it cannot move the public score yet.
+  source totals `17` selected rows across `1` integrated source artifact.
+  These are source/staging facts, not a public score update until a future full
+  pinned PHPT gate accepts them.
+- The DateTime absolute `strtotime()` packet moved selected PHPT
+  `0/17 -> 17/17` for `ext/date/tests/bug13142.phpt`,
+  `ext/date/tests/bug17988.phpt`, `ext/date/tests/bug21399.phpt`,
+  `ext/date/tests/bug26090.phpt`, `ext/date/tests/bug26320.phpt`,
+  `ext/date/tests/bug26694.phpt`, `ext/date/tests/bug28088.phpt`,
+  `ext/date/tests/bug29585.phpt`, `ext/date/tests/bug33578.phpt`,
+  `ext/date/tests/bug33869.phpt`, `ext/date/tests/bug34087.phpt`,
+  `ext/date/tests/bug34771.phpt`, `ext/date/tests/bug35499.phpt`,
+  `ext/date/tests/bug35885.phpt`, `ext/date/tests/bug35887.phpt`,
+  `ext/date/tests/bug36224.phpt`, and `ext/date/tests/bug37514.phpt`. It also
+  preserved an eight-row latest-published PASS scout and the prior staged
+  DateTime `strtotime()` `12/12` rows.
 - The previous publication blocker was the blocked `52a79aa1` full gate:
   `state/logs/phpt-full-current-score-20260604T005236Z-php-src-f97ff59-public-52a79aa1-source-52a79aa1`
   had `1` latest-published PASS regression,
@@ -99,7 +77,18 @@ Unpublished source progress since the accepted public score source:
   remains blocked by the latest-published PASS regression
   `php-src/Zend/tests/bug60598.phpt`.
 
-Accepted public gate: checkpoint `96ed077d` completed the pinned full PHPT
+Accepted public gate: checkpoint `21abc76f` completed the pinned full PHPT
+gate with `7279 / 20294 = 35.87%` and zero latest-published PASS regressions
+against the `96ed077d` baseline. Full gate evidence is in
+`state/logs/phpt-full-current-score-20260604T030645Z-php-src-f97ff59-public-21abc76f-source-21abc76f`;
+the aggregate had `7279` passed rows, `7275` normalized current passes, and
+`0` PASS regressions. The accepted PASS baseline is
+`state/logs/phpt-full-current-score-20260604T030645Z-php-src-f97ff59-public-21abc76f-source-21abc76f/current-passes.normalized.txt`
+with SHA-256
+`205f1109ae6a26361cb4ce1df92b6d44b4ec3358aafa16f2238d69294720916a`.
+The invalid-proof-marker summary reported `0` hits.
+
+Previous accepted public gate: checkpoint `96ed077d` completed the pinned full PHPT
 gate with `7240 / 20294 = 35.68%` and zero latest-published PASS regressions
 against the `00a8fa10` baseline. Full gate evidence is in
 `state/logs/phpt-full-current-score-20260604T024037Z-php-src-f97ff59-public-96ed077d-source-96ed077d`;
