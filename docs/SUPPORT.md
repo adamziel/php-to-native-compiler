@@ -3630,12 +3630,13 @@
   `get_extension_funcs("standard")`; the `user` entry is derived from the
   interpreter's registered user-function table using PHP's case-insensitive
   lowercased function keys. Class methods and closures are not included in the
-  user-function list.
-  The optional `exclude_disabled` boolean is accepted but currently has no
-  effect because disabled-function INI policy is not implemented.
+  user-function list. Disabled internal names from `disable_functions` are
+  filtered from the `internal` list. The optional `exclude_disabled` boolean is
+  accepted for PHP compatibility and emits the PHP 8 deprecation that the
+  parameter no longer has an effect.
   Exact host internal-function catalogs, extension load-order parity,
-  declaration-order user-function ordering, disabled-function filtering,
-  dynamically loaded modules, and native execution remain unsupported.
+  declaration-order user-function ordering, dynamically loaded modules, and
+  native execution remain unsupported.
   `function_exists()`, `is_callable()`, and `ReflectionFunction` metadata
   recognize the builtin, and native lowering only folds metadata membership.
 - `getenv()` supports no-argument environment snapshots, string name lookups,
@@ -3957,12 +3958,17 @@
   classes or methods. Normal array callable resolution checks the same
   two-element shape against current declared method metadata and the active
   method scope: object receivers are true for visible public/private/protected
-  non-static declared methods, or for missing methods when the object class
-  declares or inherits public non-static `__call`. Class-string
-  receivers are true for visible public/private/protected static declared
-  methods, or for missing methods when the class declares or inherits public
-  static `__callStatic`. This `is_callable()` magic-method introspection does
-  not broaden the currently executable array-callback dispatch subset.
+  declared methods, including public static methods, or for missing methods
+  when the object class declares or inherits public non-static `__call`.
+  Class-string receivers are true for visible public/private/protected static
+  declared methods, for visible non-static methods when the current `$this`
+  object is compatible with the class receiver, or for missing methods when
+  the class declares or inherits public static `__callStatic`. Abstract methods
+  are not callable. The covered deprecated forms using `self`, `parent`,
+  `static`, or a `Class::method` method string emit PHP-style deprecations
+  while returning bounded availability. This `is_callable()` magic-method
+  introspection does not broaden the currently executable array-callback
+  dispatch subset.
   Direct interpreter calls with a third direct-variable argument write the
   bounded callable-name output string for scalar/null values, arrays, objects,
   closures, and resources; this output slice does not imply broader callable
@@ -4824,10 +4830,12 @@
   native lowering remain unsupported.
   `function_exists($name)` checks string names against the current runtime
   function table, including current user functions and documented callable
-  builtins; a single leading global namespace separator is ignored for lookup
-  strings such as `\App\fn`. Conditional/nested user-function declarations
-  become visible only after their declaration statement executes. Non-string
-  names, namespace/import expansion for arbitrary dynamic strings, and native
+  builtins; disabled internal builtins are hidden, while user-defined
+  functions with the same name remain visible after declaration. A single
+  leading global namespace separator is ignored for lookup strings such as
+  `\App\fn`. Conditional/nested user-function declarations become visible only
+  after their declaration statement executes. Non-string names,
+  namespace/import expansion for arbitrary dynamic strings, and native
   function-table breadth beyond the documented metadata subset remain
   unsupported.
   `mysqli_connect(...)` accepts zero to six current connection arguments and
@@ -10063,14 +10071,20 @@
   string class name or current object and the second value is a string method
   name; this shape check does not resolve classes or methods. Normal array
   callable resolution checks the same two-element shape against current
-  declared method metadata: object receivers are true for public declared
-  methods, or for missing/inaccessible methods when the object class declares
-  or inherits public non-static `__call`; class-string receivers are true for
-  public static declared methods, or for missing/inaccessible methods when the
-  class declares or inherits public static `__callStatic`. This
-  `is_callable()` magic-method introspection does not broaden the currently
-  executable array-callback dispatch subset. Scalar non-string values return
-  false. Direct interpreter calls with a third direct-variable argument write
+  declared method metadata and the active method scope: object receivers are
+  true for visible public/private/protected declared methods, including public
+  static methods, or for missing methods when the object class declares or
+  inherits public non-static `__call`; class-string receivers are true for
+  visible public/private/protected static declared methods, for visible
+  non-static methods when the current `$this` object is compatible with the
+  class receiver, or for missing methods when the class declares or inherits
+  public static `__callStatic`. Abstract methods are not callable. The covered
+  deprecated forms using `self`, `parent`, `static`, or a `Class::method`
+  method string emit PHP-style deprecations while returning bounded
+  availability. This `is_callable()` magic-method introspection does not
+  broaden the currently executable array-callback dispatch subset. Scalar
+  non-string values return false. Direct interpreter calls with a third
+  direct-variable argument write
   the bounded callable-name output string for scalar/null values, arrays,
   objects, closures, and resources; output targets beyond direct variables
   remain unsupported. Native lowering
@@ -10088,12 +10102,14 @@
   and generator object semantics are not implemented.
   `function_exists($name)` checks string names against the current runtime
   function table, including current user functions and documented callable
-  builtins. Native lowering folds only direct calls whose name argument is an
-  already-lowerable string with a uniform known result in the documented
-  builtin table; native user-defined function tables, dynamic calls,
-  namespace/autoload-aware lookup, extension-loaded functions beyond documented
-  builtins, non-string name coercion, and exact native
-  `TypeError`/deprecation behavior are not implemented. `assert(...)` is a
+  builtins; disabled internal builtins are hidden, while user-defined
+  functions with the same name remain visible after declaration. Native
+  lowering folds only direct calls whose name argument is an already-lowerable
+  string with a uniform known result in the documented builtin table; native
+  user-defined function tables, dynamic calls, namespace/autoload-aware lookup,
+  extension-loaded functions beyond documented builtins, non-string name
+  coercion, and exact native `TypeError`/deprecation behavior are not
+  implemented. `assert(...)` is a
   runtime-only builtin in this slice: truthy and inactive assertions return
   `true`, and the interpreter implements the bounded `assert.exception=0`
   warning/callback/options path documented above. Default `AssertionError`
@@ -10926,7 +10942,10 @@
   their name, false file/start/end/doc-comment metadata, current
   parameter/default metadata, return type, by-reference-return predicate, and
   a request-local `ReflectionExtension` object through `getExtension()`, and
-  executes them through `invoke()`/`invokeArgs()`.
+  executes them through `invoke()`/`invokeArgs()`. Disabled internal functions
+  are treated as non-existent for construction.
+  `ReflectionFunction::isDisabled()` is available on constructible functions,
+  emits the PHP 8 deprecation, and returns `false`.
   `ReflectionFunction::invoke(...$args)` and
   `ReflectionFunction::invokeArgs($args)` execute declared user functions,
   ordinary closure values, and those internal builtins over the current
@@ -13140,7 +13159,8 @@
   attribute names, and broad internal attribute catalogs
 - `is_callable` callable-name output targets beyond direct variables, object
   `__invoke` callables outside the bounded closure first-class callable slice,
-  private/protected caller-context method callability,
+  private/protected caller-context method callability beyond the documented
+  active-scope array-callable slice,
   inherited/trait/interface method lookup, full PHP `Closure` object parity
   for first-class callables, namespace/autoload-aware resolution, exact native
   `TypeError` behavior, and native lowering beyond direct known string

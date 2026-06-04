@@ -12112,6 +12112,7 @@ impl Interpreter {
         if let Some(message) = timezone_startup_warning {
             interpreter.emit_startup_warning(message);
         }
+        interpreter.emit_disable_functions_startup_warnings();
         interpreter.emit_assert_startup_deprecations();
         interpreter.seed_main_source_directory_realpath_cache();
         interpreter.uploaded_file_paths =
@@ -13968,6 +13969,13 @@ impl Interpreter {
     }
 
     fn disabled_functions_contains(&self, function_name: &str) -> bool {
+        if matches!(function_name.to_ascii_lowercase().as_str(), "exit" | "die") {
+            return false;
+        }
+        self.disable_functions_ini_contains(function_name)
+    }
+
+    fn disable_functions_ini_contains(&self, function_name: &str) -> bool {
         self.ini_value("disable_functions").is_some_and(|value| {
             value
                 .split(|ch: char| ch == ',' || ch.is_ascii_whitespace())
@@ -27006,6 +27014,35 @@ impl Interpreter {
             "Warning: PHP Startup: {} in Unknown on line 0\n",
             message.as_ref()
         ));
+    }
+
+    fn emit_startup_warning_without_prefix(&mut self, message: impl AsRef<str>) {
+        if self.error_reporting_mask & PHP_E_WARNING == 0 {
+            return;
+        }
+        self.append_output(&format!(
+            "Warning: {} in Unknown on line 0\n",
+            message.as_ref()
+        ));
+    }
+
+    fn emit_disable_functions_startup_warnings(&mut self) {
+        let Some(value) = self.ini_value("disable_functions") else {
+            return;
+        };
+
+        let mut warned = HashSet::new();
+        for part in value
+            .split(|ch: char| ch == ',' || ch.is_ascii_whitespace())
+            .filter(|part| !part.is_empty())
+        {
+            let key = part.to_ascii_lowercase();
+            if matches!(key.as_str(), "exit" | "die") && warned.insert(key.clone()) {
+                self.emit_startup_warning_without_prefix(format!(
+                    "Cannot disable function {key}()"
+                ));
+            }
+        }
     }
 
     fn emit_startup_deprecated(&mut self, message: impl AsRef<str>) {
@@ -50409,9 +50446,15 @@ impl Interpreter {
                     )
                 })
             }
-            None => reflection_internal_function_state(name).ok_or_else(|| {
-                reflection_exception_error(span, format!("Function {name}() does not exist"))
-            }),
+            None if self.disable_functions_ini_contains(name) => Err(reflection_exception_error(
+                span,
+                format!("Function {name}() does not exist"),
+            )),
+            None => reflection_internal_function_state(name)
+                .filter(|_| !self.disabled_functions_contains(name))
+                .ok_or_else(|| {
+                    reflection_exception_error(span, format!("Function {name}() does not exist"))
+                }),
         }
     }
 
@@ -62331,6 +62374,16 @@ impl Interpreter {
                 expect_expr_arity("ReflectionFunction::returnsReference", args.len(), 0, span)?;
                 Ok(Value::Bool(state.returns_by_reference))
             }
+            "isdisabled" => {
+                expect_expr_arity("ReflectionFunction::isDisabled", args.len(), 0, span)?;
+                self.emit_display_diagnostic(
+                    "Deprecated",
+                    PHP_E_DEPRECATED,
+                    "Method ReflectionFunction::isDisabled() is deprecated since 8.0, as ReflectionFunction can no longer be constructed for disabled functions",
+                    span,
+                )?;
+                Ok(Value::Bool(false))
+            }
             "isdeprecated" => {
                 expect_expr_arity("ReflectionFunction::isDeprecated", args.len(), 0, span)?;
                 Ok(Value::Bool(state.is_deprecated))
@@ -70231,23 +70284,27 @@ impl Interpreter {
         method_name: &str,
         span: Span,
     ) -> CompileResult<Rc<FunctionDecl>> {
-        let key = (class_id, method_name.to_ascii_lowercase());
-        if self.abstract_methods.contains(&key) {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    format!("{class_name}::{method_name}()"),
-                    "abstract methods are not executable in the current subset",
-                ),
+        if self.method_is_abstract(class_id, method_name) {
+            return Err(Diagnostic::new(
+                Phase::Runtime,
+                span.line,
+                span.column,
+                format!("Cannot call abstract method {class_name}::{method_name}()"),
             ));
         }
 
+        let key = (class_id, method_name.to_ascii_lowercase());
         self.methods.get(&key).cloned().ok_or_else(|| {
             runtime_error(
                 span,
                 RuntimeError::undefined_function(format!("{class_name}::{method_name}()")),
             )
         })
+    }
+
+    fn method_is_abstract(&self, class_id: ClassId, method_name: &str) -> bool {
+        self.abstract_methods
+            .contains(&(class_id, method_name.to_ascii_lowercase()))
     }
 
     fn trait_reflection_method_function(
@@ -71785,10 +71842,20 @@ impl Interpreter {
                 .map(|value| (value, None));
         }
         ensure_no_positional_arguments_after_named_arguments(args)?;
-        if key == "call_user_func" || fallback_key.as_deref() == Some("call_user_func") {
+        if (key == "call_user_func" || fallback_key.as_deref() == Some("call_user_func"))
+            && matches!(
+                self.lookup_direct_function_call(name),
+                Some(Callable::Builtin(ref builtin)) if builtin == "call_user_func"
+            )
+        {
             return self.call_user_func_direct_with_array_copy_source(args, span, caller_scope);
         }
-        if key == "call_user_func_array" || fallback_key.as_deref() == Some("call_user_func_array")
+        if (key == "call_user_func_array"
+            || fallback_key.as_deref() == Some("call_user_func_array"))
+            && matches!(
+                self.lookup_direct_function_call(name),
+                Some(Callable::Builtin(ref builtin)) if builtin == "call_user_func_array"
+            )
         {
             return self.call_user_func_array_direct_with_array_copy_source(
                 args,
@@ -73174,14 +73241,16 @@ impl Interpreter {
         method_name: &str,
     ) -> bool {
         match self.resolve_instance_method_for_current_object_scope(class_id, method_name) {
-            Some((declaring_class_id, _, _, visibility, is_static)) if !is_static => self
-                .method_visible_for_dispatch(
-                    Some(class_id),
-                    declaring_class_id,
-                    method_name,
-                    visibility,
-                ),
-            Some(_) | None => has_public_non_static_magic_call(&self.classes, class_id),
+            Some((declaring_class_id, _, resolved_method_name, visibility, _)) => {
+                !self.method_is_abstract(declaring_class_id, &resolved_method_name)
+                    && self.method_visible_for_dispatch(
+                        Some(class_id),
+                        declaring_class_id,
+                        method_name,
+                        visibility,
+                    )
+            }
+            None => has_public_non_static_magic_call(&self.classes, class_id),
         }
     }
 
@@ -73191,15 +73260,283 @@ impl Interpreter {
         method_name: &str,
     ) -> bool {
         match self.resolve_instance_method(class_id, method_name) {
-            Some((declaring_class_id, _, _, visibility, true)) => self.method_visible_for_dispatch(
-                Some(class_id),
-                declaring_class_id,
-                method_name,
-                visibility,
-            ),
+            Some((declaring_class_id, _, resolved_method_name, visibility, true)) => {
+                !self.method_is_abstract(declaring_class_id, &resolved_method_name)
+                    && self.method_visible_for_dispatch(
+                        Some(class_id),
+                        declaring_class_id,
+                        method_name,
+                        visibility,
+                    )
+            }
             Some(_) => false,
             None => has_public_static_magic_call_static(&self.classes, class_id),
         }
+    }
+
+    fn is_callable_value_direct(
+        &mut self,
+        value: &Value,
+        syntax_only: bool,
+        span: Span,
+        caller_scope: &SymbolTable,
+    ) -> CompileResult<bool> {
+        if syntax_only {
+            return Ok(self.is_callable_value(value, true));
+        }
+
+        match value {
+            Value::Array(array) => {
+                self.array_callable_is_callable_direct(array, span, caller_scope)
+            }
+            _ => Ok(self.is_callable_value(value, false)),
+        }
+    }
+
+    fn array_callable_is_callable_direct(
+        &mut self,
+        array: &PhpArray,
+        span: Span,
+        caller_scope: &SymbolTable,
+    ) -> CompileResult<bool> {
+        let Some((target, method_name)) = array_callable_parts(array) else {
+            return Ok(false);
+        };
+
+        if let Some(result) =
+            self.deprecated_array_callable_is_callable(target, method_name, span, caller_scope)?
+        {
+            return Ok(result);
+        }
+
+        Ok(match target {
+            Value::Object(object) => {
+                self.object_method_is_callable_from_current_scope(object.class_id(), method_name)
+            }
+            Value::String(class_name) => self.class_string_array_callable_is_callable_from_scope(
+                class_name,
+                method_name,
+                caller_scope,
+            ),
+            _ => false,
+        })
+    }
+
+    fn class_string_array_callable_is_callable_from_scope(
+        &self,
+        class_name: &str,
+        method_name: &str,
+        caller_scope: &SymbolTable,
+    ) -> bool {
+        let Some(class) = self.classes.lookup_class(class_name) else {
+            return false;
+        };
+        let class_id = class.id();
+
+        match self.resolve_instance_method(class_id, method_name) {
+            Some((declaring_class_id, _, resolved_method_name, visibility, is_static)) => {
+                if self.method_is_abstract(declaring_class_id, &resolved_method_name)
+                    || !self.method_visible_for_dispatch(
+                        Some(class_id),
+                        declaring_class_id,
+                        method_name,
+                        visibility,
+                    )
+                {
+                    return false;
+                }
+                is_static || self.current_this_is_instance_of(caller_scope, class_id)
+            }
+            None => has_public_static_magic_call_static(&self.classes, class_id),
+        }
+    }
+
+    fn current_this_is_instance_of(&self, caller_scope: &SymbolTable, class_id: ClassId) -> bool {
+        let Some(Value::Object(object)) = caller_scope.read_named("this") else {
+            return false;
+        };
+        object.class_id() == class_id || self.classes.is_subclass_of(object.class_id(), class_id)
+    }
+
+    fn deprecated_array_callable_is_callable(
+        &mut self,
+        target: &Value,
+        method_name: &str,
+        span: Span,
+        caller_scope: &SymbolTable,
+    ) -> CompileResult<Option<bool>> {
+        let target_scope = match target {
+            Value::String(name) if name.eq_ignore_ascii_case("self") => Some("self"),
+            Value::String(name) if name.eq_ignore_ascii_case("parent") => Some("parent"),
+            Value::String(name) if name.eq_ignore_ascii_case("static") => Some("static"),
+            _ => None,
+        };
+        let method_scope = static_method_callable_string(method_name);
+        if target_scope.is_none() && method_scope.is_none() {
+            return Ok(None);
+        }
+
+        let target_label = self.array_callable_target_label(target);
+        if method_scope.is_some() {
+            self.emit_display_diagnostic(
+                "Deprecated",
+                PHP_E_DEPRECATED,
+                format!(
+                    "Callables of the form [\"{target_label}\", \"{method_name}\"] are deprecated"
+                ),
+                span,
+            )?;
+        } else if let Some(scope) = target_scope {
+            self.emit_display_diagnostic(
+                "Deprecated",
+                PHP_E_DEPRECATED,
+                format!("Use of \"{scope}\" in callables is deprecated"),
+                span,
+            )?;
+        }
+
+        let Some((lookup_class_id, receiver_class_id, lookup_method_name, allow_non_static)) = self
+            .deprecated_array_callable_resolution_target(
+                target,
+                target_scope,
+                method_scope,
+                method_name,
+                caller_scope,
+            )
+        else {
+            return Ok(Some(false));
+        };
+
+        Ok(Some(self.deprecated_array_callable_method_is_callable(
+            lookup_class_id,
+            receiver_class_id,
+            lookup_method_name,
+            allow_non_static,
+        )))
+    }
+
+    fn array_callable_target_label(&self, target: &Value) -> String {
+        match target {
+            Value::Object(object) => self
+                .classes
+                .get(object.class_id())
+                .map(|class| class.name().to_string())
+                .unwrap_or_else(|| object.class_name().to_string()),
+            Value::String(name) => name.clone(),
+            _ => target.type_name().to_string(),
+        }
+    }
+
+    fn deprecated_array_callable_resolution_target<'a>(
+        &self,
+        target: &Value,
+        target_scope: Option<&str>,
+        method_scope: Option<(&'a str, &'a str)>,
+        method_name: &'a str,
+        caller_scope: &SymbolTable,
+    ) -> Option<(ClassId, ClassId, &'a str, bool)> {
+        let (scope_name, lookup_method_name) = method_scope.unwrap_or(("", method_name));
+
+        match target {
+            Value::Object(object) => {
+                let receiver_class_id = object.class_id();
+                let lookup_class_id = if let Some((scope, _)) = method_scope {
+                    self.deprecated_array_callable_lookup_class_for_scope(
+                        scope,
+                        receiver_class_id,
+                        Some(receiver_class_id),
+                    )?
+                } else {
+                    self.deprecated_array_callable_lookup_class_for_scope(
+                        target_scope?,
+                        receiver_class_id,
+                        Some(receiver_class_id),
+                    )?
+                };
+                Some((lookup_class_id, receiver_class_id, lookup_method_name, true))
+            }
+            Value::String(class_name) => {
+                let base_class_id = if target_scope.is_some() && method_scope.is_none() {
+                    self.class_context.last().copied()?
+                } else {
+                    self.classes.lookup_class_id(class_name)?
+                };
+                let called_class_id = self
+                    .called_class_context
+                    .last()
+                    .copied()
+                    .unwrap_or(base_class_id);
+                let lookup_class_id = if let Some((scope, _)) = method_scope {
+                    self.deprecated_array_callable_lookup_class_for_scope(
+                        scope,
+                        base_class_id,
+                        Some(called_class_id),
+                    )?
+                } else {
+                    self.deprecated_array_callable_lookup_class_for_scope(
+                        target_scope?,
+                        base_class_id,
+                        Some(called_class_id),
+                    )?
+                };
+                let allow_non_static = matches!(
+                    scope_name.to_ascii_lowercase().as_str(),
+                    "self" | "parent" | "static"
+                ) && self
+                    .current_this_is_instance_of(caller_scope, lookup_class_id);
+                Some((
+                    lookup_class_id,
+                    called_class_id,
+                    lookup_method_name,
+                    allow_non_static,
+                ))
+            }
+            _ => None,
+        }
+    }
+
+    fn deprecated_array_callable_lookup_class_for_scope(
+        &self,
+        scope: &str,
+        base_class_id: ClassId,
+        called_class_id: Option<ClassId>,
+    ) -> Option<ClassId> {
+        if scope.eq_ignore_ascii_case("self") {
+            return Some(base_class_id);
+        }
+        if scope.eq_ignore_ascii_case("static") {
+            return Some(called_class_id.unwrap_or(base_class_id));
+        }
+        if scope.eq_ignore_ascii_case("parent") {
+            return self.classes.get(base_class_id)?.parent_id();
+        }
+        self.classes.lookup_class_id(scope)
+    }
+
+    fn deprecated_array_callable_method_is_callable(
+        &self,
+        lookup_class_id: ClassId,
+        receiver_class_id: ClassId,
+        method_name: &str,
+        allow_non_static: bool,
+    ) -> bool {
+        let resolved =
+            self.resolve_instance_method_for_current_object_scope(lookup_class_id, method_name);
+        let Some((declaring_class_id, _, resolved_method_name, visibility, is_static)) = resolved
+        else {
+            return false;
+        };
+        if self.method_is_abstract(declaring_class_id, &resolved_method_name)
+            || !self.method_visible_for_dispatch(
+                Some(receiver_class_id),
+                declaring_class_id,
+                method_name,
+                visibility,
+            )
+        {
+            return false;
+        }
+        is_static || allow_non_static
     }
 
     fn call_is_callable_direct(
@@ -73272,7 +73609,9 @@ impl Interpreter {
             }
         }
 
-        Ok(Value::Bool(self.is_callable_value(&values[0], syntax_only)))
+        let is_callable =
+            self.is_callable_value_direct(&values[0], syntax_only, span, caller_scope)?;
+        Ok(Value::Bool(is_callable))
     }
 
     fn evaluate_builtin_value_call_arguments(
@@ -84194,11 +84533,14 @@ impl Interpreter {
 
     fn lookup_function_exact(&self, name: &str) -> Option<Callable> {
         let key = name.to_ascii_lowercase();
-        if is_builtin(&key) {
+        if let Some(function) = self.functions.get(&key) {
+            return Some(Callable::User(function.clone()));
+        }
+        if is_builtin(&key) && !self.disabled_functions_contains(&key) {
             return Some(Callable::Builtin(key));
         }
 
-        self.functions.get(&key).cloned().map(Callable::User)
+        None
     }
 
     fn lookup_direct_function_call(&self, name: &str) -> Option<Callable> {
@@ -84250,7 +84592,7 @@ impl Interpreter {
         }
     }
 
-    fn call_get_defined_functions(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+    fn call_get_defined_functions(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         if args.len() > 1 {
             return Err(runtime_error(
                 span,
@@ -84278,10 +84620,19 @@ impl Interpreter {
             ));
         }
 
+        if !args.is_empty() {
+            self.emit_display_diagnostic(
+                "Deprecated",
+                PHP_E_DEPRECATED,
+                "get_defined_functions(): The $exclude_disabled parameter has no effect since PHP 8.0",
+                span,
+            )?;
+        }
+
         let mut functions = PhpArray::new();
         functions.insert(
             "internal".to_string(),
-            Value::Array(defined_internal_functions_array()),
+            Value::Array(self.defined_internal_functions_array()),
         );
         functions.insert(
             "user".to_string(),
@@ -84297,6 +84648,18 @@ impl Interpreter {
         let mut functions = PhpArray::new();
         for (index, name) in names.into_iter().enumerate() {
             functions.insert(index as i64, Value::String(name));
+        }
+        functions
+    }
+
+    fn defined_internal_functions_array(&self) -> PhpArray {
+        let mut functions = PhpArray::new();
+        for name in
+            defined_internal_function_names().filter(|name| !self.disabled_functions_contains(name))
+        {
+            functions
+                .append(Value::String(name.to_string()))
+                .expect("internal function count fits in PHP array keys");
         }
         functions
     }
@@ -129627,6 +129990,10 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             return Some(("Error", error.message.clone()));
         }
 
+        if error.message.starts_with("Cannot call abstract method ") {
+            return Some(("Error", error.message.clone()));
+        }
+
         if error.message.starts_with("Unsupported operand types: ") {
             return Some(("TypeError", error.message.clone()));
         }
@@ -131944,14 +132311,6 @@ fn defined_internal_function_names() -> impl Iterator<Item = &'static str> {
         .iter()
         .copied()
         .chain(COMPAT_STANDARD_EXTENSION_FUNCTIONS.iter().copied())
-}
-
-fn defined_internal_functions_array() -> PhpArray {
-    let mut functions = PhpArray::new();
-    for (index, name) in defined_internal_function_names().enumerate() {
-        functions.insert(index as i64, Value::String(name.to_string()));
-    }
-    functions
 }
 
 fn call_arguments_have_spread(args: &[Expr]) -> bool {
