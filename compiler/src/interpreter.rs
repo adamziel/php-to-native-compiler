@@ -397,6 +397,37 @@ fn class_registration_startup_fatal_message(error: &Diagnostic) -> Option<String
         ));
     }
 
+    if let Some((missing_count, missing_methods)) =
+        class_missing_trait_methods_from_startup_reason(class_name, reason, true)
+    {
+        let method_word = if missing_count == 1 {
+            "method"
+        } else {
+            "methods"
+        };
+        let remaining_word = if missing_count == 1 {
+            "method"
+        } else {
+            "methods"
+        };
+        return Some(format!(
+            "Class {class_name} contains {missing_count} abstract {method_word} and must therefore be declared abstract or implement the remaining {remaining_word} ({missing_methods})"
+        ));
+    }
+
+    if let Some((missing_count, missing_methods)) =
+        class_missing_trait_methods_from_startup_reason(class_name, reason, false)
+    {
+        let method_word = if missing_count == 1 {
+            "method"
+        } else {
+            "methods"
+        };
+        return Some(format!(
+            "Class {class_name} must implement {missing_count} abstract {method_word} ({missing_methods})"
+        ));
+    }
+
     let missing = reason.strip_prefix(&format!(
         "concrete class {class_name} must implement abstract method "
     ))?;
@@ -453,6 +484,39 @@ fn class_missing_interface_methods_from_startup_reason<'a>(
             return None;
         }
         method_list.push(method);
+    }
+    if method_list.is_empty() {
+        return None;
+    }
+    let count = method_list.len();
+    Some((count, method_list.join(", ")))
+}
+
+fn class_missing_trait_methods_from_startup_reason<'a>(
+    class_name: &str,
+    reason: &'a str,
+    concrete_class: bool,
+) -> Option<(usize, String)> {
+    let prefix = if concrete_class {
+        format!("concrete class {class_name} must implement trait method ")
+    } else {
+        format!("class {class_name} must implement trait method ")
+    };
+    let missing = reason
+        .strip_prefix(&prefix)
+        .or_else(|| reason.strip_prefix(&prefix.replace(" method ", " methods ")))?;
+    let mut method_list = Vec::new();
+    for method in missing.split(", ") {
+        let method = method.strip_suffix("()")?;
+        let (_, method_name) = method.split_once("::")?;
+        if method_name.contains("::")
+            || method_name
+                .chars()
+                .any(|ch| ch.is_whitespace() || matches!(ch, '(' | ')' | ';'))
+        {
+            return None;
+        }
+        method_list.push(format!("{class_name}::{method_name}"));
     }
     if method_list.is_empty() {
         return None;
@@ -123572,6 +123636,17 @@ fn register_class_members(
         }
     }
 
+    validate_abstract_trait_method_requirements(
+        classes,
+        final_classes,
+        interface_lookup,
+        &effective_method_signatures,
+        abstract_methods,
+        trait_lookup,
+        id,
+        class,
+    )
+    .map_err(|error| runtime_error(class.span, error))?;
     validate_abstract_method_implementation(classes, abstract_methods, id, class)
         .map_err(|error| runtime_error(class.span, error))?;
     validate_interface_method_implementation(
@@ -123789,6 +123864,14 @@ fn composed_trait_methods(
                 .map(|method| method.method)
                 .collect::<Vec<_>>()
         })
+        .map_err(|error| error.to_diagnostic(Phase::Runtime))
+}
+
+fn composed_abstract_trait_method_requirements(
+    class: &ClassDecl,
+    trait_lookup: &HashMap<String, Rc<TraitDecl>>,
+) -> CompileResult<Vec<trait_semantics::EffectiveTraitMethod>> {
+    trait_semantics::compose_class_abstract_trait_method_requirements(class, trait_lookup)
         .map_err(|error| error.to_diagnostic(Phase::Runtime))
 }
 
@@ -127876,6 +127959,283 @@ fn find_method<'a>(
     }
 
     None
+}
+
+fn validate_abstract_trait_method_requirements(
+    classes: &PhpClassTable,
+    final_classes: &HashSet<ClassId>,
+    interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
+    method_signatures: &HashMap<(ClassId, String), MethodSignature>,
+    abstract_methods: &HashSet<(ClassId, String)>,
+    trait_lookup: &HashMap<String, Rc<TraitDecl>>,
+    class_id: ClassId,
+    class: &ClassDecl,
+) -> RuntimeResult<()> {
+    let requirements = composed_abstract_trait_method_requirements(class, trait_lookup)
+        .map_err(|error| RuntimeError::unsupported_class_inheritance(&class.name, error.message))?;
+    if requirements.is_empty() {
+        return Ok(());
+    }
+
+    let mut missing = Vec::new();
+    for requirement in requirements {
+        let lookup_name = requirement.method.function.name.to_ascii_lowercase();
+        let Some((declaring_class_id, declaring_class_name, implementation)) =
+            find_method(classes, class_id, &lookup_name)
+        else {
+            if class.is_abstract && requirement.method.visibility != ClassVisibility::Private {
+                continue;
+            }
+            missing.push(format!(
+                "{}::{}()",
+                class.name, requirement.method.function.name
+            ));
+            continue;
+        };
+
+        let implementation_is_abstract =
+            abstract_methods.contains(&(declaring_class_id, lookup_name.clone()));
+        if implementation_is_abstract && !class.is_abstract {
+            missing.push(format!(
+                "{}::{}()",
+                class.name, requirement.method.function.name
+            ));
+            continue;
+        }
+
+        validate_abstract_trait_method_static_compatibility(
+            &class.name,
+            &requirement,
+            implementation,
+        )?;
+        validate_abstract_trait_method_signature_compatibility(
+            classes,
+            final_classes,
+            interface_lookup,
+            method_signatures,
+            class_id,
+            &class.name,
+            &requirement,
+            declaring_class_id,
+            declaring_class_name,
+            implementation,
+        )?;
+    }
+
+    if missing.is_empty() {
+        return Ok(());
+    }
+
+    let method_list = missing.join(", ");
+    let method_word = if missing.len() == 1 {
+        "method"
+    } else {
+        "methods"
+    };
+    let prefix = if class.is_abstract {
+        format!("class {}", class.name)
+    } else {
+        format!("concrete class {}", class.name)
+    };
+    Err(RuntimeError::unsupported_class_inheritance(
+        &class.name,
+        format!("{prefix} must implement trait {method_word} {method_list}"),
+    ))
+}
+
+fn validate_abstract_trait_method_static_compatibility(
+    class_name: &str,
+    requirement: &trait_semantics::EffectiveTraitMethod,
+    implementation: &PhpMethodMetadata,
+) -> RuntimeResult<()> {
+    if implementation.is_static() == requirement.method.is_static {
+        return Ok(());
+    }
+
+    let required_static = method_static_name(requirement.method.is_static);
+    let implementation_static = method_static_name(implementation.is_static());
+    Err(RuntimeError::unsupported_class_inheritance(
+        class_name,
+        format!(
+            "modifier diagnostic: Cannot make {required_static} method {}::{}() {implementation_static} in class {class_name}",
+            requirement.declaring_trait_name, requirement.method.function.name
+        ),
+    ))
+}
+
+fn validate_abstract_trait_method_signature_compatibility(
+    classes: &PhpClassTable,
+    final_classes: &HashSet<ClassId>,
+    interface_lookup: &HashMap<String, Rc<InterfaceDecl>>,
+    method_signatures: &HashMap<(ClassId, String), MethodSignature>,
+    class_id: ClassId,
+    class_name: &str,
+    requirement: &trait_semantics::EffectiveTraitMethod,
+    declaring_class_id: ClassId,
+    declaring_class_name: &str,
+    implementation: &PhpMethodMetadata,
+) -> RuntimeResult<()> {
+    let lookup_name = implementation.name().to_ascii_lowercase();
+    let Some(implementation_signature) =
+        method_signatures.get(&(declaring_class_id, lookup_name.clone()))
+    else {
+        return Ok(());
+    };
+    let requirement_signature = method_signature(
+        &requirement.method.function,
+        &requirement.method.attributes,
+        None,
+    );
+    let implementation_context =
+        signature_type_context_for_class(classes, final_classes, declaring_class_id);
+    let requirement_context = signature_type_context_for_class(classes, final_classes, class_id);
+    let child_signature = || {
+        method_signature_compatibility_signature_with_context(
+            declaring_class_name,
+            implementation.name(),
+            Some(implementation_signature),
+            Some(implementation_context),
+        )
+    };
+    let requirement_signature_text = || {
+        method_signature_compatibility_signature_with_context(
+            &requirement.declaring_trait_name,
+            &requirement.method.function.name,
+            Some(&requirement_signature),
+            Some(requirement_context),
+        )
+    };
+
+    if implementation_signature.required_params > requirement_signature.required_params
+        || (implementation_signature.params.len() < requirement_signature.params.len()
+            && !implementation_signature
+                .params
+                .iter()
+                .any(|param| param.is_variadic))
+    {
+        return Err(incompatible_declaration_error(
+            class_name,
+            child_signature(),
+            requirement_signature_text(),
+        ));
+    }
+
+    let implementation_variadic_param = implementation_signature
+        .params
+        .iter()
+        .find(|param| param.is_variadic);
+    for (index, requirement_param) in requirement_signature.params.iter().enumerate() {
+        let Some(implementation_param) = implementation_signature
+            .params
+            .get(index)
+            .or(implementation_variadic_param)
+        else {
+            continue;
+        };
+
+        if requirement_param.by_reference != implementation_param.by_reference {
+            return Err(incompatible_declaration_error(
+                class_name,
+                child_signature(),
+                requirement_signature_text(),
+            ));
+        }
+
+        match (
+            requirement_param.type_decl.as_deref(),
+            implementation_param.type_decl.as_deref(),
+        ) {
+            (None, Some(_)) => {
+                return Err(incompatible_declaration_error(
+                    class_name,
+                    child_signature(),
+                    requirement_signature_text(),
+                ));
+            }
+            (Some(required_type), Some(implementation_type))
+                if !is_compatible_parameter_type_override_with_context(
+                    classes,
+                    interface_lookup,
+                    required_type,
+                    Some(requirement_context),
+                    implementation_type,
+                    Some(implementation_context),
+                ) =>
+            {
+                if let Some(missing_class) = unavailable_class_for_failed_signature_subtype_check(
+                    classes,
+                    interface_lookup,
+                    required_type,
+                    Some(requirement_context),
+                    implementation_type,
+                    Some(implementation_context),
+                ) {
+                    return Err(could_not_check_compatibility_error(
+                        class_name,
+                        child_signature(),
+                        requirement_signature_text(),
+                        missing_class,
+                    ));
+                }
+                return Err(incompatible_declaration_error(
+                    class_name,
+                    child_signature(),
+                    requirement_signature_text(),
+                ));
+            }
+            _ => {}
+        }
+    }
+
+    let implementation_return_type =
+        method_signature_effective_return_type(implementation_signature);
+    if let Some(required_return_type) =
+        method_signature_effective_return_type(&requirement_signature)
+    {
+        match implementation_return_type {
+            None => {
+                return Err(incompatible_declaration_error(
+                    class_name,
+                    child_signature(),
+                    requirement_signature_text(),
+                ));
+            }
+            Some(implementation_type)
+                if !is_compatible_return_type_override_with_context(
+                    classes,
+                    interface_lookup,
+                    required_return_type,
+                    Some(requirement_context),
+                    implementation_type,
+                    Some(implementation_context),
+                ) =>
+            {
+                if let Some(missing_class) = unavailable_class_for_failed_signature_subtype_check(
+                    classes,
+                    interface_lookup,
+                    implementation_type,
+                    Some(implementation_context),
+                    required_return_type,
+                    Some(requirement_context),
+                ) {
+                    return Err(could_not_check_compatibility_error(
+                        class_name,
+                        child_signature(),
+                        requirement_signature_text(),
+                        missing_class,
+                    ));
+                }
+                return Err(incompatible_declaration_error(
+                    class_name,
+                    child_signature(),
+                    requirement_signature_text(),
+                ));
+            }
+            _ => {}
+        }
+    }
+
+    Ok(())
 }
 
 fn validate_abstract_method_implementation(

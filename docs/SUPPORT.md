@@ -7440,7 +7440,7 @@
   declarations, non-public interface methods,
   non-public/typed/abstract/final/static trait constants, multi-constant trait
   declarations, trait constant adaptations, conflicting trait/class constants,
-  abstract/final or non-public trait methods, native trait method execution
+  final trait methods, concrete non-public trait methods, native trait method execution
   beyond generated-C metadata validation, adaptation blocks beyond the current
   simple method alias, visibility-adaptation, and bounded `insteadof` shapes,
   broad conflict resolution,
@@ -11228,7 +11228,13 @@
   use the same current public instance method `as` aliases, visibility-only
   adaptations, protected/private aliases, qualified `insteadof` conflict
   resolution, and same-block winner-alias interaction as class-body trait use
-  declarations. Trait
+  declarations. Abstract trait methods are metadata-only requirements rather
+  than composed executable methods: direct class methods, inherited concrete
+  methods, or concrete methods supplied by other traits can satisfy them,
+  aliases create additional requirement names, missing requirements report
+  PHP-shaped abstract-method startup fatals, and staticness plus bounded
+  signature compatibility are checked while visibility remains deliberately
+  unenforced for PHP compatibility. Trait
   constants declared as `const NAME = ...` or `public const NAME = ...` use the
   current class-constant expression subset and resolve as ordinary public class
   constants through `ClassName::CONST`, `self::CONST`, `parent::CONST`, and
@@ -11980,7 +11986,7 @@
   built-in/internal interface catalogs,
   trait properties, non-public/typed/abstract/final/static trait constants,
   multi-constant trait declarations, trait constant adaptations, conflicting
-  trait/class constants, abstract/final and non-public trait methods,
+  trait/class constants, final trait methods, concrete non-public trait methods,
   executing unresolved same-name trait method conflicts, exact PHP fatal-error
   text for trait conflicts,
   trait aliases beyond the current simple public, qualified public-alias,
@@ -11989,7 +11995,7 @@
   declarations, unqualified visibility-only adaptations across multiple used
   traits, unqualified `insteadof`, trait property or constant adaptations,
   `__TRAIT__`,
-  conditional/nested trait registration, exact trait diagnostics,
+  delayed conditional/nested trait registration, exact trait diagnostics,
   backed enum declarations, enum case objects, backed enum values, enum
   methods, enum constants/properties, enum interface implementations,
   namespace-aware enum member access,
@@ -12290,9 +12296,10 @@
   inheritance rules beyond the current single-parent metadata chain,
   typed/static/non-public/abstract/final or multi-constant interface
   declarations, full interface signature
-  enforcement, built-in/internal interface catalogs, trait
-  declarations, enum declarations, enum cases/backing values/methods/interface
-  implementation,
+  enforcement, built-in/internal interface catalogs, broader trait
+  declarations and registration timing beyond the current top-level
+  metadata/class-use/trait-body-use slice, enum declarations, enum
+  cases/backing values/methods/interface implementation,
   autoload-triggered trait, enum, static-member, reflection, namespace-imported
   string-name, closure-callback, and array-callable discovery,
   promoted constructor property semantics beyond bounded metadata/startup

@@ -950,7 +950,9 @@ impl Parser {
         let span = self
             .consume_keyword(TokenKind::Function, "expected trait method declaration")?
             .span;
-        if modifiers.is_final || !matches!(modifiers.visibility, ClassVisibility::Public) {
+        if modifiers.is_final
+            || (!modifiers.is_abstract && !matches!(modifiers.visibility, ClassVisibility::Public))
+        {
             return Err(self.error_at(span, unsupported_trait_method_message()));
         }
 
@@ -969,7 +971,7 @@ impl Parser {
         };
         Ok(ClassMethodDecl {
             function,
-            visibility: ClassVisibility::Public,
+            visibility: modifiers.visibility,
             is_static: modifiers.is_static,
             is_abstract: modifiers.is_abstract,
             is_final: false,
@@ -10168,7 +10170,7 @@ fn unsupported_trait_member_declaration_message() -> &'static str {
 }
 
 fn unsupported_trait_method_message() -> &'static str {
-    "unsupported trait method declaration: only simple public instance and public static trait methods are implemented; abstract, final, non-public methods, __TRAIT__ context, references/copy-on-write, and native lowering remain unsupported"
+    "unsupported trait method declaration: only concrete public instance/static methods and abstract method requirements are implemented; final methods, concrete non-public methods, __TRAIT__ context, references/copy-on-write, and native lowering remain unsupported"
 }
 
 fn unsupported_interface_declaration_message() -> &'static str {

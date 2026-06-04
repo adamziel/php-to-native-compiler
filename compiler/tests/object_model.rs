@@ -5286,6 +5286,124 @@ print_r($methods);
 }
 
 #[test]
+fn abstract_trait_method_requirements_are_validated_against_class_and_trait_implementations() {
+    let concrete_trait_implementation = run_source(
+        r#"<?php
+trait RequiresValue {
+    abstract public function value($input);
+}
+
+trait ProvidesValue {
+    public function value($input) {
+        return "value:" . $input;
+    }
+}
+
+class Box {
+    use RequiresValue, ProvidesValue;
+}
+
+echo (new Box())->value("ok");
+"#,
+    )
+    .unwrap();
+    assert_eq!(concrete_trait_implementation.stdout, "value:ok");
+    assert_eq!(concrete_trait_implementation.exit_code, 0);
+
+    let private_self_requirement = run_source(
+        r#"<?php
+trait RequiresFactory {
+    abstract private function make(self $input): self;
+}
+
+class Box {
+    use RequiresFactory;
+
+    private function make(self $input): self {
+        return $this;
+    }
+
+    public function ok() {
+        return "private-ok";
+    }
+}
+
+echo (new Box())->ok();
+"#,
+    )
+    .unwrap();
+    assert_eq!(private_self_requirement.stdout, "private-ok");
+    assert_eq!(private_self_requirement.exit_code, 0);
+
+    let relaxed_visibility_requirement = run_source(
+        r#"<?php
+trait RequiresHidden {
+    abstract public function hidden();
+}
+
+class Box {
+    use RequiresHidden;
+
+    private function hidden() {
+        return "hidden-ok";
+    }
+
+    public function callHidden() {
+        return $this->hidden();
+    }
+}
+
+echo (new Box())->callHidden();
+"#,
+    )
+    .unwrap();
+    assert_eq!(relaxed_visibility_requirement.stdout, "hidden-ok");
+    assert_eq!(relaxed_visibility_requirement.exit_code, 0);
+
+    let signature_error = runtime_error(
+        r#"<?php
+trait RequiresValue {
+    abstract public function value(int $input);
+}
+
+class Box {
+    use RequiresValue;
+
+    public function value(array $input) {}
+}
+"#,
+    );
+    assert_eq!(
+        signature_error.message,
+        "Declaration of Box::value(array $input) must be compatible with RequiresValue::value(int $input)"
+    );
+}
+
+#[test]
+fn abstract_trait_method_aliases_create_remaining_class_requirements() {
+    let error = runtime_error(
+        r#"<?php
+trait RequiresStuff {
+    abstract public function doStuff();
+}
+
+class Box {
+    use RequiresStuff {
+        RequiresStuff::doStuff as doOtherStuff;
+    }
+
+    public function doStuff() {}
+}
+"#,
+    );
+
+    assert_eq!(
+        error.message,
+        "Class Box contains 1 abstract method and must therefore be declared abstract or implement the remaining method (Box::doOtherStuff)"
+    );
+}
+
+#[test]
 fn trait_alias_visibility_adaptations_are_callable_from_class_context() {
     let source = r#"<?php
 trait HookTools {
@@ -17887,7 +18005,7 @@ trait Logs {
 "#,
             3,
             22,
-            "unsupported trait method declaration: only simple public instance and public static trait methods are implemented; abstract, final, non-public methods, __TRAIT__ context, references/copy-on-write, and native lowering remain unsupported",
+            "unsupported trait method declaration: only concrete public instance/static methods and abstract method requirements are implemented; final methods, concrete non-public methods, __TRAIT__ context, references/copy-on-write, and native lowering remain unsupported",
         ),
         (
             r#"<?php

@@ -99,6 +99,17 @@ pub fn compose_class_effective_trait_methods(
     )
 }
 
+pub fn compose_class_abstract_trait_method_requirements(
+    class: &ClassDecl,
+    trait_lookup: &HashMap<String, Rc<TraitDecl>>,
+) -> TraitSemanticResult<Vec<EffectiveTraitMethod>> {
+    compose_abstract_trait_method_requirements_from_uses(
+        &class.trait_uses,
+        trait_lookup,
+        &mut HashSet::new(),
+    )
+}
+
 pub fn compose_effective_trait_methods_for_trait(
     trait_decl: &TraitDecl,
     trait_lookup: &HashMap<String, Rc<TraitDecl>>,
@@ -230,6 +241,11 @@ fn compose_trait_methods_for_trait(
         trait_lookup,
         path,
         &declared_trait_method_names(trait_decl),
+    )?);
+    methods.extend(compose_abstract_trait_method_requirements_from_uses(
+        &trait_decl.trait_uses,
+        trait_lookup,
+        path,
     )?);
 
     path.remove(&key);
@@ -429,6 +445,9 @@ fn compose_effective_trait_methods_from_uses(
         }
 
         for candidate in &trait_methods {
+            if candidate.method.is_abstract {
+                continue;
+            }
             let method_name_key = method_key(&candidate.method.function.name);
             if let Some(aliases) = aliases_by_method.remove(&method_name_key) {
                 for alias in aliases {
@@ -552,6 +571,78 @@ fn compose_effective_trait_methods_from_uses(
     }
 
     Ok(methods)
+}
+
+fn compose_abstract_trait_method_requirements_from_uses(
+    trait_uses: &[TraitUseDecl],
+    trait_lookup: &HashMap<String, Rc<TraitDecl>>,
+    path: &mut HashSet<String>,
+) -> TraitSemanticResult<Vec<EffectiveTraitMethod>> {
+    let mut requirements = Vec::new();
+    let method_adaptations =
+        resolve_trait_method_adaptations_for_uses(trait_uses, trait_lookup, path)?;
+    let precedence_exclusions =
+        trait_precedence_exclusions_for_uses(trait_uses, trait_lookup, path)?;
+
+    for trait_use in trait_uses {
+        let used_trait_key = trait_key(&trait_use.name);
+        let trait_decl = resolve_trait_use_decl(trait_use, trait_lookup)?;
+        let trait_methods = compose_trait_methods_for_trait(trait_decl, trait_lookup, path)?;
+        let visibility_adaptations = trait_visibility_adaptations(
+            &trait_decl.name,
+            method_adaptations.visibility_adaptations_for(&used_trait_key),
+            &trait_methods,
+        )?;
+        let mut aliases_by_method: HashMap<String, Vec<_>> = HashMap::new();
+        for alias in method_adaptations.aliases_for(&used_trait_key) {
+            let Some(candidate) = trait_methods.iter().find(|candidate| {
+                candidate
+                    .method
+                    .function
+                    .name
+                    .eq_ignore_ascii_case(&alias.method_name)
+            }) else {
+                let alias_trait_name = alias.trait_name.as_deref().unwrap_or(&trait_decl.name);
+                return Err(TraitSemanticError::new(
+                    alias.span,
+                    format!(
+                        "unsupported trait use: trait alias {}::{} targets a missing method",
+                        alias_trait_name, alias.method_name
+                    ),
+                ));
+            };
+            aliases_by_method
+                .entry(method_key(&candidate.method.function.name))
+                .or_default()
+                .push(alias);
+        }
+
+        for candidate in &trait_methods {
+            if !candidate.method.is_abstract {
+                continue;
+            }
+            let method_name_key = method_key(&candidate.method.function.name);
+            if let Some(aliases) = aliases_by_method.remove(&method_name_key) {
+                for alias in aliases {
+                    let mut aliased = candidate.clone();
+                    aliased.method.function.name = alias.alias.clone();
+                    aliased.method.visibility = alias.visibility;
+                    aliased.method.span = alias.span;
+                    requirements.push(aliased);
+                }
+            }
+            if precedence_exclusions.contains(&(used_trait_key.clone(), method_name_key.clone())) {
+                continue;
+            }
+            let mut requirement = candidate.clone();
+            if let Some(visibility) = visibility_adaptations.get(&method_name_key) {
+                requirement.method.visibility = *visibility;
+            }
+            requirements.push(requirement);
+        }
+    }
+
+    Ok(requirements)
 }
 
 fn resolve_trait_method_adaptations_for_uses(

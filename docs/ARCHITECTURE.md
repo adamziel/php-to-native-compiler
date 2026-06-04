@@ -1075,8 +1075,8 @@ members, renders PHP-facing diagnostic text with intersection parentheses, and
 leaves broader namespace/import-aware type resolution, reflection DNF objects,
 and native lowering as separate boundaries.
 Top-level trait declarations are parsed as metadata for empty traits,
-supported properties, simple public instance methods, and simple public static
-methods. A class body may use already-declared traits
+supported properties, simple public instance/static methods, and abstract
+method requirements. A class body may use already-declared traits
 with `use TraitName;`, repeated simple trait-use declarations, or one simple
 comma-separated declaration such as `use TraitA, TraitB;`; the interpreter
 composes those trait properties plus public instance/static methods onto the consuming class metadata
@@ -1134,6 +1134,16 @@ method metadata. Trait-body `use` declarations inside traits reuse that same
 bounded method-adaptation machinery for supported public instance/static methods, so
 an outer trait can adapt nested trait aliases, visibility, and qualified
 `insteadof` conflict winners before a class consumes the outer trait.
+Abstract trait methods are not composed as executable methods. The trait
+composition pass carries them as requirements through direct and nested
+trait-body uses, applies aliases as additional requirement names, and lets the
+consuming class, an ancestor method, or another concrete trait method satisfy
+the obligation. Class registration validates missing abstract trait
+requirements, staticness, and bounded signature compatibility with the same
+type-relationship helpers used for inherited/interface method checks. Abstract
+trait requirement visibility is intentionally not enforced, matching PHP's
+backward-compatibility behavior; private abstract requirements still must be
+satisfied by the declaring class where PHP requires that startup fatal.
 Public trait constants declared as `const NAME = ...` or
 `public const NAME = ...` with the current class-constant expression subset are
 composed into consuming classes and resolve through the existing
@@ -1143,7 +1153,7 @@ composed as consuming-class properties for object storage and reflection;
 identical duplicate definitions are deduped, while incompatible duplicate
 definitions stop with a stable trait-use diagnostic. Non-public/typed/abstract/final/static trait constants,
 multi-constant trait declarations, trait constant adaptations, conflicting
-trait/class constants, abstract/final or non-public trait methods,
+trait/class constants, final trait methods, concrete non-public trait methods,
 broad executable conflict resolution beyond class-method precedence and the
 current bounded `insteadof` slice, exact PHP fatal-error text for unresolved
 trait conflicts, unqualified visibility-only adaptations across
@@ -1320,9 +1330,11 @@ Implemented now:
   non-public implementations of public interface methods, class-extends-interface
   declarations, class-implements-class/trait declarations, and
   interface-extends-class/trait declarations surfaced as bounded PHP-shaped
-  startup fatals, final-parent inheritance, final method overrides, method
-  visibility reductions, and inherited abstract method implementation gaps
-  rejected at runtime, and inherited method static/non-static plus bounded
+  startup fatals, missing abstract trait method requirements and bounded
+  trait-requirement staticness/signature incompatibilities surfaced as
+  PHP-shaped startup fatals, final-parent inheritance, final method overrides,
+  method visibility reductions, and inherited abstract method implementation
+  gaps rejected at runtime, and inherited method static/non-static plus bounded
   non-constructor signature compatibility enforced at runtime, including
   required-parameter counts, parameter type metadata, and return type metadata,
   bounded `new self`/`new parent`/`new static` class-name resolution in active
