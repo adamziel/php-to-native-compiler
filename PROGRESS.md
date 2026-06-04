@@ -1,6 +1,6 @@
 # PHP Native Compiler PHPT Progress
 
-Updated: 2026-06-04 17:28 CEST
+Updated: 2026-06-04 19:07 CEST
 
 Primary/public branch: `origin/master`
 Latest accepted public-score source:
@@ -19,7 +19,7 @@ denominators that exclude BORKED rows are not public progress.
 Current public score: **7873 / 20294 pinned runnable PHPTs = 38.79%**.
 
 Latest pushed source checkpoint:
-`5219685e3d1821bbcf3c3cf1edfaec5ab4fd7347 fix: implement gmp number theory helpers`
+`4e26d128443f07b1b8ea319616226671339ee5f6 fix: enforce asymmetric setter visibility`
 
 Current score-gate status:
 Accepted public gate:
@@ -32,19 +32,19 @@ the accepted `6c038019` PASS baseline. It reported public-comparable
 `7873 / 20294 = 38.79%`, `7869` normalized current passes, `0`
 latest-published PASS regressions, and `0` invalid proof-marker hits. This
 gate converts the post-`6c038019` source chain through `0b917f67` into public
-PHPT progress. Newer source commits through `5219685e` are staged after this
+PHPT progress. Newer source commits through `4e26d128` are staged after this
 accepted public source and are not included in the public score above.
 
 Latest candidate full gate:
-`state/logs/phpt-full-current-score-20260604T150052Z-php-src-f97ff59-public-99b183cc-source-99b183cc`
-ended `FINAL / ABORTED-MIDSHARD` for source `99b183cc` against the accepted
-`0b917f67` PASS baseline before aggregate current-pass or PASS-regression
-summary artifacts were produced. Its PASS-regression status is unknown, so it
-is not publication evidence and does not change the public score.
+`state/logs/phpt-full-current-score-20260604T170039Z-php-src-f97ff59-public-4e26d128-source-4e26d128`
+is `RUNNING / SHARDED-PHPT` for source `4e26d128` against the accepted
+`0b917f67` PASS baseline. It has not produced aggregate current-pass or
+PASS-regression summary artifacts yet, so it does not authorize a public score
+change.
 
-Recent non-public gate history: the `99b183cc` and `31656671` full gates
-aborted mid-shard and were not publication evidence; the `d978106e` gate
-completed with four
+Recent non-public gate history: the `48738670`, `1f981cb8`, `75c29966`,
+`99b183cc`, and `31656671` full gates aborted mid-shard and were not
+publication evidence; the `d978106e` gate completed with four
 latest-published PASS regressions. The DatePeriod and property-override
 regression rows from that blocked gate are repaired in the now-published
 `0b917f67` chain.
@@ -97,10 +97,10 @@ passes, with zero latest-published PASS regressions.
 
 Unpublished source progress since the accepted public score source:
 
-- Latest pushed source head is `5219685e3d1821bbcf3c3cf1edfaec5ab4fd7347`
-  (`fix: implement gmp number theory helpers`), which is newer than the
+- Latest pushed source head is `4e26d128443f07b1b8ea319616226671339ee5f6`
+  (`fix: enforce asymmetric setter visibility`), which is newer than the
   accepted `0b917f67` full gate and is not included in the public score above.
-- There are `5` score-relevant source commits after the accepted public-score
+- There are `11` score-relevant source commits after the accepted public-score
   source: `88071e97e22d6b840ab9ebbc248a67a55e5b6926`
   (`fix: reject invalid property hooks`),
   `1b3c4f4dad1eef590cfec69504dd16c4e55e0743`
@@ -108,24 +108,41 @@ Unpublished source progress since the accepted public score source:
   `ca69ead9cfcc410f3c094e30a38608dedf880771`
   (`fix: implement xmlreader factories`),
   `99b183cc2e1834b2a716e5a01d24ad185cfe31ab`
-  (`fix: implement gmp bit helpers`), and
+  (`fix: implement gmp bit helpers`),
   `5219685e3d1821bbcf3c3cf1edfaec5ab4fd7347`
-  (`fix: implement gmp number theory helpers`).
+  (`fix: implement gmp number theory helpers`),
+  `fac5227efdb6bcb040879ab9adb6b3a658633e70`
+  (`fix: propagate throwable exceptions`),
+  `052023c5c5032fbea86940dde2220e834faf082f`
+  (`fix: parse parenthesized dnf types`),
+  `75c29966ba4a8cbcf2b1fa4769e68a646fd90534`
+  (`fix: parse asymmetric property visibility`),
+  `1f981cb8305f57660bc97ee7cdfcb6ceb350cfac`
+  (`fix: implement reflection parameter metadata`),
+  `4873867059b57ff2be53d3e869412fba19ff55b9`
+  (`fix: validate property hook contracts`), and
+  `4e26d128443f07b1b8ea319616226671339ee5f6`
+  (`fix: enforce asymmetric setter visibility`).
 - Staged focused selected-PHPT proof after the latest accepted public-score
-  source totals `65` selected rows across `5` integrated source artifacts.
+  source totals `146` selected rows across `11` integrated source artifacts.
   These are source/staging facts, not a public score update unless a full
   pinned PHPT gate accepts them.
 - The staged packets are property-hook diagnostics `0/16 -> 16/16`, GMP
   arithmetic `0/14 -> 14/14`, XMLReader factories/residuals `0/14 -> 14/14`,
-  GMP bit helpers `0/11 -> 11/11`, and GMP number-theory/root helpers
-  `0/10 -> 10/10`. They preserved latest-published PASS scouts in the
-  accepted integration artifacts and passed focused Rust, build, fmt, diff,
-  php-src cleanliness, and production row-name leakage checks.
-- Outstanding publication blocker: the latest `99b183cc` full gate aborted
-  mid-shard and has unknown latest-published PASS-regression status. No full
-  pinned gate has accepted `5219685e`; no staged source after `0b917f67` can
-  move the public score unless a fresh full pinned PHPT gate completes with
-  zero latest-published PASS regressions.
+  GMP bit helpers `0/11 -> 11/11`, GMP number-theory/root helpers
+  `0/10 -> 10/10`, exception boundaries `0/12 -> 12/12`, DNF types
+  `0/15 -> 15/15`, asymmetric property visibility `0/14 -> 14/14`,
+  ReflectionParameter metadata `0/10 -> 10/10`, property-hook contracts
+  fixed-row proof `14/14` from a `7/23 -> 21/23` packet, and asymmetric
+  setter visibility `0/16 -> 16/16`. They preserved latest-published PASS
+  scouts in the accepted integration artifacts and passed focused Rust, build,
+  fmt, diff, php-src cleanliness, and production row-name leakage checks.
+- Outstanding publication blocker: the current `4e26d128` full gate is still
+  `RUNNING / SHARDED-PHPT` and has not produced aggregate current-pass or
+  latest-published PASS-regression summary artifacts. No full pinned gate has
+  accepted `4e26d128`; no staged source after `0b917f67` can move the public
+  score unless the running or a fresh full pinned PHPT gate completes with zero
+  latest-published PASS regressions.
 
 Accepted source proof included in the `0b917f67` public gate:
 
