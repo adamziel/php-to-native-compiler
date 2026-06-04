@@ -1,13 +1,13 @@
 # PHP Native Compiler PHPT Progress
 
-Updated: 2026-06-04 01:29 CEST
+Updated: 2026-06-04 02:34 CEST
 
 Primary/public branch: `origin/master`
 Latest accepted public-score source:
-`fd09b99711d7d61dcec71bff66cde632e9d70871 fix: parse semi-reserved class constants`
+`4cbed17007d8105004b2e7af202ed3097cac50ed fix: report readonly startup diagnostics`
 
 Semantic source for current published score:
-`fd09b99711d7d61dcec71bff66cde632e9d70871 fix: parse semi-reserved class constants`
+`4cbed17007d8105004b2e7af202ed3097cac50ed fix: report readonly startup diagnostics`
 
 Public PHPT metric:
 
@@ -16,63 +16,62 @@ Public PHPT metric:
 Pinned denominator: `20294` total pinned runnable php-src PHPTs. Raw runner
 denominators that exclude BORKED rows are not public progress.
 
-Current public score: **7015 / 20294 pinned runnable PHPTs = 34.57%**.
+Current public score: **7090 / 20294 pinned runnable PHPTs = 34.94%**.
 
 Latest pushed source checkpoint:
-`8e5f532140dcf399144e257b9a231a5db5c2f015 fix: add bounded DatePeriod metadata`
+`3a003811c04e4756cccf2c18343188d964c568a2 fix: report user type diagnostics`
 
-Current running score-gate checkpoint:
-`28662f8a482521f65fcbdc1b415163afbf65efd9 docs: note blocked b2914 gate progress`
+Next score-gate target:
+`3a003811c04e4756cccf2c18343188d964c568a2 fix: report user type diagnostics`
 
-The accepted source checkpoint chain through `fd09b997` has been pushed to
+The accepted source checkpoint chain through `4cbed170` has been pushed to
 `origin/master` and is now reflected in the public score above. The completed
-score gate converted the post-`64d95b6d` source chain into a public PHPT
-movement of `6628 -> 7015` passed pinned rows, a net gain of `387` public PHPT
+score gate converted the post-`fd09b997` source chain into a public PHPT
+movement of `7015 -> 7090` passed pinned rows, a net gain of `75` public PHPT
 passes, with zero latest-published PASS regressions.
 
 Unpublished source progress since the accepted public score source:
 
-- Latest semantic source head is `8e5f532140dcf399144e257b9a231a5db5c2f015`
-  (`fix: add bounded DatePeriod metadata`), pushed to `origin/master`. The
-  current score gate uses docs-only checkpoint
-  `28662f8a482521f65fcbdc1b415163afbf65efd9`; later progress-page-only commits
-  do not change the semantic source under test.
-- At that score-gate checkpoint there are `6` commits after the accepted
-  public-score source; `2` are score-relevant, touching `5` score-relevant
-  paths.
+- Latest semantic source head is `3a003811c04e4756cccf2c18343188d964c568a2`
+  (`fix: report user type diagnostics`), pushed to `origin/master`.
+- There are `2` score-relevant commits after the accepted public-score source:
+  `7f78a158c01007020b02bc3f19fc062524ecb48a` (`fix: emit deprecated constant
+  diagnostics`) and `3a003811c04e4756cccf2c18343188d964c568a2` (`fix: report
+  user type diagnostics`).
 - Integrated focused selected-PHPT proof since the latest accepted public gate
-  totals `34` selected rows across `2` integrated artifacts. These are local
+  totals `22` selected rows across `2` integrated artifacts. These are local
   source/staging facts, not a public score update.
-- The enum forbidden-member diagnostics source packet moved selected PHPT
-  `0/16 -> 16/16` for
-  `Zend/tests/enum/__clone.phpt`, `__get.phpt`, `__isset.phpt`,
-  `__serialize.phpt`, `__set.phpt`, `__set_state.phpt`, `__sleep.phpt`,
-  `__toString.phpt`, `__unserialize.phpt`, `__unset.phpt`, `__wakeup.phpt`,
-  `no-abstract.phpt`, `no-constructors.phpt`, `no-destruct.phpt`,
-  `no-properties.phpt`, and `no-static-properties.phpt`. It also preserved the
-  repaired `Zend/tests/grammar/semi_reserved_005.phpt` row and a seven-row
+- The deprecated constants diagnostics source packet moved selected PHPT
+  `0/12 -> 12/12` for the covered constant-deprecation rows and preserved a
   latest-published PASS scout.
-- The DatePeriod metadata/state packet moved selected PHPT `0/18 -> 18/18`
-  for the selected DatePeriod constructor, property, serialization,
-  `__set_state`, ISO-string, and bad-format rows. It also preserved
-  `date_diff.phpt`, `semi_reserved_005.phpt`, and a latest-published PASS
-  scout.
-- A new full pinned PHPT score gate is running for score-gate checkpoint
-  `28662f8a482521f65fcbdc1b415163afbf65efd9`:
-  `phpt-full-current-score-20260603T232433Z-php-src-f97ff59-public-28662f8a-source-28662f8a`.
-  Latest cadence readback is `RUNNING / BUILDING-RELEASE`, with PASS
-  regressions still unknown. This is publication evidence for the current
-  branch head, including the DatePeriod semantic source packet; it is not yet a
-  public score update.
-- The earlier post-enum full pinned PHPT gate on branch head
-  `b2914aff8cf1f25f507386bec4a877b0ac002725`:
-  `phpt-full-current-score-20260603T230358Z-php-src-f97ff59-public-b2914aff-source-b2914aff`
-  completed with blocked comparable evidence `7030 / 20294 = 34.64%`, but
-  publication is blocked by one latest-published PASS regression:
-  `php-src/Zend/tests/bug60598.phpt`. The DatePeriod packet is not included in
-  that blocked gate and remains staged for the next score-conversion attempt.
+- The userland type diagnostics source packet moved selected PHPT
+  `0/10 -> 10/10` for `tests/classes/type_hinting_001.phpt`,
+  `tests/classes/type_hinting_002.phpt`,
+  `tests/classes/type_hinting_003.phpt`, `tests/lang/type_hints_001.phpt`,
+  `Zend/tests/object_types/type_hint_in_function.phpt`,
+  `Zend/tests/object_types/type_hint_in_class_method.phpt`,
+  `Zend/tests/object_types/return_type_in_function.phpt`,
+  `Zend/tests/typehints/bug76198.phpt`,
+  `Zend/tests/typehints/fully_qualified_scalar.phpt`, and
+  `Zend/tests/typehints/namespace_relative_scalar.phpt`. It also preserved a
+  seven-row latest-published PASS scout.
+- The prior score-gate checkpoint
+  `28662f8a482521f65fcbdc1b415163afbf65efd9` is not publication evidence
+  because its gate is missing result files. The earlier `b2914aff` full gate
+  remains blocked by the latest-published PASS regression
+  `php-src/Zend/tests/bug60598.phpt`.
 
-Accepted public gate: checkpoint `fd09b997` completed the pinned full PHPT
+Accepted public gate: checkpoint `4cbed170` completed the pinned full PHPT
+gate with `7090 / 20294 = 34.94%` and zero latest-published PASS regressions
+against the `fd09b997` baseline. Full gate evidence is in
+`state/logs/phpt-full-current-score-20260604T001248Z-php-src-f97ff59-public-4cbed170-source-4cbed170`;
+the aggregate had `7090` passed rows, `7086` normalized current passes, and
+`0` PASS regressions. The accepted PASS baseline is
+`state/logs/phpt-full-current-score-20260604T001248Z-php-src-f97ff59-public-4cbed170-source-4cbed170/current-passes.normalized.txt`
+with SHA-256
+`33578febdffb60f9cdaa5dd6e8f66c29659be6ef38e1b82d68415008e02eb51c`.
+
+Previous accepted public gate: checkpoint `fd09b997` completed the pinned full PHPT
 gate with `7015 / 20294 = 34.57%` and zero latest-published PASS regressions
 against the `64d95b6d` baseline. Full gate evidence is in
 `state/logs/phpt-full-current-score-20260603T224452Z-php-src-f97ff59-public-fd09b997-source-fd09b997`;
