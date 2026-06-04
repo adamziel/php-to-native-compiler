@@ -3869,7 +3869,11 @@
   `mb_strtolower`, `mb_strtoupper`, `mb_http_output`,
   `mb_output_handler`, `similar_text`,
   `convert_uuencode`, `convert_uudecode`,
-  `preg_match`, `preg_last_error`, `preg_quote`, `preg_replace`, `preg_split`, `preg_replace_callback`, `str_replace`, `str_ireplace`, `substr_replace`, `substr_compare`, `substr_count`, `str_getcsv`, `parse_str`, `http_build_query`,
+  `preg_match`, `preg_match_all`, `preg_grep`, `preg_filter`,
+  `preg_last_error`, `preg_last_error_msg`, `preg_quote`, `preg_replace`,
+  `preg_split`, `preg_replace_callback`, `preg_replace_callback_array`,
+  `str_replace`, `str_ireplace`, `substr_replace`, `substr_compare`,
+  `substr_count`, `str_getcsv`, `parse_str`, `http_build_query`,
   `escapeshellarg`, `highlight_string`, `highlight_file`, `show_source`, `php_strip_whitespace`, `error_reporting`, `set_time_limit`, `usleep`, `ignore_user_abort`, `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, `vfprintf`, `call_user_func`, `call_user_func_array`,
   `implode`, `basename`, `dirname`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `file_put_contents`, `readfile`, `unlink`, `mkdir`, `rmdir`, `copy`, `rename`, `chdir`, `scandir`, `stat`, `lstat`, `fileperms`, `chmod`, `chown`, `chgrp`,
@@ -4416,19 +4420,26 @@
   runtime string model, returning whether any represented character is
   non-ASCII. The current interpreter PCRE diagnostic surface also emits
   PHP-shaped warnings and `false`/`NULL` returns for malformed scalar patterns
-  with invalid delimiters, missing ending delimiters, or unknown modifiers.
-  Array and non-stringable object pattern arguments raise PHP-shaped
-  `TypeError` messages for `preg_match()`, `preg_match_all()`,
-  `preg_split()`, and `preg_grep()`, and direct `preg_match_all()` matches
-  output remains untouched when pattern compilation fails. Non-direct matches
-  outputs, flags, offsets, optional unmatched-group fidelity, broad
-  named-capture support, full PCRE syntax, modifiers other than the documented
-  exact WordPress `i` patterns and `u`, byte/Unicode edge cases, broader
-  coercions, exact diagnostics beyond the listed malformed-pattern cases, and
-  native lowering remain unsupported. `preg_last_error()`
-  reports the bounded error code from these current PCRE paths, including the
+  with invalid delimiters, missing ending delimiters, paired delimiters without
+  a matching close, whitespace-only empty regexes, unknown modifiers, NUL
+  modifiers, and the reached compile-warning surfaces for leading quantifiers,
+  invalid named captures, and unknown escapes. The `X` modifier is accepted as
+  a no-op and `/n` suppresses unnamed auto-captures in the current translator.
+  Negative offsets that point before the subject start clamp to zero on the
+  covered match path, and named captures are inserted before their numeric
+  duplicate in match arrays. Array and non-stringable object pattern arguments
+  raise PHP-shaped `TypeError` messages for `preg_match()`,
+  `preg_match_all()`, `preg_split()`, and `preg_grep()`, direct
+  `preg_match_all()` matches output remains untouched when pattern compilation
+  fails, and non-variable matches output arguments produce the current
+  PHP-shaped by-reference fatal. Flags, optional unmatched-group fidelity, full
+  PCRE syntax, modifiers beyond the documented slice, byte/Unicode edge cases,
+  broader coercions, exact diagnostics beyond the listed malformed-pattern
+  cases, and native lowering remain unsupported. `preg_last_error()` reports
+  the bounded error code from these current PCRE paths, including the
   backtrack-limit, bad-UTF8, and bad-UTF8-offset cases covered by focused
-  tests. `preg_quote()` escapes current string bytes for the bounded delimiter
+  tests; `preg_last_error_msg()` reports the corresponding bounded message.
+  `preg_quote()` escapes current string bytes for the bounded delimiter
   subset, including NUL as `\\000`; the PCRE translator maps that escape back
   to a NUL byte for the supported pattern paths, and escaped `#` remains
   escaped under extended-mode patterns. Exact PCRE engine state, complete
@@ -4447,6 +4458,15 @@
   full string, limit/count/flags arguments, byte/Unicode edge cases outside
   valid runtime strings, broad coercions, exact diagnostics beyond the listed
   malformed-pattern cases, and native lowering remain unsupported.
+  `preg_replace_callback_array($pattern, $subject, $limit = -1,
+  &$count = null, $flags = 0)` supports string-keyed pattern arrays on the
+  current interpreter PCRE replacement path, validates all callbacks before
+  compiling patterns, accepts the callable forms currently supported by the
+  callback dispatcher, and reports PHP-shaped catchable or uncaught
+  `TypeError`s for invalid callbacks and numeric pattern keys. Direct count
+  output is supported for variable arguments. Full PCRE replacement parity,
+  broader callable/autoload behavior, exact callback reference/COW semantics,
+  and native lowering remain unsupported.
   `preg_replace($pattern, $replacement, $subject)` supports exactly the
   WordPress database-version cleanup pattern `/[^0-9.].*/`, the WordPress
   path-tail cleanup pattern `#/[^/]*$#i`, the WordPress redirect sanitizer

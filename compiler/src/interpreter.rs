@@ -82044,13 +82044,13 @@ impl Interpreter {
 
         if args.len() > 3 {
             let Expr::Variable(matches_name, _) = &args[2] else {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "preg_match()",
-                        "matches output must be a direct variable in the current subset",
-                    ),
-                ));
+                self.emit_builtin_reference_argument_fatal(
+                    "preg_match()",
+                    2,
+                    "matches",
+                    args[2].span(),
+                );
+                return Ok(Value::Null);
             };
             let pattern = self.evaluate(&args[0], caller_scope)?;
             let subject = self.evaluate(&args[1], caller_scope)?;
@@ -82083,13 +82083,13 @@ impl Interpreter {
         }
 
         let Expr::Variable(matches_name, _) = &args[2] else {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "preg_match()",
-                    "matches output must be a direct variable in the current subset",
-                ),
-            ));
+            self.emit_builtin_reference_argument_fatal(
+                "preg_match()",
+                2,
+                "matches",
+                args[2].span(),
+            );
+            return Ok(Value::Null);
         };
 
         caller_scope.write_static(matches_name, Value::Null);
@@ -82139,13 +82139,13 @@ impl Interpreter {
 
         let matches_name = if let Some(matches_arg) = args.get(2) {
             let Expr::Variable(matches_name, _) = matches_arg else {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "preg_match_all()",
-                        "matches output must be a direct variable in the current subset",
-                    ),
-                ));
+                self.emit_builtin_reference_argument_fatal(
+                    "preg_match_all()",
+                    2,
+                    "matches",
+                    matches_arg.span(),
+                );
+                return Ok(Value::Null);
             };
             caller_scope.write_static(matches_name, Value::Null);
             Some(matches_name)
@@ -82268,7 +82268,16 @@ impl Interpreter {
             values.push(self.evaluate_by_value_argument_with_cow_source(&args[4], caller_scope)?);
         }
 
-        let (value, count) = self.preg_replace_callback_array_result(&values, span)?;
+        let result = self.preg_replace_callback_array_result(&values, span);
+        if let Err(error) = &result {
+            self.record_pending_uncaught_internal_call_frame(
+                "preg_replace_callback_array",
+                span,
+                &values,
+                error,
+            );
+        }
+        let (value, count) = result?;
         if let Some(count_arg) = args.get(3) {
             let Expr::Variable(count_name, _) = count_arg else {
                 return Err(runtime_error(
@@ -103862,10 +103871,27 @@ impl Interpreter {
             "preg_replace" => self.call_preg_replace(args, span),
             "preg_split" => self.call_preg_split(&args, span),
             "preg_replace_callback" => self.call_preg_replace_callback(args, span),
-            "preg_replace_callback_array" => self.call_preg_replace_callback_array(args, span),
+            "preg_replace_callback_array" => {
+                let result = self.call_preg_replace_callback_array(args.clone(), span);
+                if let Err(error) = &result {
+                    self.record_pending_uncaught_internal_call_frame(
+                        "preg_replace_callback_array",
+                        span,
+                        &args,
+                        error,
+                    );
+                }
+                result
+            }
             "preg_last_error" => {
                 expect_arity("preg_last_error", &args, 0, span)?;
                 Ok(Value::Int(self.pcre_last_error))
+            }
+            "preg_last_error_msg" => {
+                expect_arity("preg_last_error_msg", &args, 0, span)?;
+                Ok(Value::String(
+                    pcre_last_error_message(self.pcre_last_error).to_string(),
+                ))
             }
             "get_defined_vars" => Err(runtime_error(
                 span,
@@ -131720,6 +131746,21 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
 
         if let Some(message) = error
             .message
+            .strip_prefix("unsupported call preg_replace_callback_array(): ")
+            .filter(|message| {
+                *message == "Argument #1 ($pattern) must contain only valid callbacks"
+                    || *message
+                        == "Argument #1 ($pattern) must contain only string patterns as keys"
+            })
+        {
+            return Some((
+                "TypeError",
+                format!("preg_replace_callback_array(): {message}"),
+            ));
+        }
+
+        if let Some(message) = error
+            .message
             .strip_prefix("unsupported call PhpToken::is(): ")
             .filter(|message| {
                 message
@@ -134059,6 +134100,7 @@ fn is_builtin(name: &str) -> bool {
             | "preg_replace_callback"
             | "preg_replace_callback_array"
             | "preg_last_error"
+            | "preg_last_error_msg"
             | "get_defined_vars"
             | "extract"
             | "compact"
@@ -151070,7 +151112,7 @@ impl Interpreter {
                 return Ok(None);
             }
         };
-        let body = translate_pcre_body_for_regex(&body);
+        let body = translate_pcre_body_for_regex(&body, settings.no_auto_capture);
         let mut builder = RegexBuilder::new(&body);
         builder.unicode(false);
         builder.case_insensitive(settings.case_insensitive);
@@ -151086,10 +151128,11 @@ impl Interpreter {
                 utf8: settings.utf8,
             })),
             Err(error) => {
+                let message = pcre_compile_warning_message(&body, &error);
                 self.emit_pcre_pattern_warning(
                     context,
                     pattern,
-                    format!("Compilation failed: {error}"),
+                    format!("Compilation failed: {message}"),
                     span,
                 )?;
                 self.pcre_last_error = PHP_PREG_INTERNAL_ERROR;
@@ -151246,11 +151289,11 @@ impl Interpreter {
         } else {
             subject.len() as i64 + raw_offset
         };
-        if start < 0 || start > subject.len() as i64 {
+        if start > subject.len() as i64 {
             self.pcre_last_error = PHP_PREG_INTERNAL_ERROR;
             return Ok(None);
         }
-        let start = start as usize;
+        let start = start.max(0) as usize;
         if utf8 {
             match std::str::from_utf8(subject) {
                 Ok(_) if std::str::from_utf8(&subject[..start]).is_ok() => {}
@@ -151611,13 +151654,23 @@ impl Interpreter {
                     span,
                     RuntimeError::unsupported_call(
                         "preg_replace_callback_array()",
-                        "numeric pattern keys are not implemented in the current subset",
+                        "Argument #1 ($pattern) must contain only string patterns as keys",
                     ),
                 ));
             };
+            let callback = entry.value_cloned();
+            if !self.pcre_callback_is_callable(&callback) {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "preg_replace_callback_array()",
+                        "Argument #1 ($pattern) must contain only valid callbacks",
+                    ),
+                ));
+            }
             patterns.push((
                 PcrePatternValue::from_bytes(pattern.as_bytes().to_vec()),
-                entry.value_cloned(),
+                callback,
             ));
         }
 
@@ -151926,6 +151979,21 @@ impl Interpreter {
             )),
         }
     }
+
+    fn pcre_callback_is_callable(&self, callback: &Value) -> bool {
+        match callback {
+            Value::Object(object) => self
+                .resolve_instance_method(object.class_id(), "__invoke")
+                .is_some_and(
+                    |(class_id, _, resolved_method_name, visibility, is_static)| {
+                        !is_static
+                            && visibility == Visibility::Public
+                            && !self.method_is_abstract(class_id, &resolved_method_name)
+                    },
+                ),
+            _ => self.is_callable_value(callback, false),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -151961,6 +152029,7 @@ struct PhpPcreSettings {
     dot_matches_new_line: bool,
     ignore_whitespace: bool,
     swap_greed: bool,
+    no_auto_capture: bool,
     utf8: bool,
 }
 
@@ -151974,8 +152043,10 @@ impl PhpPcreSettings {
                 's' => settings.dot_matches_new_line = true,
                 'x' => settings.ignore_whitespace = true,
                 'U' => settings.swap_greed = true,
+                'n' => settings.no_auto_capture = true,
                 'u' => settings.utf8 = true,
-                'A' | 'D' | 'S' | 'J' => {}
+                'A' | 'D' | 'S' | 'J' | 'X' => {}
+                '\0' => return Err("NUL byte is not a valid modifier".to_string()),
                 ' ' | '\r' | '\n' => {}
                 other => return Err(format!("Unknown modifier '{other}'")),
             }
@@ -152009,7 +152080,25 @@ fn limit_remaining(limit: i64, used: i64) -> Option<i64> {
     (limit >= 0).then_some((limit - used).max(0))
 }
 
+fn pcre_last_error_message(error: i64) -> &'static str {
+    match error {
+        PHP_PREG_NO_ERROR => "No error",
+        PHP_PREG_INTERNAL_ERROR => "Internal error",
+        PHP_PREG_BACKTRACK_LIMIT_ERROR => "Backtrack limit exhausted",
+        PHP_PREG_RECURSION_LIMIT_ERROR => "Recursion limit exhausted",
+        PHP_PREG_BAD_UTF8_ERROR => "Malformed UTF-8 characters, possibly incorrectly encoded",
+        PHP_PREG_BAD_UTF8_OFFSET_ERROR => {
+            "The offset did not correspond to the beginning of a valid UTF-8 code point"
+        }
+        PHP_PREG_JIT_STACKLIMIT_ERROR => "JIT stack limit exhausted",
+        _ => "Internal error",
+    }
+}
+
 fn parse_php_pcre_pattern(pattern: &str) -> Result<(String, String), String> {
+    if pattern.trim().is_empty() {
+        return Err("Empty regular expression".to_string());
+    }
     let mut chars = pattern.char_indices();
     let Some((_, delimiter)) = chars.next() else {
         return Err("Empty regular expression".to_string());
@@ -152024,8 +152113,10 @@ fn parse_php_pcre_pattern(pattern: &str) -> Result<(String, String), String> {
         '<' => '>',
         other => other,
     };
+    let paired = close != delimiter;
     let mut closing_index = None;
     let mut escaped = false;
+    let mut nesting = 0_usize;
     for (index, ch) in chars {
         if escaped {
             escaped = false;
@@ -152035,11 +152126,23 @@ fn parse_php_pcre_pattern(pattern: &str) -> Result<(String, String), String> {
             escaped = true;
             continue;
         }
+        if paired && ch == delimiter {
+            nesting += 1;
+            continue;
+        }
         if ch == close {
+            if paired && nesting > 0 {
+                nesting -= 1;
+                continue;
+            }
             closing_index = Some(index);
+            break;
         }
     }
     let Some(end) = closing_index else {
+        if paired {
+            return Err(format!("No ending matching delimiter '{close}' found"));
+        }
         return Err(format!("No ending delimiter '{close}' found"));
     };
     let body = pattern[delimiter.len_utf8()..end].to_string();
@@ -152047,7 +152150,7 @@ fn parse_php_pcre_pattern(pattern: &str) -> Result<(String, String), String> {
     Ok((body, modifiers))
 }
 
-fn translate_pcre_body_for_regex(body: &str) -> String {
+fn translate_pcre_body_for_regex(body: &str, no_auto_capture: bool) -> String {
     let mut output = String::with_capacity(body.len());
     let mut chars = body.chars().peekable();
     let mut in_class = false;
@@ -152085,6 +152188,13 @@ fn translate_pcre_body_for_regex(body: &str) -> String {
                 in_class = true;
                 output.push(ch);
             }
+            '(' if !in_class && no_auto_capture => {
+                output.push('(');
+                if chars.peek() == Some(&'?') {
+                    continue;
+                }
+                output.push_str("?:");
+            }
             ']' if in_class => {
                 in_class = false;
                 output.push(ch);
@@ -152109,6 +152219,22 @@ fn translate_pcre_body_for_regex(body: &str) -> String {
         output.push('\\');
     }
     output.replace("(?<", "(?P<")
+}
+
+fn pcre_compile_warning_message(body: &str, error: &regex::Error) -> String {
+    let raw = error.to_string();
+    if raw.contains("repetition operator missing expression") {
+        return "quantifier does not follow a repeatable item at offset 0".to_string();
+    }
+    if raw.contains("unrecognized escape sequence") {
+        let offset = body.find('\\').map(|index| index + 1).unwrap_or(1);
+        return format!("unrecognized character follows \\ at offset {offset}");
+    }
+    if raw.contains("invalid capture group character") {
+        let offset = body.find("(?P<").map(|index| index + 4).unwrap_or(0);
+        return format!("subpattern name must start with a non-digit at offset {offset}");
+    }
+    raw
 }
 
 fn pcre_quantifier_body_starts(mut chars: std::iter::Peekable<std::str::Chars<'_>>) -> bool {
@@ -152705,26 +152831,22 @@ fn pcre_capture_array(
             .find(|index| captures.get(*index).is_some())
             .unwrap_or(0)
     };
+    let capture_names = regex.capture_names().collect::<Vec<_>>();
     for index in 0..=last_capture_index {
         let capture = captures
             .get(index)
             .map(|matched| (base + matched.start(), base + matched.end()));
-        array
-            .append(pcre_capture_value(subject, capture, flags, span)?)
-            .map_err(|error| runtime_error(span, error))?;
-    }
-    for (index, name) in regex.capture_names().enumerate().skip(1) {
-        let Some(name) = name else {
-            continue;
-        };
-        let capture = captures
-            .get(index)
-            .map(|matched| (base + matched.start(), base + matched.end()));
-        if capture.is_none() && !unmatched_as_null {
-            continue;
-        }
         let value = pcre_capture_value(subject, capture, flags, span)?;
-        array.insert(name.to_string(), value);
+        if index > 0 {
+            if let Some(Some(name)) = capture_names.get(index) {
+                if capture.is_some() || unmatched_as_null {
+                    array.insert((*name).to_string(), value.clone());
+                }
+            }
+        }
+        array
+            .append(value)
+            .map_err(|error| runtime_error(span, error))?;
     }
     Ok(array)
 }

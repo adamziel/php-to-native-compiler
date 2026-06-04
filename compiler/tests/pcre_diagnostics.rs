@@ -283,3 +283,97 @@ foreach (['this is a string', ['this is', 'a subarray'], new stdClass()] as $val
         execution.stdout
     );
 }
+
+#[test]
+fn pcre_residual_warnings_flags_and_callback_array_errors_match_php_shape() {
+    let execution = run_source(
+        r#"<?php
+var_dump(preg_match('      ', 'abc'));
+var_dump(preg_last_error_msg());
+var_dump(preg_match("/a/\0i", "a"));
+var_dump(preg_match('/\y/X', '\y'));
+
+preg_match('/(a)(b)/n', 'ab', $no_auto);
+var_dump($no_auto);
+
+preg_match('/(?P<capt1>.)(x)(?P<letsmix>\S+)/', 'fjszxax', $offsets, PREG_OFFSET_CAPTURE);
+print_r(array_keys($offsets));
+
+try {
+    preg_replace_callback_array(['/a/' => 'missing_callback_for_pcre_test'], 'a');
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+
+try {
+    preg_replace_callback_array([1 => function ($matches) { return ''; }], 'a');
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.exit_code, 0);
+    assert!(
+        execution
+            .stdout
+            .contains("Warning: preg_match(): Empty regular expression"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution.stdout.contains("string(14) \"Internal error\""),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution
+            .stdout
+            .contains("Warning: preg_match(): NUL byte is not a valid modifier"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution.stdout.contains(
+            "Warning: preg_match(): Compilation failed: unrecognized character follows \\ at offset 1"
+        ),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution
+            .stdout
+            .contains("array(1) {\n  [0]=>\n  string(2) \"ab\""),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution
+            .stdout
+            .contains("    [1] => capt1\n    [2] => 1\n"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution
+            .stdout
+            .contains("    [4] => letsmix\n    [5] => 3\n"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution.stdout.contains(
+            "preg_replace_callback_array(): Argument #1 ($pattern) must contain only valid callbacks"
+        ),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution.stdout.contains(
+            "preg_replace_callback_array(): Argument #1 ($pattern) must contain only string patterns as keys"
+        ),
+        "{}",
+        execution.stdout
+    );
+}
