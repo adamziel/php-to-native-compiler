@@ -4665,7 +4665,10 @@ small token parsers for the documented numeric/RFC/textual formats, and
 `date_parse()` exposes only the documented numeric date/time plus selected
 malformed numeric timezone metadata arrays, selected single-letter timezone
 abbreviation/whitespace metadata, and selected relative metadata for the
-bounded first/last-day next-month forms. `DateTime::modify()` shares the
+bounded first/last-day next-month forms. The shared timezone token table keeps
+fixed offsets with optional seconds, selected military-letter offsets, and the
+represented named/legacy timezone identifiers as explicit data instead of
+falling back to regex-only parsing. `DateTime::modify()` shares the
 same bounded approach: current support covers selected weekday/week-relative
 forms, first/last-day calendar forms, unit modifiers including subsecond
 aliases, timestamp modifiers, and named time resets while rejecting unsupported

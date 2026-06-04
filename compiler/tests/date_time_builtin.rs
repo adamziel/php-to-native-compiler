@@ -165,6 +165,47 @@ var_dump(date_parse(" \n ")["error_count"]);
 }
 
 #[test]
+fn timezone_strings_accept_bounded_aliases_suffixes_and_offset_seconds() {
+    let execution = run_source(
+        r#"<?php
+date_default_timezone_set("GMT0");
+echo date("Y-m-d H:i:s", strtotime("2003-11-19 09:20:42 T")), "\n";
+date_default_timezone_set("GMT");
+echo strtotime("2006-05-12 12:59:59 America/New_York"), "\n";
+date_default_timezone_set("Asia/Singapore");
+echo strtotime("2008-05-23 00:00:00"), "\n";
+echo strtotime("Sun, 13 Nov 2005 22:56:10 -0800 (PST)"), "\n";
+$offsets = ["+03:00", "+03:00:00", "-03:00:01", "+03:00:58"];
+foreach ($offsets as $offset) {
+    echo (new DateTimeZone($offset))->getName(), "|";
+}
+echo "\n";
+$dt = DateTime::createFromFormat("Y-m-d H:i:sO", "0021-08-21 00:00:00+00:49:56");
+echo $dt->format("Y-m-d H:i:s e"), "\n";
+echo (new DateTimeZone("Etc/GMT+1"))->getName(), "|";
+echo (new DateTimeZone("America/Argentina/ComodRivadavia"))->getName(), "|";
+echo (new DateTimeZone("CST6CDT"))->getName(), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "2003-11-19 16:20:42\n",
+            "1147453199\n",
+            "1211472000\n",
+            "1131951370\n",
+            "+03:00|+03:00|-03:00:01|+03:00:58|\n",
+            "0021-08-21 00:00:00 +00:49:56\n",
+            "Etc/GMT+1|America/Argentina/ComodRivadavia|CST6CDT\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn datetime_timestamp_helpers_get_and_set_bounded_state() {
     let execution = run_source(
         r#"<?php

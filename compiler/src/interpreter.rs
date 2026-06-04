@@ -167839,7 +167839,7 @@ impl BoundedTimezone {
 
     fn numeric_fixed_offset(offset: i64) -> Self {
         Self {
-            name: format_timezone_offset(offset, true),
+            name: format_timezone_offset_name(offset),
             fixed_offset: Some(offset),
         }
     }
@@ -167897,6 +167897,7 @@ impl BoundedTimezone {
             | "Africa/Abidjan" | "Zulu" => 0,
             "Asia/Jerusalem" => 10_800,
             "Asia/Calcutta" | "Asia/Kolkata" => 19_800,
+            "Asia/Shanghai" | "Asia/Singapore" | "Hongkong" | "Singapore" => 28_800,
             "Europe/Berlin" | "Europe/Oslo" => {
                 if bounded_month_is_in_dst_window(month, day, 3, 27, 10, 31) {
                     7_200
@@ -167984,6 +167985,9 @@ impl BoundedTimezone {
             "Pacific/Kwajalein" => 43_200,
             "Pacific/Samoa" => -39_600,
             "Pacific/Wallis" => 43_200,
+            "Etc/GMT+1" => -3_600,
+            "Japan" => 32_400,
+            "Kwajalein" => 43_200,
             _ => {
                 let _ = year;
                 0
@@ -168153,12 +168157,16 @@ impl BoundedTimezone {
             "Europe/Kyiv" => 7_200,
             "Asia/Jerusalem" => 7_200,
             "Asia/Calcutta" | "Asia/Kolkata" => 19_800,
+            "Asia/Shanghai" | "Asia/Singapore" | "Hongkong" | "Singapore" => 28_800,
             "Asia/Hong_Kong" => 28_800,
             "Asia/Tokyo" => 32_400,
             "Australia/Brisbane" => 36_000,
             "Pacific/Kwajalein" => 43_200,
             "Pacific/Samoa" => -39_600,
             "Pacific/Wallis" => 43_200,
+            "Etc/GMT+1" => -3_600,
+            "Japan" => 32_400,
+            "Kwajalein" => 43_200,
             _ => self.offset_for_local_date(1970, 1, 1),
         }
     }
@@ -168183,6 +168191,8 @@ impl BoundedTimezone {
                 }
             }
             "Asia/Calcutta" | "Asia/Kolkata" => "IST",
+            "Asia/Shanghai" => "CST",
+            "Asia/Singapore" | "Singapore" => "SGT",
             "Europe/London" => {
                 if self.is_dst(parts) {
                     "BST"
@@ -168282,6 +168292,10 @@ impl BoundedTimezone {
             }
             "Pacific/Samoa" => "SST",
             "Pacific/Wallis" => "+12",
+            "Etc/GMT+1" => "-01",
+            "Hongkong" => "HKT",
+            "Japan" => "JST",
+            "Kwajalein" => "+12",
             _ => "UTC",
         };
         abbreviation.to_string()
@@ -168313,7 +168327,10 @@ fn bounded_timezone_from_name(name: &str) -> Option<BoundedTimezone> {
         "Asia/Calcutta" => "Asia/Calcutta",
         "Asia/Kolkata" => "Asia/Kolkata",
         "Asia/Hong_Kong" => "Asia/Hong_Kong",
+        "Asia/Shanghai" => "Asia/Shanghai",
+        "Asia/Singapore" => "Asia/Singapore",
         "Australia/Brisbane" => "Australia/Brisbane",
+        "Etc/GMT+1" => "Etc/GMT+1",
         "Pacific/Kwajalein" => "Pacific/Kwajalein",
         "Pacific/Samoa" => "Pacific/Samoa",
         "Pacific/Wallis" => "Pacific/Wallis",
@@ -168321,6 +168338,8 @@ fn bounded_timezone_from_name(name: &str) -> Option<BoundedTimezone> {
         "America/Chicago" => "America/Chicago",
         "America/Halifax" => "America/Halifax",
         "America/Los_Angeles" => "America/Los_Angeles",
+        "America/Argentina/ComodRivadavia" => "America/Argentina/ComodRivadavia",
+        "America/Indiana/Indianapolis" => "America/Indiana/Indianapolis",
         "America/Indiana/Knox" => "America/Indiana/Knox",
         "America/Lima" => "America/Lima",
         "America/Montevideo" => "America/Montevideo",
@@ -168340,6 +168359,32 @@ fn bounded_timezone_from_name(name: &str) -> Option<BoundedTimezone> {
         "US/Alaska" => "US/Alaska",
         "US/Eastern" => "US/Eastern",
         "America/New_York" => "America/New_York",
+        "CST6CDT" => "CST6CDT",
+        "Cuba" => "Cuba",
+        "Egypt" => "Egypt",
+        "Eire" => "Eire",
+        "EST5EDT" => "EST5EDT",
+        "Factory" => "Factory",
+        "GB-Eire" => "GB-Eire",
+        "Greenwich" => "Greenwich",
+        "Hongkong" => "Hongkong",
+        "Iceland" => "Iceland",
+        "Iran" => "Iran",
+        "Israel" => "Israel",
+        "Jamaica" => "Jamaica",
+        "Japan" => "Japan",
+        "Kwajalein" => "Kwajalein",
+        "Libya" => "Libya",
+        "MST7MDT" => "MST7MDT",
+        "Navajo" => "Navajo",
+        "NZ-CHAT" => "NZ-CHAT",
+        "Poland" => "Poland",
+        "Portugal" => "Portugal",
+        "PST8PDT" => "PST8PDT",
+        "Singapore" => "Singapore",
+        "Turkey" => "Turkey",
+        "Universal" => "Universal",
+        "W-SU" => "W-SU",
         _ => {
             if let Some(metadata_name) = bounded_timezone_metadata_name(name) {
                 return Some(BoundedTimezone {
@@ -168469,6 +168514,8 @@ fn call_timezone_name_from_abbr(args: &[Value], span: Span) -> CompileResult<Val
             (Some(3_600), Some(1)) => Some("Europe/London"),
             (Some(3_600), Some(0)) => Some("Europe/Paris"),
             (Some(-7_200), Some(1)) => Some("America/Sao_Paulo"),
+            (Some(19_800), Some(0)) => Some("Asia/Kolkata"),
+            (Some(28_800), Some(0)) => Some("Asia/Shanghai"),
             (Some(-14_400), Some(1)) => Some("America/New_York"),
             (Some(-14_400), Some(0)) => Some("America/Halifax"),
             _ => None,
@@ -168525,8 +168572,17 @@ fn bounded_timezone_object_parts(name: &str) -> Option<(i64, String)> {
         return None;
     }
     let upper = trimmed.to_ascii_uppercase();
+    if let Some(offset_token) = upper.strip_prefix("GMT") {
+        if !offset_token.is_empty() {
+            if let Some(offset) = parse_timezone_offset_token(offset_token) {
+                return Some((1, format_timezone_offset_name(offset)));
+            }
+        }
+    }
     match upper.as_str() {
-        "GMT" | "CET" | "CEST" | "EST" | "EDT" | "PST" | "PDT" => {
+        "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I" | "K" | "L" | "M" | "N" | "O" | "P"
+        | "Q" | "R" | "S" | "T" | "U" | "V" | "W" | "X" | "Y" | "Z" | "GMT" | "CET" | "CEST"
+        | "EST" | "EDT" | "PST" | "PDT" => {
             return Some((2, upper));
         }
         "UTC" => return Some((3, "UTC".to_string())),
@@ -168534,7 +168590,7 @@ fn bounded_timezone_object_parts(name: &str) -> Option<(i64, String)> {
     }
     if matches!(trimmed.as_bytes().first(), Some(b'+') | Some(b'-')) {
         if let Some(offset) = parse_timezone_offset_token(trimmed) {
-            return Some((1, format_timezone_offset(offset, true)));
+            return Some((1, format_timezone_offset_name(offset)));
         }
     }
     bounded_timezone_from_name(trimmed).map(|timezone| (3, timezone.name))
@@ -168935,7 +168991,7 @@ fn bounded_datetime_timezone_hint(
             return zone;
         }
     }
-    for suffix_len in [6_usize, 5] {
+    for suffix_len in [9_usize, 7, 6, 5] {
         if trimmed.len() > suffix_len {
             let suffix = &trimmed[trimmed.len() - suffix_len..];
             if matches!(suffix.as_bytes().first(), Some(b'+') | Some(b'-')) {
@@ -169837,12 +169893,21 @@ fn parse_bounded_flexible_numeric_datetime(
     input: &str,
     default_timezone: &BoundedTimezone,
 ) -> Option<i64> {
-    let (body, explicit_offset) = split_bounded_datetime_timezone(input);
+    let (body, explicit_timezone) = split_bounded_datetime_timezone_or_name(input);
     let separator_index = body.find(' ').or_else(|| body.find('T'))?;
     let date = &body[..separator_index];
     let time = body[separator_index + 1..].trim();
     let (year, month, day) = parse_strtotime_ymd_token(date)?;
     let (hour, minute, second, _) = parse_strtotime_time_token_parts(time, None)?;
+    let explicit_offset = explicit_timezone_offset(
+        explicit_timezone.as_ref(),
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        second,
+    );
     timestamp_for_bounded_parts(
         year,
         month,
@@ -169952,10 +170017,10 @@ fn parse_bounded_strtotime_rfc_datetime(
     let offset = parse_timezone_offset_token(clean_strtotime_token(tokens[start + 4]))?;
     if tokens.len() > start + 5
         && !matches!(
-            clean_strtotime_token(tokens[start + 5])
+            clean_rfc_timezone_comment_token(tokens[start + 5])
                 .to_ascii_uppercase()
                 .as_str(),
-            "GMT" | "UTC"
+            "GMT" | "UTC" | "PST" | "PDT" | "CST" | "CDT" | "EST" | "EDT"
         )
     {
         return None;
@@ -171182,16 +171247,25 @@ impl<'a> BoundedFormatCursor<'a> {
     }
 
     fn consume_timezone_offset(&mut self, colon: bool) -> Option<i64> {
-        let width = if colon { 6 } else { 5 };
-        let end = self.position.checked_add(width)?;
-        let token = self.input.get(self.position..end)?;
-        let offset = if colon {
-            parse_timezone_offset_token(token)?
-        } else {
-            parse_timezone_offset_without_colon(token)?
-        };
-        self.position = end;
-        Some(offset)
+        let widths: &[usize] = if colon { &[9, 6] } else { &[9, 7, 5] };
+        for width in widths {
+            let Some(end) = self.position.checked_add(*width) else {
+                continue;
+            };
+            let Some(token) = self.input.get(self.position..end) else {
+                continue;
+            };
+            let offset = if colon || token.contains(':') {
+                parse_timezone_offset_token(token)
+            } else {
+                parse_timezone_offset_without_colon(token)
+            };
+            if let Some(offset) = offset {
+                self.position = end;
+                return Some(offset);
+            }
+        }
+        None
     }
 
     fn consume_timezone_abbreviation(&mut self) -> Option<i64> {
@@ -171220,7 +171294,7 @@ impl<'a> BoundedFormatCursor<'a> {
 }
 
 fn parse_timezone_offset_without_colon(token: &str) -> Option<i64> {
-    if token.len() != 5 {
+    if !matches!(token.len(), 5 | 7) {
         return None;
     }
     let sign = &token[0..1];
@@ -171229,10 +171303,18 @@ fn parse_timezone_offset_without_colon(token: &str) -> Option<i64> {
     }
     let hours = parse_ascii_i64(&token[1..3])?;
     let minutes = parse_ascii_i64(&token[3..5])?;
-    if hours > 23 || minutes > 59 {
+    let seconds = if token.len() == 7 {
+        parse_ascii_i64(&token[5..7])?
+    } else {
+        0
+    };
+    if hours > 23 || minutes > 59 || seconds > 59 {
         return None;
     }
-    let offset = hours.checked_mul(3_600)?.checked_add(minutes * 60)?;
+    let offset = hours
+        .checked_mul(3_600)?
+        .checked_add(minutes * 60)?
+        .checked_add(seconds)?;
     if sign == "-" {
         offset.checked_neg()
     } else {
@@ -171751,7 +171833,7 @@ fn parse_bounded_numeric_datetime_with_microsecond(
     input: &str,
     default_timezone: &BoundedTimezone,
 ) -> Option<(i64, i64)> {
-    let (body, explicit_offset) = split_bounded_datetime_timezone(input);
+    let (body, explicit_timezone) = split_bounded_datetime_timezone_or_name(input);
     let separator_index = body.find(' ').or_else(|| body.find('T'))?;
     let date = &body[..separator_index];
     let time = &body[separator_index + 1..];
@@ -171781,6 +171863,15 @@ fn parse_bounded_numeric_datetime_with_microsecond(
     } else {
         0
     };
+    let explicit_offset = explicit_timezone_offset(
+        explicit_timezone.as_ref(),
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        second,
+    );
     timestamp_for_bounded_parts(
         year,
         month,
@@ -171798,7 +171889,7 @@ fn parse_bounded_dmy_datetime_with_microsecond(
     input: &str,
     default_timezone: &BoundedTimezone,
 ) -> Option<(i64, i64)> {
-    let (body, explicit_offset) = split_bounded_datetime_timezone(input);
+    let (body, explicit_timezone) = split_bounded_datetime_timezone_or_name(input);
     let (date, time) = body.split_once(' ')?;
     if date.len() != 10 || &date[2..3] != "-" || &date[5..6] != "-" {
         return None;
@@ -171807,6 +171898,15 @@ fn parse_bounded_dmy_datetime_with_microsecond(
     let month = parse_ascii_i64(&date[3..5])?;
     let year = normalize_mktime_year(parse_ascii_i64(&date[6..10])?, true);
     let (hour, minute, second, microsecond) = parse_bounded_time_with_microsecond(time)?;
+    let explicit_offset = explicit_timezone_offset(
+        explicit_timezone.as_ref(),
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        second,
+    );
     timestamp_for_bounded_parts(
         year,
         month,
@@ -171928,16 +172028,30 @@ fn parse_bounded_textual_datetime(input: &str, default_timezone: &BoundedTimezon
 }
 
 fn split_bounded_datetime_timezone(input: &str) -> (&str, Option<i64>) {
+    let (body, timezone) = split_bounded_datetime_timezone_or_name(input);
+    (body, timezone.and_then(|timezone| timezone.fixed_offset))
+}
+
+fn split_bounded_datetime_timezone_or_name(input: &str) -> (&str, Option<BoundedTimezone>) {
     if let Some((body, token)) = input.rsplit_once(' ') {
         if let Some(offset) = parse_timezone_offset_token(token) {
-            return (body, Some(offset));
+            return (body, Some(BoundedTimezone::numeric_fixed_offset(offset)));
+        }
+        if let Some(timezone) = bounded_timezone_from_name(token) {
+            return (body, Some(timezone));
         }
     }
-    if input.len() > 6 {
-        let suffix = &input[input.len() - 6..];
-        if matches!(suffix.as_bytes().first(), Some(b'+') | Some(b'-')) && &suffix[3..4] == ":" {
+    for suffix_len in [9_usize, 6] {
+        if input.len() > suffix_len {
+            let suffix = &input[input.len() - suffix_len..];
+            if !matches!(suffix.as_bytes().first(), Some(b'+') | Some(b'-')) {
+                continue;
+            }
             if let Some(offset) = parse_timezone_offset_token(suffix) {
-                return (&input[..input.len() - 6], Some(offset));
+                return (
+                    &input[..input.len() - suffix_len],
+                    Some(BoundedTimezone::numeric_fixed_offset(offset)),
+                );
             }
         }
     }
@@ -171946,28 +172060,70 @@ fn split_bounded_datetime_timezone(input: &str) -> (&str, Option<i64>) {
             let suffix = &input[input.len() - suffix_len..];
             if suffix.chars().all(|ch| ch.is_ascii_alphabetic()) {
                 if let Some(offset) = parse_timezone_offset_token(suffix) {
-                    return (&input[..input.len() - suffix_len], Some(offset));
+                    return (
+                        &input[..input.len() - suffix_len],
+                        Some(BoundedTimezone::numeric_fixed_offset(offset)),
+                    );
                 }
             }
         }
     }
-    for suffix_len in [6_usize, 5, 4, 3] {
+    for suffix_len in [7_usize, 6, 5, 4, 3] {
         if input.len() > suffix_len {
             let suffix = &input[input.len() - suffix_len..];
             if !matches!(suffix.as_bytes().first(), Some(b'+') | Some(b'-')) {
                 continue;
             }
             if let Some(offset) = parse_timezone_offset_token(suffix) {
-                return (&input[..input.len() - suffix_len], Some(offset));
+                return (
+                    &input[..input.len() - suffix_len],
+                    Some(BoundedTimezone::numeric_fixed_offset(offset)),
+                );
             }
         }
     }
     (input, None)
 }
 
+fn explicit_timezone_offset(
+    timezone: Option<&BoundedTimezone>,
+    year: i64,
+    month: i64,
+    day: i64,
+    hour: i64,
+    minute: i64,
+    second: i64,
+) -> Option<i64> {
+    timezone.map(|timezone| timezone.offset_for_local_parts(year, month, day, hour, minute, second))
+}
+
 fn parse_timezone_offset_token(token: &str) -> Option<i64> {
     match token.to_ascii_uppercase().as_str() {
         "UTC" | "GMT" | "Z" => return Some(0),
+        "A" => return Some(3_600),
+        "B" => return Some(7_200),
+        "C" => return Some(10_800),
+        "D" => return Some(14_400),
+        "E" => return Some(18_000),
+        "F" => return Some(21_600),
+        "G" => return Some(25_200),
+        "H" => return Some(28_800),
+        "I" => return Some(32_400),
+        "K" => return Some(36_000),
+        "L" => return Some(39_600),
+        "M" => return Some(43_200),
+        "N" => return Some(-3_600),
+        "O" => return Some(-7_200),
+        "P" => return Some(-10_800),
+        "Q" => return Some(-14_400),
+        "R" => return Some(-18_000),
+        "S" => return Some(-21_600),
+        "T" => return Some(-25_200),
+        "U" => return Some(-28_800),
+        "V" => return Some(-32_400),
+        "W" => return Some(-36_000),
+        "X" => return Some(-39_600),
+        "Y" => return Some(-43_200),
         "CEST" => return Some(7_200),
         "CET" => return Some(3_600),
         "EDT" => return Some(-14_400),
@@ -171982,35 +172138,56 @@ fn parse_timezone_offset_token(token: &str) -> Option<i64> {
         b'-' => -1,
         _ => return None,
     };
-    let (hours, minutes) = if let Some((hours, minutes)) = token[1..].split_once(':') {
-        if hours.is_empty()
-            || hours.len() > 2
-            || minutes.is_empty()
-            || minutes.len() > 2
-            || !hours.chars().all(|ch| ch.is_ascii_digit())
-            || !minutes.chars().all(|ch| ch.is_ascii_digit())
+    let (hours, minutes, seconds) = if token[1..].contains(':') {
+        let parts = token[1..].split(':').collect::<Vec<_>>();
+        if !(2..=3).contains(&parts.len())
+            || parts.iter().any(|part| {
+                part.is_empty() || part.len() > 2 || !part.chars().all(|ch| ch.is_ascii_digit())
+            })
         {
             return None;
         }
-        (parse_ascii_i64(hours)?, parse_ascii_i64(minutes)?)
+        (
+            parse_ascii_i64(parts[0])?,
+            parse_ascii_i64(parts[1])?,
+            if let Some(part) = parts.get(2) {
+                parse_ascii_i64(part)?
+            } else {
+                0
+            },
+        )
     } else {
         let digits = &token[1..];
-        if !matches!(digits.len(), 2 | 4) || !digits.chars().all(|ch| ch.is_ascii_digit()) {
+        if !matches!(digits.len(), 2 | 4 | 6) || !digits.chars().all(|ch| ch.is_ascii_digit()) {
             return None;
         }
         if digits.len() == 2 {
-            (parse_ascii_i64(digits)?, 0)
+            (parse_ascii_i64(digits)?, 0, 0)
+        } else if digits.len() == 4 {
+            (
+                parse_ascii_i64(&digits[0..2])?,
+                parse_ascii_i64(&digits[2..4])?,
+                0,
+            )
         } else {
             (
                 parse_ascii_i64(&digits[0..2])?,
                 parse_ascii_i64(&digits[2..4])?,
+                parse_ascii_i64(&digits[4..6])?,
             )
         }
     };
-    if hours > 23 || minutes > 59 {
+    if hours > 23 || minutes > 59 || seconds > 59 {
         return None;
     }
-    Some(sign * (hours * 3_600 + minutes * 60))
+    Some(sign * (hours * 3_600 + minutes * 60 + seconds))
+}
+
+fn clean_rfc_timezone_comment_token(token: &str) -> &str {
+    clean_strtotime_token(token)
+        .strip_prefix('(')
+        .and_then(|token| token.strip_suffix(')'))
+        .unwrap_or_else(|| clean_strtotime_token(token))
 }
 
 fn timestamp_for_bounded_parts(
@@ -173687,6 +173864,19 @@ fn format_timezone_offset(offset: i64, colon: bool) -> String {
         format!("{sign}{hours:02}:{minutes:02}")
     } else {
         format!("{sign}{hours:02}{minutes:02}")
+    }
+}
+
+fn format_timezone_offset_name(offset: i64) -> String {
+    let sign = if offset < 0 { '-' } else { '+' };
+    let absolute = offset.abs();
+    let hours = absolute / 3_600;
+    let minutes = (absolute % 3_600) / 60;
+    let seconds = absolute % 60;
+    if seconds == 0 {
+        format!("{sign}{hours:02}:{minutes:02}")
+    } else {
+        format!("{sign}{hours:02}:{minutes:02}:{seconds:02}")
     }
 }
 

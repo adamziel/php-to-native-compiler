@@ -6597,6 +6597,9 @@
   textual forms such as `Fri Aug 20 1993 23:59:59` and
   `Sun Mar 27 01:59:59 2005`, while timestamp strings such as `@0` /
   `@0.123456` and explicit timezone tokens retain their own timezone identity.
+  Explicit timezone tokens include selected named suffixes such as
+  `America/New_York`, fixed offsets with optional seconds, and military
+  single-letter offsets in the bounded parser table.
   `date_create_from_format()` plus
   `DateTime::createFromFormat()` / `DateTimeImmutable::createFromFormat()`
   cover the bounded formats `Y-m-d H:i:s.u`, `U.u`,
@@ -6605,7 +6608,9 @@
   `l, d-M-y H:i:s T`, `l, d-M-Y H:i:s T`,
   `Y-m-d\TH:i:s.vP` / `DateTime::RFC3339_EXTENDED`, and
   `D., M# j, Y g:iA`, returning `false` for unsupported formats in the
-  current subset. `date_parse()` exposes bounded parse-result arrays for
+  current subset. The covered `O` / `P` timezone readers accept fixed offsets
+  with seconds and normalize zero-second offset identities to PHP-shaped
+  `+HH:MM` names. `date_parse()` exposes bounded parse-result arrays for
   numeric `YYYY-MM-DD`, `YYYY-MM`, `YYYY-MM-DD HH:MM:SS.fraction`, and
   `HH:MM:SS.fraction` forms plus selected malformed numeric timezone/error
   metadata, selected single-letter `A` timezone-abbreviation metadata,
@@ -6621,12 +6626,15 @@
   `YYYYMMDDtHHMMSSZ`, compact `YYYYMMDDHHMMSS` with timezone suffixes,
   flexible `Y/M/D` and `Y-m-d[T ]H:i:s(.fraction)` forms with `Z` or short
   numeric offsets, slash `M/D/YY HHMM` and `M/D/YYYY H:MM AM`, RFC-ish
-  weekday/timezone suffix forms, ISO week `YYYYWww`, compact textual
+  weekday/timezone suffix forms including selected parenthesized timezone
+  comments, ISO week `YYYYWww`, compact textual
   `Oct11`/`11Oct2005`, AM/PM textual times, `now`, `YYYY-M[M]`,
   `HH:MM YYYY-MM-DD`, `Month YYYY` / `YYYY Month`, Roman-month, ordinal
   textual date, `YYYY-MM-DD noon` / `midnight`, and weekday-prefixed date
   forms. The bounded timezone table includes the represented pre-2007
-  US/Eastern transition slice used by current rows. The supported internal
+  US/Eastern transition slice used by current rows, selected long timezone
+  identifiers, and selected legacy links/aliases used by current public date
+  rows. The supported internal
   DateTime/DateTimeZone method-signature metadata for `setTime()`,
   `createFromFormat()`, `getTransitions()`, `listIdentifiers()`, and
   `DateTimeInterface::diff()` is also used by the current declaration
@@ -6737,11 +6745,13 @@
   `DateTimeInterface::RFC7231`.
   `date.timezone` PHPT INI overrides seed the same bounded timezone state,
   including PHPT-style trailing semicolon syntax and reached `Asia/Tokyo`
-  `+09:00` / `JST` metadata. `timezone_open()` accepts
+  `+09:00` / `JST` metadata plus the selected `Asia/Singapore` default-zone
+  rows. `timezone_open()` accepts
   string and scalar-string-compatible timezone identifiers, returns bounded
-  `DateTimeZone` objects for supported named or fixed-offset identifiers, and
-  emits a PHP-shaped warning plus `false` for unsupported or malformed
-  identifiers in the covered local CLI row. Exact core `DateTimeZone` objects
+  `DateTimeZone` objects for supported named, legacy/alias, military-letter,
+  or fixed-offset identifiers, including fixed offsets with seconds, and emits
+  a PHP-shaped warning plus `false` for unsupported or malformed identifiers
+  in the covered local CLI row. Exact core `DateTimeZone` objects
   also round-trip through the generic `serialize()` / `unserialize()` subset
   for supported fixed-offset, abbreviation, and named timezone metadata, with
   `DateTimeZone::__serialize()`, `DateTimeZone::__unserialize()`, and
@@ -6767,9 +6777,10 @@
   historical transition rules outside the bounded post-2007 US/Eastern,
   selected central Europe, and selected Pacific/Kwajalein slices,
   full all-row timezone abbreviation inventory
-  beyond `acst` and first-row metadata, location metadata beyond the bounded
-  represented rows, timezone abbreviation and fixed-offset state identity
-  beyond the covered named-zone rows, DateTime
+  beyond `acst` and first-row metadata, full timezone link/alias inventory
+  beyond the selected represented legacy names, location metadata beyond the
+  bounded represented rows, timezone abbreviation and fixed-offset state
+  identity beyond the covered named-zone and fixed-offset-second rows, DateTime
   state arrays outside the bounded exported `date`/`timezone_type`/`timezone`
   and `timezone_type`/`timezone` shapes, DateTime manual `__serialize()` /
   `__unserialize()` methods, private/protected serialized properties on
