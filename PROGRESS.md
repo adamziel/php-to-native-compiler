@@ -1,6 +1,6 @@
 # PHP Native Compiler PHPT Progress
 
-Updated: 2026-06-04 09:22 CEST
+Updated: 2026-06-04 09:46 CEST
 
 Primary/public branch: `origin/master`
 Latest accepted public-score source:
@@ -19,23 +19,28 @@ denominators that exclude BORKED rows are not public progress.
 Current public score: **7376 / 20294 pinned runnable PHPTs = 36.35%**.
 
 Latest pushed source checkpoint:
-`22a45603987ba28705f678941cf6edfe12521e9e fix: resolve namespace constants`
+`6b0952e0507a6f810e162b4aeb4a40589753c05c fix: preserve reset date parse defaults`
 
 Current score-gate status:
-The latest full gate for source `6eb8d818`:
+The latest full gate is running for source `6b0952e0`:
+`state/logs/phpt-full-current-score-20260604T074408Z-php-src-f97ff59-public-6b0952e0-source-6b0952e0`.
+The latest status reports `RUNNING / BUILDING-RELEASE` as of
+`2026-06-04T07:44:46Z`; PASS regressions are still unknown, so it is not
+publication evidence yet. It is running against the accepted `0086ba77` PASS
+baseline with `7372` normalized rows and SHA-256
+`533d26badda5ae40d414a51611a76417eb2621d67d9ba5a83a38b47e7684316f`.
+The previous full gate for source `6eb8d818`:
 `state/logs/phpt-full-current-score-20260604T070724Z-php-src-f97ff59-public-6eb8d818-source-6eb8d818`
 completed `FINAL / BLOCKED-PASS-REGRESSIONS` against the accepted `0086ba77`
-PASS baseline with `7372` normalized rows and SHA-256
-`533d26badda5ae40d414a51611a76417eb2621d67d9ba5a83a38b47e7684316f`.
-It reported public-comparable `7542 / 20294 = 37.16%` and `7538` normalized
-current passes, but it is not publication evidence because it has `1`
-latest-published PASS regression:
-`php-src/ext/date/tests/date-parse-by-format001.phpt`. The current source
-head `22a45603` is newer than that blocked gate. The previous `f13e45f4` gate
-ended `FINAL / GATE-INCOMPLETE-NO-EXIT-MARKERS /
-NOT-PUBLICATION-EVIDENCE`, and the previous `daee77c1` gate completed with a
-broken aggregate caused by shard-directory naming mismatch. The latest
-accepted full gate remains
+PASS baseline. It reported public-comparable `7542 / 20294 = 37.16%` and
+`7538` normalized current passes, but it is not publication evidence because it
+has `1` latest-published PASS regression:
+`php-src/ext/date/tests/date-parse-by-format001.phpt`. That row now has
+selected repair proof at current source `6b0952e0`, but the blocked `6eb8d818`
+gate cannot be published. The previous `f13e45f4` gate ended
+`FINAL / GATE-INCOMPLETE-NO-EXIT-MARKERS / NOT-PUBLICATION-EVIDENCE`, and the
+previous `daee77c1` gate completed with a broken aggregate caused by
+shard-directory naming mismatch. The latest accepted full gate remains
 `state/logs/phpt-full-current-score-20260604T043544Z-php-src-f97ff59-public-0086ba77-source-0086ba77`.
 It completed `FINAL / GATE-AGGREGATE-COMPLETE / ZERO-PASS-REGRESSIONS`
 against the accepted `21abc76f` PASS baseline.
@@ -52,10 +57,10 @@ latest-published PASS regressions.
 
 Unpublished source progress since the accepted public score source:
 
-- Latest pushed source head is `22a45603987ba28705f678941cf6edfe12521e9e`
-  (`fix: resolve namespace constants`), which is newer than the
+- Latest pushed source head is `6b0952e0507a6f810e162b4aeb4a40589753c05c`
+  (`fix: preserve reset date parse defaults`), which is newer than the
   accepted `0086ba77` full gate and is not included in the public score above.
-- There are `12` score-relevant source commits after the accepted public-score
+- There are `14` score-relevant source commits after the accepted public-score
   source: `01afaf19e44c2d4a23023469a0a1122ed81f7d90`
   (`fix: parse numeric literal separators`),
   `f4be414cce658cfc8c6f77ad5a17146a97c66e22`
@@ -77,11 +82,15 @@ Unpublished source progress since the accepted public score source:
   `f13e45f48d96df1c7648e224370ce430e64ab0ed`
   (`fix: canonicalize dnf signature types`),
   `6eb8d8189a5d92db31dfe4bf0d2b122edb1f0d4b`
-  (`fix: track PHP error diagnostics`), and
+  (`fix: track PHP error diagnostics`),
   `22a45603987ba28705f678941cf6edfe12521e9e`
-  (`fix: resolve namespace constants`).
+  (`fix: resolve namespace constants`),
+  `2b3f00fc3cf77aa081509a3b64b4dd03357d1994`
+  (`fix: handle ArrayObject object storage`), and
+  `6b0952e0507a6f810e162b4aeb4a40589753c05c`
+  (`fix: preserve reset date parse defaults`).
 - Staged focused selected-PHPT proof after the latest accepted public-score
-  source totals `134` selected rows across `12` integrated source artifacts.
+  source totals `146` selected rows across `14` integrated source artifacts.
   These are source/staging facts, not a public score update unless a full
   pinned PHPT gate accepts them.
 - The numeric literal separator packet moved selected PHPT `0/11 -> 11/11`
@@ -221,6 +230,37 @@ Unpublished source progress since the accepted public score source:
   also preserved the latest-published non-date PASS scout `8/8`, passed
   focused Rust coverage, build, fmt, diff checks, and production row-name
   leakage scan.
+- The ArrayObject object-backed storage packet moved selected PHPT
+  `0/11 -> 11/11` for
+  `ext/spl/tests/ArrayObject/ArrayObject_clone_other_std_props.phpt`,
+  `ArrayObject_std_props_no_recursion.phpt`,
+  `arrayObject___construct_basic1.phpt`,
+  `arrayObject___construct_basic2.phpt`,
+  `arrayObject___construct_basic3.phpt`,
+  `arrayObject___construct_basic4.phpt`,
+  `arrayObject___construct_basic5.phpt`,
+  `arrayObject___construct_basic6.phpt`,
+  `arrayObject_clone_basic2.phpt`, `arrayObject_clone_basic3.phpt`, and
+  `arrayObject_exchangeArray_basic2.phpt`. It also preserved the
+  latest-published non-date PASS scout `8/8`, passed focused Rust
+  ArrayObject coverage, build, fmt, diff checks, and production row-name
+  leakage scan.
+- The `date-parse-by-format001` PASS-regression repair packet moved selected
+  PHPT `0/1 -> 1/1` for
+  `ext/date/tests/date-parse-by-format001.phpt`. It confirmed that row was the
+  sole latest-published PASS regression in the blocked `6eb8d818` gate and was
+  present in the latest accepted PASS baseline. It also preserved the
+  latest-published non-date PASS scout `8/8`, passed focused Rust DateTime
+  coverage, build, fmt, diff checks, and production row-name leakage scan.
+  This repairs the exact known `6eb8d818` publication blocker at current source
+  `6b0952e0`, but it is not public score movement unless the fresh full pinned
+  PHPT gate accepts it.
+- The `6b0952e0` full gate is running:
+  `state/logs/phpt-full-current-score-20260604T074408Z-php-src-f97ff59-public-6b0952e0-source-6b0952e0`
+  against the accepted `0086ba77` PASS baseline with `7372` normalized rows.
+  Latest status is `RUNNING / BUILDING-RELEASE`; PASS regressions are unknown,
+  and it is not publication evidence unless it completes with zero
+  latest-published PASS regressions.
 - The `6eb8d818` full gate is blocked:
   `state/logs/phpt-full-current-score-20260604T070724Z-php-src-f97ff59-public-6eb8d818-source-6eb8d818`
   against the accepted `0086ba77` PASS baseline with `7372` normalized rows.
@@ -228,8 +268,8 @@ Unpublished source progress since the accepted public score source:
   `7542 / 20294 = 37.16%`, `7538` normalized current passes, and `1`
   latest-published PASS regression:
   `php-src/ext/date/tests/date-parse-by-format001.phpt`. It is not
-  publication evidence for `6eb8d818` or newer source `22a45603`; a repair
-  prompt has been queued for that exact blocker row.
+  publication evidence for `6eb8d818` or newer source `6b0952e0`; that exact
+  blocker row now has selected repair proof at current source `6b0952e0`.
 - The `f13e45f4` full gate is incomplete and not publication evidence:
   `state/logs/phpt-full-current-score-20260604T065227Z-php-src-f97ff59-public-f13e45f4-source-f13e45f4`
   ended `FINAL / GATE-INCOMPLETE-NO-EXIT-MARKERS /
