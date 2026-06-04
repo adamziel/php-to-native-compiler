@@ -806,6 +806,7 @@ struct Interpreter {
     active_debug_backtrace_frames: Vec<PendingUncaughtCallFrame>,
     generator_states: HashMap<i64, GeneratorState>,
     active_generator_yields: Vec<Vec<PendingGeneratorYield>>,
+    active_generator_returns_by_reference: Vec<bool>,
     global_symbols: SymbolStorage,
     error_reporting_mask: i64,
     error_control_suppression_depth: usize,
@@ -12206,6 +12207,18 @@ enum ArrayCopyReturnBodyFlow {
     },
 }
 
+#[derive(Clone)]
+struct AssignmentArrayKey {
+    key: ArrayKey,
+    string_offset_cast_offset: Option<i64>,
+    deferred_null_offset_deprecation: Option<Span>,
+}
+
+enum NestedStringOffsetAssignment {
+    Write(Vec<ArrayKey>),
+    Noop,
+}
+
 impl Interpreter {
     fn from_program(
         program: &Program,
@@ -12444,6 +12457,7 @@ impl Interpreter {
             active_debug_backtrace_frames: Vec::new(),
             generator_states: HashMap::new(),
             active_generator_yields: Vec::new(),
+            active_generator_returns_by_reference: Vec::new(),
             global_symbols: Rc::new(RefCell::new(HashMap::new())),
             error_reporting_mask,
             error_control_suppression_depth: 0,
@@ -29582,47 +29596,16 @@ impl Interpreter {
         )
     }
 
-    fn string_offset_index(
-        key: &ArrayKey,
-        byte_len: usize,
-        operation: &str,
-        span: Span,
-    ) -> CompileResult<usize> {
-        let offset = match key {
-            ArrayKey::Int(offset) => *offset,
-            ArrayKey::String(offset) => Self::parse_string_offset_key(offset).ok_or_else(|| {
-                runtime_error(
-                    span,
-                    RuntimeError::invalid_array_access(format!(
-                        "cannot {operation} offset on string"
-                    )),
-                )
-            })?,
-        };
-
-        Self::string_offset_index_from_i64(offset, byte_len, span)
-    }
-
-    fn string_offset_index_from_i64(
-        offset: i64,
-        byte_len: usize,
-        span: Span,
-    ) -> CompileResult<usize> {
+    fn resolve_string_offset_index(offset: i64, byte_len: usize) -> Option<usize> {
         let resolved = if offset < 0 {
-            byte_len as i64 + offset
+            (byte_len as i128) + (offset as i128)
         } else {
-            offset
+            offset as i128
         };
         if resolved < 0 {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "string offset",
-                    "negative offsets before the start of the string are not implemented",
-                ),
-            ));
+            return None;
         }
-        Ok(resolved as usize)
+        usize::try_from(resolved).ok()
     }
 
     fn parse_string_offset_key(value: &str) -> Option<i64> {
@@ -29729,6 +29712,71 @@ impl Interpreter {
         }
     }
 
+    fn evaluate_string_offset_probe_index(
+        &mut self,
+        expr: &Expr,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Option<i64>> {
+        let key = self.evaluate(expr, scope)?;
+        match key {
+            Value::Int(value) => Ok(Some(value)),
+            Value::Bool(value) => Ok(Some(i64::from(value))),
+            Value::Float(value) => self.float_to_array_key_i64(value, expr.span()).map(Some),
+            Value::Null => Ok(Some(0)),
+            Value::String(value) => Ok(Self::parse_string_offset_key(&value)),
+            Value::BinaryString(value) => {
+                let value = String::from_utf8_lossy(&value);
+                Ok(Self::parse_string_offset_key(&value))
+            }
+            Value::Array(_) | Value::Object(_) | Value::Resource(_) | Value::Closure(_) => Ok(None),
+        }
+    }
+
+    fn string_offset_path_value_for_probe(
+        &mut self,
+        mut bytes: Vec<u8>,
+        indices: &[&Expr],
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Option<Vec<u8>>> {
+        for index in indices {
+            let Some(offset) = self.evaluate_string_offset_probe_index(index, scope)? else {
+                return Ok(None);
+            };
+            let Some(resolved) = Self::resolve_string_offset_index(offset, bytes.len()) else {
+                return Ok(None);
+            };
+            let Some(byte) = bytes.get(resolved).copied() else {
+                return Ok(None);
+            };
+            bytes.clear();
+            bytes.push(byte);
+        }
+        Ok(Some(bytes))
+    }
+
+    fn string_offset_path_isset_for_probe(
+        &mut self,
+        bytes: Vec<u8>,
+        indices: &[&Expr],
+        scope: &mut SymbolTable,
+    ) -> CompileResult<bool> {
+        Ok(self
+            .string_offset_path_value_for_probe(bytes, indices, scope)?
+            .is_some())
+    }
+
+    fn string_offset_path_empty_for_probe(
+        &mut self,
+        bytes: Vec<u8>,
+        indices: &[&Expr],
+        scope: &mut SymbolTable,
+    ) -> CompileResult<bool> {
+        let Some(value) = self.string_offset_path_value_for_probe(bytes, indices, scope)? else {
+            return Ok(true);
+        };
+        Ok(value.is_empty() || value == b"0")
+    }
+
     fn offset_type_runtime_error(value: &Value, container: &str, span: Span) -> Diagnostic {
         runtime_error(
             span,
@@ -29778,12 +29826,13 @@ impl Interpreter {
         display_key: &str,
         span: Span,
     ) -> CompileResult<Value> {
-        let index = Self::string_offset_index_from_i64(offset, value.len(), span)?;
-        let Some(byte) = value.get(index) else {
+        let byte = Self::resolve_string_offset_index(offset, value.len())
+            .and_then(|index| value.get(index).copied());
+        let Some(byte) = byte else {
             self.emit_display_warning(format!("Uninitialized string offset {display_key}"), span)?;
             return Ok(Value::String(String::new()));
         };
-        Ok(interpreter_value_from_php_string_bytes(vec![*byte]))
+        Ok(interpreter_value_from_php_string_bytes(vec![byte]))
     }
 
     fn write_ascii_string_offset(
@@ -29803,7 +29852,19 @@ impl Interpreter {
             ));
         }
 
-        let index = Self::string_offset_index(key, value.len(), "write", span)?;
+        let offset = match key {
+            ArrayKey::Int(offset) => *offset,
+            ArrayKey::String(offset) => Self::parse_string_offset_key(offset).ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::invalid_array_access("cannot write offset on string".to_string()),
+                )
+            })?,
+        };
+        let Some(index) = Self::resolve_string_offset_index(offset, value.len()) else {
+            self.emit_display_warning(format!("Illegal string offset {offset}"), span)?;
+            return Ok(());
+        };
         let replacement = self.value_to_echo_string(replacement, span)?;
         if replacement.is_empty() {
             return Err(runtime_error(
@@ -29823,8 +29884,7 @@ impl Interpreter {
             ));
         }
         if replacement.len() > 1 {
-            self.emit_warning(
-                "string offset",
+            self.emit_display_warning(
                 "Only the first byte will be assigned to the string offset",
                 span,
             )?;
@@ -44589,18 +44649,25 @@ impl Interpreter {
                 let key = match index {
                     Some(index) if scope.read_named_string(name).is_some() => {
                         let (offset, _) = self.evaluate_string_offset_index(index, scope)?;
-                        Some(ArrayKey::Int(offset))
+                        Some(AssignmentArrayKey {
+                            key: ArrayKey::Int(offset),
+                            string_offset_cast_offset: None,
+                            deferred_null_offset_deprecation: None,
+                        })
                     }
-                    Some(index) if suppress_null_offset_deprecation => {
-                        Some(self.evaluate_array_key_without_null_offset_deprecation(index, scope)?)
-                    }
-                    Some(index) => Some(self.evaluate_array_key(index, scope)?),
+                    Some(index) if suppress_null_offset_deprecation => Some(AssignmentArrayKey {
+                        key: self
+                            .evaluate_array_key_without_null_offset_deprecation(index, scope)?,
+                        string_offset_cast_offset: None,
+                        deferred_null_offset_deprecation: None,
+                    }),
+                    Some(index) => Some(self.evaluate_assignment_array_key(index, scope)?),
                     None => None,
                 };
                 if let Some(key) = key.as_ref() {
                     scope.remove_array_literal_copy_source_paths_for_static_prefix(
                         name,
-                        std::slice::from_ref(key),
+                        std::slice::from_ref(&key.key),
                     );
                 } else {
                     scope.clear_array_literal_copy_source_paths_for_root(name);
@@ -44651,7 +44718,8 @@ impl Interpreter {
                             ),
                         ));
                     };
-                    let Some(global_name) = globals_offset_name(key) else {
+                    self.emit_deferred_assignment_array_key_diagnostics(std::slice::from_ref(key))?;
+                    let Some(global_name) = globals_offset_name(&key.key) else {
                         return Err(runtime_error(
                             *span,
                             RuntimeError::unsupported_call(
@@ -44681,31 +44749,42 @@ impl Interpreter {
                     return Ok(value);
                 }
                 if let Some(key) = key.as_ref() {
-                    if let Some(mut string) = scope.read_named_string(name) {
-                        self.write_ascii_string_offset(&mut string, key, value.clone(), *span)?;
-                        scope.write_static(name, Value::String(string));
+                    if scope.read_named_string(name).is_some() {
+                        let string_key = self.assignment_string_offset_key(key, *span)?;
+                        if let Some(mut string) = scope.read_named_string(name) {
+                            self.write_ascii_string_offset(
+                                &mut string,
+                                &string_key,
+                                value.clone(),
+                                *span,
+                            )?;
+                            scope.write_static(name, Value::String(string));
+                        }
                         return Ok(value);
                     }
+                }
+                if let Some(key) = key.as_ref() {
+                    self.emit_deferred_assignment_array_key_diagnostics(std::slice::from_ref(key))?;
                 }
                 let retained_array_copy_source = key.as_ref().and_then(|key| {
                     Self::array_copy_source_preserved_after_nested_write(
                         scope,
                         name,
-                        std::slice::from_ref(key),
+                        std::slice::from_ref(&key.key),
                     )
                 });
                 let replaces_copied_array_parent = key.as_ref().is_some_and(|key| {
                     Self::copied_array_write_replaces_live_alias_parent(
                         scope,
                         name,
-                        std::slice::from_ref(key),
+                        std::slice::from_ref(&key.key),
                     )
                 });
                 if let Some(key) = key.as_ref() {
                     if !replaces_copied_array_parent
                         && scope.write_alias_backed_array_offset_checked_with_object_type_resolver(
                             name,
-                            std::slice::from_ref(key),
+                            std::slice::from_ref(&key.key),
                             value.clone(),
                             *span,
                             &|object, type_name| {
@@ -44725,7 +44804,7 @@ impl Interpreter {
                         root: ArrayOffsetAliasRoot::StaticArray {
                             name: name.to_string(),
                         },
-                        keys: vec![key.clone()],
+                        keys: vec![key.key.clone()],
                     }]);
                 }
                 let is_direct_array_access_append = key.is_none()
@@ -44773,7 +44852,7 @@ impl Interpreter {
                 {
                     return Ok(value);
                 }
-                let target_key = key.clone();
+                let target_key = key.as_ref().map(|key| key.key.clone());
                 if let Some(key) = target_key.as_ref() {
                     if !matches!(value, Value::Array(_))
                         && array_literal_references.is_empty()
@@ -44835,7 +44914,7 @@ impl Interpreter {
                     self.call_array_access_method_with_caller_scope_and_arg_sources(
                         object.clone(),
                         "offsetSet",
-                        vec![Self::array_key_value(key), method_value],
+                        vec![Self::array_key_value(target_key.clone()), method_value],
                         *span,
                         scope,
                         indexed_copy_source_bindings,
@@ -44872,7 +44951,7 @@ impl Interpreter {
                         Some(key) => {
                             array
                                 .insert_checked_with_object_type_resolver(
-                                    key,
+                                    key.key.clone(),
                                     value.clone(),
                                     |object, type_name| {
                                         self.object_satisfies_live_property_type(object, type_name)
@@ -44895,7 +44974,8 @@ impl Interpreter {
                                 ),
                             ));
                         };
-                        self.write_ascii_string_offset(string, key, value.clone(), *span)?;
+                        let string_key = self.assignment_string_offset_key(key, *span)?;
+                        self.write_ascii_string_offset(string, &string_key, value.clone(), *span)?;
                     }
                     other => {
                         return Err(runtime_error(
@@ -44980,10 +45060,12 @@ impl Interpreter {
                 indices,
                 span,
             } => {
-                let keys = indices
+                let root_before_key_evaluation = scope.read_named(name);
+                let assignment_keys = indices
                     .iter()
-                    .map(|index| self.evaluate_array_key(index, scope))
+                    .map(|index| self.evaluate_assignment_array_key(index, scope))
                     .collect::<CompileResult<Vec<_>>>()?;
+                let mut keys = Self::assignment_array_keys(&assignment_keys);
                 scope.remove_array_literal_copy_source_paths_for_static_prefix(name, &keys);
                 let retained_array_literal_copy_source_paths = scope
                     .array_literal_copy_source_paths
@@ -45022,6 +45104,7 @@ impl Interpreter {
                     }
                 };
                 if name == "GLOBALS" {
+                    self.emit_deferred_assignment_array_key_diagnostics(&assignment_keys)?;
                     if self
                         .write_global_array_value_path_array_access_keyed_with_reference_propagation(
                             &keys,
@@ -45048,6 +45131,21 @@ impl Interpreter {
                         )?;
                     }
                     return Ok(value);
+                }
+                match self.prepare_nested_string_offset_cast_assignment(
+                    name,
+                    root_before_key_evaluation.as_ref(),
+                    &assignment_keys,
+                    *span,
+                    scope,
+                )? {
+                    Some(NestedStringOffsetAssignment::Write(converted)) => {
+                        keys = converted;
+                    }
+                    Some(NestedStringOffsetAssignment::Noop) => return Ok(value),
+                    None => {
+                        self.emit_deferred_assignment_array_key_diagnostics(&assignment_keys)?;
+                    }
                 }
                 let retained_array_copy_source =
                     Self::array_copy_source_preserved_after_nested_write(scope, name, &keys);
@@ -48837,6 +48935,67 @@ impl Interpreter {
             scope,
         )?;
         Ok(true)
+    }
+
+    fn nested_string_offset_cast_keys_from_root(
+        root: &Value,
+        keys: &[AssignmentArrayKey],
+    ) -> Option<Vec<ArrayKey>> {
+        if keys.is_empty() {
+            return None;
+        }
+
+        let mut current = root.clone();
+        let mut converted = Self::assignment_array_keys(keys);
+        for (index, key) in keys.iter().enumerate() {
+            if let Value::String(_) = current {
+                let offset = key.string_offset_cast_offset?;
+                converted[index] = ArrayKey::Int(offset);
+                return Some(converted);
+            }
+            if index + 1 >= keys.len() {
+                return None;
+            }
+            current = match current {
+                Value::Array(array) => array.get_cloned(key.key.clone())?,
+                _ => return None,
+            };
+        }
+        None
+    }
+
+    fn prepare_nested_string_offset_cast_assignment(
+        &mut self,
+        name: &str,
+        root_before_key_evaluation: Option<&Value>,
+        keys: &[AssignmentArrayKey],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Option<NestedStringOffsetAssignment>> {
+        let current_root = scope.read_named(name);
+        if let Some(current_root) = current_root.as_ref() {
+            if let Some(converted) =
+                Self::nested_string_offset_cast_keys_from_root(current_root, keys)
+            {
+                self.emit_display_warning("String offset cast occurred", span)?;
+                return if matches!(scope.read_named(name), Some(Value::Array(_))) {
+                    Ok(Some(NestedStringOffsetAssignment::Write(converted)))
+                } else {
+                    Ok(Some(NestedStringOffsetAssignment::Noop))
+                };
+            }
+        }
+
+        if let Some(root_before_key_evaluation) = root_before_key_evaluation {
+            if Self::nested_string_offset_cast_keys_from_root(root_before_key_evaluation, keys)
+                .is_some()
+            {
+                self.emit_display_warning("String offset cast occurred", span)?;
+                return Ok(Some(NestedStringOffsetAssignment::Noop));
+            }
+        }
+
+        Ok(None)
     }
 
     fn write_nested_array_assignment(
@@ -77422,6 +77581,87 @@ impl Interpreter {
         self.evaluate_array_key_with_null_offset_deprecation(expr, scope, true)
     }
 
+    fn evaluate_assignment_array_key(
+        &mut self,
+        expr: &Expr,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<AssignmentArrayKey> {
+        let key = self.evaluate(expr, scope)?;
+        match key {
+            Value::Null => Ok(AssignmentArrayKey {
+                key: ArrayKey::String(String::new()),
+                string_offset_cast_offset: Some(0),
+                deferred_null_offset_deprecation: Some(expr.span()),
+            }),
+            Value::Bool(value) => {
+                let offset = i64::from(value);
+                Ok(AssignmentArrayKey {
+                    key: ArrayKey::Int(offset),
+                    string_offset_cast_offset: Some(offset),
+                    deferred_null_offset_deprecation: None,
+                })
+            }
+            Value::Float(value) => {
+                let offset = self.float_to_array_key_i64(value, expr.span())?;
+                Ok(AssignmentArrayKey {
+                    key: ArrayKey::Int(offset),
+                    string_offset_cast_offset: Some(offset),
+                    deferred_null_offset_deprecation: None,
+                })
+            }
+            Value::Resource(id) => {
+                self.emit_display_warning(
+                    format!("Resource ID#{id} used as offset, casting to integer ({id})"),
+                    expr.span(),
+                )?;
+                Ok(AssignmentArrayKey {
+                    key: ArrayKey::Int(id),
+                    string_offset_cast_offset: None,
+                    deferred_null_offset_deprecation: None,
+                })
+            }
+            other => Ok(AssignmentArrayKey {
+                key: ArrayKey::from_value(&other)
+                    .map_err(|error| runtime_error(expr.span(), error))?,
+                string_offset_cast_offset: None,
+                deferred_null_offset_deprecation: None,
+            }),
+        }
+    }
+
+    fn assignment_array_keys(keys: &[AssignmentArrayKey]) -> Vec<ArrayKey> {
+        keys.iter().map(|key| key.key.clone()).collect()
+    }
+
+    fn emit_deferred_assignment_array_key_diagnostics(
+        &mut self,
+        keys: &[AssignmentArrayKey],
+    ) -> CompileResult<()> {
+        for key in keys {
+            if let Some(span) = key.deferred_null_offset_deprecation {
+                self.emit_display_diagnostic(
+                    "Deprecated",
+                    PHP_E_DEPRECATED,
+                    "Using null as an array offset is deprecated, use an empty string instead",
+                    span,
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    fn assignment_string_offset_key(
+        &mut self,
+        key: &AssignmentArrayKey,
+        span: Span,
+    ) -> CompileResult<ArrayKey> {
+        if let Some(offset) = key.string_offset_cast_offset {
+            self.emit_display_warning("String offset cast occurred", span)?;
+            return Ok(ArrayKey::Int(offset));
+        }
+        Ok(key.key.clone())
+    }
+
     fn evaluate_array_offset_key(
         &mut self,
         expr: &Expr,
@@ -95822,6 +96062,9 @@ impl Interpreter {
                         .iter()
                         .map(|index| self.evaluate_array_key(index, scope))
                         .collect::<CompileResult<Vec<_>>>()?;
+                    self.reject_direct_scalar_string_reference_source_if_needed(
+                        root_name, &keys, false, span, scope,
+                    )?;
                     if let Some(Value::Object(object)) = scope.read_named(root_name) {
                         if let Some(binding) = self
                             .reference_return_array_access_local_binding_for_object(
@@ -97345,6 +97588,14 @@ impl Interpreter {
         )? {
             return Ok(Some((alias, value)));
         }
+
+        self.reject_direct_scalar_string_reference_source_if_needed(
+            name,
+            &keys,
+            false,
+            arg.span(),
+            caller_scope,
+        )?;
 
         let alias = if name == "GLOBALS" {
             let (global_name, keys) = SymbolTable::split_globals_reference_path(keys, arg.span())?;
@@ -99438,6 +99689,38 @@ impl Interpreter {
             None
         };
         let value_expr = if args.len() == 2 { &args[1] } else { &args[0] };
+        if self
+            .active_generator_returns_by_reference
+            .last()
+            .copied()
+            .unwrap_or(false)
+        {
+            if let Expr::Index { target, index, .. } = value_expr {
+                if let Some((root_name, indices)) =
+                    Self::collect_direct_variable_array_index_path(target, index)
+                {
+                    if root_name == "GLOBALS"
+                        || matches!(
+                            scope.read_named(root_name),
+                            Some(
+                                Value::String(_)
+                                    | Value::Bool(true)
+                                    | Value::Int(_)
+                                    | Value::Float(_)
+                            )
+                        )
+                    {
+                        let keys = indices
+                            .iter()
+                            .map(|index| self.evaluate_array_key(index, scope))
+                            .collect::<CompileResult<Vec<_>>>()?;
+                        self.reject_direct_scalar_string_reference_source_if_needed(
+                            root_name, &keys, false, span, scope,
+                        )?;
+                    }
+                }
+            }
+        }
         let value = self.evaluate(value_expr, scope)?;
         let Some(yields) = self.active_generator_yields.last_mut() else {
             return Err(runtime_error(
@@ -99738,12 +100021,15 @@ impl Interpreter {
         self.active_function_call_arguments
             .push(state.active_function_arguments.clone());
         self.active_generator_yields.push(Vec::new());
+        self.active_generator_returns_by_reference
+            .push(state.function.returns_by_reference);
 
         let strict_types = state.function.strict_types;
         let flow = self.with_strict_types_scope(strict_types, |this| {
             this.execute_statements(&state.function.body, &mut state.local_scope)
         });
         let pending_yields = self.active_generator_yields.pop().unwrap_or_default();
+        self.active_generator_returns_by_reference.pop();
         self.active_function_call_arguments.pop();
 
         let static_names = self.active_static_locals.pop().unwrap_or_default();
@@ -118266,6 +118552,19 @@ impl Interpreter {
                     }
                 }
             }
+            match caller_scope.read_named(name) {
+                Some(Value::String(value)) => {
+                    return self.string_offset_path_isset_for_probe(
+                        value.into_bytes(),
+                        &indices,
+                        caller_scope,
+                    );
+                }
+                Some(Value::BinaryString(value)) => {
+                    return self.string_offset_path_isset_for_probe(value, &indices, caller_scope);
+                }
+                _ => {}
+            }
             let mut keys = Vec::with_capacity(indices.len());
             for index in indices {
                 keys.push(
@@ -118983,6 +119282,19 @@ impl Interpreter {
                         return Ok(!value.is_truthy());
                     }
                 }
+            }
+            match caller_scope.read_named(name) {
+                Some(Value::String(value)) => {
+                    return self.string_offset_path_empty_for_probe(
+                        value.into_bytes(),
+                        &indices,
+                        caller_scope,
+                    );
+                }
+                Some(Value::BinaryString(value)) => {
+                    return self.string_offset_path_empty_for_probe(value, &indices, caller_scope);
+                }
+                _ => {}
             }
             let mut keys = Vec::with_capacity(indices.len());
             for index in indices {
@@ -139038,9 +139350,33 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             return Some(("TypeError", array_access_message.to_string()));
         }
 
-        if array_access_message == "Cannot use string offset as an array"
-            || (array_access_message.starts_with("Cannot use object of type ")
-                && array_access_message.ends_with(" as array"))
+        if array_access_message == "cannot access offset of type string on string" {
+            return Some((
+                "TypeError",
+                "Cannot access offset of type string on string".to_string(),
+            ));
+        }
+
+        if matches!(
+            array_access_message,
+            "Cannot use string offset as an array" | "cannot use string offset as an array"
+        ) {
+            return Some(("Error", "Cannot use string offset as an array".to_string()));
+        }
+
+        if matches!(
+            array_access_message,
+            "Cannot create references to/from string offsets"
+                | "cannot create references to/from string offsets"
+        ) {
+            return Some((
+                "Error",
+                "Cannot create references to/from string offsets".to_string(),
+            ));
+        }
+
+        if array_access_message.starts_with("Cannot use object of type ")
+            && array_access_message.ends_with(" as array")
         {
             return Some(("Error", array_access_message.to_string()));
         }
@@ -193699,6 +194035,9 @@ fn ensure_supported_reference_return_function_metadata(
 
 fn reference_return_type_decl_is_supported(function: &FunctionDecl, decl: &TypeDecl) -> bool {
     if type_decl_is_exact(decl, "never") {
+        return true;
+    }
+    if type_decl_is_exact(decl, "string") {
         return true;
     }
     let supports_syntax_only_mixed_return = function.name.eq_ignore_ascii_case("offsetGet")

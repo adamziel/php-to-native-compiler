@@ -8090,12 +8090,25 @@
   both text and binary string values reached through direct variables,
   visible/context object-property roots, and array buckets when the offset is
   an integer or decimal integer-form string such as `"01"`, `"+2"`, or
-  `" 1"`. Bounded ASCII string offset writes preserve by-value copy isolation
-  and by-reference write-through for direct aliases, object-property aliases,
-  and array-slot aliases, including negative in-range offsets and out-of-range
-  positive offset space padding. Binary/multibyte string offset writes,
-  decimal/exponent non-integer string offset keys, and magic/`ArrayAccess`
-  string-offset paths remain unsupported. By-value
+  `" 1"`. Out-of-range reads return an empty string after PHP's
+  `Uninitialized string offset ...` warning, while negative before-start writes
+  warn `Illegal string offset ...` and leave the string unchanged. Bounded
+  ASCII string offset writes preserve by-value copy isolation and by-reference
+  write-through for direct aliases, object-property aliases, and array-slot
+  aliases, including negative in-range offsets, out-of-range positive offset
+  space padding, and one-byte truncation warnings. Covered `isset(...)` and
+  `empty(...)` string-offset probes avoid array-key fatals for invalid
+  array/object/resource/non-numeric string probe keys and evaluate nested
+  byte-string probes. Late string writes after an error handler mutates an
+  array/null root to a string preserve PHP's `String offset cast occurred`
+  warning/no-write behavior for the covered direct and one-level nested
+  assignment shapes. Direct string-offset reference sources, direct
+  string-offset reference assignments, and string-offset yields inside
+  by-reference generators report PHP's `Cannot create references to/from
+  string offsets` `Error` in the covered direct-variable paths. Binary/multibyte
+  string offset writes, decimal/exponent non-integer string offset keys,
+  by-reference list/destructuring writes to string offsets, and
+  magic/`ArrayAccess` string-offset paths remain unsupported. By-value
   terminal/plain-array nested
   appends through property-held `ArrayAccess`, magic-provided `ArrayAccess`,
   and by-value magic plain-array roots follow PHP's
