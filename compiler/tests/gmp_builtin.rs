@@ -132,3 +132,70 @@ try {
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
 }
+
+#[test]
+fn gmp_integer_bit_helpers_are_supported() {
+    let execution = run_source(
+        r#"<?php
+echo gmp_strval(gmp_and("111111", "2222222")), "\n";
+echo gmp_strval(gmp_or(4545, -20)), "\n";
+echo gmp_strval(gmp_xor(-1, 3333)), "\n";
+echo gmp_strval(gmp_com("2394876545678")), "\n";
+$n = gmp_init("100000000000");
+gmp_setbit($n, 23, true);
+echo gmp_strval($n), "\n";
+gmp_setbit($n, 23, false);
+gmp_setbit($n, 3);
+echo gmp_strval($n), "\n";
+$m = gmp_init("238462734628347239571823641234");
+gmp_clrbit($m, 3);
+gmp_clrbit($m, 5);
+gmp_clrbit($m, 20);
+echo gmp_strval($m), "\n";
+var_dump(gmp_testbit(gmp_init(-1), 1));
+var_dump(gmp_scan0("434234", 1));
+var_dump(gmp_scan1("1000000000", 200));
+var_dump(gmp_popcount("52638927634234"));
+var_dump(gmp_hamdist(gmp_init("8765434567"), gmp_init("987654445678")));
+try {
+    gmp_scan0("434234", -10);
+} catch (ValueError $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+try {
+    gmp_setbit("", 23);
+} catch (TypeError $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+try {
+    gmp_and(array(), 1);
+} catch (TypeError $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "106502\n",
+            "-19\n",
+            "-3334\n",
+            "-2394876545679\n",
+            "100008388608\n",
+            "100000000008\n",
+            "238462734628347239571822592658\n",
+            "bool(true)\n",
+            "int(2)\n",
+            "int(-1)\n",
+            "int(31)\n",
+            "int(26)\n",
+            "ValueError:gmp_scan0(): Argument #2 ($start) must be between 0 and 4096 * 8\n",
+            "TypeError:gmp_setbit(): Argument #1 ($num) must be of type GMP, string given\n",
+            "TypeError:gmp_and(): Argument #1 ($num1) must be of type GMP|string|int, array given\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}

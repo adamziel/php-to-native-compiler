@@ -107557,6 +107557,17 @@ impl Interpreter {
             "gmp_fact" => self.call_gmp_fact(&args, span),
             "gmp_nextprime" => self.call_gmp_nextprime(&args, span),
             "gmp_perfect_square" => self.call_gmp_perfect_square(&args, span),
+            "gmp_and" => self.call_gmp_bitwise_binary("gmp_and()", &args, span, GmpBitwiseOp::And),
+            "gmp_or" => self.call_gmp_bitwise_binary("gmp_or()", &args, span, GmpBitwiseOp::Or),
+            "gmp_xor" => self.call_gmp_bitwise_binary("gmp_xor()", &args, span, GmpBitwiseOp::Xor),
+            "gmp_com" => self.call_gmp_com(&args, span),
+            "gmp_setbit" => self.call_gmp_setbit(&args, span),
+            "gmp_clrbit" => self.call_gmp_clrbit(&args, span),
+            "gmp_testbit" => self.call_gmp_testbit(&args, span),
+            "gmp_scan0" => self.call_gmp_scan(&args, span, false),
+            "gmp_scan1" => self.call_gmp_scan(&args, span, true),
+            "gmp_popcount" => self.call_gmp_popcount(&args, span),
+            "gmp_hamdist" => self.call_gmp_hamdist(&args, span),
             "version_compare" => call_version_compare(&args, span),
             "microtime" => call_microtime(&args, span),
             "gettimeofday" => self.call_gettimeofday(&args, span),
@@ -130235,6 +130246,57 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
             "bool",
             vec![reflection_internal_param("num", "GMP|string|int")],
         ),
+        "gmp_and" | "gmp_or" | "gmp_xor" => (
+            "GMP",
+            vec![
+                reflection_internal_param("num1", "GMP|string|int"),
+                reflection_internal_param("num2", "GMP|string|int"),
+            ],
+        ),
+        "gmp_com" => (
+            "GMP",
+            vec![reflection_internal_param("num", "GMP|string|int")],
+        ),
+        "gmp_setbit" => (
+            "void",
+            vec![
+                reflection_internal_param("num", "GMP"),
+                reflection_internal_param("index", "int"),
+                reflection_internal_optional_bool_param("value", true),
+            ],
+        ),
+        "gmp_clrbit" => (
+            "void",
+            vec![
+                reflection_internal_param("num", "GMP"),
+                reflection_internal_param("index", "int"),
+            ],
+        ),
+        "gmp_testbit" => (
+            "bool",
+            vec![
+                reflection_internal_param("num", "GMP|string|int"),
+                reflection_internal_param("index", "int"),
+            ],
+        ),
+        "gmp_scan0" | "gmp_scan1" => (
+            "int",
+            vec![
+                reflection_internal_param("num1", "GMP|string|int"),
+                reflection_internal_param("start", "int"),
+            ],
+        ),
+        "gmp_popcount" => (
+            "int",
+            vec![reflection_internal_param("num", "GMP|string|int")],
+        ),
+        "gmp_hamdist" => (
+            "int",
+            vec![
+                reflection_internal_param("num1", "GMP|string|int"),
+                reflection_internal_param("num2", "GMP|string|int"),
+            ],
+        ),
         "strval" => ("string", vec![reflection_internal_param("value", "mixed")]),
         "boolval" => ("bool", vec![reflection_internal_param("value", "mixed")]),
         "intval" => (
@@ -137277,7 +137339,18 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
             | "gmp_sqrtrem()"
             | "gmp_fact()"
             | "gmp_nextprime()"
-            | "gmp_perfect_square()",
+            | "gmp_perfect_square()"
+            | "gmp_and()"
+            | "gmp_or()"
+            | "gmp_xor()"
+            | "gmp_com()"
+            | "gmp_setbit()"
+            | "gmp_clrbit()"
+            | "gmp_testbit()"
+            | "gmp_scan0()"
+            | "gmp_scan1()"
+            | "gmp_popcount()"
+            | "gmp_hamdist()",
             message,
         ) if message.contains(" is not an integer string")
             || message.contains(" must be 0 or between 2 and 62")
@@ -138254,6 +138327,17 @@ fn is_builtin(name: &str) -> bool {
             | "gmp_fact"
             | "gmp_nextprime"
             | "gmp_perfect_square"
+            | "gmp_and"
+            | "gmp_or"
+            | "gmp_xor"
+            | "gmp_com"
+            | "gmp_setbit"
+            | "gmp_clrbit"
+            | "gmp_testbit"
+            | "gmp_scan0"
+            | "gmp_scan1"
+            | "gmp_popcount"
+            | "gmp_hamdist"
             | "version_compare"
             | "microtime"
             | "gettimeofday"
@@ -174941,6 +175025,134 @@ impl Interpreter {
         ))
     }
 
+    fn call_gmp_bitwise_binary(
+        &mut self,
+        function: &'static str,
+        args: &[Value],
+        span: Span,
+        op: GmpBitwiseOp,
+    ) -> CompileResult<Value> {
+        expect_arity(function.trim_end_matches("()"), args, 2, span)?;
+        let left = self.gmp_decimal_argument(function, 1, "num1", &args[0], 0, span)?;
+        let right = self.gmp_decimal_argument(function, 2, "num2", &args[1], 0, span)?;
+        let result = gmp_bitwise_binary_decimal(&left, &right, op);
+        self.gmp_object(result, span).map(Value::Object)
+    }
+
+    fn call_gmp_com(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("gmp_com", args, 1, span)?;
+        let value = self.gmp_decimal_argument("gmp_com()", 1, "num", &args[0], 0, span)?;
+        self.gmp_object(gmp_bitwise_not_decimal(&value), span)
+            .map(Value::Object)
+    }
+
+    fn call_gmp_setbit(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(2..=3).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "gmp_setbit()",
+                    ArityExpectation::Between { min: 2, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+        let object = self.gmp_mutable_object_argument("gmp_setbit()", &args[0], span)?;
+        let index = gmp_bit_index_argument("gmp_setbit()", 2, "index", &args[1], span)?;
+        let value = match args.get(2) {
+            Some(value) => php_internal_bool_argument("gmp_setbit()", 3, "value", value, span)?,
+            None => true,
+        };
+        self.write_gmp_object_decimal_bit(&object, index, value, span)?;
+        Ok(Value::Null)
+    }
+
+    fn call_gmp_clrbit(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("gmp_clrbit", args, 2, span)?;
+        let object = self.gmp_mutable_object_argument("gmp_clrbit()", &args[0], span)?;
+        let index = gmp_bit_index_argument("gmp_clrbit()", 2, "index", &args[1], span)?;
+        self.write_gmp_object_decimal_bit(&object, index, false, span)?;
+        Ok(Value::Null)
+    }
+
+    fn call_gmp_testbit(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("gmp_testbit", args, 2, span)?;
+        let value = self.gmp_decimal_argument("gmp_testbit()", 1, "num", &args[0], 0, span)?;
+        let index = gmp_bit_index_argument("gmp_testbit()", 2, "index", &args[1], span)?;
+        Ok(Value::Bool(gmp_decimal_bit_is_set(&value, index)))
+    }
+
+    fn call_gmp_scan(
+        &mut self,
+        args: &[Value],
+        span: Span,
+        scan_for_one: bool,
+    ) -> CompileResult<Value> {
+        let function = if scan_for_one {
+            "gmp_scan1()"
+        } else {
+            "gmp_scan0()"
+        };
+        expect_arity(function.trim_end_matches("()"), args, 2, span)?;
+        let value = self.gmp_decimal_argument(function, 1, "num1", &args[0], 0, span)?;
+        let start = gmp_bit_index_argument(function, 2, "start", &args[1], span)?;
+        Ok(Value::Int(gmp_scan_decimal_bits(
+            &value,
+            start,
+            scan_for_one,
+        )))
+    }
+
+    fn call_gmp_popcount(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("gmp_popcount", args, 1, span)?;
+        let value = self.gmp_decimal_argument("gmp_popcount()", 1, "num", &args[0], 0, span)?;
+        Ok(Value::Int(gmp_popcount_decimal(&value)))
+    }
+
+    fn call_gmp_hamdist(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("gmp_hamdist", args, 2, span)?;
+        let left = self.gmp_decimal_argument("gmp_hamdist()", 1, "num1", &args[0], 0, span)?;
+        let right = self.gmp_decimal_argument("gmp_hamdist()", 2, "num2", &args[1], 0, span)?;
+        Ok(Value::Int(gmp_hamdist_decimal(&left, &right)))
+    }
+
+    fn gmp_mutable_object_argument(
+        &self,
+        function: &str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<PhpObject> {
+        if let Value::Object(object) = value {
+            if object.class_name().eq_ignore_ascii_case("GMP") {
+                return Ok(object.clone());
+            }
+        }
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!(
+                    "Argument #1 ($num) must be of type GMP, {} given",
+                    php_type_error_given(value)
+                ),
+            ),
+        ))
+    }
+
+    fn write_gmp_object_decimal_bit(
+        &mut self,
+        object: &PhpObject,
+        index: usize,
+        bit_value: bool,
+        span: Span,
+    ) -> CompileResult<()> {
+        let decimal = self.gmp_object_decimal(object, span)?;
+        let decimal = gmp_decimal_with_bit(&decimal, index, bit_value);
+        object
+            .write_public_property("num", Value::String(decimal.format_with_scale(0)))
+            .map_err(|error| runtime_error(span, error))
+    }
+
     fn gmp_object(&mut self, decimal: BcDecimal, span: Span) -> CompileResult<PhpObject> {
         let class_id = self
             .classes
@@ -184336,6 +184548,13 @@ enum GmpBinaryOp {
 }
 
 #[derive(Clone, Copy)]
+enum GmpBitwiseOp {
+    And,
+    Or,
+    Xor,
+}
+
+#[derive(Clone, Copy)]
 enum GmpDivRoundingMode {
     Zero,
     PlusInf,
@@ -184397,6 +184616,7 @@ const BCMATH_ROUNDING_MODE_CASES: [BcRoundingMode; 8] = [
 const BCMATH_POW_EXPONENT_LIMIT: u64 = 4096;
 const GMP_POW_EXPONENT_LIMIT: u64 = 4096;
 const GMP_FACTORIAL_LIMIT: u64 = 4096;
+const GMP_BIT_INDEX_WORD_LIMIT: i64 = 4096;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct BcDecimal {
@@ -185165,6 +185385,194 @@ fn gmp_decimal_to_i64_wrapping(decimal: &BcDecimal) -> i64 {
         value = value.wrapping_neg();
     }
     value as i64
+}
+
+fn gmp_bit_index_argument(
+    function: &str,
+    position: usize,
+    parameter: &str,
+    value: &Value,
+    span: Span,
+) -> CompileResult<usize> {
+    let index = php_internal_int_argument(function, position, parameter, value, span)?;
+    let max_index = GMP_BIT_INDEX_WORD_LIMIT * 8 - 1;
+    if !(0..=max_index).contains(&index) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!(
+                    "Argument #{position} (${parameter}) must be between 0 and {GMP_BIT_INDEX_WORD_LIMIT} * 8"
+                ),
+            ),
+        ));
+    }
+    Ok(index as usize)
+}
+
+fn gmp_decimal_abs_to_le_bytes(decimal: &BcDecimal) -> Vec<u8> {
+    let mut digits = decimal.digits_at_scale(0);
+    let mut bytes = Vec::new();
+    while !digits_are_zero(&digits) {
+        let (quotient, remainder) = decimal_div_mod_small_abs(&digits, 256);
+        bytes.push(remainder as u8);
+        digits = quotient;
+    }
+    if bytes.is_empty() {
+        bytes.push(0);
+    }
+    bytes
+}
+
+fn gmp_unsigned_le_bytes_to_decimal(bytes: &[u8]) -> BcDecimal {
+    let mut digits = vec![0];
+    for byte in bytes.iter().rev() {
+        digits = decimal_mul_small_abs(&digits, 256);
+        if *byte != 0 {
+            digits = decimal_add_small_abs(&digits, u16::from(*byte));
+        }
+    }
+    BcDecimal {
+        negative: false,
+        digits,
+        scale: 0,
+    }
+    .normalized()
+}
+
+fn gmp_required_twos_complement_width(decimal: &BcDecimal) -> usize {
+    let bytes = gmp_decimal_abs_to_le_bytes(decimal);
+    if decimal.negative || bytes.last().is_some_and(|byte| byte & 0x80 != 0) {
+        bytes.len() + 1
+    } else {
+        bytes.len()
+    }
+    .max(1)
+}
+
+fn gmp_twos_complement_bytes(decimal: &BcDecimal, width: usize) -> Vec<u8> {
+    let mut bytes = gmp_decimal_abs_to_le_bytes(decimal);
+    bytes.resize(width, 0);
+    if decimal.negative {
+        for byte in &mut bytes {
+            *byte = !*byte;
+        }
+        let mut carry = 1u16;
+        for byte in &mut bytes {
+            let sum = u16::from(*byte) + carry;
+            *byte = sum as u8;
+            carry = sum >> 8;
+            if carry == 0 {
+                break;
+            }
+        }
+    }
+    bytes
+}
+
+fn gmp_decimal_from_twos_complement_bytes(bytes: &[u8]) -> BcDecimal {
+    let negative = bytes.last().is_some_and(|byte| byte & 0x80 != 0);
+    if !negative {
+        return gmp_unsigned_le_bytes_to_decimal(bytes);
+    }
+
+    let mut magnitude = bytes.to_vec();
+    for byte in &mut magnitude {
+        *byte = !*byte;
+    }
+    let mut carry = 1u16;
+    for byte in &mut magnitude {
+        let sum = u16::from(*byte) + carry;
+        *byte = sum as u8;
+        carry = sum >> 8;
+        if carry == 0 {
+            break;
+        }
+    }
+    gmp_unsigned_le_bytes_to_decimal(&magnitude).with_sign(true)
+}
+
+fn gmp_bitwise_binary_decimal(left: &BcDecimal, right: &BcDecimal, op: GmpBitwiseOp) -> BcDecimal {
+    let width =
+        gmp_required_twos_complement_width(left).max(gmp_required_twos_complement_width(right));
+    let left = gmp_twos_complement_bytes(left, width);
+    let right = gmp_twos_complement_bytes(right, width);
+    let bytes = left
+        .iter()
+        .zip(right.iter())
+        .map(|(left, right)| match op {
+            GmpBitwiseOp::And => left & right,
+            GmpBitwiseOp::Or => left | right,
+            GmpBitwiseOp::Xor => left ^ right,
+        })
+        .collect::<Vec<_>>();
+    gmp_decimal_from_twos_complement_bytes(&bytes)
+}
+
+fn gmp_bitwise_not_decimal(value: &BcDecimal) -> BcDecimal {
+    let width = gmp_required_twos_complement_width(value);
+    let bytes = gmp_twos_complement_bytes(value, width)
+        .into_iter()
+        .map(|byte| !byte)
+        .collect::<Vec<_>>();
+    gmp_decimal_from_twos_complement_bytes(&bytes)
+}
+
+fn gmp_decimal_with_bit(value: &BcDecimal, index: usize, bit_value: bool) -> BcDecimal {
+    let byte_index = index / 8;
+    let bit_mask = 1u8 << (index % 8);
+    let width = gmp_required_twos_complement_width(value).max(byte_index + 2);
+    let mut bytes = gmp_twos_complement_bytes(value, width);
+    if bit_value {
+        bytes[byte_index] |= bit_mask;
+    } else {
+        bytes[byte_index] &= !bit_mask;
+    }
+    gmp_decimal_from_twos_complement_bytes(&bytes)
+}
+
+fn gmp_decimal_bit_is_set(value: &BcDecimal, index: usize) -> bool {
+    let byte_index = index / 8;
+    let width = gmp_required_twos_complement_width(value).max(byte_index + 1);
+    let bytes = gmp_twos_complement_bytes(value, width);
+    bytes[byte_index] & (1u8 << (index % 8)) != 0
+}
+
+fn gmp_scan_decimal_bits(value: &BcDecimal, start: usize, scan_for_one: bool) -> i64 {
+    let start_byte = start / 8;
+    let width = gmp_required_twos_complement_width(value).max(start_byte + 2);
+    let bytes = gmp_twos_complement_bytes(value, width);
+    let total_bits = width * 8;
+    for bit in start..total_bits {
+        let is_set = bytes[bit / 8] & (1u8 << (bit % 8)) != 0;
+        if is_set == scan_for_one {
+            return bit as i64;
+        }
+    }
+    match (scan_for_one, value.negative) {
+        (true, true) => total_bits as i64,
+        (true, false) => -1,
+        (false, true) => -1,
+        (false, false) => total_bits as i64,
+    }
+}
+
+fn gmp_popcount_decimal(value: &BcDecimal) -> i64 {
+    if value.negative {
+        return -1;
+    }
+    gmp_decimal_abs_to_le_bytes(value)
+        .into_iter()
+        .map(|byte| i64::from(byte.count_ones()))
+        .sum()
+}
+
+fn gmp_hamdist_decimal(left: &BcDecimal, right: &BcDecimal) -> i64 {
+    if left.negative || right.negative {
+        return -1;
+    }
+    let result = gmp_bitwise_binary_decimal(left, right, GmpBitwiseOp::Xor);
+    gmp_popcount_decimal(&result)
 }
 
 fn gmp_integer_string_error(

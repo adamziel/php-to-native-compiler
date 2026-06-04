@@ -7263,8 +7263,13 @@
   `gmp_pow()`, `gmp_sqrt()`, `gmp_sqrtrem()`, `gmp_fact()`,
   `gmp_nextprime()`, and `gmp_perfect_square()` for current int/string/GMP
   operands, including the three `GMP_ROUND_*` constants and selected
-  `ValueError`/`DivisionByZeroError` surfaces. Exact `gmp_div_qr()`
-  object-handle reuse parity, GMP bitwise/import/export/random functions,
+  `ValueError`/`DivisionByZeroError` surfaces. The bounded bit slice includes
+  `gmp_and()`, `gmp_or()`, `gmp_xor()`, `gmp_com()`, `gmp_setbit()`,
+  `gmp_clrbit()`, `gmp_testbit()`, `gmp_scan0()`, `gmp_scan1()`,
+  `gmp_popcount()`, and `gmp_hamdist()` over current int/string/GMP operands,
+  with `gmp_setbit()` and `gmp_clrbit()` mutating only GMP objects and selected
+  `ValueError`/`TypeError` surfaces. Exact `gmp_div_qr()` object-handle reuse
+  parity, unbounded bit indexes, GMP import/export/random functions,
   serialization/cloning, operator overloading, exact base conversion beyond the
   covered rows, binary-string/non-ASCII parsing parity, unbounded
   exponent/factorial inputs, references/copy-on-write, and native lowering
