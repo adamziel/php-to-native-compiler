@@ -1,6 +1,6 @@
 # PHP Native Compiler PHPT Progress
 
-Updated: 2026-06-05 00:05 CEST
+Updated: 2026-06-05 00:23 CEST
 
 Primary/public branch: `origin/master`
 Latest accepted public-score source:
@@ -21,6 +21,10 @@ Current public score: **7873 / 20294 pinned runnable PHPTs = 38.79%**.
 Latest pushed source checkpoint:
 `b180bf06f086f498e1dcd5f4d645714e2f776333 fix: support typed class-like constants`
 
+Latest pushed branch checkpoint:
+`56fe9377fb46be00db5fdd30c966fdba406dc581 docs: update progress for b180bf06`
+(docs-only; not score-relevant PHPT source progress)
+
 Current score-gate status:
 Accepted public gate:
 `state/logs/phpt-full-current-score-20260604T135138Z-php-src-f97ff59-public-0b917f67-source-0b917f67`
@@ -35,15 +39,25 @@ gate converts the post-`6c038019` source chain through `0b917f67` into public
 PHPT progress. Newer source commits through `b180bf06` are staged after this
 accepted public source and are not included in the public score above.
 
-Latest non-public full gate:
+Current non-public full gate:
+`state/logs/phpt-full-current-score-20260604T221205Z-php-src-f97ff59-public-56fe9377-source-56fe9377`
+is `RUNNING / SHARDED-PHPT` for docs-only branch checkpoint `56fe9377`
+against the accepted `0b917f67` PASS baseline. It uses the pinned denominator
+`20294`, lowercase `run-tests.php -p`, six shards plus serialized
+`open_basedir` rows, and has not produced accepted aggregate current-pass or
+latest-published PASS-regression publication artifacts. It does not authorize
+a public score change while running.
+
+Latest blocked non-public full gate:
 `state/logs/phpt-full-current-score-20260604T205049Z-php-src-f97ff59-public-eab7db21-source-eab7db21`
 is `FINAL / RUNNER-INTERRUPTED-TERM` for source `eab7db21` against the
 accepted `0b917f67` PASS baseline. The repaired runner captured
 `signal-events.tsv`, shard signal events, and shard exit codes; all 12 shard
 exits were `143` after TERM. It produced no accepted aggregate current-pass or
-latest-published PASS-regression publication artifacts. Current source later
-advanced to `b180bf06`. This gate does not authorize a public score change or
-publish source commits after `0b917f67`.
+latest-published PASS-regression publication artifacts. Current
+score-relevant source later advanced to `b180bf06`, and the branch later
+advanced to docs-only checkpoint `56fe9377`. This gate does not authorize a
+public score change or publish source commits after `0b917f67`.
 
 Recent non-public gate history: the `6bca3d9c` gate at `203538Z` also ended
 `FINAL / RUNNER-INTERRUPTED-TERM` with all 12 shard exits at `143` and signal
@@ -191,13 +205,15 @@ Unpublished source progress since the accepted public score source:
   They preserved latest-published PASS scouts in the accepted integration
   artifacts and passed focused Rust, build, fmt, diff, php-src cleanliness, and
   production row-name leakage checks.
-- Outstanding publication blocker: the latest full gate is still the
-  `eab7db21` `FINAL / RUNNER-INTERRUPTED-TERM` attempt and produced no
-  accepted aggregate/current-pass/PASS-regression publication artifacts.
-  Refreshed cadence now reports `SCORE-GATE-READY` with disk above the 35 GiB
-  floor, but no full gate has accepted staged source through `b180bf06` after
-  `0b917f67`; no staged source can move the public score unless a fresh/current
-  full pinned PHPT gate completes with zero latest-published PASS regressions.
+- Outstanding publication blocker: the current full gate is the `56fe9377`
+  `RUNNING / SHARDED-PHPT` attempt and has not produced accepted
+  aggregate/current-pass/PASS-regression publication artifacts. The latest
+  completed blocked attempt remains the `eab7db21`
+  `FINAL / RUNNER-INTERRUPTED-TERM` gate with all 12 shard exits at `143`.
+  No full gate has accepted staged source through `b180bf06` after
+  `0b917f67`; no staged source can move the public score unless the running or
+  a later fresh/current full pinned PHPT gate completes with zero
+  latest-published PASS regressions.
 
 Accepted source proof included in the `0b917f67` public gate:
 
@@ -1344,6 +1360,8 @@ Current rejected, reverted, stale, or still-pending Batch024 candidates:
 - Current accepted gate evidence:
   `/home/claude/supervised-php-compiler/state/logs/phpt-full-current-score-20260604T135138Z-php-src-f97ff59-public-0b917f67-source-0b917f67`
 - Latest non-public full gate evidence:
+  `/home/claude/supervised-php-compiler/state/logs/phpt-full-current-score-20260604T221205Z-php-src-f97ff59-public-56fe9377-source-56fe9377`
+- Latest blocked non-public full gate evidence:
   `/home/claude/supervised-php-compiler/state/logs/phpt-full-current-score-20260604T205049Z-php-src-f97ff59-public-eab7db21-source-eab7db21`
 - Previous accepted gate evidence:
   `/home/claude/supervised-php-compiler/state/logs/phpt-full-current-score-20260604T110314Z-php-src-f97ff59-public-6c038019-source-6c038019`
