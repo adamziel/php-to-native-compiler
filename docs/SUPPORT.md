@@ -8299,13 +8299,22 @@
   the cloned object when one is declared or inherited, mirror the current
   bounded public-property and
   context-aware non-public property reference-slot metadata for direct-variable
-  `clone $object` assignments, and return the cloned object. Object-valued
+  `clone $object` assignments, and return the cloned object. Initialized
+  readonly properties copied to the fresh clone receive a transient
+  `__clone()`-only allowance for one successful whole-property reset; failed
+  typed-property coercions do not consume the allowance, and direct calls to
+  `__clone()` on the original object do not receive it. Clone-time `unset()` of
+  such a property is accepted for later whole-property reinitialization in the
+  covered value model, while exact debug output for that intermediate
+  uninitialized typed slot remains outside the current display subset.
+  Object-valued
   properties keep their existing handles under the current no-copy-on-write
   model. Non-object operands, static `__clone` methods, clone
   expressions outside direct-variable assignments for reference-slot mirroring,
   non-public property-offset clone alias mirroring, private/protected
   clone-method visibility behavior beyond current method-context checks,
-  destructor/reuse behavior, exact PHP
+  exact object-handle reuse after failed clone expressions, catchable indirect
+  readonly array-modification errors, destructor/reuse behavior, exact PHP
   `Error` objects, partial-output behavior, full references, copy-on-write,
   and native lowering remain unsupported. Native lowering rejects `clone`
   expressions with a clone-specific codegen diagnostic before lowering the

@@ -783,7 +783,12 @@ alias metadata and context-aware non-public
 object-property alias metadata from the cloned source variable to the target
 variable, so the current bounded reference-slot model can keep covered property
 slots shared across a fresh object handle for the covered `clone $object`
-assignment shape.
+assignment shape. During clone construction, initialized readonly property
+slots copied onto the fresh object are marked with a transient reset allowance.
+That allowance is visible only while userland `__clone()` is executing, is
+consumed by one successful whole-property write, survives failed typed-property
+coercion, and is cleared before the clone value is returned or an uncaught
+clone error is propagated.
 Prepared MySQLi result bindings use a separate deterministic statement-target
 list rather than PHP reference containers: direct variables write to the caller
 symbol table, and direct variable or direct object-property array-offset

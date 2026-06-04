@@ -34920,40 +34920,52 @@ impl Interpreter {
             self.hash_contexts.insert(clone.id(), state);
         }
 
-        if let Some((class_id, class_name, method_name, visibility, is_static)) =
-            self.resolve_instance_method(object.class_id(), "__clone")
-        {
-            if is_static {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        format!("{class_name}::{method_name}()"),
-                        "static clone methods are not implemented",
-                    ),
-                ));
-            }
+        let clone_call_result =
+            if let Some((class_id, class_name, method_name, visibility, is_static)) =
+                self.resolve_instance_method(object.class_id(), "__clone")
+            {
+                if is_static {
+                    Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{class_name}::{method_name}()"),
+                            "static clone methods are not implemented",
+                        ),
+                    ))
+                } else {
+                    self.ensure_instance_method_visible(
+                        class_id,
+                        &class_name,
+                        "__clone",
+                        visibility,
+                        span,
+                    )
+                    .and_then(|()| {
+                        let function =
+                            self.method_function(class_id, &class_name, &method_name, span)?;
+                        let function = function.as_ref();
+                        ensure_user_function_arity(function, 0, span)?;
+                        ensure_supported_function_signature(function, 0, span)?;
+                        self.ensure_user_function_call_depth(function, span)?;
+                        self.call_user_function_with_checked_values(
+                            function,
+                            Vec::new(),
+                            Some(clone.clone()),
+                            Some(class_id),
+                            Some(clone.class_id()),
+                            Vec::new(),
+                            None,
+                        )
+                    })
+                }
+            } else {
+                Ok(Value::Null)
+            };
 
-            self.ensure_instance_method_visible(
-                class_id,
-                &class_name,
-                "__clone",
-                visibility,
-                span,
-            )?;
-            let function = self.method_function(class_id, &class_name, &method_name, span)?;
-            let function = function.as_ref();
-            ensure_user_function_arity(function, 0, span)?;
-            ensure_supported_function_signature(function, 0, span)?;
-            self.ensure_user_function_call_depth(function, span)?;
-            self.call_user_function_with_checked_values(
-                function,
-                Vec::new(),
-                Some(clone.clone()),
-                Some(class_id),
-                Some(clone.class_id()),
-                Vec::new(),
-                None,
-            )?;
+        clone.clear_readonly_clone_reset_allowance();
+
+        if let Err(error) = clone_call_result {
+            return Err(error);
         }
 
         self.track_allocated_object(&clone);

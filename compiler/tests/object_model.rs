@@ -13846,6 +13846,113 @@ echo $box->label, "|", $copy->label;
 }
 
 #[test]
+fn readonly_properties_can_be_reset_once_during_clone() {
+    let source = r#"<?php
+class Foo {
+    public function __construct(public readonly int $bar) {}
+
+    public function __clone() {
+        $this->bar++;
+    }
+}
+
+$foo = new Foo(1);
+$first = clone $foo;
+$second = clone $foo;
+$third = clone $second;
+
+echo $first->bar, "|", $second->bar, "|", $third->bar, "\n";
+
+try {
+    $third->bar = 4;
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "2|2|3\nCannot modify readonly property Foo::$bar\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn readonly_clone_reset_survives_type_error_and_rejects_second_write() {
+    let source = r#"<?php
+class TypeErrorThenReset {
+    public function __construct(public readonly int $bar) {}
+
+    public function __clone() {
+        try {
+            $this->bar = "foo";
+        } catch (Error $e) {
+            echo $e->getMessage(), "\n";
+        }
+
+        $this->bar = 2;
+    }
+}
+
+class SetTwice {
+    public function __construct(public readonly int $bar) {}
+
+    public function __clone() {
+        try {
+            $this->bar = 2;
+            echo $this->bar, "\n";
+            $this->bar = 3;
+        } catch (Error $e) {
+            echo $e->getMessage(), "\n";
+        }
+    }
+}
+
+$first = clone new TypeErrorThenReset(1);
+echo $first->bar, "\n";
+$second = clone new SetTwice(1);
+echo $second->bar, "\n";
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "Cannot assign string to property TypeErrorThenReset::$bar of type int\n\
+2\n\
+2\n\
+Cannot modify readonly property SetTwice::$bar\n\
+2\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn readonly_clone_reset_does_not_allow_indirect_array_mutation() {
+    let source = r#"<?php
+class Bag {
+    public readonly array $prop;
+
+    public function __construct() {
+        $this->prop = [];
+    }
+
+    public function __clone() {
+        $this->prop[] = 1;
+    }
+}
+
+clone new Bag();
+"#;
+
+    let error = runtime_error(source);
+    assert_eq!(
+        error.message,
+        "unsupported object property access: Cannot indirectly modify readonly property Bag::$prop"
+    );
+}
+
+#[test]
 fn spl_object_hash_requires_one_object_argument() {
     let arity_error = runtime_error("<?php\nvar_dump(spl_object_hash());\n");
 

@@ -37765,6 +37765,7 @@ impl PhpObject {
             visibility,
             type_decl: type_decl.clone(),
             is_readonly,
+            readonly_clone_resettable: false,
             storage: ObjectPropertyStorage::Value(PhpValueCell::new(Value::Null)),
             initialized: type_decl.is_none() && !is_readonly,
             unset: false,
@@ -37831,6 +37832,17 @@ impl PhpObject {
     }
 
     pub fn shallow_clone_with_id(&self, id: i64) -> Self {
+        let properties = self
+            .properties
+            .borrow()
+            .iter()
+            .cloned()
+            .map(|mut property| {
+                property.mark_readonly_clone_resettable();
+                property
+            })
+            .collect();
+
         Self {
             id,
             class_id: self.class_id,
@@ -37838,7 +37850,13 @@ impl PhpObject {
             allows_dynamic_properties: self.allows_dynamic_properties,
             ancestor_class_names: self.ancestor_class_names.clone(),
             interface_names: self.interface_names.clone(),
-            properties: Rc::new(RefCell::new(self.properties.borrow().clone())),
+            properties: Rc::new(RefCell::new(properties)),
+        }
+    }
+
+    pub fn clear_readonly_clone_reset_allowance(&self) {
+        for property in self.properties.borrow_mut().iter_mut() {
+            property.clear_readonly_clone_reset_allowance();
         }
     }
 
@@ -38038,7 +38056,7 @@ impl PhpObject {
         let properties = self.properties.borrow();
         let property =
             self.context_property(&properties, name, current_class_id, protected_class_ids)?;
-        property.ensure_writable()
+        property.ensure_writable_for_indirect_mutation()
     }
 
     pub fn is_public_property_set(&self, name: &str) -> RuntimeResult<bool> {
@@ -38330,6 +38348,7 @@ impl PhpObject {
             visibility: Visibility::Public,
             type_decl: None,
             is_readonly: false,
+            readonly_clone_resettable: false,
             storage: ObjectPropertyStorage::Reference(reference.clone()),
             initialized: true,
             unset: false,
@@ -38381,6 +38400,7 @@ impl PhpObject {
             visibility: Visibility::Public,
             type_decl: None,
             is_readonly: false,
+            readonly_clone_resettable: false,
             storage: ObjectPropertyStorage::Reference(reference),
             initialized: true,
             unset: false,
@@ -38427,6 +38447,7 @@ impl PhpObject {
             visibility: Visibility::Public,
             type_decl: None,
             is_readonly: false,
+            readonly_clone_resettable: false,
             storage: ObjectPropertyStorage::Value(PhpValueCell::new(value)),
             initialized: true,
             unset: false,
@@ -38451,6 +38472,7 @@ impl PhpObject {
             visibility: Visibility::Public,
             type_decl: None,
             is_readonly: false,
+            readonly_clone_resettable: false,
             storage: ObjectPropertyStorage::Value(PhpValueCell::new(value)),
             initialized: true,
             unset: false,
@@ -38554,6 +38576,7 @@ impl PhpObject {
                     visibility: Visibility::Public,
                     type_decl: None,
                     is_readonly: false,
+                    readonly_clone_resettable: false,
                     storage: ObjectPropertyStorage::Value(PhpValueCell::new(Value::Null)),
                     initialized: true,
                     unset: false,
@@ -38963,6 +38986,7 @@ pub struct ObjectProperty {
     visibility: Visibility,
     type_decl: Option<String>,
     is_readonly: bool,
+    readonly_clone_resettable: bool,
     storage: ObjectPropertyStorage,
     initialized: bool,
     unset: bool,
@@ -39049,7 +39073,7 @@ impl ObjectProperty {
     }
 
     fn ensure_writable(&self) -> RuntimeResult<()> {
-        if self.is_readonly && self.initialized && !self.unset {
+        if self.is_readonly && self.initialized && !self.unset && !self.readonly_clone_resettable {
             return Err(RuntimeError::unsupported_property_access(format!(
                 "Cannot modify readonly property {}::${}",
                 self.declaring_class_name, self.name
@@ -39058,14 +39082,32 @@ impl ObjectProperty {
         Ok(())
     }
 
+    fn ensure_writable_for_indirect_mutation(&self) -> RuntimeResult<()> {
+        if self.is_readonly && self.initialized && !self.unset {
+            return Err(RuntimeError::unsupported_property_access(format!(
+                "Cannot indirectly modify readonly property {}::${}",
+                self.declaring_class_name, self.name
+            )));
+        }
+        Ok(())
+    }
+
     fn ensure_unsettable(&self) -> RuntimeResult<()> {
-        if self.is_readonly {
+        if self.is_readonly && !self.readonly_clone_resettable {
             return Err(RuntimeError::unsupported_property_access(format!(
                 "Cannot unset readonly property {}::${}",
                 self.declaring_class_name, self.name
             )));
         }
         Ok(())
+    }
+
+    fn mark_readonly_clone_resettable(&mut self) {
+        self.readonly_clone_resettable = self.is_readonly && self.initialized && !self.unset;
+    }
+
+    fn clear_readonly_clone_reset_allowance(&mut self) {
+        self.readonly_clone_resettable = false;
     }
 
     pub fn mangled_name(&self) -> String {
@@ -39168,6 +39210,7 @@ impl ObjectProperty {
             ObjectPropertyStorage::Value(cell) => cell.set_value(value),
             ObjectPropertyStorage::Reference(reference) => reference.set_value(value),
         }
+        self.clear_readonly_clone_reset_allowance();
         self.unset = false;
     }
 
@@ -39178,6 +39221,7 @@ impl ObjectProperty {
             &self.name,
         );
         self.storage = ObjectPropertyStorage::Reference(reference);
+        self.clear_readonly_clone_reset_allowance();
         self.unset = false;
     }
 
