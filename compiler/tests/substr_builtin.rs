@@ -171,14 +171,11 @@ try {
         "substr(): Argument #2 ($offset) must be of type int, array given"
     );
 
-    let too_few = run_source("<?php\nsubstr('abc');\n").unwrap_err();
-    assert_eq!(too_few.phase, Phase::Runtime);
-    assert_eq!(too_few.line, 2);
-    assert_eq!(too_few.column, 1);
-    assert_eq!(
-        too_few.message,
-        "arity mismatch for substr(): expected 2 to 3 argument(s), got 1"
-    );
+    let too_few = run_source("<?php\nsubstr('abc');\n").unwrap();
+    assert!(too_few.stdout.starts_with(
+        "Fatal error: Uncaught ArgumentCountError: substr() expects at least 2 arguments, 1 given"
+    ));
+    assert_eq!(too_few.exit_code, 255);
 }
 
 #[test]

@@ -67,7 +67,7 @@
   array or object variable has covered child array/property-slot aliases, those
   aliases detach with their last observed value instead of routing through the
   removed root; `unset(...)` may include multiple supported operands and
-  executes them left to right
+  executes them left to right, including a single optional trailing comma
 - PHP array by-value copies use shared runtime value cells for plain array
   slots and detach the written slot before mutation; reference-backed array
   slots continue to share their `PhpReferenceCell`. The covered interpreter
@@ -2932,11 +2932,13 @@
 - dynamic function calls through string-valued expressions that resolve to the
   documented callable builtin subset or user-defined functions, and through
   supported `[object, method]` or `["ClassName", "method"]` array callables,
-  with optional trailing commas in argument lists. Array-callable dynamic
-  invocation is bounded to the same public object-method and public static
-  method subset as direct array-callable dispatch; arbitrary callback
-  containers, object `__invoke`, first-class callables, and exact PHP callable
-  diagnostics remain unsupported.
+  with optional trailing commas in argument lists. Object-valued dynamic calls
+  dispatch through a resolvable `__invoke` using the same bounded public
+  non-static method path as array-callable object dispatch. Array-callable
+  dynamic invocation is bounded to the same public object-method and public
+  static method subset as direct array-callable dispatch; arbitrary callback
+  containers, broader callable autoload/deprecation parity, first-class
+  callables, and exact PHP callable diagnostics remain unsupported.
 - trailing default parameter values for user functions over the documented
   constant-expression subset, including bare references to previously defined
   unqualified constants, the current built-in global constant slice, declared
@@ -7587,6 +7589,10 @@
 - explicit parse diagnostics for unsupported namespace forms and imports:
   grouped imports. Invalid mixed or nested namespace forms still remain outside
   exact PHP diagnostic parity.
+- Too-few user-function arguments and arity mismatches for reflected supported
+  internal functions surface as catchable `ArgumentCountError`s with
+  PHP-shaped messages on the interpreter path; unsupported or unreflected
+  internals may still report raw runtime diagnostics.
 - bounded magic class names in `new` expressions such as `new self()`,
   `new parent()`, and `new static()` in active class/method contexts;
   contextless magic class-name instantiation remains a stable runtime boundary

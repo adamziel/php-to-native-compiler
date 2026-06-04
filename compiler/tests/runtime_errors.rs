@@ -41,10 +41,104 @@ fn user_function_arity_mismatch_reports_php_fatal() {
         execution("<?php\nfunction identity($value) {\n    return $value;\n}\necho identity();\n");
 
     assert!(execution.stdout.starts_with(
-        "Fatal error: Uncaught TypeError: Too few arguments to function identity(), 0 passed"
+        "Fatal error: Uncaught ArgumentCountError: Too few arguments to function identity(), 0 passed"
     ));
     assert!(execution.stdout.contains("exactly 1 expected"));
     assert_eq!(execution.exit_code, 255);
+}
+
+#[test]
+fn incorrect_function_argument_counts_are_catchable_argument_count_errors() {
+    let execution = execution(
+        r#"<?php
+try {
+    substr("foo");
+} catch (ArgumentCountError $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+
+try {
+    function needs_two($one, $two) {}
+    needs_two(1);
+} catch (Error $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+
+try {
+    array_diff();
+} catch (ArgumentCountError $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+"#,
+    );
+
+    assert_eq!(
+        execution.stdout,
+        "ArgumentCountError:substr() expects at least 2 arguments, 1 given\nArgumentCountError:Too few arguments to function needs_two(), 1 passed in Command line code on line 10 and exactly 2 expected\nArgumentCountError:array_diff() expects at least 1 argument, 0 given\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn malformed_function_argument_lists_report_php_parse_errors() {
+    let identifier = run_source("<?php\nfunction foo($arg1 string) {}\n").unwrap_err();
+    assert_eq!(identifier.phase, Phase::Parse);
+    assert_eq!(
+        identifier.cli_display(),
+        "Parse error: syntax error, unexpected identifier \"string\", expecting \")\" in Command line code on line 2"
+    );
+
+    let slash = run_source("<?php\nfunction foo($arg1/) {}\n").unwrap_err();
+    assert_eq!(slash.phase, Phase::Parse);
+    assert_eq!(
+        slash.cli_display(),
+        "Parse error: syntax error, unexpected token \"/\", expecting \")\" in Command line code on line 2"
+    );
+
+    let leading = run_source("<?php\nfoo(,$foo);\n").unwrap_err();
+    assert_eq!(leading.phase, Phase::Parse);
+    assert_eq!(
+        leading.cli_display(),
+        "Parse error: syntax error, unexpected token \",\" in Command line code on line 2"
+    );
+
+    let doubled = run_source("<?php\nfoo($foo,,$bar);\n").unwrap_err();
+    assert_eq!(doubled.phase, Phase::Parse);
+    assert_eq!(
+        doubled.cli_display(),
+        "Parse error: syntax error, unexpected token \",\", expecting \")\" in Command line code on line 2"
+    );
+}
+
+#[test]
+fn trailing_commas_in_call_unset_and_isset_arguments_are_accepted() {
+    let execution = execution(
+        r#"<?php
+function collect(...$args) {
+    var_dump($args);
+}
+
+class InvokableCollector {
+    public function __invoke(...$args) {
+        var_dump($args);
+    }
+}
+
+$left = 1;
+$right = 2;
+$collector = new InvokableCollector();
+collect($left, $right,);
+$collector("call", "object",);
+unset($left, $right,);
+var_dump(isset($left, $right,));
+"#,
+    );
+
+    assert_eq!(
+        execution.stdout,
+        "array(2) {\n  [0]=>\n  int(1)\n  [1]=>\n  int(2)\n}\narray(2) {\n  [0]=>\n  string(4) \"call\"\n  [1]=>\n  string(6) \"object\"\n}\nbool(false)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

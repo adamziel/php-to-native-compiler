@@ -4243,9 +4243,10 @@ behavior.
 
 Dynamic PHP features will be implemented as runtime fallback zones:
 
-- dynamic function calls use runtime lookup; the first implemented slice accepts
-  string-valued callees that resolve to the documented callable builtin subset
-  or user-defined functions
+- dynamic function calls use runtime lookup; the implemented interpreter slice
+  accepts string-valued callees that resolve to the documented callable builtin
+  subset or user-defined functions, supported array-callable values, and
+  object-valued callees with a resolvable public non-static `__invoke`
 - variable variables use materialized symbol tables; current variable-variable
   syntax is rejected with an explicit diagnostic before execution
 - dynamic includes will use runtime include resolution
@@ -5198,8 +5199,10 @@ longer a single parse-only category. The runtime seeds a metadata-only
 constructor state, core accessors, and user classes extending `Exception` use
 the same object metadata table as declared classes. `ErrorException` extends
 that slice with bounded severity, filename, line, and previous constructor
-state. Caught core `Error`/`TypeError`-style objects expose the same bounded
-file/line/previous/trace-string accessor surface. The model still does not
+state. Caught core `Error`/`TypeError`/`ArgumentCountError`-style objects
+expose the same bounded file/line/previous/trace-string accessor surface;
+too-few user-function arguments and arity mismatches for reflected supported
+internals can enter that catchable object path. The model still does not
 provide full `Throwable` interface parity, structured `getTrace()` arrays,
 exact internal stack frames, callable methods on core Throwable subclasses, or
 full unwinding parity.

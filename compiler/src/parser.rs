@@ -436,6 +436,13 @@ impl Parser {
                     span,
                 });
                 if !self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
+                    if !self.check(|kind| matches!(kind, TokenKind::RParen)) {
+                        let token = self.peek();
+                        return Err(self.error_at(
+                            token.span,
+                            syntax_unexpected_token_message(&token.kind, Some(")")),
+                        ));
+                    }
                     break;
                 }
                 if self.check(|kind| matches!(kind, TokenKind::RParen)) {
@@ -3929,6 +3936,9 @@ impl Parser {
         loop {
             targets.push(self.parse_unset_target()?);
             if !self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
+                break;
+            }
+            if self.check(|kind| matches!(kind, TokenKind::RParen)) {
                 break;
             }
         }
@@ -8712,6 +8722,13 @@ impl Parser {
         let mut args = Vec::new();
         if !self.check(|kind| matches!(kind, TokenKind::RParen)) {
             loop {
+                if self.check(|kind| matches!(kind, TokenKind::Comma)) {
+                    let token = self.peek();
+                    return Err(self.error_at(
+                        token.span,
+                        syntax_unexpected_token_message(&token.kind, None),
+                    ));
+                }
                 self.reject_unsupported_call_argument_syntax()?;
                 args.push(self.parse_call_argument_after_open()?);
                 if !self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
@@ -8719,6 +8736,13 @@ impl Parser {
                 }
                 if self.check(|kind| matches!(kind, TokenKind::RParen)) {
                     break;
+                }
+                if self.check(|kind| matches!(kind, TokenKind::Comma)) {
+                    let token = self.peek();
+                    return Err(self.error_at(
+                        token.span,
+                        syntax_unexpected_token_message(&token.kind, Some(")")),
+                    ));
                 }
             }
         }
@@ -10439,6 +10463,17 @@ fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::Greater => ">",
         TokenKind::GreaterEqual => ">=",
         TokenKind::RightShift => ">>",
+    }
+}
+
+fn syntax_unexpected_token_message(kind: &TokenKind, expecting: Option<&str>) -> String {
+    let token = match kind {
+        TokenKind::Identifier(name) => format!("identifier \"{name}\""),
+        _ => format!("token \"{}\"", token_name(kind)),
+    };
+    match expecting {
+        Some(expected) => format!("syntax error, unexpected {token}, expecting \"{expected}\""),
+        None => format!("syntax error, unexpected {token}"),
     }
 }
 

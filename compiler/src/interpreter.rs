@@ -78340,7 +78340,20 @@ impl Interpreter {
                 );
             }
             Value::Object(object) => {
-                return Err(object_not_callable_error(object.class_name(), span));
+                if self
+                    .resolve_instance_method(object.class_id(), "__invoke")
+                    .is_none()
+                {
+                    return Err(object_not_callable_error(object.class_name(), span));
+                }
+                let callback = invokable_object_callback(object);
+                return self.call_user_func_array_callable_direct(
+                    &callback,
+                    args,
+                    span,
+                    caller_scope,
+                    "dynamic function call",
+                );
             }
             other => {
                 return Err(runtime_error(
@@ -78421,7 +78434,22 @@ impl Interpreter {
                     caller_scope,
                     "dynamic function call",
                 ),
-            Value::Object(object) => Err(object_not_callable_error(object.class_name(), span)),
+            Value::Object(object) => {
+                if self
+                    .resolve_instance_method(object.class_id(), "__invoke")
+                    .is_none()
+                {
+                    return Err(object_not_callable_error(object.class_name(), span));
+                }
+                let callback = invokable_object_callback(object);
+                self.call_user_func_array_callable_direct_with_array_copy_source(
+                    &callback,
+                    args,
+                    span,
+                    caller_scope,
+                    "dynamic function call",
+                )
+            }
             other => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -133515,7 +133543,12 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_int_param("mode", 0),
             ],
         ),
-        "array_diff_assoc" | "array_intersect_assoc" => (
+        "array_diff"
+        | "array_intersect"
+        | "array_diff_key"
+        | "array_intersect_key"
+        | "array_diff_assoc"
+        | "array_intersect_assoc" => (
             "array",
             vec![
                 reflection_internal_param("array", "array"),
@@ -138683,7 +138716,11 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
     }
 
     if let Some(message) = user_function_too_few_arguments_message(error) {
-        return Some(("TypeError", message));
+        return Some(("ArgumentCountError", message));
+    }
+
+    if let Some(message) = internal_function_argument_count_error_message(error) {
+        return Some(("ArgumentCountError", message));
     }
 
     if let Some(message) = return_type_error_message(error) {
@@ -140086,6 +140123,67 @@ fn user_function_too_few_arguments_message(error: &Diagnostic) -> Option<String>
         "Too few arguments to function {callable}, {actual} passed in {source} on line {} and exactly {expected} expected",
         error.line
     ))
+}
+
+fn internal_function_argument_count_error_message(error: &Diagnostic) -> Option<String> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+
+    let rest = error.message.strip_prefix("arity mismatch for ")?;
+    let (callable, expectation) = rest.split_once(": expected ")?;
+    let (expected, actual) = expectation.split_once(" argument(s), got ")?;
+    let actual = actual.parse::<usize>().ok()?;
+    let function_name = callable.strip_suffix("()")?;
+    if reflection_internal_function_state(function_name).is_none() {
+        return None;
+    }
+
+    if let Some((min, max)) = expected.split_once(" to ") {
+        let min = min.parse::<usize>().ok()?;
+        let max = max.parse::<usize>().ok()?;
+        if actual < min {
+            return Some(format!(
+                "{callable} expects at least {min} {}, {actual} given",
+                argument_noun(min)
+            ));
+        }
+        if actual > max {
+            return Some(format!(
+                "{callable} expects at most {max} {}, {actual} given",
+                argument_noun(max)
+            ));
+        }
+        return None;
+    }
+
+    if let Some(min) = expected.strip_prefix("at least ") {
+        let min = min.parse::<usize>().ok()?;
+        if actual < min {
+            return Some(format!(
+                "{callable} expects at least {min} {}, {actual} given",
+                argument_noun(min)
+            ));
+        }
+        return None;
+    }
+
+    let expected = expected.parse::<usize>().ok()?;
+    if actual != expected {
+        return Some(format!(
+            "{callable} expects exactly {expected} {}, {actual} given",
+            argument_noun(expected)
+        ));
+    }
+    None
+}
+
+fn argument_noun(count: usize) -> &'static str {
+    if count == 1 {
+        "argument"
+    } else {
+        "arguments"
+    }
 }
 
 fn reflection_constructor_too_few_arguments_message(error: &Diagnostic) -> Option<String> {
@@ -143824,6 +143922,17 @@ fn php_array_from_strings(values: impl IntoIterator<Item = String>) -> PhpArray 
         let _ = array.append(Value::String(value));
     }
     array
+}
+
+fn invokable_object_callback(object: PhpObject) -> PhpArray {
+    let mut callback = PhpArray::new();
+    callback
+        .append(Value::Object(object))
+        .expect("fresh callback array accepts first automatic key");
+    callback
+        .append(Value::String("__invoke".to_string()))
+        .expect("fresh callback array accepts second automatic key");
+    callback
 }
 
 fn glob_pattern_argument(value: &Value, span: Span) -> CompileResult<String> {
