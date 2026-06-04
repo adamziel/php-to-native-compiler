@@ -1,6 +1,6 @@
 # PHP Native Compiler PHPT Progress
 
-Updated: 2026-06-04 21:58 CEST
+Updated: 2026-06-04 23:03 CEST
 
 Primary/public branch: `origin/master`
 Latest accepted public-score source:
@@ -19,7 +19,7 @@ denominators that exclude BORKED rows are not public progress.
 Current public score: **7873 / 20294 pinned runnable PHPTs = 38.79%**.
 
 Latest pushed source checkpoint:
-`2498ca42530bd8b7693ec852ec403e994936f9db fix: support enum generated methods`
+`ac0c019764ce7b9469ed2b87811fa55481849ea9 fix: support function argument diagnostics`
 
 Current score-gate status:
 Accepted public gate:
@@ -32,30 +32,32 @@ the accepted `6c038019` PASS baseline. It reported public-comparable
 `7873 / 20294 = 38.79%`, `7869` normalized current passes, `0`
 latest-published PASS regressions, and `0` invalid proof-marker hits. This
 gate converts the post-`6c038019` source chain through `0b917f67` into public
-PHPT progress. Newer source commits through `2498ca42` are staged after this
+PHPT progress. Newer source commits through `ac0c0197` are staged after this
 accepted public source and are not included in the public score above.
 
 Latest non-public full gate:
-`state/logs/phpt-full-current-score-20260604T194852Z-php-src-f97ff59-public-4cbea350-source-4cbea350`
-is `FINAL / RUNNER-ERROR` for docs checkpoint `4cbea350`, whose
-score-relevant source was `f060ab5d`, against the accepted `0b917f67` PASS
-baseline. It reached sharded PHPT, but all 12 shard exits were `143`,
-`runner.stderr.log` contained twelve `Terminated` lines, the runner did not
-write `signal-events.tsv`, and the evidence directory had no aggregate,
-current-pass, or latest-published PASS-regression summary artifacts. Current
-source later advanced to `2498ca42`. This gate does not authorize a public
-score change or publish source commits after `0b917f67`.
+`state/logs/phpt-full-current-score-20260604T205049Z-php-src-f97ff59-public-eab7db21-source-eab7db21`
+is `FINAL / RUNNER-INTERRUPTED-TERM` for source `eab7db21` against the
+accepted `0b917f67` PASS baseline. The repaired runner captured
+`signal-events.tsv`, shard signal events, and shard exit codes; all 12 shard
+exits were `143` after TERM. It produced no accepted aggregate current-pass or
+latest-published PASS-regression publication artifacts. Current source later
+advanced to `ac0c0197`. This gate does not authorize a public score change or
+publish source commits after `0b917f67`.
 
-Recent non-public gate history: the `4cbea350` runner-error gate with shard
-TERM exits, the `86dff250` TERM-interrupted gate, the
-`fe9d080a` HUP-interrupted gate, the
-`aaf4376f` gates at `180344Z` and
-`181724Z`, plus the `a1d98e14`, `24448fcf`, `4e26d128`, `48738670`,
-`1f981cb8`, `75c29966`, `99b183cc`, and `31656671` full gates aborted or were
-interrupted and were not publication evidence; the `d978106e` gate completed
-with four latest-published PASS regressions. The DatePeriod and
-property-override regression rows from that blocked gate are repaired in the
-now-published `0b917f67` chain.
+Recent non-public gate history: the `6bca3d9c` gate at `203538Z` also ended
+`FINAL / RUNNER-INTERRUPTED-TERM` with all 12 shard exits at `143` and signal
+artifacts, and the `4cbea350` gate at `194852Z` ended
+`FINAL / RUNNER-ERROR` with all 12 shard exits at `143`, no
+`signal-events.tsv`, and no aggregate/current-pass/latest-published
+PASS-regression artifacts. Earlier `86dff250` TERM-interrupted,
+`fe9d080a` HUP-interrupted, `aaf4376f` `180344Z` / `181724Z`, `a1d98e14`,
+`24448fcf`, `4e26d128`, `48738670`, `1f981cb8`, `75c29966`, `99b183cc`, and
+`31656671` full gates also aborted or were interrupted and were not
+publication evidence; the `d978106e` gate completed with four
+latest-published PASS regressions. The DatePeriod and property-override
+regression rows from that blocked gate are repaired in the now-published
+`0b917f67` chain.
 
 The previous accepted full gate for source `e3813529`:
 `state/logs/phpt-full-current-score-20260604T103438Z-php-src-f97ff59-public-e3813529-source-e3813529`
@@ -105,10 +107,10 @@ passes, with zero latest-published PASS regressions.
 
 Unpublished source progress since the accepted public score source:
 
-- Latest pushed source head is `2498ca42530bd8b7693ec852ec403e994936f9db`
-  (`fix: support enum generated methods`), which is newer than the
+- Latest pushed source head is `ac0c019764ce7b9469ed2b87811fa55481849ea9`
+  (`fix: support function argument diagnostics`), which is newer than the
   accepted `0b917f67` full gate and is not included in the public score above.
-- There are `20` score-relevant source commits after the accepted public-score
+- There are `24` score-relevant source commits after the accepted public-score
   source: `88071e97e22d6b840ab9ebbc248a67a55e5b6926`
   (`fix: reject invalid property hooks`),
   `1b3c4f4dad1eef590cfec69504dd16c4e55e0743`
@@ -146,11 +148,19 @@ Unpublished source progress since the accepted public score source:
   `087e3ad3ff8005ae07b73ca528749c1066d8efff`
   (`fix: support class-order autoload variance`),
   `f060ab5d959f4ab00d70ecc41b1b9f104bc20b45`
-  (`fix: handle bcmath number invalid operands`), and
+  (`fix: handle bcmath number invalid operands`),
   `2498ca42530bd8b7693ec852ec403e994936f9db`
-  (`fix: support enum generated methods`).
+  (`fix: support enum generated methods`),
+  `380cb8b8452cfdcf45ac570d264e32a8c715b172`
+  (`fix: support json throw core edges`),
+  `6bca3d9c554cc80fd8088cadee2d057e8b2274a9`
+  (`fix: support password bcrypt helpers`),
+  `eab7db21e00e706eca24aec5598254aa6d1fd3b0`
+  (`fix: support html entity encoding edges`), and
+  `ac0c019764ce7b9469ed2b87811fa55481849ea9`
+  (`fix: support function argument diagnostics`).
 - Staged focused selected-PHPT proof after the latest accepted public-score
-  source totals `289` selected rows across `22` integrated source artifacts.
+  source totals `333` selected rows across `27` integrated status artifacts.
   These are source/staging facts, not a public score update unless a full
   pinned PHPT gate accepts them.
 - The staged packets are property-hook diagnostics `0/16 -> 16/16`, GMP
@@ -167,21 +177,20 @@ Unpublished source progress since the accepted public score source:
   enum reflection metadata `0/14 -> 14/14`, class-order autoload variance
   `0/14 -> 14/14` with the unsupported nested-interface
   `class_order_autoload4.phpt` row still excluded from that selected packet,
-  BcMath Number invalid operand/coercion rows `0/12 -> 12/12`, and enum
-  generated method/property rows `1/16 -> 16/16` with direct selected movement
-  `+15`.
+  BcMath Number invalid operand/coercion rows `0/12 -> 12/12`, enum generated
+  method/property rows `1/16 -> 16/16` with direct selected movement `+15`,
+  JSON throw/core-edge rows `0/11 -> 11/11`, password/bcrypt helper rows
+  `0/12 -> 12/12`, HTML entity encoding rows `0/11 -> 11/11`, and
+  function-argument diagnostics rows `0/10 -> 10/10`.
   They preserved latest-published PASS scouts in the accepted integration
   artifacts and passed focused Rust, build, fmt, diff, php-src cleanliness, and
   production row-name leakage checks.
-- Outstanding publication blocker: the latest `4cbea350` full gate is
-  `FINAL / RUNNER-ERROR` with all shard exits at `143`, no
-  `signal-events.tsv`, and no aggregate current-pass or latest-published
-  PASS-regression summary artifacts. It was launched after the TERM
-  diagnostics/launch guard repair and could only have accepted
-  source through `f060ab5d`; the later `2498ca42` enum source packet landed
-  after that launch. No full gate has accepted `f060ab5d` or `2498ca42`, and
-  no staged source after `0b917f67` can move the public score unless a fresh
-  full pinned PHPT gate completes with zero latest-published PASS regressions.
+- Outstanding publication blocker: cadence reports `SCORE-GATE-BLOCKED-DISK`
+  with disk below the 35 GiB floor after the `eab7db21` full gate ended
+  `FINAL / RUNNER-INTERRUPTED-TERM`. No full gate has accepted staged source
+  after `0b917f67`, and no staged source can move the public score unless a
+  fresh/current full pinned PHPT gate completes with zero latest-published
+  PASS regressions.
 
 Accepted source proof included in the `0b917f67` public gate:
 
