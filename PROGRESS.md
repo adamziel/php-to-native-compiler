@@ -1,13 +1,13 @@
 # PHP Native Compiler PHPT Progress
 
-Updated: 2026-06-04 12:04 CEST
+Updated: 2026-06-04 12:50 CEST
 
 Primary/public branch: `origin/master`
 Latest accepted public-score source:
-`dcf615c99b27b8e809423e24ae8f6004174e1945 fix: prefer callStatic for missing static callables`
+`e38135290f48e7f97dec2e99e673c6466a950f3e fix: implement trait constant semantics`
 
 Semantic source for current published score:
-`dcf615c99b27b8e809423e24ae8f6004174e1945 fix: prefer callStatic for missing static callables`
+`e38135290f48e7f97dec2e99e673c6466a950f3e fix: implement trait constant semantics`
 
 Public PHPT metric:
 
@@ -16,46 +16,43 @@ Public PHPT metric:
 Pinned denominator: `20294` total pinned runnable php-src PHPTs. Raw runner
 denominators that exclude BORKED rows are not public progress.
 
-Current public score: **7636 / 20294 pinned runnable PHPTs = 37.63%**.
+Current public score: **7685 / 20294 pinned runnable PHPTs = 37.87%**.
 
 Latest pushed source checkpoint:
-`d52967f40f2b6d186b2caaa47bf3ab85ac0ed8e9 fix: implement bcmath number semantics`
+`6c03801927f71f7c43fb7200dbdc37542a2ad8e9 fix: handle overloaded property updates`
 
 Current score-gate status:
-The latest accepted full gate for source `dcf615c9`:
+The latest accepted full gate for source `e3813529`:
+`state/logs/phpt-full-current-score-20260604T103438Z-php-src-f97ff59-public-e3813529-source-e3813529`
+completed `FINAL / GATE-AGGREGATE-COMPLETE / ZERO-PASS-REGRESSIONS` against
+the accepted `dcf615c9` PASS baseline. It reported public-comparable
+`7685 / 20294 = 37.87%`, `7681` normalized current passes, `0`
+latest-published PASS regressions, and `0` invalid proof-marker hits. This
+gate converts the post-`dcf615c9` source chain through `e3813529` into public
+PHPT progress. Newer source `6c038019` is staged after this accepted public
+source and is not included in the public score above.
+
+The previous accepted full gate for source `dcf615c9`:
 `state/logs/phpt-full-current-score-20260604T095029Z-php-src-f97ff59-public-dcf615c9-source-dcf615c9`
 completed `FINAL / GATE-AGGREGATE-COMPLETE / ZERO-PASS-REGRESSIONS` against
 the accepted `0086ba77` PASS baseline. It reported public-comparable
 `7636 / 20294 = 37.63%`, `7632` normalized current passes, `0`
 latest-published PASS regressions, and `0` invalid proof-marker hits. This
 gate converts the post-`0086ba77` source chain through `dcf615c9` into public
-PHPT progress. Newer source `d52967f4` is staged after this accepted public
-source and is not included in the public score above.
+PHPT progress.
 
-The latest finalized full gate for source `a3889f45`:
-`state/logs/phpt-full-current-score-20260604T083545Z-php-src-f97ff59-public-a3889f45-source-a3889f45`
-completed `FINAL / BLOCKED-PASS-REGRESSIONS` against the accepted `0086ba77`
-PASS baseline. It reported public-comparable `7602 / 20294 = 37.46%` and
-`7598` normalized current passes, but it is not publication evidence because it
-has `2` latest-published PASS regressions:
-`php-src/Zend/tests/abstract_implicit.phpt` and
-`php-src/Zend/tests/dynamic_call/dynamic_call_non_static.phpt`. That gate does
-not include newer source `1b1e9b0d`, `e340aa0b`, `593c0625`, or `bc8172b0`.
-Both historical blockers from that finalized gate now have selected repair
-proof: `dynamic_call_non_static.phpt` at source `e340aa0b`, and
-`abstract_implicit.phpt` at source `593c0625`. The earlier replacement full
-gate for source `6b0952e0` completed `FINAL / BLOCKED-PASS-REGRESSIONS` with
-one latest-published PASS regression,
-`php-src/Zend/tests/typehints/namespace_relative_scalar.phpt`; that row has
-selected repair proof at source `a3889f45`, but the blocked `6b0952e0` gate
-cannot be published. The older `6b0952e0` gate ended
-`FINAL / GATE-INCOMPLETE-NO-EXIT-MARKERS / NOT-PUBLICATION-EVIDENCE`, the
-previous `f13e45f4` gate also ended incomplete with no exit markers, and the
-previous `daee77c1` gate completed with a broken aggregate caused by
-shard-directory naming mismatch.
+Historical blocked full gates from before the `dcf615c9` publication included
+`593c0625` with four latest-published PASS regressions, `a3889f45` with two,
+and `6b0952e0` with one. Those blocked gates are not publication evidence, and
+the later clean `dcf615c9` and `e3813529` gates supersede them for the current
+public score.
 
-The accepted source checkpoint chain through semantic source `dcf615c9` has
+The accepted source checkpoint chain through semantic source `e3813529` has
 been pushed to `origin/master` and is now reflected in the public score above.
+The completed score gate at checkpoint `e3813529` converted the
+post-`dcf615c9` source chain into a public PHPT movement of `7636 -> 7685`
+passed pinned rows, a net gain of `49` public PHPT passes, with zero
+latest-published PASS regressions.
 The completed score gate at checkpoint `dcf615c9` converted the
 post-`0086ba77` source chain into a public PHPT movement of `7376 -> 7636`
 passed pinned rows, a net gain of `260` public PHPT passes, with zero
@@ -66,16 +63,43 @@ passes, with zero latest-published PASS regressions.
 
 Unpublished source progress since the accepted public score source:
 
-- Latest pushed source head is `d52967f40f2b6d186b2caaa47bf3ab85ac0ed8e9`
-  (`fix: implement bcmath number semantics`), which is newer than the
-  accepted `dcf615c9` full gate and is not included in the public score above.
+- Latest pushed source head is `6c03801927f71f7c43fb7200dbdc37542a2ad8e9`
+  (`fix: handle overloaded property updates`), which is newer than the
+  accepted `e3813529` full gate and is not included in the public score above.
 - There is `1` score-relevant source commit after the accepted public-score
-  source: `d52967f40f2b6d186b2caaa47bf3ab85ac0ed8e9`
-  (`fix: implement bcmath number semantics`).
+  source: `6c03801927f71f7c43fb7200dbdc37542a2ad8e9`
+  (`fix: handle overloaded property updates`).
 - Staged focused selected-PHPT proof after the latest accepted public-score
-  source totals `12` selected rows across `1` integrated source artifact.
+  source totals `17` selected rows across `1` integrated source artifact.
   These are source/staging facts, not a public score update unless a full
   pinned PHPT gate accepts them.
+- The overloaded-property update packet moved selected PHPT `0/17 -> 17/17`
+  for `Zend/tests/magic_methods/bug30394.phpt`,
+  `Zend/tests/magic_methods/bug30889.phpt`,
+  `Zend/tests/magic_methods/bug37667.phpt`,
+  `Zend/tests/magic_methods/bug39775.phpt`,
+  `Zend/tests/magic_methods/bug66609.phpt`,
+  `Zend/tests/magic_methods/bug70223.phpt`,
+  `Zend/tests/magic_methods/overloaded_prop_assign_op_refs.phpt`,
+  `Zend/tests/bug69201.phpt`,
+  `Zend/tests/exceptions/exception_during_property_assign_op.phpt`,
+  `Zend/tests/throwing_overloaded_compound_assign_op.phpt`,
+  `tests/classes/__set__get_001.phpt`,
+  `tests/classes/assign_op_property_001.phpt`,
+  `tests/classes/incdec_property_001.phpt`,
+  `tests/classes/incdec_property_002.phpt`,
+  `tests/classes/incdec_property_003.phpt`,
+  `tests/classes/incdec_property_004.phpt`, and
+  `tests/lang/operators/overloaded_property_ref.phpt`. It also preserved the
+  latest-published PASS scout `8/8`, passed focused Rust object-model
+  coverage, build, fmt, diff checks, php-src cleanliness, and production
+  row-name leakage scan.
+
+Accepted source proof included in the `e3813529` public gate:
+
+- The now-published `dcf615c9..e3813529` source chain carried `44` focused
+  selected rows across `3` integrated source artifacts before the clean full
+  gate accepted it.
 - The BcMath Number packet moved selected PHPT `0/12 -> 12/12` for
   `ext/bcmath/tests/gh16262.phpt`, `ext/bcmath/tests/gh20006.phpt`,
   `ext/bcmath/tests/number/class_extends_error.phpt`,
@@ -92,6 +116,27 @@ Unpublished source progress since the accepted public score source:
   longer-timeout `bug60598.phpt` pass, passed focused Rust BcMath coverage,
   build, fmt, diff checks, php-src cleanliness, and production row-name
   leakage scan.
+- The PCRE diagnostics/callback-array packet moved selected PHPT
+  `0/16 -> 16/16` for `ext/pcre/tests/delimiters.phpt`,
+  `errors01.phpt`, `errors02.phpt`, `errors03.phpt`, `errors06.phpt`,
+  `null_bytes.phpt`, `pcre_extra.phpt`, `grep2.phpt`, `split.phpt`,
+  `match_flags2.phpt`, `match_flags3.phpt`, `preg_match_non_capture.phpt`,
+  `preg_match_all_error3.phpt`, `preg_replace_callback_array2.phpt`,
+  `preg_replace_callback_array_fatal_error.phpt`, and
+  `preg_replace_callback_array_numeric_index_error.phpt`. It also preserved
+  the latest-published PASS scout `8/8`, passed focused Rust PCRE diagnostics
+  coverage, build, fmt, diff checks, php-src cleanliness, and production
+  row-name leakage scan.
+- The trait constant packet moved selected PHPT `0/16 -> 16/16` for
+  `Zend/tests/traits/constant_001.phpt`, `constant_002.phpt`,
+  `constant_004.phpt`, `constant_005.phpt`, `constant_006.phpt`,
+  `constant_007.phpt`, `constant_008.phpt`, `constant_009.phpt`,
+  `constant_010.phpt`, `constant_011.phpt`, `constant_012.phpt`,
+  `constant_013.phpt`, `constant_014.phpt`, `constant_015.phpt`,
+  `constant_016.phpt`, and `constant_018.phpt`. It also preserved the
+  latest-published PASS scout `8/8`, passed focused Rust trait-constant
+  coverage, an adjacent parser-boundary guard, build, fmt, diff checks,
+  php-src cleanliness, and production row-name leakage scan.
 
 Accepted source proof included in the `dcf615c9` public gate:
 
@@ -780,17 +825,17 @@ regressions.
 
 ## Current Public Gate
 
-Published gate: current score gate `dcf615c9`.
+Published gate: current score gate `e3813529`.
 
 - Gate run:
-  `phpt-full-current-score-20260604T095029Z-php-src-f97ff59-public-dcf615c9-source-dcf615c9`
-- Source: `dcf615c99b27b8e809423e24ae8f6004174e1945 fix: prefer callStatic for missing static callables`
-- Score: **7636 / 20294 pinned runnable PHPTs = 37.63%**
+  `phpt-full-current-score-20260604T103438Z-php-src-f97ff59-public-e3813529-source-e3813529`
+- Source: `e38135290f48e7f97dec2e99e673c6466a950f3e fix: implement trait constant semantics`
+- Score: **7685 / 20294 pinned runnable PHPTs = 37.87%**
 - Regression result: zero latest-published PASS regressions against the
-  `0086ba77` PASS baseline.
-- Gate notes: the aggregate had `7636` public-comparable passes, `7632`
+  `dcf615c9` PASS baseline.
+- Gate notes: the aggregate had `7685` public-comparable passes, `7681`
   normalized current passes, `0` PASS regressions, and `0` invalid
-  proof-marker hits. Newer source `d52967f4` is staged after this accepted
+  proof-marker hits. Newer source `6c038019` is staged after this accepted
   gate and awaits a future full pinned PHPT gate.
 
 No focused PHPT run, source checkpoint, status note, PR, or candidate gate
