@@ -529,6 +529,11 @@ struct Interpreter {
     error_control_suppression_depth: usize,
     ignore_user_abort: bool,
     ini_values: HashMap<String, String>,
+    assert_active: bool,
+    assert_warning: bool,
+    assert_bail: bool,
+    assert_exception: bool,
+    assert_callback: Value,
     opcache_file_cache_paths: HashSet<String>,
     error_handlers: Vec<ErrorHandlerRegistration>,
     error_handler_active: bool,
@@ -11921,6 +11926,11 @@ impl Interpreter {
             .and_then(|value| parse_ini_error_reporting_mask(value))
             .map(normalize_initial_error_reporting_mask)
             .unwrap_or(PHP_E_ALL);
+        let assert_active = assert_ini_bool(&ini_values, "assert.active", true);
+        let assert_warning = assert_ini_bool(&ini_values, "assert.warning", true);
+        let assert_bail = assert_ini_bool(&ini_values, "assert.bail", false);
+        let assert_exception = assert_ini_bool(&ini_values, "assert.exception", true);
+        let assert_callback = assert_callback_from_ini_values(&ini_values);
         let session_cache_limiter = session_cache_limiter_from_ini_values(&ini_values);
         let session_cache_expire = session_cache_expire_from_ini_values(&ini_values);
 
@@ -11965,6 +11975,11 @@ impl Interpreter {
             error_control_suppression_depth: 0,
             ignore_user_abort: false,
             ini_values,
+            assert_active,
+            assert_warning,
+            assert_bail,
+            assert_exception,
+            assert_callback,
             opcache_file_cache_paths: HashSet::new(),
             error_handlers: Vec::new(),
             error_handler_active: false,
@@ -12091,6 +12106,7 @@ impl Interpreter {
         if let Some(message) = timezone_startup_warning {
             interpreter.emit_startup_warning(message);
         }
+        interpreter.emit_assert_startup_deprecations();
         interpreter.seed_main_source_directory_realpath_cache();
         interpreter.uploaded_file_paths =
             uploaded_file_paths_from_metadata_pairs(options.upload_files.as_deref().unwrap_or(""));
@@ -26976,6 +26992,37 @@ impl Interpreter {
         ));
     }
 
+    fn emit_startup_deprecated(&mut self, message: impl AsRef<str>) {
+        if self.error_reporting_mask & PHP_E_DEPRECATED == 0 {
+            return;
+        }
+        if !self.stdout.is_empty()
+            || self
+                .output_buffers
+                .iter()
+                .any(|buffer| !buffer.contents.is_empty())
+        {
+            self.append_output("\n");
+        }
+        self.append_output(&format!(
+            "Deprecated: PHP Startup: {} in Unknown on line 0\n",
+            message.as_ref()
+        ));
+    }
+
+    fn emit_assert_startup_deprecations(&mut self) {
+        for name in [
+            "assert.active",
+            "assert.warning",
+            "assert.callback",
+            "assert.exception",
+        ] {
+            if assert_startup_ini_setting_is_deprecated(name, &self.ini_values) {
+                self.emit_startup_deprecated(format!("{name} INI setting is deprecated"));
+            }
+        }
+    }
+
     fn with_error_control_suppression<T>(
         &mut self,
         evaluate: impl FnOnce(&mut Self) -> CompileResult<T>,
@@ -27648,7 +27695,7 @@ impl Interpreter {
         args: Vec<Value>,
         span: Span,
     ) -> CompileResult<Value> {
-        let Some((target, method_name)) = array_callable_parts(callback) else {
+        let Some((target, method_name)) = array_callable_parts_cloned(callback) else {
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -27660,14 +27707,15 @@ impl Interpreter {
 
         match target {
             Value::Object(object) => {
+                let called_class_id = object.class_id();
                 let receiver_class_name = self
                     .classes
-                    .get(object.class_id())
+                    .get(called_class_id)
                     .expect("object class id should resolve to class metadata")
                     .name()
                     .to_string();
                 let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
-                    self.resolve_instance_method(object.class_id(), method_name)
+                    self.resolve_instance_method(called_class_id, &method_name)
                 else {
                     return Err(runtime_error(
                         span,
@@ -27676,15 +27724,6 @@ impl Interpreter {
                         )),
                     ));
                 };
-                if is_static {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            format!("{class_name}::{method_name}()"),
-                            "static method dispatch through object error handlers is not implemented",
-                        ),
-                    ));
-                }
                 if visibility != Visibility::Public {
                     return Err(runtime_error(
                         span,
@@ -27702,19 +27741,20 @@ impl Interpreter {
                 ensure_user_function_arity(function, args.len(), span)?;
                 ensure_supported_function_signature(function, args.len(), span)?;
                 self.ensure_user_function_call_depth(function, span)?;
+                let this_object = if is_static { None } else { Some(object) };
                 self.call_error_handler_user_function_with_checked_values(
                     function,
                     args,
                     span,
-                    Some(object.clone()),
+                    this_object,
                     Some(class_id),
-                    Some(object.class_id()),
+                    Some(called_class_id),
                     Vec::new(),
                 )
             }
             Value::String(class_name) => {
-                let class_id = self.classes.lookup_class_id(class_name).ok_or_else(|| {
-                    runtime_error(span, RuntimeError::undefined_class(class_name))
+                let class_id = self.classes.lookup_class_id(&class_name).ok_or_else(|| {
+                    runtime_error(span, RuntimeError::undefined_class(&class_name))
                 })?;
                 let receiver_class = self
                     .classes
@@ -27726,7 +27766,7 @@ impl Interpreter {
                     resolved_method_name,
                     visibility,
                     is_static,
-                )) = self.resolve_instance_method(class_id, method_name)
+                )) = self.resolve_instance_method(class_id, &method_name)
                 else {
                     return Err(runtime_error(
                         span,
@@ -48042,6 +48082,23 @@ impl Interpreter {
                 "Deprecated",
                 PHP_E_DEPRECATED,
                 format!("Constant {name} is deprecated since 8.1, use htmlspecialchars() instead"),
+                span,
+            )?;
+        }
+        if matches!(
+            name,
+            "ASSERT_ACTIVE"
+                | "ASSERT_CALLBACK"
+                | "ASSERT_BAIL"
+                | "ASSERT_WARNING"
+                | "ASSERT_EXCEPTION"
+        ) {
+            self.emit_display_diagnostic(
+                "Deprecated",
+                PHP_E_DEPRECATED,
+                format!(
+                    "Constant {name} is deprecated since 8.3, as assert_options() is deprecated"
+                ),
                 span,
             )?;
         }
@@ -71519,6 +71576,9 @@ impl Interpreter {
                 if key == "is_callable" {
                     return self.call_is_callable_direct(args, span, caller_scope);
                 }
+                if key == "assert" {
+                    return self.call_assert_direct(args, span, caller_scope);
+                }
                 let values = self.evaluate_builtin_value_call_arguments(
                     &key,
                     &callable_name(name),
@@ -71744,6 +71804,9 @@ impl Interpreter {
                 }
                 if key == "is_callable" {
                     return self.call_is_callable_direct(args, span, caller_scope);
+                }
+                if key == "assert" {
+                    return self.call_assert_direct(args, span, caller_scope);
                 }
                 let values = self.evaluate_builtin_value_call_arguments(
                     &key,
@@ -72705,6 +72768,273 @@ impl Interpreter {
         values.extend(variadic_values);
 
         Ok(values)
+    }
+
+    fn call_assert_direct(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "assert()",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let values =
+            self.evaluate_builtin_value_call_arguments("assert", "assert()", args, caller_scope)?;
+        if self.exit_signal.is_some() {
+            return Ok(Value::Null);
+        }
+        let source = args
+            .first()
+            .map(assertion_expr_source)
+            .map(|expr| format!("assert({expr})"));
+        self.call_assert_values(&values, span, source)
+    }
+
+    fn call_assert_values(
+        &mut self,
+        args: &[Value],
+        span: Span,
+        source: Option<String>,
+    ) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "assert()",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let message = self.assert_failure_message(args, source, span)?;
+        if !self.zend_assertions_enabled() || !self.assert_active || args[0].is_truthy() {
+            return Ok(Value::Bool(true));
+        }
+
+        self.call_assert_callback(&message, span)?;
+
+        if self.assert_warning {
+            if message == "Assertion failed" {
+                self.emit_display_warning("assert(): Assertion failed", span)?;
+            } else {
+                self.emit_display_warning(format!("assert(): {message} failed"), span)?;
+            }
+        }
+
+        if self.assert_bail {
+            self.exit_signal = Some(255);
+            return Ok(Value::Bool(false));
+        }
+
+        if self.assert_exception {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "assert()",
+                    "AssertionError exceptions are not implemented in the current subset",
+                ),
+            ));
+        }
+
+        Ok(Value::Bool(false))
+    }
+
+    fn assert_failure_message(
+        &self,
+        args: &[Value],
+        source: Option<String>,
+        span: Span,
+    ) -> CompileResult<String> {
+        match args.get(1) {
+            None => Ok(source.unwrap_or_else(|| "Assertion failed".to_string())),
+            Some(Value::Null) => Ok("Assertion failed".to_string()),
+            Some(
+                Value::Bool(_)
+                | Value::Int(_)
+                | Value::Float(_)
+                | Value::String(_)
+                | Value::BinaryString(_),
+            ) => Ok(args[1].echo_string()),
+            Some(other) => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "assert()",
+                    format!(
+                        "description argument must be null, bool, int, float, or string in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
+    }
+
+    fn call_assert_options(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "assert_options()",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+        self.emit_display_diagnostic(
+            "Deprecated",
+            PHP_E_DEPRECATED,
+            "Function assert_options() is deprecated since 8.3",
+            span,
+        )?;
+
+        let Value::Int(option) = args[0] else {
+            return Err(assert_options_value_error(span));
+        };
+        let previous = self.assert_option_value(option, span)?;
+        if let Some(value) = args.get(1) {
+            self.set_assert_option_value(option, value.clone(), span)?;
+        }
+        Ok(previous)
+    }
+
+    fn assert_option_value(&self, option: i64, span: Span) -> CompileResult<Value> {
+        match option {
+            PHP_ASSERT_ACTIVE => Ok(Value::Int(self.assert_active as i64)),
+            PHP_ASSERT_WARNING => Ok(Value::Int(self.assert_warning as i64)),
+            PHP_ASSERT_BAIL => Ok(Value::Int(self.assert_bail as i64)),
+            PHP_ASSERT_CALLBACK => Ok(self.assert_callback.clone()),
+            PHP_ASSERT_EXCEPTION => Ok(Value::Int(self.assert_exception as i64)),
+            _ => Err(assert_options_value_error(span)),
+        }
+    }
+
+    fn set_assert_option_value(
+        &mut self,
+        option: i64,
+        value: Value,
+        span: Span,
+    ) -> CompileResult<()> {
+        match option {
+            PHP_ASSERT_ACTIVE => self.assert_active = value.is_truthy(),
+            PHP_ASSERT_WARNING => self.assert_warning = value.is_truthy(),
+            PHP_ASSERT_BAIL => self.assert_bail = value.is_truthy(),
+            PHP_ASSERT_CALLBACK => self.assert_callback = value,
+            PHP_ASSERT_EXCEPTION => self.assert_exception = value.is_truthy(),
+            _ => return Err(assert_options_value_error(span)),
+        }
+        Ok(())
+    }
+
+    fn zend_assertions_enabled(&self) -> bool {
+        self.ini_value("zend.assertions")
+            .as_deref()
+            .and_then(parse_ini_i64_prefix)
+            .unwrap_or(1)
+            != 0
+    }
+
+    fn call_assert_callback(&mut self, message: &str, span: Span) -> CompileResult<()> {
+        let callback = self.assert_callback.clone();
+        match callback {
+            Value::Null => Ok(()),
+            Value::String(name) if name.is_empty() => Ok(()),
+            Value::String(name) => {
+                let Some(callable) = self.lookup_function(&name) else {
+                    return Err(invalid_assert_callback_error(&name, span));
+                };
+                let args = self.assert_callback_args(message, span);
+                match callable {
+                    Callable::User(function) => {
+                        let function = function.as_ref();
+                        let args = error_handler_args_for_function(function, &args);
+                        ensure_user_function_arity_with_extra_policy(
+                            function,
+                            args.len(),
+                            span,
+                            true,
+                        )?;
+                        ensure_supported_function_signature(function, args.len(), span)?;
+                        self.ensure_user_function_call_depth(function, span)?;
+                        self.call_error_handler_user_function_with_checked_values(
+                            function,
+                            args,
+                            span,
+                            None,
+                            None,
+                            None,
+                            Vec::new(),
+                        )?;
+                        Ok(())
+                    }
+                    Callable::Builtin(key) => {
+                        self.call_builtin(&key, args, span)?;
+                        Ok(())
+                    }
+                }
+            }
+            Value::Array(array) => {
+                let args = self.assert_callback_args(message, span);
+                self.call_error_handler_array_callable(&array, args, span)?;
+                Ok(())
+            }
+            Value::Closure(closure) => {
+                let args = self.assert_callback_args(message, span);
+                let function = self
+                    .closure_functions
+                    .get(&closure.id())
+                    .cloned()
+                    .ok_or_else(|| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "assert()",
+                                "closure callback metadata is missing in the current subset",
+                            ),
+                        )
+                    })?;
+                let function = function.as_ref();
+                let args = error_handler_args_for_function(function, &args);
+                ensure_user_function_arity_with_extra_policy(function, args.len(), span, false)?;
+                ensure_supported_function_signature(function, args.len(), span)?;
+                self.ensure_user_function_call_depth(function, span)?;
+                let prebound_locals = self.closure_prebound_locals(&closure);
+                let (this_object, class_context, called_class_context) =
+                    self.closure_call_context(&closure);
+                self.call_error_handler_user_function_with_checked_values(
+                    function,
+                    args,
+                    span,
+                    this_object,
+                    class_context,
+                    called_class_context,
+                    prebound_locals,
+                )?;
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    }
+
+    fn assert_callback_args(&self, message: &str, span: Span) -> Vec<Value> {
+        vec![
+            Value::String(
+                self.source_file
+                    .clone()
+                    .unwrap_or_else(|| "Command line code".to_string()),
+            ),
+            Value::Int(span.line as i64),
+            Value::Null,
+            Value::String(message.to_string()),
+        ]
     }
 
     fn call_callable_with_values(
@@ -104139,55 +104469,8 @@ impl Interpreter {
             "session_id" => self.call_session_id(&args, span),
             "session_write_close" => self.call_session_write_close(&args, span),
             "session_destroy" => self.call_session_destroy(&args, span),
-            "assert" => {
-                if !(1..=2).contains(&args.len()) {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::arity_mismatch(
-                            "assert()",
-                            ArityExpectation::Between { min: 1, max: 2 },
-                            args.len(),
-                        ),
-                    ));
-                }
-
-                if let Some(other) = args
-                    .get(1)
-                    .filter(|value| {
-                        !matches!(
-                            value,
-                            Value::Null
-                                | Value::Bool(_)
-                                | Value::Int(_)
-                                | Value::Float(_)
-                                | Value::String(_)
-                        )
-                    })
-                {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "assert()",
-                            format!(
-                                "description argument must be null, bool, int, float, or string in the current subset, got {}",
-                                other.type_name()
-                            ),
-                        ),
-                    ));
-                }
-
-                if args[0].is_truthy() {
-                    Ok(Value::Bool(true))
-                } else {
-                    Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "assert()",
-                            "assertion failures are not implemented in the current subset",
-                        ),
-                    ))
-                }
-            }
+            "assert_options" => self.call_assert_options(&args, span),
+            "assert" => self.call_assert_values(&args, span, None),
             "get_class" => {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
@@ -127865,6 +128148,10 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             return Some(("Error", error.message.clone()));
         }
 
+        if error.message.starts_with("Invalid callback ") {
+            return Some(("Error", error.message.clone()));
+        }
+
         if error.message == "First array member is not a valid class name or object"
             || error.message == "Second array member is not a valid method"
         {
@@ -128028,6 +128315,14 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             })
         {
             return Some(("TypeError", format!("PhpToken::is(): {message}")));
+        }
+
+        if let Some(message) = error
+            .message
+            .strip_prefix("unsupported call assert_options(): ")
+            .filter(|message| *message == "Argument #1 ($option) must be an ASSERT_* constant")
+        {
+            return Some(("ValueError", format!("assert_options(): {message}")));
         }
 
         if let Some((class_name, message)) = request_parse_body_php_error_class_and_message(error) {
@@ -129982,6 +130277,26 @@ fn array_callable_parts(array: &PhpArray) -> Option<(&Value, &str)> {
     }
 }
 
+fn array_callable_parts_cloned(array: &PhpArray) -> Option<(Value, String)> {
+    let entries = array.entries();
+    if entries.len() != 2 {
+        return None;
+    }
+
+    if !matches!(entries[0].key, ArrayKey::Int(0)) || !matches!(entries[1].key, ArrayKey::Int(1)) {
+        return None;
+    }
+
+    let Value::String(method_name) = entries[1].value_cloned() else {
+        return None;
+    };
+
+    match entries[0].value_cloned() {
+        target @ (Value::String(_) | Value::Object(_)) => Some((target, method_name)),
+        _ => None,
+    }
+}
+
 fn autoload_callbacks_match(left: &AutoloadCallback, right: &AutoloadCallback) -> bool {
     match (left, right) {
         (AutoloadCallback::Function(left), AutoloadCallback::Function(right)) => {
@@ -130860,6 +131175,7 @@ fn is_builtin(name: &str) -> bool {
             | "session_id"
             | "session_write_close"
             | "session_destroy"
+            | "assert_options"
             | "assert"
             | "get_class"
             | "is_object"
@@ -132513,6 +132829,11 @@ const PHP_ROUND_HALF_UP: i64 = 1;
 const PHP_ROUND_HALF_DOWN: i64 = 2;
 const PHP_ROUND_HALF_EVEN: i64 = 3;
 const PHP_ROUND_HALF_ODD: i64 = 4;
+const PHP_ASSERT_ACTIVE: i64 = 1;
+const PHP_ASSERT_CALLBACK: i64 = 2;
+const PHP_ASSERT_BAIL: i64 = 3;
+const PHP_ASSERT_WARNING: i64 = 4;
+const PHP_ASSERT_EXCEPTION: i64 = 5;
 
 const BUILTIN_GLOBAL_CONSTANT_NAMES: &[&str] = &[
     "PHP_VERSION",
@@ -132543,6 +132864,11 @@ const BUILTIN_GLOBAL_CONSTANT_NAMES: &[&str] = &[
     "PHP_ROUND_HALF_DOWN",
     "PHP_ROUND_HALF_EVEN",
     "PHP_ROUND_HALF_ODD",
+    "ASSERT_ACTIVE",
+    "ASSERT_CALLBACK",
+    "ASSERT_BAIL",
+    "ASSERT_WARNING",
+    "ASSERT_EXCEPTION",
     "PHP_SAPI",
     "PHP_BINARY",
     "PHP_OS",
@@ -133003,6 +133329,11 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "PHP_ROUND_HALF_DOWN" => Some(Value::Int(PHP_ROUND_HALF_DOWN)),
         "PHP_ROUND_HALF_EVEN" => Some(Value::Int(PHP_ROUND_HALF_EVEN)),
         "PHP_ROUND_HALF_ODD" => Some(Value::Int(PHP_ROUND_HALF_ODD)),
+        "ASSERT_ACTIVE" => Some(Value::Int(PHP_ASSERT_ACTIVE)),
+        "ASSERT_CALLBACK" => Some(Value::Int(PHP_ASSERT_CALLBACK)),
+        "ASSERT_BAIL" => Some(Value::Int(PHP_ASSERT_BAIL)),
+        "ASSERT_WARNING" => Some(Value::Int(PHP_ASSERT_WARNING)),
+        "ASSERT_EXCEPTION" => Some(Value::Int(PHP_ASSERT_EXCEPTION)),
         "PHP_SAPI" => Some(Value::String("cli".to_string())),
         "PHP_BINARY" => Some(Value::String(php_binary_constant_value())),
         "PHP_OS" => Some(Value::String("Linux".to_string())),
@@ -156574,6 +156905,138 @@ fn apply_ascii_rot13_bytes_in_place(value: &mut [u8]) {
     }
 }
 
+fn assert_ini_bool(
+    ini_values: &HashMap<String, String>,
+    normalized_name: &str,
+    default: bool,
+) -> bool {
+    ini_values
+        .get(normalized_name)
+        .map(|value| php_ini_truthy(value))
+        .unwrap_or(default)
+}
+
+fn assert_callback_from_ini_values(ini_values: &HashMap<String, String>) -> Value {
+    ini_values
+        .get("assert.callback")
+        .map(|value| assert_callback_from_ini_value(value))
+        .unwrap_or(Value::Null)
+}
+
+fn assert_callback_from_ini_value(value: &str) -> Value {
+    if value.is_empty() {
+        Value::Null
+    } else {
+        Value::String(value.to_string())
+    }
+}
+
+fn assert_startup_ini_setting_is_deprecated(
+    normalized_name: &str,
+    ini_values: &HashMap<String, String>,
+) -> bool {
+    let Some(value) = ini_values.get(normalized_name) else {
+        return false;
+    };
+    match normalized_name {
+        "assert.active" => !php_ini_truthy(value),
+        "assert.warning" => !php_ini_truthy(value),
+        "assert.callback" => !value.is_empty(),
+        "assert.exception" => !php_ini_truthy(value),
+        _ => false,
+    }
+}
+
+fn assert_options_value_error(span: Span) -> Diagnostic {
+    runtime_error(
+        span,
+        RuntimeError::unsupported_call(
+            "assert_options()",
+            "Argument #1 ($option) must be an ASSERT_* constant",
+        ),
+    )
+}
+
+fn invalid_assert_callback_error(name: &str, span: Span) -> Diagnostic {
+    Diagnostic::new(
+        Phase::Runtime,
+        span.line,
+        span.column,
+        format!("Invalid callback {name}, function \"{name}\" not found or invalid function name"),
+    )
+}
+
+fn assertion_expr_source(expr: &Expr) -> String {
+    match expr {
+        Expr::NamedArgument { expr, .. } => assertion_expr_source(expr),
+        Expr::Bool(value, _) => {
+            if *value {
+                "true".to_string()
+            } else {
+                "false".to_string()
+            }
+        }
+        Expr::Int(value, _) => value.to_string(),
+        Expr::Float(value, _) => value.to_string(),
+        Expr::String(value, _) => format!("\"{}\"", value.escape_default()),
+        Expr::Variable(name, _) => format!("${name}"),
+        Expr::GlobalConstant { name, .. } => name.clone(),
+        Expr::Binary {
+            left, op, right, ..
+        } => format!(
+            "{} {} {}",
+            assertion_expr_source(left),
+            assertion_binary_op_symbol(*op),
+            assertion_expr_source(right)
+        ),
+        Expr::Unary { op, expr, .. } => format!(
+            "{}{}",
+            assertion_unary_op_symbol(*op),
+            assertion_expr_source(expr)
+        ),
+        _ => "Assertion failed".to_string(),
+    }
+}
+
+fn assertion_binary_op_symbol(op: BinaryOp) -> &'static str {
+    match op {
+        BinaryOp::Add => "+",
+        BinaryOp::Sub => "-",
+        BinaryOp::Mul => "*",
+        BinaryOp::Div => "/",
+        BinaryOp::Mod => "%",
+        BinaryOp::Pow => "**",
+        BinaryOp::Concat => ".",
+        BinaryOp::Eq => "==",
+        BinaryOp::Ne => "!=",
+        BinaryOp::StrictEq => "===",
+        BinaryOp::StrictNe => "!==",
+        BinaryOp::Lt => "<",
+        BinaryOp::Le => "<=",
+        BinaryOp::Gt => ">",
+        BinaryOp::Ge => ">=",
+        BinaryOp::Spaceship => "<=>",
+        BinaryOp::NullCoalesce => "??",
+        BinaryOp::LogicalAnd => "&&",
+        BinaryOp::LogicalOr => "||",
+        BinaryOp::LogicalXor => "xor",
+        BinaryOp::BitwiseAnd => "&",
+        BinaryOp::BitwiseOr => "|",
+        BinaryOp::BitwiseXor => "^",
+        BinaryOp::ShiftLeft => "<<",
+        BinaryOp::ShiftRight => ">>",
+    }
+}
+
+fn assertion_unary_op_symbol(op: UnaryOp) -> &'static str {
+    match op {
+        UnaryOp::Plus => "+",
+        UnaryOp::Negate => "-",
+        UnaryOp::Not => "!",
+        UnaryOp::BitwiseNot => "~",
+    }
+}
+
 fn session_cache_limiter_from_ini_values(ini_values: &HashMap<String, String>) -> String {
     ini_values
         .get("session.cache_limiter")
@@ -165887,6 +166350,18 @@ impl Interpreter {
             }
         }
 
+        if normalized_name == "assert.callback" {
+            self.emit_display_diagnostic(
+                "Deprecated",
+                PHP_E_DEPRECATED,
+                "ini_set(): assert.callback INI setting is deprecated",
+                span,
+            )?;
+            self.assert_callback = assert_callback_from_ini_value(&value);
+            self.ini_values.insert(normalized_name, value);
+            return Ok(Value::String(previous));
+        }
+
         if normalized_name == "mysqli.default_port"
             && !mysqli_default_port_ini_value_is_valid(&value)
         {
@@ -165908,6 +166383,14 @@ impl Interpreter {
             self.session_cache_limiter = value.clone();
         } else if normalized_name == "session.cache_expire" {
             self.session_cache_expire = parse_ini_i64_prefix(&value).unwrap_or(180);
+        } else if normalized_name == "assert.active" {
+            self.assert_active = php_ini_truthy(&value);
+        } else if normalized_name == "assert.warning" {
+            self.assert_warning = php_ini_truthy(&value);
+        } else if normalized_name == "assert.bail" {
+            self.assert_bail = php_ini_truthy(&value);
+        } else if normalized_name == "assert.exception" {
+            self.assert_exception = php_ini_truthy(&value);
         }
 
         if normalized_name == "date.timezone" {
@@ -171730,6 +172213,11 @@ const COMPAT_STANDARD_EXTENSION_FUNCTIONS: &[&str] = &[
 const COMPAT_INI_DIRECTIVES: &[&str] = &[
     "arg_separator.input",
     "arg_separator.output",
+    "assert.active",
+    "assert.bail",
+    "assert.callback",
+    "assert.exception",
+    "assert.warning",
     "bcmath.scale",
     "date.default_latitude",
     "date.default_longitude",
@@ -171764,6 +172252,7 @@ const COMPAT_INI_DIRECTIVES: &[&str] = &[
     "upload_max_filesize",
     "upload_tmp_dir",
     "user_agent",
+    "zend.assertions",
     "zlib.output_compression",
 ];
 
@@ -172512,6 +173001,11 @@ fn compat_ini_value(normalized_name: &str) -> Option<&'static str> {
     match normalized_name {
         "arg_separator.input" => Some("&"),
         "arg_separator.output" => Some("&"),
+        "assert.active" => Some("1"),
+        "assert.bail" => Some("0"),
+        "assert.callback" => Some(""),
+        "assert.exception" => Some("1"),
+        "assert.warning" => Some("1"),
         "bcmath.scale" => Some("0"),
         "date.default_latitude" => Some("31.7667"),
         "date.default_longitude" => Some("35.2333"),
@@ -172553,6 +173047,7 @@ fn compat_ini_value(normalized_name: &str) -> Option<&'static str> {
         "upload_max_filesize" => Some("2M"),
         "upload_tmp_dir" => Some(""),
         "user_agent" => Some(""),
+        "zend.assertions" => Some("1"),
         "zlib.output_compression" => Some("0"),
         _ => None,
     }

@@ -658,7 +658,9 @@ incorrect native code.
   implementors that pass the current method-shape check
 - a documented builtin subset for strings, arrays, constants, filesystem and
   request-state probes, output-buffer probes, type checks, callability checks,
-  bounded truthy assertions, object/class metadata, and debug-style output
+  bounded PHP 8.3 `assert()`/`assert_options()` diagnostics for the
+  `assert.exception=0` warning/callback path, object/class metadata, and
+  debug-style output
 
 The runtime still names unsupported zones explicitly. Examples include
 references beyond the current direct variable-to-variable assignment cell

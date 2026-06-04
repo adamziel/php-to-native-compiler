@@ -5841,12 +5841,16 @@
   `$this` object-context handling, exact diagnostic wording outside the
   covered warnings, and native lowering remain unsupported.
   `assert($assertion, $description = null)` evaluates one or two arguments
-  normally and returns `true` for truthy assertions. The optional description
-  is inert metadata in this slice and may be `null`, bool, int, float, or
-  string. Failing assertions remain a stable runtime boundary; assertion INI
-  policy, callbacks, `AssertionError`, `Throwable` descriptions, exact
-  warning/fatal behavior, PHP 8.3 deprecations, partial-output behavior, and
-  native lowering are not implemented.
+  normally and returns `true` for truthy assertions or inactive assertions. On
+  the interpreter path, the bounded PHP 8.3 assertion-policy slice supports
+  `assert_options()`, `ASSERT_*` constants, deprecated assert INI startup
+  diagnostics, `ini_get()`/`ini_set("assert.callback", ...)`, function,
+  closure, static-method, and object/static-method callbacks, warning output,
+  `assert.bail`, `assert.exception=0` false returns, and the unknown-option
+  catchable `ValueError`. Default `AssertionError` throwing, `Throwable`
+  description objects, dynamic first-class/assertion-compilation behavior,
+  full source reconstruction for arbitrary expressions, exact fatal traces,
+  and native lowering remain unsupported.
   `basename($path, $suffix = "")` accepts string and binary-string paths plus
   optional string or binary-string suffixes. It performs lexical Unix-style
   slash basename extraction for local paths used by the current
@@ -10014,11 +10018,12 @@
   namespace/autoload-aware lookup, extension-loaded functions beyond documented
   builtins, non-string name coercion, and exact native
   `TypeError`/deprecation behavior are not implemented. `assert(...)` is a
-  runtime-only builtin in this slice: truthy assertions return `true`, while
-  failing assertions, assertion INI policy, callbacks, `AssertionError`,
-  `Throwable` descriptions, exact warning/fatal behavior, PHP 8.3
-  deprecations, partial-output behavior, and native lowering are not
-  implemented. `extension_loaded`
+  runtime-only builtin in this slice: truthy and inactive assertions return
+  `true`, and the interpreter implements the bounded `assert.exception=0`
+  warning/callback/options path documented above. Default `AssertionError`
+  throwing, `Throwable` descriptions, dynamic first-class/assertion-compilation
+  behavior, full source reconstruction for arbitrary expressions, exact fatal
+  traces, and native lowering are not implemented. `extension_loaded`
   accepts string extension names, returns true for current deterministic
   runtime entries including `json`, `hash`, `pdo`, `pdo_mysql`, and `posix`,
   returns false for other names, and rejects non-string names. Its native

@@ -47509,6 +47509,28 @@ Next:
 
 Next:
 
+- Added a bounded interpreter-only PHP 8.3 assertion diagnostics slice for
+  `assert.exception=0`: request-local assert option state, `assert_options()`,
+  `ASSERT_*` constant deprecations, deprecated assert INI startup diagnostics,
+  `ini_get()`/`ini_set("assert.callback", ...)` behavior, function/closure/
+  static-method/object callback dispatch, warning output, `assert.bail`, false
+  returns, and the unknown-option catchable `ValueError`.
+- The public PHPT proof target was the focused
+  `ext/standard/tests/assert/{assert,assert03,assert04,assert_basic,assert_basic1,assert_basic2,assert_basic3,assert_basic4,assert_basic5,assert_closures,assert_error2,assert_options_error,assert_return_value,assert_variation,assert_warnings}.phpt`
+  cluster, which moved from 0/15 PASS pre-patch to 15/15 PASS post-patch under
+  the pinned `phpc-phpt-wrapper`.
+- Default `AssertionError` throwing, custom `Throwable` assertion
+  descriptions, dynamic first-class/assertion-compilation behavior such as
+  `zend.assertions=0` first-class callable rows, exact fatal traces, broad
+  assertion source reconstruction, and native lowering remain unsupported.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-diagnostics-types-170507 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo build -q -p phpc --bin phpc`;
+  the selected 15-row assert PHPT command via lowercase `run-tests.php -p`
+  with `PHPC_BIN=/tmp/phpc-target-diagnostics-types-170507/debug/phpc`;
+  plus scoped rustfmt/diff checks for this worker patch.
+
+Next:
+
 - Added a bounded closure reflection metadata slice for current closure values
   in `phpc run`. `ReflectionFunction($closure)` now exposes
   location-qualified closure names, closure static/scope/`$this` metadata,

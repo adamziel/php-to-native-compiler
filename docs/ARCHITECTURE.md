@@ -3598,13 +3598,21 @@ same-name guard, enum autoload lookup, trait aliasing, alias entries in
 lowering remain outside this slice. Native function-table introspection
 recognizes the names, while direct native calls reject under the function-call
 boundary.
-`assert()` is currently an interpreter-only assertion builtin for truthy
-bootstrap guards. It evaluates one or two arguments normally, accepts scalar or
-null descriptions as inert metadata, returns true for truthy assertions, and
-keeps failing assertions behind a stable runtime boundary. Native
-function-table introspection recognizes the name, while direct native calls
-reject under the function-call boundary until generated code has assertion
-policy, callbacks/exceptions, exact diagnostics, and unwinding behavior.
+`assert()` is currently an interpreter-only assertion builtin. It evaluates one
+or two arguments normally, returns true for truthy, inactive, or
+`zend.assertions=0` assertions, and implements the bounded PHP 8.3
+`assert.exception=0` surface: `assert_options()`, `ASSERT_*` constant
+deprecations, deprecated assert INI startup diagnostics, callback dispatch for
+functions, closures, static methods, and object/static-method arrays,
+`ini_set("assert.callback", ...)`, warning output, `assert.bail`, false
+returns, and the unknown-option catchable `ValueError`. Default
+`AssertionError` throwing, custom `Throwable` description objects, dynamic
+first-class/assertion-compilation behavior, exact fatal traces, full source
+reconstruction for arbitrary expressions, and native lowering remain
+unsupported. Native function-table introspection recognizes the names, while
+direct native calls reject under the function-call boundary until generated
+code has assertion policy, callbacks/exceptions, exact diagnostics, and
+unwinding behavior.
 Runtime-backed constant behavior currently lives in the interpreter's
 `ConstantTable`. Unbracketed namespace-scoped top-level `const NAME = value;`
 declarations store canonical qualified names such as
