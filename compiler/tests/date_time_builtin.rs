@@ -121,7 +121,11 @@ $base = strtotime("2005-01-01 01:01:01");
 echo date(DATE_ISO8601, strtotime("+5days", $base)), "|";
 echo date(DATE_ISO8601, strtotime("+1month", $base)), "\n";
 echo strtotime("2005/8/12"), "|", date(DATE_ISO8601, strtotime("2005/1/2")), "\n";
-echo date(DATE_ISO8601, strtotime("2005-12-22 1p.m.")), "\n";
+echo date(DATE_ISO8601, strtotime("2005-12-22 1p.m.")), "|";
+echo date(DATE_ISO8601, strtotime("2005-12-22 12am")), "|";
+echo date(DATE_ISO8601, strtotime("2005-12-22 1am")), "|";
+echo date(DATE_ISO8601, strtotime("2005-12-22 1pm")), "|";
+echo date(DATE_ISO8601, strtotime("2005-12-22 12:00am")), "\n";
 var_dump(strtotime("NOW", 1234567890) === 1234567890);
 echo date(DATE_ISO8601, strtotime("2006-1-6T0:0:0-8:0")), "\n";
 date_default_timezone_set("Europe/Oslo");
@@ -150,7 +154,7 @@ var_dump(date_parse(" \n ")["error_count"]);
             "10/11/2005|10/11/1970\n",
             "2005-01-06T01:01:01+0000|2005-02-01T01:01:01+0000\n",
             "1123804800|2005-01-02T00:00:00+0000\n",
-            "2005-12-22T13:00:00+0000\n",
+            "2005-12-22T13:00:00+0000|2005-12-22T00:00:00+0000|2005-12-22T01:00:00+0000|2005-12-22T13:00:00+0000|2005-12-22T00:00:00+0000\n",
             "bool(true)\n",
             "2006-01-06T08:00:00+0000\n",
             "2006-01-31T20:23:56+01:00\n",

@@ -172423,6 +172423,14 @@ fn split_bounded_datetime_timezone_or_name(input: &str) -> (&str, Option<Bounded
     for suffix_len in [4_usize, 3, 1] {
         if input.len() > suffix_len {
             let suffix = &input[input.len() - suffix_len..];
+            if suffix_len == 1
+                && input[..input.len() - suffix_len]
+                    .chars()
+                    .last()
+                    .is_some_and(|ch| ch.is_ascii_alphabetic())
+            {
+                continue;
+            }
             if suffix.chars().all(|ch| ch.is_ascii_alphabetic()) {
                 if let Some(offset) = parse_timezone_offset_token(suffix) {
                     return (
