@@ -9533,6 +9533,64 @@ $attributes[0]->newInstance();
 }
 
 #[test]
+fn deprecated_attribute_warns_for_constants_class_constants_and_enum_cases() {
+    let execution = run_source(
+        r#"<?php
+set_error_handler(function ($errno, $message) {
+    echo $errno, "|", $message, "\n";
+});
+
+#[Deprecated(TEST)]
+const TEST = "from itself";
+
+#[Deprecated]
+const TEST2 = "from another";
+
+#[Deprecated(TEST2)]
+const TEST3 = 1;
+
+class Packet {
+    #[Deprecated(self::LEGACY)]
+    public const LEGACY = "legacy self";
+
+    #[Deprecated]
+    public const OTHER = "other";
+
+    #[Deprecated(self::OTHER)]
+    public const THIRD = 3;
+}
+
+enum Mode {
+    #[Deprecated("use Mode::NewCase instead")]
+    case OldCase;
+}
+
+TEST;
+TEST3;
+Packet::LEGACY;
+Packet::THIRD;
+Mode::OldCase;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "16384|Constant TEST is deprecated, from itself\n",
+            "16384|Constant TEST2 is deprecated\n",
+            "16384|Constant TEST3 is deprecated, from another\n",
+            "16384|Constant Packet::LEGACY is deprecated, legacy self\n",
+            "16384|Constant Packet::OTHER is deprecated\n",
+            "16384|Constant Packet::THIRD is deprecated, other\n",
+            "16384|Enum case Mode::OldCase is deprecated, use Mode::NewCase instead\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reflection_class_to_string_renders_bounded_userland_metadata() {
     let execution = run_source(
         r#"<?php

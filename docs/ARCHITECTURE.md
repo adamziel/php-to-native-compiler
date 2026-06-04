@@ -4098,7 +4098,9 @@ Dynamic PHP features will be implemented as runtime fallback zones:
   the current built-in constant slice. The interpreter constant table also
   carries a small metadata side table for runtime/user constants, currently used
   by `ReflectionConstant` to report source-file provenance while keeping builtin
-  constants as file-less extension-owned values.
+  constants as file-less extension-owned values. That metadata also feeds
+  `#[Deprecated]` read diagnostics for supported top-level constants read by
+  bare/global lookup or `constant(...)`.
 
 String-valued dynamic function lookup and the narrow local `require path;` /
 `require_once path;` / `include path;` / `include_once path;` statement slice
@@ -4704,7 +4706,8 @@ expose file-less Core/json or registered-extension ownership for the current
 bounded slice. Top-level single-constant declarations also retain parsed
 attribute metadata in the runtime constant table so `ReflectionConstant` can
 return constant-target `ReflectionAttribute` objects; runtime `define()` and
-builtin constants remain attribute-less.
+builtin constants remain attribute-less. The same parsed `Deprecated` attribute
+metadata is consulted when supported top-level constants are read at runtime.
 `get_called_class()` is a zero-argument runtime builtin that reads the
 interpreter's called-class context in current instance and static method calls;
 outside method or static class context it fails with a stable unsupported-call
@@ -4898,6 +4901,11 @@ Namespace/import alias expansion for attribute names, broad delayed validation,
 many member/parameter target combinations, references/copy-on-write behavior,
 and native lowering remain outside this boundary. Ordinary `#` comments remain
 comments, including `# [` with whitespace before the bracket.
+The interpreter also uses supported `Deprecated` attribute metadata on
+top-level constants, class/interface constants, and unbacked enum cases to emit
+runtime `E_USER_DEPRECATED` diagnostics when those constants or cases are read;
+declaration-target deprecations for classes/interfaces/traits/enums/properties
+and broader delayed target validation remain outside this boundary.
 
 ## Cast Boundary
 

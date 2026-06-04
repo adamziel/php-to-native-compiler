@@ -513,6 +513,7 @@ struct Interpreter {
     opcache_file_cache_paths: HashSet<String>,
     error_handlers: Vec<ErrorHandlerRegistration>,
     error_handler_active: bool,
+    active_deprecated_constant_diagnostics: Vec<String>,
     exception_handlers: Vec<Value>,
     exception_handler_active: bool,
     shutdown_callbacks: Vec<ShutdownCallback>,
@@ -11909,6 +11910,7 @@ impl Interpreter {
             opcache_file_cache_paths: HashSet::new(),
             error_handlers: Vec::new(),
             error_handler_active: false,
+            active_deprecated_constant_diagnostics: Vec::new(),
             exception_handlers: Vec::new(),
             exception_handler_active: false,
             shutdown_callbacks: Vec::new(),
@@ -46212,17 +46214,34 @@ impl Interpreter {
                 .constants
                 .get(exact_name)
                 .ok_or_else(|| runtime_error(span, RuntimeError::undefined_constant(exact_name)))?;
+            if let Some(metadata) = self.constants.metadata(exact_name).cloned() {
+                self.emit_deprecated_global_constant_diagnostic(
+                    exact_name,
+                    &metadata.attributes,
+                    span,
+                )?;
+            }
             self.emit_builtin_global_constant_deprecation(exact_name, span)?;
             return Ok(value);
         }
 
         if let Some(value) = self.constants.get(name) {
+            if let Some(metadata) = self.constants.metadata(name).cloned() {
+                self.emit_deprecated_global_constant_diagnostic(name, &metadata.attributes, span)?;
+            }
             self.emit_builtin_global_constant_deprecation(name, span)?;
             return Ok(value);
         }
 
         if let Some((_, fallback_name)) = name.rsplit_once('\\') {
             if let Some(value) = self.constants.get(fallback_name) {
+                if let Some(metadata) = self.constants.metadata(fallback_name).cloned() {
+                    self.emit_deprecated_global_constant_diagnostic(
+                        fallback_name,
+                        &metadata.attributes,
+                        span,
+                    )?;
+                }
                 self.emit_builtin_global_constant_deprecation(fallback_name, span)?;
                 return Ok(value);
             }
@@ -62396,6 +62415,103 @@ impl Interpreter {
         format!("Function {}()", function.name)
     }
 
+    fn emit_deprecated_global_constant_diagnostic(
+        &mut self,
+        name: &str,
+        attributes: &[AttributeDecl],
+        span: Span,
+    ) -> CompileResult<()> {
+        self.emit_deprecated_constant_diagnostic("global", None, "Constant", name, attributes, span)
+    }
+
+    fn emit_deprecated_class_constant_diagnostic(
+        &mut self,
+        declaring_class_id: Option<ClassId>,
+        declaring_name: &str,
+        constant: &str,
+        attributes: &[AttributeDecl],
+        span: Span,
+    ) -> CompileResult<()> {
+        self.emit_deprecated_constant_diagnostic(
+            "class",
+            declaring_class_id,
+            "Constant",
+            &format!("{declaring_name}::{constant}"),
+            attributes,
+            span,
+        )
+    }
+
+    fn emit_deprecated_enum_case_diagnostic(
+        &mut self,
+        enum_name: &str,
+        case_name: &str,
+        attributes: &[AttributeDecl],
+        span: Span,
+    ) -> CompileResult<()> {
+        self.emit_deprecated_constant_diagnostic(
+            "enum",
+            None,
+            "Enum case",
+            &format!("{enum_name}::{case_name}"),
+            attributes,
+            span,
+        )
+    }
+
+    fn emit_deprecated_constant_diagnostic(
+        &mut self,
+        key_prefix: &str,
+        declaring_class_id: Option<ClassId>,
+        subject_label: &str,
+        subject_name: &str,
+        attributes: &[AttributeDecl],
+        span: Span,
+    ) -> CompileResult<()> {
+        let Some(attribute) = attributes
+            .iter()
+            .find(|attribute| attribute_name_is_deprecated(attribute))
+        else {
+            return Ok(());
+        };
+
+        let key = format!("{key_prefix}:{}", subject_name.to_ascii_lowercase());
+        if self
+            .active_deprecated_constant_diagnostics
+            .iter()
+            .any(|active| active == &key)
+        {
+            return Ok(());
+        }
+
+        self.active_deprecated_constant_diagnostics
+            .push(key.clone());
+        let message_parts = if let Some(class_id) = declaring_class_id {
+            self.class_context.push(class_id);
+            self.called_class_context.push(class_id);
+            let result = self.deprecated_attribute_message_parts(attribute, false, span);
+            self.called_class_context.pop();
+            self.class_context.pop();
+            result
+        } else {
+            self.deprecated_attribute_message_parts(attribute, false, span)
+        };
+        self.active_deprecated_constant_diagnostics.pop();
+
+        let (message, since) = message_parts?;
+        let mut diagnostic = format!("{subject_label} {subject_name} is deprecated");
+        if let Some(since) = since.filter(|value| !value.is_empty()) {
+            diagnostic.push_str(" since ");
+            diagnostic.push_str(&since);
+        }
+        if let Some(message) = message.filter(|value| !value.is_empty()) {
+            diagnostic.push_str(", ");
+            diagnostic.push_str(&message);
+        }
+
+        self.emit_display_diagnostic("Deprecated", PHP_E_USER_DEPRECATED, diagnostic, span)
+    }
+
     fn deprecated_attribute_message_parts(
         &mut self,
         attribute: &AttributeDecl,
@@ -65949,6 +66065,12 @@ impl Interpreter {
                 RuntimeError::undefined_constant(format!("{}::{case_name}", enum_decl.name)),
             ));
         };
+        self.emit_deprecated_enum_case_diagnostic(
+            &enum_decl.name,
+            &case_decl.name,
+            &case_decl.attributes,
+            span,
+        )?;
 
         let key = (enum_decl.name.to_ascii_lowercase(), case_decl.name.clone());
         if let Some(object) = self.enum_case_objects.get(&key) {
@@ -66196,6 +66318,13 @@ impl Interpreter {
             )?;
         }
         self.emit_builtin_class_constant_deprecation(&resolved.declaring_name, constant, span)?;
+        self.emit_deprecated_class_constant_diagnostic(
+            resolved.declaring_class_id,
+            &resolved.declaring_name,
+            constant,
+            &resolved.attributes,
+            span,
+        )?;
 
         self.evaluate_reflection_constant_expr(
             resolved.declaring_class_id,
@@ -66256,6 +66385,14 @@ impl Interpreter {
                 ));
             }
         };
+
+        self.emit_deprecated_class_constant_diagnostic(
+            resolved.declaring_class_id,
+            &resolved.declaring_name,
+            constant,
+            &resolved.attributes,
+            span,
+        )?;
 
         self.evaluate_reflection_constant_expr(
             resolved.declaring_class_id,
@@ -99523,6 +99660,13 @@ impl Interpreter {
                                 ),
                             )
                         })?;
+                        if let Some(metadata) = self.constants.metadata(normalized).cloned() {
+                            self.emit_deprecated_global_constant_diagnostic(
+                                normalized,
+                                &metadata.attributes,
+                                span,
+                            )?;
+                        }
                         self.emit_builtin_global_constant_deprecation(normalized, span)?;
                         Ok(value)
                     }
