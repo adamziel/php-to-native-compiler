@@ -33242,8 +33242,11 @@ impl PhpClassTable {
             .expect("declared SplFileInfo class id should resolve");
         for method in [
             "__construct",
+            "__debugInfo",
+            "getBasename",
             "getExtension",
             "getFileInfo",
+            "getFilename",
             "getGroup",
             "getInode",
             "getOwner",
@@ -33257,9 +33260,41 @@ impl PhpClassTable {
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
                 .expect("SplFileInfo core metadata should not duplicate methods");
         }
+        let directory_iterator_id = classes
+            .declare_class("DirectoryIterator")
+            .expect("core class table should contain SplFileInfo before DirectoryIterator");
+        classes
+            .set_parent(directory_iterator_id, spl_file_info_id)
+            .expect("DirectoryIterator should extend SplFileInfo");
+        classes
+            .set_interfaces(directory_iterator_id, vec!["Iterator".to_string()])
+            .expect("DirectoryIterator should implement Iterator");
+        let directory_iterator = classes
+            .get_mut(directory_iterator_id)
+            .expect("declared DirectoryIterator class id should resolve");
+        for method in [
+            "__construct",
+            "current",
+            "getBasename",
+            "getExtension",
+            "getFilename",
+            "getGroup",
+            "getInode",
+            "getOwner",
+            "isDot",
+            "isFile",
+            "key",
+            "next",
+            "rewind",
+            "valid",
+        ] {
+            directory_iterator
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("DirectoryIterator core metadata should not duplicate methods");
+        }
         let spl_file_object_id = classes
             .declare_class("SplFileObject")
-            .expect("core class table should contain SplFileInfo before SplFileObject");
+            .expect("core class table should contain DirectoryIterator before SplFileObject");
         classes
             .set_interfaces(spl_file_object_id, vec!["Iterator".to_string()])
             .expect("SplFileObject should implement Iterator");
@@ -82103,6 +82138,7 @@ mod tests {
                 "SplStack",
                 "SplObjectStorage",
                 "SplFileInfo",
+                "DirectoryIterator",
                 "SplFileObject",
                 "EmptyIterator",
                 "IteratorIterator",

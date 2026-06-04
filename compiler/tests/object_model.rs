@@ -67,6 +67,7 @@ const CORE_CLASS_NAMES: &[&str] = &[
     "SplStack",
     "SplObjectStorage",
     "SplFileInfo",
+    "DirectoryIterator",
     "SplFileObject",
     "EmptyIterator",
     "IteratorIterator",
@@ -77,7 +78,9 @@ const CORE_CLASS_NAMES: &[&str] = &[
     "ReflectionZendExtension",
     "DateMalformedStringException",
     "DateMalformedIntervalStringException",
+    "DateMalformedPeriodStringException",
     "DateInterval",
+    "DatePeriod",
     "DateTime",
     "DateTimeImmutable",
     "DOMException",
@@ -283,14 +286,22 @@ echo "ready\n";
     assert!(spl_file_object.constant("READ_CSV").is_some());
     assert!(spl_file_object.method("setCsvControl").is_some());
     let spl_file_info = classes.lookup_class("SplFileInfo").unwrap();
+    assert!(spl_file_info.method("__debugInfo").is_some());
+    assert!(spl_file_info.method("getBasename").is_some());
     assert!(spl_file_info.method("getExtension").is_some());
     assert!(spl_file_info.method("getFileInfo").is_some());
+    assert!(spl_file_info.method("getFilename").is_some());
     assert!(spl_file_info.method("getOwner").is_some());
     assert!(spl_file_info.method("getPathInfo").is_some());
     assert!(spl_file_info.method("getPerms").is_some());
     assert!(spl_file_info.method("openFile").is_some());
     assert!(spl_file_info.method("setFileClass").is_some());
     assert!(spl_file_info.method("setInfoClass").is_some());
+    let directory_iterator = classes.lookup_class("DirectoryIterator").unwrap();
+    assert_eq!(directory_iterator.parent_id(), Some(spl_file_info.id()));
+    assert!(classes.implements_interface(directory_iterator.id(), "Iterator"));
+    assert!(directory_iterator.method("getBasename").is_some());
+    assert!(directory_iterator.method("isFile").is_some());
 
     let class = classes.lookup_class("box").unwrap();
     assert_eq!(class.name(), "Box");
@@ -18725,6 +18736,86 @@ try {{
     );
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn spl_file_info_path_names_and_debug_info_are_php_shaped() {
+    let source = r#"<?php
+echo (new SplFileInfo('/path/to/a.txt'))->getFilename(), "\n";
+echo (new SplFileInfo('path/to/bbb.txt'))->getBasename('b.txt'), "\n";
+echo (new SplFileInfo('path/to/ccc.txt'))->getBasename('to/ccc.txt'), "\n";
+echo (new SplFileInfo('e.txt'))->getBasename('e.txt'), "\n";
+var_dump(new SplFileInfo('path/to/b'));
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert!(execution.stdout.starts_with("a.txt\nbb\nccc.txt\ne.txt\n"));
+    assert!(
+        execution
+            .stdout
+            .contains("[\"pathName\":\"SplFileInfo\":private]=>\n  string(9) \"path/to/b\""),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution
+            .stdout
+            .contains("[\"fileName\":\"SplFileInfo\":private]=>\n  string(1) \"b\""),
+        "{}",
+        execution.stdout
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn directory_iterator_iterates_local_entries_and_metadata_methods() {
+    use std::fs;
+
+    let fixture_dir =
+        std::env::temp_dir().join(format!("phpc-directory-iterator-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&fixture_dir);
+    fs::create_dir_all(&fixture_dir).unwrap();
+    let fixture = fixture_dir.join("sample.txt");
+    fs::write(&fixture, "sample").unwrap();
+    let dir_path = fixture_dir.display().to_string().replace('\\', "\\\\");
+
+    let source = format!(
+        r#"<?php
+$dir = "{dir_path}";
+$it = new DirectoryIterator($dir);
+echo $it->getGroup() == filegroup($dir) ? "group\n" : "bad-group\n";
+echo $it->getInode() == fileinode($dir) ? "inode\n" : "bad-inode\n";
+echo get_class($it->current()), "|", $it->key(), "|", $it->getFilename(), "\n";
+while (!$it->isFile()) {{
+    $it->next();
+}}
+echo $it->getBasename(".txt"), "|", $it->getExtension(), "\n";
+class MyDirectoryIterator extends DirectoryIterator {{
+    public function __construct() {{}}
+}}
+try {{
+    (new MyDirectoryIterator())->key();
+}} catch (Error $e) {{
+    echo $e->getMessage(), "\n";
+}}
+try {{
+    new DirectoryIterator("");
+}} catch (ValueError $e) {{
+    echo $e->getMessage(), "\n";
+}}
+"#
+    );
+
+    let execution = run_source(&source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "group\ninode\nDirectoryIterator|0|.\nsample|txt\nObject not initialized\nDirectoryIterator::__construct(): Argument #1 ($directory) must not be empty\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+
+    fs::remove_dir_all(&fixture_dir).unwrap();
 }
 
 #[test]

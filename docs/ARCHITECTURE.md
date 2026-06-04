@@ -146,11 +146,18 @@ share the existing local filesystem metadata helpers while raising SPL-shaped
 current `setFileClass()` / `setInfoClass()` selections so `openFile()`,
 `getFileInfo()`, and `getPathInfo()` can allocate bounded SPL objects through
 the existing object metadata path, while `getExtension()` remains a pure
-basename operation. Core `SplFileObject` instances are modeled as bounded
-local-file cursor states with optional local stream resources; covered CSV
-controls, default-escape diagnostics, method-shaped CSV argument errors, and
-internal CSV method reflection metadata are handled on that interpreter object
-state.
+basename operation. `getBasename()`, `getFilename()`, and `__debugInfo()` are
+also pure path-state operations, with direct `var_dump()` retiring unrooted
+temporary object handles after formatting so repeated temporary dumps can reuse
+PHP-shaped object handles. Core `DirectoryIterator` instances add a bounded
+local-directory cursor state layered on `SplFileInfo`: construction resolves a
+local directory, records a deterministic entry list with dot entries, and the
+covered cursor, basename/extension/filename, dot/file, and group/inode/owner
+methods read from that current entry. Core `SplFileObject` instances are
+modeled as bounded local-file cursor states with optional local stream
+resources; covered CSV controls, default-escape diagnostics, method-shaped CSV
+argument errors, and internal CSV method reflection metadata are handled on
+that interpreter object state.
 Bounded non-direct named and dynamic property holder expressions in
 by-reference `foreach`, such as `$holders["bag"]->items["child"]`,
 `$holders["bag"]->{$name}["child"]`, method-context

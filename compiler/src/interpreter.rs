@@ -562,6 +562,7 @@ struct Interpreter {
     spl_doubly_linked_lists: HashMap<i64, SplDoublyLinkedListState>,
     spl_file_infos: HashMap<i64, SplFileInfoState>,
     spl_file_objects: HashMap<i64, SplFileObjectState>,
+    spl_directory_iterators: HashMap<i64, DirectoryIteratorState>,
     spl_iterator_wrappers: HashMap<i64, SplIteratorWrapperState>,
     date_time_objects: HashMap<i64, BoundedDateTimeObjectState>,
     date_interval_objects: HashMap<i64, BoundedDateIntervalState>,
@@ -983,6 +984,14 @@ impl Default for SplFileObjectState {
             csv_escape_configured: false,
         }
     }
+}
+
+#[derive(Debug, Clone, Default)]
+struct DirectoryIteratorState {
+    filesystem_path: PathBuf,
+    entries: Vec<String>,
+    cursor: usize,
+    initialized: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -11960,6 +11969,7 @@ impl Interpreter {
             spl_doubly_linked_lists: HashMap::new(),
             spl_file_infos: HashMap::new(),
             spl_file_objects: HashMap::new(),
+            spl_directory_iterators: HashMap::new(),
             spl_iterator_wrappers: HashMap::new(),
             date_time_objects: HashMap::new(),
             date_interval_objects: HashMap::new(),
@@ -12231,6 +12241,20 @@ impl Interpreter {
         self.classes
             .lookup_class_id("SplFileObject")
             .is_some_and(|file_id| class_id == file_id)
+    }
+
+    fn is_spl_directory_iterator_class_id(&self, class_id: ClassId) -> bool {
+        self.classes
+            .lookup_class_id("DirectoryIterator")
+            .is_some_and(|directory_id| {
+                class_id == directory_id || self.classes.is_subclass_of(class_id, directory_id)
+            })
+    }
+
+    fn resolved_method_is_core_spl_directory_iterator(&self, class_id: ClassId) -> bool {
+        self.classes
+            .lookup_class_id("DirectoryIterator")
+            .is_some_and(|directory_id| class_id == directory_id)
     }
 
     fn is_spl_empty_iterator_class_id(&self, class_id: ClassId) -> bool {
@@ -15634,6 +15658,17 @@ impl Interpreter {
                 .map(|value| (value, None));
         }
 
+        if self.resolved_method_is_core_spl_directory_iterator(class_id) {
+            return self
+                .call_spl_directory_iterator_method_with_values(
+                    object,
+                    method_name,
+                    Vec::new(),
+                    span,
+                )
+                .map(|value| (value, None));
+        }
+
         if self.resolved_method_is_core_spl_file_info(class_id) {
             return self
                 .call_spl_file_info_method_with_values(object, method_name, Vec::new(), span)
@@ -18081,6 +18116,15 @@ impl Interpreter {
             );
         }
 
+        if self.resolved_method_is_core_spl_directory_iterator(class_id) {
+            return self.call_spl_directory_iterator_method_with_values(
+                object,
+                method_name,
+                Vec::new(),
+                span,
+            );
+        }
+
         if self.resolved_method_is_core_spl_file_info(class_id) {
             return self.call_spl_file_info_method_with_values(
                 object,
@@ -18960,10 +19004,7 @@ impl Interpreter {
     }
 
     fn spl_file_info_path_extension(path: &str) -> String {
-        let basename = path
-            .rsplit(|ch| ch == '/' || ch == '\\')
-            .next()
-            .unwrap_or(path);
+        let basename = Self::spl_file_info_path_basename(path);
         if basename == "." || basename == ".." {
             return String::new();
         }
@@ -18971,6 +19012,43 @@ impl Interpreter {
             .rsplit_once('.')
             .map(|(_, extension)| extension.to_string())
             .unwrap_or_default()
+    }
+
+    fn spl_file_info_path_basename(path: &str) -> String {
+        let trimmed = path.trim_end_matches(|ch| ch == '/' || ch == '\\');
+        let path = if trimmed.is_empty() { path } else { trimmed };
+        path.rsplit(|ch| ch == '/' || ch == '\\')
+            .next()
+            .unwrap_or(path)
+            .to_string()
+    }
+
+    fn spl_file_info_basename_with_suffix(path: &str, suffix: Option<&str>) -> String {
+        let basename = Self::spl_file_info_path_basename(path);
+        let Some(suffix) = suffix else {
+            return basename;
+        };
+        if suffix.is_empty()
+            || suffix.contains('/')
+            || suffix.contains('\\')
+            || suffix.len() >= basename.len()
+        {
+            return basename;
+        }
+        basename
+            .strip_suffix(suffix)
+            .unwrap_or(&basename)
+            .to_string()
+    }
+
+    fn spl_file_info_debug_info_array(state: &SplFileInfoState) -> PhpArray {
+        let mut properties = PhpArray::new();
+        properties.insert("\0SplFileInfo\0pathName", Value::String(state.path.clone()));
+        properties.insert(
+            "\0SplFileInfo\0fileName",
+            Value::String(Self::spl_file_info_path_basename(&state.path)),
+        );
+        properties
     }
 
     fn spl_file_info_parent_path(path: &str) -> String {
@@ -19119,6 +19197,59 @@ impl Interpreter {
                     .clone();
                 Ok(Value::String(Self::spl_file_info_path_extension(&path)))
             }
+            "getbasename" => {
+                if args.len() > 1 {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "SplFileInfo::getBasename",
+                            ArityExpectation::Between { min: 0, max: 1 },
+                            args.len(),
+                        ),
+                    ));
+                }
+                let suffix = match args.first() {
+                    Some(Value::String(suffix)) => Some(suffix.as_str()),
+                    Some(Value::BinaryString(bytes)) => {
+                        Some(tree_walk_binary_string_utf8(bytes, "suffix", span)?)
+                    }
+                    Some(other) => {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "SplFileInfo::getBasename()",
+                                format!(
+                                    "Argument #1 ($suffix) must be of type string, {} given",
+                                    php_type_error_given(other)
+                                ),
+                            ),
+                        ));
+                    }
+                    None => None,
+                };
+                let path = self
+                    .spl_file_info_state(&object, method_name, span)?
+                    .path
+                    .clone();
+                Ok(Value::String(Self::spl_file_info_basename_with_suffix(
+                    &path, suffix,
+                )))
+            }
+            "getfilename" => {
+                expect_arity("SplFileInfo::getFilename", &args, 0, span)?;
+                let path = self
+                    .spl_file_info_state(&object, method_name, span)?
+                    .path
+                    .clone();
+                Ok(Value::String(Self::spl_file_info_path_basename(&path)))
+            }
+            "__debuginfo" => {
+                expect_arity("SplFileInfo::__debugInfo", &args, 0, span)?;
+                let state = self
+                    .spl_file_info_state(&object, method_name, span)?
+                    .clone();
+                Ok(Value::Array(Self::spl_file_info_debug_info_array(&state)))
+            }
             "setfileclass" => {
                 expect_arity("SplFileInfo::setFileClass", &args, 1, span)?;
                 let class_name = self.spl_file_info_class_argument(
@@ -19218,6 +19349,423 @@ impl Interpreter {
                 constructor_args.push(Value::String(state.path));
                 constructor_args.extend(args);
                 self.create_spl_file_object_for_class(&state.file_class, constructor_args, span)
+            }
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!(
+                    "{}::{method_name}()",
+                    object.class_name()
+                )),
+            )),
+        }
+    }
+
+    fn spl_directory_iterator_state(
+        &self,
+        object: &PhpObject,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<&DirectoryIteratorState> {
+        self.spl_directory_iterators
+            .get(&object.id())
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("DirectoryIterator::{method_name}()"),
+                        "missing DirectoryIterator runtime state",
+                    ),
+                )
+            })
+    }
+
+    fn spl_directory_iterator_state_mut(
+        &mut self,
+        object: &PhpObject,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<&mut DirectoryIteratorState> {
+        self.spl_directory_iterators
+            .get_mut(&object.id())
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("DirectoryIterator::{method_name}()"),
+                        "missing DirectoryIterator runtime state",
+                    ),
+                )
+            })
+    }
+
+    fn spl_directory_iterator_initialized_state(
+        &self,
+        object: &PhpObject,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<&DirectoryIteratorState> {
+        let state = self.spl_directory_iterator_state(object, method_name, span)?;
+        if state.initialized {
+            Ok(state)
+        } else {
+            Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("DirectoryIterator::{method_name}()"),
+                    "Object not initialized",
+                ),
+            ))
+        }
+    }
+
+    fn spl_directory_iterator_directory_argument(
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<String> {
+        let path = match value {
+            Value::String(path) => path.clone(),
+            Value::BinaryString(bytes) => {
+                tree_walk_binary_string_utf8(bytes, "filesystem path", span)?.to_string()
+            }
+            Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) => value.echo_string(),
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "DirectoryIterator::__construct()",
+                        format!(
+                            "DirectoryIterator::__construct(): Argument #1 ($directory) must be of type string, {} given",
+                            php_type_error_given(other)
+                        ),
+                    ),
+                ));
+            }
+        };
+        if path.is_empty() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "DirectoryIterator::__construct()",
+                    "DirectoryIterator::__construct(): Argument #1 ($directory) must not be empty",
+                ),
+            ));
+        }
+        if path.contains('\0') {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "DirectoryIterator::__construct()",
+                    "DirectoryIterator::__construct(): Argument #1 ($directory) must not contain any null bytes",
+                ),
+            ));
+        }
+        Ok(path)
+    }
+
+    fn spl_directory_iterator_entries(
+        function: &str,
+        directory_path: &Path,
+        span: Span,
+    ) -> CompileResult<Vec<String>> {
+        let mut entries = vec![".".to_string(), "..".to_string()];
+        let read_dir = fs::read_dir(directory_path).map_err(|error| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{function}()"),
+                    format!("{function}(): Failed to open directory: {error}"),
+                ),
+            )
+        })?;
+        let mut host_entries = Vec::new();
+        for entry in read_dir {
+            let entry = entry.map_err(|error| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("{function}()"),
+                        format!("local directory entry read failed: {error}"),
+                    ),
+                )
+            })?;
+            let Some(name) = entry.file_name().to_str().map(str::to_string) else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("{function}()"),
+                        "non-UTF-8 directory entries are not supported in the current subset",
+                    ),
+                ));
+            };
+            host_entries.push(name);
+        }
+        host_entries.sort();
+        entries.extend(host_entries);
+        Ok(entries)
+    }
+
+    fn spl_directory_iterator_current_entry<'a>(
+        state: &'a DirectoryIteratorState,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<&'a str> {
+        state
+            .entries
+            .get(state.cursor)
+            .map(String::as_str)
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("DirectoryIterator::{method_name}()"),
+                        "DirectoryIterator cursor is not valid",
+                    ),
+                )
+            })
+    }
+
+    fn spl_directory_iterator_current_filesystem_path(
+        state: &DirectoryIteratorState,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<PathBuf> {
+        let entry = Self::spl_directory_iterator_current_entry(state, method_name, span)?;
+        Ok(state.filesystem_path.join(entry))
+    }
+
+    fn spl_directory_iterator_current_metadata(
+        &self,
+        state: &DirectoryIteratorState,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<fs::Metadata> {
+        let path = Self::spl_directory_iterator_current_filesystem_path(state, method_name, span)?;
+        fs::metadata(&path).map_err(|_| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("DirectoryIterator::{method_name}()"),
+                    format!(
+                        "DirectoryIterator::{method_name}(): stat failed for {}",
+                        path.display()
+                    ),
+                ),
+            )
+        })
+    }
+
+    fn call_spl_directory_iterator_method_with_values(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        args: Vec<Value>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        match method_name.to_ascii_lowercase().as_str() {
+            "__construct" => {
+                expect_arity("DirectoryIterator::__construct", &args, 1, span)?;
+                let path = Self::spl_directory_iterator_directory_argument(&args[0], span)?;
+                let filesystem_path = self.resolve_local_filesystem_operation_path(
+                    "DirectoryIterator::__construct",
+                    &path,
+                    false,
+                    span,
+                )?;
+                if !self.enforce_bounded_open_basedir(
+                    "DirectoryIterator::__construct()",
+                    &path,
+                    &filesystem_path,
+                    span,
+                )? {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "DirectoryIterator::__construct()",
+                            format!("DirectoryIterator::__construct({path}): Failed to open directory: Permission denied"),
+                        ),
+                    ));
+                }
+                let metadata = fs::metadata(&filesystem_path).map_err(|error| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "DirectoryIterator::__construct()",
+                            format!(
+                                "DirectoryIterator::__construct({path}): Failed to open directory: {}",
+                                Self::filesystem_io_warning_message(&error)
+                            ),
+                        ),
+                    )
+                })?;
+                if !metadata.is_dir() {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "DirectoryIterator::__construct()",
+                            format!("DirectoryIterator::__construct({path}): Failed to open directory: Not a directory"),
+                        ),
+                    ));
+                }
+                let entries = Self::spl_directory_iterator_entries(
+                    "DirectoryIterator::__construct",
+                    &filesystem_path,
+                    span,
+                )?;
+                if let Some(info_state) = self.spl_file_infos.get_mut(&object.id()) {
+                    info_state.path = path;
+                }
+                let state = self.spl_directory_iterator_state_mut(&object, "__construct", span)?;
+                *state = DirectoryIteratorState {
+                    filesystem_path,
+                    entries,
+                    cursor: 0,
+                    initialized: true,
+                };
+                Ok(Value::Null)
+            }
+            "current" => {
+                expect_arity("DirectoryIterator::current", &args, 0, span)?;
+                let state =
+                    self.spl_directory_iterator_initialized_state(&object, method_name, span)?;
+                if state.cursor < state.entries.len() {
+                    Ok(Value::Object(object))
+                } else {
+                    Ok(Value::Bool(false))
+                }
+            }
+            "key" => {
+                expect_arity("DirectoryIterator::key", &args, 0, span)?;
+                let state =
+                    self.spl_directory_iterator_initialized_state(&object, method_name, span)?;
+                Ok(Value::Int(state.cursor as i64))
+            }
+            "next" => {
+                expect_arity("DirectoryIterator::next", &args, 0, span)?;
+                let state = self.spl_directory_iterator_state_mut(&object, method_name, span)?;
+                if !state.initialized {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "DirectoryIterator::next()",
+                            "Object not initialized",
+                        ),
+                    ));
+                }
+                state.cursor = state.cursor.saturating_add(1);
+                Ok(Value::Null)
+            }
+            "rewind" => {
+                expect_arity("DirectoryIterator::rewind", &args, 0, span)?;
+                let state = self.spl_directory_iterator_state_mut(&object, method_name, span)?;
+                if !state.initialized {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "DirectoryIterator::rewind()",
+                            "Object not initialized",
+                        ),
+                    ));
+                }
+                state.cursor = 0;
+                Ok(Value::Null)
+            }
+            "valid" => {
+                expect_arity("DirectoryIterator::valid", &args, 0, span)?;
+                let state =
+                    self.spl_directory_iterator_initialized_state(&object, method_name, span)?;
+                Ok(Value::Bool(state.cursor < state.entries.len()))
+            }
+            "getfilename" => {
+                expect_arity("DirectoryIterator::getFilename", &args, 0, span)?;
+                let state =
+                    self.spl_directory_iterator_initialized_state(&object, method_name, span)?;
+                Ok(Value::String(
+                    Self::spl_directory_iterator_current_entry(state, method_name, span)?
+                        .to_string(),
+                ))
+            }
+            "getbasename" => {
+                if args.len() > 1 {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "DirectoryIterator::getBasename",
+                            ArityExpectation::Between { min: 0, max: 1 },
+                            args.len(),
+                        ),
+                    ));
+                }
+                let suffix = match args.first() {
+                    Some(Value::String(suffix)) => Some(suffix.as_str()),
+                    Some(Value::BinaryString(bytes)) => {
+                        Some(tree_walk_binary_string_utf8(bytes, "suffix", span)?)
+                    }
+                    Some(other) => {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "DirectoryIterator::getBasename()",
+                                format!(
+                                    "Argument #1 ($suffix) must be of type string, {} given",
+                                    php_type_error_given(other)
+                                ),
+                            ),
+                        ));
+                    }
+                    None => None,
+                };
+                let state =
+                    self.spl_directory_iterator_initialized_state(&object, method_name, span)?;
+                let entry = Self::spl_directory_iterator_current_entry(state, method_name, span)?;
+                Ok(Value::String(Self::spl_file_info_basename_with_suffix(
+                    entry, suffix,
+                )))
+            }
+            "getextension" => {
+                expect_arity("DirectoryIterator::getExtension", &args, 0, span)?;
+                let state =
+                    self.spl_directory_iterator_initialized_state(&object, method_name, span)?;
+                let entry = Self::spl_directory_iterator_current_entry(state, method_name, span)?;
+                Ok(Value::String(Self::spl_file_info_path_extension(entry)))
+            }
+            "isdot" => {
+                expect_arity("DirectoryIterator::isDot", &args, 0, span)?;
+                let state =
+                    self.spl_directory_iterator_initialized_state(&object, method_name, span)?;
+                let entry = Self::spl_directory_iterator_current_entry(state, method_name, span)?;
+                Ok(Value::Bool(entry == "." || entry == ".."))
+            }
+            "isfile" => {
+                expect_arity("DirectoryIterator::isFile", &args, 0, span)?;
+                let state =
+                    self.spl_directory_iterator_initialized_state(&object, method_name, span)?;
+                let metadata =
+                    self.spl_directory_iterator_current_metadata(state, method_name, span)?;
+                Ok(Value::Bool(metadata.is_file()))
+            }
+            "getgroup" => {
+                expect_arity("DirectoryIterator::getGroup", &args, 0, span)?;
+                let state =
+                    self.spl_directory_iterator_initialized_state(&object, method_name, span)?;
+                let metadata =
+                    self.spl_directory_iterator_current_metadata(state, method_name, span)?;
+                Ok(Value::Int(filesystem_group_value(&metadata)))
+            }
+            "getinode" => {
+                expect_arity("DirectoryIterator::getInode", &args, 0, span)?;
+                let state =
+                    self.spl_directory_iterator_initialized_state(&object, method_name, span)?;
+                let metadata =
+                    self.spl_directory_iterator_current_metadata(state, method_name, span)?;
+                Ok(Value::Int(filesystem_inode_value(&metadata)))
+            }
+            "getowner" => {
+                expect_arity("DirectoryIterator::getOwner", &args, 0, span)?;
+                let state =
+                    self.spl_directory_iterator_initialized_state(&object, method_name, span)?;
+                let metadata =
+                    self.spl_directory_iterator_current_metadata(state, method_name, span)?;
+                Ok(Value::Int(filesystem_owner_value(&metadata)))
             }
             _ => Err(runtime_error(
                 span,
@@ -30363,6 +30911,10 @@ impl Interpreter {
             self.spl_file_objects
                 .insert(object.id(), SplFileObjectState::default());
         }
+        if self.is_spl_directory_iterator_class_id(class_id) {
+            self.spl_directory_iterators
+                .insert(object.id(), DirectoryIteratorState::default());
+        }
         self.apply_instance_property_defaults(&object, class_id, span)?;
         self.sync_spl_doubly_linked_list_object_properties(&object, span)?;
         let Some((
@@ -30501,6 +31053,21 @@ impl Interpreter {
                 .map(|arg| self.evaluate(arg, scope))
                 .collect::<CompileResult<Vec<_>>>()?;
             self.call_spl_file_object_method_with_values(
+                object.clone(),
+                "__construct",
+                values,
+                span,
+            )?;
+            self.track_allocated_object(&object);
+            return Ok(Value::Object(object));
+        }
+
+        if self.resolved_method_is_core_spl_directory_iterator(constructor_class_id) {
+            let values = args
+                .iter()
+                .map(|arg| self.evaluate(arg, scope))
+                .collect::<CompileResult<Vec<_>>>()?;
+            self.call_spl_directory_iterator_method_with_values(
                 object.clone(),
                 "__construct",
                 values,
@@ -31090,6 +31657,7 @@ impl Interpreter {
         self.spl_doubly_linked_lists.remove(&object_id);
         self.spl_file_infos.remove(&object_id);
         self.spl_file_objects.remove(&object_id);
+        self.spl_directory_iterators.remove(&object_id);
         self.spl_iterator_wrappers.remove(&object_id);
         self.date_time_objects.remove(&object_id);
         self.date_interval_objects.remove(&object_id);
@@ -31172,6 +31740,69 @@ impl Interpreter {
             Value::Closure(closure) => {
                 for capture in closure.captures() {
                     self.retire_json_encode_temporary_objects_in_value(
+                        &capture.value(),
+                        scope,
+                        visited,
+                    )?;
+                }
+            }
+            Value::Null
+            | Value::Bool(_)
+            | Value::Int(_)
+            | Value::Float(_)
+            | Value::String(_)
+            | Value::BinaryString(_)
+            | Value::Resource(_) => {}
+        }
+        Ok(())
+    }
+
+    fn retire_reusable_temporary_object_arguments(
+        &mut self,
+        values: &[Value],
+        scope: &SymbolTable,
+    ) -> CompileResult<()> {
+        let mut visited = HashSet::new();
+        for value in values {
+            self.retire_reusable_temporary_objects_in_value(value, scope, &mut visited)?;
+        }
+        Ok(())
+    }
+
+    fn retire_reusable_temporary_objects_in_value(
+        &mut self,
+        value: &Value,
+        scope: &SymbolTable,
+        visited: &mut HashSet<i64>,
+    ) -> CompileResult<()> {
+        match value {
+            Value::Object(object) => {
+                if !visited.insert(object.id()) {
+                    return Ok(());
+                }
+                for property in object.properties() {
+                    if property.is_initialized() {
+                        self.retire_reusable_temporary_objects_in_value(
+                            &property.value_cloned(),
+                            scope,
+                            visited,
+                        )?;
+                    }
+                }
+                self.retire_reusable_unrooted_temporary_object_handle(object, scope)?;
+            }
+            Value::Array(array) => {
+                for entry in array.entries() {
+                    self.retire_reusable_temporary_objects_in_value(
+                        &entry.value_cloned(),
+                        scope,
+                        visited,
+                    )?;
+                }
+            }
+            Value::Closure(closure) => {
+                for capture in closure.captures() {
+                    self.retire_reusable_temporary_objects_in_value(
                         &capture.value(),
                         scope,
                         visited,
@@ -31542,6 +32173,9 @@ impl Interpreter {
         }
         if let Some(state) = self.spl_file_objects.get(&object.id()).cloned() {
             self.spl_file_objects.insert(clone.id(), state);
+        }
+        if let Some(state) = self.spl_directory_iterators.get(&object.id()).cloned() {
+            self.spl_directory_iterators.insert(clone.id(), state);
         }
         if let Some(state) = self.spl_iterator_wrappers.get(&object.id()).cloned() {
             self.spl_iterator_wrappers.insert(clone.id(), state);
@@ -55800,6 +56434,12 @@ impl Interpreter {
             span,
         )?;
 
+        if self.resolved_method_is_core_spl_file_info(class_id) {
+            return self
+                .call_spl_file_info_method_with_values(object, "__debugInfo", Vec::new(), span)
+                .map(Some);
+        }
+
         let function = self.method_function(class_id, &class_name, &resolved_method_name, span)?;
         let function = function.as_ref();
         ensure_user_function_arity(function, 0, span)?;
@@ -55863,6 +56503,12 @@ impl Interpreter {
         if self.resolved_method_is_core_spl_doubly_linked_list(class_id) {
             return self
                 .call_spl_doubly_linked_list_method_with_values(object, method_name, args, span)
+                .map(Some);
+        }
+
+        if self.resolved_method_is_core_spl_directory_iterator(class_id) {
+            return self
+                .call_spl_directory_iterator_method_with_values(object, method_name, args, span)
                 .map(Some);
         }
 
@@ -56128,6 +56774,12 @@ impl Interpreter {
         if self.resolved_method_is_core_spl_doubly_linked_list(class_id) {
             return self
                 .call_spl_doubly_linked_list_method_with_values(object, method_name, args, span)
+                .map(Some);
+        }
+
+        if self.resolved_method_is_core_spl_directory_iterator(class_id) {
+            return self
+                .call_spl_directory_iterator_method_with_values(object, method_name, args, span)
                 .map(Some);
         }
 
@@ -56915,6 +57567,24 @@ impl Interpreter {
                 .collect::<CompileResult<Vec<_>>>()?;
             let callable = format!("{}->{method_name}", object.class_name());
             let result = self.call_spl_doubly_linked_list_method_with_values(
+                object,
+                method_name,
+                values.clone(),
+                span,
+            );
+            if let Err(error) = &result {
+                self.record_pending_uncaught_internal_call_frame(callable, span, &values, error);
+            }
+            return result.map(|value| (value, None));
+        }
+
+        if self.resolved_method_is_core_spl_directory_iterator(class_id) {
+            let values = args
+                .iter()
+                .map(|arg| self.evaluate(arg, caller_scope))
+                .collect::<CompileResult<Vec<_>>>()?;
+            let callable = format!("{}->{method_name}", object.class_name());
+            let result = self.call_spl_directory_iterator_method_with_values(
                 object,
                 method_name,
                 values.clone(),
@@ -63936,6 +64606,31 @@ impl Interpreter {
             );
         }
 
+        if self.resolved_method_is_core_spl_directory_iterator(class_id) {
+            let this_object = match caller_scope.read_named("this") {
+                Some(Value::Object(object)) => object.clone(),
+                _ => {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{class_name}::{method_name}()"),
+                            "non-static method dispatch through parent:: requires current $this object context",
+                        ),
+                    ));
+                }
+            };
+            let values = args
+                .iter()
+                .map(|arg| self.evaluate(arg, caller_scope))
+                .collect::<CompileResult<Vec<_>>>()?;
+            return self.call_spl_directory_iterator_method_with_values(
+                this_object,
+                method_name,
+                values,
+                span,
+            );
+        }
+
         if self.resolved_method_is_core_spl_file_object(class_id) {
             let this_object = match caller_scope.read_named("this") {
                 Some(Value::Object(object)) => object.clone(),
@@ -69388,6 +70083,13 @@ impl Interpreter {
                         caller_scope,
                     );
                 }
+                if key == "var_dump" {
+                    return self.call_var_dump_with_temporary_argument_retirement(
+                        values,
+                        span,
+                        caller_scope,
+                    );
+                }
                 self.call_builtin(&key, values, span)
             }
             Callable::User(function) => {
@@ -69602,6 +70304,13 @@ impl Interpreter {
                 }
                 if key == "json_encode" {
                     return self.call_json_encode_with_temporary_argument_retirement(
+                        values,
+                        span,
+                        caller_scope,
+                    );
+                }
+                if key == "var_dump" {
+                    return self.call_var_dump_with_temporary_argument_retirement(
                         values,
                         span,
                         caller_scope,
@@ -125733,6 +126442,27 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             }
         }
 
+        if let Some(message) = error
+            .message
+            .strip_prefix("unsupported call DirectoryIterator::")
+            .and_then(|message| message.split_once(": "))
+            .map(|(_, message)| message.to_string())
+        {
+            if message == "Object not initialized" {
+                return Some(("Error", message));
+            }
+            if message.contains("must not be empty") {
+                return Some(("ValueError", message));
+            }
+            if message.contains("Failed to open directory") || message.contains("stat failed for ")
+            {
+                return Some(("RuntimeException", message));
+            }
+            if message.contains(" must be of type ") || message.contains("null bytes") {
+                return Some(("TypeError", message));
+            }
+        }
+
         for prefix in [
             "unsupported call InfiniteIterator::",
             "unsupported call LimitIterator::",
@@ -150337,6 +151067,30 @@ impl Interpreter {
         let result = self.call_json_encode(&args, span);
         if result.is_ok() {
             self.retire_json_encode_temporary_object_arguments(&temporary_arguments, caller_scope)?;
+        }
+        result
+    }
+
+    fn call_var_dump_with_temporary_argument_retirement(
+        &mut self,
+        args: Vec<Value>,
+        span: Span,
+        caller_scope: &SymbolTable,
+    ) -> CompileResult<Value> {
+        let result = (|| {
+            for value in &args {
+                let Some(output) = self.format_var_dump_argument_bytes(value, span)? else {
+                    break;
+                };
+                self.append_output_bytes_at(&output, span);
+                if self.exit_signal.is_some() {
+                    break;
+                }
+            }
+            Ok(Value::Null)
+        })();
+        if result.is_ok() {
+            self.retire_reusable_temporary_object_arguments(&args, caller_scope)?;
         }
         result
     }

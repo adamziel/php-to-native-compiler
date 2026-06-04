@@ -2730,9 +2730,10 @@
   during detach/unset, serialization parity, reference/COW mutation of stored
   info values, and native lowering remain unsupported.
 - SPL `SplFileInfo` has a bounded local metadata runtime model for
-  `__construct()`, `getExtension()`, `getFileInfo()`, `getGroup()`,
-  `getInode()`, `getOwner()`, `getPathInfo()`, `getPerms()`, `openFile()`,
-  `setFileClass()`, and `setInfoClass()`.
+  `__construct()`, `__debugInfo()`, `getBasename()`, `getExtension()`,
+  `getFileInfo()`, `getFilename()`, `getGroup()`, `getInode()`, `getOwner()`,
+  `getPathInfo()`, `getPerms()`, `openFile()`, `setFileClass()`, and
+  `setInfoClass()`.
   Construction records the provided path without opening or statting it.
   Covered metadata getters resolve local paths through the same bounded
   local-path, open_basedir, and stat-cache policy as the adjacent `filegroup()`,
@@ -2743,10 +2744,17 @@
   `SplFileObject` and `SplFileInfo` respectively; `openFile()`,
   `getFileInfo()`, and `getPathInfo()` create bounded SPL objects using the
   selected class state without invoking selected-class constructor side
-  effects. Broad `SplFileInfo` path/name/type methods, DirectoryIterator
-  inherited metadata, link-target-specific metadata, non-local/user stream
-  wrappers, exact open_basedir warning parity, serialization parity,
-  references/COW, and native lowering remain unsupported.
+  effects. `getBasename()`, `getFilename()`, and `__debugInfo()` are pure
+  path-string operations over the stored path. Core `DirectoryIterator`
+  supports bounded local directory construction, `current()`, `key()`,
+  `next()`, `rewind()`, `valid()`, `isDot()`, `isFile()`, `getFilename()`,
+  `getBasename()`, `getExtension()`, `getGroup()`, `getInode()`, and
+  `getOwner()` for the reached public PHPT rows. Broad `SplFileInfo`
+  path/name/type methods, `FilesystemIterator` / `RecursiveDirectoryIterator`,
+  broad `DirectoryIterator` seek/path/type/link behavior, link-target-specific
+  metadata, non-local/user stream wrappers, exact open_basedir warning parity,
+  serialization parity, references/COW, and native lowering remain
+  unsupported.
 - SPL `SplFileObject` has a bounded local UTF-8 line-cursor runtime model for
   construction from local paths and local `file://` URLs in supported local
   stream modes, plus `current()`, `getCurrentLine()`, `fgets()`,
