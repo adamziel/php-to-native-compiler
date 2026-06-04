@@ -1,6 +1,6 @@
 # PHP Native Compiler PHPT Progress
 
-Updated: 2026-06-04 05:55 CEST
+Updated: 2026-06-04 06:15 CEST
 
 Primary/public branch: `origin/master`
 Latest accepted public-score source:
@@ -19,12 +19,12 @@ denominators that exclude BORKED rows are not public progress.
 Current public score: **7279 / 20294 pinned runnable PHPTs = 35.87%**.
 
 Latest pushed source checkpoint:
-`c912841afc0a14861cd2ebbbbb022c8214364412 fix: support final class constants`
+`93aafea2f2b86880dddf047f5bf704874f9e033f fix: support class name constants`
 
 Current score-gate target:
 `c12ecf1b66d0840726404a9b72296fa336724c4b fix: support bounded list destructuring`
 completed `FINAL / BLOCKED-PASS-REGRESSIONS` with `1` latest-published PASS
-regression. It is not publication evidence. The newer `c912841a` source has no
+regression. It is not publication evidence. The newer `93aafea2` source has no
 accepted full gate.
 
 The accepted source checkpoint chain through semantic source `21abc76f` has
@@ -39,18 +39,20 @@ latest-published PASS regressions.
 
 Unpublished source progress since the accepted public score source:
 
-- Latest pushed source head is `c912841afc0a14861cd2ebbbbb022c8214364412`
-  (`fix: support final class constants`), pushed to
+- Latest pushed source head is `93aafea2f2b86880dddf047f5bf704874f9e033f`
+  (`fix: support class name constants`), pushed to
   `origin/master`.
-- There are `3` score-relevant source commits after the accepted public-score
+- There are `4` score-relevant source commits after the accepted public-score
   source: `e2c610c753d35f043d91f4483bb2cdd4662ae12c`
   (`fix: support bounded strtotime absolute forms`),
   `c12ecf1b66d0840726404a9b72296fa336724c4b`
-  (`fix: support bounded list destructuring`), and
+  (`fix: support bounded list destructuring`),
   `c912841afc0a14861cd2ebbbbb022c8214364412`
-  (`fix: support final class constants`).
+  (`fix: support final class constants`), and
+  `93aafea2f2b86880dddf047f5bf704874f9e033f`
+  (`fix: support class name constants`).
 - Staged focused selected-PHPT proof after the latest accepted public-score
-  source totals `43` selected rows across `3` integrated source artifacts.
+  source totals `57` selected rows across `4` integrated source artifacts.
   These are source/staging facts, not a public score update unless a full pinned
   PHPT gate accepts them.
 - The DateTime absolute `strtotime()` packet moved selected PHPT
@@ -93,6 +95,23 @@ Unpublished source progress since the accepted public score source:
   `Zend/tests/constants/iface_constant_visibility_variance.phpt`. It also
   preserved the staged DateTime absolute and list destructuring selected PHPT
   `33/33` rows plus the latest-published PASS scout.
+- The class-name constants packet moved selected PHPT `0/14 -> 14/14` for
+  `Zend/tests/class_name/bug66811.phpt`,
+  `Zend/tests/class_name/bug77530.phpt`,
+  `Zend/tests/class_name/class_name_as_scalar.phpt`,
+  `Zend/tests/class_name/class_name_as_scalar_error_001.phpt`,
+  `Zend/tests/class_name/class_name_as_scalar_error_002.phpt`,
+  `Zend/tests/class_name/class_name_as_scalar_error_003.phpt`,
+  `Zend/tests/class_name/class_name_as_scalar_error_004.phpt`,
+  `Zend/tests/class_name/class_name_as_scalar_error_005.phpt`,
+  `Zend/tests/class_name/class_name_as_scalar_error_006.phpt`,
+  `Zend/tests/class_name/class_name_as_scalar_error_007.phpt`,
+  `Zend/tests/class_name/class_on_constant_evaluated_expression.phpt`,
+  `Zend/tests/class_name/class_on_object.phpt`,
+  `Zend/tests/class_name/parent_class_name_without_parent.phpt`, and
+  `Zend/tests/class_name/self_class_const_in_unknown_scope.phpt`. It also
+  preserved staged DateTime absolute, list destructuring, and final constants
+  selected PHPT `43/43` rows plus the latest-published PASS scout.
 - The `c12ecf1b` full gate is blocked:
   `state/logs/phpt-full-current-score-20260604T034027Z-php-src-f97ff59-public-c12ecf1b-source-c12ecf1b`
   against the accepted `21abc76f` PASS baseline with `7275` normalized rows.
@@ -101,15 +120,16 @@ Unpublished source progress since the accepted public score source:
   latest-published PASS regression:
   `php-src/ext/date/tests/bug35422.phpt`. It is not publication evidence until
   that row is repaired and a clean full pinned gate accepts the source chain.
-  The newer `c912841a` final-constants source is not included in that gate.
+  The newer `c912841a` final-constants and `93aafea2` class-name constants
+  sources are not included in that gate.
 - The attempted `830d966d` full gate is not publication evidence:
   `state/logs/phpt-full-current-score-20260604T032315Z-php-src-f97ff59-public-830d966d-source-830d966d`
   ended `FINAL / GATE-INCOMPLETE-NO-AGGREGATE /
   NOT-PUBLICATION-EVIDENCE`. It produced no aggregate, current-passes, or
   regression summary files, and shards `01`, `08`, and `09` lacked `exit.tsv`
   markers. That gate included semantic source `e2c610c7`, not `c12ecf1b` or
-  `c912841a`, so it cannot move the public score even aside from the incomplete
-  run state.
+  the newer `c912841a` / `93aafea2` sources, so it cannot move the public score
+  even aside from the incomplete run state.
 - The previous publication blocker was the blocked `52a79aa1` full gate:
   `state/logs/phpt-full-current-score-20260604T005236Z-php-src-f97ff59-public-52a79aa1-source-52a79aa1`
   had `1` latest-published PASS regression,
