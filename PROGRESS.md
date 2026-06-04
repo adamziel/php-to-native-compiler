@@ -1,6 +1,6 @@
 # PHP Native Compiler PHPT Progress
 
-Updated: 2026-06-04 21:05 CEST
+Updated: 2026-06-04 21:35 CEST
 
 Primary/public branch: `origin/master`
 Latest accepted public-score source:
@@ -19,7 +19,7 @@ denominators that exclude BORKED rows are not public progress.
 Current public score: **7873 / 20294 pinned runnable PHPTs = 38.79%**.
 
 Latest pushed source checkpoint:
-`087e3ad3ff8005ae07b73ca528749c1066d8efff fix: support class-order autoload variance`
+`f060ab5d959f4ab00d70ecc41b1b9f104bc20b45 fix: handle bcmath number invalid operands`
 
 Current score-gate status:
 Accepted public gate:
@@ -32,26 +32,27 @@ the accepted `6c038019` PASS baseline. It reported public-comparable
 `7873 / 20294 = 38.79%`, `7869` normalized current passes, `0`
 latest-published PASS regressions, and `0` invalid proof-marker hits. This
 gate converts the post-`6c038019` source chain through `0b917f67` into public
-PHPT progress. Newer source commits through `087e3ad3` are staged after this
+PHPT progress. Newer source commits through `f060ab5d` are staged after this
 accepted public source and are not included in the public score above.
 
 Latest non-public full gate:
-`state/logs/phpt-full-current-score-20260604T185055Z-php-src-f97ff59-public-fe9d080a-source-fe9d080a`
-is `FINAL / RUNNER-INTERRUPTED-HUP` for source checkpoint `fe9d080a` against
-the accepted `0b917f67` PASS baseline. It reached sharded PHPT with per-shard
-harnesses, but runner PID `640421` and tmux session `phpc-score-fe9d080a-251`
-were gone, all 12 shard exits were `129`, and the evidence directory had no
-aggregate, current-pass, or latest-published PASS-regression summary artifacts.
-Current source later advanced to `087e3ad3`. This gate does not authorize a
-public score change or publish source commits after `0b917f67`.
+`state/logs/phpt-full-current-score-20260604T191318Z-php-src-f97ff59-public-86dff250-source-86dff250`
+is `FINAL / RUNNER-INTERRUPTED-TERM` for docs checkpoint `86dff250`, whose
+score-relevant source was `087e3ad3`, against the accepted `0b917f67` PASS
+baseline. It reached sharded PHPT, but all 12 shard exits were `143`,
+`runner.stderr.log` contained twelve `Terminated` lines, and the evidence
+directory had no aggregate, current-pass, or latest-published PASS-regression
+summary artifacts. Current source later advanced to `f060ab5d`. This gate does
+not authorize a public score change or publish source commits after `0b917f67`.
 
-Recent non-public gate history: the `fe9d080a` HUP-interrupted gate, the
-`aaf4376f` gates at `180344Z` and `181724Z`, plus the `a1d98e14`,
-`24448fcf`, `4e26d128`, `48738670`, `1f981cb8`, `75c29966`, `99b183cc`, and
-`31656671` full gates aborted or were interrupted and were not publication
-evidence; the `d978106e` gate completed with four latest-published PASS
-regressions. The DatePeriod and property-override regression rows from that
-blocked gate are repaired in the now-published `0b917f67` chain.
+Recent non-public gate history: the `86dff250` TERM-interrupted gate, the
+`fe9d080a` HUP-interrupted gate, the `aaf4376f` gates at `180344Z` and
+`181724Z`, plus the `a1d98e14`, `24448fcf`, `4e26d128`, `48738670`,
+`1f981cb8`, `75c29966`, `99b183cc`, and `31656671` full gates aborted or were
+interrupted and were not publication evidence; the `d978106e` gate completed
+with four latest-published PASS regressions. The DatePeriod and
+property-override regression rows from that blocked gate are repaired in the
+now-published `0b917f67` chain.
 
 The previous accepted full gate for source `e3813529`:
 `state/logs/phpt-full-current-score-20260604T103438Z-php-src-f97ff59-public-e3813529-source-e3813529`
@@ -101,10 +102,10 @@ passes, with zero latest-published PASS regressions.
 
 Unpublished source progress since the accepted public score source:
 
-- Latest pushed source head is `087e3ad3ff8005ae07b73ca528749c1066d8efff`
-  (`fix: support class-order autoload variance`), which is newer than the
+- Latest pushed source head is `f060ab5d959f4ab00d70ecc41b1b9f104bc20b45`
+  (`fix: handle bcmath number invalid operands`), which is newer than the
   accepted `0b917f67` full gate and is not included in the public score above.
-- There are `18` score-relevant source commits after the accepted public-score
+- There are `19` score-relevant source commits after the accepted public-score
   source: `88071e97e22d6b840ab9ebbc248a67a55e5b6926`
   (`fix: reject invalid property hooks`),
   `1b3c4f4dad1eef590cfec69504dd16c4e55e0743`
@@ -138,11 +139,13 @@ Unpublished source progress since the accepted public score source:
   `af3410859860d2bf2d9021ed76328fb1c2194c0b`
   (`fix: validate property hook metadata`),
   `2d7a57e41641c99a87593c37524f71c4b57426e1`
-  (`fix: support enum reflection metadata`), and
+  (`fix: support enum reflection metadata`),
   `087e3ad3ff8005ae07b73ca528749c1066d8efff`
-  (`fix: support class-order autoload variance`).
+  (`fix: support class-order autoload variance`), and
+  `f060ab5d959f4ab00d70ecc41b1b9f104bc20b45`
+  (`fix: handle bcmath number invalid operands`).
 - Staged focused selected-PHPT proof after the latest accepted public-score
-  source totals `262` selected rows across `19` integrated source artifacts.
+  source totals `274` selected rows across `21` integrated source artifacts.
   These are source/staging facts, not a public score update unless a full
   pinned PHPT gate accepts them.
 - The staged packets are property-hook diagnostics `0/16 -> 16/16`, GMP
@@ -155,21 +158,24 @@ Unpublished source progress since the accepted public score source:
   setter visibility `0/16 -> 16/16`, POSIX metadata helpers
   `0/15 -> 15/15`, trait composition diagnostics `0/22 -> 22/22`, SPL
   memory/temp file objects `0/19 -> 19/19`, GMP operator overloading
-  `0/18 -> 18/18`, property-hook final/set metadata `0/14 -> 14/14`, and
-  enum reflection metadata `0/14 -> 14/14`, and class-order autoload variance
+  `0/18 -> 18/18`, property-hook final/set metadata `0/14 -> 14/14`,
+  enum reflection metadata `0/14 -> 14/14`, class-order autoload variance
   `0/14 -> 14/14` with the unsupported nested-interface
-  `class_order_autoload4.phpt` row still excluded from that selected packet.
+  `class_order_autoload4.phpt` row still excluded from that selected packet,
+  and BcMath Number invalid operand/coercion rows `0/12 -> 12/12`.
   They preserved latest-published PASS scouts in the accepted integration
   artifacts and passed focused Rust, build, fmt, diff, php-src cleanliness, and
   production row-name leakage checks.
-- Outstanding publication blocker: the latest `fe9d080a` full gate is
-  `FINAL / RUNNER-INTERRUPTED-HUP` and did not produce aggregate current-pass
-  or latest-published PASS-regression summary artifacts. The prior shared
-  harness abort shape was repaired, but this gate exposed a separate HUP/session
-  lifecycle blocker. A bounded HUP repair lane is running; no repaired full gate
-  has accepted `087e3ad3`, and no staged source after `0b917f67` can move the
-  public score unless a fresh full pinned PHPT gate completes with zero
-  latest-published PASS regressions.
+- Outstanding publication blocker: the latest `86dff250` full gate is
+  `FINAL / RUNNER-INTERRUPTED-TERM` and did not produce aggregate current-pass
+  or latest-published PASS-regression summary artifacts. The prior HUP/session
+  lifecycle blocker was repaired before that launch, but this gate exposed a
+  separate TERM/session lifecycle blocker. A bounded TERM repair/diagnostic lane
+  is running, and cadence is `SCORE-GATE-BLOCKED-DISK` with `23GiB` available
+  below the `35GiB` full-gate floor. No repaired full gate has accepted
+  `f060ab5d`, and no staged source after `0b917f67` can move the public score
+  unless a fresh full pinned PHPT gate completes with zero latest-published
+  PASS regressions.
 
 Accepted source proof included in the `0b917f67` public gate:
 
