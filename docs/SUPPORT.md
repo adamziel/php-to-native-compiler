@@ -7657,10 +7657,11 @@
   simple method alias, visibility-adaptation, and bounded `insteadof` shapes,
   broad conflict resolution,
   `__TRAIT__` context,
-  references/copy-on-write, and native trait lowering, enum methods/interface
-  implementations/traits, generated enum `cases()` / `from()` / `tryFrom()`
-  execution, typed or property-hook enum properties, enum case object/value
-  behavior beyond the bounded direct case-read and reflection metadata paths,
+  references/copy-on-write, and native trait lowering, ordinary enum
+  methods/interface implementations/traits beyond the generated
+  `cases()`/`from()`/`tryFrom()` interpreter path, property-hook enum
+  properties, enum case object/value behavior beyond the bounded direct
+  case-read, generated-method, and reflection metadata paths,
   unsupported class modifier combinations, full readonly class runtime
   semantics beyond bounded declaration metadata and startup diagnostics,
   typed-property initialization/write rules, reflection behavior, and native
@@ -8262,14 +8263,18 @@
   metadata so PHP-forbidden magic methods (`__clone`, `__construct`,
   `__destruct`, `__get`, `__isset`, `__serialize`, `__set`, `__set_state`,
   `__sleep`, `__toString`, `__unserialize`, `__unset`, `__wakeup`), abstract
-  enum methods, and untyped instance/static enum properties emit PHP-shaped
-  startup fatals. Enum cases are singleton objects for direct `Enum::Case`
-  reads, and backed case values are evaluated for the bounded reflection
-  `getBackingValue()` path. Ordinary enum method dispatch, `__call`,
-  `__callStatic`, `__invoke`, typed/property-hook enum properties, enum
-  `cases()`/`from()`/`tryFrom()` methods, enum `implements` declarations,
-  enum reflection APIs beyond the current `ReflectionEnum`/case metadata
-  slice, and native enum lowering remain unsupported.
+  enum methods, generated-method redeclarations, and instance/static enum
+  properties emit PHP-shaped startup fatals. Enum cases are singleton objects
+  for direct `Enum::Case` reads, generated `cases()` returns those singleton
+  case objects in declaration order, and backed generated `from()`/`tryFrom()`
+  resolve current `int`/`string` backing values with PHP-shaped `ValueError`
+  and `TypeError` surfaces for the covered scalar cases. Generated readonly
+  `name` and backed `value` properties expose PHP-shaped write/unset errors,
+  and enum cases reject dynamic property creation. Ordinary enum method
+  dispatch, `__call`, `__callStatic`, `__invoke`, property-hook enum
+  properties, enum `implements` declarations, enum reflection APIs beyond the
+  current `ReflectionEnum`/case/generated-method metadata slice, references
+  and copy-on-write parity, and native enum lowering remain unsupported.
   `property_exists($object_or_class, $property)` accepts a current object value
   or string class name and a string property name. It checks the current
   declared and inherited property metadata with case-sensitive property names,
@@ -11213,12 +11218,14 @@
   names, public `name`/`class` properties for debug output, `getName()`,
   `isPublic()`, `getModifiers()`, `getDocComment()`, `getEnum()`,
   `getValue()`, and backed-case `getBackingValue()` over the current constant
-  expression subset. Enum cases are also registered as class constants for
-  `ReflectionClassConstant`, including `getDocComment()` and `isEnumCase()`.
-  Enum methods, interfaces declared with `implements`, traits, `cases()`,
-  `from()`, `tryFrom()`, backed enum `__toString()` parity beyond the
-  represented metadata rows, references/COW, and native enum lowering remain
-  unsupported.
+  expression subset. `ReflectionEnum::getMethod()` can resolve the generated
+  backed `from()`/`tryFrom()` method metadata, and enum cases are also
+  registered as class constants for `ReflectionClassConstant`, including
+  `getDocComment()` and `isEnumCase()`. Ordinary enum methods, interfaces
+  declared with `implements`, traits, generated method parameter/reflection
+  detail beyond the current metadata rows, backed enum `__toString()` parity
+  beyond the represented metadata rows, references/COW, and native enum
+  lowering remain unsupported.
   `new ReflectionMethod($object_or_class, $method)` and
   `new ReflectionMethod("ClassName::methodName")` create a bounded
   metadata object for methods declared in the current user class, interface,
@@ -12330,10 +12337,11 @@
   traits, unqualified `insteadof`, trait property or constant adaptations,
   `__TRAIT__`,
   delayed conditional/nested trait registration, exact trait diagnostics,
-  enum methods, enum properties, enum constants beyond the current simple
-  constant-expression metadata slice, enum interface implementations,
-  generated enum `cases()`/`from()`/`tryFrom()` execution, namespace-aware
-  enum member access,
+  ordinary enum methods, property-hook enum properties, enum constants beyond
+  the current simple constant-expression metadata slice, enum interface
+  implementations, generated enum `cases()`/`from()`/`tryFrom()` behavior
+  beyond the current interpreter/reflection slice, namespace-aware enum member
+  access,
   full method signature compatibility beyond inherited required-parameter count
   increases, readonly class semantics beyond bounded startup diagnostics,
   readonly property runtime enforcement and reflection metadata,
@@ -13581,8 +13589,8 @@
 - broad interface implementation enforcement beyond the current
   public-method/signature metadata slice,
   trait composition beyond the current public method/adaptation subset, and
-  enum methods/interfaces/generated case lookup methods beyond the current
-  reflection metadata and direct-case slices
+  ordinary enum methods/interfaces plus generated enum methods beyond the
+  current direct-case/interpreter/reflection slices
 - generator functions, generator objects, `yield`, `yield from` delegation,
   key/value yields, by-reference yields, `send`/`throw`/`return` generator
   semantics, `Traversable` forwarding, and native lowering

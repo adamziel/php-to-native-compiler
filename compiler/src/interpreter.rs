@@ -32876,6 +32876,9 @@ impl Interpreter {
             scope.post_replace_holder_storage(&boundary);
             return Ok(());
         }
+        if let Some(error) = Self::enum_case_property_unset_error(&object, property, span) {
+            return Err(error);
+        }
         if call_magic_on_missing
             && object
                 .is_unset_property_from_context(property, current_class_id, &protected_class_ids)
@@ -45275,6 +45278,11 @@ impl Interpreter {
                             )?;
                             scope.post_replace_holder_storage(&boundary);
                             return Ok(value);
+                        }
+                        if let Some(error) =
+                            Self::enum_case_property_write_error(&object_value, property, *span)
+                        {
+                            return Err(error);
                         }
                         if object_value
                             .is_unset_property_from_context(
@@ -64437,6 +64445,50 @@ impl Interpreter {
         )
     }
 
+    fn enum_case_property_write_error(
+        object: &PhpObject,
+        property: &str,
+        span: Span,
+    ) -> Option<Diagnostic> {
+        if !object.is_instance_of_class_name("UnitEnum") {
+            return None;
+        }
+        let message = if enum_case_has_readonly_property(object, property) {
+            format!(
+                "Cannot modify readonly property {}::${property}",
+                object.class_name()
+            )
+        } else {
+            format!(
+                "Cannot create dynamic property {}::${property}",
+                object.class_name()
+            )
+        };
+        Some(runtime_error(
+            span,
+            RuntimeError::unsupported_property_access(message),
+        ))
+    }
+
+    fn enum_case_property_unset_error(
+        object: &PhpObject,
+        property: &str,
+        span: Span,
+    ) -> Option<Diagnostic> {
+        if !object.is_instance_of_class_name("UnitEnum")
+            || !enum_case_has_readonly_property(object, property)
+        {
+            return None;
+        }
+        Some(runtime_error(
+            span,
+            RuntimeError::unsupported_property_access(format!(
+                "Cannot unset readonly property {}::${property}",
+                object.class_name()
+            )),
+        ))
+    }
+
     fn call_reflection_enum_method(
         &mut self,
         object: PhpObject,
@@ -64567,6 +64619,23 @@ impl Interpreter {
                 }
                 self.retire_reusable_unrooted_temporary_object_handle(&object, caller_scope)?;
                 Ok(Value::Array(cases))
+            }
+            "getmethod" => {
+                expect_expr_arity("ReflectionEnum::getMethod", args.len(), 1, span)?;
+                let value = self.evaluate(&args[0], caller_scope)?;
+                let method = reflection_scalar_string_argument(
+                    "ReflectionEnum::getMethod",
+                    "name",
+                    value,
+                    span,
+                )?;
+                let class_state = self.reflection_class_state_for(
+                    state.enum_decl.name.clone(),
+                    ReflectionClassKind::Class,
+                    Some(state.class_id),
+                );
+                let method = self.resolve_reflection_method_target(&class_state, &method, span)?;
+                self.create_reflection_method_object(method, span)
             }
             _ => Err(runtime_error(
                 span,
@@ -65328,6 +65397,7 @@ impl Interpreter {
                         }
                     }
                 }
+                self.retire_reusable_unrooted_temporary_object_handle(&object, caller_scope)?;
                 Ok(Value::Array(properties))
             }
             "getstaticproperties" => {
@@ -72873,6 +72943,17 @@ impl Interpreter {
                 caller_scope,
             );
         }
+        if let Some(enum_decl) = self.enum_decl_for_class_id(class_id) {
+            if let Some(result) = self.call_enum_generated_static_method(
+                enum_decl,
+                method_name,
+                args,
+                span,
+                caller_scope,
+            ) {
+                return result;
+            }
+        }
         let Some((
             declaring_class_id,
             declaring_class_name,
@@ -73072,6 +73153,17 @@ impl Interpreter {
                 span,
                 caller_scope,
             );
+        }
+        if let Some(enum_decl) = self.enum_decl_for_class_id(receiver_class_id) {
+            if let Some(result) = self.call_enum_generated_static_method(
+                enum_decl,
+                method_name,
+                args,
+                span,
+                caller_scope,
+            ) {
+                return result;
+            }
         }
         let Some((
             declaring_class_id,
@@ -74820,6 +74912,138 @@ impl Interpreter {
         }
         self.enum_case_objects.insert(key, object.clone());
         Ok(Value::Object(object))
+    }
+
+    fn enum_decl_for_class_id(&self, class_id: ClassId) -> Option<Rc<EnumDecl>> {
+        let class = self.classes.get(class_id)?;
+        self.enum_lookup
+            .get(&class.name().to_ascii_lowercase())
+            .cloned()
+    }
+
+    fn call_enum_generated_static_method(
+        &mut self,
+        enum_decl: Rc<EnumDecl>,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> Option<CompileResult<Value>> {
+        match method_name.to_ascii_lowercase().as_str() {
+            "cases" => Some(self.call_enum_cases_static_method(&enum_decl, args, span)),
+            "from" | "tryfrom" if enum_decl.backing_type.is_some() => {
+                Some(self.call_enum_backed_static_lookup_method(
+                    &enum_decl,
+                    method_name,
+                    args,
+                    span,
+                    caller_scope,
+                ))
+            }
+            _ => None,
+        }
+    }
+
+    fn call_enum_cases_static_method(
+        &mut self,
+        enum_decl: &EnumDecl,
+        args: &[Expr],
+        span: Span,
+    ) -> CompileResult<Value> {
+        expect_expr_arity(&format!("{}::cases", enum_decl.name), args.len(), 0, span)?;
+        let mut cases = PhpArray::new();
+        for case_decl in &enum_decl.cases {
+            let object = self.evaluate_enum_case_object(enum_decl, &case_decl.name, span)?;
+            cases
+                .append(object)
+                .expect("enum case count fits in array keys");
+        }
+        Ok(Value::Array(cases))
+    }
+
+    fn call_enum_backed_static_lookup_method(
+        &mut self,
+        enum_decl: &EnumDecl,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        expect_expr_arity(
+            &format!("{}::{}", enum_decl.name, method_name),
+            args.len(),
+            1,
+            span,
+        )?;
+        let input = self.evaluate(&args[0], caller_scope)?;
+        let search = self.enum_backing_lookup_value(enum_decl, method_name, input, span)?;
+        let class_id = self
+            .classes
+            .lookup_class_id(&enum_decl.name)
+            .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class(&enum_decl.name)))?;
+        for case_decl in &enum_decl.cases {
+            let Some(value_expr) = &case_decl.value else {
+                continue;
+            };
+            let backing_value = self.evaluate_reflection_constant_expr(
+                Some(class_id),
+                &enum_decl.name,
+                &case_decl.name,
+                ConstantOwnerKind::Class,
+                None,
+                value_expr,
+                span,
+            )?;
+            if enum_backing_lookup_values_match(&search, &backing_value) {
+                return self.evaluate_enum_case_object(enum_decl, &case_decl.name, span);
+            }
+        }
+
+        if method_name.eq_ignore_ascii_case("tryFrom") {
+            Ok(Value::Null)
+        } else {
+            Err(enum_invalid_backing_value_error(
+                &enum_decl.name,
+                method_name,
+                &search,
+                span,
+            ))
+        }
+    }
+
+    fn enum_backing_lookup_value(
+        &self,
+        enum_decl: &EnumDecl,
+        method_name: &str,
+        value: Value,
+        span: Span,
+    ) -> CompileResult<Value> {
+        match enum_decl.backing_type.as_deref() {
+            Some("int") => php_internal_coerced_int(&value)
+                .map(Value::Int)
+                .ok_or_else(|| {
+                    enum_backing_argument_type_error(enum_decl, method_name, "int", &value, span)
+                }),
+            Some("string") => value
+                .php_scalar_string_bytes()
+                .map(|bytes| match String::from_utf8(bytes) {
+                    Ok(value) => Value::String(value),
+                    Err(error) => Value::BinaryString(error.into_bytes()),
+                })
+                .ok_or_else(|| {
+                    enum_backing_argument_type_error(
+                        enum_decl,
+                        method_name,
+                        "string|int",
+                        &value,
+                        span,
+                    )
+                }),
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!("{}::{}()", enum_decl.name, method_name)),
+            )),
+        }
     }
 
     fn evaluate_object_static_class_constant(
@@ -122395,6 +122619,13 @@ fn enum_member_startup_diagnostic_message(
                 )
             })
         }
+        EnumMemberDiagnosticKind::GeneratedMethodRedeclaration => {
+            let name = diagnostic.name.as_deref()?;
+            Some((
+                format!("Cannot redeclare {}::{}()", enum_decl.name, name),
+                diagnostic.span.line,
+            ))
+        }
     }
 }
 
@@ -128790,6 +129021,17 @@ fn register_enum_name(
             Visibility::Public,
         ))
         .map_err(|error| runtime_error(enum_decl.span, error))?;
+    if enum_decl.backing_type.is_some() {
+        enum_class
+            .add_method(PhpMethodMetadata::static_method("from", Visibility::Public))
+            .map_err(|error| runtime_error(enum_decl.span, error))?;
+        enum_class
+            .add_method(PhpMethodMetadata::static_method(
+                "tryFrom",
+                Visibility::Public,
+            ))
+            .map_err(|error| runtime_error(enum_decl.span, error))?;
+    }
     enums.push(enum_decl.clone());
     enum_lookup.insert(key, enum_decl);
     Ok(class_id)
@@ -137260,6 +137502,68 @@ fn runtime_error(span: Span, error: RuntimeError) -> Diagnostic {
     Diagnostic::new(Phase::Runtime, span.line, span.column, error.message())
 }
 
+fn enum_backing_lookup_values_match(search: &Value, backing_value: &Value) -> bool {
+    match (search, backing_value) {
+        (Value::Int(search), Value::Int(backing)) => search == backing,
+        (Value::String(search), Value::String(backing)) => search == backing,
+        (Value::String(search), Value::BinaryString(backing)) => search.as_bytes() == backing,
+        (Value::BinaryString(search), Value::String(backing)) => search == backing.as_bytes(),
+        (Value::BinaryString(search), Value::BinaryString(backing)) => search == backing,
+        _ => false,
+    }
+}
+
+fn enum_invalid_backing_value_error(
+    enum_name: &str,
+    method_name: &str,
+    value: &Value,
+    span: Span,
+) -> Diagnostic {
+    runtime_error(
+        span,
+        RuntimeError::unsupported_call(
+            format!("{enum_name}::{method_name}()"),
+            format!(
+                "{} is not a valid backing value for enum {enum_name}",
+                enum_backing_value_display(value)
+            ),
+        ),
+    )
+}
+
+fn enum_backing_value_display(value: &Value) -> String {
+    match value {
+        Value::Int(value) => value.to_string(),
+        Value::String(value) => format!("\"{value}\""),
+        Value::BinaryString(value) => format!("\"{}\"", String::from_utf8_lossy(value)),
+        _ => value.echo_string(),
+    }
+}
+
+fn enum_backing_argument_type_error(
+    enum_decl: &EnumDecl,
+    method_name: &str,
+    expected: &str,
+    value: &Value,
+    span: Span,
+) -> Diagnostic {
+    runtime_error(
+        span,
+        RuntimeError::unsupported_call(
+            format!("{}::{}()", enum_decl.name, method_name),
+            format!(
+                "Argument #1 ($value) must be of type {expected}, {} given",
+                php_type_error_given(value)
+            ),
+        ),
+    )
+}
+
+fn enum_case_has_readonly_property(object: &PhpObject, property: &str) -> bool {
+    property == "name"
+        || (property == "value" && object.read_current_public_property("value").is_some())
+}
+
 fn class_name_resolution_fatal_message(error: &Diagnostic) -> Option<String> {
     if error.phase != Phase::Runtime {
         return None;
@@ -139916,6 +140220,12 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
     let unsupported = error.message.strip_prefix("unsupported call ")?;
     let (function, message) = unsupported.split_once(": ")?;
     match (function, message) {
+        (function, message)
+            if function.contains("::from()")
+                && message.contains(" is not a valid backing value for enum ") =>
+        {
+            Some(message.to_string())
+        }
         ("array_multisort()", message)
             if message.starts_with("Argument #") && message.ends_with(" must be a valid sort flag") =>
         {

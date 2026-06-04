@@ -988,6 +988,7 @@ pub struct EnumMemberDiagnosticDecl {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EnumMemberDiagnosticKind {
     AbstractMethod,
+    GeneratedMethodRedeclaration,
     MagicMethod,
     Property,
 }

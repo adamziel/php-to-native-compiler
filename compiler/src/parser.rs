@@ -1664,11 +1664,15 @@ impl Parser {
                 )?;
                 EnumMemberDiagnosticKind::AbstractMethod
             } else {
-                if !Self::enum_magic_method_is_forbidden(&function.name) {
+                if Self::enum_generated_method_is_reserved(&function.name) {
+                    self.skip_enum_method_body_after_signature(span)?;
+                    EnumMemberDiagnosticKind::GeneratedMethodRedeclaration
+                } else if Self::enum_magic_method_is_forbidden(&function.name) {
+                    self.skip_enum_method_body_after_signature(span)?;
+                    EnumMemberDiagnosticKind::MagicMethod
+                } else {
                     return Err(self.error_at(span, unsupported_enum_member_message()));
                 }
-                self.skip_enum_method_body_after_signature(span)?;
-                EnumMemberDiagnosticKind::MagicMethod
             };
             return Ok(EnumMemberDiagnosticDecl {
                 kind,
@@ -1677,8 +1681,7 @@ impl Parser {
             });
         }
 
-        if self.check(|kind| matches!(kind, TokenKind::Variable(_))) {
-            let (_name, span) = self.consume_variable_with_span("expected enum property name")?;
+        if let Some(span) = self.enum_member_property_variable_span() {
             self.skip_enum_member_declaration_remainder()?;
             return Ok(EnumMemberDiagnosticDecl {
                 kind: EnumMemberDiagnosticKind::Property,
@@ -1688,6 +1691,32 @@ impl Parser {
         }
 
         Err(self.error_at(self.peek().span, unsupported_enum_member_message()))
+    }
+
+    fn enum_member_property_variable_span(&self) -> Option<Span> {
+        let mut index = self.current;
+        let mut paren_depth = 0usize;
+        let mut bracket_depth = 0usize;
+        while let Some(token) = self.tokens.get(index) {
+            match &token.kind {
+                TokenKind::Variable(_) if paren_depth == 0 && bracket_depth == 0 => {
+                    return Some(token.span);
+                }
+                TokenKind::Eof => return None,
+                TokenKind::Semicolon | TokenKind::LBrace | TokenKind::RBrace
+                    if paren_depth == 0 && bracket_depth == 0 =>
+                {
+                    return None;
+                }
+                TokenKind::LParen => paren_depth += 1,
+                TokenKind::RParen => paren_depth = paren_depth.saturating_sub(1),
+                TokenKind::LBracket => bracket_depth += 1,
+                TokenKind::RBracket => bracket_depth = bracket_depth.saturating_sub(1),
+                _ => {}
+            }
+            index += 1;
+        }
+        None
     }
 
     fn skip_enum_method_body_after_signature(&mut self, span: Span) -> CompileResult<()> {
@@ -1753,6 +1782,13 @@ impl Parser {
                 | "__unserialize"
                 | "__unset"
                 | "__wakeup"
+        )
+    }
+
+    fn enum_generated_method_is_reserved(name: &str) -> bool {
+        matches!(
+            name.to_ascii_lowercase().as_str(),
+            "cases" | "from" | "tryfrom"
         )
     }
 

@@ -7018,6 +7018,121 @@ fn enum_forbidden_members_report_php_startup_fatals() {
 }
 
 #[test]
+fn enum_generated_methods_and_backing_errors_use_php_surfaces() {
+    let execution = run_source(
+        r#"<?php
+enum Suit: string {
+    case Hearts = "H";
+    case Spades = "S";
+}
+
+enum Foo: int {
+    case One = 1;
+}
+
+foreach (Suit::cases() as $case) {
+    echo $case->name, "=", $case->value, "\n";
+}
+echo Suit::from("H")->name, "\n";
+var_dump(Suit::tryFrom("X"));
+echo Foo::from("1")->name, "\n";
+
+try {
+    Suit::from(42);
+} catch (ValueError $e) {
+    echo "value|", $e->getMessage(), "\n";
+}
+
+try {
+    Foo::from("H");
+} catch (TypeError $e) {
+    echo "type|", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "Hearts=H\n",
+            "Spades=S\n",
+            "Hearts\n",
+            "NULL\n",
+            "One\n",
+            "value|\"42\" is not a valid backing value for enum Suit\n",
+            "type|Foo::from(): Argument #1 ($value) must be of type int, string given\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn enum_case_properties_report_readonly_and_dynamic_errors() {
+    let execution = run_source(
+        r#"<?php
+enum Foo {
+    case Bar;
+}
+
+enum IntFoo: int {
+    case Bar = 0;
+}
+
+$foo = Foo::Bar;
+$int = IntFoo::Bar;
+
+foreach ([
+    function () use ($foo) { $foo->name = "Baz"; },
+    function () use ($foo) { $foo->value = 0; },
+    function () use ($int) { $int->name = "Baz"; },
+    function () use ($int) { $int->value = 1; },
+    function () use ($int) { unset($int->value); },
+] as $case) {
+    try {
+        $case();
+    } catch (Error $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "Cannot modify readonly property Foo::$name\n",
+            "Cannot create dynamic property Foo::$value\n",
+            "Cannot modify readonly property IntFoo::$name\n",
+            "Cannot modify readonly property IntFoo::$value\n",
+            "Cannot unset readonly property IntFoo::$value\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reflection_enum_get_method_resolves_generated_backed_methods() {
+    let execution = run_source(
+        r#"<?php
+enum Suit: string {
+    case Hearts = "H";
+}
+
+echo (new ReflectionEnum(Suit::class))->getMethod("tryFrom")->getName(), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "tryFrom\n");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn property_exists_checks_declared_property_metadata() {
     let source = r#"<?php
 class Base {
