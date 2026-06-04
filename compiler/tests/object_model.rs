@@ -4852,7 +4852,7 @@ interface Logger {
     assert_eq!(non_public.column, 15);
     assert_eq!(
         non_public.message,
-        "unsupported interface constant declaration: only public interface constants are implemented"
+        "php fatal: Access type for interface constant Logger::NAME must be public"
     );
 
     let duplicate = runtime_error(
@@ -4902,6 +4902,86 @@ var_dump(defined("Plugin::NAME"));
     assert_eq!(
         ambiguous_defined.message,
         "Class Plugin inherits both Primary::NAME and Secondary::NAME, which is ambiguous"
+    );
+}
+
+#[test]
+fn invalid_class_like_declarations_emit_php_shaped_parse_fatals() {
+    let duplicate_readonly = parse_error(
+        r#"<?php
+readonly readonly class Box {}
+"#,
+    );
+    assert_eq!(duplicate_readonly.line, 2);
+    assert_eq!(
+        duplicate_readonly.message,
+        "php fatal: Multiple readonly modifiers are not allowed"
+    );
+
+    let readonly_interface = parse_error(
+        r#"<?php
+readonly interface Contract {}
+"#,
+    );
+    assert_eq!(readonly_interface.line, 2);
+    assert_eq!(
+        readonly_interface.cli_display(),
+        "Parse error: syntax error, unexpected token \"interface\", expecting \"abstract\" or \"final\" or \"readonly\" or \"class\" in Command line code on line 2"
+    );
+
+    let interface_property = parse_error(
+        r#"<?php
+interface Contract {
+    public $member;
+}
+"#,
+    );
+    assert_eq!(interface_property.line, 3);
+    assert_eq!(
+        interface_property.message,
+        "php fatal: Interfaces may only include hooked properties"
+    );
+
+    let interface_method_body = parse_error(
+        r#"<?php
+interface Contract {
+    function run() {}
+}
+"#,
+    );
+    assert_eq!(interface_method_body.line, 3);
+    assert_eq!(
+        interface_method_body.message,
+        "php fatal: Interface function Contract::run() cannot contain body"
+    );
+
+    let private_interface_method = parse_error(
+        r#"<?php
+interface Contract {
+    private function run();
+}
+"#,
+    );
+    assert_eq!(private_interface_method.line, 3);
+    assert_eq!(
+        private_interface_method.message,
+        "php fatal: Access type for interface method Contract::run() must be public"
+    );
+
+    let static_insteadof = parse_error(
+        r#"<?php
+trait T { public function run() {} }
+class C {
+    use T {
+        T::run insteadof static;
+    }
+}
+"#,
+    );
+    assert_eq!(static_insteadof.line, 5);
+    assert_eq!(
+        static_insteadof.message,
+        "php fatal: Cannot use \"static\" as trait name, as it is reserved"
     );
 }
 

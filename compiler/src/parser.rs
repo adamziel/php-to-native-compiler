@@ -620,7 +620,7 @@ impl Parser {
                     if is_readonly {
                         return Err(self.error_at(
                             self.peek().span,
-                            "duplicate readonly modifier in class declaration",
+                            "php fatal: Multiple readonly modifiers are not allowed",
                         ));
                     }
                     is_readonly = true;
@@ -629,6 +629,21 @@ impl Parser {
                 }
                 _ => break,
             }
+        }
+
+        if (is_abstract || is_final || is_readonly)
+            && matches!(
+                self.peek().kind,
+                TokenKind::Enum | TokenKind::Interface | TokenKind::Trait
+            )
+        {
+            return Err(self.error_at(
+                self.peek().span,
+                format!(
+                    "syntax error, unexpected token \"{}\", expecting \"abstract\" or \"final\" or \"readonly\" or \"class\"",
+                    token_name(&self.peek().kind)
+                ),
+            ));
         }
 
         if is_abstract && is_final {
@@ -1017,7 +1032,7 @@ impl Parser {
         self.consume_keyword(TokenKind::LBrace, "expected trait adaptation block")?;
         while !self.check(|kind| matches!(kind, TokenKind::RBrace | TokenKind::Eof)) {
             let (first, span) =
-                self.consume_identifier_with_span("expected trait method name in adaptation")?;
+                self.consume_trait_adaptation_name("expected trait method name in adaptation")?;
             let (trait_name, method_name) =
                 if self.match_token(|kind| matches!(kind, TokenKind::DoubleColon)) {
                     let method_name = self.consume_identifier("expected trait method name")?;
@@ -1036,10 +1051,11 @@ impl Parser {
                     ));
                 };
                 let mut loser_trait_names = Vec::new();
-                loser_trait_names
-                    .push(self.consume_class_like_name("expected trait name after 'insteadof'")?);
+                loser_trait_names.push(self.consume_trait_adaptation_trait_name(
+                    "expected trait name after 'insteadof'",
+                )?);
                 while self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
-                    loser_trait_names.push(self.consume_class_like_name(
+                    loser_trait_names.push(self.consume_trait_adaptation_trait_name(
                         "expected trait name after ',' in insteadof adaptation",
                     )?);
                 }
@@ -1211,11 +1227,11 @@ impl Parser {
             self.trace_parse("interface member");
             self.consume_doc_comments_and_attributes();
             if self.check_interface_constant_declaration() {
-                constants.push(self.parse_interface_constant()?);
+                constants.push(self.parse_interface_constant(&name)?);
             } else if self.check_interface_property_declaration() {
                 properties.push(self.parse_interface_property()?);
             } else {
-                methods.push(self.parse_interface_method()?);
+                methods.push(self.parse_interface_method(&name)?);
             }
         }
         self.consume_keyword(TokenKind::RBrace, "expected '}' after interface body")?;
@@ -1234,7 +1250,10 @@ impl Parser {
         }))
     }
 
-    fn parse_interface_constant(&mut self) -> CompileResult<ClassConstantDecl> {
+    fn parse_interface_constant(
+        &mut self,
+        interface_name: &str,
+    ) -> CompileResult<ClassConstantDecl> {
         let attributes = self.take_pending_attributes();
         self.pending_doc_comment = None;
         let modifiers = self.parse_class_member_modifiers()?;
@@ -1252,12 +1271,6 @@ impl Parser {
                 "unsupported interface constant declaration: abstract interface constants are not implemented",
             ));
         }
-        if !matches!(modifiers.visibility, ClassVisibility::Public) {
-            return Err(self.error_at(
-                const_span,
-                "unsupported interface constant declaration: only public interface constants are implemented",
-            ));
-        }
         if matches!(self.peek().kind, TokenKind::Identifier(_))
             && matches!(self.peek_next().kind, TokenKind::Identifier(_))
         {
@@ -1269,6 +1282,14 @@ impl Parser {
         let (name, name_span) = self.consume_class_constant_name_with_span(
             "expected interface constant name after const",
         )?;
+        if !matches!(modifiers.visibility, ClassVisibility::Public) {
+            return Err(self.error_at(
+                const_span,
+                format!(
+                    "php fatal: Access type for interface constant {interface_name}::{name} must be public"
+                ),
+            ));
+        }
         self.consume_keyword(
             TokenKind::Equal,
             "expected '=' after interface constant name",
@@ -1343,6 +1364,12 @@ impl Parser {
                 unsupported_multiple_properties_message(),
             ));
         }
+        if !self.check(|kind| matches!(kind, TokenKind::LBrace)) {
+            return Err(self.error_at(
+                span,
+                "php fatal: Interfaces may only include hooked properties",
+            ));
+        }
         self.parse_interface_property_hook_block()?;
 
         Ok(ClassPropertyDecl {
@@ -1400,14 +1427,11 @@ impl Parser {
         Ok(())
     }
 
-    fn parse_interface_method(&mut self) -> CompileResult<InterfaceMethodDecl> {
+    fn parse_interface_method(
+        &mut self,
+        interface_name: &str,
+    ) -> CompileResult<InterfaceMethodDecl> {
         let modifiers = self.parse_class_member_modifiers()?;
-        if !matches!(modifiers.visibility, ClassVisibility::Public) {
-            return Err(self.error_at(
-                self.previous().span,
-                unsupported_interface_method_visibility_message(),
-            ));
-        }
         if modifiers.is_abstract || modifiers.is_final {
             return Err(self.error_at(
                 modifiers
@@ -1421,10 +1445,22 @@ impl Parser {
             .consume_keyword(TokenKind::Function, "expected interface method declaration")?
             .span;
         let function = self.parse_function_signature_after_keyword(span)?;
+        if !matches!(modifiers.visibility, ClassVisibility::Public) {
+            return Err(self.error_at(
+                span,
+                format!(
+                    "php fatal: Access type for interface method {interface_name}::{}() must be public",
+                    function.name
+                ),
+            ));
+        }
         if self.check(|kind| matches!(kind, TokenKind::LBrace)) {
             return Err(self.error_at(
                 self.peek().span,
-                unsupported_interface_method_body_message(),
+                format!(
+                    "php fatal: Interface function {interface_name}::{}() cannot contain body",
+                    function.name
+                ),
             ));
         }
         self.consume_keyword(TokenKind::Semicolon, "expected ';' after interface method")?;
@@ -9130,6 +9166,47 @@ impl Parser {
         self.consume_class_like_name_with_reserved(message, true)
     }
 
+    fn consume_trait_adaptation_name(&mut self, message: &str) -> CompileResult<(String, Span)> {
+        if let Some(name) = self.reserved_trait_adaptation_name() {
+            let span = self.advance().span;
+            return Err(self.error_at(
+                span,
+                format!("php fatal: Cannot use \"{name}\" as trait name, as it is reserved"),
+            ));
+        }
+        self.consume_identifier_with_span(message)
+    }
+
+    fn consume_trait_adaptation_trait_name(&mut self, message: &str) -> CompileResult<String> {
+        if let Some(name) = self.reserved_trait_adaptation_name() {
+            let span = self.advance().span;
+            return Err(self.error_at(
+                span,
+                format!("php fatal: Cannot use \"{name}\" as trait name, as it is reserved"),
+            ));
+        }
+        self.consume_class_like_name(message)
+    }
+
+    fn reserved_trait_adaptation_name(&self) -> Option<&'static str> {
+        match &self.peek().kind {
+            TokenKind::Identifier(name)
+                if name.eq_ignore_ascii_case("self")
+                    || name.eq_ignore_ascii_case("parent")
+                    || name.eq_ignore_ascii_case("static") =>
+            {
+                Some(match name.to_ascii_lowercase().as_str() {
+                    "self" => "self",
+                    "parent" => "parent",
+                    "static" => "static",
+                    _ => unreachable!("reserved trait name was checked above"),
+                })
+            }
+            TokenKind::Static => Some("static"),
+            _ => None,
+        }
+    }
+
     fn consume_class_like_name_with_reserved(
         &mut self,
         message: &str,
@@ -10213,14 +10290,6 @@ fn unsupported_interface_declaration_message() -> &'static str {
 
 fn unsupported_nested_interface_declaration_message() -> &'static str {
     "unsupported interface declaration: only top-level interface declarations are implemented"
-}
-
-fn unsupported_interface_method_visibility_message() -> &'static str {
-    "unsupported interface method declaration: only public interface methods are implemented"
-}
-
-fn unsupported_interface_method_body_message() -> &'static str {
-    "unsupported interface method declaration: interface methods cannot have bodies in the current subset"
 }
 
 fn unsupported_enum_declaration_message() -> &'static str {

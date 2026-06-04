@@ -3616,6 +3616,7 @@
   and block direct class overrides; ambiguous inherited constants from
   multiple interfaces or from a class plus an interface report PHP-shaped
   startup fatals, while a duplicated common interface ancestor is deduplicated.
+  Protected or private interface constants emit PHP-shaped access fatals.
   Interface constant visibility is invariant for class implementations.
   `ClassName::CONST`, `self::CONST`, and
   `parent::CONST` resolve declared or inherited constants case-sensitively,
@@ -7527,8 +7528,13 @@
 - explicit parse diagnostics for unsupported object/class syntax: unbraced
   nested class declarations, broader inheritance forms beyond declared
   single-parent class `extends` and already-declared interface parent lists,
-  typed/non-public/abstract/final or multi-constant interface
-  declarations, non-public interface methods,
+  PHP-shaped fatal/parse diagnostics for non-public interface constants,
+  non-hooked interface properties, bodyful or non-public interface methods,
+  duplicate `readonly` class modifiers, `readonly interface` /
+  `readonly trait` / `readonly enum`, and reserved `static` trait names in
+  bounded `insteadof` adaptations,
+  typed/abstract/static or multi-constant interface constant declarations,
+  interface property hooks beyond the current declaration metadata parser,
   typed/abstract/static trait constants, multi-constant trait declarations,
   trait constant adaptations, exact private-final trait-constant diagnostics,
   final trait methods, concrete non-public trait methods, native trait method execution
@@ -11415,6 +11421,8 @@
   method with the same name as a composed public trait method or alias, the
   class method takes precedence and the trait method is skipped in the
   effective class method table, including for current interface method checks.
+  Reserved `static` trait names in a bounded `insteadof` method reference or
+  loser list emit PHP-shaped fatal diagnostics.
   If two different composed traits provide the same public instance method and
   no class method or bounded `insteadof` adaptation resolves the conflict,
   `phpc run` stops with a stable trait-conflict diagnostic before registering
