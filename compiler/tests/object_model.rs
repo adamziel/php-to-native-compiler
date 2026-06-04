@@ -1771,6 +1771,42 @@ $foo->run();
 }
 
 #[test]
+fn dynamic_class_method_callables_prefer_callstatic_when_available() {
+    let source = r#"<?php
+class Foo {
+    public function __call($method, $args) {
+        return "call:" . $method;
+    }
+
+    public static function __callStatic($method, $args) {
+        return static::class . "::" . $method;
+    }
+}
+
+class Bar extends Foo {}
+
+$array = array("Foo", "anythingStatic");
+echo $array(), "\n";
+
+$string = "Foo::anythingStatic";
+echo $string(), "\n";
+
+$fcc = Foo::anythingStatic(...);
+echo $fcc(), "\n";
+
+$child = Bar::anythingStatic(...);
+echo $child(), "\n";
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "Foo::anythingStatic\nFoo::anythingStatic\nFoo::anythingStatic\nBar::anythingStatic\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn inaccessible_static_syntax_methods_fall_back_to_call_static() {
     let source = r#"<?php
 class Hidden {

@@ -4013,8 +4013,9 @@
   Class-string receivers are true for visible public/private/protected static
   declared methods, for visible non-static methods when the current `$this`
   object is compatible with the class receiver, or for missing methods when
-  the class declares or inherits public static `__callStatic`. Abstract methods
-  are not callable. The covered deprecated forms using `self`, `parent`,
+  the class declares or inherits public static `__callStatic`, including when
+  public non-static `__call` is also present. Abstract methods are not
+  callable. The covered deprecated forms using `self`, `parent`,
   `static`, or a `Class::method` method string emit PHP-style deprecations
   while returning bounded availability. This `is_callable()` magic-method
   introspection does not broaden the currently executable array-callback
@@ -4025,10 +4026,10 @@
   dispatch support. Callable-name output targets beyond direct variables,
   object `__invoke` callables outside the bounded closure first-class callable
   slice, first-class method/static callable
-  parity, full `__callStatic` execution parity, namespace/autoload behavior
-  beyond the existing bounded class lookup hooks, exact native `TypeError`
-  behavior, native lowering, and the environment-specific legacy `is_real`
-  alias are not implemented.
+  parity, full `__callStatic` parity outside the documented missing-method
+  dispatch paths, namespace/autoload behavior beyond the existing bounded
+  class lookup hooks, exact native `TypeError` behavior, native lowering, and
+  the environment-specific legacy `is_real` alias are not implemented.
   `version_compare($version1, $version2, $operator = null)` supports string
   versions made of dot, hyphen, or underscore separated non-negative integer
   components. With two arguments it returns `-1`, `0`, or `1`; with a string
@@ -10013,7 +10014,12 @@
   string callables produce callable strings, closure values preserve the same
   closure identity for `$closure(...)` and `$closure->__invoke(...)`, and
   object/static method forms produce the existing public/magic two-element
-  array-callable shape. `new ClassName(...)` and non-variadic placeholders such
+  array-callable shape. Missing object-method descriptors can dispatch through
+  public non-static `__call()`, and missing class-string descriptors dispatch
+  through public static `__callStatic()` when declared or inherited, even when
+  public non-static `__call()` is also present. Class-string descriptors with
+  only non-static `__call()` keep PHP's non-static static-call Error. `new
+  ClassName(...)` and non-variadic placeholders such
   as `foo(?)` report bounded fatal diagnostics. Full PHP `Closure` object
   parity for method/function first-class callables, private-scope method
   closures, first-class callable reflection identity, `Closure::fromCallable()`,

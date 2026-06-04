@@ -4221,7 +4221,12 @@ existing dynamic-call dispatcher, closure values such as `$closure(...)` and
 `$closure->__invoke(...)` return the current closure value, and object/static
 method forms such as `$object->method(...)` or `ClassName::method(...)`
 produce the existing two-element array-callable shape after validating the
-current declared or magic callability slice. This is intentionally not full PHP
+current declared or magic callability slice. Missing object-method descriptors
+can dispatch through public non-static `__call()`, while missing class-string
+descriptors dispatch through public static `__callStatic()` when declared or
+inherited, even if the class also declares public non-static `__call()`. A
+class-string descriptor with only non-static `__call()` keeps the PHP-shaped
+non-static static-call Error. This is intentionally not full PHP
 `Closure` object parity yet: private-scope method closures, callable
 reflection identity, `Closure::fromCallable()`, constexpr closure object
 dumping, autoload/namespace breadth, and native lowering remain unsupported.
@@ -4304,11 +4309,14 @@ methods when the object class declares or inherits public non-static `__call`.
 String `Class::method` values use the same static method
 visibility lookup. Array/object callable dynamic invocation is supported by the current
 dynamic-call path for the documented two-element callable shape, including
-public object methods and public static class-string methods, and first-class
-callable acquisition now reuses that same shape for method forms. Broader
+public object methods, public static class-string methods, public object
+`__call()` fallback, and public static class-string `__callStatic()` fallback.
+First-class callable acquisition now reuses that same shape for method forms.
+Broader
 full PHP `Closure` object semantics for first-class callables, complete
-callable-name output, `__callStatic` execution, and namespace/autoload-aware
-callable resolution are still outside the implemented dynamic-call subset.
+callable-name output, full `__callStatic` parity outside the documented
+missing-method callback paths, and namespace/autoload-aware callable resolution
+are still outside the implemented dynamic-call subset.
 Constant names that are lexed as language keywords or
 literals cannot be read bare, and case-insensitive legacy constants, extension
 constants, nested `const` declarations, dynamic `const` values, class constants through

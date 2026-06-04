@@ -75277,6 +75277,7 @@ impl Interpreter {
                 else {
                     if context == "dynamic function call"
                         && has_public_non_static_magic_call(&self.classes, class_id)
+                        && !has_public_static_magic_call_static(&self.classes, class_id)
                     {
                         return Err(non_static_method_called_statically_error(
                             &receiver_class_name,
@@ -75554,6 +75555,7 @@ impl Interpreter {
                 else {
                     if context == "dynamic function call"
                         && has_public_non_static_magic_call(&self.classes, class_id)
+                        && !has_public_static_magic_call_static(&self.classes, class_id)
                     {
                         return Err(non_static_method_called_statically_error(
                             &receiver_class_name,

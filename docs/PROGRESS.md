@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Repaired the latest-published PASS regression in
+  `Zend/tests/first_class_callable/first_class_callable_005.phpt`. Dynamic
+  class-string callables, including descriptors produced by first-class static
+  callable acquisition, now prefer a declared/inherited public static
+  `__callStatic()` fallback for missing methods even when the class also has a
+  public non-static `__call()`. Class-string callables with only non-static
+  `__call()` keep PHP's `Non-static method Class::method() cannot be called
+  statically` Error surface. Focused proof covers exact-current pre-patch PHPT
+  failure and post-patch target pass, adjacent first-class callable rows,
+  the dynamic-call non-static scout, focused Rust object-model guards, build,
+  fmt, and diff checks. Unsupported edges remain full PHP `Closure` object
+  parity for first-class callables, callable-name/reflection parity, broader
+  callable autoload/deprecation behavior, references/COW, and native lowering.
+
 - Repaired the active score-gate PASS regression in
   `Zend/tests/dynamic_call/dynamic_call_non_static.phpt`. Direct dynamic
   class-method callable invocation through `['Class', 'missing']()` and
@@ -12,7 +26,7 @@ Implemented:
   surface, while `call_user_func()` and static-syntax missing-method paths keep
   the bounded current `$this->__call()` behavior added for the magic-method
   rows, and `__callStatic()` remains available for dynamic class-method
-  callables without non-static `__call()`. Focused proof covers exact-current
+  callables when declared or inherited. Focused proof covers exact-current
   pre-patch selected PHPT at `0/1`, post-patch selected PHPT at `1/1`,
   adjacent dynamic-call PHPT guards, focused Rust object-model coverage, build,
   fmt, and diff checks. Unsupported edges remain broader callable autoload and
