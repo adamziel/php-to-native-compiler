@@ -3656,21 +3656,28 @@
   expressions for the current function/static-method callable subset. Private
   final class constants emit PHP-shaped startup fatals, and overriding a final
   class constant reports PHP's
-  final-constant startup fatal. A bounded typed class-constant parser/startup
-  lane accepts `public|protected|private const Type NAME = literal;` and
+  final-constant startup fatal. A bounded typed class-like constant lane
+  accepts `public|protected|private const Type NAME = literal;` and
   comma-separated class constants sharing one type; immediate literal defaults
   are checked against the declared scalar/array/null/union subset, and
   `callable`, `void`, and `never` class-constant types emit PHP-shaped startup
-  fatals. Public interface constants also accept `final`, can be inherited,
-  and block direct class overrides; ambiguous inherited constants from
-  multiple interfaces or from a class plus an interface report PHP-shaped
-  startup fatals, while a duplicated common interface ancestor is deduplicated.
+  fatals. Public interface constants and trait constants also retain bounded
+  type metadata; class implementations of typed interface constants reject
+  missing or incompatible child types, and duplicate trait/class constants are
+  compatible only when type metadata and runtime-evaluated values match.
+  Runtime reads validate object-valued and enum-valued typed constant
+  expressions, including enum `self`/`static` types and no-argument named
+  `new ClassName()` expressions in the current constant-expression subset.
+  Public interface constants also accept `final`, can be inherited, and block
+  direct class overrides; ambiguous inherited constants from multiple
+  interfaces or from a class plus an interface report PHP-shaped startup
+  fatals, while a duplicated common interface ancestor is deduplicated.
   Protected or private interface constants emit PHP-shaped access fatals.
   Interface constant visibility is invariant for class implementations.
   `ClassName::CONST`, `self::CONST`, and
   `parent::CONST` resolve declared or inherited constants case-sensitively,
   enforce public/protected/private visibility in the current class context,
-  and return null, bool, int, float, string, or array values. Direct
+  and return null, bool, int, float, string, array, or object values. Direct
   declarations and direct static fetches also accept the current
   semi-reserved keyword-token name subset, such as `const STATIC = ...;` and
   `Obj::STATIC`, through the same class-constant metadata path. Private parent
@@ -3692,8 +3699,8 @@
   values are compatible; incompatible class/trait and trait/trait duplicates
   emit PHP-shaped composition fatals at the declaration statement. Direct
   `TraitName::CONST` and `constant("TraitName::CONST")` access raises PHP
-  `Error` instead of exposing trait constants directly. Typed, abstract, and
-  static trait constants, multi-constant trait declarations, trait constant
+  `Error` instead of exposing trait constants directly. Abstract and static
+  trait constants, multi-constant trait declarations, trait constant
   adaptations, exact private-final trait-constant diagnostics, references/COW,
   and native lowering remain unsupported.
 - static property reads, direct writes, compound assignment, pre/post
@@ -12699,9 +12706,11 @@
   DNF-shaped typed property declarations,
   non-constant instance property defaults, multiple properties in
   one declaration, per-property defaults in multi-property declarations,
-  typed class constants beyond the bounded literal-startup lane,
-  typed/static/non-public/abstract/multi-constant interface declarations,
-  static class constants, trait constants, typed static properties,
+  typed class-like constants beyond the bounded class/interface/trait/enum
+  runtime lane, constructor-argument or dynamic `new` constant expressions,
+  exact constant value caching, static/abstract/multi-constant interface
+  declarations, static class constants, trait constant adaptations, typed
+  static properties,
   storage-removing static-property unset,
   and anonymous classes
 - object receiver class constants, `$object::class`, and broader `static::`

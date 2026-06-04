@@ -884,14 +884,11 @@ impl Parser {
                 "unsupported trait constant declaration: abstract trait constants are not implemented",
             ));
         }
-        if matches!(self.peek().kind, TokenKind::Identifier(_))
-            && matches!(self.peek_next().kind, TokenKind::Identifier(_))
-        {
-            return Err(self.error_at(
-                self.peek().span,
-                "unsupported trait constant declaration: typed trait constants are not implemented",
-            ));
-        }
+        let type_decl = if self.check_class_constant_type_declaration() {
+            Some(self.parse_type_decl(unsupported_class_constant_type_message())?)
+        } else {
+            None
+        };
         let (name, name_span) =
             self.consume_class_constant_name_with_span("expected trait constant name after const")?;
         self.consume_keyword(TokenKind::Equal, "expected '=' after trait constant name")?;
@@ -914,7 +911,7 @@ impl Parser {
             is_abstract: false,
             is_final: modifiers.is_final,
             is_readonly: modifiers.is_readonly,
-            type_decl: None,
+            type_decl,
             value,
             attributes,
             span: name_span,
@@ -1309,14 +1306,11 @@ impl Parser {
                 "unsupported interface constant declaration: abstract interface constants are not implemented",
             ));
         }
-        if matches!(self.peek().kind, TokenKind::Identifier(_))
-            && matches!(self.peek_next().kind, TokenKind::Identifier(_))
-        {
-            return Err(self.error_at(
-                self.peek().span,
-                "unsupported interface constant declaration: typed interface constants are not implemented",
-            ));
-        }
+        let type_decl = if self.check_class_constant_type_declaration() {
+            Some(self.parse_type_decl(unsupported_class_constant_type_message())?)
+        } else {
+            None
+        };
         let (name, name_span) = self.consume_class_constant_name_with_span(
             "expected interface constant name after const",
         )?;
@@ -1351,7 +1345,7 @@ impl Parser {
             is_abstract: false,
             is_final: modifiers.is_final,
             is_readonly: modifiers.is_readonly,
-            type_decl: None,
+            type_decl,
             value,
             attributes,
             span: name_span,
@@ -9016,6 +9010,11 @@ impl Parser {
             {
                 Ok(())
             }
+            Expr::New {
+                class_name: NewClassName::Named(_),
+                args,
+                ..
+            } if args.is_empty() => Ok(()),
             Expr::Variable(_, _)
             | Expr::InterpolatedString { .. }
             | Expr::Cast { .. }

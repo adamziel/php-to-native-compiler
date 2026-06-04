@@ -151,10 +151,15 @@ same-name trait method collisions including concrete non-public trait methods,
 alias-created method collisions, and incompatible trait/class or trait/trait
 properties while preserving prior statement output. Public constants declared
 by already-declared traits as
-`const NAME = ...` or `public const NAME = ...` are composed into consuming
-classes as ordinary public class constants and can be resolved through the
-current `ClassName::CONST`, `self::CONST`, `parent::CONST`, and late-bound
-`static::CONST` class-constant paths.
+`const NAME = ...` or `public const NAME = ...`, including the current typed
+trait-constant metadata subset, are composed into consuming classes as
+ordinary public class constants and can be resolved through the current
+`ClassName::CONST`, `self::CONST`, `parent::CONST`, and late-bound
+`static::CONST` class-constant paths. Public interface constants can also
+carry bounded type metadata; implementing class constants must keep a
+compatible type, and enum constants are resolved after enum case lookup so
+typed enum constants using `self` or `static` validate against enum case
+objects.
 `get_object_vars($object)` accepts current object values and returns public
 exact and inherited instance property names with their current slot values.
 `get_mangled_object_vars($object)` accepts current object values and returns
@@ -510,12 +515,12 @@ return enforcement, and native reflection invocation remain unsupported.
 ## Unsupported Edge Cases
 
 The implemented class-declaration parser intentionally excludes nested and
-conditional class declarations, typed/non-public/abstract/final or
-multi-constant interface declarations, cyclic parent-interface inheritance
+conditional class declarations, static/abstract or multi-constant interface
+declarations, cyclic parent-interface inheritance
 beyond stable rejection,
 full interface signature fatal text beyond the bounded metadata and
 not-an-interface target checks,
-trait property adaptations, non-public/typed/abstract/final/static trait constants,
+trait property adaptations, abstract/static trait constants,
 multi-constant trait declarations, trait constant adaptations, conflicting
 trait/class constants, abstract/final trait methods, non-public trait method
 execution parity beyond metadata/conflict diagnostics,
@@ -526,11 +531,12 @@ single-trait visibility-only slices,
 unqualified visibility-only adaptations across multiple used traits,
 unqualified `insteadof`, `__TRAIT__`, nested/conditional trait
 registration, backed enum
-declarations, enum case objects, enum methods/constants/properties, enum interface implementation,
+declarations, broader enum methods/properties/constants, enum interface implementation,
 abstract-method enforcement, method visibility compatibility enforcement,
 readonly class and property semantics, constructor promotion, typed properties,
-instance property default values, multiple properties in one declaration, typed
-or multi-declarator class constants, typed static properties, late static
+instance property default values, multiple properties in one declaration,
+class-like constant expressions beyond the bounded scalar/array/object/enum
+runtime lane, typed static properties, late static
 binding, executable property hook bodies, virtual hooked properties,
 reference-return hook dispatch, hook reflection metadata, magic methods beyond
 the current direct missing-property

@@ -15731,6 +15731,131 @@ try {
 }
 
 #[test]
+fn typed_class_constants_accept_object_valued_global_const_expressions() {
+    let execution = run_source(
+        r#"<?php
+class B implements Stringable {
+    public function __toString() {
+        return "";
+    }
+}
+class A {
+    public const object CONST1 = C;
+}
+const C = new B();
+var_dump(A::CONST1);
+"#,
+    )
+    .unwrap();
+    assert!(execution.stdout.starts_with("object(B)#"));
+    assert!(execution.stdout.ends_with(" (0) {\n}\n"));
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn typed_trait_and_interface_class_constants_keep_type_metadata() {
+    let trait_error = runtime_error(
+        r#"<?php
+trait T {
+    public const ?array CONST1 = [];
+}
+class C {
+    use T;
+    public const CONST1 = [];
+}
+"#,
+    );
+    assert_eq!(
+        trait_error.message,
+        "C and T define the same constant (CONST1) in the composition of C. However, the definition differs and is considered incompatible. Class was composed"
+    );
+
+    let interface_error = runtime_error(
+        r#"<?php
+interface A {
+    public const string CONST1 = "A";
+}
+class B implements A {
+    public const CONST1 = "B";
+}
+"#,
+    );
+    assert_eq!(
+        interface_error.message,
+        "Type of B::CONST1 must be compatible with A::CONST1 of type string"
+    );
+}
+
+#[test]
+fn enum_class_constants_are_reachable_after_case_lookup() {
+    let execution = run_source(
+        r#"<?php
+enum E {
+    public const E CONST1 = E::Foo;
+    public const self CONST2 = E::Foo;
+    public const static CONST3 = E::Foo;
+    case Foo;
+}
+class A {
+    public const E CONST1 = E::CONST1;
+    public const E CONST2 = E::CONST2;
+    public const E CONST3 = E::CONST3;
+}
+var_dump(A::CONST1);
+var_dump(A::CONST2);
+var_dump(A::CONST3);
+"#,
+    )
+    .unwrap();
+    assert_eq!(
+        execution.stdout,
+        "enum(E::Foo)\nenum(E::Foo)\nenum(E::Foo)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let type_error = run_source(
+        r#"<?php
+enum E1 {
+    const static C = E2::Foo;
+}
+enum E2 {
+    case Foo;
+}
+try {
+    var_dump(E1::C);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+    assert_eq!(
+        type_error.stdout,
+        "Cannot assign E2 to class constant E1::C of type static\n"
+    );
+    assert_eq!(type_error.exit_code, 0);
+}
+
+#[test]
+fn typed_class_constants_validate_on_object_instantiation() {
+    let execution = run_source(
+        r#"<?php
+class A {
+    public const self CONST1 = C;
+}
+try {
+    define("C", new A());
+} catch (Error $exception) {
+    echo $exception->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+    assert_eq!(execution.stdout, "Undefined constant \"C\"\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn private_parent_class_constants_are_not_inherited() {
     let execution = run_source(
         r#"<?php

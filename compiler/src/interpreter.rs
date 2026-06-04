@@ -34445,6 +34445,7 @@ impl Interpreter {
                 format!("Cannot instantiate abstract class {declared_class_name}"),
             ));
         }
+        self.validate_typed_class_constants_for_class_use(class_id, span)?;
         if declared_class_name.eq_ignore_ascii_case("mysqli") {
             return self.instantiate_mysqli(args, span, scope);
         }
@@ -74926,7 +74927,16 @@ impl Interpreter {
             .get(&class_name.to_ascii_lowercase())
             .cloned()
         {
-            return self.evaluate_enum_case_object(&enum_decl, constant, span);
+            if enum_decl.cases.iter().any(|case| case.name == constant) {
+                return self.evaluate_enum_case_object(&enum_decl, constant, span);
+            }
+            if let Some(class_id) = self.classes.lookup_class_id(class_name) {
+                return self.evaluate_resolved_class_constant(class_id, class_name, constant, span);
+            }
+            return Err(runtime_error(
+                span,
+                RuntimeError::undefined_constant(format!("{}::{constant}", enum_decl.name)),
+            ));
         }
 
         if class_name.eq_ignore_ascii_case("DateTimeInterface") {
@@ -75526,6 +75536,52 @@ impl Interpreter {
             value,
             span,
         )
+    }
+
+    fn validate_typed_class_constants_for_class_use(
+        &mut self,
+        class_id: ClassId,
+        span: Span,
+    ) -> CompileResult<()> {
+        let mut targets = Vec::new();
+        let mut seen = HashSet::new();
+        let mut current = Some(class_id);
+
+        while let Some(current_id) = current {
+            let Some(class) = self.classes.get(current_id) else {
+                break;
+            };
+            for metadata in class.constants() {
+                if !seen.insert(metadata.name().to_string()) {
+                    continue;
+                }
+                let Some(constant) = self
+                    .class_constants
+                    .get(&(current_id, metadata.name().to_string()))
+                else {
+                    continue;
+                };
+                if constant.type_decl.is_some() {
+                    targets.push((
+                        current_id,
+                        class.name().to_string(),
+                        metadata.name().to_string(),
+                    ));
+                }
+            }
+            current = class.parent_id();
+        }
+
+        for (declaring_class_id, declaring_name, constant) in targets {
+            self.evaluate_resolved_class_constant(
+                declaring_class_id,
+                &declaring_name,
+                &constant,
+                span,
+            )?;
+        }
+
+        Ok(())
     }
 
     fn validate_class_constant_runtime_type(
@@ -126853,6 +126909,7 @@ struct StartupInheritedConstant {
     declaring_name: String,
     name: String,
     is_final: bool,
+    type_decl: Option<TypeDecl>,
     origin_key: String,
 }
 
@@ -126989,6 +127046,32 @@ fn class_interface_constant_startup_diagnostic(
                 constant.span.line,
             ));
         }
+        if !startup_class_constant_types_are_compatible(
+            classes,
+            interfaces,
+            interface_constant
+                .type_decl
+                .as_ref()
+                .map(|decl| decl.text.as_str()),
+            constant.type_decl.as_ref().map(|decl| decl.text.as_str()),
+        ) {
+            let interface_type = interface_constant
+                .type_decl
+                .as_ref()
+                .map(|decl| decl.text.as_str())
+                .unwrap_or("mixed");
+            return Some((
+                format!(
+                    "Type of {}::{} must be compatible with {}::{} of type {}",
+                    class.name,
+                    constant.name,
+                    interface_constant.declaring_name,
+                    interface_constant.name,
+                    interface_type
+                ),
+                constant.span.line,
+            ));
+        }
     }
 
     None
@@ -127024,6 +127107,7 @@ fn startup_parent_class_visible_constants(
                 declaring_name: parent.name.clone(),
                 name: constant.name.clone(),
                 is_final: constant.is_final,
+                type_decl: constant.type_decl.clone(),
                 origin_key: format!(
                     "{}::{}",
                     startup_class_lookup_key(&parent.name),
@@ -127116,6 +127200,7 @@ fn startup_interface_visible_constants_inner(
             declaring_name: interface.name.clone(),
             name: constant.name.clone(),
             is_final: constant.is_final,
+            type_decl: constant.type_decl.clone(),
             origin_key: format!(
                 "{}::{}",
                 startup_class_lookup_key(&interface.name),

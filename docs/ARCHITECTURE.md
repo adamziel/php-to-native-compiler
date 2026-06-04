@@ -4392,8 +4392,8 @@ are still outside the implemented dynamic-call subset.
 Constant names that are lexed as language keywords or
 literals cannot be read bare, and case-insensitive legacy constants, extension
 constants, nested `const` declarations, dynamic `const` values, class constants through
-`constant(...)`/unsupported `defined(...)` forms, typed class constants beyond
-the bounded literal-startup lane, `static::CONST`, references/copy-on-write for constant values,
+`constant(...)`/unsupported `defined(...)` forms, typed class-like constants beyond
+the bounded runtime lane, references/copy-on-write for constant values,
 and broader constant lowering are still outside the implemented constant
 subset. Namespace-qualified and leading-backslash fully-qualified constant
 reads use the interpreter constant table but remain rejected by native lowering
@@ -5019,18 +5019,24 @@ and reduced-visibility redeclarations before execution. The parser
 disambiguates semi-reserved keyword-token names in class-constant declaration
 positions before treating the same token family as possible typed constant
 declaration starts, so direct declarations such as `const STATIC = ...;` and
-matching direct static fetches reach runtime class metadata. Typed class
-constants carry parsed type metadata for the bounded startup lane: disallowed
-`callable`, `void`, and `never` types fatal before execution, and immediate
-literal defaults are checked against scalar/array/null/union declarations for
-the covered slice. Runtime reads enforce protected/private class-constant
-visibility as PHP `Error` surfaces and skip private parent constants during
-inherited lookup. Runtime-dependent typed class-constant expression
-validation, typed class-constant inheritance compatibility, typed interface
-and trait constants, final constants, exact source-spelled reflection/string
-lookup for names that lex as keyword tokens, and broader dynamic
-class-constant string lookup beyond loaded `ClassName::CONST` names remain
-unsupported.
+matching direct static fetches reach runtime class metadata. Typed class-like
+constants carry parsed type metadata for the bounded runtime lane: disallowed
+`callable`, `void`, and `never` class constant types fatal before execution,
+immediate literal defaults are checked against scalar/array/null/union
+declarations, typed interface constants participate in class implementation
+compatibility, trait/class duplicate constants compare type metadata and
+runtime-evaluated values, enum constants are reachable after enum case lookup,
+and runtime reads validate object-valued plus enum-valued expressions
+including enum `self`/`static` types. The current constant-expression subset
+also accepts named no-argument `new ClassName()` expressions for object-valued
+constants. Runtime reads enforce protected/private class-constant visibility
+as PHP `Error` surfaces and skip private parent constants during inherited
+lookup. `ReflectionClassConstant::getType()` parity, exact constant value
+caching, constructor-argument or dynamic `new` constant expressions, typed
+constant autoload side effects, final constants beyond the documented startup
+checks, exact source-spelled reflection/string lookup for names that lex as
+keyword tokens, and broader dynamic class-constant string lookup beyond loaded
+`ClassName::CONST` names remain unsupported.
 Direct `ClassName::$prop`, `self::$prop`, `parent::$prop`,
 and late-bound `static::$prop` resolve untyped static properties through
 interpreter-owned class-level storage, initialize from the current
