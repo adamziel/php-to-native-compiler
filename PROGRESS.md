@@ -1,6 +1,6 @@
 # PHP Native Compiler PHPT Progress
 
-Updated: 2026-06-04 16:07 CEST
+Updated: 2026-06-04 17:03 CEST
 
 Primary/public branch: `origin/master`
 Latest accepted public-score source:
@@ -19,7 +19,7 @@ denominators that exclude BORKED rows are not public progress.
 Current public score: **7873 / 20294 pinned runnable PHPTs = 38.79%**.
 
 Latest pushed source checkpoint:
-`88071e97e22d6b840ab9ebbc248a67a55e5b6926 fix: reject invalid property hooks`
+`99b183cc2e1834b2a716e5a01d24ad185cfe31ab fix: implement gmp bit helpers`
 
 Current score-gate status:
 Accepted public gate:
@@ -32,8 +32,14 @@ the accepted `6c038019` PASS baseline. It reported public-comparable
 `7873 / 20294 = 38.79%`, `7869` normalized current passes, `0`
 latest-published PASS regressions, and `0` invalid proof-marker hits. This
 gate converts the post-`6c038019` source chain through `0b917f67` into public
-PHPT progress. Newer source commit `88071e97` is staged after this accepted
-public source and is not included in the public score above.
+PHPT progress. Newer source commits through `99b183cc` are staged after this
+accepted public source and are not included in the public score above.
+
+Current candidate full gate:
+`state/logs/phpt-full-current-score-20260604T150052Z-php-src-f97ff59-public-99b183cc-source-99b183cc`
+is `RUNNING / BUILDING-RELEASE` for source `99b183cc` against the accepted
+`0b917f67` PASS baseline. Its PASS-regression status is unknown, so it is not
+publication evidence and does not change the public score.
 
 Recent non-public gate history: the `31656671` full gate aborted mid-shard and
 was not publication evidence; the `d978106e` gate completed with four
@@ -89,25 +95,32 @@ passes, with zero latest-published PASS regressions.
 
 Unpublished source progress since the accepted public score source:
 
-- Latest pushed source head is `88071e97e22d6b840ab9ebbc248a67a55e5b6926`
-  (`fix: reject invalid property hooks`), which is newer than the accepted
+- Latest pushed source head is `99b183cc2e1834b2a716e5a01d24ad185cfe31ab`
+  (`fix: implement gmp bit helpers`), which is newer than the accepted
   `0b917f67` full gate and is not included in the public score above.
-- There is `1` score-relevant source commit after the accepted public-score
+- There are `4` score-relevant source commits after the accepted public-score
   source: `88071e97e22d6b840ab9ebbc248a67a55e5b6926`
-  (`fix: reject invalid property hooks`).
+  (`fix: reject invalid property hooks`),
+  `1b3c4f4dad1eef590cfec69504dd16c4e55e0743`
+  (`fix: implement gmp arithmetic`),
+  `ca69ead9cfcc410f3c094e30a38608dedf880771`
+  (`fix: implement xmlreader factories`), and
+  `99b183cc2e1834b2a716e5a01d24ad185cfe31ab`
+  (`fix: implement gmp bit helpers`).
 - Staged focused selected-PHPT proof after the latest accepted public-score
-  source totals `16` selected rows across `1` integrated source artifact.
+  source totals `55` selected rows across `4` integrated source artifacts.
   These are source/staging facts, not a public score update unless a full
   pinned PHPT gate accepts them.
-- The property-hook diagnostics packet moved selected PHPT `0/16 -> 16/16`
-  for invalid property-hook declaration rows including duplicate hooks,
-  interface final/abstract/non-public restrictions, invalid abstract/final/
-  private/static hook combinations, empty hook lists, explicit hook visibility,
-  `get` hook parameter lists, and unknown hook names. It also preserved the
-  latest-published BcMath PASS scout `8/8`, the former DatePeriod/property
-  blocker scout `4/4`, passed focused Rust object-model and syntax-boundary
-  coverage, build, fmt, diff checks, php-src cleanliness, and production
-  row-name leakage scan.
+- The staged packets are property-hook diagnostics `0/16 -> 16/16`, GMP
+  arithmetic `0/14 -> 14/14`, XMLReader factories/residuals `0/14 -> 14/14`,
+  and GMP bit helpers `0/11 -> 11/11`. They preserved latest-published PASS
+  scouts in the accepted integration artifacts and passed focused Rust, build,
+  fmt, diff, php-src cleanliness, and production row-name leakage checks.
+- Outstanding publication blocker: the current `99b183cc` full gate is still
+  running and has unknown latest-published PASS-regression status. No staged
+  source after `0b917f67` can move the public score unless that gate, or a
+  clean successor full pinned PHPT gate, completes with zero latest-published
+  PASS regressions.
 
 Accepted source proof included in the `0b917f67` public gate:
 
