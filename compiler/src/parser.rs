@@ -2,14 +2,15 @@ use std::collections::HashMap;
 
 use crate::ast::{
     ArrayItem, AssignTarget, AttributeDecl, BinaryOp, CastKind, CatchClause, CatchType,
-    ClassConstantDecl, ClassDecl, ClassMember, ClassMethodDecl, ClassPropertyDecl, ClassVisibility,
-    ClosureCapture, CompoundAssignOp, ConstDeclarator, EnumCaseDecl, EnumDecl,
-    EnumMemberDiagnosticDecl, EnumMemberDiagnosticKind, Expr, ForAction, ForeachListItem,
-    ForeachListKey, ForeachValueTarget, FunctionDecl, FunctionParam, IncrementDecrementOp,
-    IncrementDecrementPosition, InterfaceDecl, InterfaceMethodDecl, MatchArm, NewClassName,
-    Program, ReferenceSource, Span, StaticLocalDeclarator, Stmt, SwitchCase, TraitDecl,
-    TraitMethodAliasDecl, TraitMethodPrecedenceDecl, TraitMethodVisibilityDecl, TraitUseDecl,
-    TypeDecl, UnaryOp, UnsetTarget, UseImport, UseImportKind,
+    ClassConstantDecl, ClassDecl, ClassDiagnosticDecl, ClassDiagnosticKind, ClassMember,
+    ClassMethodDecl, ClassPropertyDecl, ClassVisibility, ClosureCapture, CompoundAssignOp,
+    ConstDeclarator, EnumCaseDecl, EnumDecl, EnumMemberDiagnosticDecl, EnumMemberDiagnosticKind,
+    Expr, ForAction, ForeachListItem, ForeachListKey, ForeachValueTarget, FunctionDecl,
+    FunctionParam, IncrementDecrementOp, IncrementDecrementPosition, InterfaceDecl,
+    InterfaceMethodDecl, MatchArm, NewClassName, Program, ReferenceSource, Span,
+    StaticLocalDeclarator, Stmt, SwitchCase, TraitDecl, TraitMethodAliasDecl,
+    TraitMethodPrecedenceDecl, TraitMethodVisibilityDecl, TraitUseDecl, TypeDecl, UnaryOp,
+    UnsetTarget, UseImport, UseImportKind,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::lexer::{tokenize, AttributeToken, Token, TokenKind};
@@ -54,7 +55,7 @@ enum SwitchBodyKind {
     Alternate,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct ClassMemberModifiers {
     visibility: ClassVisibility,
     is_static: bool,
@@ -63,9 +64,14 @@ struct ClassMemberModifiers {
     is_readonly: bool,
     abstract_span: Option<Span>,
     final_span: Option<Span>,
+    diagnostics: Vec<ClassDiagnosticDecl>,
 }
 
 impl ClassMemberModifiers {
+    fn has_diagnostics(&self) -> bool {
+        !self.diagnostics.is_empty()
+    }
+
     fn abstract_or_final_span(&self) -> Option<Span> {
         self.abstract_span.or(self.final_span)
     }
@@ -574,28 +580,33 @@ impl Parser {
         let mut is_final = false;
         let mut is_readonly = false;
         let mut modifier_span = None;
+        let mut abstract_span = None;
+        let mut final_span = None;
+        let mut diagnostics = Vec::new();
 
         loop {
             match self.peek().kind {
                 TokenKind::Abstract => {
                     if is_abstract {
-                        return Err(self.error_at(
-                            self.peek().span,
-                            "duplicate abstract modifier in class declaration",
-                        ));
+                        diagnostics.push(ClassDiagnosticDecl {
+                            kind: ClassDiagnosticKind::MultipleAbstractModifiers,
+                            span: self.peek().span,
+                        });
                     }
                     is_abstract = true;
+                    abstract_span.get_or_insert(self.peek().span);
                     modifier_span.get_or_insert(self.peek().span);
                     self.advance();
                 }
                 TokenKind::Final => {
                     if is_final {
-                        return Err(self.error_at(
-                            self.peek().span,
-                            "duplicate final modifier in class declaration",
-                        ));
+                        diagnostics.push(ClassDiagnosticDecl {
+                            kind: ClassDiagnosticKind::MultipleFinalModifiers,
+                            span: self.peek().span,
+                        });
                     }
                     is_final = true;
+                    final_span.get_or_insert(self.peek().span);
                     modifier_span.get_or_insert(self.peek().span);
                     self.advance();
                 }
@@ -615,10 +626,13 @@ impl Parser {
         }
 
         if is_abstract && is_final {
-            return Err(self.error_at(
-                modifier_span.expect("abstract/final modifier should set span"),
-                "unsupported class modifier combination: abstract final classes are not implemented",
-            ));
+            diagnostics.push(ClassDiagnosticDecl {
+                kind: ClassDiagnosticKind::FinalAbstractClass,
+                span: final_span
+                    .or(abstract_span)
+                    .or(modifier_span)
+                    .expect("abstract/final modifier should set span"),
+            });
         }
 
         let class_span = self
@@ -655,7 +669,9 @@ impl Parser {
                 self.pending_attributes.clear();
                 trait_uses.extend(self.parse_class_trait_use()?);
             } else {
-                members.extend(self.parse_class_member()?);
+                let (parsed_members, mut member_diagnostics) = self.parse_class_member()?;
+                members.extend(parsed_members);
+                diagnostics.append(&mut member_diagnostics);
             }
         }
         self.consume_keyword(TokenKind::RBrace, "expected '}' after class body")?;
@@ -667,6 +683,7 @@ impl Parser {
             interfaces,
             trait_uses,
             members,
+            diagnostics,
             is_abstract,
             is_final,
             is_readonly,
@@ -1620,14 +1637,16 @@ impl Parser {
         )
     }
 
-    fn parse_class_member(&mut self) -> CompileResult<Vec<ClassMember>> {
-        let modifiers = self.parse_class_member_modifiers()?;
+    fn parse_class_member(
+        &mut self,
+    ) -> CompileResult<(Vec<ClassMember>, Vec<ClassDiagnosticDecl>)> {
+        let mut modifiers = self.parse_class_member_modifiers()?;
         let attributes = self.take_pending_attributes();
 
         if self.match_identifier("const") {
             self.pending_doc_comment = None;
             let const_span = self.previous().span;
-            if modifiers.is_final {
+            if modifiers.is_final && !modifiers.has_diagnostics() {
                 return Err(self.error_at(
                     modifiers.final_span.unwrap_or(const_span),
                     unsupported_final_class_constant_message(),
@@ -1665,43 +1684,53 @@ impl Parser {
                 TokenKind::Semicolon,
                 "expected ';' after class constant declaration",
             )?;
-            return Ok(constants);
+            return Ok((constants, modifiers.diagnostics));
         }
 
         if self.match_token(|kind| matches!(kind, TokenKind::Function)) {
             let span = self.previous().span;
             if modifiers.is_abstract && modifiers.is_final {
-                return Err(self.error_at(
-                    modifiers.abstract_final_conflict_span().unwrap_or(span),
-                    "unsupported class member modifier combination: abstract final methods are not implemented",
-                ));
+                modifiers.diagnostics.push(ClassDiagnosticDecl {
+                    kind: ClassDiagnosticKind::FinalAbstractMethod,
+                    span: modifiers.abstract_final_conflict_span().unwrap_or(span),
+                });
             }
             let function = if modifiers.is_abstract {
                 let function = self.parse_function_signature_after_keyword(span)?;
-                self.consume_keyword(
-                    TokenKind::Semicolon,
-                    "expected ';' after abstract method declaration",
-                )?;
+                if modifiers.has_diagnostics()
+                    && self.check(|kind| matches!(kind, TokenKind::LBrace))
+                {
+                    self.advance();
+                    self.skip_balanced_block_after_open(span, "expected '}' after method body")?;
+                } else {
+                    self.consume_keyword(
+                        TokenKind::Semicolon,
+                        "expected ';' after abstract method declaration",
+                    )?;
+                }
                 function
             } else {
                 self.parse_function_after_keyword(span, false, true)?
             };
-            return Ok(vec![ClassMember::Method(ClassMethodDecl {
-                function,
-                visibility: modifiers.visibility,
-                is_static: modifiers.is_static,
-                is_abstract: modifiers.is_abstract,
-                is_final: modifiers.is_final,
-                is_readonly: modifiers.is_readonly,
-                attributes,
-                span,
-            })]);
+            return Ok((
+                vec![ClassMember::Method(ClassMethodDecl {
+                    function,
+                    visibility: modifiers.visibility,
+                    is_static: modifiers.is_static,
+                    is_abstract: modifiers.is_abstract,
+                    is_final: modifiers.is_final,
+                    is_readonly: modifiers.is_readonly,
+                    attributes,
+                    span,
+                })],
+                modifiers.diagnostics,
+            ));
         }
 
         let mut doc_comment = self.pending_doc_comment.take();
 
         if self.check_unsupported_property_type_declaration() {
-            if modifiers.is_abstract || modifiers.is_final {
+            if (modifiers.is_abstract || modifiers.is_final) && !modifiers.has_diagnostics() {
                 return Err(self.error_at(
                     modifiers
                         .abstract_or_final_span()
@@ -1754,11 +1783,11 @@ impl Parser {
                 TokenKind::Semicolon,
                 "expected ';' after property declaration",
             )?;
-            return Ok(properties);
+            return Ok((properties, modifiers.diagnostics));
         }
 
         if self.check(|kind| matches!(kind, TokenKind::Variable(_))) {
-            if modifiers.is_abstract || modifiers.is_final {
+            if (modifiers.is_abstract || modifiers.is_final) && !modifiers.has_diagnostics() {
                 return Err(self.error_at(
                     modifiers
                         .abstract_or_final_span()
@@ -1806,7 +1835,7 @@ impl Parser {
                 TokenKind::Semicolon,
                 "expected ';' after property declaration",
             )?;
-            return Ok(properties);
+            return Ok((properties, modifiers.diagnostics));
         }
 
         let token = self.peek().clone();
@@ -1821,6 +1850,7 @@ impl Parser {
         let mut is_readonly = false;
         let mut abstract_span = None;
         let mut final_span = None;
+        let mut diagnostics = Vec::new();
 
         loop {
             if self.check_asymmetric_property_visibility_modifier() {
@@ -1839,10 +1869,10 @@ impl Parser {
                 }
                 TokenKind::Static => {
                     if is_static {
-                        return Err(self.error_at(
-                            self.peek().span,
-                            "duplicate static modifier in class member declaration",
-                        ));
+                        diagnostics.push(ClassDiagnosticDecl {
+                            kind: ClassDiagnosticKind::MultipleStaticModifiers,
+                            span: self.peek().span,
+                        });
                     }
                     is_static = true;
                     self.advance();
@@ -1850,25 +1880,25 @@ impl Parser {
                 }
                 TokenKind::Abstract => {
                     if is_abstract {
-                        return Err(self.error_at(
-                            self.peek().span,
-                            "duplicate abstract modifier in class member declaration",
-                        ));
+                        diagnostics.push(ClassDiagnosticDecl {
+                            kind: ClassDiagnosticKind::MultipleAbstractModifiers,
+                            span: self.peek().span,
+                        });
                     }
                     is_abstract = true;
-                    abstract_span = Some(self.peek().span);
+                    abstract_span.get_or_insert(self.peek().span);
                     self.advance();
                     continue;
                 }
                 TokenKind::Final => {
                     if is_final {
-                        return Err(self.error_at(
-                            self.peek().span,
-                            "duplicate final modifier in class member declaration",
-                        ));
+                        diagnostics.push(ClassDiagnosticDecl {
+                            kind: ClassDiagnosticKind::MultipleFinalModifiers,
+                            span: self.peek().span,
+                        });
                     }
                     is_final = true;
-                    final_span = Some(self.peek().span);
+                    final_span.get_or_insert(self.peek().span);
                     self.advance();
                     continue;
                 }
@@ -1888,10 +1918,10 @@ impl Parser {
 
             if let Some(next_visibility) = modifier {
                 if visibility.is_some() {
-                    return Err(self.error_at(
-                        self.peek().span,
-                        "duplicate visibility modifier in class member declaration",
-                    ));
+                    diagnostics.push(ClassDiagnosticDecl {
+                        kind: ClassDiagnosticKind::MultipleAccessModifiers,
+                        span: self.peek().span,
+                    });
                 }
                 visibility = Some(next_visibility);
                 self.advance();
@@ -1909,6 +1939,7 @@ impl Parser {
             is_readonly,
             abstract_span,
             final_span,
+            diagnostics,
         })
     }
 

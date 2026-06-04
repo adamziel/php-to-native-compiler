@@ -41,13 +41,14 @@ use xxhash_rust::{
 
 use crate::ast::{
     ArrayItem, AssignTarget, AttributeDecl, BinaryOp, CastKind, CatchClause, ClassConstantDecl,
-    ClassDecl, ClassMember, ClassMethodDecl, ClassPropertyDecl, ClassVisibility, ClosureCapture,
-    CompoundAssignOp, EnumDecl, EnumMemberDiagnosticDecl, EnumMemberDiagnosticKind, Expr,
-    ForAction, ForeachListKey, ForeachValueTarget, FunctionDecl, FunctionParam,
-    IncrementDecrementOp, IncrementDecrementPosition, InterfaceDecl, InterfaceMethodDecl,
-    InterpolatedAccessSegment, InterpolatedArrayKey, InterpolatedStringPart, MatchArm,
-    NewClassName, Program, ReferenceSource, Span, StaticLocalDeclarator, Stmt, SwitchCase,
-    TraitDecl, TraitUseDecl, TypeDecl, UnaryOp, UnsetTarget,
+    ClassDecl, ClassDiagnosticDecl, ClassDiagnosticKind, ClassMember, ClassMethodDecl,
+    ClassPropertyDecl, ClassVisibility, ClosureCapture, CompoundAssignOp, EnumDecl,
+    EnumMemberDiagnosticDecl, EnumMemberDiagnosticKind, Expr, ForAction, ForeachListKey,
+    ForeachValueTarget, FunctionDecl, FunctionParam, IncrementDecrementOp,
+    IncrementDecrementPosition, InterfaceDecl, InterfaceMethodDecl, InterpolatedAccessSegment,
+    InterpolatedArrayKey, InterpolatedStringPart, MatchArm, NewClassName, Program, ReferenceSource,
+    Span, StaticLocalDeclarator, Stmt, SwitchCase, TraitDecl, TraitUseDecl, TypeDecl, UnaryOp,
+    UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::legacy_hashes;
@@ -313,6 +314,10 @@ fn class_registration_startup_fatal_message(error: &Diagnostic) -> Option<String
 
     if let Some(declaration) = reason.strip_prefix("declaration of ") {
         return Some(format!("Declaration of {declaration}"));
+    }
+
+    if let Some(message) = reason.strip_prefix("modifier diagnostic: ") {
+        return Some(message.to_string());
     }
 
     if let Some(message) = reason.strip_prefix("could not check compatibility between ") {
@@ -31192,7 +31197,14 @@ impl Interpreter {
             }
         }
 
-        self.call_user_function_with_checked_values(
+        let trace_args = values.clone();
+        let trace_callable = self.pending_uncaught_user_call_callable(
+            function,
+            Some(&object),
+            Some(constructor_class_id),
+        );
+        let trace_function_line = function.span.line;
+        let result = self.call_user_function_with_checked_values(
             function,
             values,
             Some(object.clone()),
@@ -31200,7 +31212,17 @@ impl Interpreter {
             Some(object.class_id()),
             reference_bindings,
             Some(scope),
-        )?;
+        );
+        if let Err(error) = &result {
+            self.record_pending_uncaught_call_frame(
+                trace_callable,
+                trace_function_line,
+                span,
+                &trace_args,
+                error,
+            );
+        }
+        result?;
         self.track_allocated_object(&object);
         Ok(Value::Object(object))
     }
@@ -71583,13 +71605,23 @@ impl Interpreter {
                         )),
                     };
                 };
-                self.ensure_instance_method_visible(
-                    class_id,
-                    &class_name,
-                    method_name,
-                    visibility,
-                    span,
-                )?;
+                if !self.method_visible_for_dispatch(None, class_id, method_name, visibility) {
+                    return match self.call_missing_instance_method_via_magic(
+                        object.clone(),
+                        method_name,
+                        args,
+                        span,
+                        caller_scope,
+                    )? {
+                        Some(value) => Ok(value),
+                        None => Err(self.method_visibility_error(
+                            &class_name,
+                            method_name,
+                            visibility,
+                            span,
+                        )),
+                    };
+                }
 
                 let function =
                     self.method_function(class_id, &class_name, &resolved_method_name, span)?;
@@ -71822,13 +71854,23 @@ impl Interpreter {
                         )),
                     };
                 };
-                self.ensure_instance_method_visible(
-                    class_id,
-                    &class_name,
-                    method_name,
-                    visibility,
-                    span,
-                )?;
+                if !self.method_visible_for_dispatch(None, class_id, method_name, visibility) {
+                    return match self.call_missing_instance_method_via_magic(
+                        object.clone(),
+                        method_name,
+                        args,
+                        span,
+                        caller_scope,
+                    )? {
+                        Some(value) => Ok((value, None)),
+                        None => Err(self.method_visibility_error(
+                            &class_name,
+                            method_name,
+                            visibility,
+                            span,
+                        )),
+                    };
+                }
 
                 let function =
                     self.method_function(class_id, &class_name, &resolved_method_name, span)?;
@@ -118660,6 +118702,7 @@ fn register_class_members(
         .lookup_class_id(&class.name)
         .expect("class name pass should declare class id");
 
+    validate_class_modifier_diagnostics(class)?;
     validate_class_relationship_targets(classes, interface_lookup, trait_lookup, class)?;
 
     if let Some(parent_name) = &class.parent {
@@ -118947,6 +118990,42 @@ fn register_class_members(
         .map_err(|error| runtime_error(class.span, error))?;
 
     Ok(id)
+}
+
+fn validate_class_modifier_diagnostics(class: &ClassDecl) -> CompileResult<()> {
+    let Some(diagnostic) = class.diagnostics.first() else {
+        return Ok(());
+    };
+
+    Err(runtime_error(
+        diagnostic.span,
+        RuntimeError::unsupported_class_inheritance(
+            &class.name,
+            format!(
+                "modifier diagnostic: {}",
+                class_modifier_diagnostic_message(diagnostic)
+            ),
+        ),
+    ))
+}
+
+fn class_modifier_diagnostic_message(diagnostic: &ClassDiagnosticDecl) -> &'static str {
+    match diagnostic.kind {
+        ClassDiagnosticKind::MultipleAccessModifiers => {
+            "Multiple access type modifiers are not allowed"
+        }
+        ClassDiagnosticKind::MultipleStaticModifiers => "Multiple static modifiers are not allowed",
+        ClassDiagnosticKind::MultipleAbstractModifiers => {
+            "Multiple abstract modifiers are not allowed"
+        }
+        ClassDiagnosticKind::MultipleFinalModifiers => "Multiple final modifiers are not allowed",
+        ClassDiagnosticKind::FinalAbstractMethod => {
+            "Cannot use the final modifier on an abstract method"
+        }
+        ClassDiagnosticKind::FinalAbstractClass => {
+            "Cannot use the final modifier on an abstract class"
+        }
+    }
 }
 
 fn predeclare_class_relationship_metadata(

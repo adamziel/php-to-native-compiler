@@ -1156,15 +1156,44 @@ fn abstract_and_final_methods_remain_supported_member_metadata() {
 }
 
 #[test]
-fn abstract_final_method_combinations_keep_stable_parse_error() {
-    let error = parse_error("<?php\nclass Base {\n    abstract final function compute();\n}\n");
+fn duplicate_and_conflicting_class_modifiers_report_php_startup_fatals() {
+    let cases = [
+        (
+            "<?php\nclass Base {\n    public public function compute() {}\n}\n",
+            "Fatal error: Multiple access type modifiers are not allowed in Command line code on line 3",
+        ),
+        (
+            "<?php\nclass Base {\n    static static function compute() {}\n}\n",
+            "Fatal error: Multiple static modifiers are not allowed in Command line code on line 3",
+        ),
+        (
+            "<?php\nclass Base {\n    abstract abstract function compute() {}\n}\n",
+            "Fatal error: Multiple abstract modifiers are not allowed in Command line code on line 3",
+        ),
+        (
+            "<?php\nclass Base {\n    final final function compute() {}\n}\n",
+            "Fatal error: Multiple final modifiers are not allowed in Command line code on line 3",
+        ),
+        (
+            "<?php\nfinal final class Base {}\n",
+            "Fatal error: Multiple final modifiers are not allowed in Command line code on line 2",
+        ),
+        (
+            "<?php\nclass Base {\n    abstract final function compute();\n}\n",
+            "Fatal error: Cannot use the final modifier on an abstract method in Command line code on line 3",
+        ),
+        (
+            "<?php\nfinal abstract class Base {}\n",
+            "Fatal error: Cannot use the final modifier on an abstract class in Command line code on line 2",
+        ),
+    ];
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 14);
-    assert_eq!(
-        error.message,
-        "unsupported class member modifier combination: abstract final methods are not implemented"
-    );
+    for (source, message) in cases {
+        let execution = run_source(source).unwrap();
+        assert_eq!(execution.stdout, "");
+        assert_eq!(execution.stderr, message);
+        assert_eq!(execution.exit_code, 255);
+    }
 }
 
 #[test]

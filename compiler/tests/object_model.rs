@@ -5950,6 +5950,75 @@ grandparent\n"
 }
 
 #[test]
+fn call_user_func_object_callbacks_use_call_for_non_visible_methods() {
+    let execution = run_source(
+        r#"<?php
+class C {
+    protected function prot() {}
+    private function priv() {}
+    public function __call($name, $args) {
+        echo "In __call() for method $name()\n";
+    }
+}
+
+$c = new C;
+call_user_func(array($c, 'none'));
+call_user_func(array($c, 'prot'));
+call_user_func(array($c, 'priv'));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "In __call() for method none()\n\
+In __call() for method prot()\n\
+In __call() for method priv()\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn constructor_dispatch_records_uncaught_stack_frame() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+class d {
+    private function test2() {
+        echo "unreachable\n";
+    }
+}
+
+abstract class a extends d {
+    public function test() {
+        $this->test2();
+    }
+}
+
+class c extends a {
+    public function __construct() {
+        $this->test();
+    }
+}
+
+new c;
+"#,
+        "constructor-trace.php",
+    )
+    .unwrap();
+
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 255);
+    assert!(execution
+        .stdout
+        .contains("Fatal error: Uncaught Error: Call to private method d::test2() from scope a"));
+    assert!(execution
+        .stdout
+        .contains("): a->test()\n#1 constructor-trace.php("));
+    assert!(execution.stdout.contains("): c->__construct()\n#2 {main}"));
+}
+
+#[test]
 fn get_class_methods_requires_object_or_valid_class_name_argument() {
     let execution = run_source(
         r#"<?php

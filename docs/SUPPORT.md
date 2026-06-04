@@ -2233,7 +2233,9 @@
   unsupported.
   Bounded magic
   `__call()` is supported for direct missing or inaccessible instance method
-  calls and object array-callable paths when `__call()` is public. The
+  calls and object array-callable paths, including `call_user_func()` object
+  callbacks that name missing or inaccessible methods, when `__call()` is
+  public. The
   reference-return source slice additionally requires `__call()` to be declared
   by reference and to return a proven lvalue from the executed body. This covers
   `$this->missing($key)`, `[$this, "missing"]($key)`, and
@@ -3247,7 +3249,13 @@
   subset, including abstract method signatures, final methods, compatible
   public/protected inherited property redeclarations sharing one runtime slot,
   and untyped static properties initialized from the current
-  constant-expression default subset or `null`. Top-level classes are
+  constant-expression default subset or `null`. Duplicate access/static/
+  abstract/final class-member modifiers, duplicate class `final`/`abstract`
+  modifiers, final abstract methods, and final abstract classes report bounded
+  PHP-shaped startup fatals before class member metadata is registered.
+  Duplicate readonly/promoted-property modifiers, invalid abstract/final
+  properties, final class constants, and broader exact compile-time diagnostic
+  object parity remain outside this diagnostic slice. Top-level classes are
   pre-registered before execution. Braced nested declarations in control-flow
   bodies, function/method bodies, switch cases, and included files register
   only when execution reaches the `class` statement; skipped branches do not
@@ -3300,9 +3308,11 @@
   public `[object, "method"]` instance-method, and public
   `["ClassName", "method"]` static-method autoload callbacks once before the
   class table is rechecked. Classes without
-  `__construct` are supported only with no constructor arguments. Declared or inherited
-  public instance `__construct` methods execute with scoped `$this`,
-  positional arguments, and the current default-parameter subset. Successfully
+  `__construct` are supported only with no constructor arguments. Declared or
+  inherited public instance `__construct` methods execute with scoped `$this`,
+  positional arguments, the current default-parameter subset, and constructor
+  stack frames for uncaught PHP error fatals raised from the executed
+  constructor body. Successfully
   allocated objects whose class declares or inherits a public non-static
   no-argument `__destruct` method run that destructor during normal script
   shutdown, including after `exit`, in reverse allocation order for the current

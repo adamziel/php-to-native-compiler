@@ -828,6 +828,7 @@ pub struct ClassDecl {
     pub interfaces: Vec<String>,
     pub trait_uses: Vec<TraitUseDecl>,
     pub members: Vec<ClassMember>,
+    pub diagnostics: Vec<ClassDiagnosticDecl>,
     pub is_abstract: bool,
     pub is_final: bool,
     pub is_readonly: bool,
@@ -836,6 +837,22 @@ pub struct ClassDecl {
     pub attributes: Vec<AttributeDecl>,
     pub doc_comment: Option<String>,
     pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClassDiagnosticDecl {
+    pub kind: ClassDiagnosticKind,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClassDiagnosticKind {
+    MultipleAccessModifiers,
+    MultipleStaticModifiers,
+    MultipleAbstractModifiers,
+    MultipleFinalModifiers,
+    FinalAbstractMethod,
+    FinalAbstractClass,
 }
 
 #[derive(Debug, Clone, PartialEq)]
