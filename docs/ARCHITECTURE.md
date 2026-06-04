@@ -3152,8 +3152,11 @@ PHP-shaped ASCII apostrophe/hyphen run boundary. `mb_strcut()` and
 `mb_substr_count()` share the existing mbstring UTF-8/single-byte encoding
 boundary; `mb_strcut()` applies byte offsets and lengths while rounding UTF-8
 cuts to scalar boundaries, and `mb_substr_count()` counts non-overlapping
-needle occurrences, with empty-needle and unknown-encoding diagnostics routed
-through the catchable `ValueError` path. Optional nullable mbstring
+needle occurrences. `mb_strstr()`, `mb_stristr()`, `mb_strrchr()`, and
+`mb_strrichr()` use that same encoding boundary to return the haystack segment
+before or after the first or last matched needle, with empty-needle and
+unknown-encoding diagnostics routed through the catchable `ValueError` path.
+Optional nullable mbstring
 `$encoding` operands use the shared PHP-shaped string boundary, so supported
 visible `__toString()` objects can select the same bounded encoding catalog
 while arrays, closures, resources, and non-stringable objects stop at the

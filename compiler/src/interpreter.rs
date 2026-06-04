@@ -105732,6 +105732,38 @@ impl Interpreter {
                 true,
                 span,
             ),
+            "mb_strstr" => call_mb_strstr_like(
+                self,
+                &args,
+                "mb_strstr()",
+                false,
+                false,
+                span,
+            ),
+            "mb_stristr" => call_mb_strstr_like(
+                self,
+                &args,
+                "mb_stristr()",
+                true,
+                false,
+                span,
+            ),
+            "mb_strrchr" => call_mb_strstr_like(
+                self,
+                &args,
+                "mb_strrchr()",
+                false,
+                true,
+                span,
+            ),
+            "mb_strrichr" => call_mb_strstr_like(
+                self,
+                &args,
+                "mb_strrichr()",
+                true,
+                true,
+                span,
+            ),
             "mb_strtolower" => call_mb_strcase(
                 self,
                 &args,
@@ -128195,6 +128227,15 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_null_param("encoding", "?string"),
             ],
         ),
+        "mb_strstr" | "mb_stristr" | "mb_strrchr" | "mb_strrichr" => (
+            "string|false",
+            vec![
+                reflection_internal_param("haystack", "string"),
+                reflection_internal_param("needle", "string"),
+                reflection_internal_optional_bool_param("before_needle", false),
+                reflection_internal_optional_null_param("encoding", "?string"),
+            ],
+        ),
         "mb_strtolower" | "mb_strtoupper" => (
             "string",
             vec![
@@ -135542,6 +135583,12 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         ) if message.starts_with("Argument #4 ($encoding) must be a valid encoding, ") => {
             Some(format!("{function}: {message}"))
         }
+        (
+            "mb_strstr()" | "mb_stristr()" | "mb_strrchr()" | "mb_strrichr()",
+            message,
+        ) if message.starts_with("Argument #4 ($encoding) must be a valid encoding, ") => {
+            Some(format!("{function}: {message}"))
+        }
         ("str_decrement()", message)
             if message.starts_with("Argument #1 ($string) \"")
                 && message.ends_with("\" is out of decrement range") =>
@@ -136339,6 +136386,10 @@ fn is_builtin(name: &str) -> bool {
             | "mb_stripos"
             | "mb_strrpos"
             | "mb_strripos"
+            | "mb_strstr"
+            | "mb_stristr"
+            | "mb_strrchr"
+            | "mb_strrichr"
             | "mb_strtolower"
             | "mb_strtoupper"
             | "mb_http_output"
@@ -151944,6 +151995,141 @@ fn mb_utf8_strpos(
     Ok(found
         .map(|index| Value::Int(index as i64))
         .unwrap_or(Value::Bool(false)))
+}
+
+fn call_mb_strstr_like(
+    interpreter: &mut Interpreter,
+    args: &[Value],
+    function: &'static str,
+    case_insensitive: bool,
+    reverse: bool,
+    span: Span,
+) -> CompileResult<Value> {
+    if !(2..=4).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                function,
+                ArityExpectation::Between { min: 2, max: 4 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let haystack = string_compare_argument_bytes(function, "haystack", &args[0], span)?;
+    let needle = string_compare_argument_bytes(function, "needle", &args[1], span)?;
+    let before_needle = match args.get(2) {
+        Some(value) => php_internal_bool_argument(function, 3, "before_needle", value, span)?,
+        None => false,
+    };
+    let encoding = mb_scalar_encoding(interpreter, function, 4, args.get(3), span)?;
+
+    match encoding {
+        MbScalarEncoding::Utf8 => mb_utf8_strstr_like(
+            &mb_utf8_lossy(haystack),
+            &mb_utf8_lossy(needle),
+            before_needle,
+            case_insensitive,
+            reverse,
+        ),
+        MbScalarEncoding::SingleByte => {
+            mb_single_byte_strstr_like(haystack, needle, before_needle, case_insensitive, reverse)
+        }
+    }
+}
+
+fn mb_single_byte_strstr_like(
+    haystack: Vec<u8>,
+    needle: Vec<u8>,
+    before_needle: bool,
+    case_insensitive: bool,
+    reverse: bool,
+) -> CompileResult<Value> {
+    let index = if needle.is_empty() {
+        Some(if reverse { haystack.len() } else { 0 })
+    } else if needle.len() > haystack.len() {
+        None
+    } else {
+        let matches_at = |index: usize| {
+            let window = &haystack[index..index + needle.len()];
+            if case_insensitive {
+                window.eq_ignore_ascii_case(&needle)
+            } else {
+                window == needle
+            }
+        };
+        let max_start = haystack.len() - needle.len();
+        if reverse {
+            (0..=max_start).rev().find(|&index| matches_at(index))
+        } else {
+            (0..=max_start).find(|&index| matches_at(index))
+        }
+    };
+
+    let Some(index) = index else {
+        return Ok(Value::Bool(false));
+    };
+    let output = if before_needle {
+        haystack[..index].to_vec()
+    } else {
+        haystack[index..].to_vec()
+    };
+    Ok(interpreter_value_from_php_string_bytes(output))
+}
+
+fn mb_utf8_strstr_like(
+    haystack: &str,
+    needle: &str,
+    before_needle: bool,
+    case_insensitive: bool,
+    reverse: bool,
+) -> CompileResult<Value> {
+    let haystack_chars = haystack.chars().collect::<Vec<_>>();
+    let needle_chars = needle.chars().collect::<Vec<_>>();
+    let index = if needle_chars.is_empty() {
+        Some(if reverse { haystack_chars.len() } else { 0 })
+    } else if needle_chars.len() > haystack_chars.len() {
+        None
+    } else {
+        let max_start = haystack_chars.len() - needle_chars.len();
+        if case_insensitive {
+            let haystack_folded = haystack_chars
+                .iter()
+                .map(|ch| mb_casefold_char(*ch))
+                .collect::<Vec<_>>();
+            let needle_folded = needle_chars
+                .iter()
+                .map(|ch| mb_casefold_char(*ch))
+                .collect::<Vec<_>>();
+            let matches_at = |index: usize| {
+                haystack_folded[index..index + needle_folded.len()] == needle_folded[..]
+            };
+            if reverse {
+                (0..=max_start).rev().find(|&index| matches_at(index))
+            } else {
+                (0..=max_start).find(|&index| matches_at(index))
+            }
+        } else {
+            let matches_at = |index: usize| {
+                haystack_chars[index..index + needle_chars.len()] == needle_chars[..]
+            };
+            if reverse {
+                (0..=max_start).rev().find(|&index| matches_at(index))
+            } else {
+                (0..=max_start).find(|&index| matches_at(index))
+            }
+        }
+    };
+
+    let Some(index) = index else {
+        return Ok(Value::Bool(false));
+    };
+    let output = if before_needle {
+        haystack_chars[..index].iter().collect()
+    } else {
+        haystack_chars[index..].iter().collect()
+    };
+    Ok(Value::String(output))
 }
 
 fn mb_casefold_char(ch: char) -> String {

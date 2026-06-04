@@ -207,6 +207,61 @@ foreach (["mb_stripos", "mb_strrpos", "mb_strripos"] as $fn) {
 }
 
 #[test]
+fn mb_strstr_family_returns_before_or_after_substrings() {
+    let execution = run_source(
+        r#"<?php
+$ascii = "abcdef zbcdyx";
+$japanese = base64_decode("5pel5pys6Kqe44OG44Kt44K544OIMzTvvJXvvJbml6XmnKzoqp7jg4bjgq3jgrnjg4g=");
+$japanese_needle = base64_decode("6Kqe44OG44Kt");
+$greek = base64_decode("zrrOu868zr3Ovs6/z4DPgSDOus67zrzOvc6+zr/PgA==");
+$greek_needle = base64_decode("zpzOnc6ezp8=");
+var_dump(bin2hex(mb_strstr($ascii, "bcd", false, "ISO-8859-1")));
+var_dump(bin2hex(mb_strstr($ascii, "bcd", true)));
+var_dump(bin2hex(mb_strrchr($ascii, "bcd", false)));
+var_dump(bin2hex(mb_strrchr($ascii, "bcd", true)));
+var_dump(bin2hex(mb_strstr($japanese, $japanese_needle)));
+var_dump(bin2hex(mb_strrchr($japanese, $japanese_needle, true)));
+var_dump(bin2hex(mb_stristr($greek, $greek_needle)));
+var_dump(bin2hex(mb_strrichr($greek, $greek_needle, true)));
+var_dump(mb_strstr("abc", ""));
+var_dump(mb_strrchr("abc", ""));
+try {
+    mb_strrichr("x", "x", false, "unknown-encoding");
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+$call = "mb_stristr";
+echo function_exists($call) ? "fn" : "missing";
+echo is_callable($call) ? ":callable:" : ":missing:";
+echo bin2hex($call("abcDef", "BCD", true, "8bit")), "\n";
+$reflection = new ReflectionFunction("mb_strrichr");
+echo $reflection->getName(), ":", $reflection->getNumberOfRequiredParameters(), "/", $reflection->getNumberOfParameters(), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "string(24) \"6263646566207a6263647978\"\n",
+            "string(2) \"61\"\n",
+            "string(10) \"6263647978\"\n",
+            "string(16) \"616263646566207a\"\n",
+            "string(88) \"e8aa9ee38386e382ade382b9e383883334efbc95efbc96e697a5e69cace8aa9ee38386e382ade382b9e38388\"\n",
+            "string(70) \"e697a5e69cace8aa9ee38386e382ade382b9e383883334efbc95efbc96e697a5e69cac\"\n",
+            "string(54) \"cebccebdcebecebfcf80cf8120cebacebbcebccebdcebecebfcf80\"\n",
+            "string(42) \"cebacebbcebccebdcebecebfcf80cf8120cebacebb\"\n",
+            "string(3) \"abc\"\n",
+            "string(0) \"\"\n",
+            "mb_strrichr(): Argument #4 ($encoding) must be a valid encoding, \"unknown-encoding\" given\n",
+            "fn:callable:61\n",
+            "mb_strrichr:2/4\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn mb_strcase_supports_unicode_case_mapping_and_final_sigma_boundary() {
     let execution = run_source(
         r#"<?php
@@ -327,11 +382,12 @@ echo function_exists("mb_substr") ? "1" : "0";
 echo function_exists("mb_strcut") ? "1" : "0";
 echo function_exists("mb_substr_count") ? "1" : "0";
 echo is_callable("mb_stripos") ? "1" : "0";
+echo is_callable("mb_strrichr") ? "1" : "0";
 "#,
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 5, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 6, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
 }
