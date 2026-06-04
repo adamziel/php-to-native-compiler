@@ -5932,6 +5932,12 @@ impl Parser {
 
         let expr = self.parse_expression()?;
         let span = expr.span();
+        if let TokenKind::Identifier(name) = &self.peek().kind {
+            return Err(self.error_at(
+                self.peek().span,
+                format!("syntax error, unexpected identifier \"{name}\""),
+            ));
+        }
         self.consume_keyword(TokenKind::Semicolon, "expected ';' after expression")?;
         Ok(Stmt::Expr { expr, span })
     }

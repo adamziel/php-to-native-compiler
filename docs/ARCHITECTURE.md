@@ -19,13 +19,15 @@ PHP source
 Milestone 1 implements the lexer, parser, AST, a direct interpreter/runtime
 execution path, and a narrow LLVM IR text emitter for simple straight-line code.
 The lexer classifies PHP numeric literals before AST construction: valid
-decimal, legacy-octal, and hexadecimal integer literals stay integer-valued
-when they fit the current signed 64-bit subset, valid overflowing
-legacy-octal/hexadecimal integer literals become float tokens, and
-leading-zero forms with a decimal point or exponent are decimal float tokens
-rather than legacy-octal integers. Numeric separators, binary integer
-literals, and exact non-finite overflow policy remain outside the current
-lexer subset.
+decimal, binary, legacy-octal, and hexadecimal integer literals stay
+integer-valued when they fit the current signed 64-bit subset, valid
+overflowing binary/legacy-octal/hexadecimal integer literals become float
+tokens, and leading-zero forms with a decimal point or exponent are decimal
+float tokens rather than legacy-octal integers. Numeric literal separators are
+accepted only between valid digits in the current decimal, binary,
+legacy-octal, hexadecimal, fraction, and exponent digit segments; invalid
+separator placements remain parser syntax errors. Exact non-finite overflow
+policy remains outside the current lexer subset.
 The interpreter runs top-level statements in a global symbol table and creates a
 fresh local symbol table for each user-function call. Before a user-function
 body is entered, direct calls validate supported by-reference argument sources;

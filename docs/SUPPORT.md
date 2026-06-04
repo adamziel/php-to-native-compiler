@@ -17,11 +17,15 @@
 - `echo` statements with one or more comma-separated expressions, including
   array operands that emit `Array to string conversion` and output `Array`
 - `print` statements
-- decimal, legacy-octal, and hexadecimal integer literals in the current
-  signed 64-bit subset; valid overflowing hexadecimal and legacy-octal integer
-  literals are parsed as floats on the interpreter path
+- decimal, binary `0b`/`0B`, legacy-octal, and hexadecimal integer literals in
+  the current signed 64-bit subset; valid overflowing binary, hexadecimal, and
+  legacy-octal integer literals are parsed as floats on the interpreter path.
+  Numeric literal separators are accepted between valid digits in the current
+  decimal, binary, legacy-octal, hexadecimal, fraction, and exponent digit
+  segments.
 - float literals, including leading-zero decimal float/exponent forms such as
-  `0200001.7` and `09e1`
+  `0200001.7` and `09e1`, plus between-digit numeric literal separators such
+  as `96_485.332_12` and `6.626_070_15e-34`
 - single-quoted and double-quoted string literals with basic escapes; double
   quoted strings additionally support simple `$name`, `{$name}`, and
   deprecated `${name}` interpolation over the current variable table
@@ -12123,9 +12127,8 @@
 - expression-position `eval(...)`, `return` from evaluated source, non-string
   eval arguments, nested eval, eval declarations, include/require inside eval,
   references/copy-on-write through eval, and exact eval diagnostics
-- numeric literal separators, binary integer literals, exact non-finite
-  overflow policy for arbitrarily huge numeric source literals, and invalid
-  legacy-octal integer recovery remain unsupported
+- exact non-finite overflow policy for arbitrarily huge numeric source
+  literals and invalid legacy-octal integer recovery remain unsupported
 - namespace forms outside the current namespace/imported class-name plus
   function/constant slice: invalid mixed/nested namespace forms, grouped
   imports, namespace-qualified constant reads, leading-backslash

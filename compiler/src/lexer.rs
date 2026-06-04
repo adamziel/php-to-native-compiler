@@ -1170,34 +1170,65 @@ impl<'a> Lexer<'a> {
         let mut text = String::new();
         text.push(first);
 
-        if first == '0' && matches!(self.peek(), Some('x' | 'X')) {
+        if first == '0'
+            && matches!(self.peek(), Some('x' | 'X'))
+            && self
+                .chars
+                .get(self.index + 1)
+                .is_some_and(|ch| ch.is_ascii_hexdigit())
+        {
             text.push(self.advance());
             let mut digits = String::new();
-            while matches!(self.peek(), Some(ch) if ch.is_ascii_hexdigit()) {
-                let ch = self.advance();
-                text.push(ch);
-                digits.push(ch);
-            }
-            if digits.is_empty() {
-                return Err(self.error_at(span, format!("invalid integer literal '{text}'")));
-            }
+            self.consume_digits_with_numeric_separators(
+                |ch| ch.is_ascii_hexdigit(),
+                false,
+                Some(&mut text),
+                &mut digits,
+            );
             return match i64::from_str_radix(&digits, 16) {
                 Ok(value) => Ok(TokenKind::Int(value)),
                 Err(_) => Ok(TokenKind::Float(radix_digits_to_f64(&digits, 16))),
             };
         }
 
-        while matches!(self.peek(), Some('0'..='9')) {
+        if first == '0'
+            && matches!(self.peek(), Some('b' | 'B'))
+            && self
+                .chars
+                .get(self.index + 1)
+                .is_some_and(|ch| matches!(ch, '0' | '1'))
+        {
             text.push(self.advance());
+            let mut digits = String::new();
+            self.consume_digits_with_numeric_separators(
+                |ch| matches!(ch, '0' | '1'),
+                false,
+                Some(&mut text),
+                &mut digits,
+            );
+            return match i64::from_str_radix(&digits, 2) {
+                Ok(value) => Ok(TokenKind::Int(value)),
+                Err(_) => Ok(TokenKind::Float(radix_digits_to_f64(&digits, 2))),
+            };
         }
+
+        self.consume_digits_with_numeric_separators(
+            |ch| ch.is_ascii_digit(),
+            true,
+            None,
+            &mut text,
+        );
 
         let mut is_float = false;
         if self.peek() == Some('.') {
             is_float = true;
             text.push(self.advance());
-            while matches!(self.peek(), Some('0'..='9')) {
-                text.push(self.advance());
-            }
+            self.consume_digits_with_numeric_separators(
+                |ch| ch.is_ascii_digit(),
+                false,
+                None,
+                &mut text,
+            );
         }
 
         if self.peek().is_some_and(|ch| matches!(ch, 'e' | 'E'))
@@ -1219,9 +1250,12 @@ impl<'a> Lexer<'a> {
             if self.peek().is_some_and(|ch| matches!(ch, '+' | '-')) {
                 text.push(self.advance());
             }
-            while matches!(self.peek(), Some('0'..='9')) {
-                text.push(self.advance());
-            }
+            self.consume_digits_with_numeric_separators(
+                |ch| ch.is_ascii_digit(),
+                false,
+                None,
+                &mut text,
+            );
         }
 
         if is_float {
@@ -1252,11 +1286,54 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    fn consume_digits_with_numeric_separators(
+        &mut self,
+        is_digit: impl Fn(char) -> bool,
+        mut previous_was_digit: bool,
+        mut raw_text: Option<&mut String>,
+        normalized_digits: &mut String,
+    ) {
+        while let Some(ch) = self.peek() {
+            if is_digit(ch) {
+                let ch = self.advance();
+                if let Some(raw_text) = raw_text.as_mut() {
+                    raw_text.push(ch);
+                }
+                normalized_digits.push(ch);
+                previous_was_digit = true;
+                continue;
+            }
+            if previous_was_digit
+                && ch == '_'
+                && self
+                    .chars
+                    .get(self.index + 1)
+                    .is_some_and(|next| is_digit(*next))
+            {
+                if let Some(raw_text) = raw_text.as_mut() {
+                    raw_text.push(self.advance());
+                    let digit = self.advance();
+                    raw_text.push(digit);
+                    normalized_digits.push(digit);
+                } else {
+                    self.advance();
+                    normalized_digits.push(self.advance());
+                }
+                previous_was_digit = true;
+                continue;
+            }
+            break;
+        }
+    }
+
     fn lex_leading_dot_number(&mut self, span: Span) -> CompileResult<TokenKind> {
         let mut text = String::from(".");
-        while matches!(self.peek(), Some('0'..='9')) {
-            text.push(self.advance());
-        }
+        self.consume_digits_with_numeric_separators(
+            |ch| ch.is_ascii_digit(),
+            false,
+            None,
+            &mut text,
+        );
 
         if self.peek().is_some_and(|ch| matches!(ch, 'e' | 'E'))
             && (self
@@ -1276,9 +1353,12 @@ impl<'a> Lexer<'a> {
             if self.peek().is_some_and(|ch| matches!(ch, '+' | '-')) {
                 text.push(self.advance());
             }
-            while matches!(self.peek(), Some('0'..='9')) {
-                text.push(self.advance());
-            }
+            self.consume_digits_with_numeric_separators(
+                |ch| ch.is_ascii_digit(),
+                false,
+                None,
+                &mut text,
+            );
         }
 
         let value = text
