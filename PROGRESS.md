@@ -1,13 +1,13 @@
 # PHP Native Compiler PHPT Progress
 
-Updated: 2026-06-04 13:56 CEST
+Updated: 2026-06-04 16:07 CEST
 
 Primary/public branch: `origin/master`
 Latest accepted public-score source:
-`6c03801927f71f7c43fb7200dbdc37542a2ad8e9 fix: handle overloaded property updates`
+`0b917f67a37d9ca9779d77f87173b628431c2425 fix: respect private instance property shadows`
 
 Semantic source for current published score:
-`6c03801927f71f7c43fb7200dbdc37542a2ad8e9 fix: handle overloaded property updates`
+`0b917f67a37d9ca9779d77f87173b628431c2425 fix: respect private instance property shadows`
 
 Public PHPT metric:
 
@@ -16,37 +16,30 @@ Public PHPT metric:
 Pinned denominator: `20294` total pinned runnable php-src PHPTs. Raw runner
 denominators that exclude BORKED rows are not public progress.
 
-Current public score: **7703 / 20294 pinned runnable PHPTs = 37.96%**.
+Current public score: **7873 / 20294 pinned runnable PHPTs = 38.79%**.
 
 Latest pushed source checkpoint:
-`13edcb5d72a55a15917d39e07be3c8150eb143f7 fix: enforce constructor destructor visibility`
+`88071e97e22d6b840ab9ebbc248a67a55e5b6926 fix: reject invalid property hooks`
 
 Current score-gate status:
 Accepted public gate:
-`state/logs/phpt-full-current-score-20260604T110314Z-php-src-f97ff59-public-6c038019-source-6c038019`
+`state/logs/phpt-full-current-score-20260604T135138Z-php-src-f97ff59-public-0b917f67-source-0b917f67`
 
-The latest accepted full gate for source `6c038019`:
-`state/logs/phpt-full-current-score-20260604T110314Z-php-src-f97ff59-public-6c038019-source-6c038019`
+The latest accepted full gate for source `0b917f67`:
+`state/logs/phpt-full-current-score-20260604T135138Z-php-src-f97ff59-public-0b917f67-source-0b917f67`
 completed `FINAL / GATE-AGGREGATE-COMPLETE / ZERO-PASS-REGRESSIONS` against
-the accepted `e3813529` PASS baseline. It reported public-comparable
-`7703 / 20294 = 37.96%`, `7699` normalized current passes, `0`
+the accepted `6c038019` PASS baseline. It reported public-comparable
+`7873 / 20294 = 38.79%`, `7869` normalized current passes, `0`
 latest-published PASS regressions, and `0` invalid proof-marker hits. This
-gate converts the overloaded-property source checkpoint `6c038019` into
-public PHPT progress. Newer source commits `5bfe8362`, `248aa93a`,
-`0a761d6b`, and `13edcb5d` are staged after this accepted public source and
-are not included in the public score above.
+gate converts the post-`6c038019` source chain through `0b917f67` into public
+PHPT progress. Newer source commit `88071e97` is staged after this accepted
+public source and is not included in the public score above.
 
-A newer full gate for source `248aa93a`:
-`state/logs/phpt-full-current-score-20260604T113613Z-php-src-f97ff59-public-248aa93a-source-248aa93a`
-produced aggregate artifacts against the accepted `6c038019` PASS baseline
-with public-comparable `7756 / 20294 = 38.22%`, `7752` normalized current
-passes, `2` latest-published PASS regressions, and `0` invalid proof-marker
-hits. The regressions are
-`Zend/tests/readonly_props/readonly_clone_success1.phpt` and
-`Zend/tests/readonly_props/readonly_clone_success4.phpt`. This is blocked
-candidate evidence, not public-score evidence, because it is not a clean
-zero-regression gate. It covers `248aa93a`, not the newer `0a761d6b` or
-`13edcb5d` source checkpoints.
+Recent non-public gate history: the `31656671` full gate aborted mid-shard and
+was not publication evidence; the `d978106e` gate completed with four
+latest-published PASS regressions. The DatePeriod and property-override
+regression rows from that blocked gate are repaired in the now-published
+`0b917f67` chain.
 
 The previous accepted full gate for source `e3813529`:
 `state/logs/phpt-full-current-score-20260604T103438Z-php-src-f97ff59-public-e3813529-source-e3813529`
@@ -68,15 +61,16 @@ PHPT progress.
 
 Historical blocked full gates from before the `dcf615c9` publication included
 `593c0625` with four latest-published PASS regressions, `a3889f45` with two,
-and `6b0952e0` with one. The earlier `248aa93a` gate
-`state/logs/phpt-full-current-score-20260604T112324Z-php-src-f97ff59-public-248aa93a-source-248aa93a`
-aborted mid-shard and is also not publication evidence. The later clean
-`dcf615c9`, `e3813529`, and `6c038019` gates supersede the historical blocked
-gates for the current public score, while the blocked `248aa93a` candidate
-must be repaired or superseded before any newer score can be published.
+and `6b0952e0` with one. The later clean `dcf615c9`, `e3813529`, `6c038019`,
+and `0b917f67` gates supersede those historical blocked gates for the current
+public score.
 
-The accepted source checkpoint chain through semantic source `6c038019` has
+The accepted source checkpoint chain through semantic source `0b917f67` has
 been pushed to `origin/master` and is now reflected in the public score above.
+The completed score gate at checkpoint `0b917f67` converted the post-`6c038019`
+source chain into a public PHPT movement of `7703 -> 7873` passed pinned rows,
+a net gain of `170` public PHPT passes, with zero latest-published PASS
+regressions.
 The completed score gate at checkpoint `6c038019` converted the post-`e3813529`
 source checkpoint into a public PHPT movement of `7685 -> 7703` passed pinned
 rows, a net gain of `18` public PHPT passes, with zero latest-published PASS
@@ -95,69 +89,37 @@ passes, with zero latest-published PASS regressions.
 
 Unpublished source progress since the accepted public score source:
 
-- Latest pushed source head is `13edcb5d72a55a15917d39e07be3c8150eb143f7`
-  (`fix: enforce constructor destructor visibility`), which is newer than the
-  accepted `6c038019` full gate and is not included in the public score above.
-- There are `4` score-relevant source commits after the accepted public-score
-  source: `5bfe836230ff17c3011e77018123bd09aa9d538e`
-  (`fix: render reflection metadata strings`),
-  `248aa93a432e0e0c72020cf2d676d1dd8117ff16`
-  (`fix: implement regex iterator semantics`),
-  `0a761d6b8f4aad66b778bb093ffd63d580cbfcbc`
-  (`fix: implement static property semantics`), and
-  `13edcb5d72a55a15917d39e07be3c8150eb143f7`
-  (`fix: enforce constructor destructor visibility`).
+- Latest pushed source head is `88071e97e22d6b840ab9ebbc248a67a55e5b6926`
+  (`fix: reject invalid property hooks`), which is newer than the accepted
+  `0b917f67` full gate and is not included in the public score above.
+- There is `1` score-relevant source commit after the accepted public-score
+  source: `88071e97e22d6b840ab9ebbc248a67a55e5b6926`
+  (`fix: reject invalid property hooks`).
 - Staged focused selected-PHPT proof after the latest accepted public-score
-  source totals `56` selected rows across `4` integrated source artifacts.
+  source totals `16` selected rows across `1` integrated source artifact.
   These are source/staging facts, not a public score update unless a full
   pinned PHPT gate accepts them.
-- The reflection metadata/string-rendering packet moved selected PHPT
-  `0/13 -> 13/13` for `ext/reflection/tests/009.phpt`, `010.phpt`,
-  `024.phpt`, `025.phpt`, `ReflectionClass_toString_002.phpt`,
-  `ReflectionClass_toString_005.phpt`,
-  `ReflectionClass_toString_006.phpt`,
-  `ReflectionObject___toString_basic1.phpt`,
-  `ReflectionObject___toString_basic2.phpt`,
-  `ReflectionObject_export_basic3.phpt`, `bug41061.phpt`, `bug60357.phpt`,
-  and `bug74673.phpt`.
-- The SPL `RegexIterator` packet moved selected PHPT `0/17 -> 17/17` for
-  `ext/spl/tests/regexiterator_getregex.phpt`,
-  `ext/spl/tests/regexIterator_mode_basic.phpt`,
-  `ext/spl/tests/regexIterator_flags_basic.phpt`,
-  `ext/spl/tests/regexiterator_getpregflags.phpt`,
-  `ext/spl/tests/regexiterator_setpregflags.phpt`,
-  `ext/spl/tests/regexIterator_setMode_error.phpt`,
-  `ext/spl/tests/iterator_029.phpt`, `iterator_050.phpt`,
-  `iterator_051.phpt`, `iterator_054.phpt`, `iterator_055.phpt`,
-  `bug46088.phpt`, `bug50579.phpt`, `bug54304.phpt`, `bug66702.phpt`,
-  `bug68175.phpt`, and `bug70868.phpt`. It also preserved the latest-published
-  PASS scout `8/8`, passed focused Rust `RegexIterator` and object metadata
+- The property-hook diagnostics packet moved selected PHPT `0/16 -> 16/16`
+  for invalid property-hook declaration rows including duplicate hooks,
+  interface final/abstract/non-public restrictions, invalid abstract/final/
+  private/static hook combinations, empty hook lists, explicit hook visibility,
+  `get` hook parameter lists, and unknown hook names. It also preserved the
+  latest-published BcMath PASS scout `8/8`, the former DatePeriod/property
+  blocker scout `4/4`, passed focused Rust object-model and syntax-boundary
   coverage, build, fmt, diff checks, php-src cleanliness, and production
   row-name leakage scan.
-- The static-property semantics packet moved selected PHPT `0/13 -> 13/13`
-  for `tests/classes/static_mix_1.phpt`, `static_mix_2.phpt`,
-  `static_properties_001.phpt`, `static_properties_003.phpt`,
-  `static_properties_003_error1.phpt`, `static_properties_003_error2.phpt`,
-  `static_properties_003_error3.phpt`, `static_properties_003_error4.phpt`,
-  `static_properties_undeclared_assign.phpt`,
-  `static_properties_undeclared_assignInc.phpt`,
-  `static_properties_undeclared_assignRef.phpt`,
-  `static_properties_undeclared_inc.phpt`, and
-  `static_properties_undeclared_read.phpt`. It also preserved the
-  latest-published PASS scout `8/8`, passed focused Rust object-model
-  `static_propert` coverage `14/14`, build, fmt, diff checks,
-  php-src cleanliness, and production row-name leakage scan.
-- The constructor/destructor visibility packet moved selected PHPT
-  `0/13 -> 13/13` for `tests/classes/clone_005.phpt`,
-  `ctor_visibility.phpt`, `destructor_visibility_001.phpt`,
-  `destructor_visibility_002.phpt`, `destructor_visibility_003.phpt`,
-  `factory_and_singleton_003.phpt`, `factory_and_singleton_004.phpt`,
-  `factory_and_singleton_005.phpt`, `factory_and_singleton_006.phpt`,
-  `factory_and_singleton_009.phpt`, `factory_and_singleton_010.phpt`,
-  `final_ctor1.phpt`, and `final_private_ctor.phpt`. It also preserved the
-  latest-published PASS scout `8/8`, passed focused Rust object-model
-  `constructor_visibility`, `destructor`, and `final_method` coverage, build,
-  fmt, diff checks, php-src cleanliness, and production row-name leakage scan.
+
+Accepted source proof included in the `0b917f67` public gate:
+
+- The now-published `6c038019..0b917f67` source chain carried `124` focused
+  selected rows across `11` integrated source artifacts before the clean full
+  gate accepted it. The chain includes Reflection metadata/string rendering,
+  SPL `RegexIterator`, static-property semantics, constructor/destructor
+  visibility, readonly clone regression repair, mbstring substring searches,
+  HTML entity semantics, class/interface declaration diagnostics, XMLReader
+  semantics, DatePeriod readonly mutation regression repair, and the
+  property-override private static PASS-regression repair. The clean full gate
+  accepted it with zero latest-published PASS regressions.
 
 Accepted source proof included in the `6c038019` public gate:
 
