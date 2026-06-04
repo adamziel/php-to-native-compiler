@@ -15725,6 +15725,64 @@ echo count(Bag::$items), ":", Bag::$items[0], ":", Bag::$items["name"];
 }
 
 #[test]
+fn private_parent_instance_read_ignores_child_static_property_shadow() {
+    let execution = run_source(
+        r#"<?php
+class A {
+    private $p = "A::p";
+
+    function showA() {
+        echo $this->p, "\n";
+    }
+}
+
+class BPrivate extends A {
+    private static $p = "BPrivate::p (static)";
+
+    static function showB() {
+        echo self::$p, "\n";
+    }
+}
+
+class BProtected extends A {
+    protected static $p = "BProtected::p (static)";
+
+    static function showB() {
+        echo self::$p, "\n";
+    }
+}
+
+class BPublic extends A {
+    public static $p = "BPublic::p (static)";
+
+    static function showB() {
+        echo self::$p, "\n";
+    }
+}
+
+$a = new A;
+$a->showA();
+$private = new BPrivate;
+$private->showA();
+BPrivate::showB();
+$protected = new BProtected;
+$protected->showA();
+BProtected::showB();
+$public = new BPublic;
+$public->showA();
+BPublic::showB();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.exit_code, 0);
+    assert_eq!(
+        execution.stdout,
+        "A::p\nA::p\nBPrivate::p (static)\nA::p\nBProtected::p (static)\nA::p\nBPublic::p (static)\n"
+    );
+}
+
+#[test]
 fn static_properties_accessed_as_instance_properties_match_php_notices_and_errors() {
     let execution = run_source(
         r#"<?php

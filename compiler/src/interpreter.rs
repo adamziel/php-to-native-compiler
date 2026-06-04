@@ -60072,7 +60072,16 @@ impl Interpreter {
                             return self
                                 .array_object_read_property_from_storage(&object, property, span);
                         }
-                        self.ensure_static_property_instance_access(&object, property, span, true)?;
+                        if !self.non_public_instance_property_shadows_static_instance_access(
+                            &object,
+                            property,
+                            current_class_id,
+                            &protected_class_ids,
+                        ) {
+                            self.ensure_static_property_instance_access(
+                                &object, property, span, true,
+                            )?;
+                        }
                         Ok(value)
                     }
                     Err(error)
@@ -60197,7 +60206,16 @@ impl Interpreter {
                                 None,
                             ));
                         }
-                        self.ensure_static_property_instance_access(&object, property, span, true)?;
+                        if !self.non_public_instance_property_shadows_static_instance_access(
+                            &object,
+                            property,
+                            current_class_id,
+                            &protected_class_ids,
+                        ) {
+                            self.ensure_static_property_instance_access(
+                                &object, property, span, true,
+                            )?;
+                        }
                         let source = if matches!(value, Value::Array(_)) {
                             scope
                                 .object_property_array_copy_source_for_path(&object, property, &[])
@@ -71993,6 +72011,23 @@ impl Interpreter {
         }
 
         Ok(())
+    }
+
+    fn non_public_instance_property_shadows_static_instance_access(
+        &self,
+        object: &PhpObject,
+        property: &str,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+    ) -> bool {
+        matches!(
+            object.property_visibility_from_context(
+                property,
+                current_class_id,
+                protected_class_ids
+            ),
+            Ok(visibility) if visibility != Visibility::Public
+        )
     }
 
     fn static_property_instance_write_should_try_magic_set(
