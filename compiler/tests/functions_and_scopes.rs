@@ -245,7 +245,7 @@ class actual_return_type {
     )
     .unwrap();
     assert!(uncaught.stdout.contains(
-        "Fatal error: Uncaught TypeError: actual_return_type::make(): Return value must be of type expected_return_type, actual_return_type returned in /tmp/uncaught_method_return_type.php:4"
+        "Fatal error: Uncaught TypeError: actual_return_type::make(): Return value must be of type expected_return_type, actual_return_type returned in /tmp/uncaught_method_return_type.php:5"
     ));
     assert!(uncaught.stdout.contains(
         "#0 /tmp/uncaught_method_return_type.php(8): actual_return_type->make()\n#1 {main}"

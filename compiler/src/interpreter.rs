@@ -604,6 +604,7 @@ struct Interpreter {
     active_foreach_references: Vec<ActiveForeachReference>,
     function_context: Vec<String>,
     pending_uncaught_call_frames: Vec<PendingUncaughtCallFrame>,
+    last_return_span: Option<Span>,
     throwable_string_traces: HashMap<i64, String>,
     class_context: Vec<ClassId>,
     called_class_context: Vec<ClassId>,
@@ -12003,6 +12004,7 @@ impl Interpreter {
             active_foreach_references: Vec::new(),
             function_context: Vec::new(),
             pending_uncaught_call_frames: Vec::new(),
+            last_return_span: None,
             throwable_string_traces: HashMap::new(),
             class_context: Vec::new(),
             called_class_context: Vec::new(),
@@ -15837,8 +15839,9 @@ impl Interpreter {
         scope: &mut SymbolTable,
     ) -> CompileResult<ArrayCopyReturnBodyFlow> {
         match stmt {
-            Stmt::Return { value, .. } => {
+            Stmt::Return { value, span } => {
                 self.tick(stmt.span())?;
+                self.last_return_span = Some(*span);
                 let (flow, source) =
                     self.return_flow_with_array_copy_source(value.as_ref(), scope)?;
                 let Flow::Return(value) = flow else {
@@ -26928,7 +26931,8 @@ impl Interpreter {
                 }
                 Ok(Flow::Normal)
             }
-            Stmt::Return { value, .. } => {
+            Stmt::Return { value, span } => {
+                self.last_return_span = Some(*span);
                 let value = match value {
                     Some(expr) => self.evaluate(expr, scope)?,
                     None => Value::Null,
@@ -27584,7 +27588,7 @@ impl Interpreter {
             return message.to_string();
         }
         let callable = callable.strip_suffix("()").unwrap_or(callable);
-        let same_callable = callable == frame.function_name
+        let same_callable = callable_names_match_pending_frame(callable, &frame.function_name)
             || (frame.function_name == "{closure}" && callable.starts_with("{closure:"));
         if !same_callable {
             return message.to_string();
@@ -27704,15 +27708,19 @@ impl Interpreter {
             return;
         }
         let callable = call_argument_type_error_callable(error_message).unwrap_or("{main}");
-        let trace_callable = self
+        let matching_frame = self
             .pending_uncaught_call_frames
             .last()
-            .filter(|frame| pending_frame_matches_call_argument_callable(frame, callable))
-            .map(|frame| format_call_trace_callable_with_args(callable, &frame.args))
+            .filter(|frame| pending_frame_matches_call_argument_callable(frame, callable));
+        let call_line = matching_frame.map_or(line, |frame| frame.call_line);
+        let trace_callable = matching_frame
+            .map(|frame| {
+                format_call_trace_callable_with_args(&frame.display_callable(&file), &frame.args)
+            })
             .unwrap_or_else(|| callable.to_string());
         self.push_uncaught_fatal_separator();
         self.push_unbuffered_stdout_text(&format!(
-            "Fatal error: Uncaught {error_class_name}: {error_message}, called in {file}:{line}\nStack trace:\n#0 {file}({line}): {trace_callable}\n#1 {{main}}\n  thrown in {file} on line {line}"
+            "Fatal error: Uncaught {error_class_name}: {error_message}, called in {file} on line {call_line} and defined in {file}:{line}\nStack trace:\n#0 {file}({call_line}): {trace_callable}\n#1 {{main}}\n  thrown in {file} on line {line}"
         ));
     }
 
@@ -89602,10 +89610,17 @@ impl Interpreter {
         value: Value,
         missing_return: bool,
     ) -> CompileResult<Value> {
+        let return_span = if missing_return {
+            self.last_return_span = None;
+            None
+        } else {
+            self.last_return_span.take()
+        };
         let Some(type_decl) = function.return_type.as_ref() else {
             return Ok(value);
         };
         let callable = self.return_type_callable_name(function, class_context);
+        let diagnostic_span = return_span.unwrap_or(function.span);
         if type_decl_is_exact(type_decl, "never") {
             let callable_kind = if class_context.is_some() && function.name != "{closure}" {
                 "method"
@@ -89624,8 +89639,8 @@ impl Interpreter {
             }
             return Err(Diagnostic::new(
                 Phase::Runtime,
-                function.span.line,
-                function.span.column,
+                diagnostic_span.line,
+                diagnostic_span.column,
                 format!("{callable}: A never-returning {callable_kind} must not return"),
             ));
         }
@@ -89635,8 +89650,8 @@ impl Interpreter {
             } else {
                 Err(Diagnostic::new(
                     Phase::Runtime,
-                    function.span.line,
-                    function.span.column,
+                    diagnostic_span.line,
+                    diagnostic_span.column,
                     format!("{callable}: A void function must not return a value"),
                 ))
             };
@@ -89670,8 +89685,8 @@ impl Interpreter {
                 self.call_type_error_type_text(type_decl, class_context, called_class_context);
             Diagnostic::new(
                 Phase::Runtime,
-                function.span.line,
-                function.span.column,
+                diagnostic_span.line,
+                diagnostic_span.column,
                 format!(
                     "{callable}: Return value must be of type {}, {} returned",
                     expected_type,
@@ -113065,11 +113080,62 @@ fn type_decl_reserved_qualified_type_name_diagnostic(
     type_decl: Option<&TypeDecl>,
 ) -> Option<(String, usize)> {
     let type_decl = type_decl?;
+    if let Some(name) = qualified_builtin_type_name(&type_decl.text) {
+        return Some((
+            format!("Type declaration '{name}' must be unqualified"),
+            type_decl.span.line,
+        ));
+    }
     let name = reserved_qualified_type_name(&type_decl.text)?;
     Some((
         format!("Cannot use \"{name}\" as a type name as it is reserved"),
         type_decl.span.line,
     ))
+}
+
+fn qualified_builtin_type_name(type_decl: &str) -> Option<&str> {
+    type_decl
+        .split(['|', '&'])
+        .find_map(qualified_builtin_type_part)
+}
+
+fn qualified_builtin_type_part(part: &str) -> Option<&str> {
+    let raw = part.trim();
+    let raw = raw.strip_prefix('?').unwrap_or(raw);
+    let segment = if let Some(segment) = raw.strip_prefix('\\') {
+        if segment.contains('\\') {
+            return None;
+        }
+        segment
+    } else if let Some(segment) = raw.strip_prefix("namespace\\") {
+        if segment.contains('\\') {
+            return None;
+        }
+        segment
+    } else {
+        return None;
+    };
+    is_unqualified_builtin_type_name(segment).then_some(segment)
+}
+
+fn is_unqualified_builtin_type_name(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "array"
+            | "bool"
+            | "callable"
+            | "false"
+            | "float"
+            | "int"
+            | "iterable"
+            | "mixed"
+            | "never"
+            | "null"
+            | "object"
+            | "string"
+            | "true"
+            | "void"
+    )
 }
 
 fn reserved_qualified_type_name(type_decl: &str) -> Option<&str> {
@@ -113079,10 +113145,12 @@ fn reserved_qualified_type_name(type_decl: &str) -> Option<&str> {
 }
 
 fn reserved_qualified_type_part(part: &str) -> Option<&str> {
-    let name = type_decl_normalized_part(part);
-    if !name.contains('\\') {
+    let raw = part.trim();
+    let raw = raw.strip_prefix('?').unwrap_or(raw);
+    if !raw.starts_with('\\') && !raw.contains('\\') {
         return None;
     }
+    let name = type_decl_normalized_part(part);
     let segment = name.rsplit('\\').next().unwrap_or(name);
     if is_reserved_special_class_name(segment) {
         Some(name)
@@ -123883,8 +123951,14 @@ fn pending_frame_matches_call_argument_callable(
     callable: &str,
 ) -> bool {
     let callable_name = callable.strip_suffix("()").unwrap_or(callable);
-    callable_name == frame.function_name
+    callable_names_match_pending_frame(callable_name, &frame.function_name)
         || (frame.function_name == "{closure}" && callable_name.starts_with("{closure:"))
+}
+
+fn callable_names_match_pending_frame(callable: &str, frame_callable: &str) -> bool {
+    callable == frame_callable
+        || callable.replace("::", "->") == frame_callable
+        || callable.replace("->", "::") == frame_callable
 }
 
 fn format_call_trace_callable_with_args(callable: &str, args: &[Value]) -> String {

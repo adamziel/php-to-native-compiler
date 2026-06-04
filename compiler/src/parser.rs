@@ -548,6 +548,7 @@ impl Parser {
         let token = self.advance().clone();
         match token.kind {
             TokenKind::Identifier(name) => raw.push_str(&name),
+            TokenKind::Namespace => raw.push_str("namespace"),
             TokenKind::Static => raw.push_str("static"),
             TokenKind::Null => raw.push_str("null"),
             TokenKind::True => raw.push_str("true"),
@@ -8980,6 +8981,11 @@ impl Parser {
     }
 
     fn resolve_type_decl_name(&self, raw: &str) -> String {
+        if let Some(stripped) = raw.strip_prefix('\\') {
+            if Self::is_special_type_decl_name(stripped) {
+                return raw.to_string();
+            }
+        }
         if Self::is_special_type_decl_name(raw) {
             raw.to_string()
         } else {
@@ -9588,6 +9594,7 @@ fn is_parameter_type_start(kind: &TokenKind) -> bool {
             | TokenKind::Question
             | TokenKind::LParen
             | TokenKind::Backslash
+            | TokenKind::Namespace
             | TokenKind::Static
             | TokenKind::Null
             | TokenKind::True
