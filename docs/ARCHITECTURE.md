@@ -3650,19 +3650,22 @@ recognizes the names, while direct native calls reject under the function-call
 boundary.
 `assert()` is currently an interpreter-only assertion builtin. It evaluates one
 or two arguments normally, returns true for truthy, inactive, or
-`zend.assertions=0` assertions, and implements the bounded PHP 8.3
-`assert.exception=0` surface: `assert_options()`, `ASSERT_*` constant
-deprecations, deprecated assert INI startup diagnostics, callback dispatch for
-functions, closures, static methods, and object/static-method arrays,
-`ini_set("assert.callback", ...)`, warning output, `assert.bail`, false
-returns, and the unknown-option catchable `ValueError`. Default
-`AssertionError` throwing, custom `Throwable` description objects, dynamic
-first-class/assertion-compilation behavior, exact fatal traces, full source
-reconstruction for arbitrary expressions, and native lowering remain
-unsupported. Native function-table introspection recognizes the names, while
-direct native calls reject under the function-call boundary until generated
-code has assertion policy, callbacks/exceptions, exact diagnostics, and
-unwinding behavior.
+`zend.assertions=0` assertions, and implements the bounded PHP 8.3 assertion
+surface: `assert_options()`, `ASSERT_*` constant deprecations, deprecated
+assert INI startup diagnostics, callback dispatch for functions, closures,
+static methods, and object/static-method arrays,
+`ini_set("assert.callback", ...)`, warning output for `assert.exception=0`,
+`assert.bail`, false returns, the unknown-option catchable `ValueError`,
+default `AssertionError` throwing/catching/fatal formatting, runtime
+`zend.assertions` 0/1 transitions, and `-1` transition warnings. Assertion
+messages use the source line when available, with a fallback AST printer for
+in-memory sources. Custom `Throwable` description object propagation from
+value-returning assert calls, dynamic first-class/assertion-compilation
+behavior, full source reconstruction for multi-line/arbitrary expressions, and
+native lowering remain unsupported. Native function-table introspection
+recognizes the names, while direct native calls reject under the function-call
+boundary until generated code has assertion policy, callbacks/exceptions,
+exact diagnostics, and unwinding behavior.
 Runtime-backed constant behavior currently lives in the interpreter's
 `ConstantTable`. Unbracketed namespace-scoped top-level `const NAME = value;`
 declarations store canonical qualified names such as

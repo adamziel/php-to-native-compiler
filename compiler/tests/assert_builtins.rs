@@ -1,8 +1,9 @@
 use std::env;
+use std::fs;
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
 use php_compiler::error::Phase;
-use php_compiler::{emit_ir_source, run_source};
+use php_compiler::{emit_ir_source, run_source, run_source_with_source_file};
 
 const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
 
@@ -60,21 +61,60 @@ echo "C";
 }
 
 #[test]
-fn assert_builtin_reports_current_exception_failure_boundary() {
-    let error = run_source(
+fn assert_builtin_throws_default_assertion_error() {
+    let execution = run_source(
         r#"<?php
-assert(false, "boom");
+try {
+    assert(false, "boom");
+} catch (AssertionError $e) {
+    echo get_class($e), ":", $e->getMessage(), "|", $e->getTraceAsString();
+}
 "#,
     )
-    .unwrap_err();
+    .unwrap();
 
-    assert_eq!(error.phase, Phase::Runtime);
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 1);
     assert_eq!(
-        error.message,
-        "unsupported call assert(): AssertionError exceptions are not implemented in the current subset"
+        execution.stdout,
+        "AssertionError:boom|#0 Command line code(3): assert(false, 'boom')\n#1 {main}"
     );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn assert_builtin_uses_source_expression_for_instanceof_messages() {
+    let source = r#"<?php
+namespace Foo;
+class Bar {}
+$bar = "Bar";
+try {
+    assert(new \stdClass instanceof $bar);
+} catch (\AssertionError $e) {
+    echo 'assert(): ', $e->getMessage(), ' failed', PHP_EOL;
+}
+try {
+    assert(new \stdClass instanceof Bar);
+} catch (\AssertionError $e) {
+    echo 'assert(): ', $e->getMessage(), ' failed', PHP_EOL;
+}
+try {
+    assert(new \stdClass instanceof \Foo\Bar);
+} catch (\AssertionError $e) {
+    echo 'assert(): ', $e->getMessage(), ' failed', PHP_EOL;
+}
+"#;
+    let path = env::temp_dir().join(format!("phpc-assert-instanceof-{}.php", std::process::id()));
+    fs::write(&path, source).unwrap();
+
+    let execution = run_source_with_source_file(source, path.display().to_string()).unwrap();
+
+    let _ = fs::remove_file(&path);
+    assert_eq!(
+        execution.stdout,
+        "assert(): assert(new \\stdClass() instanceof $bar) failed\n\
+assert(): assert(new \\stdClass() instanceof Bar) failed\n\
+assert(): assert(new \\stdClass() instanceof \\Foo\\Bar) failed\n"
+    );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -97,6 +137,52 @@ var_dump(assert(false));
     assert!(stdout.contains("Deprecated: PHP Startup: assert.exception INI setting is deprecated"));
     assert!(stdout.contains("Warning: assert(): assert(false) failed"));
     assert!(stdout.ends_with("bool(false)\n"));
+    assert_eq!(exit_code, 0);
+}
+
+#[test]
+fn assert_builtin_suppresses_warning_when_exception_enabled() {
+    let execution = run_source(
+        r#"<?php
+assert(false);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.exit_code, 255);
+    assert!(execution.stdout.starts_with(
+        "Fatal error: Uncaught AssertionError: assert(false) in Command line code:2\n"
+    ));
+    assert!(!execution.stdout.contains("Warning: assert()"));
+}
+
+#[test]
+fn assert_builtin_respects_runtime_zend_assertions_policy() {
+    let _guard = env_lock();
+    let previous = env::var_os("PHPC_PHPT_INI_FLAGS");
+
+    env::set_var("PHPC_PHPT_INI_FLAGS", "-d zend.assertions=0");
+    let execution = run_source(
+        r#"<?php
+ini_set("zend.assertions", 1);
+try {
+    assert(false);
+} catch (AssertionError $e) {
+    echo $e->getMessage(), "\n";
+}
+ini_set("zend.assertions", -1);
+"#,
+    )
+    .unwrap();
+    let stdout = execution.stdout.clone();
+    let exit_code = execution.exit_code;
+
+    restore_env_var("PHPC_PHPT_INI_FLAGS", previous);
+
+    assert!(stdout.contains("assert(false)\n"));
+    assert!(stdout.contains(
+        "Warning: zend.assertions may be completely enabled or disabled only in php.ini"
+    ));
     assert_eq!(exit_code, 0);
 }
 

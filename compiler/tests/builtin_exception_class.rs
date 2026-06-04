@@ -44,6 +44,24 @@ echo "after";
 }
 
 #[test]
+fn builtin_assertion_error_extends_error_and_initializes_message_state() {
+    let execution = run_source(
+        r#"<?php
+class CustomAssertionError extends AssertionError {}
+$error = new CustomAssertionError("message");
+echo class_exists("AssertionError"), "\n";
+echo get_parent_class($error), "\n";
+echo is_subclass_of($error, "Error") ? "yes" : "no", "\n";
+echo $error->getMessage();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "1\nAssertionError\nyes\nmessage");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn user_code_cannot_redeclare_builtin_exception_class() {
     let error = run_source(
         r#"<?php

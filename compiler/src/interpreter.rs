@@ -32302,7 +32302,7 @@ impl Interpreter {
                 self.track_allocated_object(&object);
                 return Ok(Value::Object(object));
             }
-            if self.is_exception_class_or_subclass(class_id) {
+            if self.is_exception_or_error_class_or_subclass(class_id) {
                 self.initialize_core_exception_object(
                     &object,
                     class_id,
@@ -33825,11 +33825,16 @@ impl Interpreter {
         Ok(Value::Object(clone))
     }
 
-    fn is_exception_class_or_subclass(&self, class_id: ClassId) -> bool {
-        let Some(exception_id) = self.classes.lookup_class_id("Exception") else {
-            return false;
-        };
-        class_id == exception_id || self.classes.is_subclass_of(class_id, exception_id)
+    fn is_exception_or_error_class_or_subclass(&self, class_id: ClassId) -> bool {
+        for class_name in ["Exception", "Error"] {
+            let Some(root_id) = self.classes.lookup_class_id(class_name) else {
+                continue;
+            };
+            if class_id == root_id || self.classes.is_subclass_of(class_id, root_id) {
+                return true;
+            }
+        }
+        false
     }
 
     fn initialize_core_exception_object(
@@ -34113,7 +34118,9 @@ impl Interpreter {
     ) -> CompileResult<Value> {
         match self.evaluate(expr, scope)? {
             Value::Null => Ok(Value::Null),
-            Value::Object(object) if self.is_exception_class_or_subclass(object.class_id()) => {
+            Value::Object(object)
+                if self.is_exception_or_error_class_or_subclass(object.class_id()) =>
+            {
                 Ok(Value::Object(object))
             }
             other => Err(runtime_error(
@@ -74575,9 +74582,21 @@ impl Interpreter {
         }
         let source = args
             .first()
-            .map(assertion_expr_source)
+            .map(|expr| self.assertion_expr_source_for_direct_call(expr, span))
             .map(|expr| format!("assert({expr})"));
         self.call_assert_values(&values, span, source)
+    }
+
+    fn assertion_expr_source_for_direct_call(&self, expr: &Expr, span: Span) -> String {
+        self.assertion_expr_source_from_source_file(span)
+            .unwrap_or_else(|| assertion_expr_source(expr))
+    }
+
+    fn assertion_expr_source_from_source_file(&self, span: Span) -> Option<String> {
+        let source_file = self.source_file.as_ref()?;
+        let source = fs::read_to_string(source_file).ok()?;
+        let line = source.lines().nth(span.line.checked_sub(1)?)?;
+        assertion_expr_source_from_line(line)
     }
 
     fn call_assert_values(
@@ -74597,12 +74616,23 @@ impl Interpreter {
             ));
         }
 
-        let message = self.assert_failure_message(args, source, span)?;
+        let (message, throwable_description) =
+            self.assert_failure_description(args, source, span)?;
         if !self.zend_assertions_enabled() || !self.assert_active || args[0].is_truthy() {
             return Ok(Value::Bool(true));
         }
 
         self.call_assert_callback(&message, span)?;
+
+        if self.assert_exception {
+            if let Some(object) = throwable_description {
+                return Err(self.uncaught_throw_error(&object, span));
+            }
+            let error = assertion_error_diagnostic(&message, span);
+            let trace_args = self.assert_failure_trace_args(args, &message);
+            self.record_pending_uncaught_internal_call_frame("assert", span, &trace_args, &error);
+            return Err(error);
+        }
 
         if self.assert_warning {
             if message == "Assertion failed" {
@@ -74617,35 +74647,31 @@ impl Interpreter {
             return Ok(Value::Bool(false));
         }
 
-        if self.assert_exception {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "assert()",
-                    "AssertionError exceptions are not implemented in the current subset",
-                ),
-            ));
-        }
-
         Ok(Value::Bool(false))
     }
 
-    fn assert_failure_message(
+    fn assert_failure_description(
         &self,
         args: &[Value],
         source: Option<String>,
         span: Span,
-    ) -> CompileResult<String> {
+    ) -> CompileResult<(String, Option<PhpObject>)> {
         match args.get(1) {
-            None => Ok(source.unwrap_or_else(|| "Assertion failed".to_string())),
-            Some(Value::Null) => Ok("Assertion failed".to_string()),
+            None => Ok((
+                source.unwrap_or_else(|| "Assertion failed".to_string()),
+                None,
+            )),
+            Some(Value::Null) => Ok(("Assertion failed".to_string(), None)),
             Some(
                 Value::Bool(_)
                 | Value::Int(_)
                 | Value::Float(_)
                 | Value::String(_)
                 | Value::BinaryString(_),
-            ) => Ok(args[1].echo_string()),
+            ) => Ok((args[1].echo_string(), None)),
+            Some(Value::Object(object)) if Self::is_throwable_object(object) => {
+                Ok((self.throwable_message_for_fatal(object), Some(object.clone())))
+            }
             Some(other) => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -74657,6 +74683,12 @@ impl Interpreter {
                 ),
             )),
         }
+    }
+
+    fn assert_failure_trace_args(&self, args: &[Value], message: &str) -> Vec<Value> {
+        let mut trace_args = vec![args[0].clone()];
+        trace_args.push(Value::String(message.to_string()));
+        trace_args
     }
 
     fn call_assert_options(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -74720,7 +74752,7 @@ impl Interpreter {
             .as_deref()
             .and_then(parse_ini_i64_prefix)
             .unwrap_or(1)
-            != 0
+            > 0
     }
 
     fn call_assert_callback(&mut self, message: &str, span: Span) -> CompileResult<()> {
@@ -131046,6 +131078,10 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
         return Some(("Error", error.message.clone()));
     }
 
+    if let Some(message) = assertion_error_message(error) {
+        return Some(("AssertionError", message));
+    }
+
     if let Some(name) = error
         .message
         .strip_prefix(DEFERRED_INSTANCE_PROPERTY_DEFAULT_UNDEFINED_CONSTANT_PREFIX)
@@ -131944,6 +131980,25 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
     None
 }
 
+const ASSERTION_ERROR_DIAGNOSTIC_PREFIX: &str = "unsupported call assert(): AssertionError: ";
+
+fn assertion_error_diagnostic(message: &str, span: Span) -> Diagnostic {
+    runtime_error(
+        span,
+        RuntimeError::unsupported_call("assert()", format!("AssertionError: {message}")),
+    )
+}
+
+fn assertion_error_message(error: &Diagnostic) -> Option<String> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+    error
+        .message
+        .strip_prefix(ASSERTION_ERROR_DIAGNOSTIC_PREFIX)
+        .map(str::to_string)
+}
+
 fn return_type_error_message(error: &Diagnostic) -> Option<String> {
     if error.phase != Phase::Runtime {
         return None;
@@ -131980,6 +132035,7 @@ fn catchable_uncaught_throw_class_and_message(
         "ValueError",
         "ArithmeticError",
         "DivisionByZeroError",
+        "AssertionError",
         "RuntimeException",
         "OutOfRangeException",
         "UnexpectedValueException",
@@ -160296,6 +160352,16 @@ fn assertion_expr_source(expr: &Expr) -> String {
         Expr::String(value, _) => format!("\"{}\"", value.escape_default()),
         Expr::Variable(name, _) => format!("${name}"),
         Expr::GlobalConstant { name, .. } => name.clone(),
+        Expr::New { class_name, .. } => {
+            format!("new {}()", assertion_new_class_name_source(class_name))
+        }
+        Expr::InstanceOf {
+            expr, class_name, ..
+        } => format!(
+            "{} instanceof {}",
+            assertion_expr_source(expr),
+            assertion_new_class_name_source(class_name)
+        ),
         Expr::Binary {
             left, op, right, ..
         } => format!(
@@ -160311,6 +160377,168 @@ fn assertion_expr_source(expr: &Expr) -> String {
         ),
         _ => "Assertion failed".to_string(),
     }
+}
+
+fn assertion_new_class_name_source(class_name: &NewClassName) -> String {
+    match class_name {
+        NewClassName::Named(name) => name.clone(),
+        NewClassName::DynamicVariable(name) => format!("${name}"),
+        NewClassName::DynamicExpression(expr) => format!("({})", assertion_expr_source(expr)),
+        NewClassName::SelfClass => "self".to_string(),
+        NewClassName::ParentClass => "parent".to_string(),
+        NewClassName::StaticClass => "static".to_string(),
+    }
+}
+
+fn assertion_expr_source_from_line(line: &str) -> Option<String> {
+    let open = assertion_call_open_paren_index(line)?;
+    let expr = first_call_argument_source(&line[open + 1..])?.trim();
+    (!expr.is_empty()).then(|| canonicalize_assertion_source_expr(expr))
+}
+
+fn assertion_call_open_paren_index(line: &str) -> Option<usize> {
+    let lower = line.to_ascii_lowercase();
+    let bytes = lower.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes.get(index..index + "assert".len()) == Some(b"assert")
+            && index
+                .checked_sub(1)
+                .and_then(|previous| bytes.get(previous).copied())
+                .is_none_or(|byte| !is_ascii_identifier_byte(byte))
+            && bytes
+                .get(index + "assert".len())
+                .is_none_or(|byte| !is_ascii_identifier_byte(*byte))
+        {
+            let mut open = index + "assert".len();
+            while bytes
+                .get(open)
+                .is_some_and(|byte| byte.is_ascii_whitespace())
+            {
+                open += 1;
+            }
+            if bytes.get(open) == Some(&b'(') {
+                return Some(open);
+            }
+        }
+        index += 1;
+    }
+    None
+}
+
+fn first_call_argument_source(source: &str) -> Option<&str> {
+    let mut depth = 0usize;
+    let mut quote = None;
+    let mut escaped = false;
+    for (index, ch) in source.char_indices() {
+        if let Some(active_quote) = quote {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == active_quote {
+                quote = None;
+            }
+            continue;
+        }
+
+        match ch {
+            '\'' | '"' => quote = Some(ch),
+            '(' | '[' | '{' => depth += 1,
+            ')' if depth == 0 => return Some(&source[..index]),
+            ')' | ']' | '}' => depth = depth.saturating_sub(1),
+            ',' if depth == 0 => return Some(&source[..index]),
+            _ => {}
+        }
+    }
+    None
+}
+
+fn canonicalize_assertion_source_expr(source: &str) -> String {
+    let bytes = source.as_bytes();
+    let mut output = String::new();
+    let mut index = 0;
+    let mut copied_until = 0;
+    let mut quote = None;
+    let mut escaped = false;
+
+    while index < bytes.len() {
+        let byte = bytes[index];
+        if let Some(active_quote) = quote {
+            if escaped {
+                escaped = false;
+            } else if byte == b'\\' {
+                escaped = true;
+            } else if byte == active_quote {
+                quote = None;
+            }
+            index += 1;
+            continue;
+        }
+
+        if byte == b'\'' || byte == b'"' {
+            quote = Some(byte);
+            index += 1;
+            continue;
+        }
+
+        if bytes.get(index..index + "new".len()) == Some(b"new")
+            && index
+                .checked_sub(1)
+                .and_then(|previous| bytes.get(previous).copied())
+                .is_none_or(|byte| !is_ascii_identifier_byte(byte))
+            && bytes
+                .get(index + "new".len())
+                .is_none_or(|byte| !is_ascii_identifier_byte(*byte))
+        {
+            let mut cursor = index + "new".len();
+            while bytes
+                .get(cursor)
+                .is_some_and(|byte| byte.is_ascii_whitespace())
+            {
+                cursor += 1;
+            }
+            let class_start = cursor;
+            if bytes.get(cursor) == Some(&b'\\') {
+                cursor += 1;
+            }
+            while bytes
+                .get(cursor)
+                .is_some_and(|byte| is_assertion_class_name_byte(*byte))
+            {
+                cursor += 1;
+            }
+            if cursor > class_start {
+                let mut next = cursor;
+                while bytes
+                    .get(next)
+                    .is_some_and(|byte| byte.is_ascii_whitespace())
+                {
+                    next += 1;
+                }
+                output.push_str(&source[copied_until..cursor]);
+                if bytes.get(next) != Some(&b'(') {
+                    output.push_str("()");
+                }
+                copied_until = cursor;
+                index = cursor;
+                continue;
+            }
+        }
+
+        index += 1;
+    }
+
+    output.push_str(&source[copied_until..]);
+    output
+}
+
+fn is_ascii_identifier_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || byte == b'_'
+}
+
+fn is_assertion_class_name_byte(byte: u8) -> bool {
+    is_ascii_identifier_byte(byte) || byte == b'\\'
 }
 
 fn assertion_binary_op_symbol(op: BinaryOp) -> &'static str {
@@ -169663,6 +169891,20 @@ impl Interpreter {
                 )?;
                 return Ok(Value::String(previous));
             }
+        }
+
+        if normalized_name == "zend.assertions" {
+            let previous_level = parse_ini_i64_prefix(&previous).unwrap_or(1);
+            let requested_level = parse_ini_i64_prefix(&value).unwrap_or(1);
+            if previous_level < 0 || requested_level < 0 {
+                self.emit_display_warning(
+                    "zend.assertions may be completely enabled or disabled only in php.ini",
+                    span,
+                )?;
+                return Ok(Value::String(previous));
+            }
+            self.ini_values.insert(normalized_name, value);
+            return Ok(Value::String(previous));
         }
 
         if normalized_name == "assert.callback" {

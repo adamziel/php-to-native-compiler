@@ -55,6 +55,7 @@ const CORE_CLASS_NAMES: &[&str] = &[
     "ValueError",
     "ArithmeticError",
     "DivisionByZeroError",
+    "AssertionError",
     "RuntimeException",
     "OutOfRangeException",
     "UnexpectedValueException",
@@ -233,6 +234,8 @@ echo "ready\n";
         division_by_zero_error.parent_id(),
         Some(arithmetic_error.id())
     );
+    let assertion_error = classes.lookup_class("AssertionError").unwrap();
+    assert_eq!(assertion_error.parent_id(), Some(error.id()));
     let runtime_exception = classes.lookup_class("RuntimeException").unwrap();
     assert_eq!(runtime_exception.parent_id(), Some(exception.id()));
     let out_of_range_exception = classes.lookup_class("OutOfRangeException").unwrap();
