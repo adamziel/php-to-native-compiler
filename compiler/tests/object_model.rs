@@ -6510,6 +6510,54 @@ echo count($dynamic), "|", array_key_exists("secret", $dynamic);
 }
 
 #[test]
+fn get_class_vars_uses_calling_scope_visibility_and_static_defaults() {
+    let source = r#"<?php
+class Ancestor {
+    public static function inspect() {
+        print_r(get_class_vars("Tester"));
+        echo Tester::$prot, "\n";
+    }
+}
+
+class Tester extends Ancestor {
+    public $pub = "public var";
+    protected $protInst = "protected var";
+    private $priv = "private var";
+
+    static public $pubs = "public static var";
+    static protected $prot = "protected static var";
+    static private $privs = "private static var";
+
+    public static function inspectSelf() {
+        print_r(get_class_vars("Tester"));
+    }
+}
+
+class Child extends Tester {
+    public static function inspectChild() {
+        print_r(get_class_vars("Tester"));
+    }
+}
+
+print_r(get_class_vars("Tester"));
+Tester::inspectSelf();
+Ancestor::inspect();
+Child::inspectChild();
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "Array\n(\n    [pub] => public var\n    [pubs] => public static var\n)\n\
+Array\n(\n    [pub] => public var\n    [protInst] => protected var\n    [priv] => private var\n    [pubs] => public static var\n    [prot] => protected static var\n    [privs] => private static var\n)\n\
+Array\n(\n    [pub] => public var\n    [protInst] => protected var\n    [pubs] => public static var\n    [prot] => protected static var\n)\n\
+protected static var\n\
+Array\n(\n    [pub] => public var\n    [protInst] => protected var\n    [pubs] => public static var\n    [prot] => protected static var\n)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn get_class_vars_requires_declared_class_string_argument() {
     let source = r#"<?php
 foreach ([42, "Missing"] as $class) {
@@ -14943,6 +14991,42 @@ echo Root::$missing;
         undefined_property.message,
         "undefined property Root::$missing"
     );
+}
+
+#[test]
+fn late_static_property_access_allows_protected_family_visibility() {
+    let execution = run_source(
+        r#"<?php
+class Root {
+    private static $value = "A";
+
+    public static function testStatic() {
+        echo static::$value, "\n";
+    }
+
+    public function testInstance() {
+        echo static::$value, "\n";
+    }
+}
+
+class Branch extends Root {
+    protected static $value = "B";
+}
+
+class Leaf extends Branch {
+    public static $value = "C";
+}
+
+Root::testStatic();
+Branch::testStatic();
+(new Branch())->testInstance();
+Leaf::testStatic();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "A\nB\nB\nC\n");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

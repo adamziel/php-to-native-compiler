@@ -7200,10 +7200,11 @@
   class names, and declared user interface names. It includes implemented
   interface method names first, invokes bounded class-like autoload on
   non-empty unresolved string names, and raises catchable PHP-shaped
-  `TypeError`s for invalid values. `get_class_vars` returns public declared
-  and inherited
-  property names with instance properties before static properties and `null`
-  values for declared string class names, `get_object_vars` returns
+  `TypeError`s for invalid values. `get_class_vars` returns declared and
+  inherited property names visible from the current method or static-method
+  class scope, or public names outside a method, with instance properties
+  before static properties and supported default/current static values or
+  `null` for declared string class names, `get_object_vars` returns
   initialized properties visible in the current method context, or initialized
   public properties outside a method, with their current values in
   parent-to-child slot order for current object values while preserving
@@ -8074,10 +8075,11 @@
   PHP-shaped `TypeError`s with the PHP argument name. It is available through
   string-valued dynamic function calls.
   `get_class_vars($class_name)` accepts declared string class names and returns
-  an array of public declared and inherited properties with instance properties
-  before static properties, walking the current class toward parents within
-  each group, including public static properties, with current supported
-  default values or `null` for properties without defaults. Invalid or
+  an array of declared and inherited properties visible from the current method
+  or static-method class scope, or public properties outside a method. Results
+  keep instance properties before static properties, walk the current class
+  toward parents within each group, and include supported default/current
+  static values or `null` for properties without defaults. Invalid or
   unresolved class-name values raise a catchable PHP-shaped `TypeError`. It is
   available through string-valued dynamic function calls.
   `get_object_vars($object)` accepts current object values and returns an array
@@ -10833,9 +10835,11 @@
   values, declared string class names, and declared user interface names, with
   implemented interface method names listed before class methods and invalid
   or unresolved values surfaced as catchable PHP-shaped `TypeError`s.
-  `get_class_vars($class_name)` returns
-  public declared and inherited property names with instance properties before
-  static properties and `null` values for declared string class names.
+  `get_class_vars($class_name)` returns declared and inherited property names
+  visible from the current method or static-method class scope, or public names
+  outside a method, with instance properties before static properties and
+  supported default/current static values or `null` for declared string class
+  names.
   `get_object_vars($object)` returns initialized public or current-context
   visible instance properties with their current values for current object
   values and preserves existing reference-backed slots.
@@ -13034,9 +13038,10 @@
   every duplicate/conflict case, and native lowering
 - `get_class_vars` property defaults beyond the current constant-expression
   subset, inheritance beyond the current single-parent chain, traits, interfaces,
-  aliases/imports, namespace-aware names, autoloading,
-  non-public/context-sensitive visibility listing, exact invalid class-name
-  conversion warnings for arrays/objects/resources, and native lowering
+  aliases/imports, namespace-aware names, autoloading, exact invalid class-name
+  conversion warnings for arrays/objects/resources, property hooks/asymmetric
+  visibility, references/COW beyond the current object-property model, and
+  native lowering
 - `get_object_vars` trait/interface property composition, aliases/imports,
   namespace-aware names, broad magic property hooks, full reference/COW
   identity beyond preserving existing reference-backed slots, exact native

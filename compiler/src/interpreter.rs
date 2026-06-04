@@ -69273,20 +69273,9 @@ impl Interpreter {
     ) -> CompileResult<()> {
         match visibility {
             Visibility::Public => Ok(()),
-            Visibility::Private
-                if self.class_context.last().copied() == Some(declaring_class_id) =>
-            {
-                Ok(())
-            }
-            Visibility::Protected
+            Visibility::Private | Visibility::Protected
                 if self
-                    .class_context
-                    .last()
-                    .copied()
-                    .is_some_and(|current_id| {
-                        current_id == declaring_class_id
-                            || self.classes.is_subclass_of(current_id, declaring_class_id)
-                    }) =>
+                    .member_visible_from_current_class_context(declaring_class_id, visibility) =>
             {
                 Ok(())
             }
@@ -69304,6 +69293,26 @@ impl Interpreter {
                     "protected static property is not visible from the current class context",
                 ),
             )),
+        }
+    }
+
+    fn member_visible_from_current_class_context(
+        &self,
+        declaring_class_id: ClassId,
+        visibility: Visibility,
+    ) -> bool {
+        match visibility {
+            Visibility::Public => true,
+            Visibility::Private => self.class_context.last().copied() == Some(declaring_class_id),
+            Visibility::Protected => self
+                .class_context
+                .last()
+                .copied()
+                .is_some_and(|current_id| {
+                    current_id == declaring_class_id
+                        || self.classes.is_subclass_of(current_id, declaring_class_id)
+                        || self.classes.is_subclass_of(declaring_class_id, current_id)
+                }),
         }
     }
 
@@ -71011,12 +71020,12 @@ impl Interpreter {
         false
     }
 
-    fn append_public_class_vars(&self, class_id: ClassId, properties: &mut PhpArray) {
-        self.append_public_class_vars_by_staticness(class_id, properties, false);
-        self.append_public_class_vars_by_staticness(class_id, properties, true);
+    fn append_visible_class_vars(&self, class_id: ClassId, properties: &mut PhpArray) {
+        self.append_visible_class_vars_by_staticness(class_id, properties, false);
+        self.append_visible_class_vars_by_staticness(class_id, properties, true);
     }
 
-    fn append_public_class_vars_by_staticness(
+    fn append_visible_class_vars_by_staticness(
         &self,
         class_id: ClassId,
         properties: &mut PhpArray,
@@ -71027,7 +71036,8 @@ impl Interpreter {
             .get(class_id)
             .expect("class id should resolve to class metadata");
         for property in class.properties() {
-            if property.visibility() == Visibility::Public && property.is_static() == include_static
+            if self.member_visible_from_current_class_context(class.id(), property.visibility())
+                && property.is_static() == include_static
             {
                 let value = if property.is_static() {
                     self.static_properties
@@ -71044,7 +71054,7 @@ impl Interpreter {
             }
         }
         if let Some(parent_id) = class.parent_id() {
-            self.append_public_class_vars_by_staticness(parent_id, properties, include_static);
+            self.append_visible_class_vars_by_staticness(parent_id, properties, include_static);
         }
     }
 
@@ -106990,7 +107000,7 @@ impl Interpreter {
                     };
 
                     let mut properties = PhpArray::new();
-                    self.append_public_class_vars(class.id(), &mut properties);
+                    self.append_visible_class_vars(class.id(), &mut properties);
                     Ok(Value::Array(properties))
                 }
                 [other] => Err(self.invalid_get_class_vars_class_argument_error(

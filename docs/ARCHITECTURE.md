@@ -4433,11 +4433,14 @@ private methods declared only by ancestor classes, while object probes retain
 the current inherited-private reporting behavior. Unsupported object/class and
 method-name operands raise catchable PHP-shaped `TypeError`s.
 `get_class_vars($class_name)` accepts declared string class names and returns
-public declared and inherited property names with instance properties before
-static properties, walking the current class toward parents within each group,
-with supported constant-expression default values or `null` for properties
-without defaults. Invalid or unresolved class names raise the current
-PHP-shaped catchable `TypeError` surface.
+declared and inherited property names visible from the current method or
+static-method class scope, or public names outside a method. Results keep
+PHP's instance-before-static grouping and walk the current class toward parents
+within each group, with supported constant-expression instance defaults,
+current static values, or `null` for properties without defaults. The same
+ancestor/descendant protected visibility relation is used by direct static
+property reads. Invalid or unresolved class names raise the current PHP-shaped
+catchable `TypeError` surface.
 `get_object_vars($object)` accepts current object values and returns initialized
 properties visible in the current method context, or initialized public
 properties outside a method, with their current slot values in parent-to-child
