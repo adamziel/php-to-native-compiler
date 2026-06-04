@@ -157,10 +157,12 @@ current `setFileClass()` / `setInfoClass()` selections so `openFile()`,
 `getFileInfo()`, and `getPathInfo()` can allocate bounded SPL objects through
 the existing object metadata path, while `getExtension()` remains a pure
 basename operation. `getBasename()`, `getFilename()`, and `__debugInfo()` are
-also pure path-state operations, with direct `var_dump()` retiring selected
-unrooted `SplFileInfo` / `SplFileObject` / `DirectoryIterator` temporary
-object handles after formatting so repeated temporary dumps can reuse
-PHP-shaped object handles without recycling general iterator temporaries. Core
+also pure path-state operations. Direct `var_dump()` retires unrooted
+temporary object handles after formatting, including ordinary declared objects
+and selected `SplFileInfo` / `SplFileObject` / `DirectoryIterator`
+temporaries, so repeated temporary dumps can reuse PHP-shaped object handles
+while live roots and supported destructors still flow through the shared
+object-lifetime checks. Core
 `DirectoryIterator` instances add a bounded
 local-directory cursor state layered on `SplFileInfo`: construction resolves a
 local directory, records a deterministic entry list with dot entries, and the
@@ -1353,9 +1355,10 @@ Implemented now:
   interface-extends-class/trait declarations surfaced as bounded PHP-shaped
   startup fatals, missing abstract trait method requirements and bounded
   trait-requirement staticness/signature incompatibilities surfaced as
-  PHP-shaped startup fatals, final-parent inheritance, final method overrides,
-  method visibility reductions, and inherited abstract method implementation
-  gaps rejected at runtime, and inherited method static/non-static plus bounded
+  PHP-shaped startup fatals, final-parent inheritance surfaced as a
+  PHP-shaped startup fatal, final method overrides, method visibility
+  reductions, and inherited abstract method implementation gaps rejected at
+  runtime, and inherited method static/non-static plus bounded
   non-constructor signature compatibility enforced at runtime, including
   required-parameter counts, parameter type metadata, and return type metadata,
   bounded `new self`/`new parent`/`new static` class-name resolution in active
@@ -1364,8 +1367,9 @@ Implemented now:
   invoke the current bounded autoload callbacks before the class table is
   rechecked; included class/interface declarations also use that callback path
   to load missing `extends` parents, direct `implements` interfaces, direct
-  class-body trait uses, and parent interfaces before final registration
-  validation,
+  class-body trait uses, parent interfaces, and missing class-like type names
+  referenced by inherited and child method signatures before final
+  registration validation,
   bounded named and dynamic property-name reads/writes for existing public
   slots, `stdClass` public dynamic slots, and the WordPress `wpdb`
   compatibility class's dynamic table-name slots, and bounded `clone`

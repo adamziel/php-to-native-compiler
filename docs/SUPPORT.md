@@ -2796,10 +2796,11 @@
   effects. `getBasename()`, `getFilename()`, and `__debugInfo()` are pure
   path-string operations over the stored path, while `getSize()` and the
   selected type/link checks use the bounded local metadata path. Direct
-  `var_dump()` recycles
-  unrooted temporary object handles only for selected SPL file/directory
-  temporaries in this lane; broader object temporary handle reuse remains
-  unsupported. Core `DirectoryIterator` supports bounded local directory
+  `var_dump()` can recycle unrooted temporary object handles after formatting,
+  including ordinary declared objects and the selected SPL file/directory
+  temporaries in this lane, while live roots and supported destructors remain
+  guarded by the shared object-lifetime checks. Core `DirectoryIterator`
+  supports bounded local directory
   construction, `current()`, `key()`, `next()`, `rewind()`, `valid()`,
   `isDot()`, `isFile()`, `getFilename()`, `getBasename()`, `getExtension()`,
   `getGroup()`, `getInode()`, and `getOwner()` for the reached public PHPT
@@ -3356,8 +3357,8 @@
   bodies, function/method bodies, switch cases, and included files register
   only when execution reaches the `class` statement; skipped branches do not
   define the class, and repeated reached declarations report a stable duplicate
-  class runtime diagnostic. Extending a declared final parent reports a stable
-  runtime boundary before registering the child class. Declaring a child method
+  class runtime diagnostic. Extending a declared final parent reports a
+  PHP-shaped fatal before registering the child class. Declaring a child method
   with the same case-insensitive name as an inherited final method reports a
   stable runtime boundary before registering the child class. A concrete class
   that directly declares an abstract method reports a bounded PHP-shaped
@@ -3437,10 +3438,16 @@
   current bounded `spl_autoload_register()` callbacks for missing `extends`
   parent classes, direct `implements` interface names, and direct class-body
   trait `use TraitName;` names before final class registration validation.
+  If an executed class declaration redeclares an inherited non-private method
+  and the inherited or child method signature references missing class-like
+  types, the same bounded autoload path is invoked for those signature
+  dependencies before compatibility is checked. Pending parent links created
+  by those nested autoload declarations are linked as soon as their parent
+  class becomes available.
   Interface declarations loaded through that path also trigger the same
   bounded autoload callback path for missing parent interfaces before
   interface inheritance validation.
-  extending a declared final parent reports a stable runtime boundary.
+  extending a declared final parent reports a PHP-shaped fatal.
   Overriding an inherited final method reports a stable runtime boundary.
   Concrete classes with inherited unimplemented abstract methods report stable
   runtime boundaries, while concrete classes missing required declared-interface

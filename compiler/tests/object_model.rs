@@ -18929,6 +18929,41 @@ class PluginResolver implements Resolver {
 }
 
 #[test]
+fn autoloaded_inherited_signature_dependencies_link_pending_parent_classes() {
+    let execution = run_source(
+        r#"<?php
+spl_autoload_register(function($class) {
+    if ($class === 'A') {
+        class A {
+            public function method() : B {}
+        }
+        var_dump(new A);
+    } else if ($class == 'B') {
+        class B extends A {
+            public function method() : C {}
+        }
+        var_dump(new B);
+    } else {
+        class C extends B {
+        }
+        var_dump(new C);
+    }
+});
+
+var_dump(new C);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "object(A)#2 (0) {\n}\nobject(B)#2 (0) {\n}\nobject(C)#2 (0) {\n}\nobject(C)#2 (0) {\n}\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn relative_self_parent_static_method_variance_uses_declaring_context() {
     let execution = run_source(
         r#"<?php
@@ -19450,10 +19485,7 @@ class Child extends Base {}
 
     assert_eq!(error.line, 3);
     assert_eq!(error.column, 1);
-    assert_eq!(
-        error.message,
-        "unsupported class inheritance for Child: cannot extend final class Base"
-    );
+    assert_eq!(error.message, "Class Child cannot extend final class Base");
 }
 
 #[test]
@@ -19482,11 +19514,8 @@ if (true) {
     );
 
     assert_eq!(error.line, 4);
-    assert_eq!(error.column, 5);
-    assert_eq!(
-        error.message,
-        "unsupported class inheritance for Child: cannot extend final class Base"
-    );
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, "Class Child cannot extend final class Base");
 }
 
 #[test]
@@ -21487,6 +21516,26 @@ var_dump(new SplFileInfo("second.txt"));
         2
     );
     assert!(!execution.stdout.contains("object(SplFileInfo)#2"));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn ordinary_var_dump_temporaries_reuse_php_handles_without_releasing_roots() {
+    let source = r#"<?php
+class Dumped {}
+var_dump(new Dumped);
+var_dump(new Dumped);
+$kept = new Dumped;
+var_dump($kept);
+var_dump(new Dumped);
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "object(Dumped)#1 (0) {\n}\nobject(Dumped)#1 (0) {\n}\nobject(Dumped)#1 (0) {\n}\nobject(Dumped)#2 (0) {\n}\n"
+    );
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
 }

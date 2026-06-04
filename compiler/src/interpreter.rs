@@ -780,6 +780,9 @@ struct Interpreter {
     readonly_classes: HashSet<ClassId>,
     abstract_methods: HashSet<(ClassId, String)>,
     final_methods: HashMap<(ClassId, String), String>,
+    pending_class_parent_names: HashMap<ClassId, (String, Span)>,
+    pending_class_method_signature_order: HashMap<ClassId, Vec<String>>,
+    pending_class_decls: HashMap<ClassId, ClassDecl>,
     interfaces: Vec<Rc<InterfaceDecl>>,
     interface_lookup: HashMap<String, Rc<InterfaceDecl>>,
     traits: Vec<Rc<TraitDecl>>,
@@ -12406,6 +12409,9 @@ impl Interpreter {
             readonly_classes,
             abstract_methods,
             final_methods,
+            pending_class_parent_names: HashMap::new(),
+            pending_class_method_signature_order: HashMap::new(),
+            pending_class_decls: HashMap::new(),
             interfaces,
             interface_lookup,
             traits,
@@ -28312,6 +28318,228 @@ impl Interpreter {
         Ok(())
     }
 
+    fn record_pending_class_parent_name(
+        &mut self,
+        class_id: ClassId,
+        class: &ClassDecl,
+    ) -> CompileResult<()> {
+        if let Some(parent_name) = &class.parent {
+            self.pending_class_parent_names
+                .insert(class_id, (parent_name.clone(), class.span));
+            self.apply_pending_parent_for_class(class_id)?;
+        }
+        self.apply_pending_children_for_parent(class_id)
+    }
+
+    fn apply_pending_parent_for_class(&mut self, class_id: ClassId) -> CompileResult<()> {
+        let Some((parent_name, span)) = self.pending_class_parent_names.get(&class_id).cloned()
+        else {
+            return Ok(());
+        };
+        let Some(parent_id) = self.classes.lookup_class_id(&parent_name) else {
+            return Ok(());
+        };
+        if self
+            .classes
+            .get(class_id)
+            .and_then(|class| class.parent_id())
+            == Some(parent_id)
+        {
+            return Ok(());
+        }
+        self.classes
+            .set_parent(class_id, parent_id)
+            .map_err(|error| runtime_error(span, error))
+    }
+
+    fn apply_pending_children_for_parent(&mut self, parent_id: ClassId) -> CompileResult<()> {
+        let Some(parent_name) = self
+            .classes
+            .get(parent_id)
+            .map(|class| class.name().to_string())
+        else {
+            return Ok(());
+        };
+        let waiting_children = self
+            .pending_class_parent_names
+            .iter()
+            .filter_map(|(child_id, (waiting_parent, _))| {
+                waiting_parent
+                    .eq_ignore_ascii_case(&parent_name)
+                    .then_some(*child_id)
+            })
+            .collect::<Vec<_>>();
+        for child_id in waiting_children {
+            self.apply_pending_parent_for_class(child_id)?;
+        }
+        Ok(())
+    }
+
+    fn autoload_missing_signature_dependencies(
+        &mut self,
+        class_id: ClassId,
+        class: &ClassDecl,
+    ) -> CompileResult<()> {
+        if self
+            .classes
+            .get(class_id)
+            .and_then(|metadata| metadata.parent_id())
+            .is_none()
+        {
+            return Ok(());
+        }
+
+        let mut names = Vec::new();
+        let mut seen = HashSet::new();
+        collect_class_signature_dependency_names(class, &mut seen, &mut names);
+        self.collect_inherited_signature_dependency_names(class_id, &mut seen, &mut names);
+
+        for name in names {
+            if self.class_like_exists(&name, AutoloadKind::Any) {
+                continue;
+            }
+            self.run_autoload_callbacks(&name, AutoloadKind::Any, class.span)?;
+            self.apply_pending_parent_for_class(class_id)?;
+            self.validate_decidable_pending_inherited_method_signatures(class_id, class)?;
+        }
+        Ok(())
+    }
+
+    fn validate_decidable_pending_inherited_method_signatures(
+        &self,
+        class_id: ClassId,
+        class: &ClassDecl,
+    ) -> CompileResult<()> {
+        self.validate_decidable_pending_class_inherited_method_signatures(class_id, class)?;
+        let mut current = self
+            .classes
+            .get(class_id)
+            .and_then(|metadata| metadata.parent_id());
+        let mut visited = HashSet::new();
+        while let Some(parent_id) = current {
+            if !visited.insert(parent_id) {
+                break;
+            }
+            let Some(parent_decl) = self.pending_class_decls.get(&parent_id) else {
+                break;
+            };
+            self.validate_decidable_pending_class_inherited_method_signatures(
+                parent_id,
+                parent_decl,
+            )?;
+            current = self
+                .classes
+                .get(parent_id)
+                .and_then(|metadata| metadata.parent_id());
+        }
+        Ok(())
+    }
+
+    fn validate_decidable_pending_class_inherited_method_signatures(
+        &self,
+        class_id: ClassId,
+        class: &ClassDecl,
+    ) -> CompileResult<()> {
+        for member in &class.members {
+            let ClassMember::Method(method) = member else {
+                continue;
+            };
+            match validate_inherited_method_signature_compatibility(
+                &self.classes,
+                &self.final_classes,
+                &self.interface_lookup,
+                &self.method_signatures,
+                class_id,
+                &class.name,
+                method,
+            ) {
+                Ok(()) => {}
+                Err(error)
+                    if error
+                        .message()
+                        .starts_with("could not check compatibility between ") => {}
+                Err(error) => return Err(runtime_error(method.span, error)),
+            }
+        }
+        Ok(())
+    }
+
+    fn register_pending_class_method_signatures(&mut self, class_id: ClassId, class: &ClassDecl) {
+        let mut order = Vec::new();
+        for member in &class.members {
+            let ClassMember::Method(method) = member else {
+                continue;
+            };
+            let lookup_name = method.function.name.to_ascii_lowercase();
+            order.push(lookup_name.clone());
+            self.method_signatures.insert(
+                (class_id, lookup_name),
+                method_signature(&method.function, &method.attributes, None),
+            );
+        }
+        self.pending_class_method_signature_order
+            .insert(class_id, order);
+        self.pending_class_decls.insert(class_id, class.clone());
+    }
+
+    fn remove_pending_class_method_signatures(&mut self, class_id: ClassId) {
+        self.method_signatures
+            .retain(|(declaring_class_id, _), _| *declaring_class_id != class_id);
+        self.pending_class_method_signature_order.remove(&class_id);
+        self.pending_class_decls.remove(&class_id);
+    }
+
+    fn remove_pending_class_method_signature_order(&mut self, class_id: ClassId) {
+        self.pending_class_method_signature_order.remove(&class_id);
+        self.pending_class_decls.remove(&class_id);
+    }
+
+    fn collect_inherited_signature_dependency_names(
+        &self,
+        class_id: ClassId,
+        seen: &mut HashSet<String>,
+        names: &mut Vec<String>,
+    ) {
+        let mut current = self
+            .classes
+            .get(class_id)
+            .and_then(|class| class.parent_id());
+        let mut visited = HashSet::new();
+        while let Some(parent_id) = current {
+            if !visited.insert(parent_id) {
+                return;
+            }
+            let Some(parent) = self.classes.get(parent_id) else {
+                return;
+            };
+            if let Some(method_order) = self.pending_class_method_signature_order.get(&parent_id) {
+                for method_name in method_order {
+                    if let Some(signature) = self
+                        .method_signatures
+                        .get(&(parent_id, method_name.clone()))
+                    {
+                        collect_method_signature_dependency_names(signature, seen, names);
+                    }
+                }
+            } else {
+                for method in parent.methods() {
+                    if let Some(signature) = self
+                        .method_signatures
+                        .get(&(parent_id, method.name().to_ascii_lowercase()))
+                    {
+                        collect_method_signature_dependency_names(signature, seen, names);
+                    }
+                }
+            }
+            for property in parent.properties() {
+                if let Some(type_decl) = property.type_decl() {
+                    collect_signature_type_dependency_names(type_decl, seen, names);
+                }
+            }
+            current = parent.parent_id();
+        }
+    }
+
     fn register_nested_class_declaration(&mut self, class: &ClassDecl) -> CompileResult<()> {
         let key = class.name.to_ascii_lowercase();
         if self.interface_lookup.contains_key(&key)
@@ -28337,7 +28565,40 @@ impl Interpreter {
         if class.is_readonly {
             self.readonly_classes.insert(class_id);
         }
+        self.register_pending_class_method_signatures(class_id, class);
+        if let Err(error) = self.record_pending_class_parent_name(class_id, class) {
+            self.pending_class_parent_names.remove(&class_id);
+            self.remove_pending_class_method_signatures(class_id);
+            self.abstract_classes.remove(&class_id);
+            self.final_classes.remove(&class_id);
+            self.readonly_classes.remove(&class_id);
+            self.class_source_metadata.remove(&class_id);
+            self.classes.remove_last_declared_class(class_id);
+            return Err(error);
+        }
         if let Err(error) = self.autoload_missing_class_dependencies(class) {
+            self.pending_class_parent_names.remove(&class_id);
+            self.remove_pending_class_method_signatures(class_id);
+            self.abstract_classes.remove(&class_id);
+            self.final_classes.remove(&class_id);
+            self.readonly_classes.remove(&class_id);
+            self.class_source_metadata.remove(&class_id);
+            self.classes.remove_last_declared_class(class_id);
+            return Err(error);
+        }
+        if let Err(error) = self.apply_pending_parent_for_class(class_id) {
+            self.pending_class_parent_names.remove(&class_id);
+            self.remove_pending_class_method_signatures(class_id);
+            self.abstract_classes.remove(&class_id);
+            self.final_classes.remove(&class_id);
+            self.readonly_classes.remove(&class_id);
+            self.class_source_metadata.remove(&class_id);
+            self.classes.remove_last_declared_class(class_id);
+            return Err(error);
+        }
+        if let Err(error) = self.autoload_missing_signature_dependencies(class_id, class) {
+            self.pending_class_parent_names.remove(&class_id);
+            self.remove_pending_class_method_signatures(class_id);
             self.abstract_classes.remove(&class_id);
             self.final_classes.remove(&class_id);
             self.readonly_classes.remove(&class_id);
@@ -28356,6 +28617,8 @@ impl Interpreter {
             &HashMap::new(),
             class,
         ) {
+            self.pending_class_parent_names.remove(&class_id);
+            self.remove_pending_class_method_signatures(class_id);
             self.abstract_classes.remove(&class_id);
             self.final_classes.remove(&class_id);
             self.readonly_classes.remove(&class_id);
@@ -28377,6 +28640,8 @@ impl Interpreter {
             class_id,
             class,
         )?;
+        self.pending_class_parent_names.remove(&class_id);
+        self.remove_pending_class_method_signature_order(class_id);
         if let Err(error) = self.initialize_static_property_defaults_for_class(class_id, class) {
             remove_class_member_runtime_tables(
                 &mut self.class_constants,
@@ -28388,6 +28653,7 @@ impl Interpreter {
                 &mut self.abstract_methods,
                 class_id,
             );
+            self.pending_class_parent_names.remove(&class_id);
             self.abstract_classes.remove(&class_id);
             self.final_classes.remove(&class_id);
             self.readonly_classes.remove(&class_id);
@@ -28412,6 +28678,7 @@ impl Interpreter {
                 .retain(|(declaring_class_id, _), _| *declaring_class_id != class_id);
             self.instance_property_default_exprs
                 .retain(|(declaring_class_id, _), _| *declaring_class_id != class_id);
+            self.pending_class_parent_names.remove(&class_id);
             self.abstract_classes.remove(&class_id);
             self.final_classes.remove(&class_id);
             self.readonly_classes.remove(&class_id);
@@ -28561,6 +28828,9 @@ impl Interpreter {
                     return self.fatal_runtime_message_execution(&error, &error.message);
                 }
                 if let Some(message) = class_name_resolution_fatal_message(&error) {
+                    return self.fatal_runtime_message_execution(&error, &message);
+                }
+                if let Some(message) = class_registration_startup_fatal_message(&error) {
                     return self.fatal_runtime_message_execution(&error, &message);
                 }
                 if let Some((object, span)) = self.take_pending_uncaught_throw_for_error(&error) {
@@ -35244,7 +35514,8 @@ impl Interpreter {
     }
 
     fn can_reuse_var_dump_temporary_object_handle(&self, object: &PhpObject) -> bool {
-        self.is_spl_file_info_class_id(object.class_id())
+        !self.object_has_supported_destructor(object)
+            || self.is_spl_file_info_class_id(object.class_id())
             || self.is_spl_file_object_class_id(object.class_id())
             || self.is_spl_directory_iterator_class_id(object.class_id())
             || self.is_array_object_class_id(object.class_id())
@@ -130836,6 +131107,86 @@ fn method_signature(
     }
 }
 
+fn collect_class_signature_dependency_names(
+    class: &ClassDecl,
+    seen: &mut HashSet<String>,
+    names: &mut Vec<String>,
+) {
+    for method in class.members.iter().filter_map(|member| match member {
+        ClassMember::Method(method) => Some(method),
+        _ => None,
+    }) {
+        collect_function_signature_dependency_names(&method.function, seen, names);
+    }
+}
+
+fn collect_function_signature_dependency_names(
+    function: &FunctionDecl,
+    seen: &mut HashSet<String>,
+    names: &mut Vec<String>,
+) {
+    if let Some(type_decl) = &function.return_type {
+        collect_signature_type_dependency_names(&type_decl.text, seen, names);
+    }
+}
+
+fn collect_method_signature_dependency_names(
+    signature: &MethodSignature,
+    seen: &mut HashSet<String>,
+    names: &mut Vec<String>,
+) {
+    for param in &signature.params {
+        if let Some(type_decl) = &param.type_decl {
+            collect_signature_type_dependency_names(type_decl, seen, names);
+        }
+    }
+    if let Some(type_decl) = &signature.return_type {
+        collect_signature_type_dependency_names(type_decl, seen, names);
+    }
+    if let Some(type_decl) = &signature.tentative_return_type {
+        collect_signature_type_dependency_names(type_decl, seen, names);
+    }
+}
+
+fn collect_signature_type_dependency_names(
+    type_text: &str,
+    seen: &mut HashSet<String>,
+    names: &mut Vec<String>,
+) {
+    let stripped = strip_wrapping_type_parens(type_text.trim());
+    if let Some(union_members) = signature_union_members(stripped) {
+        for member in union_members {
+            collect_signature_type_dependency_names(member, seen, names);
+        }
+        return;
+    }
+    if let Some(intersection_members) = signature_intersection_members(stripped) {
+        for member in intersection_members {
+            collect_signature_type_dependency_names(member, seen, names);
+        }
+        return;
+    }
+    let Some(class_like) = simple_class_like_signature_type(stripped) else {
+        return;
+    };
+    let key = class_like.to_ascii_lowercase();
+    if seen.insert(key) {
+        names.push(class_like.to_string());
+    }
+}
+
+fn signature_type_mentions_class_like(type_text: &str, class_like: &str) -> bool {
+    let mut names = Vec::new();
+    let mut seen = HashSet::new();
+    collect_signature_type_dependency_names(type_text, &mut seen, &mut names);
+    let class_like = class_like.strip_prefix('\\').unwrap_or(class_like);
+    names.iter().any(|name| {
+        name.strip_prefix('\\')
+            .unwrap_or(name)
+            .eq_ignore_ascii_case(class_like)
+    })
+}
+
 fn incompatible_declaration_error(
     class_name: &str,
     child_signature: String,
@@ -135173,12 +135524,14 @@ fn validate_inherited_method_signature_compatibility(
                                 Some(child_context),
                             )
                         {
-                            return Err(could_not_check_compatibility_error(
-                                class_name,
-                                child_signature(),
-                                inherited_signature(),
-                                missing_class,
-                            ));
+                            if !signature_type_mentions_class_like(child_type, &missing_class) {
+                                return Err(could_not_check_compatibility_error(
+                                    class_name,
+                                    child_signature(),
+                                    inherited_signature(),
+                                    missing_class,
+                                ));
+                            }
                         }
                         return Err(incompatible_declaration_error(
                             class_name,
