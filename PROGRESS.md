@@ -1,6 +1,6 @@
 # PHP Native Compiler PHPT Progress
 
-Updated: 2026-06-04 04:52 CEST
+Updated: 2026-06-04 05:10 CEST
 
 Primary/public branch: `origin/master`
 Latest accepted public-score source:
@@ -19,11 +19,12 @@ denominators that exclude BORKED rows are not public progress.
 Current public score: **7240 / 20294 pinned runnable PHPTs = 35.68%**.
 
 Latest pushed source checkpoint:
-`980cf9c4280bd64bb76b4b01ef5d01eff0a9a9cb fix: support bounded strtotime forms`
+`21abc76f24c1fbc242e659280341085db854de52 fix: support assert option diagnostics`
 
 Next score-gate target:
-`980cf9c4280bd64bb76b4b01ef5d01eff0a9a9cb fix: support bounded strtotime forms`
-once cadence requires the next full pinned PHPT gate.
+`21abc76f24c1fbc242e659280341085db854de52 fix: support assert option diagnostics`.
+A full pinned PHPT gate for this source is running; it is not publication
+evidence until it completes with zero latest-published PASS regressions.
 
 The accepted source checkpoint chain through semantic source `13a0caf9` has
 been pushed to `origin/master` and is now reflected in the public score above.
@@ -34,15 +35,20 @@ latest-published PASS regressions.
 
 Unpublished source progress since the accepted public score source:
 
-- Latest pushed source head is `980cf9c4280bd64bb76b4b01ef5d01eff0a9a9cb`
-  (`fix: support bounded strtotime forms`), pushed to `origin/master`.
-- There is `1` score-relevant source commit after the accepted public-score
-  checkpoint: `980cf9c4280bd64bb76b4b01ef5d01eff0a9a9cb`
-  (`fix: support bounded strtotime forms`).
+- Latest pushed source head is `21abc76f24c1fbc242e659280341085db854de52`
+  (`fix: support assert option diagnostics`), pushed to `origin/master`.
+- There are `2` score-relevant source commits after the accepted public-score
+  source: `980cf9c4280bd64bb76b4b01ef5d01eff0a9a9cb`
+  (`fix: support bounded strtotime forms`) and
+  `21abc76f24c1fbc242e659280341085db854de52`
+  (`fix: support assert option diagnostics`).
 - Staged focused selected-PHPT proof after the latest accepted public-score
-  checkpoint totals `12` selected rows across `1` integrated artifact. These
-  are source/staging facts, not a
-  public score update until a future full pinned PHPT gate accepts them.
+  source totals `27` selected rows across `2` integrated source artifacts:
+  DateTime `strtotime()` `+12` and assert option diagnostics `+15`.
+  Cadence currently reports `15` artifact-window rows across `1` artifact
+  because the DateTime integration artifact was written before the `96ed077d`
+  public-gate window reset. These are source/staging facts, not a public score
+  update until a future full pinned PHPT gate accepts them.
 - The DateTime `strtotime()` packet moved selected PHPT `0/12 -> 12/12` for
   `ext/date/tests/bug14561.phpt`, `ext/date/tests/bug26198.phpt`,
   `ext/date/tests/bug28024.phpt`, `ext/date/tests/bug28599.phpt`,
@@ -52,6 +58,29 @@ Unpublished source progress since the accepted public score source:
   `ext/date/tests/bug74057.phpt`, and
   `ext/date/tests/strtotime-relative.phpt`. It also preserved a five-row
   latest-published non-date PASS scout.
+- The assert option diagnostics packet moved selected PHPT `0/15 -> 15/15`
+  for `ext/standard/tests/assert/assert.phpt`,
+  `ext/standard/tests/assert/assert03.phpt`,
+  `ext/standard/tests/assert/assert04.phpt`,
+  `ext/standard/tests/assert/assert_basic.phpt`,
+  `ext/standard/tests/assert/assert_basic1.phpt`,
+  `ext/standard/tests/assert/assert_basic2.phpt`,
+  `ext/standard/tests/assert/assert_basic3.phpt`,
+  `ext/standard/tests/assert/assert_basic4.phpt`,
+  `ext/standard/tests/assert/assert_basic5.phpt`,
+  `ext/standard/tests/assert/assert_closures.phpt`,
+  `ext/standard/tests/assert/assert_error2.phpt`,
+  `ext/standard/tests/assert/assert_options_error.phpt`,
+  `ext/standard/tests/assert/assert_return_value.phpt`,
+  `ext/standard/tests/assert/assert_variation.phpt`, and
+  `ext/standard/tests/assert/assert_warnings.phpt`. It also preserved an
+  eight-row latest-published PASS scout.
+- The active full pinned PHPT gate for source `21abc76f` is
+  `state/logs/phpt-full-current-score-20260604T030645Z-php-src-f97ff59-public-21abc76f-source-21abc76f`.
+  It uses the accepted `96ed077d` PASS baseline with `7236` rows and SHA-256
+  `b91a188270d1704b610e00b65f8f495f5ee2f91ccd0d91ce13f440b742f0d40b`.
+  Latest cadence/readback is `RUNNING / BUILDING-RELEASE`; PASS regressions
+  are unknown, so it cannot move the public score yet.
 - The previous publication blocker was the blocked `52a79aa1` full gate:
   `state/logs/phpt-full-current-score-20260604T005236Z-php-src-f97ff59-public-52a79aa1-source-52a79aa1`
   had `1` latest-published PASS regression,
