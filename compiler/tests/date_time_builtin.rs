@@ -128,6 +128,8 @@ date_default_timezone_set("Europe/Oslo");
 echo date(DATE_ATOM, strtotime("2006-01-31T19:23:56Z")), "\n";
 date_default_timezone_set("UTC");
 echo date("r", strtotime("May 18th 5:05pm", 1168156376)), "\n";
+echo date(DATE_ISO8601, strtotime("July 1, 2000 00:00:00 UTC")), "|";
+echo date(DATE_ISO8601, strtotime("July 1, 2000 00:00:00 GMT")), "\n";
 $parsed = date_parse(" a ");
 echo count($parsed), "|", $parsed["zone_type"], "|", $parsed["zone"], "|", $parsed["tz_abbr"], "\n";
 var_dump(date_parse(" \n ")["error_count"]);
@@ -153,6 +155,7 @@ var_dump(date_parse(" \n ")["error_count"]);
             "2006-01-06T08:00:00+0000\n",
             "2006-01-31T20:23:56+01:00\n",
             "Fri, 18 May 2007 17:05:00 +0000\n",
+            "2000-07-01T00:00:00+0000|2000-07-01T00:00:00+0000\n",
             "16|2|3600|A\n",
             "int(0)\n",
         )

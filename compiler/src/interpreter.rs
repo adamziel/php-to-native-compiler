@@ -169793,6 +169793,13 @@ fn parse_bounded_strtotime_textual_date(
     } else {
         (0, 0, 0)
     };
+    let explicit_offset = if let Some(token) = rest.get(index) {
+        let offset = parse_timezone_offset_token(clean_strtotime_token(token))?;
+        index += 1;
+        Some(offset)
+    } else {
+        None
+    };
     if index != rest.len() {
         return None;
     }
@@ -169803,7 +169810,7 @@ fn parse_bounded_strtotime_textual_date(
         hour,
         minute,
         second,
-        None,
+        explicit_offset,
         default_timezone,
     )
 }
