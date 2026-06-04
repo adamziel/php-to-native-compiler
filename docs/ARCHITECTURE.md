@@ -2720,10 +2720,16 @@ scalar arithmetic helpers. When either operand is a `BcMath\Number`, binary
 current int/string/Number operands through the BcMath decimal parser and
 materialize a fresh `BcMath\Number` result. Pre/post `++` and `--` on a
 `BcMath\Number` add or subtract decimal one while preserving the decimal scale.
-Division and negative powers use bounded scale search for the covered PHPT rows;
-unbounded scales/exponents, exact invalid-operand diagnostic parity, references
-and copy-on-write identity, full object lifetime timing, and native lowering
-remain outside this lane.
+Division and negative powers use bounded scale search for the covered PHPT rows.
+The same interpreter lane also owns omitted/null-scale `BcMath\Number` method
+results for `div()`, `divmod()`, `pow()`, and `sqrt()`, Number comparison
+operators, Number-aware `pow()`, and the built-in serialized shape for
+`BcMath\Number`'s readonly `value` property. The object-lifetime model remains
+bounded: unrooted Number temporaries from method receivers, `var_dump()`, list
+destructuring replacements, and explicit unsets can return handles to the
+reusable pool after the live-root scan. Unbounded scales/exponents, exact
+invalid-operand diagnostic parity, references and copy-on-write identity, full
+object lifetime timing, and native lowering remain outside this lane.
 Non-BcMath scalar `**` and `**=` stay on the interpreter path and reuse the
 standard math `pow()` helper so scalar exponentiation shares the same coercion,
 deprecation, and int-vs-float result rules as `pow()`. Native lowering still

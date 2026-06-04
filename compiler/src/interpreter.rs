@@ -338,6 +338,12 @@ fn class_registration_startup_fatal_message(error: &Diagnostic) -> Option<String
         return Some(format!("Could not check compatibility between {message}"));
     }
 
+    if let Some(parent) = reason.strip_prefix("cannot extend final class ") {
+        return Some(format!(
+            "Class {class_name} cannot extend final class {parent}"
+        ));
+    }
+
     if let Some((class, interface)) = reason
         .strip_prefix("class ")
         .and_then(|reason| reason.split_once(" cannot extend interface "))
@@ -12295,6 +12301,12 @@ impl Interpreter {
             || self
                 .classes
                 .implements_interface(class_id, "IteratorAggregate")
+    }
+
+    fn is_bcmath_number_class_id(&self, class_id: ClassId) -> bool {
+        self.classes
+            .lookup_class_id("BcMath\\Number")
+            .is_some_and(|number_id| class_id == number_id)
     }
 
     fn is_spl_object_storage_class_id(&self, class_id: ClassId) -> bool {
@@ -33312,6 +33324,7 @@ impl Interpreter {
             || self.is_spl_file_object_class_id(object.class_id())
             || self.is_spl_directory_iterator_class_id(object.class_id())
             || self.is_array_object_class_id(object.class_id())
+            || self.is_bcmath_number_class_id(object.class_id())
     }
 
     fn retire_reusable_temporary_objects_in_value(
@@ -33376,6 +33389,10 @@ impl Interpreter {
         let Some(Value::Object(object)) = value else {
             return Ok(());
         };
+
+        if self.is_bcmath_number_class_id(object.class_id()) {
+            return self.retire_reusable_unrooted_temporary_object_handle(&object, scope);
+        }
 
         if !self.object_has_supported_public_destructor(&object) {
             return Ok(());
@@ -46832,7 +46849,17 @@ impl Interpreter {
         self.collect_list_assignment_writes(items, &value, span, &mut assignments)?;
 
         for (name, element) in assignments {
+            let target_is_alias = scope.is_array_offset_alias_name(&name);
+            let released_value = if target_is_alias {
+                None
+            } else {
+                scope.read_storage_named(&name)
+            };
             scope.write_static(&name, element);
+            if let Some(released_value) = released_value {
+                self.retire_released_bcmath_number_handle(released_value.clone(), scope)?;
+                self.retire_released_array_object_handle(released_value, scope)?;
+            }
         }
 
         Ok(value)
@@ -59436,9 +59463,13 @@ impl Interpreter {
                 .map(|value| (value, None));
         }
         if object.class_name().eq_ignore_ascii_case("BcMath\\Number") {
-            return self
-                .call_bcmath_number_method(object, method_name, args, span, caller_scope)
-                .map(|value| (value, None));
+            let receiver = object.clone();
+            let result =
+                self.call_bcmath_number_method(object, method_name, args, span, caller_scope);
+            if result.is_ok() {
+                self.retire_reusable_unrooted_temporary_object_handle(&receiver, caller_scope)?;
+            }
+            return result.map(|value| (value, None));
         }
         if object
             .class_name()
@@ -107370,6 +107401,10 @@ impl Interpreter {
                 self.format_php_serialized_spl_object_storage(object, &mut output, span)?;
                 return Ok(Value::String(output));
             }
+            if object.class_name().eq_ignore_ascii_case("BcMath\\Number") {
+                self.format_php_serialized_bcmath_number(object, &mut output, span)?;
+                return Ok(Value::String(output));
+            }
         }
         format_php_serialized_value(&args[0], &mut output).ok_or_else(|| {
             runtime_error(
@@ -107384,6 +107419,28 @@ impl Interpreter {
             )
         })?;
         Ok(Value::String(output))
+    }
+
+    fn format_php_serialized_bcmath_number(
+        &self,
+        object: &PhpObject,
+        output: &mut String,
+        span: Span,
+    ) -> CompileResult<()> {
+        let value = self.bcmath_number_object_string(object, span)?;
+        output.push_str("O:13:\"BcMath\\Number\":1:{");
+        format_php_serialized_array_key(&ArrayKey::String("value".to_string()), output);
+        format_php_serialized_value(&Value::String(value), output).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "serialize()",
+                    "BcMath\\Number value requires serializable string state",
+                ),
+            )
+        })?;
+        output.push('}');
+        Ok(())
     }
 
     fn format_php_serialized_spl_object_storage(
@@ -107457,7 +107514,9 @@ impl Interpreter {
             {
                 Ok(value) => Some(value),
                 Err(error) => {
-                    if is_date_object_invalid_serialization_error(&error) {
+                    if is_date_object_invalid_serialization_error(&error)
+                        || is_bcmath_number_invalid_serialization_error(&error)
+                    {
                         object_error = Some(error);
                     }
                     None
@@ -107631,6 +107690,8 @@ impl Interpreter {
             self.initialize_unserialized_datetimeimmutable_object(&object, properties, span)?;
         } else if self.is_dateperiod_class_id(class_id) {
             self.initialize_unserialized_dateperiod_object(&object, properties, span)?;
+        } else if self.is_bcmath_number_class_id(class_id) {
+            self.initialize_unserialized_bcmath_number_object(&object, properties, span)?;
         } else if self.is_spl_object_storage_class_id(class_id) {
             self.initialize_unserialized_spl_object_storage_object(&object, properties, span)?;
         } else {
@@ -107642,6 +107703,35 @@ impl Interpreter {
         }
         self.track_allocated_object(&object);
         Ok(Value::Object(object))
+    }
+
+    fn initialize_unserialized_bcmath_number_object(
+        &self,
+        object: &PhpObject,
+        properties: Vec<(String, Value)>,
+        span: Span,
+    ) -> CompileResult<()> {
+        let [(name, value)] = properties.as_slice() else {
+            return Err(bcmath_number_invalid_serialization_error(span));
+        };
+        if name != "value" {
+            return Err(bcmath_number_invalid_serialization_error(span));
+        }
+        let Value::String(value) = value else {
+            return Err(bcmath_number_invalid_serialization_error(span));
+        };
+        if !bcmath_serialized_number_value_is_well_formed(value) {
+            return Err(bcmath_number_invalid_serialization_error(span));
+        }
+        let decimal = BcDecimal::parse(value)
+            .ok_or_else(|| bcmath_number_invalid_serialization_error(span))?;
+        object
+            .write_serialized_property("value", Value::String(value.clone()))
+            .map_err(|error| runtime_error(span, error))?;
+        object
+            .write_serialized_property("scale", Value::Int(decimal.scale as i64))
+            .map_err(|error| runtime_error(span, error))?;
+        Ok(())
     }
 
     fn create_unserialized_incomplete_object(
@@ -114979,6 +115069,12 @@ impl Interpreter {
 
         if let Some(result) =
             self.apply_bcmath_number_binary_operator(op, &left, &right, span, scope)?
+        {
+            return Ok(result);
+        }
+
+        if let Some(result) =
+            self.apply_bcmath_number_comparison_operator(op, &left, &right, span)?
         {
             return Ok(result);
         }
@@ -130854,6 +130950,8 @@ const DATETIMEIMMUTABLE_INVALID_SERIALIZATION_MESSAGE: &str =
     "Invalid serialization data for DateTimeImmutable object";
 const DATEPERIOD_INVALID_SERIALIZATION_MESSAGE: &str =
     "Invalid serialization data for DatePeriod object";
+const BCMATH_NUMBER_INVALID_SERIALIZATION_MESSAGE: &str =
+    "Invalid serialization data for BcMath\\Number object";
 const DATEPERIOD_CONSTRUCTOR_TYPE_MESSAGE: &str =
     "DatePeriod::__construct() accepts (DateTimeInterface, DateInterval, int [, int]), or (DateTimeInterface, DateInterval, DateTime [, int]), or (string [, int]) as arguments";
 const DATE_OBJECT_ERROR_DIAGNOSTIC_PREFIX: &str = "DateObjectError: ";
@@ -130868,6 +130966,24 @@ fn datetimezone_invalid_serialization_error(span: Span) -> Diagnostic {
         span,
         RuntimeError::unsupported_call("unserialize()", DATETIMEZONE_INVALID_SERIALIZATION_MESSAGE),
     )
+}
+
+fn bcmath_number_invalid_serialization_error(span: Span) -> Diagnostic {
+    runtime_error(
+        span,
+        RuntimeError::unsupported_call(
+            "unserialize()",
+            BCMATH_NUMBER_INVALID_SERIALIZATION_MESSAGE,
+        ),
+    )
+}
+
+fn bcmath_serialized_number_value_is_well_formed(value: &str) -> bool {
+    let unsigned = value
+        .strip_prefix('+')
+        .or_else(|| value.strip_prefix('-'))
+        .unwrap_or(value);
+    !unsigned.is_empty() && unsigned.bytes().any(|byte| byte.is_ascii_digit())
 }
 
 fn datetime_invalid_serialization_error(span: Span) -> Diagnostic {
@@ -131038,6 +131154,14 @@ fn is_date_object_invalid_serialization_error(error: &Diagnostic) -> bool {
         || is_datetime_invalid_serialization_error(error)
         || is_datetimeimmutable_invalid_serialization_error(error)
         || is_dateperiod_invalid_serialization_error(error)
+}
+
+fn is_bcmath_number_invalid_serialization_error(error: &Diagnostic) -> bool {
+    error.phase == Phase::Runtime
+        && error.message
+            == format!(
+                "unsupported call unserialize(): {BCMATH_NUMBER_INVALID_SERIALIZATION_MESSAGE}"
+            )
 }
 
 fn map_datetime_invalid_serialization_to_datetimeimmutable<T>(
@@ -131627,6 +131751,13 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
 
         if let Some(message) = hash_context_php_exception_message(error) {
             return Some(("Exception", message));
+        }
+
+        if is_bcmath_number_invalid_serialization_error(error) {
+            return Some((
+                "Exception",
+                BCMATH_NUMBER_INVALID_SERIALIZATION_MESSAGE.to_string(),
+            ));
         }
 
         if let Some(message) = hash_context_php_type_error_message(error) {
@@ -162536,6 +162667,28 @@ fn php_pow_result(
     exponent_value: &Value,
     span: Span,
 ) -> CompileResult<Value> {
+    if Interpreter::value_is_bcmath_number(base_value)
+        || Interpreter::value_is_bcmath_number(exponent_value)
+    {
+        let base = interpreter.bcmath_number_decimal_argument(
+            "BcMath\\Number operator",
+            1,
+            "num1",
+            base_value,
+            span,
+        )?;
+        let exponent = interpreter.bcmath_number_decimal_argument(
+            "BcMath\\Number operator",
+            2,
+            "num2",
+            exponent_value,
+            span,
+        )?;
+        let result = Interpreter::bcmath_number_operator_pow_result(&base, &exponent, span)?;
+        let object = interpreter.bcmath_number_object(result, None, span)?;
+        return Ok(Value::Object(object));
+    }
+
     let base = pow_number_arg(base_value)
         .ok_or_else(|| pow_unsupported_operand_types(base_value, exponent_value, span))?;
     let exponent = pow_number_arg(exponent_value)
@@ -168314,6 +168467,13 @@ impl Interpreter {
                 self.bcmath_number_object_string(&object, span)
                     .map(Value::String)
             }
+            "__unserialize" => {
+                expect_arity("BcMath\\Number::__unserialize", &values, 1, span)?;
+                object
+                    .write_public_property("value", Value::Null)
+                    .map_err(|error| runtime_error(span, error))?;
+                Ok(Value::Null)
+            }
             "add" => self.call_bcmath_number_binary_method(
                 object,
                 "BcMath\\Number::add()",
@@ -168400,11 +168560,10 @@ impl Interpreter {
                         RuntimeError::unsupported_call(function, "Division by zero"),
                     ));
                 }
-                left.div(
-                    &right,
-                    explicit_scale.unwrap_or_else(|| left.scale.max(right.scale)),
-                    span,
-                )?
+                match explicit_scale {
+                    Some(scale) => left.div(&right, scale, span)?,
+                    None => Self::bcmath_number_operator_div_result(&left, &right, span)?,
+                }
             }
             BcNumberBinaryOp::Mod => left.modulo(&right, span, function)?,
             BcNumberBinaryOp::Pow => {
@@ -168466,6 +168625,56 @@ impl Interpreter {
         self.retire_bcmath_number_operator_operand(left, scope)?;
         self.retire_bcmath_number_operator_operand(right, scope)?;
         Ok(Some(Value::Object(object)))
+    }
+
+    fn apply_bcmath_number_comparison_operator(
+        &self,
+        op: BinaryOp,
+        left: &Value,
+        right: &Value,
+        span: Span,
+    ) -> CompileResult<Option<Value>> {
+        if !matches!(
+            op,
+            BinaryOp::Eq
+                | BinaryOp::Ne
+                | BinaryOp::Lt
+                | BinaryOp::Le
+                | BinaryOp::Gt
+                | BinaryOp::Ge
+                | BinaryOp::Spaceship
+        ) {
+            return Ok(None);
+        }
+        if !Self::value_is_bcmath_number(left) && !Self::value_is_bcmath_number(right) {
+            return Ok(None);
+        }
+
+        let left_decimal = self.bcmath_number_decimal_argument(
+            "BcMath\\Number comparison",
+            1,
+            "num1",
+            left,
+            span,
+        )?;
+        let right_decimal = self.bcmath_number_decimal_argument(
+            "BcMath\\Number comparison",
+            2,
+            "num2",
+            right,
+            span,
+        )?;
+        let scale = left_decimal.scale.max(right_decimal.scale);
+        let ordering = left_decimal.compare_at_scale(&right_decimal, scale);
+        let value = match op {
+            BinaryOp::Spaceship => Value::Int(match ordering {
+                Ordering::Less => -1,
+                Ordering::Equal => 0,
+                Ordering::Greater => 1,
+            }),
+            _ => Self::comparison_result_value(op, ordering),
+        };
+        Ok(Some(value))
     }
 
     fn bcmath_number_operator_div_result(
@@ -168662,26 +168871,29 @@ impl Interpreter {
                 span,
             )?),
         };
-        let output_scale = explicit_scale.unwrap_or_else(|| {
-            if exponent == 0 {
-                0
-            } else {
-                base.scale.saturating_mul(exponent.unsigned_abs() as usize)
-            }
-        });
-        if output_scale > 10_000 {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "BcMath\\Number::pow()",
-                    "computed scale above 10000 is not supported in the current subset",
-                ),
-            ));
-        }
 
-        let result = if exponent == 0 {
-            BcDecimal::one()
-        } else if base.is_zero() {
+        let (result, output_scale) = if let Some(scale) = explicit_scale {
+            let result = Self::bcmath_number_pow_result_with_scale(&base, exponent, scale, span)?;
+            (result, scale)
+        } else {
+            let result = Self::bcmath_number_operator_pow_result(&base, &exponent_decimal, span)?;
+            let output_scale = result.scale;
+            (result, output_scale)
+        };
+        self.bcmath_number_object(result, Some(output_scale), span)
+            .map(Value::Object)
+    }
+
+    fn bcmath_number_pow_result_with_scale(
+        base: &BcDecimal,
+        exponent: i64,
+        scale: usize,
+        span: Span,
+    ) -> CompileResult<BcDecimal> {
+        if exponent == 0 {
+            return Ok(BcDecimal::one());
+        }
+        if base.is_zero() {
             if exponent < 0 {
                 return Err(runtime_error(
                     span,
@@ -168691,31 +168903,32 @@ impl Interpreter {
                     ),
                 ));
             }
-            BcDecimal::zero()
-        } else if base.is_integral_one_abs() {
-            BcDecimal::one().with_sign(base.negative && exponent.unsigned_abs() % 2 == 1)
-        } else {
-            let exponent_abs = exponent.unsigned_abs();
-            if exponent_abs > BCMATH_POW_EXPONENT_LIMIT {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "BcMath\\Number::pow()",
-                        format!(
-                            "absolute exponent above {BCMATH_POW_EXPONENT_LIMIT} is not supported in the current subset"
-                        ),
+            return Ok(BcDecimal::zero());
+        }
+        if base.is_integral_one_abs() {
+            return Ok(
+                BcDecimal::one().with_sign(base.negative && exponent.unsigned_abs() % 2 == 1)
+            );
+        }
+
+        let exponent_abs = exponent.unsigned_abs();
+        if exponent_abs > BCMATH_POW_EXPONENT_LIMIT {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "BcMath\\Number::pow()",
+                    format!(
+                        "absolute exponent above {BCMATH_POW_EXPONENT_LIMIT} is not supported in the current subset"
                     ),
-                ));
-            }
-            let powered = base.pow_u64(exponent_abs);
-            if exponent > 0 {
-                powered
-            } else {
-                BcDecimal::one().div(&powered, output_scale, span)?
-            }
-        };
-        self.bcmath_number_object(result, Some(output_scale), span)
-            .map(Value::Object)
+                ),
+            ));
+        }
+        let powered = base.pow_u64(exponent_abs);
+        if exponent > 0 {
+            Ok(powered)
+        } else {
+            BcDecimal::one().div(&powered, scale, span)
+        }
     }
 
     fn call_bcmath_number_powmod_method(
@@ -168819,7 +169032,10 @@ impl Interpreter {
             ));
         }
         let scale = match args.first() {
-            Some(Value::Null) | None => self.bcmath_default_scale(),
+            Some(Value::Null) | None => {
+                let value = self.bcmath_number_object_decimal(&object, span)?;
+                Self::bcmath_number_default_sqrt_scale(&value)
+            }
             Some(value) => {
                 bcmath_scale_argument("BcMath\\Number::sqrt()", 1, "scale", value, span)?
             }
@@ -168836,6 +169052,14 @@ impl Interpreter {
         }
         self.bcmath_number_object(value.sqrt(scale), Some(scale), span)
             .map(Value::Object)
+    }
+
+    fn bcmath_number_default_sqrt_scale(value: &BcDecimal) -> usize {
+        if value.is_zero() {
+            0
+        } else {
+            value.scale.saturating_add(10)
+        }
     }
 
     fn call_bcmath_number_round_method(
@@ -168952,13 +169176,13 @@ impl Interpreter {
                 ),
             ));
         }
+        let left = self.bcmath_number_object_decimal(&object, span)?;
         let scale = match args.get(1) {
-            Some(Value::Null) | None => self.bcmath_default_scale(),
+            Some(Value::Null) | None => left.scale,
             Some(value) => {
                 bcmath_scale_argument("BcMath\\Number::divmod()", 2, "scale", value, span)?
             }
         };
-        let left = self.bcmath_number_object_decimal(&object, span)?;
         let right = self.bcmath_number_decimal_argument(
             "BcMath\\Number::divmod()",
             1,

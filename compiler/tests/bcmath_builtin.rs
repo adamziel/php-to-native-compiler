@@ -281,6 +281,106 @@ echo $step->value, "|", $step->scale, "\n";
 }
 
 #[test]
+fn bcmath_number_default_scales_serialization_comparison_and_handles_are_generalized() {
+    let execution = run_source(
+        r#"<?php
+foreach (["0", "0.00", "123"] as $value) {
+    $tmp = new BcMath\Number($value);
+    var_dump($tmp);
+    unset($tmp);
+}
+var_dump((new BcMath\Number("1"))->div("1000"));
+var_dump((new BcMath\Number("1"))->div("2000"));
+
+$num = new BcMath\Number("100.012");
+$div = $num->div("-30");
+echo $div->value, "|", $div->scale, "\n";
+[$quot, $rem] = $num->divmod("80.3");
+echo $quot->value, "|", $quot->scale, "|", $rem->value, "|", $rem->scale, "\n";
+$pow = (new BcMath\Number("12.5"))->pow("-2");
+echo $pow->value, "|", $pow->scale, "\n";
+$sqrt = (new BcMath\Number("15151324141414.412312232141241"))->sqrt();
+echo $sqrt->value, "|", $sqrt->scale, "\n";
+$zeroPow = pow(new BcMath\Number("0"), 2);
+echo $zeroPow->value, "|", $zeroPow->scale, "\n";
+var_dump((new BcMath\Number("100.0000")) > "99.9999");
+var_dump("100.00001" > new BcMath\Number("100.0000"));
+var_dump(new BcMath\Number("100.0000") == 100);
+echo serialize(new BcMath\Number("0.1230")), "\n";
+$copy = unserialize('O:13:"BcMath\Number":1:{s:5:"value";s:6:"0.1230";}');
+echo $copy->value, "|", $copy->scale, "\n";
+try {
+    (new BcMath\Number(1))->__unserialize(["value" => "5"]);
+} catch (Error $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+try {
+    unserialize('O:13:"BcMath\Number":1:{s:5:"value";s:1:"a";}');
+} catch (Exception $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+try {
+    unserialize('O:13:"BcMath\Number":1:{s:5:"value";s:0:"";}');
+} catch (Exception $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "object(BcMath\\Number)#1 (2) {\n",
+            "  [\"value\"]=>\n",
+            "  string(1) \"0\"\n",
+            "  [\"scale\"]=>\n",
+            "  int(0)\n",
+            "}\n",
+            "object(BcMath\\Number)#1 (2) {\n",
+            "  [\"value\"]=>\n",
+            "  string(4) \"0.00\"\n",
+            "  [\"scale\"]=>\n",
+            "  int(2)\n",
+            "}\n",
+            "object(BcMath\\Number)#1 (2) {\n",
+            "  [\"value\"]=>\n",
+            "  string(3) \"123\"\n",
+            "  [\"scale\"]=>\n",
+            "  int(0)\n",
+            "}\n",
+            "object(BcMath\\Number)#2 (2) {\n",
+            "  [\"value\"]=>\n",
+            "  string(5) \"0.001\"\n",
+            "  [\"scale\"]=>\n",
+            "  int(3)\n",
+            "}\n",
+            "object(BcMath\\Number)#1 (2) {\n",
+            "  [\"value\"]=>\n",
+            "  string(6) \"0.0005\"\n",
+            "  [\"scale\"]=>\n",
+            "  int(4)\n",
+            "}\n",
+            "-3.3337333333333|13\n",
+            "1|0|19.712|3\n",
+            "0.0064|4\n",
+            "3892470.1850385973524458288799178|25\n",
+            "0|0\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "O:13:\"BcMath\\Number\":1:{s:5:\"value\";s:6:\"0.1230\";}\n",
+            "0.1230|4\n",
+            "Error:Cannot modify readonly property BcMath\\Number::$value\n",
+            "Exception:Invalid serialization data for BcMath\\Number object\n",
+            "Exception:Invalid serialization data for BcMath\\Number object\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn bcmath_number_readonly_properties_can_be_read_by_reference_as_values() {
     let execution = run_source(
         r#"<?php
