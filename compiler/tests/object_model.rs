@@ -4006,6 +4006,82 @@ class B extends A {
 }
 
 #[test]
+fn asymmetric_property_visibility_runtime_set_access_is_enforced() {
+    let output = run_source(
+        r#"<?php
+class Base {
+    public private(set) int $prop = 1;
+    public private(set) array $items = [];
+
+    public function ok() {
+        $this->prop = 2;
+        $this->items[] = 3;
+        unset($this->prop);
+        echo "ok\n";
+    }
+}
+
+class Child extends Base {
+    public function bad() {
+        try {
+            $this->prop = 3;
+        } catch (Error $e) {
+            echo $e->getMessage(), "\n";
+        }
+    }
+}
+
+class ReadonlyValue {
+    public readonly int $value;
+}
+
+$base = new Base();
+try {
+    $base->prop = 2;
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $base->items[] = 1;
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $ref =& $base->prop;
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    unset($base->prop);
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+$base->ok();
+(new Child())->bad();
+try {
+    (new ReadonlyValue())->value = 1;
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        output.stdout,
+        "Cannot modify private(set) property Base::$prop from global scope\n\
+Cannot indirectly modify private(set) property Base::$items from global scope\n\
+Cannot indirectly modify private(set) property Base::$prop from global scope\n\
+Cannot unset private(set) property Base::$prop from global scope\n\
+ok\n\
+Cannot modify private(set) property Base::$prop from scope Child\n\
+Cannot modify protected(set) readonly property ReadonlyValue::$value from global scope\n"
+    );
+    assert_eq!(output.stderr, "");
+    assert_eq!(output.exit_code, 0);
+}
+
+#[test]
 fn method_override_attribute_validates_class_interface_trait_and_constructor_methods() {
     let parent_method = run_source(
         r#"<?php

@@ -4,6 +4,36 @@
 
 Implemented:
 
+- Added bounded runtime enforcement for asymmetric instance property setter
+  visibility on the interpreter path. Declared `private(set)` /
+  `protected(set)` metadata now reaches runtime object slots; direct writes,
+  compound stores, indirect array/reference mutations, and `unset` check the
+  current class scope; unset inaccessible slots can still dispatch through
+  visible `__set()` / `__unset()`; and public readonly properties without an
+  explicit setter use PHP's default `protected(set)` write boundary. Focused
+  proof covers exact-current pre-patch selected PHPT at `0/16` and post-patch
+  selected PHPT at `16/16` for
+  `Zend/tests/asymmetric_visibility/__set.phpt`,
+  `Zend/tests/asymmetric_visibility/__unset.phpt`,
+  `Zend/tests/asymmetric_visibility/bug001.phpt`,
+  `Zend/tests/asymmetric_visibility/bug002.phpt`,
+  `Zend/tests/asymmetric_visibility/bug003.phpt`,
+  `Zend/tests/asymmetric_visibility/cpp_private.phpt`,
+  `Zend/tests/asymmetric_visibility/cpp_protected.phpt`,
+  `Zend/tests/asymmetric_visibility/dim_add.phpt`,
+  `Zend/tests/asymmetric_visibility/private.phpt`,
+  `Zend/tests/asymmetric_visibility/protected.phpt`,
+  `Zend/tests/asymmetric_visibility/readonly.phpt`,
+  `Zend/tests/asymmetric_visibility/reference.phpt`,
+  `Zend/tests/asymmetric_visibility/reference_2.phpt`,
+  `Zend/tests/asymmetric_visibility/scope_rebinding.phpt`,
+  `Zend/tests/asymmetric_visibility/unset.phpt`, and
+  `Zend/tests/asymmetric_visibility/variation.phpt`, plus focused Rust
+  object-model coverage, build, fmt, and diff checks. Unsupported edges remain
+  static property setter visibility, executable hook body semantics, exact
+  reflection parity for user declarations, full reference/COW identity, and
+  native lowering.
+
 - Added bounded class/interface property-hook declaration metadata on the
   interpreter path. Class and interface hooked properties now parse and keep
   hook metadata for abstract/interface implementation checks while hook bodies

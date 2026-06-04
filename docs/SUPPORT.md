@@ -3540,7 +3540,17 @@
   result as the assigned value. Missing direct-property `unset($object->name)`
   calls visible non-static `__unset($name)` when one is declared or inherited,
   while existing visible slots are still nulled under the current storage
-  model.
+  model. Declared asymmetric `private(set)` and `protected(set)` instance
+  properties enforce setter visibility on the interpreter path for direct
+  writes, compound read-modify-write stores after the read succeeds, array
+  append/nested array mutation, by-reference binding, and `unset`, with
+  PHP-shaped `Cannot modify`, `Cannot indirectly modify`, and `Cannot unset`
+  catchable `Error` messages naming global or class scope. Explicitly unset
+  inaccessible slots still route through visible `__set()` / `__unset()` when
+  PHP does, and public readonly properties without explicit setter visibility
+  use the PHP default `protected(set)` write boundary for outside
+  initialization. Static property setter visibility, property hooks, full
+  reference/COW identity, and native lowering remain unsupported.
 - public, same-class private, and protected same-class/child instance method
   calls by static method name:
   `$object->method(...)` evaluates the object receiver, checks a declared

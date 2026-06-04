@@ -28043,6 +28043,12 @@ impl RuntimeError {
         })
     }
 
+    pub fn property_set_visibility(reason: impl Into<String>) -> Self {
+        Self::from_kind(RuntimeErrorKind::PropertySetVisibility {
+            reason: reason.into(),
+        })
+    }
+
     pub fn arity_mismatch(
         callable: impl Into<String>,
         expected: ArityExpectation,
@@ -28203,6 +28209,9 @@ pub enum RuntimeErrorKind {
         property_name: String,
     },
     UnsupportedPropertyAccess {
+        reason: String,
+    },
+    PropertySetVisibility {
         reason: String,
     },
     ArityMismatch {
@@ -28438,6 +28447,7 @@ fn format_runtime_error(kind: &RuntimeErrorKind) -> String {
         RuntimeErrorKind::UnsupportedPropertyAccess { reason } => {
             format!("unsupported object property access: {reason}")
         }
+        RuntimeErrorKind::PropertySetVisibility { reason } => reason.clone(),
         RuntimeErrorKind::ArityMismatch {
             callable,
             expected,
@@ -34661,6 +34671,7 @@ impl PhpClassConstantMetadata {
 pub struct PhpPropertyMetadata {
     name: String,
     visibility: Visibility,
+    set_visibility: Option<Visibility>,
     is_static: bool,
     type_decl: Option<String>,
     is_readonly: bool,
@@ -34671,6 +34682,7 @@ impl PhpPropertyMetadata {
         Self {
             name: name.into(),
             visibility,
+            set_visibility: None,
             is_static: false,
             type_decl: None,
             is_readonly: false,
@@ -34681,10 +34693,16 @@ impl PhpPropertyMetadata {
         Self {
             name: name.into(),
             visibility,
+            set_visibility: None,
             is_static: true,
             type_decl: None,
             is_readonly: false,
         }
+    }
+
+    pub fn with_set_visibility(mut self, set_visibility: Option<Visibility>) -> Self {
+        self.set_visibility = set_visibility;
+        self
     }
 
     pub fn with_type_decl(mut self, type_decl: Option<String>) -> Self {
@@ -34703,6 +34721,10 @@ impl PhpPropertyMetadata {
 
     pub fn visibility(&self) -> Visibility {
         self.visibility
+    }
+
+    pub fn set_visibility(&self) -> Option<Visibility> {
+        self.set_visibility
     }
 
     pub fn is_static(&self) -> bool {
@@ -37812,6 +37834,7 @@ impl PhpObject {
                 initializer.declaring_class_name.clone(),
                 initializer.property.name(),
                 initializer.property.visibility(),
+                initializer.property.set_visibility(),
                 initializer.property.type_decl().map(str::to_string),
                 initializer.property.is_readonly(),
             );
@@ -37828,6 +37851,7 @@ impl PhpObject {
                 class.name().to_string(),
                 property.name(),
                 property.visibility(),
+                property.set_visibility(),
                 property.type_decl().map(str::to_string),
                 property.is_readonly(),
             );
@@ -37850,6 +37874,7 @@ impl PhpObject {
         declaring_class_name: String,
         name: &str,
         visibility: Visibility,
+        set_visibility: Option<Visibility>,
         type_decl: Option<String>,
         is_readonly: bool,
     ) {
@@ -37858,6 +37883,7 @@ impl PhpObject {
                 property.name == name && property.visibility != Visibility::Private
             }) {
                 property.visibility = visibility;
+                property.set_visibility = set_visibility;
                 property.type_decl = type_decl;
                 property.is_readonly = is_readonly;
                 property.initialized = property.type_decl.is_none() && !property.is_readonly;
@@ -37870,6 +37896,7 @@ impl PhpObject {
             declaring_class_name,
             name: name.to_string(),
             visibility,
+            set_visibility,
             type_decl: type_decl.clone(),
             is_readonly,
             readonly_clone_resettable: false,
@@ -38160,9 +38187,30 @@ impl PhpObject {
         current_class_id: Option<ClassId>,
         protected_class_ids: &[ClassId],
     ) -> RuntimeResult<()> {
+        self.ensure_property_writable_from_context_with_scope(
+            name,
+            current_class_id,
+            protected_class_ids,
+            None,
+        )
+    }
+
+    pub fn ensure_property_writable_from_context_with_scope(
+        &self,
+        name: &str,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+        scope_name: Option<&str>,
+    ) -> RuntimeResult<()> {
         let properties = self.properties.borrow();
         let property =
             self.context_property(&properties, name, current_class_id, protected_class_ids)?;
+        property.ensure_set_visible_in_context(
+            current_class_id,
+            protected_class_ids,
+            PropertySetOperation::IndirectModify,
+            scope_name,
+        )?;
         property.ensure_writable_for_indirect_mutation()
     }
 
@@ -38453,6 +38501,7 @@ impl PhpObject {
             declaring_class_name: self.class_name.clone(),
             name: name.to_string(),
             visibility: Visibility::Public,
+            set_visibility: None,
             type_decl: None,
             is_readonly: false,
             readonly_clone_resettable: false,
@@ -38505,6 +38554,7 @@ impl PhpObject {
             declaring_class_name: self.class_name.clone(),
             name: name.to_string(),
             visibility: Visibility::Public,
+            set_visibility: None,
             type_decl: None,
             is_readonly: false,
             readonly_clone_resettable: false,
@@ -38552,6 +38602,7 @@ impl PhpObject {
             declaring_class_name: self.class_name.clone(),
             name: name.to_string(),
             visibility: Visibility::Public,
+            set_visibility: None,
             type_decl: None,
             is_readonly: false,
             readonly_clone_resettable: false,
@@ -38577,6 +38628,7 @@ impl PhpObject {
             declaring_class_name: self.class_name.clone(),
             name: name.to_string(),
             visibility: Visibility::Public,
+            set_visibility: None,
             type_decl: None,
             is_readonly: false,
             readonly_clone_resettable: false,
@@ -38682,6 +38734,7 @@ impl PhpObject {
                     declaring_class_name: self.class_name.clone(),
                     name: name.clone(),
                     visibility: Visibility::Public,
+                    set_visibility: None,
                     type_decl: None,
                     is_readonly: false,
                     readonly_clone_resettable: false,
@@ -38704,6 +38757,23 @@ impl PhpObject {
         current_class_id: Option<ClassId>,
         protected_class_ids: &[ClassId],
     ) -> RuntimeResult<()> {
+        self.write_property_from_context_with_scope(
+            name,
+            value,
+            current_class_id,
+            protected_class_ids,
+            None,
+        )
+    }
+
+    pub fn write_property_from_context_with_scope(
+        &self,
+        name: &str,
+        value: Value,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+        scope_name: Option<&str>,
+    ) -> RuntimeResult<()> {
         let mut properties = self.properties.borrow_mut();
         let Some(property) = self.context_property_mut_or_none(
             &mut properties,
@@ -38716,6 +38786,12 @@ impl PhpObject {
             return self.write_dynamic_public_property(name, value);
         };
 
+        property.ensure_set_visible_in_context(
+            current_class_id,
+            protected_class_ids,
+            PropertySetOperation::Modify,
+            scope_name,
+        )?;
         property.ensure_writable()?;
         let value = coerce_typed_property_value(property, value)?;
         property.set_value(value);
@@ -38729,6 +38805,21 @@ impl PhpObject {
         current_class_id: Option<ClassId>,
         protected_class_ids: &[ClassId],
     ) -> RuntimeResult<PhpReferenceCell> {
+        self.bind_property_reference_cell_from_context_with_scope(
+            name,
+            current_class_id,
+            protected_class_ids,
+            None,
+        )
+    }
+
+    pub fn bind_property_reference_cell_from_context_with_scope(
+        &self,
+        name: &str,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+        scope_name: Option<&str>,
+    ) -> RuntimeResult<PhpReferenceCell> {
         let mut properties = self.properties.borrow_mut();
         let property = self.context_property_mut(
             &mut properties,
@@ -38737,6 +38828,12 @@ impl PhpObject {
             protected_class_ids,
         )?;
 
+        property.ensure_set_visible_in_context(
+            current_class_id,
+            protected_class_ids,
+            PropertySetOperation::IndirectModify,
+            scope_name,
+        )?;
         property.ensure_writable()?;
         property.reference_cell()
     }
@@ -38765,6 +38862,23 @@ impl PhpObject {
         current_class_id: Option<ClassId>,
         protected_class_ids: &[ClassId],
     ) -> RuntimeResult<()> {
+        self.bind_property_reference_cell_to_context_with_scope(
+            name,
+            reference,
+            current_class_id,
+            protected_class_ids,
+            None,
+        )
+    }
+
+    pub fn bind_property_reference_cell_to_context_with_scope(
+        &self,
+        name: &str,
+        reference: PhpReferenceCell,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+        scope_name: Option<&str>,
+    ) -> RuntimeResult<()> {
         let mut properties = self.properties.borrow_mut();
         let property = self.context_property_mut(
             &mut properties,
@@ -38773,6 +38887,12 @@ impl PhpObject {
             protected_class_ids,
         )?;
 
+        property.ensure_set_visible_in_context(
+            current_class_id,
+            protected_class_ids,
+            PropertySetOperation::IndirectModify,
+            scope_name,
+        )?;
         property.ensure_writable()?;
         let value = coerce_typed_property_value(property, reference.value_cloned())?;
         reference.set_value(value);
@@ -38792,13 +38912,38 @@ impl PhpObject {
     where
         F: Fn(&PhpObject, &str) -> bool,
     {
-        self.write_property_from_context_with_object_type_resolver_returning_value_strict(
+        self.write_property_from_context_with_object_type_resolver_returning_value_strict_with_scope(
             name,
             value,
             current_class_id,
             protected_class_ids,
             false,
             object_type_resolver,
+            None,
+        )
+        .map(|_| ())
+    }
+
+    pub fn write_property_from_context_with_object_type_resolver_with_scope<F>(
+        &self,
+        name: &str,
+        value: Value,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+        object_type_resolver: F,
+        scope_name: Option<&str>,
+    ) -> RuntimeResult<()>
+    where
+        F: Fn(&PhpObject, &str) -> bool,
+    {
+        self.write_property_from_context_with_object_type_resolver_returning_value_strict_with_scope(
+            name,
+            value,
+            current_class_id,
+            protected_class_ids,
+            false,
+            object_type_resolver,
+            scope_name,
         )
         .map(|_| ())
     }
@@ -38814,13 +38959,14 @@ impl PhpObject {
     where
         F: Fn(&PhpObject, &str) -> bool,
     {
-        self.write_property_from_context_with_object_type_resolver_returning_value_strict(
+        self.write_property_from_context_with_object_type_resolver_returning_value_strict_with_scope(
             name,
             value,
             current_class_id,
             protected_class_ids,
             false,
             object_type_resolver,
+            None,
         )
     }
 
@@ -38832,6 +38978,32 @@ impl PhpObject {
         protected_class_ids: &[ClassId],
         strict_scalars: bool,
         object_type_resolver: F,
+    ) -> RuntimeResult<Value>
+    where
+        F: Fn(&PhpObject, &str) -> bool,
+    {
+        self.write_property_from_context_with_object_type_resolver_returning_value_strict_with_scope(
+            name,
+            value,
+            current_class_id,
+            protected_class_ids,
+            strict_scalars,
+            object_type_resolver,
+            None,
+        )
+    }
+
+    pub fn write_property_from_context_with_object_type_resolver_returning_value_strict_with_scope<
+        F,
+    >(
+        &self,
+        name: &str,
+        value: Value,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+        strict_scalars: bool,
+        object_type_resolver: F,
+        scope_name: Option<&str>,
     ) -> RuntimeResult<Value>
     where
         F: Fn(&PhpObject, &str) -> bool,
@@ -38849,6 +39021,12 @@ impl PhpObject {
             return Ok(value);
         };
 
+        property.ensure_set_visible_in_context(
+            current_class_id,
+            protected_class_ids,
+            PropertySetOperation::Modify,
+            scope_name,
+        )?;
         property.ensure_writable()?;
         let value = coerce_typed_property_value_with_object_type_resolver(
             property,
@@ -38867,6 +39045,21 @@ impl PhpObject {
         current_class_id: Option<ClassId>,
         protected_class_ids: &[ClassId],
     ) -> RuntimeResult<bool> {
+        self.unset_property_from_context_with_scope(
+            name,
+            current_class_id,
+            protected_class_ids,
+            None,
+        )
+    }
+
+    pub fn unset_property_from_context_with_scope(
+        &self,
+        name: &str,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+        scope_name: Option<&str>,
+    ) -> RuntimeResult<bool> {
         let mut properties = self.properties.borrow_mut();
         let Some(property) = self.context_property_mut_or_none(
             &mut properties,
@@ -38878,6 +39071,12 @@ impl PhpObject {
             return Ok(false);
         };
 
+        property.ensure_set_visible_in_context(
+            current_class_id,
+            protected_class_ids,
+            PropertySetOperation::Unset,
+            scope_name,
+        )?;
         property.ensure_unsettable()?;
         property.unset_value();
         Ok(true)
@@ -39092,6 +39291,7 @@ pub struct ObjectProperty {
     declaring_class_name: String,
     name: String,
     visibility: Visibility,
+    set_visibility: Option<Visibility>,
     type_decl: Option<String>,
     is_readonly: bool,
     readonly_clone_resettable: bool,
@@ -39106,6 +39306,13 @@ enum ObjectPropertyStorage {
     Reference(PhpReferenceCell),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PropertySetOperation {
+    Modify,
+    IndirectModify,
+    Unset,
+}
+
 impl ObjectProperty {
     pub fn name(&self) -> &str {
         &self.name
@@ -39113,6 +39320,10 @@ impl ObjectProperty {
 
     pub fn visibility(&self) -> Visibility {
         self.visibility
+    }
+
+    pub fn set_visibility(&self) -> Option<Visibility> {
+        self.set_visibility
     }
 
     pub fn declaring_class_id(&self) -> ClassId {
@@ -39178,6 +39389,64 @@ impl ObjectProperty {
 
     pub fn is_unset(&self) -> bool {
         self.unset
+    }
+
+    fn effective_set_visibility(&self) -> Option<Visibility> {
+        self.set_visibility.or_else(|| {
+            (self.is_readonly && self.visibility == Visibility::Public)
+                .then_some(Visibility::Protected)
+        })
+    }
+
+    fn is_set_visible_in_context(
+        &self,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+    ) -> bool {
+        match self.effective_set_visibility() {
+            Some(Visibility::Public) | None => true,
+            Some(Visibility::Private) => current_class_id == Some(self.declaring_class_id),
+            Some(Visibility::Protected) => protected_class_ids.contains(&self.declaring_class_id),
+        }
+    }
+
+    fn ensure_set_visible_in_context(
+        &self,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+        operation: PropertySetOperation,
+        scope_name: Option<&str>,
+    ) -> RuntimeResult<()> {
+        if self.is_set_visible_in_context(current_class_id, protected_class_ids) {
+            return Ok(());
+        }
+
+        let Some(set_visibility) = self.effective_set_visibility() else {
+            return Ok(());
+        };
+        let operation = match operation {
+            PropertySetOperation::Modify => "modify",
+            PropertySetOperation::IndirectModify => "indirectly modify",
+            PropertySetOperation::Unset => "unset",
+        };
+        let readonly = if self.is_readonly && set_visibility == Visibility::Protected {
+            " readonly"
+        } else {
+            ""
+        };
+        let visibility = match set_visibility {
+            Visibility::Public => "public",
+            Visibility::Protected => "protected",
+            Visibility::Private => "private",
+        };
+        let scope = scope_name
+            .map(|name| format!("scope {name}"))
+            .unwrap_or_else(|| "global scope".to_string());
+
+        Err(RuntimeError::property_set_visibility(format!(
+            "Cannot {operation} {visibility}(set){readonly} property {}::${} from {scope}",
+            self.declaring_class_name, self.name
+        )))
     }
 
     fn ensure_writable(&self) -> RuntimeResult<()> {

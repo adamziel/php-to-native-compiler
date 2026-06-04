@@ -4869,11 +4869,16 @@ asymmetric-set bits used by current public PHPT rows. Readonly
 class/property declarations are parsed for bounded startup diagnostics, but
 runtime write-once enforcement and reflection readonly metadata remain outside
 this metadata lane. Asymmetric property set visibility is parsed into AST
-metadata for bounded declaration and inheritance startup diagnostics; runtime
-write enforcement, exact user-declaration reflection parity, and native
-lowering remain outside this lane. Property hooks remain unsupported beyond
-declaration diagnostics even though their constants and modifier names are
-available.
+metadata for bounded declaration and inheritance startup diagnostics, and the
+runtime stores the effective setter visibility on declared instance property
+slots. Interpreter writes, indirect array/reference mutations, and `unset`
+check that setter visibility against the current class context and emit
+PHP-shaped catchable `Error` messages for `private(set)` / `protected(set)`
+violations; public readonly properties without an explicit setter use the PHP
+default `protected(set)` write boundary. Exact user-declaration reflection
+parity, static property setter enforcement, property hooks, and native lowering
+remain outside this lane even though hook/asymmetric constants and modifier
+names are available.
 Property file/line metadata, attributes and exact
 docblock association across unusual trivia, parenthesized DNF property types,
 uninitialized/unset/non-public dynamic slots, exact PHP union scalar coercion

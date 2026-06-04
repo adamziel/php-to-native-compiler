@@ -15833,11 +15833,13 @@ impl Interpreter {
             }
         };
         let (current_class_id, protected_class_ids) = self.current_property_access_context();
-        match object.write_property_from_context(
+        let scope_name = self.current_property_scope_name();
+        match object.write_property_from_context_with_scope(
             property,
             assigned_value.clone(),
             current_class_id,
             &protected_class_ids,
+            scope_name.as_deref(),
         ) {
             Ok(()) => Ok(()),
             Err(error) if Self::is_undefined_property_error(&error) => match self
@@ -15925,28 +15927,32 @@ impl Interpreter {
         };
 
         let (current_class_id, protected_class_ids) = self.current_property_access_context();
-        match object.bind_property_reference_cell_to_context(
+        let scope_name = self.current_property_scope_name();
+        match object.bind_property_reference_cell_to_context_with_scope(
             property,
             reference.clone(),
             current_class_id,
             &protected_class_ids,
+            scope_name.as_deref(),
         ) {
             Ok(()) => Ok(()),
             Err(error) if matches!(error.kind(), RuntimeErrorKind::UndefinedProperty { .. }) => {
                 object
-                    .write_property_from_context(
+                    .write_property_from_context_with_scope(
                         property,
                         Value::Null,
                         current_class_id,
                         &protected_class_ids,
+                        scope_name.as_deref(),
                     )
                     .map_err(|error| runtime_error(span, error))?;
                 object
-                    .bind_property_reference_cell_to_context(
+                    .bind_property_reference_cell_to_context_with_scope(
                         property,
                         reference,
                         current_class_id,
                         &protected_class_ids,
+                        scope_name.as_deref(),
                     )
                     .map_err(|error| runtime_error(span, error))
             }
@@ -32164,8 +32170,34 @@ impl Interpreter {
             scope.post_replace_holder_storage(&boundary);
             return Ok(());
         }
+        if call_magic_on_missing
+            && object
+                .is_unset_property_from_context(property, current_class_id, &protected_class_ids)
+                .map_err(|error| runtime_error(span, error))?
+            && self
+                .resolve_instance_method(object.class_id(), "__unset")
+                .is_some()
+            && self
+                .call_magic_property_method_with_caller_scope(
+                    object.clone(),
+                    "__unset",
+                    property,
+                    span,
+                    scope,
+                )?
+                .is_some()
+        {
+            scope.post_replace_holder_storage(&boundary);
+            return Ok(());
+        }
+        let scope_name = self.current_property_scope_name();
         let found = object
-            .unset_property_from_context(property, current_class_id, &protected_class_ids)
+            .unset_property_from_context_with_scope(
+                property,
+                current_class_id,
+                &protected_class_ids,
+                scope_name.as_deref(),
+            )
             .map_err(|error| runtime_error(span, error))?;
         if found {
             self.ensure_static_property_instance_access(&object, property, span, true)?;
@@ -32525,6 +32557,12 @@ impl Interpreter {
         else {
             return self.execute_unset_magic_get_array_index(object, property, &keys, span, scope);
         };
+        self.ensure_object_property_writable_for_array_mutation(
+            object_name,
+            property,
+            span,
+            scope,
+        )?;
 
         match &mut slot {
             Value::Array(array) => {
@@ -32558,11 +32596,12 @@ impl Interpreter {
                 scope.detach_array_offset_aliases_for_unset_paths(&unset_paths);
                 Self::unset_nested_array_value(array, &keys, span)?;
                 object
-                    .write_property_from_context(
+                    .write_property_from_context_with_scope(
                         property,
                         slot,
                         current_class_id,
                         &protected_class_ids,
+                        self.current_property_scope_name().as_deref(),
                     )
                     .map_err(|error| runtime_error(span, error))?;
                 scope.post_replace_holder_storage(&boundary);
@@ -37769,6 +37808,7 @@ impl Interpreter {
         scope: &mut SymbolTable,
     ) -> CompileResult<()> {
         let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        let scope_name = self.current_property_scope_name();
         match scope.read_static(object, span)? {
             Value::Object(object_value) => {
                 let boundary = scope.object_property_holder_storage_boundary(
@@ -37782,11 +37822,12 @@ impl Interpreter {
                 scope.pre_replace_holder_storage(&boundary);
                 let alias_fallbacks =
                     scope.public_object_property_root_alias_fallbacks(object, property);
-                match object_value.bind_property_reference_cell_to_context(
+                match object_value.bind_property_reference_cell_to_context_with_scope(
                     property,
                     source_cell.clone(),
                     current_class_id,
                     &protected_class_ids,
+                    scope_name.as_deref(),
                 ) {
                     Ok(()) => {}
                     Err(error) if Self::is_undefined_property_error(&error) => object_value
@@ -38180,8 +38221,14 @@ impl Interpreter {
             return Ok(());
         };
         let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        let scope_name = self.current_property_scope_name();
         object
-            .ensure_property_writable_from_context(property, current_class_id, &protected_class_ids)
+            .ensure_property_writable_from_context_with_scope(
+                property,
+                current_class_id,
+                &protected_class_ids,
+                scope_name.as_deref(),
+            )
             .map_err(|error| runtime_error(span, error))
     }
 
@@ -38758,6 +38805,7 @@ impl Interpreter {
         scope: &mut SymbolTable,
     ) -> CompileResult<()> {
         let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        let scope_name = self.current_property_scope_name();
         let object = match scope.read_static(object_name, span)? {
             Value::Object(object) => object,
             other => {
@@ -38785,6 +38833,14 @@ impl Interpreter {
             }
             Err(error) => return Err(runtime_error(span, error)),
         };
+        object
+            .ensure_property_writable_from_context_with_scope(
+                property,
+                current_class_id,
+                &protected_class_ids,
+                scope_name.as_deref(),
+            )
+            .map_err(|error| runtime_error(span, error))?;
 
         let root_was_false = matches!(
             object
@@ -42613,11 +42669,13 @@ impl Interpreter {
 
         match object.read_property_from_context(property, current_class_id, &protected_class_ids) {
             Ok(_) => {
+                let scope_name = self.current_property_scope_name();
                 let cell = object
-                    .bind_property_reference_cell_from_context(
+                    .bind_property_reference_cell_from_context_with_scope(
                         property,
                         current_class_id,
                         &protected_class_ids,
+                        scope_name.as_deref(),
                     )
                     .map_err(|error| runtime_error(span, error))?;
                 scope.bind_static_to_cell(target_name, cell);
@@ -42667,11 +42725,13 @@ impl Interpreter {
 
         match object.read_property_from_context(property, current_class_id, &protected_class_ids) {
             Ok(_) => {
+                let scope_name = self.current_property_scope_name();
                 let cell = object
-                    .bind_property_reference_cell_from_context(
+                    .bind_property_reference_cell_from_context_with_scope(
                         property,
                         current_class_id,
                         &protected_class_ids,
+                        scope_name.as_deref(),
                     )
                     .map_err(|error| runtime_error(span, error))?;
                 scope.bind_static_to_cell(target_name, cell);
@@ -42721,11 +42781,13 @@ impl Interpreter {
 
         match object.read_property_from_context(property, current_class_id, &protected_class_ids) {
             Ok(_) => {
+                let scope_name = self.current_property_scope_name();
                 let cell = object
-                    .bind_property_reference_cell_from_context(
+                    .bind_property_reference_cell_from_context_with_scope(
                         property,
                         current_class_id,
                         &protected_class_ids,
+                        scope_name.as_deref(),
                     )
                     .map_err(|error| runtime_error(span, error))?;
                 scope.bind_static_to_cell(target_name, cell);
@@ -44431,6 +44493,7 @@ impl Interpreter {
                 };
                 let (current_class_id, protected_class_ids) =
                     self.current_property_access_context();
+                let scope_name = self.current_property_scope_name();
                 match scope.read_static(object, *span)? {
                     Value::Object(object_value) => {
                         if object_value.class_name().eq_ignore_ascii_case("NoDiscard")
@@ -44586,7 +44649,7 @@ impl Interpreter {
                             *span,
                         )?;
                         match object_value
-                            .write_property_from_context_with_object_type_resolver_returning_value_strict(
+                            .write_property_from_context_with_object_type_resolver_returning_value_strict_with_scope(
                                 property,
                                 value.clone(),
                                 current_class_id,
@@ -44595,6 +44658,7 @@ impl Interpreter {
                                 |object, type_name| {
                                     self.object_satisfies_live_property_type(object, type_name)
                                 },
+                                scope_name.as_deref(),
                             ) {
                             Ok(stored_value) => {
                                 scope.post_replace_holder_storage(&boundary);
@@ -45529,6 +45593,7 @@ impl Interpreter {
                     Value::Object(object_value) => {
                         let (current_class_id, protected_class_ids) =
                             self.current_property_access_context();
+                        let scope_name = self.current_property_scope_name();
                         let boundary = scope.object_property_holder_storage_boundary(
                             object,
                             &object_value,
@@ -45659,7 +45724,7 @@ impl Interpreter {
                             *span,
                         )?;
                         let stored_value = match object_value
-                            .write_property_from_context_with_object_type_resolver_returning_value_strict(
+                            .write_property_from_context_with_object_type_resolver_returning_value_strict_with_scope(
                                 &property,
                                 value.clone(),
                                 current_class_id,
@@ -45668,6 +45733,7 @@ impl Interpreter {
                                 |object, type_name| {
                                     self.object_satisfies_live_property_type(object, type_name)
                                 },
+                                scope_name.as_deref(),
                             ) {
                             Ok(stored_value) => stored_value,
                             Err(error) if Self::is_undefined_property_error(&error) => {
@@ -46729,8 +46795,31 @@ impl Interpreter {
             return Ok(false);
         };
         let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        let scope_name = self.current_property_scope_name();
+        match holder.ensure_property_writable_from_context_with_scope(
+            property,
+            current_class_id,
+            &protected_class_ids,
+            scope_name.as_deref(),
+        ) {
+            Ok(()) => {}
+            Err(error)
+                if matches!(error.kind(), RuntimeErrorKind::PropertySetVisibility { .. }) =>
+            {
+                return Err(runtime_error(span, error));
+            }
+            Err(_) => {}
+        }
         match holder.read_property_from_context(property, current_class_id, &protected_class_ids) {
             Ok(_) => return Ok(false),
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    RuntimeErrorKind::UninitializedTypedProperty { .. }
+                ) =>
+            {
+                return Ok(false);
+            }
             Err(error) if Self::is_magic_get_fallback_property_error(&error) => {}
             Err(error) => return Err(runtime_error(span, error)),
         }
@@ -48009,6 +48098,7 @@ impl Interpreter {
         scope: &mut SymbolTable,
     ) -> CompileResult<()> {
         let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        let scope_name = self.current_property_scope_name();
         let object = match scope.read_static(object_name, span)? {
             Value::Object(object) => object,
             other => {
@@ -48028,9 +48118,22 @@ impl Interpreter {
             scope,
         )?;
 
-        let mut slot = object
-            .read_property_from_context(property, current_class_id, &protected_class_ids)
-            .map_err(|error| runtime_error(span, error))?;
+        let mut slot = match object.read_property_from_context(
+            property,
+            current_class_id,
+            &protected_class_ids,
+        ) {
+            Ok(slot) => slot,
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    RuntimeErrorKind::UninitializedTypedProperty { .. }
+                ) =>
+            {
+                Value::Null
+            }
+            Err(error) => return Err(runtime_error(span, error)),
+        };
 
         if matches!(slot, Value::Bool(false)) {
             self.emit_false_to_array_deprecation(span)?;
@@ -48074,7 +48177,7 @@ impl Interpreter {
                 scope.pre_replace_holder_storage(&boundary);
                 self.write_ascii_string_offset(string, &keys[0], value, span)?;
                 object
-                    .write_property_from_context_with_object_type_resolver(
+                    .write_property_from_context_with_object_type_resolver_with_scope(
                         property,
                         slot,
                         current_class_id,
@@ -48082,6 +48185,7 @@ impl Interpreter {
                         |object, type_name| {
                             self.object_satisfies_live_property_type(object, type_name)
                         },
+                        scope_name.as_deref(),
                     )
                     .map_err(|error| runtime_error(span, error))?;
                 scope.post_replace_holder_storage(&boundary);
@@ -48099,11 +48203,12 @@ impl Interpreter {
                 scope.pre_replace_holder_storage(&boundary);
                 self.write_nested_array_value(array, keys, value, span)?;
                 object
-                    .write_property_from_context(
+                    .write_property_from_context_with_scope(
                         property,
                         slot,
                         current_class_id,
                         &protected_class_ids,
+                        scope_name.as_deref(),
                     )
                     .map_err(|error| runtime_error(span, error))?;
                 scope.post_replace_holder_storage(&boundary);
@@ -48129,6 +48234,7 @@ impl Interpreter {
         scope: &mut SymbolTable,
     ) -> CompileResult<()> {
         let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        let scope_name = self.current_property_scope_name();
         let object = match scope.read_static(object_name, span)? {
             Value::Object(object) => object,
             other => {
@@ -48148,9 +48254,22 @@ impl Interpreter {
             scope,
         )?;
 
-        let mut slot = object
-            .read_property_from_context(property, current_class_id, &protected_class_ids)
-            .map_err(|error| runtime_error(span, error))?;
+        let mut slot = match object.read_property_from_context(
+            property,
+            current_class_id,
+            &protected_class_ids,
+        ) {
+            Ok(slot) => slot,
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    RuntimeErrorKind::UninitializedTypedProperty { .. }
+                ) =>
+            {
+                Value::Null
+            }
+            Err(error) => return Err(runtime_error(span, error)),
+        };
 
         if matches!(slot, Value::Bool(false)) {
             self.emit_false_to_array_deprecation(span)?;
@@ -48194,11 +48313,12 @@ impl Interpreter {
                 scope.pre_replace_holder_storage(&boundary);
                 Self::append_nested_array_value(array, keys, value, span)?;
                 object
-                    .write_property_from_context(
+                    .write_property_from_context_with_scope(
                         property,
                         slot,
                         current_class_id,
                         &protected_class_ids,
+                        scope_name.as_deref(),
                     )
                     .map_err(|error| runtime_error(span, error))?;
                 scope.post_replace_holder_storage(&boundary);
@@ -49402,6 +49522,7 @@ impl Interpreter {
             CompoundAssignmentPlace::ObjectProperty { object, property } => {
                 let (current_class_id, protected_class_ids) =
                     self.current_property_access_context();
+                let scope_name = self.current_property_scope_name();
                 match scope.read_static(&object, span)? {
                     Value::Object(object_value) => {
                         let boundary = scope.object_property_holder_storage_boundary(
@@ -49415,11 +49536,12 @@ impl Interpreter {
                         scope.pre_replace_holder_storage(&boundary);
                         let alias_fallbacks =
                             scope.public_object_property_root_alias_fallbacks(&object, &property);
-                        match object_value.write_property_from_context(
+                        match object_value.write_property_from_context_with_scope(
                             &property,
                             value.clone(),
                             current_class_id,
                             &protected_class_ids,
+                            scope_name.as_deref(),
                         ) {
                             Ok(()) => {
                                 scope.post_replace_holder_storage(&boundary);
@@ -75097,6 +75219,20 @@ impl Interpreter {
         )
     }
 
+    fn current_property_scope_name(&self) -> Option<String> {
+        if let Some(class_id) = self.class_context.last().copied() {
+            return Some(
+                self.classes
+                    .get(class_id)
+                    .expect("current class id should resolve to metadata")
+                    .name()
+                    .to_string(),
+            );
+        }
+
+        self.trait_class_context.last().cloned()
+    }
+
     fn protected_class_ids_for_context(&self, current_class_id: ClassId) -> Vec<ClassId> {
         let mut protected_class_ids = vec![current_class_id];
         let mut current = self
@@ -94423,11 +94559,13 @@ impl Interpreter {
                 } else {
                     None
                 };
+                let scope_name = self.current_property_scope_name();
                 let cell = object
-                    .bind_property_reference_cell_from_context(
+                    .bind_property_reference_cell_from_context_with_scope(
                         &property,
                         current_class_id,
                         &protected_class_ids,
+                        scope_name.as_deref(),
                     )
                     .map_err(|error| runtime_error(arg.span(), error))?;
                 let mut value = cell.value_cloned();
@@ -94499,11 +94637,13 @@ impl Interpreter {
         let (current_class_id, protected_class_ids) = self.current_property_access_context();
         match object.read_property_from_context(&property, current_class_id, &protected_class_ids) {
             Ok(_) => {
+                let scope_name = self.current_property_scope_name();
                 let cell = object
-                    .bind_property_reference_cell_from_context(
+                    .bind_property_reference_cell_from_context_with_scope(
                         &property,
                         current_class_id,
                         &protected_class_ids,
+                        scope_name.as_deref(),
                     )
                     .map_err(|error| runtime_error(arg.span(), error))?;
                 let value = cell.value_cloned();
@@ -127630,6 +127770,7 @@ fn register_class_members(
         } else {
             PhpPropertyMetadata::instance(&effective_property.name, visibility)
         }
+        .with_set_visibility(effective_property.set_visibility.map(runtime_visibility))
         .with_type_decl(
             effective_property
                 .type_decl
@@ -127717,6 +127858,7 @@ fn register_class_members(
                 } else {
                     PhpPropertyMetadata::instance(&effective_property.name, visibility)
                 }
+                .with_set_visibility(effective_property.set_visibility.map(runtime_visibility))
                 .with_type_decl(
                     effective_property
                         .type_decl
@@ -127767,6 +127909,9 @@ fn register_class_members(
 
                     let metadata_property =
                         PhpPropertyMetadata::instance(&effective_property.name, visibility)
+                            .with_set_visibility(
+                                effective_property.set_visibility.map(runtime_visibility),
+                            )
                             .with_type_decl(
                                 effective_property
                                     .type_decl
@@ -136294,6 +136439,20 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             || error
                 .message
                 .starts_with("Cannot access protected property ")
+        {
+            return Some(("Error", error.message.clone()));
+        }
+
+        if [
+            "Cannot modify ",
+            "Cannot indirectly modify ",
+            "Cannot unset ",
+        ]
+        .iter()
+        .any(|prefix| error.message.starts_with(prefix))
+            && error.message.contains("(set)")
+            && error.message.contains(" property ")
+            && error.message.contains(" from ")
         {
             return Some(("Error", error.message.clone()));
         }
@@ -189372,7 +189531,7 @@ fn display_object_properties(object: &PhpObject) -> Vec<ObjectProperty> {
         .properties()
         .into_iter()
         .enumerate()
-        .filter(|(_, property)| !property.is_unset())
+        .filter(|(_, property)| !property.is_unset() || property.type_decl().is_some())
         .collect();
 
     if object.is_instance_of_class_name("ArrayObject")
