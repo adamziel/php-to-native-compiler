@@ -1,6 +1,6 @@
 # PHP Native Compiler PHPT Progress
 
-Updated: 2026-06-04 17:03 CEST
+Updated: 2026-06-04 17:13 CEST
 
 Primary/public branch: `origin/master`
 Latest accepted public-score source:
@@ -35,14 +35,16 @@ gate converts the post-`6c038019` source chain through `0b917f67` into public
 PHPT progress. Newer source commits through `99b183cc` are staged after this
 accepted public source and are not included in the public score above.
 
-Current candidate full gate:
+Latest candidate full gate:
 `state/logs/phpt-full-current-score-20260604T150052Z-php-src-f97ff59-public-99b183cc-source-99b183cc`
-is `RUNNING / BUILDING-RELEASE` for source `99b183cc` against the accepted
-`0b917f67` PASS baseline. Its PASS-regression status is unknown, so it is not
-publication evidence and does not change the public score.
+ended `FINAL / ABORTED-MIDSHARD` for source `99b183cc` against the accepted
+`0b917f67` PASS baseline before aggregate current-pass or PASS-regression
+summary artifacts were produced. Its PASS-regression status is unknown, so it
+is not publication evidence and does not change the public score.
 
-Recent non-public gate history: the `31656671` full gate aborted mid-shard and
-was not publication evidence; the `d978106e` gate completed with four
+Recent non-public gate history: the `99b183cc` and `31656671` full gates
+aborted mid-shard and were not publication evidence; the `d978106e` gate
+completed with four
 latest-published PASS regressions. The DatePeriod and property-override
 regression rows from that blocked gate are repaired in the now-published
 `0b917f67` chain.
@@ -116,11 +118,10 @@ Unpublished source progress since the accepted public score source:
   and GMP bit helpers `0/11 -> 11/11`. They preserved latest-published PASS
   scouts in the accepted integration artifacts and passed focused Rust, build,
   fmt, diff, php-src cleanliness, and production row-name leakage checks.
-- Outstanding publication blocker: the current `99b183cc` full gate is still
-  running and has unknown latest-published PASS-regression status. No staged
-  source after `0b917f67` can move the public score unless that gate, or a
-  clean successor full pinned PHPT gate, completes with zero latest-published
-  PASS regressions.
+- Outstanding publication blocker: the latest `99b183cc` full gate aborted
+  mid-shard and has unknown latest-published PASS-regression status. No staged
+  source after `0b917f67` can move the public score unless a fresh full pinned
+  PHPT gate completes with zero latest-published PASS regressions.
 
 Accepted source proof included in the `0b917f67` public gate:
 
