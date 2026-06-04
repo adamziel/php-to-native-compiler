@@ -2469,13 +2469,18 @@
   comparison, default/exhaustiveness behavior, references/copy-on-write, and
   exact native diagnostics exist; `throw` arms and exact `UnhandledMatchError`
   objects remain outside the current subset.
-- PHP error-control syntax `@expr` as a bounded runtime diagnostic-suppression
-  wrapper. The operand evaluates normally while current interpreter warnings,
-  notices, and deprecations emitted through the shared diagnostic path are
-  suppressed. Native lowering rejects `@expr` through a dedicated codegen
-  diagnostic until generated code has diagnostic severity,
-  warning/notice/deprecation suppression, `error_reporting()` mask interaction,
-  recoverable expression values, and exact native diagnostics.
+- PHP error-control syntax `@expr` as a bounded runtime diagnostic-mask
+  wrapper. The operand evaluates normally while the active `error_reporting()`
+  mask is narrowed to PHP's error-control fatal mask, so current interpreter
+  warnings, notices, and deprecations emitted through the shared diagnostic
+  path are filtered unless code inside the controlled expression re-enables
+  non-fatal levels with `error_reporting(...)`. The previous mask is restored
+  across normal and throwing expression exits; simple `@$target = value`
+  assignment expressions are parsed as error-controlled assignments. Native
+  lowering rejects `@expr` through a dedicated codegen diagnostic until
+  generated code has diagnostic severity, warning/notice/deprecation
+  suppression, `error_reporting()` mask interaction, recoverable expression
+  values, and exact native diagnostics.
 - `if` / `elseif` / `else`, including alternate
   `if (...) : ... elseif (...) : ... else: ... endif;` syntax
 - `while`
@@ -4463,9 +4468,21 @@
   legacy all-bits `32767` ini default used by older PHPT wrapper hosts to that
   current `E_ALL` value. The current mask filters bounded display/runtime
   diagnostics after any matching custom handler has run or declined handling.
-  Broader PHP warning/notice/deprecation filtering,
-  disabled-function policy, exact `@` unwinding restoration for every nested
-  expression/throw edge, and native lowering remain unsupported.
+  The same shared diagnostic path records `error_get_last()` arrays with
+  `type`, `message`, `file`, and `line`, clears that state through
+  `error_clear_last()`, and honors `ignore_repeated_errors=1` for repeated
+  diagnostics with the same level/message/file/line key. `trigger_error()`
+  supports the current string-compatible message subset, default
+  `E_USER_NOTICE`, `E_USER_WARNING`, and `E_USER_DEPRECATED`, plus PHP's
+  covered invalid-level `ValueError` for levels outside
+  `E_USER_ERROR`/`E_USER_WARNING`/`E_USER_NOTICE`/`E_USER_DEPRECATED`.
+  `set_error_handler()`/`get_error_handler()`/`restore_error_handler()` cover
+  null, function-string, public static-method string, public static/instance
+  array callable, closure/first-class callable, and public non-static
+  invokable-object registrations in the interpreter. Broader PHP
+  warning/notice/deprecation filtering, active-handler stack mutation parity,
+  full fatal `E_USER_ERROR` behavior, disabled-function policy, and native
+  lowering remain unsupported.
   `strpbrk($string, $characters)` accepts scalar/null string-convertible
   operands and supported visible `__toString()` objects, searches by byte, and
   returns the suffix beginning at the first byte from `$characters`, or
@@ -13497,10 +13514,10 @@
   limit/count/flags arguments, invalid-pattern warnings, exact diagnostics,
   and native lowering beyond function-table introspection
 - `error_reporting()` outside the current no-argument read and nullable
-  PHP-internal integer mask-set subset: complete PHP diagnostic filtering,
-  disabled-function policy, exact `@` unwinding restoration for every nested
-  expression/throw edge, and native lowering beyond function-table
-  introspection
+  PHP-internal integer mask-set subset and the bounded shared diagnostic path:
+  complete PHP diagnostic filtering, active error-handler stack mutation
+  parity, full fatal `E_USER_ERROR` behavior, disabled-function policy, and
+  native lowering beyond function-table introspection
 - `min()` outside the current two-or-more integer argument subset: array-form
   calls, mixed-type comparison rules, float/string/bool/null/object/resource
   operands, exact PHP diagnostics, and native lowering beyond function-table

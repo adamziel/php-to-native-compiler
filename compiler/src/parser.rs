@@ -6298,6 +6298,10 @@ impl Parser {
         }
 
         let operator_span = self.previous().span;
+        let (expr, error_control_span) = match expr {
+            Expr::ErrorControl { expr, span } => (*expr, Some(span)),
+            other => (other, None),
+        };
         let target = self
             .assignment_expression_target_from_expr(expr)
             .map_err(|message| self.error_at(operator_span, message))?;
@@ -6322,11 +6326,18 @@ impl Parser {
             ));
         }
 
-        Ok(Expr::Assign {
+        let assignment = Expr::Assign {
             target: Box::new(target),
             expr: Box::new(value),
             span,
-        })
+        };
+        if let Some(span) = error_control_span {
+            return Ok(Expr::ErrorControl {
+                expr: Box::new(assignment),
+                span,
+            });
+        }
+        Ok(assignment)
     }
 
     fn complete_binary_rhs_assignment_expression(&mut self, expr: Expr) -> CompileResult<Expr> {

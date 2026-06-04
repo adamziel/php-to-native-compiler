@@ -3705,20 +3705,25 @@ non-negative max length over the current UTF-8 string payload. Missing local
 file reads and negative offsets before the start of the current local or
 `php://input` payload emit a bounded PHP-style `E_WARNING`, return `false`,
 and continue. That warning can route through the current request-local
-`set_error_handler()` stack when the top stored handler is a string
-user-function callback or public object/static array callable whose mask
-includes `E_WARNING`; `restore_error_handler()` pops that bounded stack so the
-previous registration becomes active again. A `false` handler return falls
-through to the stderr warning path when `error_reporting()` still includes
-`E_WARNING`, while other return values suppress the fallback. This is
-intentionally a local recovery
-path, not the general PHP warning/error-handler system. It does not model PHP
+`set_error_handler()` stack when the top stored handler is `null` or a bounded
+callable form: function string, public static-method string, public
+object/static array callable, closure/first-class callable, or public
+non-static invokable object. `get_error_handler()` returns the current stored
+callback and `restore_error_handler()` pops that bounded stack so the previous
+registration becomes active again. A `false` handler return falls through to
+the stderr warning path when `error_reporting()` still includes `E_WARNING`,
+while other return values suppress the fallback. The same shared diagnostic
+path updates `error_get_last()`, supports `error_clear_last()`, and applies
+`ignore_repeated_errors=1` before display fallback. This is intentionally a
+bounded recovery path, not the full PHP warning/error-handler system. It does
+not model PHP
 binary strings, exact PHP warning or handler `errstr` text, non-local
 `file://` hosts, malformed percent escapes, decoded NUL bytes, non-UTF-8
 percent-decoded paths, stream context
 effects, wrapper-specific context behavior, exact byte offsets through
 non-UTF-8 data, warning recovery for other stream/resource paths,
-handler stack mutation edge cases during active handler dispatch,
+handler stack mutation edge cases during active handler dispatch, full fatal
+`E_USER_ERROR` behavior,
 `open_basedir` policy beyond the current request-local allow-list check for
 covered local filesystem helpers, stat caching, host SAPI body streams, or
 native filesystem lowering. Direct

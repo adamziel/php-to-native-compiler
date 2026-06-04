@@ -528,6 +528,9 @@ struct Interpreter {
     global_symbols: SymbolStorage,
     error_reporting_mask: i64,
     error_control_suppression_depth: usize,
+    error_control_saved_masks: Vec<i64>,
+    last_error: Option<RuntimeLastError>,
+    emitted_error_keys: HashSet<RuntimeLastError>,
     ignore_user_abort: bool,
     ini_values: HashMap<String, String>,
     assert_active: bool,
@@ -1535,6 +1538,14 @@ struct ShutdownCallback {
 struct ErrorHandlerRegistration {
     callback: Value,
     mask: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct RuntimeLastError {
+    level: i64,
+    message: String,
+    file: String,
+    line: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -11986,6 +11997,9 @@ impl Interpreter {
             global_symbols: Rc::new(RefCell::new(HashMap::new())),
             error_reporting_mask,
             error_control_suppression_depth: 0,
+            error_control_saved_masks: Vec::new(),
+            last_error: None,
+            emitted_error_keys: HashSet::new(),
             ignore_user_abort: false,
             ini_values,
             assert_active,
@@ -27117,8 +27131,14 @@ impl Interpreter {
         evaluate: impl FnOnce(&mut Self) -> CompileResult<T>,
     ) -> CompileResult<T> {
         let previous_depth = self.error_control_suppression_depth;
+        let previous_mask = self.error_reporting_mask;
         self.error_control_suppression_depth = previous_depth + 1;
+        self.error_control_saved_masks.push(previous_mask);
+        self.error_reporting_mask &= PHP_E_ERROR_CONTROL_MASK;
         let result = evaluate(self);
+        if let Some(restored_mask) = self.error_control_saved_masks.pop() {
+            self.error_reporting_mask = restored_mask;
+        }
         self.error_control_suppression_depth = previous_depth;
         result
     }
@@ -27139,7 +27159,49 @@ impl Interpreter {
     }
 
     fn diagnostics_are_suppressed(&self) -> bool {
-        self.error_control_suppression_depth > 0
+        false
+    }
+
+    fn record_last_error(&mut self, level: i64, message: &str, file: &str, span: Span) {
+        self.last_error = Some(RuntimeLastError {
+            level,
+            message: message.to_string(),
+            file: file.to_string(),
+            line: span.line,
+        });
+    }
+
+    fn diagnostic_is_repeated(
+        &mut self,
+        level: i64,
+        message: &str,
+        file: &str,
+        span: Span,
+    ) -> bool {
+        if !self
+            .ini_value("ignore_repeated_errors")
+            .as_deref()
+            .is_some_and(php_ini_truthy)
+        {
+            return false;
+        }
+
+        let key = RuntimeLastError {
+            level,
+            message: message.to_string(),
+            file: file.to_string(),
+            line: span.line,
+        };
+        !self.emitted_error_keys.insert(key)
+    }
+
+    fn update_error_control_saved_masks_for_error_reporting(&mut self, mask: i64) {
+        if self.error_control_saved_masks.is_empty() || mask & !PHP_E_ERROR_CONTROL_MASK == 0 {
+            return;
+        }
+        for saved_mask in &mut self.error_control_saved_masks {
+            *saved_mask = mask;
+        }
     }
 
     fn emit_notice(
@@ -27277,7 +27339,11 @@ impl Interpreter {
             .source_file
             .clone()
             .unwrap_or_else(|| "Command line code".to_string());
+        self.record_last_error(level, &message, &file, span);
         if self.diagnostics_are_suppressed() {
+            return Ok(());
+        }
+        if self.diagnostic_is_repeated(level, &message, &file, span) {
             return Ok(());
         }
         if self.call_error_handler_for_diagnostic(level, &message, &file, span)? {
@@ -27606,7 +27672,11 @@ impl Interpreter {
             .source_file
             .clone()
             .unwrap_or_else(|| "Command line code".to_string());
+        self.record_last_error(level, &message, &file, span);
         if self.diagnostics_are_suppressed() {
+            return Ok(());
+        }
+        if self.diagnostic_is_repeated(level, &message, &file, span) {
             return Ok(());
         }
         if self.call_error_handler_for_diagnostic(level, &message, &file, span)? {
@@ -27638,6 +27708,9 @@ impl Interpreter {
         let Some(handler) = self.error_handlers.last().cloned() else {
             return Ok(false);
         };
+        if matches!(handler.callback, Value::Null) {
+            return Ok(false);
+        }
         if handler.mask.is_some_and(|mask| mask & level == 0) {
             return Ok(false);
         }
@@ -27661,10 +27734,18 @@ impl Interpreter {
         span: Span,
     ) -> CompileResult<Value> {
         match handler {
+            Value::Null => Ok(Value::Bool(false)),
             Value::String(name) => {
-                let callable = self.lookup_function(&name).ok_or_else(|| {
-                    runtime_error(span, RuntimeError::undefined_function(callable_name(&name)))
-                })?;
+                let Some(callable) = self.lookup_function(&name) else {
+                    if static_method_callable_string(&name).is_some() {
+                        let callback = static_method_callable_value_from_string(&name, span)?;
+                        return self.call_error_handler_array_callable(&callback, args, span);
+                    }
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::undefined_function(callable_name(&name)),
+                    ));
+                };
                 match callable {
                     Callable::User(function) => {
                         let function = function.as_ref();
@@ -27691,6 +27772,7 @@ impl Interpreter {
                 }
             }
             Value::Array(array) => self.call_error_handler_array_callable(&array, args, span),
+            Value::Object(object) => self.call_error_handler_invokable_object(object, args, span),
             Value::Closure(closure) => {
                 let function = self
                     .closure_functions
@@ -27729,12 +27811,60 @@ impl Interpreter {
                 RuntimeError::unsupported_call(
                     "set_error_handler()",
                     format!(
-                        "stored handler must be string, array callable, or closure in the current subset, got {}",
+                        "stored handler must be null, string, array callable, closure, or invokable object in the current subset, got {}",
                         other.type_name()
                     ),
                 ),
             )),
         }
+    }
+
+    fn call_error_handler_invokable_object(
+        &mut self,
+        object: PhpObject,
+        args: Vec<Value>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let called_class_id = object.class_id();
+        let Some((class_id, class_name, method_name, visibility, is_static)) =
+            self.resolve_instance_method(called_class_id, "__invoke")
+        else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "set_error_handler()",
+                    format!(
+                        "object callback {} must define public non-static __invoke() in the current subset",
+                        object.class_name()
+                    ),
+                ),
+            ));
+        };
+        if visibility != Visibility::Public || is_static {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{class_name}::__invoke()"),
+                    "error-handler invokable object dispatch is only implemented for public non-static __invoke methods",
+                ),
+            ));
+        }
+
+        let function = self.method_function(class_id, &class_name, &method_name, span)?;
+        let function = function.as_ref();
+        let args = error_handler_args_for_function(function, &args);
+        ensure_user_function_arity_with_extra_policy(function, args.len(), span, true)?;
+        ensure_supported_function_signature(function, args.len(), span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+        self.call_error_handler_user_function_with_checked_values(
+            function,
+            args,
+            span,
+            Some(object),
+            Some(class_id),
+            Some(called_class_id),
+            Vec::new(),
+        )
     }
 
     fn call_error_handler_user_function_with_checked_values(
@@ -101160,9 +101290,10 @@ impl Interpreter {
         if self.error_handler_active {
             return false;
         }
-        self.error_handlers
-            .last()
-            .is_some_and(|handler| handler.mask.is_none_or(|mask| mask & level != 0))
+        self.error_handlers.last().is_some_and(|handler| {
+            !matches!(handler.callback, Value::Null)
+                && handler.mask.is_none_or(|mask| mask & level != 0)
+        })
     }
 
     fn emit_output_handler_produced_output_deprecation(
@@ -101197,7 +101328,11 @@ impl Interpreter {
             .source_file
             .clone()
             .unwrap_or_else(|| "Command line code".to_string());
+        self.record_last_error(level, &message, &file, span);
         if self.diagnostics_are_suppressed() {
+            return Ok(());
+        }
+        if self.diagnostic_is_repeated(level, &message, &file, span) {
             return Ok(());
         }
         if self.call_error_handler_for_diagnostic(level, &message, &file, span)? {
@@ -103129,6 +103264,9 @@ impl Interpreter {
                 ),
             )),
             "error_reporting" => self.call_error_reporting(args, span),
+            "error_get_last" => self.call_error_get_last(args, span),
+            "error_clear_last" => self.call_error_clear_last(args, span),
+            "trigger_error" => self.call_trigger_error(args, span),
             "set_time_limit" => call_set_time_limit(&args, span),
             "connection_aborted" => call_connection_aborted(&args, span),
             "connection_status" => call_connection_status(&args, span),
@@ -105812,6 +105950,7 @@ impl Interpreter {
                 self.call_register_shutdown_function(args, span)
             }
             "set_error_handler" => self.call_set_error_handler(args, span),
+            "get_error_handler" => self.call_get_error_handler(args, span),
             "restore_error_handler" => self.call_restore_error_handler(args, span),
             "set_exception_handler" => self.call_set_exception_handler(args, span),
             "restore_exception_handler" => self.call_restore_exception_handler(args, span),
@@ -107951,7 +108090,9 @@ impl Interpreter {
         }
 
         match &args[0] {
+            Value::Null => {}
             Value::String(name) if self.lookup_function(name).is_some() => {}
+            Value::String(name) if self.static_method_callable_string_is_error_handler(name) => {}
             Value::String(_) => {
                 return Err(runtime_error(
                     span,
@@ -107972,13 +108113,14 @@ impl Interpreter {
                 ));
             }
             Value::Closure(_) => {}
+            Value::Object(object) if self.invokable_object_is_error_handler(object) => {}
             other => {
                 return Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
                         "set_error_handler()",
                         format!(
-                            "callback argument must be string, array callable, or closure in the current subset, got {}",
+                            "callback argument must be null, string, array callable, closure, or invokable object in the current subset, got {}",
                             other.type_name()
                         ),
                     ),
@@ -108016,6 +108158,35 @@ impl Interpreter {
             mask,
         });
         Ok(previous)
+    }
+
+    fn static_method_callable_string_is_error_handler(&self, name: &str) -> bool {
+        let Some((class_name, method_name)) = static_method_callable_string(name) else {
+            return false;
+        };
+        let Some(class) = self.classes.lookup_class(class_name) else {
+            return false;
+        };
+        self.resolve_instance_method(class.id(), method_name)
+            .is_some_and(|(_, _, _, visibility, is_static)| {
+                visibility == Visibility::Public && is_static
+            })
+    }
+
+    fn invokable_object_is_error_handler(&self, object: &PhpObject) -> bool {
+        self.resolve_instance_method(object.class_id(), "__invoke")
+            .is_some_and(|(_, _, _, visibility, is_static)| {
+                visibility == Visibility::Public && !is_static
+            })
+    }
+
+    fn call_get_error_handler(&self, args: Vec<Value>, span: Span) -> CompileResult<Value> {
+        expect_arity("get_error_handler", &args, 0, span)?;
+        Ok(self
+            .error_handlers
+            .last()
+            .map(|handler| handler.callback.clone())
+            .unwrap_or(Value::Null))
     }
 
     fn call_restore_error_handler(&mut self, args: Vec<Value>, span: Span) -> CompileResult<Value> {
@@ -108180,10 +108351,77 @@ impl Interpreter {
                 span,
             )? {
                 self.error_reporting_mask = mask;
+                self.update_error_control_saved_masks_for_error_reporting(mask);
             }
         }
 
         Ok(Value::Int(previous))
+    }
+
+    fn call_error_get_last(&self, args: Vec<Value>, span: Span) -> CompileResult<Value> {
+        expect_arity("error_get_last", &args, 0, span)?;
+        let Some(error) = &self.last_error else {
+            return Ok(Value::Null);
+        };
+
+        let mut array = PhpArray::new();
+        array.insert("type", Value::Int(error.level));
+        array.insert("message", Value::String(error.message.clone()));
+        array.insert("file", Value::String(error.file.clone()));
+        array.insert("line", Value::Int(error.line as i64));
+        Ok(Value::Array(array))
+    }
+
+    fn call_error_clear_last(&mut self, args: Vec<Value>, span: Span) -> CompileResult<Value> {
+        expect_arity("error_clear_last", &args, 0, span)?;
+        self.last_error = None;
+        Ok(Value::Null)
+    }
+
+    fn call_trigger_error(&mut self, args: Vec<Value>, span: Span) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "trigger_error()",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+        let message = string_builtin_argument("trigger_error()", "message", &args[0], span)?;
+        let level = if let Some(level) = args.get(1) {
+            php_internal_int_argument("trigger_error()", 2, "error_level", level, span)?
+        } else {
+            PHP_E_USER_NOTICE
+        };
+
+        match level {
+            PHP_E_USER_NOTICE => {
+                self.emit_display_diagnostic("Notice", PHP_E_USER_NOTICE, message, span)?;
+            }
+            PHP_E_USER_WARNING => {
+                self.emit_display_diagnostic("Warning", PHP_E_USER_WARNING, message, span)?;
+            }
+            PHP_E_USER_DEPRECATED => {
+                self.emit_display_diagnostic("Deprecated", PHP_E_USER_DEPRECATED, message, span)?;
+            }
+            PHP_E_USER_ERROR => {
+                self.emit_display_diagnostic("Fatal error", PHP_E_USER_ERROR, message, span)?;
+                self.exit_signal = Some(255);
+            }
+            _ => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "trigger_error()",
+                        TRIGGER_ERROR_INVALID_LEVEL_MESSAGE,
+                    ),
+                ));
+            }
+        }
+
+        Ok(Value::Bool(true))
     }
 
     fn call_ignore_user_abort(&mut self, args: Vec<Value>, span: Span) -> CompileResult<Value> {
@@ -125220,6 +125458,22 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
         ),
         "json_last_error" => ("int", vec![]),
         "json_last_error_msg" => ("string", vec![]),
+        "error_reporting" => (
+            "int",
+            vec![reflection_internal_optional_null_param(
+                "error_level",
+                "?int",
+            )],
+        ),
+        "error_get_last" => ("?array", vec![]),
+        "error_clear_last" => ("void", vec![]),
+        "trigger_error" => (
+            "bool",
+            vec![
+                reflection_internal_param("message", "string"),
+                reflection_internal_optional_int_param("error_level", PHP_E_USER_NOTICE),
+            ],
+        ),
         "set_time_limit" => ("bool", vec![reflection_internal_param("seconds", "int")]),
         "rand" | "mt_rand" => (
             "int",
@@ -125857,6 +126111,15 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_int_param("flags", PHP_OUTPUT_HANDLER_STDFLAGS),
             ],
         ),
+        "set_error_handler" => (
+            "?callable",
+            vec![
+                reflection_internal_param("callback", "?callable"),
+                reflection_internal_optional_int_param("error_levels", PHP_E_ALL),
+            ],
+        ),
+        "get_error_handler" => ("?callable", vec![]),
+        "restore_error_handler" => ("bool", vec![]),
         "flush" => ("void", vec![]),
         "ob_implicit_flush" => (
             "void",
@@ -131056,7 +131319,11 @@ fn json_exact_argument_count_error_message(error: &Diagnostic) -> Option<String>
     let rest = error.message.strip_prefix("arity mismatch for ")?;
     let (callable, expectation) = rest.split_once(": expected 0 argument(s), got ")?;
     match callable {
-        "json_last_error()" | "json_last_error_msg()" => {}
+        "json_last_error()"
+        | "json_last_error_msg()"
+        | "error_get_last()"
+        | "error_clear_last()"
+        | "get_error_handler()" => {}
         _ => return None,
     }
     let actual = expectation.parse::<usize>().ok()?;
@@ -131501,6 +131768,9 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         ("array_multisort()", "Array sizes are inconsistent") => Some(message.to_string()),
         ("settype()", "Cannot convert to resource type") => Some(message.to_string()),
         ("settype()", "Argument #2 ($type) must be a valid type") => {
+            Some(format!("{function}: {message}"))
+        }
+        ("trigger_error()", TRIGGER_ERROR_INVALID_LEVEL_MESSAGE) => {
             Some(format!("{function}: {message}"))
         }
         (
@@ -132490,6 +132760,13 @@ const DEFINED_INTERNAL_CORE_FUNCTION_NAMES: &[&str] = &[
     "set_exception_handler",
     "restore_exception_handler",
     "get_exception_handler",
+    "set_error_handler",
+    "get_error_handler",
+    "restore_error_handler",
+    "error_reporting",
+    "error_get_last",
+    "error_clear_last",
+    "trigger_error",
 ];
 
 fn defined_internal_function_names() -> impl Iterator<Item = &'static str> {
@@ -132676,6 +132953,9 @@ fn is_builtin(name: &str) -> bool {
             | "extract"
             | "compact"
             | "error_reporting"
+            | "error_get_last"
+            | "error_clear_last"
+            | "trigger_error"
             | "connection_aborted"
             | "connection_status"
             | "ignore_user_abort"
@@ -133235,6 +133515,7 @@ fn is_builtin(name: &str) -> bool {
             | "clearstatcache"
             | "register_shutdown_function"
             | "set_error_handler"
+            | "get_error_handler"
             | "restore_error_handler"
             | "set_exception_handler"
             | "restore_exception_handler"
@@ -134229,6 +134510,14 @@ const PHP_E_RECOVERABLE_ERROR: i64 = 4096;
 const PHP_E_DEPRECATED: i64 = 8192;
 const PHP_E_USER_DEPRECATED: i64 = 16384;
 const PHP_E_ALL: i64 = 30719;
+const PHP_E_ERROR_CONTROL_MASK: i64 = PHP_E_ERROR
+    | PHP_E_PARSE
+    | PHP_E_CORE_ERROR
+    | PHP_E_COMPILE_ERROR
+    | PHP_E_USER_ERROR
+    | PHP_E_RECOVERABLE_ERROR;
+const TRIGGER_ERROR_INVALID_LEVEL_MESSAGE: &str =
+    "Argument #2 ($error_level) must be one of E_USER_ERROR, E_USER_WARNING, E_USER_NOTICE, or E_USER_DEPRECATED";
 const PHP_ATTRIBUTE_TARGET_CLASS: i64 = 1;
 const PHP_ATTRIBUTE_TARGET_FUNCTION: i64 = 2;
 const PHP_ATTRIBUTE_TARGET_METHOD: i64 = 4;
@@ -175193,6 +175482,7 @@ const COMPAT_INI_DIRECTIVES: &[&str] = &[
     "error_log",
     "error_prepend_string",
     "html_errors",
+    "ignore_repeated_errors",
     "internal_encoding",
     "mail.add_x_header",
     "max_execution_time",
@@ -175981,6 +176271,7 @@ fn compat_ini_value(normalized_name: &str) -> Option<&'static str> {
         "error_log" => Some(""),
         "error_prepend_string" => Some(""),
         "html_errors" => Some("0"),
+        "ignore_repeated_errors" => Some("0"),
         "highlight.comment" => Some(PHP_HIGHLIGHT_COMMENT),
         "highlight.default" => Some(PHP_HIGHLIGHT_DEFAULT),
         "highlight.html" => Some(PHP_HIGHLIGHT_HTML),

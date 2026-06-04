@@ -99,6 +99,55 @@ echo $previous === null ? "null" : "other";
 }
 
 #[test]
+fn get_error_handler_reports_current_bounded_callable_forms() {
+    let execution = run_source(
+        r#"<?php
+class HandlerForms {
+    public function handle() {}
+    public static function handleStatic() {}
+}
+class InvokableHandler {
+    public function __invoke() {}
+}
+function handler_function() {}
+
+var_dump(get_error_handler() === null);
+set_error_handler("handler_function");
+var_dump(get_error_handler() === "handler_function");
+set_error_handler(null);
+var_dump(get_error_handler() === null);
+set_error_handler([HandlerForms::class, "handleStatic"]);
+var_dump(get_error_handler() === [HandlerForms::class, "handleStatic"]);
+set_error_handler("HandlerForms::handleStatic");
+var_dump(get_error_handler() === "HandlerForms::handleStatic");
+$handler = new HandlerForms();
+set_error_handler([$handler, "handle"]);
+var_dump(get_error_handler() === [$handler, "handle"]);
+$closure = function () {};
+set_error_handler($closure);
+var_dump(get_error_handler() === $closure);
+$invokable = new InvokableHandler();
+set_error_handler($invokable);
+var_dump(get_error_handler() === $invokable);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn func_get_args_error_handler_reports_php_shaped_arity_error() {
     let execution = run_source(
         r#"<?php
@@ -145,7 +194,7 @@ set_error_handler(42);
     assert_eq!(non_callable.column, 1);
     assert_eq!(
         non_callable.message,
-        "unsupported call set_error_handler(): callback argument must be string, array callable, or closure in the current subset, got int"
+        "unsupported call set_error_handler(): callback argument must be null, string, array callable, closure, or invokable object in the current subset, got int"
     );
 
     let missing_string = runtime_error(

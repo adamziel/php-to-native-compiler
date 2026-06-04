@@ -117,6 +117,82 @@ error_reporting(0, 1);
 }
 
 #[test]
+fn error_control_records_last_error_and_restores_php_masks() {
+    let execution = run_source(
+        r#"<?php
+error_reporting(E_ALL & ~E_DEPRECATED);
+function enable_warnings_inside_at() {
+    echo $suppressed;
+    error_reporting(E_ALL);
+    echo $visible;
+}
+@enable_warnings_inside_at();
+echo "|", error_reporting(), "|";
+
+error_reporting(E_ALL);
+function disable_warnings_inside_at() {
+    echo $suppressed_again;
+    error_reporting(0);
+}
+@disable_warnings_inside_at();
+echo error_reporting(), "|";
+
+@$a = $missing;
+$last = error_get_last();
+echo $last["type"], ":", $last["message"];
+error_clear_last();
+echo "|", error_get_last() === null ? "cleared" : "set";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Warning: Undefined variable $visible in Command line code on line 6\n\
+|30719|30719|2:Undefined variable $missing|cleared"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn trigger_error_levels_and_repeated_error_ini_are_php_shaped() {
+    let previous = std::env::var("PHPC_PHPT_INI_FLAGS").ok();
+    std::env::set_var("PHPC_PHPT_INI_FLAGS", "-d ignore_repeated_errors=1");
+    let execution = run_source(
+        r#"<?php
+trigger_error("notice");
+trigger_error("warning", E_USER_WARNING);
+trigger_error("deprecated", E_USER_DEPRECATED);
+try {
+    trigger_error("bad", 0);
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+$u + $u;
+"#,
+    )
+    .unwrap();
+    if let Some(previous) = previous {
+        std::env::set_var("PHPC_PHPT_INI_FLAGS", previous);
+    } else {
+        std::env::remove_var("PHPC_PHPT_INI_FLAGS");
+    }
+
+    assert_eq!(
+        execution.stdout,
+        "Notice: notice in Command line code on line 2\n\
+\n\
+Warning: warning in Command line code on line 3\n\
+\n\
+Deprecated: deprecated in Command line code on line 4\n\
+trigger_error(): Argument #2 ($error_level) must be one of E_USER_ERROR, E_USER_WARNING, E_USER_NOTICE, or E_USER_DEPRECATED\n\
+\n\
+Warning: Undefined variable $u in Command line code on line 10\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn emit_ir_folds_error_reporting_metadata_but_rejects_direct_calls() {
     let ir = emit_ir_source(
         r#"<?php
