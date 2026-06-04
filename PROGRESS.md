@@ -1,13 +1,13 @@
 # PHP Native Compiler PHPT Progress
 
-Updated: 2026-06-04 06:37 CEST
+Updated: 2026-06-04 06:50 CEST
 
 Primary/public branch: `origin/master`
 Latest accepted public-score source:
-`21abc76f24c1fbc242e659280341085db854de52 fix: support assert option diagnostics`
+`0086ba77c61b1379951e3b23f8830e94f6cc0c79 fix: parse textual strtotime timezone suffixes`
 
 Semantic source for current published score:
-`21abc76f24c1fbc242e659280341085db854de52 fix: support assert option diagnostics`
+`0086ba77c61b1379951e3b23f8830e94f6cc0c79 fix: parse textual strtotime timezone suffixes`
 
 Public PHPT metric:
 
@@ -16,119 +16,54 @@ Public PHPT metric:
 Pinned denominator: `20294` total pinned runnable php-src PHPTs. Raw runner
 denominators that exclude BORKED rows are not public progress.
 
-Current public score: **7279 / 20294 pinned runnable PHPTs = 35.87%**.
+Current public score: **7376 / 20294 pinned runnable PHPTs = 36.35%**.
 
 Latest pushed source checkpoint:
-`0086ba77c61b1379951e3b23f8830e94f6cc0c79 fix: parse textual strtotime timezone suffixes`
+`01afaf19e44c2d4a23023469a0a1122ed81f7d90 fix: parse numeric literal separators`
 
 Current score-gate target:
-`0086ba77c61b1379951e3b23f8830e94f6cc0c79 fix: parse textual strtotime timezone suffixes`
-is running in
-`state/logs/phpt-full-current-score-20260604T043544Z-php-src-f97ff59-public-0086ba77-source-0086ba77`
-at `RUNNING / BUILDING-RELEASE` against the accepted `21abc76f` PASS baseline.
-It is not accepted publication evidence until it completes with zero
-latest-published PASS regressions.
+No full score gate is currently running for latest source `01afaf19`.
+The latest accepted full gate is
+`state/logs/phpt-full-current-score-20260604T043544Z-php-src-f97ff59-public-0086ba77-source-0086ba77`.
+It completed `FINAL / GATE-AGGREGATE-COMPLETE / ZERO-PASS-REGRESSIONS`
+against the accepted `21abc76f` PASS baseline.
 
-The accepted source checkpoint chain through semantic source `21abc76f` has
+The accepted source checkpoint chain through semantic source `0086ba77` has
 been pushed to `origin/master` and is now reflected in the public score above.
-The completed score gate at checkpoint `21abc76f` converted the post-`96ed077d`
-source chain into a public PHPT movement of `7240 -> 7279` passed pinned rows,
-a net gain of `39` public PHPT passes, with zero latest-published PASS
-regressions. The previous score gate at checkpoint `96ed077d` converted the
-post-`00a8fa10` source chain into a public PHPT movement of `7201 -> 7240`
-passed pinned rows, also a net gain of `39` public PHPT passes, with zero
+The completed score gate at checkpoint `0086ba77` converted the post-`21abc76f`
+source chain into a public PHPT movement of `7279 -> 7376` passed pinned rows,
+a net gain of `97` public PHPT passes, with zero latest-published PASS
+regressions. The previous score gate at checkpoint `21abc76f` converted the
+post-`96ed077d` source chain into a public PHPT movement of `7240 -> 7279`
+passed pinned rows, a net gain of `39` public PHPT passes, with zero
 latest-published PASS regressions.
 
 Unpublished source progress since the accepted public score source:
 
-- Latest pushed source head is `0086ba77c61b1379951e3b23f8830e94f6cc0c79`
-  (`fix: parse textual strtotime timezone suffixes`), the source currently
-  under full-gate exercise.
-- There are `5` score-relevant source commits after the accepted public-score
-  source: `e2c610c753d35f043d91f4483bb2cdd4662ae12c`
-  (`fix: support bounded strtotime absolute forms`),
-  `c12ecf1b66d0840726404a9b72296fa336724c4b`
-  (`fix: support bounded list destructuring`),
-  `c912841afc0a14861cd2ebbbbb022c8214364412`
-  (`fix: support final class constants`),
-  `93aafea2f2b86880dddf047f5bf704874f9e033f`
-  (`fix: support class name constants`), and
-  `0086ba77c61b1379951e3b23f8830e94f6cc0c79`
-  (`fix: parse textual strtotime timezone suffixes`).
+- Latest pushed source head is `01afaf19e44c2d4a23023469a0a1122ed81f7d90`
+  (`fix: parse numeric literal separators`), which is newer than the accepted
+  `0086ba77` full gate and is not included in the public score above.
+- There is `1` score-relevant source commit after the accepted public-score
+  source: `01afaf19e44c2d4a23023469a0a1122ed81f7d90`
+  (`fix: parse numeric literal separators`).
 - Staged focused selected-PHPT proof after the latest accepted public-score
-  source totals `58` selected rows across `5` integrated status artifacts,
-  including the selected repair row for `ext/date/tests/bug35422.phpt` at
-  current source `0086ba77`. These are source/staging facts, not a public score
-  update unless a full pinned PHPT gate accepts them.
-- The DateTime absolute `strtotime()` packet moved selected PHPT
-  `0/17 -> 17/17` for `ext/date/tests/bug13142.phpt`,
-  `ext/date/tests/bug17988.phpt`, `ext/date/tests/bug21399.phpt`,
-  `ext/date/tests/bug26090.phpt`, `ext/date/tests/bug26320.phpt`,
-  `ext/date/tests/bug26694.phpt`, `ext/date/tests/bug28088.phpt`,
-  `ext/date/tests/bug29585.phpt`, `ext/date/tests/bug33578.phpt`,
-  `ext/date/tests/bug33869.phpt`, `ext/date/tests/bug34087.phpt`,
-  `ext/date/tests/bug34771.phpt`, `ext/date/tests/bug35499.phpt`,
-  `ext/date/tests/bug35885.phpt`, `ext/date/tests/bug35887.phpt`,
-  `ext/date/tests/bug36224.phpt`, and `ext/date/tests/bug37514.phpt`. It also
-  preserved an eight-row latest-published PASS scout and the prior staged
-  DateTime `strtotime()` `12/12` rows.
-- The list destructuring packet moved selected PHPT `0/16 -> 16/16` for
-  `Zend/tests/list/bug39304.phpt`, `Zend/tests/list/bug40899.phpt`,
-  `Zend/tests/list/destruct_bool.phpt`, `Zend/tests/list/destruct_float.phpt`,
-  `Zend/tests/list/destruct_int.phpt`, `Zend/tests/list/destruct_null.phpt`,
-  `Zend/tests/list/destruct_resource.phpt`,
-  `Zend/tests/list/destruct_string.phpt`, `Zend/tests/list/list_001.phpt`,
-  `Zend/tests/list/list_002.phpt`, `Zend/tests/list/list_006.phpt`,
-  `Zend/tests/list/list_keyed.phpt`,
-  `Zend/tests/list/list_keyed_trailing_comma.phpt`,
-  `Zend/tests/list/list_keyed_undefined.phpt`,
-  `Zend/tests/list/list_mixed_nested_keyed_unkeyed.phpt`, and
-  `Zend/tests/list/list_self_assign.phpt`. It also preserved the staged
-  DateTime absolute `strtotime()` `17/17` rows and the latest-published PASS
-  scout.
-- The final class/interface constants packet moved selected PHPT
-  `0/10 -> 10/10` for
-  `Zend/tests/constants/final_constants/final_const1.phpt`,
-  `Zend/tests/constants/final_constants/final_const2.phpt`,
-  `Zend/tests/constants/final_constants/final_const3.phpt`,
-  `Zend/tests/constants/final_constants/final_const5.phpt`,
-  `Zend/tests/constants/final_constants/final_const6.phpt`,
-  `Zend/tests/constants/final_constants/final_const8.phpt`,
-  `Zend/tests/constants/final_constants/final_const11.phpt`,
-  `Zend/tests/constants/final_constants/final_const12.phpt`,
-  `Zend/tests/constants/final_constants/final_const13.phpt`, and
-  `Zend/tests/constants/iface_constant_visibility_variance.phpt`. It also
-  preserved the staged DateTime absolute and list destructuring selected PHPT
-  `33/33` rows plus the latest-published PASS scout.
-- The class-name constants packet moved selected PHPT `0/14 -> 14/14` for
-  `Zend/tests/class_name/bug66811.phpt`,
-  `Zend/tests/class_name/bug77530.phpt`,
-  `Zend/tests/class_name/class_name_as_scalar.phpt`,
-  `Zend/tests/class_name/class_name_as_scalar_error_001.phpt`,
-  `Zend/tests/class_name/class_name_as_scalar_error_002.phpt`,
-  `Zend/tests/class_name/class_name_as_scalar_error_003.phpt`,
-  `Zend/tests/class_name/class_name_as_scalar_error_004.phpt`,
-  `Zend/tests/class_name/class_name_as_scalar_error_005.phpt`,
-  `Zend/tests/class_name/class_name_as_scalar_error_006.phpt`,
-  `Zend/tests/class_name/class_name_as_scalar_error_007.phpt`,
-  `Zend/tests/class_name/class_on_constant_evaluated_expression.phpt`,
-  `Zend/tests/class_name/class_on_object.phpt`,
-  `Zend/tests/class_name/parent_class_name_without_parent.phpt`, and
-  `Zend/tests/class_name/self_class_const_in_unknown_scope.phpt`. It also
-  preserved staged DateTime absolute, list destructuring, and final constants
-  selected PHPT `43/43` rows plus the latest-published PASS scout.
-- The DateTime textual-timezone repair packet at source `0086ba77` moved the
-  blocked latest-published PASS regression row
-  `ext/date/tests/bug35422.phpt` from `0/1 -> 1/1` by accepting bounded
-  trailing timezone suffixes such as `UTC` and `GMT` after full-month textual
-  `strtotime()` inputs. Its selected post-patch run also passed the eight-row
-  latest-published PASS scout. The repair is staged/non-public until the
-  current `0086ba77` full pinned gate completes cleanly.
-- The current `0086ba77` full gate is running:
-  `state/logs/phpt-full-current-score-20260604T043544Z-php-src-f97ff59-public-0086ba77-source-0086ba77`
-  against the accepted `21abc76f` PASS baseline with `7275` normalized rows.
-  Latest readback is `RUNNING / BUILDING-RELEASE`; it has no accepted aggregate
-  or regression summary yet and cannot move the public score at this point.
+  source totals `11` selected rows across `1` integrated source artifact.
+  These are source/staging facts, not a public score update unless a full
+  pinned PHPT gate accepts them.
+- The numeric literal separator packet moved selected PHPT `0/11 -> 11/11`
+  for `Zend/tests/numeric_literal_separator/bug78454_1.phpt`,
+  `Zend/tests/numeric_literal_separator/bug78454_2.phpt`,
+  `Zend/tests/numeric_literal_separator/numeric_literal_separator_001.phpt`,
+  `Zend/tests/numeric_literal_separator/numeric_literal_separator_002.phpt`,
+  `Zend/tests/numeric_literal_separator/numeric_literal_separator_003.phpt`,
+  `Zend/tests/numeric_literal_separator/numeric_literal_separator_004.phpt`,
+  `Zend/tests/numeric_literal_separator/numeric_literal_separator_005.phpt`,
+  `Zend/tests/numeric_literal_separator/numeric_literal_separator_006.phpt`,
+  `Zend/tests/numeric_literal_separator/numeric_literal_separator_007.phpt`,
+  `Zend/tests/numeric_literal_separator/numeric_literal_separator_008.phpt`,
+  and `Zend/tests/numeric_literal_separator/numeric_literal_separator_009.phpt`.
+  It also preserved the latest-published PASS scout `8/8`, passed focused
+  Rust coverage, build, fmt, diff checks, and production row-name leakage scan.
 - The `c12ecf1b` full gate is blocked:
   `state/logs/phpt-full-current-score-20260604T034027Z-php-src-f97ff59-public-c12ecf1b-source-c12ecf1b`
   against the accepted `21abc76f` PASS baseline with `7275` normalized rows.
@@ -136,10 +71,10 @@ Unpublished source progress since the accepted public score source:
   `7317 / 20294 = 36.05%`, `7313` normalized current passes, and `1`
   latest-published PASS regression:
   `php-src/ext/date/tests/bug35422.phpt`. It is not publication evidence. That
-  row now has selected repair proof at source `0086ba77`, but publication still
-  requires a clean accepted full pinned gate. The newer `c912841a`
-  final-constants, `93aafea2` class-name constants, and `0086ba77` repair
-  sources are not included in the blocked `c12ecf1b` gate.
+  row has selected repair proof at source `0086ba77`, and the later accepted
+  `0086ba77` full gate below supersedes this blocked gate for publication.
+  The newer `c912841a` final-constants, `93aafea2` class-name constants, and
+  `0086ba77` repair sources are not included in the blocked `c12ecf1b` gate.
 - The attempted `830d966d` full gate is not publication evidence:
   `state/logs/phpt-full-current-score-20260604T032315Z-php-src-f97ff59-public-830d966d-source-830d966d`
   ended `FINAL / GATE-INCOMPLETE-NO-AGGREGATE /
@@ -166,7 +101,18 @@ Unpublished source progress since the accepted public score source:
   remains blocked by the latest-published PASS regression
   `php-src/Zend/tests/bug60598.phpt`.
 
-Accepted public gate: checkpoint `21abc76f` completed the pinned full PHPT
+Accepted public gate: checkpoint `0086ba77` completed the pinned full PHPT
+gate with `7376 / 20294 = 36.35%` and zero latest-published PASS regressions
+against the `21abc76f` baseline. Full gate evidence is in
+`state/logs/phpt-full-current-score-20260604T043544Z-php-src-f97ff59-public-0086ba77-source-0086ba77`;
+the aggregate had `7376` passed rows, `7372` normalized current passes, and
+`0` PASS regressions. The accepted PASS baseline is
+`state/logs/phpt-full-current-score-20260604T043544Z-php-src-f97ff59-public-0086ba77-source-0086ba77/current-passes.normalized.txt`
+with `7372` rows and SHA-256
+`533d26badda5ae40d414a51611a76417eb2621d67d9ba5a83a38b47e7684316f`.
+The invalid-proof-marker summary reported `0` hits.
+
+Previous accepted public gate: checkpoint `21abc76f` completed the pinned full PHPT
 gate with `7279 / 20294 = 35.87%` and zero latest-published PASS regressions
 against the `96ed077d` baseline. Full gate evidence is in
 `state/logs/phpt-full-current-score-20260604T030645Z-php-src-f97ff59-public-21abc76f-source-21abc76f`;
