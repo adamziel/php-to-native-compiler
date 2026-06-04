@@ -18813,6 +18813,120 @@ foreach ($it as $key => $value) {
 }
 
 #[test]
+fn array_object_object_backed_storage_snapshots_and_reuses_handles() {
+    let source = r#"<?php
+#[AllowDynamicProperties]
+class C {
+    public $p = "p";
+}
+
+class MyArrayObject extends ArrayObject {
+    public $prop = "MyArrayObject::prop.orig";
+}
+
+var_dump(new ArrayObject());
+$holder = new C();
+var_dump(new ArrayObject($holder));
+
+$base = new ArrayObject(array(1, 2), ArrayObject::STD_PROP_LIST);
+$base->prop = "base";
+$storageView = new ArrayObject($base, 0);
+$storageView->prop = "storage-view";
+foreach ((array) $storageView as $key => $value) {
+    echo "storage:$key=$value\n";
+}
+$propView = new ArrayObject($base);
+$propView->prop = "prop-view";
+foreach ((array) $propView as $key => $value) {
+    echo "props:$key=$value\n";
+}
+
+$object = new C();
+$wrapped = new ArrayObject($object);
+$object->before = "before";
+$clone = clone $wrapped;
+$object->after = "after";
+$wrapped["wrapped"] = "wrapped";
+$clone["clone"] = "clone";
+var_dump($object, $wrapped, $clone);
+
+$swap = new ArrayObject();
+$swap->exchangeArray(new C());
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert!(execution.stdout.contains("object(ArrayObject)#1 (1)"));
+    assert!(execution.stdout.contains(
+        "object(ArrayObject)#2 (1) {\n  [\"storage\":\"ArrayObject\":private]=>\n  object(C)#1 (1)"
+    ));
+    assert!(execution.stdout.contains("storage:0=1\nstorage:1=2\n"));
+    assert!(execution.stdout.contains("props:prop=prop-view\n"));
+    assert!(execution.stdout.contains(
+        "Deprecated: ArrayObject::exchangeArray(): Using an object as a backing array for ArrayObject is deprecated"
+    ));
+    assert!(execution.stdout.contains(
+        "object(ArrayObject)#7 (1) {\n  [\"storage\":\"ArrayObject\":private]=>\n  array(3) {"
+    ));
+    assert!(execution
+        .stdout
+        .contains("[\"before\"]=>\n    string(6) \"before\""));
+    assert!(execution
+        .stdout
+        .contains("[\"clone\"]=>\n    string(5) \"clone\""));
+    assert!(!execution
+        .stdout
+        .contains("[\"after\"]=>\n    string(5) \"after\"\n    [\"clone\"]=>"));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+
+    let object_backed_handle_source = r#"<?php
+class C {
+    public $p = "p";
+}
+class MyArrayObject extends ArrayObject {
+    public $prop = "MyArrayObject::prop.orig";
+}
+$c = new C();
+$ao = new ArrayObject($c);
+foreach ($ao as $key => $value) {}
+$c = new C();
+$ao = new MyArrayObject($c);
+var_dump($ao, $c);
+"#;
+    let handle_execution = run_source(object_backed_handle_source).unwrap();
+    assert!(handle_execution
+        .stdout
+        .contains("object(MyArrayObject)#3 (2)"));
+    assert!(handle_execution.stdout.contains("object(C)#4 (1)"));
+    assert_eq!(handle_execution.stderr, "");
+    assert_eq!(handle_execution.exit_code, 0);
+
+    let overwrite_handle_source = r#"<?php
+class DumpArrayObject extends ArrayObject {
+    private $priv1 = "secret1";
+    public $pub1 = "public1";
+}
+$slot = new ArrayObject(array(1, 2, 3));
+var_dump($slot);
+$slot = new ArrayObject(array(1, 2, 3), ArrayObject::STD_PROP_LIST);
+var_dump($slot);
+$slot = new DumpArrayObject(array(1, 2, 3));
+var_dump($slot);
+$slot = new DumpArrayObject(array(1, 2, 3), ArrayObject::STD_PROP_LIST);
+var_dump($slot);
+"#;
+    let overwrite_execution = run_source(overwrite_handle_source).unwrap();
+    assert!(overwrite_execution
+        .stdout
+        .contains("object(DumpArrayObject)#1 (3)"));
+    assert!(overwrite_execution
+        .stdout
+        .contains("object(DumpArrayObject)#2 (3)"));
+    assert_eq!(overwrite_execution.stderr, "");
+    assert_eq!(overwrite_execution.exit_code, 0);
+}
+
+#[test]
 fn array_object_introspection_hides_core_storage_and_preserves_object_backing_keys() {
     let source = r#"<?php
 #[AllowDynamicProperties]

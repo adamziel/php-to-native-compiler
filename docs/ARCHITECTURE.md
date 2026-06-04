@@ -121,6 +121,14 @@ PHP-shaped indirect-modification no-op.
 Core `ArrayObject` and `ArrayIterator` objects share a bounded runtime storage
 record. Array-backed storage, plain object-backed public-property storage, and
 selected nested ArrayObject-backed reads/writes are routed through that record;
+object-backed construction and `exchangeArray()` retain PHP's deprecation
+surface, clones snapshot the current public-property storage array, and
+top-level `(array)` casts honor `STD_PROP_LIST` by exposing initialized object
+properties while omitting the internal storage slot. Object-backed
+`ArrayObject` by-value foreach keeps the hidden iterator handle attached to the
+owning storage record until the owner is replaced, while direct root
+replacement retires unrooted `ArrayObject` / `ArrayIterator` handles through
+the existing reusable temporary-object path when no live root keeps them.
 ordinary built-in sorts and `uasort()` / `uksort()` operate on materialized
 storage entries and write the sorted storage back. Direct ArrayObject and
 ArrayIterator sort-method calls consult the bounded `disable_functions` INI

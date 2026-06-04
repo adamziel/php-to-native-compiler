@@ -2689,8 +2689,17 @@
   public properties and keyed `offsetSet()` writes, including raw public
   property names with NUL bytes and integer-like keys; appending to
   object-backed `ArrayIterator` or `ArrayObject` storage throws the PHP-shaped
-  `Error` directing callers to `offsetSet()`. Top-level `(array)` casts of
-  bounded `ArrayObject` / `ArrayIterator` values return the backing storage,
+  `Error` directing callers to `offsetSet()`. Object-backed construction and
+  `exchangeArray()` emit the covered PHP deprecation, clones snapshot the
+  current public-property array instead of continuing to share the original
+  backing object, direct temporary `var_dump(new ArrayObject(...))` can reuse
+  the unrooted handle, object-backed `ArrayObject` foreach retains the hidden
+  iterator handle until the owning root is replaced, and direct root
+  replacement retires unrooted `ArrayObject` / `ArrayIterator` handles through
+  the bounded reusable-object path. Top-level `(array)` casts of bounded
+  `ArrayObject` / `ArrayIterator` values return the backing storage unless
+  `STD_PROP_LIST` is set, in which case initialized object properties are
+  exposed while the internal storage property is omitted,
   and `get_mangled_object_vars()` omits their internal storage property.
   Bounded SPL wrapper iterators include `IteratorIterator` and
   `NoRewindIterator`, in addition to the `EmptyIterator`, `InfiniteIterator`,

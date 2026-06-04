@@ -935,6 +935,7 @@ struct BoundedArrayObjectState {
     flags: i64,
     iterator_class: String,
     cursor: usize,
+    retained_foreach_iterator: Option<PhpObject>,
 }
 
 impl Default for BoundedArrayObjectState {
@@ -944,6 +945,7 @@ impl Default for BoundedArrayObjectState {
             flags: 0,
             iterator_class: "ArrayIterator".to_string(),
             cursor: 0,
+            retained_foreach_iterator: None,
         }
     }
 }
@@ -13259,6 +13261,38 @@ impl Interpreter {
         })
     }
 
+    fn array_object_has_object_backed_storage(&self, object: &PhpObject) -> bool {
+        self.array_objects
+            .get(&object.id())
+            .is_some_and(|state| matches!(state.storage, Value::Object(_)))
+    }
+
+    fn retain_array_object_foreach_iterator(&mut self, object: &PhpObject, iterator: PhpObject) {
+        if let Some(state) = self.array_objects.get_mut(&object.id()) {
+            state.retained_foreach_iterator = Some(iterator);
+        }
+    }
+
+    fn take_retained_array_object_foreach_iterator(
+        &mut self,
+        object: &PhpObject,
+    ) -> Option<PhpObject> {
+        self.array_objects
+            .get_mut(&object.id())
+            .and_then(|state| state.retained_foreach_iterator.take())
+    }
+
+    fn retire_retained_array_object_foreach_iterator(
+        &mut self,
+        object: &PhpObject,
+        scope: &SymbolTable,
+    ) -> CompileResult<()> {
+        if let Some(iterator) = self.take_retained_array_object_foreach_iterator(object) {
+            self.retire_reusable_unrooted_temporary_object_handle(&iterator, scope)?;
+        }
+        Ok(())
+    }
+
     fn array_object_inherited_flags(&self, storage: &Value) -> Option<i64> {
         let Value::Object(object) = storage else {
             return None;
@@ -13921,6 +13955,7 @@ impl Interpreter {
             flags,
             iterator_class,
             cursor: 0,
+            retained_foreach_iterator: None,
         };
         self.sync_array_object_properties(&object, &state, span)?;
         self.array_objects.insert(object.id(), state);
@@ -14109,6 +14144,7 @@ impl Interpreter {
                     flags,
                     iterator_class,
                     cursor: 0,
+                    retained_foreach_iterator: None,
                 };
                 self.sync_array_object_properties(&object, &state, span)?;
                 self.array_objects.insert(object.id(), state);
@@ -14149,11 +14185,22 @@ impl Interpreter {
                         ));
                     }
                 };
+                if matches!(replacement, Value::Object(_)) {
+                    self.emit_display_diagnostic(
+                        "Deprecated",
+                        PHP_E_DEPRECATED,
+                        format!(
+                            "{class_name}::exchangeArray(): Using an object as a backing array for {class_name} is deprecated, as it allows violating class constraints and invariants"
+                        ),
+                        span,
+                    )?;
+                }
                 self.ensure_array_object_not_sorting(&object, method_name, span)?;
                 let mut state = self.array_object_state(&object, method_name, span)?.clone();
                 let old = self.array_object_storage_to_array(&state.storage, method_name, span)?;
                 state.storage = replacement;
                 state.cursor = 0;
+                state.retained_foreach_iterator = None;
                 self.sync_array_object_properties(&object, &state, span)?;
                 self.array_objects.insert(object.id(), state);
                 Ok(Value::Array(old))
@@ -14542,8 +14589,7 @@ impl Interpreter {
                     .classes
                     .implements_interface(object.class_id(), "IteratorAggregate") =>
             {
-                let iterator =
-                    self.call_required_iterator_method(object, "getIterator", span)?;
+                let iterator = self.call_required_iterator_method(object, "getIterator", span)?;
                 match iterator {
                     Value::Object(iterator)
                         if self
@@ -15549,8 +15595,10 @@ impl Interpreter {
                     .classes
                     .implements_interface(object.class_id(), "IteratorAggregate") =>
             {
+                let retain_array_object_iterator =
+                    self.array_object_has_object_backed_storage(&object);
                 let iterator =
-                    self.call_required_iterator_method(object, "getIterator", span)?;
+                    self.call_required_iterator_method(object.clone(), "getIterator", span)?;
                 match iterator {
                     Value::Object(iterator)
                         if self
@@ -15565,7 +15613,11 @@ impl Interpreter {
                             span,
                             scope,
                         )?;
-                        self.retire_unrooted_temporary_object_handle(&iterator, scope)?;
+                        if retain_array_object_iterator {
+                            self.retain_array_object_foreach_iterator(&object, iterator);
+                        } else {
+                            self.retire_unrooted_temporary_object_handle(&iterator, scope)?;
+                        }
                         Ok(flow)
                     }
                     other => Err(runtime_error(
@@ -16529,7 +16581,10 @@ impl Interpreter {
                     .classes
                     .implements_interface(object.class_id(), "IteratorAggregate") =>
             {
-                let iterator = self.call_required_iterator_method(object, "getIterator", span)?;
+                let retain_array_object_iterator =
+                    self.array_object_has_object_backed_storage(&object);
+                let iterator =
+                    self.call_required_iterator_method(object.clone(), "getIterator", span)?;
                 match iterator {
                     Value::Object(iterator)
                         if self
@@ -16545,7 +16600,11 @@ impl Interpreter {
                                 span,
                                 scope,
                             )?;
-                        self.retire_unrooted_temporary_object_handle(&iterator, scope)?;
+                        if retain_array_object_iterator {
+                            self.retain_array_object_foreach_iterator(&object, iterator);
+                        } else {
+                            self.retire_unrooted_temporary_object_handle(&iterator, scope)?;
+                        }
                         Ok(flow)
                     }
                     other => Err(runtime_error(
@@ -33079,6 +33138,36 @@ impl Interpreter {
         self.retire_reusable_unrooted_temporary_object_handle(&object, scope)
     }
 
+    fn release_array_object_retained_iterator_for_assignment(
+        &mut self,
+        value: Option<Value>,
+        scope: &SymbolTable,
+    ) -> CompileResult<()> {
+        let Some(Value::Object(object)) = value else {
+            return Ok(());
+        };
+        if !self.is_array_object_storage_object(&object) {
+            return Ok(());
+        }
+        self.retire_retained_array_object_foreach_iterator(&object, scope)
+    }
+
+    fn retire_released_array_object_handle(
+        &mut self,
+        value: Value,
+        scope: &SymbolTable,
+    ) -> CompileResult<()> {
+        let Value::Object(object) = value else {
+            return Ok(());
+        };
+        if !self.is_array_object_storage_object(&object) {
+            return Ok(());
+        }
+
+        self.retire_retained_array_object_foreach_iterator(&object, scope)?;
+        self.retire_reusable_unrooted_temporary_object_handle(&object, scope)
+    }
+
     fn retire_json_encode_temporary_object_arguments(
         &mut self,
         values: &[Value],
@@ -33158,6 +33247,7 @@ impl Interpreter {
         self.is_spl_file_info_class_id(object.class_id())
             || self.is_spl_file_object_class_id(object.class_id())
             || self.is_spl_directory_iterator_class_id(object.class_id())
+            || self.is_array_object_class_id(object.class_id())
     }
 
     fn retire_reusable_temporary_objects_in_value(
@@ -33570,6 +33660,15 @@ impl Interpreter {
             self.spl_fixed_arrays.insert(clone.id(), state);
         }
         if let Some(state) = self.array_objects.get(&object.id()).cloned() {
+            let mut state = state;
+            if matches!(state.storage, Value::Object(_)) {
+                state.storage = Value::Array(self.array_object_storage_to_array(
+                    &state.storage,
+                    "clone",
+                    span,
+                )?);
+            }
+            state.retained_foreach_iterator = None;
             self.array_objects.insert(clone.id(), state);
             self.sync_array_object_object_properties(&clone, span)?;
         }
@@ -41504,6 +41603,10 @@ impl Interpreter {
     ) -> CompileResult<Value> {
         match target {
             AssignTarget::Variable { name, span } => {
+                self.release_array_object_retained_iterator_for_assignment(
+                    scope.read_storage_named(name),
+                    scope,
+                )?;
                 let (
                     value,
                     array_literal_references,
@@ -41760,7 +41863,8 @@ impl Interpreter {
                     }
                 }
                 if let Some(released_value) = released_value {
-                    self.retire_released_bcmath_number_handle(released_value, scope)?;
+                    self.retire_released_bcmath_number_handle(released_value.clone(), scope)?;
+                    self.retire_released_array_object_handle(released_value, scope)?;
                 }
                 let array_literal_references_for_value = array_literal_references.clone();
                 for reference in array_literal_references {
@@ -88543,8 +88647,10 @@ impl Interpreter {
                             .classes
                             .implements_interface(object.class_id(), "IteratorAggregate") =>
                     {
+                        let retain_array_object_iterator =
+                            self.array_object_has_object_backed_storage(&object);
                         let iterator =
-                            self.call_required_iterator_method(object, "getIterator", *span)?;
+                            self.call_required_iterator_method(object.clone(), "getIterator", *span)?;
                         match iterator {
                             Value::Object(iterator)
                                 if self
@@ -88561,7 +88667,11 @@ impl Interpreter {
                                         *span,
                                         scope,
                                     )?;
-                                self.retire_unrooted_temporary_object_handle(&iterator, scope)?;
+                                if retain_array_object_iterator {
+                                    self.retain_array_object_foreach_iterator(&object, iterator);
+                                } else {
+                                    self.retire_unrooted_temporary_object_handle(&iterator, scope)?;
+                                }
                                 Ok(flow)
                             }
                             other => Err(runtime_error(
@@ -114766,11 +114876,31 @@ impl Interpreter {
                 }
                 Value::Object(object) if self.is_array_object_storage_object(&object) => {
                     let state = self.array_object_state(&object, "(array)", span)?.clone();
-                    Ok(Value::Array(self.array_object_storage_to_array(
-                        &state.storage,
-                        "(array)",
-                        span,
-                    )?))
+                    if state.flags & ARRAY_OBJECT_STD_PROP_LIST == ARRAY_OBJECT_STD_PROP_LIST {
+                        let mut properties = PhpArray::new();
+                        for property in
+                            dateperiod_ordered_object_properties(&object, object.properties())
+                        {
+                            if !property.is_initialized()
+                                || property.is_unset()
+                                || Self::is_array_object_core_storage_property(&object, &property)
+                            {
+                                continue;
+                            }
+                            Self::insert_object_property_snapshot(
+                                &mut properties,
+                                ArrayKey::String(property.mangled_name()),
+                                &property,
+                            );
+                        }
+                        Ok(Value::Array(properties))
+                    } else {
+                        Ok(Value::Array(self.array_object_storage_to_array(
+                            &state.storage,
+                            "(array)",
+                            span,
+                        )?))
+                    }
                 }
                 Value::Object(object) if is_sensitive_parameter_value_object(&object) => {
                     Ok(Value::Array(PhpArray::new()))
