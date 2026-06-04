@@ -1,6 +1,6 @@
 # PHP Native Compiler PHPT Progress
 
-Updated: 2026-06-04 07:37 CEST
+Updated: 2026-06-04 08:11 CEST
 
 Primary/public branch: `origin/master`
 Latest accepted public-score source:
@@ -19,15 +19,23 @@ denominators that exclude BORKED rows are not public progress.
 Current public score: **7376 / 20294 pinned runnable PHPTs = 36.35%**.
 
 Latest pushed source checkpoint:
-`40609421fef30899c8fcd8fcd575a84526de3462 fix: handle bounded datetime diff offsets`
+`0ee623687bebc402bab0488301b9b3e84c39774d fix: honor disabled function metadata`
 
 Current score-gate target:
-No full score gate is currently running for latest source `40609421`.
-The latest attempted current-source full gate is
+A full score gate is currently running for source `daee77c1`:
+`state/logs/phpt-full-current-score-20260604T055910Z-php-src-f97ff59-public-daee77c1-source-daee77c1`.
+Cadence readback is `RUNNING / SHARDED-PHPT` against the accepted
+`0086ba77` PASS baseline with `7372` normalized rows and SHA-256
+`533d26badda5ae40d414a51611a76417eb2621d67d9ba5a83a38b47e7684316f`.
+It can publish at most through `daee77c1` and does not include newer staged
+source `0ee62368`; it is not publication evidence unless it completes with zero
+latest-published PASS regressions. The latest completed current-source full
+gate before that is
 `state/logs/phpt-full-current-score-20260604T051404Z-php-src-f97ff59-public-1fe5a48a-source-1fe5a48a`;
 it completed `FINAL / BLOCKED-PASS-REGRESSIONS` with `1`
 latest-published PASS regression, `php-src/ext/date/tests/bug34771.phpt`, and
-is not publication evidence. The latest accepted full gate is
+is not publication evidence. That row now has selected repair proof at source
+`daee77c1`. The latest accepted full gate is
 `state/logs/phpt-full-current-score-20260604T043544Z-php-src-f97ff59-public-0086ba77-source-0086ba77`.
 It completed `FINAL / GATE-AGGREGATE-COMPLETE / ZERO-PASS-REGRESSIONS`
 against the accepted `21abc76f` PASS baseline.
@@ -44,22 +52,28 @@ latest-published PASS regressions.
 
 Unpublished source progress since the accepted public score source:
 
-- Latest pushed source head is `40609421fef30899c8fcd8fcd575a84526de3462`
-  (`fix: handle bounded datetime diff offsets`), which is newer than the
+- Latest pushed source head is `0ee623687bebc402bab0488301b9b3e84c39774d`
+  (`fix: honor disabled function metadata`), which is newer than the
   accepted `0086ba77` full gate and is not included in the public score above.
-- There are `5` score-relevant source commits after the accepted public-score
+- There are `8` score-relevant source commits after the accepted public-score
   source: `01afaf19e44c2d4a23023469a0a1122ed81f7d90`
-  (`fix: parse numeric literal separators`) and
+  (`fix: parse numeric literal separators`),
   `f4be414cce658cfc8c6f77ad5a17146a97c66e22`
   (`fix: materialize first-class callable constants`),
   `1fe5a48ad8e6e3bb4e224fb182ff1b06730c22fb`
   (`fix: preserve bounded timezone offsets`),
   `84fbeb8d8dc0637a8b722d38512bb5b856ae7cf7`
-  (`fix: construct user classes via reflection`), and
+  (`fix: construct user classes via reflection`),
   `40609421fef30899c8fcd8fcd575a84526de3462`
-  (`fix: handle bounded datetime diff offsets`).
+  (`fix: handle bounded datetime diff offsets`),
+  `d2709c1588fb10700542b07bbb161021e88293b4`
+  (`fix: handle invalid list destructuring forms`),
+  `daee77c182d84f4b3bd6255c5efb788822f4c778`
+  (`fix: parse meridiem strtotime forms`), and
+  `0ee623687bebc402bab0488301b9b3e84c39774d`
+  (`fix: honor disabled function metadata`).
 - Staged focused selected-PHPT proof after the latest accepted public-score
-  source totals `59` selected rows across `5` integrated source artifacts.
+  source totals `84` selected rows across `8` integrated source artifacts.
   These are source/staging facts, not a public score update unless a full
   pinned PHPT gate accepts them.
 - The numeric literal separator packet moved selected PHPT `0/11 -> 11/11`
@@ -123,6 +137,37 @@ Unpublished source progress since the accepted public score source:
   `DateTime_sub-massive.phpt`. It also preserved the active blocker row state,
   preserved the latest-published non-date PASS scout `8/8`, passed focused Rust
   coverage, build, fmt, diff checks, and production row-name leakage scan.
+- The invalid array/list destructuring packet moved selected PHPT
+  `0/11 -> 11/11` for `Zend/tests/list/list_007.phpt`,
+  `list_008.phpt`, `list_010.phpt`, `list_011.phpt`, `list_012.phpt`,
+  `list_013.phpt`, `list_014.phpt`, `list_empty_error.phpt`,
+  `list_empty_error_keyed.phpt`, `list_keyed_leading_comma.phpt`, and
+  `list_mixed_keyed_unkeyed.phpt`. It also preserved the latest-published
+  non-date PASS scout `8/8`, passed focused Rust coverage, build, fmt, diff
+  checks, isolated `bug60598`, rechecked the active blocker row, and passed the
+  production row-name leakage scan.
+- The `bug34771` PASS-regression repair packet moved selected PHPT
+  `0/1 -> 1/1` for `ext/date/tests/bug34771.phpt`. It also preserved the
+  blocker plus latest-published PASS scout `9/9`, passed focused Rust
+  coverage, build, fmt, diff checks, and production row-name leakage scan.
+  This restores the row that blocked the `1fe5a48a` full gate, but it is not
+  public score movement unless a fresh full pinned PHPT gate accepts it.
+- The disabled-function metadata packet moved selected PHPT `0/13 -> 13/13`
+  for `tests/basic/bug31875.phpt`,
+  `Zend/tests/assert/disable_assert_function.phpt`,
+  `Zend/tests/bug69315.phpt`, `Zend/tests/bug79382.phpt`,
+  `Zend/tests/exit/disabling_die.phpt`,
+  `Zend/tests/exit/disabling_exit.phpt`,
+  `ext/opcache/tests/bug76796.phpt`,
+  `ext/reflection/tests/ReflectionFunction_isDisabled_basic.phpt`,
+  `Zend/tests/bug48899.phpt`, `Zend/tests/bug48899-deprecated.phpt`,
+  `Zend/tests/bug63111.phpt`,
+  `Zend/tests/is_callable_trampoline_uaf-deprecated.phpt`, and
+  `ext/standard/tests/general_functions/is_callable_abstract_method-deprecated.phpt`.
+  It also preserved the latest-published non-date PASS scout `8/8`, passed
+  focused Rust coverage, build, fmt, diff checks, and production row-name
+  leakage scan. It is newer than the running `daee77c1` full gate and is not
+  included in that gate.
 - The `1fe5a48a` full gate is blocked:
   `state/logs/phpt-full-current-score-20260604T051404Z-php-src-f97ff59-public-1fe5a48a-source-1fe5a48a`
   against the accepted `0086ba77` PASS baseline with `7372` normalized rows.
@@ -130,8 +175,10 @@ Unpublished source progress since the accepted public score source:
   `7428 / 20294 = 36.60%`, `7424` normalized current passes, and `1`
   latest-published PASS regression:
   `php-src/ext/date/tests/bug34771.phpt`. It is not publication evidence for
-  `1fe5a48a` or newer sources `84fbeb8d` / `40609421`; a dedicated repair lane
-  is active for that row.
+  `1fe5a48a` or newer sources `84fbeb8d` / `40609421` / `d2709c15` /
+  `daee77c1` / `0ee62368`. The row has selected repair proof at source
+  `daee77c1`, and the fresh `daee77c1` full gate above must complete cleanly
+  before any score publication.
 - The `c12ecf1b` full gate is blocked:
   `state/logs/phpt-full-current-score-20260604T034027Z-php-src-f97ff59-public-c12ecf1b-source-c12ecf1b`
   against the accepted `21abc76f` PASS baseline with `7275` normalized rows.
