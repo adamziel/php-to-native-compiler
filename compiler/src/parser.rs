@@ -8163,6 +8163,14 @@ impl Parser {
     }
 
     fn ensure_supported_default_expr(&self, expr: &Expr) -> CompileResult<()> {
+        self.ensure_supported_default_expr_inner(expr, true)
+    }
+
+    fn ensure_supported_default_expr_inner(
+        &self,
+        expr: &Expr,
+        allow_first_class_callable: bool,
+    ) -> CompileResult<()> {
         match expr {
             Expr::Null(_)
             | Expr::Bool(_, _)
@@ -8172,13 +8180,13 @@ impl Parser {
             Expr::Array { items, .. } => {
                 for item in items {
                     if let Some(key) = &item.key {
-                        self.ensure_supported_default_expr(key)?;
+                        self.ensure_supported_default_expr_inner(key, false)?;
                     }
-                    self.ensure_supported_default_expr(&item.value)?;
+                    self.ensure_supported_default_expr_inner(&item.value, false)?;
                 }
                 Ok(())
             }
-            Expr::Unary { expr, .. } => self.ensure_supported_default_expr(expr),
+            Expr::Unary { expr, .. } => self.ensure_supported_default_expr_inner(expr, false),
             Expr::ErrorControl { .. } => Err(self.error_at(
                 expr.span(),
                 "default parameter values only support constant expressions in the current subset",
@@ -8189,8 +8197,8 @@ impl Parser {
                 if matches!(op, BinaryOp::NullCoalesce) {
                     return Err(self.error_at(expr.span(), unsupported_null_coalescing_message()));
                 }
-                self.ensure_supported_default_expr(left)?;
-                self.ensure_supported_default_expr(right)
+                self.ensure_supported_default_expr_inner(left, false)?;
+                self.ensure_supported_default_expr_inner(right, false)
             }
             Expr::Ternary { .. } | Expr::ShortTernary { .. } => Err(self.error_at(
                 expr.span(),
@@ -8210,6 +8218,11 @@ impl Parser {
             | Expr::SelfClassConstant { .. }
             | Expr::ParentClassConstant { .. }
             | Expr::LateStaticClassConstant { .. } => Ok(()),
+            Expr::Call { name, .. }
+                if allow_first_class_callable && is_first_class_callable_helper_name(name) =>
+            {
+                Ok(())
+            }
             Expr::Variable(_, _)
             | Expr::InterpolatedString { .. }
             | Expr::Cast { .. }
@@ -8258,6 +8271,14 @@ impl Parser {
     }
 
     fn ensure_supported_const_declaration_expr(&self, expr: &Expr) -> CompileResult<()> {
+        self.ensure_supported_const_declaration_expr_inner(expr, true)
+    }
+
+    fn ensure_supported_const_declaration_expr_inner(
+        &self,
+        expr: &Expr,
+        allow_first_class_callable: bool,
+    ) -> CompileResult<()> {
         match expr {
             Expr::Null(_)
             | Expr::Bool(_, _)
@@ -8267,13 +8288,15 @@ impl Parser {
             Expr::Array { items, .. } => {
                 for item in items {
                     if let Some(key) = &item.key {
-                        self.ensure_supported_const_declaration_expr(key)?;
+                        self.ensure_supported_const_declaration_expr_inner(key, false)?;
                     }
-                    self.ensure_supported_const_declaration_expr(&item.value)?;
+                    self.ensure_supported_const_declaration_expr_inner(&item.value, false)?;
                 }
                 Ok(())
             }
-            Expr::Unary { expr, .. } => self.ensure_supported_const_declaration_expr(expr),
+            Expr::Unary { expr, .. } => {
+                self.ensure_supported_const_declaration_expr_inner(expr, false)
+            }
             Expr::ErrorControl { .. } => Err(self.error_at(
                 expr.span(),
                 "const declaration values only support constant expressions in the current subset",
@@ -8284,8 +8307,8 @@ impl Parser {
                 if matches!(op, BinaryOp::NullCoalesce) {
                     return Err(self.error_at(expr.span(), unsupported_null_coalescing_message()));
                 }
-                self.ensure_supported_const_declaration_expr(left)?;
-                self.ensure_supported_const_declaration_expr(right)
+                self.ensure_supported_const_declaration_expr_inner(left, false)?;
+                self.ensure_supported_const_declaration_expr_inner(right, false)
             }
             Expr::Ternary { .. } | Expr::ShortTernary { .. } => Err(self.error_at(
                 expr.span(),
@@ -8302,6 +8325,11 @@ impl Parser {
             Expr::MagicFunction { .. } => Ok(()),
             Expr::MagicClass { .. } | Expr::MagicMethod { .. } => Ok(()),
             Expr::ClassConstant { .. } => Ok(()),
+            Expr::Call { name, .. }
+                if allow_first_class_callable && is_first_class_callable_helper_name(name) =>
+            {
+                Ok(())
+            }
             Expr::Variable(_, _)
             | Expr::InterpolatedString { .. }
             | Expr::Cast { .. }
@@ -8353,7 +8381,7 @@ impl Parser {
     }
 
     fn ensure_supported_static_property_default_expr(&self, expr: &Expr) -> CompileResult<()> {
-        self.ensure_supported_const_declaration_expr(expr)
+        self.ensure_supported_const_declaration_expr_inner(expr, false)
             .map_err(|_error| {
                 self.error_at(
                     expr.span(),
@@ -8366,7 +8394,7 @@ impl Parser {
         if let Expr::AppendIndex { target, .. } = expr {
             return self.ensure_supported_instance_property_default_expr(target);
         }
-        self.ensure_supported_const_declaration_expr(expr)
+        self.ensure_supported_const_declaration_expr_inner(expr, false)
             .map_err(|_error| {
                 self.error_at(
                     expr.span(),
@@ -9815,6 +9843,10 @@ fn magic_constant_name(name: &str) -> Option<&'static str> {
         "__NAMESPACE__" => Some("__NAMESPACE__"),
         _ => None,
     }
+}
+
+fn is_first_class_callable_helper_name(name: &str) -> bool {
+    name.to_ascii_lowercase().starts_with("__phpc_first_class_")
 }
 
 fn unsupported_magic_constant_message(name: &str) -> String {

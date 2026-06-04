@@ -2886,7 +2886,11 @@
   constant-expression subset, including bare references to previously defined
   unqualified constants, the current built-in global constant slice, declared
   `ClassName::CONST` class constants, and class-method `self::CONST` defaults
-  resolved from the declaring class context when an omitted argument is bound
+  resolved from the declaring class context when an omitted argument is bound.
+  Direct first-class callable expressions such as `strrev(...)` and
+  `self::method(...)` materialize Closure-shaped defaults for the current
+  function/static-method callable subset; nested first-class callable
+  expressions inside arrays and property defaults remain unsupported.
 - by-value user-function, public method, closure, `call_user_func()`, and
   `ReflectionFunction::invoke()` calls enforce the bounded runtime
   parameter/return type subset through the shared call-frame path. Supported
@@ -3518,8 +3522,10 @@
 - class constants declared as `const NAME = value;`,
   `public|protected|private const NAME = value;`, or final variants of those
   public/protected declarations with values from the current
-  constant-expression subset. Private final class constants emit PHP-shaped
-  startup fatals, and overriding a final class constant reports PHP's
+  constant-expression subset, including direct first-class callable
+  expressions for the current function/static-method callable subset. Private
+  final class constants emit PHP-shaped startup fatals, and overriding a final
+  class constant reports PHP's
   final-constant startup fatal. A bounded typed class-constant parser/startup
   lane accepts `public|protected|private const Type NAME = literal;` and
   comma-separated class constants sharing one type; immediate literal defaults
@@ -3723,7 +3729,11 @@
   current built-in `CASE_*`, `ARRAY_FILTER_*`, `SORT_REGULAR`,
   `SORT_NUMERIC`, `SORT_STRING`, `PHP_VERSION_ID`, `PHP_VERSION`,
   `PHP_INT_MAX`, `PHP_INT_SIZE`, `PHP_SAPI`, and documented `E_*` error mask
-  constants
+  constants. Direct first-class callable expressions such as `strrev(...)`,
+  namespaced function fallbacks, user functions, and public static-method
+  callables materialize Closure-shaped constant values with bounded
+  `var_dump()` metadata and invocation support; nested first-class callable
+  expressions inside arrays remain unsupported.
 - short array literals (`[]`, `[value]`, `[key => value]`) and long
   `array(...)` literals as an alias for that same array-literal subset
 - ordered arrays with integer and string keys

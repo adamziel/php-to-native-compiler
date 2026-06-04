@@ -39452,6 +39452,7 @@ fn coerce_property_value_with_object_type_resolver_dyn(
         (Value::Bool(true), "bool" | "true") => true,
         (Value::Bool(false), "bool" | "false") => true,
         (Value::Array(_), "array" | "iterable") => true,
+        (Value::Closure(_), "object" | "closure") => true,
         (Value::Object(_), "object") => true,
         (Value::Object(object), "iterable") => object_type_resolver(object, "iterable"),
         (Value::Object(object), type_name) => object_type_resolver(object, type_name),

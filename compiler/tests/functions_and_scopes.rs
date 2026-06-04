@@ -9781,6 +9781,64 @@ echo $instance(), "|", $static();
 }
 
 #[test]
+fn first_class_callable_constexpr_constants_materialize_closure_metadata() {
+    let execution = run_source(
+        r#"<?php
+const Closure = strrev(...);
+class FirstClassCallableConstexprBox {
+    public const Handler = self::named(...);
+
+    public static function named(string $value) {
+        return "static:$value";
+    }
+}
+
+var_dump(Closure);
+var_dump((Closure)("abc"));
+var_dump(FirstClassCallableConstexprBox::Handler);
+var_dump((FirstClassCallableConstexprBox::Handler)("abc"));
+"#,
+    )
+    .unwrap();
+
+    assert!(execution
+        .stdout
+        .contains("[\"function\"]=>\n  string(6) \"strrev\""));
+    assert!(execution
+        .stdout
+        .contains("[\"$string\"]=>\n    string(10) \"<required>\""));
+    assert!(execution
+        .stdout
+        .contains("\"FirstClassCallableConstexprBox::named\""));
+    assert!(execution
+        .stdout
+        .contains("[\"$value\"]=>\n    string(10) \"<required>\""));
+    assert!(execution
+        .stdout
+        .trim_end()
+        .ends_with("string(10) \"static:abc\""));
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn first_class_callable_constexpr_defaults_and_closure_typed_args_materialize() {
+    let execution = run_source(
+        r#"<?php
+function first_class_callable_constexpr_default(Closure $name = strrev(...)) {
+    var_dump($name("abc"));
+}
+
+first_class_callable_constexpr_default();
+first_class_callable_constexpr_default(strlen(...));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout.trim_end(), "string(3) \"cba\"\nint(3)");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn first_class_callable_closure_acquisition_preserves_closure_identity() {
     let execution = run_source(
         r#"<?php

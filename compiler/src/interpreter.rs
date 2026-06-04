@@ -566,6 +566,7 @@ struct Interpreter {
     closure_reflection_functions: HashMap<i64, ReflectionFunctionState>,
     closure_functions: HashMap<i64, Rc<FunctionDecl>>,
     closure_values: HashMap<i64, PhpClosure>,
+    first_class_closure_callables: HashMap<i64, Value>,
     closure_alias_captures: HashMap<i64, Vec<ClosureAliasCapture>>,
     closure_array_copy_source_captures: HashMap<i64, Vec<(String, ArrayCopySource, SymbolTable)>>,
     closure_bound_contexts: HashMap<i64, ClosureBoundContext>,
@@ -12015,6 +12016,7 @@ impl Interpreter {
             closure_reflection_functions: HashMap::new(),
             closure_functions: HashMap::new(),
             closure_values: HashMap::new(),
+            first_class_closure_callables: HashMap::new(),
             closure_alias_captures: HashMap::new(),
             closure_array_copy_source_captures: HashMap::new(),
             closure_bound_contexts: HashMap::new(),
@@ -31151,7 +31153,7 @@ impl Interpreter {
         if let Some(error) = const_declaration_class_scope_error(value, has_class_scope) {
             return Err(error);
         }
-        let value = self.evaluate(value, scope)?;
+        let value = self.evaluate_constant_like_expr(value, scope)?;
         if let Some(type_name) = unsupported_runtime_constant_value_type(&value) {
             return Err(runtime_error(
                 span,
@@ -62835,6 +62837,19 @@ impl Interpreter {
         context: &str,
         allow_extra_user_args: bool,
     ) -> CompileResult<Value> {
+        if let Some(callable) = self
+            .first_class_closure_callables
+            .get(&closure.id())
+            .cloned()
+        {
+            return self.call_first_class_callable_descriptor_with_values(
+                callable,
+                values,
+                span,
+                context,
+                allow_extra_user_args,
+            );
+        }
         let function = self
             .closure_functions
             .get(&closure.id())
@@ -62981,6 +62996,19 @@ impl Interpreter {
         caller_scope: &mut SymbolTable,
         context: &str,
     ) -> CompileResult<Value> {
+        if let Some(callable) = self
+            .first_class_closure_callables
+            .get(&closure.id())
+            .cloned()
+        {
+            return self.call_first_class_callable_descriptor_direct(
+                callable,
+                args,
+                span,
+                caller_scope,
+                context,
+            );
+        }
         let function = self
             .closure_functions
             .get(&closure.id())
@@ -63047,6 +63075,14 @@ impl Interpreter {
         caller_scope: &mut SymbolTable,
         context: &str,
     ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
+        if self
+            .first_class_closure_callables
+            .contains_key(&closure.id())
+        {
+            return self
+                .invoke_closure_value_direct(closure, args, span, caller_scope, context)
+                .map(|value| (value, None));
+        }
         let function = self
             .closure_functions
             .get(&closure.id())
@@ -68875,7 +68911,7 @@ impl Interpreter {
             self.called_class_context.push(class_id);
         }
         let mut constant_scope = SymbolTable::new();
-        let value = self.evaluate(value_expr, &mut constant_scope);
+        let value = self.evaluate_constant_like_expr(value_expr, &mut constant_scope);
         if declaring_class_id.is_some() {
             self.called_class_context.pop();
             self.class_context.pop();
@@ -70904,7 +70940,7 @@ impl Interpreter {
         match key {
             "__phpc_first_class_function" => {
                 let name = self.first_class_helper_string_arg(args, 0, span, caller_scope)?;
-                self.ensure_first_class_function_callable(&name, span)?;
+                let name = self.first_class_function_callable_name(&name, span)?;
                 Ok(Value::String(name))
             }
             "__phpc_first_class_dynamic" => {
@@ -71067,9 +71103,17 @@ impl Interpreter {
         }
     }
 
-    fn ensure_first_class_function_callable(&self, name: &str, span: Span) -> CompileResult<()> {
-        if self.lookup_function(name).is_some() {
-            return Ok(());
+    fn first_class_function_callable_name(&self, name: &str, span: Span) -> CompileResult<String> {
+        if let Some(exact_name) = name.strip_prefix('\\') {
+            if self.lookup_function_exact(exact_name).is_some() {
+                return Ok(exact_name.to_string());
+            }
+        } else if self.lookup_function_exact(name).is_some() {
+            return Ok(name.to_string());
+        } else if let Some((_, suffix)) = name.rsplit_once('\\') {
+            if self.lookup_function_exact(suffix).is_some() {
+                return Ok(suffix.to_string());
+            }
         }
         if let Some((class_name, method_name)) = static_method_callable_string(name) {
             let class_id = self
@@ -71077,7 +71121,7 @@ impl Interpreter {
                 .lookup_class_id(class_name)
                 .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class(class_name)))?;
             self.ensure_first_class_static_method_callable(class_id, method_name, span)?;
-            return Ok(());
+            return Ok(name.to_string());
         }
         Err(runtime_error(
             span,
@@ -71092,7 +71136,7 @@ impl Interpreter {
     ) -> CompileResult<Value> {
         match value {
             Value::String(name) => {
-                self.ensure_first_class_function_callable(&name, span)?;
+                let name = self.first_class_function_callable_name(&name, span)?;
                 Ok(Value::String(name))
             }
             Value::Closure(closure) => Ok(Value::Closure(closure)),
@@ -71105,6 +71149,164 @@ impl Interpreter {
             Value::Object(object) => Err(object_not_callable_error(object.class_name(), span)),
             other => Err(first_class_value_not_callable_error(&other, span)),
         }
+    }
+
+    fn evaluate_constant_like_expr(
+        &mut self,
+        expr: &Expr,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let value = self.evaluate(expr, scope)?;
+        self.materialize_first_class_callable_expr_value(expr, value, expr.span())
+    }
+
+    fn materialize_first_class_callable_expr_value(
+        &mut self,
+        expr: &Expr,
+        value: Value,
+        span: Span,
+    ) -> CompileResult<Value> {
+        if Self::is_first_class_callable_helper_expr(expr) {
+            self.materialize_first_class_callable_value(value, span)
+        } else {
+            Ok(value)
+        }
+    }
+
+    fn is_first_class_callable_helper_expr(expr: &Expr) -> bool {
+        matches!(
+            expr,
+            Expr::Call { name, .. } if name.to_ascii_lowercase().starts_with("__phpc_first_class_")
+        )
+    }
+
+    fn materialize_first_class_callable_value(
+        &mut self,
+        value: Value,
+        span: Span,
+    ) -> CompileResult<Value> {
+        match value {
+            Value::Closure(_) => Ok(value),
+            Value::String(_) | Value::Array(_) => {
+                let id = self.allocate_object_id();
+                let closure = PhpClosure::new(id, false, Vec::new());
+                self.closure_values.insert(id, closure.clone());
+                self.first_class_closure_callables.insert(id, value);
+                Ok(Value::Closure(closure))
+            }
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "first-class callable constant expression",
+                    format!(
+                        "callable metadata must be string, array, or Closure, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
+    }
+
+    fn call_first_class_callable_descriptor_direct(
+        &mut self,
+        callable: Value,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+        context: &str,
+    ) -> CompileResult<Value> {
+        match callable {
+            Value::String(name) => {
+                if let Some((class_name, method_name)) = static_method_callable_string(&name) {
+                    let callback =
+                        static_method_array_callable_value(class_name, method_name, span)?;
+                    return self.call_user_func_array_callable_direct(
+                        &callback,
+                        args,
+                        span,
+                        caller_scope,
+                        context,
+                    );
+                }
+
+                let callable = self.lookup_function(&name).ok_or_else(|| {
+                    runtime_error(span, RuntimeError::undefined_function(callable_name(&name)))
+                })?;
+                match callable {
+                    Callable::Builtin(key) => self.call_builtin_callback_from_call_user_func(
+                        &key,
+                        args,
+                        span,
+                        caller_scope,
+                    ),
+                    Callable::User(function) => {
+                        self.call_user_func_user_function(function, args, span, caller_scope)
+                    }
+                }
+            }
+            Value::Array(callback) => self.call_user_func_array_callable_direct(
+                &callback,
+                args,
+                span,
+                caller_scope,
+                context,
+            ),
+            Value::Closure(closure) => {
+                self.invoke_closure_value_direct(closure, args, span, caller_scope, context)
+            }
+            other => Err(first_class_value_not_callable_error(&other, span)),
+        }
+    }
+
+    fn call_first_class_callable_descriptor_with_values(
+        &mut self,
+        callable: Value,
+        args: Vec<Value>,
+        span: Span,
+        context: &str,
+        allow_extra_user_args: bool,
+    ) -> CompileResult<Value> {
+        match callable {
+            Value::String(name) => {
+                if let Some((class_name, method_name)) = static_method_callable_string(&name) {
+                    let callback =
+                        static_method_array_callable_value(class_name, method_name, span)?;
+                    return self.call_array_callable_with_values_with_context(
+                        &callback,
+                        args,
+                        span,
+                        allow_extra_user_args,
+                        context,
+                    );
+                }
+                let callable = self.lookup_function(&name).ok_or_else(|| {
+                    runtime_error(span, RuntimeError::undefined_function(callable_name(&name)))
+                })?;
+                self.call_callable_with_values(callable, args, span)
+            }
+            Value::Array(callback) => self.call_array_callable_with_values_with_context(
+                &callback,
+                args,
+                span,
+                allow_extra_user_args,
+                context,
+            ),
+            Value::Closure(closure) => self.invoke_closure_value_with_extra_policy(
+                closure,
+                args,
+                span,
+                context,
+                allow_extra_user_args,
+            ),
+            other => Err(first_class_value_not_callable_error(&other, span)),
+        }
+    }
+
+    fn param_accepts_closure_object(param: &FunctionParam) -> bool {
+        param
+            .type_decl
+            .as_ref()
+            .is_some_and(|type_decl| type_decl_contains_name(&type_decl.text, "Closure"))
     }
 
     fn first_class_callable_from_method_value(
@@ -74627,6 +74829,11 @@ impl Interpreter {
 
         let (value, array_copy_source) =
             self.evaluate_by_value_call_argument_with_array_copy_source(arg, caller_scope)?;
+        let value = if Self::param_accepts_closure_object(param) {
+            self.materialize_first_class_callable_expr_value(arg, value, arg.span())?
+        } else {
+            value
+        };
         let value = caller_scope.value_with_object_property_aliases_from_array_copy(
             value,
             array_copy_source.clone(),
@@ -79397,7 +79604,7 @@ impl Interpreter {
                     ));
                 };
                 let mut default_scope = SymbolTable::new();
-                values.push(self.evaluate(default, &mut default_scope)?);
+                values.push(self.evaluate_constant_like_expr(default, &mut default_scope)?);
                 argument_keys.push(None);
             }
         }
@@ -84191,7 +84398,7 @@ impl Interpreter {
                     ));
                 };
                 let mut default_scope = SymbolTable::new();
-                values.push(self.evaluate(default, &mut default_scope)?);
+                values.push(self.evaluate_constant_like_expr(default, &mut default_scope)?);
                 argument_keys.push(None);
             }
         }
@@ -86086,7 +86293,7 @@ impl Interpreter {
                     .as_ref()
                     .expect("arity check ensures missing params have defaults");
                 let mut default_scope = SymbolTable::new();
-                match self.evaluate(default, &mut default_scope) {
+                match self.evaluate_constant_like_expr(default, &mut default_scope) {
                     Ok(value) => value,
                     Err(error) => {
                         self.function_context.pop();
@@ -86963,7 +87170,7 @@ impl Interpreter {
                     .as_ref()
                     .expect("arity check ensures missing params have defaults");
                 let mut default_scope = SymbolTable::new();
-                match self.evaluate(default, &mut default_scope) {
+                match self.evaluate_constant_like_expr(default, &mut default_scope) {
                     Ok(value) => value,
                     Err(error) => {
                         self.function_context.pop();
@@ -88901,7 +89108,7 @@ impl Interpreter {
                 ));
             };
             let mut default_scope = SymbolTable::new();
-            values.push(self.evaluate(default, &mut default_scope)?);
+            values.push(self.evaluate_constant_like_expr(default, &mut default_scope)?);
         }
 
         Ok((
@@ -91363,7 +91570,7 @@ impl Interpreter {
                     .as_ref()
                     .expect("arity check ensures missing params have defaults");
                 let mut default_scope = SymbolTable::new();
-                match self.evaluate(default, &mut default_scope) {
+                match self.evaluate_constant_like_expr(default, &mut default_scope) {
                     Ok(value) => value,
                     Err(error) => {
                         self.function_context.pop();
@@ -98861,6 +99068,11 @@ impl Interpreter {
         indent: usize,
         span: Span,
     ) -> CompileResult<Vec<u8>> {
+        if let Some(callable) = self.first_class_closure_callables.get(&closure.id()) {
+            return self.format_first_class_callable_closure_var_dump_bytes(
+                closure, callable, indent, span,
+            );
+        }
         let padding = "  ".repeat(indent);
         let child_indent = indent + 1;
         let resource_type = |id| self.resource_type_label(id);
@@ -98944,6 +99156,145 @@ impl Interpreter {
         }
         output.push_str(&format!("{padding}}}\n"));
         Ok(output.into_bytes())
+    }
+
+    fn format_first_class_callable_closure_var_dump_bytes(
+        &self,
+        closure: &PhpClosure,
+        callable: &Value,
+        indent: usize,
+        span: Span,
+    ) -> CompileResult<Vec<u8>> {
+        let padding = "  ".repeat(indent);
+        let child_indent = indent + 1;
+        let resource_type = |id| self.resource_type_label(id);
+        let (function_name, params) = self
+            .first_class_callable_descriptor_metadata(callable, span)
+            .unwrap_or_else(|| ("{closure}".to_string(), Vec::new()));
+        let parameter_array = Self::first_class_callable_parameter_var_dump_array(&params);
+
+        let mut output = format!("{padding}object(Closure)#{} (2) {{\n", closure.id());
+        output.push_str(&format!("{padding}  [\"function\"]=>\n"));
+        output.push_str(&format_var_dump_with_indent(
+            &Value::String(function_name),
+            child_indent,
+            span,
+            self.php_serialize_precision(),
+            &resource_type,
+        )?);
+        output.push_str(&format!("{padding}  [\"parameter\"]=>\n"));
+        output.push_str(&format_var_dump_with_indent(
+            &Value::Array(parameter_array),
+            child_indent,
+            span,
+            self.php_serialize_precision(),
+            &resource_type,
+        )?);
+        output.push_str(&format!("{padding}}}\n"));
+        Ok(output.into_bytes())
+    }
+
+    fn first_class_callable_parameter_var_dump_array(
+        params: &[ReflectionParameterMetadata],
+    ) -> PhpArray {
+        let mut array = PhpArray::new();
+        for param in params {
+            let state = if param.default.is_none() && !param.is_variadic {
+                "<required>"
+            } else {
+                "<optional>"
+            };
+            array.insert(
+                ArrayKey::String(format!("${}", param.name)),
+                Value::String(state.to_string()),
+            );
+        }
+        array
+    }
+
+    fn first_class_callable_descriptor_metadata(
+        &self,
+        callable: &Value,
+        span: Span,
+    ) -> Option<(String, Vec<ReflectionParameterMetadata>)> {
+        match callable {
+            Value::String(name) => {
+                if let Some((class_name, method_name)) = static_method_callable_string(name) {
+                    return self.first_class_static_method_metadata(class_name, method_name, span);
+                }
+                match self.lookup_function(name)? {
+                    Callable::Builtin(key) => reflection_internal_function_state(&key)
+                        .map(|state| (state.name, state.params)),
+                    Callable::User(function) => Some((
+                        function.name.clone(),
+                        reflection_parameter_metadata_from_function_params(&function.params),
+                    )),
+                }
+            }
+            Value::Array(callback) => {
+                let (target, method_name) = array_callable_parts(callback)?;
+                match target {
+                    Value::String(class_name) => {
+                        self.first_class_static_method_metadata(class_name, method_name, span)
+                    }
+                    Value::Object(object) => self.first_class_object_method_metadata(
+                        object.class_id(),
+                        object.class_name(),
+                        method_name,
+                        span,
+                    ),
+                    _ => None,
+                }
+            }
+            Value::Closure(closure) => self
+                .first_class_closure_callables
+                .get(&closure.id())
+                .and_then(|inner| self.first_class_callable_descriptor_metadata(inner, span))
+                .or_else(|| {
+                    self.closure_reflection_functions
+                        .get(&closure.id())
+                        .map(|state| (state.name.clone(), state.params.clone()))
+                }),
+            _ => None,
+        }
+    }
+
+    fn first_class_static_method_metadata(
+        &self,
+        class_name: &str,
+        method_name: &str,
+        span: Span,
+    ) -> Option<(String, Vec<ReflectionParameterMetadata>)> {
+        let class_id = self.classes.lookup_class_id(class_name)?;
+        self.first_class_object_method_metadata(class_id, class_name, method_name, span)
+    }
+
+    fn first_class_object_method_metadata(
+        &self,
+        class_id: ClassId,
+        fallback_class_name: &str,
+        method_name: &str,
+        span: Span,
+    ) -> Option<(String, Vec<ReflectionParameterMetadata>)> {
+        let (declaring_class_id, declaring_class_name, resolved_method_name, _, _) =
+            self.resolve_instance_method(class_id, method_name)?;
+        let function = self
+            .method_function(
+                declaring_class_id,
+                &declaring_class_name,
+                &resolved_method_name,
+                span,
+            )
+            .ok()?;
+        let display_class = if declaring_class_name.is_empty() {
+            fallback_class_name
+        } else {
+            &declaring_class_name
+        };
+        Some((
+            format!("{display_class}::{resolved_method_name}"),
+            reflection_parameter_metadata_from_function_params(&function.params),
+        ))
     }
 
     fn format_print_r_bytes(&self, value: &Value, span: Span) -> CompileResult<Vec<u8>> {
@@ -134678,7 +135029,7 @@ fn unsupported_runtime_constant_value_type(value: &Value) -> Option<&'static str
             .entries()
             .iter()
             .find_map(|entry| unsupported_runtime_constant_value_type(entry.value())),
-        Value::Closure(_) => Some("closure"),
+        Value::Closure(_) => None,
         Value::Resource(_) => Some("resource"),
     }
 }
