@@ -4953,10 +4953,20 @@ and late-bound `static::$prop` resolve untyped static properties through
 interpreter-owned class-level storage, initialize from the current
 constant-expression default subset or `null`, and support direct reads/writes,
 compound assignment, pre/post increment/decrement, `isset`, `empty`, `??`,
-`??=`, and stable runtime diagnostics for PHP-forbidden static-property
-`unset(...)`; typed static properties, dynamic names, storage-removing
-static-property unset, and top-level `static::$prop` execution remain
-unsupported.
+`??=`, selected array-index/append assignment, and stable runtime diagnostics
+for PHP-forbidden static-property `unset(...)`. Static-property array
+assignment resolves the declared static property to the same reference cell as
+ordinary reads and writes, mutates the array root in interpreter storage, and
+coerces the updated root through the cell's write path before storing it back.
+Direct missing static-property access raises PHP's catchable `Access to
+undeclared static property Class::$prop` `Error` surface. Ordinary
+`$object->prop` access still enters the object-property and supported magic
+fallback path first; when that path falls through to declared static metadata,
+visible non-magic access emits PHP's static-as-instance notice and
+protected/private non-magic access raises the corresponding property `Error`.
+Typed static properties, dynamic names, storage-removing static-property unset,
+static-property array-offset unset, and top-level `static::$prop` execution
+remain unsupported.
 Native lowering
 rejects class declarations, inheritance metadata, class-name constants, class
 constants, static properties, object instantiation, and object metadata

@@ -15509,8 +15509,133 @@ echo Root::$missing;
     );
     assert_eq!(
         undefined_property.message,
-        "undefined property Root::$missing"
+        "Access to undeclared static property Root::$missing"
     );
+}
+
+#[test]
+fn static_property_array_assignment_targets_execute_current_subset() {
+    let execution = run_source(
+        r#"<?php
+class Bag {
+    public static $items = array();
+}
+
+Bag::$items[] = 1;
+Bag::$items["name"] = "Ada";
+echo count(Bag::$items), ":", Bag::$items[0], ":", Bag::$items["name"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "2:1:Ada");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn static_properties_accessed_as_instance_properties_match_php_notices_and_errors() {
+    let execution = run_source(
+        r#"<?php
+#[AllowDynamicProperties]
+class C {
+    public static $x = 'C::$x';
+    protected static $y = 'C::$y';
+}
+$c = new C;
+var_dump(isset($c->x));
+unset($c->x);
+echo $c->x;
+$c->x = 1;
+$ref = 'ref';
+$c->x =& $ref;
+var_dump($c->x, C::$x);
+var_dump(isset($c->y));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.exit_code, 0);
+    assert_eq!(
+        execution
+            .stdout
+            .matches("Notice: Accessing static property C::$x as non static")
+            .count(),
+        5
+    );
+    assert!(execution
+        .stdout
+        .contains("Warning: Undefined property: C::$x"));
+    assert!(execution.stdout.contains("string(3) \"ref\""));
+    assert!(execution.stdout.contains("string(5) \"C::$x\""));
+    assert!(execution.stdout.ends_with("bool(false)\n"));
+
+    let protected_reference = run_source(
+        r#"<?php
+class C {
+    protected static $y = 'C::$y';
+}
+$c = new C;
+try {
+    $c->y =& $ref;
+} catch (Error $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(protected_reference.exit_code, 0);
+    assert_eq!(
+        protected_reference.stdout,
+        "Cannot access protected property C::$y"
+    );
+
+    let magic_precedence = run_source(
+        r#"<?php
+class MagicStatic {
+    public static $x = 'static-x';
+    protected static $y = 'static-y';
+
+    public function __get($name) {
+        echo "__get:$name\n";
+        return "magic-$name";
+    }
+
+    public function __set($name, $value) {
+        echo "__set:$name:$value\n";
+    }
+
+    public function __unset($name) {
+        echo "__unset:$name\n";
+    }
+
+    public function __isset($name) {
+        echo "__isset:$name\n";
+        return true;
+    }
+}
+
+$m = new MagicStatic;
+echo $m->x, "\n";
+echo $m->y, "\n";
+$m->x = 'write-x';
+$m->y = 'write-y';
+unset($m->x);
+unset($m->y);
+var_dump(isset($m->x), isset($m->y));
+echo MagicStatic::$x;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(magic_precedence.exit_code, 0);
+    assert_eq!(
+        magic_precedence.stdout,
+        "__get:x\nmagic-x\n__get:y\nmagic-y\n__set:x:write-x\n__set:y:write-y\n__unset:x\n__unset:y\n__isset:x\n__isset:y\nbool(true)\nbool(true)\nstatic-x"
+    );
+    assert!(!magic_precedence
+        .stdout
+        .contains("Accessing static property"));
 }
 
 #[test]
@@ -17421,10 +17546,10 @@ class Child extends Base {
 "#,
     );
     assert_eq!(static_child_error.line, 9);
-    assert_eq!(static_child_error.column, 19);
+    assert_eq!(static_child_error.column, 1);
     assert_eq!(
         static_child_error.message,
-        "unsupported class inheritance for Child: cannot redeclare non static method Base::label() as static Child::label()"
+        "Cannot make non static method Base::label() static in class Child"
     );
 
     let instance_child_error = runtime_error(
@@ -17443,10 +17568,10 @@ class Child extends Base {
 "#,
     );
     assert_eq!(instance_child_error.line, 9);
-    assert_eq!(instance_child_error.column, 12);
+    assert_eq!(instance_child_error.column, 1);
     assert_eq!(
         instance_child_error.message,
-        "unsupported class inheritance for Child: cannot redeclare static method Base::compute() as non static Child::compute()"
+        "Cannot make static method Base::compute() non static in class Child"
     );
 }
 

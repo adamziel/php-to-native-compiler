@@ -3643,13 +3643,23 @@
   and native lowering remain unsupported.
 - static property reads, direct writes, compound assignment, pre/post
   increment/decrement, `isset`, `empty`, `??`, `??=`, `unset(...)`, direct
-  references, selected array-offset mutation, and selected array-offset
-  reference sources for declared static properties through literal class,
-  object/class-string, `self`, `parent`, and active method-frame
-  late-`static` receivers. Storage is class-level, initialized from supported
-  defaults or `null`, inherited static properties share the declaring class
-  slot unless redeclared, names are case-sensitive, and current
-  public/protected/private visibility plus typed-write checks apply.
+  references, selected array-index/append assignment, selected array-offset
+  mutation, and selected array-offset reference sources for declared static
+  properties through literal class, object/class-string, `self`, `parent`, and
+  active method-frame late-`static` receivers. Storage is class-level,
+  initialized from supported defaults or `null`, inherited static properties
+  share the declaring class slot unless redeclared, names are case-sensitive,
+  and current public/protected/private visibility plus typed-write checks
+  apply. Direct missing static-property read/write/increment/reference paths
+  raise PHP `Error` objects with `Access to undeclared static property
+  Class::$prop`. Ordinary instance-property syntax over declared static
+  property metadata follows the supported object-property/magic fallback
+  order: visible non-magic accesses emit PHP's static-as-instance notice and
+  continue through the instance/dynamic slot, non-visible non-magic read,
+  write, unset, and reference-assignment accesses raise `Cannot access
+  protected/private property Class::$prop`, and supported
+  `__get`/`__set`/`__unset`/`__isset` methods keep priority when no real
+  instance slot handles the access.
 - `isset($object->name)` for direct public instance property operands on direct
   object variables, plus private property operands owned by the active
   declaring class, protected property operands owned by the active class or an
@@ -8351,15 +8361,24 @@
   evaluate to current objects or declared class-name strings, using the same
   storage, inherited-property lookup, visibility rules, typed-write
   diagnostics, and assignment-result ownership as literal and relative
-  receivers. Static-property references and selected static-property
+  receivers. Missing declared static-property read/write/increment/reference
+  paths raise PHP `Error` objects with `Access to undeclared static property
+  Class::$prop`. Ordinary `$object->prop` syntax that names declared static
+  property metadata keeps the normal supported object-property and magic
+  fallback order; visible non-magic accesses emit PHP's static-as-instance
+  notice and continue through the instance/dynamic slot, while
+  protected/private non-magic read, write, unset, and reference assignment
+  raise `Cannot access ... property Class::$prop`. Static-property references
+  and selected static-property
   array-offset reference sources use the same storage identity for literal,
   object/class-string, `self`, `parent`, and method-frame late-`static`
   receivers; when the stored root is a proven `ArrayAccess` object, selected
   `Class::$bag[$key]` by-reference sources route through the shared
   reference-returning `offsetGet()` owner boundary. Computed static property
   names beyond direct `::$name` tokens, storage-removing static-property unset,
-  multi-hop static-property `ArrayAccess` reference paths, object/class-string
-  receiver `isset`, `empty`, `??`, `??=`, and
+  static-property array-offset unset, multi-hop static-property `ArrayAccess`
+  reference paths, object/class-string receiver `isset`, `empty`, `??`, `??=`,
+  and
   `static::$prop` outside method/static class context remain unsupported.
   `parent::method(...)` and `self::method(...)` calls are the supported magic
   receiver slices for visible non-static or static method dispatch from active

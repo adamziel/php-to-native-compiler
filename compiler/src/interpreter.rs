@@ -392,6 +392,10 @@ fn class_registration_startup_fatal_message(error: &Diagnostic) -> Option<String
         return Some(message);
     }
 
+    if let Some(message) = class_method_staticness_startup_fatal_message(reason) {
+        return Some(message);
+    }
+
     if let Some((missing_count, missing_methods)) =
         class_missing_interface_methods_from_startup_reason(class_name, reason)
     {
@@ -469,6 +473,27 @@ fn class_method_visibility_startup_fatal_message(reason: &str) -> Option<String>
     Some(format!(
         "Access level to {method} must be {visibility} (as in class {parent_class}){suffix}"
     ))
+}
+
+fn class_method_staticness_startup_fatal_message(reason: &str) -> Option<String> {
+    for parent_static in ["static", "non static"] {
+        let Some(rest) = reason.strip_prefix(&format!("cannot redeclare {parent_static} method "))
+        else {
+            continue;
+        };
+        let (parent_method, rest) = rest.split_once(" as ")?;
+        for child_static in ["static", "non static"] {
+            let Some(child_method) = rest.strip_prefix(&format!("{child_static} ")) else {
+                continue;
+            };
+            let (child_class, _) = child_method.split_once("::")?;
+            return Some(format!(
+                "Cannot make {parent_static} method {parent_method} {child_static} in class {child_class}"
+            ));
+        }
+    }
+
+    None
 }
 
 fn class_missing_interface_methods_from_startup_reason<'a>(
@@ -31777,6 +31802,7 @@ impl Interpreter {
             .unset_property_from_context(property, current_class_id, &protected_class_ids)
             .map_err(|error| runtime_error(span, error))?;
         if found {
+            self.ensure_static_property_instance_access(&object, property, span, true)?;
             scope.post_replace_holder_storage(&boundary);
             scope.remove_public_object_property_root_from_array_offset_aliases(
                 object_name,
@@ -31785,10 +31811,20 @@ impl Interpreter {
             );
             self.mark_dateinterval_state_property_dirty(&object, property);
         } else {
-            if call_magic_on_missing {
+            let magic_handled = if call_magic_on_missing {
                 self.call_magic_property_method_with_caller_scope(
-                    object, "__unset", property, span, scope,
-                )?;
+                    object.clone(),
+                    "__unset",
+                    property,
+                    span,
+                    scope,
+                )?
+                .is_some()
+            } else {
+                false
+            };
+            if !magic_handled {
+                self.ensure_static_property_instance_access(&object, property, span, true)?;
             }
         }
         Ok(())
@@ -36647,6 +36683,25 @@ impl Interpreter {
                     name: source_name, ..
                 } = source
                 {
+                    match scope.read_static(object, *span)? {
+                        Value::Object(object_value) => {
+                            self.ensure_static_property_instance_access(
+                                &object_value,
+                                property,
+                                *span,
+                                true,
+                            )?;
+                        }
+                        other => {
+                            return Err(runtime_error(
+                                *span,
+                                RuntimeError::invalid_property_access(format!(
+                                    "cannot write property ${property} on {}",
+                                    other.type_name()
+                                )),
+                            ));
+                        }
+                    }
                     let source_cell = scope.read_cell(source_name).ok_or_else(|| {
                         runtime_error(*span, RuntimeError::undefined_variable(source_name))
                     })?;
@@ -36672,6 +36727,25 @@ impl Interpreter {
                 } = source
                 {
                     let property = self.evaluate_dynamic_property_name(property, *span, scope)?;
+                    match scope.read_static(object, *span)? {
+                        Value::Object(object_value) => {
+                            self.ensure_static_property_instance_access(
+                                &object_value,
+                                &property,
+                                *span,
+                                true,
+                            )?;
+                        }
+                        other => {
+                            return Err(runtime_error(
+                                *span,
+                                RuntimeError::invalid_property_access(format!(
+                                    "cannot write property ${property} on {}",
+                                    other.type_name()
+                                )),
+                            ));
+                        }
+                    }
                     let source_cell = scope.read_cell(source_name).ok_or_else(|| {
                         runtime_error(*span, RuntimeError::undefined_variable(source_name))
                     })?;
@@ -43958,6 +44032,47 @@ impl Interpreter {
                             }
                         }
 
+                        if self.static_property_instance_write_should_try_magic_set(
+                            &object_value,
+                            property,
+                            current_class_id,
+                            &protected_class_ids,
+                        ) {
+                            let method_value = self.value_with_assignment_reference_cells(
+                                value.clone(),
+                                expr,
+                                &array_literal_references,
+                                &array_copy_sources,
+                                scope,
+                                expr.span(),
+                            )?;
+                            let indexed_copy_source_bindings =
+                                Self::indexed_array_copy_source_bindings_for_argument(
+                                    1,
+                                    &array_copy_sources,
+                                );
+                            if self
+                                .call_magic_instance_method_with_values_and_caller_scope_and_arg_sources(
+                                    object_value.clone(),
+                                    "__set",
+                                    vec![Value::String(property.clone()), method_value],
+                                    *span,
+                                    scope,
+                                    indexed_copy_source_bindings,
+                                )?
+                                .is_some()
+                            {
+                                return Ok(value);
+                            }
+                        }
+
+                        self.ensure_static_property_instance_access(
+                            &object_value,
+                            property,
+                            *span,
+                            true,
+                        )?;
+
                         if let Some(stored_value) = self.write_mysqli_driver_property(
                             &object_value,
                             property,
@@ -45008,6 +45123,47 @@ impl Interpreter {
                             }
                         }
 
+                        if self.static_property_instance_write_should_try_magic_set(
+                            &object_value,
+                            &property,
+                            current_class_id,
+                            &protected_class_ids,
+                        ) {
+                            let method_value = self.value_with_assignment_reference_cells(
+                                value.clone(),
+                                expr,
+                                &array_literal_references,
+                                &array_copy_sources,
+                                scope,
+                                expr.span(),
+                            )?;
+                            let indexed_copy_source_bindings =
+                                Self::indexed_array_copy_source_bindings_for_argument(
+                                    1,
+                                    &array_copy_sources,
+                                );
+                            if self
+                                .call_magic_instance_method_with_values_and_caller_scope_and_arg_sources(
+                                    object_value.clone(),
+                                    "__set",
+                                    vec![Value::String(property.clone()), method_value],
+                                    *span,
+                                    scope,
+                                    indexed_copy_source_bindings,
+                                )?
+                                .is_some()
+                            {
+                                return Ok(value);
+                            }
+                        }
+
+                        self.ensure_static_property_instance_access(
+                            &object_value,
+                            &property,
+                            *span,
+                            true,
+                        )?;
+
                         self.emit_array_object_dynamic_property_deprecation_if_needed(
                             &object_value,
                             &property,
@@ -45145,14 +45301,52 @@ impl Interpreter {
                 let value = self.evaluate(expr, scope)?;
                 self.write_object_static_property(target, &property, value, *span, scope)
             }
-            AssignTarget::StaticPropertyArrayIndex { span, .. }
-            | AssignTarget::StaticPropertyArrayAppend { span, .. } => Err(runtime_error(
-                *span,
-                RuntimeError::unsupported_call(
-                    "assignment",
-                    "static-property array-offset targets are not implemented in the interpreter",
-                ),
-            )),
+            AssignTarget::StaticPropertyArrayIndex {
+                expr: target_expr,
+                indices,
+                span,
+            } => {
+                let keys = indices
+                    .iter()
+                    .map(|index| self.evaluate_array_key(index, scope))
+                    .collect::<CompileResult<Vec<_>>>()?;
+                let (value, _, _) =
+                    self.evaluate_assignment_value_with_reference_metadata(expr, scope)?;
+                self.write_static_property_nested_array_value(
+                    target_expr,
+                    &keys,
+                    value.clone(),
+                    *span,
+                    scope,
+                )?;
+                Ok(value)
+            }
+            AssignTarget::StaticPropertyArrayAppend {
+                expr: target_expr,
+                indices,
+                suffix_indices,
+                span,
+            } => {
+                let keys = indices
+                    .iter()
+                    .map(|index| self.evaluate_array_key(index, scope))
+                    .collect::<CompileResult<Vec<_>>>()?;
+                let suffix_keys = suffix_indices
+                    .iter()
+                    .map(|index| self.evaluate_array_key(index, scope))
+                    .collect::<CompileResult<Vec<_>>>()?;
+                let (value, _, _) =
+                    self.evaluate_assignment_value_with_reference_metadata(expr, scope)?;
+                self.write_static_property_nested_array_append(
+                    target_expr,
+                    &keys,
+                    &suffix_keys,
+                    value.clone(),
+                    *span,
+                    scope,
+                )?;
+                Ok(value)
+            }
             AssignTarget::StaticProperty {
                 class_name,
                 property,
@@ -47858,6 +48052,78 @@ impl Interpreter {
         Self::append_nested_array_value(&mut child, rest, value, span)?;
         array.insert(key.clone(), Value::Array(child));
         Ok(())
+    }
+
+    fn write_static_property_nested_array_value(
+        &mut self,
+        target: &Expr,
+        keys: &[ArrayKey],
+        value: Value,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        let cell = self.static_property_reference_cell_from_expr(target, span, scope)?;
+        let mut slot = cell.value_cloned();
+
+        if matches!(slot, Value::Bool(false)) {
+            self.emit_false_to_array_deprecation(span)?;
+            slot = Value::Array(PhpArray::new());
+        } else if matches!(slot, Value::Null) {
+            slot = Value::Array(PhpArray::new());
+        }
+
+        match &mut slot {
+            Value::Array(array) => {
+                self.write_nested_array_value(array, keys, value, span)?;
+                let slot = self.coerce_reference_cell_value_for_write(&cell, slot, span)?;
+                cell.set_value(slot);
+                Ok(())
+            }
+            other => Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access(format!(
+                    "cannot write offset on {}",
+                    other.type_name()
+                )),
+            )),
+        }
+    }
+
+    fn write_static_property_nested_array_append(
+        &mut self,
+        target: &Expr,
+        keys: &[ArrayKey],
+        suffix_keys: &[ArrayKey],
+        value: Value,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        let cell = self.static_property_reference_cell_from_expr(target, span, scope)?;
+        let mut slot = cell.value_cloned();
+
+        if matches!(slot, Value::Bool(false)) {
+            self.emit_false_to_array_deprecation(span)?;
+            slot = Value::Array(PhpArray::new());
+        } else if matches!(slot, Value::Null) {
+            slot = Value::Array(PhpArray::new());
+        }
+
+        match &mut slot {
+            Value::Array(array) => {
+                let stored_value = Self::wrap_value_in_array_suffix(suffix_keys, value, span)?;
+                Self::append_nested_array_value(array, keys, stored_value, span)?;
+                let slot = self.coerce_reference_cell_value_for_write(&cell, slot, span)?;
+                cell.set_value(slot);
+                Ok(())
+            }
+            other => Err(runtime_error(
+                span,
+                RuntimeError::invalid_array_access(format!(
+                    "cannot write offset on {}",
+                    other.type_name()
+                )),
+            )),
+        }
     }
 
     fn evaluate_list_assignment(
@@ -58896,6 +59162,7 @@ impl Interpreter {
                             return self
                                 .array_object_read_property_from_storage(&object, property, span);
                         }
+                        self.ensure_static_property_instance_access(&object, property, span, true)?;
                         Ok(value)
                     }
                     Err(error)
@@ -58952,6 +59219,9 @@ impl Interpreter {
                         .map(Ok)
                         .unwrap_or_else(|| {
                             if Self::is_undefined_property_error(&error) {
+                                self.ensure_static_property_instance_access(
+                                    &object, property, span, true,
+                                )?;
                                 self.emit_undefined_property_warning(
                                     object.class_name(),
                                     property,
@@ -59017,6 +59287,7 @@ impl Interpreter {
                                 None,
                             ));
                         }
+                        self.ensure_static_property_instance_access(&object, property, span, true)?;
                         let source = if matches!(value, Value::Array(_)) {
                             scope
                                 .object_property_array_copy_source_for_path(&object, property, &[])
@@ -59095,6 +59366,9 @@ impl Interpreter {
                         .map(Ok)
                         .unwrap_or_else(|| {
                             if Self::is_undefined_property_error(&error) {
+                                self.ensure_static_property_instance_access(
+                                    &object, property, span, true,
+                                )?;
                                 self.emit_undefined_property_warning(
                                     object.class_name(),
                                     property,
@@ -60093,6 +60367,9 @@ impl Interpreter {
                             return self
                                 .array_object_read_property_from_storage(&object, &property, span);
                         }
+                        self.ensure_static_property_instance_access(
+                            &object, &property, span, true,
+                        )?;
                         Ok(value)
                     }
                     Err(error)
@@ -60149,6 +60426,9 @@ impl Interpreter {
                         .map(Ok)
                         .unwrap_or_else(|| {
                             if Self::is_undefined_property_error(&error) {
+                                self.ensure_static_property_instance_access(
+                                    &object, &property, span, true,
+                                )?;
                                 self.emit_undefined_property_warning(
                                     object.class_name(),
                                     &property,
@@ -70722,9 +71002,7 @@ impl Interpreter {
     ) -> CompileResult<(ClassId, String)> {
         let (declaring_class_id, declaring_class_name, visibility) = self
             .resolve_static_property(class_id, property)
-            .ok_or_else(|| {
-                runtime_error(span, RuntimeError::undefined_property(class_name, property))
-            })?;
+            .ok_or_else(|| undeclared_static_property_error(class_name, property, span))?;
 
         self.ensure_static_property_visible(
             declaring_class_id,
@@ -70735,6 +71013,71 @@ impl Interpreter {
         )?;
 
         Ok((declaring_class_id, declaring_class_name))
+    }
+
+    fn ensure_static_property_instance_access(
+        &mut self,
+        object: &PhpObject,
+        property: &str,
+        span: Span,
+        emit_notice: bool,
+    ) -> CompileResult<()> {
+        let Some((declaring_class_id, declaring_class_name, visibility)) =
+            self.resolve_static_property(object.class_id(), property)
+        else {
+            return Ok(());
+        };
+
+        if visibility != Visibility::Public
+            && !self.member_visible_from_current_class_context(declaring_class_id, visibility)
+        {
+            return Err(static_property_instance_visibility_error(
+                &declaring_class_name,
+                property,
+                visibility,
+                span,
+            ));
+        }
+
+        if emit_notice {
+            self.emit_display_notice(
+                format!(
+                    "Accessing static property {declaring_class_name}::${property} as non static"
+                ),
+                span,
+            )?;
+        }
+
+        Ok(())
+    }
+
+    fn static_property_instance_write_should_try_magic_set(
+        &self,
+        object: &PhpObject,
+        property: &str,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+    ) -> bool {
+        if self
+            .resolve_static_property(object.class_id(), property)
+            .is_none()
+            || self
+                .resolve_instance_method(object.class_id(), "__set")
+                .is_none()
+        {
+            return false;
+        }
+
+        match object.read_property_from_context(property, current_class_id, protected_class_ids) {
+            Ok(_) => false,
+            Err(error) => Self::is_magic_get_fallback_property_error_for_object(
+                object,
+                property,
+                current_class_id,
+                protected_class_ids,
+                &error,
+            ),
+        }
     }
 
     fn resolve_static_property(
@@ -132546,6 +132889,34 @@ fn non_static_method_called_statically_error(
     )
 }
 
+fn undeclared_static_property_error(class_name: &str, property: &str, span: Span) -> Diagnostic {
+    Diagnostic::new(
+        Phase::Runtime,
+        span.line,
+        span.column,
+        format!("Access to undeclared static property {class_name}::${property}"),
+    )
+}
+
+fn static_property_instance_visibility_error(
+    class_name: &str,
+    property: &str,
+    visibility: Visibility,
+    span: Span,
+) -> Diagnostic {
+    let visibility = match visibility {
+        Visibility::Private => "private",
+        Visibility::Protected => "protected",
+        Visibility::Public => "public",
+    };
+    Diagnostic::new(
+        Phase::Runtime,
+        span.line,
+        span.column,
+        format!("Cannot access {visibility} property {class_name}::${property}"),
+    )
+}
+
 fn cannot_call_constructor_error(span: Span) -> Diagnostic {
     Diagnostic::new(
         Phase::Runtime,
@@ -133277,6 +133648,21 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
 
         if error.message.starts_with("Call to private method ")
             || error.message.starts_with("Call to protected method ")
+        {
+            return Some(("Error", error.message.clone()));
+        }
+
+        if error
+            .message
+            .starts_with("Access to undeclared static property ")
+        {
+            return Some(("Error", error.message.clone()));
+        }
+
+        if error.message.starts_with("Cannot access private property ")
+            || error
+                .message
+                .starts_with("Cannot access protected property ")
         {
             return Some(("Error", error.message.clone()));
         }
