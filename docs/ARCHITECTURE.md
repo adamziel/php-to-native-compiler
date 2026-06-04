@@ -4668,14 +4668,20 @@ names in inherited parameter or return types still produce PHP-shaped
 compatibility-check fatals.
 The DateTime parser path is intentionally table-bounded: supported
 `createFromFormat()` and `date_parse_from_format()` rows are recognized through
-small token parsers for the documented numeric/RFC/textual formats, and
-`date_parse()` exposes only the documented numeric date/time plus selected
-malformed numeric timezone metadata arrays, selected single-letter timezone
-abbreviation/whitespace metadata, and selected relative metadata for the
-bounded first/last-day next-month forms. The shared timezone token table keeps
-fixed offsets with optional seconds, selected military-letter offsets, and the
-represented named/legacy timezone identifiers as explicit data instead of
-falling back to regex-only parsing. `DateTime::modify()` shares the
+small token parsers for the documented numeric/RFC/textual formats. That
+format parser returns a single attempt value with the constructed DateTime
+state, the `date_parse_from_format()` field array, and represented
+warning/error diagnostics so `createFromFormat()`,
+`date_parse_from_format()`, and `getLastErrors()` do not drift from one
+another. Timezone metadata is emitted in parse-result arrays only when an
+explicit timezone token was consumed. `date_parse()` exposes only the
+documented numeric date/time plus selected malformed numeric timezone metadata
+arrays, selected single-letter timezone abbreviation/whitespace metadata, and
+selected relative metadata for the bounded first/last-day next-month forms. The
+shared timezone token table keeps fixed offsets with optional seconds, selected
+military-letter offsets, and the represented named/legacy timezone identifiers
+as explicit data instead of falling back to regex-only parsing.
+`DateTime::modify()` shares the
 same bounded approach: current support covers selected weekday/week-relative
 forms, first/last-day calendar forms, unit modifiers including subsecond
 aliases, timestamp modifiers, and named time resets while rejecting unsupported
@@ -4684,8 +4690,8 @@ engine for selected base-timestamp relative forms and keeps its extra absolute
 grammar to small table-driven compact, flexible numeric, slash-date, ISO-week,
 RFC-ish timezone suffix, compact textual, month/year, ordinal textual,
 named-time, and weekday-prefixed forms. Broad timelib grammar, parser
-error-state history, and object-handle reuse behavior remain outside that
-runtime parser boundary.
+error-state history beyond represented diagnostics, and object-handle reuse
+behavior remain outside that runtime parser boundary.
 DateTime interval arithmetic stays in the same bounded local timestamp model:
 calendar components are borrowed in local civil time, fixed/abbreviation and
 same-civil-day named-zone transition spans are adjusted by endpoint offset

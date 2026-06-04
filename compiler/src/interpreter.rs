@@ -595,6 +595,7 @@ struct Interpreter {
     date_interval_objects: HashMap<i64, BoundedDateIntervalState>,
     dirty_date_interval_objects: HashSet<i64>,
     date_period_objects: HashSet<i64>,
+    date_last_errors: Option<BoundedDateParseDiagnostics>,
     hash_contexts: HashMap<i64, BoundedHashContextState>,
     uri_rfc3986_empty_port_objects: HashSet<i64>,
     source_file: Option<String>,
@@ -1074,15 +1075,22 @@ struct BoundedParsedDateTime {
 }
 
 #[derive(Debug, Clone)]
-struct BoundedParsedFormatDateTime {
-    year: i64,
-    month: i64,
-    day: i64,
-    hour: i64,
-    minute: i64,
-    second: i64,
-    microsecond: i64,
-    timezone: BoundedTimezone,
+struct BoundedDateParseDiagnostics {
+    warnings: Vec<(i64, &'static str)>,
+    errors: Vec<(i64, &'static str)>,
+}
+
+impl BoundedDateParseDiagnostics {
+    fn is_empty(&self) -> bool {
+        self.warnings.is_empty() && self.errors.is_empty()
+    }
+}
+
+#[derive(Debug, Clone)]
+struct BoundedFormatParseAttempt {
+    parsed: Option<BoundedParsedDateTime>,
+    fields: BoundedDateParseResult,
+    diagnostics: BoundedDateParseDiagnostics,
 }
 
 #[derive(Debug, Clone)]
@@ -12045,6 +12053,7 @@ impl Interpreter {
             date_interval_objects: HashMap::new(),
             dirty_date_interval_objects: HashSet::new(),
             date_period_objects: HashSet::new(),
+            date_last_errors: None,
             hash_contexts: HashMap::new(),
             uri_rfc3986_empty_port_objects: HashSet::new(),
             main_source_file: source_file.clone(),
@@ -12659,7 +12668,8 @@ impl Interpreter {
                 "Trying to compare an incomplete DateTime or DateTimeImmutable object",
             )
         })?;
-        let ordering = left_state.timestamp.cmp(&right_state.timestamp);
+        let ordering = (left_state.timestamp, left_state.microsecond)
+            .cmp(&(right_state.timestamp, right_state.microsecond));
         Ok(Self::comparison_result_value(op, ordering))
     }
 
@@ -24536,9 +24546,14 @@ impl Interpreter {
         let format = self.date_format_string_argument(function, 1, format_value, span)?;
         let datetime =
             self.php_string_argument_with_magic(function, 2, "datetime", datetime_value, span)?;
+        validate_date_no_null_bytes(function, 2, "datetime", &datetime, span)?;
         let default_timezone =
             self.datetime_constructor_timezone(function, timezone_value, span)?;
-        let Some(parsed) = parse_bounded_create_from_format(&format, &datetime, &default_timezone)
+        let attempt = parse_bounded_format_datetime_attempt(&format, &datetime, &default_timezone);
+        self.set_date_last_errors(attempt.diagnostics.clone());
+        let Some(parsed) = attempt
+            .parsed
+            .filter(|_| attempt.diagnostics.errors.is_empty())
         else {
             return Ok(Value::Bool(false));
         };
@@ -25485,6 +25500,7 @@ impl Interpreter {
         expect_arity("date_parse", args, 1, span)?;
         let datetime =
             self.php_string_argument_with_magic("date_parse()", 1, "datetime", &args[0], span)?;
+        validate_date_no_null_bytes("date_parse()", 1, "datetime", &datetime, span)?;
         Ok(Value::Array(bounded_date_parse_array(&datetime)))
     }
 
@@ -25499,9 +25515,29 @@ impl Interpreter {
             &args[1],
             span,
         )?;
-        Ok(Value::Array(bounded_date_parse_from_format_array(
-            &format, &datetime,
+        validate_date_no_null_bytes("date_parse_from_format()", 2, "datetime", &datetime, span)?;
+        let attempt =
+            parse_bounded_format_datetime_attempt(&format, &datetime, &BoundedTimezone::utc());
+        self.set_date_last_errors(attempt.diagnostics.clone());
+        Ok(Value::Array(bounded_date_parse_result_array(
+            attempt.fields,
         )))
+    }
+
+    fn set_date_last_errors(&mut self, diagnostics: BoundedDateParseDiagnostics) {
+        self.date_last_errors = (!diagnostics.is_empty()).then_some(diagnostics);
+    }
+
+    fn call_date_get_last_errors(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("date_get_last_errors", args, 0, span)?;
+        Ok(self.date_get_last_errors_value())
+    }
+
+    fn date_get_last_errors_value(&self) -> Value {
+        match &self.date_last_errors {
+            Some(diagnostics) => Value::Array(date_parse_last_errors_array(diagnostics)),
+            None => Value::Bool(false),
+        }
     }
 
     fn call_date_diff(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -67090,6 +67126,20 @@ impl Interpreter {
         {
             return self.call_datetime_set_state_static(class_id, args, span, caller_scope);
         }
+        if self.is_datetime_class_id(class_id) && method_name.eq_ignore_ascii_case("getLastErrors")
+        {
+            if !args.is_empty() {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::arity_mismatch(
+                        "DateTime::getLastErrors",
+                        ArityExpectation::Exactly(0),
+                        args.len(),
+                    ),
+                ));
+            }
+            return Ok(self.date_get_last_errors_value());
+        }
         if self.is_datetime_class_id(class_id)
             && method_name.eq_ignore_ascii_case("createFromFormat")
         {
@@ -67130,6 +67180,21 @@ impl Interpreter {
                 span,
                 caller_scope,
             );
+        }
+        if self.is_datetimeimmutable_class_id(class_id)
+            && method_name.eq_ignore_ascii_case("getLastErrors")
+        {
+            if !args.is_empty() {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::arity_mismatch(
+                        "DateTimeImmutable::getLastErrors",
+                        ArityExpectation::Exactly(0),
+                        args.len(),
+                    ),
+                ));
+            }
+            return Ok(self.date_get_last_errors_value());
         }
         if self.is_datetimeimmutable_class_id(class_id)
             && method_name.eq_ignore_ascii_case("createFromFormat")
@@ -103364,6 +103429,7 @@ impl Interpreter {
             "date_create_immutable" => self.call_date_create_immutable(&args, span),
             "date_parse" => self.call_date_parse(&args, span),
             "date_parse_from_format" => self.call_date_parse_from_format(&args, span),
+            "date_get_last_errors" => self.call_date_get_last_errors(&args, span),
             "date_diff" => self.call_date_diff(&args, span),
             "date_modify" => self.call_date_modify(&args, span),
             "date_add" => self.call_date_add(&args, span),
@@ -129566,6 +129632,25 @@ fn date_malformed_string_error(span: Span, message: String) -> Diagnostic {
     )
 }
 
+fn validate_date_no_null_bytes(
+    function: &'static str,
+    position: usize,
+    name: &str,
+    value: &str,
+    span: Span,
+) -> CompileResult<()> {
+    if !value.as_bytes().contains(&0) {
+        return Ok(());
+    }
+    Err(runtime_error(
+        span,
+        RuntimeError::unsupported_call(
+            function,
+            format!("Argument #{position} (${name}) must not contain any null bytes"),
+        ),
+    ))
+}
+
 fn date_modifier_parse_error(function: &str, modifier: &str) -> String {
     let first = modifier.chars().next().unwrap_or(' ');
     if modifier.is_empty() {
@@ -131359,6 +131444,17 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
             Some(format!("{function}: {message}"))
         }
         (
+            "DateTime::createFromFormat()"
+            | "DateTimeImmutable::createFromFormat()"
+            | "date_parse_from_format()"
+            | "date_parse()",
+            message,
+        ) if message.starts_with("Argument #")
+            && message.ends_with(" must not contain any null bytes") =>
+        {
+            Some(format!("{function}: {message}"))
+        }
+        (
             "setcookie()" | "setrawcookie()",
             "Argument #1 ($name) must not be empty"
             | "\"samesite\" option must be \"Strict\", \"Lax\", \"None\", or \"\"",
@@ -132629,6 +132725,7 @@ fn is_builtin(name: &str) -> bool {
             | "date_create_immutable"
             | "date_parse"
             | "date_parse_from_format"
+            | "date_get_last_errors"
             | "date_diff"
             | "date_modify"
             | "date_add"
@@ -169070,6 +169167,7 @@ fn bounded_timezone_from_name(name: &str) -> Option<BoundedTimezone> {
         "America/Sao_Paulo" => "America/Sao_Paulo",
         "Europe/Amsterdam" => "Europe/Amsterdam",
         "Europe/Berlin" => "Europe/Berlin",
+        "Europe/Bratislava" => "Europe/Bratislava",
         "Europe/Kyiv" => "Europe/Kyiv",
         "Europe/London" => "Europe/London",
         "Europe/Moscow" => "Europe/Moscow",
@@ -171260,52 +171358,6 @@ fn parse_bounded_datetime_with_microsecond(
     parse_bounded_textual_datetime(trimmed, default_timezone).map(|timestamp| (timestamp, 0))
 }
 
-fn parse_bounded_create_from_format(
-    format: &str,
-    input: &str,
-    default_timezone: &BoundedTimezone,
-) -> Option<BoundedParsedDateTime> {
-    if let Some(parsed) = parse_bounded_format_datetime(format, input, default_timezone) {
-        let explicit_offset = parsed.timezone.fixed_offset;
-        let timestamp = timestamp_for_bounded_parts(
-            parsed.year,
-            parsed.month,
-            parsed.day,
-            parsed.hour,
-            parsed.minute,
-            parsed.second,
-            explicit_offset,
-            default_timezone,
-        )?;
-        return Some(BoundedParsedDateTime {
-            timestamp,
-            microsecond: parsed.microsecond,
-            timezone: parsed.timezone,
-        });
-    }
-    match format {
-        "Y-m-d H:i:s.u" => {
-            let (timestamp, microsecond) =
-                parse_bounded_ymd_his_microseconds(input, default_timezone)?;
-            Some(BoundedParsedDateTime {
-                timestamp,
-                microsecond,
-                timezone: default_timezone.clone(),
-            })
-        }
-        "U.u" => {
-            let (timestamp, microsecond) = parse_bounded_unix_microseconds(input)?;
-            Some(BoundedParsedDateTime {
-                timestamp,
-                microsecond,
-                timezone: BoundedTimezone::numeric_fixed_offset(0),
-            })
-        }
-        "Y-m-d\\TH:i:s.vP" => parse_bounded_rfc3339_extended(input, default_timezone),
-        _ => None,
-    }
-}
-
 fn bounded_date_parse_array(input: &str) -> PhpArray {
     let trimmed = input.trim();
     if !input.is_empty() && trimmed.is_empty() {
@@ -171338,43 +171390,6 @@ fn bounded_date_parse_array(input: &str) -> PhpArray {
     bounded_date_parse_result_array(bounded_date_parse_result(input))
 }
 
-fn bounded_date_parse_from_format_array(format: &str, input: &str) -> PhpArray {
-    let default_timezone = BoundedTimezone::utc();
-    let result = match parse_bounded_format_datetime(format, input, &default_timezone) {
-        Some(parsed) => BoundedDateParseResult {
-            year: Some(parsed.year),
-            month: Some(parsed.month),
-            day: Some(parsed.day),
-            hour: Some(parsed.hour),
-            minute: Some(parsed.minute),
-            second: Some(parsed.second),
-            fraction: Value::Int(parsed.microsecond / 1_000_000),
-            warnings: vec![],
-            errors: vec![],
-            is_localtime: false,
-            zone_type: None,
-            zone: None,
-            is_dst: None,
-        },
-        None => BoundedDateParseResult {
-            year: None,
-            month: None,
-            day: None,
-            hour: None,
-            minute: None,
-            second: None,
-            fraction: Value::Bool(false),
-            warnings: vec![],
-            errors: vec![(0, "Data missing")],
-            is_localtime: false,
-            zone_type: None,
-            zone: None,
-            is_dst: None,
-        },
-    };
-    bounded_date_parse_result_array(result)
-}
-
 fn bounded_date_parse_result_array(result: BoundedDateParseResult) -> PhpArray {
     let mut array = PhpArray::new();
     array.insert("year", optional_int_or_false(result.year));
@@ -171404,6 +171419,24 @@ fn bounded_date_parse_result_array(result: BoundedDateParseResult) -> PhpArray {
     if let Some(is_dst) = result.is_dst {
         array.insert("is_dst", Value::Bool(is_dst));
     }
+    array
+}
+
+fn date_parse_last_errors_array(diagnostics: &BoundedDateParseDiagnostics) -> PhpArray {
+    let mut array = PhpArray::new();
+    array.insert(
+        "warning_count",
+        Value::Int(diagnostics.warnings.len() as i64),
+    );
+    array.insert(
+        "warnings",
+        Value::Array(date_parse_diagnostics_array(&diagnostics.warnings)),
+    );
+    array.insert("error_count", Value::Int(diagnostics.errors.len() as i64));
+    array.insert(
+        "errors",
+        Value::Array(date_parse_diagnostics_array(&diagnostics.errors)),
+    );
     array
 }
 
@@ -171687,13 +171720,13 @@ fn parse_decimal_fraction_value(fraction: &str) -> Option<f64> {
     format!("0.{fraction}").parse::<f64>().ok()
 }
 
-fn parse_bounded_format_datetime(
+fn parse_bounded_format_datetime_attempt(
     format: &str,
     input: &str,
     default_timezone: &BoundedTimezone,
-) -> Option<BoundedParsedFormatDateTime> {
+) -> BoundedFormatParseAttempt {
     if !format.is_ascii() || !input.is_ascii() {
-        return None;
+        return bounded_format_parse_error(0, "Data missing");
     }
     let mut cursor = BoundedFormatCursor { input, position: 0 };
     let mut parts = BoundedFormatParts {
@@ -171707,16 +171740,31 @@ fn parse_bounded_format_datetime(
         timezone: default_timezone.clone(),
         twelve_hour: false,
         meridiem: None,
+        year_seen: false,
+        month_seen: false,
+        day_seen: false,
+        hour_seen: false,
+        minute_seen: false,
+        second_seen: false,
+        fraction_seen: false,
+        timezone_seen: false,
+        day_of_year: None,
+        unix_timestamp: None,
+        lenient_trailing_data: false,
     };
     let mut escaped = false;
     for token in format.chars() {
         if escaped {
-            cursor.consume_literal(token)?;
+            if cursor.consume_literal(token).is_none() {
+                return bounded_format_parse_error(cursor.position as i64, "Data missing");
+            }
             escaped = false;
             continue;
         }
         match token {
             '\\' => escaped = true,
+            '+' => parts.lenient_trailing_data = true,
+            '|' => {}
             '!' => {
                 parts.year = 1970;
                 parts.month = 1;
@@ -171726,70 +171774,223 @@ fn parse_bounded_format_datetime(
                 parts.second = 0;
                 parts.microsecond = 0;
                 parts.timezone = default_timezone.clone();
+                parts.year_seen = false;
+                parts.month_seen = false;
+                parts.day_seen = false;
+                parts.hour_seen = false;
+                parts.minute_seen = false;
+                parts.second_seen = false;
+                parts.fraction_seen = false;
+                parts.timezone_seen = false;
+                parts.day_of_year = None;
+                parts.unix_timestamp = None;
             }
-            'Y' => parts.year = cursor.consume_fixed_digits(4)?,
-            'X' => parts.year = cursor.consume_signed_fixed_year(4)?,
+            'Y' => {
+                let Some(value) = cursor.consume_fixed_digits(4) else {
+                    return bounded_format_parse_error(
+                        cursor.position as i64,
+                        "A four digit year could not be found",
+                    );
+                };
+                parts.year = value;
+                parts.year_seen = true;
+            }
+            'X' => {
+                let Some(value) = cursor.consume_signed_fixed_year(4) else {
+                    return bounded_format_parse_error(cursor.position as i64, "Data missing");
+                };
+                parts.year = value;
+                parts.year_seen = true;
+            }
+            'U' => {
+                let Some(timestamp) = cursor.consume_signed_digit_run(1, 19) else {
+                    return bounded_format_parse_error(cursor.position as i64, "Data missing");
+                };
+                parts.unix_timestamp = Some(timestamp);
+                parts.timezone = BoundedTimezone::numeric_fixed_offset(0);
+            }
             'y' => {
-                let year = cursor.consume_fixed_digits(2)?;
+                let Some(year) = cursor.consume_fixed_digits(2) else {
+                    return bounded_format_parse_error(cursor.position as i64, "Data missing");
+                };
                 parts.year = if year <= 69 { 2000 + year } else { 1900 + year };
+                parts.year_seen = true;
             }
-            'm' | 'd' | 'H' | 'i' | 's' => {
-                let value = cursor.consume_fixed_digits(2)?;
+            'm' | 'd' | 'H' => {
+                let Some(value) = cursor.consume_digit_component(1, 2) else {
+                    return bounded_format_parse_error(cursor.position as i64, "Data missing");
+                };
                 match token {
-                    'm' => parts.month = value,
-                    'd' => parts.day = value,
-                    'H' => parts.hour = value,
-                    'i' => parts.minute = value,
-                    's' => parts.second = value,
+                    'm' => {
+                        parts.month = value;
+                        parts.month_seen = true;
+                    }
+                    'd' => {
+                        parts.day = value;
+                        parts.day_seen = true;
+                    }
+                    'H' => {
+                        parts.hour = value;
+                        parts.hour_seen = true;
+                    }
                     _ => {}
                 }
             }
-            'j' => parts.day = cursor.consume_variable_digits(1, 2)?,
+            'i' | 's' => {
+                let Some(value) = cursor.consume_fixed_digits(2) else {
+                    let message = if token == 's' {
+                        "A two digit second could not be found"
+                    } else {
+                        "Data missing"
+                    };
+                    return bounded_format_parse_error(cursor.position as i64, message);
+                };
+                match token {
+                    'H' => parts.hour = value,
+                    'i' => {
+                        parts.minute = value;
+                        parts.minute_seen = true;
+                    }
+                    's' => {
+                        parts.second = value;
+                        parts.second_seen = true;
+                    }
+                    _ => {}
+                }
+            }
+            'j' => {
+                let Some(value) = cursor.consume_variable_digits(1, 2) else {
+                    return bounded_format_parse_error(cursor.position as i64, "Data missing");
+                };
+                parts.day = value;
+                parts.day_seen = true;
+            }
+            'z' => {
+                if !parts.year_seen {
+                    return bounded_format_parse_error(
+                        cursor.position as i64,
+                        "A 'day of year' can only come after a year has been found",
+                    );
+                }
+                let Some(value) = cursor.consume_variable_digits(1, 3) else {
+                    return bounded_format_parse_error(cursor.position as i64, "Data missing");
+                };
+                parts.day_of_year = Some(value);
+            }
             'g' => {
-                parts.hour = cursor.consume_variable_digits(1, 2)?;
+                let Some(value) = cursor.consume_variable_digits(1, 2) else {
+                    return bounded_format_parse_error(cursor.position as i64, "Data missing");
+                };
+                parts.hour = value;
+                parts.hour_seen = true;
                 parts.twelve_hour = true;
             }
             'u' => {
-                let digits = cursor.consume_digit_run(1, 6)?;
-                parts.microsecond = parse_microsecond_fraction(digits)?;
+                let Some(digits) = cursor.consume_digit_run(1, 6) else {
+                    return bounded_format_parse_error(
+                        cursor.position as i64,
+                        "Not enough data available to satisfy format",
+                    );
+                };
+                let Some(microsecond) = parse_microsecond_fraction(digits) else {
+                    return bounded_format_parse_error(cursor.position as i64, "Data missing");
+                };
+                parts.microsecond = microsecond;
+                parts.fraction_seen = true;
             }
             'v' => {
-                let digits = cursor.consume_digit_run(3, 3)?;
-                parts.microsecond = parse_microsecond_fraction(digits)?;
+                let Some(digits) = cursor.consume_digit_run(3, 3) else {
+                    return bounded_format_parse_error(cursor.position as i64, "Data missing");
+                };
+                let Some(microsecond) = parse_microsecond_fraction(digits) else {
+                    return bounded_format_parse_error(cursor.position as i64, "Data missing");
+                };
+                parts.microsecond = microsecond;
+                parts.fraction_seen = true;
             }
-            'M' => parts.month = cursor.consume_month_name(false)?,
-            'F' => parts.month = cursor.consume_month_name(true)?,
+            'M' => {
+                let Some(month) = cursor.consume_month_name(false) else {
+                    return bounded_format_parse_error(cursor.position as i64, "Data missing");
+                };
+                parts.month = month;
+                parts.month_seen = true;
+            }
+            'F' => {
+                let Some(month) = cursor.consume_month_name(true) else {
+                    return bounded_format_parse_error(cursor.position as i64, "Data missing");
+                };
+                parts.month = month;
+                parts.month_seen = true;
+            }
             'D' => {
-                cursor.consume_weekday_name(false)?;
+                if cursor.consume_weekday_name(false).is_none() {
+                    return bounded_format_parse_error(cursor.position as i64, "Data missing");
+                }
             }
             'l' => {
-                cursor.consume_weekday_name(true)?;
+                if cursor.consume_weekday_name(true).is_none() {
+                    return bounded_format_parse_error(cursor.position as i64, "Data missing");
+                }
             }
-            'A' | 'a' => parts.meridiem = Some(cursor.consume_meridiem()?),
+            'A' | 'a' => {
+                let Some(meridiem) = cursor.consume_meridiem() else {
+                    return bounded_format_parse_error(
+                        cursor.position as i64,
+                        "A meridian could not be found",
+                    );
+                };
+                parts.meridiem = Some(meridiem);
+            }
             'O' => {
-                let offset = cursor.consume_timezone_offset(false)?;
+                let Some(offset) = cursor.consume_timezone_offset(false) else {
+                    return bounded_format_parse_error(cursor.position as i64, "Data missing");
+                };
                 parts.timezone = BoundedTimezone::numeric_fixed_offset(offset);
+                parts.timezone_seen = true;
             }
             'P' => {
-                let offset = cursor.consume_timezone_offset(true)?;
+                let Some(offset) = cursor.consume_timezone_offset(true) else {
+                    return bounded_format_parse_error(cursor.position as i64, "Data missing");
+                };
                 parts.timezone = BoundedTimezone::numeric_fixed_offset(offset);
+                parts.timezone_seen = true;
             }
             'T' => {
-                let offset = cursor.consume_timezone_abbreviation()?;
-                parts.timezone = BoundedTimezone::numeric_fixed_offset(offset);
+                let Some(timezone) = cursor.consume_timezone_abbreviation() else {
+                    return bounded_format_parse_error(cursor.position as i64, "Data missing");
+                };
+                parts.timezone = timezone;
+                parts.timezone_seen = true;
             }
             '#' | '*' => {
-                cursor.consume_one_separator()?;
+                if cursor.consume_one_separator().is_none() {
+                    return bounded_format_parse_error(cursor.position as i64, "Data missing");
+                }
             }
-            other => cursor.consume_literal(other)?,
+            other => {
+                if cursor.consume_literal(other).is_none() {
+                    return bounded_format_parse_error(cursor.position as i64, "Data missing");
+                }
+            }
         }
     }
     if escaped || !cursor.is_finished() {
-        return None;
+        let diagnostics = if parts.lenient_trailing_data {
+            BoundedDateParseDiagnostics {
+                warnings: vec![(cursor.position as i64, "Trailing data")],
+                errors: vec![],
+            }
+        } else {
+            BoundedDateParseDiagnostics {
+                warnings: vec![],
+                errors: vec![(cursor.position as i64, "Trailing data")],
+            }
+        };
+        return bounded_format_parse_success(parts, default_timezone, diagnostics);
     }
     if parts.twelve_hour {
         if !(1..=12).contains(&parts.hour) {
-            return None;
+            return bounded_format_parse_error(0, "Data missing");
         }
         if parts.hour == 12 {
             parts.hour = 0;
@@ -171798,16 +171999,144 @@ fn parse_bounded_format_datetime(
             parts.hour += 12;
         }
     }
-    Some(BoundedParsedFormatDateTime {
-        year: parts.year,
-        month: parts.month,
-        day: parts.day,
-        hour: parts.hour,
-        minute: parts.minute,
-        second: parts.second,
-        microsecond: parts.microsecond,
-        timezone: parts.timezone,
-    })
+    bounded_format_parse_success(
+        parts,
+        default_timezone,
+        BoundedDateParseDiagnostics {
+            warnings: vec![],
+            errors: vec![],
+        },
+    )
+}
+
+fn bounded_format_parse_error(offset: i64, message: &'static str) -> BoundedFormatParseAttempt {
+    let diagnostics = BoundedDateParseDiagnostics {
+        warnings: vec![],
+        errors: vec![(offset, message)],
+    };
+    BoundedFormatParseAttempt {
+        parsed: None,
+        fields: BoundedDateParseResult {
+            year: None,
+            month: None,
+            day: None,
+            hour: None,
+            minute: None,
+            second: None,
+            fraction: Value::Bool(false),
+            warnings: diagnostics.warnings.clone(),
+            errors: diagnostics.errors.clone(),
+            is_localtime: false,
+            zone_type: None,
+            zone: None,
+            is_dst: None,
+        },
+        diagnostics,
+    }
+}
+
+fn bounded_format_parse_success(
+    mut parts: BoundedFormatParts,
+    default_timezone: &BoundedTimezone,
+    diagnostics: BoundedDateParseDiagnostics,
+) -> BoundedFormatParseAttempt {
+    if let Some(day_of_year) = parts.day_of_year {
+        if let Some((month, day)) = month_day_from_day_of_year(parts.year, day_of_year) {
+            parts.month = month;
+            parts.day = day;
+            parts.month_seen = true;
+            parts.day_seen = true;
+        } else {
+            return bounded_format_parse_error(0, "Data missing");
+        }
+    }
+
+    let (parsed, parsed_timezone) = if let Some(timestamp) = parts.unix_timestamp {
+        (
+            Some(BoundedParsedDateTime {
+                timestamp,
+                microsecond: parts.microsecond,
+                timezone: BoundedTimezone::numeric_fixed_offset(0),
+            }),
+            BoundedTimezone::numeric_fixed_offset(0),
+        )
+    } else {
+        let explicit_offset = parts.timezone.fixed_offset;
+        let parsed = timestamp_for_bounded_parts(
+            parts.year,
+            parts.month,
+            parts.day,
+            parts.hour,
+            parts.minute,
+            parts.second,
+            explicit_offset,
+            default_timezone,
+        )
+        .map(|timestamp| BoundedParsedDateTime {
+            timestamp,
+            microsecond: parts.microsecond,
+            timezone: parts.timezone.clone(),
+        });
+        (parsed, parts.timezone.clone())
+    };
+
+    let (zone_type, zone, is_dst) = if parts.timezone_seen {
+        bounded_date_parse_timezone_metadata(&parsed_timezone.name).unwrap_or((None, None, None))
+    } else {
+        (None, None, None)
+    };
+    let fields = BoundedDateParseResult {
+        year: parts.year_seen.then_some(parts.year),
+        month: parts.month_seen.then_some(parts.month),
+        day: parts.day_seen.then_some(parts.day),
+        hour: parts.hour_seen.then_some(parts.hour),
+        minute: parts.minute_seen.then_some(parts.minute),
+        second: parts.second_seen.then_some(parts.second),
+        fraction: if parts.fraction_seen {
+            Value::Float(parts.microsecond as f64 / 1_000_000.0)
+        } else {
+            Value::Bool(false)
+        },
+        warnings: diagnostics.warnings.clone(),
+        errors: diagnostics.errors.clone(),
+        is_localtime: zone_type.is_some(),
+        zone_type,
+        zone,
+        is_dst,
+    };
+    BoundedFormatParseAttempt {
+        parsed,
+        fields,
+        diagnostics,
+    }
+}
+
+fn bounded_date_parse_timezone_metadata(
+    timezone_name: &str,
+) -> Option<(Option<i64>, Option<i64>, Option<bool>)> {
+    let (timezone_type, canonical) = bounded_timezone_object_parts(timezone_name)?;
+    let zone = match timezone_type {
+        1 => parse_timezone_offset_token(&canonical),
+        2 => bounded_timezone_from_name(&canonical)
+            .map(|timezone| timezone.fixed_offset.unwrap_or(0)),
+        _ => None,
+    };
+    Some((Some(timezone_type), zone, Some(false)))
+}
+
+fn month_day_from_day_of_year(year: i64, day_of_year: i64) -> Option<(i64, i64)> {
+    if day_of_year < 0 {
+        return None;
+    }
+    let mut remaining = day_of_year;
+    for month in 1..=12 {
+        let days = days_in_month(year, month);
+        if remaining < days {
+            return Some((month, remaining + 1));
+        }
+        remaining -= days;
+    }
+    None
 }
 
 struct BoundedFormatParts {
@@ -171821,6 +172150,17 @@ struct BoundedFormatParts {
     timezone: BoundedTimezone,
     twelve_hour: bool,
     meridiem: Option<bool>,
+    year_seen: bool,
+    month_seen: bool,
+    day_seen: bool,
+    hour_seen: bool,
+    minute_seen: bool,
+    second_seen: bool,
+    fraction_seen: bool,
+    timezone_seen: bool,
+    day_of_year: Option<i64>,
+    unix_timestamp: Option<i64>,
+    lenient_trailing_data: bool,
 }
 
 struct BoundedFormatCursor<'a> {
@@ -171870,6 +172210,37 @@ impl<'a> BoundedFormatCursor<'a> {
     fn consume_variable_digits(&mut self, min: usize, max: usize) -> Option<i64> {
         let digits = self.consume_digit_run(min, max)?;
         parse_ascii_i64(digits)
+    }
+
+    fn consume_digit_component(&mut self, min: usize, max: usize) -> Option<i64> {
+        self.consume_variable_digits(min, max)
+    }
+
+    fn consume_signed_digit_run(&mut self, min: usize, max: usize) -> Option<i64> {
+        let start = self.position;
+        if matches!(
+            self.rest().as_bytes().first().copied(),
+            Some(b'+') | Some(b'-')
+        ) {
+            self.position += 1;
+        }
+        let bytes = self.input.as_bytes();
+        let mut len = 0;
+        while self.position + len < bytes.len()
+            && len < max
+            && bytes[self.position + len].is_ascii_digit()
+        {
+            len += 1;
+        }
+        if len < min {
+            self.position = start;
+            return None;
+        }
+        self.position += len;
+        parse_signed_ascii_i64(&self.input[start..self.position]).or_else(|| {
+            self.position = start;
+            None
+        })
     }
 
     fn consume_digit_run(&mut self, min: usize, max: usize) -> Option<&'a str> {
@@ -171954,6 +172325,9 @@ impl<'a> BoundedFormatCursor<'a> {
                 return Some(());
             }
         }
+        if full {
+            return self.consume_weekday_name(false);
+        }
         None
     }
 
@@ -171971,6 +172345,10 @@ impl<'a> BoundedFormatCursor<'a> {
     }
 
     fn consume_timezone_offset(&mut self, colon: bool) -> Option<i64> {
+        let gmt_prefix = self.rest().get(..3).is_some_and(|value| value == "GMT");
+        if gmt_prefix {
+            self.position += 3;
+        }
         let widths: &[usize] = if colon { &[9, 6] } else { &[9, 7, 5] };
         for width in widths {
             let Some(end) = self.position.checked_add(*width) else {
@@ -171989,20 +172367,27 @@ impl<'a> BoundedFormatCursor<'a> {
                 return Some(offset);
             }
         }
+        if gmt_prefix {
+            self.position -= 3;
+        }
         None
     }
 
-    fn consume_timezone_abbreviation(&mut self) -> Option<i64> {
+    fn consume_timezone_abbreviation(&mut self) -> Option<BoundedTimezone> {
         if self.rest().starts_with("GMT") {
             self.position += 3;
             if self.is_finished() {
-                return Some(0);
+                return Some(BoundedTimezone {
+                    name: "GMT".to_string(),
+                    fixed_offset: Some(0),
+                });
             }
-            return self.consume_timezone_offset(false);
+            let offset = self.consume_timezone_offset(false)?;
+            return Some(BoundedTimezone::numeric_fixed_offset(offset));
         }
         if self.rest().starts_with("UTC") {
             self.position += 3;
-            return Some(0);
+            return bounded_timezone_from_name("UTC");
         }
         None
     }
@@ -172044,101 +172429,6 @@ fn parse_timezone_offset_without_colon(token: &str) -> Option<i64> {
     } else {
         Some(offset)
     }
-}
-
-fn parse_bounded_ymd_his_microseconds(
-    input: &str,
-    default_timezone: &BoundedTimezone,
-) -> Option<(i64, i64)> {
-    if !input.is_ascii()
-        || input.len() != 26
-        || &input[4..5] != "-"
-        || &input[7..8] != "-"
-        || &input[10..11] != " "
-        || &input[13..14] != ":"
-        || &input[16..17] != ":"
-        || &input[19..20] != "."
-    {
-        return None;
-    }
-    let year = parse_ascii_i64(&input[0..4])?;
-    let month = parse_ascii_i64(&input[5..7])?;
-    let day = parse_ascii_i64(&input[8..10])?;
-    let hour = parse_ascii_i64(&input[11..13])?;
-    let minute = parse_ascii_i64(&input[14..16])?;
-    let second = parse_ascii_i64(&input[17..19])?;
-    let microsecond = parse_microsecond_fraction(&input[20..26])?;
-    timestamp_for_bounded_parts(
-        year,
-        month,
-        day,
-        hour,
-        minute,
-        second,
-        None,
-        default_timezone,
-    )
-    .map(|timestamp| (timestamp, microsecond))
-}
-
-fn parse_bounded_unix_microseconds(input: &str) -> Option<(i64, i64)> {
-    let trimmed = input.trim();
-    let (seconds, fraction) = trimmed.split_once('.')?;
-    if seconds.is_empty() || fraction.is_empty() {
-        return None;
-    }
-    let timestamp = parse_signed_ascii_i64(seconds)?;
-    let microsecond = parse_microsecond_fraction(fraction)?;
-    let microsecond_delta = if seconds.starts_with('-') {
-        -microsecond
-    } else {
-        microsecond
-    };
-    Some(normalize_timestamp_microsecond(
-        timestamp,
-        microsecond_delta,
-    ))
-}
-
-fn parse_bounded_rfc3339_extended(
-    input: &str,
-    default_timezone: &BoundedTimezone,
-) -> Option<BoundedParsedDateTime> {
-    if !input.is_ascii()
-        || input.len() != 29
-        || &input[4..5] != "-"
-        || &input[7..8] != "-"
-        || &input[10..11] != "T"
-        || &input[13..14] != ":"
-        || &input[16..17] != ":"
-        || &input[19..20] != "."
-        || &input[26..27] != ":"
-    {
-        return None;
-    }
-    let offset = parse_timezone_offset_token(&input[23..29])?;
-    let year = parse_ascii_i64(&input[0..4])?;
-    let month = parse_ascii_i64(&input[5..7])?;
-    let day = parse_ascii_i64(&input[8..10])?;
-    let hour = parse_ascii_i64(&input[11..13])?;
-    let minute = parse_ascii_i64(&input[14..16])?;
-    let second = parse_ascii_i64(&input[17..19])?;
-    let millisecond = parse_microsecond_fraction(&input[20..23])?;
-    let timestamp = timestamp_for_bounded_parts(
-        year,
-        month,
-        day,
-        hour,
-        minute,
-        second,
-        Some(offset),
-        default_timezone,
-    )?;
-    Some(BoundedParsedDateTime {
-        timestamp,
-        microsecond: millisecond,
-        timezone: BoundedTimezone::numeric_fixed_offset(offset),
-    })
 }
 
 fn apply_bounded_datetime_modifier(

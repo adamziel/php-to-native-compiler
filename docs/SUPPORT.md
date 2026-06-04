@@ -6616,15 +6616,19 @@
   single-letter offsets in the bounded parser table.
   `date_create_from_format()` plus
   `DateTime::createFromFormat()` / `DateTimeImmutable::createFromFormat()`
-  cover the bounded formats `Y-m-d H:i:s.u`, `U.u`,
+  cover the bounded formats `Y-m-d H:i:s.u`, `U.u`, `U H`, `Y-m-d|`,
   `Y-m-d\TH:i:sP`, `Y-m-d\TH:i:sO`, `X-m-d\TH:i:sP`,
   `D, d M y H:i:s O`, `D, d M Y H:i:s O`,
   `l, d-M-y H:i:s T`, `l, d-M-Y H:i:s T`,
   `Y-m-d\TH:i:s.vP` / `DateTime::RFC3339_EXTENDED`, and
-  `D., M# j, Y g:iA`, returning `false` for unsupported formats in the
-  current subset. The covered `O` / `P` timezone readers accept fixed offsets
-  with seconds and normalize zero-second offset identities to PHP-shaped
-  `+HH:MM` names. `date_parse()` exposes bounded parse-result arrays for
+  `D., M# j, Y g:iA`, plus the selected variable-width `m/d/Y`, `m/d/y+`,
+  `yz`, and standalone `O` token shapes used by current rows. `U` timestamp
+  parsing takes precedence over additional parsed clock fields in this bounded
+  subset, `|` resets unspecified fields to the epoch defaults, and unsupported
+  formats return `false`. The covered `O` / `P` timezone readers accept
+  optional `GMT` prefixes, fixed offsets with seconds, and normalize
+  zero-second offset identities to PHP-shaped `+HH:MM` names. `date_parse()`
+  exposes bounded parse-result arrays for
   numeric `YYYY-MM-DD`, `YYYY-MM`, `YYYY-MM-DD HH:MM:SS.fraction`, and
   `HH:MM:SS.fraction` forms plus selected malformed numeric timezone/error
   metadata, selected single-letter `A` timezone-abbreviation metadata,
@@ -6632,9 +6636,15 @@
   `first day`, `last day`, `next month`, `first day next month`,
   `last day next month`, `first day of next month`, and `last day of next
   month`;
-  `date_parse_from_format()` covers `!m/d/y` and the same bounded
-  single-separator wildcard form `!m*d*y`. `strtotime()` uses the supplied
-  base timestamp for the bounded relative unit and `<weekday> this week`
+  `date_parse_from_format()` covers `!m/d/y`, `!m*d*y`, and the same selected
+  format-token subset as `createFromFormat()` while returning field metadata,
+  timezone metadata only for explicit timezone tokens, and represented
+  warning/error arrays for trailing data and null-byte inputs.
+  `date_get_last_errors()` and `DateTime::getLastErrors()` /
+  `DateTimeImmutable::getLastErrors()` expose the latest represented
+  create-from-format or parse-from-format diagnostics, or `false` when the
+  bounded format parse had no warnings or errors. `strtotime()` uses the
+  supplied base timestamp for the bounded relative unit and `<weekday> this week`
   modifiers already shared with DateTime mutation, including joined count/unit
   spellings such as `+5days`, and recognizes selected compact UTC
   `YYYYMMDDtHHMMSSZ`, compact `YYYYMMDDHHMMSS` with timezone suffixes,
@@ -6698,7 +6708,8 @@
   the current runtime object model; exact core `DateTime` and `DateTimeZone`
   dynamic property creation emits the PHP-shaped deprecation before storing the
   property. Non-strict `DateTime` / `DateTimeImmutable` comparisons use stored
-  timestamps, ignoring class and public property differences, and report
+  timestamps and microseconds, ignoring class and public property differences,
+  and report
   catchable `DateObjectError`s for uninitialized operands in the covered
   comparison path. `DateTime::diff()`,
   `DateTimeImmutable::diff()`, and `date_diff()` produce bounded
@@ -6819,7 +6830,8 @@
   broad `strtotime()` parser grammar outside the documented bounded forms,
   broad
   `createFromFormat()` / `date_parse()` / `date_parse_from_format()` grammar,
-  parser error metadata, `getLastErrors()` metadata, DateTime object-handle
+  full parser error metadata and `getLastErrors()` history beyond the
+  represented diagnostics, DateTime object-handle
   reuse parity during parser loops, fractional or negative ISO interval
   components, exact
   DateInterval object-dump handler parity for `from_string` intervals, exact

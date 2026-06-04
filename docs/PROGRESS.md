@@ -4,6 +4,31 @@
 
 Implemented:
 
+- Added a bounded `DateTime::createFromFormat()` /
+  `DateTimeImmutable::createFromFormat()` / `date_parse_from_format()`
+  format-edge lane on the interpreter path. The shared parser now carries both
+  parsed field metadata and parse diagnostics for the covered tokens, including
+  variable-width numeric dates/times, `|` resets, lenient `+` trailing-data
+  warnings, `U` timestamp precedence over parsed clock fields, `y` plus
+  year-relative `z`, textual month/weekday tokens, GMT-prefixed `O` / `P`
+  offsets, timezone-abbreviation metadata, null-byte `ValueError`s, and
+  selected `DateTime::getLastErrors()` / `date_get_last_errors()` result
+  arrays. Non-strict DateTime comparisons now include microseconds instead of
+  timestamp seconds alone. Focused proof covers exact-current pre-patch
+  selected PHPT at `0/11` and post-patch selected PHPT at `11/11` for
+  `ext/date/tests/bug50392.phpt`, `ext/date/tests/bug51393.phpt`,
+  `ext/date/tests/bug51994.phpt`, `ext/date/tests/bug53879.phpt`,
+  `ext/date/tests/bug54316.phpt`, `ext/date/tests/bug66836.phpt`,
+  `ext/date/tests/bug68078.phpt`,
+  `ext/date/tests/bug68078_negative.phpt`,
+  `ext/date/tests/bug72963.phpt`, `ext/date/tests/bug76770.phpt`, and
+  `ext/date/tests/date-lenient.phpt`, plus focused Rust DateTime coverage,
+  build, fmt, and diff checks. Unsupported edges remain broad timelib
+  `createFromFormat()` / `date_parse_from_format()` grammar and exact
+  diagnostics outside the represented token set, full parser error-history
+  parity, DateTime object-handle reuse and object property visibility side
+  effects during parser loops, references/COW, and native lowering.
+
 - Added a bounded DateTime interval-arithmetic correction for DST-crossing
   diffs and massive signed proleptic years on the interpreter path. The local
   civil-date conversion now round-trips negative-era dates with Euclidean

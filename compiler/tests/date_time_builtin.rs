@@ -1821,6 +1821,49 @@ echo $textual->format("D., M. j, Y g:iA"), "\n";
 }
 
 #[test]
+fn datetime_create_from_format_edges_preserve_bounded_metadata() {
+    let execution = run_source(
+        r#"<?php
+date_default_timezone_set("UTC");
+var_dump(DateTime::createFromFormat("O", "GMT+0800")->getOffset());
+echo DateTime::createFromFormat("Y-m-d|", "2011-02-02")->format("Y-m-d H:i:s"), "\n";
+$yz = date_parse_from_format("yz", "10153");
+echo $yz["year"], "-", $yz["month"], "-", $yz["day"], "\n";
+$frac = date_parse_from_format("Y-m-d H:i:s.u", "2009-03-01 18:00:00.7777777");
+echo $frac["fraction"], "|", $frac["errors"][26], "\n";
+$date1 = DateTime::createFromFormat("U.u", "1448889063.3531");
+$date2 = DateTime::createFromFormat("U.u", "1448889063.5216");
+var_dump($date1 < $date2);
+var_dump(DateTime::createFromFormat("U H", "3600 01")->getTimestamp());
+$lenient = date_parse_from_format("m/d/y+", "06/08/04 12:00");
+echo $lenient["warning_count"], "|", $lenient["warnings"][8], "\n";
+try {
+    date_parse_from_format("m/d/Y", "8/8/2016\0asf");
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "int(28800)\n",
+            "2011-02-02 00:00:00\n",
+            "2010-6-3\n",
+            "0.777777|Trailing data\n",
+            "bool(true)\n",
+            "int(3600)\n",
+            "1|Trailing data\n",
+            "date_parse_from_format(): Argument #2 ($datetime) must not contain any null bytes\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn datetime_mutable_date_time_setters_normalize_bounded_parts() {
     let execution = run_source(
         r#"<?php
