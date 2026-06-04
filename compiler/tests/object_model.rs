@@ -1591,6 +1591,151 @@ echo $bag->title;
 }
 
 #[test]
+fn magic_get_set_run_for_direct_property_compound_assignment() {
+    let source = r#"<?php
+class Container {
+    private $_p = array();
+
+    public function __get($property) {
+        echo "get:$property\n";
+        return $this->_p[$property];
+    }
+
+    public function __set($property, $value) {
+        echo "set:$property=$value\n";
+        $this->_p[$property] = $value;
+    }
+}
+
+$container = new Container();
+$container->a = 1;
+var_dump($container->a += 1);
+var_dump($container->a += max(0, 1));
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "set:a=1\n",
+            "get:a\n",
+            "set:a=2\n",
+            "int(2)\n",
+            "get:a\n",
+            "set:a=3\n",
+            "int(3)\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn magic_get_set_run_for_direct_property_increment_decrement() {
+    let source = r#"<?php
+class Overloaded {
+    private $values = array("a" => 0, "b" => 5);
+
+    public function __get($property) {
+        echo "get:$property(" . $this->values[$property] . ")\n";
+        return $this->values[$property];
+    }
+
+    public function __set($property, $value) {
+        echo "set:$property=$value\n";
+        $this->values[$property] = $value;
+    }
+}
+
+$box = new Overloaded();
+var_dump($box->a++);
+var_dump(++$box->a);
+var_dump($box->b--);
+var_dump(--$box->b);
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "get:a(0)\n",
+            "set:a=1\n",
+            "int(0)\n",
+            "get:a(1)\n",
+            "set:a=2\n",
+            "int(2)\n",
+            "get:b(5)\n",
+            "set:b=4\n",
+            "int(5)\n",
+            "get:b(4)\n",
+            "set:b=3\n",
+            "int(3)\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_returning_magic_get_increment_writes_missing_dynamic_property_without_set() {
+    let source = r#"<?php
+#[AllowDynamicProperties]
+class Box {
+    private $slot = 0;
+
+    public function &__get($property) {
+        return $this->slot;
+    }
+}
+
+$box = new Box();
+echo $box->f++;
+echo $box->f++;
+echo $box->f++;
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.stdout, "012");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn magic_get_does_not_reenter_same_active_object_property() {
+    let source = r#"<?php
+$bar = new Bar();
+$foo = new Foo();
+
+class Bar {
+    public function __get($property) {
+        global $foo;
+        return $foo->foo;
+    }
+}
+
+#[AllowDynamicProperties]
+class Foo {
+    public function __get($property) {
+        global $bar;
+        return $bar->bar;
+    }
+}
+
+$foo->blah += 1;
++$foo->blah;
+echo "ok";
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert!(
+        execution
+            .stdout
+            .contains("Warning: Undefined property: Bar::$bar"),
+        "{}",
+        execution.stdout
+    );
+    assert!(execution.stdout.ends_with("ok"), "{}", execution.stdout);
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn magic_unset_runs_for_missing_direct_property_unset() {
     let source = r#"<?php
 class Bag {

@@ -559,6 +559,23 @@ struct ArrayCallableMethodResolution {
     called_class_id: ClassId,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct ActiveMagicProperty {
+    object_id: i64,
+    method_name: &'static str,
+    property: String,
+}
+
+impl ActiveMagicProperty {
+    fn new(object: &PhpObject, method_name: &'static str, property: &str) -> Self {
+        Self {
+            object_id: object.id(),
+            method_name,
+            property: property.to_string(),
+        }
+    }
+}
+
 struct Interpreter {
     functions: HashMap<String, Rc<FunctionDecl>>,
     function_source_files: HashMap<String, Option<String>>,
@@ -619,6 +636,7 @@ struct Interpreter {
     autoload_callbacks: Vec<AutoloadCallback>,
     autoload_extensions: String,
     active_autoloads: HashSet<String>,
+    active_magic_properties: HashSet<ActiveMagicProperty>,
     json_last_error: i64,
     json_last_error_message: String,
     json_active_serializable_objects: HashSet<i64>,
@@ -12104,6 +12122,7 @@ impl Interpreter {
             autoload_callbacks: Vec::new(),
             autoload_extensions: ".inc,.php".to_string(),
             active_autoloads: HashSet::new(),
+            active_magic_properties: HashSet::new(),
             json_last_error: PHP_JSON_ERROR_NONE,
             json_last_error_message: json_error_base_message(PHP_JSON_ERROR_NONE).to_string(),
             json_active_serializable_objects: HashSet::new(),
@@ -27377,6 +27396,20 @@ impl Interpreter {
         )
     }
 
+    fn emit_overloaded_property_indirect_modification_notice(
+        &mut self,
+        class_name: &str,
+        property: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        self.emit_display_notice(
+            format!(
+                "Indirect modification of overloaded property {class_name}::${property} has no effect"
+            ),
+            span,
+        )
+    }
+
     fn emit_array_access_reference_assignment_fatal(&mut self, span: Span) {
         let file = self
             .source_file
@@ -31434,11 +31467,9 @@ impl Interpreter {
                     self.execute_unset_array_access_path(object, keys, span, scope)
                 }
                 Value::Array(_) => {
-                    self.emit_notice(
-                        "__get()",
-                        format!(
-                            "Indirect modification of overloaded property {class_name}::${property} has no effect"
-                        ),
+                    self.emit_overloaded_property_indirect_modification_notice(
+                        &class_name,
+                        property,
                         span,
                     )?;
                     Ok(())
@@ -38625,11 +38656,9 @@ impl Interpreter {
                 if !allow_array_fallback {
                     return Ok(None);
                 }
-                self.emit_notice(
-                    "__get()",
-                    format!(
-                        "Indirect modification of overloaded property {class_name}::${property} has no effect"
-                    ),
+                self.emit_overloaded_property_indirect_modification_notice(
+                    &class_name,
+                    property,
                     span,
                 )?;
                 match value {
@@ -41476,13 +41505,7 @@ impl Interpreter {
             None
         };
         let value = scope.value_with_object_property_aliases_from_array_copy(value, source, true);
-        self.emit_notice(
-            "__get()",
-            format!(
-                "Indirect modification of overloaded property {class_name}::${property} has no effect"
-            ),
-            span,
-        )?;
+        self.emit_overloaded_property_indirect_modification_notice(&class_name, property, span)?;
         Ok(Some(MagicGetReferenceRootBinding::DetachedValue(value)))
     }
 
@@ -45537,11 +45560,9 @@ impl Interpreter {
                     )
                 }
                 Some(returned_value @ Value::Array(_)) => {
-                    self.emit_notice(
-                        "__get()",
-                        format!(
-                            "Indirect modification of overloaded property {class_name}::${property} has no effect"
-                        ),
+                    self.emit_overloaded_property_indirect_modification_notice(
+                        &class_name,
+                        property,
                         span,
                     )?;
                     if self.write_by_value_overloaded_array_path_array_access_object(
@@ -45572,11 +45593,9 @@ impl Interpreter {
                     )
                 }
                 Some(Value::Null) | Some(Value::Bool(false)) => {
-                    self.emit_notice(
-                        "__get()",
-                        format!(
-                            "Indirect modification of overloaded property {class_name}::${property} has no effect"
-                        ),
+                    self.emit_overloaded_property_indirect_modification_notice(
+                        &class_name,
+                        property,
                         span,
                     )?;
                     Ok(true)
@@ -45585,11 +45604,9 @@ impl Interpreter {
                     value
                     @ (Value::Bool(true) | Value::Int(_) | Value::Float(_) | Value::String(_)),
                 ) => {
-                    self.emit_notice(
-                        "__get()",
-                        format!(
-                            "Indirect modification of overloaded property {class_name}::${property} has no effect"
-                        ),
+                    self.emit_overloaded_property_indirect_modification_notice(
+                        &class_name,
+                        property,
                         span,
                     )?;
                     Err(runtime_error(
@@ -45820,11 +45837,9 @@ impl Interpreter {
                     Some(object)
                 }
                 Some(returned_value @ Value::Array(_)) => {
-                    self.emit_notice(
-                        "__get()",
-                        format!(
-                            "Indirect modification of overloaded property {class_name}::${property} has no effect"
-                        ),
+                    self.emit_overloaded_property_indirect_modification_notice(
+                        &class_name,
+                        property,
                         span,
                     )?;
                     if self.write_by_value_overloaded_array_path_array_access_object(
@@ -45855,11 +45870,9 @@ impl Interpreter {
                     );
                 }
                 Some(Value::Null) | Some(Value::Bool(false)) => {
-                    self.emit_notice(
-                        "__get()",
-                        format!(
-                            "Indirect modification of overloaded property {class_name}::${property} has no effect"
-                        ),
+                    self.emit_overloaded_property_indirect_modification_notice(
+                        &class_name,
+                        property,
                         span,
                     )?;
                     return Ok(true);
@@ -45868,11 +45881,9 @@ impl Interpreter {
                     value
                     @ (Value::Bool(true) | Value::Int(_) | Value::Float(_) | Value::String(_)),
                 ) => {
-                    self.emit_notice(
-                        "__get()",
-                        format!(
-                            "Indirect modification of overloaded property {class_name}::${property} has no effect"
-                        ),
+                    self.emit_overloaded_property_indirect_modification_notice(
+                        &class_name,
+                        property,
                         span,
                     )?;
                     return Err(runtime_error(
@@ -47456,6 +47467,7 @@ impl Interpreter {
                         current_class_id,
                         &protected_class_ids,
                         span,
+                        scope,
                     )?;
                     Ok((
                         CompoundAssignmentPlace::ObjectProperty {
@@ -47666,17 +47678,65 @@ impl Interpreter {
         current_class_id: Option<ClassId>,
         protected_class_ids: &[ClassId],
         span: Span,
+        scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
         match object.read_property_from_context(property, current_class_id, protected_class_ids) {
             Ok(value) => Ok(value),
-            Err(error) if Self::is_undefined_property_error(&error) => {
-                if object
-                    .is_unset_untyped_declared_property_from_context(
+            Err(error)
+                if Self::is_magic_get_fallback_property_error_for_object(
+                    object,
+                    property,
+                    current_class_id,
+                    protected_class_ids,
+                    &error,
+                ) =>
+            {
+                let type_check_unset_typed = Self::is_unset_typed_property_read_error_for_object(
+                    object,
+                    property,
+                    current_class_id,
+                    protected_class_ids,
+                    &error,
+                );
+                if let Some((value, source, magic_strict_types)) = self
+                    .call_magic_get_property_value_with_array_copy_source(
+                        object.clone(),
                         property,
-                        current_class_id,
-                        protected_class_ids,
-                    )
-                    .map_err(|error| runtime_error(span, error))?
+                        span,
+                        scope,
+                    )?
+                {
+                    if type_check_unset_typed {
+                        return self
+                            .coerce_magic_get_unset_typed_property_value(
+                                object,
+                                property,
+                                current_class_id,
+                                protected_class_ids,
+                                value,
+                                source,
+                                magic_strict_types,
+                                span,
+                            )
+                            .map(|(value, _)| value);
+                    }
+                    let source = if matches!(value, Value::Array(_)) {
+                        source
+                    } else {
+                        None
+                    };
+                    return Ok(scope
+                        .value_with_object_property_aliases_from_array_copy(value, source, true));
+                }
+
+                if Self::is_undefined_property_error(&error)
+                    && object
+                        .is_unset_untyped_declared_property_from_context(
+                            property,
+                            current_class_id,
+                            protected_class_ids,
+                        )
+                        .map_err(|error| runtime_error(span, error))?
                 {
                     self.emit_undefined_property_warning(object.class_name(), property, span)?;
                     Ok(Value::Null)
@@ -47810,23 +47870,58 @@ impl Interpreter {
                         scope.pre_replace_holder_storage(&boundary);
                         let alias_fallbacks =
                             scope.public_object_property_root_alias_fallbacks(&object, &property);
-                        object_value
-                            .write_property_from_context(
-                                &property,
-                                value,
-                                current_class_id,
-                                &protected_class_ids,
-                            )
-                            .map_err(|error| runtime_error(span, error))?;
-                        scope.post_replace_holder_storage(&boundary);
-                        scope.remove_public_object_property_root_from_array_offset_aliases(
-                            &object,
+                        match object_value.write_property_from_context(
                             &property,
-                            &alias_fallbacks,
-                        );
-                        scope
-                            .sync_array_offset_aliases_for_object_property_root(&object, &property);
-                        Ok(())
+                            value.clone(),
+                            current_class_id,
+                            &protected_class_ids,
+                        ) {
+                            Ok(()) => {
+                                scope.post_replace_holder_storage(&boundary);
+                                scope.remove_public_object_property_root_from_array_offset_aliases(
+                                    &object,
+                                    &property,
+                                    &alias_fallbacks,
+                                );
+                                scope.sync_array_offset_aliases_for_object_property_root(
+                                    &object, &property,
+                                );
+                                Ok(())
+                            }
+                            Err(error) if Self::is_magic_get_fallback_property_error(&error) => {
+                                if self
+                                    .call_magic_instance_method_with_values_and_caller_scope(
+                                        object_value.clone(),
+                                        "__set",
+                                        vec![Value::String(property.clone()), value.clone()],
+                                        span,
+                                        scope,
+                                    )?
+                                    .is_some()
+                                {
+                                    return Ok(());
+                                }
+
+                                if Self::is_undefined_property_error(&error) {
+                                    object_value
+                                        .write_dynamic_public_property(&property, value)
+                                        .map_err(|error| runtime_error(span, error))?;
+                                    scope.post_replace_holder_storage(&boundary);
+                                    scope.remove_public_object_property_root_from_array_offset_aliases(
+                                        &object,
+                                        &property,
+                                        &alias_fallbacks,
+                                    );
+                                    scope.sync_array_offset_aliases_for_object_property_root(
+                                        &object, &property,
+                                    );
+                                    Ok(())
+                                } else {
+                                    Err(runtime_error(span, error))
+                                }
+                            }
+                            Err(error) => Err(runtime_error(span, error)),
+                        }
                     }
                     other => Err(runtime_error(
                         span,
@@ -48203,6 +48298,7 @@ impl Interpreter {
                         current_class_id,
                         &protected_class_ids,
                         span,
+                        scope,
                     )?;
                     Ok((
                         CompoundAssignmentPlace::ObjectProperty {
@@ -58226,6 +58322,14 @@ impl Interpreter {
                 .map(|value| value.map(|(value, _, _)| value));
         }
 
+        let active_key = Self::active_magic_property_key(&object, method_name, property);
+        if active_key
+            .as_ref()
+            .is_some_and(|key| self.active_magic_properties.contains(key))
+        {
+            return Ok(None);
+        }
+
         let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
             self.resolve_instance_method(object.class_id(), method_name)
         else {
@@ -58251,9 +58355,25 @@ impl Interpreter {
         self.ensure_user_function_call_depth(function, span)?;
 
         let called_class_id = object.class_id();
+        let args = vec![Value::String(property.to_string())];
+        if let Some(key) = active_key {
+            self.active_magic_properties.insert(key.clone());
+            let result = self.call_user_function_with_checked_values(
+                function,
+                args,
+                Some(object),
+                Some(class_id),
+                Some(called_class_id),
+                Vec::new(),
+                Some(&mut *caller_scope),
+            );
+            self.active_magic_properties.remove(&key);
+            return result.map(Some);
+        }
+
         self.call_user_function_with_checked_values(
             function,
-            vec![Value::String(property.to_string())],
+            args,
             Some(object),
             Some(class_id),
             Some(called_class_id),
@@ -58270,6 +58390,11 @@ impl Interpreter {
         span: Span,
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<Option<(Value, Option<ArrayCopySource>, bool)>> {
+        let active_key = ActiveMagicProperty::new(&object, "__get", property);
+        if self.active_magic_properties.contains(&active_key) {
+            return Ok(None);
+        }
+
         let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
             self.resolve_instance_method(object.class_id(), "__get")
         else {
@@ -58295,40 +58420,73 @@ impl Interpreter {
 
         let called_class_id = object.class_id();
         let args = vec![Value::String(property.to_string())];
-        if function.returns_by_reference {
-            let strict_types = function.strict_types;
-            ensure_supported_reference_return_function_metadata(function, span)?;
-            let binding = self
-                .call_reference_return_function_with_checked_values_for_reference_assignment(
-                    function,
-                    args,
-                    Some(object),
-                    Some(class_id),
-                    Some(called_class_id),
-                    Vec::new(),
+        self.active_magic_properties.insert(active_key.clone());
+        let result = (|| -> CompileResult<Option<(Value, Option<ArrayCopySource>, bool)>> {
+            if function.returns_by_reference {
+                let strict_types = function.strict_types;
+                ensure_supported_reference_return_function_metadata(function, span)?;
+                let binding = self
+                    .call_reference_return_function_with_checked_values_for_reference_assignment(
+                        function,
+                        args,
+                        Some(object),
+                        Some(class_id),
+                        Some(called_class_id),
+                        Vec::new(),
+                        caller_scope,
+                    )?;
+                let source = Self::public_object_property_array_copy_source_from_reference_binding(
+                    &binding,
                     caller_scope,
-                )?;
-            let source = Self::public_object_property_array_copy_source_from_reference_binding(
-                &binding,
-                caller_scope,
-            );
-            let value =
-                self.read_reference_return_binding_value(function, &binding, caller_scope)?;
-            return Ok(Some((value, source, strict_types)));
-        }
+                );
+                let value =
+                    self.read_reference_return_binding_value(function, &binding, caller_scope)?;
+                return Ok(Some((value, source, strict_types)));
+            }
 
-        let strict_types = function.strict_types;
-        ensure_supported_magic_array_access_function_signature(function, 1, span)?;
-        self.call_user_function_with_this_and_array_copy_source(
-            function,
-            object,
-            vec![Value::String(property.to_string())],
-            Some(class_id),
-            Some(called_class_id),
-            caller_scope,
-        )
-        .map(|(value, source)| (value, source, strict_types))
-        .map(Some)
+            let strict_types = function.strict_types;
+            ensure_supported_magic_array_access_function_signature(function, 1, span)?;
+            self.call_user_function_with_this_and_array_copy_source(
+                function,
+                object,
+                vec![Value::String(property.to_string())],
+                Some(class_id),
+                Some(called_class_id),
+                caller_scope,
+            )
+            .map(|(value, source)| Some((value, source, strict_types)))
+        })();
+        self.active_magic_properties.remove(&active_key);
+        result
+    }
+
+    fn active_magic_property_key(
+        object: &PhpObject,
+        method_name: &str,
+        property: &str,
+    ) -> Option<ActiveMagicProperty> {
+        let method_name = if method_name.eq_ignore_ascii_case("__isset") {
+            "__isset"
+        } else if method_name.eq_ignore_ascii_case("__unset") {
+            "__unset"
+        } else if method_name.eq_ignore_ascii_case("__set") {
+            "__set"
+        } else {
+            return None;
+        };
+        Some(ActiveMagicProperty::new(object, method_name, property))
+    }
+
+    fn active_magic_property_key_from_call_args(
+        object: &PhpObject,
+        method_name: &str,
+        args: &[Value],
+    ) -> Option<ActiveMagicProperty> {
+        let property = match args.first()? {
+            Value::String(property) => property.as_str(),
+            _ => return None,
+        };
+        Self::active_magic_property_key(object, method_name, property)
     }
 
     fn call_magic_get_reference_return_cell(
@@ -58338,6 +58496,11 @@ impl Interpreter {
         span: Span,
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<Option<VariableCell>> {
+        let active_key = ActiveMagicProperty::new(&object, "__get", property);
+        if self.active_magic_properties.contains(&active_key) {
+            return Ok(None);
+        }
+
         let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
             self.resolve_instance_method(object.class_id(), "__get")
         else {
@@ -58372,18 +58535,23 @@ impl Interpreter {
         self.ensure_user_function_call_depth(function, span)?;
 
         let called_class_id = object.class_id();
-        let binding = self
-            .call_reference_return_function_with_checked_values_for_reference_assignment(
-                function,
-                vec![Value::String(property.to_string())],
-                Some(object),
-                Some(class_id),
-                Some(called_class_id),
-                Vec::new(),
-                caller_scope,
-            )?;
-        self.reference_return_binding_cell(function, binding, span, caller_scope)
-            .map(Some)
+        self.active_magic_properties.insert(active_key.clone());
+        let result = (|| -> CompileResult<Option<VariableCell>> {
+            let binding = self
+                .call_reference_return_function_with_checked_values_for_reference_assignment(
+                    function,
+                    vec![Value::String(property.to_string())],
+                    Some(object),
+                    Some(class_id),
+                    Some(called_class_id),
+                    Vec::new(),
+                    caller_scope,
+                )?;
+            self.reference_return_binding_cell(function, binding, span, caller_scope)
+                .map(Some)
+        })();
+        self.active_magic_properties.remove(&active_key);
+        result
     }
 
     fn call_debug_info_method(
@@ -58744,6 +58912,15 @@ impl Interpreter {
         caller_scope: &mut SymbolTable,
         indexed_array_copy_source_bindings: Vec<IndexedArrayCopySourceBinding>,
     ) -> CompileResult<Option<Value>> {
+        let active_key =
+            Self::active_magic_property_key_from_call_args(&object, method_name, &args);
+        if active_key
+            .as_ref()
+            .is_some_and(|key| self.active_magic_properties.contains(key))
+        {
+            return Ok(None);
+        }
+
         let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
             self.resolve_instance_method(object.class_id(), method_name)
         else {
@@ -58857,6 +59034,27 @@ impl Interpreter {
             function,
             indexed_array_copy_source_bindings,
         );
+        if let Some(key) = active_key {
+            self.active_magic_properties.insert(key.clone());
+            let result = self
+                .call_user_function_with_checked_values_and_locals_with_array_copy_source_and_arg_sources(
+            function,
+            args,
+            Vec::new(),
+            Some(object),
+            Some(class_id),
+            Some(called_class_id),
+            Vec::new(),
+            Some(&mut *caller_scope),
+            Vec::new(),
+            Vec::new(),
+            by_value_array_copy_source_bindings,
+            None,
+                );
+            self.active_magic_properties.remove(&key);
+            return result.map(|(value, _)| value).map(Some);
+        }
+
         self.call_user_function_with_checked_values_and_locals_with_array_copy_source_and_arg_sources(
             function,
             args,
@@ -58871,8 +59069,8 @@ impl Interpreter {
             by_value_array_copy_source_bindings,
             None,
         )
-        .map(|(value, _)| value)
-        .map(Some)
+            .map(|(value, _)| value)
+            .map(Some)
     }
 
     fn call_reference_return_magic_instance_method_with_values(
@@ -91216,11 +91414,9 @@ impl Interpreter {
                         .implements_interface(object.class_id(), "ArrayAccess")
             );
         if !suppress_notice {
-            self.emit_notice(
-                "__get()",
-                format!(
-                    "Indirect modification of overloaded property {class_name}::${property} has no effect"
-                ),
+            self.emit_overloaded_property_indirect_modification_notice(
+                &class_name,
+                property,
                 span,
             )?;
         }

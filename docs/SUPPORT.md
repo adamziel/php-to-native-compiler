@@ -2366,7 +2366,16 @@
   `$object->property ^= expr`, `$object->property <<= expr`, and
   `$object->property >>= expr`, in statement position, expression position,
   and C-style `for` initializer/increment slots. In expressions, compound
-  assignment returns the updated value.
+  assignment returns the updated value. Missing, inaccessible, and unset typed
+  direct object-property read-modify-write targets dispatch visible
+  `__get($name)` for the read side and visible `__set($name, $value)` for the
+  writeback side in the current method-call subset, with same-object/property
+  magic re-entry guarded to avoid recursive getter/setter loops. Missing
+  untyped declared properties without `__get()` still follow the existing
+  undefined-property warning/null path. Broader complex lvalues, arbitrary
+  magic method bodies outside the interpreter subset, exact diagnostic
+  ordering for every nested shape, references/copy-on-write, and native
+  lowering remain unsupported.
 - direct object-property array-offset compound assignment such as
   `$object->items[$outer][$inner] += expr` over an existing array-valued visible
   property and existing integer/string keyed nested entries. The target keys
@@ -2387,8 +2396,11 @@
   `--$object->property`, and `$object->property--` for existing declared
   public property slots, private slots owned by the active declaring class, and
   protected slots owned by the active class or an ancestor whose current
-  values are integers, floats, null, or strings. In expressions, pre forms
-  return the updated value and post forms return the previous value.
+  values are integers, floats, null, or strings. Missing, inaccessible, and
+  unset typed direct property targets use the same visible magic
+  `__get()`/`__set()` read-modify-write route described for object-property
+  compound assignment. In expressions, pre forms return the updated value and
+  post forms return the previous value.
 - direct static-variable pre/post increment and decrement in statement
   position, expression position, and C-style `for` initializer/increment
   slots: `++$name`, `$name++`, `--$name`, and `$name--` for existing integer,
