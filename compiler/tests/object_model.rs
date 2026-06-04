@@ -28,6 +28,7 @@ const CORE_CLASS_NAMES: &[&str] = &[
     "Uri\\WhatWg\\UrlHostType",
     "Uri\\WhatWg\\Url",
     "BcMath\\Number",
+    "GMP",
     "DateError",
     "DateObjectError",
     "DateRangeError",
@@ -73,6 +74,7 @@ const CORE_CLASS_NAMES: &[&str] = &[
     "FilesystemIterator",
     "RecursiveDirectoryIterator",
     "SplFileObject",
+    "SplTempFileObject",
     "EmptyIterator",
     "IteratorIterator",
     "RecursiveIteratorIterator",
@@ -95,6 +97,7 @@ const CORE_CLASS_NAMES: &[&str] = &[
     "DOMElement",
     "DOMDocument",
     "DOMDocumentType",
+    "XMLReader",
     "ErrorException",
     "Reflection",
     "Deprecated",
@@ -307,8 +310,13 @@ echo "ready\n";
     let spl_file_object = classes.lookup_class("SplFileObject").unwrap();
     assert_eq!(spl_file_object.parent_id(), Some(spl_file_info.id()));
     assert!(spl_file_object.constant("READ_CSV").is_some());
+    assert!(spl_file_object.method("__toString").is_some());
+    assert!(spl_file_object.method("flock").is_some());
     assert!(spl_file_object.method("fstat").is_some());
     assert!(spl_file_object.method("setCsvControl").is_some());
+    let spl_temp_file_object = classes.lookup_class("SplTempFileObject").unwrap();
+    assert_eq!(spl_temp_file_object.parent_id(), Some(spl_file_object.id()));
+    assert!(spl_temp_file_object.method("__construct").is_some());
     assert!(spl_file_info.method("__debugInfo").is_some());
     assert!(spl_file_info.method("__toString").is_some());
     assert!(spl_file_info.method("getBasename").is_some());
@@ -21949,6 +21957,69 @@ var_dump(file_get_contents($file));
     assert_eq!(
         execution.stdout,
         "int(8)\nint(8)\nbool(false)\nint(2)\nbool(true)\nstring(10) \"'a|b'|c\nta\"\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn spl_temp_file_object_uses_memory_stream_defaults_and_debug_info() {
+    let source = r#"<?php
+$default = new SplTempFileObject();
+var_dump($default);
+$fixed = new SplTempFileObject(1024);
+var_dump($fixed);
+$memory = new SplTempFileObject(-1);
+var_dump($memory);
+try {
+    new SplTempFileObject("invalid");
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert!(execution.stdout.contains("object(SplTempFileObject)#1 (5)"));
+    assert!(execution.stdout.contains("string(10) \"php://temp\""));
+    assert!(execution
+        .stdout
+        .contains("string(25) \"php://temp/maxmemory:1024\""));
+    assert!(execution.stdout.contains("string(12) \"php://memory\""));
+    assert!(execution
+        .stdout
+        .contains("[\"openMode\":\"SplFileObject\":private]=>\n  string(2) \"wb\""));
+    assert!(execution.stdout.contains(
+        "SplTempFileObject::__construct(): Argument #1 ($maxMemory) must be of type int, string given\n"
+    ));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn spl_file_object_memory_stream_csv_and_string_semantics() {
+    let source = r#"<?php
+$file = new SplTempFileObject();
+$file->setCsvControl(escape: "");
+$file->fputcsv(["foo", "bar", "baz"]);
+$file->rewind();
+$file->setFlags(SplFileObject::READ_CSV);
+echo $file, "\n";
+var_dump($file->current());
+
+$multi = new SplTempFileObject();
+$multi->fwrite("\"left\nright\"\n");
+$multi->rewind();
+print_r($multi->fgetcsv(",", "\"", ""));
+
+$readonly = new SplFileObject("php://memory", "r");
+$readonly->setCsvControl(escape: "");
+var_dump($readonly->fputcsv(["nope"]));
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "foo,bar,baz\n\narray(3) {\n  [0]=>\n  string(3) \"foo\"\n  [1]=>\n  string(3) \"bar\"\n  [2]=>\n  string(3) \"baz\"\n}\nArray\n(\n    [0] => left\nright\n)\nbool(false)\n"
     );
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);

@@ -33428,11 +33428,14 @@ impl PhpClassTable {
         }
         for method in [
             "__construct",
+            "__debugInfo",
+            "__toString",
             "current",
             "eof",
             "fgetc",
             "fgets",
             "fgetcsv",
+            "flock",
             "fpassthru",
             "fread",
             "fstat",
@@ -33458,9 +33461,24 @@ impl PhpClassTable {
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
                 .expect("SplFileObject core metadata should not duplicate methods");
         }
+        let spl_temp_file_object_id = classes
+            .declare_class("SplTempFileObject")
+            .expect("core class table should contain SplFileObject before SplTempFileObject");
+        classes
+            .set_parent(spl_temp_file_object_id, spl_file_object_id)
+            .expect("SplTempFileObject should extend SplFileObject");
+        let spl_temp_file_object = classes
+            .get_mut(spl_temp_file_object_id)
+            .expect("declared SplTempFileObject class id should resolve");
+        spl_temp_file_object
+            .add_method(PhpMethodMetadata::instance(
+                "__construct",
+                Visibility::Public,
+            ))
+            .expect("SplTempFileObject core metadata should not duplicate methods");
         let empty_iterator_id = classes
             .declare_class("EmptyIterator")
-            .expect("core class table should contain SplFileObject before EmptyIterator");
+            .expect("core class table should contain SplTempFileObject before EmptyIterator");
         classes
             .set_interfaces(empty_iterator_id, vec!["Iterator".to_string()])
             .expect("EmptyIterator should implement Iterator");
@@ -82747,6 +82765,7 @@ mod tests {
                 "FilesystemIterator",
                 "RecursiveDirectoryIterator",
                 "SplFileObject",
+                "SplTempFileObject",
                 "EmptyIterator",
                 "IteratorIterator",
                 "RecursiveIteratorIterator",

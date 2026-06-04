@@ -1282,6 +1282,7 @@ struct SplFileObjectState {
     byte_position: usize,
     eof: bool,
     stream_id: Option<i64>,
+    open_mode: String,
     max_line_len: usize,
     flags: i64,
     csv_separator: char,
@@ -1299,6 +1300,7 @@ impl Default for SplFileObjectState {
             byte_position: 0,
             eof: true,
             stream_id: None,
+            open_mode: "r".to_string(),
             max_line_len: 0,
             flags: 0,
             csv_separator: ',',
@@ -12764,10 +12766,19 @@ impl Interpreter {
             })
     }
 
-    fn resolved_method_is_core_spl_file_object(&self, class_id: ClassId) -> bool {
+    fn is_spl_temp_file_object_class_id(&self, class_id: ClassId) -> bool {
         self.classes
-            .lookup_class_id("SplFileObject")
-            .is_some_and(|file_id| class_id == file_id)
+            .lookup_class_id("SplTempFileObject")
+            .is_some_and(|file_id| {
+                class_id == file_id || self.classes.is_subclass_of(class_id, file_id)
+            })
+    }
+
+    fn resolved_method_is_core_spl_file_object(&self, class_id: ClassId) -> bool {
+        ["SplFileObject", "SplTempFileObject"]
+            .iter()
+            .filter_map(|class_name| self.classes.lookup_class_id(class_name))
+            .any(|file_id| class_id == file_id)
     }
 
     fn is_spl_directory_iterator_class_id(&self, class_id: ClassId) -> bool {
@@ -22065,6 +22076,62 @@ impl Interpreter {
             })
     }
 
+    fn spl_file_object_memory_stream_type(path: &str) -> Option<&'static str> {
+        let lower = path.to_ascii_lowercase();
+        if lower == "php://memory" {
+            Some("MEMORY")
+        } else if lower == "php://temp" || lower.starts_with("php://temp/maxmemory:") {
+            Some("TEMP")
+        } else {
+            None
+        }
+    }
+
+    fn spl_file_object_set_stream_position(
+        &mut self,
+        stream_id: i64,
+        position: usize,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        let stream = self.streams.get_mut(&stream_id).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("SplFileObject::{method_name}()"),
+                    "SplFileObject stream is closed",
+                ),
+            )
+        })?;
+        match stream {
+            StreamResource::Memory(stream) => {
+                stream.position = position.min(stream.buffer.len());
+                stream.eof = stream.position >= stream.buffer.len();
+            }
+            StreamResource::File(stream) => {
+                stream
+                    .file
+                    .seek(SeekFrom::Start(position as u64))
+                    .map_err(|error| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                format!("SplFileObject::{method_name}()"),
+                                format!("local file stream seek failed: {error}"),
+                            ),
+                        )
+                    })?;
+                stream.eof = false;
+                update_local_file_stream_unread_bytes(
+                    stream,
+                    format!("SplFileObject::{method_name}()"),
+                    span,
+                )?;
+            }
+        }
+        Ok(())
+    }
+
     fn spl_file_object_refresh_from_stream(
         &mut self,
         object_id: i64,
@@ -22072,7 +22139,7 @@ impl Interpreter {
         method_name: &str,
         span: Span,
     ) -> CompileResult<()> {
-        let (filesystem_path, position) = {
+        let (contents, position) = {
             let stream = self.streams.get_mut(&stream_id).ok_or_else(|| {
                 runtime_error(
                     span,
@@ -22104,28 +22171,21 @@ impl Interpreter {
                             ),
                         )
                     })?;
-                    (stream.filesystem_path.clone(), position)
+                    let contents =
+                        fs::read_to_string(&stream.filesystem_path).map_err(|error| {
+                            runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    format!("SplFileObject::{method_name}()"),
+                                    format!("local file stream read failed: {error}"),
+                                ),
+                            )
+                        })?;
+                    (contents, position as usize)
                 }
-                StreamResource::Memory(_) => {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            format!("SplFileObject::{method_name}()"),
-                            "SplFileObject memory streams are not implemented in this subset",
-                        ),
-                    ));
-                }
+                StreamResource::Memory(stream) => (stream.buffer.clone(), stream.position),
             }
         };
-        let contents = fs::read_to_string(&filesystem_path).map_err(|error| {
-            runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    format!("SplFileObject::{method_name}()"),
-                    format!("local file stream read failed: {error}"),
-                ),
-            )
-        })?;
         let state = self.spl_file_objects.get_mut(&object_id).ok_or_else(|| {
             runtime_error(
                 span,
@@ -22137,7 +22197,7 @@ impl Interpreter {
         })?;
         state.contents = contents;
         state.lines = Self::spl_file_object_split_lines(&state.contents);
-        state.byte_position = (position as usize).min(state.contents.len());
+        state.byte_position = position.min(state.contents.len());
         Self::spl_file_object_sync_cursor_from_byte_position(state);
         Ok(())
     }
@@ -22211,6 +22271,76 @@ impl Interpreter {
         Value::Array(array)
     }
 
+    fn spl_file_object_file_name_for_debug(path: &str) -> String {
+        if path.contains("://") {
+            path.to_string()
+        } else {
+            Self::spl_file_info_path_basename(path)
+        }
+    }
+
+    fn spl_file_object_debug_info_array(
+        info_state: &SplFileInfoState,
+        file_state: &SplFileObjectState,
+    ) -> PhpArray {
+        let mut properties = PhpArray::new();
+        properties.insert(
+            "\0SplFileInfo\0pathName",
+            Value::String(info_state.path.clone()),
+        );
+        properties.insert(
+            "\0SplFileInfo\0fileName",
+            Value::String(Self::spl_file_object_file_name_for_debug(&info_state.path)),
+        );
+        properties.insert(
+            "\0SplFileObject\0openMode",
+            Value::String(file_state.open_mode.clone()),
+        );
+        properties.insert(
+            "\0SplFileObject\0delimiter",
+            Value::String(file_state.csv_separator.to_string()),
+        );
+        properties.insert(
+            "\0SplFileObject\0enclosure",
+            Value::String(file_state.csv_enclosure.to_string()),
+        );
+        properties
+    }
+
+    fn spl_file_object_current_line_string(state: &SplFileObjectState) -> Value {
+        state
+            .lines
+            .get(state.cursor)
+            .map(|line| Value::String(Self::spl_file_object_line_string(state, line)))
+            .unwrap_or(Value::String(String::new()))
+    }
+
+    fn spl_file_object_read_csv_record(
+        state: &mut SplFileObjectState,
+        delimiter: char,
+        enclosure: char,
+        escape: Option<char>,
+    ) -> Option<String> {
+        let start = state.cursor;
+        let mut end = start;
+        let mut record = String::new();
+        while let Some(line) = state.lines.get(end) {
+            record.push_str(line);
+            end += 1;
+            if csv_record_is_complete(&record, delimiter, enclosure, escape) {
+                break;
+            }
+        }
+        if end == start {
+            state.eof = true;
+            return None;
+        }
+        state.cursor = end;
+        Self::spl_file_object_sync_byte_position_from_cursor(state);
+        state.eof = state.cursor >= state.lines.len();
+        Some(record)
+    }
+
     fn spl_file_object_bool_argument(
         function: &str,
         position: usize,
@@ -22264,12 +22394,105 @@ impl Interpreter {
         }
     }
 
+    fn spl_file_object_create_memory_stream(
+        &mut self,
+        path: &str,
+        mode: &str,
+        stream_mode: StreamMode,
+        stream_type: &str,
+    ) -> i64 {
+        let stream_id = self.next_resource_id;
+        self.next_resource_id += 1;
+        self.streams.insert(
+            stream_id,
+            StreamResource::Memory(MemoryStream {
+                buffer: String::new(),
+                position: 0,
+                readable: stream_mode.readable,
+                writable: stream_mode.writable,
+                append: stream_mode.append,
+                eof: false,
+                uri: path.to_string(),
+                read_filter_rot13: false,
+                metadata_wrapper_type: "PHP".to_string(),
+                metadata_mode: stream_metadata_mode(path, mode),
+                metadata_stream_type: stream_type.to_string(),
+                metadata_include_runtime_flags: true,
+                metadata_extra: Vec::new(),
+            }),
+        );
+        stream_id
+    }
+
+    fn initialize_spl_temp_file_object(
+        &mut self,
+        object: &PhpObject,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<()> {
+        if args.len() > 1 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "SplTempFileObject::__construct()",
+                    ArityExpectation::Between { min: 0, max: 1 },
+                    args.len(),
+                ),
+            ));
+        }
+        let max_memory = match args.first() {
+            Some(value) => php_internal_coerced_int(value).ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "SplTempFileObject::__construct()",
+                        format!(
+                            "SplTempFileObject::__construct(): Argument #1 ($maxMemory) must be of type int, {} given",
+                            php_type_error_given(value)
+                        ),
+                    ),
+                )
+            })?,
+            None => 2 * 1024 * 1024,
+        };
+        let path = if max_memory < 1 {
+            "php://memory".to_string()
+        } else if args.is_empty() {
+            "php://temp".to_string()
+        } else {
+            format!("php://temp/maxmemory:{max_memory}")
+        };
+        if let Some(info_state) = self.spl_file_infos.get_mut(&object.id()) {
+            info_state.path = path.clone();
+        }
+        let Some(stream_mode) = parse_stream_mode("wb") else {
+            unreachable!("wb is a supported stream mode");
+        };
+        let stream_type =
+            Self::spl_file_object_memory_stream_type(&path).expect("SplTempFileObject path");
+        let stream_id =
+            self.spl_file_object_create_memory_stream(&path, "wb", stream_mode, stream_type);
+        self.spl_file_objects.insert(
+            object.id(),
+            SplFileObjectState {
+                stream_id: Some(stream_id),
+                open_mode: "wb".to_string(),
+                ..SplFileObjectState::default()
+            },
+        );
+        Ok(())
+    }
+
     fn initialize_spl_file_object(
         &mut self,
         object: &PhpObject,
         args: &[Value],
         span: Span,
     ) -> CompileResult<()> {
+        if self.is_spl_temp_file_object_class_id(object.class_id()) {
+            return self.initialize_spl_temp_file_object(object, args, span);
+        }
+
         if !(1..=4).contains(&args.len()) {
             return Err(runtime_error(
                 span,
@@ -22327,6 +22550,18 @@ impl Interpreter {
                     RuntimeError::unsupported_call("SplFileObject::__construct()", message),
                 )
             })?
+        } else if let Some(stream_type) = Self::spl_file_object_memory_stream_type(&path) {
+            let stream_id =
+                self.spl_file_object_create_memory_stream(&path, &mode, stream_mode, stream_type);
+            self.spl_file_objects.insert(
+                object.id(),
+                SplFileObjectState {
+                    stream_id: Some(stream_id),
+                    open_mode: mode,
+                    ..SplFileObjectState::default()
+                },
+            );
+            return Ok(());
         } else if path.contains("://") {
             return Err(runtime_error(
                 span,
@@ -22401,7 +22636,7 @@ impl Interpreter {
             uri: path.to_string(),
             filesystem_path: filesystem_path.clone(),
             read_filter_rot13: false,
-            metadata_mode: mode,
+            metadata_mode: mode.clone(),
         };
         if stream.append {
             stream.file.seek(SeekFrom::Start(0)).map_err(|error| {
@@ -22444,6 +22679,7 @@ impl Interpreter {
                 byte_position: 0,
                 eof,
                 stream_id: Some(stream_id),
+                open_mode: mode,
                 ..SplFileObjectState::default()
             },
         );
@@ -22461,6 +22697,24 @@ impl Interpreter {
             "__construct" => {
                 self.initialize_spl_file_object(&object, &args, span)?;
                 Ok(Value::Null)
+            }
+            "__debuginfo" => {
+                expect_arity("SplFileObject::__debugInfo", &args, 0, span)?;
+                let info_state = self
+                    .spl_file_info_state(&object, method_name, span)?
+                    .clone();
+                let file_state = self
+                    .spl_file_object_state(&object, method_name, span)?
+                    .clone();
+                Ok(Value::Array(Self::spl_file_object_debug_info_array(
+                    &info_state,
+                    &file_state,
+                )))
+            }
+            "__tostring" => {
+                expect_arity("SplFileObject::__toString", &args, 0, span)?;
+                let state = self.spl_file_object_state(&object, method_name, span)?;
+                Ok(Self::spl_file_object_current_line_string(state))
             }
             "current" | "getcurrentline" => {
                 expect_arity("SplFileObject::current", &args, 0, span)?;
@@ -22605,6 +22859,16 @@ impl Interpreter {
                         ),
                     )
                 })?;
+                let stream_is_writable =
+                    self.streams
+                        .get(&stream_id)
+                        .is_some_and(|stream| match stream {
+                            StreamResource::Memory(stream) => stream.writable,
+                            StreamResource::File(stream) => stream.writable,
+                        });
+                if !stream_is_writable {
+                    return Ok(Value::Bool(false));
+                }
                 let separator = csv_single_character_argument(
                     "SplFileObject::fputcsv()",
                     "separator",
@@ -22729,17 +22993,55 @@ impl Interpreter {
                     )?,
                     None => state_snapshot.csv_escape,
                 };
-                let state = self.spl_file_object_state_mut(&object, method_name, span)?;
-                let Some(line) = state.lines.get(state.cursor).cloned() else {
-                    state.eof = true;
-                    return Ok(Value::Bool(false));
+                let (line, stream_id, byte_position) = {
+                    let state = self.spl_file_object_state_mut(&object, method_name, span)?;
+                    let Some(line) =
+                        Self::spl_file_object_read_csv_record(state, separator, enclosure, escape)
+                    else {
+                        return Ok(Value::Bool(false));
+                    };
+                    (line, state.stream_id, state.byte_position)
                 };
-                state.cursor += 1;
-                Self::spl_file_object_sync_byte_position_from_cursor(state);
-                state.eof = state.cursor >= state.lines.len();
+                if let Some(stream_id) = stream_id {
+                    self.spl_file_object_set_stream_position(
+                        stream_id,
+                        byte_position,
+                        method_name,
+                        span,
+                    )?;
+                }
                 Ok(Self::spl_file_object_csv_array_from_line(
                     &line, separator, enclosure, escape,
                 ))
+            }
+            "flock" => {
+                if args.is_empty() || args.len() > 2 {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "SplFileObject::flock()",
+                            ArityExpectation::Between { min: 1, max: 2 },
+                            args.len(),
+                        ),
+                    ));
+                }
+                let stream_id = self
+                    .spl_file_objects
+                    .get(&object.id())
+                    .and_then(|state| state.stream_id)
+                    .ok_or_else(|| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "SplFileObject::flock()",
+                                "Object not initialized",
+                            ),
+                        )
+                    })?;
+                let mut flock_args = Vec::with_capacity(args.len() + 1);
+                flock_args.push(Value::Resource(stream_id));
+                flock_args.extend(args);
+                self.call_flock(&flock_args, span)
             }
             "getcsvcontrol" => {
                 expect_arity("SplFileObject::getCsvControl", &args, 0, span)?;
@@ -22851,18 +23153,35 @@ impl Interpreter {
             }
             "next" => {
                 expect_arity("SplFileObject::next", &args, 0, span)?;
-                let state = self.spl_file_object_state_mut(&object, method_name, span)?;
-                state.cursor = state.cursor.saturating_add(1).min(state.lines.len());
-                Self::spl_file_object_sync_byte_position_from_cursor(state);
-                state.eof = state.cursor >= state.lines.len();
+                let (stream_id, byte_position) = {
+                    let state = self.spl_file_object_state_mut(&object, method_name, span)?;
+                    state.cursor = state.cursor.saturating_add(1).min(state.lines.len());
+                    Self::spl_file_object_sync_byte_position_from_cursor(state);
+                    state.eof = state.cursor >= state.lines.len();
+                    (state.stream_id, state.byte_position)
+                };
+                if let Some(stream_id) = stream_id {
+                    self.spl_file_object_set_stream_position(
+                        stream_id,
+                        byte_position,
+                        method_name,
+                        span,
+                    )?;
+                }
                 Ok(Value::Null)
             }
             "rewind" => {
                 expect_arity("SplFileObject::rewind", &args, 0, span)?;
-                let state = self.spl_file_object_state_mut(&object, method_name, span)?;
-                state.cursor = 0;
-                state.byte_position = 0;
-                state.eof = state.lines.is_empty();
+                let stream_id = {
+                    let state = self.spl_file_object_state_mut(&object, method_name, span)?;
+                    state.cursor = 0;
+                    state.byte_position = 0;
+                    state.eof = state.lines.is_empty();
+                    state.stream_id
+                };
+                if let Some(stream_id) = stream_id {
+                    self.spl_file_object_set_stream_position(stream_id, 0, method_name, span)?;
+                }
                 Ok(Value::Null)
             }
             "seek" => {
@@ -22878,10 +23197,21 @@ impl Interpreter {
                         ),
                     ));
                 }
-                let state = self.spl_file_object_state_mut(&object, method_name, span)?;
-                state.cursor = (line as usize).min(state.lines.len());
-                Self::spl_file_object_sync_byte_position_from_cursor(state);
-                state.eof = state.cursor >= state.lines.len();
+                let (stream_id, byte_position) = {
+                    let state = self.spl_file_object_state_mut(&object, method_name, span)?;
+                    state.cursor = (line as usize).min(state.lines.len());
+                    Self::spl_file_object_sync_byte_position_from_cursor(state);
+                    state.eof = state.cursor >= state.lines.len();
+                    (state.stream_id, state.byte_position)
+                };
+                if let Some(stream_id) = stream_id {
+                    self.spl_file_object_set_stream_position(
+                        stream_id,
+                        byte_position,
+                        method_name,
+                        span,
+                    )?;
+                }
                 Ok(Value::Null)
             }
             "valid" => {
@@ -61415,6 +61745,11 @@ impl Interpreter {
             span,
         )?;
 
+        if self.resolved_method_is_core_spl_file_object(class_id) {
+            return self
+                .call_spl_file_object_method_with_values(object, "__debugInfo", Vec::new(), span)
+                .map(Some);
+        }
         if self.resolved_method_is_core_spl_file_info(class_id) {
             return self
                 .call_spl_file_info_method_with_values(object, "__debugInfo", Vec::new(), span)
@@ -136909,12 +137244,21 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             }
         }
 
-        if let Some(message) = error
-            .message
-            .strip_prefix("unsupported call SplFileObject::")
-            .and_then(|message| message.split_once(": "))
-            .map(|(_, message)| message.to_string())
-        {
+        for prefix in [
+            "unsupported call SplFileObject::",
+            "unsupported call SplTempFileObject::",
+        ] {
+            let Some(message) = error
+                .message
+                .strip_prefix(prefix)
+                .and_then(|message| message.split_once(": "))
+                .map(|(_, message)| message.to_string())
+            else {
+                continue;
+            };
+            if message == "Object not initialized" {
+                return Some(("Error", message));
+            }
             if message.contains("must be greater than or equal to 0")
                 || message.contains("must be greater than 0")
             {

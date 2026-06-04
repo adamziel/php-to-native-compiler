@@ -171,11 +171,14 @@ presentation, and `getFlags()` / `setFlags()`. `RecursiveDirectoryIterator`
 adds bounded `hasChildren()` plus selected subpath helpers, and
 `RecursiveIteratorIterator` materializes a deterministic flattened local
 snapshot for the reached subpath traversal rows. Core `SplFileObject`
-instances are modeled as bounded local-file cursor states with optional local
-stream resources and inherit the covered `SplFileInfo` path/stat/link methods;
-covered CSV controls, `fstat()`, default-escape diagnostics, method-shaped CSV
-argument errors, and internal CSV method reflection metadata are handled on
-that interpreter object state.
+instances are modeled as bounded UTF-8 cursor states with optional local or
+memory/temp stream resources and inherit the covered `SplFileInfo`
+path/stat/link methods. `SplTempFileObject` is declared as a core
+`SplFileObject` subclass and initializes that same state with request-local
+`php://temp`, `php://temp/maxmemory:N`, or `php://memory` memory streams.
+Covered CSV controls, `fstat()`, `__debugInfo()`, `__toString()`,
+default-escape diagnostics, method-shaped CSV argument errors, and internal CSV
+method reflection metadata are handled on that interpreter object state.
 Bounded non-direct named and dynamic property holder expressions in
 by-reference `foreach`, such as `$holders["bag"]->items["child"]`,
 `$holders["bag"]->{$name}["child"]`, method-context

@@ -2815,13 +2815,19 @@
   behavior, non-local/user stream wrappers, exact open_basedir warning parity,
   serialization parity, references/COW, and native lowering remain
   unsupported.
-- SPL `SplFileObject` has a bounded local UTF-8 line-cursor runtime model for
-  construction from local paths and local `file://` URLs in supported local
-  stream modes, plus `current()`, `getCurrentLine()`, `fgets()`,
+- SPL `SplFileObject` has a bounded UTF-8 line-cursor runtime model for
+  construction from local paths, local `file://` URLs, `php://memory`,
+  `php://temp`, and `php://temp/maxmemory:N` in supported stream modes, plus
+  `current()`, `getCurrentLine()`, `fgets()`,
   `fgetc()`, `fread()`, `fpassthru()`, `fwrite()` / `fputs()`,
   `fputcsv()`, `fflush()`, `ftell()`, `key()`, `next()`, `rewind()`,
-  `seek()`, `valid()`, `eof()`, and ordinary by-value `foreach` through the
-  `Iterator` surface. Lines retain their
+  `seek()`, `valid()`, `eof()`, `__toString()`, bounded `__debugInfo()`, and
+  ordinary by-value `foreach` through the `Iterator` surface.
+  `SplTempFileObject` is a core `SplFileObject` subclass for the reached
+  constructor forms: omitted `$maxMemory` records `php://temp`, positive values
+  record `php://temp/maxmemory:N`, and non-positive values record
+  `php://memory`; the implementation keeps this request-local and does not
+  model spill-to-disk thresholds. Lines retain their
   trailing newline when present, out-of-range non-negative `seek()` positions
   move to the invalid end cursor, and negative `seek()` raises the bounded
   PHP-shaped `ValueError`. Bounded byte reads advance a local UTF-8 byte cursor
@@ -2833,21 +2839,23 @@
   `setFlags()` / `getFlags()`, newline trimming for `current()` /
   `getCurrentLine()` under `DROP_NEW_LINE`, `setCsvControl()` /
   `getCsvControl()`, CSV row materialization for `current()` / foreach under
-  `READ_CSV`, local-file `fgetcsv()` over the bounded CSV parser, and
-  local-file `fputcsv()` using the object's current CSV controls when method
-  arguments are omitted. The covered CSV methods also expose bounded internal
-  reflection parameter names, emit the PHP-shaped default-escape deprecations
+  `READ_CSV`, `fgetcsv()` over the bounded CSV parser including covered
+  multiline quoted records, and `fputcsv()` using the object's current CSV
+  controls when method arguments are omitted. The covered CSV methods also
+  expose bounded internal reflection parameter names, emit the PHP-shaped
+  default-escape deprecations
   for omitted `fgetcsv()` / `setCsvControl()` escape arguments, and report
   method-shaped `fputcsv()` separator/enclosure/escape `ValueError`
-  diagnostics. Write-capable local modes are backed by the existing local
-  stream resource model and update the bounded line cursor after covered
-  writes.
-  Non-local/user stream wrappers, `SplTempFileObject`,
-  `fseek()` / `ftruncate()` / `flock()` as `SplFileObject` methods,
-  full max-line chunked
+  diagnostics. Write-capable local, memory, and temp modes are backed by the
+  existing stream resource model and update the bounded line cursor after
+  covered writes; `fputcsv()` on non-writable memory/temp streams returns
+  `false`.
+  Non-local/user stream wrappers, `fseek()` / `ftruncate()` as
+  `SplFileObject` methods, exact shutdown-time file-object invalidation before
+  destructor `flock()` calls, full max-line chunked
   cursor parity for every mixed read/seek path, full `READ_AHEAD` /
-  `SKIP_EMPTY` side effects, broad CSV multiline/default-escape parity beyond
-  the covered method omissions, binary or non-UTF-8 line storage, independent
+  `SKIP_EMPTY` side effects, broad CSV/default-escape parity beyond the
+  covered method omissions, binary or non-UTF-8 line storage, independent
   nested iterator cursors, serialization parity, references/COW, and native
   lowering remain unsupported.
 - SPL `EmptyIterator`, `IteratorIterator`, `NoRewindIterator`,
