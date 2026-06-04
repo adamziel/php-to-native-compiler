@@ -1,6 +1,6 @@
 # PHP Native Compiler PHPT Progress
 
-Updated: 2026-06-04 17:13 CEST
+Updated: 2026-06-04 17:28 CEST
 
 Primary/public branch: `origin/master`
 Latest accepted public-score source:
@@ -19,7 +19,7 @@ denominators that exclude BORKED rows are not public progress.
 Current public score: **7873 / 20294 pinned runnable PHPTs = 38.79%**.
 
 Latest pushed source checkpoint:
-`99b183cc2e1834b2a716e5a01d24ad185cfe31ab fix: implement gmp bit helpers`
+`5219685e3d1821bbcf3c3cf1edfaec5ab4fd7347 fix: implement gmp number theory helpers`
 
 Current score-gate status:
 Accepted public gate:
@@ -32,7 +32,7 @@ the accepted `6c038019` PASS baseline. It reported public-comparable
 `7873 / 20294 = 38.79%`, `7869` normalized current passes, `0`
 latest-published PASS regressions, and `0` invalid proof-marker hits. This
 gate converts the post-`6c038019` source chain through `0b917f67` into public
-PHPT progress. Newer source commits through `99b183cc` are staged after this
+PHPT progress. Newer source commits through `5219685e` are staged after this
 accepted public source and are not included in the public score above.
 
 Latest candidate full gate:
@@ -97,31 +97,35 @@ passes, with zero latest-published PASS regressions.
 
 Unpublished source progress since the accepted public score source:
 
-- Latest pushed source head is `99b183cc2e1834b2a716e5a01d24ad185cfe31ab`
-  (`fix: implement gmp bit helpers`), which is newer than the accepted
-  `0b917f67` full gate and is not included in the public score above.
-- There are `4` score-relevant source commits after the accepted public-score
+- Latest pushed source head is `5219685e3d1821bbcf3c3cf1edfaec5ab4fd7347`
+  (`fix: implement gmp number theory helpers`), which is newer than the
+  accepted `0b917f67` full gate and is not included in the public score above.
+- There are `5` score-relevant source commits after the accepted public-score
   source: `88071e97e22d6b840ab9ebbc248a67a55e5b6926`
   (`fix: reject invalid property hooks`),
   `1b3c4f4dad1eef590cfec69504dd16c4e55e0743`
   (`fix: implement gmp arithmetic`),
   `ca69ead9cfcc410f3c094e30a38608dedf880771`
-  (`fix: implement xmlreader factories`), and
+  (`fix: implement xmlreader factories`),
   `99b183cc2e1834b2a716e5a01d24ad185cfe31ab`
-  (`fix: implement gmp bit helpers`).
+  (`fix: implement gmp bit helpers`), and
+  `5219685e3d1821bbcf3c3cf1edfaec5ab4fd7347`
+  (`fix: implement gmp number theory helpers`).
 - Staged focused selected-PHPT proof after the latest accepted public-score
-  source totals `55` selected rows across `4` integrated source artifacts.
+  source totals `65` selected rows across `5` integrated source artifacts.
   These are source/staging facts, not a public score update unless a full
   pinned PHPT gate accepts them.
 - The staged packets are property-hook diagnostics `0/16 -> 16/16`, GMP
   arithmetic `0/14 -> 14/14`, XMLReader factories/residuals `0/14 -> 14/14`,
-  and GMP bit helpers `0/11 -> 11/11`. They preserved latest-published PASS
-  scouts in the accepted integration artifacts and passed focused Rust, build,
-  fmt, diff, php-src cleanliness, and production row-name leakage checks.
+  GMP bit helpers `0/11 -> 11/11`, and GMP number-theory/root helpers
+  `0/10 -> 10/10`. They preserved latest-published PASS scouts in the
+  accepted integration artifacts and passed focused Rust, build, fmt, diff,
+  php-src cleanliness, and production row-name leakage checks.
 - Outstanding publication blocker: the latest `99b183cc` full gate aborted
-  mid-shard and has unknown latest-published PASS-regression status. No staged
-  source after `0b917f67` can move the public score unless a fresh full pinned
-  PHPT gate completes with zero latest-published PASS regressions.
+  mid-shard and has unknown latest-published PASS-regression status. No full
+  pinned gate has accepted `5219685e`; no staged source after `0b917f67` can
+  move the public score unless a fresh full pinned PHPT gate completes with
+  zero latest-published PASS regressions.
 
 Accepted source proof included in the `0b917f67` public gate:
 
