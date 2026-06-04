@@ -162603,13 +162603,12 @@ impl Interpreter {
                 ));
             }
         };
-        if args.get(1).is_some() {
-            optional_timestamp_arg("strtotime()", args.get(1), span)?;
-        }
+        let base_timestamp =
+            optional_timestamp_arg("strtotime()", args.get(1), span)?.unwrap_or(self.request_time);
 
         let timezone = bounded_timezone_from_name(&self.default_timezone)
             .expect("stored default timezone should be bounded");
-        Ok(parse_bounded_strtotime(input, &timezone)
+        Ok(parse_bounded_strtotime(input, &timezone, base_timestamp)
             .map(Value::Int)
             .unwrap_or(Value::Bool(false)))
     }
@@ -168021,8 +168020,383 @@ fn optional_sun_float_arg(
     }
 }
 
-fn parse_bounded_strtotime(input: &str, default_timezone: &BoundedTimezone) -> Option<i64> {
-    parse_bounded_datetime_with_microsecond(input, default_timezone).map(|(timestamp, _)| timestamp)
+fn parse_bounded_strtotime(
+    input: &str,
+    default_timezone: &BoundedTimezone,
+    base_timestamp: i64,
+) -> Option<i64> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if let Some(timestamp) =
+        parse_bounded_strtotime_absolute(trimmed, default_timezone, base_timestamp)
+    {
+        return Some(timestamp);
+    }
+    if let Some((timestamp, _)) =
+        apply_bounded_datetime_modifier(base_timestamp, 0, default_timezone, trimmed)
+    {
+        return Some(timestamp);
+    }
+    parse_bounded_strtotime_weekday(trimmed, default_timezone, base_timestamp)
+}
+
+fn parse_bounded_strtotime_absolute(
+    input: &str,
+    default_timezone: &BoundedTimezone,
+    base_timestamp: i64,
+) -> Option<i64> {
+    if let Some((timestamp, _)) = parse_bounded_datetime_with_microsecond(input, default_timezone) {
+        return Some(timestamp);
+    }
+    if let Some(timestamp) = parse_bounded_compact_utc_datetime(input, default_timezone) {
+        return Some(timestamp);
+    }
+    if let Some(timestamp) = parse_bounded_strtotime_weekday_ymd(input, default_timezone) {
+        return Some(timestamp);
+    }
+    if let Some(timestamp) = parse_bounded_strtotime_year_month(input, default_timezone) {
+        return Some(timestamp);
+    }
+    if let Some(timestamp) = parse_bounded_strtotime_time_ymd(input, default_timezone) {
+        return Some(timestamp);
+    }
+    if let Some(timestamp) = parse_bounded_strtotime_ymd_named_time(input, default_timezone) {
+        return Some(timestamp);
+    }
+    if let Some(timestamp) =
+        parse_bounded_strtotime_textual_date(input, default_timezone, base_timestamp)
+    {
+        return Some(timestamp);
+    }
+    None
+}
+
+fn parse_bounded_compact_utc_datetime(
+    input: &str,
+    default_timezone: &BoundedTimezone,
+) -> Option<i64> {
+    if input.len() != 16
+        || !matches!(input.as_bytes().get(8), Some(b't') | Some(b'T'))
+        || !matches!(input.as_bytes().get(15), Some(b'z') | Some(b'Z'))
+    {
+        return None;
+    }
+    if !input[..8].chars().all(|ch| ch.is_ascii_digit())
+        || !input[9..15].chars().all(|ch| ch.is_ascii_digit())
+    {
+        return None;
+    }
+    let year = parse_ascii_i64(&input[0..4])?;
+    let month = parse_ascii_i64(&input[4..6])?;
+    let day = parse_ascii_i64(&input[6..8])?;
+    let hour = parse_ascii_i64(&input[9..11])?;
+    let minute = parse_ascii_i64(&input[11..13])?;
+    let second = parse_ascii_i64(&input[13..15])?;
+    timestamp_for_bounded_parts(
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        second,
+        Some(0),
+        default_timezone,
+    )
+}
+
+fn parse_bounded_strtotime_weekday_ymd(
+    input: &str,
+    default_timezone: &BoundedTimezone,
+) -> Option<i64> {
+    let tokens: Vec<&str> = input.split_whitespace().collect();
+    if tokens.len() != 2 || weekday_number_from_name(tokens[0]).is_none() {
+        return None;
+    }
+    let (year, month, day) = parse_strtotime_ymd_token(tokens[1])?;
+    timestamp_for_bounded_parts(year, month, day, 0, 0, 0, None, default_timezone)
+}
+
+fn parse_bounded_strtotime_year_month(
+    input: &str,
+    default_timezone: &BoundedTimezone,
+) -> Option<i64> {
+    if let Some((year, month, day)) = parse_strtotime_ymd_token(input) {
+        return timestamp_for_bounded_parts(year, month, day, 0, 0, 0, None, default_timezone);
+    }
+
+    let tokens: Vec<&str> = input.split_whitespace().collect();
+    if tokens.len() != 2 {
+        return None;
+    }
+    let (year, month) = if let Some(year) = parse_four_digit_year(tokens[0]) {
+        (year, parse_strtotime_month_token(tokens[1])?)
+    } else if let Some(year) = parse_four_digit_year(tokens[1]) {
+        (year, parse_strtotime_month_token(tokens[0])?)
+    } else {
+        return None;
+    };
+    timestamp_for_bounded_parts(year, month, 1, 0, 0, 0, None, default_timezone)
+}
+
+fn parse_bounded_strtotime_time_ymd(
+    input: &str,
+    default_timezone: &BoundedTimezone,
+) -> Option<i64> {
+    let tokens: Vec<&str> = input.split_whitespace().collect();
+    if tokens.len() != 2 {
+        return None;
+    }
+    let (hour, minute, second) = parse_strtotime_time_token(tokens[0])?;
+    let (year, month, day) = parse_strtotime_ymd_token(tokens[1])?;
+    timestamp_for_bounded_parts(
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        second,
+        None,
+        default_timezone,
+    )
+}
+
+fn parse_bounded_strtotime_ymd_named_time(
+    input: &str,
+    default_timezone: &BoundedTimezone,
+) -> Option<i64> {
+    let tokens: Vec<&str> = input.split_whitespace().collect();
+    if tokens.len() != 2 {
+        return None;
+    }
+    let (year, month, day) = parse_strtotime_ymd_token(tokens[0])?;
+    let (hour, minute, second) = parse_strtotime_named_time_token(tokens[1])?;
+    timestamp_for_bounded_parts(
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        second,
+        None,
+        default_timezone,
+    )
+}
+
+fn parse_bounded_strtotime_textual_date(
+    input: &str,
+    default_timezone: &BoundedTimezone,
+    base_timestamp: i64,
+) -> Option<i64> {
+    let tokens: Vec<&str> = input.split_whitespace().collect();
+    if tokens.is_empty() {
+        return None;
+    }
+    if tokens.len() == 4 {
+        if let Some((hour, minute, second)) = parse_strtotime_time_token(tokens[0]) {
+            let month = parse_strtotime_month_token(tokens[1])?;
+            let day = parse_strtotime_day_token(tokens[2])?;
+            let year = parse_four_digit_year(tokens[3])?;
+            return timestamp_for_bounded_parts(
+                year,
+                month,
+                day,
+                hour,
+                minute,
+                second,
+                None,
+                default_timezone,
+            );
+        }
+        if let Some(month) = parse_strtotime_month_token(tokens[0]) {
+            let day = parse_strtotime_day_token(tokens[1])?;
+            let (hour, minute, second) = parse_strtotime_time_token(tokens[2])?;
+            let year = parse_four_digit_year(tokens[3])?;
+            return timestamp_for_bounded_parts(
+                year,
+                month,
+                day,
+                hour,
+                minute,
+                second,
+                None,
+                default_timezone,
+            );
+        }
+    }
+
+    let mut start = 0;
+    if weekday_number_from_name(tokens[0]).is_some() {
+        start = 1;
+    }
+    let rest = &tokens[start..];
+    if rest.len() < 2 {
+        return None;
+    }
+
+    let base_offset = default_timezone.offset_at_timestamp(base_timestamp);
+    let base_parts = bounded_datetime_parts(base_timestamp, base_offset);
+
+    if let Some(day) = parse_strtotime_day_token(rest[0]) {
+        let month = parse_strtotime_month_token(rest[1])?;
+        let year = rest
+            .get(2)
+            .and_then(|token| parse_four_digit_year(token))
+            .unwrap_or(base_parts.year);
+        let (hour, minute, second) = rest
+            .get(3)
+            .and_then(|token| parse_strtotime_time_token(token))
+            .unwrap_or((0, 0, 0));
+        return timestamp_for_bounded_parts(
+            year,
+            month,
+            day,
+            hour,
+            minute,
+            second,
+            None,
+            default_timezone,
+        );
+    }
+
+    let month = parse_strtotime_month_token(rest[0])?;
+    let day = parse_strtotime_day_token(rest[1])?;
+    let year = rest
+        .get(2)
+        .and_then(|token| parse_four_digit_year(token))
+        .unwrap_or(base_parts.year);
+    let (hour, minute, second) = rest
+        .get(3)
+        .and_then(|token| parse_strtotime_time_token(token))
+        .unwrap_or((0, 0, 0));
+    timestamp_for_bounded_parts(
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        second,
+        None,
+        default_timezone,
+    )
+}
+
+fn parse_bounded_strtotime_weekday(
+    input: &str,
+    default_timezone: &BoundedTimezone,
+    base_timestamp: i64,
+) -> Option<i64> {
+    let tokens: Vec<&str> = input.split_whitespace().collect();
+    let weekday = match tokens.as_slice() {
+        [weekday] => weekday_number_from_name(weekday)?,
+        ["first", weekday] => weekday_number_from_name(weekday)?,
+        _ => return None,
+    };
+    let offset = default_timezone.offset_at_timestamp(base_timestamp);
+    let parts = bounded_datetime_parts(base_timestamp, offset);
+    let mut delta_days = weekday - parts.weekday;
+    if delta_days <= 0 {
+        delta_days += 7;
+    }
+    timestamp_from_overflowing_local_parts(
+        parts.year,
+        parts.month,
+        parts.day + delta_days,
+        0,
+        0,
+        0,
+        default_timezone,
+    )
+}
+
+fn parse_strtotime_ymd_token(token: &str) -> Option<(i64, i64, i64)> {
+    let parts: Vec<&str> = token.split('-').collect();
+    if !(2..=3).contains(&parts.len()) {
+        return None;
+    }
+    let year = parse_four_digit_year(parts[0])?;
+    let month = parse_ascii_i64(parts[1])?;
+    let day = if let Some(day) = parts.get(2) {
+        parse_ascii_i64(day)?
+    } else {
+        1
+    };
+    Some((year, month, day))
+}
+
+fn parse_four_digit_year(token: &str) -> Option<i64> {
+    let token = clean_strtotime_token(token);
+    if token.len() == 4 && token.chars().all(|ch| ch.is_ascii_digit()) {
+        parse_ascii_i64(token)
+    } else {
+        None
+    }
+}
+
+fn parse_strtotime_month_token(token: &str) -> Option<i64> {
+    let clean = clean_strtotime_token(token);
+    month_number_from_name(clean).or_else(|| roman_month_number(clean))
+}
+
+fn roman_month_number(token: &str) -> Option<i64> {
+    match token.to_ascii_lowercase().as_str() {
+        "i" => Some(1),
+        "ii" => Some(2),
+        "iii" => Some(3),
+        "iv" => Some(4),
+        "v" => Some(5),
+        "vi" => Some(6),
+        "vii" => Some(7),
+        "viii" => Some(8),
+        "ix" => Some(9),
+        "x" => Some(10),
+        "xi" => Some(11),
+        "xii" => Some(12),
+        _ => None,
+    }
+}
+
+fn parse_strtotime_day_token(token: &str) -> Option<i64> {
+    let clean = clean_strtotime_token(token).to_ascii_lowercase();
+    let digits = clean
+        .strip_suffix("st")
+        .or_else(|| clean.strip_suffix("nd"))
+        .or_else(|| clean.strip_suffix("rd"))
+        .or_else(|| clean.strip_suffix("th"))
+        .unwrap_or(&clean);
+    parse_ascii_i64(digits)
+}
+
+fn parse_strtotime_time_token(token: &str) -> Option<(i64, i64, i64)> {
+    let clean = clean_strtotime_token(token);
+    let parts: Vec<&str> = clean.split(':').collect();
+    if !(2..=3).contains(&parts.len()) {
+        return None;
+    }
+    let hour = parse_ascii_i64(parts[0])?;
+    let minute = parse_ascii_i64(parts[1])?;
+    let second = if let Some(second) = parts.get(2) {
+        parse_ascii_i64(second)?
+    } else {
+        0
+    };
+    Some((hour, minute, second))
+}
+
+fn parse_strtotime_named_time_token(token: &str) -> Option<(i64, i64, i64)> {
+    match clean_strtotime_token(token).to_ascii_lowercase().as_str() {
+        "noon" => Some((12, 0, 0)),
+        "midnight" => Some((0, 0, 0)),
+        _ => None,
+    }
+}
+
+fn clean_strtotime_token(token: &str) -> &str {
+    token
+        .trim_matches(',')
+        .trim_end_matches(',')
+        .trim_end_matches('.')
 }
 
 fn parse_bounded_datetime_with_microsecond(

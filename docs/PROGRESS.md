@@ -4,6 +4,31 @@
 
 Implemented:
 
+- Added a bounded `strtotime()` parser/mutation lane on the interpreter path.
+  `strtotime()` now uses its supplied base timestamp for relative modifiers
+  and shares the existing bounded DateTime modifier engine for selected unit
+  offsets and `<weekday> this week` forms. It also recognizes the selected
+  compact UTC, `YYYY-M[M]`, time-plus-date, month/year, Roman-month, ordinal
+  textual date, `noon` / `midnight`, and weekday-prefixed date forms reached
+  by current public date rows. Focused proof covers exact-current pre-patch
+  selected PHPT at `0/12` and post-patch selected PHPT at `12/12` for
+  `ext/date/tests/bug14561.phpt`,
+  `ext/date/tests/bug26198.phpt`,
+  `ext/date/tests/bug28024.phpt`,
+  `ext/date/tests/bug28599.phpt`,
+  `ext/date/tests/bug29150.phpt`,
+  `ext/date/tests/bug33056.phpt`,
+  `ext/date/tests/bug34676.phpt`,
+  `ext/date/tests/bug35414.phpt`,
+  `ext/date/tests/bug36510.phpt`,
+  `ext/date/tests/bug38229.phpt`,
+  `ext/date/tests/bug74057.phpt`, and
+  `ext/date/tests/strtotime-relative.phpt`; Rust DateTime regression
+  coverage, build checks, and pinned wrapper proof. Unsupported edges remain
+  broad timelib grammar, relative forms with complex timezone/database rules,
+  parser diagnostics and `getLastErrors()` metadata, references/COW, and
+  native lowering.
+
 - Repaired the active score-gate PASS regression in
   `ext/standard/tests/math/round_gh12143_expand_rounding_target.phpt`.
   `round()` now keeps the first argument as the shared math

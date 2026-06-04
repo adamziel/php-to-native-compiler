@@ -6576,7 +6576,13 @@
   `next month`, `first day next month`, `last day next month`,
   `first day of next month`, and `last day of next month`;
   `date_parse_from_format()` covers `!m/d/y` and the same bounded
-  single-separator wildcard form `!m*d*y`. The supported internal
+  single-separator wildcard form `!m*d*y`. `strtotime()` uses the supplied
+  base timestamp for the bounded relative unit and `<weekday> this week`
+  modifiers already shared with DateTime mutation, and recognizes selected
+  compact UTC `YYYYMMDDtHHMMSSZ`, `YYYY-M[M]`, `HH:MM YYYY-MM-DD`,
+  `Month YYYY` / `YYYY Month`, Roman-month, ordinal textual date,
+  `YYYY-MM-DD noon` / `midnight`, and weekday-prefixed date forms. The
+  supported internal
   DateTime/DateTimeZone method-signature metadata for `setTime()`,
   `createFromFormat()`, `getTransitions()`, `listIdentifiers()`, and
   `DateTimeInterface::diff()` is also used by the current declaration
@@ -6734,7 +6740,9 @@
   `R#/YYYY-MM-DDTHH:MM:SSZ/P...` shape, DateInterval
   serialization/unserialization outside the current public-state restoration
   slice,
-  full timelib relative string grammar and non-relative classification, broad
+  full timelib relative string grammar and non-relative classification,
+  broad `strtotime()` parser grammar outside the documented bounded forms,
+  broad
   `createFromFormat()` / `date_parse()` / `date_parse_from_format()` grammar,
   parser error metadata, `getLastErrors()` metadata, DateTime object-handle
   reuse parity during parser loops, fractional or negative ISO interval

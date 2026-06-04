@@ -54,6 +54,54 @@ var_dump(idate("O", strtotime("2021-01-01")));
 }
 
 #[test]
+fn strtotime_uses_base_timestamp_and_bounded_textual_forms() {
+    let execution = run_source(
+        r#"<?php
+date_default_timezone_set("UTC");
+echo strtotime("19:30 Dec 17 2005"), "|", strtotime("Dec 17 19:30 2005"), "\n";
+echo gmdate("Y-m-d H:i:s", strtotime("Oct 2001")), "|";
+echo gmdate("Y-m-d H:i:s", strtotime("2001 Oct")), "\n";
+echo date(DATE_ISO8601, strtotime("17:00 2004-01-01")), "\n";
+echo gmdate("Y-m-d H:i:s", strtotime("20 VI. 2005")), "\n";
+echo strtotime("20050518t091234Z"), "\n";
+echo date(DATE_ISO8601, strtotime("2005-12-22 noon")), "|";
+echo date(DATE_ISO8601, strtotime("2005-12-22 midnight")), "\n";
+echo date(DATE_ISO8601, strtotime("Sat 26th Nov 2005 18:18")), "|";
+echo date(DATE_ISO8601, strtotime("26th Nov", 1134340285)), "|";
+echo date(DATE_ISO8601, strtotime("Dec. 4th, 2005")), "\n";
+$base = 1204200000;
+echo date(DATE_ISO8601, strtotime("+80412 seconds", $base)), "|";
+echo date(DATE_ISO8601, strtotime("-115 months", $base)), "\n";
+echo date("D Y-m-d", strtotime("saturday this week", strtotime("Sun 2017-01-01"))), "|";
+echo date("D Y-m-d", strtotime("saturday this week", strtotime("Mon 2017-01-02"))), "\n";
+date_default_timezone_set("Europe/Amsterdam");
+echo gmdate("d-m-Y H:i:s", strtotime("+30 minutes", 1100535573)), "\n";
+var_dump(strtotime("-2\thours", 1140973388));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "1134847800|1134847800\n",
+            "2001-10-01 00:00:00|2001-10-01 00:00:00\n",
+            "2004-01-01T17:00:00+0000\n",
+            "2005-06-20 00:00:00\n",
+            "1116407554\n",
+            "2005-12-22T12:00:00+0000|2005-12-22T00:00:00+0000\n",
+            "2005-11-26T18:18:00+0000|2005-11-26T00:00:00+0000|2005-12-04T00:00:00+0000\n",
+            "2008-02-29T10:20:12+0000|1998-07-28T12:00:00+0000\n",
+            "Sat 2016-12-31|Sat 2017-01-07\n",
+            "15-11-2004 16:49:33\n",
+            "int(1140966188)\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn datetime_timestamp_helpers_get_and_set_bounded_state() {
     let execution = run_source(
         r#"<?php

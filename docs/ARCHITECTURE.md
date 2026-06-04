@@ -4626,9 +4626,11 @@ the bounded first/last-day next-month forms. `DateTime::modify()` shares the
 same bounded approach: current support covers selected weekday/week-relative
 forms, first/last-day calendar forms, unit modifiers including subsecond
 aliases, timestamp modifiers, and named time resets while rejecting unsupported
-timelib grammar instead of guessing. Broad timelib grammar, parser error-state
-history, and object-handle reuse behavior remain outside that runtime parser
-boundary.
+timelib grammar instead of guessing. `strtotime()` reuses that bounded modifier
+engine for selected base-timestamp relative forms and keeps its extra absolute
+grammar to small table-driven compact, month/year, ordinal textual, named-time,
+and weekday-prefixed forms. Broad timelib grammar, parser error-state history,
+and object-handle reuse behavior remain outside that runtime parser boundary.
 `DatePeriod` follows the same bounded runtime-metadata pattern as the current
 DateTime family. The runtime class table exposes the core class, constants,
 readonly public metadata fields, and the selected constructor/static/instance
