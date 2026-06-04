@@ -1,6 +1,6 @@
 # PHP Native Compiler PHPT Progress
 
-Updated: 2026-06-04 06:58 CEST
+Updated: 2026-06-04 07:37 CEST
 
 Primary/public branch: `origin/master`
 Latest accepted public-score source:
@@ -19,11 +19,15 @@ denominators that exclude BORKED rows are not public progress.
 Current public score: **7376 / 20294 pinned runnable PHPTs = 36.35%**.
 
 Latest pushed source checkpoint:
-`f4be414cce658cfc8c6f77ad5a17146a97c66e22 fix: materialize first-class callable constants`
+`40609421fef30899c8fcd8fcd575a84526de3462 fix: handle bounded datetime diff offsets`
 
 Current score-gate target:
-No full score gate is currently running for latest source `f4be414c`.
-The latest accepted full gate is
+No full score gate is currently running for latest source `40609421`.
+The latest attempted current-source full gate is
+`state/logs/phpt-full-current-score-20260604T051404Z-php-src-f97ff59-public-1fe5a48a-source-1fe5a48a`;
+it completed `FINAL / BLOCKED-PASS-REGRESSIONS` with `1`
+latest-published PASS regression, `php-src/ext/date/tests/bug34771.phpt`, and
+is not publication evidence. The latest accepted full gate is
 `state/logs/phpt-full-current-score-20260604T043544Z-php-src-f97ff59-public-0086ba77-source-0086ba77`.
 It completed `FINAL / GATE-AGGREGATE-COMPLETE / ZERO-PASS-REGRESSIONS`
 against the accepted `21abc76f` PASS baseline.
@@ -40,16 +44,22 @@ latest-published PASS regressions.
 
 Unpublished source progress since the accepted public score source:
 
-- Latest pushed source head is `f4be414cce658cfc8c6f77ad5a17146a97c66e22`
-  (`fix: materialize first-class callable constants`), which is newer than the
+- Latest pushed source head is `40609421fef30899c8fcd8fcd575a84526de3462`
+  (`fix: handle bounded datetime diff offsets`), which is newer than the
   accepted `0086ba77` full gate and is not included in the public score above.
-- There are `2` score-relevant source commits after the accepted public-score
+- There are `5` score-relevant source commits after the accepted public-score
   source: `01afaf19e44c2d4a23023469a0a1122ed81f7d90`
   (`fix: parse numeric literal separators`) and
   `f4be414cce658cfc8c6f77ad5a17146a97c66e22`
-  (`fix: materialize first-class callable constants`).
+  (`fix: materialize first-class callable constants`),
+  `1fe5a48ad8e6e3bb4e224fb182ff1b06730c22fb`
+  (`fix: preserve bounded timezone offsets`),
+  `84fbeb8d8dc0637a8b722d38512bb5b856ae7cf7`
+  (`fix: construct user classes via reflection`), and
+  `40609421fef30899c8fcd8fcd575a84526de3462`
+  (`fix: handle bounded datetime diff offsets`).
 - Staged focused selected-PHPT proof after the latest accepted public-score
-  source totals `24` selected rows across `2` integrated source artifacts.
+  source totals `59` selected rows across `5` integrated source artifacts.
   These are source/staging facts, not a public score update unless a full
   pinned PHPT gate accepts them.
 - The numeric literal separator packet moved selected PHPT `0/11 -> 11/11`
@@ -83,6 +93,45 @@ Unpublished source progress since the accepted public score source:
   `Zend/tests/first_class_callable/constexpr/userland.phpt`. It also
   preserved the latest-published PASS scout `8/8`, passed focused Rust
   coverage, build, fmt, diff checks, and production row-name leakage scan.
+- The DateTime timezone-offset packet moved selected PHPT `0/12 -> 12/12`
+  for `ext/date/tests/bug26317.phpt`, `bug35218.phpt`, `bug37017.phpt`,
+  `bug45081.phpt`, `bug46111.phpt`, `bug66985.phpt`, `bug75857.phpt`,
+  `bug81097.phpt`, `bug81565.phpt`, `gh10218.phpt`, `gh11281.phpt`, and
+  `gh20764.phpt`. It also preserved the latest-published PASS scout `8/8`,
+  passed focused Rust coverage, build, fmt, diff checks, and production
+  row-name leakage scan.
+- The ReflectionClass construction packet moved selected PHPT `0/11 -> 11/11`
+  for `ext/reflection/tests/001.phpt`, `007.phpt`,
+  `ReflectionClass_newInstance_001.phpt`,
+  `ReflectionClass_newInstanceArgs_001.phpt`,
+  `ReflectionClass_newInstanceArgs_002.phpt`, `bug38217.phpt`,
+  `bug42976.phpt`, `bug43926.phpt`, `bug52854.phpt`, `bug70982.phpt`, and
+  `bug77882.phpt`. It also preserved the latest-published PASS scout `8/8`,
+  passed focused Rust coverage, build, fmt, diff checks, and production
+  row-name leakage scan.
+- The DateTime diff/massive arithmetic packet moved selected PHPT
+  `0/12 -> 12/12` for
+  `ext/date/tests/DateTime_diff-fall-type2-type2.phpt`,
+  `DateTime_diff-fall-type2-type3.phpt`,
+  `DateTime_diff-fall-type3-type2.phpt`,
+  `DateTime_diff-fall-type3-type3.phpt`,
+  `DateTime_diff-spring-type2-type2.phpt`,
+  `DateTime_diff-spring-type2-type3.phpt`,
+  `DateTime_diff-spring-type3-type2.phpt`,
+  `DateTime_diff-spring-type3-type3.phpt`, `DateTime_add-massive.phpt`,
+  `DateTime_days-massive.phpt`, `DateTime_diff-massive.phpt`, and
+  `DateTime_sub-massive.phpt`. It also preserved the active blocker row state,
+  preserved the latest-published non-date PASS scout `8/8`, passed focused Rust
+  coverage, build, fmt, diff checks, and production row-name leakage scan.
+- The `1fe5a48a` full gate is blocked:
+  `state/logs/phpt-full-current-score-20260604T051404Z-php-src-f97ff59-public-1fe5a48a-source-1fe5a48a`
+  against the accepted `0086ba77` PASS baseline with `7372` normalized rows.
+  It completed `FINAL / BLOCKED-PASS-REGRESSIONS` with public-comparable
+  `7428 / 20294 = 36.60%`, `7424` normalized current passes, and `1`
+  latest-published PASS regression:
+  `php-src/ext/date/tests/bug34771.phpt`. It is not publication evidence for
+  `1fe5a48a` or newer sources `84fbeb8d` / `40609421`; a dedicated repair lane
+  is active for that row.
 - The `c12ecf1b` full gate is blocked:
   `state/logs/phpt-full-current-score-20260604T034027Z-php-src-f97ff59-public-c12ecf1b-source-c12ecf1b`
   against the accepted `21abc76f` PASS baseline with `7275` normalized rows.
