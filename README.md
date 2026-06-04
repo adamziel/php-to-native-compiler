@@ -169,7 +169,11 @@ warning-plus-`false` recovery path and continue execution.
 omitted-handle compatibility deprecations for the last opened directory
 resource. `scandir("")` raises PHP's catchable empty-directory `ValueError`,
 and failed `chdir()` calls emit PHP-shaped display warnings with host errno
-before returning `false`. `clearstatcache()`
+before returning `false`. Bounded SPL filesystem objects cover local
+`SplFileInfo` metadata/path methods, `SplFileObject` inherited path metadata
+plus `fstat()`, `DirectoryIterator` / `FilesystemIterator` local cursor and
+flag behavior, and selected `RecursiveDirectoryIterator` /
+`RecursiveIteratorIterator` local subpath traversal. `clearstatcache()`
 accepts the PHP-shaped zero-, one-, or two-argument forms and clears the
 bounded request-local successful metadata cache used by `filesize()` and
 `filemtime()`, either globally or for one local path; successful local-file

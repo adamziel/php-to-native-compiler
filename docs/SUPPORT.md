@@ -2733,9 +2733,10 @@
   info values, and native lowering remain unsupported.
 - SPL `SplFileInfo` has a bounded local metadata runtime model for
   `__construct()`, `__debugInfo()`, `getBasename()`, `getExtension()`,
-  `getFileInfo()`, `getFilename()`, `getGroup()`, `getInode()`, `getOwner()`,
-  `getPathInfo()`, `getPerms()`, `openFile()`, `setFileClass()`, and
-  `setInfoClass()`.
+  `getFileInfo()`, `getFilename()`, `getGroup()`, `getInode()`,
+  `getLinkTarget()`, `getOwner()`, `getPathInfo()`, `getPerms()`,
+  `getSize()`, `isDir()`, `isFile()`, `isLink()`, `openFile()`,
+  `setFileClass()`, `setInfoClass()`, and `__toString()`.
   Construction records the provided path without opening or statting it.
   Covered metadata getters resolve local paths through the same bounded
   local-path, open_basedir, and stat-cache policy as the adjacent `filegroup()`,
@@ -2747,17 +2748,25 @@
   `getFileInfo()`, and `getPathInfo()` create bounded SPL objects using the
   selected class state without invoking selected-class constructor side
   effects. `getBasename()`, `getFilename()`, and `__debugInfo()` are pure
-  path-string operations over the stored path. Direct `var_dump()` recycles
+  path-string operations over the stored path, while `getSize()` and the
+  selected type/link checks use the bounded local metadata path. Direct
+  `var_dump()` recycles
   unrooted temporary object handles only for selected SPL file/directory
   temporaries in this lane; broader object temporary handle reuse remains
   unsupported. Core `DirectoryIterator` supports bounded local directory
   construction, `current()`, `key()`, `next()`, `rewind()`, `valid()`,
   `isDot()`, `isFile()`, `getFilename()`, `getBasename()`, `getExtension()`,
   `getGroup()`, `getInode()`, and `getOwner()` for the reached public PHPT
-  rows. Broad `SplFileInfo`
-  path/name/type methods, `FilesystemIterator` / `RecursiveDirectoryIterator`,
-  broad `DirectoryIterator` seek/path/type/link behavior, link-target-specific
-  metadata, non-local/user stream wrappers, exact open_basedir warning parity,
+  rows. `FilesystemIterator` extends the bounded local directory cursor with
+  `getFlags()` / `setFlags()`, dot filtering, filename/pathname key modes, and
+  current-as-self, current-as-pathname, or current-as-`SplFileInfo` modes.
+  `RecursiveDirectoryIterator` covers selected local `hasChildren()`,
+  `getSubPath()`, and `getSubPathname()` behavior, and
+  `RecursiveIteratorIterator` covers deterministic flattened local traversal
+  for the reached subpath rows. Broad `SplFileInfo` path/name/type methods
+  outside the listed subset, broad recursive iterator modes and flags,
+  cycle-safe symlink recursion, broad `DirectoryIterator` seek/path/type/link
+  behavior, non-local/user stream wrappers, exact open_basedir warning parity,
   serialization parity, references/COW, and native lowering remain
   unsupported.
 - SPL `SplFileObject` has a bounded local UTF-8 line-cursor runtime model for
@@ -2787,9 +2796,9 @@
   diagnostics. Write-capable local modes are backed by the existing local
   stream resource model and update the bounded line cursor after covered
   writes.
-  Non-local/user stream wrappers, `SplTempFileObject`, `SplFileObject`
-  inheritance over `SplFileInfo`, `fseek()` / `ftruncate()` /
-  `fstat()` / `flock()` as `SplFileObject` methods, full max-line chunked
+  Non-local/user stream wrappers, `SplTempFileObject`,
+  `fseek()` / `ftruncate()` / `flock()` as `SplFileObject` methods,
+  full max-line chunked
   cursor parity for every mixed read/seek path, full `READ_AHEAD` /
   `SKIP_EMPTY` side effects, broad CSV multiline/default-escape parity beyond
   the covered method omissions, binary or non-UTF-8 line storage, independent

@@ -33243,15 +33243,21 @@ impl PhpClassTable {
         for method in [
             "__construct",
             "__debugInfo",
+            "__toString",
             "getBasename",
             "getExtension",
             "getFileInfo",
             "getFilename",
             "getGroup",
             "getInode",
+            "getLinkTarget",
             "getOwner",
             "getPathInfo",
             "getPerms",
+            "getSize",
+            "isDir",
+            "isFile",
+            "isLink",
             "openFile",
             "setFileClass",
             "setInfoClass",
@@ -33292,9 +33298,68 @@ impl PhpClassTable {
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
                 .expect("DirectoryIterator core metadata should not duplicate methods");
         }
-        let spl_file_object_id = classes
-            .declare_class("SplFileObject")
-            .expect("core class table should contain DirectoryIterator before SplFileObject");
+        let filesystem_iterator_id = classes
+            .declare_class("FilesystemIterator")
+            .expect("core class table should contain DirectoryIterator before FilesystemIterator");
+        classes
+            .set_parent(filesystem_iterator_id, directory_iterator_id)
+            .expect("FilesystemIterator should extend DirectoryIterator");
+        classes
+            .set_interfaces(filesystem_iterator_id, vec!["Iterator".to_string()])
+            .expect("FilesystemIterator should implement Iterator");
+        let filesystem_iterator = classes
+            .get_mut(filesystem_iterator_id)
+            .expect("declared FilesystemIterator class id should resolve");
+        for constant in [
+            "CURRENT_AS_PATHNAME",
+            "CURRENT_AS_FILEINFO",
+            "CURRENT_AS_SELF",
+            "CURRENT_MODE_MASK",
+            "KEY_AS_PATHNAME",
+            "KEY_AS_FILENAME",
+            "KEY_MODE_MASK",
+            "SKIP_DOTS",
+            "UNIX_PATHS",
+            "FOLLOW_SYMLINKS",
+            "OTHER_MODE_MASK",
+        ] {
+            filesystem_iterator
+                .add_constant(PhpClassConstantMetadata::new(constant, Visibility::Public))
+                .expect("FilesystemIterator core metadata should not duplicate constants");
+        }
+        for method in ["__construct", "getFlags", "setFlags"] {
+            filesystem_iterator
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("FilesystemIterator core metadata should not duplicate methods");
+        }
+        let recursive_directory_iterator_id = classes
+            .declare_class("RecursiveDirectoryIterator")
+            .expect(
+            "core class table should contain FilesystemIterator before RecursiveDirectoryIterator",
+        );
+        classes
+            .set_parent(recursive_directory_iterator_id, filesystem_iterator_id)
+            .expect("RecursiveDirectoryIterator should extend FilesystemIterator");
+        classes
+            .set_interfaces(
+                recursive_directory_iterator_id,
+                vec!["Iterator".to_string()],
+            )
+            .expect("RecursiveDirectoryIterator should implement Iterator");
+        let recursive_directory_iterator = classes
+            .get_mut(recursive_directory_iterator_id)
+            .expect("declared RecursiveDirectoryIterator class id should resolve");
+        for method in ["getSubPath", "getSubPathname", "hasChildren"] {
+            recursive_directory_iterator
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("RecursiveDirectoryIterator core metadata should not duplicate methods");
+        }
+        let spl_file_object_id = classes.declare_class("SplFileObject").expect(
+            "core class table should contain RecursiveDirectoryIterator before SplFileObject",
+        );
+        classes
+            .set_parent(spl_file_object_id, spl_file_info_id)
+            .expect("SplFileObject should extend SplFileInfo");
         classes
             .set_interfaces(spl_file_object_id, vec!["Iterator".to_string()])
             .expect("SplFileObject should implement Iterator");
@@ -33315,6 +33380,7 @@ impl PhpClassTable {
             "fgetcsv",
             "fpassthru",
             "fread",
+            "fstat",
             "fflush",
             "fputcsv",
             "fputs",
@@ -33373,9 +33439,33 @@ impl PhpClassTable {
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
                 .expect("IteratorIterator core metadata should not duplicate methods");
         }
-        let no_rewind_iterator_id = classes
-            .declare_class("NoRewindIterator")
-            .expect("core class table should contain IteratorIterator before NoRewindIterator");
+        let recursive_iterator_iterator_id =
+            classes.declare_class("RecursiveIteratorIterator").expect(
+                "core class table should contain IteratorIterator before RecursiveIteratorIterator",
+            );
+        classes
+            .set_interfaces(recursive_iterator_iterator_id, vec!["Iterator".to_string()])
+            .expect("RecursiveIteratorIterator should implement Iterator");
+        let recursive_iterator_iterator = classes
+            .get_mut(recursive_iterator_iterator_id)
+            .expect("declared RecursiveIteratorIterator class id should resolve");
+        for method in [
+            "__construct",
+            "current",
+            "getSubPath",
+            "getSubPathname",
+            "key",
+            "next",
+            "rewind",
+            "valid",
+        ] {
+            recursive_iterator_iterator
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("RecursiveIteratorIterator core metadata should not duplicate methods");
+        }
+        let no_rewind_iterator_id = classes.declare_class("NoRewindIterator").expect(
+            "core class table should contain RecursiveIteratorIterator before NoRewindIterator",
+        );
         classes
             .set_interfaces(no_rewind_iterator_id, vec!["Iterator".to_string()])
             .expect("NoRewindIterator should implement Iterator");
@@ -82137,9 +82227,12 @@ mod tests {
                 "SplObjectStorage",
                 "SplFileInfo",
                 "DirectoryIterator",
+                "FilesystemIterator",
+                "RecursiveDirectoryIterator",
                 "SplFileObject",
                 "EmptyIterator",
                 "IteratorIterator",
+                "RecursiveIteratorIterator",
                 "NoRewindIterator",
                 "InfiniteIterator",
                 "LimitIterator",

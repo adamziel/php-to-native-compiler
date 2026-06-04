@@ -68,9 +68,12 @@ const CORE_CLASS_NAMES: &[&str] = &[
     "SplObjectStorage",
     "SplFileInfo",
     "DirectoryIterator",
+    "FilesystemIterator",
+    "RecursiveDirectoryIterator",
     "SplFileObject",
     "EmptyIterator",
     "IteratorIterator",
+    "RecursiveIteratorIterator",
     "NoRewindIterator",
     "InfiniteIterator",
     "LimitIterator",
@@ -282,18 +285,24 @@ echo "ready\n";
         classes.lookup_class("SplStack").unwrap().parent_id(),
         Some(spl_doubly_linked_list.id())
     );
-    let spl_file_object = classes.lookup_class("SplFileObject").unwrap();
-    assert!(spl_file_object.constant("READ_CSV").is_some());
-    assert!(spl_file_object.method("setCsvControl").is_some());
     let spl_file_info = classes.lookup_class("SplFileInfo").unwrap();
+    let spl_file_object = classes.lookup_class("SplFileObject").unwrap();
+    assert_eq!(spl_file_object.parent_id(), Some(spl_file_info.id()));
+    assert!(spl_file_object.constant("READ_CSV").is_some());
+    assert!(spl_file_object.method("fstat").is_some());
+    assert!(spl_file_object.method("setCsvControl").is_some());
     assert!(spl_file_info.method("__debugInfo").is_some());
+    assert!(spl_file_info.method("__toString").is_some());
     assert!(spl_file_info.method("getBasename").is_some());
     assert!(spl_file_info.method("getExtension").is_some());
     assert!(spl_file_info.method("getFileInfo").is_some());
     assert!(spl_file_info.method("getFilename").is_some());
+    assert!(spl_file_info.method("getLinkTarget").is_some());
     assert!(spl_file_info.method("getOwner").is_some());
     assert!(spl_file_info.method("getPathInfo").is_some());
     assert!(spl_file_info.method("getPerms").is_some());
+    assert!(spl_file_info.method("getSize").is_some());
+    assert!(spl_file_info.method("isFile").is_some());
     assert!(spl_file_info.method("openFile").is_some());
     assert!(spl_file_info.method("setFileClass").is_some());
     assert!(spl_file_info.method("setInfoClass").is_some());
@@ -302,6 +311,24 @@ echo "ready\n";
     assert!(classes.implements_interface(directory_iterator.id(), "Iterator"));
     assert!(directory_iterator.method("getBasename").is_some());
     assert!(directory_iterator.method("isFile").is_some());
+    let filesystem_iterator = classes.lookup_class("FilesystemIterator").unwrap();
+    assert_eq!(
+        filesystem_iterator.parent_id(),
+        Some(directory_iterator.id())
+    );
+    assert!(filesystem_iterator.constant("SKIP_DOTS").is_some());
+    assert!(filesystem_iterator.method("setFlags").is_some());
+    let recursive_directory_iterator = classes.lookup_class("RecursiveDirectoryIterator").unwrap();
+    assert_eq!(
+        recursive_directory_iterator.parent_id(),
+        Some(filesystem_iterator.id())
+    );
+    assert!(recursive_directory_iterator.method("hasChildren").is_some());
+    let recursive_iterator_iterator = classes.lookup_class("RecursiveIteratorIterator").unwrap();
+    assert!(classes.implements_interface(recursive_iterator_iterator.id(), "Iterator"));
+    assert!(recursive_iterator_iterator
+        .method("getSubPathname")
+        .is_some());
 
     let class = classes.lookup_class("box").unwrap();
     assert_eq!(class.name(), "Box");
@@ -19200,6 +19227,102 @@ try {{
     assert_eq!(
         execution.stdout,
         "group\ninode\nDirectoryIterator|0|.\nsample|txt\nObject not initialized\nDirectoryIterator::__construct(): Argument #1 ($directory) must not be empty\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+
+    fs::remove_dir_all(&fixture_dir).unwrap();
+}
+
+#[test]
+fn filesystem_iterator_flags_and_recursive_subpaths_are_php_shaped() {
+    use std::fs;
+
+    let fixture_dir =
+        std::env::temp_dir().join(format!("phpc-filesystem-iterator-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&fixture_dir);
+    fs::create_dir_all(fixture_dir.join("child")).unwrap();
+    fs::write(fixture_dir.join("root.txt"), "root").unwrap();
+    fs::write(fixture_dir.join("child").join("nested.txt"), "nested").unwrap();
+    let dir_path = fixture_dir.display().to_string().replace('\\', "\\\\");
+
+    let source = format!(
+        r#"<?php
+$it = new FilesystemIterator("{dir_path}");
+printf("%04X\n", $it->getFlags());
+$items = [];
+foreach ($it as $key => $file) {{
+    $items[] = $file->getFilename() . "=" . basename($key);
+}}
+sort($items);
+echo implode(",", $items), "\n";
+
+$it = new FilesystemIterator("{dir_path}", 0);
+$items = [];
+foreach ($it as $file) {{
+    $items[] = $file->getFilename();
+}}
+sort($items);
+echo implode(",", $items), "\n";
+
+$it->setFlags(-1);
+printf("%04X\n", $it->getFlags());
+
+$rdi = new RecursiveDirectoryIterator("{dir_path}", FilesystemIterator::SKIP_DOTS | FilesystemIterator::KEY_AS_FILENAME);
+var_dump($rdi->key());
+var_dump($rdi->hasChildren());
+
+$rii = new RecursiveIteratorIterator($rdi);
+$paths = [];
+while ($rii->valid()) {{
+    $paths[] = $rii->getSubPathname();
+    $rii->next();
+}}
+sort($paths);
+echo implode("|", $paths), "\n";
+"#
+    );
+
+    let execution = run_source(&source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "1000\nchild=child,root.txt=root.txt\n.,..,child,root.txt\n7FF0\nstring(5) \"child\"\nbool(true)\nchild/.|child/..|child/nested.txt|root.txt\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+
+    fs::remove_dir_all(&fixture_dir).unwrap();
+}
+
+#[test]
+fn spl_file_object_inherits_file_info_metadata_methods() {
+    use std::fs;
+
+    let fixture_dir =
+        std::env::temp_dir().join(format!("phpc-spl-file-object-info-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&fixture_dir);
+    fs::create_dir_all(&fixture_dir).unwrap();
+    let fixture = fixture_dir.join("object.txt");
+    fs::write(&fixture, "abcdef").unwrap();
+    let fixture_path = fixture.display().to_string().replace('\\', "\\\\");
+
+    let source = format!(
+        r#"<?php
+$file = new SplFileObject("{fixture_path}");
+var_dump($file->isFile());
+var_dump($file->isDir());
+var_dump($file->isLink());
+echo $file->getBasename(".txt"), "\n";
+echo $file->getSize(), "\n";
+echo get_class($file->getFileInfo()), "\n";
+echo count($file->fstat()), "\n";
+"#
+    );
+
+    let execution = run_source(&source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "bool(true)\nbool(false)\nbool(false)\nobject\n6\nSplFileInfo\n26\n"
     );
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);

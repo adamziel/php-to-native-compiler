@@ -73,6 +73,18 @@ const SPL_FILE_OBJECT_DROP_NEW_LINE: i64 = 1;
 const SPL_FILE_OBJECT_READ_AHEAD: i64 = 2;
 const SPL_FILE_OBJECT_SKIP_EMPTY: i64 = 4;
 const SPL_FILE_OBJECT_READ_CSV: i64 = 8;
+const SPL_FILESYSTEM_CURRENT_AS_FILEINFO: i64 = 0x0000;
+const SPL_FILESYSTEM_CURRENT_AS_SELF: i64 = 0x0010;
+const SPL_FILESYSTEM_CURRENT_AS_PATHNAME: i64 = 0x0020;
+const SPL_FILESYSTEM_CURRENT_MODE_MASK: i64 = 0x00f0;
+const SPL_FILESYSTEM_KEY_AS_PATHNAME: i64 = 0x0000;
+const SPL_FILESYSTEM_KEY_AS_FILENAME: i64 = 0x0100;
+const SPL_FILESYSTEM_KEY_MODE_MASK: i64 = 0x0f00;
+const SPL_FILESYSTEM_SKIP_DOTS: i64 = 0x1000;
+const SPL_FILESYSTEM_UNIX_PATHS: i64 = 0x2000;
+const SPL_FILESYSTEM_FOLLOW_SYMLINKS: i64 = 0x4000;
+const SPL_FILESYSTEM_OTHER_MODE_MASK: i64 = 0x7000;
+const SPL_FILESYSTEM_FLAGS_MASK: i64 = 0x7ff0;
 const ARRAY_OBJECT_STD_PROP_LIST: i64 = 1;
 const ARRAY_OBJECT_ARRAY_AS_PROPS: i64 = 2;
 const DATEPERIOD_EXCLUDE_START_DATE: i64 = 1;
@@ -569,6 +581,7 @@ struct Interpreter {
     spl_file_infos: HashMap<i64, SplFileInfoState>,
     spl_file_objects: HashMap<i64, SplFileObjectState>,
     spl_directory_iterators: HashMap<i64, DirectoryIteratorState>,
+    spl_recursive_iterator_iterators: HashMap<i64, RecursiveIteratorIteratorState>,
     spl_iterator_wrappers: HashMap<i64, SplIteratorWrapperState>,
     date_time_objects: HashMap<i64, BoundedDateTimeObjectState>,
     date_interval_objects: HashMap<i64, BoundedDateIntervalState>,
@@ -998,6 +1011,21 @@ struct DirectoryIteratorState {
     entries: Vec<String>,
     cursor: usize,
     initialized: bool,
+    flags: i64,
+}
+
+#[derive(Debug, Clone)]
+struct RecursiveDirectoryIterationEntry {
+    sub_path: String,
+    sub_pathname: String,
+}
+
+#[derive(Debug, Clone, Default)]
+struct RecursiveIteratorIteratorState {
+    initial_entries: Vec<RecursiveDirectoryIterationEntry>,
+    rewound_entries: Vec<RecursiveDirectoryIterationEntry>,
+    cursor: usize,
+    rewound: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -11976,6 +12004,7 @@ impl Interpreter {
             spl_file_infos: HashMap::new(),
             spl_file_objects: HashMap::new(),
             spl_directory_iterators: HashMap::new(),
+            spl_recursive_iterator_iterators: HashMap::new(),
             spl_iterator_wrappers: HashMap::new(),
             date_time_objects: HashMap::new(),
             date_interval_objects: HashMap::new(),
@@ -12261,6 +12290,48 @@ impl Interpreter {
         self.classes
             .lookup_class_id("DirectoryIterator")
             .is_some_and(|directory_id| class_id == directory_id)
+    }
+
+    fn is_spl_filesystem_iterator_class_id(&self, class_id: ClassId) -> bool {
+        self.classes
+            .lookup_class_id("FilesystemIterator")
+            .is_some_and(|filesystem_id| {
+                class_id == filesystem_id || self.classes.is_subclass_of(class_id, filesystem_id)
+            })
+    }
+
+    fn resolved_method_is_core_spl_filesystem_iterator(&self, class_id: ClassId) -> bool {
+        self.classes
+            .lookup_class_id("FilesystemIterator")
+            .is_some_and(|filesystem_id| class_id == filesystem_id)
+    }
+
+    fn is_spl_recursive_directory_iterator_class_id(&self, class_id: ClassId) -> bool {
+        self.classes
+            .lookup_class_id("RecursiveDirectoryIterator")
+            .is_some_and(|recursive_id| {
+                class_id == recursive_id || self.classes.is_subclass_of(class_id, recursive_id)
+            })
+    }
+
+    fn resolved_method_is_core_spl_recursive_directory_iterator(&self, class_id: ClassId) -> bool {
+        self.classes
+            .lookup_class_id("RecursiveDirectoryIterator")
+            .is_some_and(|recursive_id| class_id == recursive_id)
+    }
+
+    fn is_spl_recursive_iterator_iterator_class_id(&self, class_id: ClassId) -> bool {
+        self.classes
+            .lookup_class_id("RecursiveIteratorIterator")
+            .is_some_and(|iterator_id| {
+                class_id == iterator_id || self.classes.is_subclass_of(class_id, iterator_id)
+            })
+    }
+
+    fn resolved_method_is_core_spl_recursive_iterator_iterator(&self, class_id: ClassId) -> bool {
+        self.classes
+            .lookup_class_id("RecursiveIteratorIterator")
+            .is_some_and(|iterator_id| class_id == iterator_id)
     }
 
     fn is_spl_empty_iterator_class_id(&self, class_id: ClassId) -> bool {
@@ -15675,6 +15746,17 @@ impl Interpreter {
                 .map(|value| (value, None));
         }
 
+        if self.resolved_method_is_core_spl_recursive_iterator_iterator(class_id) {
+            return self
+                .call_spl_recursive_iterator_iterator_method_with_values(
+                    object,
+                    method_name,
+                    Vec::new(),
+                    span,
+                )
+                .map(|value| (value, None));
+        }
+
         if self.resolved_method_is_core_spl_file_info(class_id) {
             return self
                 .call_spl_file_info_method_with_values(object, method_name, Vec::new(), span)
@@ -18131,6 +18213,15 @@ impl Interpreter {
             );
         }
 
+        if self.resolved_method_is_core_spl_recursive_iterator_iterator(class_id) {
+            return self.call_spl_recursive_iterator_iterator_method_with_values(
+                object,
+                method_name,
+                Vec::new(),
+                span,
+            );
+        }
+
         if self.resolved_method_is_core_spl_file_info(class_id) {
             return self.call_spl_file_info_method_with_values(
                 object,
@@ -18868,8 +18959,13 @@ impl Interpreter {
         match method_name.to_ascii_lowercase().as_str() {
             "getgroup" => Some("SplFileInfo::getGroup"),
             "getinode" => Some("SplFileInfo::getInode"),
+            "getlinktarget" => Some("SplFileInfo::getLinkTarget"),
             "getowner" => Some("SplFileInfo::getOwner"),
             "getperms" => Some("SplFileInfo::getPerms"),
+            "getsize" => Some("SplFileInfo::getSize"),
+            "isdir" => Some("SplFileInfo::isDir"),
+            "isfile" => Some("SplFileInfo::isFile"),
+            "islink" => Some("SplFileInfo::isLink"),
             _ => None,
         }
     }
@@ -18931,6 +19027,46 @@ impl Interpreter {
         }
         self.cache_bounded_realpath_entry_for_local_path(&filesystem_path);
         Ok(metadata)
+    }
+
+    fn spl_file_info_filesystem_path(
+        &mut self,
+        object: &PhpObject,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<(String, PathBuf)> {
+        let function = Self::spl_file_info_metadata_method_name(method_name)
+            .expect("metadata method name was already selected");
+        let path = self
+            .spl_file_info_state(object, method_name, span)?
+            .path
+            .clone();
+        if path.contains("://") {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{function}()"),
+                    "stream wrappers are not supported in the current subset",
+                ),
+            ));
+        }
+        let filesystem_path =
+            self.resolve_local_filesystem_operation_path(function, &path, false, span)?;
+        if !self.enforce_bounded_open_basedir(
+            &format!("{function}()"),
+            &path,
+            &filesystem_path,
+            span,
+        )? {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{function}()"),
+                    format!("{function}(): stat failed for {path}"),
+                ),
+            ));
+        }
+        Ok((path, filesystem_path))
     }
 
     fn spl_file_info_class_argument(
@@ -19047,6 +19183,15 @@ impl Interpreter {
             .to_string()
     }
 
+    fn spl_file_info_path_without_trailing_separators(path: &str) -> String {
+        let trimmed = path.trim_end_matches(|ch| ch == '/' || ch == '\\');
+        if trimmed.is_empty() {
+            path.to_string()
+        } else {
+            trimmed.to_string()
+        }
+    }
+
     fn spl_file_info_debug_info_array(state: &SplFileInfoState) -> PhpArray {
         let mut properties = PhpArray::new();
         properties.insert("\0SplFileInfo\0pathName", Value::String(state.path.clone()));
@@ -19154,6 +19299,8 @@ impl Interpreter {
             object_id,
         );
         self.apply_instance_property_defaults(&object, class_id, span)?;
+        self.spl_file_infos
+            .insert(object.id(), SplFileInfoState::default());
         self.initialize_spl_file_object(&object, &constructor_args, span)?;
         self.track_allocated_object(&object);
         Ok(Value::Object(object))
@@ -19175,6 +19322,14 @@ impl Interpreter {
                     .path = path;
                 Ok(Value::Null)
             }
+            "__tostring" => {
+                expect_arity("SplFileInfo::__toString", &args, 0, span)?;
+                let path = self
+                    .spl_file_info_state(&object, method_name, span)?
+                    .path
+                    .clone();
+                Ok(Value::String(path))
+            }
             "getgroup" => {
                 expect_arity("SplFileInfo::getGroup", &args, 0, span)?;
                 let metadata = self.spl_file_info_metadata(&object, method_name, span)?;
@@ -19194,6 +19349,65 @@ impl Interpreter {
                 expect_arity("SplFileInfo::getPerms", &args, 0, span)?;
                 let metadata = self.spl_file_info_metadata(&object, method_name, span)?;
                 Ok(Value::Int(filesystem_mode_bits(&metadata)))
+            }
+            "getsize" => {
+                expect_arity("SplFileInfo::getSize", &args, 0, span)?;
+                let metadata = self.spl_file_info_metadata(&object, method_name, span)?;
+                Ok(Value::Int(metadata.len() as i64))
+            }
+            "isdir" => {
+                expect_arity("SplFileInfo::isDir", &args, 0, span)?;
+                let (_path, filesystem_path) =
+                    self.spl_file_info_filesystem_path(&object, method_name, span)?;
+                Ok(Value::Bool(
+                    self.cached_filesystem_metadata(&filesystem_path, true)
+                        .map(|metadata| metadata.is_dir())
+                        .unwrap_or(false),
+                ))
+            }
+            "isfile" => {
+                expect_arity("SplFileInfo::isFile", &args, 0, span)?;
+                let (_path, filesystem_path) =
+                    self.spl_file_info_filesystem_path(&object, method_name, span)?;
+                Ok(Value::Bool(
+                    self.cached_filesystem_metadata(&filesystem_path, true)
+                        .map(|metadata| metadata.is_file())
+                        .unwrap_or(false),
+                ))
+            }
+            "islink" => {
+                expect_arity("SplFileInfo::isLink", &args, 0, span)?;
+                let (_path, filesystem_path) =
+                    self.spl_file_info_filesystem_path(&object, method_name, span)?;
+                Ok(Value::Bool(
+                    self.cached_filesystem_metadata(&filesystem_path, false)
+                        .map(|metadata| metadata.file_type().is_symlink())
+                        .unwrap_or(false),
+                ))
+            }
+            "getlinktarget" => {
+                expect_arity("SplFileInfo::getLinkTarget", &args, 0, span)?;
+                let (path, filesystem_path) =
+                    self.spl_file_info_filesystem_path(&object, method_name, span)?;
+                let target = fs::read_link(&filesystem_path).map_err(|_| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "SplFileInfo::getLinkTarget()",
+                            format!("SplFileInfo::getLinkTarget(): readlink failed for {path}"),
+                        ),
+                    )
+                })?;
+                let target = target.into_os_string().into_string().map_err(|_| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "SplFileInfo::getLinkTarget()",
+                            "link target must be valid UTF-8 in the current subset",
+                        ),
+                    )
+                })?;
+                Ok(Value::String(target))
             }
             "getextension" => {
                 expect_arity("SplFileInfo::getExtension", &args, 0, span)?;
@@ -19307,7 +19521,8 @@ impl Interpreter {
                 } else {
                     state.info_class
                 };
-                self.create_spl_file_info_object_for_class(&class_name, state.path, span)
+                let path = Self::spl_file_info_path_without_trailing_separators(&state.path);
+                self.create_spl_file_info_object_for_class(&class_name, path, span)
             }
             "getpathinfo" => {
                 if args.len() > 1 {
@@ -19530,6 +19745,27 @@ impl Interpreter {
             })
     }
 
+    fn spl_directory_iterator_entry_is_dot(entry: &str) -> bool {
+        entry == "." || entry == ".."
+    }
+
+    fn spl_directory_iterator_skip_dots_enabled(state: &DirectoryIteratorState) -> bool {
+        state.flags & SPL_FILESYSTEM_SKIP_DOTS != 0
+    }
+
+    fn spl_directory_iterator_advance_past_dots(state: &mut DirectoryIteratorState) {
+        if !Self::spl_directory_iterator_skip_dots_enabled(state) {
+            return;
+        }
+        while state
+            .entries
+            .get(state.cursor)
+            .is_some_and(|entry| Self::spl_directory_iterator_entry_is_dot(entry))
+        {
+            state.cursor += 1;
+        }
+    }
+
     fn spl_directory_iterator_current_filesystem_path(
         state: &DirectoryIteratorState,
         method_name: &str,
@@ -19537,6 +19773,15 @@ impl Interpreter {
     ) -> CompileResult<PathBuf> {
         let entry = Self::spl_directory_iterator_current_entry(state, method_name, span)?;
         Ok(state.filesystem_path.join(entry))
+    }
+
+    fn spl_directory_iterator_current_path_string(
+        state: &DirectoryIteratorState,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<String> {
+        let path = Self::spl_directory_iterator_current_filesystem_path(state, method_name, span)?;
+        Ok(path.to_string_lossy().to_string())
     }
 
     fn spl_directory_iterator_current_metadata(
@@ -19626,6 +19871,7 @@ impl Interpreter {
                     entries,
                     cursor: 0,
                     initialized: true,
+                    flags: 0,
                 };
                 Ok(Value::Null)
             }
@@ -19634,7 +19880,32 @@ impl Interpreter {
                 let state =
                     self.spl_directory_iterator_initialized_state(&object, method_name, span)?;
                 if state.cursor < state.entries.len() {
-                    Ok(Value::Object(object))
+                    if self.is_spl_filesystem_iterator_class_id(object.class_id()) {
+                        match state.flags & SPL_FILESYSTEM_CURRENT_MODE_MASK {
+                            SPL_FILESYSTEM_CURRENT_AS_SELF => Ok(Value::Object(object)),
+                            SPL_FILESYSTEM_CURRENT_AS_PATHNAME => Ok(Value::String(
+                                Self::spl_directory_iterator_current_path_string(
+                                    state,
+                                    method_name,
+                                    span,
+                                )?,
+                            )),
+                            _ => {
+                                let path = Self::spl_directory_iterator_current_path_string(
+                                    state,
+                                    method_name,
+                                    span,
+                                )?;
+                                self.create_spl_file_info_object_for_class(
+                                    "SplFileInfo",
+                                    path,
+                                    span,
+                                )
+                            }
+                        }
+                    } else {
+                        Ok(Value::Object(object))
+                    }
                 } else {
                     Ok(Value::Bool(false))
                 }
@@ -19643,7 +19914,24 @@ impl Interpreter {
                 expect_arity("DirectoryIterator::key", &args, 0, span)?;
                 let state =
                     self.spl_directory_iterator_initialized_state(&object, method_name, span)?;
-                Ok(Value::Int(state.cursor as i64))
+                if self.is_spl_filesystem_iterator_class_id(object.class_id()) {
+                    if state.flags & SPL_FILESYSTEM_KEY_MODE_MASK == SPL_FILESYSTEM_KEY_AS_FILENAME
+                    {
+                        let entry =
+                            Self::spl_directory_iterator_current_entry(state, method_name, span)?;
+                        Ok(Value::String(entry.to_string()))
+                    } else {
+                        Ok(Value::String(
+                            Self::spl_directory_iterator_current_path_string(
+                                state,
+                                method_name,
+                                span,
+                            )?,
+                        ))
+                    }
+                } else {
+                    Ok(Value::Int(state.cursor as i64))
+                }
             }
             "next" => {
                 expect_arity("DirectoryIterator::next", &args, 0, span)?;
@@ -19658,6 +19946,7 @@ impl Interpreter {
                     ));
                 }
                 state.cursor = state.cursor.saturating_add(1);
+                Self::spl_directory_iterator_advance_past_dots(state);
                 Ok(Value::Null)
             }
             "rewind" => {
@@ -19673,6 +19962,7 @@ impl Interpreter {
                     ));
                 }
                 state.cursor = 0;
+                Self::spl_directory_iterator_advance_past_dots(state);
                 Ok(Value::Null)
             }
             "valid" => {
@@ -19739,7 +20029,9 @@ impl Interpreter {
                 let state =
                     self.spl_directory_iterator_initialized_state(&object, method_name, span)?;
                 let entry = Self::spl_directory_iterator_current_entry(state, method_name, span)?;
-                Ok(Value::Bool(entry == "." || entry == ".."))
+                Ok(Value::Bool(Self::spl_directory_iterator_entry_is_dot(
+                    entry,
+                )))
             }
             "isfile" => {
                 expect_arity("DirectoryIterator::isFile", &args, 0, span)?;
@@ -19772,6 +20064,491 @@ impl Interpreter {
                 let metadata =
                     self.spl_directory_iterator_current_metadata(state, method_name, span)?;
                 Ok(Value::Int(filesystem_owner_value(&metadata)))
+            }
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!(
+                    "{}::{method_name}()",
+                    object.class_name()
+                )),
+            )),
+        }
+    }
+
+    fn call_spl_filesystem_iterator_method_with_values(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        args: Vec<Value>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        match method_name.to_ascii_lowercase().as_str() {
+            "__construct" => {
+                if args.is_empty() || args.len() > 2 {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "FilesystemIterator::__construct",
+                            ArityExpectation::Between { min: 1, max: 2 },
+                            args.len(),
+                        ),
+                    ));
+                }
+                let path = Self::spl_directory_iterator_directory_argument(&args[0], span)?;
+                let flags = match args.get(1) {
+                    Some(value) => php_internal_int_argument(
+                        "FilesystemIterator::__construct()",
+                        2,
+                        "flags",
+                        value,
+                        span,
+                    )?,
+                    None => SPL_FILESYSTEM_SKIP_DOTS,
+                } & SPL_FILESYSTEM_FLAGS_MASK;
+                let filesystem_path = self.resolve_local_filesystem_operation_path(
+                    "FilesystemIterator::__construct",
+                    &path,
+                    false,
+                    span,
+                )?;
+                if !self.enforce_bounded_open_basedir(
+                    "FilesystemIterator::__construct()",
+                    &path,
+                    &filesystem_path,
+                    span,
+                )? {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "FilesystemIterator::__construct()",
+                            format!("FilesystemIterator::__construct({path}): Failed to open directory: Permission denied"),
+                        ),
+                    ));
+                }
+                let metadata = fs::metadata(&filesystem_path).map_err(|error| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "FilesystemIterator::__construct()",
+                            format!(
+                                "FilesystemIterator::__construct({path}): Failed to open directory: {}",
+                                Self::filesystem_io_warning_message(&error)
+                            ),
+                        ),
+                    )
+                })?;
+                if !metadata.is_dir() {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "FilesystemIterator::__construct()",
+                            format!("FilesystemIterator::__construct({path}): Failed to open directory: Not a directory"),
+                        ),
+                    ));
+                }
+                let entries = Self::spl_directory_iterator_entries(
+                    "FilesystemIterator::__construct",
+                    &filesystem_path,
+                    span,
+                )?;
+                if let Some(info_state) = self.spl_file_infos.get_mut(&object.id()) {
+                    info_state.path = path;
+                }
+                let state = self.spl_directory_iterator_state_mut(&object, "__construct", span)?;
+                *state = DirectoryIteratorState {
+                    filesystem_path,
+                    entries,
+                    cursor: 0,
+                    initialized: true,
+                    flags,
+                };
+                Self::spl_directory_iterator_advance_past_dots(state);
+                Ok(Value::Null)
+            }
+            "getflags" => {
+                expect_arity("FilesystemIterator::getFlags", &args, 0, span)?;
+                let state =
+                    self.spl_directory_iterator_initialized_state(&object, method_name, span)?;
+                Ok(Value::Int(state.flags))
+            }
+            "setflags" => {
+                expect_arity("FilesystemIterator::setFlags", &args, 1, span)?;
+                let flags = php_internal_int_argument(
+                    "FilesystemIterator::setFlags()",
+                    1,
+                    "flags",
+                    &args[0],
+                    span,
+                )? & SPL_FILESYSTEM_FLAGS_MASK;
+                let state = self.spl_directory_iterator_state_mut(&object, method_name, span)?;
+                if !state.initialized {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "FilesystemIterator::setFlags()",
+                            "Object not initialized",
+                        ),
+                    ));
+                }
+                state.flags = flags;
+                Self::spl_directory_iterator_advance_past_dots(state);
+                Ok(Value::Null)
+            }
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!(
+                    "{}::{method_name}()",
+                    object.class_name()
+                )),
+            )),
+        }
+    }
+
+    fn spl_recursive_iterator_iterator_state(
+        &self,
+        object: &PhpObject,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<&RecursiveIteratorIteratorState> {
+        self.spl_recursive_iterator_iterators
+            .get(&object.id())
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("RecursiveIteratorIterator::{method_name}()"),
+                        "missing RecursiveIteratorIterator runtime state",
+                    ),
+                )
+            })
+    }
+
+    fn spl_recursive_iterator_iterator_state_mut(
+        &mut self,
+        object: &PhpObject,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<&mut RecursiveIteratorIteratorState> {
+        self.spl_recursive_iterator_iterators
+            .get_mut(&object.id())
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("RecursiveIteratorIterator::{method_name}()"),
+                        "missing RecursiveIteratorIterator runtime state",
+                    ),
+                )
+            })
+    }
+
+    fn spl_recursive_join_path(left: &str, right: &str) -> String {
+        if left.is_empty() {
+            right.to_string()
+        } else {
+            Path::new(left).join(right).to_string_lossy().to_string()
+        }
+    }
+
+    fn spl_recursive_directory_iteration_entries(
+        root: &Path,
+        include_root_entries: bool,
+        flags: i64,
+        span: Span,
+    ) -> CompileResult<Vec<RecursiveDirectoryIterationEntry>> {
+        let mut entries = Vec::new();
+        Self::spl_recursive_directory_collect_entries(
+            root,
+            "",
+            include_root_entries,
+            flags,
+            &mut entries,
+            span,
+        )?;
+        Ok(entries)
+    }
+
+    fn spl_recursive_directory_collect_entries(
+        directory: &Path,
+        relative_directory: &str,
+        include_directory_entries: bool,
+        flags: i64,
+        entries: &mut Vec<RecursiveDirectoryIterationEntry>,
+        span: Span,
+    ) -> CompileResult<()> {
+        if include_directory_entries {
+            for name in [".", ".."] {
+                entries.push(RecursiveDirectoryIterationEntry {
+                    sub_path: relative_directory.to_string(),
+                    sub_pathname: Self::spl_recursive_join_path(relative_directory, name),
+                });
+            }
+        }
+
+        let read_dir = fs::read_dir(directory).map_err(|error| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "RecursiveIteratorIterator::__construct()",
+                    format!("recursive directory read failed: {error}"),
+                ),
+            )
+        })?;
+        let mut host_entries = Vec::new();
+        for entry in read_dir {
+            let entry = entry.map_err(|error| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "RecursiveIteratorIterator::__construct()",
+                        format!("recursive directory entry read failed: {error}"),
+                    ),
+                )
+            })?;
+            let Some(name) = entry.file_name().to_str().map(str::to_string) else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "RecursiveIteratorIterator::__construct()",
+                        "non-UTF-8 directory entries are not supported in the current subset",
+                    ),
+                ));
+            };
+            host_entries.push(name);
+        }
+        host_entries.sort();
+
+        for name in host_entries {
+            let filesystem_path = directory.join(&name);
+            let relative_path = Self::spl_recursive_join_path(relative_directory, &name);
+            let symlink_metadata = fs::symlink_metadata(&filesystem_path).map_err(|error| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "RecursiveIteratorIterator::__construct()",
+                        format!("recursive directory metadata read failed: {error}"),
+                    ),
+                )
+            })?;
+            let is_symlink = symlink_metadata.file_type().is_symlink();
+            let is_directory = if is_symlink {
+                flags & SPL_FILESYSTEM_FOLLOW_SYMLINKS != 0
+                    && fs::metadata(&filesystem_path)
+                        .map(|metadata| metadata.is_dir())
+                        .unwrap_or(false)
+            } else {
+                symlink_metadata.is_dir()
+            };
+            if is_directory {
+                Self::spl_recursive_directory_collect_entries(
+                    &filesystem_path,
+                    &relative_path,
+                    true,
+                    flags,
+                    entries,
+                    span,
+                )?;
+            } else {
+                entries.push(RecursiveDirectoryIterationEntry {
+                    sub_path: relative_directory.to_string(),
+                    sub_pathname: relative_path,
+                });
+            }
+        }
+        Ok(())
+    }
+
+    fn spl_recursive_iterator_active_entries(
+        state: &RecursiveIteratorIteratorState,
+    ) -> &[RecursiveDirectoryIterationEntry] {
+        if state.rewound {
+            &state.rewound_entries
+        } else {
+            &state.initial_entries
+        }
+    }
+
+    fn spl_recursive_iterator_current_entry<'a>(
+        state: &'a RecursiveIteratorIteratorState,
+        method_name: &str,
+        span: Span,
+    ) -> CompileResult<&'a RecursiveDirectoryIterationEntry> {
+        Self::spl_recursive_iterator_active_entries(state)
+            .get(state.cursor)
+            .ok_or_else(|| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        format!("RecursiveIteratorIterator::{method_name}()"),
+                        "RecursiveIteratorIterator cursor is not valid",
+                    ),
+                )
+            })
+    }
+
+    fn call_spl_recursive_directory_iterator_method_with_values(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        args: Vec<Value>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        match method_name.to_ascii_lowercase().as_str() {
+            "haschildren" => {
+                expect_arity("RecursiveDirectoryIterator::hasChildren", &args, 0, span)?;
+                let state =
+                    self.spl_directory_iterator_initialized_state(&object, method_name, span)?;
+                let entry = Self::spl_directory_iterator_current_entry(state, method_name, span)?;
+                if Self::spl_directory_iterator_entry_is_dot(entry) {
+                    return Ok(Value::Bool(false));
+                }
+                let path =
+                    Self::spl_directory_iterator_current_filesystem_path(state, method_name, span)?;
+                let symlink_metadata = match fs::symlink_metadata(&path) {
+                    Ok(metadata) => metadata,
+                    Err(_) => return Ok(Value::Bool(false)),
+                };
+                let is_symlink = symlink_metadata.file_type().is_symlink();
+                let is_directory = if is_symlink {
+                    state.flags & SPL_FILESYSTEM_FOLLOW_SYMLINKS != 0
+                        && fs::metadata(&path)
+                            .map(|metadata| metadata.is_dir())
+                            .unwrap_or(false)
+                } else {
+                    symlink_metadata.is_dir()
+                };
+                Ok(Value::Bool(is_directory))
+            }
+            "getsubpath" => {
+                expect_arity("RecursiveDirectoryIterator::getSubPath", &args, 0, span)?;
+                Ok(Value::String(String::new()))
+            }
+            "getsubpathname" => {
+                expect_arity("RecursiveDirectoryIterator::getSubPathname", &args, 0, span)?;
+                let state =
+                    self.spl_directory_iterator_initialized_state(&object, method_name, span)?;
+                let entry = Self::spl_directory_iterator_current_entry(state, method_name, span)?;
+                Ok(Value::String(entry.to_string()))
+            }
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!(
+                    "{}::{method_name}()",
+                    object.class_name()
+                )),
+            )),
+        }
+    }
+
+    fn call_spl_recursive_iterator_iterator_method_with_values(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        args: Vec<Value>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        match method_name.to_ascii_lowercase().as_str() {
+            "__construct" => {
+                expect_arity("RecursiveIteratorIterator::__construct", &args, 1, span)?;
+                let iterator = match &args[0] {
+                    Value::Object(iterator)
+                        if self
+                            .is_spl_recursive_directory_iterator_class_id(iterator.class_id()) =>
+                    {
+                        iterator.clone()
+                    }
+                    other => {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "RecursiveIteratorIterator::__construct()",
+                                format!(
+                                    "Argument #1 ($iterator) must be RecursiveDirectoryIterator in the current subset, {} given",
+                                    php_type_error_given(other)
+                                ),
+                            ),
+                        ));
+                    }
+                };
+                let directory_state = self
+                    .spl_directory_iterator_initialized_state(&iterator, "__construct", span)?
+                    .clone();
+                let initial_entries = Self::spl_recursive_directory_iteration_entries(
+                    &directory_state.filesystem_path,
+                    false,
+                    directory_state.flags,
+                    span,
+                )?;
+                let rewound_entries = Self::spl_recursive_directory_iteration_entries(
+                    &directory_state.filesystem_path,
+                    true,
+                    directory_state.flags,
+                    span,
+                )?;
+                self.spl_recursive_iterator_iterators.insert(
+                    object.id(),
+                    RecursiveIteratorIteratorState {
+                        initial_entries,
+                        rewound_entries,
+                        cursor: 0,
+                        rewound: false,
+                    },
+                );
+                Ok(Value::Null)
+            }
+            "valid" => {
+                expect_arity("RecursiveIteratorIterator::valid", &args, 0, span)?;
+                let state =
+                    self.spl_recursive_iterator_iterator_state(&object, method_name, span)?;
+                Ok(Value::Bool(
+                    state.cursor < Self::spl_recursive_iterator_active_entries(state).len(),
+                ))
+            }
+            "next" => {
+                expect_arity("RecursiveIteratorIterator::next", &args, 0, span)?;
+                let state =
+                    self.spl_recursive_iterator_iterator_state_mut(&object, method_name, span)?;
+                state.cursor = state.cursor.saturating_add(1);
+                Ok(Value::Null)
+            }
+            "rewind" => {
+                expect_arity("RecursiveIteratorIterator::rewind", &args, 0, span)?;
+                let state =
+                    self.spl_recursive_iterator_iterator_state_mut(&object, method_name, span)?;
+                state.cursor = 0;
+                state.rewound = true;
+                Ok(Value::Null)
+            }
+            "getsubpath" => {
+                expect_arity("RecursiveIteratorIterator::getSubPath", &args, 0, span)?;
+                let state =
+                    self.spl_recursive_iterator_iterator_state(&object, method_name, span)?;
+                let entry = Self::spl_recursive_iterator_current_entry(state, method_name, span)?;
+                Ok(Value::String(entry.sub_path.clone()))
+            }
+            "getsubpathname" => {
+                expect_arity("RecursiveIteratorIterator::getSubPathname", &args, 0, span)?;
+                let state =
+                    self.spl_recursive_iterator_iterator_state(&object, method_name, span)?;
+                let entry = Self::spl_recursive_iterator_current_entry(state, method_name, span)?;
+                Ok(Value::String(entry.sub_pathname.clone()))
+            }
+            "current" => {
+                expect_arity("RecursiveIteratorIterator::current", &args, 0, span)?;
+                let state =
+                    self.spl_recursive_iterator_iterator_state(&object, method_name, span)?;
+                let Some(entry) =
+                    Self::spl_recursive_iterator_active_entries(state).get(state.cursor)
+                else {
+                    return Ok(Value::Bool(false));
+                };
+                Ok(Value::String(entry.sub_pathname.clone()))
+            }
+            "key" => {
+                expect_arity("RecursiveIteratorIterator::key", &args, 0, span)?;
+                let state =
+                    self.spl_recursive_iterator_iterator_state(&object, method_name, span)?;
+                Ok(Value::Int(state.cursor as i64))
             }
             _ => Err(runtime_error(
                 span,
@@ -20189,6 +20966,9 @@ impl Interpreter {
 
         let path =
             self.filesystem_filename_argument("SplFileObject::__construct", &args[0], span)?;
+        if let Some(info_state) = self.spl_file_infos.get_mut(&object.id()) {
+            info_state.path = path.clone();
+        }
         let mode = Self::spl_file_object_constructor_mode(args.get(1), span)?;
         let Some(stream_mode) = parse_stream_mode(&mode) else {
             return Err(runtime_error(
@@ -20569,6 +21349,11 @@ impl Interpreter {
                 expect_arity("SplFileObject::ftell", &args, 0, span)?;
                 let stream_id = self.spl_file_object_stream_id(&object, method_name, span)?;
                 self.call_ftell(&[Value::Resource(stream_id)], span)
+            }
+            "fstat" => {
+                expect_arity("SplFileObject::fstat", &args, 0, span)?;
+                let stream_id = self.spl_file_object_stream_id(&object, method_name, span)?;
+                self.call_fstat(&[Value::Resource(stream_id)], span)
             }
             "fgetcsv" => {
                 if args.len() > 3 {
@@ -30993,6 +31778,10 @@ impl Interpreter {
             self.spl_directory_iterators
                 .insert(object.id(), DirectoryIteratorState::default());
         }
+        if self.is_spl_recursive_iterator_iterator_class_id(class_id) {
+            self.spl_recursive_iterator_iterators
+                .insert(object.id(), RecursiveIteratorIteratorState::default());
+        }
         self.apply_instance_property_defaults(&object, class_id, span)?;
         self.sync_spl_doubly_linked_list_object_properties(&object, span)?;
         let Some((
@@ -31146,6 +31935,36 @@ impl Interpreter {
                 .map(|arg| self.evaluate(arg, scope))
                 .collect::<CompileResult<Vec<_>>>()?;
             self.call_spl_directory_iterator_method_with_values(
+                object.clone(),
+                "__construct",
+                values,
+                span,
+            )?;
+            self.track_allocated_object(&object);
+            return Ok(Value::Object(object));
+        }
+
+        if self.resolved_method_is_core_spl_filesystem_iterator(constructor_class_id) {
+            let values = args
+                .iter()
+                .map(|arg| self.evaluate(arg, scope))
+                .collect::<CompileResult<Vec<_>>>()?;
+            self.call_spl_filesystem_iterator_method_with_values(
+                object.clone(),
+                "__construct",
+                values,
+                span,
+            )?;
+            self.track_allocated_object(&object);
+            return Ok(Value::Object(object));
+        }
+
+        if self.resolved_method_is_core_spl_recursive_iterator_iterator(constructor_class_id) {
+            let values = args
+                .iter()
+                .map(|arg| self.evaluate(arg, scope))
+                .collect::<CompileResult<Vec<_>>>()?;
+            self.call_spl_recursive_iterator_iterator_method_with_values(
                 object.clone(),
                 "__construct",
                 values,
@@ -31753,6 +32572,7 @@ impl Interpreter {
         self.spl_file_infos.remove(&object_id);
         self.spl_file_objects.remove(&object_id);
         self.spl_directory_iterators.remove(&object_id);
+        self.spl_recursive_iterator_iterators.remove(&object_id);
         self.spl_iterator_wrappers.remove(&object_id);
         self.date_time_objects.remove(&object_id);
         self.date_interval_objects.remove(&object_id);
@@ -32280,6 +33100,14 @@ impl Interpreter {
         }
         if let Some(state) = self.spl_directory_iterators.get(&object.id()).cloned() {
             self.spl_directory_iterators.insert(clone.id(), state);
+        }
+        if let Some(state) = self
+            .spl_recursive_iterator_iterators
+            .get(&object.id())
+            .cloned()
+        {
+            self.spl_recursive_iterator_iterators
+                .insert(clone.id(), state);
         }
         if let Some(state) = self.spl_iterator_wrappers.get(&object.id()).cloned() {
             self.spl_iterator_wrappers.insert(clone.id(), state);
@@ -56613,6 +57441,34 @@ impl Interpreter {
                 .map(Some);
         }
 
+        if self.resolved_method_is_core_spl_filesystem_iterator(class_id) {
+            return self
+                .call_spl_filesystem_iterator_method_with_values(object, method_name, args, span)
+                .map(Some);
+        }
+
+        if self.resolved_method_is_core_spl_recursive_directory_iterator(class_id) {
+            return self
+                .call_spl_recursive_directory_iterator_method_with_values(
+                    object,
+                    method_name,
+                    args,
+                    span,
+                )
+                .map(Some);
+        }
+
+        if self.resolved_method_is_core_spl_recursive_iterator_iterator(class_id) {
+            return self
+                .call_spl_recursive_iterator_iterator_method_with_values(
+                    object,
+                    method_name,
+                    args,
+                    span,
+                )
+                .map(Some);
+        }
+
         if self.resolved_method_is_core_spl_file_info(class_id) {
             return self
                 .call_spl_file_info_method_with_values(object, method_name, args, span)
@@ -56881,6 +57737,34 @@ impl Interpreter {
         if self.resolved_method_is_core_spl_directory_iterator(class_id) {
             return self
                 .call_spl_directory_iterator_method_with_values(object, method_name, args, span)
+                .map(Some);
+        }
+
+        if self.resolved_method_is_core_spl_filesystem_iterator(class_id) {
+            return self
+                .call_spl_filesystem_iterator_method_with_values(object, method_name, args, span)
+                .map(Some);
+        }
+
+        if self.resolved_method_is_core_spl_recursive_directory_iterator(class_id) {
+            return self
+                .call_spl_recursive_directory_iterator_method_with_values(
+                    object,
+                    method_name,
+                    args,
+                    span,
+                )
+                .map(Some);
+        }
+
+        if self.resolved_method_is_core_spl_recursive_iterator_iterator(class_id) {
+            return self
+                .call_spl_recursive_iterator_iterator_method_with_values(
+                    object,
+                    method_name,
+                    args,
+                    span,
+                )
                 .map(Some);
         }
 
@@ -57691,6 +58575,60 @@ impl Interpreter {
                 .collect::<CompileResult<Vec<_>>>()?;
             let callable = format!("{}->{method_name}", object.class_name());
             let result = self.call_spl_directory_iterator_method_with_values(
+                object,
+                method_name,
+                values.clone(),
+                span,
+            );
+            if let Err(error) = &result {
+                self.record_pending_uncaught_internal_call_frame(callable, span, &values, error);
+            }
+            return result.map(|value| (value, None));
+        }
+
+        if self.resolved_method_is_core_spl_filesystem_iterator(class_id) {
+            let values = args
+                .iter()
+                .map(|arg| self.evaluate(arg, caller_scope))
+                .collect::<CompileResult<Vec<_>>>()?;
+            let callable = format!("{}->{method_name}", object.class_name());
+            let result = self.call_spl_filesystem_iterator_method_with_values(
+                object,
+                method_name,
+                values.clone(),
+                span,
+            );
+            if let Err(error) = &result {
+                self.record_pending_uncaught_internal_call_frame(callable, span, &values, error);
+            }
+            return result.map(|value| (value, None));
+        }
+
+        if self.resolved_method_is_core_spl_recursive_directory_iterator(class_id) {
+            let values = args
+                .iter()
+                .map(|arg| self.evaluate(arg, caller_scope))
+                .collect::<CompileResult<Vec<_>>>()?;
+            let callable = format!("{}->{method_name}", object.class_name());
+            let result = self.call_spl_recursive_directory_iterator_method_with_values(
+                object,
+                method_name,
+                values.clone(),
+                span,
+            );
+            if let Err(error) = &result {
+                self.record_pending_uncaught_internal_call_frame(callable, span, &values, error);
+            }
+            return result.map(|value| (value, None));
+        }
+
+        if self.resolved_method_is_core_spl_recursive_iterator_iterator(class_id) {
+            let values = args
+                .iter()
+                .map(|arg| self.evaluate(arg, caller_scope))
+                .collect::<CompileResult<Vec<_>>>()?;
+            let callable = format!("{}->{method_name}", object.class_name());
+            let result = self.call_spl_recursive_iterator_iterator_method_with_values(
                 object,
                 method_name,
                 values.clone(),
@@ -64827,6 +65765,81 @@ impl Interpreter {
                 .map(|arg| self.evaluate(arg, caller_scope))
                 .collect::<CompileResult<Vec<_>>>()?;
             return self.call_spl_directory_iterator_method_with_values(
+                this_object,
+                method_name,
+                values,
+                span,
+            );
+        }
+
+        if self.resolved_method_is_core_spl_filesystem_iterator(class_id) {
+            let this_object = match caller_scope.read_named("this") {
+                Some(Value::Object(object)) => object.clone(),
+                _ => {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{class_name}::{method_name}()"),
+                            "non-static method dispatch through parent:: requires current $this object context",
+                        ),
+                    ));
+                }
+            };
+            let values = args
+                .iter()
+                .map(|arg| self.evaluate(arg, caller_scope))
+                .collect::<CompileResult<Vec<_>>>()?;
+            return self.call_spl_filesystem_iterator_method_with_values(
+                this_object,
+                method_name,
+                values,
+                span,
+            );
+        }
+
+        if self.resolved_method_is_core_spl_recursive_directory_iterator(class_id) {
+            let this_object = match caller_scope.read_named("this") {
+                Some(Value::Object(object)) => object.clone(),
+                _ => {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{class_name}::{method_name}()"),
+                            "non-static method dispatch through parent:: requires current $this object context",
+                        ),
+                    ));
+                }
+            };
+            let values = args
+                .iter()
+                .map(|arg| self.evaluate(arg, caller_scope))
+                .collect::<CompileResult<Vec<_>>>()?;
+            return self.call_spl_recursive_directory_iterator_method_with_values(
+                this_object,
+                method_name,
+                values,
+                span,
+            );
+        }
+
+        if self.resolved_method_is_core_spl_recursive_iterator_iterator(class_id) {
+            let this_object = match caller_scope.read_named("this") {
+                Some(Value::Object(object)) => object.clone(),
+                _ => {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{class_name}::{method_name}()"),
+                            "non-static method dispatch through parent:: requires current $this object context",
+                        ),
+                    ));
+                }
+            };
+            let values = args
+                .iter()
+                .map(|arg| self.evaluate(arg, caller_scope))
+                .collect::<CompileResult<Vec<_>>>()?;
+            return self.call_spl_recursive_iterator_iterator_method_with_values(
                 this_object,
                 method_name,
                 values,
@@ -118774,6 +119787,37 @@ fn seed_core_class_constant_runtime_tables(
             let span = Span::new(1, 1);
             class_constants.insert(
                 (spl_file_object_id, name.to_string()),
+                ClassConstantDecl {
+                    name: name.to_string(),
+                    visibility: ClassVisibility::Public,
+                    is_static: false,
+                    is_abstract: false,
+                    is_readonly: false,
+                    type_decl: None,
+                    value: Expr::Int(value, span),
+                    attributes: Vec::new(),
+                    span,
+                },
+            );
+        }
+    }
+    if let Some(filesystem_iterator_id) = classes.lookup_class_id("FilesystemIterator") {
+        for (name, value) in [
+            ("CURRENT_AS_PATHNAME", SPL_FILESYSTEM_CURRENT_AS_PATHNAME),
+            ("CURRENT_AS_FILEINFO", SPL_FILESYSTEM_CURRENT_AS_FILEINFO),
+            ("CURRENT_AS_SELF", SPL_FILESYSTEM_CURRENT_AS_SELF),
+            ("CURRENT_MODE_MASK", SPL_FILESYSTEM_CURRENT_MODE_MASK),
+            ("KEY_AS_PATHNAME", SPL_FILESYSTEM_KEY_AS_PATHNAME),
+            ("KEY_AS_FILENAME", SPL_FILESYSTEM_KEY_AS_FILENAME),
+            ("KEY_MODE_MASK", SPL_FILESYSTEM_KEY_MODE_MASK),
+            ("SKIP_DOTS", SPL_FILESYSTEM_SKIP_DOTS),
+            ("UNIX_PATHS", SPL_FILESYSTEM_UNIX_PATHS),
+            ("FOLLOW_SYMLINKS", SPL_FILESYSTEM_FOLLOW_SYMLINKS),
+            ("OTHER_MODE_MASK", SPL_FILESYSTEM_OTHER_MODE_MASK),
+        ] {
+            let span = Span::new(1, 1);
+            class_constants.insert(
+                (filesystem_iterator_id, name.to_string()),
                 ClassConstantDecl {
                     name: name.to_string(),
                     visibility: ClassVisibility::Public,

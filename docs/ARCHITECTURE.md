@@ -155,9 +155,15 @@ PHP-shaped object handles without recycling general iterator temporaries. Core
 local-directory cursor state layered on `SplFileInfo`: construction resolves a
 local directory, records a deterministic entry list with dot entries, and the
 covered cursor, basename/extension/filename, dot/file, and group/inode/owner
-methods read from that current entry. Core `SplFileObject` instances are
-modeled as bounded local-file cursor states with optional local stream
-resources; covered CSV controls, default-escape diagnostics, method-shaped CSV
+methods read from that current entry. `FilesystemIterator` extends that local
+directory cursor with bounded flag handling for dot filtering, key/current
+presentation, and `getFlags()` / `setFlags()`. `RecursiveDirectoryIterator`
+adds bounded `hasChildren()` plus selected subpath helpers, and
+`RecursiveIteratorIterator` materializes a deterministic flattened local
+snapshot for the reached subpath traversal rows. Core `SplFileObject`
+instances are modeled as bounded local-file cursor states with optional local
+stream resources and inherit the covered `SplFileInfo` path/stat/link methods;
+covered CSV controls, `fstat()`, default-escape diagnostics, method-shaped CSV
 argument errors, and internal CSV method reflection metadata are handled on
 that interpreter object state.
 Bounded non-direct named and dynamic property holder expressions in
