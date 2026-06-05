@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-05T21:46:00+00:00
+Last generated: 2026-06-05T22:00:08+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -24,7 +24,8 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | architect-19 | Architect | stopped | architect-19 |  |
 | architect-2 | Architect | stopped | architect-2 |  |
 | architect-20 | Architect | stopped | architect-20 |  |
-| architect-21 | Architect | running | architect-21 |  |
+| architect-21 | Architect | crash | architect-21 |  |
+| architect-22 | Architect | stopped | architect-22 |  |
 | architect-3 | Architect | stopped | architect-3 |  |
 | architect-4 | Architect | stopped | architect-4 |  |
 | architect-5 | Architect | stopped | architect-5 |  |
@@ -2766,7 +2767,8 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-2 | Coordinator | stopped | coordinator-2 |  |
 | coordinator-3 | Coordinator | stopped | coordinator-3 |  |
 | coordinator-4 | Coordinator | stopped | coordinator-4 |  |
-| coordinator-5 | Coordinator | running | coordinator-5 |  |
+| coordinator-5 | Coordinator | crash | coordinator-5 |  |
+| coordinator-6 | Coordinator | stopped | coordinator-6 |  |
 | developer-1 | Developer | stopped | developer-1 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-1 |
 | developer-10 | Developer | stopped | developer-10 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-10 |
 | developer-100 | Developer | stopped | developer-100 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-100 |
@@ -3165,8 +3167,8 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-455 | Developer | stopped | developer-455 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-455 |
 | developer-456 | Developer | stopped | developer-456 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-456 |
 | developer-457 | Developer | stopped | developer-457 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-457 |
-| developer-458 | Developer | running | developer-458 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-458 |
-| developer-459 | Developer | running | developer-459 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-459 |
+| developer-458 | Developer | stopped | developer-458 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-458 |
+| developer-459 | Developer | stopped | developer-459 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-459 |
 | developer-46 | Developer | stopped | developer-46 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-46 |
 | developer-47 | Developer | stopped | developer-47 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-47 |
 | developer-48 | Developer | stopped | developer-48 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-48 |
@@ -3265,8 +3267,8 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | integrator-41 | Integrator | stopped | integrator-41 |  |
 | integrator-42 | Integrator | stopped | integrator-42 |  |
 | integrator-43 | Integrator | stopped | integrator-43 |  |
-| integrator-44 | Integrator | running | integrator-44 |  |
-| integrator-45 | Integrator | running | integrator-45 |  |
+| integrator-44 | Integrator | stopped | integrator-44 |  |
+| integrator-45 | Integrator | stopped | integrator-45 |  |
 | integrator-5 | Integrator | stopped | integrator-5 |  |
 | integrator-6 | Integrator | stopped | integrator-6 |  |
 | integrator-7 | Integrator | stopped | integrator-7 |  |
@@ -3298,41 +3300,41 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | manager-7 | Manager | stopped | manager-7 |  |
 | manager-8 | Manager | stopped | manager-8 |  |
 | manager-9 | Manager | stopped | manager-9 |  |
-| manhole | Manager | running | manhole |  |
+| manhole | Manager | stopped | manhole |  |
 
 ## Work lanes
 | id | title | role_type | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- |
-| 462 | Fix failing tests from run 522 | Developer | queued |  | 0.0 |
-| 461 | Fix failing tests from run 521 | Developer | queued |  | 0.0 |
-| 460 | Fix failing tests from run 520 | Developer | queued |  | 0.0 |
-| 459 | Fix failing tests from run 519 | Developer | queued |  | 0.0 |
-| 458 | Fix failing tests from run 518 | Developer | queued |  | 0.0 |
-| 457 | Fix failing tests from run 517 | Developer | queued |  | 0.0 |
-| 456 | Fix failing tests from run 516 | Developer | queued |  | 0.0 |
-| 455 | Fix failing tests from run 515 | Developer | queued |  | 0.0 |
-| 454 | Fix failing tests from run 514 | Developer | queued |  | 0.0 |
-| 453 | Fix failing tests from run 513 | Developer | queued |  | 0.0 |
+| 517 | Fix failing tests from run 577 | Developer | queued |  | 0.0 |
+| 516 | Fix failing tests from run 576 | Developer | queued |  | 0.0 |
+| 515 | Fix failing tests from run 575 | Developer | queued |  | 0.0 |
+| 514 | Fix failing tests from run 574 | Developer | queued |  | 0.0 |
+| 513 | Fix failing tests from run 573 | Developer | queued |  | 0.0 |
+| 512 | Fix failing tests from run 572 | Developer | queued |  | 0.0 |
+| 511 | Fix failing tests from run 571 | Developer | queued |  | 0.0 |
+| 510 | Fix failing tests from run 570 | Developer | queued |  | 0.0 |
+| 509 | Fix failing tests from run 569 | Developer | queued |  | 0.0 |
+| 508 | Fix failing tests from run 568 | Developer | queued |  | 0.0 |
 
 ## Tests
 failed — python -m unittest discover -s tests -v (error=0, failed=1, passed=0, skipped=0)
 
 ## Resource samples
-Latest: CPU 1.59%, RAM 14.19%, disk free 9.67 GB.
+Latest: CPU 10.54%, RAM 14.78%, disk free 9.63 GB.
 
 ## Recent events
-- 2026-06-05T21:45:52+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: harness/idle-alert-ended-agents
-- 2026-06-05T21:45:52+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: harness/idle-alert-missing-window-undelivered-assignment
-- 2026-06-05T21:45:52+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: harness/idle-alert-auditor-spawn-storm
-- 2026-06-05T21:45:52+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-05T21:45:54+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-05T21:45:57+00:00 **worklane_created**: Fix failing tests from run 522
-- 2026-06-05T21:45:57+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: harness/idle-alert-ended-agents
-- 2026-06-05T21:45:57+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: harness/idle-alert-missing-window-undelivered-assignment
-- 2026-06-05T21:45:57+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: harness/idle-alert-auditor-spawn-storm
-- 2026-06-05T21:45:57+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-05T21:45:59+00:00 **mcp**: Harness MCP tools exposed to Codex workers
-- 2026-06-05T21:46:00+00:00 **tmux**: Support windows ready
+- 2026-06-05T21:50:44+00:00 **spawn_coalesced**: Reused architect-22 for Architect: Find systemic cause for repeated failure: harness/idle-alert-auditor-spawn-storm
+- 2026-06-05T21:50:46+00:00 **worklane_created**: Fix failing tests from run 577
+- 2026-06-05T21:50:46+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: harness/idle-alert-ended-agents
+- 2026-06-05T21:50:46+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: harness/idle-alert-missing-window-undelivered-assignment
+- 2026-06-05T21:50:46+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: harness/idle-alert-auditor-spawn-storm
+- 2026-06-05T21:50:46+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-05T21:50:48+00:00 **scheduler**: Harness scheduler stopped by user
+- 2026-06-05T21:50:50+00:00 **stop**: Stopped harness runtime
+- 2026-06-05T21:52:39+00:00 **stop**: Stopped harness runtime
+- 2026-06-05T22:00:06+00:00 **stop**: Stopped harness runtime
+- 2026-06-05T22:00:07+00:00 **mcp**: Harness MCP tools exposed to Codex workers
+- 2026-06-05T22:00:07+00:00 **tmux**: Support windows ready
 
 ## Next steps
-Move next worklane forward: Fix failing tests from run 522
+Move next worklane forward: Fix failing tests from run 577
