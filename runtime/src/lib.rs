@@ -65554,7 +65554,7 @@ mod tests {
     }
 
     #[test]
-    fn native_string_value_conversion_rejects_missing_or_non_utf8_handles() {
+    fn native_string_value_conversion_rejects_missing_and_preserves_binary_bytes() {
         let null_value = unsafe { phpc_native_value_from_string(NativeStringHandle::null()) };
         assert!(null_value.is_null());
         let null_echo = unsafe { phpc_native_value_echo_bytes(null_value) };
@@ -65822,28 +65822,11 @@ mod tests {
         let mut diagnostic = NativeDiagnosticHandle::null();
         let invalid_value =
             unsafe { phpc_native_value_from_string_with_diagnostic(string, &mut diagnostic) };
-        assert!(invalid_value.is_null());
-        assert!(!diagnostic.is_null());
-        assert_eq!(unsafe { phpc_native_diagnostic_count(diagnostic) }, 1);
-        assert_eq!(
-            unsafe { phpc_native_diagnostic_severity_at(diagnostic, 0) },
-            NativeDiagnosticSeverity::Error.tag()
-        );
-        assert!(unsafe {
-            phpc_native_diagnostic_contains_severity(
-                diagnostic,
-                NativeDiagnosticSeverity::Error.tag(),
-            )
-        });
-        let message = unsafe { phpc_native_diagnostic_message_clone_bytes(diagnostic) };
-        let message_bytes = unsafe { std::slice::from_raw_parts(message.ptr(), message.len()) };
-        assert_eq!(
-            message_bytes,
-            b"native value conversion failed: string bytes are not valid UTF-8"
-        );
-
-        unsafe { phpc_native_byte_buffer_free(message) };
-        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        assert!(diagnostic.is_null());
+        assert!(matches!(
+            unsafe { invalid_value.as_ref() },
+            Some(Value::BinaryString(bytes)) if bytes == &invalid_bytes
+        ));
         unsafe { phpc_native_value_free(invalid_value) };
         unsafe { phpc_native_string_free(string) };
     }
@@ -65909,16 +65892,12 @@ mod tests {
                 &mut diagnostic,
             )
         };
-        assert!(invalid_value.is_null());
-        assert!(!diagnostic.is_null());
-        let message = unsafe { phpc_native_diagnostic_message_clone_bytes(diagnostic) };
-        let message_bytes = unsafe { std::slice::from_raw_parts(message.ptr(), message.len()) };
-        assert_eq!(
-            message_bytes,
-            b"native value conversion failed: string bytes are not valid UTF-8"
-        );
-        unsafe { phpc_native_byte_buffer_free(message) };
-        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        assert!(!invalid_value.is_null());
+        assert!(diagnostic.is_null());
+        assert!(matches!(
+            unsafe { invalid_value.as_ref() },
+            Some(Value::BinaryString(bytes)) if bytes == &invalid
+        ));
         unsafe { phpc_native_value_free(invalid_value) };
     }
 
@@ -65946,6 +65925,13 @@ mod tests {
                 phpc_native_null(),
                 true,
             ),
+            (
+                "binary byte-string strict non-identity materialization",
+                &[0xff, b'p'][..],
+                NativeComparisonOp::StrictNe,
+                phpc_native_int(1),
+                true,
+            ),
         ] {
             let mut diagnostic = NativeDiagnosticHandle::null();
             let left = unsafe {
@@ -65970,29 +65956,19 @@ mod tests {
             unsafe { phpc_native_value_free(left) };
         }
 
-        let invalid_bytes = [0xff, b'p'];
-        for (label, bytes, len) in [
-            ("null pointer with nonzero length", ptr::null(), 4),
-            (
-                "invalid UTF-8 bytes",
-                invalid_bytes.as_ptr(),
-                invalid_bytes.len(),
-            ),
-        ] {
-            let mut diagnostic = NativeDiagnosticHandle::null();
-            let value = unsafe {
-                phpc_native_value_from_string_bytes_with_diagnostic(bytes, len, &mut diagnostic)
-            };
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let value = unsafe {
+            phpc_native_value_from_string_bytes_with_diagnostic(ptr::null(), 4, &mut diagnostic)
+        };
 
-            assert!(value.is_null(), "{label}");
-            assert_eq!(
-                unsafe { phpc_native_value_materialization_failure_exit_code(value, diagnostic) },
-                1,
-                "{label}"
-            );
+        assert!(value.is_null(), "null pointer with nonzero length");
+        assert_eq!(
+            unsafe { phpc_native_value_materialization_failure_exit_code(value, diagnostic) },
+            1,
+            "null pointer with nonzero length"
+        );
 
-            unsafe { phpc_native_value_free(value) };
-        }
+        unsafe { phpc_native_value_free(value) };
     }
 
     #[test]
@@ -66130,12 +66106,11 @@ mod tests {
             "string bytes pointer is null",
         );
 
-        let invalid_bytes = [0xff, b'p'];
         let mut failed_right_diagnostic = NativeDiagnosticHandle::null();
         let failed_right = unsafe {
             phpc_native_value_from_string_bytes_with_diagnostic(
-                invalid_bytes.as_ptr(),
-                invalid_bytes.len(),
+                ptr::null(),
+                4,
                 &mut failed_right_diagnostic,
             )
         };
@@ -66658,6 +66633,19 @@ mod tests {
             empty_equality_expected,
         );
 
+        let binary_handle = unsafe { phpc_native_string_from_bytes([0xff].as_ptr(), 1) };
+        assert_native_comparison_ok(
+            "binary string-handle materialization preserves bytes",
+            unsafe {
+                phpc_native_comparison_operand_compare_and_free(
+                    phpc_native_comparison_operand_from_string_and_free(binary_handle),
+                    NativeComparisonOp::StrictEq.abi_opcode(),
+                    phpc_native_comparison_operand_from_scalar(phpc_native_int(1)),
+                )
+            },
+            false,
+        );
+
         for (label, op) in [
             (
                 "null string-handle materialization through loose equality",
@@ -66688,21 +66676,6 @@ mod tests {
                 "string handle is null",
             );
         }
-
-        let invalid_bytes = [0xff];
-        let invalid_handle =
-            unsafe { phpc_native_string_from_bytes(invalid_bytes.as_ptr(), invalid_bytes.len()) };
-        assert_native_comparison_blocked(
-            "invalid string-handle materialization diagnostic",
-            unsafe {
-                phpc_native_comparison_operand_compare_and_free(
-                    phpc_native_comparison_operand_from_string_and_free(invalid_handle),
-                    NativeComparisonOp::StrictEq.abi_opcode(),
-                    phpc_native_comparison_operand_from_scalar(phpc_native_int(1)),
-                )
-            },
-            "string bytes are not valid UTF-8",
-        );
     }
 
     #[test]
@@ -68804,11 +68777,11 @@ mod tests {
             Value::String("B".to_string()),
             "invalid string conversion: native string offset operation failed: array subjects are not supported; only null, bool, int, float, and string subjects are implemented",
         );
-        assert_diagnostic(
+        assert_written_warning(
             Value::String("abc".to_string()),
             Value::Int(1),
             Value::String(String::from_utf8(vec![0xc3, 0xa9]).unwrap()),
-            "unsupported call native string offset write: byte strings with invalid UTF-8 require the binary string value boundary",
+            b"a\xc3c",
         );
 
         let subject = NativeValueHandle::from_value(Value::String("ab".to_string()));

@@ -1,5 +1,36 @@
 # Progress Log
 
+## 2026-06-05
+
+Implemented:
+
+- Repaired the focused native runtime ABI string expectation slice from the
+  repeated `php_runtime --lib` failing-test lanes. Runtime string-handle and
+  raw byte conversion tests now assert the current PHP-shaped behavior:
+  non-UTF-8 byte payloads materialize as byte-backed `Value::BinaryString`
+  values, while null string handles and malformed raw byte inputs such as a
+  null pointer with nonzero length stay on the diagnostic/null-handle path.
+  Focused comparison and string-offset write tests now pin the same byte-backed
+  materialization boundary instead of expecting invalid-UTF-8 diagnostics.
+  Broader binary PHP string operations, stdout write diagnostics, mutable
+  native string storage, and production native lowering beyond the existing
+  string/value helper path remain unsupported. Focused verification used
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-dev114 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 cargo test -p php_runtime --lib native_string --
+  --test-threads=1`,
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-dev114 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 cargo test -p php_runtime --lib
+  native_value_materialization_failure_exit_code_feeds_comparison_operands --
+  --test-threads=1`,
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-dev114 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 cargo test -p php_runtime --lib
+  native_materialized_comparison_value_pairs_reuse_operand_contract_across_families
+  -- --test-threads=1`, and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-dev114 CARGO_BUILD_JOBS=1
+  CARGO_INCREMENTAL=0 cargo test -p php_runtime --lib
+  native_comparison_string_handle_operands_share_materialization_across_families
+  -- --test-threads=1`.
+
 ## 2026-05-27
 
 Implemented:

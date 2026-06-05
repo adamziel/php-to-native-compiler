@@ -159,21 +159,22 @@ is valid only until the handle is freed, and the clone helper returns an owned
 handle ABI seed only: it does not intern strings, expose mutable string storage,
 or change normal generated string/echo lowering.
 
-`phpc_native_value_from_string` clones a valid UTF-8 native string handle into
-an opaque runtime-owned `Value::String` handle. The source string handle remains
-owned by the caller and must still be freed separately. Null string handles and
-non-UTF-8 byte payloads return a null value handle. The opt-in
+`phpc_native_value_from_string` clones a native string handle into an opaque
+runtime-owned PHP string value handle. Valid UTF-8 bytes become `Value::String`;
+arbitrary byte payloads become byte-backed `Value::BinaryString`. The source
+string handle remains owned by the caller and must still be freed separately.
+Null string handles return a null value handle. The opt-in
 `phpc_native_value_from_string_with_diagnostic` variant preserves that return
 shape and, when the caller supplies a non-null diagnostic out pointer, stores a
-runtime-owned diagnostic handle for null string handles or non-UTF-8 byte
-payloads. Diagnostic message helpers expose the stable message byte length, a
+runtime-owned diagnostic handle for null string handles or malformed raw byte
+inputs such as a null byte pointer with a nonzero length. Diagnostic message
+helpers expose the stable message byte length, a
 runtime-owned message copy, and a bounded stderr reporting helper that writes
 the diagnostic message bytes and returns the number of bytes written. Callers
 must free diagnostic handles with `phpc_native_diagnostic_free` and copied
 message buffers with `phpc_native_byte_buffer_free`. This diagnostic slice
 covers only native string-to-value conversion failures; it does not provide a
-general exception, warning, or errno channel. Binary PHP string values still
-lack native ABI coverage. `phpc_native_value_echo_bytes`
+general exception, warning, or errno channel. `phpc_native_value_echo_bytes`
 returns runtime-owned echo bytes for the current value handle, and
 `phpc_native_value_echo_stdout` writes the current value handle's PHP echo bytes
 to stdout, flushes after a successful write, and returns the number of bytes
@@ -334,14 +335,16 @@ and passes the selected pointer plus selected length through
 `phpc_native_value_echo_stdout`, and the handle free helpers for statement-form
 `echo` and `print`.
 
-Milestone 1609 adds the first bounded diagnostics handle slice for native
+Milestone 1609 added the first bounded diagnostics handle slice for native
 runtime ABI failures. `phpc_native_value_from_string_with_diagnostic` reports
-null string-handle and non-UTF-8 string-byte conversion failures through an
-opaque runtime-owned diagnostic handle, and the deterministic probe now includes
-a failing string-to-value conversion path plus diagnostic message length,
-message clone, and free calls. Normal generated LLVM output still uses the
-existing non-diagnostic `phpc_native_value_from_string` helper at that
-milestone and does not branch on helper failures yet.
+null string-handle conversion failures through an opaque runtime-owned
+diagnostic handle, and the deterministic probe includes a failing
+string-to-value conversion path plus diagnostic message length, message clone,
+and free calls. Later byte-backed PHP string support means non-UTF-8 payloads
+now materialize as `Value::BinaryString` rather than helper failures. Normal
+generated LLVM output still uses the existing non-diagnostic
+`phpc_native_value_from_string` helper at that milestone and does not branch on
+helper failures yet.
 
 Milestone 1615 moves normal generated string-output lowering from the
 non-diagnostic string-to-value helper to
@@ -430,13 +433,13 @@ The tests pin:
 - opaque runtime-owned string handles copied from caller-provided bytes,
   including embedded NUL bytes, empty-string handles, borrowed byte pointers,
   cloned owned-byte buffers, null non-empty inputs, and handle release.
-- opaque runtime-owned value handles converted from valid UTF-8 string handles,
-  including embedded NUL bytes, independent source-handle lifetime, value
-  echo-byte cloning, null string handles, non-UTF-8 rejection, null-handle
-  stdout echo behavior, and value-handle release.
+- opaque runtime-owned value handles converted from string handles, including
+  embedded NUL bytes, arbitrary byte payloads through byte-backed PHP string
+  values, independent source-handle lifetime, value echo-byte cloning, null
+  string handles, null-handle stdout echo behavior, and value-handle release.
 - opaque runtime-owned diagnostic handles for string-to-value conversion
   failures, including stable message bytes for null string handles and
-  non-UTF-8 byte payloads, success-path diagnostic clearing, null diagnostic
+  malformed raw byte inputs, success-path diagnostic clearing, null diagnostic
   helper behavior, message-buffer cloning, stderr message reporting, and
   diagnostic release.
 - null-only opaque array/object/resource/reference handle shapes, including
@@ -472,12 +475,11 @@ The tests pin:
 
 This ABI does not yet provide:
 
-- string interning, mutable string storage, binary PHP string value conversion,
-  diagnostics beyond string-to-value conversion failures, stdout write
-  diagnostics, or production lowering of PHP strings through runtime helpers
-  beyond the scalar echo
+- string interning, mutable string storage, diagnostics beyond string-to-value
+  conversion failures, stdout write diagnostics, or production lowering of PHP
+  strings through runtime helpers beyond the scalar echo
   owned-byte helper, copied raw-byte buffer helper, opaque copied string-handle
-  helper, valid UTF-8 string-handle-to-value helpers, the narrow
+  helper, string-handle-to-value helpers, the narrow
   statement-form direct string `echo`/`print` stdout helper path, and the
   narrow selected string-pointer `echo`/`print` stdout helper paths;
 - object, resource, reference, or copy-on-write storage/semantics beyond the
