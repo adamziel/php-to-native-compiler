@@ -43250,3 +43250,25 @@ Next:
   split-lane batch. A checkpoint was still not created because
   `tools/checkpoint.sh` stages the full dirty tree and this worker was not
   asked to checkpoint.
+
+Next:
+
+- Added Milestone 2305, bounded `phpc run` support for `base64_encode($string)`.
+  The interpreter now accepts scalar/null string-convertible inputs, encodes
+  runtime byte strings with standard padded Base64, and exposes the function to
+  dynamic string-valued calls, `function_exists()`, `is_callable()`, and
+  `ReflectionFunction`.
+- The native function table now recognizes `base64_encode` for metadata
+  folding, while direct native function-call lowering still rejects through the
+  existing function-call boundary instead of emitting misleading code.
+- Array operands use the current subset string-argument diagnostic;
+  object/resource coercions, line folding helpers, URL-safe alphabets, exact
+  diagnostics, and native lowering beyond function-table introspection remain
+  unsupported.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-dev440-base64 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo test -p phpc --test base64_encode_builtin -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-dev440-base64-fixture CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone2305`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-dev440-base64-compare CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone2305`;
+  `CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo fmt --check`;
+  and scoped `git diff --check` over the Milestone 2305 compiler code, docs,
+  tests, and fixtures.

@@ -76024,6 +76024,7 @@ impl Interpreter {
             "levenshtein" => call_levenshtein(&args, span),
             "soundex" => call_soundex(&args, span),
             "count_chars" => call_count_chars(&args, span),
+            "base64_encode" => call_base64_encode(&args, span),
             "base64_decode" => call_base64_decode(&args, span),
             "ctype_alnum" => self.call_ctype("ctype_alnum()", &args, ctype_byte_is_alnum, span),
             "ctype_alpha" => self.call_ctype("ctype_alpha()", &args, ctype_byte_is_alpha, span),
@@ -89478,6 +89479,10 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_bool_param("strict", false),
             ],
         ),
+        "base64_encode" => (
+            "string",
+            vec![reflection_internal_param("string", "string")],
+        ),
         "ctype_alnum" | "ctype_alpha" | "ctype_cntrl" | "ctype_digit" | "ctype_graph"
         | "ctype_lower" | "ctype_print" | "ctype_punct" | "ctype_space" | "ctype_upper"
         | "ctype_xdigit" => ("bool", vec![reflection_internal_param("text", "mixed")]),
@@ -92871,6 +92876,7 @@ fn is_builtin(name: &str) -> bool {
             | "levenshtein"
             | "soundex"
             | "count_chars"
+            | "base64_encode"
             | "base64_decode"
             | "ctype_alnum"
             | "ctype_alpha"
@@ -100058,6 +100064,42 @@ fn call_base64_decode(args: &[Value], span: Span) -> CompileResult<Value> {
         Some(decoded) => Ok(interpreter_value_from_php_string_bytes(decoded)),
         None => Ok(Value::Bool(false)),
     }
+}
+
+fn call_base64_encode(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("base64_encode", args, 1, span)?;
+
+    let value = string_compare_argument_bytes("base64_encode()", "string", &args[0], span)?;
+    Ok(Value::String(base64_encode_bytes(&value)))
+}
+
+const BASE64_ENCODE_ALPHABET: &[u8; 64] =
+    b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+fn base64_encode_bytes(input: &[u8]) -> String {
+    let mut output = String::with_capacity(((input.len() + 2) / 3) * 4);
+
+    for chunk in input.chunks(3) {
+        let b0 = chunk[0];
+        let b1 = if chunk.len() > 1 { chunk[1] } else { 0 };
+        let b2 = if chunk.len() > 2 { chunk[2] } else { 0 };
+        let triple = ((b0 as u32) << 16) | ((b1 as u32) << 8) | b2 as u32;
+
+        output.push(BASE64_ENCODE_ALPHABET[((triple >> 18) & 0x3f) as usize] as char);
+        output.push(BASE64_ENCODE_ALPHABET[((triple >> 12) & 0x3f) as usize] as char);
+        if chunk.len() > 1 {
+            output.push(BASE64_ENCODE_ALPHABET[((triple >> 6) & 0x3f) as usize] as char);
+        } else {
+            output.push('=');
+        }
+        if chunk.len() > 2 {
+            output.push(BASE64_ENCODE_ALPHABET[(triple & 0x3f) as usize] as char);
+        } else {
+            output.push('=');
+        }
+    }
+
+    output
 }
 
 fn base64_decode_bytes(input: &[u8], strict: bool) -> Option<Vec<u8>> {
