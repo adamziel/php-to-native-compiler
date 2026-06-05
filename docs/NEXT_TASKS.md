@@ -7,6 +7,14 @@ handled.
 
 ## Active COW Frontier
 
+- [x] Milestone 2306: add bounded interpreter `str_ireplace()` support parallel
+  to the existing `str_replace()` slice, including scalar/null search,
+  replacement, and subject values, one-level scalar/null search arrays, direct
+  `$count` output variables, string-valued dynamic calls, native
+  function-table introspection, fixture CLI coverage, documentation, and named
+  unsupported edges for replacement/subject arrays, nested search arrays,
+  non-variable count targets, non-ASCII case folding, exact diagnostics,
+  binary edge cases, object/resource coercions, and native lowering.
 - [x] Lane 2117-C through 2120-C: execute mixed nested `ArrayAccess`
   observation/unset chains for direct roots, visible property-held roots,
   magic `__get()` roots, and by-reference `offsetGet()` array returns.

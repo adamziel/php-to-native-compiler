@@ -1,5 +1,26 @@
 # Progress Log
 
+## 2026-06-05
+
+Implemented:
+
+- Added Milestone 2306, bounded interpreter `str_ireplace()` support parallel
+  to the existing `str_replace()` slice. Direct calls and string-valued dynamic
+  calls now accept scalar/null string-convertible search, replacement, and
+  subject values, one-level scalar/null search arrays, and a direct `$count`
+  output variable. The implementation uses ASCII case-insensitive byte
+  matching while preserving original subject bytes outside replaced spans, and
+  function metadata/native function-table introspection recognize
+  `str_ireplace` while direct native lowering still rejects under the
+  runtime-backed function-call boundary. Replacement arrays, subject arrays,
+  nested search arrays, non-variable count targets, object/resource coercions,
+  non-ASCII case folding, exact warning behavior, binary string edge cases,
+  and native lowering remain unsupported. Focused verification:
+  `cargo fmt --check` reported formatting drift before `cargo fmt`;
+  `cargo test -q -p phpc --test str_ireplace_builtin -- --test-threads=1`;
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone2306`;
+  `cargo run -q -p phpc -- run tests/fixtures/milestone2306/str_ireplace_bounded.php`.
+
 ## 2026-05-27
 
 Implemented:

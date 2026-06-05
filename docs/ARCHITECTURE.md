@@ -2683,10 +2683,13 @@ byte comparison. Array operands, object/resource coercions, broader binary
 edge cases, exact diagnostics beyond the covered negative-length path, and
 native parity for unsupported operand/reference/COW shapes remain out of
 scope.
-`str_replace()` is an interpreter-only bounded string replacement builtin for
-scalar/null string-convertible search, replacement, and subject values. Native
-function-table introspection recognizes the name, while direct native calls
-still reject until string allocation, array forms, count-output references, and
+`str_replace()` and `str_ireplace()` are interpreter-only bounded string
+replacement builtins for scalar/null string-convertible search, replacement,
+and subject values, plus the current one-level search-array subset and direct
+`$count` output variable. `str_ireplace()` shares the same replacement model
+but uses ASCII case-insensitive byte matching. Native function-table
+introspection recognizes both names, while direct native calls still reject
+until string allocation, broader array forms, count-output references, and
 diagnostics have a lowered runtime model.
 `strtok()` is an interpreter-only stateful tokenizer with one saved byte cursor
 per interpreter execution. It accepts scalar/null string-convertible input and
