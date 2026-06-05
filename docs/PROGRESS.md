@@ -1,5 +1,25 @@
 # Progress Log
 
+## 2026-06-05
+
+Implemented:
+
+- Refreshed stale `php_runtime` runtime-ABI assertions for the run220
+  `php_runtime --lib` blocker: byte-backed PHP string values, native
+  comparison materialization, core class-table metadata, native string offset
+  write diagnostics, and reference-held typed-property diagnostics now match
+  the current runtime ABI. Isolated the test-only
+  `NativeCallArgumentsHandle` free counter per Rust test thread instead of
+  sharing one process-global atomic, removing parallel-test interference from
+  lookup-plus-invoke, closure invoke, constructor invoke, and receiver
+  magic-call helper assertions while leaving non-test runtime ABI behavior
+  unchanged. Added a focused guard proving the counter is thread-local.
+  Focused checks passed with a lane-specific target directory:
+  `cargo test -p php_runtime --lib -- --test-threads=1`,
+  `cargo check -p php_runtime`, `cargo fmt --check`, and `git diff --check`.
+  This clears the focused runtime gate repair without claiming public PHPT
+  score movement.
+
 ## 2026-05-27
 
 Implemented:
