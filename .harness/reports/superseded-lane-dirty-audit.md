@@ -1,6 +1,6 @@
 # Superseded-Lane Dirty Worktree Audit
 
-Audit time: 2026-06-05T00:18:35Z  
+Audit time: 2026-06-05T00:18:35Z
 Auditor: developer-100, lane 28, branch `work/developer-100`
 
 This is diagnostic/control-plane work only. It does not implement PHP
@@ -120,4 +120,3 @@ integrator explicitly reassigns/reviews them:
   central reports directory and from the developer-87/developer-100 worktrees.
 - Some expected active-lane report artifacts are not present yet because those
   lanes are still in progress or queued: lanes 14, 15, 18, 19, 22, and 23.
-
