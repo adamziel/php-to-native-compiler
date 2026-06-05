@@ -1,5 +1,36 @@
 # Progress Log
 
+## 2026-06-05
+
+Implemented:
+
+- Repaired the current runtime focused gate at `e147c033` without broadening
+  public support claims. Native call-argument free-count tests now use
+  thread-local test accounting so plain parallel `cargo test` runs do not mix
+  unrelated runtime tests. Static-property direct writes now validate the
+  target property's own type metadata before writing through an already
+  reference-backed storage cell, preserving the direct property diagnostic
+  boundary while reference-handle writes continue to report PHP-shaped
+  reference-held-by-property diagnostics. Runtime ABI tests were brought back
+  in line with existing binary-string byte support, multi-byte string-offset
+  truncation behavior, and the expanded core metadata table for
+  `UnexpectedValueException`, `ArrayObject`, `ArrayIterator`,
+  `ReflectionParameter`, `ReflectionProperty`, and
+  `ReflectionClassConstant`.
+
+Focused checks:
+
+- `cargo fmt --check`
+- `CARGO_TARGET_DIR=/tmp/phpc-dev115-target-runtime CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -q -p php_runtime --lib`
+- `CARGO_TARGET_DIR=/tmp/phpc-dev115-target-phc CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -q -p phpc --test object_model class_declarations_register_metadata_without_object_execution -- --test-threads=1`
+- `CARGO_TARGET_DIR=/tmp/phpc-dev115-target-phc2 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -q -p phpc --test object_model array_object_array_iterator_offsets_iteration_clone_and_sort -- --test-threads=1`
+
+Full workspace and PHPT gates were deferred for the integrator because this
+lane was scoped to the repeated `php_runtime` library failure from the harness
+queue. Unsupported edge cases remain unchanged: exact PHP `TypeError` wording,
+broader binary-string/native lowering parity, and the documented dynamic
+reference/COW gaps are still outside this slice.
+
 ## 2026-05-27
 
 Implemented:

@@ -88,6 +88,7 @@ echo "ready\n";
             "DivisionByZeroError",
             "RuntimeException",
             "OutOfRangeException",
+            "UnexpectedValueException",
             "OutOfBoundsException",
             "Directory",
             "SplFixedArray",
