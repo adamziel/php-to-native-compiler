@@ -53,16 +53,23 @@ fn array_count_values_requires_array_argument() {
 }
 
 #[test]
-fn array_count_values_rejects_unsupported_value_types() {
-    let error =
-        runtime_error("<?php\n$items = [\"ok\", true];\necho array_count_values($items);\n");
+fn array_count_values_warns_and_skips_unsupported_value_types() {
+    let source = r#"<?php
+$items = ["ok", true, null, [], 2, "2", false, 2.0];
+$counted = array_count_values($items);
+print_r($counted);
+echo count($counted), "\n";
+"#;
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
+    let execution = run_source(source).unwrap();
+    let warning = "Warning: array_count_values(): Can only count string and integer values, entry skipped in Command line code on line 3\n";
     assert_eq!(
-        error.message,
-        "unsupported call array_count_values(): values must be int or string in the current subset, got bool"
+        execution.stdout,
+        format!(
+            "{warning}\n{warning}\n{warning}\n{warning}\n{warning}Array\n(\n    [ok] => 1\n    [2] => 2\n)\n2\n"
+        )
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

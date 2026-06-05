@@ -77471,10 +77471,7 @@ impl Interpreter {
             "array_count_values" => {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
-                    Value::Array(array) => array
-                        .count_values()
-                        .map(Value::Array)
-                        .map_err(|error| runtime_error(span, error)),
+                    Value::Array(array) => self.call_array_count_values(array, span),
                     other => Err(runtime_error(
                         span,
                         RuntimeError::unsupported_call(
@@ -80757,6 +80754,17 @@ impl Interpreter {
             Value::Array(array) => Ok(i64::from(!array.is_empty())),
             Value::Object(_) | Value::Closure(_) | Value::Resource(_) => Ok(1),
         }
+    }
+
+    fn call_array_count_values(&mut self, array: &PhpArray, span: Span) -> CompileResult<Value> {
+        let (counted, skipped) = array.count_values_with_skipped_entries();
+        for _ in 0..skipped {
+            self.emit_display_warning(
+                "array_count_values(): Can only count string and integer values, entry skipped",
+                span,
+            )?;
+        }
+        Ok(Value::Array(counted))
     }
 
     fn call_array_sum(&mut self, array: &PhpArray, span: Span) -> CompileResult<Value> {

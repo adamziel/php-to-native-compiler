@@ -5377,8 +5377,7 @@
   `array_flip` values, non-array `array_fill_keys` operands, unsupported
   lossy or non-finite float `array_fill_keys` key values, unsupported
   non-null/bool/int/string/float `array_fill_keys` key values, non-array
-  `array_count_values` operands,
-  unsupported non-int/string
+  `array_count_values` operands, warning-and-skip behavior for non-int/string
   `array_count_values` values, non-array `array_sum` operands, unsupported
   non-numeric/non-scalar `array_sum` values, non-array `array_product`
   operands, unsupported non-numeric/non-scalar `array_product` values,
@@ -6450,10 +6449,11 @@
   ordered array using those values as normalized result keys, stores the
   supplied value in each result slot, and overwrites duplicate result keys with
   later entries without moving the first key position. It is also available
-  through string-valued dynamic function calls. `array_count_values($array)` accepts arrays whose values are integers
-  or strings, counts values in insertion order using the current array-key
-  normalization rules for string values, stores integer counts as result
-  values, and is available through string-valued dynamic function calls.
+  through string-valued dynamic function calls. `array_count_values($array)`
+  accepts arrays, counts integer and string values in insertion order using the
+  current array-key normalization rules for string values, stores integer
+  counts as result values, emits bounded warnings for other values, skips those
+  entries, and is available through string-valued dynamic function calls.
   `array_sum($array)` accepts arrays whose values are `null`, booleans,
   integers, floats, or well-formed numeric strings under the current scalar
   numeric-coercion rules, accumulates as an integer until a float input or
@@ -6706,8 +6706,7 @@
   `array_flip` values, non-array `array_fill_keys` operands, unsupported
   lossy or non-finite float `array_fill_keys` key values, unsupported
   non-null/bool/int/string/float `array_fill_keys` key values, non-array
-  `array_count_values` operands,
-  unsupported non-int/string
+  `array_count_values` operands, warning-and-skip behavior for non-int/string
   `array_count_values` values, non-array `array_sum` operands, unsupported
   non-numeric/non-scalar `array_sum` values, non-array `array_product`
   operands, unsupported non-numeric/non-scalar `array_product` values,
@@ -9085,12 +9084,12 @@
   PHP-style decimal string key rules, and stores integer occurrence counts as
   result values. Duplicate counted keys update the existing count without
   moving the first result-key position. Unsupported source values such as
-  `null`, booleans, floats, arrays, objects, and future resources fail with a
-  stable project diagnostic instead of PHP's warning-and-skip behavior.
-  References, copy-on-write containers, exact native warning/`TypeError`
-  behavior, resource values, and native lowering are not implemented.
-  `array_count_values` is also available through string-valued dynamic
-  function calls.
+  `null`, booleans, floats, arrays, objects, and future resources now emit
+  bounded PHP-style warnings and are skipped. References, copy-on-write
+  containers, exact native warning/`TypeError` behavior including generated
+  native per-entry warning parity, resource values, and native lowering are not
+  implemented. `array_count_values` is also available through string-valued
+  dynamic function calls.
   `array_sum($array)` accepts arrays only, treats `null` and `false` as zero,
   `true` as one, integers and floats as themselves, and well-formed numeric
   strings through the current numeric-string parser. Pure integer inputs return
@@ -9328,8 +9327,7 @@
   `TypeError` objects, and native lowering, `array_flip`
   warning-and-skip behavior
   for unsupported source values, and `array_fill_keys` warning/stringification
-  behavior for unsupported key values, `array_count_values` warning-and-skip
-  behavior for unsupported values, `array_sum` PHP warning recovery for
+  behavior for unsupported key values, `array_sum` PHP warning recovery for
   unsupported values, `array_product` PHP warning recovery for unsupported
   values, `array_reduce` callback forms outside the current
   string function-name subset, and `array_filter` callback forms outside the
@@ -10306,9 +10304,9 @@
   key values, reference/copy-on-write behavior, object handle identity for
   object fill values, exact native warning/`TypeError` objects, resource
   values, and native lowering
-- `array_count_values` warning-and-skip behavior for unsupported values,
-  reference/copy-on-write behavior, exact native warning/`TypeError` objects,
-  resource values, and native lowering
+- `array_count_values` reference/copy-on-write behavior, exact native
+  warning/`TypeError` objects including generated native per-entry warning
+  parity, resource values, and native lowering
 - `array_sum` PHP warning recovery for non-numeric strings and unsupported
   value types, object/resource values, reference/copy-on-write behavior, exact
   native `TypeError` objects, and native lowering

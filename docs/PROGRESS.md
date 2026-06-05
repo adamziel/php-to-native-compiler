@@ -42302,6 +42302,38 @@ Next:
 
 Next:
 
+- Added Milestone 628, runtime `array_count_values($array)` warning-and-skip
+  behavior for unsupported source values through `phpc run`. Integer and
+  string values still count through the existing ordered array-key
+  normalization path, while `null`, booleans, floats, arrays, objects, and
+  future resources now emit bounded PHP-style warnings and are skipped instead
+  of failing the whole call. String-valued dynamic calls use the same path.
+- Added the Milestone 628 fixture with committed `phpc run` output and marked
+  it `phpc-only` because the interpreter fixture stream currently records
+  display warnings in stdout while host PHP CLI reports these warnings on
+  stderr. Removed the obsolete runtime-error fixture that expected unsupported
+  `array_count_values` element values to be fatal.
+- The shared native array-query ABI can now return a value while also exposing
+  a warning diagnostic for generated-native `array_count_values` unsupported
+  values. Exact generated-native per-entry warning parity, references,
+  copy-on-write containers, resource values, exact native `TypeError` objects,
+  and LLVM array lowering remain unsupported.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-628 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p php_runtime array_count_values -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-628 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p php_runtime native_value_array_query_operations_reuse_array_value_key_and_numeric_boundaries -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-628 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test array_count_values -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-628 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -q -p phpc -- test tests/fixtures/milestone628`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-628 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone628`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-628 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 bash -lc 'cargo run -q -p phpc -- compile tests/fixtures/milestone628/array_count_values_warns_and_skips.php --emit-ir >/tmp/phpc-628-emit-ir.out 2>/tmp/phpc-628-emit-ir.err; status=$?; cat /tmp/phpc-628-emit-ir.err; test $status -eq 1; rg -q "array lowering rejects arrays|function calls" /tmp/phpc-628-emit-ir.err'`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-628 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo fmt --check`;
+  and `git diff --check`.
+- A full `tools/run-tests.sh` gate was not run under the focused runtime-lane
+  policy. A broad `tests/fixtures/runtime_errors` run remains stale in this
+  worktree for unrelated pre-existing fixture expectations and was not used as
+  this slice's acceptance gate.
+
+Next:
+
 - Added Milestone 612, parser-lane unsupported `instanceof` expression
   boundary coverage. `$object instanceof ClassName` and uppercase
   `INSTANCEOF` now have pinned parser diagnostics, an `emit_ir_source(...)`

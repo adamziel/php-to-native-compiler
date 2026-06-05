@@ -1,0 +1,22 @@
+exit: 0
+stdout:
+Warning: array_count_values(): Can only count string and integer values, entry skipped in tests/fixtures/milestone628/array_count_values_warns_and_skips.php on line 3
+
+Warning: array_count_values(): Can only count string and integer values, entry skipped in tests/fixtures/milestone628/array_count_values_warns_and_skips.php on line 3
+
+Warning: array_count_values(): Can only count string and integer values, entry skipped in tests/fixtures/milestone628/array_count_values_warns_and_skips.php on line 3
+
+Warning: array_count_values(): Can only count string and integer values, entry skipped in tests/fixtures/milestone628/array_count_values_warns_and_skips.php on line 3
+
+Warning: array_count_values(): Can only count string and integer values, entry skipped in tests/fixtures/milestone628/array_count_values_warns_and_skips.php on line 3
+Array
+(
+    [ok] => 1
+    [2] => 2
+)
+2
+
+Warning: array_count_values(): Can only count string and integer values, entry skipped in tests/fixtures/milestone628/array_count_values_warns_and_skips.php on line 8
+1|2--- stdout end ---
+stderr:
+--- stderr end ---

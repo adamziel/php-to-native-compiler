@@ -21984,7 +21984,19 @@ pub unsafe extern "C" fn phpc_native_value_array_query_operation_with_diagnostic
     let result =
         unsafe { native_value_array_query_operation_value(handle, operand, flags, operation) };
     match result {
-        Ok(value) => NativeValueHandle::from_value(value),
+        Ok(result) => {
+            if let Some(warning) = result.warning {
+                if !diagnostic.is_null() {
+                    unsafe {
+                        *diagnostic = NativeDiagnosticHandle::from_message_with_severity(
+                            NativeDiagnosticSeverity::Warning,
+                            warning,
+                        )
+                    };
+                }
+            }
+            NativeValueHandle::from_value(result.value)
+        }
         Err(error) => {
             if !diagnostic.is_null() {
                 unsafe { *diagnostic = NativeDiagnosticHandle::from_message(error.message()) };
@@ -22035,7 +22047,19 @@ pub unsafe extern "C" fn phpc_native_value_array_query_operation_with_operands_a
         native_value_array_query_operands_operation_value(handle, operands, flags, operation)
     };
     match result {
-        Ok(value) => NativeValueHandle::from_value(value),
+        Ok(result) => {
+            if let Some(warning) = result.warning {
+                if !diagnostic.is_null() {
+                    unsafe {
+                        *diagnostic = NativeDiagnosticHandle::from_message_with_severity(
+                            NativeDiagnosticSeverity::Warning,
+                            warning,
+                        )
+                    };
+                }
+            }
+            NativeValueHandle::from_value(result.value)
+        }
         Err(error) => {
             if !diagnostic.is_null() {
                 unsafe { *diagnostic = NativeDiagnosticHandle::from_message(error.message()) };
@@ -22142,12 +22166,33 @@ pub unsafe extern "C" fn phpc_native_value_array_callback_result(
     }
 }
 
+struct NativeValueArrayQueryResult {
+    value: Value,
+    warning: Option<&'static str>,
+}
+
+impl NativeValueArrayQueryResult {
+    fn value(value: Value) -> Self {
+        Self {
+            value,
+            warning: None,
+        }
+    }
+
+    fn value_with_warning(value: Value, warning: &'static str) -> Self {
+        Self {
+            value,
+            warning: Some(warning),
+        }
+    }
+}
+
 unsafe fn native_value_array_query_operation_value(
     handle: NativeValueHandle,
     operand: NativeValueHandle,
     flags: u8,
     operation: u8,
-) -> RuntimeResult<Value> {
+) -> RuntimeResult<NativeValueArrayQueryResult> {
     if operand.is_null() {
         unsafe { native_value_array_query_operands_operation_value(handle, &[], flags, operation) }
     } else {
@@ -22217,7 +22262,7 @@ unsafe fn native_value_array_query_operands_operation_value(
     operands: &[NativeValueHandle],
     flags: u8,
     operation: u8,
-) -> RuntimeResult<Value> {
+) -> RuntimeResult<NativeValueArrayQueryResult> {
     if flags & !NATIVE_ARRAY_QUERY_STRICT != 0 {
         return Err(RuntimeError::invalid_array_access(
             "native value array query operation failed: unsupported operation flags",
@@ -22265,7 +22310,9 @@ unsafe fn native_value_array_query_operands_operation_value(
     }
 
     match operation {
-        NativeValueArrayQueryOperation::Count => Ok(Value::Int(array.len() as i64)),
+        NativeValueArrayQueryOperation::Count => Ok(NativeValueArrayQueryResult::value(
+            Value::Int(array.len() as i64),
+        )),
         NativeValueArrayQueryOperation::KeysMatching => {
             let search = unsafe { native_value_array_query_operand(operation, operands, 0)? };
             let keys = if strict {
@@ -22273,7 +22320,7 @@ unsafe fn native_value_array_query_operands_operation_value(
             } else {
                 array.keys_matching_loose_scalar(search)?
             };
-            Ok(Value::Array(keys))
+            Ok(NativeValueArrayQueryResult::value(Value::Array(keys)))
         }
         NativeValueArrayQueryOperation::Contains => {
             let needle = unsafe { native_value_array_query_operand(operation, operands, 0)? };
@@ -22282,7 +22329,7 @@ unsafe fn native_value_array_query_operands_operation_value(
             } else {
                 array.contains_value_loose_scalar(needle)?
             };
-            Ok(Value::Bool(contains))
+            Ok(NativeValueArrayQueryResult::value(Value::Bool(contains)))
         }
         NativeValueArrayQueryOperation::Search => {
             let needle = unsafe { native_value_array_query_operand(operation, operands, 0)? };
@@ -22291,18 +22338,37 @@ unsafe fn native_value_array_query_operands_operation_value(
             } else {
                 array.search_value_loose_scalar(needle)?
             };
-            Ok(key
-                .as_ref()
-                .map(array_key_to_value)
-                .unwrap_or(Value::Bool(false)))
+            Ok(NativeValueArrayQueryResult::value(
+                key.as_ref()
+                    .map(array_key_to_value)
+                    .unwrap_or(Value::Bool(false)),
+            ))
         }
-        NativeValueArrayQueryOperation::Flip => Ok(Value::Array(array.flipped()?)),
-        NativeValueArrayQueryOperation::CountValues => Ok(Value::Array(array.count_values()?)),
-        NativeValueArrayQueryOperation::Sum => array.sum_values(),
-        NativeValueArrayQueryOperation::Product => array.product_values(),
+        NativeValueArrayQueryOperation::Flip => Ok(NativeValueArrayQueryResult::value(
+            Value::Array(array.flipped()?),
+        )),
+        NativeValueArrayQueryOperation::CountValues => {
+            let (counted, skipped) = array.count_values_with_skipped_entries();
+            if skipped > 0 {
+                Ok(NativeValueArrayQueryResult::value_with_warning(
+                    Value::Array(counted),
+                    array_count_values_skipped_entry_warning(),
+                ))
+            } else {
+                Ok(NativeValueArrayQueryResult::value(Value::Array(counted)))
+            }
+        }
+        NativeValueArrayQueryOperation::Sum => {
+            array.sum_values().map(NativeValueArrayQueryResult::value)
+        }
+        NativeValueArrayQueryOperation::Product => array
+            .product_values()
+            .map(NativeValueArrayQueryResult::value),
         NativeValueArrayQueryOperation::FillKeys => {
             let fill = unsafe { native_value_array_query_operand(operation, operands, 0)? };
-            Ok(Value::Array(array.filled_keys(fill.clone())?))
+            Ok(NativeValueArrayQueryResult::value(Value::Array(
+                array.filled_keys(fill.clone())?,
+            )))
         }
         NativeValueArrayQueryOperation::Combine => {
             let values = unsafe { native_value_array_query_operand(operation, operands, 0)? };
@@ -22312,7 +22378,9 @@ unsafe fn native_value_array_query_operands_operation_value(
                     format!("second argument must be array, got {}", values.type_name()),
                 ));
             };
-            Ok(Value::Array(array.combined_with(values)?))
+            Ok(NativeValueArrayQueryResult::value(Value::Array(
+                array.combined_with(values)?,
+            )))
         }
         NativeValueArrayQueryOperation::ChangeKeyCase => {
             let case = match operands.first() {
@@ -22335,7 +22403,9 @@ unsafe fn native_value_array_query_operands_operation_value(
                 },
                 None => ArrayKeyCase::Lower,
             };
-            Ok(Value::Array(array.keys_with_ascii_case(case)))
+            Ok(NativeValueArrayQueryResult::value(Value::Array(
+                array.keys_with_ascii_case(case),
+            )))
         }
         NativeValueArrayQueryOperation::Column => {
             let column_key = ArrayColumnKey::from_value(unsafe {
@@ -22348,7 +22418,9 @@ unsafe fn native_value_array_query_operands_operation_value(
             } else {
                 None
             };
-            Ok(Value::Array(array.column_values(column_key, index_key)?))
+            Ok(NativeValueArrayQueryResult::value(Value::Array(
+                array.column_values(column_key, index_key)?,
+            )))
         }
     }
 }
@@ -29950,20 +30022,28 @@ impl PhpArray {
         Ok(array)
     }
 
-    pub fn count_values(&self) -> RuntimeResult<Self> {
+    pub fn count_values(&self) -> Self {
+        self.count_values_with_skipped_entries().0
+    }
+
+    pub fn count_values_with_skipped_entries(&self) -> (Self, usize) {
         let mut array = Self::new();
+        let mut skipped = 0;
         for entry in &self.entries {
-            let key = array_count_values_key_from_value(entry.value())?;
-            if let Some(count_entry) = array.entries.iter_mut().find(|entry| entry.key == key) {
-                let Value::Int(count) = count_entry.value_mut() else {
-                    unreachable!("array_count_values stores integer counts")
-                };
-                *count = count.checked_add(1).expect("array value count fits in i64");
+            if let Some(key) = array_count_values_key_from_value(entry.value()) {
+                if let Some(count_entry) = array.entries.iter_mut().find(|entry| entry.key == key) {
+                    let Value::Int(count) = count_entry.value_mut() else {
+                        unreachable!("array_count_values stores integer counts")
+                    };
+                    *count = count.checked_add(1).expect("array value count fits in i64");
+                } else {
+                    array.insert(key, Value::Int(1));
+                }
             } else {
-                array.insert(key, Value::Int(1));
+                skipped += 1;
             }
         }
-        Ok(array)
+        (array, skipped)
     }
 
     pub fn sum_values(&self) -> RuntimeResult<Value> {
@@ -30422,17 +30502,15 @@ fn array_combine_key_from_value(value: &Value) -> RuntimeResult<ArrayKey> {
     }
 }
 
-fn array_count_values_key_from_value(value: &Value) -> RuntimeResult<ArrayKey> {
+fn array_count_values_skipped_entry_warning() -> &'static str {
+    "array_count_values(): Can only count string and integer values, entry skipped"
+}
+
+fn array_count_values_key_from_value(value: &Value) -> Option<ArrayKey> {
     match value {
-        Value::Int(value) => Ok(ArrayKey::Int(*value)),
-        Value::String(value) => Ok(ArrayKey::string(value.clone())),
-        other => Err(RuntimeError::unsupported_call(
-            "array_count_values()",
-            format!(
-                "values must be int or string in the current subset, got {}",
-                other.type_name()
-            ),
-        )),
+        Value::Int(value) => Some(ArrayKey::Int(*value)),
+        Value::String(value) => Some(ArrayKey::string(value.clone())),
+        _ => None,
     }
 }
 
@@ -72173,6 +72251,55 @@ mod tests {
         assert!(diagnostic.is_null());
         assert_eq!(native_value_echo_bytes_for_test(counted_two), b"1");
 
+        let mut counted_skip_array = PhpArray::new();
+        counted_skip_array
+            .append(Value::String("a".to_string()))
+            .unwrap();
+        counted_skip_array.append(Value::Bool(true)).unwrap();
+        counted_skip_array.append(Value::Null).unwrap();
+        counted_skip_array.append(Value::Int(2)).unwrap();
+        let counted_skip_handle = NativeValueHandle::from_value(Value::Array(counted_skip_array));
+        let counted_skip = unsafe {
+            phpc_native_value_array_query_operation_with_diagnostic(
+                counted_skip_handle,
+                NativeValueHandle::null(),
+                0,
+                NATIVE_VALUE_ARRAY_QUERY_COUNT_VALUES,
+                &mut diagnostic,
+            )
+        };
+        assert!(!counted_skip.is_null());
+        assert_eq!(
+            unsafe { phpc_native_diagnostic_severity_at(diagnostic, 0) },
+            NativeDiagnosticSeverity::Warning.tag()
+        );
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            array_count_values_skipped_entry_warning()
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        diagnostic = NativeDiagnosticHandle::null();
+        let counted_skip_a = unsafe {
+            phpc_native_value_offset_operation_with_diagnostic(
+                counted_skip,
+                a_key,
+                NativeStringOffsetOperation::Read as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(native_value_echo_bytes_for_test(counted_skip_a), b"1");
+        let counted_skip_two = unsafe {
+            phpc_native_value_offset_operation_with_diagnostic(
+                counted_skip,
+                two_key,
+                NativeStringOffsetOperation::Read as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(native_value_echo_bytes_for_test(counted_skip_two), b"1");
+
         let mut numeric_array = PhpArray::new();
         numeric_array.append(Value::Int(1)).unwrap();
         numeric_array
@@ -78126,9 +78253,10 @@ mod tests {
         array.insert("dup-string", Value::String("name".to_string()));
         array.insert("dup-int", Value::Int(2));
 
-        let mut counted = array.count_values().unwrap();
+        let (mut counted, skipped) = array.count_values_with_skipped_entries();
         let entries = counted.entries();
 
+        assert_eq!(skipped, 0);
         assert_eq!(entries.len(), 4);
         assert_eq!(entries[0].key, ArrayKey::String("name".to_string()));
         assert_eq!(entries[0].value(), &Value::Int(2));
@@ -78150,23 +78278,20 @@ mod tests {
     }
 
     #[test]
-    fn array_count_values_rejects_unsupported_value_types() {
+    fn array_count_values_skips_unsupported_value_types() {
         let mut array = PhpArray::new();
         array.insert("ok", Value::String("name".to_string()));
         array.insert("bad", Value::Bool(true));
+        array.insert("nested", Value::Array(PhpArray::new()));
+        array.insert("float", Value::Float(2.0));
 
-        let error = array.count_values().unwrap_err();
-        assert_eq!(
-            error.kind(),
-            &RuntimeErrorKind::UnsupportedCall {
-                callable: "array_count_values()".to_string(),
-                reason: "values must be int or string in the current subset, got bool".to_string(),
-            }
-        );
-        assert_eq!(
-            error.message(),
-            "unsupported call array_count_values(): values must be int or string in the current subset, got bool"
-        );
+        let (counted, skipped) = array.count_values_with_skipped_entries();
+        let entries = counted.entries();
+
+        assert_eq!(skipped, 3);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].key, ArrayKey::String("name".to_string()));
+        assert_eq!(entries[0].value(), &Value::Int(1));
     }
 
     #[test]

@@ -605,9 +605,9 @@ handled.
 ## Milestone 19: Array Counting Builtins
 
 - [x] Implement `array_count_values($array)` for the current ordered array
-  value model, including integer/string value counting, non-array and
-  unsupported-value diagnostics, fixture CLI coverage, documentation, and
-  explicit native-codegen rejection.
+  value model, including integer/string value counting, non-array diagnostics,
+  warning-and-skip behavior for unsupported values, fixture CLI coverage,
+  documentation, and explicit native-codegen rejection.
 
 ## Milestone 20: Array Filtering Builtins
 
@@ -5937,10 +5937,12 @@ handled.
 
 ## Milestone 628: Independent Lane Candidates
 
-- [ ] Runtime lane: choose the next small array/object builtin refinement from
+- [x] Runtime lane: choose the next small array/object builtin refinement from
   the remaining documented unsupported gaps, implement it through `phpc run`
   with focused fixtures and system PHP comparison where applicable, and keep
-  native lowering explicitly rejected.
+  native lowering explicitly rejected. Selected candidate:
+  `array_count_values($array)` now emits bounded PHP-style warnings and skips
+  unsupported source values instead of failing the whole call.
 
 ## Milestone 629: Independent Lane Candidates
 

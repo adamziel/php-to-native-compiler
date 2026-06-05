@@ -1,0 +1,1 @@
+phpc currently records display warnings in the fixture stdout stream, while host PHP CLI reports these warnings on stderr; the executable behavior covered here is the bounded warning-and-skip continuation.
