@@ -2,7 +2,7 @@
 
 Lane: 4, developer-96
 
-Generated: 2026-06-05T00:10Z
+Generated: 2026-06-05T00:14Z
 
 Scope: control-plane and artifact refresh only. No compiler/runtime source
 edits were made. No PHPT gate was run.
@@ -110,15 +110,19 @@ Database:
   target `20294`, percent `38.79`.
 - `metric_samples.id=2`: `blocked_221205_candidate_phpt_passes`, value
   `7197`, target `20294`, percent `35.46`.
-- `work_lanes.id=2`: PASS-regression manifest lane, status `in_progress`,
+- `work_lanes.id=2`: PASS-regression manifest lane, status `completed`,
   branch `work/developer-94`, worktree
   `/home/claude/php-to-native-compiler/.harness/worktrees/developer-94`.
+  `developer-94` wrote `.harness/reports/221205Z-pass-regression-manifest.md`
+  and pushed commit `c4b67ac5301d8e8dfecda66276949c75e9c5fb9a`.
 - `work_lanes.id=4`: this progress/control-plane refresh lane, status
-  `in_progress`, branch `work/developer-96`, worktree
+  `completed`, branch `work/developer-96`, worktree
   `/home/claude/php-to-native-compiler/.harness/worktrees/developer-96`.
 - `work_lanes.id=5`: PHPT manifest and late-row tag lane, status
-  `in_progress`, branch `work/developer-95`, worktree
+  `completed`, branch `work/developer-95`, worktree
   `/home/claude/php-to-native-compiler/.harness/worktrees/developer-95`.
+  `developer-95` wrote `.harness/reports/phpt-manifest-late-row-tags.md`
+  and pushed commit `71afe561`.
 - `agents.id=90` (`developer-79`): status `crashed`, ended
   `2026-06-05T00:02:29+00:00`; notes say the tmux window was missing,
   message `41` was undeliverable, and lane 2 moved to `developer-94`.
@@ -128,13 +132,14 @@ Database:
 - `agents.id=93` (`developer-82`): status `crashed`, ended
   `2026-06-05T00:08:20+00:00`; notes say live pane `%107` did not process
   redelivered lane 4 prompt `68`.
-- `agents.id=107` (`developer-94`): current lane 2 replacement, status
-  `in_progress`; notes say it is building the `221205Z` PASS-regression
-  manifest from saved artifacts.
-- `agents.id=108` (`developer-95`): current lane 5 replacement, status
-  `running: lane 5 PHPT manifest and late-row tag report; docs read,
-  deterministic scans starting`.
-- `agents.id=109` (`developer-96`): current lane 4 replacement.
+- `agents.id=107` (`developer-94`): lane 2 replacement, status `completed`;
+  notes report exact `1166` regressions classified as `1136` absent
+  candidate rows, `27` FAILED, and `3` BORKED.
+- `agents.id=108` (`developer-95`): lane 5 replacement, status
+  `completed: lane 5 report committed and pushed`; notes report late-row
+  counts `eval=142`, `variable-variable=86`, combined `226`, and overlap `2`.
+- `agents.id=109` (`developer-96`): lane 4 replacement, status completed by
+  this report/commit.
 - `messages.id=41`: original lane 2 assignment to `developer-79`, status
   `undeliverable`.
 - `messages.id=43`: original lane 5 assignment to `developer-81`, status
@@ -158,30 +163,30 @@ Database:
 
 Lane 2, PASS-regression manifest:
 
-- Current owner in `work_lanes.id=2`: `developer-94`.
-- Current status: `in_progress`.
-- Required artifact:
-  `.harness/reports/221205Z-pass-regression-manifest.md`.
-- Current concern: repeated auditor idle prompts for `developer-94` appear in
-  `events.id=1887` through `events.id=2032`, while `work_lanes.id=2` still
-  lists `developer-94` as owner. This lane remains open until the manifest
-  artifact classifies all `1166` PASS regressions.
+- Owner in `work_lanes.id=2`: `developer-94`.
+- Current status: `completed`.
+- Artifact:
+  `/home/claude/php-to-native-compiler/.harness/worktrees/developer-94/.harness/reports/221205Z-pass-regression-manifest.md`.
+- Current findings from `agents.id=107`/`work_lanes.id=2`: exact `1166`
+  PASS regressions verified from normalized set arithmetic and classified as
+  `1136` absent candidate rows, `27` FAILED, and `3` BORKED.
 
 Lane 5, PHPT manifest and late-row tags:
 
-- Current owner in `work_lanes.id=5`: `developer-95`.
-- Current status: `in_progress`.
-- Required artifact:
-  `.harness/reports/phpt-manifest-late-row-tags.md`.
-- Current task: verify or correct planning counts for late rows
-  (`142` eval-pattern, `86` variable-variable-pattern, `226` unique), keep
-  those rows in denominator accounting, and avoid implementing eval or
-  variable-variable support.
+- Owner in `work_lanes.id=5`: `developer-95`.
+- Current status: `completed`.
+- Artifact:
+  `/home/claude/php-to-native-compiler/.harness/worktrees/developer-95/.harness/reports/phpt-manifest-late-row-tags.md`.
+- Current findings from `agents.id=108`/`work_lanes.id=5`: late-row scan
+  counts verified as `142` eval-pattern, `86` variable-variable-pattern,
+  `226` unique combined rows, and overlap `2`; rows remain in denominator
+  accounting and no eval or variable-variable implementation was started.
 
 Lane 4, progress/control-plane refresh:
 
 - Current owner in `work_lanes.id=4`: `developer-96`.
-- Required artifact:
+- Current status: `completed`.
+- Artifact:
   `.harness/reports/blocked-221205Z-progress-refresh.md`.
 - Public score must remain unchanged.
 
@@ -205,16 +210,20 @@ Lane 4, progress/control-plane refresh:
 
 Do not move public score from `7873 / 20294`.
 
-Before score movement is possible, lane 2 must produce the full
-`221205Z` PASS-regression manifest for all `1166` rows, and the team must use
-that manifest plus focused accepted-vs-candidate replays to classify each
-regression bucket. Only after the candidate has zero latest-public PASS
-regressions, or the remaining regressions have been explicitly adjudicated by
-an auditor, should another pinned full PHPT score gate be considered for public
-score update.
+The next deterministic action is to consume the completed lane 2 manifest and
+focused accepted-vs-candidate replay evidence, then adjudicate the `1136`
+absent candidate rows separately from the `27` concrete FAILED rows and `3`
+BORKED rows. The absent-row bucket needs a harness/run-results explanation
+before semantic repair lanes are selected; concrete FAILED/BORKED rows can
+become narrow repair or environment-adjudication lanes only after replay
+confirms the symptom.
 
-Late eval and variable-variable rows should stay tagged by lane 5 and remain
-in denominator accounting. They should not be implemented as part of this
+Only after the candidate has zero latest-public PASS regressions, or the
+remaining regressions have been explicitly adjudicated by an auditor, should
+another pinned full PHPT score gate be considered for public score update.
+
+Late eval and variable-variable rows are now tagged by lane 5 and remain in
+denominator accounting. They should not be implemented as part of this
 blocked-gate recovery path.
 
 ## Commands Run
@@ -228,5 +237,7 @@ sed -n '1,80p' /home/claude/supervised-php-compiler/state/logs/phpt-full-current
 sed -n '1,80p' /home/claude/supervised-php-compiler/state/logs/phpt-full-current-score-20260604T221205Z-php-src-f97ff59-public-56fe9377-source-56fe9377/current-score-gate-preflight.tsv
 wc -l /home/claude/supervised-php-compiler/state/logs/phpt-full-current-score-20260604T221205Z-php-src-f97ff59-public-56fe9377-source-56fe9377/regressions-from-latest-published-passes.txt
 sed -n '1,80p' /home/claude/supervised-php-compiler/state/workers/phpt-full-current-score-20260604T221205Z-php-src-f97ff59-public-56fe9377-source-56fe9377.status.md
+sed -n '1,180p' /home/claude/php-to-native-compiler/.harness/worktrees/developer-94/.harness/reports/221205Z-pass-regression-manifest.md
+sed -n '1,180p' /home/claude/php-to-native-compiler/.harness/worktrees/developer-95/.harness/reports/phpt-manifest-late-row-tags.md
 python3 -c 'import sqlite3; ...'  # queried goals, metric_samples, work_lanes, agents, messages, spawn_requests, events
 ```
