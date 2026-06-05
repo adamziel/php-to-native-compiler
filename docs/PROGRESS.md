@@ -1,5 +1,20 @@
 # Progress Log
 
+## 2026-06-05
+
+Implemented:
+
+- Added Milestone 625 compiler-output CLI snapshot coverage for compile-mode
+  arity validation without changing production lowering behavior.
+  `phpc compile <missing> --emit-exe` now has committed coverage proving the
+  missing output path reports the stable `--emit-exe <output>` usage error
+  before input I/O, and `phpc compile <missing> --emit-ir <extra>` proves
+  non-executable output modes reject extra output paths before input I/O.
+  This does not add object-file output, broaden `--emit-ir`/`--emit-asm`
+  lowering, change `--emit-exe` linking behavior, or claim any native support
+  for arrays, objects, functions, references, request/session/stream state,
+  exceptions, includes, or broad PHP coercions.
+
 ## 2026-05-27
 
 Implemented:

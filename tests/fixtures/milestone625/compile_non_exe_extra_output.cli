@@ -1,0 +1,6 @@
+exit: 1
+stdout:
+--- stdout end ---
+stderr:
+cli error at 0:0: usage: phpc compile <input.php> (--emit-ir | --emit-asm)
+--- stderr end ---

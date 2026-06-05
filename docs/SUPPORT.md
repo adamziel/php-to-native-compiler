@@ -7419,9 +7419,11 @@
   codegen diagnostics.
 - Assembly emission: uses LLVM tools when available, with a temporary `cc -S`
   C fallback for the same narrow lowerable subset. CLI coverage for
-  invalid compile output modes proves the mode flag is rejected before input
-  IO or parsing, so unsupported modes such as `--emit-object` remain a CLI
-  usage boundary and do not imply object-file emission support. `--emit-exe`
+  invalid compile output modes and compile-mode arity proves the mode flag,
+  missing `--emit-exe` output path, and extra non-executable output path are
+  rejected before input IO or parsing, so unsupported modes such as
+  `--emit-object` and object-file-style output requests remain CLI usage
+  boundaries and do not imply object-file emission support. `--emit-exe`
   is now the first bounded exception to that historical boundary: it emits C
   for the current straight-line native subset, builds `php_runtime` as a static
   library, links with `cc`, and routes direct compile-time string

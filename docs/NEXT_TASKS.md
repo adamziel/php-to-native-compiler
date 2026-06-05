@@ -5911,10 +5911,15 @@ handled.
 
 ## Milestone 625: Independent Lane Candidates
 
-- [ ] Compiler-output lane: choose the next deterministic CLI artifact or
+- [x] Compiler-output lane: choose the next deterministic CLI artifact or
   backend contract coverage target from existing native output behavior, add
   focused snapshot coverage, and leave production lowering behavior unchanged
   unless the gap is itself in CLI/output handling.
+  Selected candidate: add deterministic CLI snapshots for compile-mode arity
+  validation before input I/O. `--emit-exe` without an output path now proves
+  the stable executable-output usage error, and `--emit-ir` with an extra
+  output path proves non-executable modes reject output destinations before
+  file reads. Production lowering behavior is unchanged.
 
 ## Milestone 626: Independent Lane Candidates
 

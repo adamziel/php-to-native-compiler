@@ -221,7 +221,9 @@ through a dedicated native diagnostic until catch matching, catch variable
 binding, finally execution, and stack unwinding have native semantics.
 The compile mode flag is validated before the input file is read, so invalid
 modes such as `--emit-object` report a stable CLI usage error instead of an
-unrelated file, parse, or codegen diagnostic.
+unrelated file, parse, or codegen diagnostic. Compile-mode arity is validated
+at the same boundary: `--emit-exe` requires an output path, while `--emit-ir`
+and `--emit-asm` reject extra output paths before input I/O.
 
 ### `phpc compile --emit-asm`
 
