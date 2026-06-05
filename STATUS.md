@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-05T20:36:56+00:00
+Last generated: 2026-06-05T20:48:13+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -3292,7 +3292,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- |
-| 165 | Fix failing tests from run 225 | Developer | control_plane_recurrence_in_progress |  | 0.0 |
+| 165 | Fix failing tests from run 225 | Developer | ready_for_integration | ready_fast_path | 0.0 |
 | 164 | Fix failing tests from run 224 | Developer | superseded_by_lane163_infra_duplicate |  | 0.0 |
 | 163 | Fix failing tests from run 223 | Developer | needs_verification |  | 0.0 |
 | 162 | Harness command-selection recurrence after run222 | Developer | superseded_by_lane159_160_reconciliation |  | 0.0 |
@@ -3310,18 +3310,24 @@ failed — python -m unittest discover -s tests -v (error=0, failed=1, passed=0,
 Latest: CPU 26.73%, RAM 13.0%, disk free 32.47 GB.
 
 ## Recent events
-- 2026-06-05T20:35:56+00:00 **worklane_status**: worklane#157 -> superseded_by_lane163_current_base_port
-- 2026-06-05T20:35:56+00:00 **agent_report**: integrator-42 reported stale_ready_lane_requeued
-- 2026-06-05T20:35:58+00:00 **coordination_decision**: Run225/lane165 classified as live harness command-selection/liveness recurrence evidence, not product compiler/runtime failure; no new lanes or agents will be spawned under Manhole no-concurrency directive.
-- 2026-06-05T20:36:13+00:00 **worklane_status**: worklane#165 -> superseded_by_harness_command_selection_recurrence
-- 2026-06-05T20:36:13+00:00 **agent_report**: coordinator-3 reported superseded_by_harness_command_selection_recurrence
-- 2026-06-05T20:36:35+00:00 **worklane_status**: worklane#165 -> control_plane_recurrence_in_progress
-- 2026-06-05T20:36:35+00:00 **agent_report**: coordinator-3 reported control_plane_recurrence_in_progress
-- 2026-06-05T20:36:36+00:00 **coordination_correction**: Corrected lane165 coordination: existing developer-456 may continue focused harness/control-plane repair per Manhole report#22; no new lanes/spawns or product edits.
-- 2026-06-05T20:36:49+00:00 **architect_root_cause**: architect-18 reproduced current harness/idle-alert-ended-agents recurrence: root .harness unittest fails 4/8, test_run#225 selected python unittest zero-test command, and root harness zipapp hash 35addc0e has reverted from prior green 7cc667d3 behavior. Report: .harness/reports/idle-alert-ended-agents-architect-18.md
-- 2026-06-05T20:36:49+00:00 **harness_patch_prepared**: Prepared live harness zipapp patch for run225 zero-test command-selection recurrence.
-- 2026-06-05T20:36:56+00:00 **poke**: Queued message for developer-456
-- 2026-06-05T20:36:56+00:00 **poke_delivered**: Delivered poke to 1 agents
+- 2026-06-05T20:36:57+00:00 **status_publish_failed**: Committed status files but failed to push: To https://github.com/adamziel/php-to-native-compiler.git
+ ! [rejected]          HEAD -> master (non-fast-forward)
+error: failed to push some refs to 'https://github.com/adamziel/php-to-native-compiler.git'
+hint: Updates were rejected because the tip of your current branch is behind
+hint: its remote counterpart. If you want to integrate the remote changes,
+hint: use 'git pull' before pushing again.
+hint: See the 'Note about fast-forwards' in 'git push --help' for details.
+- 2026-06-05T20:36:57+00:00 **agent_report**: architect-18 reported completed
+- 2026-06-05T20:37:27+00:00 **control_plane_verification**: Verified live harness selector/liveness fix after developer-456 patch: discover_test_command now returns tools/run-tests.sh and focused .harness unittest passes 8/8.
+- 2026-06-05T20:37:27+00:00 **worklane_status**: worklane#165 -> control_plane_verified_live
+- 2026-06-05T20:37:27+00:00 **agent_report**: coordinator-3 reported control_plane_verified_live
+- 2026-06-05T20:37:56+00:00 **verification_passed**: Run225 live harness selector recurrence fixed; focused harness tests pass and dry-run records tools/run-tests.sh.
+- 2026-06-05T20:37:59+00:00 **operational_side_effect**: Harness poke created local status-only commit 5c9cf41f and failed non-fast-forward push; no compiler/runtime product source changed by this side effect.
+- 2026-06-05T20:37:59+00:00 **agent_report**: coordinator-3 reported coordinator_pass_complete
+- 2026-06-05T20:38:34+00:00 **commit_created**: Committed run225 selector live-fix report artifact.
+- 2026-06-05T20:38:49+00:00 **worklane_status**: worklane#165 -> ready_for_integration
+- 2026-06-05T20:38:49+00:00 **agent_report**: developer-456 reported ready_for_integration
+- 2026-06-05T20:38:49+00:00 **lane_completed_request_next**: Completed lane165 and requested another Developer lane.
 
 ## Next steps
-Move next worklane forward: Fix failing tests from run 223
+Move next worklane forward: Fix failing tests from run 225
