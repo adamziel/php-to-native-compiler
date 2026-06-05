@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-05T20:33:12+00:00
+Last generated: 2026-06-05T20:36:56+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -20,6 +20,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | architect-15 | Architect | stopped | architect-15 |  |
 | architect-16 | Architect | stopped | architect-16 |  |
 | architect-17 | Architect | stopped | architect-17 |  |
+| architect-18 | Architect | running | architect-18 |  |
 | architect-2 | Architect | stopped | architect-2 |  |
 | architect-3 | Architect | stopped | architect-3 |  |
 | architect-4 | Architect | stopped | architect-4 |  |
@@ -2760,6 +2761,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | auditor-999 | Auditor | crash | auditor-999 |  |
 | coordinator-1 | Coordinator | stopped | coordinator-1 |  |
 | coordinator-2 | Coordinator | stopped | coordinator-2 |  |
+| coordinator-3 | Coordinator | running | coordinator-3 |  |
 | developer-1 | Developer | stopped | developer-1 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-1 |
 | developer-10 | Developer | stopped | developer-10 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-10 |
 | developer-100 | Developer | stopped | developer-100 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-100 |
@@ -3156,6 +3158,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-453 | Developer | stopped | developer-453 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-453 |
 | developer-454 | Developer | stopped | developer-454 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-454 |
 | developer-455 | Developer | stopped | developer-455 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-455 |
+| developer-456 | Developer | running | developer-456 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-456 |
 | developer-46 | Developer | stopped | developer-46 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-46 |
 | developer-47 | Developer | stopped | developer-47 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-47 |
 | developer-48 | Developer | stopped | developer-48 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-48 |
@@ -3252,6 +3255,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | integrator-4 | Integrator | stopped | integrator-4 |  |
 | integrator-40 | Integrator | stopped | integrator-40 |  |
 | integrator-41 | Integrator | stopped | integrator-41 |  |
+| integrator-42 | Integrator | idle_no_ready_fast_path | integrator-42 |  |
 | integrator-5 | Integrator | stopped | integrator-5 |  |
 | integrator-6 | Integrator | stopped | integrator-6 |  |
 | integrator-7 | Integrator | stopped | integrator-7 |  |
@@ -3283,11 +3287,12 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | manager-7 | Manager | stopped | manager-7 |  |
 | manager-8 | Manager | stopped | manager-8 |  |
 | manager-9 | Manager | stopped | manager-9 |  |
-| manhole | Manager | stopped | manhole |  |
+| manhole | Manager | running | manhole |  |
 
 ## Work lanes
 | id | title | role_type | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- |
+| 165 | Fix failing tests from run 225 | Developer | control_plane_recurrence_in_progress |  | 0.0 |
 | 164 | Fix failing tests from run 224 | Developer | superseded_by_lane163_infra_duplicate |  | 0.0 |
 | 163 | Fix failing tests from run 223 | Developer | needs_verification |  | 0.0 |
 | 162 | Harness command-selection recurrence after run222 | Developer | superseded_by_lane159_160_reconciliation |  | 0.0 |
@@ -3295,29 +3300,28 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | 160 | Run221 runtime failure duplicate comparison audit | Developer | integrated | ready_fast_path | 0.0 |
 | 159 | Run222 command-selection recurrence patch-point audit | Developer | integrated | ready_fast_path | 0.0 |
 | 158 | Fix failing tests from run 222 | Developer | integrated | ready_fast_path | 0.0 |
-| 157 | Fix failing tests from run 221 | Developer | ready_for_integration | ready_fast_path | 0.0 |
+| 157 | Fix failing tests from run 221 | Developer | superseded_by_lane163_current_base_port | stale_old_base_conflicts_origin_master | 0.0 |
 | 156 | Fix failing tests from run 220 | Developer | mergecheck_passed_blocked_by_dirty_root |  | 0.0 |
-| 155 | M1 nonzero test-loop smoke after lane147 | Developer | completed_by_run220_nonzero_smoke |  | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=1, passed=0, skipped=0)
+failed — python -m unittest discover -s tests -v (error=0, failed=1, passed=0, skipped=0)
 
 ## Resource samples
-Latest: CPU 91.1%, RAM 20.11%, disk free 3.52 GB.
+Latest: CPU 26.73%, RAM 13.0%, disk free 32.47 GB.
 
 ## Recent events
-- 2026-06-05T20:20:14+00:00 **poke_delivered**: Delivered poke to 2 agents
-- 2026-06-05T20:20:14+00:00 **run224_classified_infra_duplicate**: Classified run224/lane created at 20:18:40 as infrastructure fallout from lane163 tools/run-tests.sh disk exhaustion, not a new product failure. Poked Coordinator role not to assign run224 or spawn Architect work while lane163 verification retry runs.
-- 2026-06-05T20:20:25+00:00 **worklane_status**: worklane#164 -> superseded_by_lane163_infra_duplicate
-- 2026-06-05T20:20:25+00:00 **agent_report**: manhole reported superseded_by_lane163_infra_duplicate
-- 2026-06-05T20:20:53+00:00 **lane163_full_gate_retry_started_by_manhole**: Developer-450 did not start the explicit retry after receiving agent_messages#625, so manhole started deterministic tools/run-tests.sh verification directly in the same clean developer-450 worktree on committed branch e8f98d09. No source edits, no trunk push.
-- 2026-06-05T20:22:57+00:00 **lane163_snapshot_fix_applied**: Applied minimal lane163 follow-up after full gate exposed first real failure: removed stale command header from tests/fixtures/milestone2333/disk_space_stringable_directory.cli and documented it in docs/PROGRESS.md. No production compiler/runtime logic changed.
-- 2026-06-05T20:23:32+00:00 **lane163_snapshot_fix_committed_full_gate_retry**: Committed lane163 snapshot follow-up efff2311 after focused array_chunk_preserve_key_coercions_cli passed and static checks were clean; rerunning tools/run-tests.sh from cached build.
-- 2026-06-05T20:24:00+00:00 **lane163_array_find_arity_expectation_patched**: Patched lane163 next exposed full-gate test expectation: array_find_family now expects ArgumentCountError for array_any too-few-args fatal, matching observed PHP-style fatal class and existing abs fatal-arity contract. Updated docs/PROGRESS; no production logic changed.
-- 2026-06-05T20:24:29+00:00 **lane163_array_find_fix_committed_full_gate_retry**: Committed lane163 array_any arity assertion follow-up 34c3f09a after focused array_find_family passed and static checks were clean; rerunning tools/run-tests.sh from cached build.
-- 2026-06-05T20:33:10+00:00 **stop**: Stopped harness runtime
-- 2026-06-05T20:33:11+00:00 **mcp**: Harness MCP tools exposed to Codex workers
-- 2026-06-05T20:33:11+00:00 **tmux**: Support windows ready
+- 2026-06-05T20:35:56+00:00 **worklane_status**: worklane#157 -> superseded_by_lane163_current_base_port
+- 2026-06-05T20:35:56+00:00 **agent_report**: integrator-42 reported stale_ready_lane_requeued
+- 2026-06-05T20:35:58+00:00 **coordination_decision**: Run225/lane165 classified as live harness command-selection/liveness recurrence evidence, not product compiler/runtime failure; no new lanes or agents will be spawned under Manhole no-concurrency directive.
+- 2026-06-05T20:36:13+00:00 **worklane_status**: worklane#165 -> superseded_by_harness_command_selection_recurrence
+- 2026-06-05T20:36:13+00:00 **agent_report**: coordinator-3 reported superseded_by_harness_command_selection_recurrence
+- 2026-06-05T20:36:35+00:00 **worklane_status**: worklane#165 -> control_plane_recurrence_in_progress
+- 2026-06-05T20:36:35+00:00 **agent_report**: coordinator-3 reported control_plane_recurrence_in_progress
+- 2026-06-05T20:36:36+00:00 **coordination_correction**: Corrected lane165 coordination: existing developer-456 may continue focused harness/control-plane repair per Manhole report#22; no new lanes/spawns or product edits.
+- 2026-06-05T20:36:49+00:00 **architect_root_cause**: architect-18 reproduced current harness/idle-alert-ended-agents recurrence: root .harness unittest fails 4/8, test_run#225 selected python unittest zero-test command, and root harness zipapp hash 35addc0e has reverted from prior green 7cc667d3 behavior. Report: .harness/reports/idle-alert-ended-agents-architect-18.md
+- 2026-06-05T20:36:49+00:00 **harness_patch_prepared**: Prepared live harness zipapp patch for run225 zero-test command-selection recurrence.
+- 2026-06-05T20:36:56+00:00 **poke**: Queued message for developer-456
+- 2026-06-05T20:36:56+00:00 **poke_delivered**: Delivered poke to 1 agents
 
 ## Next steps
 Move next worklane forward: Fix failing tests from run 223
