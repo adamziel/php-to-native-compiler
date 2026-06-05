@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-05T21:42:23+00:00
+Last generated: 2026-06-05T21:46:00+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -3303,36 +3303,36 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- |
-| 421 | Fix failing tests from run 481 | Developer | queued |  | 0.0 |
-| 420 | Fix failing tests from run 480 | Developer | queued |  | 0.0 |
-| 419 | Fix failing tests from run 479 | Developer | queued |  | 0.0 |
-| 418 | Fix failing tests from run 478 | Developer | queued |  | 0.0 |
-| 417 | Fix failing tests from run 477 | Developer | queued |  | 0.0 |
-| 416 | Fix failing tests from run 476 | Developer | queued |  | 0.0 |
-| 415 | Fix failing tests from run 475 | Developer | queued |  | 0.0 |
-| 414 | Fix failing tests from run 474 | Developer | queued |  | 0.0 |
-| 413 | Fix failing tests from run 473 | Developer | queued |  | 0.0 |
-| 412 | Fix failing tests from run 472 | Developer | queued |  | 0.0 |
+| 462 | Fix failing tests from run 522 | Developer | queued |  | 0.0 |
+| 461 | Fix failing tests from run 521 | Developer | queued |  | 0.0 |
+| 460 | Fix failing tests from run 520 | Developer | queued |  | 0.0 |
+| 459 | Fix failing tests from run 519 | Developer | queued |  | 0.0 |
+| 458 | Fix failing tests from run 518 | Developer | queued |  | 0.0 |
+| 457 | Fix failing tests from run 517 | Developer | queued |  | 0.0 |
+| 456 | Fix failing tests from run 516 | Developer | queued |  | 0.0 |
+| 455 | Fix failing tests from run 515 | Developer | queued |  | 0.0 |
+| 454 | Fix failing tests from run 514 | Developer | queued |  | 0.0 |
+| 453 | Fix failing tests from run 513 | Developer | queued |  | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=1, passed=0, skipped=0)
+failed — python -m unittest discover -s tests -v (error=0, failed=1, passed=0, skipped=0)
 
 ## Resource samples
-Latest: CPU 5.23%, RAM 14.19%, disk free 9.68 GB.
+Latest: CPU 1.59%, RAM 14.19%, disk free 9.67 GB.
 
 ## Recent events
-- 2026-06-05T21:42:15+00:00 **spawn_coalesced**: Reused architect-21 for Architect: Find systemic cause for repeated failure: harness/idle-alert-ended-agents
-- 2026-06-05T21:42:15+00:00 **spawn_coalesced**: Reused architect-21 for Architect: Find systemic cause for repeated failure: harness/idle-alert-missing-window-undelivered-assignment
-- 2026-06-05T21:42:15+00:00 **spawn_coalesced**: Reused architect-21 for Architect: Find systemic cause for repeated failure: harness/idle-alert-auditor-spawn-storm
-- 2026-06-05T21:42:18+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-05T21:42:18+00:00 **worklane_created**: Fix failing tests from run 481
-- 2026-06-05T21:42:18+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: harness/idle-alert-ended-agents
-- 2026-06-05T21:42:18+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: harness/idle-alert-missing-window-undelivered-assignment
-- 2026-06-05T21:42:18+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: harness/idle-alert-auditor-spawn-storm
-- 2026-06-05T21:42:18+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-05T21:42:20+00:00 **spawn_coalesced**: Reused architect-21 for Architect: Find systemic cause for repeated failure: harness/idle-alert-ended-agents
-- 2026-06-05T21:42:20+00:00 **spawn_coalesced**: Reused architect-21 for Architect: Find systemic cause for repeated failure: harness/idle-alert-missing-window-undelivered-assignment
-- 2026-06-05T21:42:20+00:00 **spawn_coalesced**: Reused architect-21 for Architect: Find systemic cause for repeated failure: harness/idle-alert-auditor-spawn-storm
+- 2026-06-05T21:45:52+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: harness/idle-alert-ended-agents
+- 2026-06-05T21:45:52+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: harness/idle-alert-missing-window-undelivered-assignment
+- 2026-06-05T21:45:52+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: harness/idle-alert-auditor-spawn-storm
+- 2026-06-05T21:45:52+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-05T21:45:54+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-05T21:45:57+00:00 **worklane_created**: Fix failing tests from run 522
+- 2026-06-05T21:45:57+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: harness/idle-alert-ended-agents
+- 2026-06-05T21:45:57+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: harness/idle-alert-missing-window-undelivered-assignment
+- 2026-06-05T21:45:57+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: harness/idle-alert-auditor-spawn-storm
+- 2026-06-05T21:45:57+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-05T21:45:59+00:00 **mcp**: Harness MCP tools exposed to Codex workers
+- 2026-06-05T21:46:00+00:00 **tmux**: Support windows ready
 
 ## Next steps
-Move next worklane forward: Fix failing tests from run 481
+Move next worklane forward: Fix failing tests from run 522
