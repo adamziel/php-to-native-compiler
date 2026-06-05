@@ -1,5 +1,30 @@
 # Progress Log
 
+## 2026-06-05
+
+Implemented:
+
+- Isolated the `php_runtime` test-only `NativeCallArgumentsHandle` free counter
+  per Rust test thread instead of sharing one process-global atomic. This
+  removes parallel-test interference from lookup-plus-invoke, closure invoke,
+  constructor invoke, and receiver magic-call helper assertions while leaving
+  the runtime ABI unchanged outside `cfg(test)`. Added a focused guard proving
+  the counter is thread-local. Focused checks passed:
+  `cargo test -q -p php_runtime --lib
+  call_arguments_free_count_is_thread_local_for_parallel_tests`,
+  `cargo test -q -p php_runtime --lib
+  native_lookup_plus_invoke_helpers_free_arguments_once_across_target_families`,
+  `cargo test -q -p php_runtime --lib
+  native_closure_invoke_helpers_bridge_call_arguments_to_call_results`,
+  `cargo test -q -p php_runtime --lib
+  native_constructor_allocation_invoke_carrier_owns_receiver_arguments_and_diagnostics`,
+  `cargo test -q -p php_runtime --lib
+  native_method_lookup_plus_invoke_dispatches_missing_and_inaccessible_methods_to_magic_call`,
+  `cargo check -q -p php_runtime`, and `git diff --check`. A package-level
+  default-thread `cargo test -q -p php_runtime --lib -- --nocapture` now leaves
+  the unrelated class-table, string/comparison, and static-property failure
+  clusters for their existing lanes; no PHP support-matrix behavior changed.
+
 ## 2026-05-27
 
 Implemented:
