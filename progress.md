@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-05T22:10:38+00:00
+Last generated: 2026-06-05T22:10:57+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -19,6 +19,9 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- |
+| 631 | Fix failing tests from run 691 | Developer | queued |  | 0.0 |
+| 630 | Fix failing tests from run 690 | Developer | queued |  | 0.0 |
+| 629 | Fix failing tests from run 689 | Developer | queued |  | 0.0 |
 | 628 | Fix failing tests from run 688 | Developer | queued |  | 0.0 |
 | 627 | Fix failing tests from run 687 | Developer | queued |  | 0.0 |
 | 626 | Fix failing tests from run 686 | Developer | queued |  | 0.0 |
@@ -26,29 +29,32 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | 624 | Fix failing tests from run 684 | Developer | queued |  | 0.0 |
 | 623 | Fix failing tests from run 683 | Developer | queued |  | 0.0 |
 | 622 | Fix failing tests from run 682 | Developer | queued |  | 0.0 |
-| 621 | Fix failing tests from run 681 | Developer | queued |  | 0.0 |
-| 620 | Fix failing tests from run 680 | Developer | queued |  | 0.0 |
-| 619 | Fix failing tests from run 679 | Developer | queued |  | 0.0 |
 
 ## Tests
 failed — tools/run-tests.sh (error=0, failed=1, passed=0, skipped=0)
 
 ## Resource samples
-Latest: CPU 8.75%, RAM 13.52%, disk free 8.66 GB.
+Latest: CPU 7.62%, RAM 13.24%, disk free 8.66 GB.
 
 ## Recent events
-- 2026-06-05T22:10:23+00:00 **worklane_status**: worklane#170 -> needs_verification
-- 2026-06-05T22:10:23+00:00 **agent_report**: developer-1 reported needs_verification
-- 2026-06-05T22:10:26+00:00 **worklane_created**: Fix failing tests from run 686
-- 2026-06-05T22:10:26+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-05T22:10:28+00:00 **runtime_gate_failure_classified**: After harness selector repair, tools/run-tests.sh reaches real Rust gate. Reproduced parallel-only php_runtime --lib failure: 6 tests fail under default parallel cargo test; serial --test-threads=1 passes 420/420.
-- 2026-06-05T22:10:30+00:00 **developer_capacity_available**: developer-1 completed lane 170 report_id 70 and is available for another narrow Developer lane.
-- 2026-06-05T22:10:31+00:00 **worklane_created**: Fix failing tests from run 687
-- 2026-06-05T22:10:31+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-05T22:10:37+00:00 **worklane_created**: Fix failing tests from run 688
-- 2026-06-05T22:10:37+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
 - 2026-06-05T22:10:38+00:00 **poke**: Queued message for developer-2
 - 2026-06-05T22:10:38+00:00 **poke_delivered**: Delivered poke to 1 agents
+- 2026-06-05T22:10:39+00:00 **status_publish_failed**: Committed status files but failed to push: To https://github.com/adamziel/php-to-native-compiler.git
+ ! [rejected]          HEAD -> master (non-fast-forward)
+error: failed to push some refs to 'https://github.com/adamziel/php-to-native-compiler.git'
+hint: Updates were rejected because the tip of your current branch is behind
+hint: its remote counterpart. If you want to integrate the remote changes,
+hint: use 'git pull' before pushing again.
+hint: See the 'Note about fast-forwards' in 'git push --help' for details.
+- 2026-06-05T22:10:42+00:00 **worklane_created**: Fix failing tests from run 689
+- 2026-06-05T22:10:42+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-05T22:10:47+00:00 **worklane_created**: Fix failing tests from run 690
+- 2026-06-05T22:10:47+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-05T22:10:49+00:00 **worklane_status**: worklane#170 -> integration_failed
+- 2026-06-05T22:10:53+00:00 **worklane_created**: Fix failing tests from run 691
+- 2026-06-05T22:10:53+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-05T22:10:57+00:00 **poke**: Queued message for developer-1
+- 2026-06-05T22:10:57+00:00 **poke_delivered**: Delivered poke to 1 agents
 
 ## Next steps
-Move next worklane forward: Fix failing tests from run 688
+Move next worklane forward: Fix failing tests from run 691
