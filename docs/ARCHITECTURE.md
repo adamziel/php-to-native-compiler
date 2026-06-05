@@ -2936,10 +2936,14 @@ timing checks. It returns a finite float seconds value from `SystemTime`, while
 the string-return forms stay unsupported until time virtualization, formatting,
 precision, monotonicity, INI/timezone policy, and native runtime calls are
 designed.
-`ini_get()` is an interpreter-only configuration boundary backed by a
-deterministic compatibility registry rather than host php.ini. It is intended
-to make bootstrap decisions reproducible while leaving mutable INI state,
-`ini_get_all()`, SAPI policy, extension-owned option catalogs, and native
+`ini_get()`/`ini_set()`/`ini_restore()` are interpreter-only configuration
+boundaries backed by a deterministic compatibility registry rather than host
+php.ini. The interpreter keeps startup `-d` overrides separate from later
+`ini_set()` writes, so `ini_restore($option)` can reset a current mutable
+option, including the live `include_path`, to the bounded startup value or the
+documented deterministic default. This is intended to make bootstrap decisions
+reproducible while leaving host php.ini discovery, access-level enforcement,
+SAPI policy, extension-owned option catalogs, exact diagnostics, and native
 runtime integration explicit future work.
 `ignore_user_abort()` is an interpreter-only SAPI/connection-state placeholder
 for entry flows such as WordPress `wp-cron.php`. It stores one deterministic

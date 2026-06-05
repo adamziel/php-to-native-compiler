@@ -176,6 +176,7 @@ struct Interpreter {
     error_control_suppression_depth: usize,
     ignore_user_abort: bool,
     ini_values: HashMap<String, String>,
+    initial_ini_values: HashMap<String, String>,
     opcache_file_cache_paths: HashSet<String>,
     error_handlers: Vec<ErrorHandlerRegistration>,
     error_handler_active: bool,
@@ -1909,6 +1910,7 @@ fn decode_hex_digit(byte: u8) -> Option<u8> {
     }
 }
 
+const DEFAULT_INCLUDE_PATH: &str = ".";
 const INCLUDE_PATH_SEPARATOR: char = if cfg!(windows) { ';' } else { ':' };
 const DEFAULT_STREAM_WRAPPERS: &[&str] = &["file", "php", "data"];
 
@@ -10092,6 +10094,11 @@ impl Interpreter {
         }
 
         let ini_values = phpc_phpt_ini_overrides_from_env();
+        let initial_ini_values = ini_values.clone();
+        let include_path = initial_ini_values
+            .get("include_path")
+            .cloned()
+            .unwrap_or_else(|| DEFAULT_INCLUDE_PATH.to_string());
         let error_reporting_mask = ini_values
             .get("error_reporting")
             .and_then(|value| parse_ini_error_reporting_mask(value))
@@ -10134,6 +10141,7 @@ impl Interpreter {
             error_control_suppression_depth: 0,
             ignore_user_abort: false,
             ini_values,
+            initial_ini_values,
             opcache_file_cache_paths: HashSet::new(),
             error_handlers: Vec::new(),
             error_handler_active: false,
@@ -10188,7 +10196,7 @@ impl Interpreter {
             request_time_seeded: options.request_time.is_some(),
             default_timezone: "UTC".to_string(),
             request_body: options.request_body.unwrap_or_default(),
-            include_path: ".".to_string(),
+            include_path,
             execution_steps: 0,
             call_depth: 0,
             next_object_id: 1,
@@ -76321,6 +76329,7 @@ impl Interpreter {
             "putenv" => self.call_putenv(&args, span),
             "ini_get" => self.call_ini_get(&args, span),
             "ini_get_all" => self.call_ini_get_all(&args, span),
+            "ini_restore" => self.call_ini_restore(&args, span),
             "ini_set" => self.call_ini_set(&args, span),
             "opcache_get_configuration" => self.call_opcache_get_configuration(&args, span),
             "opcache_get_status" => self.call_opcache_get_status(&args, span),
@@ -93036,6 +93045,7 @@ fn is_builtin(name: &str) -> bool {
             | "putenv"
             | "ini_get"
             | "ini_get_all"
+            | "ini_restore"
             | "ini_set"
             | "opcache_get_configuration"
             | "opcache_get_status"
@@ -111590,6 +111600,46 @@ impl Interpreter {
             .unwrap_or(Value::Bool(false)))
     }
 
+    fn call_ini_restore(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("ini_restore", args, 1, span)?;
+
+        let name = match &args[0] {
+            Value::String(name) => name,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "ini_restore()",
+                        format!(
+                            "option argument must be string in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+
+        let normalized_name = normalize_ini_name(name);
+        if normalized_name == "include_path" {
+            let restored = self.initial_include_path();
+            if let Some(initial) = self.initial_ini_values.get(&normalized_name).cloned() {
+                self.ini_values.insert(normalized_name, initial);
+            } else {
+                self.ini_values.remove(&normalized_name);
+            }
+            self.include_path = restored;
+            return Ok(Value::Null);
+        }
+
+        if let Some(initial) = self.initial_ini_values.get(&normalized_name).cloned() {
+            self.ini_values.insert(normalized_name, initial);
+        } else {
+            self.ini_values.remove(&normalized_name);
+        }
+
+        Ok(Value::Null)
+    }
+
     fn call_ini_set(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("ini_set", args, 2, span)?;
 
@@ -111666,6 +111716,13 @@ impl Interpreter {
             .get(&normalized)
             .cloned()
             .or_else(|| compat_ini_value(&normalized).map(str::to_string))
+    }
+
+    fn initial_include_path(&self) -> String {
+        self.initial_ini_values
+            .get("include_path")
+            .cloned()
+            .unwrap_or_else(|| DEFAULT_INCLUDE_PATH.to_string())
     }
 }
 

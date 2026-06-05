@@ -66387,6 +66387,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "getenv",
     "putenv",
     "ini_get",
+    "ini_restore",
     "ini_set",
     "get_include_path",
     "get_included_files",

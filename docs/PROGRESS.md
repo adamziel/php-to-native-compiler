@@ -1,5 +1,45 @@
 # Progress Log
 
+## 2026-06-05
+
+Implemented:
+
+- Added interpreter `ini_restore($option)` support over the deterministic INI
+  registry. The interpreter now keeps startup `-d` INI overrides separate from
+  later `ini_set()` mutations, restores current values to that startup/default
+  state, returns `null`, and routes `include_path` restore through the same
+  live include-path state used by include and stream lookup. String-valued
+  dynamic calls and native function-table metadata now recognize
+  `ini_restore`, while direct native lowering still rejects it through the
+  existing function-call boundary.
+
+Tests/verification:
+
+- Added focused Rust coverage in `compiler/tests/ini_builtins.rs` for
+  registry restore, live `include_path` restore, dynamic callable metadata,
+  runtime diagnostics, and native rejection.
+- Added the Milestone 2305 CLI fixture
+  `tests/fixtures/milestone2305/ini_restore_state.php` with committed
+  `phpc run` output and system-PHP comparison coverage.
+- Focused checks passed with `CARGO_TARGET_DIR=/tmp/phpc-target-dev379-ini`,
+  `CARGO_BUILD_JOBS=1`, and `CARGO_INCREMENTAL=0`:
+  `cargo test -p phpc --test ini_builtins -- --test-threads=1`;
+  `cargo run -p phpc -- test tests/fixtures/milestone2305`;
+  `cargo run -p phpc -- test --compare-php tests/fixtures/milestone2305`;
+  `cargo fmt --check`; `git diff --check`; and `cargo check -p phpc`.
+  The first focused `ini_builtins` run exposed one stale pre-existing
+  assertion for `ini_set()` too-few arguments, which was updated to the current
+  PHP-shaped fatal-execution contract before the rerun passed. The full suite
+  remains deferred under the active harness instruction not to run the entire
+  suite unless requested by the Manager or Integrator.
+
+Unsupported:
+
+- Host php.ini discovery, access-level enforcement, SAPI-specific policy,
+  extension-owned option catalogs, exact PHP warning/`TypeError` text, broad
+  coercions, full `ini_get_all()` breadth, and native `ini_restore()` lowering
+  remain unsupported.
+
 ## 2026-05-27
 
 Implemented:

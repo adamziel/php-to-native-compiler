@@ -3109,7 +3109,7 @@
   `file_put_contents`, `readfile`, `unlink`, `mkdir`, `rmdir`, `copy`, `rename`, `chdir`, `scandir`, `stat`, `lstat`, `fileperms`, `chmod`,
   `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fscanf`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fflush`, `ftruncate`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`,
   `disk_free_space`, `diskfreespace`, `disk_total_space`, `clearstatcache`, `realpath`, `realpath_cache_get`, `realpath_cache_size`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_executable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`,
-  `version_compare`, `microtime`, `ini_get`, `ini_set`,
+  `version_compare`, `microtime`, `ini_get`, `ini_restore`, `ini_set`,
   `get_include_path`, `set_include_path`, `min`, `rand`, `array_rand`, `uniqid`,
   `hash_hmac`, `md5`, `isset`, `empty`, `count`, `sizeof`, `compact`, `define`, `constant`, `defined`,
   `array_key_exists`, `key_exists`, `array_key_first`, `array_key_last`, `current`,
@@ -3242,13 +3242,16 @@
   option names and current scalar/null values, returns the previous
   deterministic value, stores the new string-coerced value for later
   `ini_get()` reads in the same execution, and returns `false` for unknown
-  options. The registry currently covers WordPress-oriented options such as
-  `memory_limit`, `max_execution_time`, `disable_functions`,
-  `mbstring.func_overload`, upload/mail/error-output defaults, and related
-  bootstrap settings. Host php.ini discovery, access-level enforcement,
-  `ini_restore()`, `ini_get_all()`, SAPI differences, extension
-  ownership/access metadata, exact option catalogs, broad coercions, exact
-  diagnostics, and native lowering remain unsupported.
+  options. `ini_restore($option)` accepts one string option name, returns
+  `null`, and restores the current value to the bounded startup `-d` override
+  or deterministic default; the live `include_path` used by include and stream
+  lookup is restored with the same boundary. The registry currently covers
+  WordPress-oriented options such as `memory_limit`, `max_execution_time`,
+  `disable_functions`, `mbstring.func_overload`, upload/mail/error-output
+  defaults, and related bootstrap settings. Host php.ini discovery,
+  access-level enforcement, SAPI differences, extension ownership/access
+  metadata, exact option catalogs, broad coercions, exact diagnostics, and
+  native lowering remain unsupported.
   `ignore_user_abort($enable = null)` returns the previous deterministic
   placeholder setting as `0` or `1`. With no argument or `null`, it reads the
   current setting without changing it. Current scalar arguments update the
@@ -7614,7 +7617,7 @@
   `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, `vfprintf`, `call_user_func`, `call_user_func_array`, `implode`, `basename`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `file_put_contents`, `readfile`, `unlink`, `mkdir`, `rmdir`, `copy`, `rename`, `chdir`, `scandir`, `stat`, `lstat`, `fileperms`, `chmod`,
   `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fscanf`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fflush`, `ftruncate`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`, `disk_free_space`, `diskfreespace`, `disk_total_space`, `clearstatcache`, `realpath`, `realpath_cache_get`, `realpath_cache_size`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_executable`, `is_link`, `abs`,
-  `microtime`, `ini_get`, `min`, `count`, `compact`,
+  `microtime`, `ini_get`, `ini_restore`, `min`, `count`, `compact`,
   `array_key_exists`, `array_key_first`, `array_key_last`, `current`, `next`, `array_is_list`,
   `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
   `array_pad`, `array_merge`, `array_replace`, `array_combine`, `define`,
@@ -7850,7 +7853,7 @@
   `str_starts_with`, `str_ends_with`, `strspn`, `strcspn`, `strpbrk`, `strpos`, `stripos`, `strrpos`, `strripos`, `strstr`, `strchr`, `stristr`, `strtok`, `substr`, `substr_replace`, `substr_count`, `str_replace`, `str_getcsv`, `parse_str`, `printf`, `fprintf`, `sprintf`, `vsprintf`, `vprintf`, `vfprintf`,
   `call_user_func`, `call_user_func_array`, `implode`, `file_exists`, `file_get_contents`, `is_uploaded_file`, `move_uploaded_file`,
   `file_put_contents`, `readfile`, `unlink`, `mkdir`, `rmdir`, `copy`, `rename`, `chdir`, `scandir`, `stat`, `lstat`, `fileperms`, `chmod`,
-  `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fscanf`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fflush`, `ftruncate`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`, `disk_free_space`, `diskfreespace`, `disk_total_space`, `clearstatcache`, `realpath`, `realpath_cache_get`, `realpath_cache_size`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_executable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `min`, `isset`, `empty`, `count`,
+  `fopen`, `stream_context_create`, `stream_context_get_options`, `stream_context_get_params`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `fwrite`, `fscanf`, `fread`, `rewind`, `stream_get_contents`, `feof`, `ftell`, `fseek`, `fflush`, `ftruncate`, `fstat`, `stream_get_meta_data`, `fclose`, `opendir`, `readdir`, `rewinddir`, `closedir`, `filesize`, `filemtime`, `disk_free_space`, `diskfreespace`, `disk_total_space`, `clearstatcache`, `realpath`, `realpath_cache_get`, `realpath_cache_size`, `getcwd`, `is_dir`, `is_file`, `is_readable`, `is_writable`, `is_executable`, `is_link`, `register_shutdown_function`, `set_error_handler`, `restore_error_handler`, `ob_start`, `ob_get_level`, `ob_get_contents`, `ob_get_length`, `ob_list_handlers`, `ob_get_status`, `ob_get_clean`, `ob_get_flush`, `ob_clean`, `ob_flush`, `ob_end_clean`, `ob_end_flush`, `date_default_timezone_set`, `abs`, `microtime`, `ini_get`, `ini_restore`, `min`, `isset`, `empty`, `count`,
   `define`, `constant`,
   `defined`, `array_key_exists`, `array_key_first`, `array_key_last`,
   `current`, `array_is_list`, `array_values`, `array_keys`, `array_reverse`,
@@ -8260,10 +8263,11 @@
   section above; direct native `microtime(...)` calls still reject under the
   function-call boundary, while native function-table introspection recognizes
   the name.
-  `ini_get` and `ini_set` accept the same current deterministic registry subset
-  as the builtin section above; direct native `ini_get(...)` and
-  `ini_set(...)` calls still reject under the function-call boundary, while
-  native function-table introspection recognizes the names.
+  `ini_get`, `ini_restore`, and `ini_set` accept the same current
+  deterministic registry subset as the builtin section above; direct native
+  `ini_get(...)`, `ini_restore(...)`, and `ini_set(...)` calls still reject
+  under the function-call boundary, while native function-table introspection
+  recognizes the names.
   `ignore_user_abort` accepts the same current deterministic placeholder
   state subset as the builtin section above; direct native
   `ignore_user_abort(...)` calls still reject under the function-call
@@ -10890,11 +10894,11 @@
   precision guarantees, monotonicity, deterministic virtual time, broad
   coercions, exact diagnostics, and native lowering beyond function-table
   introspection
-- `ini_get()` behavior beyond the current deterministic registry: host php.ini
-  discovery, mutable INI state, `ini_set()`/`ini_restore()`, `ini_get_all()`,
-  SAPI differences, extension ownership/access metadata, exact option catalogs,
-  coercions, exact diagnostics, and native lowering beyond function-table
-  introspection
+- INI behavior beyond the current deterministic registry: host php.ini
+  discovery, access-level enforcement, SAPI differences, extension
+  ownership/access metadata, exact option catalogs, broad coercions,
+  `ini_get_all()` breadth beyond the documented bounded registry, exact
+  diagnostics, and native lowering beyond function-table introspection
 - `ignore_user_abort()` behavior beyond the current deterministic placeholder:
   real client disconnect state, SAPI/web-server connection-abort behavior,
   request finishing, exact warning/`TypeError` behavior, and native lowering
