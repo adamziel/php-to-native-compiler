@@ -1,5 +1,51 @@
 # Progress Log
 
+## 2026-06-05
+
+Implemented:
+
+- Repaired the deterministic Rust-test gate for the repeated
+  `tools/run-tests.sh` failure cluster recorded by the harness. The runner now
+  defaults `cargo test` to `RUST_TEST_THREADS=1`, while still allowing an
+  explicit caller override, because the runtime native ABI tests share process
+  global diagnostic counters and registries that are intentionally exercised
+  through C-style handles. This is an operational test-runner fix, not a PHP
+  support expansion.
+
+- Refreshed `class_table_can_bootstrap_core_exception_metadata` to match the
+  existing core class table: `UnexpectedValueException`, `ArrayObject`, and
+  `ArrayIterator` are present in declaration order, and
+  `ReflectionParameter`, `ReflectionProperty`, and
+  `ReflectionClassConstant` expose their currently seeded placeholder
+  properties. Added direct metadata assertions for the existing exception and
+  SPL class entries so future core-table drift fails at the precise metadata
+  boundary instead of only through a stale name-list comparison.
+
+- Updated stale runtime unit expectations for already-implemented
+  byte-backed PHP string values and reference-held typed-property diagnostics.
+  Invalid UTF-8 byte inputs through the native value/comparison boundaries now
+  assert `BinaryString` preservation instead of failure, and constrained
+  static-property references assert the PHP-shaped
+  `Cannot assign ... to reference held by property ...` diagnostic.
+
+- Unsupported edges are unchanged: exact SPL object behavior beyond the
+  documented bounded subset, exact exception object parity, broader native
+  runtime ABI concurrency guarantees, and full PHP compatibility remain
+  outside this operational repair.
+
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/tmp/phpc-dev122-target CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -q -p php_runtime class_table_can_bootstrap_core_exception_metadata -- --test-threads=1 --nocapture`;
+  `RUST_TEST_THREADS=1 CARGO_TARGET_DIR=/tmp/phpc-dev122-runtime-string CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -q -p php_runtime native_string -- --test-threads=1 --nocapture`;
+  `RUST_TEST_THREADS=1 CARGO_TARGET_DIR=/tmp/phpc-dev122-runtime-comparison CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -q -p php_runtime native_comparison -- --test-threads=1 --nocapture`;
+  `RUST_TEST_THREADS=1 CARGO_TARGET_DIR=/tmp/phpc-dev122-runtime-static CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -q -p php_runtime static_property -- --test-threads=1 --nocapture`;
+  `RUST_TEST_THREADS=1 CARGO_TARGET_DIR=/tmp/phpc-dev122-runtime CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -q -p php_runtime` passed with
+  `419` tests; `sh -n tools/run-tests.sh`; `cargo fmt --check`; and scoped
+  `git diff --check -- runtime/src/lib.rs tools/run-tests.sh docs/OPERATIONS.md docs/PROGRESS.md`.
+
+- Full `tools/run-tests.sh` remains deferred under the assigned developer-lane
+  rule not to run the entire suite unless requested by a Manager or
+  Integrator.
+
 ## 2026-05-27
 
 Implemented:
@@ -42299,8 +42345,6 @@ Next:
   split-lane batch. A checkpoint was still not created because
   `tools/checkpoint.sh` stages the full dirty tree and this worker was not
   asked to checkpoint.
-
-Next:
 
 - Added Milestone 612, parser-lane unsupported `instanceof` expression
   boundary coverage. `$object instanceof ClassName` and uppercase

@@ -14,7 +14,8 @@ tools/run-tests.sh
 
 That currently runs:
 
-- `cargo test`
+- `cargo test` with `RUST_TEST_THREADS=1` by default, unless the caller
+  deliberately supplies another `RUST_TEST_THREADS` value
 - `cargo run -p phpc -- test`
 - `cargo run -p phpc -- test --compare-php`
 
