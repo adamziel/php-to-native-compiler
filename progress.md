@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-05T23:42:56+00:00
+Last generated: 2026-06-05T23:43:12+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -22,6 +22,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1459 | Fix failing tests from run 1519 | Developer | implementation | planned | queued |  | 0.0 |
 | 1458 | Fix failing tests from run 1518 | Developer | implementation | planned | queued |  | 0.0 |
 | 1457 | Fix failing tests from run 1517 | Developer | implementation | planned | queued |  | 0.0 |
 | 1456 | Fix failing tests from run 1516 | Developer | implementation | planned | queued |  | 0.0 |
@@ -31,27 +32,32 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | 1452 | Fix failing tests from run 1512 | Developer | implementation | planned | queued |  | 0.0 |
 | 1451 | Fix failing tests from run 1511 | Developer | implementation | planned | queued |  | 0.0 |
 | 1450 | Fix failing tests from run 1510 | Developer | implementation | planned | queued |  | 0.0 |
-| 1449 | Fix failing tests from run 1509 | Developer | implementation | planned | queued |  | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=1, passed=0, skipped=0)
+failed — python -m unittest discover -s tests -v (error=0, failed=1, passed=0, skipped=0)
 
 ## Resource samples
 Latest: CPU 2.34%, RAM 14.83%, disk free 9.2 GB.
 
 ## Recent events
-- 2026-06-05T23:24:16+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-05T23:24:18+00:00 **worklane_created**: Fix failing tests from run 1515
-- 2026-06-05T23:24:18+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-05T23:24:24+00:00 **worklane_created**: Fix failing tests from run 1516
-- 2026-06-05T23:24:24+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-05T23:24:26+00:00 **scheduler**: Harness scheduler stopped by user
-- 2026-06-05T23:24:29+00:00 **worklane_created**: Fix failing tests from run 1517
-- 2026-06-05T23:24:29+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-05T23:24:34+00:00 **worklane_created**: Fix failing tests from run 1518
-- 2026-06-05T23:24:34+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-05T23:41:12+00:00 **mcp**: Harness MCP server passed init preflight
 - 2026-06-05T23:42:56+00:00 **index**: Indexed 1769 files during init
+- 2026-06-05T23:42:56+00:00 **worklane_created**: Fix failing tests from run 1519
+- 2026-06-05T23:42:56+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-05T23:42:57+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-05T23:42:57+00:00 **status_publish_failed**: Committed status files but failed to push: To https://github.com/adamziel/php-to-native-compiler.git
+ ! [rejected]          HEAD -> master (non-fast-forward)
+error: failed to push some refs to 'https://github.com/adamziel/php-to-native-compiler.git'
+hint: Updates were rejected because the tip of your current branch is behind
+hint: its remote counterpart. If you want to integrate the remote changes,
+hint: use 'git pull' before pushing again.
+hint: See the 'Note about fast-forwards' in 'git push --help' for details.
+- 2026-06-05T23:42:57+00:00 **init**: Harness initialized or repaired
+- 2026-06-05T23:43:01+00:00 **worklane_deduplicated**: Updated existing failing-test card#1459 from run 1520
+- 2026-06-05T23:43:01+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-05T23:43:06+00:00 **worklane_deduplicated**: Updated existing failing-test card#1459 from run 1521
+- 2026-06-05T23:43:06+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-05T23:43:12+00:00 **mcp**: Harness MCP tools exposed to Codex workers
+- 2026-06-05T23:43:12+00:00 **tmux**: Support windows ready
 
 ## Next steps
-Move next worklane forward: Fix failing tests from run 1518
+Move next worklane forward: Fix failing tests from run 1519
