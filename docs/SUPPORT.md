@@ -171,6 +171,13 @@
   warning behavior while preserving copied-source metadata for selected
   returned leaves. Returning a selected copied leaf can promote the original
   reference-backed source.
+  Alias-backed materialization and assignment to one static array entry now
+  preserve unrelated array-literal copied-source paths on the same root, so a
+  later `call_user_func_array()` reference-return callback over a sibling
+  copied entry can still promote selected reference-backed leaves from covered
+  visible `__get()` sources. This remains bounded to supported static alias
+  roots and recorded literal paths; arbitrary transformed containers and
+  untracked dynamic containers still use the legacy bounded alias-root model.
   Broader dynamic holder writeback and untracked containers still use the
   legacy bounded alias-root model.
 - covered magic/`ArrayAccess` method-body COW side effects: named `__set()`,

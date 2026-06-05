@@ -2487,6 +2487,12 @@ type VariableCell = PhpReferenceCell;
 type PublicArrayCopySourceSnapshot =
     Vec<(String, ArrayCopySource, bool, Option<VariableCell>, Value)>;
 
+type RetainedStaticArrayCopySourceMetadata = Vec<(
+    String,
+    Option<ArrayCopySource>,
+    Vec<(Vec<ArrayKey>, ArrayCopySource)>,
+)>;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ArrayOffsetAlias {
     root: ArrayOffsetAliasRoot,
@@ -3110,7 +3116,9 @@ impl SymbolTable {
     fn write_named(&mut self, name: &str, value: Value) {
         self.clear_array_literal_copy_source_paths_for_root(name);
         if let Some(aliases) = self.array_offset_aliases.get(name).cloned() {
-            if self.write_array_offset_aliases(&aliases, value.clone()) {
+            if self
+                .write_array_offset_aliases_preserving_static_copy_sources(&aliases, value.clone())
+            {
                 return;
             }
             self.array_offset_aliases.remove(name);
@@ -3134,7 +3142,7 @@ impl SymbolTable {
     {
         self.clear_array_literal_copy_source_paths_for_root(name);
         if let Some(aliases) = self.array_offset_aliases.get(name).cloned() {
-            if self.write_array_offset_aliases_checked_with_object_type_resolver(
+            if self.write_array_offset_aliases_checked_preserving_static_copy_sources(
                 &aliases,
                 value.clone(),
                 span,
@@ -8127,8 +8135,12 @@ impl SymbolTable {
                 ));
             }
         };
+        let retained = self
+            .retained_static_array_copy_source_metadata_for_aliases(std::slice::from_ref(alias));
         Self::materialize_nested_array_offset_alias(&mut array, &alias.keys, span)?;
-        self.write_alias_root_value(alias, Value::Array(array), span)
+        self.write_alias_root_value(alias, Value::Array(array), span)?;
+        self.restore_retained_static_array_copy_source_metadata(retained);
+        Ok(())
     }
 
     fn read_array_offset_alias(&self, alias: &ArrayOffsetAlias) -> Option<Value> {
@@ -8331,7 +8343,8 @@ impl SymbolTable {
         else {
             return false;
         };
-        let retained = self.retained_static_copy_sources_for_aliases(std::slice::from_ref(alias));
+        let retained = self
+            .retained_static_array_copy_source_metadata_for_aliases(std::slice::from_ref(alias));
 
         let boundary = self.pre_replace_holder_storage_for_alias_write(&alias.root, &alias.keys);
         if !Self::write_nested_array_offset_alias(&mut array, &alias.keys, value) {
@@ -8342,7 +8355,7 @@ impl SymbolTable {
             .is_ok();
         if wrote {
             self.post_replace_holder_storage_for_alias_write(boundary.as_ref());
-            self.restore_retained_static_copy_sources(retained);
+            self.restore_retained_static_array_copy_source_metadata(retained);
         }
         wrote
     }
@@ -8370,7 +8383,8 @@ impl SymbolTable {
         let Some(Value::Array(mut array)) = self.read_alias_root_value(alias, span)? else {
             return Ok(false);
         };
-        let retained = self.retained_static_copy_sources_for_aliases(std::slice::from_ref(alias));
+        let retained = self
+            .retained_static_array_copy_source_metadata_for_aliases(std::slice::from_ref(alias));
 
         let boundary = self.pre_replace_holder_storage_for_alias_write(&alias.root, &alias.keys);
         if !Self::write_nested_array_offset_alias_checked_with_object_type_resolver(
@@ -8390,7 +8404,7 @@ impl SymbolTable {
             object_type_resolver,
         )?;
         self.post_replace_holder_storage_for_alias_write(boundary.as_ref());
-        self.restore_retained_static_copy_sources(retained);
+        self.restore_retained_static_array_copy_source_metadata(retained);
         Ok(true)
     }
 
@@ -8471,34 +8485,69 @@ impl SymbolTable {
             .all(|alias| self.write_array_offset_alias(alias, value.clone()))
     }
 
-    fn retained_static_copy_sources_for_aliases(
+    fn retained_static_array_copy_source_metadata_for_aliases(
         &self,
         aliases: &[ArrayOffsetAlias],
-    ) -> Vec<(String, ArrayCopySource)> {
-        aliases
-            .iter()
-            .filter_map(|alias| {
-                if alias.keys.is_empty() {
+    ) -> RetainedStaticArrayCopySourceMetadata {
+        let mut static_writes: Vec<(String, Vec<Vec<ArrayKey>>)> = Vec::new();
+        for alias in aliases {
+            if alias.keys.is_empty() {
+                continue;
+            }
+            let ArrayOffsetAliasRoot::StaticArray { name } = &alias.root else {
+                continue;
+            };
+            if let Some((_, prefixes)) = static_writes
+                .iter_mut()
+                .find(|(candidate, _)| candidate == name)
+            {
+                prefixes.push(alias.keys.clone());
+            } else {
+                static_writes.push((name.clone(), vec![alias.keys.clone()]));
+            }
+        }
+
+        static_writes
+            .into_iter()
+            .filter_map(|(name, prefixes)| {
+                let source = prefixes.iter().find_map(|keys| {
+                    Interpreter::array_copy_source_preserved_after_nested_write(self, &name, keys)
+                });
+                let literal_paths = self
+                    .array_literal_copy_source_paths
+                    .get(&name)
+                    .map(|paths| {
+                        paths
+                            .iter()
+                            .filter(|(candidate, _)| {
+                                !prefixes.iter().any(|prefix| candidate.starts_with(prefix))
+                            })
+                            .cloned()
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                if source.is_none() && literal_paths.is_empty() {
                     return None;
                 }
-                let ArrayOffsetAliasRoot::StaticArray { name } = &alias.root else {
-                    return None;
-                };
-                let source = Interpreter::array_copy_source_preserved_after_nested_write(
-                    self,
-                    name,
-                    &alias.keys,
-                )?;
-                Some((name.clone(), source))
+                Some((name, source, literal_paths))
             })
             .collect()
     }
 
-    fn restore_retained_static_copy_sources(&mut self, retained: Vec<(String, ArrayCopySource)>) {
-        for (name, source) in retained {
-            if matches!(self.read_named(&name), Some(Value::Array(_))) {
+    fn restore_retained_static_array_copy_source_metadata(
+        &mut self,
+        retained: RetainedStaticArrayCopySourceMetadata,
+    ) {
+        for (name, source, literal_paths) in retained {
+            if !matches!(self.read_named(&name), Some(Value::Array(_))) {
+                continue;
+            }
+            if let Some(source) = source {
                 self.record_public_object_property_array_copy_source(&name, source);
                 self.mark_public_object_property_array_copy_source_dirty(&name);
+            }
+            if !literal_paths.is_empty() {
+                self.record_array_literal_copy_source_paths(&name, literal_paths);
             }
         }
     }
@@ -8508,10 +8557,10 @@ impl SymbolTable {
         aliases: &[ArrayOffsetAlias],
         value: Value,
     ) -> bool {
-        let retained = self.retained_static_copy_sources_for_aliases(aliases);
+        let retained = self.retained_static_array_copy_source_metadata_for_aliases(aliases);
         let wrote = self.write_array_offset_aliases(aliases, value);
         if wrote {
-            self.restore_retained_static_copy_sources(retained);
+            self.restore_retained_static_array_copy_source_metadata(retained);
         }
         wrote
     }
@@ -8535,10 +8584,10 @@ impl SymbolTable {
         aliases: &[ArrayOffsetAlias],
         reference: VariableCell,
     ) -> bool {
-        let retained = self.retained_static_copy_sources_for_aliases(aliases);
+        let retained = self.retained_static_array_copy_source_metadata_for_aliases(aliases);
         let wrote = self.write_array_offset_aliases_reference_cell(aliases, reference);
         if wrote {
-            self.restore_retained_static_copy_sources(retained);
+            self.restore_retained_static_array_copy_source_metadata(retained);
         }
         wrote
     }
@@ -8575,7 +8624,7 @@ impl SymbolTable {
         span: Span,
         object_type_resolver: &dyn Fn(&PhpObject, &str) -> bool,
     ) -> CompileResult<bool> {
-        let retained = self.retained_static_copy_sources_for_aliases(aliases);
+        let retained = self.retained_static_array_copy_source_metadata_for_aliases(aliases);
         let wrote = self.write_array_offset_aliases_checked_with_object_type_resolver(
             aliases,
             value,
@@ -8583,7 +8632,7 @@ impl SymbolTable {
             object_type_resolver,
         )?;
         if wrote {
-            self.restore_retained_static_copy_sources(retained);
+            self.restore_retained_static_array_copy_source_metadata(retained);
         }
         Ok(wrote)
     }
@@ -65477,12 +65526,11 @@ impl Interpreter {
                         },
                         keys: keys.clone(),
                     };
-                    let retained =
-                        scope.retained_static_copy_sources_for_aliases(std::slice::from_ref(
-                            &alias,
-                        ));
+                    let retained = scope.retained_static_array_copy_source_metadata_for_aliases(
+                        std::slice::from_ref(&alias),
+                    );
                     scope.materialize_array_offset_alias(&alias, span)?;
-                    scope.restore_retained_static_copy_sources(retained);
+                    scope.restore_retained_static_array_copy_source_metadata(retained);
                     return Ok(ReferenceReturnLocalBinding::ArrayOffset {
                         root_name: root_name.to_string(),
                         keys,
@@ -67860,7 +67908,8 @@ impl Interpreter {
         scope: &mut SymbolTable,
         span: Span,
     ) -> CompileResult<()> {
-        let retained_static_copy_sources = scope.retained_static_copy_sources_for_aliases(aliases);
+        let retained_static_copy_sources =
+            scope.retained_static_array_copy_source_metadata_for_aliases(aliases);
         if !scope.write_array_offset_aliases_checked_with_object_type_resolver(
             aliases,
             value,
@@ -67890,7 +67939,7 @@ impl Interpreter {
                 }
             }
         }
-        scope.restore_retained_static_copy_sources(retained_static_copy_sources);
+        scope.restore_retained_static_array_copy_source_metadata(retained_static_copy_sources);
         Ok(())
     }
 
@@ -117321,6 +117370,75 @@ echo $items["shared"]["leaf"] . "|" . $shared . "|" . $items["plain"]["leaf"] . 
         assert!(scope
             .dirty_public_object_property_array_copy_sources
             .contains("copy"));
+    }
+
+    #[test]
+    fn alias_variable_write_preserves_unwritten_array_literal_copy_source_paths() {
+        let mut scope = SymbolTable::new();
+        let keep_key = ArrayKey::String("keep".to_string());
+        let changed_key = ArrayKey::String("changed".to_string());
+
+        let mut copy = PhpArray::new();
+        copy.insert(keep_key.clone(), Value::Array(PhpArray::new()));
+        copy.insert(changed_key.clone(), Value::Array(PhpArray::new()));
+        scope.write_static("copy", Value::Array(copy));
+
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("Box").unwrap();
+        let class = classes.get_mut(class_id).unwrap();
+        class
+            .add_property(PhpPropertyMetadata::instance("items", Visibility::Public))
+            .unwrap();
+        let object = PhpObject::from_class(class);
+
+        let keep_source = ArrayCopySource::object_property(
+            object.clone(),
+            "items".to_string(),
+            std::slice::from_ref(&keep_key).to_vec(),
+            true,
+        );
+        let changed_source = ArrayCopySource::object_property(
+            object,
+            "items".to_string(),
+            std::slice::from_ref(&changed_key).to_vec(),
+            true,
+        );
+        scope.record_array_literal_copy_source_path(
+            "copy",
+            std::slice::from_ref(&keep_key).to_vec(),
+            keep_source.clone(),
+        );
+        scope.record_array_literal_copy_source_path(
+            "copy",
+            std::slice::from_ref(&changed_key).to_vec(),
+            changed_source,
+        );
+
+        let alias = ArrayOffsetAlias {
+            root: ArrayOffsetAliasRoot::StaticArray {
+                name: "copy".to_string(),
+            },
+            keys: std::slice::from_ref(&changed_key).to_vec(),
+        };
+        scope
+            .bind_static_to_existing_array_offset_aliases("alias", vec![alias], Span::new(1, 1))
+            .expect("reference alias binding should succeed");
+        scope
+            .write_named_checked_with_object_type_resolver(
+                "alias",
+                Value::String("new".to_string()),
+                Span::new(1, 1),
+                |_, _| true,
+            )
+            .expect("alias variable write should succeed");
+
+        let recovered = scope
+            .array_literal_copy_source_for_static_path("copy", std::slice::from_ref(&keep_key))
+            .expect("expected unrelated literal path to survive alias write");
+        assert!(scope.array_copy_sources_match(&recovered, &keep_source));
+        assert!(scope
+            .array_literal_copy_source_for_static_path("copy", std::slice::from_ref(&changed_key))
+            .is_none());
     }
 
     #[test]

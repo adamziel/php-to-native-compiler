@@ -210,6 +210,13 @@ use the same parameter-name mapping before importing those bindings. This path
 is still bounded to literal array-transform inputs whose entries can be mapped
 to callback positions or parameter names; arbitrary transformed arrays and
 untracked dynamic containers remain outside the model.
+When an argument array stores multiple copied-source entries, alias-backed
+materialization or assignment to one static array prefix preserves unrelated
+literal copied-source paths on the same root. This lets a later
+`call_user_func_array()` reference-return callback over an untouched sibling
+entry promote its selected reference-backed source leaf even after another
+entry was rebound through a direct reference alias. This is still a static
+alias-root preservation rule, not arbitrary dynamic container graph recovery.
 use the same parameter-name mapping before importing those bindings. For
 reference-return string callbacks and public object array-callable callbacks
 whose parameters are declared by reference, supported literal-transform

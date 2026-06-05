@@ -13,6 +13,26 @@ high-impact COW/runtime architecture before easier case-by-case patches. Use
 narrow fixtures to prove the architecture, not as a substitute for it, unless
 a one-off is genuinely the only viable route.
 
+## Loop Event 2026-06-05T01:20:00+02:00
+
+- Continued the COW runtime-handle/literal-source frontier in `work/developer-88`.
+- Closed a bounded alias-backed static-root gap: materializing or assigning
+  through one direct reference alias now preserves unrelated array-literal
+  copied-source paths on the same static root while invalidating the written
+  prefix. This lets a later reference-return `call_user_func_array()` callback
+  over a sibling copied entry promote selected leaves from covered visible
+  `__get()` copies.
+- Added focused unit coverage and the `milestone2300` PHP fixture. Checks
+  passed with constrained cargo settings: filtered unit
+  `alias_variable_write_preserves_unwritten_array_literal_copy_source_paths`,
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone2300`,
+  `cargo run -q -p phpc -- test --compare-php tests/fixtures/milestone2294`,
+  `cargo check -q -p phpc`, and `git diff --check`.
+- Remaining gaps: unsupported magic/`ArrayAccess` method syntax, arbitrary
+  transformed containers, untracked dynamic containers without concrete
+  roots/cells, exact diagnostics/Throwable parity, and native reference/COW
+  lowering.
+
 ## Loop Event 2026-05-20T14:22:00Z
 
 - Checkpoint before this task: `d2f015c9 runtime: carry copy sources through

@@ -243,6 +243,12 @@ handled.
   slot fallback, so supported `array_merge(array($copy))` containers preserve
   copied-source bindings and selected returned leaves promote back to the
   original reference-backed source.
+- [x] Lane 2300-C: preserve unrelated array-literal copied-source paths when
+  supported static alias roots are materialized or written through a direct
+  reference alias. Rebinding `$args["changed"]` through `$changed =& ...`
+  no longer erases the copied-source metadata for sibling entries such as
+  `$args["keep"]`, so later reference-return `call_user_func_array()` callbacks
+  can still promote selected leaves from covered visible `__get()` copies.
 - [ ] Next COW gap, hard-first: keep extending the general
   value/container identity model by extracting root resolution into a
   runtime-backed alias/lvalue handle under `SymbolTable`, then migrating
@@ -268,7 +274,9 @@ handled.
   root. Object-property alias syncs preserve the same dirty-only metadata while
   rewriting static alias groups, and reference-binding metadata sync treats
   dirty-only local metadata as a still-present imported source before removing
-  caller metadata.
+  caller metadata. Alias-backed materialization and assignment now also retain
+  unrelated array-literal copied-source paths on the same static root while
+  invalidating the written prefix.
   Runtime-cell handle discovery now includes initialized public object
   properties sharing the same reference cell without requiring pre-seeded
   array-offset alias metadata. Descendant

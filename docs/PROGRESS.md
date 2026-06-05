@@ -1,5 +1,23 @@
 # Progress Log
 
+## 2026-06-05
+
+Implemented:
+
+- Preserved nested array-literal copied-source metadata when supported
+  alias-backed writes or reference-alias materialization rewrite only one
+  static array prefix. Sibling copied-source paths now survive writes such as
+  `$changed =& $args["changed"]; $changed = ...`, so a later
+  `call_user_func_array()` reference-return callback over `$args["keep"]`
+  can still promote selected reference-backed leaves copied from a visible
+  `__get()` result. Focused gates cover the alias binding/write metadata unit,
+  the new `milestone2300` CLI fixture with system-PHP comparison, and the
+  existing post-format focused checks. This remains bounded to supported
+  static alias roots, visible magic/object-property copied sources, and
+  selected array-literal paths; arbitrary transformed containers, unsupported
+  magic/`ArrayAccess` syntax, untracked dynamic containers, exact diagnostics,
+  and native reference/COW lowering remain unsupported.
+
 ## 2026-05-27
 
 Implemented:
