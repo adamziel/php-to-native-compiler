@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-05T21:18:02+00:00
+Last generated: 2026-06-05T21:27:23+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -21,6 +21,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | architect-16 | Architect | stopped | architect-16 |  |
 | architect-17 | Architect | stopped | architect-17 |  |
 | architect-18 | Architect | stopped | architect-18 |  |
+| architect-19 | Architect | stopped | architect-19 |  |
 | architect-2 | Architect | stopped | architect-2 |  |
 | architect-3 | Architect | stopped | architect-3 |  |
 | architect-4 | Architect | stopped | architect-4 |  |
@@ -2762,6 +2763,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-1 | Coordinator | stopped | coordinator-1 |  |
 | coordinator-2 | Coordinator | stopped | coordinator-2 |  |
 | coordinator-3 | Coordinator | stopped | coordinator-3 |  |
+| coordinator-4 | Coordinator | stopped | coordinator-4 |  |
 | developer-1 | Developer | stopped | developer-1 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-1 |
 | developer-10 | Developer | stopped | developer-10 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-10 |
 | developer-100 | Developer | stopped | developer-100 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-100 |
@@ -3159,6 +3161,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-454 | Developer | stopped | developer-454 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-454 |
 | developer-455 | Developer | stopped | developer-455 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-455 |
 | developer-456 | Developer | stopped | developer-456 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-456 |
+| developer-457 | Developer | stopped | developer-457 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-457 |
 | developer-46 | Developer | stopped | developer-46 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-46 |
 | developer-47 | Developer | stopped | developer-47 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-47 |
 | developer-48 | Developer | stopped | developer-48 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-48 |
@@ -3256,6 +3259,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | integrator-40 | Integrator | stopped | integrator-40 |  |
 | integrator-41 | Integrator | stopped | integrator-41 |  |
 | integrator-42 | Integrator | stopped | integrator-42 |  |
+| integrator-43 | Integrator | stopped | integrator-43 |  |
 | integrator-5 | Integrator | stopped | integrator-5 |  |
 | integrator-6 | Integrator | stopped | integrator-6 |  |
 | integrator-7 | Integrator | stopped | integrator-7 |  |
@@ -3292,42 +3296,36 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- |
-| 167 | Fix failing tests from run 227 | Developer | queued |  | 0.0 |
-| 166 | Fix failing tests from run 226 | Developer | queued |  | 0.0 |
-| 165 | Fix failing tests from run 225 | Developer | ready_for_integration | ready_fast_path | 0.0 |
-| 164 | Fix failing tests from run 224 | Developer | superseded_by_lane163_infra_duplicate |  | 0.0 |
-| 163 | Fix failing tests from run 223 | Developer | needs_verification |  | 0.0 |
-| 162 | Harness command-selection recurrence after run222 | Developer | superseded_by_lane159_160_reconciliation |  | 0.0 |
-| 161 | Run221/run222 deterministic failure manifest | Developer | superseded_by_lane159_160_reconciliation |  | 0.0 |
-| 160 | Run221 runtime failure duplicate comparison audit | Developer | integrated | ready_fast_path | 0.0 |
-| 159 | Run222 command-selection recurrence patch-point audit | Developer | integrated | ready_fast_path | 0.0 |
-| 158 | Fix failing tests from run 222 | Developer | integrated | ready_fast_path | 0.0 |
+| 261 | Fix failing tests from run 321 | Developer | queued |  | 0.0 |
+| 260 | Fix failing tests from run 320 | Developer | queued |  | 0.0 |
+| 259 | Fix failing tests from run 319 | Developer | queued |  | 0.0 |
+| 258 | Fix failing tests from run 318 | Developer | queued |  | 0.0 |
+| 257 | Fix failing tests from run 317 | Developer | queued |  | 0.0 |
+| 256 | Fix failing tests from run 316 | Developer | queued |  | 0.0 |
+| 255 | Fix failing tests from run 315 | Developer | queued |  | 0.0 |
+| 254 | Fix failing tests from run 314 | Developer | queued |  | 0.0 |
+| 253 | Fix failing tests from run 313 | Developer | queued |  | 0.0 |
+| 252 | Fix failing tests from run 312 | Developer | queued |  | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=1, passed=0, skipped=0)
+failed — python -m unittest discover -s tests -v (error=0, failed=1, passed=0, skipped=0)
 
 ## Resource samples
-Latest: CPU 26.73%, RAM 13.0%, disk free 32.47 GB.
+Latest: CPU 16.8%, RAM 13.17%, disk free 11.12 GB.
 
 ## Recent events
-- 2026-06-05T20:49:04+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: harness/idle-alert-auditor-spawn-storm
-- 2026-06-05T20:49:04+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-05T21:03:15+00:00 **status_publish_failed**: Committed status files but failed to push: To https://github.com/adamziel/php-to-native-compiler.git
- ! [rejected]          HEAD -> master (non-fast-forward)
-error: failed to push some refs to 'https://github.com/adamziel/php-to-native-compiler.git'
-hint: Updates were rejected because the tip of your current branch is behind
-hint: its remote counterpart. If you want to integrate the remote changes,
-hint: use 'git pull' before pushing again.
-hint: See the 'Note about fast-forwards' in 'git push --help' for details.
-- 2026-06-05T21:03:15+00:00 **status**: Updated STATUS.md and STATUS.html
-- 2026-06-05T21:04:04+00:00 **worklane_created**: Fix failing tests from run 227
-- 2026-06-05T21:04:04+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: harness/idle-alert-ended-agents
-- 2026-06-05T21:04:04+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: harness/idle-alert-missing-window-undelivered-assignment
-- 2026-06-05T21:04:04+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: harness/idle-alert-auditor-spawn-storm
-- 2026-06-05T21:04:04+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-05T21:18:01+00:00 **stop**: Stopped harness runtime
-- 2026-06-05T21:18:02+00:00 **mcp**: Harness MCP tools exposed to Codex workers
-- 2026-06-05T21:18:02+00:00 **tmux**: Support windows ready
+- 2026-06-05T21:27:14+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: harness/idle-alert-ended-agents
+- 2026-06-05T21:27:14+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: harness/idle-alert-missing-window-undelivered-assignment
+- 2026-06-05T21:27:14+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: harness/idle-alert-auditor-spawn-storm
+- 2026-06-05T21:27:14+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-05T21:27:19+00:00 **worklane_created**: Fix failing tests from run 321
+- 2026-06-05T21:27:19+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: harness/idle-alert-ended-agents
+- 2026-06-05T21:27:19+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: harness/idle-alert-missing-window-undelivered-assignment
+- 2026-06-05T21:27:19+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: harness/idle-alert-auditor-spawn-storm
+- 2026-06-05T21:27:19+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-05T21:27:21+00:00 **stop**: Stopped harness runtime
+- 2026-06-05T21:27:22+00:00 **mcp**: Harness MCP tools exposed to Codex workers
+- 2026-06-05T21:27:22+00:00 **tmux**: Support windows ready
 
 ## Next steps
-Move next worklane forward: Fix failing tests from run 227
+Move next worklane forward: Fix failing tests from run 321
