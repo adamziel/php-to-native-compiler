@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-05T21:03:14+00:00
+Last generated: 2026-06-05T21:18:02+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -20,7 +20,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | architect-15 | Architect | stopped | architect-15 |  |
 | architect-16 | Architect | stopped | architect-16 |  |
 | architect-17 | Architect | stopped | architect-17 |  |
-| architect-18 | Architect | running | architect-18 |  |
+| architect-18 | Architect | stopped | architect-18 |  |
 | architect-2 | Architect | stopped | architect-2 |  |
 | architect-3 | Architect | stopped | architect-3 |  |
 | architect-4 | Architect | stopped | architect-4 |  |
@@ -2761,7 +2761,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | auditor-999 | Auditor | crash | auditor-999 |  |
 | coordinator-1 | Coordinator | stopped | coordinator-1 |  |
 | coordinator-2 | Coordinator | stopped | coordinator-2 |  |
-| coordinator-3 | Coordinator | running | coordinator-3 |  |
+| coordinator-3 | Coordinator | stopped | coordinator-3 |  |
 | developer-1 | Developer | stopped | developer-1 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-1 |
 | developer-10 | Developer | stopped | developer-10 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-10 |
 | developer-100 | Developer | stopped | developer-100 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-100 |
@@ -3158,7 +3158,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-453 | Developer | stopped | developer-453 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-453 |
 | developer-454 | Developer | stopped | developer-454 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-454 |
 | developer-455 | Developer | stopped | developer-455 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-455 |
-| developer-456 | Developer | running | developer-456 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-456 |
+| developer-456 | Developer | stopped | developer-456 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-456 |
 | developer-46 | Developer | stopped | developer-46 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-46 |
 | developer-47 | Developer | stopped | developer-47 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-47 |
 | developer-48 | Developer | stopped | developer-48 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-48 |
@@ -3255,7 +3255,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | integrator-4 | Integrator | stopped | integrator-4 |  |
 | integrator-40 | Integrator | stopped | integrator-40 |  |
 | integrator-41 | Integrator | stopped | integrator-41 |  |
-| integrator-42 | Integrator | idle_no_ready_fast_path | integrator-42 |  |
+| integrator-42 | Integrator | stopped | integrator-42 |  |
 | integrator-5 | Integrator | stopped | integrator-5 |  |
 | integrator-6 | Integrator | stopped | integrator-6 |  |
 | integrator-7 | Integrator | stopped | integrator-7 |  |
@@ -3287,11 +3287,12 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | manager-7 | Manager | stopped | manager-7 |  |
 | manager-8 | Manager | stopped | manager-8 |  |
 | manager-9 | Manager | stopped | manager-9 |  |
-| manhole | Manager | running | manhole |  |
+| manhole | Manager | stopped | manhole |  |
 
 ## Work lanes
 | id | title | role_type | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- |
+| 167 | Fix failing tests from run 227 | Developer | queued |  | 0.0 |
 | 166 | Fix failing tests from run 226 | Developer | queued |  | 0.0 |
 | 165 | Fix failing tests from run 225 | Developer | ready_for_integration | ready_fast_path | 0.0 |
 | 164 | Fix failing tests from run 224 | Developer | superseded_by_lane163_infra_duplicate |  | 0.0 |
@@ -3301,7 +3302,6 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | 160 | Run221 runtime failure duplicate comparison audit | Developer | integrated | ready_fast_path | 0.0 |
 | 159 | Run222 command-selection recurrence patch-point audit | Developer | integrated | ready_fast_path | 0.0 |
 | 158 | Fix failing tests from run 222 | Developer | integrated | ready_fast_path | 0.0 |
-| 157 | Fix failing tests from run 221 | Developer | superseded_by_lane163_current_base_port | stale_old_base_conflicts_origin_master | 0.0 |
 
 ## Tests
 failed — tools/run-tests.sh (error=0, failed=1, passed=0, skipped=0)
@@ -3310,24 +3310,24 @@ failed — tools/run-tests.sh (error=0, failed=1, passed=0, skipped=0)
 Latest: CPU 26.73%, RAM 13.0%, disk free 32.47 GB.
 
 ## Recent events
-- 2026-06-05T20:37:59+00:00 **agent_report**: coordinator-3 reported coordinator_pass_complete
-- 2026-06-05T20:38:34+00:00 **commit_created**: Committed run225 selector live-fix report artifact.
-- 2026-06-05T20:38:49+00:00 **worklane_status**: worklane#165 -> ready_for_integration
-- 2026-06-05T20:38:49+00:00 **agent_report**: developer-456 reported ready_for_integration
-- 2026-06-05T20:38:49+00:00 **lane_completed_request_next**: Completed lane165 and requested another Developer lane.
-- 2026-06-05T20:48:14+00:00 **status_publish_failed**: Committed status files but failed to push: To https://github.com/adamziel/php-to-native-compiler.git
+- 2026-06-05T20:49:04+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: harness/idle-alert-auditor-spawn-storm
+- 2026-06-05T20:49:04+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-05T21:03:15+00:00 **status_publish_failed**: Committed status files but failed to push: To https://github.com/adamziel/php-to-native-compiler.git
  ! [rejected]          HEAD -> master (non-fast-forward)
 error: failed to push some refs to 'https://github.com/adamziel/php-to-native-compiler.git'
 hint: Updates were rejected because the tip of your current branch is behind
 hint: its remote counterpart. If you want to integrate the remote changes,
 hint: use 'git pull' before pushing again.
 hint: See the 'Note about fast-forwards' in 'git push --help' for details.
-- 2026-06-05T20:48:14+00:00 **status**: Updated STATUS.md and STATUS.html
-- 2026-06-05T20:49:04+00:00 **worklane_created**: Fix failing tests from run 226
-- 2026-06-05T20:49:04+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: harness/idle-alert-ended-agents
-- 2026-06-05T20:49:04+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: harness/idle-alert-missing-window-undelivered-assignment
-- 2026-06-05T20:49:04+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: harness/idle-alert-auditor-spawn-storm
-- 2026-06-05T20:49:04+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-05T21:03:15+00:00 **status**: Updated STATUS.md and STATUS.html
+- 2026-06-05T21:04:04+00:00 **worklane_created**: Fix failing tests from run 227
+- 2026-06-05T21:04:04+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: harness/idle-alert-ended-agents
+- 2026-06-05T21:04:04+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: harness/idle-alert-missing-window-undelivered-assignment
+- 2026-06-05T21:04:04+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: harness/idle-alert-auditor-spawn-storm
+- 2026-06-05T21:04:04+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-05T21:18:01+00:00 **stop**: Stopped harness runtime
+- 2026-06-05T21:18:02+00:00 **mcp**: Harness MCP tools exposed to Codex workers
+- 2026-06-05T21:18:02+00:00 **tmux**: Support windows ready
 
 ## Next steps
-Move next worklane forward: Fix failing tests from run 226
+Move next worklane forward: Fix failing tests from run 227
