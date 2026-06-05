@@ -72174,8 +72174,20 @@ echo " 10" < "zeta";
             .expect("known binary string comparison pairs should lower through C fallback");
 
         assert!(
-            c_source.contains("strcmp("),
-            "numeric-vs-nonnumeric, leading-numeric, and sign/dot-prefixed nonnumeric pairs should lower through generated-C binary string comparison:\n{c_source}"
+            c_source.contains("extern phpc_NativeValueOperationResult phpc_native_value_compare_result"),
+            "numeric-vs-nonnumeric, leading-numeric, and sign/dot-prefixed nonnumeric pairs should lower through the shared generated-C value comparison ABI:\n{c_source}"
+        );
+        assert!(
+            c_source
+                .matches(" = phpc_native_value_compare_result(")
+                .count()
+                >= 3,
+            "string comparison pairs should share value-result comparison materialization:\n{c_source}"
+        );
+        assert!(
+            c_source.contains("PHPC_NATIVE_VALUE_COMPARISON_LT")
+                && c_source.contains("PHPC_NATIVE_VALUE_COMPARISON_NE"),
+            "generated-C string comparisons should preserve comparison operation tags:\n{c_source}"
         );
 
         for source in [
@@ -72185,10 +72197,13 @@ echo " 10" < "zeta";
             "<?php\necho \".5\" < \"5.\";\n",
         ] {
             let program = crate::parse(source).expect("parse numeric string comparison source");
-            let error = emit_c_source_for_assembly(&program).unwrap_err();
-
-            assert_eq!(error.phase, Phase::Codegen);
-            assert_eq!(error.message, assembly_comparison_rejection());
+            let numeric_source = emit_c_source_for_assembly(&program).expect(
+                "numeric string comparison should lower through generated-C value comparison",
+            );
+            assert!(
+                numeric_source.contains(" = phpc_native_value_compare_result("),
+                "numeric string comparison should use the same value comparison ABI:\n{numeric_source}"
+            );
         }
     }
 
@@ -75706,8 +75721,15 @@ echo $call("Ada");
 
     #[test]
     fn c_assembly_non_local_assignment_families_share_assignment_owner_boundary() {
+        let dynamic_property_program = crate::parse("<?php\n$box->$name = 1;\n").unwrap();
+        let dynamic_property_source = emit_c_source_for_assembly(&dynamic_property_program)
+            .expect("direct dynamic object-property assignment should lower through generated C");
+        assert!(
+            dynamic_property_source.contains("object_property_mutation_operation"),
+            "direct dynamic object-property assignment should use the shared object-property mutation ABI:\n{dynamic_property_source}"
+        );
+
         for source in [
-            "<?php\n$box->$name = 1;\n",
             "<?php\n$box->child->name = 1;\n",
             "<?php\nRoot::$name = 1;\n",
             "<?php\nself::$name = 1;\n",

@@ -1,5 +1,44 @@
 # Progress Log
 
+## 2026-06-05
+
+Implemented:
+
+- Refreshed stale `php_runtime` runtime-ABI assertions for byte-backed PHP
+  string values, native comparison materialization, core class-table metadata,
+  and reference-held typed-property diagnostics, and isolated the test-only
+  `NativeCallArgumentsHandle` free counter per Rust test thread instead of
+  sharing one process-global atomic. The counter change removes parallel-test
+  interference from lookup-plus-invoke, closure invoke, constructor invoke, and
+  receiver magic-call helper assertions while leaving the runtime ABI unchanged
+  outside `cfg(test)`. Added a focused guard proving the counter is
+  thread-local. Focused checks passed:
+  `cargo test -q -p php_runtime --lib
+  class_table_can_bootstrap_core_exception_metadata`,
+  `cargo test -q -p php_runtime --lib native_string`,
+  `cargo test -q -p php_runtime --lib native_comparison`,
+  `cargo test -q -p php_runtime --lib static_property`,
+  `cargo test -q -p php_runtime --lib
+  call_arguments_free_count_is_thread_local_for_parallel_tests`,
+  `cargo test -q -p php_runtime --lib
+  native_lookup_plus_invoke_helpers_free_arguments_once_across_target_families`,
+  `cargo test -q -p php_runtime --lib
+  native_closure_invoke_helpers_bridge_call_arguments_to_call_results`,
+  `cargo test -q -p php_runtime --lib
+  native_constructor_allocation_invoke_carrier_owns_receiver_arguments_and_diagnostics`,
+  `cargo test -q -p php_runtime --lib
+  native_method_lookup_plus_invoke_dispatches_missing_and_inaccessible_methods_to_magic_call`,
+  `cargo check -q -p php_runtime`, and `git diff --check`. This clears the
+  run221 `tools/run-tests.sh` `php_runtime --lib` blocker without changing PHP
+  support-matrix behavior.
+
+- Refreshed stale generated-C assembly-fallback unit assertions exposed after
+  the runtime gate was fixed: string comparisons now assert the already-shared
+  native value comparison ABI, and direct dynamic object-property assignment
+  now asserts the existing object-property mutation ABI while non-direct and
+  static owner families remain rejected. No new production lowering path was
+  added.
+
 ## 2026-05-27
 
 Implemented:
