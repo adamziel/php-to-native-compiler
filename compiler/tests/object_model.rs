@@ -88,6 +88,7 @@ echo "ready\n";
             "DivisionByZeroError",
             "RuntimeException",
             "OutOfRangeException",
+            "UnexpectedValueException",
             "OutOfBoundsException",
             "Directory",
             "SplFixedArray",
@@ -138,6 +139,11 @@ echo "ready\n";
     let out_of_range_exception = classes.lookup_class("OutOfRangeException").unwrap();
     assert_eq!(
         out_of_range_exception.parent_id(),
+        Some(runtime_exception.id())
+    );
+    let unexpected_value_exception = classes.lookup_class("UnexpectedValueException").unwrap();
+    assert_eq!(
+        unexpected_value_exception.parent_id(),
         Some(runtime_exception.id())
     );
     let out_of_bounds_exception = classes.lookup_class("OutOfBoundsException").unwrap();

@@ -79278,9 +79278,12 @@ mod tests {
                 "DivisionByZeroError",
                 "RuntimeException",
                 "OutOfRangeException",
+                "UnexpectedValueException",
                 "OutOfBoundsException",
                 "Directory",
                 "SplFixedArray",
+                "ArrayObject",
+                "ArrayIterator",
                 "SplDoublyLinkedList",
                 "SplQueue",
                 "SplStack",
@@ -79541,7 +79544,14 @@ mod tests {
         assert_eq!(reflection_parameter.name(), "ReflectionParameter");
         assert_eq!(reflection_parameter.id().index(), 17);
         assert!(reflection_parameter.parent_id().is_none());
-        assert!(reflection_parameter.properties().is_empty());
+        assert_eq!(
+            reflection_parameter
+                .properties()
+                .iter()
+                .map(PhpPropertyMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["name"]
+        );
         assert!(reflection_parameter.method("getDefaultValue").is_some());
         assert!(reflection_parameter.method("getType").is_some());
         assert!(reflection_parameter.method("getAttributes").is_some());
@@ -79592,7 +79602,14 @@ mod tests {
         assert_eq!(reflection_property.name(), "ReflectionProperty");
         assert_eq!(reflection_property.id().index(), 22);
         assert!(reflection_property.parent_id().is_none());
-        assert!(reflection_property.properties().is_empty());
+        assert_eq!(
+            reflection_property
+                .properties()
+                .iter()
+                .map(PhpPropertyMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["name", "class"]
+        );
         assert!(reflection_property.constant("IS_PUBLIC").is_some());
         assert!(reflection_property.method("getDefaultValue").is_some());
         assert!(reflection_property.method("getAttributes").is_some());
@@ -79601,7 +79618,14 @@ mod tests {
         assert_eq!(reflection_class_constant.name(), "ReflectionClassConstant");
         assert_eq!(reflection_class_constant.id().index(), 23);
         assert!(reflection_class_constant.parent_id().is_none());
-        assert!(reflection_class_constant.properties().is_empty());
+        assert_eq!(
+            reflection_class_constant
+                .properties()
+                .iter()
+                .map(PhpPropertyMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["name", "class"]
+        );
         assert!(reflection_class_constant.constant("IS_PUBLIC").is_some());
         assert!(reflection_class_constant.method("getValue").is_some());
         assert!(reflection_class_constant.method("getAttributes").is_some());
@@ -79657,6 +79681,53 @@ mod tests {
         assert_eq!(runtime_exception.parent_id(), Some(exception.id()));
         assert!(runtime_exception.properties().is_empty());
         assert!(runtime_exception.methods().is_empty());
+
+        let out_of_range_exception = classes.lookup_class("outofrangeexception").unwrap();
+        assert_eq!(out_of_range_exception.name(), "OutOfRangeException");
+        assert_eq!(out_of_range_exception.id().index(), 31);
+        assert_eq!(
+            out_of_range_exception.parent_id(),
+            Some(runtime_exception.id())
+        );
+
+        let unexpected_value_exception = classes.lookup_class("unexpectedvalueexception").unwrap();
+        assert_eq!(
+            unexpected_value_exception.name(),
+            "UnexpectedValueException"
+        );
+        assert_eq!(unexpected_value_exception.id().index(), 32);
+        assert_eq!(
+            unexpected_value_exception.parent_id(),
+            Some(runtime_exception.id())
+        );
+
+        let out_of_bounds_exception = classes.lookup_class("outofboundsexception").unwrap();
+        assert_eq!(out_of_bounds_exception.name(), "OutOfBoundsException");
+        assert_eq!(out_of_bounds_exception.id().index(), 33);
+        assert_eq!(
+            out_of_bounds_exception.parent_id(),
+            Some(runtime_exception.id())
+        );
+
+        let array_object = classes.lookup_class("arrayobject").unwrap();
+        assert_eq!(array_object.name(), "ArrayObject");
+        assert_eq!(array_object.id().index(), 36);
+        assert!(array_object.method("getIterator").is_some());
+        assert!(array_object.constant("ARRAY_AS_PROPS").is_some());
+        assert_eq!(
+            array_object.property("storage").unwrap().visibility(),
+            Visibility::Private
+        );
+
+        let array_iterator = classes.lookup_class("arrayiterator").unwrap();
+        assert_eq!(array_iterator.name(), "ArrayIterator");
+        assert_eq!(array_iterator.id().index(), 37);
+        assert!(array_iterator.method("seek").is_some());
+        assert!(array_iterator.constant("STD_PROP_LIST").is_some());
+        assert_eq!(
+            array_iterator.property("storage").unwrap().visibility(),
+            Visibility::Private
+        );
     }
 
     #[test]
