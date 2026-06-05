@@ -2637,6 +2637,12 @@ lowering out of scope. Direct native `str_ends_with(...)` calls stop at a
 dedicated string-suffix codegen boundary before argument lowering or backend
 selection, while native function-table introspection can still see the known
 builtin name.
+`wordwrap()` is an interpreter-only bounded string wrapping builtin for
+current scalar/null string-convertible values. It uses byte-oriented widths,
+space/tab wrap points, existing `\n` hard breaks, non-empty scalar/null break
+strings, and the PHP `cut_long_words` switch, while broader whitespace,
+encoding, exact null deprecation diagnostics, and native lowering remain out
+of scope.
 `basename()` is an interpreter-only bounded lexical path builtin for Unix-style
 local path strings and an optional string suffix. It does not consult the
 filesystem and leaves Windows drive/UNC paths, stream wrappers, null-byte
@@ -3861,7 +3867,7 @@ the current ordered PHP array entries as positional values, not PHP 8 named
 argument semantics for string keys. A named internal-function slice re-enters
 the existing builtin dispatcher for `strlen`, `strtolower`, `trim`, `ltrim`,
 `rtrim`, `strcasecmp`, `strncmp`, `strncasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`,
-`strpos`, `substr`, `sprintf`, `implode`, `basename`, `dirname`, `defined`,
+`wordwrap`, `strpos`, `substr`, `sprintf`, `implode`, `basename`, `dirname`, `defined`,
 `function_exists`, `count`, `sizeof`, and `php_sapi_name`. Closure expressions also register a
 request-local `ReflectionFunction` metadata snapshot, parsed body, and captured
 by-value snapshot keyed by closure id, so direct closure invocation,

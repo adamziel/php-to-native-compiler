@@ -1,5 +1,24 @@
 # Progress Log
 
+## 2026-06-05
+
+Implemented:
+
+- Added a bounded interpreter-only `wordwrap()` standard string builtin.
+  Direct and string-valued dynamic calls now accept scalar/null string
+  operands, int-compatible widths, non-empty scalar/null break strings, and a
+  truthy/falsy `cut_long_words` flag. The byte-oriented wrapper uses space and
+  tab wrap points, preserves existing `\n` hard line breaks, removes selected
+  wrap whitespace, cuts long words only when requested, returns unchanged
+  strings for non-positive widths after validating the break string, exposes
+  function-table and `ReflectionFunction` metadata, and keeps native lowering
+  rejected beyond metadata introspection. Focused proof covers Rust
+  interpreter tests, compile-mode metadata folding/rejection, and the
+  `tests/fixtures/milestone2301` CLI fixture. Unsupported edge cases remain
+  broader whitespace classes, encoding/locale-sensitive wrapping, exact null
+  deprecation diagnostics, array/object/resource coercions, exact diagnostics
+  beyond the empty-break `ValueError`, and native lowering.
+
 ## 2026-05-27
 
 Implemented:

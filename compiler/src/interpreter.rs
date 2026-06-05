@@ -76051,6 +76051,7 @@ impl Interpreter {
             "get_html_translation_table" => call_get_html_translation_table(&args, span),
             "strip_tags" => call_strip_tags(&args, span),
             "nl2br" => call_nl2br(&args, span),
+            "wordwrap" => call_wordwrap(&args, span),
             "str_repeat" => call_str_repeat(&args, span),
             "str_pad" => call_str_pad(&args, span),
             "chunk_split" => call_chunk_split(&args, span),
@@ -89530,6 +89531,15 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_bool_param("use_xhtml", true),
             ],
         ),
+        "wordwrap" => (
+            "string",
+            vec![
+                reflection_internal_param("string", "string"),
+                reflection_internal_optional_int_param("width", 75),
+                reflection_internal_optional_string_param("break", "\n"),
+                reflection_internal_optional_bool_param("cut_long_words", false),
+            ],
+        ),
         "str_repeat" => (
             "string",
             vec![
@@ -92420,6 +92430,7 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         )
         | ("chunk_split()", "Argument #2 ($length) must be greater than 0")
         | ("str_split()", "Argument #2 ($length) must be greater than 0")
+        | ("wordwrap()", "Argument #3 ($break) cannot be empty")
         | ("parse_str()", "Argument #1 ($string) must not contain any null bytes")
         | ("strpbrk()", "Argument #2 ($characters) must be a non-empty string")
         | ("base_convert()", "Argument #2 ($from_base) must be between 2 and 36 (inclusive)")
@@ -92896,6 +92907,7 @@ fn is_builtin(name: &str) -> bool {
             | "get_html_translation_table"
             | "strip_tags"
             | "nl2br"
+            | "wordwrap"
             | "str_repeat"
             | "str_pad"
             | "chunk_split"
@@ -101789,6 +101801,168 @@ fn call_nl2br(args: &[Value], span: Span) -> CompileResult<Value> {
     }
 
     Ok(interpreter_value_from_php_string_bytes(output))
+}
+
+fn call_wordwrap(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(1..=4).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "wordwrap()",
+                ArityExpectation::Between { min: 1, max: 4 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let value = string_compare_argument_bytes("wordwrap()", "string", &args[0], span)?;
+    let width = match args.get(1) {
+        Some(width) => php_internal_int_argument("wordwrap()", 2, "width", width, span)?,
+        None => 75,
+    };
+    let break_bytes = match args.get(2) {
+        Some(value) => string_compare_argument_bytes("wordwrap()", "break", value, span)?,
+        None => b"\n".to_vec(),
+    };
+    if break_bytes.is_empty() {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call("wordwrap()", "Argument #3 ($break) cannot be empty"),
+        ));
+    }
+    let cut_long_words = match args.get(3) {
+        Some(Value::Array(_)) => {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "wordwrap()",
+                    "Argument #4 ($cut_long_words) must be of type bool, array given",
+                ),
+            ));
+        }
+        Some(value) => value.is_truthy(),
+        None => false,
+    };
+
+    if width <= 0 || value.is_empty() {
+        return Ok(interpreter_value_from_php_string_bytes(value));
+    }
+
+    let width = usize::try_from(width).map_err(|_| {
+        runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "wordwrap()",
+                "width is outside the current positive integer subset",
+            ),
+        )
+    })?;
+    let output = wordwrap_bytes(&value, width, &break_bytes, cut_long_words, span)?;
+    Ok(interpreter_value_from_php_string_bytes(output))
+}
+
+fn wordwrap_output_push(output: &mut Vec<u8>, bytes: &[u8], span: Span) -> CompileResult<()> {
+    let next_len = output.len().checked_add(bytes.len()).ok_or_else(|| {
+        runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "wordwrap()",
+                "result length overflows the current subset",
+            ),
+        )
+    })?;
+    if next_len > PHP_STANDARD_STRING_MEMORY_LIMIT_BYTES {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "wordwrap()",
+                "result length above the standard string memory limit is not supported in the current subset",
+            ),
+        ));
+    }
+    output.extend_from_slice(bytes);
+    Ok(())
+}
+
+fn wordwrap_is_break_space(byte: u8) -> bool {
+    matches!(byte, b' ' | b'\t')
+}
+
+fn wordwrap_bytes(
+    value: &[u8],
+    width: usize,
+    break_bytes: &[u8],
+    cut_long_words: bool,
+    span: Span,
+) -> CompileResult<Vec<u8>> {
+    let mut output = Vec::with_capacity(value.len().min(PHP_STANDARD_STRING_MEMORY_LIMIT_BYTES));
+    let mut line_start = 0;
+    while line_start < value.len() {
+        let line_end = value[line_start..]
+            .iter()
+            .position(|byte| *byte == b'\n')
+            .map(|offset| line_start + offset)
+            .unwrap_or(value.len());
+        wordwrap_line_bytes(
+            &value[line_start..line_end],
+            width,
+            break_bytes,
+            cut_long_words,
+            &mut output,
+            span,
+        )?;
+        if line_end < value.len() {
+            wordwrap_output_push(&mut output, b"\n", span)?;
+            line_start = line_end + 1;
+        } else {
+            break;
+        }
+    }
+    Ok(output)
+}
+
+fn wordwrap_line_bytes(
+    line: &[u8],
+    width: usize,
+    break_bytes: &[u8],
+    cut_long_words: bool,
+    output: &mut Vec<u8>,
+    span: Span,
+) -> CompileResult<()> {
+    let mut start = 0;
+    while line.len().saturating_sub(start) > width {
+        let search_end = (start + width).min(line.len() - 1);
+        let break_at = (start..=search_end)
+            .rev()
+            .find(|index| *index > start && wordwrap_is_break_space(line[*index]));
+        if let Some(index) = break_at {
+            wordwrap_output_push(output, &line[start..index], span)?;
+            wordwrap_output_push(output, break_bytes, span)?;
+            start = index + 1;
+            continue;
+        }
+
+        if cut_long_words {
+            let end = start + width;
+            wordwrap_output_push(output, &line[start..end], span)?;
+            wordwrap_output_push(output, break_bytes, span)?;
+            start = end;
+            continue;
+        }
+
+        let next_space = line[start + width + 1..]
+            .iter()
+            .position(|byte| wordwrap_is_break_space(*byte))
+            .map(|offset| start + width + 1 + offset);
+        let Some(index) = next_space else {
+            wordwrap_output_push(output, &line[start..], span)?;
+            return Ok(());
+        };
+        wordwrap_output_push(output, &line[start..index], span)?;
+        wordwrap_output_push(output, break_bytes, span)?;
+        start = index + 1;
+    }
+    wordwrap_output_push(output, &line[start..], span)
 }
 
 fn call_str_repeat(args: &[Value], span: Span) -> CompileResult<Value> {
