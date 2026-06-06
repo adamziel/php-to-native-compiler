@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-06T12:13:34+00:00
+Last generated: 2026-06-06T12:28:35+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -58,8 +58,10 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-35 | Developer | crash | developer-35 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-35 |
 | developer-36 | Developer | running | developer-36 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-36 |
 | developer-37 | Developer | stopped | developer-37 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-37 |
-| developer-38 | Developer | running | developer-38 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-38 |
+| developer-38 | Developer | stopped | developer-38 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-38 |
+| developer-39 | Developer | stopped | developer-39 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-39 |
 | developer-4 | Developer | stopped | developer-4 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-4 |
+| developer-40 | Developer | running | developer-40 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-40 |
 | developer-5 | Developer | stopped | developer-5 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-5 |
 | developer-6 | Developer | stopped | developer-6 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-6 |
 | developer-7 | Developer | stopped | developer-7 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-7 |
@@ -73,6 +75,9 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1534 | Provide next sanctioned Developer card after superseded lane 12 for developer-40 | Developer | implementation | planned | queued |  | 0.0 |
+| 1533 | Resolve integration failure for card #11: developer-43 focused standard-library compatibility slice | Conflict Resolver | integration-support | planned | queued |  | 0.0 |
+| 1532 | Resolve integration failure for card #10: developer-40 focused PHP compatibility slice | Conflict Resolver | integration-support | planned | queued |  | 0.0 |
 | 1531 | Resolve integration failure for card #9: Support short echo tags in phpc run | Conflict Resolver | integration-support | planned | queued |  | 0.0 |
 | 1530 | Resolve card 1527 lane 1486 runtime/docs merge conflicts | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
 | 1529 | Provide next sanctioned Developer lane after developer-35 capacity check | Developer | implementation | planned | queued |  | 0.0 |
@@ -80,35 +85,26 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | 1527 | Resolve integration failure for card #1486: Fix global test suite failures | Conflict Resolver | integration-support | planned | queued |  | 0.0 |
 | 1526 | Provide next sanctioned Developer lane after developer-34 capacity check | Developer | implementation | planned | queued |  | 0.0 |
 | 1525 | Assign fresh sanctioned Developer card after superseded lane 10 | Developer | implementation | planned | queued |  | 0.0 |
-| 1524 | Provide next narrow Developer lane after developer-33 capacity check | Developer | implementation | planned | queued |  | 0.0 |
-| 1523 | Fix global test suite failures | Developer | implementation | done | stale |  | 0.0 |
-| 1522 | Fix global test suite failures | Developer | implementation | done | stale |  | 0.0 |
 
 ## Tests
 failed — tools/run-tests.sh (error=0, failed=1, passed=0, skipped=0)
 
 ## Resource samples
-Latest: CPU 3.62%, RAM 17.56%, disk free 22.02 GB.
+Latest: CPU 7.34%, RAM 18.72%, disk free 21.0 GB.
 
 ## Recent events
-- 2026-06-06T12:13:10+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-06T12:13:15+00:00 **worklane_deduplicated**: Updated existing failing-test card#1486 from run 9809
-- 2026-06-06T12:13:15+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-06T12:13:21+00:00 **worklane_deduplicated**: Updated existing failing-test card#1486 from run 9810
-- 2026-06-06T12:13:21+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-06T12:13:26+00:00 **worklane_deduplicated**: Updated existing failing-test card#1486 from run 9811
-- 2026-06-06T12:13:26+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-06T12:13:31+00:00 **progress_stalled**: PROGRESS STALLED: metric has not increased for 30 minutes.
-- 2026-06-06T12:13:31+00:00 **coordinator_prompt_deferred**: PROGRESS STALLED: metric has not increased for 30 minutes. Reorganize work so progress resumes.
-- 2026-06-06T12:13:32+00:00 **worklane_deduplicated**: Updated existing failing-test card#1486 from run 9812
-- 2026-06-06T12:13:32+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-06T12:13:32+00:00 **status_publish_failed**: Committed status files but failed to push: To https://github.com/adamziel/php-to-native-compiler.git
- ! [rejected]          HEAD -> master (non-fast-forward)
-error: failed to push some refs to 'https://github.com/adamziel/php-to-native-compiler.git'
-hint: Updates were rejected because the tip of your current branch is behind
-hint: its remote counterpart. If you want to integrate the remote changes,
-hint: use 'git pull' before pushing again.
-hint: See the 'Note about fast-forwards' in 'git push --help' for details.
+- 2026-06-06T12:28:04+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-06T12:28:10+00:00 **worklane_deduplicated**: Updated existing failing-test card#1486 from run 9973
+- 2026-06-06T12:28:10+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-06T12:28:15+00:00 **worklane_deduplicated**: Updated existing failing-test card#1486 from run 9974
+- 2026-06-06T12:28:15+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-06T12:28:20+00:00 **worklane_deduplicated**: Updated existing failing-test card#1486 from run 9975
+- 2026-06-06T12:28:20+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-06T12:28:26+00:00 **worklane_deduplicated**: Updated existing failing-test card#1486 from run 9976
+- 2026-06-06T12:28:26+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-06T12:28:31+00:00 **worklane_deduplicated**: Updated existing failing-test card#1486 from run 9977
+- 2026-06-06T12:28:31+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-06T12:28:34+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
 
 ## Next steps
-Move next worklane forward: Resolve integration failure for card #9: Support short echo tags in phpc run
+Move next worklane forward: Provide next sanctioned Developer card after superseded lane 12 for developer-40
