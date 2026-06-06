@@ -2688,6 +2688,13 @@ scalar/null string-convertible search, replacement, and subject values. Native
 function-table introspection recognizes the name, while direct native calls
 still reject until string allocation, array forms, count-output references, and
 diagnostics have a lowered runtime model.
+`urlencode()`, `rawurlencode()`, `urldecode()`, and `rawurldecode()` are
+interpreter-only byte-string codec builtins over scalar/null string-convertible
+values. Encoding runs on runtime echo bytes; decoding preserves malformed
+percent escapes as literal bytes and returns the runtime binary-string variant
+when decoded bytes are not valid UTF-8. Native function-table introspection
+recognizes these names, while direct native calls still reject until native
+string allocation, binary result ownership, and exact diagnostics are modeled.
 `strtok()` is an interpreter-only stateful tokenizer with one saved byte cursor
 per interpreter execution. It accepts scalar/null string-convertible input and
 delimiter values, preserves embedded NUL delimiter behavior for current

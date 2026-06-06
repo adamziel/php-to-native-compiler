@@ -76097,6 +76097,9 @@ impl Interpreter {
                 ),
             )),
             "urlencode" => call_urlencode(&args, span),
+            "rawurlencode" => call_rawurlencode(&args, span),
+            "urldecode" => call_urldecode(&args, span),
+            "rawurldecode" => call_rawurldecode(&args, span),
             "preg_match" => call_preg_match(&args, span),
             "preg_replace" => call_preg_replace(&args, span),
             "preg_split" => call_preg_split(&args, span),
@@ -89706,6 +89709,14 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_untyped_reference_param("result"),
             ],
         ),
+        "urlencode" | "rawurlencode" => (
+            "string",
+            vec![reflection_internal_param("string", "string")],
+        ),
+        "urldecode" | "rawurldecode" => (
+            "string",
+            vec![reflection_internal_param("string", "string")],
+        ),
         "json_encode" => (
             "string|false",
             vec![reflection_internal_param("value", "mixed")],
@@ -92937,6 +92948,9 @@ fn is_builtin(name: &str) -> bool {
             | "str_getcsv"
             | "parse_str"
             | "urlencode"
+            | "rawurlencode"
+            | "urldecode"
+            | "rawurldecode"
             | "preg_match"
             | "preg_replace"
             | "preg_split"
@@ -105632,13 +105646,56 @@ fn call_str_replace(args: &[Value], span: Span) -> CompileResult<Value> {
 
 fn call_urlencode(args: &[Value], span: Span) -> CompileResult<Value> {
     expect_arity("urlencode", args, 1, span)?;
-    let value = string_contains_argument("urlencode()", "string", &args[0], span)?;
+    let value = url_bytes_argument("urlencode()", "string", &args[0], span)?;
     Ok(Value::String(form_urlencode_component(&value)))
 }
 
-fn form_urlencode_component(value: &str) -> String {
+fn call_rawurlencode(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("rawurlencode", args, 1, span)?;
+    let value = url_bytes_argument("rawurlencode()", "string", &args[0], span)?;
+    Ok(Value::String(raw_urlencode_component(&value)))
+}
+
+fn call_urldecode(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("urldecode", args, 1, span)?;
+    let value = url_bytes_argument("urldecode()", "string", &args[0], span)?;
+    Ok(interpreter_value_from_php_string_bytes(
+        percent_decode_url_component(&value, true),
+    ))
+}
+
+fn call_rawurldecode(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("rawurldecode", args, 1, span)?;
+    let value = url_bytes_argument("rawurldecode()", "string", &args[0], span)?;
+    Ok(interpreter_value_from_php_string_bytes(
+        percent_decode_url_component(&value, false),
+    ))
+}
+
+fn url_bytes_argument(
+    function: &str,
+    label: &str,
+    value: &Value,
+    span: Span,
+) -> CompileResult<Vec<u8>> {
+    if matches!(value, Value::Array(_)) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!("{label} argument arrays are not implemented in the current subset"),
+            ),
+        ));
+    }
+
+    value
+        .try_echo_bytes()
+        .map_err(|error| runtime_error(span, error))
+}
+
+fn form_urlencode_component(value: &[u8]) -> String {
     let mut encoded = String::with_capacity(value.len());
-    for byte in value.bytes() {
+    for &byte in value {
         if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.') {
             encoded.push(byte as char);
         } else if byte == b' ' {
@@ -105648,6 +105705,51 @@ fn form_urlencode_component(value: &str) -> String {
         }
     }
     encoded
+}
+
+fn raw_urlencode_component(value: &[u8]) -> String {
+    let mut encoded = String::with_capacity(value.len());
+    for &byte in value {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~') {
+            encoded.push(byte as char);
+        } else {
+            encoded.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    encoded
+}
+
+fn percent_decode_url_component(value: &[u8], plus_as_space: bool) -> Vec<u8> {
+    let mut decoded = Vec::with_capacity(value.len());
+    let mut index = 0;
+    while index < value.len() {
+        match value[index] {
+            b'+' if plus_as_space => {
+                decoded.push(b' ');
+                index += 1;
+            }
+            b'%' if index + 2 < value.len() => {
+                match (
+                    hex_digit_value(value[index + 1]),
+                    hex_digit_value(value[index + 2]),
+                ) {
+                    (Some(high), Some(low)) => {
+                        decoded.push((high << 4) | low);
+                        index += 3;
+                    }
+                    _ => {
+                        decoded.push(value[index]);
+                        index += 1;
+                    }
+                }
+            }
+            byte => {
+                decoded.push(byte);
+                index += 1;
+            }
+        }
+    }
+    decoded
 }
 
 fn str_replace_scalar_result(

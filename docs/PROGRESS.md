@@ -1,5 +1,21 @@
 # Progress Log
 
+## 2026-06-06
+
+Implemented:
+
+- Added interpreter URL codec builtins for `urlencode()`, `rawurlencode()`,
+  `urldecode()`, and `rawurldecode()` over the current scalar/null byte-string
+  subset. Encoding now distinguishes form-style space/tilde handling from RFC
+  3986 handling; decoding preserves malformed percent escapes literally,
+  maps `+` to space only for `urldecode()`, and returns the runtime
+  binary-string value when decoded bytes are not valid UTF-8. Function-table
+  capability checks, string-valued dynamic calls, `ReflectionFunction`
+  metadata, `phpc compile --emit-ir` function metadata folding, and a CLI
+  fixture exercise path cover the new slice. Arrays, object/resource
+  coercions, exact TypeError objects/text, disabled-function policy, and
+  native lowering beyond function-table introspection remain unsupported.
+
 ## 2026-05-27
 
 Implemented:
