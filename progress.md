@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-06T13:28:38+00:00
+Last generated: 2026-06-06T13:43:39+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -16,18 +16,19 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | auditor-3 | Auditor | stopped | auditor-3 |  |
 | auditor-4 | Auditor | stopped | auditor-4 |  |
 | auditor-5 | Auditor | crash | auditor-5 |  |
-| auditor-6 | Auditor | running | auditor-6 |  |
+| auditor-6 | Auditor | crash | auditor-6 |  |
 | conflict-resolver-1 | Conflict Resolver | crash | conflict-resolver-1 |  |
 | conflict-resolver-2 | Conflict Resolver | crash | conflict-resolver-2 |  |
 | conflict-resolver-3 | Conflict Resolver | crash | conflict-resolver-3 |  |
-| conflict-resolver-4 | Conflict Resolver | running | conflict-resolver-4 |  |
+| conflict-resolver-4 | Conflict Resolver | crash | conflict-resolver-4 |  |
 | coordinator-1 | Coordinator | stopped | coordinator-1 |  |
 | coordinator-2 | Coordinator | crash | coordinator-2 |  |
 | coordinator-3 | Coordinator | crash | coordinator-3 |  |
 | coordinator-4 | Coordinator | stopped | coordinator-4 |  |
 | coordinator-5 | Coordinator | stopped | coordinator-5 |  |
 | coordinator-6 | Coordinator | crash | coordinator-6 |  |
-| coordinator-7 | Coordinator | running | coordinator-7 |  |
+| coordinator-7 | Coordinator | crash | coordinator-7 |  |
+| coordinator-8 | Coordinator | running | coordinator-8 |  |
 | developer-1 | Developer | stopped | developer-1 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-1 |
 | developer-10 | Developer | stopped | developer-10 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-10 |
 | developer-11 | Developer | stopped | developer-11 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-11 |
@@ -57,12 +58,14 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-33 | Developer | crash | developer-33 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-33 |
 | developer-34 | Developer | crash | developer-34 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-34 |
 | developer-35 | Developer | crash | developer-35 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-35 |
-| developer-36 | Developer | running | developer-36 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-36 |
+| developer-36 | Developer | crash | developer-36 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-36 |
 | developer-37 | Developer | stopped | developer-37 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-37 |
 | developer-38 | Developer | stopped | developer-38 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-38 |
 | developer-39 | Developer | stopped | developer-39 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-39 |
 | developer-4 | Developer | stopped | developer-4 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-4 |
-| developer-40 | Developer | running | developer-40 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-40 |
+| developer-40 | Developer | crash | developer-40 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-40 |
+| developer-41 | Developer | running | developer-41 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-41 |
+| developer-42 | Developer | running | developer-42 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-42 |
 | developer-5 | Developer | stopped | developer-5 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-5 |
 | developer-6 | Developer | stopped | developer-6 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-6 |
 | developer-7 | Developer | stopped | developer-7 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-7 |
@@ -72,40 +75,41 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | integrator-2 | Integrator | stopped | integrator-2 |  |
 | integrator-3 | Integrator | stopped | integrator-3 |  |
 | integrator-4 | Integrator | crash | integrator-4 |  |
+| integrator-5 | Integrator | success | integrator-5 |  |
 
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1545 | Fix global test suite failures | Developer | implementation | planned | queued |  | 0.0 |
+| 1544 | Provide next sanctioned Developer card after superseded lane 12 for developer-42 | Developer | implementation | planned | queued |  | 0.0 |
+| 1543 | Retry resolved lane 1486 integration before feature conflict lanes | Integrator | integration-support | done | done |  | 0.0 |
+| 1542 | Provide next sanctioned Developer card after developer-41 superseded lane 7 | Developer | implementation | planned | queued |  | 0.0 |
 | 1541 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
 | 1540 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
 | 1539 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
-| 1538 | Investigate scheduler alert | Auditor | integration-support | development | assigned |  | 0.0 |
+| 1538 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
 | 1537 | Reorganize developer-36 idle alert into measurable work | Coordinator | control-plane | planned | queued |  | 0.0 |
 | 1536 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
-| 1535 | Investigate scheduler alert | Auditor | integration-support | done | done |  | 0.0 |
-| 1534 | Provide next sanctioned Developer card after superseded lane 12 for developer-40 | Developer | implementation | planned | queued |  | 0.0 |
-| 1533 | Resolve integration failure for card #11: developer-43 focused standard-library compatibility slice | Conflict Resolver | integration-support | planned | queued |  | 0.0 |
-| 1532 | Resolve integration failure for card #10: developer-40 focused PHP compatibility slice | Conflict Resolver | integration-support | planned | queued |  | 0.0 |
 
 ## Tests
 failed — tools/run-tests.sh (error=0, failed=1, passed=0, skipped=0)
 
 ## Resource samples
-Latest: CPU 6.53%, RAM 17.64%, disk free 21.66 GB.
+Latest: CPU 2.12%, RAM 18.69%, disk free 21.65 GB.
 
 ## Recent events
-- 2026-06-06T13:28:10+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-06T13:28:14+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-06T13:28:16+00:00 **worklane_deduplicated**: Updated existing failing-test card#1486 from run 10635
-- 2026-06-06T13:28:16+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-06T13:28:21+00:00 **worklane_deduplicated**: Updated existing failing-test card#1486 from run 10636
-- 2026-06-06T13:28:21+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-06T13:28:27+00:00 **worklane_deduplicated**: Updated existing failing-test card#1486 from run 10637
-- 2026-06-06T13:28:27+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-06T13:28:32+00:00 **worklane_deduplicated**: Updated existing failing-test card#1486 from run 10638
-- 2026-06-06T13:28:32+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-06T13:28:37+00:00 **worklane_deduplicated**: Updated existing failing-test card#1486 from run 10639
-- 2026-06-06T13:28:37+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-06T13:43:20+00:00 **worklane_deduplicated**: Updated existing failing-test card#1545 from run 10801
+- 2026-06-06T13:43:20+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-06T13:43:26+00:00 **worklane_deduplicated**: Updated existing failing-test card#1545 from run 10802
+- 2026-06-06T13:43:26+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-06T13:43:31+00:00 **worklane_deduplicated**: Updated existing failing-test card#1545 from run 10803
+- 2026-06-06T13:43:31+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-06T13:43:32+00:00 **janitor**: Cleaned 0 tmp entries and 0 old prompt files
+- 2026-06-06T13:43:37+00:00 **worklane_deduplicated**: Updated existing failing-test card#1545 from run 10804
+- 2026-06-06T13:43:37+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-06T13:43:37+00:00 **progress_stalled**: PROGRESS STALLED: metric has not increased for 30 minutes.
+- 2026-06-06T13:43:37+00:00 **worklane_assigned**: Assigned worklane#1462 to coordinator-8
+- 2026-06-06T13:43:37+00:00 **coordinator_prompt**: PROGRESS STALLED: metric has not increased for 30 minutes. Reorganize work so progress resumes.
 
 ## Next steps
-Move next worklane forward: Investigate scheduler alert
+Move next worklane forward: Fix global test suite failures
