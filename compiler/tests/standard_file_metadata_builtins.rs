@@ -2,6 +2,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, MutexGuard, OnceLock};
 
 use php_compiler::run_source;
 
@@ -150,6 +151,340 @@ var_dump(touch(""));
     assert_eq!(execution.exit_code, 0);
 }
 
+#[test]
+fn file_metadata_builtins_report_type_errors_for_non_string_paths() {
+    let fixture = TempFsFixture::new("metadata-type-errors");
+    let file = php_string(&fixture.root.join("resource.txt"));
+    let source = format!(
+        r#"<?php
+file_put_contents({file}, "payload");
+foreach (["stat", "lstat", "filesize", "fileatime", "filemtime", "filectime", "fileinode", "fileowner", "filegroup", "fileperms", "filetype"] as $function) {{
+    try {{
+        $function([]);
+        echo $function, ":miss\n";
+    }} catch (TypeError $e) {{
+        echo $function, ":", $e->getMessage(), "\n";
+    }}
+}}
+$closure = function () {{}};
+try {{
+    filemtime($closure);
+}} catch (TypeError $e) {{
+    echo "closure:", $e->getMessage(), "\n";
+}}
+$handle = fopen({file}, "r");
+try {{
+    filectime($handle);
+}} catch (TypeError $e) {{
+    echo "resource:", $e->getMessage(), "\n";
+}}
+fclose($handle);
+"#,
+        file = file
+    );
+
+    let execution = run_source(&source).unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "stat:stat(): Argument #1 ($filename) must be of type string, array given\n",
+            "lstat:lstat(): Argument #1 ($filename) must be of type string, array given\n",
+            "filesize:filesize(): Argument #1 ($filename) must be of type string, array given\n",
+            "fileatime:fileatime(): Argument #1 ($filename) must be of type string, array given\n",
+            "filemtime:filemtime(): Argument #1 ($filename) must be of type string, array given\n",
+            "filectime:filectime(): Argument #1 ($filename) must be of type string, array given\n",
+            "fileinode:fileinode(): Argument #1 ($filename) must be of type string, array given\n",
+            "fileowner:fileowner(): Argument #1 ($filename) must be of type string, array given\n",
+            "filegroup:filegroup(): Argument #1 ($filename) must be of type string, array given\n",
+            "fileperms:fileperms(): Argument #1 ($filename) must be of type string, array given\n",
+            "filetype:filetype(): Argument #1 ($filename) must be of type string, array given\n",
+            "closure:filemtime(): Argument #1 ($filename) must be of type string, Closure given\n",
+            "resource:filectime(): Argument #1 ($filename) must be of type string, resource given\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn file_metadata_builtins_reject_trailing_slash_regular_file_paths() {
+    let fixture = TempFsFixture::new("metadata-trailing-slash");
+    let file = fixture.root.join("file.txt");
+    fs::write(&file, "payload").expect("fixture file is created");
+    let file = php_string(&file);
+    let source = format!(
+        r#"<?php
+$file = {file};
+var_dump(fileowner($file . "/"));
+var_dump(filegroup($file . "/"));
+var_dump(fileinode($file . "/"));
+var_dump(fileperms($file . "/"));
+"#,
+        file = file
+    );
+
+    let execution = run_source(&source).unwrap();
+
+    for function in ["fileowner", "filegroup", "fileinode", "fileperms"] {
+        assert!(
+            execution
+                .stdout
+                .contains(&format!("Warning: {function}(): stat failed for ")),
+            "{}",
+            execution.stdout
+        );
+    }
+    assert_eq!(execution.stdout.matches("bool(false)").count(), 4);
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn open_basedir_denials_use_php_display_warning_shape() {
+    let _cwd_guard = cwd_guard();
+    let fixture = TempFsFixture::new("open-basedir-display");
+    fs::create_dir(fixture.root.join("allowed")).expect("allowed directory is created");
+    fs::create_dir(fixture.root.join("denied")).expect("denied directory is created");
+    fs::write(fixture.root.join("denied/file.txt"), "payload")
+        .expect("denied fixture file is created");
+    let root = php_string(&fixture.root);
+    let source = format!(
+        r#"<?php
+$root = {root};
+$allowed = $root . "/allowed";
+$denied = "../denied/file.txt";
+chdir($allowed);
+ini_set("open_basedir", ".");
+var_dump(filetype($denied));
+var_dump(lstat($denied));
+var_dump(fileatime($denied));
+var_dump(touch($denied));
+"#,
+        root = root
+    );
+
+    let execution = run_source(&source).unwrap();
+
+    assert_eq!(
+        execution
+            .stdout
+            .matches(
+                "open_basedir restriction in effect. File(../denied/file.txt) is not within the allowed path(s): (.)"
+            )
+            .count(),
+        4,
+        "{}",
+        execution.stdout
+    );
+    assert_eq!(execution.stdout.matches("bool(false)").count(), 4);
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn file_metadata_open_basedir_rejections_use_php_shaped_warning_text() {
+    let fixture = TempFsFixture::new("metadata-basedir");
+    let root = php_string(&fixture.root);
+    let source = format!(
+        r#"<?php
+$root = {root};
+$allowed = $root . "/allowed";
+$denied = $root . "/denied";
+mkdir($allowed);
+mkdir($denied);
+file_put_contents($allowed . "/ok.txt", "ok");
+file_put_contents($denied . "/bad.txt", "bad");
+ini_set("open_basedir", $allowed);
+var_dump(fileowner($denied . "/bad.txt"));
+var_dump(filegroup($denied . "/bad.txt"));
+var_dump(fileinode($denied . "/bad.txt"));
+var_dump(fileatime($denied . "/bad.txt"));
+var_dump(filectime($denied . "/bad.txt"));
+var_dump(is_executable($denied . "/bad.txt"));
+ini_set("open_basedir", "");
+unlink($allowed . "/ok.txt");
+unlink($denied . "/bad.txt");
+rmdir($allowed);
+rmdir($denied);
+"#,
+        root = root
+    );
+
+    let execution = run_source(&source).unwrap();
+
+    for function in [
+        "fileowner",
+        "filegroup",
+        "fileinode",
+        "fileatime",
+        "filectime",
+        "is_executable",
+    ] {
+        assert!(
+            execution.stdout.contains(&format!(
+                "Warning: {function}(): open_basedir restriction in effect. File("
+            )),
+            "{}",
+            execution.stdout
+        );
+        assert!(
+            execution
+                .stdout
+                .contains(") is not within the allowed path(s): ("),
+            "{}",
+            execution.stdout
+        );
+    }
+    assert_eq!(execution.stdout.matches("bool(false)").count(), 6);
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn chown_and_chgrp_missing_files_warn_return_false_and_continue() {
+    let fixture = TempFsFixture::new("ownership");
+    let missing = php_string(&fixture.root.join("missing.txt"));
+    let source = format!(
+        r#"<?php
+echo function_exists("chown") ? "chown" : "missing";
+echo ":" . (function_exists("chgrp") ? "chgrp" : "missing");
+var_dump(chown({missing}, 0));
+var_dump(chgrp({missing}, 0));
+echo "alive";
+"#,
+        missing = missing
+    );
+
+    let execution = run_source(&source).unwrap();
+
+    assert!(execution
+        .stdout
+        .starts_with("chown:chgrp\nWarning: chown(): No such file or directory"));
+    assert!(
+        execution
+            .stdout
+            .contains("Warning: chgrp(): No such file or directory"),
+        "{}",
+        execution.stdout
+    );
+    assert!(execution.stdout.ends_with("bool(false)\nalive"));
+    assert_eq!(execution.stdout.matches("bool(false)").count(), 2);
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn lchown_and_lchgrp_current_identity_rows_return_true_without_mutation() {
+    let fixture = TempFsFixture::new("link-ownership");
+    let root = php_string(&fixture.root);
+    let source = format!(
+        r#"<?php
+$root = {root};
+$file = $root . "/owned.txt";
+$link = $root . "/owned-link.txt";
+file_put_contents($file, "payload");
+var_dump(symlink($file, $link));
+$uid = posix_getuid();
+$gid = posix_getgid();
+echo function_exists("lchown") && is_callable("lchgrp") ? "known" : "missing";
+echo "|";
+var_dump(lchown($file, $uid));
+var_dump(lchgrp($file, $gid));
+var_dump(fileowner($link) === $uid);
+var_dump(filegroup($link) === $gid);
+var_dump(lchown($file, -5));
+var_dump(lchgrp($file, -5));
+"#,
+        root = root
+    );
+
+    let execution = run_source(&source).unwrap();
+
+    assert!(
+        execution
+            .stdout
+            .starts_with("bool(true)\nknown|bool(true)\nbool(true)\nbool(true)\nbool(true)"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution
+            .stdout
+            .contains("Warning: lchown(): Operation not permitted"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution
+            .stdout
+            .contains("Warning: lchgrp(): Operation not permitted"),
+        "{}",
+        execution.stdout
+    );
+    assert_eq!(execution.stdout.matches("bool(false)").count(), 2);
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn open_basedir_relative_parent_denials_cover_predicates_metadata_and_directories() {
+    let _cwd_guard = cwd_guard();
+    let fixture = TempFsFixture::new("metadata-basedir-relative-parent");
+    let ok = fixture.root.join("test/ok");
+    let bad = fixture.root.join("test/bad");
+    fs::create_dir_all(&ok).expect("allowed directory is created");
+    fs::create_dir_all(&bad).expect("denied directory is created");
+    fs::write(ok.join("ok.txt"), "ok").expect("allowed file is created");
+    fs::write(bad.join("bad.txt"), "bad").expect("denied file is created");
+    let root = php_string(&fixture.root);
+    let source = format!(
+        r#"<?php
+$root = {root};
+chdir($root . "/test/ok");
+ini_set("open_basedir", ".");
+$badFile = "../bad/bad.txt";
+$badDir = "../bad";
+var_dump(file_exists($badFile));
+var_dump(is_dir($badDir));
+var_dump(is_file($badFile));
+var_dump(is_readable($badFile));
+var_dump(is_writable($badFile));
+var_dump(filesize($badFile));
+var_dump(opendir($badDir));
+echo "--allowed--\n";
+var_dump(file_exists("ok.txt"));
+var_dump(is_dir("."));
+var_dump(is_file("ok.txt"));
+var_dump(is_readable("ok.txt"));
+var_dump(filesize("ok.txt"));
+"#,
+        root = root
+    );
+
+    let execution = run_source(&source).unwrap();
+
+    assert_eq!(
+        execution
+            .stdout
+            .matches("open_basedir restriction in effect")
+            .count(),
+        7,
+        "{}",
+        execution.stdout
+    );
+    assert_eq!(execution.stdout.matches("bool(false)").count(), 7);
+    assert!(
+        execution
+            .stdout
+            .contains("--allowed--\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nint(2)\n"),
+        "{}",
+        execution.stdout
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
 struct TempFsFixture {
     root: PathBuf,
 }
@@ -178,4 +513,28 @@ impl Drop for TempFsFixture {
 fn php_string(path: &Path) -> String {
     let value = path.to_str().expect("temporary path is valid UTF-8");
     format!("'{}'", value.replace('\\', "\\\\").replace('\'', "\\'"))
+}
+
+struct CwdGuard {
+    _lock: MutexGuard<'static, ()>,
+    original: PathBuf,
+}
+
+impl Drop for CwdGuard {
+    fn drop(&mut self) {
+        let _ = std::env::set_current_dir(&self.original);
+    }
+}
+
+fn cwd_guard() -> CwdGuard {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    let lock = LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .expect("cwd lock is not poisoned");
+    let original = std::env::current_dir().expect("current directory is available");
+    CwdGuard {
+        _lock: lock,
+        original,
+    }
 }

@@ -1,7 +1,10 @@
-$ phpc run tests/fixtures/milestone1073/reference_assignment_array_access_target_boundary.php
-exit: 1
+exit: 255
 stdout:
---- stdout end ---
+Notice: Indirect modification of overloaded element of Bag has no effect in tests/fixtures/milestone1073/reference_assignment_array_access_target_boundary.php on line 10
+
+Fatal error: Uncaught Error: Cannot assign by reference to an array dimension of an object in tests/fixtures/milestone1073/reference_assignment_array_access_target_boundary.php:10
+Stack trace:
+#0 {main}
+  thrown in tests/fixtures/milestone1073/reference_assignment_array_access_target_boundary.php on line 10--- stdout end ---
 stderr:
-runtime error at tests/fixtures/milestone1073/reference_assignment_array_access_target_boundary.php:10:1: unsupported call reference assignment: ArrayAccess object offsets cannot be assigned by reference in the current runtime
 --- stderr end ---

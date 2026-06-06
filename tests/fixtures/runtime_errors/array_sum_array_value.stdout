@@ -1,0 +1,2 @@
+Warning: array_sum(): Addition is not supported on type array in tests/fixtures/runtime_errors/array_sum_array_value.php on line 3
+0

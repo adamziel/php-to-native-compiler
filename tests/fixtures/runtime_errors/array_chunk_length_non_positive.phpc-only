@@ -1,1 +1,1 @@
-Project-specific stable runtime diagnostic; system PHP throws a native ValueError for non-positive array_chunk length values.
+Project-specific fatal formatting for the otherwise PHP-shaped ValueError; system PHP includes its native stack frame details.

@@ -1,0 +1,4 @@
+Warning: array_product(): Multiplication is not supported on type string in tests/fixtures/runtime_errors/array_product_non_numeric_string.php on line 3
+
+Warning: array_product(): Multiplication is not supported on type string in tests/fixtures/runtime_errors/array_product_non_numeric_string.php on line 3
+0

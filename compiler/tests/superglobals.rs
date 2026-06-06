@@ -60,6 +60,23 @@ echo constant("PHP_SAPI");
 }
 
 #[test]
+fn php_binary_is_available_as_current_cli_runtime_constant() {
+    let execution = run_source(
+        r#"<?php
+echo defined("PHP_BINARY") ? "defined" : "missing";
+echo "|";
+echo PHP_BINARY !== "" ? "non-empty" : "empty";
+echo "|";
+echo constant("PHP_BINARY") === PHP_BINARY ? "same" : "different";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "defined|non-empty|same");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn php_sapi_name_returns_current_cli_runtime_sapi() {
     let execution = run_source(
         r#"<?php
@@ -809,6 +826,31 @@ echo "|", $GLOBALS["wp_object_cache"];
 }
 
 #[test]
+fn globals_count_tracks_direct_and_globals_offset_unsets() {
+    let execution = run_source(
+        r#"<?php
+$c1 = 0;
+$c2 = 0;
+$a = 1;
+$b = 1;
+$c1 = count($GLOBALS);
+unset($a);
+unset($GLOBALS["b"]);
+$c2 = count($GLOBALS);
+
+var_dump($c1 - $c2);
+$c = 1;
+$c1 = count($GLOBALS);
+var_dump($c1 - $c2);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "int(2)\nint(1)\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn globals_direct_string_offsets_bind_reference_targets_to_direct_sources() {
     let execution = run_source(
         r#"<?php
@@ -972,9 +1014,30 @@ echo "|", $bag["outer"][0];
 
 #[test]
 fn other_superglobals_remain_ordinary_missing_variables_for_now() {
-    let error = runtime_error("<?php\necho $_SESSION;\n");
+    let execution = run_source("<?php\necho $_SESSION;\n").unwrap();
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
-    assert_eq!(error.message, "undefined variable '$_SESSION'");
+    assert_eq!(
+        execution.stdout,
+        "Warning: Undefined variable $_SESSION in Command line code on line 2\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn unset_initialized_request_superglobal_reports_global_variable_warning() {
+    let execution = run_source(
+        r#"<?php
+unset($_SERVER);
+var_dump($_SERVER);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Warning: Undefined global variable $_SERVER in Command line code on line 3\nNULL\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
 }

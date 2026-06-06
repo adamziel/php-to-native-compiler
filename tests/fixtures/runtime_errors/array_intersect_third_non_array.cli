@@ -1,6 +1,9 @@
-exit: 1
+exit: 255
 stdout:
---- stdout end ---
+Fatal error: Uncaught TypeError: array_intersect(): Argument #3 must be of type array, int given, called in tests/fixtures/runtime_errors/array_intersect_third_non_array.php:4
+Stack trace:
+#0 tests/fixtures/runtime_errors/array_intersect_third_non_array.php(4): array_intersect()
+#1 {main}
+  thrown in tests/fixtures/runtime_errors/array_intersect_third_non_array.php on line 4--- stdout end ---
 stderr:
-runtime error at tests/fixtures/runtime_errors/array_intersect_third_non_array.php:4:6: unsupported call array_intersect(): third argument must be array, got int
 --- stderr end ---

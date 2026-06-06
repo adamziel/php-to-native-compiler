@@ -1,2 +1,0 @@
-runtime error at 3:1: unsupported call increment/decrement: only int and float variables, array/object offsets, object properties, or static properties are implemented, got string
-

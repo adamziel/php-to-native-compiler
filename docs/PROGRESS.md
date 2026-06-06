@@ -7,8 +7,8 @@ Implemented:
 - Repaired the focused `php_runtime --lib` stabilization gate by refreshing
   stale runtime ABI unit expectations to current executable behavior for
   binary PHP string materialization, core class metadata, and typed-reference
-  diagnostics. The runtime ABI behavior was already present; this change keeps
-  tests aligned with it instead of reintroducing outdated invalid-UTF-8 and
+  diagnostics. The runtime ABI behavior was already present; this keeps tests
+  aligned with it instead of reintroducing outdated invalid-UTF-8 and
   static-property diagnostic expectations.
 
 - Isolated the `php_runtime` test-only `NativeCallArgumentsHandle` free counter
@@ -18,6 +18,5563 @@ Implemented:
   guard proving the counter is thread-local; no non-test runtime ABI behavior
   changed.
 
+## 2026-06-04
+
+Implemented:
+
+- Added bounded property-hook declaration metadata diagnostics on the
+  interpreter path. Class properties now retain final-property metadata,
+  promoted constructor properties accept the `final` modifier (including
+  `final $prop` as a public promoted property), explicit `set(...)` hook
+  parameter metadata is parsed for startup checks, variadic set parameters are
+  rejected, set-hook parameter types are checked contravariantly against the
+  property type, and inherited set hooks reject narrowed child `set` parameter
+  types. Final parent properties, including final promoted properties, now
+  report PHP-shaped startup fatals when redeclared by child properties.
+  Focused proof covers exact-current pre-patch selected PHPT at `0/14` and
+  post-patch selected PHPT at `14/14` for
+  `Zend/tests/property_hooks/abstract_prop_final.phpt`,
+  `Zend/tests/property_hooks/final_prop.phpt`,
+  `Zend/tests/property_hooks/final_prop_2.phpt`,
+  `Zend/tests/property_hooks/final_prop_promoted_1.phpt`,
+  `Zend/tests/property_hooks/final_prop_promoted_2.phpt`,
+  `Zend/tests/property_hooks/final_prop_promoted_3.phpt`,
+  `Zend/tests/property_hooks/final_prop_promoted_4.phpt`,
+  `Zend/tests/property_hooks/final_prop_promoted_5.phpt`,
+  `Zend/tests/property_hooks/set_value_parameter_type_variance_001.phpt`,
+  `Zend/tests/property_hooks/set_value_parameter_type_variance_002.phpt`,
+  `Zend/tests/property_hooks/set_value_parameter_type_variance_003.phpt`,
+  `Zend/tests/property_hooks/set_value_parameter_type_variance_005.phpt`,
+  `Zend/tests/property_hooks/set_value_parameter_type_variance_007.phpt`, and
+  `Zend/tests/property_hooks/set_variadic.phpt`, plus focused Rust
+  object-model coverage, build, fmt, and diff checks. Unsupported edges remain
+  executable hook body semantics, virtual/backed hook body classification,
+  autoload side effects during hook type compatibility, hook reflection
+  metadata, references/COW parity, and native lowering.
+
+- Added bounded runtime enforcement for asymmetric instance property setter
+  visibility on the interpreter path. Declared `private(set)` /
+  `protected(set)` metadata now reaches runtime object slots; direct writes,
+  compound stores, indirect array/reference mutations, and `unset` check the
+  current class scope; unset inaccessible slots can still dispatch through
+  visible `__set()` / `__unset()`; and public readonly properties without an
+  explicit setter use PHP's default `protected(set)` write boundary. Focused
+  proof covers exact-current pre-patch selected PHPT at `0/16` and post-patch
+  selected PHPT at `16/16` for
+  `Zend/tests/asymmetric_visibility/__set.phpt`,
+  `Zend/tests/asymmetric_visibility/__unset.phpt`,
+  `Zend/tests/asymmetric_visibility/bug001.phpt`,
+  `Zend/tests/asymmetric_visibility/bug002.phpt`,
+  `Zend/tests/asymmetric_visibility/bug003.phpt`,
+  `Zend/tests/asymmetric_visibility/cpp_private.phpt`,
+  `Zend/tests/asymmetric_visibility/cpp_protected.phpt`,
+  `Zend/tests/asymmetric_visibility/dim_add.phpt`,
+  `Zend/tests/asymmetric_visibility/private.phpt`,
+  `Zend/tests/asymmetric_visibility/protected.phpt`,
+  `Zend/tests/asymmetric_visibility/readonly.phpt`,
+  `Zend/tests/asymmetric_visibility/reference.phpt`,
+  `Zend/tests/asymmetric_visibility/reference_2.phpt`,
+  `Zend/tests/asymmetric_visibility/scope_rebinding.phpt`,
+  `Zend/tests/asymmetric_visibility/unset.phpt`, and
+  `Zend/tests/asymmetric_visibility/variation.phpt`, plus focused Rust
+  object-model coverage, build, fmt, and diff checks. Unsupported edges remain
+  static property setter visibility, executable hook body semantics, exact
+  reflection parity for user declarations, full reference/COW identity, and
+  native lowering.
+
+- Added bounded class/interface property-hook declaration metadata on the
+  interpreter path. Class and interface hooked properties now parse and keep
+  hook metadata for abstract/interface implementation checks while hook bodies
+  remain skipped and backed properties use the ordinary property storage/default
+  path. Concrete classes now report PHP-shaped startup fatals for missing
+  abstract class hooks and interface hooks, readonly properties no longer
+  satisfy `set`, and `&get` interface requirements reject concrete by-value
+  `get` hooks. Focused exact-current PHPT proof moved the selected
+  `Zend/tests/property_hooks` packet from pre-patch `7/23` PASS to post-patch
+  `21/23` PASS for `abstract_hook.phpt`,
+  `abstract_hook_not_implemented.phpt`, `abstract_prop_hooks.phpt`,
+  `abstract_prop_not_implemented.phpt`, `abstract_prop_plain.phpt`,
+  `abstract_get_set_readonly.phpt`, `interface.phpt`,
+  `interface_get_only.phpt`, `interface_set_only.phpt`,
+  `interface_not_implemented.phpt`, `interface_get_set_readonly.phpt`,
+  `interface_get_only_readonly.phpt`, `interface_explicit_abstract.phpt`,
+  `interface_invalid_explicitly_abstract.phpt`, `interface_not_public.phpt`,
+  `interface_final_hook.phpt`, `interface_final_prop.phpt`,
+  `interface_get_by_ref_plain.phpt`, `interface_get_by_ref_backed.phpt`,
+  `interface_get_by_ref_virtual.phpt`,
+  `get_by_ref_implemented_by_plain.phpt`,
+  `get_by_ref_implemented_by_val.phpt`, and `readonly.phpt`. Remaining selected
+  failures are executable reference/virtual hook behavior in
+  `get_by_ref_implemented_by_plain.phpt` and
+  `interface_get_by_ref_virtual.phpt`. Focused integration proof covered the
+  property-hook Rust guard, adjacent asymmetric-visibility Rust guards, patched
+  debug build, selected property-hook PHPT post-patch `21/23`, latest-published
+  BcMath PASS scout `8/8`, `cargo fmt --all -- --check`, and
+  `git diff --check`.
+  Unsupported edges remain executable hook body semantics, virtual hooked
+  properties, reference-return hook dispatch, hook reflection metadata,
+  typed-property hook enforcement, references/COW parity, and native lowering.
+
+- Added a bounded SPL `RegexIterator` lane on the interpreter path. Core
+  metadata now declares `RegexIterator` as an `Iterator` with the reached mode
+  and flag constants, and runtime state now stores the inner iterator, regex,
+  mode, flags, preg-flags, and cached accepted key/current values. The bounded
+  implementation covers constructor/accessor/mutator behavior, catchable
+  `setMode()` `ValueError`, `MATCH`, `GET_MATCH`, `SPLIT`, `REPLACE`,
+  `USE_KEY`, and `INVERT_MATCH` foreach behavior over existing bounded
+  iterators, direct `accept()` before rewind, replacement property writes, and
+  the current bounded PCRE match/split/replacement helpers. Focused proof
+  covers exact-current pre-patch selected PHPT at `0/17` and post-patch
+  selected PHPT at `17/17` for
+  `ext/spl/tests/regexiterator_getregex.phpt`,
+  `ext/spl/tests/regexIterator_mode_basic.phpt`,
+  `ext/spl/tests/regexIterator_flags_basic.phpt`,
+  `ext/spl/tests/regexiterator_getpregflags.phpt`,
+  `ext/spl/tests/regexiterator_setpregflags.phpt`,
+  `ext/spl/tests/regexIterator_setMode_error.phpt`,
+  `ext/spl/tests/iterator_029.phpt`,
+  `ext/spl/tests/iterator_050.phpt`,
+  `ext/spl/tests/iterator_051.phpt`,
+  `ext/spl/tests/iterator_054.phpt`,
+  `ext/spl/tests/iterator_055.phpt`,
+  `ext/spl/tests/bug46088.phpt`, `ext/spl/tests/bug50579.phpt`,
+  `ext/spl/tests/bug54304.phpt`, `ext/spl/tests/bug66702.phpt`,
+  `ext/spl/tests/bug68175.phpt`, and `ext/spl/tests/bug70868.phpt`, plus
+  focused Rust RegexIterator and core metadata tests, build, and fmt checks.
+  Unsupported edges remain `RecursiveRegexIterator`, full PCRE2 parity,
+  recursive current-value matching, broad preg-flag combinations, exact
+  serialization/cloning cursor parity, references/COW, and native lowering.
+
+- Repaired the latest-published PASS regression in
+  `Zend/tests/first_class_callable/first_class_callable_005.phpt`. Dynamic
+  class-string callables, including descriptors produced by first-class static
+  callable acquisition, now prefer a declared/inherited public static
+  `__callStatic()` fallback for missing methods even when the class also has a
+  public non-static `__call()`. Class-string callables with only non-static
+  `__call()` keep PHP's `Non-static method Class::method() cannot be called
+  statically` Error surface. Focused proof covers exact-current pre-patch PHPT
+  failure and post-patch target pass, adjacent first-class callable rows,
+  the dynamic-call non-static scout, focused Rust object-model guards, build,
+  fmt, and diff checks. Unsupported edges remain full PHP `Closure` object
+  parity for first-class callables, callable-name/reflection parity, broader
+  callable autoload/deprecation behavior, references/COW, and native lowering.
+
+- Repaired the active score-gate PASS regression in
+  `Zend/tests/dynamic_call/dynamic_call_non_static.phpt`. Direct dynamic
+  class-method callable invocation through `['Class', 'missing']()` and
+  `'Class::missing'()` now rejects a public non-static `__call()` fallback with
+  PHP's `Non-static method Class::missing() cannot be called statically` Error
+  surface, while `call_user_func()` and static-syntax missing-method paths keep
+  the bounded current `$this->__call()` behavior added for the magic-method
+  rows, and `__callStatic()` remains available for dynamic class-method
+  callables when declared or inherited. Focused proof covers exact-current
+  pre-patch selected PHPT at `0/1`, post-patch selected PHPT at `1/1`,
+  adjacent dynamic-call PHPT guards, focused Rust object-model coverage, build,
+  fmt, and diff checks. Unsupported edges remain broader callable autoload and
+  deprecation parity outside the existing bounded dynamic callable contexts,
+  references/COW, and native lowering.
+
+- Repaired the latest-published PASS regression in
+  `Zend/tests/typehints/namespace_relative_scalar.phpt`. Namespace-relative
+  built-in type names such as `namespace\int` now keep their namespace-relative
+  spelling through parser type metadata so startup diagnostics emit PHP's
+  `Type declaration 'int' must be unqualified` fatal instead of resolving to a
+  plain `int` type in the global namespace. Ordinary namespace-relative
+  class-like type names continue to resolve against the active namespace.
+  Focused proof covers the pre-patch PHPT failure and post-patch PHPT pass for
+  the repaired row, adjacent namespace-relative type resolution, focused Rust
+  type-declaration startup diagnostics, fmt, and diff checks. Unsupported
+  edges remain the documented broader native lowering gaps for namespace-aware
+  type metadata and runtime references/COW.
+
+- Added a bounded magic-method dispatch correction for static-syntax and
+  array-callback missing-method calls on the interpreter path. Missing
+  `self::` / `parent::` / `static::` / `Class::` / `$object::` /
+  `$className::` calls now prefer a compatible current `$this` object's
+  public non-static `__call()` before `__callStatic()`, inaccessible static
+  method syntax can fall back to public static `__callStatic()`, static
+  constructor calls report PHP's `Cannot call constructor` error instead of
+  dispatching through magic, object `call_user_func_array()` callbacks can
+  route missing methods through `__call()`, and dynamic static method names
+  truncate at NUL before magic dispatch. Focused proof covers exact-current
+  pre-patch selected PHPT at `0/12` and post-patch selected PHPT at `12/12`
+  for `Zend/tests/magic_methods/bug19859.phpt`,
+  `Zend/tests/magic_methods/bug42937.phpt`,
+  `Zend/tests/magic_methods/bug45186.phpt`,
+  `Zend/tests/magic_methods/bug45186_2.phpt`,
+  `Zend/tests/magic_methods/bug46238.phpt`,
+  `Zend/tests/magic_methods/bug47801.phpt`,
+  `Zend/tests/magic_methods/bug48533.phpt`,
+  `Zend/tests/magic_methods/bug53826.phpt`,
+  `Zend/tests/magic_methods/bug77339.phpt`,
+  `Zend/tests/magic_methods/call_static_003.phpt`,
+  `Zend/tests/magic_methods/call_static_006.phpt`, and
+  `Zend/tests/magic_methods/call_static_007.phpt`, plus focused Rust
+  object-model guards, build, fmt, and diff checks. Unsupported edges remain
+  trampoline closures with named arguments, complete callable deprecation and
+  autoload parity, broad magic method side effects outside the executed
+  interpreter subset, references/COW beyond documented paths, and native
+  lowering.
+
+- Added a bounded `DateTime::createFromFormat()` /
+  `DateTimeImmutable::createFromFormat()` / `date_parse_from_format()`
+  format-edge lane on the interpreter path. The shared parser now carries both
+  parsed field metadata and parse diagnostics for the covered tokens, including
+  variable-width numeric dates/times, `|` resets, lenient `+` trailing-data
+  warnings, `U` timestamp precedence over parsed clock fields, `y` plus
+  year-relative `z`, textual month/weekday tokens, GMT-prefixed `O` / `P`
+  offsets, timezone-abbreviation metadata, null-byte `ValueError`s, and
+  selected `DateTime::getLastErrors()` / `date_get_last_errors()` result
+  arrays. Non-strict DateTime comparisons now include microseconds instead of
+  timestamp seconds alone. Focused proof covers exact-current pre-patch
+  selected PHPT at `0/11` and post-patch selected PHPT at `11/11` for
+  `ext/date/tests/bug50392.phpt`, `ext/date/tests/bug51393.phpt`,
+  `ext/date/tests/bug51994.phpt`, `ext/date/tests/bug53879.phpt`,
+  `ext/date/tests/bug54316.phpt`, `ext/date/tests/bug66836.phpt`,
+  `ext/date/tests/bug68078.phpt`,
+  `ext/date/tests/bug68078_negative.phpt`,
+  `ext/date/tests/bug72963.phpt`, `ext/date/tests/bug76770.phpt`, and
+  `ext/date/tests/date-lenient.phpt`, plus focused Rust DateTime coverage,
+  build, fmt, and diff checks. Unsupported edges remain broad timelib
+  `createFromFormat()` / `date_parse_from_format()` grammar and exact
+  diagnostics outside the represented token set, full parser error-history
+  parity, DateTime object-handle reuse and object property visibility side
+  effects during parser loops, references/COW, and native lowering.
+
+- Added a bounded DateTime interval-arithmetic correction for DST-crossing
+  diffs and massive signed proleptic years on the interpreter path. The local
+  civil-date conversion now round-trips negative-era dates with Euclidean
+  division, and `DateTime::diff()` / `date_diff()` share a single bounded
+  component path that adjusts zero-day named-zone and fixed/abbreviation
+  timezone spans by endpoint offset deltas while preserving named-zone
+  multi-day wall-calendar components. Focused proof covers exact-current
+  pre-patch selected PHPT at `0/12` and post-patch selected PHPT at `12/12`
+  for `ext/date/tests/DateTime_diff-fall-type2-type2.phpt`,
+  `ext/date/tests/DateTime_diff-fall-type2-type3.phpt`,
+  `ext/date/tests/DateTime_diff-fall-type3-type2.phpt`,
+  `ext/date/tests/DateTime_diff-fall-type3-type3.phpt`,
+  `ext/date/tests/DateTime_diff-spring-type2-type2.phpt`,
+  `ext/date/tests/DateTime_diff-spring-type2-type3.phpt`,
+  `ext/date/tests/DateTime_diff-spring-type3-type2.phpt`,
+  `ext/date/tests/DateTime_diff-spring-type3-type3.phpt`,
+  `ext/date/tests/DateTime_add-massive.phpt`,
+  `ext/date/tests/DateTime_days-massive.phpt`,
+  `ext/date/tests/DateTime_diff-massive.phpt`, and
+  `ext/date/tests/DateTime_sub-massive.phpt`, plus focused Rust DateTime
+  guards, build, fmt, and diff checks. Unsupported edges remain broad timelib
+  diff semantics outside the represented bounded timezone table, named-zone
+  historical transition data beyond documented rows, exact DateInterval
+  reference/COW behavior, and native lowering.
+
+- Moved a focused `Zend/tests/class_name` PHPT cluster from `0/14` to
+  `14/14` on the interpreter path. The parser now flattens top-level
+  bracketed named/global namespace blocks with block-local namespace/import
+  context, constant-expression parsing accepts `self::class`, `parent::class`,
+  and `static::class` so startup/runtime diagnostics can match PHP-shaped
+  behavior, dynamic/object `::class` receivers now report the covered
+  `TypeError`/fatal surfaces, and closures created in static class context
+  keep class/called-class context through direct invocation and bounded
+  `$closure->bindTo(...)` rebinding. Focused proof covers
+  `Zend/tests/class_name/bug66811.phpt`,
+  `Zend/tests/class_name/bug77530.phpt`,
+  `Zend/tests/class_name/class_name_as_scalar*.phpt`,
+  `Zend/tests/class_name/class_on_constant_evaluated_expression.phpt`,
+  `Zend/tests/class_name/class_on_object.phpt`,
+  `Zend/tests/class_name/parent_class_name_without_parent.phpt`, and
+  `Zend/tests/class_name/self_class_const_in_unknown_scope.phpt`, plus focused
+  Rust namespace/object-model guards, build, fmt, and diff checks. Unsupported
+  edges remain full PHP validation for invalid mixed/nested namespace forms,
+  namespace-qualified constant reads/imports, exact `Closure::bind`/`bindTo`
+  warning and visibility parity beyond the documented null/object/class-string
+  scope slice, references/COW, and native lowering.
+
+- Added a bounded statement-form by-value array destructuring assignment lane
+  on the interpreter path. `list(...) = expr` and `[...] = expr` now accept
+  direct variable targets with skipped slots, nested lists, and literal
+  integer/string keyed slots; evaluate the right-hand side once; collect all
+  reads before mutating target variables; emit PHP-style missing-key and
+  scalar-source warnings; and assign `null` for missing, `null`, or scalar
+  destructured sources in the covered slice. Uninitialized string-offset reads
+  now use the display-warning path so list destructuring over an empty string
+  offset preserves PHP warning order. Focused proof covers exact-current
+  pre-patch selected PHPT at `0/16` and post-patch selected PHPT at `16/16`
+  for `Zend/tests/list/bug39304.phpt`,
+  `Zend/tests/list/bug40899.phpt`, `Zend/tests/list/destruct_bool.phpt`,
+  `Zend/tests/list/destruct_float.phpt`,
+  `Zend/tests/list/destruct_int.phpt`,
+  `Zend/tests/list/destruct_null.phpt`,
+  `Zend/tests/list/destruct_resource.phpt`,
+  `Zend/tests/list/destruct_string.phpt`, `Zend/tests/list/list_001.phpt`,
+  `Zend/tests/list/list_002.phpt`, `Zend/tests/list/list_006.phpt`,
+  `Zend/tests/list/list_keyed.phpt`,
+  `Zend/tests/list/list_keyed_trailing_comma.phpt`,
+  `Zend/tests/list/list_keyed_undefined.phpt`,
+  `Zend/tests/list/list_mixed_nested_keyed_unkeyed.phpt`, and
+  `Zend/tests/list/list_self_assign.phpt`. Unsupported execution edges remain
+  reference destructuring, dynamic key expressions, broader non-variable target
+  writes such as `$array[]`, ArrayAccess-source destructuring semantics, exact
+  reference/COW semantics, and native lowering; later static invalid-form fatal
+  coverage is listed below.
+
+- Tightened PHP-shaped fatal handling for static invalid array/list
+  destructuring forms on the interpreter path. The parser now reports the
+  covered PHP fatal or parse surfaces for empty `list()` assignments,
+  expression-position `list(...)`, empty array literal elements, empty keyed
+  destructuring entries, mixed keyed/unkeyed destructuring entries, nested
+  `list(...)`/`[...]` syntax mixing, non-writable static destructuring
+  targets, and nested `array(...)` targets. Non-`ArrayAccess` object and
+  closure right-hand sides now raise PHP's object-as-array fatal instead of
+  warning and assigning `null`. Focused proof covers exact-current pre-patch
+  selected PHPT at `0/11` and post-patch selected PHPT at `11/11` for
+  `Zend/tests/list/list_007.phpt`, `Zend/tests/list/list_008.phpt`,
+  `Zend/tests/list/list_010.phpt`, `Zend/tests/list/list_011.phpt`,
+  `Zend/tests/list/list_012.phpt`, `Zend/tests/list/list_013.phpt`,
+  `Zend/tests/list/list_014.phpt`,
+  `Zend/tests/list/list_empty_error.phpt`,
+  `Zend/tests/list/list_empty_error_keyed.phpt`,
+  `Zend/tests/list/list_keyed_leading_comma.phpt`, and
+  `Zend/tests/list/list_mixed_keyed_unkeyed.phpt`; focused Rust
+  list-assignment coverage, build, fmt, and pinned wrapper proof.
+  Unsupported edges remain reference destructuring, dynamic key expressions,
+  array/object/`ArrayAccess` destructuring target writes such as string
+  offsets, `__set`, `ArrayAccess::offsetSet`, broader exact compile-time fatal
+  ordering beyond the covered static forms, reference/COW semantics, and native
+  lowering.
+
+- Added a bounded `strtotime()` absolute-format/timezone parser lane on the
+  interpreter path. `strtotime()` now accepts `now` with the supplied base
+  timestamp, compact `YYYYMMDDHHMMSS` values with explicit timezone suffixes,
+  flexible `Y/M/D` and `Y-m-d[T ]H:i:s(.fraction)` forms with `Z` or short
+  numeric offsets, slash `M/D/YY HHMM` and `M/D/YYYY H:MM AM` forms, ISO week
+  `YYYYWww`, RFC-ish weekday/offset suffix forms, compact textual
+  `Oct11`/`11Oct2005`, AM/PM textual times, and joined count/unit modifiers
+  such as `+5days`. The bounded timezone table also covers the represented
+  pre-2007 US/Eastern DST transition rules, and `date_parse()` exposes the
+  selected single-letter `A` timezone-abbreviation metadata plus whitespace-only
+  no-error result arrays. Focused proof covers exact-current pre-patch selected
+  PHPT at `0/17` and post-patch selected PHPT at `17/17` for
+  `ext/date/tests/bug13142.phpt`,
+  `ext/date/tests/bug17988.phpt`,
+  `ext/date/tests/bug21399.phpt`,
+  `ext/date/tests/bug26090.phpt`,
+  `ext/date/tests/bug26320.phpt`,
+  `ext/date/tests/bug26694.phpt`,
+  `ext/date/tests/bug28088.phpt`,
+  `ext/date/tests/bug29585.phpt`,
+  `ext/date/tests/bug33578.phpt`,
+  `ext/date/tests/bug33869.phpt`,
+  `ext/date/tests/bug34087.phpt`,
+  `ext/date/tests/bug34771.phpt`,
+  `ext/date/tests/bug35499.phpt`,
+  `ext/date/tests/bug35885.phpt`,
+  `ext/date/tests/bug35887.phpt`,
+  `ext/date/tests/bug36224.phpt`, and
+  `ext/date/tests/bug37514.phpt`; Rust DateTime regression coverage, build
+  checks, and pinned wrapper proof. Unsupported edges remain broad timelib
+  grammar, broader timezone database/history outside the represented bounded
+  zones and legacy US/Eastern transition slice, parser diagnostics and
+  `getLastErrors()` metadata, DateTime object-handle parser loops,
+  references/COW, and native lowering.
+
+- Added a bounded `strtotime()` parser/mutation lane on the interpreter path.
+  `strtotime()` now uses its supplied base timestamp for relative modifiers
+  and shares the existing bounded DateTime modifier engine for selected unit
+  offsets and `<weekday> this week` forms. It also recognizes the selected
+  compact UTC, `YYYY-M[M]`, time-plus-date, month/year, Roman-month, ordinal
+  textual date, `noon` / `midnight`, and weekday-prefixed date forms reached
+  by current public date rows. Focused proof covers exact-current pre-patch
+  selected PHPT at `0/12` and post-patch selected PHPT at `12/12` for
+  `ext/date/tests/bug14561.phpt`,
+  `ext/date/tests/bug26198.phpt`,
+  `ext/date/tests/bug28024.phpt`,
+  `ext/date/tests/bug28599.phpt`,
+  `ext/date/tests/bug29150.phpt`,
+  `ext/date/tests/bug33056.phpt`,
+  `ext/date/tests/bug34676.phpt`,
+  `ext/date/tests/bug35414.phpt`,
+  `ext/date/tests/bug36510.phpt`,
+  `ext/date/tests/bug38229.phpt`,
+  `ext/date/tests/bug74057.phpt`, and
+  `ext/date/tests/strtotime-relative.phpt`; Rust DateTime regression
+  coverage, build checks, and pinned wrapper proof. Unsupported edges remain
+  broad timelib grammar, relative forms with complex timezone/database rules,
+  parser diagnostics and `getLastErrors()` metadata, references/COW, and
+  native lowering.
+
+- Repaired the active score-gate PASS regression in
+  `ext/standard/tests/math/round_gh12143_expand_rounding_target.phpt`.
+  `round()` now keeps the first argument as the shared math
+  `int|float` value until dispatch, so integer values and integer-shaped
+  numeric strings are rounded through the bounded decimal engine before the
+  final float result is produced. This preserves one-more-digit decimal
+  half-boundaries for negative-precision modes such as
+  `12345678901234565` rounded to tens under half-up/half-odd and the enum
+  directed modes. Focused proof covers exact-current pre-patch selected PHPT
+  at `0/1`, post-patch selected PHPT at `1/1`, Rust standard-math regression
+  coverage, build/fmt/diff checks, and the selected active score-gate blocker
+  row only. Unsupported edges remain broad decimal-rounding/libm platform
+  parity outside the covered `round()` integer and shortest-float decimal
+  lanes, exact diagnostics for every malformed numeric/coercion edge,
+  references/COW, and native lowering.
+
+- Repaired the latest-published PASS regression in
+  `ext/spl/tests/ArrayObject/arrayObject_getIteratorClass_basic1.phpt`.
+  Direct `var_dump()` now limits reusable temporary object-handle retirement
+  to the selected SPL file/directory classes that need repeated temporary dump
+  handle reuse, instead of recycling arbitrary unrooted objects such as
+  `ArrayIterator` instances returned by `ArrayObject::getIterator()`. This
+  preserves PHP-shaped handle progression for `var_dump($ao->getIterator())`,
+  a following `foreach` iterator temporary, and a later explicit
+  `getIterator()` call. Focused proof covers exact-current pre-patch selected
+  PHPT at `0/1`, post-patch selected PHPT at `1/1`, Rust object-model
+  regression coverage, the related SPL file/directory handle-reuse guard,
+  build/fmt/diff checks, and the selected latest-published PASS regression row
+  only. Unsupported edges remain full PHP object lifetime/refcount parity,
+  exact temporary destruction scheduling for arbitrary object graphs, broad
+  var_dump handle reuse outside selected SPL file/directory temporaries,
+  references/COW, and native lowering.
+
+- Repaired the active score-gate PASS regression in
+  `Zend/tests/bug60598.phpt`. Direct variable and `$GLOBALS`-routed nested
+  array writes now update existing root array cells in place instead of
+  cloning and rewriting the whole root on every bucket assignment, so
+  `spl_object_hash()` keyed object maps built from constructor/destructor
+  paths remain linear enough for the 10,000-object row. Live-root scans also
+  check the deterministic object-hash bucket before falling back to the full
+  recursive array walk, and released objects whose destructor already ran skip
+  redundant reachability scans. Focused proof covers exact-current pre-patch
+  selected PHPT at `0/1` with a wrapper timeout, post-patch selected PHPT at
+  `1/1`, the scaled object-model destructor/hash-map guard, build/fmt/diff
+  checks, and the same selected active score-gate blocker row only.
+  Unsupported edges remain broad object lifetime/refcount parity, exact
+  destructor ordering for every temporary/container graph, general root
+  object-reachability indexing, references/COW beyond the existing bounded
+  cell model, and native lowering.
+
+- Repaired the latest-published PASS regression in
+  `Zend/tests/grammar/semi_reserved_005.phpt`. Class-constant declaration
+  parsing now treats the existing semi-reserved class-constant name token set
+  followed by `=`, `,`, or `;` as a constant name before considering typed
+  class-constant declaration syntax, so modifier-like names such as
+  `STATIC`, `ABSTRACT`, `FINAL`, `PUBLIC`, `PROTECTED`, and `PRIVATE` reach
+  the same runtime class-constant metadata and direct `::` lookup path as
+  ordinary names. Focused proof covers exact-current pre-patch selected PHPT
+  at `0/1` and post-patch selected PHPT at `1/1`, Rust parser/runtime
+  regression coverage, object-model class-constant coverage, build/fmt/diff
+  checks, production row-name leakage scan, and the latest-published non-date
+  PASS scout at `7/7`. Unsupported edges remain exact source-spelled
+  reflection/string lookup for class-constant names that lex as keyword
+  tokens, names reserved by PHP as non-semi-reserved tokens, references/COW,
+  and native lowering.
+
+## 2026-06-03
+
+Implemented:
+
+- Added a bounded DateTime mutation/relative-parser lane on the interpreter
+  path. DateTime construction now accepts the selected DMY and weekday textual
+  forms, `date_parse()` exposes relative metadata for the selected first/last
+  day and next-month forms, `modify()` handles `this week`, `<weekday> this
+  week`, first/last-day relative calendar forms, millisecond/microsecond unit
+  aliases, and the PHP `+1 s` timezone-pattern no-op, DateTime setter
+  date/timestamp arguments use the shared bounded int-compatible scalar
+  coercion helper, and the bounded timezone table covers the selected central
+  Europe DST transition and Pacific/Kwajalein dateline-shift rows. Focused
+  proof covers exact-current pre-patch selected PHPT at `0/10` and post-patch
+  selected PHPT at `10/10` for
+  `ext/date/tests/bug-gh11368.phpt`,
+  `ext/date/tests/bug50475.phpt`,
+  `ext/date/tests/bug51096.phpt`,
+  `ext/date/tests/bug52454.phpt`,
+  `ext/date/tests/bug63740.phpt`,
+  `ext/date/tests/bug64887.phpt`,
+  `ext/date/tests/bug71525.phpt`,
+  `ext/date/tests/bug73942.phpt`,
+  `ext/date/tests/date_modify-1.phpt`, and
+  `ext/date/tests/gh10583.phpt`; Rust DateTime coverage, build/fmt/diff
+  checks, and pinned wrapper proof. Unsupported edges remain broad timelib
+  relative grammar, broad historical timezone database behavior outside the
+  represented rows, full parser diagnostics and `getLastErrors()` parity,
+  DatePeriod, references/COW, and native lowering.
+
+- Added a bounded typed class-constant startup diagnostics lane on the
+  interpreter path. Class constants now retain optional parsed type metadata,
+  comma-separated typed class constant declarations share the declaration type,
+  disallowed `callable`, `void`, and `never` class-constant types emit
+  PHP-shaped startup fatals, and immediate literal defaults are checked
+  against the declared scalar/array/null/union subset without weak coercion.
+  Focused proof covers exact-current pre-patch selected PHPT at `0/5` and
+  post-patch selected PHPT at `5/5` for
+  `Zend/tests/type_declarations/typed_class_constants_multiple_constants.phpt`,
+  `Zend/tests/type_declarations/typed_class_constants_type_error1.phpt`,
+  `Zend/tests/type_declarations/typed_class_constants_type_error4.phpt`,
+  `Zend/tests/type_declarations/typed_class_constants_type_error5.phpt`, and
+  `Zend/tests/type_declarations/typed_class_constants_type_error6.phpt`; Rust
+  object-model coverage, build/fmt/diff checks, and pinned wrapper proof.
+  Unsupported edges remain runtime-dependent typed class-constant expression
+  validation, typed class-constant inheritance compatibility, typed interface
+  and trait constants, `ReflectionClassConstant::getType()` metadata, final
+  class constants, references/COW, and native lowering.
+
+- Added a bounded DateTime parser/format-token lane on the interpreter path.
+  `date_parse()` now returns PHP-shaped metadata arrays for the selected
+  numeric date/time forms and malformed numeric timezone diagnostics;
+  `date_parse_from_format()` covers `!m/d/y` plus the same single-separator
+  wildcard shape; and `date_create_from_format()` /
+  `DateTime::createFromFormat()` now parse the bounded RFC/fixed-offset and
+  textual weekday/month formats reached by the selected rows. Focused proof
+  covers exact-current pre-patch selected PHPT at `0/5` and post-patch
+  selected PHPT at `5/5` for
+  `ext/date/tests/DateTime_fix_createFromFormat.phpt`,
+  `ext/date/tests/date-parse-by-format001.phpt`,
+  `ext/date/tests/date_parse_001.phpt`,
+  `ext/date/tests/date_parse_basic1.phpt`, and
+  `ext/date/tests/date_parse_error.phpt`; Rust parser/format guards, build,
+  and pinned wrapper proof. Unsupported edges remain broad timelib
+  `date_parse()` / `date_parse_from_format()` / `createFromFormat()` grammar,
+  parser error-history and `getLastErrors()` metadata, `DateTime` object
+  handle reuse parity in parser loops such as
+  `ext/date/tests/test-parse-from-format.phpt`, binary format strings,
+  references/COW, and native lowering.
+
+- Added a bounded global `ReflectionConstant` lane on the interpreter path.
+  Runtime/user constants and current builtin global constants can now be
+  reflected by name; reflected objects expose the public `name` property,
+  constructor reinitialization, `getName()`, `getValue()`, `getAttributes()`,
+  `isDeprecated()`, `getExtensionName()`, `getExtension()`, `getFileName()`,
+  and namespace-name helpers for the covered slice. Runtime `define()` and
+  top-level `const` declarations now retain source-file metadata so
+  `ReflectionConstant::getFileName()` reports user constants and builtin
+  constants return false; builtin extension ownership covers the current
+  registry constants plus Core/json fallback names. Focused proof covers
+  exact-current pre-patch selected PHPT at `0/6` and post-patch selected PHPT
+  at `6/6` for
+  `ext/reflection/tests/ReflectionConstant_double_construct.phpt`,
+  `ext/reflection/tests/ReflectionConstant_getAttributes_empty.phpt`,
+  `ext/reflection/tests/ReflectionConstant_getExtensionName.phpt`,
+  `ext/reflection/tests/ReflectionConstant_getExtension.phpt`,
+  `ext/reflection/tests/ReflectionConstant_getFileName.phpt`, and
+  `ext/reflection/tests/ReflectionConstant_inexistent.phpt`; Rust
+  object-model/runtime metadata coverage, build/fmt checks, and pinned wrapper
+  proof. Unsupported edges remain global constant attributes/deprecation
+  metadata beyond empty attribute arrays, bracketed namespace parser rows,
+  broad extension constant ownership/inventories, exact constructor diagnostics
+  for every invalid input shape, references/COW, and native lowering.
+
+- Added a bounded PHP-shaped `ReflectionMethod` construction/invocation
+  diagnostics lane on the interpreter path. `new ReflectionMethod()` now
+  reports catchable constructor arity errors, the one-string
+  `"Class::method"` constructor shape shares the existing method resolver, and
+  `ReflectionMethod::invoke()` / `invokeArgs()` now accept surplus positional
+  user-method arguments while reporting catchable PHP-shaped errors for
+  missing/non-object targets, non-array `invokeArgs()` payloads, non-instance
+  non-static targets, and abstract reflected methods in the covered slice.
+  Focused proof covers exact-current pre-patch selected PHPT at `0/6` and
+  post-patch selected PHPT at `6/6` for
+  `ext/reflection/tests/ReflectionMethod_006.phpt`,
+  `ext/reflection/tests/ReflectionMethod_invoke_basic.phpt`,
+  `ext/reflection/tests/ReflectionMethod_invokeArgs_basic.phpt`,
+  `ext/reflection/tests/ReflectionMethod_invoke_error1.phpt`,
+  `ext/reflection/tests/ReflectionMethod_invokeArgs_error2.phpt`, and
+  `ext/reflection/tests/ReflectionMethod_invokeArgs_error3.phpt`; Rust
+  reflection/object-model coverage, build/fmt/diff checks, and pinned wrapper
+  proof. Unsupported edges remain exact fatal stack traces for too-few
+  reflected user-method arguments, `invokeArgs()` named-string keys,
+  by-reference invocation, reference returns, typed parameter/return
+  enforcement at invocation time, broad internal method invocation, and native
+  lowering.
+
+- Added bounded `iterable` alias canonicalization for union type diagnostics
+  and invariant typed-property compatibility on the interpreter startup path.
+  Union redundancy checks now expand `iterable` to PHP's
+  `Traversable|array` spelling for duplicate-`iterable` diagnostics and
+  `object`-plus-class redundancy messages, while property type invariance
+  treats `object|iterable` and `object|array` as equivalent for the covered
+  alias relation. Focused proof covers exact-current pre-patch selected PHPT
+  at `0/6` and post-patch selected PHPT at `6/6` for
+  `Zend/tests/type_declarations/iterable/iterable_alias_redundancy_iterable.phpt`,
+  `Zend/tests/type_declarations/iterable/iterable_alias_redundancy_object_3.phpt`,
+  `Zend/tests/type_declarations/iterable/iterable_alias_redundancy_object_4.phpt`,
+  `Zend/tests/type_declarations/iterable/iterable_alias_redundancy_object_5.phpt`,
+  `Zend/tests/type_declarations/iterable/iterable_alias_redundancy_object_6.phpt`,
+  and
+  `Zend/tests/type_declarations/iterable/iterable_alias_redundancy_object_variance.phpt`;
+  Rust union-redundancy and typed-property invariance coverage, build/fmt/diff
+  checks, and pinned wrapper proof. Unsupported edges remain full iterable
+  return/parameter runtime enforcement, generator-return execution,
+  parenthesized DNF type canonicalization, namespace/import alias resolution
+  for type names, full PHP variance/subtyping, references/COW, and native
+  lowering.
+
+- Added a bounded dynamic-property `ReflectionProperty` lane on the
+  interpreter path. `new ReflectionProperty($object, $name)` now resolves
+  initialized public dynamic object properties after declared metadata,
+  reports them as public dynamic non-default instance properties, exposes
+  `isDynamic()`, `isReadable()`, and `isWritable()` for the covered slice,
+  emits PHP's no-default `getDefaultValue()` deprecation, and writes dynamic
+  public slots through `setValue()`. Focused proof covers exact-current
+  pre-patch selected PHPT at `0/7` and post-patch selected PHPT at `7/7` for
+  `ext/reflection/tests/ReflectionProperty_basic2.phpt`,
+  `ext/reflection/tests/ReflectionProperty_getDefaultValue.phpt`,
+  `ext/reflection/tests/ReflectionProperty_hasDefaultValue.phpt`,
+  `ext/reflection/tests/ReflectionProperty_isDynamic_basic.phpt`,
+  `ext/reflection/tests/ReflectionProperty_getMangledName_dynamic.phpt`,
+  `ext/reflection/tests/ReflectionProperty_isReadable_dynamic.phpt`, and
+  `ext/reflection/tests/ReflectionProperty_isWritable_dynamic.phpt`; Rust
+  reflection metadata coverage, build/fmt/diff checks, and pinned wrapper
+  proof. Unsupported edges remain uninitialized/unset/non-public dynamic
+  slots, lazy/hooked/asymmetric/readonly property shapes, exact dynamic
+  `getValue()` / `setValue()` parity beyond public object slots,
+  references/COW, and native lowering.
+
+- Repaired the latest-published PASS regression in
+  `ext/standard/tests/array/array_walk/array_walk_variation5.phpt`. The
+  direct-variable `array_walk()` cursor now distinguishes value-cell bucket
+  identities from reference-cell bucket identities and advances by occurrence
+  when multiple walked buckets share the same reference cell, so a by-value
+  callback over duplicate reference-backed slots no longer loops back to the
+  first alias bucket. Focused proof covers the active score-gate blocker row,
+  exact-current pre-patch selected PHPT at `0/1` with a 35s wrapper timeout,
+  post-patch selected PHPT at `1/1`, Rust `array_walk` regression coverage,
+  build/fmt/diff checks, and the selected score-gate blocker row only.
+  Unsupported edges remain fully disambiguating duplicate reference-backed
+  buckets after earlier same-reference buckets are removed during the same
+  walk, direct-offset root live mutation parity, array-root replacement with
+  object inputs, precise first-parameter reference detection for all
+  array-callable/magic forms, broad references/COW, and native lowering.
+
+- Added a bounded by-value `callable` type diagnostics lane on the interpreter
+  path. User-function parameter and return declarations now accept current
+  callable values for string callbacks, supported public array-callable method
+  shapes, and closures; nullable callable returns that fall through report
+  PHP-shaped `none returned` TypeErrors; `Closure` is exposed as core
+  metadata and participates as a subtype of `callable` for signature variance;
+  deprecated `ReflectionParameter::isCallable()` emits the PHP 8.0 deprecation
+  and reports callable metadata; `is_callable()` treats closure values as
+  callable; top-level closure `var_dump()` renders name/file/line, captured
+  statics, and bound `$this`; and uncaught user-function argument TypeError
+  traces preserve captured argument summaries such as `Array`. Focused proof
+  covers exact-current pre-patch selected PHPT at `0/8` and post-patch
+  selected PHPT at `8/8` for
+  `Zend/tests/type_declarations/callable/callable_001.phpt`,
+  `Zend/tests/type_declarations/callable/callable_002.phpt`,
+  `Zend/tests/type_declarations/callable/callable_003.phpt`,
+  `Zend/tests/type_declarations/callable/callable_variance_closure.phpt`,
+  `Zend/tests/return_types/011.phpt`,
+  `Zend/tests/return_types/012.phpt`,
+  `Zend/tests/return_types/013.phpt`, and
+  `Zend/tests/typehints/or_null.phpt`; Rust callable/reflection/var_dump/
+  return-type/runtime metadata guards, build/fmt/diff checks, and pinned
+  wrapper proof. Unsupported edges remain by-reference callable declarations,
+  invokable-object callable declarations, callable typed properties, nested
+  closure `var_dump()` and exact closure recursion/reference display,
+  namespace/autoload/callable-object parity, references/COW, and native
+  lowering.
+
+- Repaired the latest-published PASS regressions in
+  `tests/classes/type_hinting_005a.phpt` and
+  `tests/classes/type_hinting_005c.phpt`. Inherited user-method parameter
+  compatibility now distinguishes signature failures that genuinely depend on
+  an unavailable class-like relationship from failures already proven by a
+  builtin/class mismatch; direct `array` versus unresolved class-type
+  overrides therefore report PHP's declaration-incompatibility fatal instead
+  of the `Could not check compatibility... because class ... is not available`
+  fallback. Focused proof covers accepted latest-published PASS evidence,
+  exact-current pre-patch selected PHPT at `0/2`, post-patch selected PHPT at
+  `2/2`, Rust `object_model` coverage, build/fmt/diff checks, and the
+  selected score-gate blocker rows only. Unsupported edges remain full PHP
+  variance/subtyping, namespace/import alias resolution for type names,
+  complete DNF/canonicalization behavior, autoload-driven signature resolution,
+  references/COW, and native lowering.
+
+- Added a bounded direct-variable mutation lane for interpreter
+  `array_walk()` / `array_walk_recursive()`. Direct array roots are now
+  re-read between callbacks so unsets through captured/global aliases, root
+  replacement with a different array, and replacement with a scalar during a
+  recursive walk are visible to the cursor. The cursor continues after the
+  current slot when it survives, advances to the next surviving original slot
+  when the current slot is removed from the same storage, and restarts when the
+  root is replaced by an array with no shared slot identity. By-reference first
+  callback parameters receive a temporary live slot reference, and slots that
+  were not references before the callback are demoted back to value slots after
+  callback return. The `settype` builtin callback uses the same first-reference
+  callback channel, and scalar root replacement reports the catchable
+  `Iterated value is no longer an array or object` `TypeError`. Focused proof
+  covers exact-current pre-patch selected PHPT at `0/6` and post-patch
+  selected PHPT at `6/6` for
+  `ext/standard/tests/array/array_walk/bug42850.phpt`,
+  `ext/standard/tests/array/array_walk/bug61730.phpt`,
+  `ext/standard/tests/array/array_walk/bug61967.phpt`,
+  `ext/standard/tests/array/array_walk/bug69068.phpt`,
+  `ext/standard/tests/array/array_walk/bug69068_2.phpt`, and
+  `ext/standard/tests/array/array_walk/bug70713.phpt`; Rust `array_walk`
+  coverage, build/fmt/diff checks, and latest-published PASS-regression scout
+  verification. Unsupported edges remain direct-offset root live mutation
+  parity, array-root replacement with object inputs, precise first-parameter
+  reference detection for all array-callable/magic forms, broad
+  references/COW, and native lowering.
+
+- Added bounded userland `ReflectionClass::__toString()` rendering on the
+  interpreter path. Direct string conversion and explicit `__toString()` calls
+  now render declared user classes and traits from existing reflection
+  metadata, including class/trait headers, source span, constants, static and
+  instance properties, static and instance methods, inherited non-private
+  metadata, typed/uninitialized properties, and implicit nullable parameter
+  display. Focused proof covers exact-current pre-patch selected PHPT at
+  `0/8` and post-patch selected PHPT at `8/8` for
+  `ext/reflection/tests/017.phpt`,
+  `ext/reflection/tests/ReflectionClass_export_array_bug72222.phpt`,
+  `ext/reflection/tests/ReflectionClass_export_basic1.phpt`,
+  `ext/reflection/tests/ReflectionClass_export_basic2.phpt`,
+  `ext/reflection/tests/bug29986.phpt`,
+  `ext/reflection/tests/bug33389.phpt`,
+  `ext/reflection/tests/bug45571.phpt`, and
+  `ext/reflection/tests/traits002.phpt`; Rust
+  `reflection_class_to_string_renders_bounded_userland_metadata`, build/fmt/
+  diff checks, and latest-published PASS-regression scout verification.
+  Unsupported edges remain internal class exact dumps, enums, readonly class
+  rendering, property hooks, object-valued constants/defaults, exact engine
+  ordering beyond the covered metadata order, references/COW, and native
+  lowering.
+
+- Added a bounded shutdown closure callback lane on the interpreter path.
+  `register_shutdown_function()` now queues closure callbacks instead of
+  accepting them as registration-only no-ops, and shutdown execution dispatches
+  those closures through the existing closure invocation path so captures,
+  bound `$this`, by-value extra arguments, and callbacks appended while the
+  shutdown queue is draining are preserved. Focused proof covers exact-current
+  pre-patch selected PHPT at `0/5` and post-patch selected PHPT at `5/5` for
+  `ext/standard/tests/general_functions/closures_001.phpt`,
+  `Zend/tests/bug78396.phpt`, `Zend/tests/exceptions/gh13446_1.phpt`,
+  `Zend/tests/exceptions/gh13446_3.phpt`, and
+  `Zend/tests/exceptions/gh13446_4.phpt`; Rust `shutdown_function_builtin`
+  coverage at `6/6`, build/fmt/diff checks, and the latest-published
+  PASS-regression scout at `8/8`. Unsupported edges remain by-reference
+  shutdown callback arguments, invokable-object shutdown callbacks,
+  private/protected method callbacks, exceptions thrown from shutdown
+  callbacks, exact fatal-output newline/stack formatting before shutdown
+  output, broader fatal-error/shutdown context and destructor/finally ordering,
+  references/COW, and native lowering.
+
+- Added a bounded output-buffer metadata/control lane on the interpreter path.
+  `flush()` now behaves as a no-argument CLI/SAPI no-op that does not flush
+  user buffers, `ob_implicit_flush(bool $enable = true)` is registered with
+  reflection metadata and returns `null`, output-buffer status now reports
+  PHP-shaped buffer allocation buckets, public invokable objects are accepted
+  as output handlers through `__invoke`, and output handler names now include
+  `Class::__invoke` for invokable objects plus source-shaped closure names
+  where metadata is available. Focused proof covers exact-current pre-patch
+  selected PHPT at `0/5` and post-patch selected PHPT at `5/5` for
+  `tests/output/flush_basic_001.phpt`,
+  `tests/output/ob_implicit_flush_basic_001.phpt`,
+  `tests/output/ob_implicit_flush_basic_002.phpt`,
+  `tests/output/gh16135.phpt`, and `tests/output/ob_013.phpt`; Rust
+  `output_buffer_builtin` coverage at `29/29`, build/fmt/diff checks, and
+  the latest-published PASS-regression scout at `8/8`. Unsupported edges
+  remain catchable `TypeError` parity for incompatible internal output
+  handlers, broad SAPI flush behavior, exact output handler phase/lifetime
+  parity beyond the bounded handler slice, references/COW, and native
+  lowering.
+
+- Repaired the latest-published PASS regression in
+  `ext/date/tests/date_diff.phpt`. The interpreter now keeps bounded
+  `DateInterval` cached state authoritative on clean interval objects, marks
+  it dirty only for represented public state property writes, preserves cached
+  DateInterval state across clone/retire lifecycle paths, uses forced
+  public-property synchronization for internal DateTime/DateInterval state
+  writes, avoids cloning whole direct arrays for side-effect-free non-array
+  offset reads in dense DateTime comparison/diff loops, and short-circuits
+  exact core DateTime-family receiver method dispatch while preserving
+  subclass override resolution. Focused proof covers exact-current pre-patch
+  `date_diff.phpt` at `0/1` with empty-output timeout on `fd3bf7b0`,
+  post-patch direct release `phpc run` of `date_diff.php` producing `172800`,
+  post-patch pinned-wrapper `date_diff.phpt` at `1/1`, adjacent DateTime
+  microsecond PHPT rows at `5/5`, the non-date latest-published
+  PASS-regression scout at `7/7`, Rust DateTime guards, build/fmt/diff
+  checks, and source push. Unsupported edges remain broad DateInterval
+  property alias/COW parity, full timelib performance and timezone/history
+  parity, DatePeriod, DateInterval serialization/unserialization and
+  `__set_state()`, fractional or negative ISO interval components, broad
+  DateTime/DateInterval object-handler parity, and native lowering.
+
+- Added bounded core-attribute `?string $message` constructor diagnostics for
+  `Deprecated` and direct user-function `NoDiscard` paths on the interpreter
+  path. Supported `#[Deprecated]` calls and direct unused calls to user
+  functions annotated with `#[NoDiscard]` now validate/coerce message
+  arguments before emitting their diagnostics, record PHP-shaped internal
+  constructor stack frames for strict scalar, array, and bounded
+  `Random\IntervalBoundary` enum-case failures, and format bounded enum cases
+  in fatal traces. Focused proof covers exact-current pre-patch selected PHPT
+  at `0/6` and post-patch selected PHPT at `6/6` for
+  `Zend/tests/attributes/deprecated/type_validation_002.phpt`,
+  `Zend/tests/attributes/deprecated/type_validation_003.phpt`,
+  `Zend/tests/attributes/deprecated/type_validation_004.phpt`,
+  `Zend/tests/attributes/nodiscard/type_validation_002.phpt`,
+  `Zend/tests/attributes/nodiscard/type_validation_003.phpt`, and
+  `Zend/tests/attributes/nodiscard/type_validation_004.phpt`; Rust
+  object-model/scalar/runtime guards, build/fmt/diff checks, and the non-date
+  latest-published PASS-regression scout at `7/7`. Unsupported edges remain
+  `NoDiscard` targets beyond direct user-function unused calls, broader core
+  enum APIs/reflection/cases, namespace/import alias resolution for built-in
+  attribute names, broader attribute target/repeatability validation,
+  references/COW, and native lowering.
+
+- Added a bounded append-offset read fatal lane on the interpreter path.
+  Append-offset reads such as `$array[]`, `foreach ($array[] as $value)`,
+  `isset($array[])`, and supported instance property defaults now reach a
+  PHP-shaped fatal `Cannot use [] for reading` instead of earlier project
+  parse or unsupported-call diagnostics. Focused proof covers exact-current
+  pre-patch selected PHPT at `0/8` and post-patch selected PHPT at `8/8` for
+  `Zend/tests/array_append_reading_error.phpt`, `Zend/tests/bug70183.phpt`,
+  `Zend/tests/bug70912.phpt`, `Zend/tests/errmsg/errmsg_006.phpt`,
+  `Zend/tests/errmsg/errmsg_007.phpt`, `Zend/tests/foreach/bug41351.phpt`,
+  `Zend/tests/foreach/bug41351_2.phpt`, and
+  `Zend/tests/foreach/bug41351_3.phpt`; Rust
+  `append_offsets_raise_php_fatal_as_reads`, build/fmt/diff checks, and the
+  non-date latest-published PASS-regression scout at `7/7`. Unsupported edges
+  remain catchable `Error` behavior for runtime append reads, PHP's exact
+  uncaught stack shape after earlier by-reference append-argument output,
+  compile-time `eval()` failure timing for append reads in unexecuted method
+  bodies, references/COW, and native lowering.
+
+- Added a bounded directory path/handle diagnostics lane on the interpreter
+  path. `scandir("")` now raises PHP's catchable empty-directory `ValueError`
+  instead of treating the empty path as the current working directory, failed
+  `chdir()` calls emit PHP-shaped display warnings with host errno before
+  returning `false`, and omitted-handle `readdir()`, `rewinddir()`, and
+  `closedir()` compatibility calls emit inline PHP-shaped deprecations while
+  using the last opened directory handle or raising the catchable
+  `No resource supplied` `TypeError` when none exists. Focused proof covers
+  Rust `local_directory_omitted_handle_and_path_diagnostics_are_php_shaped`,
+  build/fmt/diff checks, and selected public PHPT rows
+  `ext/standard/tests/dir/bug41693.phpt`,
+  `ext/standard/tests/dir/chdir_error2.phpt`,
+  `ext/standard/tests/dir/closedir_basic.phpt`,
+  `ext/standard/tests/dir/closedir_without_arg.phpt`,
+  `ext/standard/tests/dir/readdir_basic.phpt`, and
+  `ext/standard/tests/dir/rewinddir_basic.phpt` at `6/6` PASS after the
+  patch. Exact-current pre-patch proof on `4bf66286` was `0/6`. Unsupported
+  edges remain exact host directory iteration order, stream-wrapper/user-
+  wrapper directories, context effects, non-UTF-8 entry names, native lowering,
+  and broader filesystem warning parity beyond the covered local directory/path
+  diagnostics.
+
+- Added bounded by-reference `foreach` cursor preservation for direct array
+  mutation during iteration on the interpreter path. Active direct-array
+  foreach loops now track the current slot identity and update the next cursor
+  position for `array_shift()`, `array_unshift()`, and `array_splice()` on the
+  iterated direct array path; reindexed surviving slots rebind the loop value
+  to the moved slot rather than the old numeric key, while same-key
+  reinsertion after `unset()` keeps the previous detached behavior. Focused
+  proof covers exact-current pre-patch selected PHPT at `0/5` and post-patch
+  selected PHPT at `5/5` for `Zend/tests/foreach/foreach_015.phpt`,
+  `Zend/tests/foreach/foreach_016.phpt`, `Zend/tests/foreach/foreach_017.phpt`,
+  `tests/lang/foreachLoop.013.phpt`, and `tests/lang/foreachLoop.015.phpt`;
+  Rust `foreach`, array mutation builtin tests, build/fmt/diff checks, and
+  `phpc run` through the PHPT wrapper. Unsupported edges remain broad array
+  reordering/sorting mutation during active foreach, object-property direct
+  array mutation targets for these builtins, exact PHP reference/COW graph
+  parity beyond the tracked slots, destructor/lifetime parity for removed
+  spliced arrays containing objects, and native lowering.
+
+- Added a bounded SPL forwarding-wrapper iterator lane on the interpreter path.
+  Core `IteratorIterator` and `NoRewindIterator` metadata and runtime state now
+  cover construction over direct bounded `Iterator` objects,
+  `IteratorIterator` construction over bounded `IteratorAggregate::getIterator()`
+  results that return an `Iterator`, public method forwarding for `rewind()`,
+  `valid()`, `current()`, `key()`, `next()`, and `getInnerIterator()`,
+  subclass `parent::` calls through the same core method dispatcher, and
+  `NoRewindIterator`'s no-op rewind plus current-value cache after loop
+  breaks. Focused proof covers Rust
+  `spl_iterator_iterator_and_no_rewind_iterator_forward_bounded_iterators`,
+  build/fmt checks, and selected public PHPT rows
+  `ext/spl/tests/ArrayObject/array_013.phpt`,
+  `ext/spl/tests/ArrayObject/array_016.phpt`,
+  `ext/spl/tests/iterator_005.phpt`, `ext/spl/tests/iterator_007.phpt`, and
+  `ext/spl/tests/iterator_012.phpt` at `5/5` PASS. Exact-current pre-patch
+  proof on `123c8282` was `0/5`. Unsupported edges remain `CachingIterator`,
+  `FilterIterator`, `AppendIterator`, `RecursiveIteratorIterator`,
+  `RecursiveArrayIterator`, broader SPL wrapper diagnostics/constructor
+  variants, by-reference SPL iterator execution, serialization/lifetime
+  parity, exact object handle numbering, references/COW, and native lowering.
+
+- Added a bounded `BcMath\Number` operator lane on the interpreter path.
+  Exponentiation syntax now parses into AST nodes, non-BcMath `**`/`**=`
+  remains an explicit runtime/codegen boundary, and `BcMath\Number` binary
+  `+`, `-`, `*`, `/`, `%`, and `**` plus matching compound assignments dispatch
+  through the shared decimal model when either operand is a `BcMath\Number`.
+  Pre/post `++` and `--` on `BcMath\Number` add or subtract decimal one, and
+  unrooted BcMath operator temporaries release handles only after the live-root
+  scan proves no current scope/runtime state still owns them. Focused proof
+  covers accepted and blocked full-gate evidence marking the selected rows
+  failed, exact-current pre-patch selected PHPT at `0/16`, Rust
+  `bcmath_builtin`, Rust `syntax_boundaries` exponentiation, unsupported
+  syntax snapshot coverage, build/fmt/diff checks, and selected public PHPT
+  rows `ext/bcmath/tests/number/operators/add_int.phpt`, `add_string.phpt`,
+  `add_object.phpt`, `sub_int.phpt`, `sub_string.phpt`, `sub_object.phpt`,
+  `mul_int.phpt`, `mul_string.phpt`, `mul_object.phpt`, `pow_int.phpt`,
+  `pow_string.phpt`, `pow_object.phpt`, `pow_div_by_zero.phpt`,
+  `compound_assignment.phpt`, `increment.phpt`, and `decrement.phpt` at
+  `16/16` PASS after the patch. Unsupported edges remain generic non-BcMath
+  exponentiation semantics, exact invalid-operand diagnostic parity beyond the
+  current int/string/`BcMath\Number` operands, unbounded scales/exponents,
+  broad BcMath rounding policy, full object lifetime/destructor timing,
+  references/COW, and native lowering.
+
+- Repaired the latest-published PASS regression in
+  `Zend/tests/gh20177.phpt`. `get_object_vars()` from a base-class method now
+  keeps the initialized base-private property visible when a descendant
+  declares a protected property with the same PHP name, rather than letting the
+  descendant protected shadow replace it in the visible snapshot. Public
+  object property keys with PHP visibility-byte spelling continue to preserve
+  their raw names for `get_object_vars()`, while `foreach` keeps using the
+  public display key. Focused proof covers the accepted public PASS baseline
+  for the row, the blocked `a7c69ff1` gate listing it as a latest-published
+  PASS regression, exact-current pre-patch selected PHPT at `2/3` with only
+  `gh20177.phpt` failing, post-patch selected PHPT at `3/3`, adjacent
+  serialize/foreach/get_object_vars PHPT at `7/7`, Rust runtime and
+  object-model guards, build/fmt/diff checks, and source push. Unsupported
+  edges remain full magic/property-hook parity, references/COW, complete
+  object visibility parity, exact native lowering, and broader object
+  serialization identity parity.
+
+- Repaired the latest-published PASS regression in
+  `ext/standard/tests/serialize/bug76300.phpt`. Runtime class-context
+  property lookup now prefers the current class's own private property slot
+  before falling back to another visible non-public slot with the same PHP
+  name, preserving distinct base-private and child-protected properties across
+  serialize/unserialize. Focused proof covers the accepted public PASS
+  baseline for the row, the blocked `a7c69ff1` gate listing it as a
+  latest-published PASS regression, exact-current pre-patch selected PHPT at
+  `0/1`, post-patch selected PHPT at `1/1`, Rust runtime and serialize
+  guards, build/fmt/diff checks, and source push. Unsupported edges remain
+  broader magic/property-hook parity, references/COW, native lowering, and
+  complete object serialization identity parity.
+
+- Repaired the latest-published PASS regressions in
+  `ext/spl/tests/ArrayObject/arrayObject_magicMethods2.phpt` and
+  `ext/spl/tests/bug61326.phpt`. Direct dynamic-property creation on core
+  `ArrayObject` / `ArrayIterator` storage objects now emits PHP's deprecation
+  unless `ARRAY_AS_PROPS` is active or the class explicitly declares
+  `#[AllowDynamicProperties]`, while the slot write still succeeds. Focused
+  proof covers the accepted public PASS baseline for both rows, the blocked
+  `a7c69ff1` gate listing both rows as latest-published PASS regressions,
+  exact-current pre-patch selected PHPT at `0/2`, post-patch selected PHPT at
+  `2/2`, Rust `object_model` focused guard (`1/1`), build/fmt/diff checks,
+  and source push. Unsupported edges remain full SPL property-table invariant
+  parity, magic/property hooks, serialization/COW identity, broad SPL object
+  semantics, and native lowering.
+
+- Repaired the latest-published PASS regression in
+  `ext/pcre/tests/invalid_utf8_offset.phpt`. `preg_match()` now preserves
+  PHP's by-reference match output shape for invalid UTF-8 start offsets:
+  the call returns `false`, `preg_last_error()` reports
+  `PREG_BAD_UTF8_OFFSET_ERROR`, and the `$matches` output is reset to an
+  empty array rather than left as `NULL`. Focused proof covers Rust
+  `pcre_diagnostics` (`3/3`), build/fmt/diff checks, and selected public
+  PHPT rows `ext/pcre/tests/invalid_utf8_offset.phpt`,
+  `preg_match_error1.phpt`, `preg_match_all_error1.phpt`,
+  `preg_replace_error1.phpt`, `preg_replace_error2.phpt`,
+  `preg_split_error1.phpt`, `preg_grep_error1.phpt`, and
+  `preg_replace_callback_error1.phpt` at `8/8` PASS. The accepted public
+  baseline marked `invalid_utf8_offset.phpt` `PASSED`; the blocked
+  `a7c69ff1` gate marked it as a latest-published PASS regression.
+  Unsupported edges remain full PCRE parity, match-array offset-capture
+  combinations beyond the current bounded subset, exact native lowering, and
+  broader references/COW.
+
+- Added a bounded DateTime tentative-return compatibility lane on the
+  interpreter path. `DateTimeZone::listIdentifiers()` now keeps its internal
+  arginfo defaults while treating its `array` return as tentative for
+  inheritance checks, direct `DateTimeZone` subclass overrides with compatible
+  parameters now emit the PHP-shaped deprecation for missing or incompatible
+  return types unless `#[ReturnTypeWillChange]` is present, and unresolved
+  class names in inherited method parameter or return compatibility checks now
+  report the PHP-shaped `Could not check compatibility... because class ... is
+  not available` startup fatal. DateTime-family instance dispatch now lets
+  user subclass overrides run before the core DateTime/DateTimeImmutable/
+  DateTimeZone/DateInterval handlers while preserving the core fallback for
+  runtime-only methods not present in the metadata table. Focused proof covers
+  Rust `date_time_builtin` (`37/37`), Rust `reflection_metadata` (`6/6`),
+  build/fmt/diff checks, the already-landed internal DateTime signature rows
+  at `5/5` PASS, and selected public PHPT rows
+  `Zend/tests/type_declarations/variance/internal_parent/incompatible_return_type.phpt`,
+  `Zend/tests/type_declarations/variance/internal_parent/missing_return_type.phpt`,
+  `Zend/tests/type_declarations/variance/internal_parent/unresolvable_inheritance_check_param.phpt`,
+  `Zend/tests/type_declarations/variance/internal_parent/unresolvable_inheritance_check_return.phpt`,
+  and
+  `Zend/tests/type_declarations/variance/suppressed_incompatible_return_type.phpt`
+  at `5/5` PASS. Exact-current pre-patch proof on `a7c69ff1` was `0/5`.
+  Unsupported edges remain broad tentative-return inventories,
+  `ReflectionMethod::hasTentativeReturnType()` /
+  `getTentativeReturnType()`, namespace-complete startup deprecation discovery,
+  native lowering, and references/COW.
+
+- Added a bounded scalar declaration diagnostics/coercion lane on the
+  interpreter path. By-value user function, closure, and public method scalar
+  parameter/return checks now use PHP-shaped closure callable names with
+  file/line metadata, weak exact `string` declarations accept supported
+  `__toString()` objects, weak exact `int` declarations reject
+  non-representable floats/float strings instead of truncating them, weak
+  `bool` declarations emit PHP's `NAN` coercion warning, and typed-property
+  scalar coercion shares the same non-representable float-to-int boundary.
+  Focused proof covers Rust
+  `scalar_declaration_coercion_handles_stringable_and_nan_edges`,
+  `function_type_metadata`, runtime
+  `php_scalar_string_boundary_reused_by_properties_and_array_comparisons`,
+  build/fmt/diff checks, and selected public PHPT rows
+  `Zend/tests/type_declarations/scalar_basic.phpt`,
+  `Zend/tests/type_declarations/scalar_none.phpt`,
+  `Zend/tests/type_declarations/scalar_null.phpt`,
+  `Zend/tests/type_declarations/scalar_return_basic_64bit.phpt`,
+  `Zend/tests/type_declarations/scalar_strict_basic.phpt`, and
+  `Zend/tests/type_declarations/scalar_strict_64bit.phpt` at `6/6` PASS.
+  Exact-current pre-patch proof on `7e108f3e` was `0/6`. Unsupported edges
+  remain typed by-reference parameter coercion/enforcement, full union
+  preference and intersection scalar interactions beyond the current metadata
+  subset, exact native PHP exception object internals, broader stack
+  formatting parity, references/COW, and native lowering.
+
+- Repaired a latest-published PASS regression in
+  `Zend/tests/foreach/foreach_018.phpt` on the runtime object iteration path.
+  Public object properties whose stored names use PHP's mangled visibility
+  spelling, such as properties created by `(object) ["\0A\0b" => 42]`, now
+  expose the unmangled suffix key during ordinary object `foreach`. Focused
+  proof covers the accepted public score row status as `PASSED`, exact-current
+  pre-patch selected PHPT at `4/5` with only `foreach_018.phpt` failing,
+  post-patch selected PHPT at `5/5`, Rust `foreach` (`47/47`), build/fmt/diff
+  checks, and source push. Unsupported edges remain broader by-reference
+  non-public ordinary-object iteration, magic object iteration, property
+  hooks/lazy objects, exact object handle formatting, and native lowering.
+
+- Added a bounded internal DateTime method-signature metadata lane on the
+  interpreter path for declaration compatibility checks. Runtime class method
+  signature tables now seed the supported `DateTime::setTime()`,
+  `DateTimeImmutable::setTime()`, `DateTime::createFromFormat()`,
+  `DateTimeImmutable::createFromFormat()`, `DateTimeZone::getTransitions()`,
+  and `DateTimeZone::listIdentifiers()` signatures, including integer,
+  `null`, and constant defaults such as `PHP_INT_MIN` and
+  `DateTimeZone::ALL`. User child interfaces extending the core
+  `DateTimeInterface` slice also validate `diff(DateTimeInterface
+  $targetObject, bool $absolute = false): DateInterval` against the internal
+  parent signature. Focused proof covers Rust `reflection_metadata` (`5/5`),
+  Rust `date_time_builtin` (`36/36`), build/fmt/diff checks, and selected
+  public PHPT rows
+  `Zend/tests/parameter_default_values/internal_declaration_error_class_const.phpt`,
+  `Zend/tests/parameter_default_values/internal_declaration_error_const.phpt`,
+  `Zend/tests/parameter_default_values/internal_declaration_error_int.phpt`,
+  `Zend/tests/parameter_default_values/internal_declaration_error_null.phpt`,
+  and
+  `Zend/tests/parameter_default_values/internal_declaration_error_false.phpt`
+  at `5/5` PASS. Exact-current pre-patch proof on `524096cf` was `0/5`.
+  Unsupported edges remain broader internal method inventories, full
+  DateTimeInterface and DateTimeZone parity beyond the named signature slice,
+  exact diagnostic-stack formatting, native lowering, and references/COW.
+
+- Added a bounded PCRE diagnostics lane on the interpreter path. The
+  `preg_match()`, `preg_match_all()`, `preg_grep()`, `preg_split()`,
+  `preg_replace()`, and `preg_replace_callback()` families now validate
+  pattern and replacement argument surfaces with PHP-shaped catchable
+  diagnostics, emit warning text for malformed PCRE delimiters/modifiers, skip
+  invalid array-pattern entries in replace-style calls, and initialize direct
+  by-reference match outputs to `NULL` before validation. Focused proof covers
+  Rust `pcre_diagnostics` (`2/2`), Rust preg-family builtin targets (`33/33`),
+  build/fmt/diff checks, and selected public PHPT rows
+  `ext/pcre/tests/preg_match_error1.phpt`,
+  `ext/pcre/tests/preg_match_all_error1.phpt`,
+  `ext/pcre/tests/preg_replace_error1.phpt`,
+  `ext/pcre/tests/preg_replace_error2.phpt`,
+  `ext/pcre/tests/preg_split_error1.phpt`,
+  `ext/pcre/tests/preg_grep_error1.phpt`, and
+  `ext/pcre/tests/preg_replace_callback_error1.phpt` at `7/7` PASS.
+  Exact-current pre-patch proof on `80fcb800` was `0/7`. Unsupported edges
+  remain full PCRE grammar/parity, complete match-array shape coverage,
+  callback callable-surface parity, exact fatal stack formatting, native
+  lowering, and broad references/COW.
+
+- Added a bounded object-property introspection and `ArrayObject` backing lane
+  on the interpreter path. `get_object_vars()`, `get_mangled_object_vars()`,
+  object-to-array casts, and object-backed `ArrayObject` / `ArrayIterator`
+  storage snapshots now preserve existing reference-backed object slots, keep
+  raw public property names including NUL-containing names, hide bounded
+  internal `ArrayObject` / `ArrayIterator` storage from
+  `get_mangled_object_vars()`, cast bounded `ArrayObject` / `ArrayIterator`
+  objects to their backing storage, allow by-reference writes to create dynamic
+  public properties, and include descendant protected slots for related
+  same-family method scopes. Focused proof covers Rust
+  `object_model::get_object_vars_preserves_references_and_related_protected_visibility`,
+  Rust
+  `object_model::array_object_introspection_hides_core_storage_and_preserves_object_backing_keys`,
+  build/fmt/diff checks, and selected public PHPT rows
+  `Zend/tests/get_mangled_object_vars.phpt`,
+  `ext/standard/tests/class_object/get_object_vars_basic_001.phpt`,
+  `ext/standard/tests/class_object/get_object_vars_basic_002.phpt`,
+  `ext/standard/tests/class_object/get_object_vars_variation_002.phpt`, and
+  `ext/standard/tests/class_object/get_object_vars_variation_005.phpt` at
+  `5/5` PASS. Exact-current pre-patch proof on `64d95b6d` was `0/5`.
+  Unsupported edges remain broad magic property hooks, full object/reference
+  COW identity, serialization parity, `ArrayObject` invariant-violation parity
+  beyond raw public property storage, native lowering, and exact fatal stack
+  formatting.
+
+- Repaired the latest-published PASS regression in
+  `ext/date/tests/date_diff.phpt` introduced by the DateTime microseconds lane.
+  Zero-microsecond DateTime diffs now use the pre-fraction component path, and
+  zero-fraction DateInterval add/sub plus zero-microsecond DateTime state
+  assignment avoid the generic microsecond normalization/padding hot path.
+  Focused proof covers the `date_diff.phpt` regression row passing in release
+  wrapper mode, the five DateTime microsecond PHPT rows still passing, the
+  seven ReflectionAttribute rows from this integration cycle still passing,
+  and Rust
+  `datetime_microsecond_format_create_from_format_and_diff_are_bounded`.
+  Unsupported edges remain full timelib performance/parity, DatePeriod,
+  fractional ISO interval parsing, references/COW, and native lowering.
+
+- Added a bounded `ReflectionAttribute` / core attribute validation lane on the
+  interpreter path. Core `Attribute` flag evaluation now reports PHP-shaped
+  type and invalid-flag errors, repeated internal `Attribute` metadata is
+  rejected, AST-node attribute arguments resolve missing class constants during
+  validation, `ReflectionAttribute::__construct()` is protected from direct
+  instantiation, `ReflectionAttribute::__toString()` renders selected argument
+  metadata, and the core `Deprecated` attribute materializes `message` and
+  `since` properties through `newInstance()`. Focused proof covers Rust
+  `object_model` `reflection_attribute_`, the core class metadata guard,
+  build/fmt/diff checks, and selected public PHPT rows
+  `Zend/tests/attributes/021_attribute_flags_type_is_validated.phpt`,
+  `Zend/tests/attributes/022_attribute_flags_value_is_validated.phpt`,
+  `Zend/tests/attributes/023_ast_node_in_validation.phpt`,
+  `Zend/tests/attributes/025_internal_repeatable_validation.phpt`,
+  `ext/reflection/tests/ReflectionAttribute_constructor_001.phpt`,
+  `ext/reflection/tests/ReflectionAttribute_newInstance_deprecated.phpt`, and
+  `ext/reflection/tests/ReflectionAttribute_toString.phpt` at `7/7` PASS.
+  Exact-current pre-patch evidence on `23109651` was `0/7` from the pinned
+  full-gate shard results. Unsupported edges remain userland attribute
+  validation blocked by anonymous classes, exact constructor exception stack
+  rendering, full attribute argument AST/value parity, broader Reflection
+  identity formatting, native lowering, and references/COW.
+
+- Added a bounded DateTime microseconds lane on the interpreter path.
+  DateTime and DateTimeImmutable state now preserves microseconds through
+  construction, formatting, serialization/state restoration, copies, timezone
+  and date setters, and bounded `DateInterval` diff/add/sub arithmetic.
+  Implemented bounded `date_create_from_format()` /
+  `DateTime::createFromFormat()` / `DateTimeImmutable::createFromFormat()`
+  coverage for selected fractional formats, plus
+  `DateTime[Immutable]::getMicrosecond()` / `setMicrosecond()` with catchable
+  `DateRangeError` bounds. Focused proof covers Rust
+  `datetime_microsecond_format_create_from_format_and_diff_are_bounded`, the
+  full `date_time_builtin` file, core class metadata guards, build/fmt/diff
+  checks, and selected public PHPT rows
+  `ext/date/tests/date_time_fractions.phpt`,
+  `ext/date/tests/date_time_fractions_create_from_format.phpt`,
+  `ext/date/tests/date_time_fractions_serialize.phpt`,
+  `ext/date/tests/getSetMicroseconds.phpt`, and
+  `ext/date/tests/bug75577.phpt` at `5/5` PASS. Exact-current pre-patch proof
+  on `c2feffda` was `0/5`. Unsupported edges remain full timelib and
+  `createFromFormat()` grammar/error metadata, DatePeriod, fractional ISO
+  interval parsing, references/COW, and native lowering.
+
+- Added a bounded method visibility and callability lane on the interpreter
+  path. Instance/static dispatch now shares a receiver-aware visibility helper
+  for current method scope, protected receiver/prototype access, PHP-shaped
+  private/protected method `Error` diagnostics, and direct public non-static
+  `__call()` fallback for missing or inaccessible instance calls. Runtime
+  `is_callable()` now resolves `Class::method` strings and two-element
+  object/class-string callable arrays through the same visibility-aware method
+  metadata and supported magic-call metadata. Focused proof covers Rust
+  `object_model::method_visibility_handles_protected_prototypes_scope_callables_and_magic_call`,
+  the broader object-model `visibility` filter, build/fmt/diff checks, and
+  selected public PHPT rows
+  `Zend/tests/access_modifiers/access_modifiers_008.phpt`,
+  `Zend/tests/access_modifiers/access_modifiers_009.phpt`,
+  `Zend/tests/access_modifiers/access_modifiers_011.phpt`,
+  `Zend/tests/get_class_methods/bug43483.phpt`, and
+  `Zend/tests/inheritance/grandparent_prototype.phpt` at `5/5` PASS.
+  Exact-current pre-patch proof on `6a8e4f1f` was `0/5`. Unsupported edges
+  remain exact uncaught fatal stack formatting, full callable-name output,
+  first-class callable parity, broader Reflection/native callable invocation
+  surfaces, `__callStatic` execution beyond metadata fallback, namespace/import
+  and autoload parity beyond existing bounded lookup hooks, native lowering,
+  and references/COW.
+
+- Added a bounded relative `self` / `parent` / `static` method-signature
+  variance lane on the interpreter path. Method signature comparison now
+  resolves relative type tokens in the declaring class or interface context,
+  preserves PHP's `static` return constraint, expands interface parents for
+  subtype checks, and uses the resolved relative context for supported runtime
+  parameter and return enforcement. Focused proof covers Rust
+  `object_model::relative_self_parent_static_method_variance_uses_declaring_context`,
+  build/fmt/diff checks, and selected public PHPT rows
+  `Zend/tests/type_declarations/variance/object_variance.phpt`,
+  `Zend/tests/type_declarations/variance/parent_in_class_success.phpt`,
+  `Zend/tests/type_declarations/variance/parent_in_class_failure2.phpt`,
+  `Zend/tests/type_declarations/variance/static_variance_success.phpt`, and
+  `Zend/tests/type_declarations/variance/static_variance_failure.phpt` at
+  `5/5` PASS. Unsupported edges remain parenthesized DNF declarations,
+  namespace/import-aware relative type diagnostics and aliases, broad runtime
+  type-enforcement diagnostics, exact PHP error objects, native lowering, and
+  references/COW.
+
+- Added a bounded intersection type diagnostics lane on the interpreter path.
+  Runtime parameter and typed-property errors now report PHP-shaped runtime
+  object class names instead of the generic `object` type for covered class,
+  interface, union, and pure-intersection declarations. Explicit `= null`
+  defaults on otherwise non-nullable typed parameters are accepted as
+  implicitly nullable on the call path, emit PHP's startup `Deprecated`
+  diagnostic, and render pure-intersection error types as `(A&B)|null`.
+  Caught direct user-function argument `TypeError`s also include the PHP-style
+  call-site suffix. Focused proof covers Rust
+  `object_model::intersection_type_diagnostics_use_php_actual_names_and_implicit_nullable_defaults`,
+  build/fmt/diff checks, and selected public PHPT rows
+  `Zend/tests/type_declarations/intersection_types/assigning_intersection_types.phpt`,
+  `Zend/tests/type_declarations/intersection_types/implicit_nullable_intersection_type.phpt`,
+  `Zend/tests/type_declarations/intersection_types/implicit_nullable_intersection_type_error.phpt`,
+  `Zend/tests/type_declarations/intersection_types/missing_interface_intersection_type.phpt`,
+  `Zend/tests/type_declarations/intersection_types/parameter.phpt`, and
+  `Zend/tests/type_declarations/intersection_types/typed_reference.phpt` at
+  `6/6` PASS. Unsupported edges remain parenthesized DNF types,
+  namespace/import-aware type canonicalization, full strict-types parity,
+  exact PHP error object internals, native lowering, and broad references/COW
+  beyond existing typed-property reference-cell paths.
+
+- Added a bounded `array_walk()` / `array_walk_recursive()` object-input and
+  callback-validation lane on the interpreter path. Both helpers now accept
+  ordinary object inputs through initialized PHP-mangled property slots,
+  preserve by-reference callback writeback to walked object properties, and
+  report catchable PHP-shaped callback `TypeError`s for invalid string
+  callbacks before walking. Focused proof covers the Rust `array_walk` target,
+  build/fmt/diff checks, and selected public PHPT rows
+  `ext/standard/tests/array/array_walk/array_walk_object1.phpt`,
+  `ext/standard/tests/array/array_walk/array_walk_objects.phpt`,
+  `ext/standard/tests/array/array_walk/array_walk_variation8.phpt`,
+  `ext/standard/tests/array/array_walk/array_walk_recursive_object1.phpt`,
+  `ext/standard/tests/array/array_walk/array_walk_recursive_variation8.phpt`,
+  and `ext/standard/tests/array/array_walk/array_walk_rec_objects.phpt` at
+  `6/6` PASS. Unsupported edges remain first-class callable forms, exact
+  exception trace frames, object-property-set mutation during walking,
+  broad references/COW, and native lowering.
+
+- Added a bounded `foreach` complex target lane on the interpreter path.
+  By-value key and value targets now share the recursive target writer for
+  direct variables, direct object properties, magic `__set()` properties,
+  direct array offsets, and direct object-property array offsets. The same
+  lane emits PHP-shaped simple fatals for `$this` as a foreach assignment
+  target and by-reference key targets. Focused proof covers the Rust
+  `foreach` target, build/fmt/diff checks, and selected public PHPT rows at
+  `9/9` PASS:
+  `Zend/tests/foreach/bug34310.phpt`,
+  `Zend/tests/foreach/bug34467.phpt`,
+  `Zend/tests/foreach/bug34873.phpt`,
+  `Zend/tests/foreach/this_in_foreach_001.phpt`,
+  `Zend/tests/foreach/this_in_foreach_002.phpt`,
+  `Zend/tests/foreach/this_in_foreach_003.phpt`,
+  `Zend/tests/foreach/this_in_foreach_004.phpt`,
+  `tests/lang/foreachLoop.004.phpt`, and
+  `tests/lang/foreachLoop.006.phpt`. Unsupported edges remain non-direct
+  holder/static/append foreach targets, by-reference array-offset and
+  destructuring value targets, exact compile-time fatal ordering outside this
+  slice, native lowering, and broader references/COW.
+
+- Added a bounded `SplFileInfo` path/class-selection lane on the interpreter
+  path. `SplFileInfo` state now tracks `setFileClass()` and `setInfoClass()`
+  selections, validates selected classes against the relevant SPL base class,
+  supports `getExtension()`, `getFileInfo()`, `getPathInfo()`, and `openFile()`
+  over the existing local `SplFileInfo` / `SplFileObject` object states, and
+  maps invalid selected classes to catchable SPL-shaped `TypeError`s. Focused
+  proof covers Rust `object_model` `spl_file_info` tests, build/fmt checks,
+  and selected public PHPT rows
+  `ext/spl/tests/SplFileInfo_getExtension_basic.phpt`,
+  `ext/spl/tests/SplFileInfo_setFileClass_basic.phpt`,
+  `ext/spl/tests/SplFileInfo_setFileClass_error.phpt`,
+  `ext/spl/tests/SplFileInfo_setInfoClass_basic.phpt`, and
+  `ext/spl/tests/SplFileInfo_setInfoClass_error.phpt` at `5/5` PASS.
+  Unsupported edges remain broad `SplFileInfo` path/name/type methods,
+  selected-class constructor side effects, DirectoryIterator inherited
+  metadata, link-target-specific behavior, remote wrappers, references/COW,
+  and native lowering.
+
+- Repaired a mixed-return inheritance PASS regression on the interpreter
+  metadata path. The bounded signature subtype relation now treats `mixed` as
+  a top type for return values while excluding `void`, so a child method with
+  `: void` no longer satisfies an inherited `: mixed` return contract, while
+  ordinary narrowed value returns and the accepted variadic/intersection
+  compatibility lanes continue to pass. Focused proof covers Rust
+  `object_model::mixed_return_variance_rejects_void_override`,
+  `object_model::intersection_variance_accepts_equivalent_and_reduced_bounds`,
+  `object_model::variadic_signature_compatibility_checks_reference_mode_nullable_and_unions`,
+  inherited/interface signature diagnostic tests, build/fmt/diff checks, and
+  selected public PHPT row
+  `Zend/tests/type_declarations/mixed/inheritance/mixed_return_inheritance_error1.phpt`.
+  Unsupported edges remain parenthesized DNF, namespace/import-aware type-name
+  canonicalization, aliases, `self`/`parent`/`static` signature resolution,
+  broad runtime type-enforcement diagnostics, exact PHP error objects, native
+  lowering, and references/COW.
+
+- Repaired two full-gate `unserialize()` PASS regressions in the interpreter
+  parser. Object and custom-object class-name lengths now report signed-length
+  errors at the serialized value start, and oversized object property counts
+  are rejected without large allocation while truncated object payloads preserve
+  the reached parser offset. Focused proof covers the Rust `serialize_builtin`
+  target, build/fmt/diff checks, and selected latest-published PASS-regression
+  PHPT rows `ext/standard/tests/serialize/bug73052.phpt` and
+  `ext/standard/tests/serialize/invalid_signs_in_lengths.phpt`. Unsupported
+  edges remain true `Serializable`, `__serialize()` / `__unserialize()` hooks,
+  complete reference graph reconstruction, broader malformed-offset parity,
+  references/COW, and native lowering.
+
+- Added a bounded pure-intersection variance lane on the interpreter metadata
+  path. Startup and runtime signature checks now understand simple
+  union/intersection subtype relationships for declared classes/interfaces,
+  `object`, `iterable`/`Traversable`, `true`/`false` under `bool`, and
+  class/interface relationships predeclared before interface-inheritance
+  validation. Inherited property checks accept PHP-equivalent pure
+  intersections, including commuted members and reductions such as
+  `A&B` to subclass `B`, while transitive interface method conflicts skip
+  ancestor/descendant duplicate pairs after the child interface has already
+  validated its override. Focused proof covers Rust
+  `object_model::intersection_variance_accepts_equivalent_and_reduced_bounds`,
+  build/fmt checks, and selected public PHPT rows
+  `Zend/tests/type_declarations/intersection_types/variance/valid1.phpt`
+  through `valid8.phpt`. Unsupported edges remain parenthesized DNF,
+  namespace/import-aware type-name canonicalization, aliases, `self`/`parent`/
+  `static` signature resolution, broad runtime type-enforcement diagnostics,
+  exact PHP error objects, native lowering, and references/COW.
+
+- Added a bounded `SplFileInfo` local metadata lane on the interpreter path.
+  Core `SplFileInfo` objects now carry a bounded local path state and support
+  `__construct()`, `getGroup()`, `getInode()`, `getOwner()`, and `getPerms()`
+  through the existing filesystem metadata/stat-cache helpers, including
+  SPL-shaped missing-stat `RuntimeException` behavior. Added bounded
+  interpreter-only `shell_exec(string $command)` stdout capture through
+  `sh -c` for PHPT oracle commands. Focused proof covers object-model and
+  process-execution Rust tests, build/fmt/diff checks, and selected public
+  PHPT rows `ext/spl/tests/SplFileInfo_getGroup_basic.phpt`,
+  `SplFileInfo_getGroup_error.phpt`, `SplFileInfo_getInode_basic.phpt`,
+  `SplFileInfo_getInode_error.phpt`, `SplFileInfo_getOwner_basic.phpt`,
+  `SplFileInfo_getOwner_error.phpt`, `SplFileInfo_getPerms_basic.phpt`, and
+  `SplFileInfo_getPerms_error.phpt` at `8/8` PASS. Unsupported edges remain
+  broad `SplFileInfo` path/name/type methods, `SplFileObject` inheritance over
+  `SplFileInfo`, DirectoryIterator inherited metadata, link-target-specific
+  behavior, remote wrappers, and native lowering.
+
+- Added a bounded malformed `unserialize()` diagnostics lane on the interpreter
+  path. The serialized parser now preserves reached error offsets while
+  parsing malformed object/custom-object payloads, uses checked digit-by-digit
+  length/count parsing, guards unrealistic array/object/custom payload counts
+  before allocation, emits the reached insufficient-data warning for oversized
+  custom payloads, and parses bounded `R:` / `r:` reference tokens far enough
+  to report PHP-shaped malformed-input offsets without claiming full reference
+  reconstruction. Focused proof covers the Rust `serialize_builtin` target,
+  build/fmt/diff checks, and selected public PHPT rows
+  `ext/standard/tests/serialize/serialization_objects_018.phpt`,
+  `ext/standard/tests/serialize/bug68044.phpt`,
+  `ext/standard/tests/serialize/unserialize_large.phpt`,
+  `ext/standard/tests/serialize/bug75054.phpt`,
+  `ext/standard/tests/serialize/oss_fuzz_433303828.phpt`, and
+  `ext/standard/tests/serialize/unserialize_mem_leak.phpt`. Unsupported edges
+  remain true `Serializable`, `__serialize()` / `__unserialize()` hooks,
+  complete reference graph reconstruction, broader malformed-offset parity,
+  references/COW, and native lowering.
+
+- Added a bounded by-value `foreach` list-destructuring lane on the
+  interpreter path. `foreach` value targets now accept nested positional
+  `list(...)` / `[...]` targets, literal integer/string keyed list targets,
+  scalar `Cannot use ... as array` warning-plus-`null` recovery, and the
+  simple PHP fatal messages for empty list targets and lists used as foreach
+  keys. Focused proof covers the Rust `foreach_destructuring` target,
+  build/fmt/diff checks, and selected public PHPT rows
+  `Zend/tests/foreach/foreach_list_001.phpt`,
+  `Zend/tests/foreach/foreach_list_002.phpt`,
+  `Zend/tests/foreach/foreach_list_003.phpt`,
+  `Zend/tests/foreach/foreach_list_004.phpt`, and
+  `Zend/tests/foreach/foreach_list_keyed.phpt`. Unsupported edges remain
+  by-reference list destructuring, non-literal keyed list targets,
+  ArrayAccess/object destructuring sources, full compile-time fatal ordering,
+  native lowering, and references/COW beyond the existing by-value foreach
+  value model.
+
+- Accepted checkpoint `d22bef26` as the current public PHPT score source after
+  the replacement full pinned php-src gate completed with zero
+  latest-published PASS regressions. The public-comparable score is now
+  `6396 / 20294 = 31.52%`, up from `6265 / 20294 = 30.87%` at checkpoint
+  `dcd07a3c`. The accepted gate evidence is
+  `state/logs/phpt-full-current-score-20260603T082116Z-php-src-f97ff59-public-d22bef26-source-d22bef26`;
+  aggregate counts were `6396` passed, `12624` failed, `2755` skipped, `16`
+  xfailed, `539` borked, and `1` warned. The normalized PASS regression
+  comparison was `6392` current passes vs. `6261` baseline passes with `0`
+  regressions, and the invalid-proof-marker summary reported `0` hits.
+
+- Added a bounded DateTime/DateInterval malformed-string diagnostics lane on the
+  interpreter path. Object `DateTime::modify()` and
+  `DateTimeImmutable::modify()` now raise catchable
+  `DateMalformedStringException`s for empty or unsupported bounded modifiers,
+  while procedural `date_modify()` emits the PHP-shaped warning and returns
+  `false`. `DateInterval::createFromDateString()` now keeps throwing
+  `DateMalformedIntervalStringException` for malformed relative strings and the
+  bounded non-relative token set with times, month names, `noon`, `midnight`,
+  `UTC`, or `GMT`; procedural `date_interval_create_from_date_string()` now
+  emits a PHP-shaped warning plus `false` for those same malformed inputs.
+  Focused proof covers the Rust
+  `malformed_datetime_and_dateinterval_strings_throw_or_warn` regression, the
+  full `date_time_builtin` Rust file, runtime/object-model core class metadata
+  checks, build/fmt/diff checks, and selected public PHPT rows
+  `ext/date/tests/DateTime_modify_invalid_format.phpt`,
+  `ext/date/tests/DateTimeImmutable_modify_invalid_format.phpt`,
+  `ext/date/tests/date_interval_create_from_date_string_broken.phpt`,
+  `ext/date/tests/date_interval_create_from_date_string_nullparam.phpt`, and
+  `ext/date/tests/date_interval_non_relative_warning.phpt` at `5/5` PASS.
+  Unsupported edges remain full timelib relative grammar and non-relative
+  classification, exact invalid-modifier diagnostics beyond the bounded parser,
+  DatePeriod, DateInterval serialization/state restoration, references/COW, and
+  native lowering.
+
+- Accepted checkpoint `dcd07a3c` as the current public PHPT score source after
+  the replacement full pinned php-src gate completed with zero
+  latest-published PASS regressions. The public-comparable score is now
+  `6265 / 20294 = 30.87%`, up from `6194 / 20294 = 30.52%` at checkpoint
+  `423a03d4`. The accepted gate evidence is
+  `state/logs/phpt-full-current-score-20260602T224641Z-php-src-f97ff59-public-dcd07a3c-source-dcd07a3c`;
+  aggregate counts were `6265` passed, `12741` failed, `2759` skipped, `16`
+  xfailed, `549` borked, and `1` warned. The normalized PASS regression
+  comparison was `6261` current passes vs. `6190` baseline passes with `0`
+  regressions, and the invalid-proof-marker summary reported `0` hits.
+
+- Repaired the full-gate DateTime `%a` PASS regressions for spring/fall DST
+  transition `DateTime::diff()` day rows. `DateInterval::$days` now derives
+  from the computed interval date component instead of the raw endpoint
+  civil-date distance, preserving bounded month-span totals while keeping
+  sub-day transition windows at zero days. Same-civil-date repeated-hour
+  fall-back diffs now decompose the absolute timestamp delta when wall-clock
+  order crosses timestamp order. Focused proof covers the Rust
+  `datetime_diff_uses_directional_calendar_borrow_and_total_days` regression,
+  the full `date_time_builtin` Rust target, build/fmt/diff checks, and the
+  eight latest-published PASS-regression PHPT rows
+  `ext/date/tests/DateTime_days-fall-type2-type2.phpt`,
+  `ext/date/tests/DateTime_days-fall-type2-type3.phpt`,
+  `ext/date/tests/DateTime_days-fall-type3-type2.phpt`,
+  `ext/date/tests/DateTime_days-fall-type3-type3.phpt`,
+  `ext/date/tests/DateTime_days-spring-type2-type2.phpt`,
+  `ext/date/tests/DateTime_days-spring-type2-type3.phpt`,
+  `ext/date/tests/DateTime_days-spring-type3-type2.phpt`, and
+  `ext/date/tests/DateTime_days-spring-type3-type3.phpt`. Unsupported edges
+  remain full timelib transition parity, broad historical timezone rules,
+  exact native lowering, and references/COW.
+
+- Added a bounded variadic method-signature compatibility lane on the
+  interpreter metadata path. Interface implementations and inherited method
+  redeclarations now compare by-reference passing mode, render `null`
+  signature defaults with PHP-shaped casing, accept simple nullable and union
+  parameter relationships where subset checks prove compatibility, and keep
+  variadic by-reference call fatals aligned with PHP's parameter-name omission.
+  Focused proof covers Rust regressions in `object_model` and
+  `functions_and_scopes`, build/fmt/diff checks, and selected public PHPT rows
+  `Zend/tests/variadic/adding_additional_optional_parameter.phpt`,
+  `Zend/tests/variadic/adding_additional_optional_parameter_error.phpt`,
+  `Zend/tests/variadic/by_ref_error.phpt`,
+  `Zend/tests/variadic/illegal_variadic_override_ref.phpt`,
+  `Zend/tests/variadic/legal_variadic_override.phpt`, and
+  `Zend/tests/variadic/variadic_changed_byref_error.phpt`. Unsupported edges
+  remain full PHP variance, DNF/intersection and namespace-aware type
+  canonicalization, broad variadic runtime type-enforcement diagnostics and
+  traces, native lowering, and references/COW.
+
+## 2026-06-02
+
+Implemented:
+
+- Added a bounded ext/filter scalar-helper lane on the interpreter path.
+  `FILTER_FLAG_EMAIL_UNICODE` is now visible, `FILTER_VALIDATE_DOMAIN` uses
+  PHP-shaped permissive scalar behavior by default and strict bounded hostname
+  label checks under `FILTER_FLAG_HOSTNAME`, arrays/objects/resources fail
+  instead of stringifying, and `FILTER_VALIDATE_EMAIL` covers reached total and
+  local-part length limits, quoted locals, bracketed IPv4/IPv6 domain
+  literals, and Unicode local parts under `FILTER_FLAG_EMAIL_UNICODE`.
+  `filter_input_array()` now covers empty or missing input-source `NULL`
+  results plus populated superglobal array filtering through the existing
+  descriptor path. Focused proof covers the Rust
+  `filter_domain_email_unicode_and_input_array_match_bounded_php_rows`
+  regression, the full `filter_builtin` Rust target, build/fmt/diff checks,
+  and selected public PHPT rows `ext/filter/tests/033.phpt`,
+  `ext/filter/tests/056.phpt`, `ext/filter/tests/058.phpt`,
+  `ext/filter/tests/bug52929.phpt`, and
+  `ext/filter/tests/filter_input_array_001.phpt`. Unsupported edges remain
+  full RFC/IDNA email/domain parity, broad `filter_input_array()` diagnostics
+  and input-source parity, `FILTER_THROW_ON_FAILURE`, sanitizer deprecation
+  diagnostics and INI `filter.default` behavior, object/resource coercions,
+  references/COW, and native lowering.
+
+- Added a bounded interface implementation startup-diagnostics lane on the
+  interpreter path. Class declarations that extend a declared interface or
+  implement a declared class/trait now report PHP-shaped startup fatals, and
+  interface declarations that extend a declared class/trait also report
+  PHP-shaped `cannot implement ... not an interface` startup fatals. Concrete
+  classes that are missing required declared-interface methods now report
+  PHP's abstract-method startup fatal instead of the generic
+  unsupported-inheritance boundary. Non-public implementations of public
+  interface methods now report PHP-shaped access-level startup fatals.
+  Focused proof covers the Rust `object_model` interface diagnostics
+  regressions, build/fmt/diff checks, and selected public PHPT rows
+  `tests/classes/interface_must_be_implemented.phpt`,
+  `tests/classes/interfaces_002.phpt`,
+  `tests/classes/interface_and_extends.phpt`,
+  `tests/classes/interface_class.phpt`, `Zend/tests/inter_05.phpt`,
+  `Zend/tests/objects/objects_012.phpt`, and
+  `Zend/tests/traits/error_008.phpt`. Unsupported edges remain preserving
+  prior user output before later class-declaration startup fatals, parser-level
+  interface method body/private/final diagnostics, inherited abstract method
+  implementation fatal wording, full signature compatibility fatal text,
+  property hooks, references/COW, and native lowering.
+
+- Added a bounded `ob_start()` invalid-handler recovery lane on the
+  interpreter path. `ob_start()` now validates scalar callback operands,
+  string function/static-method handlers, and array handlers at buffer
+  creation time; invalid callback types, missing functions/classes/methods,
+  malformed callback arrays, and non-static class-string method handlers emit
+  PHP-shaped warnings plus the `Failed to create buffer` notice, return
+  `false`, and leave the output-buffer stack unchanged. Valid public
+  object-method array handlers continue to run through the existing handler
+  dispatch. Focused proof covers the Rust
+  `ob_start_invalid_handlers_warn_and_do_not_create_buffers` regression, the
+  full `output_buffer_builtin` Rust target, build/fmt/diff checks, and
+  selected public PHPT rows `tests/output/ob_start_basic_005.phpt`,
+  `tests/output/ob_start_basic_006.phpt`,
+  `tests/output/ob_start_error_001.phpt`,
+  `tests/output/ob_start_error_002.phpt`,
+  `tests/output/ob_start_error_003.phpt`, and
+  `tests/output/ob_start_error_004.phpt`. Unsupported edges remain
+  invokable-object output handlers, by-reference output handlers, reentrant
+  output-buffer operations from inside display handlers, exact handler status
+  metadata beyond the bounded fields, exact
+  `ErrorException::__toString()` internal stack frames for
+  deprecation-converted handlers, fatal-error cleanup, broader callback
+  autoload/scope edge cases, references/COW, and native lowering.
+
+- Added a bounded class-constant visibility diagnostics lane on the interpreter
+  path. Class constants now carry invalid `static` / `abstract` modifier
+  metadata to startup diagnostics, protected/private class-constant access
+  raises catchable PHP `Error` messages, private parent constants are skipped
+  during inherited child lookups, reduced-visibility class-constant
+  redeclarations emit PHP-shaped startup fatals, and direct static method calls
+  reuse the source-aware call path so uncaught class-constant errors include the
+  expected user call frame. Focused proof covers the Rust
+  `class_constant_visibility_errors_are_catchable_php_errors`,
+  `private_parent_class_constants_are_not_inherited`, and
+  `class_constant_invalid_modifiers_and_visibility_reductions_are_startup_fatals`
+  regressions plus selected public PHPT rows
+  `tests/classes/constants_visibility_002.phpt`,
+  `tests/classes/constants_visibility_003.phpt`,
+  `tests/classes/constants_visibility_004.phpt`,
+  `tests/classes/constants_visibility_005.phpt`,
+  `tests/classes/constants_visibility_006.phpt`,
+  `tests/classes/constants_visibility_error_001.phpt`,
+  `tests/classes/constants_visibility_error_002.phpt`,
+  `tests/classes/constants_visibility_error_003.phpt`, and
+  `tests/classes/constants_visibility_error_004.phpt` at `9/9` PASS. Typed,
+  final, and multi-declarator class constants, native lowering, autoload
+  interaction, broader dynamic class-constant string names, references/COW, and
+  exact startup ordering across unrelated invalid declaration facets remain
+  unsupported.
+
+- Added a bounded PHP Throwable accessor/state lane on the interpreter path.
+  Core `Exception`, `ErrorException`, and caught `Error`/`TypeError`-style
+  objects now preserve and expose the covered `message`, `code`, `file`,
+  `line`, `previous`, and `severity` metadata through the existing Throwable
+  method dispatch, including bounded `getFile()`, `getPrevious()`,
+  `getTraceAsString()`, and `ErrorException::getSeverity()` behavior. Focused
+  proof covers the Rust `builtin_exception_class` accessors, an
+  output-buffer `ErrorException` conversion guard, build/fmt/diff checks, and
+  selected public PHPT rows `Zend/tests/ErrorException_construct.phpt`,
+  `Zend/tests/ErrorException_getSeverity.phpt`,
+  `Zend/tests/constexpr/constant_expressions_exceptions_002.phpt`,
+  `Zend/tests/exceptions/exception_014.phpt`,
+  `Zend/tests/exceptions/exception_016.phpt`,
+  `Zend/tests/exceptions/exception_getters_with_ref_props.phpt`, and
+  `Zend/tests/return_types/028.phpt`. Unsupported edges remain structured
+  `getTrace()` arrays, exact internal stack frames, full Throwable interface
+  parity, callable subclass methods on core Throwable objects, references/COW
+  outside the covered property cells, and native lowering.
+
+- Added a bounded abstract/interface diagnostics lane on the interpreter path.
+  Direct instantiation of declared abstract classes and interfaces now raises
+  PHP-shaped uncaught `Error` fatals through `phpc run`, including preserved
+  prior output and stack-trace shell formatting, and concrete classes that
+  directly declare an abstract method now report PHP-shaped startup fatals
+  instead of the generic unsupported-inheritance boundary. Focused proof covers
+  the Rust `object_model` abstract/interface diagnostic regressions, build/fmt
+  and diff checks, and selected public PHPT rows
+  `tests/classes/abstract_class.phpt`, `class_abstract.phpt`,
+  `abstract_inherit.phpt`, `abstract_derived.phpt`,
+  `abstract_not_declared.phpt`, `abstract_redeclare.phpt`, and
+  `interface_instantiate.phpt`. Unsupported edges remain inherited abstract
+  method implementation fatal wording, interface required-method fatal wording,
+  abstract static method diagnostics inside `eval()`, abstract method call
+  execution diagnostics, exact trace frames beyond the current uncaught shell,
+  references/COW, and native lowering.
+
+- Added a bounded DateTime diff calendar-borrow lane on the interpreter path.
+  `DateTime::diff()`, `DateTimeImmutable::diff()`, and `date_diff()` now use
+  directional local-calendar month/day borrowing for forward and reverse
+  intervals, and `%a` / `days` metadata is derived from absolute local
+  civil-day distance for the covered bounded rows. Ordinary diff/ISO
+  `DateInterval` object display now suppresses absent `date_string` metadata
+  while preserving present relative-string metadata. Focused proof covers the
+  Rust `datetime_diff_uses_directional_calendar_borrow_and_total_days` and
+  `dateinterval_diff_dump_hides_absent_date_string_metadata` regressions, the
+  full `date_time_builtin` Rust file, build/fmt/diff checks, and selected
+  public PHPT rows `ext/date/tests/DateTime_diff-dates.phpt`,
+  `ext/date/tests/DateTime_diff-february.phpt`,
+  `ext/date/tests/DateTime_days-february.phpt`,
+  `ext/date/tests/date_diff.phpt`, and `ext/date/tests/date_diff1.phpt`.
+  Unsupported edges remain massive-year DateTime diff/day/add/sub rows outside
+  the bounded civil-calendar/timestamp model, exact relative-string
+  `DateInterval` object-handler parity, DateInterval
+  serialization/unserialization and `__set_state()`, full timelib relative
+  grammar, broad historical timezone/DST transition parity, references/COW,
+  and native lowering.
+
+- Added a bounded `crypt()` invalid-salt fallback lane on the interpreter path.
+  Malformed modular salts, invalid bcrypt algorithm/cost/salt-body forms,
+  invalid DES/extended-DES salts, NUL-containing SHA modular salts, and the
+  `*0` fallback toggle now return PHP-shaped `*0`/`*1` markers instead of
+  stopping at the generic unsupported-call boundary. Focused proof covers the
+  Rust `crypt_invalid_modular_and_des_salts_use_php_fallback_markers`
+  regression and selected public PHPT rows
+  `ext/standard/tests/crypt/bcrypt_invalid_algorithm.phpt`,
+  `ext/standard/tests/crypt/bcrypt_invalid_cost.phpt`,
+  `ext/standard/tests/crypt/des_fallback_invalid_salt.phpt`,
+  `ext/standard/tests/strings/crypt_des_error.phpt`,
+  `ext/standard/tests/strings/crypt_blowfish_variation1.phpt`,
+  `ext/standard/tests/strings/crypt_blowfish_variation2.phpt`, and
+  `ext/standard/tests/strings/bug62443.phpt`. Valid DES, extended DES,
+  MD5-crypt, bcrypt/Blowfish, SHA-256, SHA-512, provider/platform policy,
+  cryptographic guarantees, exact diagnostics, and native lowering remain
+  unsupported.
+
+- Accepted checkpoint `423a03d4` as the current public PHPT score source after
+  the replacement full pinned php-src gate completed with zero
+  latest-published PASS regressions. The public-comparable score is now
+  `6194 / 20294 = 30.52%`, up from `6141 / 20294 = 30.26%` at checkpoint
+  `6ca895a9`. The accepted gate evidence is
+  `state/logs/phpt-full-current-score-20260602T211722Z-php-src-f97ff59-public-423a03d4-source-423a03d4`;
+  aggregate counts were `6194` passed, `12813` failed, `2758` skipped, `16`
+  xfailed, `549` borked, and `1` warned. The normalized PASS regression
+  comparison was `6190` current passes vs. `6137` baseline passes with `0`
+  regressions, and the invalid-proof-marker summary reported `0` hits.
+
+- Added a bounded magic-method return-type startup diagnostics lane on the
+  interpreter path. Class, interface, and trait declarations now reject
+  `__construct()` / `__destruct()` return declarations, enforce `void` return
+  declarations for `__clone()`, `__set()`, `__unset()`, `__unserialize()`,
+  and `__wakeup()`, enforce `bool` for `__isset()`, `string` for
+  `__toString()`, `array` / nullable-array forms for `__debugInfo()`, `array`
+  for `__serialize()` / `__sleep()`, and object-compatible `object`,
+  class-name, `self`, `static`, union, or intersection declarations for
+  `__set_state()`.
+  Focused proof covers the Rust
+  `magic_method_return_type_contracts_emit_php_startup_fatals` and
+  `magic_method_return_type_contracts_accept_supported_declarations` /
+  `set_state_return_type_accepts_object_covariance` regressions plus selected
+  public PHPT rows `Zend/tests/magic_methods/magic_methods_021.phpt`,
+  `Zend/tests/return_types/014.phpt`, `018.phpt`, `019.phpt`, `033.phpt`,
+  `034.phpt`, `035.phpt`, `036.phpt`, `037.phpt`, `038.phpt`, and
+  `039.phpt`. Unsupported edges remain exact ordering when one magic method
+  has multiple invalid signature facets, `__debugInfo()` nullable-return
+  deprecation text/order beyond the bounded startup contract, callable/iterable
+  pseudo-type execution, references/COW, and native lowering.
+
+- Added a bounded Tiger 4-pass hash execution lane and HashContext object
+  boundary parity on the interpreter path. `hash()`, `hash_file()`,
+  `HashContext` streaming/copy/clone, HMAC contexts, `hash_hmac()`,
+  `hash_hmac_file()`, `hash_pbkdf2()`, and `hash_hkdf()` now execute
+  `tiger128,4`, `tiger160,4`, and `tiger192,4`. `HashContext` var-dump debug
+  info now exposes `algo`, and `serialize()` now rejects finalized contexts and
+  HMAC contexts with PHP-shaped catchable `Exception`s. Focused proof covers the
+  Rust `hash_tiger4_and_hash_context_object_boundaries_cover_public_rows`
+  regression, the full `hash_builtin` Rust test file, a `phpc run` CLI probe,
+  build/fmt checks, and 6/6 selected public PHPT rows:
+  `ext/hash/tests/hash_copy_001.phpt`, `ext/hash/tests/hash-clone.phpt`,
+  `ext/hash/tests/hash_hkdf_basic.phpt`,
+  `ext/hash/tests/HashContext_debugInfo.phpt`,
+  `ext/hash/tests/bug81714.phpt`, and
+  `ext/hash/tests/hash_serialize_002.phpt`. Unsupported edges remain full
+  `HashContext` serialize/unserialize format parity, HashContext
+  `__serialize()`/`__unserialize()`, sensitive-parameter trace parity, exact
+  stream-resource edge cases outside the bounded readable-stream subset,
+  xxHash unserialize memory-size parity, broader diagnostics, and native
+  lowering.
+
+- Added a bounded RIPEMD and Tiger-3 hash execution lane on the interpreter
+  path. `hash()`, `hash_file()`, `HashContext` streaming, HMAC contexts,
+  `hash_hmac()`, `hash_hmac_file()`, `hash_pbkdf2()`, and `hash_hkdf()` now
+  execute the RIPEMD-128/160/256/320 family, and `hash()` plus the same
+  context/HMAC/derivation surfaces execute the Tiger 3-pass 128/160/192-bit
+  variants. Focused proof covers the Rust
+  `hash_ripemd_and_tiger3_algorithms_are_available` regression, the full
+  `hash_builtin` test file, a `phpc run` CLI probe, build/fmt/diff checks, and
+  selected public PHPT rows `ext/hash/tests/ripemd128.phpt`,
+  `ext/hash/tests/ripemd160.phpt`, `ext/hash/tests/ripemd256.phpt`,
+  `ext/hash/tests/ripemd320.phpt`, and `ext/hash/tests/tiger.phpt`.
+  Unsupported edges remain seeded/non-empty hash options arrays outside the
+  separately documented MurmurHash3/xxHash lane, full hash object
+  serialization parity, exact diagnostics, cryptographic/provider policy, and
+  native lowering.
+
+- Added a bounded MurmurHash3/xxHash hash-options lane on the interpreter path.
+  `hash()`, `hash_file()`, and buffered `HashContext` finalization now compute
+  `murmur3a`, `murmur3c`, `murmur3f`, `xxh32`, `xxh64`, `xxh3`, and `xxh128`
+  with PHP-shaped seed handling. `xxh3` and `xxh128` also support the bounded
+  `secret` option, including non-string secret deprecations, object
+  `__toString()` conversion, short-secret errors, and seed/secret conflict
+  errors. Focused proof covers Rust `hash_builtin` Murmur/xxHash digest and
+  option-diagnostic regressions, plus 7/7 selected public PHPT rows:
+  `ext/hash/tests/murmurhash3.phpt`,
+  `ext/hash/tests/murmurhash3_seed.phpt`,
+  `ext/hash/tests/murmur_seed_deprecation.phpt`,
+  `ext/hash/tests/xxhash_seed.phpt`, `ext/hash/tests/xxhash_secret.phpt`,
+  `ext/hash/tests/xxhash_seed_deprecation.phpt`, and
+  `ext/hash/tests/xxh3_convert_secret_to_string.phpt`. Unsupported edges
+  remain cryptographic algorithms still advertised but not executable in this
+  clone, `HashContext` serialization/debug-info parity, broader option
+  combinations outside the documented seed/secret lane, remote stream wrappers,
+  references/COW, and native lowering.
+
+- Accepted checkpoint `6ca895a9` as the current public PHPT score source after
+  the replacement full pinned php-src gate completed with zero
+  latest-published PASS regressions. The public-comparable score is now
+  `6141 / 20294 = 30.26%`, up from `6090 / 20294 = 30.01%` at checkpoint
+  `c307401c`. The accepted gate evidence is
+  `state/logs/phpt-full-current-score-20260602T200309Z-php-src-f97ff59-public-6ca895a9-source-6ca895a9`;
+  aggregate counts were `6141` passed, `12865` failed, `2759` skipped, `16`
+  xfailed, `549` borked, and `1` warned. The normalized PASS regression
+  comparison was `6137` current passes vs. `6086` baseline passes with `0`
+  regressions, and the invalid-proof-marker summary reported `0` hits.
+
+- Added a bounded ext/filter byte-sanitizer/default/input-source lane on the
+  interpreter path. Unsafe-raw and encoded sanitizers now handle the covered
+  low/high/amp decimal-entity and backtick/high-byte stripping flags,
+  `FILTER_FLAG_EMPTY_STRING_NULL` returns `null` for empty default/unsafe-raw
+  inputs, `filter_input()` reads bounded `INPUT_ENV` and `INPUT_SERVER`
+  superglobal seeds and returns configured defaults for missing inputs,
+  `FILTER_VALIDATE_FLOAT` accepts a one-character custom thousand separator,
+  `FILTER_VALIDATE_MAC` accepts dash/dotted forms plus a configured separator,
+  and `filter_var_array()` emits PHP-shaped unknown-filter warnings with
+  unsafe-raw fallback for reached spec-array descriptors. Focused proof covers
+  the Rust
+  `filter_byte_flags_options_and_input_defaults_cover_bounded_rows`
+  regression, the full `filter_builtin` Rust file, build/fmt/diff checks, and
+  selected public PHPT rows `ext/filter/tests/043.phpt`,
+  `ext/filter/tests/055.phpt`, `ext/filter/tests/bug44779.phpt`,
+  `ext/filter/tests/bug50632.phpt`, `ext/filter/tests/bug51368.phpt`,
+  `ext/filter/tests/bug53037.phpt`, `ext/filter/tests/bug69202.phpt`,
+  `ext/filter/tests/bug69203.phpt`, and `ext/filter/tests/gh16993.phpt`.
+  Unsupported edges remain `filter_input_array()`, `FILTER_THROW_ON_FAILURE`,
+  sanitizer deprecation diagnostics and INI `filter.default` behavior, broad
+  URL/domain/IP/email validation parity, option coercions beyond the named
+  one-character separator paths, object/resource coercions, references/COW,
+  and native lowering.
+
+- Added a bounded output-handler produced-output and `phpcredits()` lane on
+  the interpreter path. Supported output handlers now execute behind a
+  temporary output-capture boundary so PHP-visible output produced by the
+  handler itself is discarded, returned handler output is preserved, and the
+  PHP-shaped produced-output deprecation is emitted to the destination that
+  receives the handled contents. Covered throwing handlers are disabled before
+  later flush attempts, and a bounded `ErrorException` shell supports custom
+  error handlers that convert produced-output deprecations. `phpcredits()` is
+  registered as bounded no-argument output metadata for interpreter calls and
+  function/reflection metadata. Focused proof covers Rust `output_buffer`,
+  `general_function_builtins`, `object_model`, and runtime class-table
+  regressions, build/fmt/diff checks, and selected public PHPT rows
+  `tests/output/gh15181.phpt`,
+  `tests/output/ob_start_callback_output/handler_inconsistent_echo.phpt`,
+  `tests/output/ob_start_callback_output/multiple_handlers.phpt`,
+  `tests/output/ob_start_callback_output/exception_handler_nested.phpt`,
+  `tests/output/ob_start_callback_output/functions_that_output.phpt`, and
+  `tests/output/ob_start_callback_output/functions_that_output_nested.phpt`.
+  Unsupported edges remain exact `ErrorException::__toString()` internal stack
+  frames for deprecation-converted handlers, full `phpcredits()` content pages
+  and flags, invalid output-handler callback recovery, by-reference output
+  handlers, broader reentrancy/stack-mutation edge cases, references/COW, and
+  native lowering.
+
+- Added a bounded reflection method/prototype/extension metadata lane on the
+  interpreter path. `ReflectionMethod` now exposes PHP-visible `$name` and
+  `$class` properties for reflected user class, interface, and trait methods;
+  `ReflectionMethod::hasPrototype()` / `getPrototype()` cover non-private
+  parent class methods and implemented or parent interface declarations;
+  `ReflectionFunction::getExtension()` returns `null` for user functions and a
+  bounded `ReflectionExtension` object for supported internal functions; and
+  covered missing `ReflectionClass::getMethod()` lookups raise a catchable
+  `ReflectionException` while accepting scalar string-convertible method
+  names. Plain double-quoted `$object->property()` interpolation keeps the
+  following `()` literal, while braced `{$object->method()}` remains the
+  zero-argument method-call form. Focused proof covers the Rust
+  `reflection_metadata` regressions, the `milestone2369` direct/compare-php
+  fixture, build/fmt/diff checks, and selected public PHPT rows
+  `ext/reflection/tests/ReflectionClass_getMethod_001.phpt`,
+  `ext/reflection/tests/ReflectionClass_getMethods_001.phpt`,
+  `ext/reflection/tests/ReflectionClass_getMethods_003.phpt`,
+  `ext/reflection/tests/ReflectionFunction_getExtension.phpt`,
+  `ext/reflection/tests/ReflectionMethod_getModifiers_basic.phpt`,
+  `ext/reflection/tests/ReflectionMethod_getPrototype_basic.phpt`, and
+  `ext/reflection/tests/ReflectionMethod_hasPrototype_basic.phpt`.
+  Unsupported edges remain trait adaptation prototype resolution, internal
+  method prototypes, tentative return type prototype details, exact
+  tie-breaking for multiple prototype candidates, broad `ReflectionExtension`
+  inventories beyond the bounded registry, exact reflection exception stack
+  traces/codes, catchable TypeError/arity parity beyond the covered
+  `ReflectionException` paths, references/COW, and native lowering.
+
+- Added a bounded generalized hash HMAC / PBKDF2 / HKDF lane on the
+  interpreter path. `hash_hmac()` now supports lowercase hex and raw binary
+  output for the bounded MD2/MD4/MD5/SHA-1/SHA-2/SHA-3/Whirlpool digest set,
+  `hash_hmac_file()` is registered, reflected, and implemented for bounded
+  local paths/local `file://` URLs, `hash_init(..., HASH_HMAC, $key)` now
+  allocates HMAC `HashContext` objects for supported algorithms,
+  `hash_pbkdf2()` derives bounded PBKDF2 output with PHP's hex-output length
+  truncation and raw binary output, and `hash_hkdf()` is registered,
+  reflected, and implemented for bounded binary HKDF output. Focused proof
+  covers the Rust
+  `hash_hmac_file_context_pbkdf2_and_hkdf_cover_bounded_rows` regression, full
+  `hash_builtin`, build/fmt/diff checks, and selected public PHPT rows
+  `ext/hash/tests/hmac-md5.phpt`,
+  `ext/hash/tests/hash_hmac_file_error.phpt`,
+  `ext/hash/tests/hash_pbkdf2_basic.phpt`,
+  `ext/hash/tests/hash_hkdf_edges.phpt`,
+  `ext/hash/tests/hash_hkdf_error.phpt`, and
+  `ext/hash/tests/hash_hkdf_rfc5869.phpt`. Unsupported edges remain
+  HMAC/PBKDF2/HKDF execution for advertised cryptographic algorithms outside
+  the bounded digest execution set, including RIPEMD, GOST, Tiger, HAVAL, and
+  Snefru, non-empty hash options arrays, remote stream wrappers, broader exact
+  diagnostics, references/COW, and native lowering.
+
+- Added a bounded `DateTime` / `DateTimeImmutable` / `DateTimeZone` clone and
+  non-strict comparison lane on the interpreter path. Cloning exact and
+  subclassed date/timezone objects preserves the represented bounded internal
+  state and public properties, exact core `DateTime` and `DateTimeZone`
+  dynamic property creation now emits PHP-shaped deprecations before storing
+  the property, `DateTime` / `DateTimeImmutable` non-strict comparisons use
+  stored timestamps, and `DateTimeZone` non-strict comparisons cover
+  same-kind equality/inequality with catchable `DateException` /
+  `DateObjectError` diagnostics for mixed-kind or uninitialized operands.
+  Focused proof covers the Rust
+  `date_objects_clone_dynamic_properties_and_compare_bounded_metadata`
+  regression, runtime class-table and object-model guards, full
+  `date_time_builtin`, build/fmt/diff checks, and selected public PHPT rows
+  `ext/date/tests/DateTime_clone_basic2.phpt`,
+  `ext/date/tests/DateTime_clone_basic3.phpt`,
+  `ext/date/tests/DateTime_compare.phpt`,
+  `ext/date/tests/DateTime_compare_basic1.phpt`,
+  `ext/date/tests/DateTimeZone_clone_basic2.phpt`,
+  `ext/date/tests/DateTimeZone_clone_basic3.phpt`,
+  `ext/date/tests/DateTimeZone_compare.phpt`, and
+  `ext/date/tests/DateTimeZone_compare_basic1.phpt`. Unsupported edges remain
+  broad userland dynamic-property deprecation parity outside the bounded date
+  object write path, full DateTimeZone ordering semantics beyond represented
+  same-kind/mixed-kind rows, uninitialized date-object behavior outside
+  covered comparison and method-call paths, references/COW, and native
+  lowering.
+
+- Added a bounded `SplFileObject` CSV parameter semantics lane on the
+  interpreter path. `SplFileObject::fgetcsv()` and `setCsvControl()` now emit
+  PHP-shaped default-escape deprecations when `$escape` is omitted, while
+  `fgetcsv()` suppresses that deprecation after an escape has been explicitly
+  configured through `setCsvControl()` and `setCsvControl()` reports
+  separator/enclosure `ValueError`s before omitted-escape deprecations.
+  `SplFileObject::fputcsv()` validates separator, enclosure, and escape through
+  method-shaped `ValueError` diagnostics while preserving object CSV-control
+  defaults for omitted method arguments, and `ReflectionMethod::getParameters()`
+  exposes internal parameter metadata for `SplFileObject::fgetcsv()`,
+  `setCsvControl()`, and `fputcsv()`. Named-argument ordering for
+  `SplFileObject::fputcsv()` now matches the reflected method parameters.
+  Focused proof covers the Rust
+  `spl_file_object_csv_escape_diagnostics_and_reflection_metadata`,
+  `spl_file_object_flags_and_csv_controls_use_local_line_state`, and
+  `spl_file_object_writable_modes_fwrite_and_fputcsv_use_local_stream_state`
+  regressions plus selected public PHPT rows
+  `ext/spl/tests/SplFileObject/SplFileObject_fgetcsv_basic.phpt`,
+  `ext/spl/tests/SplFileObject/SplFileObject_fgetcsv_delimiter_basic.phpt`,
+  `ext/spl/tests/SplFileObject/SplFileObject_fgetcsv_escape_default.phpt`,
+  `ext/spl/tests/SplFileObject/SplFileObject_setCsvControl_error001.phpt`,
+  `ext/spl/tests/SplFileObject/SplFileObject_setCsvControl_error002.phpt`,
+  `ext/spl/tests/SplFileObject/SplFileObject_setCsvControl_variation001.phpt`,
+  `ext/spl/tests/SplFileObject/bug46569.phpt`,
+  `ext/spl/tests/SplFileObject/bug60201.phpt`,
+  `ext/spl/tests/SplFileObject/bug68479.phpt`,
+  `ext/spl/tests/SplFileObject/SplFileObject_fputcsv_variation13.phpt`, and
+  `ext/spl/tests/SplFileObject/SplFileObject_fputcsv_variation14.phpt`.
+  Unsupported edges remain `SplTempFileObject`, broader
+  multiline/default-escape CSV parity outside the covered method omissions,
+  non-local/user stream wrappers, serialization/debug-info parity,
+  references/COW, and native lowering.
+
+- Added a bounded direct `ArrayObject` / `ArrayIterator` disabled sort-method
+  diagnostics lane on the interpreter path. Comparator-free `asort()`,
+  `ksort()`, `natsort()`, and `natcasesort()` methods now share the existing
+  `disable_functions` check used by `uasort()` / `uksort()` after ordinary
+  method arity/type validation, and direct disabled sort-method fatals record
+  the covered internal method frame. Focused proof covers the Rust
+  `array_object_user_sort_methods_use_comparators_and_guard_reentrant_mutation`
+  and `array_object_disabled_sort_fatal_records_internal_method_frame`
+  regressions and selected public PHPT rows
+  `ext/spl/tests/ArrayObject/asort_disabled.phpt`,
+  `ext/spl/tests/ArrayObject/ksort_disabled.phpt`,
+  `ext/spl/tests/ArrayObject/natsort_disabled.phpt`,
+  `ext/spl/tests/ArrayObject/natcasesort_disabled.phpt`,
+  `ext/spl/tests/ArrayObject/uasort_disabled.phpt`, and
+  `ext/spl/tests/ArrayObject/uksort_disabled.phpt`. Unsupported edges remain
+  disabled-function internal-method stack traces outside direct method-call
+  dispatch, nested ArrayObject-backed user sorting, comparator side effects
+  beyond the covered storage mutation guard, callback forms outside the shared
+  user-array sort callback surface, serialization/unserialization, full
+  reference/COW identity, and native lowering.
+
+- Accepted checkpoint `c307401c` as the previous public PHPT score source after
+  the full pinned php-src gate completed with zero latest-published PASS
+  regressions. The public-comparable score was `6090 / 20294 = 30.01%`,
+  up from `5941 / 20294 = 29.27%` at checkpoint `663e3142`. The accepted gate
+  evidence is
+  `state/logs/phpt-full-current-score-20260602T185136Z-php-src-f97ff59-public-c307401c-source-c307401c`;
+  aggregate counts were `6090` passed, `12916` failed, `2759` skipped, `16`
+  xfailed, `549` borked, and `1` warned. The normalized PASS regression
+  comparison was `6086` current passes vs. `5937` baseline passes with `0`
+  regressions, and the invalid-proof-marker summary reported `0` hits.
+
+- Added a bounded named US/Eastern DST transition mutation lane on the
+  interpreter path. `DateTime` / `DateTimeImmutable` construction and
+  formatting now use time-of-day aware post-2007 spring/fall transition
+  boundaries for named `America/New_York` / `US/Eastern` zones, while explicit
+  `EST` / `EDT` abbreviation strings remain fixed-offset zones. `add()` /
+  `sub()` and procedural `date_add()` / `date_sub()` apply `DateInterval`
+  year/month/day components through local calendar normalization first, then
+  hour/minute/second components as elapsed seconds, matching the selected DST
+  crossing rows. Focused proof covers the Rust
+  `datetime_interval_add_sub_use_named_us_dst_transition_boundaries`
+  regression and selected public PHPT rows
+  `ext/date/tests/DateTime_add-spring-type3-type2.phpt`,
+  `ext/date/tests/DateTime_add-spring-type3-type3.phpt`,
+  `ext/date/tests/DateTime_add-fall-type3-type2.phpt`,
+  `ext/date/tests/DateTime_add-fall-type3-type3.phpt`,
+  `ext/date/tests/DateTime_sub-spring-type2-type3.phpt`,
+  `ext/date/tests/DateTime_sub-spring-type3-type3.phpt`,
+  `ext/date/tests/DateTime_sub-fall-type2-type3.phpt`,
+  `ext/date/tests/DateTime_sub-fall-type3-type2.phpt`, and
+  `ext/date/tests/DateTime_sub-fall-type3-type3.phpt`. Unsupported edges
+  remain full timezone database/history outside the bounded post-2007
+  US/Eastern slice, exact ambiguous/nonexistent parsing beyond the represented
+  rows, full timelib interval arithmetic, DatePeriod, references/COW, and
+  native lowering.
+
+- Added a bounded non-HMAC hash streaming and file hashing lane. `hash_init()`
+  now materializes interpreter `HashContext` objects for the supported
+  MD2/MD4/MD5/SHA-1/SHA-2/SHA-3/Whirlpool/checksum algorithm set;
+  `hash_update()`, `hash_final()`, and `hash_copy()` operate on buffered
+  non-finalized context state; `hash_file()` hashes bounded local paths/local
+  `file://` URLs; and `hash_update_file()`/`hash_update_stream()` append file
+  or readable-stream bytes to a context. Direct `new HashContext()` reports
+  the private-constructor error, and finalized contexts raise PHP-shaped
+  `TypeError`s for the covered calls. Focused proof covers the Rust
+  `hash_context_streaming_and_file_paths_cover_bounded_rows` regression,
+  hash metadata folding, selected public PHPT rows `hash_file_basic.phpt`,
+  `hash_file_error.phpt`, `new-context.phpt`, `reuse.phpt`,
+  `hash_update_file.phpt`, `hash_update_stream.phpt`, and `gh12186_1.phpt`,
+  build/fmt/diff checks. Unsupported edges remain HMAC contexts, advertised
+  algorithms outside the bounded execution set, non-empty options arrays,
+  remote stream wrappers, binary stream reads outside the current UTF-8 stream
+  subset, serialization/debug-info parity, broader exact diagnostics, and
+  native lowering.
+
+- Added a bounded internal DateTime reflection-parameter metadata lane on the
+  interpreter path. `ReflectionMethod::getParameters()` now exposes PHP-shaped
+  names, types, optional/default flags, default values, constant-default names,
+  and `__toString()` defaults for internal `DateTime::setTime()`,
+  `DateTimeImmutable::setTime()`, `DateTimeZone::getTransitions()`, and
+  `DateTimeZone::listIdentifiers()`. Default-inspection methods now raise the
+  catchable `ReflectionException` internal-default diagnostic for parameters
+  with no default and return `null` for non-constant defaults. Focused proof
+  covers the Rust `internal_datetime_parameter_defaults_reflect_php_metadata`
+  regression and selected public PHPT rows
+  `ext/reflection/tests/internal_parameter_default_value/ReflectionParameter_getDefaultValueConstantName_Internal.phpt`,
+  `ext/reflection/tests/internal_parameter_default_value/ReflectionParameter_getDefaultValue_Internal.phpt`,
+  `ext/reflection/tests/internal_parameter_default_value/ReflectionParameter_isDefaultValueAvailable_Internal.phpt`,
+  `ext/reflection/tests/internal_parameter_default_value/ReflectionParameter_isDefaultValueConstant_Internal.phpt`,
+  and
+  `ext/reflection/tests/internal_parameter_default_value/ReflectionParameter_toString_Internal.phpt`.
+  Unsupported edges remain broad internal method/function arginfo inventories,
+  parameter source-file/line/doc-comment metadata, invocation-time reference
+  binding and typed enforcement, exact ReflectionException stack traces,
+  references/COW, and native lowering.
+
+- Added a bounded Reflection modifier-name and class cloneability metadata
+  lane on the interpreter path. Core metadata now includes the `Reflection`
+  shell with static `getModifierNames()`, expanded `ReflectionClass`,
+  `ReflectionMethod`, `ReflectionProperty`, and `ReflectionClassConstant`
+  modifier constants, and PHP-ordered modifier-name arrays for the supported
+  bit masks. `ReflectionClass::isCloneable()` now reports false for traits,
+  interfaces, abstract classes, classes with non-public or static `__clone()`,
+  and the current uncloneable internal/reflection object boundary; cloning a
+  bounded Reflection object raises the PHP-shaped uncloneable-object `Error`.
+  Focused proof covers the Rust
+  `reflection_modifier_names_and_class_cloneability_metadata` regression,
+  runtime core-class metadata, and selected public PHPT rows
+  `ext/reflection/tests/018.phpt`,
+  `ext/reflection/tests/Reflection_getModifierNames_001.phpt`,
+  `ext/reflection/tests/ReflectionClass_getModifierNames_basic.phpt`,
+  `ext/reflection/tests/bug78895.phpt`,
+  `ext/reflection/tests/reflectionclass_for_traits.phpt`,
+  `ext/reflection/tests/ReflectionClass_isCloneable_002.phpt`, and
+  `ext/reflection/tests/ReflectionClass_CannotClone_basic.phpt`. Unsupported
+  edges remain parser/execution support for readonly class/property
+  declarations, property hooks and asymmetric visibility metadata, broad
+  internal object cloneability such as XML extension objects, exact reflection
+  object serialization/debug-info parity, references/COW, and native lowering.
+
+- Added bounded `DateTime` / `DateTimeImmutable` interval arithmetic on the
+  interpreter path. Mutable `DateTime::add()` / `sub()` and procedural
+  `date_add()` / `date_sub()` now mutate the receiver and return it, while
+  immutable `DateTimeImmutable::add()` / `sub()` return a fresh object and
+  preserve the original. The lane applies integer `DateInterval` component
+  metadata plus `invert` through the bounded local timestamp model, accepts
+  numeric `YYYY-MM-DD HH:MM` construction by defaulting seconds to zero, and
+  gives `Asia/Tokyo` concrete `+09:00` / `JST` timezone metadata for
+  instant-preserving `setTimezone()` rows. Focused proof covers the Rust
+  `datetime_interval_add_sub_mutate_or_copy_bounded_state` regression, the
+  full `date_time_builtin` Rust file, runtime class-table metadata, and
+  selected public PHPT rows `ext/date/tests/date_add_basic.phpt`,
+  `ext/date/tests/date_sub_basic.phpt`,
+  `ext/date/tests/date_time_immutable.phpt`,
+  `ext/date/tests/DateTime_add-dates.phpt`,
+  `ext/date/tests/DateTime_sub-dates.phpt`,
+  `ext/date/tests/DateTime_add-february.phpt`, and
+  `ext/date/tests/DateTime_sub-february.phpt`. Unsupported edges remain full
+  timelib interval arithmetic, nonzero fractional interval mutation,
+  arithmetic overflow outside the bounded timestamp range, broad historical DST
+  transition parity, DatePeriod, DateInterval serialization/state restoration,
+  references/COW, and native lowering.
+
+- Added a bounded local writable `SplFileObject` lane on the interpreter path.
+  Local `SplFileObject` construction now accepts supported local stream modes
+  including write/create/append variants, stores a bounded stream handle beside
+  the existing line cursor state, and dispatches `fwrite()` / `fputs()`,
+  `fputcsv()`, `fflush()`, and `ftell()` through the existing local stream
+  helpers. `SplFileObject::fputcsv()` uses the object's current CSV controls
+  when separator, enclosure, or escape arguments are omitted, and covered
+  writes refresh the bounded line cursor while preserving PHP's false `eof()`
+  state after successful writes. Focused proof covers the Rust
+  `spl_file_object_writable_modes_fwrite_and_fputcsv_use_local_stream_state`
+  regression, direct CLI fixture
+  `tests/fixtures/milestone2368/spl_file_object_writable_stream.php`, and
+  selected public PHPT rows
+  `SplFileObject/SplFileObject_fwrite_variation_001.phpt`,
+  `SplFileObject/SplFileObject_fwrite_variation_002.phpt`,
+  `SplFileObject/SplFileObject_fputcsv.phpt`,
+  `SplFileObject/SplFileObject_fputcsv_002.phpt`, and
+  `SplFileObject/SplFileObject_fputcsv_variation1.phpt`. Unsupported edges
+  remain non-local/user stream wrappers, `SplTempFileObject`,
+  `SplFileInfo` inheritance metadata, `fseek()` / `ftruncate()` / `fstat()` /
+  `flock()` as `SplFileObject` methods, exact line-cursor parity for every
+  mixed read/write/seek path, broad CSV multiline/deprecation/default-escape
+  parity, binary or non-UTF-8 line storage, independent nested iterator
+  cursors, serialization parity, references/COW, and native lowering.
+
+- Added bounded startup target diagnostics for direct built-in attribute names
+  `#[Attribute]` / `#[\Attribute]` and `#[AllowDynamicProperties]` /
+  `#[\AllowDynamicProperties]`. The interpreter now rejects `#[Attribute]` on
+  top-level functions, abstract classes, interfaces, traits, and enums with
+  PHP-shaped fatal text, and rejects `#[AllowDynamicProperties]` on
+  interfaces, traits, and enums while preserving the existing class opt-in
+  path. Focused proof covers the Rust
+  `builtin_attribute_target_startup_diagnostics_match_php_subset` regression
+  and selected public PHPT rows `Zend/tests/attributes/008_wrong_attribution.phpt`,
+  `Zend/tests/attributes/024_internal_target_validation.phpt`,
+  `Zend/tests/attributes/Attribute/Attribute_on_abstract.phpt`,
+  `Zend/tests/attributes/Attribute/Attribute_on_interface.phpt`,
+  `Zend/tests/attributes/Attribute/Attribute_on_trait.phpt`,
+  `Zend/tests/attributes/Attribute/Attribute_on_enum.phpt`,
+  `Zend/tests/attributes/allow_dynamic_properties_on_interface.phpt`,
+  `Zend/tests/attributes/allow_dynamic_properties_on_trait.phpt`, and
+  `Zend/tests/attributes/allow_dynamic_properties_on_enum.phpt`. Unsupported
+  edges remain namespace/import alias resolution for built-in attribute names,
+  delayed reflection-time target validation, repeated-attribute and flag
+  validation, nested function/member/parameter/closure target diagnostics,
+  readonly-class `AllowDynamicProperties` diagnostics while readonly classes
+  remain outside the parser subset, references/COW, and native lowering.
+
+- Added a bounded tokenizer-backed PHP source highlighter lane on the
+  interpreter path. `highlight_string()` now returns or echoes escaped
+  `<pre><code>` HTML using request-local `highlight.*` INI colors,
+  `highlight_file()` highlights bounded local files and `data:` payloads, and
+  `show_source()` is registered as the `highlight_file()` alias through
+  interpreter dispatch, reflection metadata, builtin detection, and native
+  function-table introspection. Focused proof covers the Rust
+  `source_highlighters_emit_bounded_php_token_spans` regression and selected
+  public PHPT rows `tests/strings/004.phpt`,
+  `tests/strings/bug26703.phpt`,
+  `ext/standard/tests/strings/show_source_basic.phpt`,
+  `ext/standard/tests/strings/show_source_variation1.phpt`, and
+  `ext/standard/tests/strings/show_source_variation2.phpt`. Unsupported edges
+  remain exact PHP highlighter parity for every tokenizer recovery edge,
+  encodings and binary path/content fidelity beyond represented runtime
+  bytes, stream wrappers beyond local files and bounded `data:` highlighter
+  payloads, unrelated INI startup diagnostics such as `allow_url_include=1`,
+  references/COW, and native lowering.
+
+- Repaired the bounded float-to-int diagnostics lane so weak `int|float`
+  unions accept real float values without emitting int-coercion diagnostics.
+  The guard now suppresses float-to-int deprecations and `NAN` string-coercion
+  warnings when a type declaration explicitly accepts `float`, while preserving
+  the previous `int|string` and integer-only coercion diagnostics. Focused
+  proof covers the Rust `float_string_to_int_deprecations` regression file and
+  the two public baseline-PASS full-gate regressions
+  `ext/opcache/tests/jit/inc_021.phpt` and
+  `ext/standard/tests/math/pow_basic_64bit.phpt`. Unsupported edges remain the
+  broader full-suite pass-regression audit until the next current-score gate
+  republishes from the repaired source head.
+
+- Added a bounded userland iterator `Traversable` return and property-cursor
+  lane on the interpreter path. Core `Iterator` and `IteratorAggregate`
+  interfaces now expand through their `Traversable` parent for runtime object
+  type checks, so supported `IteratorAggregate::getIterator(): Traversable`
+  methods may return bounded userland `Iterator` objects. Direct visible
+  object-property array roots now participate in the existing ordered-array
+  pointer mutation helpers for `next()`, `prev()`, `reset()`, and `end()`,
+  writing the updated cursor back through the property storage boundary.
+  Focused proof covers the Rust
+  `foreach_accepts_traversable_returned_iterators_with_property_array_cursors`
+  regression, the full `foreach` Rust file, `iterable_type_builtin`, and
+  selected public PHPT rows `tests/classes/iterators_001.phpt`,
+  `tests/classes/iterators_002.phpt`, `tests/classes/iterators_003.phpt`,
+  `tests/classes/iterators_006.phpt`, and
+  `tests/classes/iterators_007.phpt`. Unsupported edges remain exact
+  PHP fatal presentation for concrete classes that directly implement
+  `Traversable`, broader SPL/native `Traversable` execution beyond the
+  current bounded iterator paths, non-direct object-property pointer mutation
+  roots, full internal array-pointer/reference/COW parity, and native
+  lowering.
+
+- Added a bounded `DOMDocumentType` invalid-state metadata lane on the
+  interpreter path. `DOMDocumentType` is now a registered DOM core class and
+  `DOMNode` subclass, direct construction materializes PHP's uninitialized
+  doctype placeholder while still evaluating ignored constructor arguments,
+  and reads of `name`, `entities`, `notations`, `publicId`, `systemId`, and
+  `internalSubset` raise catchable `DOMException` objects with code `11` and
+  message `Invalid State Error`. `ReflectionExtension("dom")` includes the
+  class in the bounded DOM class inventory. Focused proof covers the Rust
+  `dom_document_type_invalid_state_properties_raise_dom_exception`
+  regression and direct CLI fixture
+  `tests/fixtures/milestone2364/dom_document_type_invalid_state.php`; the
+  matching public `DOMDocumentType_*_error_001.phpt` invalid-state rows pass
+  through the PHPT wrapper.
+  Unsupported edges remain parser-backed `DOMDocument::loadXML()` doctype
+  population, `DOMNamedNodeMap` entity/notation objects, readonly DOM
+  property-hook write diagnostics, broader DOM node metadata, references/COW,
+  and native DOM/libxml execution.
+
+- Added a bounded float-to-int diagnostics lane for `phpc run`. Real float
+  operands now emit PHP-shaped precision-loss deprecations or
+  non-representable-float warnings when coerced through unary and binary
+  bitwise operators, shifts, modulo, matching compound assignments, `chr()`,
+  weak exact `int` user parameters and returns, and visible declared `int`
+  typed-property writes; compatible integral floats remain quiet. Float
+  strings outside the signed integer range now share the existing
+  float-string-to-int deprecation surface, and weak `int|string` unions defer
+  non-representable real floats to string semantics while preserving PHP's
+  `NAN` string-coercion warning. Focused proof covers the extended Rust
+  `float_string_to_int_deprecations` regression and selected public PHPT rows
+  `Zend/tests/type_coercion/float_to_int/no_warning_compatible_float_literals.phpt`,
+  `Zend/tests/type_coercion/float_to_int/no_warnings_compatible_float_vars.phpt`,
+  `Zend/tests/type_coercion/float_to_int/non-rep-float-as-int-extra1.phpt`,
+  `Zend/tests/type_coercion/float_to_int/union_int_string_type_arg.phpt`,
+  `Zend/tests/type_coercion/float_to_int/union_int_string_type_arg_promote_exception.phpt`,
+  `Zend/tests/type_coercion/float_to_int/warnings_float_literals.phpt`,
+  `Zend/tests/type_coercion/float_to_int/warnings_float_literals_assignment_ops.phpt`,
+  and `Zend/tests/type_coercion/float_to_int/warnings_float_vars.phpt`.
+  Unsupported edges remain reentrant replacement of the `array_key_exists()`
+  array argument while its float-key warning handler runs, broader
+  reference/COW behavior, exact native error objects, and native lowering.
+
+- Added a bounded `#[Deprecated]` runtime diagnostics lane on the interpreter
+  path. Executable user functions, closures, instance/static methods,
+  constructors, and destructors now retain parsed method attributes in runtime
+  call metadata and emit `E_USER_DEPRECATED` through the shared diagnostic
+  path when a supported call reaches a `#[Deprecated]` / `#[\Deprecated]`
+  body. The diagnostic supports PHP-shaped function, method, and closure
+  callable names; positional and named `message` / `since` arguments; empty
+  messages; NUL-containing strings; runtime constants; protected parent class
+  constants in method attributes; and weak scalar-to-string coercion for the
+  covered int message row. Focused proof covers the Rust
+  `deprecated_attribute_calls_emit_user_deprecated_diagnostics` regression and
+  selected public PHPT rows
+  `Zend/tests/attributes/deprecated/functions/001.phpt`,
+  `Zend/tests/attributes/deprecated/functions/error_code_001.phpt`,
+  `Zend/tests/attributes/deprecated/functions/message_004.phpt`,
+  `Zend/tests/attributes/deprecated/functions/message_005.phpt`,
+  `Zend/tests/attributes/deprecated/message_001.phpt`,
+  `Zend/tests/attributes/deprecated/message_002.phpt`,
+  `Zend/tests/attributes/deprecated/message_003.phpt`,
+  `Zend/tests/attributes/deprecated/message_004.phpt`, and
+  `Zend/tests/attributes/deprecated/type_validation_001.phpt`. Unsupported
+  edges remain deprecations on classes/interfaces/traits/enums/constants/class
+  constants/properties, exact exception-handler diagnostic call-site
+  rendering, exact `Deprecated::__construct()` `TypeError` fatal stack traces
+  for strict or non-scalar message arguments, references/COW, and native
+  lowering.
+
+- Added a bounded exception-handler diagnostics/runtime lane on the
+  interpreter path. `set_exception_handler()` now validates supported callback
+  forms with PHP-shaped catchable `TypeError` diagnostics, and
+  `set_exception_handler()` / `restore_exception_handler()` /
+  `get_exception_handler()` maintain a request-local handler stack. Top-level
+  uncaught `Throwable` objects invoke the current non-null handler before the
+  existing shutdown callback, destructor, and final output-buffer sequence.
+  Focused proof covers the Rust exception-handler regressions, the direct CLI
+  fixture `tests/fixtures/milestone2366/exception_handler_stack.php`, and
+  selected public PHPT rows
+  `Zend/tests/exceptions/exception_handler/exception_handler_001.phpt`,
+  `Zend/tests/exceptions/exception_handler/exception_handler_003.phpt`,
+  `Zend/tests/exceptions/exception_handler/exception_handler_004.phpt`,
+  `Zend/tests/exceptions/exception_handler/exception_handler_005.phpt`,
+  `Zend/tests/exceptions/exception_handler/exception_handler_006.phpt`,
+  `Zend/tests/exceptions/exception_handler/exception_handler_007.phpt`, and
+  `Zend/tests/exceptions/exception_handler/exit_exception_handler.phpt`.
+  Unsupported edges remain handler-thrown exceptions, invokable-object
+  handlers, first-class callable method closures, by-reference handler
+  parameters, exact internal-function stack-frame rendering, active-handler
+  stack mutation edge cases, references/COW, and native lowering.
+
+- Added a bounded DateTime/timezone metadata lane on the interpreter path.
+  `DateTimeInterface` is now a visible core interface implemented by
+  `DateTime` and `DateTimeImmutable`, exposes the bounded `DATE_*` format
+  constants with the existing `RFC7231` deprecation diagnostics, and
+  participates in `defined()` / interface catalog queries. `DateTimeZone`
+  now exposes bounded `getLocation()` metadata, `timezone_location_get()`,
+  and a 144-key abbreviation inventory through
+  `DateTimeZone::listAbbreviations()` / `timezone_abbreviations_list()`, with
+  full `acst` rows and first-row metadata for the remaining buckets.
+  `DateTimeZone::getOffset()` and `timezone_offset_get()` now accept
+  immutable `DateTimeImmutable` operands and report PHP-shaped
+  `DateTimeInterface` type diagnostics. Focused proof covers the Rust
+  `timezone_metadata_inventory_interface_constants_and_offset_diagnostics`
+  regression, adjacent object-model interface catalog coverage, the direct CLI
+  fixture `tests/fixtures/milestone2364/timezone_metadata_interface.php`, and
+  selected public PHPT rows `ext/date/tests/68062.phpt`,
+  `ext/date/tests/DateTimeInterface_constants.phpt`,
+  `ext/date/tests/DateTimeZone_getLocation.phpt`,
+  `ext/date/tests/DateTimeZone_listAbbreviations_basic1.phpt`,
+  `ext/date/tests/timezone_abbreviations_list_basic1.phpt`,
+  `ext/date/tests/timezone_location_get.phpt`, and
+  `ext/date/tests/timezone_offset_get_error.phpt`. Unsupported edges remain
+  full timezone database validation, all-row abbreviation metadata beyond the
+  reached first-row/`acst` inventory, location metadata beyond represented
+  named zones, historical transition parity, broad `DateTimeInterface`
+  reflection parity beyond existence/constants/core implementation metadata,
+  references/COW, and native lowering.
+
+- Added a bounded DateInterval construction/format/diff metadata lane on the
+  interpreter path. `DateInterval` is now a visible core class with public
+  component metadata and inherited-constructor subclass allocation;
+  `DateInterval::__construct()` accepts integer ISO duration components such as
+  `P2Y4DT6H8M` and `P32D`; `DateInterval::format()` and
+  `date_interval_format()` cover component, sign, `%a`, `%%`, and unknown
+  percent-token formatting; and malformed covered duration strings raise
+  catchable PHP-shaped `DateMalformedIntervalStringException`s.
+  `DateInterval::createFromDateString()` and
+  `date_interval_create_from_date_string()` accept simple relative
+  year/month/week/day/hour/minute/second sequences such as `2 weeks` and
+  `1 year + 1 day`. `DateTime::diff()`, `DateTimeImmutable::diff()`, and
+  `date_diff()` produce bounded `DateInterval` objects for initialized mutable
+  and immutable DateTime operands, including total-day metadata for the reached
+  UTC public rows. Focused proof covers the Rust
+  `dateinterval_metadata_format_and_diff_cover_bounded_rows` regression,
+  adjacent runtime class-table/object-model metadata checks, and selected
+  public PHPT rows `ext/date/tests/DateInterval_format.phpt`,
+  `ext/date/tests/DateInterval_format_a.phpt`,
+  `ext/date/tests/date_interval_format.phpt`,
+  `ext/date/tests/DateInterval_days_prop1.phpt`,
+  `ext/date/tests/date_interval_create_from_date_string.phpt`,
+  `ext/date/tests/DateInterval_createFromDateString_broken.phpt`,
+  and `ext/date/tests/DateInterval_write_property_return.phpt`. Unsupported
+  edges remain DateTime add/sub arithmetic, DatePeriod, DateInterval
+  serialization and `__set_state()`, full timelib interval/relative grammars,
+  fractional or negative ISO duration components, exact object-dump handler
+  parity for `from_string` intervals, references/COW, and native lowering.
+
+- Accepted checkpoint `663e3142` as the current public PHPT score source
+  after the repaired full pinned php-src gate completed with zero
+  latest-published PASS regressions. The public-comparable score is now
+  `5941 / 20294 = 29.27%`, up from `5892 / 20294 = 29.03%` at checkpoint
+  `ac94984a`. The accepted gate evidence is
+  `state/logs/phpt-full-current-score-20260602T160646Z-php-src-f97ff59-public-663e3142-source-663e3142`;
+  aggregate counts were `5941` passed, `13064` failed, `2760` skipped, `16`
+  xfailed, `549` borked, and `1` warned. The normalized PASS regression
+  comparison was `5937` current passes vs. `5888` baseline passes with `0`
+  regressions, and the invalid-proof-marker summary reported `0` hits.
+
+- Repaired the blocked full-gate PASS regression in
+  `tests/classes/iterators_008.phpt`. Plain userland `Iterator` foreach loops
+  without a key target no longer probe `key()` at the engine level, while the
+  bounded `InfiniteIterator` / `LimitIterator` wrapper path still performs the
+  PHP-observed value-only key probe needed by the existing SPL wrapper rows.
+  Focused proof covers the new Rust
+  `foreach_value_only_user_iterator_does_not_probe_key` regression, the
+  existing `spl_empty_infinite_and_limit_iterators_wrap_bounded_iterators`
+  Rust regression, the exact public PHPT regression row
+  `tests/classes/iterators_008.phpt`, the prior selected SPL wrapper PHPT
+  packet `ext/spl/tests/iterator_008.phpt`,
+  `ext/spl/tests/iterator_009.phpt`, `ext/spl/tests/iterator_010.phpt`,
+  `ext/spl/tests/iterator_011.phpt`,
+  `ext/spl/tests/spl_limit_iterator_check_limits.phpt`,
+  `ext/spl/tests/bug51119.phpt`, `ext/spl/tests/gh18421.phpt`, and
+  `ext/spl/tests/ArrayObject/array_011.phpt`, plus build, fmt, and diff
+  checks. Unsupported edges remain broader internal iterator engine parity for
+  wrappers not implemented in the current subset, by-reference iteration,
+  references/COW, and native lowering.
+
+- Added a bounded ext/filter validator edge lane on the interpreter path.
+  `FILTER_FLAG_HOSTNAME` and `FILTER_FLAG_GLOBAL_RANGE` are now visible
+  constants, `FILTER_VALIDATE_INT` accepts unsigned hexadecimal and
+  legacy-octal inputs up to the 64-bit unsigned boundary and returns the
+  PHP-shaped wrapped signed integer values, `FILTER_VALIDATE_IP` honors a
+  bounded global-address rejection table plus broader IPv4 `NO_RES_RANGE`
+  rejection for the reached RFC 6890 rows, and `FILTER_VALIDATE_URL` rejects
+  raw `[` / `]` in userinfo before parsing the host authority. Focused proof
+  covers the Rust
+  `filter_validator_edge_flags_and_ranges_match_php_boundaries` regression,
+  the full `filter_builtin` Rust file, the direct CLI fixture
+  `tests/fixtures/milestone2362/filter_validator_edge_flags.php`, selected
+  public PHPT rows `ext/filter/tests/047.phpt`,
+  `ext/filter/tests/048.phpt`, `ext/filter/tests/bug77221.phpt`,
+  `ext/filter/tests/filter_ipv4_rfc6890.phpt`,
+  `ext/filter/tests/gh16523.phpt`, and
+  `ext/filter/tests/ghsa-w8qr-v226-r27w.phpt`, build, fmt, and diff checks.
+  Unsupported edges remain `FILTER_THROW_ON_FAILURE`, exact full
+  RFC 6890/RFC 8190 range-table parity beyond the covered prefixes, Unicode
+  email/IDNA policy, broad URL/domain/IP validation parity, sanitizer
+  deprecation diagnostics, object/resource coercions, references/COW beyond
+  the current array-slot path, and native lowering.
+
+- Added a bounded `SplFileObject` byte-read and max-line-length lane on the
+  interpreter path. Local UTF-8 `SplFileObject` instances now expose
+  `fgetc()`, `fread()`, `fpassthru()`, `setMaxLineLen()`, and
+  `getMaxLineLen()` through core metadata and dispatch. Bounded byte reads
+  share a local byte cursor, derive `key()` from consumed newline boundaries,
+  and set EOF after the failed/terminal read boundary used by the reached rows;
+  max-line length limits the covered line presentation path and rejects
+  negative lengths with the PHP-shaped `ValueError`. Focused proof covers the
+  Rust `spl_file_object_byte_reads_passthru_and_max_line_length` regression,
+  selected public PHPT rows `fileobject_002.phpt`, `bug65545.phpt`,
+  `SplFileObject_fpassthru_basic.phpt`,
+  `fileobject_getmaxlinelen_basic.phpt`,
+  `fileobject_setmaxlinelen_basic.phpt`,
+  `fileobject_setmaxlinelen_error001.phpt`, and `bug67805.phpt`, plus build,
+  fmt, and diff checks. Unsupported edges remain non-local/user stream
+  wrappers, write/append modes, `SplTempFileObject`, `SplFileInfo`
+  inheritance metadata, full max-line chunked cursor parity for every mixed
+  read/seek path, binary/non-UTF-8 byte fidelity, independent nested iterator
+  cursors, serialization parity, references/COW, and native lowering.
+
+- Added a bounded class/object introspection diagnostics lane on the
+  interpreter path. `get_class()` now raises a catchable PHP-shaped
+  `TypeError` for non-object operands, `get_parent_class()` now runs bounded
+  class autoload for non-empty unresolved strings and raises the PHP-shaped
+  object-or-valid-class-name `TypeError` for invalid or unresolved operands,
+  and `get_class_methods()` now accepts current objects, declared class
+  strings, and declared user interface strings. The method list includes
+  implemented interface method names before class methods, filters class
+  methods through the active class context for public/protected/private
+  visibility, deduplicates case-insensitively, and raises catchable
+  PHP-shaped `TypeError`s for invalid or unresolved values. Focused proof
+  covers the Rust `get_class_requires_object_argument`,
+  `get_class_methods`, and `get_parent_class` object-model regressions, build,
+  fmt, diff checks, and selected public class/object PHPT rows
+  `get_class_variation_001.phpt`, `get_parent_class_variation_002.phpt`,
+  `get_class_methods_basic_001.phpt`,
+  `get_class_methods_basic_002.phpt`,
+  `get_class_methods_basic_003.phpt`, and
+  `get_class_methods_variation_001.phpt`. Unsupported edges remain broader
+  trait/interface conflict inventories, aliases/imports, namespace-aware
+  names beyond the current metadata lookup surface, exact ordering for every
+  duplicate/conflict case, core/internal interface method inventories,
+  references/COW, and native lowering.
+
+- Added a bounded SPL iterator-wrapper lane on the interpreter path.
+  `EmptyIterator`, `InfiniteIterator`, and `LimitIterator` are now core
+  metadata classes implementing `Iterator`; `InfiniteIterator` and
+  `LimitIterator` retain their inner iterator object in runtime state, delegate
+  `rewind()`, `valid()`, `current()`, `key()`, and `next()` through the
+  existing iterator method path, preserve wrapper-held inner iterator liveness,
+  and expose `LimitIterator` constructor bounds validation plus the bounded
+  out-of-range `OutOfBoundsException` path when `rewind()` cannot reach the
+  requested offset. Focused proof covers the Rust
+  `spl_empty_infinite_and_limit_iterators_wrap_bounded_iterators` regression,
+  core class metadata snapshots, the direct CLI fixture
+  `tests/fixtures/milestone2363/spl_empty_infinite_limit_iterators.php`, and
+  selected public PHPT rows for `EmptyIterator`, `InfiniteIterator`,
+  `LimitIterator` over empty/infinite/ArrayIterator inputs, constructor bounds,
+  string keys, and large-offset failure. Unsupported edges remain the exact
+  SPL `OuterIterator` / `IteratorIterator` class hierarchy, `SeekableIterator`
+  and `LimitIterator::seek()` parity, named/spread arguments on these wrapper
+  methods, `EmptyIterator::current()` / `key()` exception parity beyond
+  no-current foreach rows, independent cloned iterator cursors, serialization
+  parity, references/COW, and native lowering.
+
+- Added a bounded `SplFixedArray` storage-presentation and independent
+  by-value iteration lane on the interpreter path. `SplFixedArray` now emits
+  the PHP-shaped nullable-size deprecation for `__construct(null)` and
+  `setSize(null)` while coercing to zero, reports concrete class names for
+  non-int object size arguments, treats in-range `NULL` slots as unset for
+  `offsetExists()` / `isset()`, renders top-level `print_r($fixedArray)` from
+  the runtime storage record, uses independent cursors for nested by-value
+  `foreach` while observing covered `setSize()` shrinkage, and reports the
+  PHP-shaped indirect-modification notice for direct nested append writes such
+  as `$fixed[0][] = ...` without mutating storage. Focused proof covers the
+  Rust `spl_fixed_array_print_r_null_size_exists_and_nested_iteration_edges`
+  regression, adjacent `spl_fixed_array_` Rust coverage, direct `phpc run`
+  exercise, build, fmt, diff checks, and selected public PHPT rows
+  `SplFixedArray__construct_param_null.phpt`,
+  `SplFixedArray_construct_param_SplFixedArray.phpt`,
+  `SplFixedArray_setSize_param_null.phpt`,
+  `SplFixedArray_setsize_grow.phpt`,
+  `SplFixedArray_setSize_reduce.phpt`,
+  `SplFixedArray_nested_foreach.phpt`,
+  `SplFixedArray_override_offsetGet_only.phpt`, and
+  `SplFixedArray_indirect_modification.phpt`. Unsupported edges remain
+  nested/non-top-level fixed-array dumps, `(array)` /
+  `get_mangled_object_vars()` storage parity, serialization/unserialization,
+  exact reference/COW identity, overriding `getIterator()` /
+  generator-backed fixed-array iteration, broader destructor/reentrant
+  mutation parity, and native lowering.
+
+- Accepted checkpoint `ac94984a` as the current public PHPT score source
+  after a full pinned php-src gate completed with zero latest-published PASS
+  regressions. The public-comparable score is now
+  `5892 / 20294 = 29.03%`, up from `5816 / 20294 = 28.66%` at checkpoint
+  `538c136c`. The accepted gate evidence is
+  `state/logs/phpt-full-current-score-20260602T143814Z-php-src-f97ff59-public-ac94984a-source-ac94984a`;
+  aggregate counts were `5892` passed, `13114` failed, `2759` skipped, `16`
+  xfailed, `549` borked, and `1` warned. The normalized PASS regression
+  comparison was `5888` current passes vs. `5812` baseline passes with `0`
+  regressions, and the invalid-proof-marker summary reported `0` hits.
+
+- Added a bounded `SplFileObject` flags and CSV-control lane on the
+  interpreter path. Local UTF-8 `SplFileObject` instances now expose
+  `DROP_NEW_LINE`, `READ_AHEAD`, `SKIP_EMPTY`, and `READ_CSV` constants,
+  persist `setFlags()` / `getFlags()`, return newline-trimmed `current()` /
+  `getCurrentLine()` values under `DROP_NEW_LINE`, expose
+  `setCsvControl()` / `getCsvControl()`, and parse local-file CSV rows through
+  `current()` / foreach when `READ_CSV` is active and through `fgetcsv()`.
+  Focused proof covers the Rust
+  `spl_file_object_flags_and_csv_controls_use_local_line_state` regression,
+  core class metadata snapshots, the direct CLI fixture
+  `tests/fixtures/milestone2361/spl_file_object_flags_csv.php`, selected
+  public PHPT rows for `getFlags()`, `getCsvControl()`, `setCsvControl()`
+  validation, `READ_AHEAD` adjacency, and local-file `fgetcsv()` basics,
+  build, fmt, and diff checks. Unsupported edges remain `SplTempFileObject`,
+  write/append modes and `fputcsv()` / `fwrite()` on `SplFileObject`,
+  full `READ_AHEAD` / `SKIP_EMPTY` cursor side effects beyond the covered
+  rows, broad CSV multiline/deprecation/default-escape parity, `SplFileInfo`
+  inheritance metadata, binary/non-UTF-8 line storage, independent nested
+  iterator cursors, serialization parity, references/COW, and native lowering.
+
+- Added a bounded PHP 8.4+ error-mask diagnostics lane. `E_ALL` now uses the
+  current PHP value that excludes removed `E_STRICT`, bare `E_STRICT` reads
+  emit the PHP-shaped deprecation, and `error_reporting($error_level = null)`
+  now uses the shared nullable PHP-internal integer boundary so scalar masks
+  coerce, `null` reads without changing the current mask, and arrays/objects
+  raise catchable PHP-shaped `TypeError`s with class-name `given` wording.
+  Focused proof covers the Rust `error_reporting_builtin` regression, the
+  `ini_builtins` legacy-mask normalization regression, direct runtime probes,
+  and selected public PHPT rows `e_strict-deprecated.phpt`,
+  `error_reporting01.phpt`, `error_reporting02.phpt`,
+  `error_reporting04.phpt`, `error_reporting06.phpt`,
+  `error_reporting07.phpt`, `bug33771.phpt`, `bug72162.phpt`, and
+  `bug81652.phpt`. Unsupported edges remain exact `@` unwinding restoration
+  for every nested expression/throw edge, rows that depend on warning emission
+  from code still executing under a restored non-silenced mask, full PHP
+  diagnostic filtering breadth, disabled-function policy, and native lowering
+  beyond function-table metadata.
+
+- Added a bounded `var_dump()` / `__debugInfo()` diagnostics lane for
+  `phpc run`. Top-level object dumps now invoke visible zero-argument userland
+  `__debugInfo()`, render array returns as debug properties including PHP's
+  protected/private encoded key labels, emit the bounded null-return
+  deprecation while dumping an empty object, and stop non-array/non-null returns
+  with PHP's `Fatal error: __debuginfo() must return an array` shape. Focused
+  proof covers the Rust `object_model` `debug_info` filter,
+  `cargo fmt --check`, `cargo build -q -p phpc --bin phpc`, and selected
+  public PHPT rows `debug_info-error-0.0.phpt`, `debug_info-error-0.phpt`,
+  `debug_info-error-1.0.phpt`, `debug_info-error-1.phpt`,
+  `debug_info-error-empty_str.phpt`, `debug_info-error-false.phpt`,
+  `debug_info-error-object.phpt`, `debug_info-error-resource.phpt`,
+  `debug_info-error-str.phpt`, and `debug_info-error-true.phpt`.
+  Unsupported edges remain recursive/nested object `__debugInfo()` dumps,
+  `print_r()` / `var_export()` participation, exact nullable declaration
+  deprecation startup ordering, arbitrary non-public magic visibility
+  diagnostics, references/COW, and native lowering.
+
+- Added a bounded `ArrayObject` / `ArrayIterator` user-comparator sorting
+  lane. Core metadata now exposes `uasort()` and `uksort()` on both classes,
+  and the interpreter dispatches those methods over the existing
+  `BoundedArrayObjectState` storage using the shared PHP user-array comparator
+  path. Array-backed storage is sorted in place, plain object-backed storage
+  sorts initialized public properties and writes the reordered property table
+  back, keys are preserved for both value and key comparator sorts, and
+  comparator-time mutation of the sorted ArrayObject through covered mutating
+  methods raises the PHP-shaped catchable `Error` message. The methods also
+  surface PHP-shaped one-argument `ArgumentCountError`s, and startup/runtime
+  `disable_functions` entries for `uasort` / `uksort` produce the bounded
+  catchable `Error` message, while exact uncaught internal-method stack frames
+  remain unsupported. Focused proof covers the Rust
+  `array_object_user_sort_methods_use_comparators_and_guard_reentrant_mutation`
+  regression, selected public PHPT rows
+  `arrayObject_uasort_basic1.phpt`, `arrayObject_uksort_basic1.phpt`,
+  `arrayObject_uasort_error1.phpt`, `arrayObject_uksort_error1.phpt`,
+  `ArrayObject_dump_during_sort.phpt`, and
+  `ArrayObject_exchange_array_during_sorting.phpt`, plus build and diff
+  checks. Unsupported edges remain nested ArrayObject-backed user sorting,
+  exact disabled-function uncaught stack traces, comparator side effects beyond
+  the covered storage mutation guard, callback forms outside the shared
+  user-array sort callback surface, serialization/unserialization, full
+  reference/COW identity, and native lowering.
+
+- Added a bounded `SplFileObject` local line-cursor lane for the selected SPL
+  iterator rows. `SplFileObject` is now a core `Iterator` metadata class on
+  the interpreter path, constructs from local UTF-8 files in read-only modes,
+  and supports `current()` / `getCurrentLine()`, `fgets()`, `key()`,
+  `next()`, `rewind()`, `seek()`, `valid()`, `eof()`, and ordinary by-value
+  `foreach` over the shared file cursor. Non-negative out-of-range `seek()`
+  positions move to the invalid end cursor, while negative `seek()` raises the
+  bounded PHP-shaped `ValueError`. Focused proof covers the Rust
+  `spl_file_object_local_file_line_cursor_methods` regression, current
+  core-class metadata snapshots, the direct CLI fixture
+  `tests/fixtures/milestone2360/spl_file_object_line_cursor.php`, selected
+  public PHPT rows for `SplFileObject` current/key/next/rewind/seek basics,
+  build, fmt, and diff checks. Unsupported edges remain non-local/user stream
+  wrappers, write/append modes, `SplTempFileObject`, `SplFileInfo`
+  inheritance metadata, flags/CSV/drop-newline/read-ahead behavior,
+  binary/non-UTF-8 line storage, independent nested iterator cursors,
+  serialization parity, references/COW, and native lowering.
+- Accepted checkpoint `538c136c` as the current public PHPT score source after
+  a full pinned php-src gate completed with zero latest-published PASS
+  regressions. The public-comparable score is now `5816 / 20294 = 28.66%`,
+  up from `5744 / 20294 = 28.30%` at checkpoint `0793abd4`. The accepted gate
+  evidence is
+  `state/logs/phpt-full-current-score-20260602T132934Z-php-src-f97ff59-public-538c136c-source-538c136c`;
+  aggregate counts were `5816` passed, `13189` failed, `2760` skipped, `16`
+  xfailed, `549` borked, and `1` warned. The normalized PASS regression
+  comparison was `5812` current passes vs. `5740` baseline passes with `0`
+  regressions, and the invalid-proof-marker summary reported `0` hits.
+
+- Added a bounded ordinary-object by-value `foreach` and
+  `get_object_vars()` visibility lane. Ordinary object by-value iteration now
+  enumerates initialized properties visible from the current method context,
+  hides public/dynamic same-name slots when a visible non-public declaration
+  owns that property name, unmangles public keys that use PHP's mangled object
+  property spelling, and reads each value when the loop reaches that property.
+  `get_object_vars()` uses the same current-context visible-property slice.
+  `#[AllowDynamicProperties]` is recorded on declared classes, inherited by
+  child classes, and lets covered public dynamic writes shadow inherited
+  private slots from outside the declaring class. Focused proof covers the
+  Rust `foreach_by_value_uses_visible_object_properties_in_current_context`,
+  `get_object_vars` object-model group, and
+  `allow_dynamic_properties_child_can_shadow_inherited_private_property`
+  regressions, the full `foreach` Rust file, direct CLI output, selected
+  public PHPT rows `bug33171.phpt`, `bug41929.phpt`, `foreach_018.phpt`,
+  `foreach_shadowed_property.phpt`, and
+  `foreach_shadowed_dyn_property.phpt`, build, fmt, and diff checks.
+  Unsupported edges remain by-reference non-public ordinary-object iteration,
+  magic object iteration, property hooks, namespace/import-aware
+  `AllowDynamicProperties` aliases, exact dynamic-property deprecation
+  diagnostics, broader object mutation/reference/COW parity, and native
+  lowering.
+
+- Added a bounded object-metadata diagnostics and array-to-string warning lane.
+  `property_exists()` and `method_exists()` now raise catchable PHP-shaped
+  `TypeError`s for non-object/non-string first operands and non-string
+  property/method names. Class-string `method_exists()` now hides private
+  methods inherited only by ancestor classes while object probes keep the
+  current inherited-private reporting behavior. `is_subclass_of()` now returns
+  false for non-object/non-string first operands and runs bounded class
+  autoload for non-empty string first operands when strings are allowed. Echo
+  and double-quoted interpolation now emit PHP-shaped
+  `Array to string conversion` warnings while producing `Array`. Focused proof
+  covers the Rust
+  `metadata_predicates_use_php_type_errors_and_class_string_method_visibility`
+  regression, selected public PHPT rows `method_exists_002.phpt`,
+  `property_exists_basic.phpt`, `method_exists_basic_001.phpt`,
+  `method_exists_variation_001.phpt`, `property_exists_error.phpt`,
+  `is_subclass_of_variation_001.phpt`, `is_subclass_of_variation_004.phpt`,
+  and the adjacent already-passing probe `method_exists_variation_003.phpt`,
+  object-model currentization, native-link class-string metadata proof, build,
+  fmt, and diff checks. Unsupported edges remain dynamic property discovery,
+  broader `is_a()` string-autoload parity, interface/trait/enum relationship
+  autoload breadth, magic `__call` participation in `method_exists()`,
+  anonymous classes, exact warning ordering in every string conversion
+  context, references/COW, and native lowering beyond the existing metadata
+  runtime-ABI/false-folding slice.
+
+- Added a bounded `sscanf()` / shared scanf parser lane for the reached public
+  string rows. The shared scanner now accepts positional assignment selectors
+  such as `%2$s`, the `%n` bytes-consumed conversion, and PHP-shaped
+  out-of-range positional diagnostics. `sscanf()` direct assignment targets
+  may be simple direct array offsets, failed conversions initialize only
+  missing targets to `null`, existing targets are preserved when later
+  conversions fail, and signed/unsigned integer scans use the 64-bit PHP
+  integer boundary instead of the old 32-bit clamp. Focused proof covers the
+  `scanf_builtins` Rust regression, direct runtime and native-boundary probes,
+  selected public PHPT rows `bug21730.phpt`, `bug38322.phpt`,
+  `bug42107.phpt`, `bug47322.phpt`, `bug47842.phpt`, and `gh15552.phpt`,
+  build, fmt, and diff checks. Unsupported edges remain locale-specific scanf
+  behavior, broad binary/non-UTF-8 byte accounting, every host scanf length
+  modifier, non-direct by-reference scan targets beyond direct variables and
+  simple direct array offsets, full `fscanf()` parity for every `sscanf()`
+  edge, and native lowering.
+
+- Added a bounded non-representable float-to-int coercion lane for `phpc run`
+  and the runtime ABI operator helper. Non-finite and 64-bit out-of-range
+  floats now emit PHP-shaped `Warning: The float ... is not representable as
+  an int, cast occurred` diagnostics and recover through PHP's 64-bit low-bit
+  wrapping in `(int)` / `intval()`, array literal and dynamic keys, direct
+  array reads, `isset()` / `unset()` key checks, `array_key_exists()`,
+  `sprintf()` integer conversions, and runtime integer-operator coercions.
+  String numeric casts keep PHP's warning-free saturating boundary behavior,
+  string offsets keep their existing `String offset cast occurred` warning
+  without the representability warning, and `(string) NAN` emits PHP's
+  `unexpected NAN value was coerced to string` warning. Focused proof covers
+  the full `scalar_casts`, `string_offsets`, and `array_key_exists` Rust test
+  files, direct runtime and native-IR probes, selected public PHPT rows
+  `dval_to_lval_64.phpt`,
+  `warning_float_does_not_fit_zend_long_arrays.phpt`,
+  `warning_float_does_not_fit_zend_long_strings.phpt`,
+  `explicit_casts_should_not_warn.phpt`,
+  `non-rep-float-as-int-extra2.phpt`, and
+  `non-rep-float-as-int-extra3.phpt`, build, fmt, and diff checks.
+  Unsupported edges remain `array_key_exists()` reentrant caller-array
+  replacement during the float-key warning handler
+  (`non-rep-float-as-int-extra4.phpt`), 32-bit integer parity, exact
+  diagnostic ordering outside the covered coercion sites, broader
+  object/resource numeric-cast parity outside the current scalar cast subset,
+  references/COW, and direct native lowering beyond the runtime ABI helper
+  path.
+
+- Extended the bounded DateTimeImmutable serialization/state lane for `phpc
+  run`. Exact core `DateTimeImmutable` objects now round-trip through generic
+  `serialize()` / `unserialize()` for the supported `date`, `timezone_type`,
+  and `timezone` state shape, and `DateTimeImmutable::__serialize()`,
+  `DateTimeImmutable::__unserialize()`, and `DateTimeImmutable::__set_state()`
+  share immutable-specific invalid-state `Error` diagnostics. Initialized
+  public properties on `DateTimeImmutable` subclasses round-trip after the core
+  state fields, while uninitialized DateTime/DateTimeImmutable sources passed
+  to the covered `createFrom*()` factories now report catchable
+  `DateObjectError`s. Focused proof covers the Rust
+  `datetime_immutable_serialization_state_and_uninitialized_copy_errors`
+  regression, the full DateTime Rust test file, selected public PHPT rows
+  `DateTimeImmutable_inherited_serialization.phpt`,
+  `DateTimeImmutable_serialization.phpt`,
+  `DateTimeImmutable_set_state_exception.phpt`,
+  `DateTimeImmutable_createFromInterface_exceptions.phpt`, and
+  `DateTimeImmutable_createFromMutable_exceptions.phpt`, build, fmt, and diff
+  checks. Unsupported edges remain mutable DateTime manual `__serialize()` /
+  `__unserialize()` methods, private/protected serialized properties on
+  DateTimeImmutable subclasses, custom serialization hooks, full malformed
+  payload offset parity, full timezone database/history, non-zero DateTime
+  microsecond mutation/formatting beyond preserved public state,
+  references/COW, and native lowering.
+
+- Added a bounded exact-core date object serialization-state lane. Generic
+  `serialize()` / `unserialize()` now round-trip exact core `DateTime` objects
+  whose public `date`, `timezone_type`, and `timezone` state matches the
+  existing bounded DateTime parser/timezone table, so restored objects can use
+  the current `format()` / timestamp runtime state. Invalid
+  `DateTime::__set_state()` state now raises the PHP-shaped catchable
+  `Error: Invalid serialization data for DateTime object` diagnostic.
+  `DateTimeZone` now exposes bounded `__serialize()`, `__unserialize()`, and
+  `__set_state()` over the same type-1 fixed-offset, type-2 abbreviation, and
+  type-3 named-timezone metadata already used by generic DateTimeZone
+  serialization, with invalid state raising the existing catchable PHP-shaped
+  `Error`. Existing scalar/array serialization, exact core `DateTimeZone`
+  generic serialization, mutable DateTime state mutation, metadata visibility,
+  DateTimeImmutable boundaries, and native-lowering rejection remain unchanged.
+  Focused proof covers the Rust
+  `date_object_serialization_state_helpers_validate_bounded_metadata`
+  regression, the full DateTime Rust file, direct CLI probes, selected public
+  PHPT rows `DateTime_serialize.phpt`,
+  `DateTime_set_state_exception.phpt`, `DateTimeZone_serialization.phpt`,
+  `DateTimeZone_set_state.phpt`, and
+  `DateTimeZone_set_state_exception.phpt`, build, fmt, and diff checks.
+  Unsupported edges remain DateTime manual `__serialize()` / `__unserialize()`
+  methods, DateTime and DateTimeZone subclasses with custom serialized properties, custom
+  serialization hooks, full malformed-payload offset parity, full timezone
+  database/history, non-zero DateTime microsecond method formatting beyond the
+  current public state, references/COW, and native lowering.
+
+- Added a bounded float-string-to-int deprecation diagnostics lane for
+  `phpc run`. Lossy finite well-formed numeric strings such as `"1.5"` now
+  emit PHP-shaped `Deprecated: Implicit conversion from float-string ... to int
+  loses precision` diagnostics when coerced through modulo, mixed
+  bitwise/shift operators, matching compound assignments, `chr()`, weak exact
+  `int` user parameters and returns, and visible declared `int` typed-property
+  writes. Compatible float strings with no fractional loss such as `"1.0"`
+  remain quiet. Focused proof covers the Rust
+  `float_string_to_int_deprecations` regression and selected public PHPT rows
+  `warnings_string_float_literals.phpt`,
+  `warnings_string_float_literals_assignment_ops.phpt`,
+  `warnings_string_float_vars.phpt`,
+  `no_warning_compatible_string_float_literals.phpt`, and
+  `no_warnings_compatible_string_float_vars.phpt`. Unsupported edges remain
+  non-finite or out-of-range float-string-to-int warning/recovery parity,
+  union scalar preference diagnostics such as `int|string`, strict-types exact
+  `TypeError` parity beyond the current boundary, array-key and string-offset
+  float-string warning breadth, non-UTF-8 binary-string diagnostics, and native
+  lowering beyond the existing runtime ABI paths.
+
+- Accepted checkpoint `0793abd4` as the current public PHPT score source after
+  a full pinned php-src gate completed with zero latest-published PASS
+  regressions. The public-comparable score is now `5744 / 20294 = 28.30%`,
+  up from `5690 / 20294 = 28.04%` at checkpoint `12c1be0a`. The accepted gate
+  evidence is
+  `state/logs/phpt-full-current-score-20260602T121433Z-php-src-f97ff59-public-0793abd4-source-0793abd4`;
+  aggregate counts were `5744` passed, `13260` failed, `2761` skipped, `16`
+  xfailed, `549` borked, and `1` warned. The normalized PASS regression
+  comparison was `5740` current passes vs. `5686` baseline passes with `0`
+  regressions, and the invalid-proof-marker summary reported `0` hits.
+
+- Repaired the `SplFixedArray::offsetUnset()` destructor/reentrant mutation
+  edge that blocked the first post-SplFixedArray score gate. Releasing an object
+  stored in a fixed-array slot now finalizes that released value before later
+  reads/dumps, while fixed-array backing storage remains rooted while the
+  object itself is live. This converts the focused public PHPT row
+  `ext/spl/tests/gh16478.phpt` back to PASS after the intermediate
+  `6a124890` gate reported it as the only latest-published PASS regression.
+  Focused proof covers the Rust
+  `spl_fixed_array_offset_unset_finalizes_released_slot_before_var_dump`
+  regression, prior SplFixedArray storage regressions, direct runtime output,
+  selected public SPL PHPT rows including `gh16478.phpt`, build, fmt, and diff
+  checks. Unsupported edges remain broader nested object dumps,
+  `print_r()` / `(array)` / `get_mangled_object_vars()` storage parity,
+  serialization/unserialization, full reference/COW identity, broader
+  destructor/reentrant mutation parity, and native lowering.
+
+- Added a bounded `SplFixedArray` runtime-storage `var_dump()` lane. Top-level
+  `var_dump($fixedArray)` now renders the fixed-size indexed storage from the
+  interpreter's `SplFixedArrayState`, including null slots, nested array values,
+  resized storage, and initialized subclass/dynamic object properties after the
+  fixed-array slots, instead of falling through to an empty ordinary object
+  dump. Existing fixed-array construction, `fromArray()`, offset mutation,
+  `setSize()`, iteration, `toArray()`, object metadata visibility, and native
+  lowering remain unchanged. Focused proof covers the Rust
+  `spl_fixed_array_var_dump_uses_runtime_storage_slots` regression, the direct
+  CLI fixture `tests/fixtures/milestone2355/spl_fixed_array_var_dump_storage.php`,
+  and selected public PHPT rows `SplFixedArray_fromarray_indexes.phpt`,
+  `SplFixedArray_fromarray_non_indexes.phpt`,
+  `SplFixedArray_fromarray_param_multiarray.phpt`,
+  `SplFixedArray_offsetUnset_string.phpt`,
+  `SplFixedArray_setSize_filled_to_smaller.phpt`,
+  `SplFixedArray_setsize_001.phpt`, `SplFixedArray_setsize_shrink.phpt`, and
+  `fixedarray_016.phpt`. Unsupported edges remain nested/non-top-level
+  `SplFixedArray` object dumps through the generic object formatter,
+  `print_r()` / `(array)` / `get_mangled_object_vars()` storage parity,
+  serialization/unserialization, exact reference/COW identity,
+  destructor/reentrant mutation parity, and native lowering.
+
+- Added a bounded `DateTimeImmutable` copy/construction/setter lane. `phpc run`
+  now exposes `DateTimeImmutable` metadata, `date_create_immutable()`,
+  `DateTimeImmutable::__set_state()`, `DateTimeImmutable::createFromMutable()`,
+  `DateTimeImmutable::createFromInterface()`,
+  `DateTime::createFromImmutable()`, and `DateTime::createFromInterface()` over
+  the existing boxed DateTime timestamp/timezone state. Immutable setters
+  `setTimestamp()`, `modify()`, `setTimezone()`, `setDate()`, `setISODate()`,
+  and `setTime()` reuse the bounded mutable DateTime normalization paths while
+  returning a fresh object and preserving the original receiver. The
+  DateTime-format class constants are available on `DateTimeImmutable` with the
+  same bounded PHP-shaped `RFC7231` deprecation path as `DateTime`. Focused
+  proof covers the Rust `datetime_immutable_copy_apis_and_setters_use_bounded_state`
+  regression, the DateTime immutable constant alias regression, the runtime
+  core-class registry regression, the `get_declared_classes()` object-model
+  filter, selected public DateTimeImmutable/createFrom* PHPT rows, build, fmt,
+  and diff checks. Unsupported edges remain broad `DateTimeInterface`
+  reflection/runtime parity, timezone abbreviation and fixed-offset identity
+  beyond the covered named-zone rows, invalid-state diagnostics, uninitialized
+  internal date-object exception classes, DateInterval/DatePeriod arithmetic,
+  serialization, full timezone history, references/COW, and native lowering.
+
+- Added a bounded ext/filter option and float-validation lane. `filter_var()`
+  now accepts weak scalar `$options` flags without mutating caller arrays,
+  `filter_var()` / `filter_var_array()` descriptor arrays coerce string-valued
+  `filter` and `flags` entries through the current PHP-internal int boundary,
+  and nested `options["default"]` values are honored for validation failures.
+  `FILTER_VALIDATE_FLOAT` now covers strictly grouped
+  `FILTER_FLAG_ALLOW_THOUSAND` inputs, rejects finite underflow-to-zero
+  strings such as `1e-324`, applies bounded `min_range` / `max_range`, and
+  returns configured defaults for range failures. `FILTER_CALLBACK` now
+  recursively filters array values for the covered callback path without
+  mutating the caller input, and invalid `filter_var_array()` `$options`
+  operands now surface as catchable PHP-shaped `TypeError`s. Focused proof
+  covers the Rust
+  `filter_options_float_ranges_and_callback_arrays_match_php_boundaries`
+  regression, a CLI comparison fixture, selected public PHPT rows
+  `045.phpt`, `049.phpt`, `050.phpt`, `051.phpt`, `052.phpt`, and
+  `060.phpt`, build, fmt, and diff checks. Unsupported edges remain full
+  ext/filter descriptor warning ordering, complete option coercion and
+  diagnostics, locale-sensitive numeric parsing, broad URL/domain/IP/email
+  policy, object/resource coercions, references/COW beyond existing array-slot
+  paths, and native lowering.
+
+- Added a bounded output-buffer chunk/flag lane. `ob_start()` now accepts the
+  supported `callback`, `chunk_size`, and `flags` arguments through the
+  interpreter path, exposes output-handler constants, stores sanitized
+  cleanable/flushable/removable capabilities, and reports the expanded optional
+  parameter list through `ReflectionFunction("ob_start")`. Positive chunk
+  sizes automatically process echo/print output at the threshold, handled
+  output can cascade threshold checks into parent buffers, `ob_get_status()`
+  reports bounded chunk/flag metadata, and clean/flush/remove operations honor
+  buffer capabilities with bounded PHP-style notices while preserving active
+  unerasable buffers. `ob_clean()` / `ob_end_clean()` now run supported
+  handlers with clean/final-clean phases while discarding handler output, and
+  generated code continues to route direct output-buffer calls through the
+  runtime ABI instead of inline-lowering the stack. Focused proof covers the
+  full `output_buffer_builtin` Rust file including a nested chunk-cascade
+  regression, direct CLI and native-IR probes, selected public PHPT rows
+  `ob_017.phpt`, `ob_start_basic_002.phpt`, `ob_start_basic_004.phpt`,
+  `ob_start_basic_unerasable_001.phpt` through
+  `ob_start_basic_unerasable_005.phpt`, and `ob_start_flags.phpt`, build,
+  fmt, and diff checks. Unsupported edges remain invalid-callback warning/false
+  recovery, by-reference output handlers, exact handler-status metadata beyond
+  the bounded fields, automatic threshold checks for output-producing builtins
+  outside the covered echo/print and handled-flush paths, handler reentrancy
+  breadth, exact fatal/header/output-started ordering, and inline native
+  lowering beyond the runtime ABI.
+
+- Added a bounded `DateTimeZone` generic serialization metadata lane.
+  `serialize()` now emits PHP wire text for exact core `DateTimeZone` objects
+  whose current bounded `timezone_type` / `timezone` public state is valid,
+  and `unserialize()` rebuilds exact core `DateTimeZone` objects from matching
+  type-1 fixed-offset, type-2 abbreviation, and type-3 named timezone payloads
+  so `getName()` and existing timezone helpers can use the restored object.
+  Invalid `DateTimeZone` serialized state, including NUL-containing timezone
+  names, raises a catchable PHP-shaped `Error` with the current public
+  diagnostic. Existing scalar/array serialization, generic object
+  unserialization, DateTimeZone construction, metadata visibility, and native
+  lowering rejection remain unchanged. Focused proof covers the Rust
+  `datetimezone_serialize_roundtrips_bounded_metadata` regression, the full
+  DateTime Rust file, direct CLI probes, selected public PHPT rows
+  `DateTimeZone_serialize_type_1.phpt`,
+  `DateTimeZone_serialize_type_2.phpt`,
+  `DateTimeZone_serialize_type_3.phpt`, and
+  `DateTimeZone_serialize_errors.phpt`, build, fmt, and diff checks.
+  Unsupported edges remain DateTime/DateTimeImmutable serialization,
+  DateTimeZone subclasses and custom dynamic-property serialization,
+  inherited/custom serialization hooks, malformed object payload offset
+  parity, broader timezone database/history, references/COW, and native
+  lowering.
+
+- Added a bounded JSON validation/decode error-location lane. The interpreter
+  now renders `json_validate()` / `json_decode()` syntax, state-mismatch,
+  control-character, UTF-16, and depth parse diagnostics with character-based
+  line/column locations instead of the previous single-line-only formatter.
+  Unterminated JSON strings, invalid escapes, invalid Unicode escapes, and
+  malformed literal tokens now report the token-start location used by the PHP
+  JSON extension while preserving the existing parser subset, last-error
+  state, invalid-UTF-8 repair behavior, metadata visibility, and
+  native-lowering rejection. Focused proof covers the Rust
+  `json_validate_reports_multiline_and_token_start_error_locations`
+  regression, the full JSON Rust test file, a CLI comparison fixture,
+  selected public JSON error-location PHPT rows, build, fmt, and diff checks.
+  Unsupported edges remain full JSON grammar/error-code parity, exact byte
+  location parity for every malformed UTF-8/UTF-16 edge, exact
+  `JSON_THROW_ON_ERROR` interaction parity beyond the current subset,
+  `JsonSerializable` breadth, references/COW, and native lowering.
+
+- Added a bounded string-algorithm helper argument-boundary lane. Direct and
+  string-valued dynamic interpreter calls to `crc32()`, `soundex()`,
+  `metaphone()`, `count_chars()`, `levenshtein()`, and `similar_text()` now
+  route their declared string operands through the shared PHP-shaped string
+  byte boundary. Scalar operands keep the existing byte-oriented algorithm
+  behavior, `null` emits the bounded PHP-shaped deprecation before converting
+  to `""`, supported visible `__toString()` objects are accepted, and arrays,
+  resources, closures, or non-stringable objects raise catchable PHP-shaped
+  string `TypeError`s with the declared parameter names. Existing
+  `metaphone()` max-phoneme validation, `count_chars()` modes,
+  `levenshtein()` cost handling, direct `similar_text()` percent output,
+  metadata visibility, existing `crc32()` native string-int lowering, and the
+  existing native rejection boundaries for the other helpers remain unchanged.
+  Focused proof covers the Rust
+  `string_algorithm_helpers_use_php_string_argument_boundary` regression, the
+  full string algorithm Rust file, direct CLI probes, selected public string
+  algorithm PHPT rows, build, fmt, and diff checks. Unsupported edges remain
+  exact invalid `__toString()` return diagnostics, broader binary fidelity
+  beyond represented runtime bytes, exact algorithm parity outside the current
+  bounded implementations, non-variable or indirect `similar_text()` percent
+  outputs, references/COW, and native lowering for the broadened
+  interpreter-only object/null operand paths.
+
+- Added a bounded `chunk_split()` declared string-operand boundary lane.
+  Direct and string-valued dynamic interpreter calls now route argument #1
+  `$string` and optional argument #3 `$separator` through the shared
+  PHP-shaped string byte boundary: scalar operands keep the existing byte
+  chunking behavior after conversion, `null` emits the bounded PHP-shaped
+  deprecation before converting to `""`, supported visible `__toString()`
+  objects are accepted, and arrays, resources, closures, or non-stringable
+  objects raise catchable PHP-shaped string `TypeError`s. Existing
+  PHP-internal int coercion for `$length`, non-positive length `ValueError`,
+  empty-separator behavior, bounded memory diagnostics, metadata visibility,
+  and native-lowering rejection remain unchanged. Focused proof covers the
+  Rust `chunk_split_uses_php_string_argument_boundary` regression, the full
+  `chunk_split_builtin` Rust file, direct CLI probes, selected public
+  `chunk_split()` PHPT rows, build, fmt, and diff checks. Unsupported edges
+  remain exact invalid `__toString()` return diagnostics, exact null/lossy
+  scalar int deprecations for `$length`, broader binary fidelity beyond
+  represented runtime bytes, references/COW, and native lowering.
+
+- Added a bounded `array_map()` non-array operand diagnostics lane. Direct and
+  string-valued dynamic interpreter calls now raise catchable PHP-shaped
+  `TypeError`s for non-array input arrays while preserving the existing
+  null-callback identity/zip paths, callback mapping paths, by-reference
+  callback-parameter warnings, metadata visibility, and native-lowering
+  rejection. The operand boundary follows PHP's variadic array-argument
+  wording: argument #2 is named `$array`, later array operands are named only
+  by position, booleans report `bool`, closures report `Closure`, and objects
+  report their class name. Focused proof covers the `array_map` Rust
+  regression file, the updated third-operand runtime-error CLI snapshot,
+  direct runtime/native-boundary probes, selected public PHPT row
+  `array_map_variation10.phpt`, build, fmt, and diff checks. Unsupported edges
+  remain exact callback validation ordering when an invalid callback is
+  combined with invalid array operands, `__call` callback dispatch,
+  first-class callables, true callback-parameter aliasing back into
+  helper-supplied values, broader reference/COW graph parity, exact native
+  diagnostic object internals, and native lowering.
+
+- Added a bounded date constructor argument-count diagnostics lane.
+  `DateTime::__construct()` now raises a catchable PHP-shaped
+  `ArgumentCountError` when called with more than the supported two
+  arguments, and `DateTimeZone::__construct()` raises catchable PHP-shaped
+  `ArgumentCountError`s when called with anything other than one argument.
+  Existing bounded DateTime construction, DateTimeZone metadata, timezone
+  parsing, `date_create()` behavior, metadata visibility, and native-lowering
+  rejection remain unchanged. Focused proof covers the
+  `datetime_core_constructors_report_catchable_argument_count_errors` Rust
+  regression, the full DateTime Rust file, direct CLI probes, selected public
+  PHPT rows `DateTime_construct_error.phpt` and
+  `DateTimeZone_construct_error.phpt`, build, fmt, and diff checks.
+  Unsupported edges remain exact internal DateTime/DateTimeZone constructor
+  diagnostics beyond arity, scalar/stringable timezone coercions outside the
+  covered slices, invalid timezone exception-class parity, DateTimeImmutable,
+  DateInterval arithmetic, full timezone database/history, references/COW,
+  and native lowering.
+
+- Added a bounded digest `$binary` bool-boundary lane. `md5()`, `sha1()`,
+  `md5_file()`, and `sha1_file()` now route optional `$binary` operands
+  through the shared PHP-internal bool boundary, so scalar values keep
+  selecting lowercase hex versus raw binary output by PHP truthiness while
+  arrays, objects, closures, and resources raise catchable PHP-shaped
+  `TypeError`s. Existing string/data conversion, local file path handling,
+  missing-file warning/`false` recovery, metadata visibility, and native
+  lowering rejection remain unchanged. Focused proof covers the Rust
+  `digest_binary_flags_use_php_bool_boundary` regression, the full SHA-1 Rust
+  file, direct CLI probes, selected public `md5()` / `sha1()` raw-output PHPT
+  rows, build, fmt, and diff checks. Unsupported edges remain exact
+  null-to-bool and lossy scalar bool deprecation diagnostics, exact
+  string-conversion diagnostics for digest input and file path operands,
+  FIPS/provider policy, streaming hash contexts, `hash()`/`hash_hmac()` flag
+  parity, broader file wrapper behavior, references/COW, and native lowering.
+
+- Added a bounded `base64_encode()` / `base64_decode()` string-argument
+  boundary lane. Direct and string-valued dynamic interpreter calls now route
+  argument #1 `$string` through the shared PHP-shaped string byte boundary:
+  scalar operands keep the existing base64 encode/decode behavior after
+  conversion, `null` emits the bounded PHP-shaped deprecation before
+  converting to `""`, supported visible `__toString()` objects are accepted,
+  and arrays, resources, closures, or non-stringable objects raise catchable
+  PHP-shaped string `TypeError`s. Existing strict-mode decode behavior,
+  whitespace handling, optional `$strict` PHP-internal bool boundary, metadata
+  visibility, and native-lowering rejection remain unchanged. Focused proof
+  covers the Rust `base64_helpers_use_php_string_argument_boundary`
+  regression, the full `ctype_builtins` Rust file, direct CLI probes, selected
+  public PHPT rows `base64_encode_basic_001.phpt`,
+  `base64_decode_basic_001.phpt`, and `base64_decode_basic_002.phpt`, build,
+  fmt, and diff checks. Unsupported edges remain exact invalid `__toString()`
+  return diagnostics, exact null-to-bool deprecations for `$strict`, broader
+  binary fidelity beyond represented runtime bytes, references/COW, and native
+  lowering.
+
+- Added a bounded `array_rand()` non-array operand diagnostics lane. Direct and
+  string-valued dynamic interpreter calls now raise catchable PHP-shaped
+  `TypeError`s when argument #1 `$array` is not an array, including the
+  two-argument form before `$num` coercion. Existing deterministic first-key
+  and first-N-key selection, empty-array and invalid-count `ValueError`s,
+  metadata visibility, and native-lowering rejection remain unchanged. Focused
+  proof covers the `array_rand_reports_php_type_errors_for_non_array_operands`
+  Rust regression, the updated runtime-error CLI snapshot, a direct CLI probe,
+  selected public PHPT row `array_rand_basic1.phpt`, build, fmt, and diff
+  checks. Unsupported edges remain true random selection, RNG seeding/state,
+  exact distribution, non-int count coercions outside the current argument
+  helper, exact boolean diagnostic wording beyond the current fatal renderer,
+  references/COW, object/resource value identity, exact native diagnostic
+  object internals, and native lowering.
+
+- Added a bounded array value-transform non-array diagnostics lane.
+  `array_flip()` and `array_unique()` now raise catchable PHP-shaped
+  `TypeError`s when argument #1 `$array` is not an array, including
+  string-valued dynamic interpreter calls. Existing `array_flip()` int/string
+  value-to-key conversion and warning-and-skip recovery, existing
+  `array_unique()` `SORT_STRING`/`SORT_REGULAR`/`SORT_NUMERIC` behavior,
+  metadata visibility, and native-lowering rejection remain unchanged.
+  Focused proof covers the `array_flip` and `array_unique` Rust regression
+  files, runtime-error CLI snapshots for the uncaught TypeError path, direct
+  CLI probes, selected public `array_flip()` / `array_unique()` PHPT smoke
+  rows, build, fmt, and diff checks. Unsupported edges remain exact native
+  object internals, `array_flip()` reference/COW behavior and exact skipped
+  value warning internals, `array_unique()` broader non-scalar value
+  comparisons, unsupported sort modes, PHP warning-and-string-conversion
+  recovery for arrays/objects, references/COW, and native lowering.
+
+- Added a bounded `array_keys()` first-argument diagnostics lane. Direct and
+  string-valued dynamic interpreter calls now raise catchable PHP-shaped
+  `TypeError`s when argument #1 `$array` is not an array, using PHP-style
+  given-type names for scalar, null, and object operands. Existing key
+  emission, loose and strict filtering, strict-flag bool coercion, metadata
+  visibility, and native-lowering rejection remain unchanged. Focused proof
+  covers the `array_keys_requires_array_argument` Rust regression, the full
+  `array_keys` Rust file, the updated runtime-error CLI snapshot, direct CLI
+  probes, selected public PHPT row `array_keys_basic.phpt`, build, fmt, and
+  diff checks. Unsupported edges remain object/resource and recursive-array
+  loose comparisons, strict-flag null deprecation parity, exact engine stack
+  metadata beyond the current fatal renderer, references/COW, and native
+  lowering.
+
+- Added a bounded `pack()` / `unpack()` declared-operand string-boundary lane.
+  `pack()` now routes `$format` through the shared PHP-shaped string byte
+  boundary, and `unpack()` routes `$format` and `$string` through the same
+  boundary before entering the existing bounded binary format parser. Scalar
+  operands, `null`, and supported visible `__toString()` objects now reach the
+  covered `H`/`h`/`A`/`Z`/integer/float format behavior after conversion,
+  while arrays, resources, closures, and non-stringable objects raise
+  catchable PHP-shaped string `TypeError`s for the declared operands.
+  `unpack()` offset now uses the shared PHP-internal int boundary, so scalar
+  int-compatible values keep selecting the existing byte offset while arrays,
+  objects, closures, and resources raise catchable `TypeError`s. Empty
+  pack/unpack formats now return an empty packed string or empty unpacked
+  array instead of stopping at the previous subset diagnostic. Existing format
+  support, `unpack()` `X*` warning recovery, offset containment checks,
+  pack-side too-few-value `ValueError`s, metadata visibility, and
+  native-lowering rejection remain unchanged. Focused proof covers the
+  `pack_unpack_declared_operands_use_php_argument_boundaries` Rust regression,
+  the full `pack_unpack_residuals` Rust file, direct CLI probes, selected
+  public PHPT rows `pack_A.phpt` and `unpack_offset.phpt`, build, fmt, diff,
+  and native-lowering rejection checks. Unsupported edges remain exact
+  pack-side unused-argument warnings, PHP's warning/stringification behavior
+  for array values in variadic string pack fields, exact null/lossy offset
+  deprecations, exact invalid `__toString()` return diagnostics, broad format
+  code/endian/alignment matrices, references/COW, and native lowering.
+
+- Added a bounded unary byte string-helper argument-boundary lane.
+  `strrev()`, `str_rot13()`, and `str_shuffle()` now route direct and
+  string-valued dynamic interpreter operands through the shared PHP-shaped
+  string argument boundary: scalar values keep the existing byte reverse,
+  ROT13, and deterministic shuffle behavior after conversion, `null` emits
+  the PHP-shaped deprecation before converting to `""`, supported visible
+  `__toString()` objects are accepted, and arrays, resources, closures, or
+  non-stringable objects raise catchable PHP-shaped `TypeError`s. Existing
+  metadata visibility, direct native scalar lowering for `strrev()` and
+  `str_rot13()`, and `str_shuffle()` native-lowering rejection remain
+  unchanged. Focused proof covers the Rust
+  `unary_byte_helpers_use_php_string_argument_boundary` regression, the full
+  `string_residual_builtins` test file, direct CLI probes, and selected public
+  PHPT rows for `strrev()` and `str_rot13()`. Unsupported edges remain exact
+  invalid `__toString()` return diagnostics, exact deterministic
+  `str_shuffle()` RNG parity, binary/string fidelity beyond represented
+  runtime bytes, references/COW, and native lowering for the broadened
+  interpreter-only object/null operands.
+
+- Added a bounded `DateTime::modify()` modifier string-boundary lane. Mutable
+  `DateTime::modify()` and procedural `date_modify()` now route their
+  `$modifier` operands through the shared PHP-shaped string boundary: scalar
+  values reach the existing bounded modifier parser after conversion, `null`
+  emits the PHP-shaped deprecation before converting to `""`, supported
+  visible `__toString()` objects are accepted, and arrays, resources,
+  closures, or non-stringable objects raise catchable PHP-shaped `TypeError`s.
+  Existing bounded weekday/unit/timestamp modifier behavior, mutable
+  same-object returns, timestamp-zone identity for `@...` modifiers, metadata
+  visibility, and native-lowering rejection remain unchanged. Focused proof
+  covers the `date_modify_helpers_use_php_string_modifier_boundary` Rust
+  regression, the full DateTime Rust file, direct CLI probes, selected public
+  PHPT rows `DateTime_modify_basic1.phpt` and `date_modify_basic1.phpt`,
+  build, fmt, and diff checks. Unsupported edges remain exact invalid
+  modifier parse warning/exception parity beyond already covered slices, exact
+  invalid `__toString()` return diagnostics, broad relative/absolute
+  `modify()` grammar beyond the current bounded forms, DateTimeImmutable
+  mutation behavior, DateInterval arithmetic, references/COW, and native
+  lowering.
+
+- Added a bounded array literal unpacking lane. `phpc run` now parses and
+  executes `...$array` entries in both short and long array literals, unpacking
+  array operands left-to-right with PHP-shaped merge behavior: integer keys
+  append/reindex, string keys overwrite existing buckets without moving their
+  insertion position, and reference-backed runtime slots remain shared.
+  Non-array operands now reach a focused runtime diagnostic that names the PHP
+  unpacking rule instead of failing at parse time. The Milestone 2343 CLI
+  fixture exercises the public `phpc run` path, and the old unsupported array
+  spread fixture was removed from the unsupported-syntax snapshot set. Focused
+  proof covers the `array_literal_spread` Rust regression, the adjusted
+  syntax-boundary row, the Milestone 2343 fixture, direct CLI probes, selected
+  public PHPT rows `Zend/tests/array_unpack_string_keys.phpt` and
+  `ext/standard/tests/array/array_find_types.phpt`, build, fmt, diff, and
+  source-shape checks. Unsupported edges remain Traversable/object unpacking,
+  exact PHP `Error` object parity for non-array operands, arbitrary
+  copied-source provenance through spread operands, broader reference/COW graph
+  parity beyond preserved runtime slots, and native lowering.
+
+- Added a bounded `substr_compare()` case-insensitive flag bool-boundary lane.
+  Direct and string-valued dynamic interpreter calls now route optional
+  `$case_insensitive` operands through the shared PHP-internal bool boundary,
+  so scalar values keep selecting the existing byte comparison mode by PHP
+  truthiness while arrays, objects, closures, and resources raise catchable
+  PHP-shaped `TypeError`s. Existing scalar haystack/needle conversion, offset
+  and nullable non-negative length coercion, positive offset bounds,
+  negative-offset clamping, ASCII-only case folding, metadata visibility, and
+  native-lowering rejection remain unchanged. Focused proof covers the Rust
+  `substr_compare_case_insensitive_flag_uses_php_bool_boundary` regression,
+  the full `substr_compare_builtin` test file, direct CLI probes, and selected
+  public `substr_compare()` PHPT rows. Unsupported edges remain exact
+  null/lossy scalar bool deprecation diagnostics, haystack/needle
+  object-resource-array boundary parity, locale or Unicode case folding, exact
+  diagnostics beyond the documented offset/length/bool boundaries,
+  references/COW, and native lowering.
+
+- Added a bounded `array_combine()` non-array operand diagnostics lane. Direct
+  and string-valued dynamic interpreter calls now raise catchable PHP-shaped
+  `TypeError`s when argument #1 `$keys` or argument #2 `$values` is not an
+  array. Existing equal-length pairing, key-value coercions, duplicate-key
+  overwrite behavior, empty-array handling, catchable length-mismatch
+  `ValueError`s, metadata visibility, and native-lowering rejection remain
+  unchanged. Focused proof covers the Rust `array_combine` regression suite,
+  the direct CLI fixture
+  `tests/fixtures/milestone2344/array_combine_non_array_type_errors.php`, and
+  the updated uncaught runtime-error snapshots. Unsupported edges remain lossy
+  or non-finite float, array, object, resource, and reference key-value
+  coercions, exact invalid `__toString()` return diagnostics, exact native
+  object internals, broader references/COW and object/resource identity parity,
+  and native lowering.
+
+- Added a bounded `substr()` subject string-boundary lane. Direct and
+  string-valued dynamic `substr()` calls now route `$string` through the shared
+  PHP-shaped string byte boundary: scalar operands keep the existing byte-slice
+  behavior after conversion, `null` emits the bounded PHP-shaped deprecation
+  before converting to `""`, supported visible `__toString()` objects are
+  accepted, and arrays, resources, closures, or non-stringable objects raise
+  catchable PHP-shaped string `TypeError`s. Existing `$offset` and nullable
+  `$length` PHP-internal int coercion, positive/negative byte-window math,
+  `PHP_INT_MIN` clamping, metadata visibility, and native-lowering rejection
+  remain unchanged. Focused proof covers the Rust
+  `substr_uses_php_string_argument_boundary` regression, the full
+  `substr_builtin` test file, direct CLI probes, and selected public PHPT
+  rows. Unsupported edges remain exact invalid `__toString()` return
+  diagnostics, exact null/lossy offset and length deprecations, broader
+  binary/encoding parity beyond represented runtime bytes, references/COW, and
+  native lowering.
+
+- Added a bounded `strspn()` / `strcspn()` string-boundary lane. Direct and
+  string-valued dynamic interpreter calls now route `$string` and
+  `$characters` operands through the shared PHP-shaped string argument
+  boundary: scalar values keep the existing byte-mask span/count behavior,
+  `null` emits PHP-shaped deprecations before converting to `""`, supported
+  visible `__toString()` objects are accepted, and arrays, resources,
+  closures, or non-stringable objects raise catchable PHP-shaped `TypeError`s.
+  Existing optional offset/length int coercion, byte-window clamping, metadata
+  visibility, and native-lowering rejection remain unchanged. Focused proof
+  covers the Rust `strspn_and_strcspn_use_php_string_argument_boundary`
+  regression, the full `strspn_strcspn_builtin` test file, direct CLI probes,
+  and selected public PHPT rows. Unsupported edges remain exact invalid
+  `__toString()` return diagnostics, exact null/lossy offset and length
+  deprecations, broader PHP warning/ValueError recovery for every window edge,
+  encoding-sensitive parity beyond represented runtime bytes, references/COW,
+  and native lowering.
+
+- Added a bounded array counting/numeric aggregation non-array diagnostics
+  lane. Direct and string-valued dynamic `array_count_values()`,
+  `array_sum()`, and `array_product()` interpreter calls now raise catchable
+  PHP-shaped `TypeError`s when argument #1 is not an array. Existing counting
+  of integer/string values, warning-and-skip behavior for unsupported
+  `array_count_values()` values, scalar numeric aggregation and warning
+  behavior for unsupported `array_sum()` / `array_product()` values, metadata
+  visibility, and native-lowering rejection remain unchanged. Focused proof
+  covers the Rust `array_count_values`, `array_sum`, `array_product`, and
+  runtime-error CLI regression suites plus the direct CLI fixture
+  `tests/fixtures/milestone2342/array_count_numeric_non_array_type_errors.php`.
+  Unsupported edges remain unsupported non-int/string count values,
+  unsupported non-numeric/non-scalar numeric aggregation values, exact warning
+  text beyond the current bounded rows, broader reference/COW graph parity,
+  object handle/resource parity, exact native object internals, and native
+  lowering.
+
+- Added a bounded mbstring encoding string-boundary lane for the existing
+  scalar helper subset. Optional `$encoding` operands on `mb_strlen()`,
+  `mb_substr()`, `mb_strcut()`, `mb_substr_count()`, `mb_strpos()`,
+  `mb_stripos()`, `mb_strrpos()`, `mb_strripos()`, `mb_strtolower()`, and
+  `mb_strtoupper()` now route through the shared PHP-shaped nullable string
+  boundary: omitted or `null` operands keep the current default encoding,
+  scalar operands keep the existing valid/unknown encoding behavior after
+  conversion, supported visible `__toString()` objects are accepted, and
+  arrays, resources, closures, or non-stringable objects raise catchable
+  PHP-shaped `?string` `TypeError`s. Existing string/haystack/needle scalar
+  conversion, UTF-8 and single-byte windows, `mb_strcut()` byte cuts,
+  non-overlapping counts, case mapping, offset checks, empty-needle and
+  unknown-encoding `ValueError`s, metadata visibility, and native-lowering
+  rejection remain unchanged. Focused proof covers the Rust
+  `mb_scalar_helpers_accept_stringable_encoding_arguments_and_report_type_errors`
+  regression, the full `mbstring_scalar_builtins` test file, a direct
+  stringable/dynamic-call CLI probe, and selected public unknown-encoding PHPT
+  guard rows. Unsupported edges remain string/haystack/needle
+  object-resource-array boundary parity, exact invalid `__toString()` return
+  diagnostics, full encoding conversion tables and mbstring extension-global
+  state, invalid sequence/substitute policy, references/COW, and native
+  lowering.
+
+- Added a bounded SPL iterator helper lane for `iterator_count()` and
+  `iterator_to_array()`. Both helpers now accept arrays and the runtime's
+  bounded `Iterator` / `IteratorAggregate` object surface: arrays are counted
+  or materialized directly, `Iterator` objects are driven through
+  `rewind()`, `valid()`, `current()`, `key()`, and `next()` in PHP order, and
+  `IteratorAggregate` objects are unwrapped through `getIterator()` when it
+  returns one of those bounded `Iterator` objects. `iterator_to_array()` uses
+  the shared PHP-internal bool boundary for optional `$preserve_keys`, keeps
+  keys by default, and reindexes when false. Non-array, non-traversable
+  operands and non-coercible preserve-key values raise catchable PHP-shaped
+  `TypeError`s; native lowering still rejects these helper calls. Focused
+  proof covers the Rust
+  `iterator_helpers_materialize_arrays_and_bounded_iterators` regression, the
+  direct CLI fixture
+  `tests/fixtures/milestone2337/iterator_helpers_arrays_and_bounded_iterators.php`,
+  and selected public PHPT rows for array input and invalid argument
+  diagnostics. Unsupported edges remain direct `Traversable` implementations
+  outside the bounded `Iterator` / `IteratorAggregate` method surface, exact
+  nonscalar iterator-key diagnostics, iterator temporary handle reclamation
+  outside foreach, by-reference SPL iterator execution, full reference/COW
+  identity for materialized values, and native lowering.
+
+- Added a bounded stat-style metadata non-string filename diagnostics lane.
+  `stat()`, `lstat()`, `filesize()`, `fileatime()`, `filemtime()`,
+  `filectime()`, `fileinode()`, `fileowner()`, `filegroup()`, `fileperms()`,
+  and `filetype()` now raise catchable PHP-shaped string `TypeError`s for
+  array, closure, and resource filename operands before local path resolution.
+  Existing scalar/null and UTF-8 binary-string path conversion, empty/NUL
+  warning/`false` recovery, missing-path and `open_basedir` warnings,
+  stat-cache behavior, metadata visibility, and native-lowering rejection
+  remain unchanged. Focused proof covers the Rust
+  `file_metadata_builtins_report_type_errors_for_non_string_paths`
+  regression and the full `standard_file_metadata_builtins` test file.
+  Unsupported edges remain exact null/lossy scalar deprecations,
+  object/stringable metadata paths, invalid `__toString()` diagnostics, full
+  binary/non-UTF-8 path fidelity, broader stat-cache/ACL/TOCTOU parity,
+  references/COW, and native lowering.
+
+- Added a bounded date/time formatter string-argument boundary lane.
+  `DateTime::format()`, `date_format()`, `date()`, `gmdate()`,
+  `strftime()`, `gmstrftime()`, and `idate()` now route their `$format`
+  operands through the shared PHP-shaped string boundary: scalar values keep
+  the existing formatting behavior after conversion, `null` emits the
+  PHP-shaped deprecation before converting to `""`, supported visible
+  `__toString()` objects are accepted, and arrays, resources, closures, or
+  non-stringable objects raise catchable PHP-shaped `TypeError`s. Existing
+  bounded format token rendering, `strftime()` / `gmstrftime()` deprecation
+  diagnostics, timestamp handling, DateTime object state, metadata visibility,
+  and native-lowering rejection remain unchanged. Focused proof covers the
+  Rust `date_formatters_use_php_string_argument_boundary` regression,
+  focused formatter runtime probes, and selected public date formatter PHPT
+  rows. Unsupported edges remain exact invalid `__toString()` return
+  diagnostics, binary format strings beyond represented runtime text, full
+  timezone/DST history, DateTimeImmutable, DateInterval arithmetic,
+  references/COW, and native lowering.
+
+- Added a bounded reverse string-position offset coercion lane.
+  `strrpos()` and `strripos()` now route optional `$offset` operands through
+  the shared PHP-internal int boundary used by adjacent forward search helpers,
+  so null, booleans, finite floats, and numeric strings reach the existing
+  reverse byte-search window logic while arrays, objects, closures, resources,
+  non-numeric strings, and out-of-range floats keep catchable PHP-shaped
+  `TypeError`s. Existing scalar haystack/needle conversion, positive
+  lower-bound and negative-from-end offset semantics, empty-needle reverse
+  boundary behavior, out-of-bounds `ValueError`s, binary byte offsets,
+  `strripos()` ASCII folding, metadata visibility, and native-lowering
+  rejection remain unchanged. Focused proof covers the Rust
+  `reverse_position_builtins_coerce_php_internal_offsets` regression, the full
+  `strrpos_builtin` test file, direct CLI probes, and selected public reverse
+  offset PHPT rows. Unsupported edges remain exact deprecation warnings for
+  null or lossy scalar offset coercions, supported visible `__toString()`
+  haystack/needle conversion, non-ASCII case folding, broader binary/encoding
+  parity beyond represented runtime bytes, references/COW, and native
+  lowering.
+
+- Added a bounded `array_slice()` non-array first-argument diagnostics lane.
+  Direct and string-valued dynamic interpreter calls now raise catchable
+  PHP-shaped `TypeError`s when argument #1 is not an array. Existing slice
+  ordering, integer offset handling, nullable length coercion,
+  `$preserve_keys` bool coercion, reference-backed result slots, metadata
+  visibility, and native-lowering rejection remain unchanged. Focused proof
+  covers the Rust `array_slice` regression suite, the direct runtime-error CLI
+  snapshot, and selected public `array_slice` PHPT rows. Unsupported edges
+  remain non-int offset coercion, PHP deprecation warnings for weak
+  nullable-int length or bool preserve-key coercions, reference/COW graph
+  parity beyond existing result-slot behavior, object handle identity/resource
+  parity, exact native object internals, and native lowering.
+
+- Added a bounded JSON input string-argument boundary lane. `json_decode()`
+  and `json_validate()` now route their `$json` operands through the shared
+  PHP-shaped string byte boundary, so scalar values keep the existing parser
+  and invalid-UTF-8 behavior, `null` emits the bounded deprecation before
+  decoding/validating `""`, supported visible `__toString()` objects are
+  accepted, and arrays, resources, closures, or non-stringable objects raise
+  catchable PHP-shaped `TypeError`s. Existing decode/validate flags,
+  request-local last-error state, binary invalid-UTF-8 repair lanes, metadata
+  visibility, and native-lowering rejection remain unchanged. Focused proof
+  covers the Rust
+  `json_decode_and_validate_use_php_string_argument_boundary` regression and
+  direct CLI fixture
+  `tests/fixtures/milestone2338/json_input_string_argument_boundaries.php`.
+  Unsupported edges remain exact invalid `__toString()` return diagnostics,
+  exact null deprecation breadth for related scalar arguments, full
+  `JsonSerializable` behavior, every JSON option interaction, complete
+  UTF-8/UTF-16 diagnostic parity, remaining json extension functions,
+  references/COW, and native lowering.
+
+- Added a bounded `substr_count()` string-boundary lane. Direct and
+  string-valued dynamic interpreter calls now route haystack and needle
+  operands through the shared PHP-shaped string argument boundary: scalar
+  values keep the existing byte-oriented non-overlapping count behavior, `null`
+  emits PHP-shaped deprecations before converting to `""`, supported visible
+  `__toString()` objects are accepted, and arrays, resources, closures, or
+  non-stringable objects raise catchable PHP-shaped `TypeError`s. Existing
+  empty-needle `ValueError`s, optional offset/length int coercion and bounds
+  checks, binary byte counting, metadata visibility, and native-lowering
+  behavior remain unchanged. Focused proof covers the Rust
+  `substr_count_uses_php_string_argument_boundary_for_haystack_and_needle`
+  regression, the full `substr_count_builtin` test file, a direct CLI probe,
+  and selected public PHPT rows. Unsupported edges remain exact empty-needle
+  text parity, exact invalid `__toString()` return diagnostics, broader
+  encoding-sensitive parity beyond represented runtime bytes, references/COW,
+  and native lowering.
+
+- Added a bounded tokenizer heredoc/nowdoc classification lane for
+  `token_get_all()` and `PhpToken::tokenize()`. Valid `<<<LABEL`,
+  `<<<"LABEL"`, and `<<<'LABEL'` starts now emit `T_START_HEREDOC`, content
+  is scanned until an exact or indented closing label that emits
+  `T_END_HEREDOC`, nowdoc payloads stay literal, and heredoc payloads split the
+  current simple interpolation token shapes including `$name`, numeric/string
+  offsets, object properties, `${name}`, and `{$name}`. Parser/runtime heredoc
+  execution and native lowering remain unchanged. Focused proof covers the
+  Rust `tokenizer_classifies_heredoc_and_nowdoc_boundaries` regression, the
+  full `tokenizer_function_core` test file, a direct `phpc run` tokenizer
+  probe, and selected public PHPT row `ext/tokenizer/tests/bug76991.phpt`.
+  Unsupported edges remain full malformed heredoc/nowdoc parse recovery,
+  nested heredoc expressions inside complex interpolation, complete heredoc
+  indentation/strip semantics beyond token classification, `TOKEN_PARSE`
+  parse-error validation, broader dynamic interpolation side effects,
+  references/COW, and native lowering.
+
+- Added a bounded disk-space metadata stringable-directory lane.
+  `disk_free_space()`, its `diskfreespace()` alias, and
+  `disk_total_space()` now accept supported visible `__toString()` objects for
+  their `$directory` operands on direct and string-valued dynamic interpreter
+  calls. Existing scalar/null and UTF-8 binary-string path conversion,
+  host-local `statvfs` free/total byte reporting, null-byte `ValueError`s,
+  missing-path warning/`false` recovery, `open_basedir` denial, and native
+  lowering rejection remain unchanged. Arrays, closures, resources, and
+  non-stringable objects now raise catchable PHP-shaped `TypeError`s for the
+  directory operand. Focused proof covers the Rust
+  `disk_space_builtins_accept_stringable_directories_and_report_type_errors`
+  regression, a direct CLI fixture, and selected public disk-space PHPT guard
+  rows. Unsupported edges remain exact null/lossy scalar deprecation
+  diagnostics, exact invalid `__toString()` return diagnostics, broader
+  `statvfs` portability/ACL/quota semantics, non-UTF-8 paths, references/COW,
+  and native lowering.
+
+- Added a bounded `base64_decode()` strict-flag bool-boundary lane. Direct and
+  string-valued dynamic interpreter calls now route optional `$strict` through
+  the shared PHP-internal bool boundary, so scalar values keep selecting the
+  existing strict or non-strict byte decoder by PHP truthiness while arrays,
+  objects, closures, and resources raise catchable PHP-shaped `TypeError`s.
+  Existing base64 byte encode/decode behavior, whitespace handling, strict
+  invalid-character rejection, metadata visibility, and native-lowering
+  rejection remain unchanged. Focused proof covers the Rust
+  `base64_decode_strict_flag_uses_php_bool_boundary` regression, the full
+  `ctype_builtins` test file, direct runtime/native-boundary probes, and
+  selected public PHPT base64 rows. Unsupported edges remain exact
+  null-to-bool deprecation diagnostics for `$strict`, object/resource string
+  operands, exact binary fidelity beyond represented runtime bytes,
+  references/COW, and native lowering.
+
+- Added a bounded `array_chunk()` preserve-key bool-coercion lane. Direct and
+  string-valued dynamic `array_chunk()` calls now route optional
+  `$preserve_keys` through the shared PHP-internal bool boundary, so scalar
+  values choose the existing reindexed or key-preserving chunk paths by PHP
+  truthiness while arrays, objects, closures, and resources raise catchable
+  PHP-shaped `TypeError`s. Existing positive-length chunking, non-positive
+  length `ValueError`s, integer-key reindexing, string/integer key
+  preservation, direct reference-backed value-slot preservation, source-array
+  immutability, metadata visibility, and native-lowering rejection remain
+  unchanged. Focused proof covers the Rust `array_chunk` regression suite, a
+  direct CLI fixture, the updated runtime-error snapshot, and selected public
+  PHPT rows. Unsupported edges remain PHP deprecation warnings for null or
+  lossy scalar preserve-key coercions, non-int length coercion, broader
+  reference/COW graph parity, object handle identity/resource parity, exact
+  native object internals, and native lowering.
+
+- Added a bounded filesystem access-predicate stringable path lane.
+  `file_exists()`, `is_dir()`, `is_file()`, `is_readable()`,
+  `is_writable()` / `is_writeable()`, `is_executable()`, and `is_link()` now
+  accept supported visible `__toString()` path objects through `phpc run`,
+  including string-valued dynamic calls for the already-supported predicate
+  names. Non-stringable objects raise catchable PHP-shaped string `TypeError`s
+  with the predicate-specific function name. Existing local path resolution,
+  scalar false-case behavior, empty/NUL path false returns, open_basedir
+  checks, stream-wrapper rejection, permission-bit predicates, symlink metadata
+  checks, function/callability metadata, and native-lowering rejection remain
+  unchanged. Focused proof covers the Rust
+  `access_predicates_accept_stringable_path_objects_and_report_type_errors`
+  regression. Unsupported edges remain exact invalid `__toString()` return
+  diagnostics, exact null/lossy scalar deprecations, array/closure/resource
+  TypeError parity for predicate helpers that still use warning/false fallback
+  paths, full binary/non-UTF-8 path fidelity, broader stat-cache and
+  symlink/permission policy parity, references/COW, and native lowering.
+
+- Added a bounded ASCII whole-string case helper argument-boundary lane.
+  `strtolower()` and `strtoupper()` now route direct and string-valued dynamic
+  interpreter operands through the shared PHP-shaped string argument boundary:
+  scalar values keep the existing ASCII byte casing behavior, `null` emits the
+  PHP-shaped deprecation before converting to `""`, supported visible
+  `__toString()` objects are accepted, and arrays, resources, closures, or
+  non-stringable objects raise catchable PHP-shaped `TypeError`s. Existing
+  metadata visibility and direct native ASCII byte lowering for lowerable
+  scalar operands remain unchanged. Focused proof covers the Rust
+  `ascii_case_helpers_use_php_string_argument_boundary` regression, the full
+  `string_case_builtin` test file, direct CLI probes, and selected public PHPT
+  rows for `strtolower()` and `strtoupper()`. Unsupported edges remain exact
+  invalid `__toString()` return diagnostics, locale-sensitive casing, Unicode
+  case folding, references/COW, and broader native PHP string conversion.
+
+- Added a bounded `array_reverse()` preserve-key bool-coercion lane. Direct and
+  string-valued dynamic `array_reverse()` calls now route optional
+  `$preserve_keys` through the shared PHP-internal bool boundary, so scalar
+  values choose the existing reindexed or key-preserving reverse paths by PHP
+  truthiness while arrays, objects, closures, and resources raise catchable
+  PHP-shaped `TypeError`s. Existing reverse insertion order, integer-key
+  reindexing, string-key preservation, key-preserving mode, source-array
+  immutability, metadata visibility, and native-lowering rejection remain
+  unchanged. Focused proof covers the Rust `array_reverse` regression suite, a
+  direct CLI fixture, the updated runtime-error snapshot, and selected public
+  PHPT rows. Unsupported edges remain PHP deprecation warnings for null or
+  lossy scalar preserve-key coercions, broad reference/COW graph parity, object
+  handle identity/resource parity, and native lowering.
+
+- Added a bounded `str_replace()` / `str_ireplace()` top-level
+  `array|string` argument-boundary lane. Direct calls and string-valued
+  dynamic calls now accept supported visible `__toString()` objects for
+  top-level search, replacement, and subject operands, while resources,
+  closures, and non-stringable objects raise catchable PHP-shaped `TypeError`s
+  before aggregate count writeback. Existing scalar/null conversion, null
+  deprecations, one-level array search/replacement/subject behavior, nested
+  array `Array to string conversion` warnings, byte-preserving replacement,
+  ASCII-insensitive `str_ireplace()` matching, callback by-value count
+  warnings, metadata visibility, and native-lowering rejection remain
+  unchanged. Focused proof covers the Rust
+  `str_replace_array_string_boundary_accepts_stringables_and_reports_type_errors`
+  regression and a direct `phpc run` probe. Unsupported edges remain nested
+  array-element object/resource conversion parity, exact invalid
+  `__toString()` return diagnostics, recursive arrays, non-variable and
+  indirect count outputs, full locale/Unicode case folding, references/COW,
+  and native lowering.
+
+- Added a bounded URL helper string-argument boundary lane. `parse_url()`,
+  `urlencode()`, `rawurlencode()`, `rawurldecode()`, and the
+  `http_build_query()` `$numeric_prefix` / non-null `$arg_separator` operands
+  now route through the shared PHP-shaped string boundary: scalar values keep
+  the existing conversion behavior, `null` emits the PHP-shaped deprecation
+  for non-nullable string parameters, supported visible `__toString()` objects
+  are accepted, and arrays, closures, resources, or non-stringable objects
+  raise catchable PHP-shaped `TypeError`s. Existing URL parsing, byte-oriented
+  percent encoding/decoding, query traversal, object-property query
+  serialization, component constants, and native-lowering rejection remain
+  unchanged. Focused proof covers the Rust
+  `url_helpers_accept_stringable_objects_and_report_type_errors` regression
+  plus the direct CLI fixture
+  `tests/fixtures/milestone2331/url_stringable_argument_boundaries.php`.
+  Unsupported edges remain `urldecode()` in this baseline, percent-decoding of
+  parsed `parse_url()` components, exact invalid `__toString()` return
+  diagnostics, binary-string invalid-UTF-8 parse component parity,
+  INI-derived argument separators beyond the current `&` fallback, broader
+  RFC/WHATWG URL validation, IDNA, references/COW, and native lowering.
+
+- Added a bounded `dirname()` weak-levels path metadata lane. `phpc run` now
+  routes the optional `$levels` argument through the shared PHP-internal int
+  boundary before the existing positive-level check, so booleans, finite
+  floats, numeric strings, and `null` reach the same lexical parent-directory
+  extraction or catchable non-positive `ValueError` path as integers, while
+  arrays, objects, closures, and resources raise catchable PHP-shaped `int`
+  `TypeError`s. Existing scalar/stringable path conversion, string-valued
+  dynamic calls, function/callability metadata, and native-lowering rejection
+  remain unchanged. Focused proof covers the Rust
+  `dirname_reports_current_argument_boundaries` regression, the full
+  `path_builtins` test file, a direct CLI probe, and selected public
+  `dirname` PHPT guard rows. Unsupported edges remain exact deprecation
+  warnings for null and lossy scalar level coercions, exact invalid
+  `__toString()` return diagnostics for path operands, Windows drive/UNC path
+  behavior, stream wrappers, filesystem canonicalization, symlink resolution,
+  null-byte policy beyond the current lexical path slice, references/COW, and
+  native lowering.
+
+- Added a bounded trim-family PHP-shaped string-argument boundary.
+  `trim()`, `ltrim()`, `rtrim()`, and `chop()` now route their subject and
+  optional `$characters` operands through the shared internal string boundary:
+  scalar values are converted to bytes, `null` emits PHP-shaped deprecations
+  before converting to `""`, supported visible `__toString()` objects are
+  accepted, and arrays, resources, closures, or non-stringable objects raise
+  catchable PHP-shaped `TypeError`s with the function-specific parameter
+  names. Existing default whitespace masks, custom literal bytes, simple
+  increasing `x..y` byte ranges, invalid-range warnings, string-valued dynamic
+  calls, `chop()` alias behavior, metadata visibility, and native-lowering
+  rejection remain unchanged. Focused proof covers the Rust
+  `trim_family_uses_php_string_argument_boundary` regression, the full trim
+  builtin test file, direct runtime/native-boundary probes, and selected
+  public PHPT rows `trim_basic.phpt`, `ltrim_basic.phpt`, and
+  `rtrim_basic.phpt`. Unsupported edges remain exact invalid `__toString()`
+  return diagnostics, broader charlist parsing and binary edge parity beyond
+  represented runtime bytes, references/COW, and native lowering.
+
+- Added a bounded `str_repeat()` string/count argument boundary lane. Direct
+  and string-valued dynamic `str_repeat()` calls now route `$string` through
+  the shared PHP-shaped string argument boundary, accepting supported visible
+  `__toString()` objects, emitting the existing null-to-string deprecation,
+  and reporting catchable PHP-shaped `TypeError`s for arrays, closures,
+  resources, and non-stringable objects. `$times` now uses the shared
+  PHP-internal int boundary, so non-int-compatible operands raise catchable
+  `TypeError`s while the existing negative-count `ValueError`, byte
+  repetition, deterministic memory guard, metadata visibility, and native
+  lowering rejection remain unchanged. Focused proof covers the Rust
+  `str_repeat_builtin` regression suite, a direct `phpc run` probe, and
+  selected public PHPT rows `ext/standard/tests/strings/str_repeat.phpt` and
+  `ext/standard/tests/strings/str_repeat_variation1.phpt`. Unsupported edges
+  remain deprecation warnings for null or lossy count coercions, exact invalid
+  `__toString()` return diagnostics, exact memory-limit accounting,
+  references/COW, and native lowering for dynamic object operands.
+
+- Added a bounded network database string-argument diagnostics lane.
+  `getprotobyname()`, `getservbyname()`, and `getservbyport()` now route
+  protocol/service name operands through a PHP-internal string boundary:
+  scalar values are converted to strings, `null` emits the PHP-shaped
+  deprecation before converting to `""`, supported visible `__toString()`
+  objects are accepted, and arrays, resources, closures, or non-stringable
+  objects raise catchable PHP-shaped `TypeError`s. The existing deterministic
+  protocol/service lookup tables, NUL-byte `ValueError`s,
+  `getprotobynumber()` integer boundary, string-valued dynamic calls, metadata
+  visibility, and native-lowering rejection remain unchanged. Focused proof
+  covers the Rust
+  `network_database_string_arguments_coerce_and_report_type_errors`
+  regression, the full network service/protocol builtin test file, direct CLI
+  runtime/native-boundary probes, and selected public PHPT network rows.
+  Unsupported edges remain exact invalid `__toString()` return diagnostics,
+  host `/etc/protocols` or `/etc/services` discovery, service aliases beyond
+  the documented deterministic table, UDP service lookups,
+  platform-specific resolver/database differences, broader binary/encoding
+  edge cases, references/COW, and native lowering.
+
+- Added a bounded `array_find()` family by-reference callback-parameter
+  warning lane. `phpc run` now routes `array_find()`, `array_find_key()`,
+  `array_any()`, and `array_all()` callbacks whose reached value/key
+  parameters are declared by reference through the helper value-callback path:
+  callable builtins, string user functions, closures, static-method strings,
+  and supported public array-callable user methods emit PHP-shaped `must be
+  passed by reference, value given` warnings and then execute with ordinary
+  value arguments. Callback writes remain local to the callback frame,
+  preserving the source array and key values while retaining existing
+  short-circuit behavior and native-lowering rejection. Focused proof covers
+  the Rust `array_find_family_reference_params_warn_and_receive_values`
+  regression, the adjacent static-sort callback guard, and the direct
+  `phpc run` fixture
+  `tests/fixtures/milestone2327/array_find_reference_params.php`.
+  Unsupported edges remain true aliasing of callback parameters back into
+  helper-supplied value/key temporaries, first-class callable forms,
+  unsupported dynamic callable shapes, broad reference/COW graph parity, exact
+  diagnostics for every callback failure, and native lowering.
+
+- Added a bounded membership-helper strict-flag coercion lane. `array_keys()`,
+  `in_array()`, and `array_search()` now route their optional `$strict`
+  arguments through the shared PHP-internal bool boundary, so scalar values
+  select the existing strict or loose comparison paths by PHP truthiness while
+  arrays, objects, closures, and resources raise catchable PHP-shaped `bool`
+  `TypeError` diagnostics. Existing key emission, first-match search order,
+  loose/strict scalar and bounded identity comparison behavior, string-valued
+  dynamic calls, and native-lowering rejection remain unchanged. Focused proof
+  covers Rust regressions for all three helpers, a direct CLI fixture, updated
+  runtime-error snapshots for non-coercible strict flags, and selected public
+  PHPT membership/search rows. Unsupported edges remain PHP deprecation
+  warnings for null strict flags, resource strict-flag coercion, broader
+  reference/COW graph parity beyond dereferenced value-slot reads, unsupported
+  loose object/resource/recursive-array comparisons, exact native diagnostic
+  internals, and native lowering.
+
+- Added a bounded `array_map()` / `array_filter()` by-reference
+  callback-parameter warning lane. String user-function callbacks, closure
+  callbacks, and supported public array-callable user methods whose reached
+  parameters are declared by reference now emit PHP-shaped `must be passed by
+  reference, value given` warnings for helper-supplied values/keys, then
+  execute with ordinary value arguments. Callback writes to those parameters
+  remain local to the callback frame, so source arrays and keys are not
+  aliased. Focused proof covers the Rust
+  `array_map_user_callbacks_with_reference_params_warn_and_receive_values`
+  and
+  `array_filter_user_callbacks_with_reference_params_warn_and_receive_values`
+  regressions plus the direct `phpc run` fixture
+  `tests/fixtures/milestone2324/array_map_filter_reference_params.php`.
+  Unsupported edges remain true callback-parameter aliasing back into
+  helper-supplied values/keys, first-class callable forms, unsupported dynamic
+  callable shapes, broad reference/COW graph parity, exact diagnostics for
+  every callback failure, and native lowering.
+
+- Added a bounded mutable `DateTime` setter lane. `phpc run` now supports
+  `DateTime::setDate()`, `DateTime::setISODate()`, and `DateTime::setTime()`
+  plus procedural aliases `date_date_set()`, `date_isodate_set()`, and
+  `date_time_set()` over the existing bounded mutable `DateTime` object state.
+  The setters preserve the receiver timezone, return the same object, expose
+  method/function metadata, normalize overflowing date/time and ISO week parts
+  through a checked bounded local timestamp path, and leave native direct calls
+  behind the existing function-call lowering boundary. Focused proof covers
+  the Rust `datetime_mutable_date_time_setters_normalize_bounded_parts`
+  regression and selected public PHPT rows for the basic object/procedural
+  setter surfaces. Unsupported edges remain `DateTimeImmutable` setters,
+  non-zero microsecond storage/formatting, broad weak scalar date-part
+  coercion/deprecation parity, exact PHP exception text outside the covered
+  bounded integer operands, full timezone/DST history, DateInterval arithmetic,
+  references/COW, and native lowering.
+
+- Added a bounded ASCII word-case stringable-object conversion lane.
+  `phpc run` now routes `ucfirst($string)`, `lcfirst($string)`, and
+  `ucwords($string, $separators = ...)` through the shared PHP-shaped string
+  argument boundary for their string operands. Direct and string-valued dynamic
+  calls accept supported visible `__toString()` objects, preserve the existing
+  ASCII byte-casing behavior, and report catchable PHP-shaped `TypeError`s for
+  arrays, resources, closures, and non-stringable objects. Focused proof
+  covers the Rust
+  `ascii_word_case_helpers_accept_stringable_objects_and_report_type_errors`
+  regression, direct CLI probes, and selected public PHPT rows for
+  `ucfirst()`, `lcfirst()`, and `ucwords()`. Unsupported edges remain exact
+  invalid `__toString()` return diagnostics, Unicode or locale-sensitive
+  titlecasing, exact binary-string edge parity beyond represented runtime
+  bytes, references/COW, and native lowering for dynamic object operands.
+
+- Added a bounded `array_reduce()` by-reference callback-parameter warning
+  lane. String user-function callbacks, closure callbacks, and supported
+  public array-callable user methods whose reached parameters are declared by
+  reference now emit PHP-shaped `must be passed by reference, value given`
+  warnings for the helper-supplied accumulator/value arguments, then execute
+  with those value arguments and preserve the existing extra-callback-argument
+  behavior. Focused proof covers the Rust
+  `array_reduce_user_callbacks_with_reference_params_warn_and_receive_values`
+  regression plus the direct `phpc run` fixture
+  `tests/fixtures/milestone2323/array_reduce_reference_params.php`, and
+  selected public PHPT rows
+  `ext/standard/tests/array/array_reduce_variation1.phpt` and
+  `ext/standard/tests/array/array_reduce_variation3.phpt`.
+  Unsupported edges remain true aliasing of callback parameters back into
+  helper-supplied accumulator/value temporaries, first-class callable forms,
+  unsupported dynamic callable shapes, broad reference/COW graph parity, exact
+  diagnostics for every callback failure, and native lowering.
+
+- Added a bounded extension metadata string-argument diagnostics lane.
+  `phpc run` now routes `extension_loaded($extension)` and
+  `get_extension_funcs($extension)` through a shared PHP-internal string
+  boundary for the extension name: scalar values are converted to strings,
+  `null` emits the PHP-shaped deprecation before converting to `""`,
+  supported visible `__toString()` objects are accepted, and arrays, resources,
+  closures, or non-stringable objects raise catchable PHP-shaped `TypeError`s.
+  The deterministic extension registry itself is unchanged:
+  `extension_loaded()` still answers from the bounded compatibility list, and
+  `get_extension_funcs()` still exposes the current bounded extension-function
+  metadata slices. Focused proof covers the Rust
+  `extension_loaded_coerces_extension_names_and_reports_type_errors` and
+  `get_extension_funcs_coerces_extension_names_and_reports_type_errors`
+  regressions, a direct CLI probe, and the selected public PHPT row
+  `ext/standard/tests/general_functions/get_extension_funcs_basic.phpt`.
+  Unsupported edges remain exact invalid `__toString()` return diagnostics,
+  host extension discovery, complete extension inventories and ordering, broad
+  binary/encoding edge cases, references/COW, and native lowering for these
+  dynamic argument shapes.
+
+- Added a bounded `SplDoublyLinkedList` Countable/ArrayAccess/DELETE-iteration
+  bridge. Core `SplDoublyLinkedList`, `SplQueue`, and `SplStack` objects now
+  dispatch `count($object)` / `sizeof($object)` and generic object-offset
+  syntax such as `$list[] = $value`, `$list[$index] = $value`, and
+  `$list[$index]` through the existing internal list storage methods. List
+  subclasses that override `count()` can call `parent::count()` through the
+  same internal parent-method bridge, and `IT_MODE_DELETE` now removes the
+  current element during `next()` for the covered single-cursor FIFO/LIFO
+  method and `foreach` paths. Focused proof covers the Rust
+  `spl_doubly_linked_list_count_arrayaccess_and_delete_iteration` regression
+  and selected public PHPT rows `dllist_001.phpt`, `dllist_003.phpt`,
+  `dllist_004.phpt`, `dllist_005.phpt`, `dllist_006.phpt`, `dllist_008.phpt`,
+  and `dllist_013.phpt`. Unsupported edges remain independent nested iterator
+  cursors, recursive list storage dumps, serialization/unserialization, exact
+  invalid cursor key values before the first or after the last entry, recovery
+  from invalid cursor boundary states by later `next()` / `prev()` calls,
+  by-reference SPL iterator execution, full COW/reference identity, and native
+  lowering.
+
+- Added a bounded `posix_ctermid()` terminal-path metadata lane for POSIX
+  diagnostics. `phpc run` now calls the host Unix `ctermid(3)` boundary,
+  returning a non-empty UTF-8 terminal path string or `false` if the host call
+  cannot provide one, and exposes the helper through string-valued dynamic
+  calls, `function_exists()`, `is_callable()`, `extension_loaded("posix")`,
+  and `ReflectionFunction` metadata. Native direct calls remain behind the
+  existing function-call lowering boundary. Focused proof covers the Rust
+  `posix_ctermid_builtin` tests and selected public PHPT rows
+  `ext/posix/tests/posix_ctermid_basic.phpt` and
+  `ext/posix/tests/posix_ctermid.phpt`. Unsupported edges remain exact
+  controlling-terminal policy across sessions/SAPIs, non-Unix fallback
+  behavior, non-UTF-8 `ctermid(3)` output, POSIX errno mutation, broader POSIX
+  terminal functions, references/COW, and native lowering.
+
+- Added a bounded `idate()` ISO integer-format token lane. The interpreter now
+  supports `idate("N", $timestamp)` for ISO weekday numbers and
+  `idate("o", $timestamp)` for ISO week-numbering years, reusing the existing
+  bounded date-part and ISO week helpers used by `date()` / `gmdate()` while
+  displaying PHP-shaped warnings and returning `false` for non-integer date
+  format tokens such as `O` or multi-character format strings. Focused proof
+  covers the Rust
+  `idate_supports_iso_weekday_and_week_year_tokens` regression, a direct
+  `phpc run` comparison over year-boundary ISO weeks, and selected public PHPT
+  `idate` rows. Unsupported edges remain weak scalar timestamp coercions
+  beyond `int|null`, exact warning/deprecation parity for broad timestamp
+  operands, broader timezone database and DST history, and native lowering.
+
+- Added a bounded `SplDoublyLinkedList::prev()` cursor lane for the selected
+  `dllist_010.phpt` / `dllist_011.phpt` surface. Core
+  `SplDoublyLinkedList`, `SplQueue`, and `SplStack` method dispatch now
+  accepts zero-argument `prev()` and moves the current cursor opposite the
+  active direction latched by the most recent `rewind()`: FIFO decrements and
+  LIFO increments. The method returns `null`, preserves the existing
+  `current()` / `valid()` behavior for invalid cursors, and leaves existing
+  `next()`, `foreach`, offset, and mutation methods unchanged. Focused proof
+  covers the Rust `spl_doubly_linked_list_prev_moves_against_active_direction`
+  regression, the direct `phpc run` fixture
+  `tests/fixtures/milestone2322/spl_doubly_linked_list_prev.php`, and selected
+  public PHPT rows. Unsupported edges remain exact invalid cursor key values
+  before the first or after the last entry, recovery from those invalid
+  boundary states by later `next()` / `prev()` calls, DELETE-mode side-effect
+  parity, nested independent iterator cursors, destructor/reentrant mutation
+  parity, by-reference SPL iterator execution, serialization/unserialization,
+  references/COW, and native lowering.
+
+- Added a bounded `substr()` weak offset/nullable-length coercion lane.
+  Direct and string-valued dynamic `substr()` calls now route `$offset`
+  through the shared PHP-internal int boundary and `$length` through the
+  shared nullable-int boundary, accepting null, booleans, finite floats, and
+  numeric strings while retaining PHP-shaped `int` / `?int` `TypeError`
+  diagnostics for array/object operands. Negative offset/length window math
+  now uses saturating bounds, so `PHP_INT_MIN` offset and length values clamp
+  to PHP-shaped slices instead of overflowing the interpreter's integer math.
+  Focused proof covers the Rust `substr_executes_current_scalar_string_subset`
+  and `substr_rejects_forms_outside_current_subset` regressions, direct
+  `phpc run` probes for scalar coercions and `PHP_INT_MIN`, and selected
+  public PHPT `substr` rows. Unsupported edges remain deprecation warnings for
+  null/lossy scalar coercions, object/resource string operands, invalid UTF-8
+  byte ranges, exact diagnostics beyond the covered type boundary, and native
+  lowering.
+
+- Added a bounded `ArrayObject::getIterator()` temporary foreach iterator
+  lifetime lane for the selected `arrayObject_getIteratorClass_basic1.phpt`
+  surface. By-value `foreach` over `IteratorAggregate` objects now retires the
+  returned iterator object's handle when the iterator remains unrooted after
+  the loop, so a later `getIterator()` call can reuse PHP's observable handle
+  number while iterator objects captured from method bodies stay live and keep
+  their handles. Focused proof covers the Rust
+  `array_object_foreach_retires_unrooted_iterator_class_temporaries`
+  regression, the direct `phpc run` fixture
+  `tests/fixtures/milestone2322/array_object_iterator_class_foreach_handle_reuse.php`,
+  and the selected PHPT row
+  `ext/spl/tests/ArrayObject/arrayObject_getIteratorClass_basic1.phpt`.
+  Unsupported edges remain broad PHP object lifetime and handle reuse outside
+  these unrooted foreach iterator temporaries, destructor and exception
+  unwinding parity for every temporary iterator shape, non-LIFO temporary
+  object reclamation, by-reference SPL iterator iteration, serialization
+  parity, full COW/reference identity, and native lowering.
+
+- Added a bounded `array_splice()` weak offset/nullable-length coercion lane.
+  Direct and string-valued dynamic `array_splice()` calls now route `$offset`
+  through the shared PHP-internal int boundary and `$length` through the shared
+  nullable-int boundary, accepting null, booleans, finite floats, and numeric
+  strings while retaining PHP-shaped `int` / `?int` `TypeError` diagnostics for
+  array/object operands. The existing direct variable array-path mutation,
+  nested direct array offsets, returned removed slots, and replacement
+  reference-slot preservation remain unchanged. Focused proof covers the Rust
+  `array_splice_coerces_offset_and_nullable_length_like_internal_arguments`
+  regression, the direct `phpc run` fixture
+  `tests/fixtures/milestone2322/array_splice_weak_coercions.php`, and selected
+  public PHPT splice rows. Unsupported edges remain deprecation warnings for
+  null/lossy scalar coercions, broad lvalue targets outside the direct array
+  path subset, object-property array roots, full reference/COW graph parity,
+  exact native diagnostics, and native lowering.
+
+- Added a bounded `array_splice()` removed-object destructor lane for direct
+  variable array paths. After splicing the selected path back into the live
+  root, the interpreter finalizes object values from the removed slots before
+  returning and reports a catchable `Error` if a destructor mutates the live
+  array root during the splice. Focused proof covers the Rust
+  `array_splice_finalizes_removed_objects_and_rejects_reentrant_mutation`
+  regression and the selected public PHPT `gh16649/array_splice_*` destructor
+  rows. Unsupported edges remain retained removed arrays containing objects
+  whose lifetimes should extend through the returned value, mutations that
+  restore a by-value-identical root before the guard check, broad lvalue
+  targets outside the direct array path subset, full reference/COW graph
+  parity, exact native diagnostics, and native lowering.
+
+- Added a bounded `mb_strcut()` byte-window lane for the selected mbstring
+  surfaces. The interpreter now exposes `mb_strcut()` through direct calls,
+  string-valued dynamic calls, function/callability introspection, and
+  `ReflectionFunction` metadata, while native direct execution remains behind
+  the existing function-call lowering boundary. UTF-8 cuts use byte offsets
+  and byte lengths but round the selected window to scalar boundaries so output
+  does not split a character; the scalar single-byte encoding path preserves
+  byte slicing and binary output. Focused proof covers the Rust
+  `mb_strcut_uses_byte_windows_without_splitting_utf8_characters` regression,
+  the full `mbstring_scalar_builtins` test file, direct UTF-8/binary,
+  unknown-encoding, metadata, and native-boundary probes, and selected PHPT
+  rows `ext/mbstring/tests/bug49354.phpt` and
+  `ext/mbstring/tests/mb_strcut_negative_length.phpt`. Unsupported edges
+  remain full encoding conversion tables, UTF-16/UCS/EUC-JP/JIS/stateful cut
+  rules, invalid-sequence and substitute-character policy beyond the current
+  lossy UTF-8 boundary, broad array/object/resource operand coercions, exact
+  diagnostics beyond the covered unknown-encoding path, references/COW, and
+  native lowering.
+
+- Added a bounded literal `call_user_func*()` scope-frame builtin lane for
+  `func_num_args()`, `func_get_args()`, and `func_get_arg()`. Direct source
+  calls such as `call_user_func("func_get_args")` and integer-keyed
+  `call_user_func_array("func_get_arg", [0])` now dispatch through the active
+  user-function call frame, preserving mutated parameter cells and extra
+  arguments while keeping direct `$callback()` calls, variable callback names,
+  and fully-qualified callback strings on PHP's forbidden dynamic-call path
+  for this function family. The catchable error conversion for `func_*` arity
+  mismatches now also reports PHP-shaped `ArgumentCountError` messages, so
+  `set_error_handler("func_get_args")` reaches the handler and reports the
+  selected `bug72107.phpt` shape instead of leaking the compiler's generic
+  arity diagnostic. Focused proof covers new Rust dynamic-feature tests for
+  literal callback frame reads and variable/FQ callback rejection, a new
+  error-handler regression for `func_get_args`, the existing direct
+  `func_get_*` frame and forbidden callback dispatcher guards, a direct
+  `phpc run` probe, and selected PHPT rows
+  `Zend/tests/dynamic_call/dynamic_call_006.phpt` and
+  `Zend/tests/bug72107.phpt`. Unsupported edges remain callback exposure for
+  `extract()`, `compact()`, and
+  `get_defined_vars()` through `call_user_func*()`, string-keyed/named
+  `call_user_func_array()` arguments for `func_get_arg()`, broader
+  callback-family parity, and native lowering.
+
+- Added a bounded `strpbrk()` stringable-object conversion lane for the
+  selected standard string residual surface. `strpbrk()` now accepts supported
+  visible `__toString()` objects for both `$string` and `$characters` operands
+  through the same PHP-shaped string-argument boundary used by adjacent string
+  search helpers, while retaining the existing empty-character `ValueError`
+  and catchable array operand `TypeError`s. Focused proof covers the Rust
+  `strpbrk_accepts_stringable_objects_and_reports_type_errors` regression, a
+  direct `phpc run` probe, and the selected PHPT rows
+  `ext/standard/tests/strings/strpbrk_basic.phpt` and
+  `ext/standard/tests/strings/strpbrk_error.phpt`. Unsupported edges remain
+  resources, closures, objects without supported visible `__toString()`,
+  exact invalid `__toString()` return diagnostics, locale or Unicode-aware
+  matching, exact binary string edge cases beyond represented runtime bytes,
+  references/COW, and native lowering.
+
+- Added a bounded POSIX account/group lookup lane for filesystem metadata
+  diagnostics. `phpc run` now supports `posix_getpwuid($user_id)` and
+  `posix_getgrgid($group_id)` for integer-like IDs against the local
+  `/etc/passwd` and `/etc/group` text databases, returning PHP-shaped arrays
+  with the standard `name`/`passwd`/`uid`/`gid`/`gecos`/`dir`/`shell` and
+  `name`/`passwd`/`members`/`gid` fields or `false` for negative,
+  out-of-range, missing, or unreadable entries. Dynamic-call,
+  `function_exists()`, `is_callable()`, and `ReflectionFunction` metadata
+  recognize the names, while native direct calls remain behind the existing
+  function-call boundary. Focused proof covers the new Rust
+  `posix_lookup_builtins` tests, direct UID/GID and reflection probes, and the
+  selected public PHPT error rows
+  `ext/posix/tests/posix_getpwuid_error.phpt` and
+  `ext/posix/tests/posix_getgrgid_error.phpt`. Unsupported edges remain NSS,
+  LDAP, shadow/group database backends outside the local text files,
+  non-UTF-8 account/group database entries, exact platform-specific warnings,
+  the rest of the POSIX extension, and native lowering.
+
+- Added a bounded leading namespace-separator introspection lookup lane for the
+  selected `Zend/tests/namespaces/bug47593.phpt` surface. String-name
+  `function_exists()` now treats one leading `\` as PHP's global namespace
+  separator before checking the current function table, and
+  `class_exists()`/`interface_exists()`/`trait_exists()`/`enum_exists()` use
+  the same normalized class-like metadata lookup. Truthy-autoload class-like
+  misses also pass the normalized name to the bounded SPL autoload callback
+  path, so `interface_exists('\Name')` probes no longer call loaders with a
+  non-PHP leading separator. Focused proof covers the Rust
+  `existence_helpers_accept_fully_qualified_lookup_strings` regression plus
+  the existing native `function_exists()` folding regression, direct `phpc run`
+  probe for the public row shape, and the selected PHPT row.
+  Unsupported edges remain namespace/import expansion for arbitrary dynamic
+  strings, native class-like metadata lowering for leading-separator true
+  results, direct dynamic execution of every fully qualified callable spelling,
+  broad class-like alias/import resolution, exact autoload warning/throw
+  behavior, and native lowering.
+
+- Added a bounded `SplObjectStorage` array-syntax unset cursor-key lane.
+  Core `unset($storage[$object])` now preserves the active iterator's logical
+  key when a removed earlier entry shifts the physical current object, while
+  explicit `detach()` / `offsetUnset()` stay on the existing compacting method
+  path. Focused proof covers the Rust
+  `spl_object_storage_unset_array_syntax_preserves_iterator_key` regression,
+  the direct `phpc run` fixture
+  `tests/fixtures/milestone2321/spl_object_storage_unset_preserves_iterator_key.php`,
+  and selected adjacent SplObjectStorage PHPT rows for current/offsetGet/getHash
+  and seek behavior. Unsupported edges remain exact explicit
+  `detach()` / `offsetUnset()` cursor quirks for deleting the current entry,
+  bulk-removal cursor parity beyond the existing compacting path, subclass
+  ArrayAccess override cursor side effects, destructor side effects during
+  detach/unset, serialization parity, references/COW for stored info values,
+  and native lowering.
+
+- Added a bounded `ArrayIterator::seek()` invalid-position exception lane for
+  the selected `array_014.phpt` surface. Core ArrayIterator out-of-range
+  `seek()` calls now remain on the existing cursor implementation but convert
+  `Seek position ... is out of range` failures into catchable
+  `OutOfBoundsException`s, so `catch (Exception)` and
+  `catch (OutOfBoundsException)` observe PHP-shaped behavior instead of an
+  uncaught unsupported runtime error. Focused proof covers the Rust
+  `array_iterator_seek_out_of_range_errors_are_catchable` regression, the
+  direct `phpc run` fixture
+  `tests/fixtures/milestone2320/array_iterator_seek_out_of_bounds.php`, and
+  the selected PHPT row `ext/spl/tests/ArrayObject/array_014.phpt`.
+  Unsupported edges remain weak scalar/null/float/numeric-string coercions for
+  `seek()` offsets, exact invalid-offset `TypeError` text beyond the existing
+  bounded int-only path, cursor invalidation parity for arbitrary concurrent
+  storage mutation, by-reference SPL iterator iteration, serialization parity,
+  full COW/reference identity, and native lowering.
+
+- Added a bounded `json_encode()` partial non-finite float replacement lane for
+  the selected `inf_nan_error.phpt` surface. `JSON_PARTIAL_OUTPUT_ON_ERROR`
+  now preserves the `JSON_ERROR_INF_OR_NAN` last-error state while emitting
+  `0` for `INF`, `-INF`, and `NAN` values in scalar, nested array, and public
+  object-property positions instead of using the generic unsupported-value
+  `null` placeholder. Focused proof covers the Rust
+  `json_encode_partial_output_replaces_nonfinite_floats_with_zero` test, the
+  full `json_builtins` test file, direct fixture comparison for
+  `tests/fixtures/milestone2320/json_encode_partial_nonfinite.php`, native
+  boundary rejection, and the selected PHPT row
+  `ext/json/tests/inf_nan_error.phpt`. Unsupported edges remain full
+  `JsonSerializable` behavior, broad partial-output interaction parity beyond
+  current non-finite/unsupported/recursion/depth placeholders, exact exception
+  propagation for every serializer shape including `JSON_THROW_ON_ERROR`,
+  remaining json extension functions, complete UTF-8/UTF-16 diagnostics, and
+  native lowering.
+
+- Added a bounded `json_encode()` invalid UTF-8 flag lane for the selected
+  `json_encode_invalid_utf8.phpt` surface. Binary PHP strings with malformed
+  UTF-8 now honor `JSON_INVALID_UTF8_IGNORE` by dropping malformed encode
+  sequences and `JSON_INVALID_UTF8_SUBSTITUTE` by inserting `U+FFFD` before
+  the existing JSON string quoting path runs; encode-specific flag precedence
+  matches PHP with ignore winning when both invalid-UTF8 flags are supplied.
+  The repair path is used by scalar values plus existing array/object traversal
+  through `json_encode_value()`, while the no-flag path still records
+  `JSON_ERROR_UTF8` and returns `false`. Focused proof covers the Rust
+  `json_encode_invalid_utf8_flags_repair_binary_strings` test, the full
+  `json_builtins` file, direct fixture comparison for
+  `tests/fixtures/milestone2319/json_encode_invalid_utf8_flags.php`, native
+  boundary rejection, and selected PHPT row
+  `ext/json/tests/json_encode_invalid_utf8.phpt`. Unsupported edges remain
+  exact invalid-byte grouping beyond the covered bounded encoder lane, broad
+  UTF-8/UTF-16 diagnostic-location parity, `JSON_THROW_ON_ERROR`, full
+  `JsonSerializable` behavior, complete JSON option interaction parity,
+  remaining json extension functions, and native lowering.
+
+- Added a bounded `FILTER_VALIDATE_IP` IPv6 range-flag lane for the selected
+  ext/filter `bug47435.phpt` and `gh16944.phpt` surfaces. The interpreter now
+  applies `FILTER_FLAG_NO_PRIV_RANGE` to IPv6 unique-local `fc00::/7`
+  addresses and `FILTER_FLAG_NO_RES_RANGE` to bounded IPv6 reserved ranges:
+  unspecified, loopback, IPv4-mapped, and link-local addresses. This preserves
+  accepted global/special addresses covered by the same rows and leaves
+  IPv4-mapped private addresses accepted for `NO_PRIV_RANGE`, matching the
+  current PHP-src shape. Focused proof covers the Rust
+  `filter_var_validate_ip_rejects_bounded_ipv6_private_and_reserved_ranges`
+  regression, the direct `phpc run` fixture
+  `tests/fixtures/milestone2319/filter_validate_ip_ipv6_ranges.php`, and the
+  selected PHPT rows `ext/filter/tests/bug47435.phpt` and
+  `ext/filter/tests/gh16944.phpt`. Unsupported edges remain
+  `FILTER_FLAG_GLOBAL_RANGE`, full RFC 6890 IPv4/IPv6 range breadth beyond the
+  bounded private/reserved ranges, broad URL/IP/domain/email validation parity,
+  exact ext/filter diagnostics and option coercions, `filter_input_array()`,
+  sanitizer deprecation diagnostics, object/resource coercions,
+  references/COW beyond the current array-slot path, and native lowering.
+
+- Added a bounded `get_class_vars()` valid-class diagnostics and ordering lane
+  for the selected `Zend/tests/get_class_vars/get_class_vars_001.phpt`
+  surface. The interpreter now raises PHP-shaped catchable `TypeError`s for
+  invalid scalar class-name values and unresolved class strings, preserving the
+  offending value in the diagnostic text, and the public class-variable listing
+  now groups instance properties before static properties while walking each
+  group from the current class toward parents. Focused proof covers the Rust
+  `get_class_vars` object-model tests, runtime-error CLI snapshots, a direct
+  `phpc run` probe, a native-boundary rejection probe, and the selected PHPT
+  row. Unsupported edges remain non-public/context-sensitive visibility,
+  broad class-name conversion warning parity for arrays/objects/resources,
+  traits/interfaces and namespace/import alias expansion, complete
+  property-default expression parity, autoloading, and native lowering.
+
+- Added a bounded tokenizer `__halt_compiler()` payload lane for the selected
+  `ext/tokenizer/tests/bug54089.phpt` surface. `token_get_all()` and
+  `PhpToken::tokenize()` now keep `T_HALT_COMPILER` lexical classification and
+  treat the source bytes after a completed `__halt_compiler();` token sequence,
+  including whitespace-separated `(`, `)`, and `;`, as one `T_INLINE_HTML`
+  payload token instead of continuing normal PHP tokenization. The focused
+  scanner state also preserves the reached multiline malformed-tail fallback
+  from the public row. Focused proof covers the Rust
+  `token_get_all_marks_halt_compiler_payload_as_inline_html` test, a direct
+  `phpc run` tokenizer probe, and the selected PHPT row
+  `ext/tokenizer/tests/bug54089.phpt`. Unsupported edges remain parser/runtime
+  execution of `__halt_compiler()`, exact malformed halt recovery outside the
+  covered tokenizer row, `TOKEN_PARSE` parse-error validation, complete
+  heredoc/nowdoc token parity, and native lowering.
+
+- Added a bounded SPL class-list diagnostics lane for selected
+  `class_implements()` / `class_uses()` rows. The shared class-list helper now
+  accepts objects or string class names, emits PHP-shaped warnings and returns
+  `false` for unresolved string classes, raises catchable object|string
+  `TypeError`s for unsupported first operands, and reports the implicit
+  `Stringable` interface for classes with a public instance `__toString()`.
+  Focused proof covers Rust object-model regressions for missing string
+  classes, object|string operand diagnostics, and implicit `Stringable`,
+  direct `phpc run` probes, native-boundary rejection, and selected PHPT rows
+  `ext/spl/tests/class_implements_variation.phpt`,
+  `ext/spl/tests/class_implements_variation1.phpt`,
+  `ext/spl/tests/class_uses_variation.phpt`, and
+  `ext/spl/tests/class_uses_variation1.phpt`. Unsupported edges remain
+  interface-name string operands, broad built-in/internal class/interface/trait
+  catalogs, reflection-object integration for class-list helpers, exact engine
+  metadata ordering, namespace/import alias expansion, and native lowering.
+
+- Added a bounded class-member metadata autoload lane for the selected
+  `property_exists_variation1.phpt` surface. `property_exists()` and
+  `method_exists()` now run the existing bounded class autoload callback path
+  for non-empty unresolved string class names before checking declared
+  property or method metadata, while empty string class names stay false
+  without autoload. Focused proof covers the Rust
+  `property_and_method_exists_autoload_missing_class_strings` test, direct
+  `phpc run` probes for autoloaded and missing class strings, and selected
+  PHPT rows `ext/standard/tests/class_object/property_exists_variation1.phpt`
+  plus adjacent `method_exists_basic_003.phpt`. Unsupported edges remain
+  complete dynamic property inventory, traits/interfaces and namespace/import
+  class-name resolution, exact member-name coercion/diagnostic parity beyond
+  already-covered diagnostics lanes, full internal class metadata, references
+  and COW, and native lowering.
+
+- Added a bounded `array_unshift()` existing-slot preservation lane for direct
+  array mutation. Rebuilding the target array after prepending values now
+  carries existing `ArraySlot`s through integer-key reindexing and string-key
+  preservation instead of flattening them to cloned values, so reference-backed
+  source slots remain live after `array_unshift($array, ...)` and covered
+  nested direct-path calls. Focused proof covers the runtime
+  `array_unshift_preserves_reference_backed_existing_slots` test, the compiler
+  `array_unshift` regression, the direct `phpc run` fixture
+  `tests/fixtures/milestone2316/array_unshift_reference_backed_slots.php`,
+  and the adjacent public PHPT row
+  `ext/standard/tests/array/array_unshift_basic1.phpt`. Unsupported edges
+  remain reference propagation for newly prepended value arguments, broader
+  reference/COW graph parity, object-property array roots for
+  push/pop/shift/unshift, broad by-reference callback/lvalue handling, exact
+  native diagnostics, and native lowering.
+
+- Added a bounded `array_chunk()` reference-backed value-slot preservation lane
+  for the selected `array_chunk_variation7.phpt` surface. `PhpArray` chunk
+  construction now inserts source `ArraySlot`s into both reindexed and
+  preserve-key inner chunks instead of flattening through cloned values, so
+  chunks retain direct reference-backed entries and observe later source
+  reference mutations while preserving existing chunk key behavior. Focused
+  proof covers the Rust `php_runtime` and `phpc`
+  `array_chunk_preserves_reference_backed_value_slots` tests, a direct
+  `phpc run` fixture
+  `tests/fixtures/milestone2315/array_chunk_reference_backed_slots.php`, and
+  the selected PHPT row `ext/standard/tests/array/array_chunk_variation7.phpt`.
+  Unsupported edges remain broader `array_chunk()` reference/COW graph parity
+  beyond direct value-slot preservation, non-bool preserve-key coercions,
+  non-int or non-positive length coercions outside the current diagnostics,
+  exact native `TypeError`/`ValueError` objects, object/resource identity
+  behavior, and native lowering.
+
+- Added a bounded `DateTime::modify("@timestamp")` timestamp mutation lane for
+  the selected `gh9891.phpt` surface. Mutable `DateTime::modify()` and
+  procedural `date_modify()` now recognize Unix timestamp modifiers through
+  the same bounded `@...` timestamp parser used by construction, update the
+  stored timestamp, and switch the object timezone identity to the PHP-shaped
+  fixed `+00:00` timestamp zone instead of preserving the previous local
+  timezone. The bounded timezone table now includes `Europe/Paris` and
+  `America/Lima` for the covered constructor inputs, while `setTimestamp()`
+  still preserves the receiver timezone. Focused proof covers the Rust
+  `datetime_modify_at_timestamp_uses_unix_timestamp_timezone_identity`
+  regression, a direct `phpc run` probe, the existing native rejection probe,
+  and selected PHPT row `ext/date/tests/gh9891.phpt`. Unsupported edges remain
+  broad relative/absolute `modify()` grammar beyond the current bounded
+  weekday/unit/timestamp forms, `DateMalformedStringException` invalid-modifier
+  parity, exact timezone database and DST transition history beyond bounded
+  entries, DateTimeImmutable mutation behavior, DateInterval arithmetic, and
+  native lowering.
+
+- Added a bounded mutable `DateTime::__set_state()` reconstruction lane for the
+  selected `DateTime_set_state.phpt` surface. The interpreter now accepts the
+  exported `date`, `timezone_type`, and `timezone` state array produced by the
+  current `var_export()` DateTime path, reconstructs a fresh mutable
+  `DateTime` object over the existing bounded timestamp/timezone model, and
+  exposes the static method through core DateTime metadata for callability and
+  reflection. Focused proof covers the Rust
+  `datetime_set_state_recreates_exported_bounded_state` test, direct `phpc run`
+  and `phpc compile --emit-ir` probes, and the selected PHPT row
+  `ext/date/tests/DateTime_set_state.phpt`. Unsupported edges remain
+  `DateTimeImmutable::__set_state()`, DateTime state arrays outside the bounded
+  exported `date`/`timezone_type`/`timezone` shape, exact invalid-state
+  exception text, microsecond preservation beyond the current displayed state,
+  full timezone database and DST history, references/COW, and native lowering.
+
+- Added a bounded Whirlpool execution lane for the selected ext/hash
+  `whirlpool.phpt` row. `hash()` now executes the advertised `whirlpool`
+  algorithm through the shared scalar/null data conversion, empty-options,
+  raw/hex output, and algorithm dispatcher path using the RustCrypto
+  `whirlpool` crate. Focused Rust passed the targeted Whirlpool regression and
+  the full `hash_builtin` file after currentization; `cargo build -p phpc
+  --bin phpc` passed; a direct `phpc run` probe proved Whirlpool hex prefix,
+  raw output, and `hash_algos()` membership; selected PHPT proof passed for
+  `ext/hash/tests/whirlpool.phpt`; `cargo fmt --check` and `git diff --check`
+  passed. Unsupported edges remain hash execution outside the bounded
+  MD2/MD4/MD5/SHA-1/SHA-2/SHA-3/Whirlpool/checksum subset, non-empty `hash()`
+  options arrays, file/HMAC APIs, streaming contexts, HKDF/PBKDF2 output,
+  broad exact diagnostics/coercions, provider policy, and native lowering.
+
+- Added a bounded MD2/MD4 execution lane for the selected ext/hash vector rows.
+  `hash()` now executes the advertised `md2` and `md4` algorithms through the
+  shared raw/hex digest dispatcher, using the RustCrypto `md2` and `md4`
+  crates without adding file hashing, HMAC expansion, native lowering, or
+  streaming contexts. Focused Rust passed the targeted MD2/MD4 regression and
+  the full `hash_builtin` file (`15 / 15`); `cargo build -p phpc --bin phpc`
+  passed; a direct `phpc run` probe proved MD2/MD4 hex output, raw MD2 output,
+  case-insensitive algorithm lookup, and `hash_algos()` membership; selected
+  PHPT proof passed `2 / 2` for `ext/hash/tests/md2.phpt` and
+  `ext/hash/tests/md4.phpt`; `cargo fmt --check` and `git diff --check`
+  passed. Unsupported edges remain hash execution outside the bounded
+  MD2/MD4/MD5/SHA-1/SHA-2/SHA-3/checksum subset, non-empty `hash()` options
+  arrays, `hash_file()`, broader HMAC execution/raw output/file APIs,
+  successful `HashContext` allocation and streaming updates/finalization,
+  HKDF/PBKDF2 output, broad exact diagnostics/coercions, and native lowering.
+
+- Added a bounded non-int `settype()` NAN warning/recovery lane for the
+  selected Zend type-coercion handler rows. Direct-variable
+  `settype($var, $type)` now emits the PHP-shaped `unexpected NAN value was
+  coerced to ...` warning for original `NAN` values converted to
+  `bool`/`boolean`, `string`, `array`, `object`, or `null`. Scalar/null
+  targets store the original NAN conversion result after the warning, while
+  array/object targets wrap the value left in the direct variable by the
+  handled warning, falling back to the original NAN when the handler unsets the
+  variable. Focused Rust passed `2 / 2` for the filtered `settype_nan`
+  scalar-cast tests; `cargo build -p phpc --bin phpc` passed; a direct
+  `phpc run` probe proved handler mutation, unset fallback, and scalar target
+  recovery; selected PHPT proof passed `15 / 15` for the non-int
+  `Zend/tests/type_coercion/settype/settype_{bool,string,array,object,null}_nan_with_error_handler*.phpt`
+  cluster; `cargo fmt --check` passed. Unsupported edges remain the separate
+  int/integer NAN-to-int lane, direct cast NAN warnings outside this
+  `settype()` path, broader error-handler/reference/COW interactions, exact
+  non-finite float parity outside the covered rows, and native lowering.
+
+- Added a bounded `json_decode()` invalid UTF-8 flag lane for the selected
+  `json_decode_invalid_utf8.phpt` surface. Binary JSON input with malformed
+  UTF-8 byte units inside quoted JSON string tokens now honors
+  `JSON_INVALID_UTF8_IGNORE` by dropping malformed units and
+  `JSON_INVALID_UTF8_SUBSTITUTE` by inserting `U+FFFD` before the existing JSON
+  parser runs; substitute wins when both invalid-UTF8 flags are supplied, and
+  malformed bytes outside quoted strings stay on the current `JSON_ERROR_UTF8`
+  null-result path. Focused proof covers the Rust
+  `json_decode_invalid_utf8_flags_repair_binary_string_tokens` test, the
+  direct `phpc run` fixture
+  `tests/fixtures/milestone2313/json_decode_invalid_utf8_flags.php`, and the
+  selected PHPT row `ext/json/tests/json_decode_invalid_utf8.phpt`.
+  Unsupported edges remain exact escaped-string invalid-byte parity, broad
+  UTF-8/UTF-16 diagnostic-location parity, `JSON_THROW_ON_ERROR`, full
+  `JsonSerializable` behavior, complete JSON option interaction parity,
+  remaining json extension functions, and native lowering.
+
+- Added a bounded `timezone_open()` warning/recovery lane for the selected
+  `timezone_open_warning.phpt` surface. The interpreter now accepts string and
+  scalar-string-compatible timezone identifiers for `timezone_open()`, returns
+  bounded `DateTimeZone` objects for supported named/fixed-offset identifiers,
+  and emits the covered PHP-shaped warning plus `false` for unsupported or
+  malformed identifiers instead of surfacing an unsupported runtime error.
+  Focused Rust coverage exercises valid fixed-offset/named identifiers plus
+  invalid float/string identifiers, and the full `date_time_builtin` file
+  passed `15 / 15`; `cargo build -p phpc --bin phpc` and a direct `phpc run`
+  probe passed; selected PHPT proof passed `1 / 1` for
+  `ext/date/tests/timezone_open_warning.phpt`; `cargo fmt --check` and
+  `git diff --check` passed. Unsupported edges remain exact internal
+  `DateTimeZone` constructor diagnostics, broad scalar coercion/deprecation
+  parity, arrays/objects/resources as timezone operands, full timezone
+  database inventory, and native lowering.
+
+- Added a bounded mutable `DateTime` constructor timezone-argument lane for the
+  selected `bug43003.phpt` surface. `new DateTime($time, ?DateTimeZone
+  $timezone)` and `date_create($time, ?DateTimeZone $timezone)` now accept a
+  second bounded `DateTimeZone` object or `null`, use it as the default
+  timezone for strings without an explicit timezone, and preserve explicit
+  timezone identities from strings such as `@0` and `... GMT`. Focused Rust
+  passed the targeted constructor-timezone guard and the full
+  `date_time_builtin` file (`14 / 14`); `cargo build -p phpc --bin phpc`
+  passed; a direct `phpc run` probe proved constructor, procedural,
+  explicit-token, and timestamp identities; a direct `phpc compile --emit-ir`
+  probe rejected DateTime object construction at the existing native boundary;
+  selected PHPT proof passed `1 / 1` for `ext/date/tests/bug43003.phpt`;
+  `cargo fmt --check` and `git diff --check` passed. Unsupported edges remain
+  DateTimeImmutable constructor/setter behavior, full timezone database and
+  historical DST parity, exact broad constructor diagnostics/coercions beyond
+  bounded `DateTimeZone|null`, DateInterval arithmetic/diff/add/sub
+  integration, DatePeriod, references/COW, and native lowering.
+
+- Added a bounded SHA3 execution lane for the selected ext/hash `sha3.phpt`
+  row. `hash()` now executes `sha3-224`, `sha3-256`, `sha3-384`, and
+  `sha3-512` through the shared raw/hex digest dispatcher, using the `sha3`
+  crate and the existing `hash_algos()` metadata inventory instead of adding
+  native lowering or streaming contexts. The adjacent `urlencode()` helper now
+  percent-encodes PHP string bytes directly, preserving binary-string bytes
+  such as `\xA3` that the SHA3 PHPT row prints in its subject labels. Focused
+  Rust passed `14 / 14` in `hash_builtin` after the SHA3 regression and the
+  focused `parse_url_builtin` URL-encoding byte regression; `cargo build -p
+  phpc --bin phpc` passed; a direct `phpc run` probe proved SHA3 hex/raw output,
+  binary-byte `urlencode()`, and `hash_algos()` membership; selected PHPT proof
+  passed `1 / 1` for `ext/hash/tests/sha3.phpt`; `cargo fmt --check` and
+  `git diff --check` passed. Unsupported edges remain hash execution outside
+  the bounded SHA-1/SHA-2/SHA-3/MD5/checksum subset, non-empty `hash()` options
+  arrays, `hash_file()`, HMAC execution beyond the existing SHA-256 branch,
+  HMAC raw output, streaming `HashContext`, HKDF/PBKDF2 output, broad exact
+  diagnostics/coercions, and native lowering.
+
+- Added a bounded stat-cache alias invalidation lane for local stream/file
+  writes through linked filesystem paths. Successful local `fopen()`
+  create/truncate paths, `fwrite()`, `ftruncate()`, `file_put_contents()`,
+  and `touch()` now clear cached `filesize()`/`filemtime()` metadata for the
+  exact path plus already-cached local aliases that resolve to the same file
+  identity, covering the selected soft-link and hard-link update rows without
+  adding native filesystem lowering. Focused proof covers the Rust
+  `standard_filesystem_link_builtins` alias-cache regression, the existing
+  `tests/fixtures/milestone1543` stat-cache fixture, a direct `phpc run`
+  probe, and selected PHPT rows
+  `symlink_link_linkinfo_is_link_variation3.phpt` and
+  `symlink_link_linkinfo_is_link_variation4.phpt`. Unsupported edges remain
+  full PHP stat-cache breadth, deleted-path alias discovery, stream wrappers,
+  non-UTF-8 paths, platform-specific identity/ACL behavior beyond the current
+  Unix inode/device slice plus canonical-path fallback, TOCTOU semantics, and
+  native lowering.
+
+- Added a bounded array query-helper lane for the selected `bug70668.phpt`
+  surface. `array_keys()` loose and strict filtering, plus the shared runtime
+  query helpers for `array_keys()`, `in_array()`, and `array_search()`, now
+  dereference reference-backed value slots with `value_cloned()` before
+  comparing. The shared strict-identity path now resolves bounded
+  array/object/resource identity before unsupported loose-comparison blockers,
+  preserving the existing native-lowering rejection. Focused Rust passed the
+  `php_runtime` `array_query_helpers_read_reference_backed_value_slots` test,
+  `array_keys` `11 / 11`, and `in_array`/`array_search` `16 / 16`; `cargo
+  build -p phpc --bin phpc` passed; the direct
+  `tests/fixtures/milestone2309/array_keys_reference_backed_values.php`
+  fixture passed; selected PHPT proof passed `1 / 1` for
+  `ext/standard/tests/array/bug70668.phpt`; `cargo fmt --check` and
+  `git diff --check` passed. Unsupported edges remain broad recursive
+  reference graphs and COW identity, unsupported loose object/resource or
+  recursive-array comparisons, non-bool strict-flag coercion, exact native
+  diagnostics, and native lowering.
+
+- Added a bounded `array_column()` reference-backed row-slot lane for the
+  selected `bug69723.phpt` surface. The interpreter and shared runtime
+  `array_column` helpers now dereference each outer source row slot with
+  `value_cloned()` before column and index-key lookup, so rows mutated through
+  supported by-reference `foreach` are visible to later column extraction
+  instead of panicking on reference-backed slots. Focused Rust passed the
+  `php_runtime` and `phpc` `array_column_reads_reference_backed_row_slots`
+  tests; the direct `phpc run` fixture
+  `tests/fixtures/milestone2308/array_column_reference_backed_rows.php`
+  passed through both the array-column CLI snapshot test and direct fixture
+  runner; `cargo build -p phpc --bin phpc` passed; selected PHPT proof passed
+  `1 / 1` for `ext/standard/tests/array/bug69723.phpt`; `cargo fmt --check`
+  and `git diff --check` passed. Unsupported edges remain broader
+  `array_column()` reference/COW behavior beyond dereferencing outer row
+  slots, `ArrayAccess` rows, exact non-public visibility parity, resource
+  values, exact native diagnostics, and native lowering.
+
+- Added a bounded `hash_pbkdf2()` validation lane for the selected ext/hash
+  error row. The interpreter now exposes `hash_pbkdf2()` through
+  builtin/callability/reflection metadata, validates cryptographic algorithm
+  names against the existing HMAC-capable inventory, and raises catchable
+  PHP-shaped `ValueError` diagnostics for invalid/non-cryptographic
+  algorithms, non-positive iteration counts, and negative lengths before
+  explicitly rejecting successful PBKDF2 derivation. Focused Rust passed `13 /
+  13` in `hash_builtin`; `cargo build -p phpc --bin phpc` passed; a direct
+  `phpc run` probe proved function/callability metadata plus the selected
+  catchable validation errors; selected PHPT proof passed `1 / 1` for
+  `hash_pbkdf2_error.phpt`; `cargo fmt --check` and `git diff --check`
+  passed. Unsupported edges remain PBKDF2 derivation output, exact
+  algorithm/provider behavior beyond validation, exact coercions and
+  diagnostics outside the selected row, streaming contexts, and native
+  lowering.
+
+- Added a bounded `get_defined_functions()` metadata lane for the selected
+  Zend row. The interpreter now returns the PHP-shaped `internal`/`user` array
+  structure, with core metadata names plus the shared standard-extension
+  compatibility function registry for `internal` and the live lowercased
+  user-function registry for `user` while excluding class methods and
+  closures. The optional `exclude_disabled` boolean is accepted as a no-op
+  because disabled-function policy is not implemented. `function_exists()`,
+  `is_callable()`, `ReflectionFunction`, `get_extension_funcs("standard")`,
+  and native metadata membership now recognize the builtin, while direct native
+  execution remains rejected.
+  Focused Rust passed `6 / 6` in `general_function_builtins`;
+  `cargo build -p phpc --bin phpc` passed; a direct `phpc run` probe proved
+  internal/user/reflection metadata; selected PHPT proof passed `1 / 1` for
+  `Zend/tests/get_defined_functions_basic.phpt`; `cargo fmt --check` and
+  `git diff --check` passed. Unsupported edges remain the full host
+  internal-function catalog, exact extension ordering, declaration-order
+  user-function ordering, disabled-function filtering, dynamic modules, exact
+  diagnostics outside the covered bool optional argument, and native execution.
+
+- Added a bounded PHP numeric-literal classification lane for the selected
+  `is_numeric.phpt` surface. The lexer now treats leading-zero literals with a
+  decimal point or exponent, such as `0200001.7` and `09e1`, as decimal float
+  tokens instead of legacy-octal integer prefixes, and valid overflowing
+  legacy-octal/hexadecimal integer literals now fall back to float tokens
+  rather than lex errors. Focused proof covers the `numeric_type_builtin`
+  Rust test, a direct `phpc run` literal fixture, and the selected
+  `ext/standard/tests/general_functions/is_numeric.phpt` row. Unsupported
+  edges remain numeric separators, binary integer literals, exact non-finite
+  overflow policy for arbitrarily huge source literals, invalid legacy-octal
+  integer recovery, and native lowering beyond existing scalar literal folds.
+
+- Added a bounded `hash_init()` validation lane for the selected ext/hash HMAC
+  error row. The interpreter now exposes `HASH_HMAC`, publishes
+  `hash_init()` through builtin/callability/reflection metadata, validates
+  algorithm names against the advertised `hash_algos()` inventory, preserves
+  the separate non-cryptographic-HMAC error for known checksum algorithms,
+  emits the covered null-key deprecation, and raises catchable PHP-shaped
+  `ValueError` diagnostics for unknown algorithms, non-cryptographic HMAC
+  algorithms, and empty HMAC keys. Successful `HashContext` allocation and
+  streaming updates remain explicitly rejected. Focused Rust passed `12 / 12`
+  in `hash_builtin`; `cargo build -p phpc --bin phpc` passed; a direct
+  `phpc run` probe proved `HASH_HMAC`, callability, the validation
+  `ValueError`s, and the null-key deprecation; selected PHPT proof passed
+  `1 / 1` for `hash_init_error.phpt`; `cargo fmt --check` and `git diff
+  --check` passed. Unsupported edges remain `HashContext` object allocation,
+  `hash_update()`, `hash_final()`, `hash_copy()`, clone/serialize/debugInfo,
+  finalized-context semantics, streaming file/resource updates, broad exact
+  diagnostics, and native lowering.
+
+- Added a bounded output-buffer callback lane for the selected
+  `ob_start()` / `ob_get_flush()` PHPT rows. Interpreter output buffers now
+  retain raw contents plus optional supported handler callbacks; raw peeks via
+  `ob_get_contents()` / `ob_get_clean()` remain unhandled, while
+  `ob_flush()`, `ob_get_flush()`, `ob_end_flush()`, normal completion, and
+  bounded `exit()` route handled output outward through nested buffers.
+  `ob_list_handlers()` and `ob_get_status()` expose bounded handler names,
+  types, and flags, and `ReflectionFunction("ob_start")` reports the optional
+  callback parameter. Focused Rust passed `19 / 19` in
+  `output_buffer_builtin`; `cargo build -p phpc --bin phpc` passed; a direct
+  `phpc run` probe proved nested handled flushes, raw peeks, and reflection
+  counts; selected PHPT proof passed `4 / 4` for `ob_get_flush_basic.phpt`,
+  `ob_get_flush_error.phpt`, `ob_get_length_basic.phpt`, and
+  `ob_start_closures.phpt`; `cargo fmt --check` and `git diff --check`
+  passed. Unsupported edges remain chunk-size threshold flushing, non-default
+  flags, invalid-callback warning/false recovery parity, by-reference
+  handlers, exact handler status metadata, handler reentrancy, fatal-error
+  cleanup, and native lowering.
+
+- Added a bounded `ReflectionClass` extension-ownership lane for the selected
+  ext/reflection rows. `ReflectionClass::getExtensionName()` and
+  `ReflectionClass::getExtension()` now resolve only through the existing
+  deterministic `ReflectionExtension` registry, returning `dom` and a
+  `ReflectionExtension` object for the registered `DOMDocument`/DOM class
+  slice while preserving `false`/`null` for user classes and unregistered
+  internal classes such as `stdClass`. Focused Rust passed the
+  `reflection_class_reports_bounded_extension_owner_metadata` object-model
+  test; `cargo build -p phpc --bin phpc` passed; a direct `phpc run` fixture
+  proved the DOM/user/unregistered fallback path; and selected PHPT proof
+  passed `4 / 4` for `ReflectionClass_getExtensionName_basic.phpt`,
+  `ReflectionClass_getExtensionName_variation.phpt`,
+  `ReflectionClass_getExtension_basic.phpt`, and
+  `ReflectionClass_getExtension_variation.phpt`. Unsupported edges remain host
+  extension inventory discovery, broad internal-class-to-extension ownership
+  outside the current `ReflectionExtension` registry class lists, exact
+  extension inventories/version policy, dynamic modules, and native lowering.
+
+- Added a focused source-directory seeding lane for `realpath_cache.phpt`.
+  `phpc run` now initializes the bounded request-local realpath cache with the
+  main source directory when the source file is inspectable locally, so
+  `realpath_cache_get()[__DIR__]` is visible before user code performs an
+  explicit path operation and `clearstatcache(true, __DIR__)` invalidates that
+  single entry. Focused Rust coverage exercises both `run_source_with_source_file`
+  and an actual `phpc run` CLI fixture. Unsupported edges remain exact
+  realpath-cache key hashes and memory accounting, ancestor cache entries,
+  broader filesystem-operation cache side effects, invalid-CWD behavior,
+  symlink policy differences, non-UTF-8 paths, `open_basedir` cache
+  interaction, TOCTOU semantics, and native lowering.
+
+- Currentized the bounded filesystem predicate residual lane for the selected
+  local metadata PHPT rows. `is_dir()` now uses a reusable predicate path
+  argument helper shared with `is_writable()` / `is_writeable()`, accepting
+  string and valid UTF-8 binary-string paths plus bounded scalar/null
+  false-case operands while keeping arrays, objects, resources, stream
+  wrappers, exact diagnostics, stat-cache fidelity, and native lowering outside
+  the supported surface. Existing `is_readable_variation3.phpt` and
+  `is_writable_variation2.phpt` were retained as non-repeat guards and stayed
+  green; no script metadata/statpage helpers were duplicated. Focused Rust
+  passed `20 / 20` across `is_dir_builtin`, `is_readable_builtin`, and
+  `is_writable_builtin`; `cargo build -p phpc --bin phpc` passed; selected
+  PHPT proof passed `3 / 3` for `is_dir_variation3.phpt`,
+  `is_readable_variation3.phpt`, and `is_writable_variation2.phpt`; `cargo
+  fmt --check` and `git diff --check` passed.
+
+- Added a bounded ext/hash algorithm execution lane for `hash()` over `md5`,
+  `adler32`, `fnv132`, `fnv1a32`, `fnv164`, `fnv1a64`, and `joaat`, reusing
+  the existing hash dispatcher and raw/hex output path rather than adding
+  native lowering. MD5 uses the existing digest crate already used by `md5()`;
+  Adler-32, FNV-1/FNV-1a 32/64-bit, and Jenkins one-at-a-time are pure byte
+  algorithms with PHP-compatible digest byte order. Focused Rust passed `11 /
+  11` in `hash_builtin`; `cargo build -p phpc --bin phpc`, a direct `phpc run`
+  digest fixture, selected PHPT proof `7 / 7`, `cargo fmt --check`, and
+  `git diff --check` passed on the supervisor-currentized source. Unsupported
+  edges remain hash execution outside the bounded SHA, MD5, CRC, FNV,
+  Adler-32, and joaat subset, non-empty `hash()` options arrays,
+  `hash_file()`, HMAC execution beyond the existing SHA-256 branch, HMAC raw
+  output, streaming `HashContext`, HKDF/PBKDF2, broad exact
+  diagnostics/coercions, and native lowering.
+
+- Added the bounded procedural `date_timezone_set()` alias for mutable
+  `DateTime` objects. The interpreter reuses the existing DateTime and
+  DateTimeZone object-state helpers, preserves the stored timestamp while
+  replacing the bounded timezone, returns the same mutable DateTime object, and
+  exposes the function through builtin/callability metadata while keeping
+  native lowering rejected. Focused Rust passed `13 / 13` in
+  `date_time_builtin`; `cargo build -p phpc --bin phpc`, `cargo fmt --check`,
+  and `git diff --check` passed; a direct `phpc run` exercise proved
+  `getOffset()`, `getTimezone()`, `setTimezone()`, `date_timezone_get()`, and
+  `date_timezone_set()` together; and selected PHPT proof passed `5 / 5` for
+  `DateTime_getOffset_basic1.phpt`, `DateTime_getTimeZone_basic1.phpt`,
+  `date_timezone_get_basic1.phpt`, `DateTime_setTimezone_basic1.phpt`, and
+  `date_timezone_set_basic1.phpt`. Unsupported edges remain broad DateTime
+  constructor timezone arguments, DateTimeImmutable, DateInterval, DatePeriod,
+  full timezone database and DST history, serialization, createFromFormat,
+  exact diagnostics outside the covered rows, references/COW, and native
+  lowering.
+
+## 2026-06-01
+
+Implemented:
+
+- Added a narrow mbstring string-counting lane for
+  `mb_substr_count_basic.phpt`, `mb_substr_count_error2.phpt`, and
+  `mb_substr_count_variation4.phpt`. `mb_substr_count()` is now a direct and
+  string-valued dynamic interpreter builtin for scalar/null string-convertible
+  haystacks and needles over the current UTF-8 or single-byte encoding
+  boundary. It counts non-overlapping occurrences, rejects empty needles with a
+  catchable PHP-shaped `ValueError`, validates the optional encoding through
+  the existing mbstring unknown-encoding path, and is visible to
+  function/callability metadata plus native `function_exists()` folding.
+  Full encoding conversion tables, invalid sequence policy, broad
+  array/object/resource coercions, exact diagnostics beyond the covered
+  empty-needle and unknown-encoding rows, references/COW, and native lowering
+  remain unsupported. Focused proof on currentized source passed `9 / 9` in
+  `mbstring_scalar_builtins`, `cargo build -p phpc --bin phpc`, and selected
+  PHPT proof `3 / 3` for `mb_substr_count_basic.phpt`,
+  `mb_substr_count_error2.phpt`, and `mb_substr_count_variation4.phpt`.
+
+- Added bounded `phpc run` support for script-file stat metadata helpers
+  `getlastmod()`, `getmyinode()`, `getmyuid()`, and `getmygid()`. The helpers
+  read the main source file's local filesystem metadata, return PHP-shaped
+  integer values for the selected `statpage.phpt` surface, return `false` when
+  no inspectable main source file exists, and expose function/reflection
+  metadata for `function_exists()`, `is_callable()`, and `ReflectionFunction`.
+  Focused proof covers Rust runtime/codegen metadata tests, the direct
+  `phpc run` fixture `tests/fixtures/milestone2305/script_metadata_statpage.php`,
+  and focused PHPT `ext/standard/tests/file/statpage.phpt`. Virtual sources,
+  include-caller metadata, SAPI differences, Windows UID/GID parity,
+  non-UTF-8 source paths, exact warning behavior for missing main files, and
+  native lowering remain unsupported.
+
+- Added a compact `parse_url()` relative-reference slice for query-only and
+  fragment-only inputs. `parse_url("?q")`, `parse_url("#f")`, empty query or
+  fragment forms, and component extraction no longer synthesize an empty
+  `path` member when PHP reports no path, while the empty string still keeps
+  the existing empty-path result. Focused supervisor verification passed `7 /
+  7` in `parse_url_builtin`, the Milestone 2306 `phpc run` fixture, `cargo
+  build -p phpc --bin phpc`, and selected PHPT proof `2 / 2` for
+  `ext/standard/tests/url/parse_url_basic_001.phpt` and
+  `ext/standard/tests/url/parse_url_basic_007.phpt`. Unsupported edges remain
+  full RFC3986/WHATWG parity, IDNA/Unicode host normalization, exact
+  malformed-authority diagnostics outside covered rows, and native URL
+  lowering.
+
+- Added a bounded standard-filesystem PHPT slice for local stat-cache
+  invalidation and `tempnam()` fallback diagnostics. Local-file `fopen()`
+  create/truncate paths, `fwrite()`, and `ftruncate()` now clear the
+  request-local metadata cache used by `filesize()`/`filemtime()` for the
+  mutated host path, so subsequent metadata reads observe the write/truncate
+  without an explicit `clearstatcache()`. `tempnam()` now emits the
+  PHP-shaped system-temporary-directory fallback notice before the fallback
+  `open_basedir` denial when a missing requested directory falls back outside
+  the allow-list. Focused supervisor verification passed `11 / 11` across
+  `clearstatcache_builtin`, `standard_file_tempnam_builtins`, and
+  `standard_filesystem_touch_builtins`, `cargo build -p phpc --bin phpc`, a
+  direct `phpc run` CLI exercise over stat-cache invalidation and tempnam
+  fallback denial ordering, and selected PHPT proof `2 / 2` for
+  `ext/standard/tests/file/bug52624.phpt` and
+  `ext/standard/tests/file/bug72666_variation3.phpt`. Full PHP stat-cache
+  breadth, shell-backed stat-cache rows, stream wrappers beyond the bounded
+  local file subset, filters, and native filesystem lowering remain
+  unsupported.
+
+- Tightened the bounded interpreter JSON decoder error surface for the compact
+  ext/json slice: nested container depth errors now report the container token
+  that exceeds the requested depth, array/object state mismatches keep the
+  failing token location without consuming past it, unterminated arrays report
+  syntax rather than state mismatch at EOF, control-character decode failures
+  keep the containing string-token location, and invalid `json_decode()`
+  depth now maps to a catchable `ValueError`. Focused supervisor verification
+  passed `7 / 7` in `json_builtins`, `cargo build -p phpc --bin phpc`, a
+  direct `phpc run` CLI exercise over decode depth and catchable invalid-depth
+  behavior, and selected PHPT proof `2 / 2` for
+  `ext/json/tests/007.phpt` and
+  `ext/json/tests/json_decode_error.phpt`. Remaining unsupported edges are
+  unchanged for full Unicode/UTF-8 normalization, multi-line and non-ASCII
+  diagnostic-location parity, `JSON_THROW_ON_ERROR`, full `JsonSerializable`
+  behavior, complete option interaction parity, other json extension
+  functions, and native lowering.
+
+- Added a bounded `http_build_query()` query-formatting slice for direct named
+  arguments and self-recursive public object branches. The interpreter now
+  publishes internal parameter metadata for `data`, `numeric_prefix`,
+  `arg_separator`, and `encoding_type`, so direct named calls can reuse the
+  existing builtin argument normalizer and default filling. Query traversal now
+  tracks active object ids and elides a public object branch that points back to
+  an object already on the current traversal stack, matching the selected
+  empty-output PHPT shape without adding general cyclic array/reference support.
+  Focused supervisor verification passed `5 / 5` in
+  `http_build_query_builtin`, `cargo build -p phpc --bin phpc`, a direct
+  `phpc run` CLI exercise over RFC3986/self-recursive-object cases, and
+  selected PHPT proof `3 / 3` for
+  `ext/standard/tests/http/http_build_query/gh12745.phpt`,
+  `http_build_query_object_just_stringable.phpt`, and
+  `http_build_query_object_recursif.phpt`. Exact diagnostics, class-context
+  private/protected object-property inclusion, cyclic array/reference
+  structures, object custom hooks, INI-driven separators beyond the current
+  `&` fallback, binary key/value fidelity outside UTF-8 strings, and native
+  lowering remain unsupported.
+
+- Worker string slice: added bounded traditional `metaphone()` support for
+  scalar/null string-convertible byte strings with optional non-negative
+  integer-compatible `max_phonemes`, catchable negative-limit `ValueError`,
+  builtin discovery, reflection metadata, and native function-existence
+  membership. Focused Rust passed `5 / 5` in
+  `string_algorithm_builtins`; `cargo build -p phpc --bin phpc` passed; and
+  selected PHPT proof passed `3 / 3` for
+  `ext/standard/tests/strings/metaphone.phpt`,
+  `ext/standard/tests/strings/bug44242.phpt`, and
+  `ext/standard/tests/strings/bug47443.phpt`. Unsupported edges remain
+  locale/Unicode alphabetic handling, object/resource operands, exact
+  embedded-NUL/binary parity beyond the PHP-compatible C-string boundary,
+  exact diagnostics outside the covered negative-limit path, references/COW,
+  and native lowering.
+
+- Added a focused math/general worker slice for bounded `pow()` parity.
+  `pow()` now accepts covered int-like/null/bool/numeric-string operands on
+  either side without the prior artificial `u32` exponent cap, preserves
+  PHP-shaped int-vs-float return typing for the reached integer, float, large
+  exponent overflow/underflow, and negative-zero cases, and reports catchable
+  unsupported-operand `TypeError` messages for the reached string, array,
+  object, and resource rows. Focused Rust passed `13 / 13` across
+  `standard_math_residuals` and `elementary_math_builtins`, `cargo build -p
+  phpc --bin phpc` passed, and selected PHPT proof passed `5 / 5` for
+  `ext/standard/tests/math/pow.phpt`,
+  `ext/standard/tests/math/pow_basic2.phpt`,
+  `ext/standard/tests/math/pow_basiclong_64bit.phpt`,
+  `ext/standard/tests/math/pow_variation1_64bit.phpt`, and
+  `ext/standard/tests/math/pow_variation2.phpt`. Unsupported edges remain
+  exponentiation operator syntax (`**`/`**=`), exact broad libm/platform
+  parity outside the covered rows, references/COW, and native lowering.
+
+- Added a bounded standard-math numeric-string classifier slice for the
+  interpreter path. `abs()` and the selected float math helper family now share
+  the PHP numeric-string classifier instead of the `sprintf()` leading-prefix
+  parser, so full numeric strings such as `" 039 "`, `"-4.5"`, and exponent
+  overflow `"1e9999"` coerce through the supported integer/float helper
+  boundary while leading-numeric junk and symbolic string `"INF"`/`"NAN"`
+  raise catchable type errors. Focused Rust coverage and a direct `phpc run`
+  fixture prove the deterministic `is_finite`/`sqrt`/`ceil`/`floor`/`abs`
+  surface; selected PHP-src PHPT rows for `is_finite`, `sqrt`, and `abs` are
+  recorded as proof artifacts. Broad platform-dependent libm parity,
+  object/resource numeric casts, exact diagnostic parity for every argument
+  label, and native lowering remain unsupported.
+
+- Implemented a focused local filesystem metadata candidate for five selected
+  `ext/standard/tests/file` PHPT rows. `chmod()` now preserves relative
+  `.`/`..` path segments for permission-setting operations so nonexistent
+  intermediate directories fail instead of being lexically normalized away, and
+  missing chmod targets emit the covered PHP-shaped display warning plus
+  `false`. `is_readable()` now accepts the reached scalar false-case path
+  forms, and `is_writable()`/`is_writeable()` now use Unix owner-write
+  permission bits for the covered local file/dir rows instead of Rust readonly
+  metadata. Focused Rust passed `3 / 3` in
+  `standard_file_metadata_residual_builtins`; selected PHPT proof passed `5 /
+  5` for `chmod_error.phpt`, `chmod_variation2.phpt`,
+  `is_readable_variation3.phpt`, `is_writable_basic.phpt`, and
+  `is_writable_variation2.phpt`; and adjacent PHPT guards passed `6 / 6` for
+  `chmod_basic.phpt`, `chmod_variation1.phpt`, `is_readable_basic.phpt`,
+  `is_readable_variation1.phpt`, `is_writable_variation1.phpt`, and
+  `is_writable_variation3.phpt`. This is not a public score update until
+  supervisor integration, checkpoint validation, and a full pinned PHPT gate
+  complete. Unsupported edges remain `passthru()`/shell-backed
+  `clearstatcache_001.phpt`, broad stream wrappers, full path
+  canonicalization/symlink policy, portable permission and TOCTOU parity,
+  exact diagnostics beyond the covered chmod missing-path warning, and native
+  lowering.
+
+- Repaired the completed array/string worker lane on the current supervisor
+  head. `array_intersect()` now keeps scanning the first comparison array when
+  that comparison array contains array-valued entries, so the reached
+  two-dimensional-array PHPT row gets PHP-shaped `Array to string conversion`
+  warning counts while preserving existing scalar/stringable-object/resource
+  comparison behavior. Focused Rust passed `12 / 12` across
+  `array_intersect` and `array_count_values`; `cargo build -p phpc --bin phpc`
+  passed; and selected PHPT proof passed `6 / 6` for
+  `array_count_values.phpt`, `array_count_values2.phpt`,
+  `array_intersect_variation9.phpt`, `similar_text_basic.phpt`,
+  `str_word_count.phpt`, and `str_word_count1.phpt`. Unsupported edges remain
+  full native comparison/warning-count parity outside the covered
+  `array_intersect()` first-comparison-array path, non-stringable object value
+  comparison behavior, exact native `TypeError` objects, references/COW, and
+  native lowering. This is not a public score update until a full pinned PHPT
+  gate accepts a checkpoint.
+
+- Added a focused ext/date constants slice after checkpoint `2546094a`.
+  `DateTime` now exposes the bounded date-format class constants that alias the
+  existing global `DATE_*` format constants, and reads of `DATE_RFC7231` plus
+  `DateTime::RFC7231` emit PHP-shaped deprecation diagnostics for the reached
+  PHPT rows. Focused Rust passed `14 / 14` across `date_time_builtin` and the
+  runtime class-table metadata filter; `cargo build -p phpc --bin phpc`
+  passed; and selected PHPT proof passed `2 / 2` for
+  `DateTime_constants.phpt` and `date_constants.phpt`. Unsupported edges
+  remain broad `DateTimeInterface` runtime/interface parity beyond the reached
+  constant diagnostic text, `DateTimeImmutable`, exact diagnostics outside the
+  covered constants, full timezone database parity, and native lowering. This
+  is not a public score update until a full pinned PHPT gate accepts a
+  checkpoint.
+- Accepted checkpoint `4f1c81d5` as the current public PHPT score source after
+  a full pinned php-src gate completed with zero latest-published PASS
+  regressions. The public-comparable score is now `5513 / 20294 = 27.17%`,
+  up from `5498 / 20294 = 27.09%` at checkpoint `2755fc15`. The accepted gate
+  evidence is
+  `state/logs/phpt-full-batch024-next14-20260601T192923Z-php-src-f97ff59-public-2755fc15-source-4f1c81d5`;
+  aggregate counts were `5513` passed, `13354` failed, `2761` skipped, `15`
+  xfailed, `687` borked, and `1` warned. The normalized PASS regression
+  comparison was `5509` current passes vs. `5494` baseline passes with `0`
+  regressions. The only invalid-marker grep hit was the known expected socket
+  `Permission denied` warning line, not a new proof blocker.
+
+- Integrated the next focused post-directory worker batch for eleven selected
+  PHPT rows. Mutable `DateTime` objects now expose bounded `getOffset()`,
+  `getTimezone()`, and `setTimezone()` over the existing DateTimeZone state;
+  `hash()` now executes `crc32`, `crc32b`, and `crc32c` and `hash_algos()`
+  returns the PHP 8.2 metadata list while preserving the existing SHA/HMAC
+  subset; Reflection now covers `ReflectionFunction::isVariadic()`,
+  `ReflectionClass::getConstructor()`, scalar string-convertible
+  `ReflectionClass::hasMethod()` arguments, and the narrow object/null loose
+  comparison used by the constructor row; and `umask()` now tracks a
+  request-local mask applied to newly created local paths through `fopen()`,
+  `file_put_contents()`, `touch()`, and `mkdir()`. Focused Rust passed `24 /
+  24` across `date_time_builtin`, `hash_builtin`, `file_umask_current_user`,
+  and `reflection_metadata`; `cargo build -p phpc --bin phpc` passed; and
+  selected PHPT proof passed `11 / 11` for
+  `DateTime_getOffset_basic1.phpt`, `DateTime_getTimeZone_basic1.phpt`,
+  `DateTime_setTimezone_basic1.phpt`, `crc32.phpt`, `hash_algos.phpt`,
+  `ReflectionFunction_isVariadic_basic.phpt`,
+  `ReflectionClass_getConstructor_basic.phpt`,
+  `ReflectionClass_hasMethod_002.phpt`, `umask_basic.phpt`,
+  `umask_variation1.phpt`, and `umask_variation2.phpt`. Unsupported edges
+  remain broad DateTime constructor/timezone and DateTimeImmutable parity,
+  hash execution outside the bounded SHA/CRC subset, HMAC execution beyond
+  SHA-256, full Reflection engine metadata and comparison semantics,
+  process-wide/non-Unix umask behavior, exact diagnostics, references/COW, and
+  native lowering.
+
+- Integrated the next bounded directory-open diagnostic slice after the
+  `4f1c81d5` public gate. `dir()` and `opendir()` now preserve the existing
+  local directory resource and `open_basedir` denial behavior while emitting
+  PHP-shaped `Failed to open directory` display warnings before returning
+  `false` for missing, non-directory, or unreadable local UTF-8 paths. Focused
+  Rust coverage in `compiler/tests/directory_metadata_helpers.rs` passed
+  (`1 passed`), `cargo build -p phpc --bin phpc` passed, `cargo fmt --check`
+  and `git diff --check` passed, and selected PHPT proof passed `4 / 4` for
+  `dir_variation5.phpt`, `dir_variation6.phpt`, `opendir_error2.phpt`, and
+  the adjacent already-supported `scandir_invalid_flag.phpt`. Unsupported
+  edges remain directory stream wrappers and contexts, non-UTF-8 paths/entries,
+  exact host iteration order, platform-specific permission parity, broader
+  diagnostic text beyond the covered failed-open warnings, references/COW, and
+  native lowering.
+
+- Integrated the next post-`1efcacf6` worker batch for six focused rows. The
+  interpreter now covers bounded stream context option-shape diagnostics for
+  the reached context rows, `get_extension_funcs("standard")` metadata,
+  strict-types scalar acceptance for `ini_set()`, and broader
+  `array_fill_keys()` key-value coercion for the reached variation rows.
+  Focused Rust passed `66 / 66` across `stream_resource_builtin`,
+  `general_function_builtins`, `ini_builtins`, and `array_fill_keys`;
+  `cargo build -p phpc --bin phpc` passed; and selected PHPT proof passed
+  `6 / 6` for `bug71884.phpt`, `stream_context_create_error.phpt`,
+  `get_extension_funcs_basic.phpt`, `ini_set_types.phpt`,
+  `array_fill_keys_variation1.phpt`, and
+  `array_fill_keys_variation2.phpt`. Unsupported edges remain full stream
+  wrapper/filter execution, notification callbacks and wrapper-specific
+  context option behavior, host extension inventory parity, full INI catalog
+  and access metadata, object key conversion beyond the current stringable
+  subset, references/COW, and native lowering.
+
+- Integrated the next focused source batch after the `2755fc15` public gate.
+  The interpreter now covers bounded `request_parse_body()` CLI option
+  validation and no-content-type `RequestParseBodyException` handling, C/POSIX
+  `nl_langinfo()` day/month/radix metadata, and caught core `Throwable`
+  stringification for the reached `sprintf()` error row. Focused Rust passed
+  `383 / 383` across `request_parse_body_builtin`, `object_model`,
+  `sprintf_builtin`, and `locale_string_builtins`; `cargo build -p phpc --bin
+  phpc` passed; and selected PHPT proof passed `6 / 6` for
+  `multipart_options_invalid_key.phpt`,
+  `multipart_options_invalid_quantity.phpt`,
+  `multipart_options_invalid_value_type.phpt`, `options_array_references.phpt`,
+  `nl_langinfo_basic.phpt`, and `sprintf_rope_optimization_002.phpt`.
+  Unsupported edges remain actual request-body parsing, multipart/urlencoded
+  result arrays, SAPI content-type dispatch and upload construction, non-C
+  locale catalogs, broader `nl_langinfo()` items/platform values, full
+  Throwable trace/file internals, broad formatter object/resource conversion
+  parity, and native lowering.
+
+- Accepted checkpoint `2755fc15` as the current public PHPT score source after
+  a full pinned php-src gate completed with zero latest-published PASS
+  regressions. The public-comparable score is now `5498 / 20294 = 27.09%`,
+  up from `5481 / 20294 = 27.01%` at checkpoint `1fe2b233`. The accepted gate
+  evidence is
+  `state/logs/phpt-full-batch024-next13-20260601T183739Z-php-src-f97ff59-source-2755fc15`;
+  aggregate counts were `5498` passed, `13369` failed, `2761` skipped, `15`
+  xfailed, `687` borked, and `1` warned. The normalized PASS regression
+  comparison was `5494` current passes vs. `5477` baseline passes with `0`
+  regressions. The only invalid-marker grep hit was the known expected socket
+  `Permission denied` warning line, not a new proof blocker.
+
+- Integrated the next verified focused score batch after the `1fe2b233` public
+  gate. The interpreter now covers PHP-shaped warnings for reads of explicitly
+  unset initialized request superglobal roots, `preg_quote()` NUL and `#`
+  escaping parity for the reached PCRE rows, `unserialize()` extra-data and
+  signed-length diagnostics, PHP operation-order precision for `deg2rad()` and
+  `rad2deg()`, and the reached `gettype()` / direct-variable `settype()` error
+  and side-effect rows. Focused Rust passed `102 / 102` across `superglobals`,
+  `preg_quote_builtin`, `preg_match_builtin`, `preg_split_builtin`,
+  `serialize_builtin`, `elementary_math_builtins`, `scalar_casts`, and
+  `type_introspection_builtins`; `cargo build -p phpc --bin phpc` passed; and
+  selected PHPT proof passed `14 / 14` for `globals_001.phpt`,
+  `globals_002.phpt`, `globals_003.phpt`, `globals_004.phpt`,
+  `bug26927.phpt`, `bug75355.phpt`, `preg_quote_basic.phpt`,
+  `unserialize_extra_data_001.phpt`, `invalid_signs_in_lengths.phpt`,
+  `deg2rad_basiclong_64bit.phpt`, `deg2rad_variation.phpt`,
+  `rad2deg_basiclong_64bit.phpt`, `gettype_settype_error.phpt`, and
+  `type.phpt`. Unsupported edges remain broad SAPI/superglobal parity, full
+  PCRE escape and regex semantics, object/reference serialization, exact
+  malformed-input offsets outside the covered rows, broad scalar/settype
+  lvalues, complete numeric/libm parity, references/COW, and native lowering.
+
+- Accepted checkpoint `1fe2b233` as the current public PHPT score source after
+  a full pinned php-src gate completed with zero latest-published PASS
+  regressions. The public-comparable score is now `5481 / 20294 = 27.01%`,
+  up from `5363 / 20294 = 26.43%` at checkpoint `43262ab5` and from the
+  blocked raw `5451 / 20294 = 26.86%` checkpoint `025c1325` gate. The accepted
+  gate evidence is
+  `state/logs/phpt-full-batch024-repair-hash-session-20260601T180507Z-php-src-f97ff59-source-1fe2b233`;
+  aggregate counts were `5481` passed, `13386` failed, `2761` skipped, `15`
+  xfailed, `687` borked, and `1` warned. The normalized PASS regression
+  comparison was `5477` current passes vs. `5359` baseline passes with `0`
+  regressions. The only invalid-marker grep hit was the known expected socket
+  `Permission denied` warning line, not a new proof blocker.
+
+- Integrated the next focused repair/score batch after the `025c1325`
+  checkpoint gate exposed two PASS regressions. The current source now restores
+  `ext/standard/tests/array/array_keys_variation_005.phpt` by allowing
+  `array_keys()` search filtering to compare stream/directory resource values
+  by resource identity, and restores
+  `ext/standard/tests/strings/bug70720.phpt` by stripping XML processing
+  instructions through `?>`/`/>` before falling back to tag-end scanning, so
+  object-operator arrows no longer terminate the stripped span. The same batch
+  also integrates seven worker-produced JSON/hash/session/cookie PHPT rows
+  (`json_decode_error.phpt`, `json_last_error_error.phpt`,
+  `hash_hmac_error.phpt`, `session_cache_expire_variation1.phpt`,
+  `session_cache_expire_variation2.phpt`, `bug69523.phpt`, and
+  `setcookie_samesite_validation.phpt`) plus the two hash metadata/equality
+  rows `hash_equals.phpt` and `hash_hmac_algos.phpt`. Focused Rust passed for
+  `json_builtins`, `hash_builtin`, `header_builtin`, `session_builtin`,
+  `array_keys`, and `strip_tags_builtin`, `cargo build -p phpc --bin phpc`
+  passed, and the selected PHPT proof passed `11 / 11` through the PHPT
+  wrapper. The prior full pinned gate for checkpoint `025c1325` produced raw
+  `5451 / 20294 = 26.86%` but was publication-blocked by the two regressions
+  repaired here. Unsupported edges remain broader resource comparison parity,
+  full XML/HTML tokenization, HMAC execution beyond SHA-256, broad JSON option
+  parity, real SAPI cookie/session behavior, exact diagnostics beyond covered
+  rows, and native lowering.
+
+- Integrated five completed sidecar score lanes, adding eleven more focused
+  PHPT candidates to the next checkpoint batch: `putenv.phpt`,
+  `putenv_and_getenv_reject_null_bytes.phpt`,
+  `file_exists_variation1.phpt`, `file_get_contents_error_folder.phpt`,
+  `bug61660.phpt`, `bug67249.phpt`, `bug75075.phpt`, `bug78833.phpt`,
+  `array_column_scalar_index_strict_types.phpt`, `math/constants.phpt`, and
+  `math/bug27646.phpt`, `is_writable_variation1.phpt`, and
+  `is_writable_variation3.phpt`. The interpreter now covers PHP-shaped catchable env
+  `ValueError`s; false/empty `file_exists()` path forms; local-directory
+  `file_get_contents()` notice-plus-`false`; `hex2bin()` odd-length warnings;
+  missing custom sprintf padding diagnostics; `unpack("X*")` warning-and-ignore
+  behavior; pack-side too-few-value `ValueError`s; strict-types
+  `array_column()` key rejection; active-precision float string conversion for
+  formatter `%s`; non-finite float `serialize()` spellings; and scalar
+  false-case `is_writable()` / `is_writeable()` metadata predicates.
+  Supervisor verification passed `162 / 162` focused Rust tests across the
+  touched suites, `cargo build -p phpc --bin phpc`, and `27 / 27` selected
+  PHPT rows using `/tmp/phpc-target-integrate-batch-workers/debug/phpc`.
+  Unsupported edges remain broad scalar/path coercion parity, full stream and
+  formatter/pack grammars, broad strict-types enforcement, exact
+  precision/serialization parity beyond the covered rows, references/COW, and
+  native lowering.
+
+- Integrated the next worker-produced PHPT score batch. The interpreter now
+  covers `substr($string, $offset, null)` as omitted length; PHP-shaped
+  catchable nonpositive-length `fread()` errors; negative `sleep()` and
+  `usleep()` `ValueError` diagnostics with internal builtin frames; bounded
+  direct/dynamic/reflection `usleep()`; the runtime `is_writeable()` alias for
+  the existing local `is_writable()` slice; and pack-side signed-byte
+  `pack("c", ...)` so the reached base64 PHPT loops can feed existing binary
+  base64 support. Focused worker PHPT verification passed `8 / 8` for
+  `substr.phpt`, `fread_error.phpt`, `sleep_error.phpt`, `usleep_basic.phpt`,
+  `usleep_error.phpt`, `is_writable_error.phpt`,
+  `base64_encode_basic_001.phpt`, and `base64_loop_001.phpt`; supervisor
+  focused Rust passed `59 / 59`, `cargo build -p phpc --bin phpc` passed, and
+  integrated PHPT verification passed `8 / 8` from
+  `/tmp/phpc-target-integrate-batch-workers`. Unsupported edges remain broad
+  scalar coercion parity, interrupted/precise sleep timing, full stream
+  resources, unpack-side byte formats, unsigned-byte `C`, native lowering, and
+  exact diagnostics beyond the focused rows.
+
+- Integrated the next string/security focused worker batch. Bounded
+  `strip_tags()` now strips XML processing-instruction spans beginning
+  `<?xml`/`<?XML` through the next tag end and strips the reached malformed
+  nested-angle forms `<foo<>bar>`, `<foo<!>bar>`, and `<foo<?>bar>` through the
+  outer close. The interpreter also recognizes Unix `escapeshellarg()` for the
+  focused single-quote escaping PHPT row and recognizes `crypt($string, "_")`
+  as the PHP invalid-salt fallback marker `*0`. Focused worker PHPT
+  verification passed `4 / 4` for `bug45485.phpt`, `bug78003.phpt`,
+  `bug51059.phpt`, and `escapeshellarg_basic.phpt`; supervisor focused Rust
+  passed `11 / 11`, `cargo build -p phpc --bin phpc` passed, and integrated
+  PHPT verification passed `4 / 4` from
+  `/tmp/phpc-target-integrate-batch-workers`.
+  Unsupported edges remain full malformed HTML/XML tokenizer parity, shell
+  execution/platform quoting, real crypt algorithms/salt validation,
+  cryptographic guarantees, broad coercion diagnostics, and native lowering.
+
+- Integrated the next focused array worker batch. Loose `array_keys()` filtering
+  now handles bounded PHP membership-style array comparisons for arrays against
+  `null`, booleans, scalars, and arrays, covering
+  `array_keys_variation_003.phpt` while leaving object/resource/reference and
+  recursive array comparison edges unsupported. `array_udiff()` string
+  user-compare callbacks now report callbacks requiring more than the two
+  supplied comparison values as catchable `ArgumentCountError`s with PHP's
+  callback message text, covering `array_udiff_variation5.phpt` without
+  broadening unrelated callback forms. Worker PHPT verification passed `2 / 2`;
+  supervisor focused Rust passed `12 / 12`, `cargo build -p phpc --bin phpc`
+  passed, and integrated PHPT verification passed `2 / 2` from
+  `/tmp/phpc-target-integrate-batch-workers`. The combined supervisor focused
+  gate across all touched worker suites passed `82 / 82` Rust tests, and the
+  combined selected PHPT check passed `14 / 14`.
+
+- Integrated the next high-parallel focused PHPT score batch. The interpreter
+  now covers the reached PHP-shaped diagnostics and bounded behavior for
+  `array_change_key_case_flag_error.phpt`, `array_chunk2.phpt`,
+  `array_chunk_variation5.phpt`, `array_fill_error2.phpt`,
+  `array_pad_too_large_padding.phpt`, `array_is_list.phpt`,
+  `prev_error2.phpt`, `prev_error3.phpt`, `fgets_error.phpt`,
+  `call_user_func_002.phpt`, `is_callable_variation2.phpt`,
+  `join_error1.phpt`, `chr_error.phpt`, `printf_error.phpt`,
+  `fprintf_error.phpt`, `printf_64bit.phpt`, `strcmp.phpt`, `strpos.phpt`,
+  `stripos.phpt`, `stripos_error.phpt`, `strlen_basic.phpt`, `strlen.phpt`,
+  `Zend/tests/strlen.phpt`, and
+  `Zend/tests/strlen_deprecation_to_exception.phpt`. The batch adds catchable
+  `ValueError`/`TypeError`/argument-count bridges for the focused array,
+  stream, join/implode, chr, `is_callable()`, `strpos()`/`stripos()`,
+  `strlen()`, and printf/fprintf rows; bounded class-string array callback
+  autoload for `call_user_func()`; active-precision float stringification for
+  `strlen()`/`strcmp()`; binary-preserving `print_r()` output for represented
+  strings; a bounded pass-by-reference notice/fatal path for `prev()`
+  temporaries and array literals; `fgets($stream, 1) === false`; and a
+  PHP-shaped fatal guard for the 64-bit `array_fill()` `INT_MAX` count row.
+  Focused verification passed `218 / 218` Rust tests across the touched
+  builtin suites, `cargo build -p phpc --bin phpc`, and `24 / 24` selected
+  PHPT rows. Unsupported edges remain broad references/COW parity, exact native
+  error object internals, full stream and formatter edge behavior, broad array
+  lvalues, huge allocation semantics, and native lowering.
+
+- Added a focused `intval()` base-coercion score lane for
+  `intval_binary_prefix.phpt`: the base argument now uses PHP-shaped
+  int-compatible scalar coercion, emits the current null/precision-loss
+  deprecations, treats string inputs with invalid converted bases as `0`, and
+  ignores out-of-range bases for non-string values. Focused
+  `CARGO_TARGET_DIR=/tmp/phpc-target-batch2-intval CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test scalar_casts -- --test-threads=1`
+  passed `16 / 16`; the combined Batch025 focused gate
+  `CARGO_TARGET_DIR=/tmp/phpc-target-batch2-combined CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test scalar_casts --test current_builtin -- --test-threads=1`
+  passed `25 / 25`; and focused PHPT verification passed `4 / 4` for
+  `intval_binary_prefix.phpt`, `array_next_error1.phpt`,
+  `array_next_error2.phpt`, and `current_variation6.phpt`.
+
+- Prepared the array-pointer integration candidate on top of checkpoint
+  `d2002fb1` for the focused public rows `array_next_error1.phpt`,
+  `array_next_error2.phpt`, and `current_variation6.phpt`. Removing an
+  ordered-array entry now keeps the internal cursor coherent when the cursor was
+  after the removed slot, so an exhausted cursor can observe a later append
+  after the former tail is unset. Direct `next()` on supported
+  function-returned array temporaries emits PHP's bounded "Only variables should
+  be passed by reference" notice and advances the temporary copy, while direct
+  array literals now use the bounded pass-by-reference fatal path. Broad
+  lvalues, object operands, full references/COW parity, exact pointer semantics
+  beyond this focused slice, and native lowering remain unsupported. Focused
+  verification passed:
+  `cargo fmt --check`; `git diff --check -- compiler/src/interpreter.rs compiler/tests/current_builtin.rs runtime/src/lib.rs docs/ARCHITECTURE.md docs/SUPPORT.md docs/PROGRESS.md`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-array-pointer-integration-d2002 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test current_builtin -- --test-threads=1`
+  with `9 passed / 0 failed`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-array-pointer-integration-d2002 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo build -p phpc --bin phpc`;
+  and
+  `PHPC_BIN=/tmp/phpc-target-array-pointer-integration-d2002/debug/phpc TEST_PHP_EXECUTABLE=/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper TEST_PHP_ARGS= TMPDIR=/tmp/phpc-array-pointer-integration-d2002-phpt TEMP=/tmp/phpc-array-pointer-integration-d2002-phpt TMP=/tmp/phpc-array-pointer-integration-d2002-phpt php run-tests.php -q -p /home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper ext/standard/tests/array/array_next_error1.phpt ext/standard/tests/array/array_next_error2.phpt ext/standard/tests/array/current_variation6.phpt`
+  with `3 passed / 0 failed / 0 skipped`.
+
+- Added a post-Batch024 focused score batch with direct PHPT wins:
+  string-keyed `$GLOBALS` unsets now remove root symbols so `count($GLOBALS)`
+  tracks the reached symbol-table PHPT row; `strcasecmp()` now returns PHP's
+  folded byte-delta magnitude instead of normalized signs; trim-family calls
+  coerce supported `__toString()` objects and the native callable trim helper
+  shares the form-feed-inclusive default mask; and `str_replace()` resource
+  search operands now raise a catchable PHP-shaped `TypeError` before `$count`
+  writeback while direct `str_ireplace()` supports the same direct-variable
+  `$count` output path. Top-level `null` search/replace/subject arguments in
+  `str_replace()` / `str_ireplace()` now emit the PHP-shaped deprecation while
+  nulls inside search/replacement arrays keep the current string conversion
+  behavior. Focused `cargo test -p phpc --test str_replace_builtin --test
+  strcasecmp_builtin --test string_trim_builtin --test superglobals --
+  --test-threads=1` passed `68 / 68`; focused `php_runtime` trim and string
+  helper tests passed `2 / 2`; and focused PHPT verification passed `7 / 7`
+  for `count_symbol_table.phpt`, `strcasecmp_basic.phpt`, `trim.phpt`,
+  `rtrim.phpt`, `str_replace_basic.phpt`, `str_ireplace.phpt`, and
+  `str_replace_variation1.phpt`.
+- Published the Batch024 regression-repair full pinned PHPT gate from
+  checkpoint `43262ab5f81fe293a49829c9c270137be98f5e6d`. The gate recorded
+  `5363 / 20294 = 26.43%` public pinned runnable PHPTs with zero
+  latest-published PASS regressions against the Batch023 repair01 baseline.
+  Evidence:
+  `/home/claude/supervised-php-compiler/state/logs/phpt-full-batch024-regression-repair-20260601T145651Z-php-src-f97ff59-source-43262ab5`.
+- Repaired the two PASS regressions found by the Batch024 full pinned PHPT
+  gate candidate. `is_file()` now returns `false` for regular-file paths with
+  trailing slashes, matching `is_file_variation4.phpt`, and `vfprintf()` now
+  raises a catchable PHP-shaped `TypeError` for non-resource stream arguments
+  before continuing to later catchable `ValueError` cases, matching
+  `vfprintf_error4.phpt`. Focused `cargo test -p phpc --test is_file_builtin
+  --test fprintf_builtin -- --test-threads=1` passed `10 / 10`, and focused
+  PHPT verification for both regression rows passed `2 / 2`.
+- Refreshed the stale `variable_unset` Rust baseline for the current
+  PHP-shaped undefined-variable warning path. Reading a local after `unset()`
+  now asserts visible stdout warning text and exit `0` instead of expecting an
+  internal runtime diagnostic error. Focused `cargo test -p phpc --test
+  variable_unset -- --test-threads=1` passed `3 / 3`; this is not a public
+  score update.
+- Refreshed the stale typed-property reference-coercion Rust baseline for the
+  current PHP-shaped fatal execution path. Incompatible writes through a typed
+  property reference now assert the visible fatal output and exit `255`
+  instead of expecting an internal diagnostic error. Focused
+  `cargo test -p phpc --test typed_property_reference_coercion --
+  --test-threads=1` passed `2 / 2`; this is not a public score update.
+- Refreshed the stale typed-property protected-inheritance Rust baseline for
+  the current PHP-shaped fatal text when a typed child property extends an
+  untyped protected parent property: the test now expects the existing
+  `must be omitted to match the parent definition` diagnostic. Focused
+  `cargo test -p phpc --test typed_properties_protected_inheritance --
+  --test-threads=1` passed `3 / 3`; this is not a public score update.
+- Tightened native `function_exists()` / `extension_loaded()` lowering so
+  non-string scalar names keep the explicit native function-call rejection
+  instead of being coerced through the shared text-membership helper, matching
+  the current `phpc run` unsupported-name boundary. Refreshed the
+  `extension_loaded()` `--emit-ir` baseline to assert the implemented bounded
+  compatibility-registry membership helper for lowerable string names. Focused
+  `cargo test -p phpc --test type_introspection_builtins --
+  --test-threads=1` passed `19 / 19`; this is not a public score update.
+- Worker 01 array/counting lane: `count()` and `sizeof()` now reuse the
+  existing PHP-shaped TypeError operand-name formatter for non-countable
+  values. This preserves the current array and bounded `Countable` object
+  behavior while reporting `true`, `false`, `stdClass`, or the concrete class
+  name instead of generic `bool`/`object` in catchable TypeErrors, matching the
+  reached public `count_invalid.phpt` and `sizeof_object2.phpt` rows. Focused
+  `cargo test -p phpc --test countable_type_builtin -- --test-threads=1`
+  passed `10 / 10`, and the focused public array values/counting PHPT lane now
+  reports `17` passed, `1` skipped, and `3` still failed rows; this is not a
+  public score update until a pinned full-suite gate runs.
+- Refreshed the stale `syntax_boundaries` Rust baseline for current
+  parser/runtime/codegen boundaries. Attribute syntax, function DNF metadata,
+  first-class callable syntax, `\PHP_VERSION`, parenthesized dynamic `new`,
+  foreach destructuring, native spread call lowering, and direct reference
+  assignment now assert the implemented execution/lowering paths, while DNF
+  property declarations, namespace-qualified constants, object/static unsets,
+  object instantiation, unsupported null-coalescing targets, and nested
+  compound assignment still keep named rejection boundaries. Focused
+  `cargo test -p phpc --test syntax_boundaries -- --test-threads=1` passed
+  `109 / 109`; this is not a public score update.
+- Refreshed the stale `$_SESSION` undefined-read Rust baseline for the current
+  PHP-shaped warning execution path. The request superglobal test still
+  verifies that the session root is not materialized before session startup,
+  but now expects `phpc run` to emit the same visible undefined-variable
+  warning path as ordinary missing variables and continue with exit `0`.
+  Focused `cargo test -p phpc --test superglobals --
+  --test-threads=1` passed `36 / 36`; this is not a public score update.
+- Refreshed the stale strict-identity `--emit-ir` Rust baseline for the
+  current boxed diagnostic-result echo boundary. The tests still assert native
+  integer/boolean equality lowering (`icmp` / ternary `select`) while expecting
+  boolean echo results to flow through `phpc_native_bool()` and the shared
+  diagnostic-result stdout reporter instead of the older direct `printf`
+  string path. Focused `cargo test -p phpc --test strict_identity --
+  --test-threads=1` passed `5 / 5`; this is not a public score update.
+- Refreshed the stale `str_replace()` Rust baseline for already-present
+  bounded replacement behavior. The focused test now asserts the current
+  callback-by-value `$count` warning/result path, one-level replacement arrays,
+  nested search-array `Array to string conversion` warning recovery, and
+  one-level array subject replacement output, while preserving the direct-call
+  rejection for non-direct `$count` writeback targets. Focused
+  `cargo test -p phpc --test str_replace_builtin -- --test-threads=1` passed
+  `7 / 7`; this is not a public score update.
+- Refreshed the stale `strcasecmp()` arity baseline for the current
+  PHP-shaped too-few-arguments fatal execution path. Unsupported array operand
+  diagnostics and the native string-int contract assertions remain unchanged.
+  Focused `cargo test -p phpc --test strcasecmp_builtin -- --test-threads=1`
+  passed `4 / 4`; this is not a public score update.
+- Worker 05 numeric/math lane: aligned interpreter `deg2rad()` and `rad2deg()`
+  with PHP's precision-sensitive operation order for the reached PHPT rows
+  (`$degrees / 180 * M_PI` and `$radians / M_PI * 180`) instead of Rust's
+  `to_radians()`/`to_degrees()` constants. Added focused coverage for the
+  exact `deg2rad_variation`, `deg2rad_basiclong_64bit`, and
+  `rad2deg_basiclong_64bit` edge values, plus a small compile unblocker that
+  preserves a concurrent trim-family call-site refactor by delegating
+  `self.call_trim_family(...)` to the existing trim implementation.
+- Worker 02 string lane: broadened the bounded `trim()` / `ltrim()` /
+  `rtrim()` / `chop()` interpreter slice for the reached PHPT rows. The
+  default mask now includes form-feed, simple increasing `x..y` character mask
+  ranges are expanded, and invalid range spellings emit PHP-shaped warnings
+  while returning the original string. Arrays remain rejected, broader binary
+  charlist parsing and exact object/resource coercions remain unsupported, and
+  native lowering still rejects direct trim-family calls.
+- Worker 03 filesystem lane: extended `file()` open_basedir denial recovery to
+  emit the operation-specific follow-on `Failed to open stream` warning before
+  returning `false`, matching the reached `open_basedir_file.phpt` behavior
+  without broadening stream wrapper support.
+- Worker 06 variable/symbol lane: `empty()` now accepts non-lvalue expression
+  operands by evaluating their truthiness and returning the negated result,
+  while preserving the existing direct variable, offset, property, static
+  property, and call-operand behavior.
+- Added a bounded shared `open_basedir` relative-parent escape denial slice for
+  existing interpreter local filesystem helpers. The allow-list check now
+  canonicalizes existing paths and lexically normalizes unresolved paths
+  against the active cwd, so `open_basedir=.` after `chdir()` rejects `..`
+  escapes for local metadata/predicate helpers (`file_exists()`, `filesize()`,
+  `is_dir()`, `is_file()`, `is_readable()`, `is_writable()`, and `is_link()`),
+  local stream opens (`file_get_contents()`, `file_put_contents()`, `fopen()`),
+  and directory opens (`opendir()`/`dir()` plus `scandir()`) without
+  PHPT-name special casing. Stream and directory open denials now also emit the
+  bounded operation-specific follow-on warnings (`Failed to open stream`,
+  `Failed to open directory`, and `scandir()`'s bounded `(errno 1)` warning)
+  before returning `false`. Existing allowed normalized paths under the current
+  basedir remain allowed.
+- Added focused Rust coverage in
+  `compiler/tests/open_basedir_relative_escape.rs` for denied relative-parent
+  and absolute escapes, allowed normalized `ok` paths, metadata/predicate
+  warning counts, and stream/directory follow-on warning parity. Updated the
+  existing `file_get_contents()` and `fopen()` open_basedir handler tests to
+  expect the newly surfaced follow-on warning.
+- Refreshed stale `php_runtime` unit-test expectations for already-present
+  runtime behavior: binary PHP strings preserve invalid UTF-8 bytes, `natsort`
+  treats arrays as string-comparable `"Array"` values while still rejecting
+  resources, the expanded core class bootstrap metadata is reflected in the
+  metadata test, and typed static-property reference writes report the
+  reference-held diagnostic. The call-arguments free counter used only by
+  tests is now thread-local so the default parallel Rust test runner no longer
+  cross-contaminates those assertions. Codegen unit assertions were also
+  refreshed for existing generated-C behavior: dynamic object-property
+  assignment lowers through the shared runtime mutation helper, and known
+  string comparisons use the binary-string value/comparison boundary. No
+  runtime implementation behavior changed in this refresh. The
+  `array_combine()` resource-key baseline now expects PHP's first user-visible
+  stream handle string (`Resource id #5`) instead of the stale `#1` fixture,
+  and an `unset()` detached typed-reference test now expects the PHP-shaped
+  fatal `TypeError` path for reference-held property writes.
+  Assignment-expression `--emit-ir` baselines now assert the existing boxed
+  diagnostic-result echo boundary for direct assignment values and the
+  specific non-local assignment rejection for object-property assignment
+  expressions. Built-in `Exception` constructor and uncaught-throw baselines
+  now assert the already-present message initialization and PHP-shaped fatal
+  execution path, including the general exception boundary test file.
+  `call_user_func_array()` rejection-boundary baselines now expect the
+  existing PHP-shaped fatal TypeErrors for arity/type errors, the current named
+  builtin parameter mismatch diagnostic, and the warning-only by-value
+  reference argument path. Compound-assignment baselines now assert the boxed
+  diagnostic-result echo boundary for direct compound assignment expressions
+  and PHP-shaped fatal execution paths for private-property access, modulo by
+  zero, and negative shift errors; the matching CLI snapshot fixture now
+  expects the fatal modulo-by-zero stdout/exit shape. `count()` on
+  non-Countable objects now has a baseline for the existing PHP-shaped fatal
+  TypeError execution path. A stale default-parameter boundary test now asserts
+  the already-present interpreter support for declared `ClassName::CONST`
+  default values in user functions, including omitted and explicit argument
+  calls. Dynamic-feature baselines now track the existing PHP-shaped fatal
+  execution path for unresolved dynamic function calls and unresolved qualified
+  namespace calls, parser-phase variable-variable rejection, statement-form
+  `eval(...)` execution with expression-position eval still fatal, supported
+  simple function/const imports, supported `PHP_OS` constant lookup,
+  error-control suppression for undefined variables, and deprecated filter
+  aliases in `get_defined_constants()` comparisons via suppressed
+  `constant(...)` reads. The matching unsupported dynamic feature fixture and
+  CLI sidecars were refreshed for the current pathless diagnostics and
+  PHP-shaped execution results. The `runtime_errors` fixture family was also
+  refreshed against current `phpc run` behavior, preserving its `phpc-only`
+  status and moving stale `PHP_OS` unknown-constant probes to an actually
+  unknown `PHP_OS_MISSING` name. `file_exists()` focused tests now assert the
+  current PHP-shaped fatal arity execution and the synthetic relative source
+  path repo-relative fixture resolution used by direct interpreter test calls.
+  `filesize()`
+  focused tests now assert current directory metadata sizing, missing-path
+  warning/false recovery, scalar path coercion warning recovery, and
+  PHP-shaped fatal arity execution. `fprintf()`/`vfprintf()` focused tests now
+  use the current shared stream-resource native-lowering boundary, scalar
+  format coercion, and PHP-shaped values-argument TypeError output.
+  `functions_and_scopes`, modulo, shift, native variable-read,
+  `runtime_errors`, and `implode()` Rust baselines were refreshed for the same
+  current PHP-shaped warning/fatal execution paths, accepted `declare(strict_types)` /
+  `declare(encoding)` parser behavior, named reference-argument support under
+  non-builtin-style function names, ArrayAccess/null-offset deprecation output,
+  scalar `implode()` separator coercion, PHP-shaped `implode()` TypeErrors, and
+  array-to-string warning recovery. `ini_builtins` default-registry assertions
+  now share the same `PHPC_PHPT_INI_FLAGS` lock/restore discipline as the
+  PHPT-override assertions so Rust's default parallel test runner cannot leak
+  `memory_limit` overrides across tests. The milestone159 modulo-by-zero,
+  milestone160 modulo-compound-by-zero, and milestone162 division-by-zero
+  fixture sidecars now match the current fatal stdout/exit shape. Focused
+  `is_dir()`/`is_file()`/`is_readable()`/`is_writable()` tests now assert the
+  current PHP-shaped zero-argument fatal execution paths, matching the
+  already-refreshed `is_link()` boundary. `list_assignment` now proves the
+  intended native array-destructuring lowering blocker with literal RHS values,
+  leaving RHS call-boundary routing to the dedicated native-array boundary test.
+  Magic constant CLI/fixture sidecars for the non-trait-originated
+  `__TRAIT__` and global-namespace `__NAMESPACE__` cases were refreshed to the
+  current successful runtime output and no longer carry `phpc-only` markers.
+- Stabilized whole-tree fixture execution between `cargo test` and `phpc test`
+  by resolving existing repo-relative local filesystem operation paths through
+  the repository root when the current process cwd is the `compiler` crate.
+  This keeps self-referential local metadata fixtures such as `file_exists()`,
+  `is_file()`, `filesize()`, `filemtime()`, directory handles, and
+  `clearstatcache()` aligned without changing missing-path behavior. The
+  stale milestone1 native-boundary assertions were refreshed for the current
+  earlier variable-read and non-local-assignment blockers. The full fixture
+  tree and CLI sidecars were refreshed against current `phpc run` behavior,
+  and remaining system-PHP divergences for stream-context diagnostics,
+  ArrayAccess append/null-offset deprecation output, whole-array magic/
+  ArrayAccess copied-source COW identity, and `array_key_exists(null, ...)`
+  deprecation output now carry explicit `phpc-only` reasons.
+  `functions_and_scopes` system-PHP/runtime oracle assertions now normalize
+  those null-offset deprecation lines when comparing payload behavior so
+  source-path/provenance differences do not make the direct Rust tests stale.
+  Namespace-resolution baselines were also refreshed for the current
+  PHP-shaped fatal execution result on undefined imported/non-imported function
+  calls, and the generated-C imported-type-alias static-property probe now
+  records the current object-instantiation lowering boundary instead of
+  claiming executable support. Native arithmetic boundary baselines now track
+  the current boxed diagnostic-result echo output, scalar-coercion generated-C
+  routing through the value-operation ABI, LLVM string/unary-negative operand
+  conversion routing, and the exact modulo split where zero/dynamic divisors
+  still reject while unary negative literal divisors route through the
+  value-result boundary. Native assembly CLI fake-backend validators and
+  summary sidecars now accept current helper-based IR/C output-call shapes and
+  record the current LLVM `--emit-asm` rejection boundaries for unary and
+  bitwise/shift cases that no longer lower through the assembly path. Native
+  bitwise boundary baselines now track the current boxed diagnostic-result echo
+  output, avoid unrelated unary-negative lowering boundaries when asserting
+  all-ones/negative shift behavior, and refresh the emit-IR CLI sidecars for
+  current bitwise/shift lowering and rejection boundaries. Native cast
+  boundary baselines now include `(object)` casts in the existing scalar/array
+  cast rejection message, refresh the emit-IR/emit-ASM sidecars, and keep the
+  shared runtime ABI assertion aligned with the current cast blocker text.
+  Native comparison boundary baselines now track the current boxed
+  diagnostic-result echo output for comparison and strict-identity result
+  emissions, refresh the emit-IR CLI sidecars for current comparison lowering
+  and folding output, and keep unsupported comparison fixtures on their
+  explicit rejection boundaries. Generated-C dynamic string comparison operand
+  baselines now avoid the unrelated variable-held conditional-expression
+  boundary and assert the current native value byte-string materialization,
+  explicit byte-length tracking, and native value comparison helper path.
+  Native concatenation baselines now track the current boxed
+  diagnostic-result echo path for dynamic string output, including empty-string
+  identity concatenation over untracked string expressions, static string
+  concatenation, and single-result string ternary concatenation emit-IR
+  sidecars. Native conditional boundary baselines now track the current boxed
+  diagnostic-result echo path for scalar, string, boolean, and null ternary
+  output, including the now-direct boxed boolean echo path, while preserving
+  the existing unsupported conditional-expression rejection boundary and
+  refreshing the conditional emit-IR CLI sidecars. Native `empty()` boundary
+  baselines now track the current boxed diagnostic-result echo path for direct
+  variable empty output and record the exact split where array/property/static
+  property operands reject at the `empty()` boundary, while multi-argument and
+  call-operand forms still reject through the generic native function-call
+  boundary.
+  Native function-call boundary baselines now track the current boxed
+  diagnostic-result echo path for folded `strlen(...)` output, refresh the
+  `native_strlen` emit-IR CLI snapshot, keep unsupported direct-call argument
+  diagnostics on their exact call-site columns, and separate generated-C
+  rejection coverage from generated-C dynamic call/value-result forms that now
+  compile through the bounded runtime callable path. By-reference closure
+  capture execution still covers direct value consumers and a user-function
+  callback consumer, while direct `$alias =& $closure()` remains explicitly
+  routed through the generated-C reference-assignment boundary.
+  Native global-constant boundary `defined(...)` emit-IR CLI snapshots now
+  track the same boxed diagnostic-result echo path for folded builtin,
+  missing, and sort-mode constant-name results.
+  Native `isset()` boundary baselines now track the current boxed
+  diagnostic-result echo path for direct-variable isset output and record the
+  exact split where array/property/static-property operands reject at the
+  `isset()` boundary, while multi-argument and call-operand forms reject at
+  the generic native function-call boundary.
+- Stabilized the generated-C/native-link checkpoint after supervised parallel
+  inspection of the stale assertion cluster. The `native_link` source-shape
+  assertions now match the current callable-frame, root-symbol-table,
+  diagnostic-result, array-lvalue-owner, and comparison/type-predicate ABI
+  surfaces instead of older direct-call/helper shapes. Runtime callable
+  `strpos(...)` dispatch is routed through the string-search result boundary;
+  `substr_count(...)` remains documented as direct-call interpreter support
+  only, with runtime callable dispatch still outside the supported subset.
+  Native logical-boundary baselines now track the same boxed
+  diagnostic-result output path for folded logical truthiness and short-circuit
+  selected operands, while still asserting that unselected array operands are
+  not materialized. Native mutation-boundary baselines now track boxed output
+  for direct variable compound/assignment-expression values, current non-local
+  unset diagnostics, direct-variable native reference binding, and the still
+  unsupported write-through-after-reference-binding boundary. Native
+  object/class-boundary baselines now track non-local assignment preflight for
+  object/static property writes, variable-read preflight for undefined direct
+  array offsets, and the object-instantiation-first emit-IR CLI snapshot.
+  Native runtime-ABI baselines now track direct string-byte value
+  materialization through the boxed diagnostic-result stdout sink, the mixed
+  value-offset/offset-read boundary split, current generated-C callable
+  argument construction, and by-reference closure invocation without claiming
+  direct reference-assignment support. Native scalar-echo baselines now track
+  boxed diagnostic-result stdout for scalar and string echoes, including
+  false/null echo operands that remain PHP-silent at runtime. Native
+  string-arithmetic baselines now track boxed diagnostic-result stdout for
+  folded numeric-string arithmetic results while preserving shared runtime
+  value-result routing for division and modulo. Native type-introspection
+  emit-IR CLI snapshots now track the same boxed diagnostic-result stdout path
+  for scalar type predicates, static metadata predicates, direct
+  `function_exists()` / `is_callable()` folds, and array builtin callable-name
+  lookup outputs. Native unary-boundary baselines now track the current split
+  where direct runtime-backed unary numeric conversion lowers through the
+  native conversion ABI, selected conditional-value logical-not operands still
+  reject at the unary boundary, assignment-held unary expressions still hit
+  the current function-call lowering boundary, and unary emit-IR snapshots use
+  the boxed diagnostic-result stdout path. Null-coalescing baselines now track
+  the current PHP-shaped fatal execution result for external reads and
+  assignments to inaccessible private object properties, instead of expecting
+  a pre-execution Rust diagnostic. Object-model baselines now share the
+  current core class/interface inventory, PHP-shaped fatal execution parsing,
+  typed-property/reference TypeError text, trait/property composition startup
+  diagnostics, and the parser/execution split for newly supported multiple
+  property/constant declarations.
+
+Verified:
+
+- Worker 05 numeric/math focused Rust proof:
+  `CARGO_TARGET_DIR=/tmp/phpc-worker05-target CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test elementary_math_builtins angle_conversion_matches_php_formula_order_for_phpt_edges -- --test-threads=1`
+- Worker 05 numeric/math focused Rust guard:
+  `CARGO_TARGET_DIR=/tmp/phpc-worker05-target CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test elementary_math_builtins -- --test-threads=1`
+- Worker 05 numeric/math focused PHPT proof with
+  `PHPC_BIN=/tmp/phpc-worker05-target/debug/phpc` and lowercase
+  `run-tests.php -p /home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper`
+  passed `3 / 3` rows:
+  `ext/standard/tests/math/deg2rad_variation.phpt`,
+  `ext/standard/tests/math/deg2rad_basiclong_64bit.phpt`, and
+  `ext/standard/tests/math/rad2deg_basiclong_64bit.phpt`.
+- Worker 05 adjacent PHPT regression guard passed `1 / 1` row:
+  `ext/standard/tests/math/rad2deg_variation.phpt`.
+- Supervisor integrated numeric/math focused proof:
+  `CARGO_TARGET_DIR=/tmp/phpc-integrate-focused-target CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test elementary_math_builtins -- --test-threads=1`
+  passed with `5` tests, and lowercase focused PHPT proof with
+  `PHPC_BIN=/tmp/phpc-integrate-focused-target/debug/phpc` passed `4 / 4`
+  rows: `deg2rad_variation`, `deg2rad_basiclong_64bit`,
+  `rad2deg_basiclong_64bit`, and `rad2deg_variation`.
+- Supervisor integrated trim-family focused proof:
+  `CARGO_TARGET_DIR=/tmp/phpc-integrate-focused-target CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test string_trim_builtin -- --test-threads=1`
+  passed with `14` tests, and lowercase focused PHPT proof with
+  `PHPC_BIN=/tmp/phpc-integrate-focused-target/debug/phpc` passed `4 / 4`
+  rows: `trim.phpt`, `trim_error.phpt`, `ltrim_error.phpt`, and
+  `rtrim_error.phpt`.
+- Supervisor integrated `file()` open_basedir follow-on warning proof:
+  `CARGO_TARGET_DIR=/tmp/phpc-integrate-focused-target CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test standard_file_csv_split_builtins file_open_basedir_denial_emits_stream_followup_warning -- --test-threads=1`
+  passed, and lowercase focused PHPT proof with
+  `PHPC_BIN=/tmp/phpc-integrate-focused-target/debug/phpc` passed `2 / 2`
+  rows: `tests/security/open_basedir_file.phpt` and
+  `tests/security/open_basedir_dir.phpt`.
+- Supervisor integrated `empty()` expression proof:
+  `CARGO_TARGET_DIR=/tmp/phpc-integrate-focused-target CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test empty -- --test-threads=1`
+  passed with `5` tests, and lowercase focused PHPT proof with
+  `PHPC_BIN=/tmp/phpc-integrate-focused-target/debug/phpc` passed
+  `Zend/tests/empty_with_expr.phpt`.
+- Focused Rust open_basedir regression:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-openbasedir-supervisor CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test standard_file_metadata_builtins open_basedir_relative_parent_denials_cover_predicates_metadata_and_directories -- --test-threads=1`
+- `cargo fmt --check`
+- `git diff --check -- compiler/src/interpreter.rs compiler/tests/standard_file_metadata_builtins.rs compiler/tests/file_get_contents_builtin.rs compiler/tests/stream_resource_builtin.rs docs/PROGRESS.md docs/ARCHITECTURE.md docs/SUPPORT.md PROGRESS.md`
+- Generated-C source-only native-link checkpoint:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_link native_executable_c_source -- --test-threads=1`
+  passed with `417` tests.
+- Full native-link checkpoint:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_link -- --test-threads=1`
+  passed with `823` tests.
+- Post-format native-link source-shape checkpoint:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_link native_executable_c_source -- --test-threads=1`
+  passed with `417` tests.
+- Native-link checkpoint formatting/whitespace:
+  `cargo fmt --check` passed, and
+  `git diff --check -- compiler/src/codegen.rs compiler/tests/native_link.rs runtime/src/lib.rs docs/PROGRESS.md docs/ARCHITECTURE.md docs/SUPPORT.md PROGRESS.md docs/CHECKPOINT_SUPERVISOR.md`
+  passed.
+- Native logical-boundary refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_logical_boundary -- --test-threads=1`
+  passed with `19` tests.
+- Native mutation-boundary refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_mutation_boundary -- --test-threads=1`
+  passed with `12` tests.
+- Native object/class-boundary refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_object_class_boundary -- --test-threads=1`
+  passed with `57` tests.
+- Native runtime-ABI refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_runtime_abi -- --test-threads=1`
+  passed with `80` tests.
+- Native scalar-echo refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_scalar_echo_boundary -- --test-threads=1`
+  passed with `8` tests.
+- Native string-arithmetic refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_string_arithmetic -- --test-threads=1`
+  passed with `4` tests.
+- Native type-introspection refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_type_introspection_boundary -- --test-threads=1`
+  passed with `18` tests.
+- Native unary-boundary refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_unary_boundary -- --test-threads=1`
+  passed with `32` tests.
+- Null-coalescing baseline refresh:
+  `CARGO_TARGET_DIR=/tmp/phpc-integrate-focused-target CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test null_coalescing -- --test-threads=1`
+  passed with `21` tests.
+- Object-model baseline refresh:
+  `CARGO_TARGET_DIR=/tmp/phpc-object-model-target CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test object_model -- --test-threads=1`
+  passed with `362` tests.
+- Open_basedir relative-escape checkpoint isolation:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-openbasedir-supervisor CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test open_basedir_relative_escape`
+  and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-openbasedir-supervisor CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test open_basedir_relative_escape -- --test-threads=1`
+  both passed with `2` tests after guarding the cwd-mutating `chdir()` /
+  `open_basedir=.` cases against Rust's default parallel test runner.
+- Path builtin baseline refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test path_builtins -- --test-threads=1`
+  passed with `14` tests after refreshing the current `dirname(42)` weak
+  scalar-path coercion result.
+- Shutdown callback exit repair:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test shutdown_function_builtin -- --test-threads=1`
+  passed with `6` tests after allowing registered shutdown callbacks to run
+  after the bounded `exit()` path while preserving the pending exit status.
+- File metadata residual repair:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test standard_file_metadata_residual_builtins -- --test-threads=1`
+  passed with `2` tests after matching PHP's silent `false` result for
+  `is_executable($regular_file . "/")` while retaining executable-file and
+  executable-directory probes.
+- Standard file-metadata open_basedir isolation:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test standard_file_metadata_builtins`
+  passed with `7` tests after guarding the cwd-mutating `chdir()` /
+  `open_basedir=.` metadata tests against Rust's default parallel runner.
+- String predicate baseline refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test str_ends_with_builtin -- --test-threads=1`
+  passed with `6` tests,
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test str_starts_with_builtin -- --test-threads=1`
+  passed with `6` tests, and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test string_contains_builtin -- --test-threads=1`
+  passed with `5` tests after refreshing the PHP-shaped runtime arity fatal
+  assertions and the direct ASM lowering checks for the shared native
+  string-predicate ABI.
+- `CARGO_TARGET_DIR=/dev/shm/phpc-target-openbasedir-supervisor CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test file_get_contents_builtin file_get_contents_enforces_bounded_open_basedir_for_local_paths -- --test-threads=1`
+- `CARGO_TARGET_DIR=/dev/shm/phpc-target-openbasedir-supervisor CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test stream_resource_builtin local_fopen_enforces_bounded_open_basedir_for_local_paths_and_file_urls -- --test-threads=1`
+- `CARGO_TARGET_DIR=/dev/shm/phpc-target-openbasedir-supervisor CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test standard_file_metadata_builtins open_basedir -- --test-threads=1`
+- `CARGO_TARGET_DIR=/dev/shm/phpc-target-openbasedir-supervisor CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test standard_directory_glob_builtins glob_matches_local_patterns_relative_paths_flags_and_open_basedir_filtering -- --test-threads=1`
+- Focused PHPT proof with `PHPC_BIN=/dev/shm/phpc-target-openbasedir-supervisor/debug/phpc` passed the 10-row author packet
+  (`open_basedir_file_exists`, `file_get_contents`, `file_put_contents`,
+  `filesize`, `fopen`, `is_dir`, `is_file`, `is_readable`, `opendir`, and
+  `scandir`), seven guard/adjacent rows (`open_basedir_glob`, `stat`,
+  `filemtime`, `rename`, `unlink`, `is_link`, and `is_writable`), and a
+  nine-row extended guard set (`open_basedir_chdir`, `chmod`,
+  `copy_variation1`, `disk_free_space`, `filectime`, `filegroup`, `fileperms`,
+  `lstat`, and `rmdir`).
+- `bcs3` worker proof before supervisor integration: open_basedir author Rust
+  gates passed for `open_basedir_relative_escape`, file read/open tests,
+  metadata filters, and directory/glob guard coverage; focused PHPT proof
+  passed the 10-row author packet, five guard rows, and adjacent
+  `open_basedir_is_link`/`open_basedir_is_writable` rows.
+- Runtime baseline maintenance:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p php_runtime --lib -- --test-threads=1`
+  passed with `428` tests.
+- Whole-tree fixture maintenance:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test milestone1 -- --test-threads=1`
+  passed with `30` tests;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures`
+  passed with `2419` fixtures; and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures`
+  passed with `2419` fixtures, `1691` system-PHP comparisons, and `728`
+  `phpc-only` skips.
+- Resource-key baseline refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test array_combine array_combine_accepts_float_object_resource_key_value_coercions -- --test-threads=1`
+  passed.
+- Typed-reference unset baseline refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test array_unset unset_array_offsets_preserves_detached_typed_reference_cells -- --test-threads=1`
+  passed.
+- Assignment-expression emit-ir baseline refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test assignment_expression emit_ir -- --test-threads=1`
+  passed.
+- Built-in exception baseline refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test builtin_exception_class -- --test-threads=1`
+  passed.
+- Exception-boundary baseline refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test exception_boundaries -- --test-threads=1`
+  passed.
+- `call_user_func()`/`call_user_func_array()` baseline refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test call_user_func_builtin call_user_func_rejects_forms_outside_current_subset -- --test-threads=1`
+  passed.
+- Compound-assignment baseline refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test compound_assignment -- --test-threads=1`
+  passed.
+- Compound-assignment CLI snapshot refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test compound_assignment_cli -- --test-threads=1`
+  passed.
+- Countable-object baseline refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test countable_type_builtin -- --test-threads=1`
+  passed.
+- Default-parameter class-constant baseline refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test default_parameter_constants -- --test-threads=1`
+  passed.
+- Dynamic-feature baseline refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test dynamic_features -- --test-threads=1`
+  passed.
+- Unsupported dynamic feature fixture refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -q -p phpc -- test tests/fixtures/unsupported_dynamic_features`
+  passed with `13` fixtures.
+- Unsupported dynamic feature CLI snapshot refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test unsupported_dynamic_features_cli -- --test-threads=1`
+  passed.
+- Runtime error fixture refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -q -p phpc -- test tests/fixtures/runtime_errors`
+  passed with `163` fixtures.
+- Runtime error fixture compare-php marker check:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -q -p phpc -- test --compare-php tests/fixtures/runtime_errors`
+  passed with `163` `phpc-only` skips.
+- `file_exists()` focused baseline refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test file_exists_builtin -- --test-threads=1`
+  passed.
+- `filesize()` focused baseline refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test filesize_builtin -- --test-threads=1`
+  passed.
+- `fprintf()`/`vfprintf()` focused baseline refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test fprintf_builtin -- --test-threads=1`
+  passed.
+- `functions_and_scopes` focused baseline refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test functions_and_scopes -- --test-threads=1`
+  passed with `450` tests.
+- `namespace_resolution` focused baseline refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test namespace_resolution -- --test-threads=1`
+  passed with `35` tests.
+- Native arithmetic boundary refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_arithmetic_boundary -- --test-threads=1`
+  passed with `69` tests.
+- Native assembly CLI refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli -- --test-threads=1`
+  passed with `242` tests.
+- Native bitwise boundary refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_bitwise_boundary -- --test-threads=1`
+  passed with `54` tests.
+- Native cast boundary refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_cast_boundary -- --test-threads=1`
+  passed with `6` tests.
+- Native runtime ABI cast-boundary refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_runtime_abi generated_ir_blocks_scalar_cast_builtins_at_shared_value_cast_boundary -- --test-threads=1`
+  passed.
+- Native comparison boundary refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_comparison_boundary -- --test-threads=1`
+  passed with `88` tests.
+- Native generated-C dynamic string comparison refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_comparison_dynamic_string_operands -- --test-threads=1`
+  passed with `4` tests.
+- Native concat boundary refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_concat_boundary -- --test-threads=1`
+  passed with `16` tests.
+- Native conditional boundary refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_conditional_boundary -- --test-threads=1`
+  passed with `83` tests.
+- Native `empty()` boundary refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_empty_boundary -- --test-threads=1`
+  passed with `4` tests.
+- Native function-call boundary refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_function_call_boundary -- --test-threads=1`
+  passed with `72` tests.
+- Native global-constant boundary snapshot refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_global_constant_boundary -- --test-threads=1`
+  passed with `22` tests.
+- Native `isset()` boundary refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_isset_boundary -- --test-threads=1`
+  passed with `4` tests.
+- Runtime warning/fatal baseline preflight:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test modulo_operator --test modulo_operator_cli --test native_variable_read_boundary --test runtime_errors --test shift_operators -- --test-threads=1`
+  passed.
+- `implode()` focused baseline refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test implode_builtin -- --test-threads=1`
+  passed.
+- `ini_builtins` parallel-runner env isolation:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test ini_builtins`
+  passed.
+- Local metadata predicate arity refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test is_dir_builtin --test is_file_builtin --test is_readable_builtin --test is_writable_builtin --test is_link_builtin`
+  passed.
+- List-assignment native-boundary refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test list_assignment -- --test-threads=1`
+  passed.
+- Magic constant CLI and fixture refresh:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test magic_constants_cli -- --test-threads=1`
+  passed, and `/dev/shm/phpc-target-checkpoint-openbasedir/debug/phpc test`
+  plus `--compare-php` passed for `tests/fixtures/milestone78` and
+  `tests/fixtures/milestone79`.
+- Fatal sidecar preflight:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -q -p phpc -- test tests/fixtures/milestone159`
+  passed with `3` fixtures, and
+  `/dev/shm/phpc-target-checkpoint-openbasedir/debug/phpc test tests/fixtures/milestone160`
+  plus
+  `/dev/shm/phpc-target-checkpoint-openbasedir/debug/phpc test --compare-php tests/fixtures/milestone160`
+  passed with `2` fixtures, and
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-checkpoint-openbasedir CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -q -p phpc -- test tests/fixtures/milestone162`
+  passed with `1` fixture.
+
+Review notes:
+
+- Held the local tokenizer lexical-tail currentization after `bcs3` review found
+  object-id lifetime risk plus numeric, `TOKEN_PARSE`, and cast-deprecation
+  counterexamples. No tokenizer behavior is claimed by this entry.
 ## 2026-05-27
 
 Implemented:
@@ -20730,11 +26287,11 @@ Implemented:
 - Added Milestone 1138, a dedicated native cast rejection for documented
   interpreter cast behavior. `phpc compile --emit-ir` and `--emit-asm` now
   reject `(string)`, `(int)/(integer)`, `(bool)/(boolean)`,
-  `(float)/(double)`, and `(array)` casts with a diagnostic naming PHP scalar
-  conversion, array materialization, warning/recovery behavior,
+  `(float)/(double)`, `(array)`, and `(object)` casts with a diagnostic naming
+  PHP scalar conversion, array/object materialization, warning/recovery behavior,
   object/resource handling, references/copy-on-write, and exact native
   diagnostics instead of falling through to the broader unary boundary. This
-  does not implement native scalar conversion, array materialization,
+  does not implement native scalar conversion, array/object materialization,
   warning/recovery behavior, object/resource cast handling, references,
   copy-on-write, or exact PHP diagnostics. Verification so far: `cargo test
   -p phpc --test native_cast_boundary -- --test-threads=1`, `cargo test -p
@@ -30194,7 +35751,7 @@ Implemented:
   ordered integer/string key model. The supported slice reverses insertion
   order while preserving integer and string keys, is available through
   string-valued dynamic function calls, and has stable diagnostics for
-  non-array arguments and non-bool `preserve_keys` flag values.
+  non-array arguments and non-coercible `preserve_keys` flag values.
 - Added `array_merge($left, $right)` support for two arrays over the current
   ordered integer/string key model. The supported slice processes the left
   array then the right array in insertion order, appends integer-keyed entries
@@ -31271,7 +36828,7 @@ Tested:
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_values_non_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_values_non_array.php:2:6: unsupported call array_values(): argument must be array, got int`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_keys_non_array.php`
-  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_keys_non_array.php:2:6: unsupported call array_keys(): argument must be array, got int`.
+  exits 255 with an uncaught `TypeError` for `array_keys(): Argument #1 ($array) must be of type array, int given`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_keys_array_search_value.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_keys_array_search_value.php:3:6: unsupported call array_keys(): array search values and array values are not implemented`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_keys_strict_flag_non_bool.php`
@@ -31291,9 +36848,11 @@ Tested:
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_reverse_non_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_reverse_non_array.php:2:6: unsupported call array_reverse(): argument must be array, got int`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_reverse_preserve_keys_non_bool.php`
-  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_reverse_preserve_keys_non_bool.php:3:6: unsupported call array_reverse(): preserve_keys argument must be bool in the current subset, got int`.
+  exits 255 and reports an uncaught PHP-shaped `TypeError` for non-coercible
+  `array_reverse()` `preserve_keys` values.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_slice_non_array.php`
-  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_slice_non_array.php:2:6: unsupported call array_slice(): first argument must be array, got int`.
+  exits 255 and reports an uncaught PHP-shaped `TypeError` for non-array
+  `array_slice()` first operands.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_slice_offset_non_int.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_slice_offset_non_int.php:3:6: unsupported call array_slice(): offset argument must be int in the current subset, got string`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_slice_length_non_int.php`
@@ -31363,13 +36922,15 @@ Tested:
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_intersect_third_non_array.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_intersect_third_non_array.php:4:6: unsupported call array_intersect(): third argument must be array, got int`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_unique_non_array.php`
-  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_unique_non_array.php:2:6: unsupported call array_unique(): argument must be array, got int`.
+  exits 255 and reports an uncaught `TypeError` for
+  `array_unique(): Argument #1 ($array) must be of type array, int given`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_unique_array_value.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_unique_array_value.php:3:6: unsupported call array_unique(): values must be scalar in the current subset, got array`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_unique_sort_flag.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_unique_sort_flag.php:3:6: unsupported call array_unique(): sort flags are not supported in the current subset`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_flip_non_array.php`
-  exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_flip_non_array.php:2:6: unsupported call array_flip(): argument must be array, got int`.
+  exits 255 and reports an uncaught `TypeError` for
+  `array_flip(): Argument #1 ($array) must be of type array, int given`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_flip_unsupported_value.php`
   exits 1 and reports `runtime error at tests/fixtures/runtime_errors/array_flip_unsupported_value.php:3:6: unsupported call array_flip(): values must be int or string in the current subset, got bool`.
 - `cargo run -p phpc -- run tests/fixtures/runtime_errors/array_fill_keys_non_array.php`
@@ -42317,6 +47878,86 @@ Next:
   split-lane batch. A checkpoint was still not created because
   `tools/checkpoint.sh` stages the full dirty tree and this worker was not
   asked to checkpoint.
+
+Next:
+
+- Added a bounded interpreter-only PHP 8.3 assertion diagnostics slice for
+  `assert.exception=0`: request-local assert option state, `assert_options()`,
+  `ASSERT_*` constant deprecations, deprecated assert INI startup diagnostics,
+  `ini_get()`/`ini_set("assert.callback", ...)` behavior, function/closure/
+  static-method/object callback dispatch, warning output, `assert.bail`, false
+  returns, and the unknown-option catchable `ValueError`.
+- The public PHPT proof target was the focused
+  `ext/standard/tests/assert/{assert,assert03,assert04,assert_basic,assert_basic1,assert_basic2,assert_basic3,assert_basic4,assert_basic5,assert_closures,assert_error2,assert_options_error,assert_return_value,assert_variation,assert_warnings}.phpt`
+  cluster, which moved from 0/15 PASS pre-patch to 15/15 PASS post-patch under
+  the pinned `phpc-phpt-wrapper`.
+- Default `AssertionError` throwing, custom `Throwable` assertion
+  descriptions, dynamic first-class/assertion-compilation behavior such as
+  `zend.assertions=0` first-class callable rows, exact fatal traces, broad
+  assertion source reconstruction, and native lowering remain unsupported.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-diagnostics-types-170507 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo build -q -p phpc --bin phpc`;
+  the selected 15-row assert PHPT command via lowercase `run-tests.php -p`
+  with `PHPC_BIN=/tmp/phpc-target-diagnostics-types-170507/debug/phpc`;
+  plus scoped rustfmt/diff checks for this worker patch.
+
+Next:
+
+- Added a bounded closure reflection metadata slice for current closure values
+  in `phpc run`. `ReflectionFunction($closure)` now exposes
+  location-qualified closure names, closure static/scope/`$this` metadata,
+  used-variable arrays with by-reference capture entries, and closure-specific
+  `__toString()` source/bound-variable output. `ReflectionObject($closure)`,
+  `ReflectionMethod($closure, "__invoke")`, array-callable
+  `ReflectionParameter([$closure, "__invoke"], ...)`, and
+  `$closure->__invoke(...)` now use a request-local `Closure::__invoke`
+  signature derived from the closure body.
+- Focused PHPT proof moved the selected reflection/closure cluster from
+  pre-patch `0/9 PASS` to post-patch `9/9 PASS`:
+  `ext/reflection/tests/ReflectionFunction__toString_bound_variables.phpt`,
+  `ext/reflection/tests/ReflectionFunction_getClosureScopeClass.phpt`,
+  `ext/reflection/tests/ReflectionFunction_getClosureThis.phpt`,
+  `ext/reflection/tests/ReflectionFunction_getClosureUsedVariables.phpt`,
+  `ext/reflection/tests/closures_001.phpt`,
+  `ext/reflection/tests/closures_003.phpt`,
+  `ext/reflection/tests/closures_003_v1.phpt`,
+  `ext/reflection/tests/closures_004.phpt`, and
+  `ext/reflection/tests/closures_005.phpt`.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-output-function-metadata-124101 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo build -q -p phpc --bin phpc`;
+  `timeout 120 env CARGO_TARGET_DIR=/tmp/phpc-target-output-function-metadata-124101 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -q -p phpc --test object_model reflection_function_reflects_bounded_closure_metadata -- --exact`;
+  and the selected PHPT set above via lowercase `run-tests.php -p` with
+  `PHPC_BIN=/tmp/phpc-target-output-function-metadata-124101/debug/phpc`.
+  An earlier non-exact `cargo test -q -p phpc
+  reflection_function_reflects_bounded_closure_metadata` attempt was
+  terminated after it remained quiet for repeated polls.
+- `Closure::bind`/`bindTo`, `Closure::fromCallable()`, private-scope method
+  closures, exact `Closure` object identity/parity beyond current reflection
+  and invocation, typed parameter/return enforcement during reflected closure
+  invocation, named `invokeArgs()` semantics, reference returns, broader
+  reference/copy-on-write behavior, and native lowering remain unsupported.
+
+Next:
+
+- Added a focused mbstring output-buffer lane for the public
+  `ext/mbstring/tests/mb_output_handler_pattern-01.phpt` through
+  `mb_output_handler_pattern-10.phpt` rows. Output buffers now retain raw bytes
+  internally, `mb_output_handler()` is callable from `ob_start()`, and
+  `mb_http_output()` manages the bounded request-local `output_encoding`
+  setting for `pass`, `UTF-8`, and `EUC-JP`.
+- With `output_encoding=EUC-JP`, `mb_output_handler()` converts UTF-8 ASCII
+  plus the Japanese `テスト` scalars to EUC-JP when the latest `Content-Type`
+  matches `mbstring.http_output_conv_mimetypes`; unmatched content types and
+  `pass`/`UTF-8` output encoding preserve the input bytes.
+- Full mbstring conversion tables, output encodings beyond the bounded
+  `pass`/`UTF-8`/`EUC-JP` lane, invalid-sequence policy, broader mimetype
+  grammar, and native lowering remain unsupported.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/home/claude/supervised-php-compiler/state/tmp/phpc-target-output-meta-94857 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 cargo test -q -p phpc --test output_buffer_builtin -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/home/claude/supervised-php-compiler/state/tmp/phpc-target-output-meta-94857 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo build -q -p phpc --bin phpc`;
+  and the pinned wrapper run for
+  `ext/mbstring/tests/mb_output_handler_pattern-01.phpt` through
+  `mb_output_handler_pattern-10.phpt` passed 10/10.
 
 Next:
 

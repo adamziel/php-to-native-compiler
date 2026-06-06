@@ -1,2 +1,2 @@
 <?php
-['first' => $first] = [1];
+list(&$first) = [1];

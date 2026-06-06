@@ -1,7 +1,7 @@
 use php_compiler::error::Phase;
-use php_compiler::{emit_asm_source, emit_ir_source, run_source};
+use php_compiler::{emit_asm_source, emit_ir_source, run_source, run_source_with_source_file};
 
-const LLVM_CAST_REJECTION: &str = "LLVM cast lowering rejects (string), (int)/(integer), (bool)/(boolean), (float)/(double), and (array) casts plus strval(), boolval(), floatval(), and doubleval() until native PHP scalar conversion, array materialization, warning/recovery behavior, object/resource handling, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded cast behavior";
+const LLVM_CAST_REJECTION: &str = "LLVM cast lowering rejects (string), (int)/(integer), (bool)/(boolean), (float)/(double), (array), (object), and (void) casts plus strval(), boolval(), floatval(), and doubleval() until native PHP scalar conversion, array/object materialization, warning/recovery behavior, object/resource handling, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded cast behavior";
 
 #[test]
 fn string_casts_execute_for_current_scalar_and_null_subset() {
@@ -10,12 +10,17 @@ fn string_casts_execute_for_current_scalar_and_null_subset() {
 echo "[", (string) null, "]\n";
 echo "[", (string) false, "]\n";
 echo (STRING) true, "|", (string) 42, "|", (string) 3.5, "|", (string) "ok", "\n";
+echo (string) fdiv(0, 0), "\n";
 echo ((string) true) === "1" ? "string" : "other";
 "#,
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "[]\n[]\n1|42|3.5|ok\nstring");
+    assert!(execution
+        .stdout
+        .contains("Warning: unexpected NAN value was coerced to string"));
+    assert!(execution.stdout.ends_with("\nNAN\nstring"));
+    assert!(execution.stdout.starts_with("[]\n[]\n1|42|3.5|ok\n"));
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -98,62 +103,194 @@ echo ((double) "2.25") === 2.25 ? "double" : "other";
 }
 
 #[test]
-fn string_casts_reject_array_and_object_warning_paths_for_now() {
-    let error = run_source("<?php\necho (string) [1];\n").unwrap_err();
+fn string_casts_execute_array_object_and_resource_warning_paths() {
+    let execution = run_source(
+        r#"<?php
+class StringableBox { public function __toString() { return "box"; } }
+echo (string) [1], "|", strval(new StringableBox()), "|", strval(STDIN), "\n";
+try {
+    strval(new stdClass());
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
 
-    assert_eq!(error.phase, Phase::Runtime);
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
-    assert_eq!(
-        error.message,
-        "unsupported call (string): array-to-string cast warning behavior is not implemented"
-    );
+    assert!(execution
+        .stdout
+        .contains("Warning: Array to string conversion"));
+    assert!(execution.stdout.contains("Array|box|Resource id #"));
+    assert!(execution
+        .stdout
+        .contains("Object of class stdClass could not be converted to string"));
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
-fn int_casts_reject_unimplemented_warning_paths_for_now() {
-    let error = run_source("<?php\necho (int) [1];\n").unwrap_err();
+fn int_casts_execute_array_object_and_resource_warning_paths() {
+    let execution = run_source(
+        r#"<?php
+class CountableBox {}
+echo (int) [], "|", (int) [1], "|", (int) STDERR, "|", (int) new CountableBox(), "\n";
+"#,
+    )
+    .unwrap();
 
-    assert_eq!(error.phase, Phase::Runtime);
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
-    assert_eq!(
-        error.message,
-        "unsupported call (int): array-to-int cast behavior is not implemented"
-    );
+    assert!(execution
+        .stdout
+        .contains("Warning: Object of class CountableBox could not be converted to int"));
+    assert!(execution.stdout.contains("0|1|3|"));
+    assert!(execution.stdout.ends_with("1\n"));
+    assert_eq!(execution.exit_code, 0);
 
-    let error = run_source("<?php\necho (int) \"9223372036854775808x\";\n").unwrap_err();
+    let execution = run_source("<?php\necho (int) \"9223372036854775808x\";\n").unwrap();
 
-    assert_eq!(error.phase, Phase::Runtime);
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
-    assert_eq!(
-        error.message,
-        "unsupported call (int): non-finite or out-of-range float-to-int cast behavior is not implemented"
-    );
+    assert_eq!(execution.stdout, "9223372036854775807");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
-fn float_casts_reject_unimplemented_warning_paths_for_now() {
-    let error = run_source("<?php\necho (float) [1];\n").unwrap_err();
+fn int_casts_warn_and_wrap_nonrepresentable_float_values() {
+    let execution = run_source(
+        r#"<?php
+$values = [10e120, 10e300, fdiv(0, 0), -4000000000000000000000.];
+foreach ($values as $value) {
+    var_dump((int) $value);
+}
+var_dump((int) (string) 10e120);
+"#,
+    )
+    .unwrap();
 
-    assert_eq!(error.phase, Phase::Runtime);
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
+    assert!(execution
+        .stdout
+        .contains("Warning: The float 1.0E+121 is not representable as an int, cast occurred"));
+    assert!(execution
+        .stdout
+        .contains("Warning: The float 1.0E+301 is not representable as an int, cast occurred"));
+    assert!(execution
+        .stdout
+        .contains("Warning: The float NAN is not representable as an int, cast occurred"));
+    assert!(execution
+        .stdout
+        .contains("Warning: The float -4.0E+21 is not representable as an int, cast occurred"));
+    assert!(execution.stdout.contains("int(2943463994972700672)"));
+    assert!(execution.stdout.ends_with("int(9223372036854775807)\n"));
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn array_and_string_offsets_warn_and_wrap_nonrepresentable_float_keys() {
+    let execution = run_source(
+        r#"<?php
+set_error_handler(function ($errno, $errstr) {
+    echo $errstr, "\n";
+});
+
+$array = [0 => "zero"];
+unset($array[1.0E+42]);
+var_dump(isset($array[1.0E+42]));
+var_dump(array_key_exists(1.0E+42, $array));
+
+$array = [10e120 => "large"];
+var_dump($array[10e120]);
+
+$string = "abc";
+var_dump($string[10e120]);
+$string[10e120] = "Z";
+var_dump($string);
+"#,
+    )
+    .unwrap();
+
+    assert!(execution
+        .stdout
+        .contains("The float 1.0E+42 is not representable as an int, cast occurred\nbool(false)"));
+    assert!(execution
+        .stdout
+        .contains("The float 1.0E+42 is not representable as an int, cast occurred\nbool(false)"));
+    assert!(execution.stdout.contains(
+        "The float 1.0E+121 is not representable as an int, cast occurred\n\
+The float 1.0E+121 is not representable as an int, cast occurred\n\
+string(5) \"large\""
+    ));
+    assert!(execution
+        .stdout
+        .contains("String offset cast occurred\nstring(1) \"a\""));
+    assert!(execution
+        .stdout
+        .contains("String offset cast occurred\nstring(3) \"Zbc\""));
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn float_casts_execute_array_resource_and_leading_numeric_paths() {
+    let execution = run_source(
+        r#"<?php
+class FloatBox {}
+echo (float) [], "|", (float) [1], "|", (float) STDERR, "|", (float) "42abc", "|";
+echo "10.0 dollar" + 1, "|", "10.0 dollar" + 1.0, "|", (float) new FloatBox(), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert!(execution
+        .stdout
+        .contains("Warning: A non-numeric value encountered"));
+    assert!(execution
+        .stdout
+        .contains("Warning: Object of class FloatBox could not be converted to float"));
+    assert!(execution.stdout.contains("0|1|3|42|"));
+    assert!(execution.stdout.contains("11|"));
+    assert!(execution.stdout.ends_with("1\n"));
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn scalar_conversion_builtins_execute_current_cast_subset() {
+    let execution = run_source(
+        "<?php\n\
+echo strval(\"A\"), \"|\", (boolval(\"0\") ? \"true\" : \"false\"), \"|\";\n\
+echo intval(\"0b101\", 0), \"|\", intval(\"0b101\", 2), \"|\", intval(\"0b101\"), \"|\";\n\
+echo floatval(\"10.2 dollars\"), \"|\", doubleval(true), \"\\n\";\n\
+echo bin2hex(strval(\"\\x80\\xff\")), \"\\n\";\n\
+echo function_exists(\"intval\") ? \"exists\" : \"missing\", \"|\";\n\
+echo is_callable(\"floatval\") ? \"callable\" : \"not-callable\", \"\\n\";\n",
+    )
+    .unwrap();
+
     assert_eq!(
-        error.message,
-        "unsupported call (float): array-to-float cast behavior is not implemented"
+        execution.stdout,
+        "A|false|5|5|0|10.2|1\n80ff\nexists|callable\n"
     );
+    assert_eq!(execution.exit_code, 0);
+}
 
-    let error = run_source("<?php\necho (float) \"42abc\";\n").unwrap_err();
+#[test]
+fn intval_base_argument_coercions_match_current_php_subset() {
+    let execution = run_source(
+        r#"<?php
+echo intval("101", "2"), "|";
+echo intval("101", 2.0), "|";
+echo intval("101", true), "|";
+echo intval("101", 37), "|";
+echo intval(101, 37), "\n";
+try {
+    intval("101", "2abc");
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
 
-    assert_eq!(error.phase, Phase::Runtime);
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
     assert_eq!(
-        error.message,
-        "unsupported call (float): leading-numeric string cast behavior is not implemented"
+        execution.stdout,
+        "5|5|0|0|101\nintval(): Argument #2 ($base) must be of type int, string given\n"
     );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -202,16 +339,258 @@ echo strlen($keys[2]), "|", $array[$keys[2]], "\n";
 }
 
 #[test]
+fn settype_direct_variables_execute_current_cast_subset() {
+    let execution = run_source(
+        r#"<?php
+$int = "8754456";
+var_dump(settype($int, "int"));
+var_dump($int);
+$float = "10.25";
+settype($float, "double");
+var_dump($float);
+$bool = "0";
+settype($bool, "boolean");
+var_dump($bool);
+$array = "x";
+settype($array, "array");
+echo count($array), "|", $array[0], "\n";
+$object = ["a" => 1];
+settype($object, "object");
+echo get_class($object), "|", $object->a, "\n";
+$null = true;
+settype($null, "null");
+var_dump($null);
+$kept = "kept";
+try {
+    settype($kept, "resource");
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+var_dump($kept);
+echo function_exists("settype") ? "exists" : "missing";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "bool(true)\nint(8754456)\nfloat(10.25)\nbool(false)\n1|x\nstdClass|1\nNULL\nCannot convert to resource type\nstring(4) \"kept\"\nexists"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn settype_handles_undefined_variable_validation_and_string_failure_side_effect() {
+    let execution = run_source(
+        r#"<?php
+try {
+    settype($missing, "unknown");
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+var_dump(isset($missing));
+settype($stringDefault, "string");
+var_dump($stringDefault);
+settype($intDefault, "integer");
+var_dump($intDefault);
+$object = new stdClass();
+try {
+    settype($object, "string");
+} catch (Error $e) {
+    echo "Error: ", $e->getMessage(), "\n";
+}
+var_dump($object);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "settype(): Argument #2 ($type) must be a valid type\nbool(false)\nstring(0) \"\"\nint(0)\nError: Object of class stdClass could not be converted to string\nstring(0) \"\"\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn settype_nan_scalar_targets_warn_and_ignore_handler_mutations() {
+    let execution = run_source(
+        r#"<?php
+$mode = "";
+set_error_handler(function ($errno, $errstr) {
+    global $nan, $mode;
+    if ($mode === "null") {
+        $nan = null;
+    } elseif ($mode === "unset") {
+        unset($nan);
+    } else {
+        $nan = "changed";
+    }
+    echo $errstr, "\n";
+});
+
+$mode = "null";
+$nan = fdiv(0, 0);
+settype($nan, "bool");
+var_dump($nan);
+
+$mode = "unset";
+$nan = fdiv(0, 0);
+settype($nan, "string");
+var_dump($nan);
+
+$mode = "changed";
+$nan = fdiv(0, 0);
+settype($nan, "null");
+var_dump($nan);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "unexpected NAN value was coerced to bool\nbool(true)\n\
+unexpected NAN value was coerced to string\nstring(3) \"NAN\"\n\
+unexpected NAN value was coerced to null\nNULL\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn settype_nan_array_and_object_targets_wrap_handler_value_or_original() {
+    let execution = run_source(
+        r#"<?php
+$mode = "";
+set_error_handler(function ($errno, $errstr) {
+    global $nan, $mode;
+    if ($mode === "null") {
+        $nan = null;
+    } elseif ($mode === "unset") {
+        unset($nan);
+    } else {
+        $nan = "changed";
+    }
+    echo $errstr, "\n";
+});
+
+$mode = "null";
+$nan = fdiv(0, 0);
+settype($nan, "array");
+echo gettype($nan[0]), "\n";
+
+$mode = "unset";
+$nan = fdiv(0, 0);
+settype($nan, "array");
+echo is_nan($nan[0]) ? "array-nan\n" : "array-other\n";
+
+$mode = "changed";
+$nan = fdiv(0, 0);
+settype($nan, "object");
+echo get_class($nan), ":", $nan->scalar, "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "unexpected NAN value was coerced to array\nNULL\n\
+unexpected NAN value was coerced to array\narray-nan\n\
+unexpected NAN value was coerced to object\nstdClass:changed\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn remaining_casts_have_stable_parse_error() {
-    let error = run_source("<?php\necho (object) \"1\";\n").unwrap_err();
+    let error = run_source("<?php\necho (unset) \"1\";\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Parse);
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "unsupported cast expression: only (string), (int), (bool), (float), and (array) casts are implemented"
+        "unsupported cast expression: only (string), (int), (bool), (float), (array), and (object) casts are implemented"
     );
+}
+
+#[test]
+fn void_cast_discards_values_and_suppresses_no_discard_warning() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+class WithDestructor {
+    public function __destruct() {
+        echo "WithDestructor::__destruct\n";
+    }
+}
+
+function make_with_destructor() {
+    return new WithDestructor();
+}
+
+$count = 0;
+
+#[NoDiscard]
+function incCount() {
+    global $count;
+    $count++;
+    return $count;
+}
+
+echo "Before\n";
+(void)make_with_destructor();
+echo "After\n";
+
+for ($count = 0, (void)incCount(), incCount(); (void)incCount(), incCount() < 6; incCount(), $count++, incCount(), (void)incCount()) {
+    echo $count . "\n";
+}
+"#,
+        "/tmp/void_cast.php",
+    )
+    .unwrap();
+
+    assert!(execution
+        .stdout
+        .contains("Before\nWithDestructor::__destruct\nAfter\n"));
+    assert_eq!(
+        execution
+            .stdout
+            .matches("The return value of function incCount() should either be used or intentionally ignored by casting it as (void)")
+            .count(),
+        3
+    );
+    assert!(execution
+        .stdout
+        .contains("After\n\nWarning: The return value"));
+    assert!(execution.stdout.contains("Warning: The return value of function incCount() should either be used or intentionally ignored by casting it as (void) in /tmp/void_cast.php on line "));
+    assert!(execution
+        .stdout
+        .contains("\n4\n\nWarning: The return value of function incCount() should either be used"));
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn void_cast_has_statement_only_parse_boundary() {
+    let error = run_source("<?php\n$tmp = (void)$dummy;\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Parse);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.message, "syntax error, unexpected token \"(void)\"");
+
+    let error = run_source("<?php\nfor (;(void)true;);\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Parse);
+    assert_eq!(error.line, 2);
+    assert_eq!(
+        error.message,
+        "syntax error, unexpected token \";\", expecting \",\""
+    );
+}
+
+#[test]
+fn emit_ir_rejects_void_cast_statement_until_native_cast_lowering_exists() {
+    let error = emit_ir_source("<?php\n(void) 42;\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, LLVM_CAST_REJECTION);
 }
 
 #[test]

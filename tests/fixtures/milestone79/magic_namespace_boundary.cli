@@ -1,6 +1,5 @@
-exit: 1
+exit: 0
 stdout:
 --- stdout end ---
 stderr:
-parse error at tests/fixtures/milestone79/magic_namespace_boundary.php:2:6: unsupported magic constant __NAMESPACE__: namespace context evaluation requires namespace-aware name resolution, which is not implemented
 --- stderr end ---
