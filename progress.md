@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-06T12:58:36+00:00
+Last generated: 2026-06-06T13:13:37+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -76,6 +76,8 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1541 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
+| 1540 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
 | 1539 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
 | 1538 | Investigate scheduler alert | Auditor | integration-support | development | assigned |  | 0.0 |
 | 1537 | Reorganize developer-36 idle alert into measurable work | Coordinator | control-plane | planned | queued |  | 0.0 |
@@ -84,28 +86,26 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | 1534 | Provide next sanctioned Developer card after superseded lane 12 for developer-40 | Developer | implementation | planned | queued |  | 0.0 |
 | 1533 | Resolve integration failure for card #11: developer-43 focused standard-library compatibility slice | Conflict Resolver | integration-support | planned | queued |  | 0.0 |
 | 1532 | Resolve integration failure for card #10: developer-40 focused PHP compatibility slice | Conflict Resolver | integration-support | planned | queued |  | 0.0 |
-| 1531 | Resolve integration failure for card #9: Support short echo tags in phpc run | Conflict Resolver | integration-support | planned | queued |  | 0.0 |
-| 1530 | Resolve card 1527 lane 1486 runtime/docs merge conflicts | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
 
 ## Tests
 failed — tools/run-tests.sh (error=0, failed=1, passed=0, skipped=0)
 
 ## Resource samples
-Latest: CPU 2.77%, RAM 18.22%, disk free 21.75 GB.
+Latest: CPU 7.53%, RAM 17.26%, disk free 21.7 GB.
 
 ## Recent events
-- 2026-06-06T12:58:08+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-06T12:58:14+00:00 **worklane_deduplicated**: Updated existing failing-test card#1486 from run 10304
-- 2026-06-06T12:58:14+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-06T12:58:19+00:00 **worklane_deduplicated**: Updated existing failing-test card#1486 from run 10305
-- 2026-06-06T12:58:19+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-06T12:58:24+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-06T12:58:24+00:00 **worklane_deduplicated**: Updated existing failing-test card#1486 from run 10306
-- 2026-06-06T12:58:24+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-06T12:58:30+00:00 **worklane_deduplicated**: Updated existing failing-test card#1486 from run 10307
-- 2026-06-06T12:58:30+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-06T12:58:35+00:00 **worklane_deduplicated**: Updated existing failing-test card#1486 from run 10308
-- 2026-06-06T12:58:35+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-06T13:13:12+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-06T13:13:17+00:00 **worklane_deduplicated**: Updated existing failing-test card#1486 from run 10470
+- 2026-06-06T13:13:17+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-06T13:13:18+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-06T13:13:23+00:00 **worklane_deduplicated**: Updated existing failing-test card#1486 from run 10471
+- 2026-06-06T13:13:23+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-06T13:13:28+00:00 **worklane_deduplicated**: Updated existing failing-test card#1486 from run 10472
+- 2026-06-06T13:13:28+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-06T13:13:34+00:00 **worklane_deduplicated**: Updated existing failing-test card#1486 from run 10473
+- 2026-06-06T13:13:34+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-06T13:13:37+00:00 **progress_stalled**: PROGRESS STALLED: metric has not increased for 30 minutes.
+- 2026-06-06T13:13:37+00:00 **coordinator_prompt_deferred**: PROGRESS STALLED: metric has not increased for 30 minutes. Reorganize work so progress resumes.
 
 ## Next steps
 Move next worklane forward: Investigate scheduler alert
