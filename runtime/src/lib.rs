@@ -57085,9 +57085,9 @@ mod tests {
             )
         };
         assert!(private_read.is_null());
-        assert!(
-            native_diagnostic_message_for_test(diagnostic).contains("non-public property"),
-            "diagnostic should preserve inherited non-public property visibility"
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "undefined property ChildBox::$secret"
         );
         unsafe { phpc_native_diagnostic_free(diagnostic) };
 
@@ -58254,7 +58254,7 @@ mod tests {
     }
 
     #[test]
-    fn native_user_class_property_exists_filters_private_ancestor_properties_only() {
+    fn native_user_class_metadata_exists_filters_private_ancestor_members_for_class_strings() {
         native_user_classes_reset_for_test();
         assert!(native_declare_user_class_bytes_result(b"VisibilityBase"));
         assert!(native_declare_user_class_method_bytes_result(
@@ -58356,7 +58356,7 @@ mod tests {
         });
         assert!(diagnostic.is_null());
 
-        assert!(unsafe {
+        assert!(!unsafe {
             phpc_native_value_class_metadata_exists_with_diagnostic(
                 child,
                 base_private_method,
@@ -69207,9 +69207,13 @@ mod tests {
             unsafe { phpc_native_value_from_string_with_diagnostic(string, &mut diagnostic) };
         assert!(!invalid_value.is_null());
         assert!(diagnostic.is_null());
+        assert!(matches!(
+            unsafe { invalid_value.as_ref() },
+            Some(Value::BinaryString(value)) if value == &invalid_bytes
+        ));
         assert_eq!(
-            native_value_echo_bytes_for_test(invalid_value),
-            invalid_bytes
+            native_value_php_string_bytes_for_test(invalid_value),
+            invalid_bytes.to_vec()
         );
         unsafe { phpc_native_value_free(invalid_value) };
         unsafe { phpc_native_string_free(string) };
@@ -69278,7 +69282,14 @@ mod tests {
         };
         assert!(!invalid_value.is_null());
         assert!(diagnostic.is_null());
-        assert_eq!(native_value_echo_bytes_for_test(invalid_value), invalid);
+        assert!(matches!(
+            unsafe { invalid_value.as_ref() },
+            Some(Value::BinaryString(value)) if value == &invalid
+        ));
+        assert_eq!(
+            native_value_php_string_bytes_for_test(invalid_value),
+            invalid.to_vec()
+        );
         unsafe { phpc_native_value_free(invalid_value) };
     }
 
@@ -69336,6 +69347,30 @@ mod tests {
             unsafe { phpc_native_value_free(right) };
             unsafe { phpc_native_value_free(left) };
         }
+
+        let invalid_bytes = [0xff, b'p'];
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let binary_value = unsafe {
+            phpc_native_value_from_string_bytes_with_diagnostic(
+                invalid_bytes.as_ptr(),
+                invalid_bytes.len(),
+                &mut diagnostic,
+            )
+        };
+        assert!(!binary_value.is_null(), "invalid UTF-8 PHP bytes");
+        assert!(diagnostic.is_null(), "invalid UTF-8 PHP bytes");
+        assert_eq!(
+            unsafe {
+                phpc_native_value_materialization_failure_exit_code(binary_value, diagnostic)
+            },
+            0,
+            "invalid UTF-8 PHP bytes"
+        );
+        assert!(matches!(
+            unsafe { binary_value.as_ref() },
+            Some(Value::BinaryString(value)) if value == &invalid_bytes
+        ));
+        unsafe { phpc_native_value_free(binary_value) };
 
         for (label, bytes, len) in [("null pointer with nonzero length", ptr::null(), 4)] {
             let mut diagnostic = NativeDiagnosticHandle::null();
@@ -70047,19 +70082,23 @@ mod tests {
             );
         }
 
-        let invalid_bytes = [0xff];
-        let invalid_handle =
-            unsafe { phpc_native_string_from_bytes(invalid_bytes.as_ptr(), invalid_bytes.len()) };
+        let binary_bytes = [0xff];
+        let binary_operand = owned_string_operand(&binary_bytes);
+        assert!(!phpc_native_comparison_operand_value(binary_operand).is_null());
+        assert!(phpc_native_comparison_operand_diagnostic(binary_operand).is_null());
         assert_native_comparison_ok(
-            "binary string-handle materialization",
+            "string-handle binary bytes materialize as PHP strings",
             unsafe {
                 phpc_native_comparison_operand_compare_and_free(
-                    phpc_native_comparison_operand_from_string_and_free(invalid_handle),
+                    binary_operand,
                     NativeComparisonOp::StrictEq.abi_opcode(),
-                    phpc_native_comparison_operand_from_scalar(phpc_native_int(1)),
+                    NativeComparisonOperand::from_parts(
+                        NativeValueHandle::from_value(Value::BinaryString(binary_bytes.to_vec())),
+                        NativeDiagnosticHandle::null(),
+                    ),
                 )
             },
-            false,
+            true,
         );
     }
 
@@ -83071,6 +83110,7 @@ mod tests {
                 "Uri\\WhatWg\\Url",
                 "BcMath\\Number",
                 "GMP",
+                "GdImage",
                 "DateError",
                 "DateObjectError",
                 "DateRangeError",
@@ -83375,19 +83415,26 @@ mod tests {
             vec!["__construct", "__toString"]
         );
 
+        let gd_image = classes.lookup_class("gdimage").unwrap();
+        assert_eq!(gd_image.name(), "GdImage");
+        assert_eq!(gd_image.id().index(), 23);
+        assert!(gd_image.parent_id().is_none());
+        assert!(gd_image.properties().is_empty());
+        assert!(gd_image.method("__construct").is_some());
+
         let date_error = classes.lookup_class("dateerror").unwrap();
         assert_eq!(date_error.name(), "DateError");
-        assert_eq!(date_error.id().index(), 23);
+        assert_eq!(date_error.id().index(), 24);
         assert_eq!(date_error.parent_id(), Some(error.id()));
 
         let date_object_error = classes.lookup_class("dateobjecterror").unwrap();
         assert_eq!(date_object_error.name(), "DateObjectError");
-        assert_eq!(date_object_error.id().index(), 24);
+        assert_eq!(date_object_error.id().index(), 25);
         assert_eq!(date_object_error.parent_id(), Some(date_error.id()));
 
         let date_range_error = classes.lookup_class("daterangeerror").unwrap();
         assert_eq!(date_range_error.name(), "DateRangeError");
-        assert_eq!(date_range_error.id().index(), 25);
+        assert_eq!(date_range_error.id().index(), 26);
         assert_eq!(date_range_error.parent_id(), Some(date_error.id()));
 
         let date_exception = classes.lookup_class("dateexception").unwrap();
@@ -83396,7 +83443,7 @@ mod tests {
 
         let datetimezone = classes.lookup_class("datetimezone").unwrap();
         assert_eq!(datetimezone.name(), "DateTimeZone");
-        assert_eq!(datetimezone.id().index(), 29);
+        assert_eq!(datetimezone.id().index(), 30);
         assert!(datetimezone.parent_id().is_none());
         assert_eq!(
             datetimezone
@@ -83521,14 +83568,14 @@ mod tests {
 
         let reflection_exception = classes.lookup_class("reflectionexception").unwrap();
         assert_eq!(reflection_exception.name(), "ReflectionException");
-        assert_eq!(reflection_exception.id().index(), 30);
+        assert_eq!(reflection_exception.id().index(), 31);
         assert_eq!(reflection_exception.parent_id(), Some(exception.id()));
         assert!(reflection_exception.properties().is_empty());
         assert!(reflection_exception.methods().is_empty());
 
         let attribute = classes.lookup_class("attribute").unwrap();
         assert_eq!(attribute.name(), "Attribute");
-        assert_eq!(attribute.id().index(), 31);
+        assert_eq!(attribute.id().index(), 32);
         assert!(attribute.parent_id().is_none());
         assert_eq!(
             attribute
@@ -83543,7 +83590,7 @@ mod tests {
 
         let reflection_class = classes.lookup_class("reflectionclass").unwrap();
         assert_eq!(reflection_class.name(), "ReflectionClass");
-        assert_eq!(reflection_class.id().index(), 32);
+        assert_eq!(reflection_class.id().index(), 33);
         assert!(reflection_class.parent_id().is_none());
         assert_eq!(
             reflection_class
@@ -83563,7 +83610,7 @@ mod tests {
 
         let reflection_object = classes.lookup_class("reflectionobject").unwrap();
         assert_eq!(reflection_object.name(), "ReflectionObject");
-        assert_eq!(reflection_object.id().index(), 33);
+        assert_eq!(reflection_object.id().index(), 34);
         assert_eq!(reflection_object.parent_id(), Some(reflection_class.id()));
         assert_eq!(
             reflection_object
@@ -83576,7 +83623,7 @@ mod tests {
 
         let reflection_function = classes.lookup_class("reflectionfunction").unwrap();
         assert_eq!(reflection_function.name(), "ReflectionFunction");
-        assert_eq!(reflection_function.id().index(), 34);
+        assert_eq!(reflection_function.id().index(), 35);
         assert!(reflection_function.parent_id().is_none());
         assert_eq!(
             reflection_function
@@ -83592,7 +83639,7 @@ mod tests {
 
         let reflection_method = classes.lookup_class("reflectionmethod").unwrap();
         assert_eq!(reflection_method.name(), "ReflectionMethod");
-        assert_eq!(reflection_method.id().index(), 35);
+        assert_eq!(reflection_method.id().index(), 36);
         assert!(reflection_method.parent_id().is_none());
         assert_eq!(
             reflection_method
@@ -83608,7 +83655,7 @@ mod tests {
 
         let reflection_parameter = classes.lookup_class("reflectionparameter").unwrap();
         assert_eq!(reflection_parameter.name(), "ReflectionParameter");
-        assert_eq!(reflection_parameter.id().index(), 36);
+        assert_eq!(reflection_parameter.id().index(), 37);
         assert!(reflection_parameter.parent_id().is_none());
         assert_eq!(
             reflection_parameter
@@ -83625,14 +83672,14 @@ mod tests {
 
         let reflection_type = classes.lookup_class("reflectiontype").unwrap();
         assert_eq!(reflection_type.name(), "ReflectionType");
-        assert_eq!(reflection_type.id().index(), 37);
+        assert_eq!(reflection_type.id().index(), 38);
         assert!(reflection_type.parent_id().is_none());
         assert!(reflection_type.properties().is_empty());
         assert!(reflection_type.method("allowsNull").is_some());
 
         let reflection_named_type = classes.lookup_class("reflectionnamedtype").unwrap();
         assert_eq!(reflection_named_type.name(), "ReflectionNamedType");
-        assert_eq!(reflection_named_type.id().index(), 38);
+        assert_eq!(reflection_named_type.id().index(), 39);
         assert_eq!(
             reflection_named_type.parent_id(),
             Some(reflection_type.id())
@@ -83643,7 +83690,7 @@ mod tests {
 
         let reflection_union_type = classes.lookup_class("reflectionuniontype").unwrap();
         assert_eq!(reflection_union_type.name(), "ReflectionUnionType");
-        assert_eq!(reflection_union_type.id().index(), 39);
+        assert_eq!(reflection_union_type.id().index(), 40);
         assert_eq!(
             reflection_union_type.parent_id(),
             Some(reflection_type.id())
@@ -83657,7 +83704,7 @@ mod tests {
             reflection_intersection_type.name(),
             "ReflectionIntersectionType"
         );
-        assert_eq!(reflection_intersection_type.id().index(), 40);
+        assert_eq!(reflection_intersection_type.id().index(), 41);
         assert_eq!(
             reflection_intersection_type.parent_id(),
             Some(reflection_type.id())
@@ -83667,7 +83714,7 @@ mod tests {
 
         let reflection_property = classes.lookup_class("reflectionproperty").unwrap();
         assert_eq!(reflection_property.name(), "ReflectionProperty");
-        assert_eq!(reflection_property.id().index(), 41);
+        assert_eq!(reflection_property.id().index(), 42);
         assert!(reflection_property.parent_id().is_none());
         assert_eq!(
             reflection_property
@@ -83687,7 +83734,7 @@ mod tests {
 
         let reflection_class_constant = classes.lookup_class("reflectionclassconstant").unwrap();
         assert_eq!(reflection_class_constant.name(), "ReflectionClassConstant");
-        assert_eq!(reflection_class_constant.id().index(), 42);
+        assert_eq!(reflection_class_constant.id().index(), 43);
         assert!(reflection_class_constant.parent_id().is_none());
         assert_eq!(
             reflection_class_constant
@@ -83703,7 +83750,7 @@ mod tests {
 
         let reflection_constant = classes.lookup_class("reflectionconstant").unwrap();
         assert_eq!(reflection_constant.name(), "ReflectionConstant");
-        assert_eq!(reflection_constant.id().index(), 43);
+        assert_eq!(reflection_constant.id().index(), 44);
         assert!(reflection_constant.parent_id().is_none());
         assert_eq!(
             reflection_constant
@@ -83719,7 +83766,7 @@ mod tests {
 
         let reflection_attribute = classes.lookup_class("reflectionattribute").unwrap();
         assert_eq!(reflection_attribute.name(), "ReflectionAttribute");
-        assert_eq!(reflection_attribute.id().index(), 44);
+        assert_eq!(reflection_attribute.id().index(), 45);
         assert!(reflection_attribute.parent_id().is_none());
         assert_eq!(
             reflection_attribute
@@ -83736,29 +83783,29 @@ mod tests {
 
         let type_error = classes.lookup_class("typeerror").unwrap();
         assert_eq!(type_error.name(), "TypeError");
-        assert_eq!(type_error.id().index(), 45);
+        assert_eq!(type_error.id().index(), 46);
         assert_eq!(type_error.parent_id(), Some(error.id()));
         assert!(type_error.properties().is_empty());
 
         let argument_count_error = classes.lookup_class("argumentcounterror").unwrap();
         assert_eq!(argument_count_error.name(), "ArgumentCountError");
-        assert_eq!(argument_count_error.id().index(), 46);
+        assert_eq!(argument_count_error.id().index(), 47);
         assert_eq!(argument_count_error.parent_id(), Some(type_error.id()));
         assert!(argument_count_error.properties().is_empty());
 
         let value_error = classes.lookup_class("valueerror").unwrap();
         assert_eq!(value_error.name(), "ValueError");
-        assert_eq!(value_error.id().index(), 47);
+        assert_eq!(value_error.id().index(), 48);
         assert_eq!(value_error.parent_id(), Some(error.id()));
 
         let arithmetic_error = classes.lookup_class("arithmeticerror").unwrap();
         assert_eq!(arithmetic_error.name(), "ArithmeticError");
-        assert_eq!(arithmetic_error.id().index(), 48);
+        assert_eq!(arithmetic_error.id().index(), 49);
         assert_eq!(arithmetic_error.parent_id(), Some(error.id()));
 
         let division_by_zero_error = classes.lookup_class("divisionbyzeroerror").unwrap();
         assert_eq!(division_by_zero_error.name(), "DivisionByZeroError");
-        assert_eq!(division_by_zero_error.id().index(), 49);
+        assert_eq!(division_by_zero_error.id().index(), 50);
         assert_eq!(
             division_by_zero_error.parent_id(),
             Some(arithmetic_error.id())
@@ -83766,12 +83813,12 @@ mod tests {
 
         let assertion_error = classes.lookup_class("assertionerror").unwrap();
         assert_eq!(assertion_error.name(), "AssertionError");
-        assert_eq!(assertion_error.id().index(), 50);
+        assert_eq!(assertion_error.id().index(), 51);
         assert_eq!(assertion_error.parent_id(), Some(error.id()));
 
         let runtime_exception = classes.lookup_class("runtimeexception").unwrap();
         assert_eq!(runtime_exception.name(), "RuntimeException");
-        assert_eq!(runtime_exception.id().index(), 51);
+        assert_eq!(runtime_exception.id().index(), 52);
         assert_eq!(runtime_exception.parent_id(), Some(exception.id()));
         assert!(runtime_exception.properties().is_empty());
         assert!(runtime_exception.methods().is_empty());
@@ -84303,7 +84350,7 @@ mod tests {
             .unwrap_or_default();
         assert_eq!(
             unset_diagnostic_message,
-            "typed property Counter::$count must not be accessed before initialization"
+            "typed static property Counter::$count must not be accessed before initialization"
         );
         unsafe { phpc_native_diagnostic_free(diagnostic) };
         diagnostic = NativeDiagnosticHandle::null();
