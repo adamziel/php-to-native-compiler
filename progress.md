@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-06T01:00:20+00:00
+Last generated: 2026-06-06T01:15:21+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -31,7 +31,8 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-18 | Developer | stopped | developer-18 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-18 |
 | developer-19 | Developer | stopped | developer-19 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-19 |
 | developer-2 | Developer | stopped | developer-2 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-2 |
-| developer-20 | Developer | running | developer-20 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-20 |
+| developer-20 | Developer | stopped | developer-20 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-20 |
+| developer-21 | Developer | running | developer-21 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-21 |
 | developer-3 | Developer | stopped | developer-3 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-3 |
 | developer-4 | Developer | stopped | developer-4 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-4 |
 | developer-5 | Developer | stopped | developer-5 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-5 |
@@ -46,6 +47,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1479 | Resolve integration failure for card #175: Fix failing tests from run 235 | Conflict Resolver | integration-support | planned | queued |  | 0.0 |
 | 1478 | Respond to scheduler alert | Coordinator | control-plane | development | assigned |  | 0.0 |
 | 1477 | Resolve integration failure for card #174: Fix failing tests from run 234 | Conflict Resolver | integration-support | planned | queued |  | 0.0 |
 | 1476 | Resolve integration failure for card #173: Fix failing tests from run 233 | Conflict Resolver | integration-support | planned | queued |  | 0.0 |
@@ -55,27 +57,26 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | 1472 | Resolve current integration failures without feature work | Conflict Resolver | integration-support | planned | queued |  | 0.0 |
 | 1471 | Investigate scheduler alert | Auditor | integration-support | done | done |  | 0.0 |
 | 1470 | Resolve integration failure for card #166: Fix failing tests from run 226 | Conflict Resolver | integration-support | planned | queued |  | 0.0 |
-| 1469 | Maintain Developer capacity | Developer | implementation | done | integrated | ready_fast_path | 0.0 |
 
 ## Tests
 failed — tools/run-tests.sh (error=0, failed=1, passed=0, skipped=0)
 
 ## Resource samples
-Latest: CPU 3.91%, RAM 15.5%, disk free 7.02 GB.
+Latest: CPU 7.29%, RAM 16.94%, disk free 0.0 GB.
 
 ## Recent events
-- 2026-06-06T00:59:49+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-06T00:59:54+00:00 **worklane_deduplicated**: Updated existing failing-test card#1468 from run 2377
-- 2026-06-06T00:59:54+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-06T01:00:00+00:00 **worklane_deduplicated**: Updated existing failing-test card#1468 from run 2378
-- 2026-06-06T01:00:00+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-06T01:00:05+00:00 **worklane_deduplicated**: Updated existing failing-test card#1468 from run 2379
-- 2026-06-06T01:00:05+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-06T01:00:07+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-06T01:00:11+00:00 **worklane_deduplicated**: Updated existing failing-test card#1468 from run 2380
-- 2026-06-06T01:00:11+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-06T01:00:16+00:00 **worklane_deduplicated**: Updated existing failing-test card#1468 from run 2381
-- 2026-06-06T01:00:16+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-06T01:14:53+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-06T01:14:59+00:00 **worklane_deduplicated**: Updated existing failing-test card#1468 from run 2541
+- 2026-06-06T01:14:59+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-06T01:15:01+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-06T01:15:04+00:00 **worklane_deduplicated**: Updated existing failing-test card#1468 from run 2542
+- 2026-06-06T01:15:04+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-06T01:15:10+00:00 **worklane_deduplicated**: Updated existing failing-test card#1468 from run 2543
+- 2026-06-06T01:15:10+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-06T01:15:15+00:00 **worklane_deduplicated**: Updated existing failing-test card#1468 from run 2544
+- 2026-06-06T01:15:15+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-06T01:15:20+00:00 **worklane_deduplicated**: Updated existing failing-test card#1468 from run 2545
+- 2026-06-06T01:15:20+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
 
 ## Next steps
-Move next worklane forward: Respond to scheduler alert
+Move next worklane forward: Resolve integration failure for card #175: Fix failing tests from run 235
