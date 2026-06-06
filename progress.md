@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-06T12:13:31+00:00
+Last generated: 2026-06-06T12:13:34+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -91,9 +91,6 @@ failed — tools/run-tests.sh (error=0, failed=1, passed=0, skipped=0)
 Latest: CPU 3.62%, RAM 17.56%, disk free 22.02 GB.
 
 ## Recent events
-- 2026-06-06T12:13:05+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-06T12:13:06+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-06T12:13:10+00:00 **worklane_deduplicated**: Updated existing failing-test card#1486 from run 9808
 - 2026-06-06T12:13:10+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
 - 2026-06-06T12:13:15+00:00 **worklane_deduplicated**: Updated existing failing-test card#1486 from run 9809
 - 2026-06-06T12:13:15+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
@@ -103,6 +100,15 @@ Latest: CPU 3.62%, RAM 17.56%, disk free 22.02 GB.
 - 2026-06-06T12:13:26+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
 - 2026-06-06T12:13:31+00:00 **progress_stalled**: PROGRESS STALLED: metric has not increased for 30 minutes.
 - 2026-06-06T12:13:31+00:00 **coordinator_prompt_deferred**: PROGRESS STALLED: metric has not increased for 30 minutes. Reorganize work so progress resumes.
+- 2026-06-06T12:13:32+00:00 **worklane_deduplicated**: Updated existing failing-test card#1486 from run 9812
+- 2026-06-06T12:13:32+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-06T12:13:32+00:00 **status_publish_failed**: Committed status files but failed to push: To https://github.com/adamziel/php-to-native-compiler.git
+ ! [rejected]          HEAD -> master (non-fast-forward)
+error: failed to push some refs to 'https://github.com/adamziel/php-to-native-compiler.git'
+hint: Updates were rejected because the tip of your current branch is behind
+hint: its remote counterpart. If you want to integrate the remote changes,
+hint: use 'git pull' before pushing again.
+hint: See the 'Note about fast-forwards' in 'git push --help' for details.
 
 ## Next steps
 Move next worklane forward: Resolve integration failure for card #9: Support short echo tags in phpc run
