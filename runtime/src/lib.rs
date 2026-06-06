@@ -12,7 +12,9 @@ use std::sync::atomic::{AtomicI64, Ordering as AtomicOrdering};
 pub type RuntimeResult<T> = Result<T, RuntimeError>;
 
 #[cfg(test)]
-static NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST: AtomicI64 = AtomicI64::new(0);
+thread_local! {
+    static NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST: RefCell<i64> = const { RefCell::new(0) };
+}
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -12438,7 +12440,9 @@ pub unsafe extern "C" fn phpc_native_call_arguments_mark_finalized_variadic(
 #[no_mangle]
 pub unsafe extern "C" fn phpc_native_call_arguments_free(handle: NativeCallArgumentsHandle) {
     #[cfg(test)]
-    NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST.fetch_add(1, AtomicOrdering::SeqCst);
+    NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST.with(|count| {
+        *count.borrow_mut() += 1;
+    });
 
     if handle.ptr.is_null() {
         return;
@@ -47263,11 +47267,31 @@ mod tests {
     }
 
     fn reset_call_arguments_free_count_for_test() {
-        NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST.store(0, AtomicOrdering::SeqCst);
+        NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST.with(|count| {
+            *count.borrow_mut() = 0;
+        });
     }
 
     fn call_arguments_free_count_for_test() -> i64 {
-        NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST.load(AtomicOrdering::SeqCst)
+        NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST.with(|count| *count.borrow())
+    }
+
+    #[test]
+    fn call_arguments_free_count_is_thread_local_for_parallel_tests() {
+        reset_call_arguments_free_count_for_test();
+        unsafe { phpc_native_call_arguments_free(call_arguments_from_ints_for_test(&[1])) };
+        assert_eq!(call_arguments_free_count_for_test(), 1);
+
+        std::thread::spawn(|| {
+            reset_call_arguments_free_count_for_test();
+            unsafe { phpc_native_call_arguments_free(call_arguments_from_ints_for_test(&[2])) };
+            unsafe { phpc_native_call_arguments_free(call_arguments_from_ints_for_test(&[3])) };
+            assert_eq!(call_arguments_free_count_for_test(), 2);
+        })
+        .join()
+        .expect("thread-local free-count check should not panic");
+
+        assert_eq!(call_arguments_free_count_for_test(), 1);
     }
 
     #[test]
@@ -65822,28 +65846,16 @@ mod tests {
         let mut diagnostic = NativeDiagnosticHandle::null();
         let invalid_value =
             unsafe { phpc_native_value_from_string_with_diagnostic(string, &mut diagnostic) };
-        assert!(invalid_value.is_null());
-        assert!(!diagnostic.is_null());
-        assert_eq!(unsafe { phpc_native_diagnostic_count(diagnostic) }, 1);
+        assert!(!invalid_value.is_null());
+        assert!(diagnostic.is_null());
+        assert!(matches!(
+            unsafe { invalid_value.as_ref() },
+            Some(Value::BinaryString(value)) if value == &invalid_bytes
+        ));
         assert_eq!(
-            unsafe { phpc_native_diagnostic_severity_at(diagnostic, 0) },
-            NativeDiagnosticSeverity::Error.tag()
+            native_value_php_string_bytes_for_test(invalid_value),
+            invalid_bytes.to_vec()
         );
-        assert!(unsafe {
-            phpc_native_diagnostic_contains_severity(
-                diagnostic,
-                NativeDiagnosticSeverity::Error.tag(),
-            )
-        });
-        let message = unsafe { phpc_native_diagnostic_message_clone_bytes(diagnostic) };
-        let message_bytes = unsafe { std::slice::from_raw_parts(message.ptr(), message.len()) };
-        assert_eq!(
-            message_bytes,
-            b"native value conversion failed: string bytes are not valid UTF-8"
-        );
-
-        unsafe { phpc_native_byte_buffer_free(message) };
-        unsafe { phpc_native_diagnostic_free(diagnostic) };
         unsafe { phpc_native_value_free(invalid_value) };
         unsafe { phpc_native_string_free(string) };
     }
@@ -65909,16 +65921,16 @@ mod tests {
                 &mut diagnostic,
             )
         };
-        assert!(invalid_value.is_null());
-        assert!(!diagnostic.is_null());
-        let message = unsafe { phpc_native_diagnostic_message_clone_bytes(diagnostic) };
-        let message_bytes = unsafe { std::slice::from_raw_parts(message.ptr(), message.len()) };
+        assert!(!invalid_value.is_null());
+        assert!(diagnostic.is_null());
+        assert!(matches!(
+            unsafe { invalid_value.as_ref() },
+            Some(Value::BinaryString(value)) if value == &invalid
+        ));
         assert_eq!(
-            message_bytes,
-            b"native value conversion failed: string bytes are not valid UTF-8"
+            native_value_php_string_bytes_for_test(invalid_value),
+            invalid.to_vec()
         );
-        unsafe { phpc_native_byte_buffer_free(message) };
-        unsafe { phpc_native_diagnostic_free(diagnostic) };
         unsafe { phpc_native_value_free(invalid_value) };
     }
 
@@ -65971,14 +65983,30 @@ mod tests {
         }
 
         let invalid_bytes = [0xff, b'p'];
-        for (label, bytes, len) in [
-            ("null pointer with nonzero length", ptr::null(), 4),
-            (
-                "invalid UTF-8 bytes",
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let binary_value = unsafe {
+            phpc_native_value_from_string_bytes_with_diagnostic(
                 invalid_bytes.as_ptr(),
                 invalid_bytes.len(),
-            ),
-        ] {
+                &mut diagnostic,
+            )
+        };
+        assert!(!binary_value.is_null(), "invalid UTF-8 PHP bytes");
+        assert!(diagnostic.is_null(), "invalid UTF-8 PHP bytes");
+        assert_eq!(
+            unsafe {
+                phpc_native_value_materialization_failure_exit_code(binary_value, diagnostic)
+            },
+            0,
+            "invalid UTF-8 PHP bytes"
+        );
+        assert!(matches!(
+            unsafe { binary_value.as_ref() },
+            Some(Value::BinaryString(value)) if value == &invalid_bytes
+        ));
+        unsafe { phpc_native_value_free(binary_value) };
+
+        for (label, bytes, len) in [("null pointer with nonzero length", ptr::null(), 4)] {
             let mut diagnostic = NativeDiagnosticHandle::null();
             let value = unsafe {
                 phpc_native_value_from_string_bytes_with_diagnostic(bytes, len, &mut diagnostic)
@@ -66130,12 +66158,11 @@ mod tests {
             "string bytes pointer is null",
         );
 
-        let invalid_bytes = [0xff, b'p'];
         let mut failed_right_diagnostic = NativeDiagnosticHandle::null();
         let failed_right = unsafe {
             phpc_native_value_from_string_bytes_with_diagnostic(
-                invalid_bytes.as_ptr(),
-                invalid_bytes.len(),
+                ptr::null(),
+                4,
                 &mut failed_right_diagnostic,
             )
         };
@@ -66689,19 +66716,23 @@ mod tests {
             );
         }
 
-        let invalid_bytes = [0xff];
-        let invalid_handle =
-            unsafe { phpc_native_string_from_bytes(invalid_bytes.as_ptr(), invalid_bytes.len()) };
-        assert_native_comparison_blocked(
-            "invalid string-handle materialization diagnostic",
+        let binary_bytes = [0xff];
+        let binary_operand = owned_string_operand(&binary_bytes);
+        assert!(!phpc_native_comparison_operand_value(binary_operand).is_null());
+        assert!(phpc_native_comparison_operand_diagnostic(binary_operand).is_null());
+        assert_native_comparison_ok(
+            "string-handle binary bytes materialize as PHP strings",
             unsafe {
                 phpc_native_comparison_operand_compare_and_free(
-                    phpc_native_comparison_operand_from_string_and_free(invalid_handle),
+                    binary_operand,
                     NativeComparisonOp::StrictEq.abi_opcode(),
-                    phpc_native_comparison_operand_from_scalar(phpc_native_int(1)),
+                    NativeComparisonOperand::from_parts(
+                        NativeValueHandle::from_value(Value::BinaryString(binary_bytes.to_vec())),
+                        NativeDiagnosticHandle::null(),
+                    ),
                 )
             },
-            "string bytes are not valid UTF-8",
+            true,
         );
     }
 
@@ -68804,11 +68835,11 @@ mod tests {
             Value::String("B".to_string()),
             "invalid string conversion: native string offset operation failed: array subjects are not supported; only null, bool, int, float, and string subjects are implemented",
         );
-        assert_diagnostic(
+        assert_written_warning(
             Value::String("abc".to_string()),
             Value::Int(1),
             Value::String(String::from_utf8(vec![0xc3, 0xa9]).unwrap()),
-            "unsupported call native string offset write: byte strings with invalid UTF-8 require the binary string value boundary",
+            &[b'a', 0xc3, b'c'],
         );
 
         let subject = NativeValueHandle::from_value(Value::String("ab".to_string()));
@@ -79278,9 +79309,12 @@ mod tests {
                 "DivisionByZeroError",
                 "RuntimeException",
                 "OutOfRangeException",
+                "UnexpectedValueException",
                 "OutOfBoundsException",
                 "Directory",
                 "SplFixedArray",
+                "ArrayObject",
+                "ArrayIterator",
                 "SplDoublyLinkedList",
                 "SplQueue",
                 "SplStack",
@@ -79541,7 +79575,14 @@ mod tests {
         assert_eq!(reflection_parameter.name(), "ReflectionParameter");
         assert_eq!(reflection_parameter.id().index(), 17);
         assert!(reflection_parameter.parent_id().is_none());
-        assert!(reflection_parameter.properties().is_empty());
+        assert_eq!(
+            reflection_parameter
+                .properties()
+                .iter()
+                .map(PhpPropertyMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["name"]
+        );
         assert!(reflection_parameter.method("getDefaultValue").is_some());
         assert!(reflection_parameter.method("getType").is_some());
         assert!(reflection_parameter.method("getAttributes").is_some());
@@ -79592,7 +79633,14 @@ mod tests {
         assert_eq!(reflection_property.name(), "ReflectionProperty");
         assert_eq!(reflection_property.id().index(), 22);
         assert!(reflection_property.parent_id().is_none());
-        assert!(reflection_property.properties().is_empty());
+        assert_eq!(
+            reflection_property
+                .properties()
+                .iter()
+                .map(PhpPropertyMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["name", "class"]
+        );
         assert!(reflection_property.constant("IS_PUBLIC").is_some());
         assert!(reflection_property.method("getDefaultValue").is_some());
         assert!(reflection_property.method("getAttributes").is_some());
@@ -79601,7 +79649,14 @@ mod tests {
         assert_eq!(reflection_class_constant.name(), "ReflectionClassConstant");
         assert_eq!(reflection_class_constant.id().index(), 23);
         assert!(reflection_class_constant.parent_id().is_none());
-        assert!(reflection_class_constant.properties().is_empty());
+        assert_eq!(
+            reflection_class_constant
+                .properties()
+                .iter()
+                .map(PhpPropertyMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["name", "class"]
+        );
         assert!(reflection_class_constant.constant("IS_PUBLIC").is_some());
         assert!(reflection_class_constant.method("getValue").is_some());
         assert!(reflection_class_constant.method("getAttributes").is_some());
@@ -80312,7 +80367,8 @@ mod tests {
             .map(|diagnostic| diagnostic.message.clone())
             .unwrap_or_default();
         assert!(
-            message.contains("typed property StaticRefCounter::$count expects int"),
+            message
+                .contains("Cannot assign array to reference held by property StaticRefCounter::$count of type int"),
             "{message}"
         );
         unsafe { phpc_native_diagnostic_free(diagnostic) };
@@ -80460,7 +80516,9 @@ mod tests {
             .map(|diagnostic| diagnostic.message.clone())
             .unwrap_or_default();
         assert!(
-            message.contains("typed property StaticBindRefCounter::$count expects int"),
+            message.contains(
+                "Cannot assign array to reference held by property StaticBindRefCounter::$count of type int"
+            ),
             "{message}"
         );
 
@@ -80595,7 +80653,9 @@ mod tests {
             .map(|diagnostic| diagnostic.message.clone())
             .unwrap_or_default();
         assert!(
-            message.contains("typed property StaticOffsetRefCounter::$typed expects ?string"),
+            message.contains(
+                "Cannot assign array to reference held by property StaticOffsetRefCounter::$typed of type ?string"
+            ),
             "{message}"
         );
 
@@ -81080,7 +81140,7 @@ mod tests {
             .unwrap_err();
         assert_eq!(
             type_error.message(),
-            "invalid property access: typed property Counter::$count expects int, got array"
+            "invalid property access: Cannot assign array to reference held by property Counter::$count of type int"
         );
     }
 

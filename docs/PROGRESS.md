@@ -1,5 +1,23 @@
 # Progress Log
 
+## 2026-06-06
+
+Implemented:
+
+- Repaired the focused `php_runtime --lib` stabilization gate by refreshing
+  stale runtime ABI unit expectations to current executable behavior for
+  binary PHP string materialization, core class metadata, and typed-reference
+  diagnostics. The runtime ABI behavior was already present; this change keeps
+  tests aligned with it instead of reintroducing outdated invalid-UTF-8 and
+  static-property diagnostic expectations.
+
+- Isolated the `php_runtime` test-only `NativeCallArgumentsHandle` free counter
+  per Rust test thread. Parallel runtime unit tests no longer race through a
+  process-global counter when lookup-plus-invoke, closure invoke, constructor
+  invoke, and magic-call helper assertions run concurrently. Added a focused
+  guard proving the counter is thread-local; no non-test runtime ABI behavior
+  changed.
+
 ## 2026-05-27
 
 Implemented:
