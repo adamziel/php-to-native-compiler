@@ -50612,6 +50612,24 @@ mod tests {
     }
 
     #[test]
+    fn call_arguments_free_count_is_thread_local_for_parallel_tests() {
+        reset_call_arguments_free_count_for_test();
+        unsafe { phpc_native_call_arguments_free(call_arguments_from_ints_for_test(&[1])) };
+        assert_eq!(call_arguments_free_count_for_test(), 1);
+
+        std::thread::spawn(|| {
+            reset_call_arguments_free_count_for_test();
+            unsafe { phpc_native_call_arguments_free(call_arguments_from_ints_for_test(&[2])) };
+            unsafe { phpc_native_call_arguments_free(call_arguments_from_ints_for_test(&[3])) };
+            assert_eq!(call_arguments_free_count_for_test(), 2);
+        })
+        .join()
+        .expect("thread-local free-count check should not panic");
+
+        assert_eq!(call_arguments_free_count_for_test(), 1);
+    }
+
+    #[test]
     fn native_lookup_plus_invoke_helpers_free_arguments_once_across_target_families() {
         let table = phpc_native_callable_table_new();
         unsafe {
