@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-05T23:53:52+00:00
+Last generated: 2026-06-06T00:00:16+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -19,7 +19,9 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-3 | Developer | stopped | developer-3 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-3 |
 | developer-4 | Developer | stopped | developer-4 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-4 |
 | developer-5 | Developer | stopped | developer-5 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-5 |
-| developer-6 | Developer | running | developer-6 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-6 |
+| developer-6 | Developer | stopped | developer-6 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-6 |
+| developer-7 | Developer | stopped | developer-7 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-7 |
+| developer-8 | Developer | running | developer-8 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-8 |
 | integrator-1 | Integrator | stopped | integrator-1 |  |
 | integrator-2 | Integrator | stopped | integrator-2 |  |
 | integrator-3 | Integrator | stopped | integrator-3 |  |
@@ -27,7 +29,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1469 | Maintain Developer capacity | Developer | implementation | development | assigned |  | 0.0 |
+| 1469 | Maintain Developer capacity | Developer | implementation | done | integrated | ready_fast_path | 0.0 |
 | 1468 | Fix failing tests from run 1603 | Developer | implementation | planned | queued |  | 0.0 |
 | 1467 | Resolve integration failure for card #1464: Maintain Developer capacity | Conflict Resolver | integration-support | planned | queued |  | 0.0 |
 | 1466 | Repair live harness command selector recurrence | Developer | implementation | done | integrated | ready_fast_path | 0.0 |
@@ -42,21 +44,21 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 failed — python -m unittest discover -s tests -v (error=0, failed=1, passed=0, skipped=0)
 
 ## Resource samples
-Latest: CPU 4.8%, RAM 12.78%, disk free 8.82 GB.
+Latest: CPU 5.12%, RAM 12.99%, disk free 8.59 GB.
 
 ## Recent events
-- 2026-06-05T23:53:32+00:00 **worklane_deduplicated**: Updated existing failing-test card#1468 from run 1637
-- 2026-06-05T23:53:32+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-05T23:53:36+00:00 **scheduler**: Harness scheduler stopped by user
-- 2026-06-05T23:53:37+00:00 **worklane_deduplicated**: Updated existing failing-test card#1468 from run 1638
-- 2026-06-05T23:53:37+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-05T23:53:43+00:00 **worklane_deduplicated**: Updated existing failing-test card#1468 from run 1639
-- 2026-06-05T23:53:43+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-05T23:53:43+00:00 **card_evidence_collected**: Collected evidence for report-only capacity card #1469: required docs loaded, worklane assignment verified, branch/head captured, and worktree status checked clean.
-- 2026-06-05T23:53:48+00:00 **worklane_deduplicated**: Updated existing failing-test card#1459 from run 1640
-- 2026-06-05T23:53:48+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-05T23:53:52+00:00 **mcp**: Harness MCP tools exposed to Codex workers
-- 2026-06-05T23:53:52+00:00 **tmux**: Support windows ready
+- 2026-06-05T23:59:47+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-05T23:59:51+00:00 **control_plane_recurrence**: Focused .harness unittest reproduced the run225 command-selection/liveness recurrence: 4/8 failures and test-loop rows still select python unittest. developer-8 is patching only the live untracked harness zipapp.
+- 2026-06-05T23:59:53+00:00 **worklane_deduplicated**: Updated existing failing-test card#1459 from run 1709
+- 2026-06-05T23:59:53+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-05T23:59:58+00:00 **worklane_deduplicated**: Updated existing failing-test card#1459 from run 1710
+- 2026-06-05T23:59:58+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-06T00:00:03+00:00 **worklane_deduplicated**: Updated existing failing-test card#1459 from run 1711
+- 2026-06-06T00:00:03+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-06T00:00:09+00:00 **worklane_deduplicated**: Updated existing failing-test card#1459 from run 1712
+- 2026-06-06T00:00:09+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-06T00:00:14+00:00 **worklane_deduplicated**: Updated existing failing-test card#1459 from run 1713
+- 2026-06-06T00:00:14+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
 
 ## Next steps
-Move next worklane forward: Maintain Developer capacity
+Move next worklane forward: Fix failing tests from run 1603
