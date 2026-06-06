@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-06T04:30:35+00:00
+Last generated: 2026-06-06T04:45:36+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -65,18 +65,18 @@ failed — tools/run-tests.sh (error=0, failed=1, passed=0, skipped=0)
 Latest: CPU 7.29%, RAM 16.94%, disk free 0.0 GB.
 
 ## Recent events
-- 2026-06-06T04:30:09+00:00 **worklane_deduplicated**: Updated existing failing-test card#1468 from run 4708
-- 2026-06-06T04:30:09+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-06T04:30:14+00:00 **worklane_deduplicated**: Updated existing failing-test card#1468 from run 4709
-- 2026-06-06T04:30:14+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-06T04:30:17+00:00 **test_failure**: Full loop pass 5 now fails in native_string_arithmetic with one stale numeric-string arithmetic IR assertion.
-- 2026-06-06T04:30:20+00:00 **worklane_deduplicated**: Updated existing failing-test card#1468 from run 4710
-- 2026-06-06T04:30:20+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-06T04:30:23+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-06T04:30:25+00:00 **worklane_deduplicated**: Updated existing failing-test card#1468 from run 4711
-- 2026-06-06T04:30:25+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-06T04:30:31+00:00 **worklane_deduplicated**: Updated existing failing-test card#1468 from run 4712
-- 2026-06-06T04:30:31+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-06T04:45:09+00:00 **test_pass**: Focused runtime_error_cli passed after regenerating runtime error CLI snapshots from the current phpc run behavior.
+- 2026-06-06T04:45:12+00:00 **worklane_deduplicated**: Updated existing failing-test card#1468 from run 4874
+- 2026-06-06T04:45:12+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-06T04:45:17+00:00 **worklane_deduplicated**: Updated existing failing-test card#1468 from run 4875
+- 2026-06-06T04:45:17+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-06T04:45:18+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-06T04:45:22+00:00 **worklane_deduplicated**: Updated existing failing-test card#1468 from run 4876
+- 2026-06-06T04:45:22+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-06T04:45:28+00:00 **worklane_deduplicated**: Updated existing failing-test card#1468 from run 4877
+- 2026-06-06T04:45:28+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-06T04:45:34+00:00 **worklane_deduplicated**: Updated existing failing-test card#1468 from run 4878
+- 2026-06-06T04:45:34+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
 
 ## Next steps
 Move next worklane forward: Resolve integration failure for card #175: Fix failing tests from run 235
