@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-06T01:15:21+00:00
+Last generated: 2026-06-06T01:30:22+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -65,18 +65,18 @@ failed — tools/run-tests.sh (error=0, failed=1, passed=0, skipped=0)
 Latest: CPU 7.29%, RAM 16.94%, disk free 0.0 GB.
 
 ## Recent events
-- 2026-06-06T01:14:53+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-06T01:14:59+00:00 **worklane_deduplicated**: Updated existing failing-test card#1468 from run 2541
-- 2026-06-06T01:14:59+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-06T01:15:01+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-06T01:15:04+00:00 **worklane_deduplicated**: Updated existing failing-test card#1468 from run 2542
-- 2026-06-06T01:15:04+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-06T01:15:10+00:00 **worklane_deduplicated**: Updated existing failing-test card#1468 from run 2543
-- 2026-06-06T01:15:10+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-06T01:15:15+00:00 **worklane_deduplicated**: Updated existing failing-test card#1468 from run 2544
-- 2026-06-06T01:15:15+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-06T01:15:20+00:00 **worklane_deduplicated**: Updated existing failing-test card#1468 from run 2545
-- 2026-06-06T01:15:20+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-06T01:29:52+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-06T01:29:56+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-06T01:29:58+00:00 **worklane_deduplicated**: Updated existing failing-test card#1468 from run 2708
+- 2026-06-06T01:29:58+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-06T01:30:03+00:00 **worklane_deduplicated**: Updated existing failing-test card#1468 from run 2709
+- 2026-06-06T01:30:03+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-06T01:30:09+00:00 **worklane_deduplicated**: Updated existing failing-test card#1468 from run 2710
+- 2026-06-06T01:30:09+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-06T01:30:14+00:00 **worklane_deduplicated**: Updated existing failing-test card#1468 from run 2711
+- 2026-06-06T01:30:14+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-06T01:30:19+00:00 **worklane_deduplicated**: Updated existing failing-test card#1468 from run 2712
+- 2026-06-06T01:30:19+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
 
 ## Next steps
 Move next worklane forward: Resolve integration failure for card #175: Fix failing tests from run 235
