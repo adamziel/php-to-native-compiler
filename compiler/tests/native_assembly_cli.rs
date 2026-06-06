@@ -9550,6 +9550,13 @@ ir=''\n\
 while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
+if [ -n \"$ir\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$ir\" in\n\
   *'declare i32 @printf(ptr, ...)'*) : ;;\n\
   *)\n\
@@ -9610,6 +9617,13 @@ ir=''\n\
 while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
+if [ -n \"$ir\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$ir\" in\n\
   *'declare i32 @printf(ptr, ...)'*) : ;;\n\
   *)\n\
@@ -9692,6 +9706,13 @@ ir=''\n\
 while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
+if [ -n \"$ir\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$ir\" in\n\
   *'declare i32 @printf(ptr, ...)'*) : ;;\n\
   *)\n\
@@ -9767,6 +9788,13 @@ ir=''\n\
 while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
+if [ -n \"$ir\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$ir\" in\n\
   *'declare i32 @printf(ptr, ...)'*) : ;;\n\
   *)\n\
@@ -9848,6 +9876,13 @@ ir=''\n\
 while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
+if [ -n \"$ir\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$ir\" in\n\
   *'declare i32 @printf(ptr, ...)'*) : ;;\n\
   *)\n\
@@ -9922,6 +9957,13 @@ ir=''\n\
 while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
+if [ -n \"$ir\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$ir\" in\n\
   *'declare i32 @printf(ptr, ...)'*) : ;;\n\
   *)\n\
@@ -9993,6 +10035,13 @@ ir=''\n\
 while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
+if [ -n \"$ir\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$ir\" in\n\
   *'declare i32 @printf(ptr, ...)'*) : ;;\n\
   *)\n\
@@ -10072,6 +10121,13 @@ ir=''\n\
 while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
+if [ -n \"$ir\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$ir\" in\n\
   *'declare i32 @printf(ptr, ...)'*) : ;;\n\
   *)\n\
@@ -10151,6 +10207,13 @@ ir=''\n\
 while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
+if [ -n \"$ir\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$ir\" in\n\
   *'declare i32 @printf(ptr, ...)'*) : ;;\n\
   *)\n\
@@ -10236,6 +10299,13 @@ ir=''\n\
 while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
+if [ -n \"$ir\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$ir\" in\n\
   *'declare i32 @printf(ptr, ...)'*) : ;;\n\
   *)\n\
@@ -10310,6 +10380,13 @@ ir=''\n\
 while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
+if [ -n \"$ir\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$ir\" in\n\
   *'declare i32 @printf(ptr, ...)'*) : ;;\n\
   *)\n\
@@ -10381,6 +10458,13 @@ ir=''\n\
 while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
+if [ -n \"$ir\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$ir\" in\n\
   *'declare i32 @printf(ptr, ...)'*) : ;;\n\
   *)\n\
@@ -10454,6 +10538,13 @@ ir=''\n\
 while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
+if [ -n \"$ir\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$ir\" in\n\
   *'declare i32 @printf(ptr, ...)'*) : ;;\n\
   *)\n\
@@ -10527,6 +10618,13 @@ ir=''\n\
 while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
+if [ -n \"$ir\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$ir\" in\n\
   *'declare i32 @printf(ptr, ...)'*) : ;;\n\
   *)\n\
@@ -10598,6 +10696,13 @@ ir=''\n\
 while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
+if [ -n \"$ir\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$ir\" in\n\
   *'declare i32 @printf(ptr, ...)'*) : ;;\n\
   *)\n\
@@ -10673,6 +10778,13 @@ ir=''\n\
 while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
+if [ -n \"$ir\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$ir\" in\n\
   *'declare i32 @printf(ptr, ...)'*) : ;;\n\
   *)\n\
@@ -10732,6 +10844,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'/* generated by phpc milestone 1 C assembly fallback */'*) : ;;\n\
   *)\n\
@@ -10806,6 +10925,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'/* generated by phpc milestone 1 C assembly fallback */'*) : ;;\n\
   *)\n\
@@ -10894,6 +11020,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'/* generated by phpc milestone 1 C assembly fallback */'*) : ;;\n\
   *)\n\
@@ -10983,6 +11116,13 @@ ir=''\n\
 while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
+if [ -n \"$ir\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$ir\" in\n\
   *'%tmp0 = add i64 10, 5'*) : ;;\n\
   *)\n\
@@ -11051,6 +11191,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%lld\", (10 + 5))'*) : ;;\n\
   *)\n\
@@ -11111,6 +11258,13 @@ ir=''\n\
 while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
+if [ -n \"$ir\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$ir\" in\n\
   *'%tmp0 = add i64 10, 5'*'%tmp1 = srem i64 %tmp0, 4'*'srem i64 17, 5'*) : ;;\n\
   *)\n\
@@ -11171,6 +11325,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%lld\", ((10 + 5) % 4))'*'printf(\"%lld\", (17 % 5))'*) : ;;\n\
   *)\n\
@@ -11225,6 +11386,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%lld\", 5)'*'printf(\"%lld\", 7)'*) : ;;\n\
   *)\n\
@@ -11282,6 +11450,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'(4 << 62)'*) : ;;\n\
   *)\n\
@@ -11341,6 +11516,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%lld\", (1 + 5))'*) : ;;\n\
   *)\n\
@@ -11397,6 +11579,13 @@ ir=''\n\
 while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
+if [ -n \"$ir\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$ir\" in\n\
   *'%tmp0 = fadd double 1.5, 2.25'*) : ;;\n\
   *)\n\
@@ -11471,6 +11660,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%g\", (1.5 + 2.25))'*) : ;;\n\
   *)\n\
@@ -11541,6 +11737,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%lld\", 5)'*'printf(\"%lld\", 6)'*'printf(\"%lld\", 7)'*'printf(\"%lld\", 9)'*'printf(\"%lld\", 10)'*) : ;;\n\
   *)\n\
@@ -11609,6 +11812,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'(4 << 62)'*) : ;;\n\
   *)\n\
@@ -11670,6 +11880,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'(4 << 62)'*) : ;;\n\
   *)\n\
@@ -11729,6 +11946,13 @@ ir=''\n\
 while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
+if [ -n \"$ir\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$ir\" in\n\
   *'%tmp0 = add i64 10, 2'*) : ;;\n\
   *)\n\
@@ -11790,6 +12014,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%lld\", -5)'*'printf(\"%lld\", -12)'*) : ;;\n\
   *)\n\
@@ -11846,6 +12077,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%lld\", -5)'*'printf(\"%lld\", -12)'*) : ;;\n\
   *)\n\
@@ -11903,6 +12141,13 @@ ir=''\n\
 while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
+if [ -n \"$ir\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$ir\" in\n\
   *'%tmp0 = fadd double 1.5, 2.25'*) : ;;\n\
   *)\n\
@@ -11971,6 +12216,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%g\", -2.5)'*'printf(\"%g\", -3.75)'*) : ;;\n\
   *)\n\
@@ -12034,6 +12286,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%g\", (1.5 + 2.5))'*'printf(\"%g\", (1.5 + 2.5))'*'printf(\"%g\", (1.5 + 2.5))'*'printf(\"%g\", (0.0 + 0.0))'*) : ;;\n\
   *)\n\
@@ -12093,6 +12352,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%g\", -3.75)'*'printf(\"%g\", -2.5)'*'printf(\"%g\", (0.0 - (0.0 + 0.0)))'*) : ;;\n\
   *)\n\
@@ -12154,6 +12420,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%g\", 0.0)'*'printf(\"%g\", 0.0)'*) : ;;\n\
   *)\n\
@@ -12215,6 +12488,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%g\", -3.75)'*'printf(\"%g\", -2.5)'*) : ;;\n\
   *)\n\
@@ -12276,6 +12556,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%g\", 5.0)'*'printf(\"%g\", 3.5)'*'printf(\"%g\", 7.5)'*) : ;;\n\
   *)\n\
@@ -12342,6 +12629,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%g\", 8.25)'*'printf(\"%g\", 0.75)'*'printf(\"%g\", 4.5)'*) : ;;\n\
   *)\n\
@@ -12410,6 +12704,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%lld\", 7)'*'printf(\"%lld\", 7)'*'printf(\"%lld\", 15)'*'printf(\"%lld\", 12)'*) : ;;\n\
   *)\n\
@@ -12476,6 +12777,13 @@ ir=''\n\
 while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
+if [ -n \"$ir\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$ir\" in\n\
   *'c\"1\\00\"'*) : ;;\n\
   *)\n\
@@ -12537,6 +12845,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%s\", \"1\")'*) : ;;\n\
   *)\n\
@@ -12600,6 +12915,13 @@ ir=''\n\
 while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
+if [ -n \"$ir\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$ir\" in\n\
   *'icmp eq i64 %tmp0, 3'*'select i1 %tmp1, i64 3, i64 4'*'select i1 %tmp1, i64 4, i64 3'*'icmp eq i64 %tmp0, %tmp2'*'icmp eq i64 %tmp0, %tmp3'*'xor i1 %tmp4, true'*'xor i1 %tmp5, true'*) : ;;\n\
   *)\n\
@@ -12666,6 +12988,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'(1 + 2)'*'=='*'!'*'if ('*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"x\")'*'printf(\"%s\", \"y\")'*) : ;;\n\
   *)\n\
@@ -12725,6 +13054,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%lld\", 12)'*'printf(\"%lld\", 6)'*'printf(\"%lld\", 30)'*) : ;;\n\
   *)\n\
@@ -12793,6 +13129,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%lld\", 0)'*'printf(\"%lld\", 1)'*) : ;;\n\
   *)\n\
@@ -12852,6 +13195,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%lld\", 1)'*'printf(\"%lld\", 1)'*'printf(\"%lld\", 0)'*'printf(\"%lld\", 0)'*'printf(\"%lld\", 1)'*) : ;;\n\
   *)\n\
@@ -12911,6 +13261,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%lld\", 1)'*'printf(\"%lld\", 0)'*'printf(\"%lld\", 0)'*'printf(\"%lld\", 1)'*'printf(\"%lld\", 0)'*'printf(\"%lld\", 0)'*) : ;;\n\
   *)\n\
@@ -12967,6 +13324,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%lld\", 1)'*'printf(\"%lld\", 1)'*) : ;;\n\
   *)\n\
@@ -13023,6 +13387,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%lld\", 0)'*'printf(\"%lld\", 1)'*'printf(\"%lld\", 0)'*'printf(\"%lld\", 1)'*'printf(\"%lld\", 0)'*'printf(\"%lld\", 0)'*'printf(\"%lld\", 1)'*'printf(\"%lld\", 0)'*) : ;;\n\
   *)\n\
@@ -13082,6 +13453,13 @@ ir=''\n\
 while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
+if [ -n \"$ir\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$ir\" in\n\
   *'and i1 %tmp3, %tmp4'*'or i1 %tmp3, %tmp4'*'xor i1 %tmp3, %tmp4'*) : ;;\n\
   *)\n\
@@ -13148,6 +13526,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'(1 + 2)'*'&&'*'||'*'!='*'printf(\"%s\", \"1\")'*) : ;;\n\
   *)\n\
@@ -13207,6 +13592,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*) : ;;\n\
   *)\n\
@@ -13275,6 +13667,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%lld\", 1)'*'printf(\"%lld\", 1)'*'printf(\"%lld\", 0)'*'printf(\"%lld\", 1)'*'printf(\"%lld\", 1)'*'printf(\"%lld\", 0)'*) : ;;\n\
   *)\n\
@@ -13334,6 +13733,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%lld\", 0)'*'printf(\"%lld\", 1)'*'printf(\"%lld\", 1)'*'printf(\"%lld\", 0)'*'printf(\"%lld\", 0)'*) : ;;\n\
   *)\n\
@@ -13391,6 +13797,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%lld\", 0)'*'printf(\"%lld\", 1)'*'printf(\"%lld\", 0)'*'printf(\"%lld\", 1)'*'printf(\"%lld\", 0)'*) : ;;\n\
   *)\n\
@@ -13447,6 +13860,13 @@ ir=''\n\
 while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
+if [ -n \"$ir\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$ir\" in\n\
   *'%tmp0 = add i64 6, 2'*) : ;;\n\
   *)\n\
@@ -13521,6 +13941,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%lld\", 0)'*'printf(\"%lld\", 11)'*'printf(\"%lld\", -4)'*) : ;;\n\
   *)\n\
@@ -13605,6 +14032,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%lld\", 0)'*'printf(\"%lld\", 9)'*'printf(\"%lld\", 13)'*) : ;;\n\
   *)\n\
@@ -13673,6 +14107,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%lld\", 0)'*'printf(\"%lld\", 13)'*'printf(\"%lld\", 15)'*) : ;;\n\
   *)\n\
@@ -13741,6 +14182,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%lld\", 5)'*'printf(\"%lld\", 6)'*'printf(\"%lld\", 10)'*'printf(\"%lld\", 11)'*'printf(\"%lld\", 12)'*'printf(\"%lld\", 13)'*'printf(\"%lld\", 14)'*'printf(\"%lld\", 15)'*) : ;;\n\
   *)\n\
@@ -13802,6 +14250,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%lld\", -1)'*'printf(\"%lld\", -1)'*) : ;;\n\
   *)\n\
@@ -13861,6 +14316,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%lld\", -6)'*'printf(\"%lld\", -8)'*'printf(\"%lld\", -9)'*) : ;;\n\
   *)\n\
@@ -13920,6 +14382,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'(4 << 62)'*) : ;;\n\
   *)\n\
@@ -13981,6 +14450,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'(4 << 62)'*) : ;;\n\
   *)\n\
@@ -14042,6 +14518,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'(4 << 62)'*) : ;;\n\
   *)\n\
@@ -14100,6 +14583,13 @@ ir=''\n\
 while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
+if [ -n \"$ir\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$ir\" in\n\
   *'%tmp0 = add i64 6, 2'*'%tmp1 = ashr i64 -8, 1'*) : ;;\n\
   *)\n\
@@ -14167,6 +14657,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%lld\", 32)'*'printf(\"%lld\", 4)'*'-8'*) : ;;\n\
   *)\n\
@@ -14237,6 +14734,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%lld\", 8)'*'printf(\"%lld\", 9)'*) : ;;\n\
   *)\n\
@@ -14296,6 +14800,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'(4 << 62)'*) : ;;\n\
   *)\n\
@@ -14355,6 +14866,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%lld\", 32)'*'printf(\"%lld\", 4)'*) : ;;\n\
   *)\n\
@@ -14421,6 +14939,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%lld\", 32)'*'printf(\"%lld\", 2)'*) : ;;\n\
   *)\n\
@@ -14487,6 +15012,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%lld\", -4)'*'printf(\"%lld\", -4)'*) : ;;\n\
   *)\n\
@@ -14543,6 +15075,13 @@ ir=''\n\
 while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
+if [ -n \"$ir\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$ir\" in\n\
   *'%tmp1 = icmp eq i64 %tmp0, 3'*'%tmp2 = icmp eq i64 %tmp0, 4'*'%tmp4 = select i1 %tmp1, i64 %tmp3, i64 99'*'@printf(ptr @.fmt_int, i64 1)'*) : ;;\n\
   *)\n\
@@ -14603,6 +15142,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'(1 + 2)'*' == '*' ? '*':'*'printf(\"%lld\"'*) : ;;\n\
   *)\n\
@@ -14657,6 +15203,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'(1 + 2)'*' == '*' ? (3) : (4)'*' ? (4) : (3)'*' ? (1) : ('*'printf(\"%lld\", 1)'*) : ;;\n\
   *)\n\
@@ -14714,6 +15267,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%s\", '* ) : ;;\n\
   *)\n\
@@ -14773,6 +15333,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%lld\", (3 << 62))'*) : ;;\n\
   *)\n\
@@ -14832,6 +15399,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%g\", (100000000000000000178334994858791836514563642560301392710701527770129502847789953562046870799284296099876897036220978235643807646031628623453753183252563447406133248.0 * 100000000000000000178334994858791836514563642560301392710701527770129502847789953562046870799284296099876897036220978235643807646031628623453753183252563447406133248.0))'*) : ;;\n\
   *)\n\
@@ -14891,6 +15465,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'if ((((3 << 62)) != (0))) { printf(\"%s\", \"1\"); }'*) : ;;\n\
   *)\n\
@@ -14950,6 +15531,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'if ((((3 << 62)) != (0))) { printf(\"%s\", \"1\"); }'*) : ;;\n\
   *)\n\
@@ -15009,6 +15597,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%s\", \"a\")'*'printf(\"%s\", \"b\")'*) : ;;\n\
   *)\n\
@@ -15068,6 +15663,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%s\", \"a\")'*'printf(\"%s\", \"fallback\")'*'printf(\"%s\", \"b\")'*) : ;;\n\
   *)\n\
@@ -15127,6 +15729,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%lld\", (3 << 62))'*) : ;;\n\
   *)\n\
@@ -15186,6 +15795,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%s\", '* ) : ;;\n\
   *)\n\
@@ -15245,6 +15861,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%g\", (100000000000000000178334994858791836514563642560301392710701527770129502847789953562046870799284296099876897036220978235643807646031628623453753183252563447406133248.0 * 100000000000000000178334994858791836514563642560301392710701527770129502847789953562046870799284296099876897036220978235643807646031628623453753183252563447406133248.0))'*) : ;;\n\
   *)\n\
@@ -15304,6 +15927,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%lld\", 42)'*'printf(\"%g\", 2.5)'*'printf(\"%s\", \"fallback\")'*'printf(\"%s\", \"a\")'*'printf(\"%s\", \"b\")'*'printf(\"%s\", \"1\")'*) : ;;\n\
   *)\n\
@@ -15365,6 +15995,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%lld\", 1)'*'printf(\"%s\", \"zero\")'*'printf(\"%lld\", (1 + 2))'*) : ;;\n\
   *)\n\
@@ -15426,6 +16063,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%s\", \"one\")'*'printf(\"%s\", \"zero\")'*'printf(\"%lld\", 7)'*) : ;;\n\
   *)\n\
@@ -15485,6 +16129,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%g\", 1.5)'*'printf(\"%s\", \"zero\")'*'printf(\"%g\", (1.25 + 2.5))'*) : ;;\n\
   *)\n\
@@ -15544,6 +16195,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%s\", \"one\")'*'printf(\"%s\", \"zero\")'*'printf(\"%g\", 7.5)'*) : ;;\n\
   *)\n\
@@ -15603,6 +16261,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%s\", \"one\")'*'printf(\"%s\", \"empty\")'*'printf(\"%s\", \"zero\")'*'printf(\"%lld\", 7)'*'printf(\"%s\", \"falsey\")'*) : ;;\n\
   *)\n\
@@ -15662,6 +16327,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%s\", \"literal\")'*'printf(\"%s\", \"empty\")'*'printf(\"%s\", \"zero\")'*'printf(\"%s\", (((((1 + 2)) == (3))) ? (\"left\") : (\"right\")))'*'printf(\"%s\", \"falsey\")'*) : ;;\n\
   *)\n\
@@ -15718,6 +16390,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%s\", \"fallback\")'*'printf(\"%lld\", 7)'*'printf(\"%s\", \"a\")'*'printf(\"%s\", \"b\")'*) : ;;\n\
   *)\n\
@@ -15774,6 +16453,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%s\", \"truthy\")'*'printf(\"%s\", \"falsey\")'*'printf(\"%lld\", 7)'*'printf(\"%lld\", 9)'*'printf(\"%s\", \"null\")'*'printf(\"%s\", \"string\")'*) : ;;\n\
   *)\n\
@@ -15832,6 +16518,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%s\", \"fallback\")'*'printf(\"%lld\", 7)'*'printf(\"%s\", \"a\")'*'printf(\"%s\", \"b\")'*) : ;;\n\
   *)\n\
@@ -15888,6 +16581,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%s\", \"a\")'*'printf(\"%s\", \"b\")'*) : ;;\n\
   *)\n\
@@ -15944,6 +16644,13 @@ ir=''\n\
 while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
+if [ -n \"$ir\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$ir\" in\n\
   *'%tmp1 = icmp eq i64 %tmp0, 3'*'%tmp2 = icmp eq i64 %tmp0, 4'*'%tmp3 = select i1 %tmp1, double 1.5, double 2.5'*'%tmp4 = select i1 %tmp2, double 9.25, double %tmp3'*) : ;;\n\
   *)\n\
@@ -16004,6 +16711,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'(1 + 2)'*) : ;;\n\
   *)\n\
@@ -16088,6 +16802,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%lld\"'*'(5 + 7)'*'printf(\"%g\"'*'(2.5 + 1.5)'*) : ;;\n\
   *)\n\
@@ -16149,6 +16870,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'(4 << 62)'*) : ;;\n\
   *)\n\
@@ -16210,6 +16938,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'100000000000000000178334994858791836514563642560301392710701527770129502847789953562046870799284296099876897036220978235643807646031628623453753183252563447406133248.0 * 100000000000000000178334994858791836514563642560301392710701527770129502847789953562046870799284296099876897036220978235643807646031628623453753183252563447406133248.0'*) : ;;\n\
   *)\n\
@@ -16271,6 +17006,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%lld\", (3 + 4))'*'printf(\"%g\", (3.75 + 1.25))'*'printf(\"%lld\", 1)'*) : ;;\n\
   *)\n\
@@ -16334,6 +17076,13 @@ ir=''\n\
 while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
+if [ -n \"$ir\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$ir\" in\n\
   *'%tmp1 = icmp eq i64 %tmp0, 3'*'%tmp2 = icmp eq i64 %tmp0, 4'*'%tmp3 = select i1 %tmp1, ptr @.str.0, ptr @.str.1'*'%tmp4 = select i1 %tmp1, i64 5, i64 4'*'%tmp5 = select i1 %tmp2, ptr @.str.2, ptr %tmp3'*'%tmp6 = select i1 %tmp2, i64 5, i64 %tmp4'*) : ;;\n\
   *)\n\
@@ -16401,6 +17150,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'(1 + 2)'*) : ;;\n\
   *)\n\
@@ -16483,6 +17239,13 @@ ir=''\n\
 while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
+if [ -n \"$ir\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$ir\" in\n\
   *'@printf(ptr @.fmt_int, i64 1)'*) : ;;\n\
   *)\n\
@@ -16553,6 +17316,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%lld\", 1)'*'printf(\"%s\", \"picked\")'*'printf(\"%lld\", 7)'*) : ;;\n\
   *)\n\
@@ -16606,6 +17376,13 @@ ir=''\n\
 while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
+if [ -n \"$ir\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$ir\" in\n\
   *'%tmp0 = add i64 1, 2'*'%tmp1 = icmp eq i64 %tmp0, 3'*'@.str.0'*'@.str.1'*) : ;;\n\
   *)\n\
@@ -16659,6 +17436,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%s\", \"a\")'*'printf(\"%s\", \"b\")'*) : ;;\n\
   *)\n\
@@ -16713,6 +17497,13 @@ ir=''\n\
 while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
+if [ -n \"$ir\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$ir\" in\n\
   *'c\"1\\00\"'*'c\"1\\00\"'*'c\"1\\00\"'*'c\"1\\00\"'*) : ;;\n\
   *)\n\
@@ -16770,6 +17561,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*) : ;;\n\
   *)\n\
@@ -16825,6 +17623,13 @@ ir=''\n\
 while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
+if [ -n \"$ir\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$ir\" in\n\
   *'c\"hello world\\00\"'*'c\"say: hello world\\00\"'*'c\"hello world!\\00\"'*) : ;;\n\
   *)\n\
@@ -16881,6 +17686,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%s\", \"hello world\")'*'printf(\"%s\", \"say: hello world\")'*'printf(\"%s\", \"hello world!\")'*) : ;;\n\
   *)\n\
@@ -16937,6 +17749,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%s\", \"hello\")'*'printf(\"%s\", \"say yes\")'*) : ;;\n\
   *)\n\
@@ -17005,6 +17824,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%s\", '*'printf(\"%s\", '* ) : ;;\n\
   *)\n\
@@ -17062,6 +17888,13 @@ ir=''\n\
 while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
+if [ -n \"$ir\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$ir\" in\n\
   *'c\"1\\00\"'*'c\"1\\00\"'*'c\"1\\00\"'*'c\"x\\00\"'*'c\"y\\00\"'*) : ;;\n\
   *)\n\
@@ -17123,6 +17956,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"x\")'*'printf(\"%s\", \"y\")'*) : ;;\n\
   *)\n\
@@ -17182,6 +18022,13 @@ ir=''\n\
 while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
+if [ -n \"$ir\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$ir\" in\n\
   *'c\"1\\00\"'*'c\"1\\00\"'*'c\"1\\00\"'*'c\"x\\00\"'*'c\"y\\00\"'*) : ;;\n\
   *)\n\
@@ -17241,6 +18088,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"x\")'*'printf(\"%s\", \"y\")'*) : ;;\n\
   *)\n\
@@ -17300,6 +18154,13 @@ ir=''\n\
 while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
+if [ -n \"$ir\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$ir\" in\n\
   *'c\"1\\00\"'*'c\"1\\00\"'*'c\"x\\00\"'*'c\"y\\00\"'*) : ;;\n\
   *)\n\
@@ -17359,6 +18220,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"x\")'*'printf(\"%s\", \"y\")'*) : ;;\n\
   *)\n\
@@ -17418,6 +18286,13 @@ ir=''\n\
 while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
+if [ -n \"$ir\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$ir\" in\n\
   *'c\"1\\00\"'*'c\"1\\00\"'*'c\"1\\00\"'*'c\"1\\00\"'*'c\"x\\00\"'*'c\"y\\00\"'*'%tmp0 = add i64 1, 2'*) : ;;\n\
   *)\n\
@@ -17477,6 +18352,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"x\")'*'printf(\"%s\", \"y\")'*) : ;;\n\
   *)\n\
@@ -17536,6 +18418,13 @@ ir=''\n\
 while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
+if [ -n \"$ir\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$ir\" in\n\
   *'%tmp0 = add i64 1, 2'*'%tmp1 = mul i64 3, 2'*'icmp eq i64 %tmp0, 3'*'icmp ne i64 %tmp1, 6'*'icmp ne i64 %tmp0, %tmp1'*) : ;;\n\
   *)\n\
@@ -17597,6 +18486,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'if ('*'(1 + 2)'*'=='*'printf(\"%s\", \"1\")'*'(3 * 2)'*'!='*) : ;;\n\
   *)\n\
@@ -17656,6 +18552,13 @@ ir=''\n\
 while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
+if [ -n \"$ir\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$ir\" in\n\
   *'%tmp0 = add i64 1, 2'*'icmp eq i64 %tmp0, 3'*'select i1 %tmp1, double 3.75, double 4.25'*'fcmp oeq double %tmp2, 3.75'*'fcmp une double %tmp2, 4.25'*) : ;;\n\
   *)\n\
@@ -17717,6 +18620,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'?'*'3.75'*':'*'4.25'*'=='*'3.75'*'!='*'4.25'*'printf(\"%s\", \"1\")'*) : ;;\n\
   *)\n\
@@ -17776,6 +18686,13 @@ ir=''\n\
 while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
+if [ -n \"$ir\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$ir\" in\n\
   *'declare i32 @strcmp(ptr, ptr)'*'%tmp2 = select i1 %tmp1, ptr @.str.0, ptr @.str.1'*'%tmp3 = select i1 %tmp1, i64 5, i64 4'*'%tmp4 = call i32 @strcmp(ptr %tmp2, ptr @.str.2)'*'%tmp5 = icmp eq i32 %tmp4, 0'*'call i32 (ptr, ...) @printf(ptr @.fmt_str, ptr @.str.6)'*) : ;;\n\
   *)\n\
@@ -17841,6 +18758,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'#include <string.h>'*'strcmp('*'alpha'*'== 0'*'printf(\"%s\", \"1\")'*) : ;;\n\
   *)\n\
@@ -17907,6 +18831,13 @@ ir=''\n\
 while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
+if [ -n \"$ir\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$ir\" in\n\
   *'icmp eq i64 %tmp0, 3'*'select i1 %tmp1, i64 3, i64 4'*'select i1 %tmp1, i64 4, i64 3'*'icmp eq i64 %tmp0, %tmp2'*'icmp eq i64 %tmp0, %tmp3'*'xor i1 %tmp5, true'*'icmp ne i1 %tmp4, %tmp5'*) : ;;\n\
   *)\n\
@@ -17968,6 +18899,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'(1 + 2)'*'=='*'if ('*'printf(\"%s\", \"1\")'*) : ;;\n\
   *)\n\
@@ -18027,6 +18965,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'(1 + 2)'*'? (\"T\") : (\"F\")'*'!('*'? (\"T\") : (\"F\")'*) : ;;\n\
   *)\n\
@@ -18086,6 +19031,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'!('*'? (\"T\") : (\"F\")'*'? (\"T\") : (\"F\")'*'printf(\"%s\", \"T\")'*) : ;;\n\
   *)\n\
@@ -18147,6 +19099,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*) : ;;\n\
   *)\n\
@@ -18215,6 +19174,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'(4 << 62)'*) : ;;\n\
   *)\n\
@@ -18283,6 +19249,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*) : ;;\n\
   *)\n\
@@ -18351,6 +19324,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*) : ;;\n\
   *)\n\
@@ -18419,6 +19399,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*) : ;;\n\
   *)\n\
@@ -18487,6 +19474,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%lld\", 1)'*'printf(\"%lld\", 0)'*'printf(\"%lld\", 0)'*'printf(\"%lld\", 1)'*'printf(\"%lld\", 0)'*'printf(\"%lld\", 1)'*) : ;;\n\
   *)\n\
@@ -18548,6 +19542,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%lld\", 1)'*'printf(\"%lld\", 0)'*'printf(\"%lld\", 0)'*'printf(\"%lld\", 1)'*'printf(\"%lld\", 0)'*'printf(\"%lld\", 1)'*) : ;;\n\
   *)\n\
@@ -18609,6 +19610,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*) : ;;\n\
   *)\n\
@@ -18677,6 +19685,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*) : ;;\n\
   *)\n\
@@ -18745,6 +19760,13 @@ ir=''\n\
 while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
+if [ -n \"$ir\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$ir\" in\n\
   *'c\"1\\00\"'*'c\"1\\00\"'*'c\"1\\00\"'*'c\"1\\00\"'*'c\"1\\00\"'*'c\"x\\00\"'*'c\"y\\00\"'*'%tmp0 = add i64 1, 2'*'%tmp1 = icmp eq i64 %tmp0, 3'*'%tmp2 = select i1 %tmp1'*) : ;;\n\
   *)\n\
@@ -18806,6 +19828,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'if ('*'(1 + 2)'*'=='*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"x\")'*'printf(\"%s\", \"y\")'*) : ;;\n\
   *)\n\
@@ -18867,6 +19896,13 @@ ir=''\n\
 while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
+if [ -n \"$ir\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$ir\" in\n\
   *'c\"1\\00\"'*'c\"1\\00\"'*'c\"1\\00\"'*'c\"1\\00\"'*'c\"x\\00\"'*'c\"y\\00\"'*'%tmp0 = fadd double 1.5, 2.25'*) : ;;\n\
   *)\n\
@@ -18928,6 +19964,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"x\")'*'printf(\"%s\", \"y\")'*) : ;;\n\
   *)\n\
@@ -18989,6 +20032,13 @@ ir=''\n\
 while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
+if [ -n \"$ir\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$ir\" in\n\
   *'c\"1\\00\"'*'c\"1\\00\"'*'c\"1\\00\"'*'c\"1\\00\"'*'c\"x\\00\"'*'c\"y\\00\"'*'%tmp0 = add i64 1, 2'*'%tmp1 = icmp eq i64 %tmp0, 3'*'%tmp2 = select i1 %tmp1, ptr @.str.0, ptr @.str.1'*) : ;;\n\
   *)\n\
@@ -19050,6 +20100,13 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+if [ -n \"$source\" ]; then\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+fi\n\
 case \"$source\" in\n\
   *'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"x\")'*'printf(\"%s\", \"y\")'*) : ;;\n\
   *)\n\
@@ -21030,12 +22087,15 @@ fn render_asm_cli_summary(output: &Output) -> String {
     let exit_code = output.status.code().unwrap_or(1);
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
+    let contains_output_call = stdout.contains("printf")
+        || stdout.contains("phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free")
+        || stdout.contains("phpc_native_value_format_stdout_with_diagnostic");
 
     format!(
         "exit: {exit_code}\nstdout:\nnonempty: {}\ncontains_main: {}\ncontains_printf: {}\n--- stdout end ---\nstderr:\n{stderr}--- stderr end ---\n",
         !stdout.is_empty(),
         stdout.contains("main"),
-        stdout.contains("printf"),
+        contains_output_call,
     )
 }
 

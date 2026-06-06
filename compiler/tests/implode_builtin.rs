@@ -43,7 +43,7 @@ echo "|", $call("<br>", ["one", "two"]);
 }
 
 #[test]
-fn implode_rejects_forms_outside_current_subset() {
+fn implode_handles_current_operand_boundaries() {
     let missing = runtime_error(
         r#"<?php
 echo implode();
@@ -56,53 +56,58 @@ echo implode();
         "arity mismatch for implode(): expected 1 to 2 argument(s), got 0"
     );
 
-    let single = runtime_error(
+    let single = run_source(
         r#"<?php
 echo implode("not-array");
 "#,
-    );
-    assert_eq!(single.line, 2);
-    assert_eq!(single.column, 6);
-    assert_eq!(
-        single.message,
-        "unsupported call implode(): single argument must be array in the current subset, got string"
+    )
+    .unwrap();
+    assert_eq!(single.exit_code, 255);
+    assert!(
+        single.stdout.contains(
+            "implode(): If argument #1 ($separator) is of type string, argument #2 ($array) must be of type array, null given"
+        ),
+        "{}",
+        single.stdout
     );
 
-    let separator = runtime_error(
+    let separator = run_source(
         r#"<?php
-echo implode(42, ["a"]);
+echo implode(42, ["a", "b"]);
 "#,
-    );
-    assert_eq!(separator.line, 2);
-    assert_eq!(separator.column, 6);
-    assert_eq!(
-        separator.message,
-        "unsupported call implode(): separator argument must be string in the current subset, got int"
-    );
+    )
+    .unwrap();
+    assert_eq!(separator.stdout, "a42b");
+    assert_eq!(separator.exit_code, 0);
 
-    let array = runtime_error(
+    let array = run_source(
         r#"<?php
 echo implode(",", "not-array");
 "#,
-    );
-    assert_eq!(array.line, 2);
-    assert_eq!(array.column, 6);
-    assert_eq!(
-        array.message,
-        "unsupported call implode(): array argument must be array in the current subset, got string"
+    )
+    .unwrap();
+    assert_eq!(array.exit_code, 255);
+    assert!(
+        array.stdout.contains(
+            "implode(): If argument #1 ($separator) is of type string, argument #2 ($array) must be of type array, string given"
+        ),
+        "{}",
+        array.stdout
     );
 
-    let value = runtime_error(
+    let value = run_source(
         r#"<?php
 echo implode(",", [["nested"]]);
 "#,
+    )
+    .unwrap();
+    assert!(
+        value.stdout.contains("Warning: Array to string conversion"),
+        "{}",
+        value.stdout
     );
-    assert_eq!(value.line, 2);
-    assert_eq!(value.column, 6);
-    assert_eq!(
-        value.message,
-        "unsupported call implode(): array values must be null, bool, int, float, or string in the current subset, got array"
-    );
+    assert!(value.stdout.ends_with("Array"), "{}", value.stdout);
+    assert_eq!(value.exit_code, 0);
 }
 
 #[test]

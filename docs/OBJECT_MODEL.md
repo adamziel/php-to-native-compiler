@@ -525,7 +525,8 @@ non-public property access outside the current private/protected method context,
 non-public constructor access beyond the current constructor slice, dynamic
 method names, dynamic property-name forms beyond existing public slots and
 `stdClass` public dynamic slots,
-property assignment targets other than a direct variable, object comparisons,
+property assignment targets other than a direct variable, full exact object
+comparison semantics,
 object callables, ArrayAccess beyond current direct object-offset
 read/write/append/isset/empty/`??`/unset, compound-assignment, and
 integer/float increment/decrement forms plus the current direct

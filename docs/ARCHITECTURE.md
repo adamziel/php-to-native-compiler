@@ -859,10 +859,11 @@ PHP 8 `match` expressions remain a parser boundary rather than an AST node
 until the expression model has strict arm matching, default/exhaustiveness
 handling, throw-arm behavior, value evaluation ordering, reference/COW
 interactions, and native lowering.
-Parenthesized DNF-shaped type declarations such as `(A&B)|C` are also kept at
-a parse boundary for parameters, return types, and typed properties until the
-type metadata model can represent those shapes without implying runtime
-enforcement.
+Parenthesized DNF-shaped parameter and return type declarations such as
+`(A&B)|C` are accepted as metadata in `phpc run`, but native declaration
+lowering still rejects function declarations before implying type enforcement.
+Parenthesized DNF typed properties remain a parse boundary until the property
+metadata/enforcement model can represent those shapes.
 Top-level trait declarations are parsed as metadata for empty traits,
 supported properties, simple public instance methods, and simple public static
 methods. A class body may use already-declared traits
@@ -977,10 +978,11 @@ expressions remain lexer boundaries.
 PHP error-control syntax is represented as an explicit AST wrapper for
 `@expr`. The interpreter currently evaluates the wrapped expression normally
 and deliberately does not suppress diagnostics, because the runtime still
-models undefined variables, unsupported calls, invalid arithmetic, and other
-conditions as fatal project diagnostics rather than recoverable PHP
-warnings/notices. Native lowering rejects the wrapper until generated code has
-a real diagnostic severity and suppression model.
+models only a bounded warning/null fallback for plain undefined-variable reads;
+unsupported calls, invalid arithmetic, and many other conditions remain fatal
+project diagnostics rather than recoverable PHP warnings/notices. Native
+lowering rejects the wrapper until generated code has a real diagnostic
+severity and suppression model.
 
 Loop-control statements record an explicit positive integer depth in the AST.
 The interpreter represents `break N;` and `continue N;` as control-flow signals
@@ -1014,12 +1016,13 @@ instead of the generic function-call boundary.
 
 Cast expressions are represented as `Expr::Cast` with a small `CastKind`
 covering `(string)`, `(int)/(integer)`, `(bool)/(boolean)`, and
-`(float)/(double)`, and `(array)`. The interpreter owns PHP-shaped conversion
-for the current scalar/null/array subset and keeps warning-producing or
-object/resource-heavy cast behavior as runtime or parse boundaries. Native
-lowering rejects all cast expressions with a dedicated diagnostic until
-generated code has scalar conversion, array materialization, warning/recovery,
-object/resource handling, and exact diagnostic behavior.
+`(float)/(double)`, `(array)`, and `(object)`. The interpreter owns PHP-shaped
+conversion for the current scalar/null/array/object subset and keeps
+warning-producing or resource-heavy cast behavior as runtime or parse
+boundaries. Native lowering rejects all cast expressions with a dedicated
+diagnostic until generated code has scalar conversion, array/object
+materialization, warning/recovery, resource handling, and exact diagnostic
+behavior.
 
 ## Runtime Crate
 
@@ -1841,6 +1844,17 @@ unknown or non-direct property holders, reference-returning `offsetGet()`
 without proven object facts, root keyed-suffix append without owner-stack
 descent, broad reference/COW behavior, cleanup/unwind breadth, and exact PHP
 diagnostics behind explicit blockers.
+Generated-C user-function lowering uses shared source-call argument carriers
+for direct calls, method/static/constructor dispatch, and string-valued runtime
+dynamic callable calls. Runtime dynamic invocation resolves through the native
+callable lookup/invoke ABI, then rebinds call arguments to the callee source
+signature when a user function needs frame-local reference or global-import
+metadata. Function-scope `global` imports in this subset receive one caller
+root symbol table, bind imported names to root references, and route imported
+array path writes through symbol-table references plus array-lvalue owners.
+PHP-exact ordering for unsupported by-reference literal arguments in runtime
+dynamic calls remains outside the slice; the generated-C carrier can evaluate
+later arguments before reporting the by-reference materialization diagnostic.
 `instanceof` expressions route named, non-relative LLVM IR operands that can be
 materialized as native values through the shared runtime class-relationship ABI.
 This gives scalar and already-native value operands the same diagnostic and
@@ -2580,12 +2594,15 @@ value and `$syntax_only` is an already-lowerable boolean; true syntax-only
 flags return true for string values without name lookup, non-string
 scalar/null values return false, while false flags use the documented builtin
 lookup table for strings.
-Direct `function_exists($name)` calls fold only when `$name` is an
+Direct `function_exists($name)` calls fold when `$name` is an
 already-lowerable string value with a uniform known answer in the documented
 builtin table. Documented builtin names fold to true and missing names fold to
-false; user-defined function tables, namespace/autoload-aware lookup,
-extension-loaded functions outside the documented table, dynamic callees, and
-runtime callable dispatch remain outside native lowering.
+false. Already-lowerable non-string scalar/null name operands lower through
+the native text-membership diagnostic helper so native output can report the
+current name-type diagnostic. User-defined function tables,
+namespace/autoload-aware lookup, extension-loaded functions outside the
+documented table, array/object name operands, dynamic callees, and runtime
+callable dispatch remain outside native lowering.
 `dirname()` is currently an interpreter-only path builtin for lexical
 Unix-style local paths. Native `function_exists("dirname")` and
 `is_callable("dirname")` use the known-function table, but direct native
@@ -2602,11 +2619,13 @@ and `%N$s` placeholders using runtime echo-string conversion for values. Native
 `function_exists("sprintf")` and `is_callable("sprintf")` can see the name
 through the known function table, but direct native calls still reject under
 the function-call boundary until varargs/string formatting helpers are lowered.
-`strtolower()` is an interpreter-only bounded case-mapping builtin for current
-scalar/null string-convertible values. It applies ASCII lowercase mapping over
-runtime UTF-8 strings so WordPress bootstrap can normalize simple option
-suffixes, while locale-sensitive casing, full Unicode case folding, binary
-string behavior beyond valid UTF-8, and native lowering remain out of scope.
+`strtolower()` is a bounded case-mapping builtin for current scalar/null
+string-convertible values. It applies ASCII lowercase mapping over runtime
+UTF-8 strings so WordPress bootstrap can normalize simple option suffixes.
+Lowerable direct native calls route through the shared native value
+string-result operation contract, while unsupported arities/forms,
+locale-sensitive casing, full Unicode case folding, and binary string behavior
+beyond valid UTF-8 remain out of scope.
 `trim()` is an interpreter-only bounded string-normalization builtin for
 current scalar/null string-convertible values. The first slice implements the
 default PHP whitespace mask for represented runtime strings so WordPress can
@@ -2617,26 +2636,14 @@ normalization builtins for the same scalar/null string-convertible values.
 They support the default PHP whitespace mask and reached literal masks such as
 `/`, while character-mask ranges, broad binary edge cases, object/resource
 operands, exact diagnostics, and native lowering remain out of scope.
-`str_contains()` is an interpreter-only bounded string-search builtin for
-current scalar/null string-convertible haystack and needle values. It uses the
-current UTF-8 runtime string representation, keeps PHP's empty-needle `true`
-result, and leaves binary string edge cases and native lowering out of scope.
-`str_starts_with()` is an interpreter-only bounded string-prefix builtin for
-the same scalar/null string-convertible haystack and needle subset. It keeps
-PHP's empty-needle `true` result for represented runtime strings, and leaves
-binary string edge cases, object/resource coercions, exact diagnostics, and
-native lowering out of scope. Direct native `str_starts_with(...)` calls stop
-at a dedicated string-prefix codegen boundary before argument lowering or
-backend selection, while native function-table introspection can still see the
-known builtin name.
-`str_ends_with()` is an interpreter-only bounded string-suffix builtin for the
-same scalar/null string-convertible haystack and needle subset. It keeps PHP's
-empty-needle `true` result for represented runtime strings, and leaves binary
-string edge cases, object/resource coercions, exact diagnostics, and native
-lowering out of scope. Direct native `str_ends_with(...)` calls stop at a
-dedicated string-suffix codegen boundary before argument lowering or backend
-selection, while native function-table introspection can still see the known
-builtin name.
+`str_contains()`, `str_starts_with()`, and `str_ends_with()` are bounded string
+predicate builtins for current scalar/null string-convertible haystack and
+needle values. They use the current runtime string byte representation and
+keep PHP's empty-needle `true` result. Lowerable direct native calls route
+through the shared native value string-predicate contract in LLVM, assembly,
+and generated C. Unsupported arities/forms still stop at the dedicated
+string-predicate codegen boundary, while broad object/resource coercions and
+exact diagnostics remain out of scope.
 `basename()` is an interpreter-only bounded lexical path builtin for Unix-style
 local path strings and an optional string suffix. It does not consult the
 filesystem and leaves Windows drive/UNC paths, stream wrappers, null-byte
@@ -3147,15 +3154,16 @@ as direct `ClassName::CONST`. This does not model bare namespace constant
 fallback reads, autoload-triggered class discovery, broader `self`/`parent`/
 `static` string names, host extension loading, full extension constant
 inventories, or native lowering.
-Direct `defined($name)` calls include the deterministic `PHP_VERSION_ID`,
-`PHP_VERSION`, and 64-bit `PHP_INT_MAX` compatibility-target constants in the
-built-in answer table. Bare global constant reads and `constant($name)` still
+Direct `defined($name)` calls include the documented deterministic built-in
+constant slice, including PHP version, integer-size, SAPI, and OS constants,
+in the built-in answer table. Bare global constant reads and `constant($name)` still
 stay behind the native global-constant boundary until generated code has a real
 constant table and version-policy model.
-Direct `extension_loaded($name)` calls with already-lowerable string names fold
-against the current deterministic bounded compatibility registry: `json` and
-`hash` fold to true, while other names fold to false. Native code does not
-query host PHP modules, `php.ini`, SAPI state, or dynamic extension loading.
+Direct `extension_loaded($name)` calls lower through the native text-membership
+diagnostic helper against the current deterministic bounded compatibility
+registry: `json`, `hash`, `pdo`, and `pdo_mysql` return true, while other
+names return false. Native code does not query host PHP modules, `php.ini`,
+SAPI state, or dynamic extension loading.
 `file_exists()` is currently an interpreter-only local filesystem metadata
 builtin for the WordPress bootstrap drop-in check. It accepts one string local
 path, rejects stream-wrapper paths, and returns a boolean for host filesystem
@@ -3421,10 +3429,11 @@ false. Array offsets, object properties, arrays, complex operands,
 unset/mutation interactions, ambiguous truthiness, references/copy-on-write,
 and exact native error behavior remain outside this native slice.
 Array/object operands remain rejected until native array/object lowering
-exists. This is static folding, not runtime call dispatch. Dynamic calls,
-wrong arity, non-string `function_exists` names, non-bool `is_callable`
-syntax-only flags, callable-name output parameters, array/object/method
-callables, direct `assert(...)`, callable builtin dispatch, runtime call lookup, stack-frame layout,
+exists. This is static folding plus bounded diagnostic-helper lowering, not
+runtime call dispatch. Dynamic calls, wrong arity, array/object
+`function_exists` names, non-bool `is_callable` syntax-only flags,
+callable-name output parameters, array/object/method callables, direct
+`assert(...)`, callable builtin dispatch, runtime call lookup, stack-frame layout,
 arity/type diagnostics, dynamic string-call dispatch, and exact native error
 behavior remain unsupported. The
 `define()`/`constant()` constant-table builtins and unsupported
@@ -3525,16 +3534,17 @@ Dynamic PHP features will be implemented as runtime fallback zones:
   syntax is rejected with an explicit diagnostic before execution
 - dynamic includes will use runtime include resolution
 - `eval` will parse and execute in the caller scope
-- namespaces and imports use a bounded class-name plus same-namespace function
+- namespaces and imports use a bounded class-name plus direct function
   declaration/call slice. Namespace-scoped function declarations register under
   their resolved names; unqualified direct calls inside a namespace first look
   for a same-namespace function and then fall back to global builtins/user
-  functions. Function imports, qualified function calls, leading-backslash
-  fully-qualified function calls, namespace-scoped constants, and dynamic
-  string-name namespace expansion remain boundaries.
-- global constants use a narrow interpreter constant table: exact uppercase
-  `CASE_LOWER`, `CASE_UPPER`, `ARRAY_FILTER_USE_KEY`, and
-  `ARRAY_FILTER_USE_BOTH` are available as bare built-in constants, while
+  functions. Function imports plus qualified, namespace-relative, and
+  leading-backslash fully-qualified direct calls resolve through the bounded
+  namespace/function tables. Namespace-qualified constants, unsupported
+  leading-backslash constants, and dynamic string-name namespace expansion
+  remain boundaries.
+- global constants use a narrow interpreter constant table: the documented
+  built-in constant slice is available as bare built-in constants, while
   runtime-defined constants can be created with
   `define($name, $value)`, queried with `defined($name)`, and read with
   `constant($name)` or a bare unqualified constant name for the documented
@@ -3552,13 +3562,16 @@ Variable-variable execution and `eval` remain design boundaries; direct
 Namespace declarations and top-level class `use` import declarations execute
 as metadata/no-op statements in `phpc run`, but the native path still rejects
 namespace declarations/imports before scalar folding or backend execution.
-First-class callable syntax such as `strlen(...)` and `$callback(...)` also
-stops at a stable parse diagnostic until Closure creation and callable object
-semantics exist.
-Call-site argument unpacking such as `handler(...$args)` stops at a dedicated
-parse diagnostic until iterable expansion order, string-keyed named-argument
-interaction, by-reference argument propagation, variadic collection, duplicate
-argument diagnostics, and native lowering exist.
+Direct-name first-class callable syntax such as `strlen(...)` is accepted in
+the current minimal parser/interpreter/IR slice. Dynamic first-class callable
+syntax such as `$callback(...)` still stops at a stable parse diagnostic until
+Closure creation and callable object semantics are broadened.
+Call-site argument unpacking parses, and generated-native C lowers the current
+closure/method materialized-argument bridge through runtime unpack and
+finalization helpers. Broader unpacking semantics, including iterable
+expansion order, string-keyed named-argument interaction, by-reference
+argument propagation, variadic collection, duplicate argument diagnostics, and
+LLVM/assembly parity, remain unsupported.
 Call-time by-reference arguments such as `handler(&$value)` also stop at a
 dedicated parse diagnostic because the current by-reference parameter execution
 slice uses ordinary direct-variable call arguments and callee parameter
@@ -3616,8 +3629,8 @@ does not resolve classes or methods and is not callable dispatch. Normal
 current declared method metadata: object receivers are true for public declared
 methods, and class-string receivers are true for public static declared
 methods. Array/object callable dynamic invocation, private/protected
-caller-context method callability, method calls, first-class callable syntax,
-and namespace/autoload-aware callable resolution are still outside the
+caller-context method callability, method calls, dynamic first-class callable
+syntax, and namespace/autoload-aware callable resolution are still outside the
 implemented dynamic-call subset. Constant names that are lexed as language keywords or
 literals cannot be read bare, and case-insensitive legacy constants, extension
 constants, namespace-qualified constants, nested or namespace-aware `const`
@@ -3625,9 +3638,11 @@ declarations, dynamic `const` values, class constants through
 `constant(...)`/unsupported `defined(...)` forms, typed and multi-declarator
 class constants, `static::CONST`, references/copy-on-write for constant values,
 and broader constant lowering are still outside the implemented constant
-subset. Namespace-qualified and leading-backslash fully-qualified constant
-reads stop at dedicated parse diagnostics until namespace-aware constant-table
-lookup, fallback behavior, imports, and native lowering exist. Direct
+subset. Namespace-qualified constant reads stop at dedicated parse diagnostics
+until namespace-aware constant-table lookup, fallback behavior, imports, and
+native lowering exist. Leading-backslash built-in constant reads such as
+`\PHP_VERSION` execute in `phpc run`, while native lowering stops at the
+global-constant boundary. Direct
 `ClassName::CONST`, `self::CONST`, and `parent::CONST`
 execution use class metadata instead of the global constant table. Native
 lowering currently folds only direct
@@ -3653,12 +3668,15 @@ Class inheritance uses the same resolved class-like names. Parent classes must
 already be present in the interpreter's class metadata table from the current
 program or from an executed include/require path; class lookup does not invoke
 autoload callbacks.
+The `__NAMESPACE__` magic constant evaluates from the current lexical
+namespace context in `phpc run`, with the global namespace represented as an
+empty string.
 
 Unsupported namespace/import behavior remains: bracketed namespace blocks,
 global namespace blocks, namespace-qualified constant reads,
-leading-backslash fully-qualified constant reads, grouped imports, string-name
-import expansion, trait `use` execution, `__NAMESPACE__`, autoload interaction,
-exact PHP diagnostics,
+leading-backslash fully-qualified constant reads outside the current built-in
+constant slice, grouped imports, string-name
+import expansion, trait `use` execution, autoload interaction, exact PHP diagnostics,
 partial-output behavior, and namespace-aware native lowering. The native path
 rejects namespace declarations/imports before scalar folding or backend
 execution until native symbol tables and namespace context exist.
@@ -3926,8 +3944,8 @@ type names, nullable flags, and builtin flags in the interpreter. Untyped
 parameters return `null`. It does not expose
 attributes, files, line numbers, doc comments, extension/internal metadata,
 closure parameter targets, invocation-time reference binding, exact exception
-objects, DNF type objects, runtime argument/return type enforcement, or native
-lowering.
+objects, DNF type objects beyond parsed function parameter/return metadata,
+runtime argument/return type enforcement, or native lowering.
 `ReflectionProperty` uses a core placeholder class plus request-local state for
 the selected declaring class id/name, property name, visibility, static flag,
 directly preceding property doc-comment text, and optional property type
@@ -4119,11 +4137,10 @@ and PHP's exact warning/fatal recovery details.
 
 ## Attribute Boundary
 
-PHP attributes are currently syntax-only metadata for simple no-argument
-`#[Name]` blocks; the lexer skips them before the parser sees the surrounding
-declaration. Attribute blocks with constructor-style arguments such as
-`#[Route('/wp-json/demo')]` stop at a dedicated lex diagnostic because
-attribute argument evaluation, reflection data, target validation,
+PHP attributes are currently syntax-only metadata for `#[Name]` blocks and
+constructor-style argument forms such as `#[Route('/wp-json/demo')]`; the
+lexer skips them before the parser sees the surrounding declaration.
+Attribute argument evaluation, reflection data, target validation,
 namespace-aware attribute name resolution, repeated-attribute rules,
 references/copy-on-write behavior, and native lowering do not exist yet.
 Ordinary `#` comments remain comments, including `# [` with whitespace before
@@ -4132,15 +4149,17 @@ the bracket.
 ## Cast Boundary
 
 Cast expressions are AST-backed, but execution is intentionally limited to the
-current scalar/null/array runtime value model. `(string)` handles scalar/null
-values through the runtime echo-string conversion boundary. `(int)`/`(integer)`
-handles scalar/null values through a narrow integer-cast policy for WordPress
-bootstrap parsing and focused fixtures, including bounded leading-numeric
-string prefixes. `(array)` handles `null`, scalars, and already-array values
-only. Object-to-array property materialization, resources, exact PHP
-warning/recovery behavior for leading-numeric strings, numeric grammar outside
-the current prefix scanner, non-finite or out-of-range float behavior, and
-native cast lowering remain explicit boundaries.
+current scalar/null/array/object runtime value model. `(string)` handles
+scalar/null values through the runtime echo-string conversion boundary.
+`(int)`/`(integer)` handles scalar/null values through a narrow integer-cast
+policy for WordPress bootstrap parsing and focused fixtures, including bounded
+leading-numeric string prefixes. `(array)` handles `null`, scalars,
+already-array values, and initialized object properties. `(object)` materializes
+`stdClass` for `null`, scalar, and array values, and returns object operands
+unchanged. Closure/resource casts, exact PHP warning/recovery behavior for
+leading-numeric strings, numeric grammar outside the current prefix scanner,
+non-finite or out-of-range float behavior, and native cast lowering remain
+explicit boundaries.
 
 ## Exception Boundary
 

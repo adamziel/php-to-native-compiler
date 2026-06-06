@@ -1,0 +1,4 @@
+Fatal error: Uncaught TypeError: array_map(): Argument #1 ($callback) must be a valid callback or null, no array or string given in tests/fixtures/runtime_errors/array_map_callback_non_string.php:3
+Stack trace:
+#0 {main}
+  thrown in tests/fixtures/runtime_errors/array_map_callback_non_string.php on line 3

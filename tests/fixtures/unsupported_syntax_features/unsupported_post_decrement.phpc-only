@@ -1,1 +1,1 @@
-
+phpc parses this post-decrement target and keeps nested array targets behind a runtime increment/decrement boundary.

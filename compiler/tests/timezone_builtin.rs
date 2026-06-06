@@ -45,17 +45,18 @@ echo $call("UTC") ? "utc" : "missing";
 
 #[test]
 fn date_default_timezone_set_rejects_forms_outside_current_subset() {
-    let arity = runtime_error(
+    let arity = run_source(
         r#"<?php
 date_default_timezone_set();
 "#,
-    );
-    assert_eq!(arity.line, 2);
-    assert_eq!(arity.column, 1);
+    )
+    .unwrap();
     assert_eq!(
-        arity.message,
-        "arity mismatch for date_default_timezone_set(): expected 1 argument(s), got 0"
+        arity.stdout,
+        "Fatal error: Uncaught TypeError: Too few arguments to function date_default_timezone_set(), 0 passed in Command line code on line 2 and exactly 1 expected in Command line code:2\nStack trace:\n#0 {main}\n  thrown in Command line code on line 2"
     );
+    assert_eq!(arity.stderr, "");
+    assert_eq!(arity.exit_code, 255);
 
     let type_error = runtime_error(
         r#"<?php

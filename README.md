@@ -262,9 +262,12 @@ constructors, declared methods, static calls, callable-array method branches,
 invokable-object branches, and constructorless argument arrays. Dynamic
 instance method-name matching uses a method-specific runtime helper that
 normalizes supported scalar method-name operands instead of reusing the
-string-only dynamic function-call matcher.
+string-only dynamic function-call matcher. Generated-C user-function frames
+also support the current direct and string-valued runtime dynamic call slice,
+including bounded `global` imports that share one caller root symbol table and
+array-lvalue owners for imported array-path writes.
 
-This is not broad native PHP support. Objects, functions, references,
+This is not broad native PHP support. Broad objects, functions, references,
 request/session/stream/header state, exceptions, includes, shutdown callbacks,
 destructors/finally ordering, output buffers, SAPI interaction, branch
 environment merging, loops/switch/goto/break/continue, dynamic string-pointer
@@ -305,10 +308,13 @@ incorrect native code.
   no-capture anonymous, static anonymous, and non-static arrow closure
   values with bounded direct/callback execution for ordinary closures,
   and recursion guarded by a fixed depth limit;
-  parameter/return type syntax is accepted as metadata only, without runtime
-  type enforcement, while parenthesized DNF-shaped type declarations and
-  call-site argument unpacking such as `handler(...$args)` plus call-time
-  by-reference arguments such as `handler(&$value)` remain parse boundaries
+  parameter/return type syntax is accepted as metadata only, including
+  parenthesized DNF-shaped function parameter/return declarations, without
+  runtime type enforcement. DNF-shaped property declarations and call-time
+  by-reference arguments such as `handler(&$value)` remain parse boundaries.
+  Call-site argument unpacking parses, and native generated-C lowering covers
+  the bounded closure/method materialized-argument bridge; broader unpacking
+  semantics remain explicitly unsupported
 - top-level `global $name, ...;` declarations as no-op/import-compatible
   statements
 - ordered arrays with integer/string keys, array literals, indexed reads/writes,
@@ -526,7 +532,8 @@ incorrect native code.
   while parenthesized dynamic class-name expressions such as `new ($class)()`
   remain a dedicated parse boundary,
   metadata-only built-in `Exception` and `stdClass` class seeds, including
-  no-argument instantiation and user subclasses for `Exception`,
+  bounded `Exception` constructor state for `(message, code, previous)`,
+  `getMessage()`, and user subclasses for `Exception`,
   public and same-class private instance method calls, inherited public method
   calls, protected same-class/child method calls, explicit `parent::method()`
   and `parent::__construct()` calls in instance context, narrow
@@ -632,10 +639,10 @@ incorrect native code.
 
 The runtime still names unsupported zones explicitly. Examples include
 references beyond the current direct variable-to-variable assignment cell
-slice, copy-on-write, namespace forms beyond the current class-name/import,
-same-namespace function, and namespace-scoped top-level constant slices,
-including leading-backslash fully-qualified function calls such as `\strlen()`,
-leading-backslash fully-qualified constant reads such as `\PHP_VERSION`,
+slice, copy-on-write, namespace forms beyond the current
+class-name/import/function call and namespace-scoped top-level constant
+slices, including namespace-qualified constant reads beyond the current
+built-in leading-backslash constant slice such as `\PHP_VERSION`,
 include/require breadth beyond the current narrow local string-path,
 include-path, missing-include recovery, and bounded missing-require fatal
 statement/expression slice, eval, generators, closure behavior beyond the
@@ -648,7 +655,8 @@ with bounded PHP-matching by-reference-parameter warnings,
 named call arguments, call-time by-reference arguments,
 type declaration enforcement, cast behavior outside the current `(string)`,
 `(int)`, `(bool)`, and
-`(float)`/`(double)` slices plus the null/scalar/array `(array)` slice,
+`(float)`/`(double)` slices plus the null/scalar/array/object `(array)` and
+`(object)` slices,
 actual PHP warning/notice suppression for `@expr`,
 typed/non-public/abstract/final or multi-constant interface
 declarations, full interface signature
@@ -687,9 +695,8 @@ constructor behavior beyond public/inherited public instance `__construct`
 and explicit parent calls, broader `self::`/`static::` execution beyond the
 current method, dynamic static method, class-name, class-constant, and
 static-property slices,
-exact PHP nested class declaration timing and fatal behavior, real
-`Exception` constructor state/methods, `Throwable`, stack traces, exception
-throw/catch execution,
+exact PHP nested class declaration timing and fatal behavior, broader
+`Throwable` methods, stack traces, and exception throw/catch execution,
 bare namespace constant fallback reads, namespace-qualified constant reads,
 class-constant lookup through
 `defined()`/`constant()` beyond the current declared-class/public-visibility
@@ -973,8 +980,8 @@ double-quoted string interpolation, dynamic calls outside the documented
 generated-C known string/callable surfaces, `assert()`, runtime constant tables,
 direct request superglobal reads such as `$_GET`/`$_POST`/`$_COOKIE`/
 `$_REQUEST`/`$_FILES`,
-direct `str_starts_with(...)` string-prefix calls,
-direct `str_ends_with(...)` string-suffix calls,
+string-predicate arities/forms outside the shared native
+`str_contains`/`str_starts_with`/`str_ends_with` contract,
 direct `basename(...)` lexical path calls,
 direct `file_get_contents(...)` filesystem/stream reads,
 direct `fopen()`/`stream_context_create()`/`stream_context_get_options()`/

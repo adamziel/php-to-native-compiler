@@ -1,6 +1,5 @@
-exit: 1
+exit: 0
 stdout:
 --- stdout end ---
 stderr:
-runtime error at tests/fixtures/runtime_errors/array_search_array_value.php:3:6: unsupported call array_search(): array needles and array values are not implemented
 --- stderr end ---

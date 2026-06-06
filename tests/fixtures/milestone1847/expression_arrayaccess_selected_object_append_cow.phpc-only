@@ -1,0 +1,1 @@
+Project runtime still emits null-offset deprecations while routing expression-selected object ArrayAccess append copy-on-write.

@@ -25,7 +25,7 @@ echo strftime("%z|%Z|%H:%M", 0), "\n";
 
     assert_eq!(
         execution.stdout,
-        "bool(true)\nbool(true)\nbool(true)\nstring(1) \"C\"\nAug 08 2008 08:08:08\nFriday|Fri|August|Aug| 8|221|5|5|31|31\n2008-08-08|08/08/08|08:08|08:08:08|08:08:08 AM|AM|am|%\n08/08/08|08:08:08|+0000|UTC\nbool(false)\nbool(false)\n+0530|IST|05:30\n"
+        "bool(true)\nbool(true)\nbool(true)\nstring(1) \"C\"\nAug 08 2008 08:08:08\nFriday|Fri|August|Aug| 8|221|5|5|31|31\n2008-08-08|08/08/08|08:08|08:08:08|08:08:08 AM|AM|am|%\n08/08/08|08:08:08|+0000|GMT\nbool(false)\nbool(false)\n+0530|IST|05:30\n"
     );
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);

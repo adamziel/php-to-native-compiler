@@ -1,1 +1,1 @@
-phpc intentionally supports constant() only for runtime-defined constants and the documented built-in constant slice.
+phpc reports unknown constant() names with a stable project diagnostic.

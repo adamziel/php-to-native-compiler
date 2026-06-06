@@ -5396,7 +5396,7 @@ impl Parser {
         ) {
             self.advance();
             let Some(is_generator) = self.function_generator_stack.last_mut() else {
-                return Err(self.error_at(span, unsupported_yield_message()));
+                return Err(self.error_at(span, unsupported_yield_from_message()));
             };
             *is_generator = true;
             let iterable = self.parse_expression()?;

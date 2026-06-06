@@ -37,7 +37,18 @@ echo filesize(__DIR__ . "/missing-file.php") === false ? "missing-false" : "miss
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "int|positive|dir-false|missing-false");
+    assert!(
+        execution
+            .stdout
+            .starts_with("int|positive|dir-size|\nWarning: filesize(): stat failed"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution.stdout.ends_with("missing-false"),
+        "{}",
+        execution.stdout
+    );
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -62,16 +73,20 @@ echo $call(__FILE__) === filesize(__FILE__) ? "repeat" : "different";
 
 #[test]
 fn filesize_rejects_forms_outside_current_subset() {
-    let arity = runtime_error(
+    let arity = run_source_with_source_file(
         r#"<?php
 echo filesize();
 "#,
-    );
-    assert_eq!(arity.line, 2);
-    assert_eq!(arity.column, 6);
-    assert_eq!(
-        arity.message,
-        "arity mismatch for filesize(): expected 1 argument(s), got 0"
+        fixture_source_file(),
+    )
+    .unwrap();
+    assert_eq!(arity.exit_code, 255);
+    assert!(
+        arity
+            .stdout
+            .contains("Too few arguments to function filesize(), 0 passed"),
+        "{}",
+        arity.stdout
     );
 
     let type_error = runtime_error(

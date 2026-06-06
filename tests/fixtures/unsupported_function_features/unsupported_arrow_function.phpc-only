@@ -1,1 +1,0 @@
-phpc intentionally rejects arrow closure invocation before closure body execution, implicit capture binding, and callback integration exist.

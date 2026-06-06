@@ -1,1 +1,1 @@
-
+phpc emits its current PHP-shaped undefined-function fatal for the runtime namespace-qualified call boundary.

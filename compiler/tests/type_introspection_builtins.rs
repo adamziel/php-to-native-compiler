@@ -4,7 +4,6 @@ use php_compiler::{emit_ir_source, run_source};
 const LLVM_ARRAY_REJECTION: &str = "LLVM array lowering rejects arrays, array literals, array indexing, array assignment, foreach array iteration, array offset unset, and array builtin function calls until native array storage layout, key normalization, copy-on-write, references, callbacks, and exact native error behavior exist; phpc run handles current array behavior";
 const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
 const LLVM_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "LLVM dynamic function-call lowering rejects variable-call expressions such as $name(...) until native callable expression evaluation, runtime function lookup, stack frames, arity/type diagnostics, callback dispatch, and exact native callable errors exist; phpc run handles current string-valued dynamic function calls";
-const LLVM_OBJECT_INSTANTIATION_REJECTION: &str = "LLVM object-instantiation lowering rejects new expressions and constructor dispatch until native object allocation, object handles, constructor calls, visibility checks, autoload/class lookup, references/copy-on-write, and exact native object-instantiation errors exist; phpc run handles current bounded new behavior";
 
 #[test]
 fn gettype_reports_php_legacy_type_names_for_current_values() {
@@ -355,7 +354,6 @@ fn emit_ir_keeps_unsupported_type_introspection_boundaries_explicit() {
         "<?php\necho is_int(1, 2) ? 1 : 0;\n",
         "<?php\necho is_callable(\"strlen\", 1) ? 1 : 0;\n",
         "<?php\necho is_callable(\"strlen\", true, $name) ? 1 : 0;\n",
-        "<?php\necho function_exists(42) ? 1 : 0;\n",
         "<?php\necho function_exists(\"strlen\", true) ? 1 : 0;\n",
     ] {
         let error = emit_ir_source(source).unwrap_err();
@@ -363,6 +361,18 @@ fn emit_ir_keeps_unsupported_type_introspection_boundaries_explicit() {
         assert_eq!(error.phase, Phase::Codegen);
         assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
     }
+
+    let function_exists_ir = emit_ir_source("<?php\necho function_exists(42) ? 1 : 0;\n").unwrap();
+    assert!(
+        function_exists_ir
+            .contains("phpc_native_text_membership_with_reference_slot_with_diagnostic"),
+        "{function_exists_ir}"
+    );
+    assert!(
+        function_exists_ir
+            .contains("phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"),
+        "{function_exists_ir}"
+    );
 
     for source in [
         "<?php\n$call = \"is_array\";\necho $call([]) ? 1 : 0;\n",
@@ -381,7 +391,7 @@ fn emit_ir_keeps_unsupported_type_introspection_boundaries_explicit() {
 
     let error = emit_ir_source("<?php\necho gettype(new Box()) ? 1 : 0;\n").unwrap_err();
     assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.message, LLVM_OBJECT_INSTANTIATION_REJECTION);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
 }
 
 #[test]
@@ -431,8 +441,16 @@ echo "\n";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 4, "{ir}");
-    assert_eq!(ir.matches("c\"0\\00\"").count(), 3, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 7, "{ir}");
+    assert_eq!(ir.matches("c\"0\\00\"").count(), 7, "{ir}");
+    assert!(
+        ir.contains("phpc_native_text_membership_with_reference_slot_with_diagnostic"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"),
+        "{ir}"
+    );
     assert!(!ir.contains("extension_loaded"), "{ir}");
 }
 

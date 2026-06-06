@@ -1,1 +1,2 @@
+runtime error at 32:6: unsupported call stream_context_set_params(): Argument #1 ($context) must be an array with valid callbacks as values, function "second" not found or invalid function name
 

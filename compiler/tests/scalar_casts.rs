@@ -1,7 +1,7 @@
 use php_compiler::error::Phase;
 use php_compiler::{emit_asm_source, emit_ir_source, run_source};
 
-const LLVM_CAST_REJECTION: &str = "LLVM cast lowering rejects (string), (int)/(integer), (bool)/(boolean), (float)/(double), and (array) casts plus strval(), boolval(), floatval(), and doubleval() until native PHP scalar conversion, array materialization, warning/recovery behavior, object/resource handling, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded cast behavior";
+const LLVM_CAST_REJECTION: &str = "LLVM cast lowering rejects (string), (int)/(integer), (bool)/(boolean), (float)/(double), (array), and (object) casts plus strval(), boolval(), floatval(), and doubleval() until native PHP scalar conversion, array/object materialization, warning/recovery behavior, object/resource handling, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded cast behavior";
 
 #[test]
 fn string_casts_execute_for_current_scalar_and_null_subset() {
@@ -202,15 +202,40 @@ echo strlen($keys[2]), "|", $array[$keys[2]], "\n";
 }
 
 #[test]
-fn remaining_casts_have_stable_parse_error() {
-    let error = run_source("<?php\necho (object) \"1\";\n").unwrap_err();
+fn object_casts_execute_for_current_null_scalar_array_and_object_subset() {
+    let execution = run_source(
+        r#"<?php
+$null = (object) null;
+$scalar = (object) "Ada";
+$array = (object) ["name" => "Bob"];
+class Box { public $name = "Box"; }
+$box = new Box();
+$same = (object) $box;
+echo get_class($null), "|", count(get_object_vars($null)), "\n";
+echo get_class($scalar), "|", $scalar->scalar, "\n";
+echo get_class($array), "|", $array->name, "\n";
+echo $same === $box ? "same" : "other";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "stdClass|0\nstdClass|Ada\nstdClass|Bob\nsame"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn remaining_unsupported_cast_syntax_has_stable_parse_error() {
+    let error = run_source("<?php\necho (real) \"1\";\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Parse);
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "unsupported cast expression: only (string), (int), (bool), (float), and (array) casts are implemented"
+        "unsupported cast expression: only (string), (int), (bool), (float), (array), and (object) casts are implemented"
     );
 }
 

@@ -95,16 +95,20 @@ preg_replace_callback('/./', 'cb', 'abc');
         "unsupported call preg_replace_callback(): regex metacharacter . is not implemented in the current subset"
     );
 
-    let unsupported_callback = runtime_error(
+    let unsupported_callback = run_source(
         r#"<?php
 preg_replace_callback('/x/', 'other_callback', '/x');
 "#,
-    );
-    assert_eq!(unsupported_callback.line, 2);
-    assert_eq!(unsupported_callback.column, 1);
-    assert_eq!(
-        unsupported_callback.message,
-        "undefined function other_callback()"
+    )
+    .unwrap();
+    assert_eq!(unsupported_callback.stderr, "");
+    assert_eq!(unsupported_callback.exit_code, 255);
+    assert!(
+        unsupported_callback.stdout.contains(
+            "Fatal error: Uncaught Error: Call to undefined function other_callback() in Command line code:2"
+        ),
+        "{}",
+        unsupported_callback.stdout
     );
 
     let unsupported_limit = runtime_error(

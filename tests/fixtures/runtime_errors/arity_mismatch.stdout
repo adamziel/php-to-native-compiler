@@ -1,0 +1,4 @@
+Fatal error: Uncaught TypeError: Too few arguments to function identity(), 0 passed in Command line code on line 5 and exactly 1 expected in tests/fixtures/runtime_errors/arity_mismatch.php:5
+Stack trace:
+#0 {main}
+  thrown in tests/fixtures/runtime_errors/arity_mismatch.php on line 5

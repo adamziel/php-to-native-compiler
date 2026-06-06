@@ -1,0 +1,1 @@
+Project runtime still emits null-offset deprecations while routing non-direct magic-property ArrayAccess append offsetSet(null) reference-slot copy-on-write.

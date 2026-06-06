@@ -119,7 +119,7 @@ echo is_callable("strpos") ? "1" : "0";
     );
     assert!(routed.contains("i8 0, ptr %"), "{routed}");
     assert!(
-        routed.contains("phpc_native_value_format_stdout_with_diagnostic"),
+        routed.contains("phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"),
         "{routed}"
     );
     assert!(

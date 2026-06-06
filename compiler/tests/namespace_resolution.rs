@@ -645,14 +645,17 @@ echo fallback_only();
 "#;
     fs::write(&main, source).expect("write exact function import main fixture");
 
-    let error = run_source_with_source_file(source, main.display().to_string()).unwrap_err();
+    let execution = run_source_with_source_file(source, main.display().to_string()).unwrap();
 
-    assert_eq!(error.phase, Phase::Runtime);
-    assert_eq!(error.line, 7);
-    assert_eq!(error.column, 6);
-    assert_eq!(
-        error.message,
-        "undefined function Vendor\\Missing\\fallback_only()"
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 255);
+    assert!(
+        execution.stdout.contains(&format!(
+            "Fatal error: Uncaught Error: Call to undefined function Vendor\\Missing\\fallback_only() in {}:7",
+            main.display()
+        )),
+        "{}",
+        execution.stdout
     );
 
     let _ = fs::remove_file(lib);
@@ -662,33 +665,39 @@ echo fallback_only();
 
 #[test]
 fn missing_imported_function_and_non_imported_namespaced_calls_report_distinct_runtime_names() {
-    let imported_error = run_source(
+    let imported_execution = run_source(
         r#"<?php
 namespace App\Demo;
 use function Vendor\Missing\shared;
 shared();
 "#,
     )
-    .unwrap_err();
-    assert_eq!(imported_error.phase, Phase::Runtime);
-    assert_eq!(imported_error.line, 4);
-    assert_eq!(
-        imported_error.message,
-        "undefined function Vendor\\Missing\\shared()"
+    .unwrap();
+    assert_eq!(imported_execution.stderr, "");
+    assert_eq!(imported_execution.exit_code, 255);
+    assert!(
+        imported_execution.stdout.contains(
+            "Fatal error: Uncaught Error: Call to undefined function Vendor\\Missing\\shared() in Command line code:4"
+        ),
+        "{}",
+        imported_execution.stdout
     );
 
-    let fallback_error = run_source(
+    let fallback_execution = run_source(
         r#"<?php
 namespace App\Demo;
 shared();
 "#,
     )
-    .unwrap_err();
-    assert_eq!(fallback_error.phase, Phase::Runtime);
-    assert_eq!(fallback_error.line, 3);
-    assert_eq!(
-        fallback_error.message,
-        "undefined function App\\Demo\\shared()"
+    .unwrap();
+    assert_eq!(fallback_execution.stderr, "");
+    assert_eq!(fallback_execution.exit_code, 255);
+    assert!(
+        fallback_execution.stdout.contains(
+            "Fatal error: Uncaught Error: Call to undefined function App\\Demo\\shared() in Command line code:3"
+        ),
+        "{}",
+        fallback_execution.stdout
     );
 }
 
@@ -1157,17 +1166,8 @@ echo strlen("abc"), "|", strtolower("ABC"), "\n";
 }
 
 #[test]
-fn generated_c_exe_runs_imported_type_alias_static_property_metadata() {
-    if !has_cc() {
-        return;
-    }
-
-    let dir = namespace_resolution_fixture_dir("imported-type-alias-static-property-exe");
-    let root = dir.join("root.php");
-    let output = dir.join("program");
-    fs::write(
-        &root,
-        r#"<?php
+fn run_resolves_imported_type_alias_static_property_metadata_and_generated_c_rejects_new() {
+    let source = r#"<?php
 namespace App\Demo;
 use App\Demo\Target as ImportedTarget;
 
@@ -1178,25 +1178,24 @@ class Registry {
 
 Registry::$item = new Target();
 echo "ok\n";
-"#,
-    )
-    .expect("write imported type alias static property executable fixture");
+"#;
 
-    let output = compile_exe(
-        &root,
-        &output,
-        "imported type alias static property executable",
-    );
-    let run = Command::new(&output)
-        .output()
-        .expect("run imported type alias static property executable");
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.stdout, "ok\n");
+    assert_eq!(execution.exit_code, 0);
+
+    let program = parse(source).unwrap();
+    let error = emit_native_executable_c_source(&program).unwrap_err();
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 10);
+    assert_eq!(error.column, 19);
     assert!(
-        run.status.success(),
-        "stdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&run.stdout),
-        String::from_utf8_lossy(&run.stderr)
+        error
+            .message
+            .contains("object-instantiation lowering rejects new expressions"),
+        "{}",
+        error.message
     );
-    assert_eq!(String::from_utf8_lossy(&run.stdout), "ok\n");
 }
 
 #[test]

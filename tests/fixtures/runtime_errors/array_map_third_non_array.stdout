@@ -1,0 +1,5 @@
+Fatal error: Uncaught TypeError: array_map(): Argument #3 ($array) must be of type array, int given, called in tests/fixtures/runtime_errors/array_map_third_non_array.php:3
+Stack trace:
+#0 tests/fixtures/runtime_errors/array_map_third_non_array.php(3): array_map()
+#1 {main}
+  thrown in tests/fixtures/runtime_errors/array_map_third_non_array.php on line 3

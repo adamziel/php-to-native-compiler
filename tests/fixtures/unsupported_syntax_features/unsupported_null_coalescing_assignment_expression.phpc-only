@@ -1,1 +1,1 @@
-
+phpc parses this null coalescing assignment expression and keeps nested array targets behind a runtime boundary.

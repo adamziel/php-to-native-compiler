@@ -61,13 +61,15 @@ fn str_contains_rejects_forms_outside_current_subset() {
         "unsupported call str_contains(): needle argument arrays are not implemented in the current subset"
     );
 
-    let too_few = run_source("<?php\nstr_contains('abc');\n").unwrap_err();
-    assert_eq!(too_few.phase, Phase::Runtime);
-    assert_eq!(too_few.line, 2);
-    assert_eq!(too_few.column, 1);
-    assert_eq!(
-        too_few.message,
-        "arity mismatch for str_contains(): expected 2 argument(s), got 1"
+    let too_few = run_source("<?php\nstr_contains('abc');\n").unwrap();
+    assert_eq!(too_few.exit_code, 255);
+    assert_eq!(too_few.stderr, "");
+    assert!(
+        too_few
+            .stdout
+            .contains("Fatal error: Uncaught TypeError: Too few arguments to function str_contains(), 1 passed"),
+        "{}",
+        too_few.stdout
     );
 }
 

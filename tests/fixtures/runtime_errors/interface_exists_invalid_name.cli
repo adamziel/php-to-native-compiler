@@ -1,6 +1,6 @@
-exit: 1
+exit: 0
 stdout:
+bool(false)
 --- stdout end ---
 stderr:
-runtime error at tests/fixtures/runtime_errors/interface_exists_invalid_name.php:2:10: unsupported call interface_exists(): interface name argument must be string, got int
 --- stderr end ---

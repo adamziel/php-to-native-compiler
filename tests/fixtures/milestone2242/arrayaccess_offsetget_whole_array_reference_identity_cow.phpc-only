@@ -1,0 +1,1 @@
+Project runtime does not yet preserve host PHP whole-array reference identity through by-reference ArrayAccess::offsetGet() copy-on-write.

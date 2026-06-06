@@ -1,1 +1,1 @@
-Project-specific stable parse diagnostic for unsupported parenthesized dynamic class-name expressions in new; host PHP accepts this syntax.
+phpc parses parenthesized dynamic new expressions and reaches its current PHP-shaped class lookup fatal for this fixture.

@@ -1,1 +1,0 @@
-Project-specific stable lex diagnostic for unsupported PHP attribute syntax; system PHP accepts attributes and exposes metadata through reflection.

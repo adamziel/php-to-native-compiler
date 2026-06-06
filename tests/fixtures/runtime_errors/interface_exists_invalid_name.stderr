@@ -1,2 +1,1 @@
-runtime error at 2:10: unsupported call interface_exists(): interface name argument must be string, got int
 

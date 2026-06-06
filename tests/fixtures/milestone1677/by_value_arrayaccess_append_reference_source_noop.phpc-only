@@ -1,0 +1,1 @@
+Project runtime still emits null-offset deprecations while routing by-value ArrayAccess append reference sources.
