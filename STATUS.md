@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-06T08:05:24+00:00
+Last generated: 2026-06-06T08:17:32+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -14,6 +14,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | auditor-1 | Auditor | stopped | auditor-1 |  |
 | auditor-2 | Auditor | crash | auditor-2 |  |
 | auditor-3 | Auditor | stopped | auditor-3 |  |
+| auditor-4 | Auditor | running | auditor-4 |  |
 | conflict-resolver-1 | Conflict Resolver | crash | conflict-resolver-1 |  |
 | conflict-resolver-2 | Conflict Resolver | crash | conflict-resolver-2 |  |
 | coordinator-1 | Coordinator | stopped | coordinator-1 |  |
@@ -36,7 +37,8 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-20 | Developer | stopped | developer-20 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-20 |
 | developer-21 | Developer | stopped | developer-21 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-21 |
 | developer-22 | Developer | stopped | developer-22 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-22 |
-| developer-23 | Developer | running | developer-23 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-23 |
+| developer-23 | Developer | stopped | developer-23 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-23 |
+| developer-24 | Developer | running | developer-24 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-24 |
 | developer-3 | Developer | stopped | developer-3 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-3 |
 | developer-4 | Developer | stopped | developer-4 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-4 |
 | developer-5 | Developer | stopped | developer-5 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-5 |
@@ -51,36 +53,36 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1484 | Resolve integration failure for card #178: Fix failing tests from run 238 | Conflict Resolver | integration-support | planned | queued |  | 0.0 |
+| 1483 | Respond to scheduler alert | Coordinator | control-plane | development | assigned |  | 0.0 |
+| 1482 | Investigate scheduler alert | Auditor | integration-support | done | done |  | 0.0 |
 | 1481 | Investigate scheduler alert | Auditor | integration-support | development | assigned |  | 0.0 |
 | 1480 | Resolve integration failure for card #176: Fix failing tests from run 236 | Conflict Resolver | integration-support | planned | queued |  | 0.0 |
 | 1479 | Resolve integration failure for card #175: Fix failing tests from run 235 | Conflict Resolver | integration-support | planned | queued |  | 0.0 |
-| 1478 | Respond to scheduler alert | Coordinator | control-plane | development | assigned |  | 0.0 |
+| 1478 | Respond to scheduler alert | Coordinator | control-plane | done | done |  | 0.0 |
 | 1477 | Resolve integration failure for card #174: Fix failing tests from run 234 | Conflict Resolver | integration-support | planned | queued |  | 0.0 |
 | 1476 | Resolve integration failure for card #173: Fix failing tests from run 233 | Conflict Resolver | integration-support | planned | queued |  | 0.0 |
 | 1475 | Resolve lane 172 runtime merge conflict only | Conflict Resolver | integration-support | done | done |  | 0.0 |
-| 1474 | Resolve integration failure for card #172: Fix failing tests from run 232 | Conflict Resolver | integration-support | planned | queued |  | 0.0 |
-| 1473 | Respond to scheduler alert | Coordinator | control-plane | done | done |  | 0.0 |
-| 1472 | Resolve current integration failures without feature work | Conflict Resolver | integration-support | planned | queued |  | 0.0 |
 
 ## Tests
-failed — python -m unittest discover -s tests -v (error=0, failed=1, passed=0, skipped=0)
+failed — tools/run-tests.sh (error=0, failed=1, passed=0, skipped=0)
 
 ## Resource samples
-Latest: CPU 5.82%, RAM 14.13%, disk free 5.29 GB.
+Latest: CPU 5.42%, RAM 14.48%, disk free 5.16 GB.
 
 ## Recent events
-- 2026-06-06T08:05:06+00:00 **worklane_deduplicated**: Updated existing failing-test card#1459 from run 7085
-- 2026-06-06T08:05:06+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-06T08:05:07+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-06T08:05:12+00:00 **worklane_deduplicated**: Updated existing failing-test card#1459 from run 7086
-- 2026-06-06T08:05:12+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-06T08:05:16+00:00 **control_plane_blocker_confirmed**: Read-only manhole verified live harness command-selector/liveness recurrence: latest scheduler test_runs use python unittest discovery and produce NO TESTS RAN; focused .harness tests fail 4/8; current harness zipapp has stale discover_test_command/list_agents behavior.
-- 2026-06-06T08:05:17+00:00 **worklane_deduplicated**: Updated existing failing-test card#1459 from run 7087
-- 2026-06-06T08:05:17+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-06T08:05:22+00:00 **worklane_deduplicated**: Updated existing failing-test card#1459 from run 7088
-- 2026-06-06T08:05:22+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-06T08:05:24+00:00 **poke**: Queued message for developer-23
-- 2026-06-06T08:05:24+00:00 **poke_delivered**: Delivered poke to 1 agents
+- 2026-06-06T08:17:01+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-06T08:17:06+00:00 **worklane_deduplicated**: Updated existing failing-test card#1468 from run 7218
+- 2026-06-06T08:17:06+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-06T08:17:12+00:00 **worklane_deduplicated**: Updated existing failing-test card#1468 from run 7219
+- 2026-06-06T08:17:12+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-06T08:17:17+00:00 **worklane_deduplicated**: Updated existing failing-test card#1468 from run 7220
+- 2026-06-06T08:17:17+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-06T08:17:23+00:00 **worklane_deduplicated**: Updated existing failing-test card#1468 from run 7221
+- 2026-06-06T08:17:23+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-06T08:17:28+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-06T08:17:28+00:00 **worklane_deduplicated**: Updated existing failing-test card#1468 from run 7222
+- 2026-06-06T08:17:28+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
 
 ## Next steps
-Move next worklane forward: Investigate scheduler alert
+Move next worklane forward: Resolve integration failure for card #178: Fix failing tests from run 238
