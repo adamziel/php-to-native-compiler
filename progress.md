@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-07T16:26:41+00:00
+Last generated: 2026-06-07T16:41:42+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -108,8 +108,12 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-70 | Developer | running | developer-70 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-70 |
 | developer-71 | Developer | stopped | developer-71 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-71 |
 | developer-72 | Developer | running | developer-72 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-72 |
-| developer-73 | Developer | running | developer-73 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-73 |
-| developer-74 | Developer | running | developer-74 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-74 |
+| developer-73 | Developer | stopped | developer-73 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-73 |
+| developer-74 | Developer | stopped | developer-74 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-74 |
+| developer-75 | Developer | stopped | developer-75 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-75 |
+| developer-76 | Developer | stopped | developer-76 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-76 |
+| developer-77 | Developer | running | developer-77 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-77 |
+| developer-78 | Developer | running | developer-78 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-78 |
 | developer-8 | Developer | stopped | developer-8 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-8 |
 | developer-9 | Developer | stopped | developer-9 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-9 |
 | integrator-1 | Integrator | stopped | integrator-1 |  |
@@ -122,42 +126,36 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1580 | Resolve integration failure for card #1573: Resolve integration failure for card #1566: Resolve integration failure for card #1477: Resolve integration failure for card #174: Fix failing tests from run 234 | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
+| 1584 | Resolve integration failure for card #1583: Resolve integration failure for card #1580: Resolve integration failure for card #1573: Resolve integration failure for card #1566: Resolve integration failure for card #1477: Resolve integration failure for card #174: Fix failing tests from run 234 | Conflict Resolver | integration-support | planned | queued |  | 0.0 |
+| 1583 | Resolve integration failure for card #1580: Resolve integration failure for card #1573: Resolve integration failure for card #1566: Resolve integration failure for card #1477: Resolve integration failure for card #174: Fix failing tests from run 234 | Conflict Resolver | integration-support | integration | integration_failed | ready_fast_path | 0.0 |
+| 1582 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
+| 1581 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
+| 1580 | Resolve integration failure for card #1573: Resolve integration failure for card #1566: Resolve integration failure for card #1477: Resolve integration failure for card #174: Fix failing tests from run 234 | Conflict Resolver | integration-support | integration | integration_failed | ready_fast_path | 0.0 |
 | 1579 | Fix global test suite failures | Developer | implementation | development | assigned |  | 0.0 |
 | 1578 | Investigate scheduler alert | Auditor | integration-support | development | assigned |  | 0.0 |
 | 1577 | Resolve integration failure for card #1574: Resolve integration failure for card #1568: Resolve integration failure for card #1484: Resolve integration failure for card #178: Fix failing tests from run 238 | Conflict Resolver | integration-support | done | integrated | ready_fast_path | 0.0 |
-| 1576 | Resolve integration failure for card #1572: Resolve integration failure for card #1480: Resolve integration failure for card #176: Fix failing tests from run 236 | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
+| 1576 | Resolve integration failure for card #1572: Resolve integration failure for card #1480: Resolve integration failure for card #176: Fix failing tests from run 236 | Conflict Resolver | integration-support | done | integrated | ready_fast_path | 0.0 |
 | 1575 | Provide next concrete Developer card after developer-58 duplicate resolver handoff | Developer | implementation | planned | queued |  | 0.0 |
-| 1574 | Resolve integration failure for card #1568: Resolve integration failure for card #1484: Resolve integration failure for card #178: Fix failing tests from run 238 | Conflict Resolver | integration-support | integration | integration_failed | ready_fast_path | 0.0 |
-| 1573 | Resolve integration failure for card #1566: Resolve integration failure for card #1477: Resolve integration failure for card #174: Fix failing tests from run 234 | Conflict Resolver | integration-support | integration | integration_failed | ready_fast_path | 0.0 |
-| 1572 | Resolve integration failure for card #1480: Resolve integration failure for card #176: Fix failing tests from run 236 | Conflict Resolver | integration-support | integration | integration_failed | ready_fast_path | 0.0 |
-| 1571 | Assign next sanctioned Developer card after developer-59 completed lane 1564 | Developer | implementation | planned | queued |  | 0.0 |
 
 ## Tests
 failed — tools/run-tests.sh (error=0, failed=1, passed=0, skipped=0)
 
 ## Resource samples
-Latest: CPU 15.72%, RAM 23.86%, disk free 13.71 GB.
+Latest: CPU 24.42%, RAM 18.47%, disk free 0.0 GB.
 
 ## Recent events
-- 2026-06-07T16:26:15+00:00 **worklane_deduplicated**: Updated existing failing-test card#1579 from run 28360
-- 2026-06-07T16:26:15+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-07T16:26:21+00:00 **worklane_deduplicated**: Updated existing failing-test card#1579 from run 28361
-- 2026-06-07T16:26:21+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-07T16:26:27+00:00 **worklane_deduplicated**: Updated existing failing-test card#1579 from run 28362
-- 2026-06-07T16:26:27+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-07T16:26:28+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-07T16:26:32+00:00 **worklane_deduplicated**: Updated existing failing-test card#1579 from run 28363
-- 2026-06-07T16:26:32+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-07T16:26:38+00:00 **worklane_deduplicated**: Updated existing failing-test card#1579 from run 28364
-- 2026-06-07T16:26:38+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-07T16:26:41+00:00 **status_publish_failed**: Committed status files but failed to push: To https://github.com/adamziel/php-to-native-compiler.git
- ! [rejected]          HEAD -> master (non-fast-forward)
-error: failed to push some refs to 'https://github.com/adamziel/php-to-native-compiler.git'
-hint: Updates were rejected because the tip of your current branch is behind
-hint: its remote counterpart. If you want to integrate the remote changes,
-hint: use 'git pull' before pushing again.
-hint: See the 'Note about fast-forwards' in 'git push --help' for details.
+- 2026-06-07T16:41:13+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-07T16:41:18+00:00 **worklane_deduplicated**: Updated existing failing-test card#1579 from run 28502
+- 2026-06-07T16:41:18+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-07T16:41:24+00:00 **worklane_deduplicated**: Updated existing failing-test card#1579 from run 28503
+- 2026-06-07T16:41:24+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-07T16:41:29+00:00 **worklane_deduplicated**: Updated existing failing-test card#1579 from run 28504
+- 2026-06-07T16:41:29+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-07T16:41:33+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-07T16:41:35+00:00 **worklane_deduplicated**: Updated existing failing-test card#1579 from run 28505
+- 2026-06-07T16:41:35+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-07T16:41:40+00:00 **worklane_deduplicated**: Updated existing failing-test card#1579 from run 28506
+- 2026-06-07T16:41:40+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
 
 ## Next steps
-Move next worklane forward: Resolve integration failure for card #1573: Resolve integration failure for card #1566: Resolve integration failure for card #1477: Resolve integration failure for card #174: Fix failing tests from run 234
+Move next worklane forward: Resolve integration failure for card #1583: Resolve integration failure for card #1580: Resolve integration failure for card #1573: Resolve integration failure for card #1566: Resolve integration failure for card #1477: Resolve integration failure for card #174: Fix failing tests from run 234
