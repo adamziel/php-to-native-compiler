@@ -58,10 +58,6 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-105 | Developer | running | developer-105 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-105 |
 | developer-11 | Developer | stopped | developer-11 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-11 |
 | developer-12 | Developer | stopped | developer-12 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-12 |
-| developer-120 | Developer | running | developer-120 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-120 |
-| developer-121 | Developer | running | developer-121 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-121 |
-| developer-122 | Developer | running | developer-122 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-122 |
-| developer-123 | Developer | running | developer-123 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-123 |
 | developer-13 | Developer | stopped | developer-13 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-13 |
 | developer-14 | Developer | stopped | developer-14 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-14 |
 | developer-15 | Developer | stopped | developer-15 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-15 |
