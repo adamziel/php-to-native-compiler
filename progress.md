@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-07T23:06:05+00:00
+Last generated: 2026-06-07T23:18:48+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -66,6 +66,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-38 | Coordinator | crash | coordinator-38 |  |
 | coordinator-39 | Coordinator | stopped | coordinator-39 |  |
 | coordinator-4 | Coordinator | stopped | coordinator-4 |  |
+| coordinator-40 | Coordinator | stopped | coordinator-40 |  |
 | coordinator-5 | Coordinator | stopped | coordinator-5 |  |
 | coordinator-6 | Coordinator | crash | coordinator-6 |  |
 | coordinator-7 | Coordinator | crash | coordinator-7 |  |
@@ -128,6 +129,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-148 | Developer | stopped | developer-148 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-148 |
 | developer-149 | Developer | stopped | developer-149 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-149 |
 | developer-15 | Developer | stopped | developer-15 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-15 |
+| developer-150 | Developer | stopped | developer-150 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-150 |
 | developer-16 | Developer | stopped | developer-16 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-16 |
 | developer-17 | Developer | stopped | developer-17 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-17 |
 | developer-18 | Developer | stopped | developer-18 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-18 |
@@ -234,7 +236,8 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1890 | Resume current-base str_ireplace resolver after conflict-resolver-8 crash | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
+| 1891 | Implement known-failure no-regression gate without runtime edits | Developer | implementation | planned | queued |  | 0.0 |
+| 1890 | Resume current-base str_ireplace resolver after conflict-resolver-8 crash | Conflict Resolver | integration-support | planned | queued |  | 0.0 |
 | 1889 | Resume requeued integration backlog drain after integrator-9 crash | Integrator | integration-support | done | stale |  | 0.0 |
 | 1888 | Respond to scheduler alert | Coordinator | control-plane | development | assigned |  | 0.0 |
 | 1887 | Implement known-failure no-regression gate for current php_runtime blocker | Developer | implementation | planned | queued |  | 0.0 |
@@ -243,27 +246,26 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | 1884 | Verify known-failure gate policy does not mask metric failures | Auditor | integration-support | planned | queued |  | 0.0 |
 | 1883 | Implement known-failure no-regression integration gate for current php_runtime blocker | Developer | implementation | planned | queued |  | 0.0 |
 | 1882 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
-| 1881 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
 
 ## Tests
 failed — tools/run-tests.sh (error=0, failed=1, passed=0, skipped=0)
 
 ## Resource samples
-Latest: CPU 15.59%, RAM 56.44%, disk free 45.54 GB.
+Latest: CPU 100.0%, RAM 55.49%, disk free 25.13 GB.
 
 ## Recent events
-- 2026-06-07T23:06:03+00:00 **terminal_agent_window_closed**: Closed terminal developer-86 tmux window
-- 2026-06-07T23:06:03+00:00 **terminal_agent_window_closed**: Closed terminal developer-87 tmux window
-- 2026-06-07T23:06:03+00:00 **terminal_agent_window_closed**: Closed terminal developer-88 tmux window
-- 2026-06-07T23:06:03+00:00 **terminal_agent_window_closed**: Closed terminal developer-89 tmux window
-- 2026-06-07T23:06:03+00:00 **terminal_agent_window_closed**: Closed terminal developer-9 tmux window
-- 2026-06-07T23:06:03+00:00 **terminal_agent_window_closed**: Closed terminal developer-90 tmux window
-- 2026-06-07T23:06:03+00:00 **terminal_agent_window_closed**: Closed terminal developer-91 tmux window
-- 2026-06-07T23:06:03+00:00 **terminal_agent_window_closed**: Closed terminal developer-92 tmux window
-- 2026-06-07T23:06:03+00:00 **terminal_agent_window_closed**: Closed terminal developer-93 tmux window
-- 2026-06-07T23:06:03+00:00 **stop**: Stopped harness runtime
-- 2026-06-07T23:06:05+00:00 **mcp**: Harness MCP tools exposed to Codex workers
-- 2026-06-07T23:06:05+00:00 **tmux**: Interactive support windows ready
+- 2026-06-07T23:18:41+00:00 **terminal_agent_window_closed**: Closed terminal integrator-10 tmux window
+- 2026-06-07T23:18:41+00:00 **terminal_agent_window_closed**: Closed terminal integrator-2 tmux window
+- 2026-06-07T23:18:41+00:00 **terminal_agent_window_closed**: Closed terminal integrator-3 tmux window
+- 2026-06-07T23:18:41+00:00 **terminal_agent_window_closed**: Closed terminal integrator-4 tmux window
+- 2026-06-07T23:18:41+00:00 **terminal_agent_window_closed**: Closed terminal integrator-5 tmux window
+- 2026-06-07T23:18:41+00:00 **terminal_agent_window_closed**: Closed terminal integrator-6 tmux window
+- 2026-06-07T23:18:41+00:00 **terminal_agent_window_closed**: Closed terminal integrator-7 tmux window
+- 2026-06-07T23:18:41+00:00 **terminal_agent_window_closed**: Closed terminal integrator-8 tmux window
+- 2026-06-07T23:18:41+00:00 **terminal_agent_window_closed**: Closed terminal integrator-9 tmux window
+- 2026-06-07T23:18:46+00:00 **stop**: Stopped harness runtime
+- 2026-06-07T23:18:48+00:00 **mcp**: Harness MCP tools exposed to Codex workers
+- 2026-06-07T23:18:48+00:00 **tmux**: Interactive support windows ready
 
 ## Next steps
-Move next worklane forward: Resume current-base str_ireplace resolver after conflict-resolver-8 crash
+Move next worklane forward: Implement known-failure no-regression gate without runtime edits
