@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-07T19:53:16+00:00
+Last generated: 2026-06-07T20:08:16+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -198,36 +198,36 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1825 | Resolve integration failure for card #135: Quarantine self-selected product slice by developer-379 | Conflict Resolver | integration-support | planned | queued |  | 0.0 |
+| 1831 | Resolve integration failure for card #136: Self-selected compiler-output coverage slice | Conflict Resolver | integration-support | planned | queued |  | 0.0 |
+| 1830 | Assign next Developer worklane after developer-128 completed worklane 136 | Developer | implementation | planned | queued |  | 0.0 |
+| 1829 | Assign next Developer worklane after developer-129 completed worklane 137 | Developer | implementation | planned | queued |  | 0.0 |
+| 1828 | Resolve integration failure for card #137: Self-selected bounded str_ireplace compatibility slice | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
+| 1827 | Resolve integration failure for card #1823: Resolve integration failure for card #133: Self-selected COW runtime lvalue handle gap slice | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
+| 1826 | Provide next Developer card after worklane 1823 resolver completion | Developer | implementation | planned | queued |  | 0.0 |
+| 1825 | Resolve integration failure for card #135: Quarantine self-selected product slice by developer-379 | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
 | 1824 | Provide next sanctioned Developer lane after developer-127 card 135 quarantine report | Developer | implementation | planned | queued |  | 0.0 |
-| 1823 | Resolve integration failure for card #133: Self-selected COW runtime lvalue handle gap slice | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
+| 1823 | Resolve integration failure for card #133: Self-selected COW runtime lvalue handle gap slice | Conflict Resolver | integration-support | integration | integration_failed | ready_fast_path | 0.0 |
 | 1822 | Provide next sanctioned Developer lane after developer-119 card 1811 resolver | Developer | implementation | planned | queued |  | 0.0 |
-| 1821 | Maintain Developer capacity after resolving card 91 integration failure | Developer | implementation | planned | queued |  | 0.0 |
-| 1820 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
-| 1819 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
-| 1818 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
-| 1817 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
-| 1816 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
 
 ## Tests
 failed — tools/run-tests.sh (error=0, failed=1, passed=0, skipped=0)
 
 ## Resource samples
-Latest: CPU 25.08%, RAM 64.84%, disk free 141.24 GB.
+Latest: CPU 10.67%, RAM 57.97%, disk free 119.62 GB.
 
 ## Recent events
-- 2026-06-07T19:53:15+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-16 tmux window
-- 2026-06-07T19:53:15+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-17 tmux window
-- 2026-06-07T19:53:15+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-18 tmux window
-- 2026-06-07T19:53:15+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-19 tmux window
-- 2026-06-07T19:53:15+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-2 tmux window
-- 2026-06-07T19:53:15+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-20 tmux window
-- 2026-06-07T19:53:15+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-21 tmux window
-- 2026-06-07T19:53:15+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-22 tmux window
-- 2026-06-07T19:53:15+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-23 tmux window
-- 2026-06-07T19:53:15+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-24 tmux window
-- 2026-06-07T19:53:15+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-25 tmux window
-- 2026-06-07T19:53:15+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-26 tmux window
+- 2026-06-07T20:08:15+00:00 **terminal_agent_window_closed**: Closed terminal integrator-5 tmux window
+- 2026-06-07T20:08:15+00:00 **terminal_agent_window_closed**: Closed terminal developer-43 tmux window
+- 2026-06-07T20:08:15+00:00 **terminal_agent_window_closed**: Closed terminal integrator-6 tmux window
+- 2026-06-07T20:08:15+00:00 **terminal_agent_window_closed**: Closed terminal developer-44 tmux window
+- 2026-06-07T20:08:15+00:00 **terminal_agent_window_closed**: Closed terminal developer-45 tmux window
+- 2026-06-07T20:08:15+00:00 **terminal_agent_window_closed**: Closed terminal integrator-7 tmux window
+- 2026-06-07T20:08:15+00:00 **terminal_agent_window_closed**: Closed terminal developer-46 tmux window
+- 2026-06-07T20:08:15+00:00 **terminal_agent_window_closed**: Closed terminal integrator-8 tmux window
+- 2026-06-07T20:08:15+00:00 **terminal_agent_window_closed**: Closed terminal developer-47 tmux window
+- 2026-06-07T20:08:15+00:00 **terminal_agent_window_closed**: Closed terminal developer-48 tmux window
+- 2026-06-07T20:08:16+00:00 **terminal_agent_window_closed**: Closed terminal developer-49 tmux window
+- 2026-06-07T20:08:16+00:00 **coordinator_prompt_deferred**: CPU and RAM are underused, but integration is backed up. Add integration or conflict-resolution support instead of more feature Developers.
 
 ## Next steps
-Move next worklane forward: Resolve integration failure for card #135: Quarantine self-selected product slice by developer-379
+Move next worklane forward: Resolve integration failure for card #136: Self-selected compiler-output coverage slice
