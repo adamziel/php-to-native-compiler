@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-07T21:53:26+00:00
+Last generated: 2026-06-07T22:08:28+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -56,7 +56,8 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-31 | Coordinator | crash | coordinator-31 |  |
 | coordinator-32 | Coordinator | crash | coordinator-32 |  |
 | coordinator-33 | Coordinator | crash | coordinator-33 |  |
-| coordinator-34 | Coordinator | running | coordinator-34 |  |
+| coordinator-34 | Coordinator | crash | coordinator-34 |  |
+| coordinator-35 | Coordinator | running | coordinator-35 |  |
 | coordinator-4 | Coordinator | stopped | coordinator-4 |  |
 | coordinator-5 | Coordinator | stopped | coordinator-5 |  |
 | coordinator-6 | Coordinator | crash | coordinator-6 |  |
@@ -223,36 +224,36 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1862 | Assign concrete Developer worklane after capacity placeholder 1802 | Developer | implementation | planned | queued |  | 0.0 |
-| 1861 | Assign concrete Developer worklane after capacity placeholder 1798 | Developer | implementation | planned | queued |  | 0.0 |
-| 1860 | Resolve integration failure for card #1853: Resolve integration failure for card #1808: Fix global test suite failures | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
-| 1859 | Provide next sanctioned Developer card after developer-143 repair lane 1853 | Developer | implementation | planned | queued |  | 0.0 |
-| 1858 | Assign concrete Developer worklane after capacity placeholder 1797 | Developer | implementation | planned | queued |  | 0.0 |
-| 1857 | Assign concrete Developer worklane after capacity placeholder 1736 | Developer | implementation | planned | queued |  | 0.0 |
-| 1856 | Assign concrete Developer worklane after capacity placeholder 1592 | Developer | implementation | planned | queued |  | 0.0 |
-| 1855 | Assign next sanctioned Developer card after lane 1598 capacity check | Developer | implementation | planned | queued |  | 0.0 |
-| 1854 | Assign concrete Developer worklane after capacity placeholder 1596 | Developer | implementation | planned | queued |  | 0.0 |
-| 1853 | Resolve integration failure for card #1808: Fix global test suite failures | Conflict Resolver | integration-support | integration | integration_failed | ready_fast_path | 0.0 |
+| 1876 | Assign concrete Developer worklane after capacity placeholder 1835 | Developer | implementation | planned | queued |  | 0.0 |
+| 1875 | Assign concrete Developer worklane after capacity placeholder 1833 | Developer | implementation | planned | queued |  | 0.0 |
+| 1874 | Assign concrete Developer worklane after capacity placeholder 1832 | Developer | implementation | planned | queued |  | 0.0 |
+| 1873 | Assign concrete Developer worklane after capacity placeholder 1830 | Developer | implementation | planned | queued |  | 0.0 |
+| 1872 | Assign concrete Developer worklane after capacity placeholder 1829 | Developer | implementation | planned | queued |  | 0.0 |
+| 1871 | Assign concrete Developer worklane after capacity placeholder 1826 | Developer | implementation | planned | queued |  | 0.0 |
+| 1870 | Assign concrete Developer worklane after capacity placeholder 1824 | Developer | implementation | planned | queued |  | 0.0 |
+| 1869 | Assign concrete Developer worklane after capacity placeholder 1822 | Developer | implementation | planned | queued |  | 0.0 |
+| 1868 | Assign concrete Developer worklane after capacity placeholder 1813 | Developer | implementation | planned | queued |  | 0.0 |
+| 1867 | Assign concrete Developer worklane after capacity placeholder 1812 | Developer | implementation | planned | queued |  | 0.0 |
 
 ## Tests
 failed — tools/run-tests.sh (error=0, failed=1, passed=0, skipped=0)
 
 ## Resource samples
-Latest: CPU 23.45%, RAM 58.86%, disk free 94.41 GB.
+Latest: CPU 24.88%, RAM 57.01%, disk free 77.0 GB.
 
 ## Recent events
-- 2026-06-07T21:53:26+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-1 tmux window
-- 2026-06-07T21:53:26+00:00 **terminal_agent_window_closed**: Closed terminal developer-133 tmux window
-- 2026-06-07T21:53:26+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-10 tmux window
-- 2026-06-07T21:53:26+00:00 **terminal_agent_window_closed**: Closed terminal developer-134 tmux window
-- 2026-06-07T21:53:26+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-11 tmux window
-- 2026-06-07T21:53:26+00:00 **terminal_agent_window_closed**: Closed terminal developer-135 tmux window
-- 2026-06-07T21:53:26+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-12 tmux window
-- 2026-06-07T21:53:26+00:00 **terminal_agent_window_closed**: Closed terminal developer-136 tmux window
-- 2026-06-07T21:53:26+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-13 tmux window
-- 2026-06-07T21:53:26+00:00 **terminal_agent_window_closed**: Closed terminal developer-137 tmux window
-- 2026-06-07T21:53:26+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-14 tmux window
-- 2026-06-07T21:53:26+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-15 tmux window
+- 2026-06-07T22:08:27+00:00 **terminal_agent_window_closed**: Closed terminal developer-6 tmux window
+- 2026-06-07T22:08:27+00:00 **terminal_agent_window_closed**: Closed terminal developer-65 tmux window
+- 2026-06-07T22:08:27+00:00 **terminal_agent_window_closed**: Closed terminal developer-60 tmux window
+- 2026-06-07T22:08:27+00:00 **terminal_agent_window_closed**: Closed terminal developer-66 tmux window
+- 2026-06-07T22:08:27+00:00 **terminal_agent_window_closed**: Closed terminal developer-61 tmux window
+- 2026-06-07T22:08:27+00:00 **terminal_agent_window_closed**: Closed terminal developer-67 tmux window
+- 2026-06-07T22:08:27+00:00 **terminal_agent_window_closed**: Closed terminal developer-62 tmux window
+- 2026-06-07T22:08:27+00:00 **terminal_agent_window_closed**: Closed terminal developer-68 tmux window
+- 2026-06-07T22:08:27+00:00 **terminal_agent_window_closed**: Closed terminal developer-63 tmux window
+- 2026-06-07T22:08:27+00:00 **terminal_agent_window_closed**: Closed terminal developer-69 tmux window
+- 2026-06-07T22:08:27+00:00 **terminal_agent_window_closed**: Closed terminal developer-64 tmux window
+- 2026-06-07T22:08:27+00:00 **terminal_agent_window_closed**: Closed terminal developer-7 tmux window
 
 ## Next steps
-Move next worklane forward: Assign concrete Developer worklane after capacity placeholder 1802
+Move next worklane forward: Assign concrete Developer worklane after capacity placeholder 1835
