@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-07T17:48:26+00:00
+Last generated: 2026-06-07T17:50:16+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -19,14 +19,14 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | auditor-6 | Auditor | crash | auditor-6 |  |
 | auditor-7 | Auditor | stopped | auditor-7 |  |
 | auditor-8 | Auditor | stopped | auditor-8 |  |
-| auditor-9 | Auditor | running | auditor-9 |  |
+| auditor-9 | Auditor | stopped | auditor-9 |  |
 | conflict-resolver-1 | Conflict Resolver | crash | conflict-resolver-1 |  |
 | conflict-resolver-2 | Conflict Resolver | crash | conflict-resolver-2 |  |
 | conflict-resolver-3 | Conflict Resolver | crash | conflict-resolver-3 |  |
 | conflict-resolver-4 | Conflict Resolver | crash | conflict-resolver-4 |  |
 | conflict-resolver-5 | Conflict Resolver | stopped | conflict-resolver-5 |  |
 | conflict-resolver-6 | Conflict Resolver | stopped | conflict-resolver-6 |  |
-| conflict-resolver-7 | Conflict Resolver | running | conflict-resolver-7 |  |
+| conflict-resolver-7 | Conflict Resolver | stopped | conflict-resolver-7 |  |
 | coordinator-1 | Coordinator | stopped | coordinator-1 |  |
 | coordinator-10 | Coordinator | success | coordinator-10 |  |
 | coordinator-11 | Coordinator | stopped | coordinator-11 |  |
@@ -37,7 +37,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-16 | Coordinator | crash | coordinator-16 |  |
 | coordinator-17 | Coordinator | success | coordinator-17 |  |
 | coordinator-18 | Coordinator | success | coordinator-18 |  |
-| coordinator-19 | Coordinator | running | coordinator-19 |  |
+| coordinator-19 | Coordinator | stopped | coordinator-19 |  |
 | coordinator-2 | Coordinator | crash | coordinator-2 |  |
 | coordinator-3 | Coordinator | crash | coordinator-3 |  |
 | coordinator-4 | Coordinator | stopped | coordinator-4 |  |
@@ -133,15 +133,15 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-86 | Developer | crash | developer-86 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-86 |
 | developer-87 | Developer | crash | developer-87 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-87 |
 | developer-88 | Developer | crash | developer-88 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-88 |
-| developer-89 | Developer | running | developer-89 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-89 |
+| developer-89 | Developer | stopped | developer-89 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-89 |
 | developer-9 | Developer | stopped | developer-9 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-9 |
-| developer-90 | Developer | running | developer-90 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-90 |
-| developer-91 | Developer | running | developer-91 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-91 |
-| developer-92 | Developer | running | developer-92 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-92 |
-| developer-93 | Developer | running | developer-93 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-93 |
-| developer-94 | Developer | running | developer-94 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-94 |
-| developer-95 | Developer | running | developer-95 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-95 |
-| developer-96 | Developer | running | developer-96 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-96 |
+| developer-90 | Developer | stopped | developer-90 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-90 |
+| developer-91 | Developer | stopped | developer-91 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-91 |
+| developer-92 | Developer | stopped | developer-92 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-92 |
+| developer-93 | Developer | stopped | developer-93 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-93 |
+| developer-94 | Developer | stopped | developer-94 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-94 |
+| developer-95 | Developer | stopped | developer-95 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-95 |
+| developer-96 | Developer | stopped | developer-96 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-96 |
 | integrator-1 | Integrator | stopped | integrator-1 |  |
 | integrator-2 | Integrator | stopped | integrator-2 |  |
 | integrator-3 | Integrator | stopped | integrator-3 |  |
@@ -149,7 +149,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | integrator-5 | Integrator | success | integrator-5 |  |
 | integrator-6 | Integrator | success | integrator-6 |  |
 | integrator-7 | Integrator | stopped | integrator-7 |  |
-| integrator-8 | Integrator | running | integrator-8 |  |
+| integrator-8 | Integrator | stopped | integrator-8 |  |
 
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
@@ -169,21 +169,27 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 failed — tools/run-tests.sh (error=0, failed=1, passed=0, skipped=0)
 
 ## Resource samples
-Latest: CPU 4.95%, RAM 62.3%, disk free 187.49 GB.
+Latest: CPU 5.07%, RAM 62.09%, disk free 187.49 GB.
 
 ## Recent events
-- 2026-06-07T17:43:37+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-07T17:43:57+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-07T17:44:28+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-07T17:44:59+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-07T17:45:16+00:00 **manhole_answer_context**: User asked why recent integration commits do not move passing-test metrics; inspected recent origin/master and integration attempts. Recent integrated commits include status/report/control-plane lanes with only git diff --check smoke, while metric_samples remain at accepted_public_phpt_passes 7873/20294.
-- 2026-06-07T17:45:30+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-07T17:46:01+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-07T17:46:32+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-07T17:46:49+00:00 **worklane_deduplicated**: Updated existing failing-test card#1794 from run 29180
-- 2026-06-07T17:47:03+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-07T17:47:34+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-07T17:48:05+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-07T17:48:27+00:00 **status_publish_failed**: Committed status files but failed to push: To https://github.com/adamziel/php-to-native-compiler.git
+ ! [rejected]          HEAD -> master (non-fast-forward)
+error: failed to push some refs to 'https://github.com/adamziel/php-to-native-compiler.git'
+hint: Updates were rejected because the tip of your current branch is behind
+hint: its remote counterpart. If you want to integrate the remote changes,
+hint: use 'git pull' before pushing again.
+hint: See the 'Note about fast-forwards' in 'git push --help' for details.
+- 2026-06-07T17:48:27+00:00 **status**: Updated STATUS.md and STATUS.html
+- 2026-06-07T17:48:35+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-07T17:48:42+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-07T17:49:06+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-07T17:49:37+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-07T17:50:04+00:00 **manhole_action_authorized**: User authorized acting on diagnosis: stop status/report-only churn, repair live harness selector, and prioritize real code conflict resolution. Manhole will route durable work through harness scheduler/MCP.
+- 2026-06-07T17:50:08+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-07T17:50:10+00:00 **scheduler**: Harness scheduler stopped by user
+- 2026-06-07T17:50:15+00:00 **stop**: Stopped harness runtime
+- 2026-06-07T17:50:16+00:00 **mcp**: Harness MCP tools exposed to Codex workers
+- 2026-06-07T17:50:16+00:00 **tmux**: Support windows ready
 
 ## Next steps
 Move next worklane forward: Next concrete Developer card after lane 70
