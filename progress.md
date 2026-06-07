@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-07T17:15:12+00:00
+Last generated: 2026-06-07T17:18:24+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -31,7 +31,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-12 | Coordinator | stopped | coordinator-12 |  |
 | coordinator-13 | Coordinator | stopped | coordinator-13 |  |
 | coordinator-14 | Coordinator | success | coordinator-14 |  |
-| coordinator-15 | Coordinator | running | coordinator-15 |  |
+| coordinator-15 | Coordinator | stopped | coordinator-15 |  |
 | coordinator-2 | Coordinator | crash | coordinator-2 |  |
 | coordinator-3 | Coordinator | crash | coordinator-3 |  |
 | coordinator-4 | Coordinator | stopped | coordinator-4 |  |
@@ -116,13 +116,13 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-76 | Developer | stopped | developer-76 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-76 |
 | developer-77 | Developer | stopped | developer-77 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-77 |
 | developer-78 | Developer | stopped | developer-78 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-78 |
-| developer-79 | Developer | running | developer-79 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-79 |
+| developer-79 | Developer | stopped | developer-79 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-79 |
 | developer-8 | Developer | stopped | developer-8 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-8 |
-| developer-80 | Developer | running | developer-80 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-80 |
-| developer-81 | Developer | running | developer-81 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-81 |
-| developer-82 | Developer | running | developer-82 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-82 |
-| developer-83 | Developer | running | developer-83 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-83 |
-| developer-84 | Developer | running | developer-84 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-84 |
+| developer-80 | Developer | stopped | developer-80 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-80 |
+| developer-81 | Developer | stopped | developer-81 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-81 |
+| developer-82 | Developer | stopped | developer-82 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-82 |
+| developer-83 | Developer | stopped | developer-83 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-83 |
+| developer-84 | Developer | stopped | developer-84 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-84 |
 | developer-9 | Developer | stopped | developer-9 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-9 |
 | integrator-1 | Integrator | stopped | integrator-1 |  |
 | integrator-2 | Integrator | stopped | integrator-2 |  |
@@ -130,41 +130,41 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | integrator-4 | Integrator | crash | integrator-4 |  |
 | integrator-5 | Integrator | success | integrator-5 |  |
 | integrator-6 | Integrator | success | integrator-6 |  |
-| integrator-7 | Integrator | running | integrator-7 |  |
+| integrator-7 | Integrator | stopped | integrator-7 |  |
 
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1651 | Fix global test suite failures | Developer | implementation | done | stale |  | 0.0 |
-| 1650 | Fix global test suite failures | Developer | implementation | done | stale |  | 0.0 |
-| 1649 | Fix global test suite failures | Developer | implementation | done | stale |  | 0.0 |
-| 1648 | Fix global test suite failures | Developer | implementation | done | stale |  | 0.0 |
-| 1647 | Fix global test suite failures | Developer | implementation | done | stale |  | 0.0 |
-| 1646 | Fix global test suite failures | Developer | implementation | done | stale |  | 0.0 |
-| 1645 | Fix global test suite failures | Developer | implementation | done | stale |  | 0.0 |
-| 1644 | Fix global test suite failures | Developer | implementation | done | stale |  | 0.0 |
-| 1643 | Fix global test suite failures | Developer | implementation | done | stale |  | 0.0 |
-| 1642 | Fix global test suite failures | Developer | implementation | done | stale |  | 0.0 |
+| 1685 | Fix global test suite failures | Developer | implementation | planned | queued |  | 0.0 |
+| 1684 | Fix global test suite failures | Developer | implementation | done | stale |  | 0.0 |
+| 1683 | Fix global test suite failures | Developer | implementation | done | stale |  | 0.0 |
+| 1682 | Fix global test suite failures | Developer | implementation | done | stale |  | 0.0 |
+| 1681 | Fix global test suite failures | Developer | implementation | done | stale |  | 0.0 |
+| 1680 | Fix global test suite failures | Developer | implementation | done | stale |  | 0.0 |
+| 1679 | Fix global test suite failures | Developer | implementation | done | stale |  | 0.0 |
+| 1678 | Fix global test suite failures | Developer | implementation | done | stale |  | 0.0 |
+| 1677 | Fix global test suite failures | Developer | implementation | done | stale |  | 0.0 |
+| 1676 | Fix global test suite failures | Developer | implementation | done | stale |  | 0.0 |
 
 ## Tests
 failed — tools/run-tests.sh (error=0, failed=1, passed=0, skipped=0)
 
 ## Resource samples
-Latest: CPU 11.4%, RAM 55.74%, disk free 191.26 GB.
+Latest: CPU 3.04%, RAM 55.73%, disk free 191.26 GB.
 
 ## Recent events
-- 2026-06-07T17:14:52+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-07T17:14:53+00:00 **card_repair**: Retired 1 duplicate global test-failure cards
-- 2026-06-07T17:14:57+00:00 **worklane_created**: Fix global test suite failures
-- 2026-06-07T17:14:57+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-07T17:14:58+00:00 **card_repair**: Retired 1 duplicate global test-failure cards
-- 2026-06-07T17:15:00+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-07T17:15:03+00:00 **worklane_created**: Fix global test suite failures
-- 2026-06-07T17:15:03+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-07T17:15:04+00:00 **card_repair**: Retired 1 duplicate global test-failure cards
-- 2026-06-07T17:15:08+00:00 **worklane_created**: Fix global test suite failures
-- 2026-06-07T17:15:08+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-07T17:15:09+00:00 **card_repair**: Retired 1 duplicate global test-failure cards
+- 2026-06-07T17:18:07+00:00 **worklane_created**: Fix global test suite failures
+- 2026-06-07T17:18:07+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-07T17:18:07+00:00 **card_repair**: Retired 1 duplicate global test-failure cards
+- 2026-06-07T17:18:12+00:00 **worklane_created**: Fix global test suite failures
+- 2026-06-07T17:18:12+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-07T17:18:12+00:00 **card_repair**: Retired 1 duplicate global test-failure cards
+- 2026-06-07T17:18:16+00:00 **scheduler**: Harness scheduler stopped by user
+- 2026-06-07T17:18:18+00:00 **worklane_created**: Fix global test suite failures
+- 2026-06-07T17:18:18+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-07T17:18:22+00:00 **stop**: Stopped harness runtime
+- 2026-06-07T17:18:24+00:00 **mcp**: Harness MCP tools exposed to Codex workers
+- 2026-06-07T17:18:24+00:00 **tmux**: Support windows ready
 
 ## Next steps
-Keep scheduler loops running, refresh status, and audit measurable progress.
+Move next worklane forward: Fix global test suite failures
