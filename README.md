@@ -311,7 +311,8 @@ incorrect native code.
 
 - literals, variables, assignment, direct `unset`, `isset`, `empty`, and null
   coalescing forms, plus bounded inline HTML output between PHP close/open
-  tags; short echo tags such as `<?= $value ?>` remain a lex boundary
+  tags and short echo tags such as `<?= $value ?>`; short open tags `<?`
+  remain unsupported
 - scalar arithmetic, concatenation, comparisons, logical operators, bitwise
   operators, shifts, `(string)`, `(int)`, `(bool)`, `(float)`/`(double)`, and
   `(array)` casts over documented
