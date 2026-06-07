@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone2364/timezone_metadata_interface.php

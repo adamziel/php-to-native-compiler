@@ -1,2 +1,2 @@
-runtime error at 4:6: unsupported call array_combine(): key values must be null, bool, int, string, or integral finite float in the current subset, got array
+runtime error at 4:6: unsupported call array_combine(): key values must be null, bool, int, float, string, binary string, resource, or object with __toString() in the current subset, got array
 

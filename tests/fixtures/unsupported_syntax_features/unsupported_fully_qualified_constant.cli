@@ -1,6 +1,5 @@
-exit: 1
+exit: 0
 stdout:
---- stdout end ---
+8.3.0--- stdout end ---
 stderr:
-parse error at tests/fixtures/unsupported_syntax_features/unsupported_fully_qualified_constant.php:2:6: unsupported fully-qualified constant name: leading global namespace constant reads require exact constant-table lookup, namespace fallback bypass, import interaction, and native lowering
 --- stderr end ---

@@ -90,6 +90,45 @@ rmdir($root . "/cwd");
 }
 
 #[test]
+fn scandir_reports_php_warnings_and_catchable_invalid_sort_order() {
+    let fixture = TempFsFixture::new("scandir-errors");
+    let missing = php_string(&fixture.root.join("missing"));
+    let source = format!(
+        r#"<?php
+echo "probe";
+var_dump(scandir({missing}));
+try {{
+    scandir({missing}, -1);
+}} catch (ValueError $e) {{
+    echo "|" . $e->getMessage();
+}}
+"#,
+        missing = missing
+    );
+
+    let execution = run_source(&source).unwrap();
+
+    assert!(execution.stdout.starts_with("probe\nWarning: scandir("));
+    assert!(
+        execution
+            .stdout
+            .contains("): Failed to open directory: No such file or directory"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution
+            .stdout
+            .contains("Warning: scandir(): (errno 2): No such file or directory"),
+        "{}",
+        execution.stdout
+    );
+    assert!(execution.stdout.contains("bool(false)\n|scandir(): Argument #2 ($sorting_order) must be one of the SCANDIR_SORT_ASCENDING, SCANDIR_SORT_DESCENDING, or SCANDIR_SORT_NONE constants"));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn filesystem_stat_string_and_resource_boundaries_cover_file_dir_phpt_cluster() {
     let fixture = TempFsFixture::new("stat");
     let root = php_string(&fixture.root);
@@ -143,7 +182,7 @@ rmdir($dir);
             "string(3) \"x+b\"\n",
             "a:bC",
             "bool(true)\n",
-            ":stat:644:777:mode.txt",
+            ":stat:644:755:mode.txt",
             ":file_put_contents(): supplied resource is not a valid stream resource",
             ":file_put_contents(): supplied resource is not a valid Stream-Context resource",
         )
@@ -319,6 +358,91 @@ unlink($path);
             "int(4)\n",
             "8d777f385d3dfec8815d20f7496026dc|7fc56270e7a70fa81a5935b72eacbe29|0:2:2"
         )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[cfg(unix)]
+#[test]
+fn filesystem_directory_permission_failures_match_php_shapes() {
+    let fixture = TempFsFixture::new("permission-shapes");
+    let root = php_string(&fixture.root);
+    let source = format!(
+        r#"<?php
+$root = {root};
+$blocked = $root . "/blocked";
+$file = $blocked . "/payload.txt";
+mkdir($blocked);
+file_put_contents($file, "x");
+var_dump(chmod($blocked, 0444));
+var_dump(unlink($file));
+var_dump(file_exists($file));
+var_dump(chmod($blocked, 0777));
+var_dump(unlink($file));
+mkdir($root . "/tree/child", 0777, true);
+var_dump(rmdir($root . "/tree"));
+try {{
+    mkdir($root . "/nul" . chr(0));
+}} catch (ValueError $e) {{
+    echo $e->getMessage(), "\n";
+}}
+try {{
+    rmdir($root . "/nul" . chr(0));
+}} catch (ValueError $e) {{
+    echo $e->getMessage(), "\n";
+}}
+var_dump(chmod($blocked, 0000));
+var_dump(mkdir($blocked . "/child", 0777, true));
+chmod($blocked, 0777);
+rmdir($blocked);
+rmdir($root . "/tree/child");
+rmdir($root . "/tree");
+"#,
+        root = root
+    );
+
+    let execution = run_source(&source).unwrap();
+
+    assert!(
+        execution.stdout.contains("Warning: unlink(")
+            && execution.stdout.contains("Permission denied"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution
+            .stdout
+            .contains("bool(false)\nbool(false)\nbool(true)\nbool(true)\n"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution.stdout.contains("Warning: rmdir(")
+            && execution.stdout.contains("Directory not empty"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution
+            .stdout
+            .contains("mkdir(): Argument #1 ($directory) must not contain any null bytes"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution
+            .stdout
+            .contains("rmdir(): Argument #1 ($directory) must not contain any null bytes"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution
+            .stdout
+            .contains("Warning: mkdir(): Permission denied"),
+        "{}",
+        execution.stdout
     );
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);

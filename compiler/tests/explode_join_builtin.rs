@@ -59,3 +59,45 @@ try {
     );
     assert_eq!(execution.exit_code, 0);
 }
+
+#[test]
+fn join_non_array_pieces_use_php_shaped_argument_type_messages() {
+    let execution = run_source(
+        r#"<?php
+class test {}
+
+try {
+    join("::", 0);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    join("::", true);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    join("::", "string");
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    join("::", new test());
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    join("::", null);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "join(): Argument #2 ($array) must be of type ?array, int given\njoin(): Argument #2 ($array) must be of type ?array, true given\njoin(): Argument #2 ($array) must be of type ?array, string given\njoin(): Argument #2 ($array) must be of type ?array, test given\njoin(): If argument #1 ($separator) is of type string, argument #2 ($array) must be of type array, null given\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}

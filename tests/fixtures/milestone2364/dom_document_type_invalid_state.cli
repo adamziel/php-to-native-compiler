@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone2364/dom_document_type_invalid_state.php

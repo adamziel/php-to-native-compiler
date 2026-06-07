@@ -1,0 +1,2 @@
+Warning: Undefined property: Box::$missing in tests/fixtures/runtime_errors/undefined_object_property.php on line 4
+

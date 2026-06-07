@@ -1,2 +1,0 @@
-runtime error at 6:6: unsupported object property access: non-public property Box::$secret requires same-class method context in the current subset
-

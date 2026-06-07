@@ -1,6 +1,6 @@
-exit: 1
+exit: 0
 stdout:
+Warning: Undefined array key 0 in tests/fixtures/runtime_errors/undefined_array_key.php on line 3
 --- stdout end ---
 stderr:
-runtime error at tests/fixtures/runtime_errors/undefined_array_key.php:3:6: undefined array key 0
 --- stderr end ---

@@ -1,6 +1,8 @@
-exit: 1
+exit: 255
 stdout:
---- stdout end ---
+Fatal error: Uncaught Error: Using $this when not in object context in tests/fixtures/unsupported_object_features/unsupported_this_usage.php:2
+Stack trace:
+#0 {main}
+  thrown in tests/fixtures/unsupported_object_features/unsupported_this_usage.php on line 2--- stdout end ---
 stderr:
-runtime error at tests/fixtures/unsupported_object_features/unsupported_this_usage.php:2:6: unsupported call $this: object context is only available during instance method execution
 --- stderr end ---

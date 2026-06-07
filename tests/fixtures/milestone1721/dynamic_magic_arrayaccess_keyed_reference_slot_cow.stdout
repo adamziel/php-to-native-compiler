@@ -1,1 +1,2 @@
+Deprecated: Using null as an array offset is deprecated, use an empty string instead in tests/fixtures/milestone1721/dynamic_magic_arrayaccess_keyed_reference_slot_cow.php on line 17
 dynamic-magic-keyed-cow|dynamic-magic-keyed-label|dynamic-magic-keyed-plain-mutated|dynamic-magic-nested-cow|dynamic-magic-nested-label|dynamic-magic-nested-plain-mutated|dynamic-magic-append-cow|dynamic-magic-append-label|dynamic-magic-append-plain-mutated

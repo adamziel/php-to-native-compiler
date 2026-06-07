@@ -1,0 +1,4 @@
+Fatal error: Uncaught TypeError: array_filter(): Argument #2 ($callback) must be a valid callback or null, function "missing_filter" not found or invalid function name in tests/fixtures/runtime_errors/array_filter_callback_undefined.php:3
+Stack trace:
+#0 {main}
+  thrown in tests/fixtures/runtime_errors/array_filter_callback_undefined.php on line 3

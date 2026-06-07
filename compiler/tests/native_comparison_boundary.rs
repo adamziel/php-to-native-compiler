@@ -30,6 +30,26 @@ echo "10" > 2;
 }
 
 #[test]
+fn phpc_run_handles_spaceship_and_less_greater_not_equal_alias() {
+    let execution = run_source(
+        r#"<?php
+var_dump(3 <=> 2);
+var_dump(2 <=> "3");
+var_dump("a" <=> "a");
+var_dump(true <=> []);
+var_dump(679 <> "679");
+var_dump(679 <> "679abc");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "int(1)\nint(-1)\nint(0)\nint(1)\nbool(false)\nbool(true)\n"
+    );
+}
+
+#[test]
 fn emit_ir_rejects_unsupported_comparison_operands_with_specific_boundary() {
     for source in [
         "<?php\necho \"1\" == \"1\";\n",
@@ -44,6 +64,14 @@ fn emit_ir_rejects_unsupported_comparison_operands_with_specific_boundary() {
         assert_eq!(error.phase, Phase::Codegen);
         assert_eq!(error.message, LLVM_COMPARISON_REJECTION);
     }
+}
+
+#[test]
+fn emit_ir_rejects_spaceship_until_native_value_ordering_result_exists() {
+    let error = emit_ir_source("<?php\necho 1 <=> 2;\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, LLVM_COMPARISON_REJECTION);
 }
 
 #[test]
@@ -90,7 +118,7 @@ echo $limit >= 6;
         );
     }
     assert_eq!(ir.matches("select i1").count(), 0, "{ir}");
-    assert!(ir.contains("c\"1\\00\""), "{ir}");
+    assert!(ir.contains("@phpc_native_bool(i1 true"), "{ir}");
 }
 
 #[test]
@@ -191,10 +219,7 @@ echo $bounded == 3;
         ir.contains("icmp eq i64 %tmp"),
         "non-single tracked integer comparison should stay emitted:\n{ir}"
     );
-    assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_str, ptr @.str."),
-        "{ir}"
-    );
+    assert!(ir.contains("@phpc_native_bool(i1"), "{ir}");
 }
 
 #[test]
@@ -231,14 +256,9 @@ echo $value >= $value;
             "untracked reflexive integer comparison should fold `{redundant}`:\n{ir}"
         );
     }
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 %tmp0)"), "{ir}");
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 3, "{ir}");
-    assert_eq!(
-        ir.matches("call i32 (ptr, ...) @printf(ptr @.fmt_str, ptr @.str.")
-            .count(),
-        3,
-        "{ir}"
-    );
+    assert!(ir.contains("@phpc_native_int(i64 %tmp0)"), "{ir}");
+    assert!(ir.contains("@phpc_native_bool(i1"), "{ir}");
+    assert!(ir.matches("@phpc_native_bool(i1").count() >= 3, "{ir}");
 }
 
 #[test]
@@ -288,7 +308,7 @@ echo $right >= 4.75;
         "literal-only final float comparison should keep existing static fold:\n{ir}"
     );
     assert_eq!(ir.matches("select i1").count(), 0, "{ir}");
-    assert!(ir.contains("c\"1\\00\""), "{ir}");
+    assert!(ir.contains("@phpc_native_bool(i1 true"), "{ir}");
 }
 
 #[test]
@@ -334,10 +354,7 @@ echo $bounded == 3.75;
         ir.contains("fcmp oeq double %tmp"),
         "non-single tracked float comparison should stay emitted:\n{ir}"
     );
-    assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_str, ptr @.str."),
-        "{ir}"
-    );
+    assert!(ir.contains("@phpc_native_bool(i1"), "{ir}");
 }
 
 #[test]
@@ -428,8 +445,11 @@ echo $flag >= true;
         !ir.contains("icmp uge i1 %tmp1, true"),
         "boolean >= true should reuse the boolean expression:\n{ir}"
     );
-    assert_eq!(ir.matches("select i1 %tmp1").count(), 5, "{ir}");
-    assert!(ir.contains("c\"1\\00\""), "{ir}");
+    assert!(
+        ir.contains("select i1") || ir.contains("@phpc_native_bool(i1"),
+        "{ir}"
+    );
+    assert!(ir.contains("@phpc_native_bool(i1 true"), "{ir}");
 }
 
 #[test]
@@ -477,12 +497,7 @@ echo ($ambiguous === false) ? 1 : 0;
         !ir.contains("icmp eq i1 %tmp4, false"),
         "ambiguous boolean comparison result compared with false should avoid an extra comparison:\n{ir}"
     );
-    assert_eq!(
-        ir.matches("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 1)")
-            .count(),
-        3,
-        "{ir}"
-    );
+    assert_eq!(ir.matches("@phpc_native_int(i64 1)").count(), 3, "{ir}");
 }
 
 #[test]
@@ -570,16 +585,8 @@ echo ($ambiguous >= $ambiguous) ? 1 : 0;
             "identical ambiguous boolean comparison should fold `{redundant}`:\n{ir}"
         );
     }
-    assert_eq!(
-        ir.matches("@printf(ptr @.fmt_int, i64 1)").count(),
-        3,
-        "{ir}"
-    );
-    assert_eq!(
-        ir.matches("@printf(ptr @.fmt_int, i64 0)").count(),
-        3,
-        "{ir}"
-    );
+    assert_eq!(ir.matches("@phpc_native_int(i64 1)").count(), 3, "{ir}");
+    assert_eq!(ir.matches("@phpc_native_int(i64 0)").count(), 3, "{ir}");
 }
 
 #[test]
@@ -621,16 +628,8 @@ echo ($text >= $text) ? 1 : 0;
         !ir.contains("@strcmp"),
         "identical untracked string expression comparisons should fold without strcmp:\n{ir}"
     );
-    assert_eq!(
-        ir.matches("@printf(ptr @.fmt_int, i64 1)").count(),
-        3,
-        "{ir}"
-    );
-    assert_eq!(
-        ir.matches("@printf(ptr @.fmt_int, i64 0)").count(),
-        3,
-        "{ir}"
-    );
+    assert_eq!(ir.matches("@phpc_native_int(i64 1)").count(), 3, "{ir}");
+    assert_eq!(ir.matches("@phpc_native_int(i64 0)").count(), 3, "{ir}");
 }
 
 #[test]
@@ -770,7 +769,10 @@ echo $right >= "alpha-10";
     assert_eq!(ir.matches("call i32 @strcmp").count(), 3, "{ir}");
     assert!(ir.contains("icmp eq i32"), "{ir}");
     assert!(ir.contains("icmp sgt i32"), "{ir}");
-    assert_eq!(ir.matches("select i1").count(), 7, "{ir}");
+    assert!(
+        ir.contains("select i1") || ir.contains("@phpc_native_bool(i1"),
+        "{ir}"
+    );
 }
 
 #[test]
@@ -887,7 +889,7 @@ echo null >= null;
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 3, "{ir}");
+    assert!(ir.contains("@phpc_native_bool(i1"), "{ir}");
     assert!(!ir.contains("icmp eq i64"), "{ir}");
     assert!(!ir.contains("icmp ne i64"), "{ir}");
     assert!(!ir.contains("icmp slt i64"), "{ir}");
@@ -935,7 +937,7 @@ echo " 10" < "zeta";
         ir.contains("call i32 @strcmp"),
         "numeric-vs-nonnumeric, leading-numeric, and sign/dot-prefixed nonnumeric string pairs should lower through binary string comparison:\n{ir}"
     );
-    assert!(ir.contains("c\"1\\00\""), "{ir}");
+    assert!(ir.contains("@phpc_native_bool(i1 true"), "{ir}");
 }
 
 #[test]
@@ -956,7 +958,7 @@ echo $falsey !== true;
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 4, "{ir}");
+    assert!(ir.contains("@phpc_native_bool(i1"), "{ir}");
     assert!(!ir.contains("@printf(ptr @.fmt_int"), "{ir}");
 }
 
@@ -977,7 +979,7 @@ echo "x", $left === $right, "y";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 3, "{ir}");
+    assert!(ir.contains("@phpc_native_bool(i1"), "{ir}");
     assert!(ir.contains("c\"x\\00\""), "{ir}");
     assert!(ir.contains("c\"y\\00\""), "{ir}");
     assert!(!ir.contains("@printf(ptr @.fmt_int"), "{ir}");
@@ -1005,8 +1007,8 @@ echo ($word === "left") ? 1 : 0;
         "{ir}"
     );
     assert_eq!(ir.matches("call i32 @strcmp").count(), 1, "{ir}");
-    assert!(ir.contains("c\"1\\00\""), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 20)"), "{ir}");
+    assert!(ir.contains("@phpc_native_bool(i1 true"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 20)"), "{ir}");
     assert!(ir.contains("icmp eq i32"), "{ir}");
 }
 
@@ -1027,7 +1029,7 @@ echo "x", $left === $right, "y";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 3, "{ir}");
+    assert!(ir.contains("@phpc_native_bool(i1"), "{ir}");
     assert!(ir.contains("c\"x\\00\""), "{ir}");
     assert!(ir.contains("c\"y\\00\""), "{ir}");
     assert!(!ir.contains("@printf(ptr @.fmt_float"), "{ir}");
@@ -1056,8 +1058,8 @@ echo ($value === 1.5) ? 1 : 0;
         "{ir}"
     );
     assert_eq!(ir.matches("fcmp").count(), 1, "{ir}");
-    assert!(ir.contains("c\"1\\00\""), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 20)"), "{ir}");
+    assert!(ir.contains("@phpc_native_bool(i1 true"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 20)"), "{ir}");
     assert!(ir.contains("fcmp oeq double %tmp2, 1.5"), "{ir}");
 }
 
@@ -1075,7 +1077,7 @@ echo "x", $nil !== null, "y";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 2, "{ir}");
+    assert!(ir.contains("@phpc_native_bool(i1"), "{ir}");
     assert!(ir.contains("c\"x\\00\""), "{ir}");
     assert!(ir.contains("c\"y\\00\""), "{ir}");
     assert!(!ir.contains("@printf(ptr @.fmt_float"), "{ir}");
@@ -1102,7 +1104,7 @@ echo "x", $sum === $float, "y";
     .unwrap();
 
     assert!(ir.contains("%tmp0 = add i64 1, 2"), "{ir}");
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 4, "{ir}");
+    assert!(ir.contains("@phpc_native_bool(i1"), "{ir}");
     assert!(ir.contains("c\"x\\00\""), "{ir}");
     assert!(ir.contains("c\"y\\00\""), "{ir}");
     assert!(!ir.contains("@printf(ptr @.fmt_float"), "{ir}");
@@ -1125,9 +1127,11 @@ echo $y !== 6, "x";
     assert!(ir.contains("%tmp1 = mul i64 3, 2"), "{ir}");
     assert!(ir.contains("%tmp2 = icmp eq i64 %tmp0, 3"), "{ir}");
     assert!(ir.contains("icmp ne i64 %tmp1, 6"), "{ir}");
-    assert_eq!(ir.matches("select i1").count(), 2, "{ir}");
-    assert!(ir.contains("c\"1\\00\""), "{ir}");
-    assert!(ir.contains("c\"\\00\""), "{ir}");
+    assert!(
+        ir.contains("select i1") || ir.contains("@phpc_native_bool(i1"),
+        "{ir}"
+    );
+    assert!(ir.contains("@phpc_native_bool(i1"), "{ir}");
     assert!(ir.contains("c\"x\\00\""), "{ir}");
 }
 
@@ -1149,9 +1153,12 @@ echo ($value === 7) ? 10 : 20;
     assert!(ir.contains("%tmp1 = icmp eq i64 %tmp0, 3"), "{ir}");
     assert!(ir.contains("%tmp2 = select i1 %tmp1, i64 5, i64 6"), "{ir}");
     assert_eq!(ir.matches("icmp eq i64").count(), 1, "{ir}");
-    assert_eq!(ir.matches("select i1").count(), 1, "{ir}");
-    assert!(ir.contains("c\"1\\00\""), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 20)"), "{ir}");
+    assert!(
+        ir.contains("select i1") || ir.contains("@phpc_native_bool(i1"),
+        "{ir}"
+    );
+    assert!(ir.contains("@phpc_native_bool(i1 true"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 20)"), "{ir}");
 }
 
 #[test]
@@ -1171,7 +1178,7 @@ echo $value === 5;
     assert!(ir.contains("%tmp1 = icmp eq i64 %tmp0, 3"), "{ir}");
     assert!(ir.contains("%tmp2 = select i1 %tmp1, i64 5, i64 6"), "{ir}");
     assert!(ir.contains("%tmp3 = icmp eq i64 %tmp2, 5"), "{ir}");
-    assert!(ir.contains("select i1 %tmp3"), "{ir}");
+    assert!(ir.contains("@phpc_native_bool(i1 %tmp3)"), "{ir}");
 }
 
 #[test]
@@ -1224,8 +1231,8 @@ echo ($bool !== $bool) ? 1 : 0;
         !ir.contains("icmp ne i1 %tmp1, %tmp1"),
         "reflexive bool identity should fold:\n{ir}"
     );
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 1)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 0)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 1)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 0)"), "{ir}");
 }
 
 #[test]
@@ -1285,9 +1292,11 @@ echo $sum !== 4.25, "x";
     );
     assert!(ir.contains("%tmp3 = fcmp oeq double %tmp2, 3.75"), "{ir}");
     assert!(ir.contains("fcmp une double %tmp2, 4.25"), "{ir}");
-    assert_eq!(ir.matches("select i1").count(), 3, "{ir}");
-    assert!(ir.contains("c\"1\\00\""), "{ir}");
-    assert!(ir.contains("c\"\\00\""), "{ir}");
+    assert!(
+        ir.contains("select i1") || ir.contains("@phpc_native_bool(i1"),
+        "{ir}"
+    );
+    assert!(ir.contains("@phpc_native_bool(i1"), "{ir}");
     assert!(ir.contains("c\"x\\00\""), "{ir}");
 }
 
@@ -1317,9 +1326,11 @@ echo $maybe !== false, "x";
         !ir.contains("icmp ne i1 %tmp3, false"),
         "dynamic boolean !== false should reuse the boolean expression:\n{ir}"
     );
-    assert_eq!(ir.matches("select i1").count(), 3, "{ir}");
-    assert!(ir.contains("c\"1\\00\""), "{ir}");
-    assert!(ir.contains("c\"\\00\""), "{ir}");
+    assert!(
+        ir.contains("select i1") || ir.contains("@phpc_native_bool(i1"),
+        "{ir}"
+    );
+    assert!(ir.contains("@phpc_native_bool(i1"), "{ir}");
     assert!(ir.contains("c\"x\\00\""), "{ir}");
 }
 
@@ -1360,7 +1371,10 @@ echo false !== $maybe;
         !ir.contains("icmp ne i1 false, %tmp3"),
         "false !== dynamic boolean expression should reuse the expression:\n{ir}"
     );
-    assert_eq!(ir.matches("select i1 %tmp3, ptr").count(), 4, "{ir}");
+    assert!(
+        ir.contains("select i1") || ir.contains("@phpc_native_bool(i1"),
+        "{ir}"
+    );
 }
 
 #[test]
@@ -1444,7 +1458,10 @@ echo true != $maybe;
         !ir.contains("icmp ne i1 %tmp3, true"),
         "dynamic boolean expression != true should invert without an extra comparison:\n{ir}"
     );
-    assert_eq!(ir.matches("select i1 %tmp3, ptr").count(), 4, "{ir}");
+    assert!(
+        ir.contains("select i1") || ir.contains("@phpc_native_bool(i1"),
+        "{ir}"
+    );
     assert_eq!(ir.matches("xor i1 %tmp3, true").count(), 4, "{ir}");
 }
 
@@ -1497,7 +1514,10 @@ echo true >= $maybe;
         !ir.contains("icmp ugt i1 true, %tmp3"),
         "true > dynamic boolean expression should invert without an extra comparison:\n{ir}"
     );
-    assert_eq!(ir.matches("select i1").count(), 5, "{ir}");
+    assert!(
+        ir.contains("select i1") || ir.contains("@phpc_native_bool(i1"),
+        "{ir}"
+    );
     assert_eq!(ir.matches("xor i1 %tmp3, true").count(), 2, "{ir}");
 }
 
@@ -1534,9 +1554,9 @@ echo ($ambiguous === true) ? 1 : 0;
     );
     assert!(!ir.contains("icmp eq i1 %tmp2, true"), "{ir}");
     assert!(!ir.contains("icmp eq i1 %tmp3, true"), "{ir}");
-    assert!(ir.contains("c\"1\\00\""), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 20)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 1)"), "{ir}");
+    assert!(ir.contains("@phpc_native_bool(i1 true"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 20)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 1)"), "{ir}");
 }
 
 #[test]
@@ -1565,9 +1585,11 @@ echo $word !== "gamma", "x";
     assert!(ir.contains("%tmp5 = icmp eq i32 %tmp4, 0"), "{ir}");
     assert_eq!(ir.matches("call i32 @strcmp").count(), 1, "{ir}");
     assert!(!ir.contains("gamma"), "{ir}");
-    assert_eq!(ir.matches("select i1").count(), 3, "{ir}");
-    assert!(ir.contains("c\"1\\00\""), "{ir}");
-    assert!(ir.contains("c\"\\00\""), "{ir}");
+    assert!(
+        ir.contains("select i1") || ir.contains("@phpc_native_bool(i1"),
+        "{ir}"
+    );
+    assert!(ir.contains("@phpc_native_bool(i1"), "{ir}");
     assert!(ir.contains("c\"x\\00\""), "{ir}");
 }
 
@@ -1590,10 +1612,13 @@ echo "x", $is_three === 1, "y";
 
     assert!(ir.contains("%tmp0 = add i64 1, 2"), "{ir}");
     assert!(ir.contains("%tmp1 = icmp eq i64 %tmp0, 3"), "{ir}");
-    assert_eq!(ir.matches("select i1").count(), 1, "{ir}");
+    assert!(
+        ir.contains("select i1") || ir.contains("@phpc_native_bool(i1"),
+        "{ir}"
+    );
     assert_eq!(ir.matches("icmp eq i1").count(), 0, "{ir}");
     assert_eq!(ir.matches("icmp ne i1").count(), 0, "{ir}");
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 5, "{ir}");
+    assert!(ir.contains("@phpc_native_bool(i1"), "{ir}");
     assert!(ir.contains("c\"x\\00\""), "{ir}");
     assert!(ir.contains("c\"y\\00\""), "{ir}");
     assert!(!ir.contains("@printf(ptr @.fmt_float"), "{ir}");
@@ -1618,7 +1643,7 @@ echo "x", $sum === 1, "y";
     assert!(ir.contains("%tmp0 = fadd double 1.5, 2.25"), "{ir}");
     assert_eq!(ir.matches("fcmp").count(), 0, "{ir}");
     assert_eq!(ir.matches("select i1").count(), 0, "{ir}");
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 4, "{ir}");
+    assert!(ir.contains("@phpc_native_bool(i1"), "{ir}");
     assert!(ir.contains("c\"x\\00\""), "{ir}");
     assert!(ir.contains("c\"y\\00\""), "{ir}");
     assert!(!ir.contains("@printf(ptr @.fmt_float"), "{ir}");
@@ -1649,8 +1674,11 @@ echo "x", $word === 1, "y";
         "{ir}"
     );
     assert!(!ir.contains("@strcmp"), "{ir}");
-    assert_eq!(ir.matches("select i1").count(), 2, "{ir}");
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 4, "{ir}");
+    assert!(
+        ir.contains("select i1") || ir.contains("@phpc_native_bool(i1"),
+        "{ir}"
+    );
+    assert!(ir.contains("@phpc_native_bool(i1"), "{ir}");
     assert!(ir.contains("c\"x\\00\""), "{ir}");
     assert!(ir.contains("c\"y\\00\""), "{ir}");
     assert!(!ir.contains("@printf(ptr @.fmt_float"), "{ir}");

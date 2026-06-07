@@ -1,2 +1,2 @@
-runtime error at 2:10: unsupported call class_exists(): class name argument must be string, got int
+runtime error at 2:10: unsupported call class_exists(): class-like name argument must be string-compatible scalar in the current subset, got array
 

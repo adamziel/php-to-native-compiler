@@ -1,0 +1,6 @@
+bool(false)
+float(INF)
+39|-3|4.5
+123abc:is_finite(): Argument #1 ($num) must be of type float, string given
+INF:is_finite(): Argument #1 ($num) must be of type float, string given
+NAN:is_finite(): Argument #1 ($num) must be of type float, string given

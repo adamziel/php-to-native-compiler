@@ -57,6 +57,65 @@ echo strip_tags("hello <img title='>_<'> world");
 }
 
 #[test]
+fn strip_tags_xml_processing_instruction_stops_at_tag_end() {
+    let execution = run_source(
+        r#"<?php
+$s = "This text is shown <?XML:NAMESPACE PREFIX = ST1 /><b>This Text disappears</b>";
+echo htmlspecialchars(strip_tags($s)), "\n";
+$s = "This text is shown <?xml:NAMESPACE PREFIX = ST1 /><b>This Text disappears</b>";
+echo htmlspecialchars(strip_tags($s)), "\n";
+echo strip_tags("NEAT <? cool > blah ?> STUFF");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "This text is shown This Text disappears\nThis text is shown This Text disappears\nNEAT  STUFF"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn strip_tags_xml_processing_instruction_ignores_object_operator_arrow() {
+    let execution = run_source(
+        r#"<?php
+var_dump(strip_tags('<?php $dom->test(); ?> this is a test'));
+var_dump(strip_tags('<?php $xml->test(); ?> this is a test'));
+var_dump(strip_tags('<?xml $xml->test(); ?> this is a test'));
+var_dump(strip_tags("<span class=sf-dump-> this is a test</span>"));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "string(15) \" this is a test\"\nstring(15) \" this is a test\"\nstring(15) \" this is a test\"\nstring(15) \" this is a test\"\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn strip_tags_strips_malformed_nested_angle_tag_until_outer_close() {
+    let execution = run_source(
+        r#"<?php
+var_dump(
+    strip_tags('<foo<>bar>'),
+    strip_tags('<foo<!>bar>'),
+    strip_tags('<foo<?>bar>')
+);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "string(0) \"\"\nstring(0) \"\"\nstring(0) \"\"\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn strip_tags_metadata_is_available_to_capability_checks() {
     let execution = run_source(
         r#"<?php

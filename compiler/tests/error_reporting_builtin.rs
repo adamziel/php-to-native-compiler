@@ -27,22 +27,29 @@ echo error_reporting();
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "32767|32767|0|0|7");
+    assert_eq!(execution.stdout, "30719|30719|0|0|7");
     assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
-fn error_reporting_exposes_current_php_error_constants() {
+fn error_reporting_exposes_current_php_error_constants_and_strict_deprecation() {
     let execution = run_source(
         r#"<?php
 echo E_ERROR, "|", E_WARNING, "|", E_PARSE, "|", E_CORE_ERROR, "|";
 echo E_CORE_WARNING, "|", E_COMPILE_ERROR, "|", E_USER_ERROR, "|";
-echo E_USER_WARNING, "|", E_RECOVERABLE_ERROR, "|", E_ALL;
+echo E_USER_WARNING, "|", E_RECOVERABLE_ERROR, "|", E_ALL, "\n";
+var_dump(E_STRICT);
 "#,
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "1|2|4|16|32|64|256|512|4096|32767");
+    assert_eq!(
+        execution.stdout,
+        "1|2|4|16|32|64|256|512|4096|30719\n\
+\n\
+Deprecated: Constant E_STRICT is deprecated since 8.4, the error level was removed in Command line code on line 5\n\
+int(2048)\n"
+    );
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -60,24 +67,42 @@ echo $call(0);
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "yes|callable|32767");
+    assert_eq!(execution.stdout, "yes|callable|30719");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn error_reporting_coerces_nullable_int_masks_and_reports_php_type_errors() {
+    let execution = run_source(
+        r#"<?php
+echo error_reporting(null), "|";
+echo error_reporting("7"), "|";
+echo error_reporting(), "|";
+echo error_reporting(false), "|";
+echo error_reporting();
+
+foreach ([[], new stdClass()] as $mask) {
+    try {
+        error_reporting($mask);
+    } catch (Throwable $e) {
+        echo "\n", $e::class, ": ", $e->getMessage();
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "30719|30719|7|7|0\n\
+TypeError: error_reporting(): Argument #1 ($error_level) must be of type ?int, array given\n\
+TypeError: error_reporting(): Argument #1 ($error_level) must be of type ?int, stdClass given"
+    );
     assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
 fn error_reporting_rejects_forms_outside_current_subset() {
-    let non_int = runtime_error(
-        r#"<?php
-error_reporting("0");
-"#,
-    );
-    assert_eq!(non_int.line, 2);
-    assert_eq!(non_int.column, 1);
-    assert_eq!(
-        non_int.message,
-        "unsupported call error_reporting(): mask must be int in the current subset, got string"
-    );
-
     let too_many = runtime_error(
         r#"<?php
 error_reporting(0, 1);
@@ -89,6 +114,82 @@ error_reporting(0, 1);
         too_many.message,
         "arity mismatch for error_reporting(): expected 0 to 1 argument(s), got 2"
     );
+}
+
+#[test]
+fn error_control_records_last_error_and_restores_php_masks() {
+    let execution = run_source(
+        r#"<?php
+error_reporting(E_ALL & ~E_DEPRECATED);
+function enable_warnings_inside_at() {
+    echo $suppressed;
+    error_reporting(E_ALL);
+    echo $visible;
+}
+@enable_warnings_inside_at();
+echo "|", error_reporting(), "|";
+
+error_reporting(E_ALL);
+function disable_warnings_inside_at() {
+    echo $suppressed_again;
+    error_reporting(0);
+}
+@disable_warnings_inside_at();
+echo error_reporting(), "|";
+
+@$a = $missing;
+$last = error_get_last();
+echo $last["type"], ":", $last["message"];
+error_clear_last();
+echo "|", error_get_last() === null ? "cleared" : "set";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Warning: Undefined variable $visible in Command line code on line 6\n\
+|30719|30719|2:Undefined variable $missing|cleared"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn trigger_error_levels_and_repeated_error_ini_are_php_shaped() {
+    let previous = std::env::var("PHPC_PHPT_INI_FLAGS").ok();
+    std::env::set_var("PHPC_PHPT_INI_FLAGS", "-d ignore_repeated_errors=1");
+    let execution = run_source(
+        r#"<?php
+trigger_error("notice");
+trigger_error("warning", E_USER_WARNING);
+trigger_error("deprecated", E_USER_DEPRECATED);
+try {
+    trigger_error("bad", 0);
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+$u + $u;
+"#,
+    )
+    .unwrap();
+    if let Some(previous) = previous {
+        std::env::set_var("PHPC_PHPT_INI_FLAGS", previous);
+    } else {
+        std::env::remove_var("PHPC_PHPT_INI_FLAGS");
+    }
+
+    assert_eq!(
+        execution.stdout,
+        "Notice: notice in Command line code on line 2\n\
+\n\
+Warning: warning in Command line code on line 3\n\
+\n\
+Deprecated: deprecated in Command line code on line 4\n\
+trigger_error(): Argument #2 ($error_level) must be one of E_USER_ERROR, E_USER_WARNING, E_USER_NOTICE, or E_USER_DEPRECATED\n\
+\n\
+Warning: Undefined variable $u in Command line code on line 10\n"
+    );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

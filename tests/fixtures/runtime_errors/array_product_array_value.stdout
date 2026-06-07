@@ -1,0 +1,2 @@
+Warning: array_product(): Multiplication is not supported on type array in tests/fixtures/runtime_errors/array_product_array_value.php on line 3
+1

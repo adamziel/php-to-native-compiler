@@ -1,11 +1,4 @@
-use php_compiler::error::Phase;
 use php_compiler::run_source;
-
-fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
-    let error = run_source(source).unwrap_err();
-    assert_eq!(error.phase, Phase::Runtime);
-    error
-}
 
 #[test]
 fn unset_static_variable_removes_symbol_and_undefined_names_are_noops() {
@@ -70,15 +63,19 @@ echo "global=", $name;
 
 #[test]
 fn reading_variable_after_unset_uses_existing_undefined_variable_diagnostic() {
-    let error = runtime_error(
+    let execution = run_source(
         r#"<?php
 $value = 1;
 unset($value);
 echo $value;
 "#,
-    );
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 4);
-    assert_eq!(error.column, 6);
-    assert_eq!(error.message, "undefined variable '$value'");
+    assert_eq!(
+        execution.stdout,
+        "Warning: Undefined variable $value in Command line code on line 4\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
 }

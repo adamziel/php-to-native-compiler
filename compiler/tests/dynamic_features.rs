@@ -263,6 +263,86 @@ try {
 }
 
 #[test]
+fn literal_call_user_func_scope_frame_builtins_read_active_user_call_frame() {
+    let execution = run_source(
+        r#"<?php
+function relay_frame($first, $second = "B") {
+    $first = "changed";
+    echo call_user_func("func_num_args"), "|";
+    echo implode(",", call_user_func("FUNC_GET_ARGS")), "|";
+    echo call_user_func("func_get_arg", 1), "|";
+    echo call_user_func_array("func_num_args", []), "|";
+    echo implode(",", call_user_func_array("func_get_args", [])), "|";
+    echo call_user_func_array("FUNC_GET_ARG", [0]), "\n";
+}
+
+relay_frame("A", "B", "C");
+
+try {
+    call_user_func("func_get_args");
+} catch (\Error $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "3|changed,B,C|B|3|changed,B,C|changed\n",
+            "func_get_args() cannot be called from the global scope\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn variable_call_user_func_scope_frame_builtins_remain_forbidden_dynamic_calls() {
+    let execution = run_source(
+        r#"<?php
+function rejected_callbacks($value) {
+    $callback = "func_get_args";
+    try {
+        call_user_func($callback);
+    } catch (\Error $e) {
+        echo $e->getMessage(), "\n";
+    }
+    try {
+        call_user_func_array($callback, []);
+    } catch (\Error $e) {
+        echo $e->getMessage(), "\n";
+    }
+    try {
+        call_user_func('\\func_get_args');
+    } catch (\Error $e) {
+        echo $e->getMessage(), "\n";
+    }
+    try {
+        call_user_func_array('\\func_get_args', []);
+    } catch (\Error $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
+
+rejected_callbacks("A");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "Cannot call func_get_args() dynamically\n",
+            "Cannot call func_get_args() dynamically\n",
+            "Cannot call func_get_args() dynamically\n",
+            "Cannot call func_get_args() dynamically\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn generator_rewind_foreach_and_func_get_use_materialized_yields() {
     let execution = run_source(
         r#"<?php
@@ -614,17 +694,21 @@ try {
 }
 
 #[test]
-fn unresolved_dynamic_function_name_has_stable_runtime_error() {
-    let error = runtime_error(
+fn unresolved_dynamic_function_name_reports_php_fatal_execution() {
+    let execution = run_source(
         r#"<?php
 $call = "missing";
 echo $call();
 "#,
-    );
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
-    assert_eq!(error.message, "undefined function missing()");
+    assert_eq!(
+        execution.stdout,
+        "Fatal error: Uncaught Error: Call to undefined function missing() in Command line code:3\nStack trace:\n#0 {main}\n  thrown in Command line code on line 3"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 255);
 }
 
 #[test]
@@ -645,8 +729,8 @@ echo $call();
 }
 
 #[test]
-fn variable_variables_are_rejected_with_stable_lex_error() {
-    let error = lex_error(
+fn variable_variables_are_rejected_with_stable_parse_error() {
+    let error = parse_error(
         r#"<?php
 $name = "value";
 $$name = "dynamic";
@@ -1097,72 +1181,51 @@ fn emit_ir_rejects_require_until_native_multifile_lowering_exists() {
 }
 
 #[test]
-fn eval_constructs_are_rejected_with_stable_parse_errors() {
-    let cases = [
-        (
-            r#"<?php
+fn eval_constructs_execute_statement_slice_and_expression_calls_remain_php_fatal() {
+    let statement = run_source(
+        r#"<?php
 eval('echo "dynamic";');
 "#,
-            2,
-            1,
-        ),
-        (
-            r#"<?php
+    )
+    .unwrap();
+
+    assert_eq!(statement.stdout, "dynamic");
+    assert_eq!(statement.exit_code, 0);
+
+    let expression = run_source(
+        r#"<?php
 $result = eval('return 1;');
 "#,
-            2,
-            11,
-        ),
-    ];
+    )
+    .unwrap();
 
-    for (source, line, column) in cases {
-        let error = parse_error(source);
-        assert_eq!(error.line, line);
-        assert_eq!(error.column, column);
-        assert_eq!(
-            error.message,
-            "unsupported eval: eval parsing and caller-scope execution are not implemented"
-        );
-    }
+    assert_eq!(
+        expression.stdout,
+        "Fatal error: Uncaught Error: Call to undefined function eval() in Command line code:2\nStack trace:\n#0 {main}\n  thrown in Command line code on line 2"
+    );
+    assert_eq!(expression.stderr, "");
+    assert_eq!(expression.exit_code, 255);
 }
 
 #[test]
-fn unsupported_namespace_and_use_forms_are_rejected_with_stable_parse_errors() {
-    let cases = [
-        (
-            r#"<?php
+fn bracketed_namespace_blocks_execute_with_scoped_imports() {
+    let execution = run_source(
+        r#"<?php
 namespace App\Demo {
-    echo "blocked";
+    class Thing {}
+    echo Thing::class, "\n";
+}
+
+namespace {
+    use App\Demo\Thing;
+    echo Thing::class;
 }
 "#,
-            2,
-            1,
-            "unsupported namespace declaration: bracketed namespace blocks are not implemented",
-        ),
-        (
-            r#"<?php
-use function App\Demo\make_service;
-"#,
-            2,
-            1,
-            "unsupported function use declaration: missing function import metadata, namespace-aware function lookup, alias handling, fallback lookup, and native lowering",
-        ),
-        (
-            r#"<?php
-use const App\Demo\VALUE;
-"#,
-            2,
-            1,
-            "unsupported const use declaration: missing constant import metadata, namespace-aware constant lookup, alias handling, fallback lookup, and native lowering",
-        ),
-    ];
+    )
+    .unwrap();
 
-    for (source, line, column, message) in cases {
-        let error = parse_error(source);
-        assert_eq!(error.line, line);
-        assert_eq!(error.column, column);
-        assert_eq!(error.message, message);
-    }
+    assert_eq!(execution.stdout, "App\\Demo\\Thing\nApp\\Demo\\Thing");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -1180,15 +1243,19 @@ echo namespace\make();
 
     assert_eq!(execution.stdout, "App\\make");
 
-    let error = runtime_error(
+    let execution = run_source(
         r#"<?php
 namespace App;
 App\make();
 "#,
+    )
+    .unwrap();
+    assert_eq!(
+        execution.stdout,
+        "Fatal error: Uncaught Error: Call to undefined function App\\App\\make() in Command line code:3\nStack trace:\n#0 {main}\n  thrown in Command line code on line 3"
     );
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 1);
-    assert_eq!(error.message, "undefined function App\\App\\make()");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 255);
 }
 
 #[test]
@@ -1563,52 +1630,63 @@ echo "|", defined("SecretBox::OPEN") ? "1" : "0", "\n";
     assert_eq!(execution.stdout, "0|0|1\n");
     assert_eq!(execution.exit_code, 0);
 
-    let private_error = runtime_error(
+    let private_error = run_source(
         r#"<?php
 class SecretBox {
     private const SECRET = "secret";
 }
 echo constant("SecretBox::SECRET");
 "#,
-    );
+    )
+    .unwrap();
 
-    assert_eq!(private_error.line, 5);
-    assert_eq!(private_error.column, 6);
     assert_eq!(
-        private_error.message,
-        "unsupported call SecretBox::SECRET: private class constant is not visible from the current class context"
+        private_error.exit_code, 255,
+        "private constant access should be a PHP fatal Error"
     );
+    assert!(private_error
+        .stdout
+        .contains("Cannot access private constant SecretBox::SECRET"));
+    assert!(private_error
+        .stdout
+        .contains("thrown in Command line code on line 5"));
 }
 
 #[test]
-fn constant_builtin_rejects_unknown_constant_names() {
-    let error = runtime_error(
+fn constant_builtin_resolves_php_os_and_rejects_unknown_class_constant_names() {
+    let execution = run_source(
         r#"<?php
 echo constant("PHP_OS");
 "#,
-    );
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
-    assert_eq!(
-        error.message,
-        "unsupported call constant(): constant PHP_OS is not defined in the current runtime-defined or built-in constant subset"
-    );
+    assert_eq!(execution.stdout, "Linux");
+    assert_eq!(execution.exit_code, 0);
 
-    let class_constant = runtime_error(
+    let class_constant = run_source(
         r#"<?php
 class Box {}
 echo constant("Box::MISSING");
 "#,
-    );
+    )
+    .unwrap();
 
-    assert_eq!(class_constant.line, 3);
-    assert_eq!(class_constant.column, 6);
-    assert_eq!(class_constant.message, "undefined constant Box::MISSING");
+    assert_eq!(
+        class_constant.stdout,
+        concat!(
+            "Fatal error: Uncaught Error: Undefined constant Box::MISSING in Command line code:3\n",
+            "Stack trace:\n",
+            "#0 {main}\n",
+            "  thrown in Command line code on line 3"
+        )
+    );
+    assert_eq!(class_constant.stderr, "");
+    assert_eq!(class_constant.exit_code, 255);
 }
 
 #[test]
-fn error_control_operator_evaluates_operand_without_suppression() {
+fn error_control_operator_evaluates_operand_and_suppresses_current_diagnostics() {
     let execution = run_source(
         r#"<?php
 $c = 5;
@@ -1622,15 +1700,16 @@ echo @"ok", "\n";
     assert_eq!(execution.stdout, "5\n5\nok\n");
     assert_eq!(execution.exit_code, 0);
 
-    let error = runtime_error(
+    let missing = run_source(
         r#"<?php
 echo @$missing;
 "#,
-    );
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 7);
-    assert_eq!(error.message, "undefined variable '$missing'");
+    assert_eq!(missing.stdout, "");
+    assert_eq!(missing.stderr, "");
+    assert_eq!(missing.exit_code, 0);
 }
 
 #[test]
@@ -1677,6 +1756,87 @@ echo check_defined_inside_function(), "\n";
     .unwrap();
 
     assert_eq!(execution.stdout, "1|1\n1|1\n|\n1|\n1|\n1||\n1|99\n\n1:1\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn get_defined_constants_exports_builtin_and_runtime_constant_keys() {
+    let execution = run_source(
+        r#"<?php
+$before = get_defined_constants();
+echo isset($before["PHP_URL_SCHEME"]) ? $before["PHP_URL_SCHEME"] : "missing";
+echo "|", isset($before["PHP_URL_FRAGMENT"]) ? $before["PHP_URL_FRAGMENT"] : "missing", "\n";
+echo gettype(get_defined_constants(true)), "|", gettype($before), "\n";
+define("USER_CONSTANT", "test");
+$after = get_defined_constants(false);
+echo array_key_exists("USER_CONSTANT", $after) ? $after["USER_CONSTANT"] : "missing";
+echo "|", count($after) === count($before) + 1 ? "grew" : "stale";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "0|7\narray|array\ntest|grew");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn get_defined_constants_exports_supported_builtin_constant_registry() {
+    let execution = run_source(
+        r#"<?php
+$constants = get_defined_constants();
+$names = [
+    "INPUT_POST",
+    "INPUT_GET",
+    "INPUT_COOKIE",
+    "FILTER_VALIDATE_INT",
+    "FILTER_VALIDATE_BOOLEAN",
+    "FILTER_VALIDATE_BOOL",
+    "FILTER_VALIDATE_FLOAT",
+    "FILTER_VALIDATE_REGEXP",
+    "FILTER_VALIDATE_DOMAIN",
+    "FILTER_VALIDATE_URL",
+    "FILTER_VALIDATE_EMAIL",
+    "FILTER_VALIDATE_IP",
+    "FILTER_VALIDATE_MAC",
+    "FILTER_DEFAULT",
+    "FILTER_UNSAFE_RAW",
+    "FILTER_SANITIZE_STRING",
+    "FILTER_SANITIZE_STRIPPED",
+    "FILTER_SANITIZE_ENCODED",
+    "FILTER_SANITIZE_SPECIAL_CHARS",
+    "FILTER_SANITIZE_FULL_SPECIAL_CHARS",
+    "FILTER_SANITIZE_EMAIL",
+    "FILTER_SANITIZE_URL",
+    "FILTER_SANITIZE_NUMBER_INT",
+    "FILTER_SANITIZE_NUMBER_FLOAT",
+    "FILTER_SANITIZE_ADD_SLASHES",
+    "FILTER_CALLBACK",
+    "FILTER_REQUIRE_ARRAY",
+    "FILTER_FORCE_ARRAY",
+    "FILTER_NULL_ON_FAILURE",
+    "COUNT_NORMAL",
+    "COUNT_RECURSIVE",
+];
+
+foreach ($names as $name) {
+    echo $name, ":";
+    echo defined($name) ? "defined" : "missing";
+    echo ":";
+    echo array_key_exists($name, $constants) ? "listed" : "unlisted";
+    echo ":";
+        echo $constants[$name] === @constant($name) ? "same" : "different";
+    echo "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    for line in execution.stdout.lines() {
+        assert!(
+            line.ends_with(":defined:listed:same"),
+            "unexpected constant registry line: {line}"
+        );
+    }
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -1776,6 +1936,53 @@ echo "{{$term_count}}", "\n";
 }
 
 #[test]
+fn double_quoted_strings_interpolate_deprecated_dollar_brace_variables() {
+    let execution = run_source(
+        r#"<?php
+$name = "Ada";
+echo "${name}", "\n";
+$suffix = "RUNTIME";
+define("APP_RUNTIME", "ok");
+echo constant("APP_${suffix}"), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Deprecated: Using ${var} in strings is deprecated, use {$var} instead in Command line code on line 3\n\nDeprecated: Using ${var} in strings is deprecated, use {$var} instead in Command line code on line 6\nAda\nok\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn encapsed_string_dereference_preserves_php_string_receiver_behavior() {
+    let execution = run_source(
+        r#"<?php
+$bar = "bar";
+var_dump("foo$bar"[0]);
+var_dump("foo$bar"->prop);
+try {
+    var_dump("foo$bar"->method());
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+class FooBar { public static $prop = 42; }
+var_dump("foo$bar"::$prop);
+function foobar() { return 42; }
+var_dump("foo$bar"());
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "string(1) \"f\"\n\nWarning: Attempt to read property \"prop\" on string in Command line code on line 4\nNULL\nCall to a member function method() on string\nint(42)\nint(42)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn double_quoted_strings_interpolate_current_array_offsets_and_object_properties() {
     let execution = run_source(
         r#"<?php
@@ -1806,18 +2013,50 @@ echo "|columns-{$partial->context['displayLayout']['columns']}";
 }
 
 #[test]
+fn non_variable_dollar_runs_in_interpolated_strings_are_literal() {
+    let execution = run_source(
+        r#"<?php
+echo "$$$$$$!!!!@@@@@@@ ABCDEF !!!***", "\n";
+echo "cost $$";
+$byte = chr(128);
+echo "\n", bin2hex("$byte");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "$$$$$$!!!!@@@@@@@ ABCDEF !!!***\ncost $$\n80"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let variable_variable = lex_error(
+        r#"<?php
+$name = "value";
+echo "$$name";
+"#,
+    );
+    assert_eq!(variable_variable.line, 3);
+    assert_eq!(variable_variable.column, 6);
+    assert_eq!(
+        variable_variable.message,
+        "unsupported string interpolation: only simple $name, {$name}, ${name}, array offsets, and object properties in double-quoted strings are implemented; variable variables, dynamic properties, static properties, arbitrary expressions, and complex interpolation are not implemented"
+    );
+}
+
+#[test]
 fn remaining_complex_string_interpolation_forms_keep_named_boundaries() {
     let dollar_brace = lex_error(
         r#"<?php
 $name = "value";
-echo "${name}";
+echo "${$name}";
 "#,
     );
     assert_eq!(dollar_brace.line, 3);
     assert_eq!(dollar_brace.column, 6);
     assert_eq!(
         dollar_brace.message,
-        "unsupported string interpolation: only simple $name, {$name}, array offsets, and object properties in double-quoted strings are implemented; ${...}, dynamic properties, static properties, arbitrary expressions, and complex interpolation are not implemented"
+        "unsupported string interpolation: only simple $name, {$name}, ${name}, array offsets, and object properties in double-quoted strings are implemented; variable variables, dynamic properties, static properties, arbitrary expressions, and complex interpolation are not implemented"
     );
 
     let dynamic_property = lex_error(
@@ -1834,34 +2073,40 @@ echo "customize_partial_render_{$partial->{$property}}";
     assert_eq!(dynamic_property.column, 6);
     assert_eq!(
         dynamic_property.message,
-        "unsupported string interpolation: only simple $name, {$name}, array offsets, and object properties in double-quoted strings are implemented; ${...}, dynamic properties, static properties, arbitrary expressions, and complex interpolation are not implemented"
+        "unsupported string interpolation: only simple $name, {$name}, ${name}, array offsets, and object properties in double-quoted strings are implemented; variable variables, dynamic properties, static properties, arbitrary expressions, and complex interpolation are not implemented"
     );
 }
 
 #[test]
-fn undefined_variables_in_string_interpolation_use_current_runtime_error() {
-    let error = runtime_error(
+fn undefined_variables_in_string_interpolation_warn_and_coerce_to_empty_string() {
+    let execution = run_source(
         r#"<?php
 echo "APP_$constant";
 "#,
-    );
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
-    assert_eq!(error.message, "undefined variable '$constant'");
+    assert_eq!(
+        execution.stdout,
+        "Warning: Undefined variable $constant in Command line code on line 2\nAPP_"
+    );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
-fn undefined_variables_in_braced_string_interpolation_use_current_runtime_error() {
-    let error = runtime_error(
+fn undefined_variables_in_braced_string_interpolation_warn_and_coerce_to_empty_string() {
+    let execution = run_source(
         r#"<?php
 echo "APP_{$constant}";
 "#,
-    );
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
-    assert_eq!(error.message, "undefined variable '$constant'");
+    assert_eq!(
+        execution.stdout,
+        "Warning: Undefined variable $constant in Command line code on line 2\nAPP_"
+    );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -2130,18 +2375,16 @@ define("123BAD", "bad");
         "unsupported call define(): constant name must be a non-empty supported identifier or qualified name in the current subset, got 123BAD"
     );
 
-    let unsupported_value = runtime_error(
+    let object_value = run_source(
         r#"<?php
 class Box {}
 define("BOX", new Box());
+var_dump(BOX);
 "#,
-    );
-    assert_eq!(unsupported_value.line, 3);
-    assert_eq!(unsupported_value.column, 1);
-    assert_eq!(
-        unsupported_value.message,
-        "unsupported call define(): value must be null, bool, int, float, string, or array values in the current subset, got object"
-    );
+    )
+    .unwrap();
+    assert_eq!(object_value.stdout, "object(Box)#1 (0) {\n}\n");
+    assert_eq!(object_value.exit_code, 0);
 }
 
 #[test]

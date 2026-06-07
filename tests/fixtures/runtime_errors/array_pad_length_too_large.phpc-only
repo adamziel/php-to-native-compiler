@@ -1,1 +1,1 @@
-
+Project-specific fatal wording for the PHPT-compatible oversized padding ValueError; exact native PHP wording varies by version.

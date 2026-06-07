@@ -68,6 +68,96 @@ foreach ([microtime(), microtime(false)] as $value) {
 }
 
 #[test]
+fn sleep_negative_seconds_is_catchable_value_error_without_widening_types() {
+    let execution = run_source(
+        r#"<?php
+try {
+    sleep(-10);
+} catch (ValueError $e) {
+    echo $e::class, ":", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "ValueError:sleep(): Argument #1 ($seconds) must be greater than or equal to 0\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+
+    let uncaught = run_source("<?php\nsleep(-10);\n").unwrap();
+    assert_eq!(uncaught.exit_code, 255);
+    assert_eq!(
+        uncaught.stdout,
+        "Fatal error: Uncaught ValueError: sleep(): Argument #1 ($seconds) must be greater than or equal to 0 in Command line code:2\nStack trace:\n#0 Command line code(2): sleep(-10)\n#1 {main}\n  thrown in Command line code on line 2"
+    );
+
+    let unsupported = run_source("<?php\nsleep(1.5);\n").unwrap_err();
+    assert_eq!(unsupported.phase, Phase::Runtime);
+    assert_eq!(unsupported.line, 2);
+    assert_eq!(unsupported.column, 1);
+    assert_eq!(
+        unsupported.message,
+        "unsupported call sleep(): seconds argument must be int in the current subset, got float"
+    );
+}
+
+#[test]
+fn usleep_zero_is_callable_and_returns_null() {
+    let execution = run_source(
+        r#"<?php
+$call = "usleep";
+echo function_exists($call) ? "yes" : "no";
+echo "|";
+echo is_callable($call) ? "callable" : "missing";
+echo "|";
+var_dump($call(0));
+$function = new ReflectionFunction("usleep");
+$params = $function->getParameters();
+echo $function->getName(), "|";
+echo $function->getReturnType()->getName(), "|";
+echo $params[0]->getName(), ":", $params[0]->getType()->getName();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "yes|callable|NULL\nusleep|void|microseconds:int"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn usleep_negative_microseconds_raises_php_value_error() {
+    let execution = run_source(
+        r#"<?php
+try {
+    usleep(-10);
+} catch (ValueError $e) {
+    echo get_class($e), ":", $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "ValueError:usleep(): Argument #1 ($microseconds) must be greater than or equal to 0"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let fatal = run_source("<?php\nusleep(-10);\n").unwrap();
+    assert_eq!(
+        fatal.stdout,
+        "Fatal error: Uncaught ValueError: usleep(): Argument #1 ($microseconds) must be greater than or equal to 0 in Command line code:2\nStack trace:\n#0 Command line code(2): usleep(-10)\n#1 {main}\n  thrown in Command line code on line 2"
+    );
+    assert_eq!(fatal.exit_code, 255);
+}
+
+#[test]
 fn emit_ir_folds_microtime_metadata_but_rejects_direct_time_calls() {
     let ir = emit_ir_source(
         r#"<?php

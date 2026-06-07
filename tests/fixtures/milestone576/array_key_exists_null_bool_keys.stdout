@@ -1,3 +1,4 @@
+Deprecated: Using null as the key parameter for array_key_exists() is deprecated, use an empty string instead in tests/fixtures/milestone576/array_key_exists_null_bool_keys.php on line 8
 null:exists
 false:exists
 true:exists

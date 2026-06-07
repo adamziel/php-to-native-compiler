@@ -1,5 +1,5 @@
-fn|{closure}|ReflectionFunction|2/1|0|1|string
+fn|{closure:tests/fixtures/milestone1587/closure_reflection_metadata.php:2}|ReflectionFunction|2/1|0|1|string
 source|tests/fixtures/milestone1587/closure_reflection_metadata.php|2|2|1
-param0|hook|0|0||string|{closure}
-param1|priority|1|1|10||{closure}
-arrow|{closure}|1/1|int|13|13
+param0|hook|0|0||string|{closure:tests/fixtures/milestone1587/closure_reflection_metadata.php:2}
+param1|priority|1|1|10||{closure:tests/fixtures/milestone1587/closure_reflection_metadata.php:2}
+arrow|{closure:tests/fixtures/milestone1587/closure_reflection_metadata.php:13}|1/1|int|13|13
