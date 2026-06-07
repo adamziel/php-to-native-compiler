@@ -1,9 +1,4 @@
-exit: 255
-stdout:
 Fatal error: Uncaught Error: Undefined constant "App\Demo\VALUE" in tests/fixtures/unsupported_dynamic_features/unsupported_const_use_declaration.php:3
 Stack trace:
 #0 {main}
   thrown in tests/fixtures/unsupported_dynamic_features/unsupported_const_use_declaration.php on line 3
---- stdout end ---
-stderr:
---- stderr end ---

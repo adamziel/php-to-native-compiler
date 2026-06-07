@@ -1,6 +1,6 @@
-exit: 1
+exit: 0
 stdout:
+blocked
 --- stdout end ---
 stderr:
-parse error at tests/fixtures/unsupported_dynamic_features/unsupported_namespace.php:2:1: unsupported namespace declaration: bracketed namespace blocks are not implemented
 --- stderr end ---
