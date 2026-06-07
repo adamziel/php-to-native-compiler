@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-07T19:38:14+00:00
+Last generated: 2026-06-07T19:53:16+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -12,7 +12,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | name | role | current_status | tmux_window | worktree |
 | --- | --- | --- | --- | --- |
 | auditor-1 | Auditor | stopped | auditor-1 |  |
-| auditor-10 | Auditor | running | auditor-10 |  |
+| auditor-10 | Auditor | crash | auditor-10 |  |
 | auditor-2 | Auditor | crash | auditor-2 |  |
 | auditor-3 | Auditor | stopped | auditor-3 |  |
 | auditor-4 | Auditor | stopped | auditor-4 |  |
@@ -47,7 +47,9 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-24 | Coordinator | crash | coordinator-24 |  |
 | coordinator-25 | Coordinator | crash | coordinator-25 |  |
 | coordinator-26 | Coordinator | crash | coordinator-26 |  |
-| coordinator-27 | Coordinator | running | coordinator-27 |  |
+| coordinator-27 | Coordinator | crash | coordinator-27 |  |
+| coordinator-28 | Coordinator | crash | coordinator-28 |  |
+| coordinator-29 | Coordinator | running | coordinator-29 |  |
 | coordinator-3 | Coordinator | crash | coordinator-3 |  |
 | coordinator-4 | Coordinator | stopped | coordinator-4 |  |
 | coordinator-5 | Coordinator | stopped | coordinator-5 |  |
@@ -76,13 +78,19 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-115 | Developer | crash | developer-115 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-115 |
 | developer-116 | Developer | crash | developer-116 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-116 |
 | developer-117 | Developer | crash | developer-117 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-117 |
-| developer-118 | Developer | running | developer-118 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-118 |
-| developer-119 | Developer | running | developer-119 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-119 |
+| developer-118 | Developer | crash | developer-118 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-118 |
+| developer-119 | Developer | crash | developer-119 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-119 |
 | developer-12 | Developer | stopped | developer-12 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-12 |
-| developer-120 | Developer | running | developer-120 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-120 |
-| developer-121 | Developer | running | developer-121 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-121 |
-| developer-122 | Developer | running | developer-122 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-122 |
-| developer-123 | Developer | running | developer-123 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-123 |
+| developer-120 | Developer | crash | developer-120 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-120 |
+| developer-121 | Developer | crash | developer-121 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-121 |
+| developer-122 | Developer | crash | developer-122 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-122 |
+| developer-123 | Developer | crash | developer-123 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-123 |
+| developer-124 | Developer | running | developer-124 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-124 |
+| developer-125 | Developer | running | developer-125 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-125 |
+| developer-126 | Developer | running | developer-126 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-126 |
+| developer-127 | Developer | running | developer-127 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-127 |
+| developer-128 | Developer | running | developer-128 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-128 |
+| developer-129 | Developer | running | developer-129 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-129 |
 | developer-13 | Developer | stopped | developer-13 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-13 |
 | developer-14 | Developer | stopped | developer-14 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-14 |
 | developer-15 | Developer | stopped | developer-15 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-15 |
@@ -190,7 +198,9 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1823 | Resolve integration failure for card #133: Self-selected COW runtime lvalue handle gap slice | Conflict Resolver | integration-support | planned | queued |  | 0.0 |
+| 1825 | Resolve integration failure for card #135: Quarantine self-selected product slice by developer-379 | Conflict Resolver | integration-support | planned | queued |  | 0.0 |
+| 1824 | Provide next sanctioned Developer lane after developer-127 card 135 quarantine report | Developer | implementation | planned | queued |  | 0.0 |
+| 1823 | Resolve integration failure for card #133: Self-selected COW runtime lvalue handle gap slice | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
 | 1822 | Provide next sanctioned Developer lane after developer-119 card 1811 resolver | Developer | implementation | planned | queued |  | 0.0 |
 | 1821 | Maintain Developer capacity after resolving card 91 integration failure | Developer | implementation | planned | queued |  | 0.0 |
 | 1820 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
@@ -198,28 +208,26 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | 1818 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
 | 1817 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
 | 1816 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
-| 1815 | Investigate scheduler alert | Auditor | integration-support | development | assigned |  | 0.0 |
-| 1814 | Resolve integration failure for card #91: Replay standard array/string accepted-vs-candidate PHPT samples | Conflict Resolver | integration-support | done | integrated | ready_fast_path | 0.0 |
 
 ## Tests
 failed — tools/run-tests.sh (error=0, failed=1, passed=0, skipped=0)
 
 ## Resource samples
-Latest: CPU 16.15%, RAM 57.24%, disk free 143.53 GB.
+Latest: CPU 25.08%, RAM 64.84%, disk free 141.24 GB.
 
 ## Recent events
-- 2026-06-07T19:38:13+00:00 **terminal_agent_window_closed**: Closed terminal developer-96 tmux window
-- 2026-06-07T19:38:13+00:00 **terminal_agent_window_closed**: Closed terminal developer-97 tmux window
-- 2026-06-07T19:38:13+00:00 **terminal_agent_window_closed**: Closed terminal developer-98 tmux window
-- 2026-06-07T19:38:13+00:00 **terminal_agent_window_closed**: Closed terminal developer-99 tmux window
-- 2026-06-07T19:38:13+00:00 **terminal_agent_window_closed**: Closed terminal integrator-1 tmux window
-- 2026-06-07T19:38:13+00:00 **terminal_agent_window_closed**: Closed terminal integrator-2 tmux window
-- 2026-06-07T19:38:13+00:00 **terminal_agent_window_closed**: Closed terminal integrator-3 tmux window
-- 2026-06-07T19:38:13+00:00 **terminal_agent_window_closed**: Closed terminal integrator-4 tmux window
-- 2026-06-07T19:38:13+00:00 **terminal_agent_window_closed**: Closed terminal integrator-5 tmux window
-- 2026-06-07T19:38:13+00:00 **terminal_agent_window_closed**: Closed terminal integrator-6 tmux window
-- 2026-06-07T19:38:13+00:00 **terminal_agent_window_closed**: Closed terminal integrator-7 tmux window
-- 2026-06-07T19:38:13+00:00 **terminal_agent_window_closed**: Closed terminal integrator-8 tmux window
+- 2026-06-07T19:53:15+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-16 tmux window
+- 2026-06-07T19:53:15+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-17 tmux window
+- 2026-06-07T19:53:15+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-18 tmux window
+- 2026-06-07T19:53:15+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-19 tmux window
+- 2026-06-07T19:53:15+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-2 tmux window
+- 2026-06-07T19:53:15+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-20 tmux window
+- 2026-06-07T19:53:15+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-21 tmux window
+- 2026-06-07T19:53:15+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-22 tmux window
+- 2026-06-07T19:53:15+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-23 tmux window
+- 2026-06-07T19:53:15+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-24 tmux window
+- 2026-06-07T19:53:15+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-25 tmux window
+- 2026-06-07T19:53:15+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-26 tmux window
 
 ## Next steps
-Move next worklane forward: Resolve integration failure for card #133: Self-selected COW runtime lvalue handle gap slice
+Move next worklane forward: Resolve integration failure for card #135: Quarantine self-selected product slice by developer-379
