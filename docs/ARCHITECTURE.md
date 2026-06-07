@@ -698,8 +698,9 @@ arguments, guards self-recursive public object branches by eliding that branch,
 and encodes components as RFC1738 form data by default or RFC3986 when
 requested.
 `urlencode()` and the RFC1738 `http_build_query()` path percent-encode PHP
-string bytes directly, while `rawurlencode()` uses the corresponding RFC3986
-byte boundary.
+string bytes directly, while `urldecode()` decodes form `+` characters to
+spaces before percent decoding. `rawurlencode()` and `rawurldecode()` use the
+corresponding RFC3986 byte boundary.
 The URL helper argument boundary now reuses the same PHP-shaped internal
 string coercion path used by adjacent string builtins for covered operands:
 scalar conversion stays local to the call, supported visible `__toString()`

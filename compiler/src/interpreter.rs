@@ -110056,6 +110056,7 @@ impl Interpreter {
             "http_build_query" => self.call_http_build_query(&args, span),
             "urlencode" => self.call_urlencode(&args, span),
             "rawurlencode" => self.call_rawurlencode(&args, span),
+            "urldecode" => self.call_urldecode(&args, span),
             "rawurldecode" => self.call_rawurldecode(&args, span),
             "serialize" => self.call_serialize_builtin(&args, span),
             "unserialize" => self.call_unserialize_builtin(&args, span),
@@ -133322,6 +133323,10 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_int_param("encoding_type", PHP_QUERY_RFC1738),
             ],
         ),
+        "urlencode" | "rawurlencode" | "urldecode" | "rawurldecode" => (
+            "string",
+            vec![reflection_internal_param("string", "string")],
+        ),
         "json_encode" => (
             "string|false",
             vec![
@@ -142381,6 +142386,7 @@ fn is_builtin(name: &str) -> bool {
             | "http_build_query"
             | "urlencode"
             | "rawurlencode"
+            | "urldecode"
             | "rawurldecode"
             | "serialize"
             | "unserialize"
@@ -164892,6 +164898,15 @@ impl Interpreter {
         Ok(Value::String(raw_urlencode_bytes(&value)))
     }
 
+    fn call_urldecode(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("urldecode", args, 1, span)?;
+        let value =
+            self.php_string_argument_bytes_with_magic("urldecode()", 1, "string", &args[0], span)?;
+        Ok(interpreter_value_from_php_string_bytes(
+            form_urldecode_bytes(&value),
+        ))
+    }
+
     fn call_rawurldecode(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("rawurldecode", args, 1, span)?;
         let value = self.php_string_argument_bytes_with_magic(
@@ -164935,6 +164950,14 @@ fn raw_urlencode_bytes(value: &[u8]) -> String {
         }
     }
     encoded
+}
+
+fn form_urldecode_bytes(value: &[u8]) -> Vec<u8> {
+    let mut normalized = Vec::with_capacity(value.len());
+    for &byte in value {
+        normalized.push(if byte == b'+' { b' ' } else { byte });
+    }
+    raw_urldecode_bytes(&normalized)
 }
 
 fn raw_urldecode_bytes(value: &[u8]) -> Vec<u8> {

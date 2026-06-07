@@ -3138,10 +3138,12 @@
   `false` for the covered malformed host/port cases. `PHP_URL_*` constants are
   visible through bare reads, `defined()`, `constant()`, and
   `get_defined_constants()` alongside the existing supported builtin constants.
-  `urlencode()` supports RFC1738 form percent-encoding over PHP string bytes,
-  with spaces encoded as `+`; `rawurlencode()` and `rawurldecode()` support
-  RFC3986 byte-oriented percent encoding and decoding for the current string
-  subset. These URL string operands now use the shared PHP-shaped string
+  `urlencode()` and `urldecode()` support RFC1738 form percent encoding and
+  decoding over PHP string bytes, including `+` to space decoding;
+  `rawurlencode()` and `rawurldecode()` support RFC3986 byte-oriented percent
+  encoding and decoding for the current string subset. Malformed percent
+  escapes are preserved byte-for-byte. These URL string operands now use the
+  shared PHP-shaped string
   argument boundary for the covered helpers, so scalar operands are converted,
   `null` emits the current bounded deprecation on non-nullable string
   parameters, supported visible `__toString()` objects are accepted, and
