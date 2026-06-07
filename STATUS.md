@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-07T06:39:17+00:00
+Last generated: 2026-06-07T06:54:18+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -17,6 +17,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | auditor-4 | Auditor | stopped | auditor-4 |  |
 | auditor-5 | Auditor | crash | auditor-5 |  |
 | auditor-6 | Auditor | crash | auditor-6 |  |
+| auditor-7 | Auditor | running | auditor-7 |  |
 | conflict-resolver-1 | Conflict Resolver | crash | conflict-resolver-1 |  |
 | conflict-resolver-2 | Conflict Resolver | crash | conflict-resolver-2 |  |
 | conflict-resolver-3 | Conflict Resolver | crash | conflict-resolver-3 |  |
@@ -90,36 +91,36 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1557 | Investigate scheduler alert | Auditor | integration-support | development | assigned |  | 0.0 |
+| 1556 | Reorganize developer-47 idle zero-metric lane | Coordinator | control-plane | planned | queued |  | 0.0 |
+| 1555 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
+| 1554 | Investigate scheduler alert | Auditor | integration-support | done | done |  | 0.0 |
 | 1553 | Resolve current integration conflict for card 1532 lane 10 | Conflict Resolver | integration-support | planned | queued |  | 0.0 |
 | 1552 | Resolve current integration conflict for card 1531 lane 9 | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
 | 1551 | Provide next sanctioned Developer card after developer-47 superseded lane 7 | Developer | implementation | planned | queued |  | 0.0 |
 | 1550 | Fix global test suite failures | Developer | implementation | development | assigned |  | 0.0 |
 | 1549 | Respond to scheduler alert | Coordinator | control-plane | development | assigned |  | 0.0 |
 | 1548 | Resolve integration failure for card #1545: Fix global test suite failures | Conflict Resolver | integration-support | planned | queued |  | 0.0 |
-| 1547 | Provide next sanctioned Developer card after developer-44 superseded lane 7 | Developer | implementation | planned | queued |  | 0.0 |
-| 1546 | Respond to scheduler alert | Coordinator | control-plane | done | done |  | 0.0 |
-| 1545 | Fix global test suite failures | Developer | implementation | done | stale | ready_fast_path | 0.0 |
-| 1544 | Provide next sanctioned Developer card after superseded lane 12 for developer-42 | Developer | implementation | planned | queued |  | 0.0 |
 
 ## Tests
 failed — python -m unittest discover -s tests -v (error=0, failed=1, passed=0, skipped=0)
 
 ## Resource samples
-Latest: CPU 6.37%, RAM 16.52%, disk free 0.51 GB.
+Latest: CPU 4.39%, RAM 16.22%, disk free 1.2 GB.
 
 ## Recent events
-- 2026-06-07T06:38:48+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-07T06:38:54+00:00 **worklane_deduplicated**: Updated existing failing-test card#1550 from run 21907
-- 2026-06-07T06:38:54+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-07T06:38:59+00:00 **worklane_deduplicated**: Updated existing failing-test card#1550 from run 21908
-- 2026-06-07T06:38:59+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-07T06:39:05+00:00 **worklane_deduplicated**: Updated existing failing-test card#1550 from run 21909
-- 2026-06-07T06:39:05+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-07T06:39:08+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-07T06:39:10+00:00 **worklane_deduplicated**: Updated existing failing-test card#1550 from run 21910
-- 2026-06-07T06:39:10+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-07T06:39:15+00:00 **worklane_deduplicated**: Updated existing failing-test card#1550 from run 21911
-- 2026-06-07T06:39:15+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-07T06:53:49+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-07T06:53:54+00:00 **worklane_deduplicated**: Updated existing failing-test card#1550 from run 22073
+- 2026-06-07T06:53:54+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-07T06:54:00+00:00 **worklane_deduplicated**: Updated existing failing-test card#1550 from run 22074
+- 2026-06-07T06:54:00+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-07T06:54:03+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-07T06:54:05+00:00 **worklane_deduplicated**: Updated existing failing-test card#1550 from run 22075
+- 2026-06-07T06:54:05+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-07T06:54:11+00:00 **worklane_deduplicated**: Updated existing failing-test card#1550 from run 22076
+- 2026-06-07T06:54:11+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-07T06:54:16+00:00 **worklane_deduplicated**: Updated existing failing-test card#1550 from run 22077
+- 2026-06-07T06:54:16+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
 
 ## Next steps
-Move next worklane forward: Resolve current integration conflict for card 1532 lane 10
+Move next worklane forward: Investigate scheduler alert
