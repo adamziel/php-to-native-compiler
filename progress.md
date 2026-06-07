@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-07T19:08:12+00:00
+Last generated: 2026-06-07T19:23:13+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -182,6 +182,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1819 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
 | 1818 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
 | 1817 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
 | 1816 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
@@ -191,27 +192,26 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | 1812 | Provide next sanctioned Developer lane after developer-115 lane 89 audit | Developer | implementation | planned | queued |  | 0.0 |
 | 1811 | Resolve integration failure for card #89: Manager-6 queue hygiene and integration handoff audit | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
 | 1810 | Resolve integration failure for card #87: Absent-row rerun prioritizer for post-abort gate recovery | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
-| 1809 | Assign next sanctioned Developer card after developer-114 lane 87 reconciliation | Developer | implementation | planned | queued |  | 0.0 |
 
 ## Tests
 failed — tools/run-tests.sh (error=0, failed=1, passed=0, skipped=0)
 
 ## Resource samples
-Latest: CPU 9.9%, RAM 58.52%, disk free 165.27 GB.
+Latest: CPU 10.84%, RAM 58.35%, disk free 165.29 GB.
 
 ## Recent events
-- 2026-06-07T19:08:07+00:00 **terminal_agent_window_closed**: Closed terminal developer-96 tmux window
-- 2026-06-07T19:08:07+00:00 **terminal_agent_window_closed**: Closed terminal developer-97 tmux window
-- 2026-06-07T19:08:07+00:00 **terminal_agent_window_closed**: Closed terminal developer-98 tmux window
-- 2026-06-07T19:08:07+00:00 **terminal_agent_window_closed**: Closed terminal developer-99 tmux window
-- 2026-06-07T19:08:07+00:00 **terminal_agent_window_closed**: Closed terminal integrator-1 tmux window
-- 2026-06-07T19:08:07+00:00 **terminal_agent_window_closed**: Closed terminal integrator-2 tmux window
-- 2026-06-07T19:08:07+00:00 **terminal_agent_window_closed**: Closed terminal integrator-3 tmux window
-- 2026-06-07T19:08:08+00:00 **terminal_agent_window_closed**: Closed terminal integrator-4 tmux window
-- 2026-06-07T19:08:08+00:00 **terminal_agent_window_closed**: Closed terminal integrator-5 tmux window
-- 2026-06-07T19:08:08+00:00 **terminal_agent_window_closed**: Closed terminal integrator-6 tmux window
-- 2026-06-07T19:08:08+00:00 **terminal_agent_window_closed**: Closed terminal integrator-7 tmux window
-- 2026-06-07T19:08:08+00:00 **terminal_agent_window_closed**: Closed terminal integrator-8 tmux window
+- 2026-06-07T19:23:13+00:00 **terminal_agent_window_closed**: Closed terminal developer-64 tmux window
+- 2026-06-07T19:23:13+00:00 **terminal_agent_window_closed**: Closed terminal developer-65 tmux window
+- 2026-06-07T19:23:13+00:00 **terminal_agent_window_closed**: Closed terminal developer-66 tmux window
+- 2026-06-07T19:23:13+00:00 **terminal_agent_window_closed**: Closed terminal developer-67 tmux window
+- 2026-06-07T19:23:13+00:00 **terminal_agent_window_closed**: Closed terminal developer-68 tmux window
+- 2026-06-07T19:23:13+00:00 **terminal_agent_window_closed**: Closed terminal developer-69 tmux window
+- 2026-06-07T19:23:13+00:00 **terminal_agent_window_closed**: Closed terminal developer-7 tmux window
+- 2026-06-07T19:23:13+00:00 **terminal_agent_window_closed**: Closed terminal developer-70 tmux window
+- 2026-06-07T19:23:13+00:00 **terminal_agent_window_closed**: Closed terminal developer-71 tmux window
+- 2026-06-07T19:23:13+00:00 **terminal_agent_window_closed**: Closed terminal developer-72 tmux window
+- 2026-06-07T19:23:13+00:00 **terminal_agent_window_closed**: Closed terminal developer-73 tmux window
+- 2026-06-07T19:23:13+00:00 **terminal_agent_window_closed**: Closed terminal developer-74 tmux window
 
 ## Next steps
 Move next worklane forward: Investigate scheduler alert
