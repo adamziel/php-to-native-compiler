@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-07T20:30:23+00:00
+Last generated: 2026-06-07T20:38:21+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -13,6 +13,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | --- | --- | --- | --- | --- |
 | auditor-1 | Auditor | stopped | auditor-1 |  |
 | auditor-10 | Auditor | crash | auditor-10 |  |
+| auditor-11 | Auditor | running | auditor-11 |  |
 | auditor-2 | Auditor | crash | auditor-2 |  |
 | auditor-3 | Auditor | stopped | auditor-3 |  |
 | auditor-4 | Auditor | stopped | auditor-4 |  |
@@ -206,6 +207,8 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1839 | Verify card 1808 gate fix readiness | Auditor | integration-support | planned | queued |  | 0.0 |
+| 1838 | Audit current php_runtime gate failure for card 1808 | Auditor | integration-support | development | assigned |  | 0.0 |
 | 1837 | Gate verifier for tools/run-tests.sh after php_runtime fix | Developer | implementation | planned | queued |  | 0.0 |
 | 1836 | Gate reproducer for php_runtime invocation cleanup failures | Developer | implementation | planned | queued |  | 0.0 |
 | 1835 | Maintain Developer capacity after worklane 139 | Developer | implementation | planned | queued |  | 0.0 |
@@ -214,28 +217,26 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | 1832 | Assign next sanctioned Developer card after developer-131 completed lane 1825 | Developer | implementation | planned | queued |  | 0.0 |
 | 1831 | Resolve integration failure for card #136: Self-selected compiler-output coverage slice | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
 | 1830 | Assign next Developer worklane after developer-128 completed worklane 136 | Developer | implementation | planned | queued |  | 0.0 |
-| 1829 | Assign next Developer worklane after developer-129 completed worklane 137 | Developer | implementation | planned | queued |  | 0.0 |
-| 1828 | Resolve integration failure for card #137: Self-selected bounded str_ireplace compatibility slice | Conflict Resolver | integration-support | integration | integration_failed | ready_fast_path | 0.0 |
 
 ## Tests
 failed — tools/run-tests.sh (error=0, failed=1, passed=0, skipped=0)
 
 ## Resource samples
-Latest: CPU 11.53%, RAM 57.45%, disk free 97.63 GB.
+Latest: CPU 7.23%, RAM 56.88%, disk free 98.03 GB.
 
 ## Recent events
-- 2026-06-07T20:30:22+00:00 **terminal_agent_window_closed**: Closed terminal developer-98 tmux window
-- 2026-06-07T20:30:22+00:00 **terminal_agent_window_closed**: Closed terminal developer-99 tmux window
-- 2026-06-07T20:30:22+00:00 **terminal_agent_window_closed**: Closed terminal integrator-1 tmux window
-- 2026-06-07T20:30:22+00:00 **terminal_agent_window_closed**: Closed terminal integrator-2 tmux window
-- 2026-06-07T20:30:22+00:00 **terminal_agent_window_closed**: Closed terminal integrator-3 tmux window
-- 2026-06-07T20:30:22+00:00 **terminal_agent_window_closed**: Closed terminal integrator-4 tmux window
-- 2026-06-07T20:30:22+00:00 **terminal_agent_window_closed**: Closed terminal integrator-5 tmux window
-- 2026-06-07T20:30:22+00:00 **terminal_agent_window_closed**: Closed terminal integrator-6 tmux window
-- 2026-06-07T20:30:22+00:00 **terminal_agent_window_closed**: Closed terminal integrator-7 tmux window
-- 2026-06-07T20:30:22+00:00 **terminal_agent_window_closed**: Closed terminal integrator-8 tmux window
-- 2026-06-07T20:30:23+00:00 **poke**: Queued message for coordinator-31
-- 2026-06-07T20:30:23+00:00 **poke_delivered**: Delivered poke to 0 agents
+- 2026-06-07T20:38:20+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-7 tmux window
+- 2026-06-07T20:38:20+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-8 tmux window
+- 2026-06-07T20:38:20+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-9 tmux window
+- 2026-06-07T20:38:20+00:00 **terminal_agent_window_closed**: Closed terminal developer-1 tmux window
+- 2026-06-07T20:38:20+00:00 **terminal_agent_window_closed**: Closed terminal developer-10 tmux window
+- 2026-06-07T20:38:20+00:00 **terminal_agent_window_closed**: Closed terminal developer-100 tmux window
+- 2026-06-07T20:38:20+00:00 **terminal_agent_window_closed**: Closed terminal developer-101 tmux window
+- 2026-06-07T20:38:20+00:00 **terminal_agent_window_closed**: Closed terminal developer-102 tmux window
+- 2026-06-07T20:38:20+00:00 **terminal_agent_window_closed**: Closed terminal developer-103 tmux window
+- 2026-06-07T20:38:20+00:00 **terminal_agent_window_closed**: Closed terminal developer-104 tmux window
+- 2026-06-07T20:38:20+00:00 **terminal_agent_window_closed**: Closed terminal developer-105 tmux window
+- 2026-06-07T20:38:20+00:00 **terminal_agent_window_closed**: Closed terminal developer-106 tmux window
 
 ## Next steps
-Move next worklane forward: Gate verifier for tools/run-tests.sh after php_runtime fix
+Move next worklane forward: Verify card 1808 gate fix readiness
