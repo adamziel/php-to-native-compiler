@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-07T22:23:30+00:00
+Last generated: 2026-06-07T22:28:45+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -225,36 +225,36 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1884 | Verify known-failure gate policy does not mask metric failures | Auditor | integration-support | planned | queued |  | 0.0 |
+| 1883 | Implement known-failure no-regression integration gate for current php_runtime blocker | Developer | implementation | planned | queued |  | 0.0 |
+| 1882 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
+| 1881 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
+| 1880 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
 | 1879 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
 | 1878 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
 | 1877 | Investigate scheduler alert | Auditor | integration-support | development | assigned |  | 0.0 |
 | 1876 | Assign concrete Developer worklane after capacity placeholder 1835 | Developer | implementation | planned | queued |  | 0.0 |
 | 1875 | Assign concrete Developer worklane after capacity placeholder 1833 | Developer | implementation | planned | queued |  | 0.0 |
-| 1874 | Assign concrete Developer worklane after capacity placeholder 1832 | Developer | implementation | planned | queued |  | 0.0 |
-| 1873 | Assign concrete Developer worklane after capacity placeholder 1830 | Developer | implementation | planned | queued |  | 0.0 |
-| 1872 | Assign concrete Developer worklane after capacity placeholder 1829 | Developer | implementation | planned | queued |  | 0.0 |
-| 1871 | Assign concrete Developer worklane after capacity placeholder 1826 | Developer | implementation | planned | queued |  | 0.0 |
-| 1870 | Assign concrete Developer worklane after capacity placeholder 1824 | Developer | implementation | planned | queued |  | 0.0 |
 
 ## Tests
 failed — tools/run-tests.sh (error=0, failed=1, passed=0, skipped=0)
 
 ## Resource samples
-Latest: CPU 9.17%, RAM 56.55%, disk free 62.85 GB.
+Latest: CPU 25.03%, RAM 57.52%, disk free 63.51 GB.
 
 ## Recent events
-- 2026-06-07T22:23:26+00:00 **terminal_agent_window_closed**: Closed terminal developer-96 tmux window
-- 2026-06-07T22:23:26+00:00 **terminal_agent_window_closed**: Closed terminal developer-97 tmux window
-- 2026-06-07T22:23:26+00:00 **terminal_agent_window_closed**: Closed terminal developer-98 tmux window
-- 2026-06-07T22:23:26+00:00 **terminal_agent_window_closed**: Closed terminal developer-99 tmux window
-- 2026-06-07T22:23:26+00:00 **terminal_agent_window_closed**: Closed terminal integrator-1 tmux window
-- 2026-06-07T22:23:26+00:00 **terminal_agent_window_closed**: Closed terminal integrator-2 tmux window
-- 2026-06-07T22:23:26+00:00 **terminal_agent_window_closed**: Closed terminal integrator-3 tmux window
-- 2026-06-07T22:23:26+00:00 **terminal_agent_window_closed**: Closed terminal integrator-4 tmux window
-- 2026-06-07T22:23:26+00:00 **terminal_agent_window_closed**: Closed terminal integrator-5 tmux window
-- 2026-06-07T22:23:26+00:00 **terminal_agent_window_closed**: Closed terminal integrator-6 tmux window
-- 2026-06-07T22:23:26+00:00 **terminal_agent_window_closed**: Closed terminal integrator-7 tmux window
-- 2026-06-07T22:23:26+00:00 **terminal_agent_window_closed**: Closed terminal integrator-8 tmux window
+- 2026-06-07T22:28:45+00:00 **terminal_agent_window_closed**: Closed terminal integrator-6 tmux window
+- 2026-06-07T22:28:45+00:00 **terminal_agent_window_closed**: Closed terminal developer-87 tmux window
+- 2026-06-07T22:28:45+00:00 **terminal_agent_window_closed**: Closed terminal integrator-7 tmux window
+- 2026-06-07T22:28:45+00:00 **terminal_agent_window_closed**: Closed terminal developer-88 tmux window
+- 2026-06-07T22:28:45+00:00 **terminal_agent_window_closed**: Closed terminal integrator-8 tmux window
+- 2026-06-07T22:28:45+00:00 **terminal_agent_window_closed**: Closed terminal developer-89 tmux window
+- 2026-06-07T22:28:45+00:00 **terminal_agent_window_closed**: Closed terminal developer-9 tmux window
+- 2026-06-07T22:28:45+00:00 **terminal_agent_window_closed**: Closed terminal developer-90 tmux window
+- 2026-06-07T22:28:45+00:00 **terminal_agent_window_closed**: Closed terminal developer-91 tmux window
+- 2026-06-07T22:28:45+00:00 **poke**: Queued message for coordinator-35
+- 2026-06-07T22:28:45+00:00 **terminal_agent_window_closed**: Closed terminal developer-92 tmux window
+- 2026-06-07T22:28:45+00:00 **poke_delivered**: Delivered poke to 0 agents
 
 ## Next steps
-Move next worklane forward: Investigate scheduler alert
+Move next worklane forward: Verify known-failure gate policy does not mask metric failures
