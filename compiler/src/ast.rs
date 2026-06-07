@@ -13,6 +13,7 @@ impl Span {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Program {
     pub statements: Vec<Stmt>,
+    pub strict_types: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -101,7 +102,7 @@ pub enum Stmt {
     },
     Foreach {
         iterable: Expr,
-        key: Option<String>,
+        key: Option<ForeachValueTarget>,
         value: ForeachValueTarget,
         by_reference: bool,
         body: Vec<Stmt>,
@@ -275,7 +276,7 @@ pub enum AssignTarget {
         span: Span,
     },
     List {
-        names: Vec<Option<String>>,
+        items: Vec<ListAssignmentItem>,
         span: Span,
     },
     ArrayIndex {
@@ -421,6 +422,10 @@ pub enum AssignTarget {
         property: Expr,
         span: Span,
     },
+    UnsupportedExpression {
+        message: String,
+        span: Span,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -534,13 +539,56 @@ pub enum ReferenceSource {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct ListAssignmentItem {
+    pub key: Option<ListAssignmentKey>,
+    pub target: Option<ListAssignmentTarget>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ListAssignmentKey {
+    Int(i64),
+    String(String),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ListAssignmentTarget {
+    Variable {
+        name: String,
+        span: Span,
+    },
+    List {
+        items: Vec<ListAssignmentItem>,
+        span: Span,
+    },
+}
+
+impl ListAssignmentTarget {
+    pub fn span(&self) -> Span {
+        match self {
+            Self::Variable { span, .. } | Self::List { span, .. } => *span,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum ForeachValueTarget {
     Variable {
         name: String,
         span: Span,
     },
     List {
-        items: Vec<Option<ForeachValueTarget>>,
+        items: Vec<ForeachListItem>,
+        span: Span,
+    },
+    InvalidListKey {
+        span: Span,
+    },
+    InvalidReferenceKey {
+        span: Span,
+    },
+    ArrayIndex {
+        name: String,
+        indices: Vec<Expr>,
         span: Span,
     },
     Property {
@@ -553,13 +601,32 @@ pub enum ForeachValueTarget {
         property: Box<Expr>,
         span: Span,
     },
+    ObjectPropertyArrayIndex {
+        object: String,
+        property: String,
+        indices: Vec<Expr>,
+        span: Span,
+    },
+    DynamicObjectPropertyArrayIndex {
+        object: String,
+        property: Box<Expr>,
+        indices: Vec<Expr>,
+        span: Span,
+    },
 }
 
 impl ForeachValueTarget {
     pub fn variable_name(&self) -> Option<&str> {
         match self {
             Self::Variable { name, .. } => Some(name),
-            Self::List { .. } | Self::Property { .. } | Self::DynamicProperty { .. } => None,
+            Self::List { .. }
+            | Self::InvalidListKey { .. }
+            | Self::InvalidReferenceKey { .. }
+            | Self::ArrayIndex { .. }
+            | Self::Property { .. }
+            | Self::DynamicProperty { .. }
+            | Self::ObjectPropertyArrayIndex { .. }
+            | Self::DynamicObjectPropertyArrayIndex { .. } => None,
         }
     }
 
@@ -567,16 +634,34 @@ impl ForeachValueTarget {
         match self {
             Self::Variable { span, .. }
             | Self::List { span, .. }
+            | Self::InvalidListKey { span }
+            | Self::InvalidReferenceKey { span }
+            | Self::ArrayIndex { span, .. }
             | Self::Property { span, .. }
-            | Self::DynamicProperty { span, .. } => *span,
+            | Self::DynamicProperty { span, .. }
+            | Self::ObjectPropertyArrayIndex { span, .. }
+            | Self::DynamicObjectPropertyArrayIndex { span, .. } => *span,
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ForeachListItem {
+    pub key: Option<ForeachListKey>,
+    pub target: Option<ForeachValueTarget>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ForeachListKey {
+    Int(i64),
+    String(String),
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConstDeclarator {
     pub name: String,
     pub value: Expr,
+    pub attributes: Vec<AttributeDecl>,
     pub span: Span,
 }
 
@@ -749,8 +834,9 @@ impl AssignTarget {
             | AssignTarget::DynamicSelfStaticProperty { span, .. }
             | AssignTarget::ParentStaticProperty { span, .. }
             | AssignTarget::DynamicParentStaticProperty { span, .. }
-            | AssignTarget::LateStaticProperty { span, .. } => *span,
-            AssignTarget::DynamicLateStaticProperty { span, .. } => *span,
+            | AssignTarget::LateStaticProperty { span, .. }
+            | AssignTarget::DynamicLateStaticProperty { span, .. }
+            | AssignTarget::UnsupportedExpression { span, .. } => *span,
         }
     }
 }
@@ -774,6 +860,7 @@ pub struct ClassDecl {
     pub interfaces: Vec<String>,
     pub trait_uses: Vec<TraitUseDecl>,
     pub members: Vec<ClassMember>,
+    pub diagnostics: Vec<ClassDiagnosticDecl>,
     pub is_abstract: bool,
     pub is_final: bool,
     pub is_readonly: bool,
@@ -782,6 +869,22 @@ pub struct ClassDecl {
     pub attributes: Vec<AttributeDecl>,
     pub doc_comment: Option<String>,
     pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClassDiagnosticDecl {
+    pub kind: ClassDiagnosticKind,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClassDiagnosticKind {
+    MultipleAccessModifiers,
+    MultipleStaticModifiers,
+    MultipleAbstractModifiers,
+    MultipleFinalModifiers,
+    FinalAbstractMethod,
+    FinalAbstractClass,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -833,6 +936,7 @@ pub struct TraitMethodAliasDecl {
     pub method_name: String,
     pub alias: String,
     pub visibility: ClassVisibility,
+    pub is_readonly: bool,
     pub span: Span,
 }
 
@@ -841,6 +945,7 @@ pub struct TraitMethodVisibilityDecl {
     pub trait_name: Option<String>,
     pub method_name: String,
     pub visibility: ClassVisibility,
+    pub is_readonly: bool,
     pub span: Span,
 }
 
@@ -855,7 +960,11 @@ pub struct TraitMethodPrecedenceDecl {
 #[derive(Debug, Clone, PartialEq)]
 pub struct EnumDecl {
     pub name: String,
+    pub backing_type: Option<String>,
     pub cases: Vec<EnumCaseDecl>,
+    pub constants: Vec<ClassConstantDecl>,
+    pub end_line: usize,
+    pub diagnostics: Vec<EnumMemberDiagnosticDecl>,
     pub attributes: Vec<AttributeDecl>,
     pub span: Span,
 }
@@ -863,8 +972,25 @@ pub struct EnumDecl {
 #[derive(Debug, Clone, PartialEq)]
 pub struct EnumCaseDecl {
     pub name: String,
+    pub value: Option<Expr>,
+    pub doc_comment: Option<String>,
     pub attributes: Vec<AttributeDecl>,
     pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct EnumMemberDiagnosticDecl {
+    pub kind: EnumMemberDiagnosticKind,
+    pub name: Option<String>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EnumMemberDiagnosticKind {
+    AbstractMethod,
+    GeneratedMethodRedeclaration,
+    MagicMethod,
+    Property,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -878,8 +1004,46 @@ pub enum ClassMember {
 pub struct ClassConstantDecl {
     pub name: String,
     pub visibility: ClassVisibility,
+    pub is_static: bool,
+    pub is_abstract: bool,
+    pub is_final: bool,
+    pub is_readonly: bool,
+    pub type_decl: Option<TypeDecl>,
     pub value: Expr,
     pub attributes: Vec<AttributeDecl>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PropertyHookKind {
+    Get,
+    Set,
+}
+
+impl PropertyHookKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Get => "get",
+            Self::Set => "set",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PropertyHookDecl {
+    pub kind: PropertyHookKind,
+    pub by_reference: bool,
+    pub is_abstract: bool,
+    pub has_body: bool,
+    pub value_parameter: Option<PropertyHookParameterDecl>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PropertyHookParameterDecl {
+    pub name: String,
+    pub type_decl: Option<TypeDecl>,
+    pub is_variadic: bool,
     pub span: Span,
 }
 
@@ -887,9 +1051,14 @@ pub struct ClassConstantDecl {
 pub struct ClassPropertyDecl {
     pub name: String,
     pub visibility: ClassVisibility,
+    pub set_visibility: Option<ClassVisibility>,
     pub is_static: bool,
+    pub is_readonly: bool,
+    pub is_final: bool,
+    pub is_abstract: bool,
     pub type_decl: Option<TypeDecl>,
     pub default: Option<Expr>,
+    pub hooks: Vec<PropertyHookDecl>,
     pub attributes: Vec<AttributeDecl>,
     pub doc_comment: Option<String>,
     pub span: Span,
@@ -902,6 +1071,7 @@ pub struct ClassMethodDecl {
     pub is_static: bool,
     pub is_abstract: bool,
     pub is_final: bool,
+    pub is_readonly: bool,
     pub attributes: Vec<AttributeDecl>,
     pub span: Span,
 }
@@ -920,6 +1090,7 @@ pub struct FunctionDecl {
     pub return_type: Option<TypeDecl>,
     pub returns_by_reference: bool,
     pub body: Vec<Stmt>,
+    pub strict_types: bool,
     pub is_nested: bool,
     pub is_generator: bool,
     pub end_line: usize,
@@ -936,6 +1107,9 @@ pub struct FunctionParam {
     pub is_variadic: bool,
     pub default: Option<Expr>,
     pub promotion: Option<ClassVisibility>,
+    pub promotion_set_visibility: Option<ClassVisibility>,
+    pub promotion_readonly: bool,
+    pub promotion_final: bool,
     pub attributes: Vec<AttributeDecl>,
     pub span: Span,
 }
@@ -958,6 +1132,13 @@ pub struct ArrayItem {
     pub key: Option<Expr>,
     pub value: Expr,
     pub by_reference: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct MatchArm {
+    pub conditions: Vec<Expr>,
+    pub result: Expr,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1224,6 +1405,11 @@ pub enum Expr {
         if_false: Box<Expr>,
         span: Span,
     },
+    Match {
+        subject: Box<Expr>,
+        arms: Vec<MatchArm>,
+        span: Span,
+    },
     Assign {
         target: Box<AssignTarget>,
         expr: Box<Expr>,
@@ -1262,6 +1448,7 @@ pub enum NewClassName {
 pub enum InterpolatedStringPart {
     Literal(String),
     Variable(String),
+    DeprecatedDollarBraceVariable(String),
     ArrayOffset {
         variable: String,
         key: InterpolatedArrayKey,
@@ -1280,6 +1467,7 @@ pub enum InterpolatedStringPart {
 pub enum InterpolatedAccessSegment {
     ArrayOffset(InterpolatedArrayKey),
     ObjectProperty(String),
+    MethodCall(String),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1354,6 +1542,7 @@ impl Expr {
             | Expr::Cast { span, .. }
             | Expr::Ternary { span, .. }
             | Expr::ShortTernary { span, .. }
+            | Expr::Match { span, .. }
             | Expr::Assign { span, .. }
             | Expr::CompoundAssign { span, .. }
             | Expr::NullCoalesceAssign { span, .. }
@@ -1378,6 +1567,7 @@ pub enum CastKind {
     Float,
     Array,
     Object,
+    Void,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1387,6 +1577,7 @@ pub enum BinaryOp {
     Mul,
     Div,
     Mod,
+    Pow,
     Concat,
     Eq,
     Ne,
@@ -1396,6 +1587,7 @@ pub enum BinaryOp {
     Le,
     Gt,
     Ge,
+    Spaceship,
     NullCoalesce,
     LogicalAnd,
     LogicalOr,
@@ -1414,6 +1606,7 @@ pub enum CompoundAssignOp {
     Mul,
     Div,
     Mod,
+    Pow,
     Concat,
     BitwiseAnd,
     BitwiseOr,

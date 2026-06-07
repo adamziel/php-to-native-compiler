@@ -1,0 +1,16 @@
+exit: 0
+stdout:
+bool(false)
+bool(false)
+bool(false)
+bool(false)
+bool(false)
+bool(false)
+bool(false)
+string(12) "2001:0db8::1"
+string(12) "2001:0010::1"
+string(12) "240b:0010::1"
+string(18) "::ffff:192.168.1.1"
+done--- stdout end ---
+stderr:
+--- stderr end ---

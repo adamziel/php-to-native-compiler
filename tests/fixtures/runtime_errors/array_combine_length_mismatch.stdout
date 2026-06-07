@@ -1,0 +1,4 @@
+Fatal error: Uncaught ValueError: array_combine(): Argument #1 ($keys) and argument #2 ($values) must have the same number of elements in tests/fixtures/runtime_errors/array_combine_length_mismatch.php:4
+Stack trace:
+#0 {main}
+  thrown in tests/fixtures/runtime_errors/array_combine_length_mismatch.php on line 4

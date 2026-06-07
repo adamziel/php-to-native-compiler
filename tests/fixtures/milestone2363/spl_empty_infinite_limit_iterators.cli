@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone2363/spl_empty_infinite_limit_iterators.php

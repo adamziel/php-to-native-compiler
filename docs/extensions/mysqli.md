@@ -197,9 +197,10 @@ returns an eight-key deterministic statistics array:
 `bytes_sent`, `bytes_received`, `packets_sent`, `packets_received`,
 `result_set_queries`, `non_result_set_queries`, `connect_success`, and
 `active_connections`. Traffic and query counters are zeroed; the connection
-counters are deterministic placeholders. This does not model real mysqlnd
-statistics, client/server traffic, memory accounting, connection reuse, or host
-database state.
+counters are deterministic placeholders unless `mysqlnd.collect_statistics=0`,
+which zeroes them too. This does not model real mysqlnd statistics,
+client/server traffic, memory accounting, connection reuse, or host database
+state.
 
 `mysqli_get_links_stats()` returns a deterministic zeroed array with `total`,
 `active_plinks`, and `cached_plinks`. It does not inspect real persistent
@@ -215,6 +216,14 @@ read host database state.
 `mysqli_thread_safe()` accepts no arguments and returns deterministic `true`.
 It does not inspect host client-library build flags, real thread-safety
 configuration, host client-library state, sockets, or database state.
+
+`mysqli_driver` creates a deterministic placeholder object with readable
+metadata properties, writable integer `report_mode`, read-only diagnostics for
+metadata properties, and uncloneable-object behavior. `mysqli.default_port`
+defaults to `3306` and accepts runtime values only in the `0..65535` range.
+`get_defined_constants(true)` places exported MySQLi constants under the
+`mysqli` category. This is not full host driver state, client-library
+discovery, real mysqlnd option mutation, or native lowering.
 
 `mysqli_stmt_init($handle)` creates a deterministic placeholder `mysqli_stmt`
 object with no prepared query. `mysqli_prepare($handle, $query)` creates a

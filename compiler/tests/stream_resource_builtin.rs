@@ -5,7 +5,7 @@ use php_compiler::error::Phase;
 use php_compiler::interpreter::{run_program_with_options, RunOptions};
 use php_compiler::{emit_asm_source, emit_ir_source, parse, run_source};
 
-const LLVM_STREAM_RESOURCE_REJECTION: &str = "LLVM stream-resource lowering rejects fopen(), tmpfile(), stream_context_create(), stream_context_get_options(), stream_context_get_params(), stream_context_get_default(), stream_context_set_default(), stream_context_set_option(), stream_context_set_options(), stream_context_set_params(), fwrite()/fputs(), fgetc(), fgets(), fgetcsv(), fputcsv(), fscanf(), fread(), rewind(), stream_get_contents(), fpassthru(), stream_copy_to_stream(), stream_filter_append(), stream_is_local(), stream_supports_lock(), flock(), feof(), ftell(), fseek(), fstat(), stream_get_meta_data(), stream_get_wrappers(), stream_wrapper_register(), stream_wrapper_unregister(), stream_wrapper_restore(), fclose(), dir(), opendir(), readdir(), rewinddir(), closedir(), glob(), is_uploaded_file(), and move_uploaded_file() until native PHP resource handles, stream wrapper state, stream context state, stream wrapper registry state, stream filter state, stream lock state, upload provenance state, directory/glob state, binary string byte fidelity, warning plus false recovery, references/copy-on-write, and exact native stream diagnostics exist; phpc run handles current bounded php://memory, php://temp, php://input, data://, local file stream resources, stream wrapper capability metadata, stream context resources, selected read filters, local directory handles, bounded local glob patterns, and PHPC_FILES upload provenance";
+const LLVM_STREAM_RESOURCE_REJECTION: &str = "LLVM stream-resource lowering rejects fopen(), tmpfile(), stream_context_create(), stream_context_get_options(), stream_context_get_params(), stream_context_get_default(), stream_context_set_default(), stream_context_set_option(), stream_context_set_options(), stream_context_set_params(), fwrite()/fputs(), fgetc(), fgets(), fgetcsv(), fputcsv(), fscanf(), fread(), rewind(), stream_get_contents(), fpassthru(), stream_copy_to_stream(), stream_filter_append(), stream_is_local(), stream_supports_lock(), flock(), feof(), ftell(), fseek(), fstat(), stream_get_meta_data(), stream_get_wrappers(), stream_get_transports(), stream_wrapper_register(), stream_wrapper_unregister(), stream_wrapper_restore(), fclose(), dir(), opendir(), readdir(), rewinddir(), closedir(), glob(), is_uploaded_file(), and move_uploaded_file() until native PHP resource handles, stream wrapper state, stream context state, stream wrapper registry state, stream transport state, stream filter state, stream lock state, upload provenance state, directory/glob state, binary string byte fidelity, warning plus false recovery, references/copy-on-write, and exact native stream diagnostics exist; phpc run handles current bounded php://memory, php://temp, php://input, data://, local file stream resources, stream wrapper and transport capability metadata, stream context resources, selected read filters, local directory handles, bounded local glob patterns, and PHPC_FILES upload provenance";
 
 #[test]
 fn php_memory_and_temp_stream_resources_round_trip_buffer_contents() {
@@ -34,6 +34,85 @@ echo fclose($memory) ? "closed" : "open";
     .unwrap();
 
     assert_eq!(execution.stdout, "resource|5:6:alpha:-omega|payload|closed");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn fgets_nonpositive_lengths_are_catchable_and_length_one_reads_false() {
+    let execution = run_source(
+        r#"<?php
+$stream = fopen("php://memory", "w+");
+fwrite($stream, "alpha\nbeta");
+rewind($stream);
+try {
+    var_dump(fgets($stream, 0));
+} catch (ValueError $e) {
+    echo $e->getMessage() . "\n";
+}
+try {
+    var_dump(fgets($stream, -10));
+} catch (ValueError $e) {
+    echo $e->getMessage() . "\n";
+}
+var_dump(fgets($stream, 1));
+echo fgets($stream, 2);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "fgets(): Argument #2 ($length) must be greater than 0\nfgets(): Argument #2 ($length) must be greater than 0\nbool(false)\na"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn fread_nonpositive_lengths_are_catchable() {
+    let execution = run_source(
+        r#"<?php
+$stream = fopen("php://memory", "w+");
+fwrite($stream, "abcdef");
+rewind($stream);
+try {
+    var_dump(fread($stream, 0));
+} catch (ValueError $e) {
+    echo $e->getMessage() . "\n";
+}
+try {
+    var_dump(fread($stream, -10));
+} catch (ValueError $e) {
+    echo $e->getMessage() . "\n";
+}
+echo fread($stream, 2);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "fread(): Argument #2 ($length) must be greater than 0\nfread(): Argument #2 ($length) must be greater than 0\nab"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn get_resource_id_matches_integer_cast_for_open_and_closed_resources() {
+    let execution = run_source(
+        r#"<?php
+$stream = fopen("php://memory", "w+");
+echo function_exists("get_resource_id") ? "exists" : "missing";
+echo "|";
+var_dump(get_resource_id($stream) === (int) $stream);
+fclose($stream);
+var_dump(get_resource_id($stream) === (int) $stream);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "exists|bool(true)\nbool(true)\n");
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -632,7 +711,10 @@ echo $blocked === false ? "|blocked" : "|opened";
     );
     let execution = run_source(&source).unwrap();
 
-    assert_eq!(execution.stdout, "allowed|warning:2:basedir|blocked");
+    assert_eq!(
+        execution.stdout,
+        "allowed|warning:2:basedir|warning:2:other|blocked"
+    );
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
     let _ = fs::remove_dir_all(root);
@@ -770,12 +852,32 @@ echo $file_meta["seekable"] ? "seekable" : "fixed";
 echo ":";
 echo $file_meta["uri"] === $path ? "same-uri" : "other-uri";
 echo ":";
+echo $file_meta["unread_bytes"];
+echo ":";
+rewind($file);
+fread($file, 4);
+$file_meta_after_read = stream_get_meta_data($file);
+echo $file_meta_after_read["unread_bytes"];
+echo ":";
 echo $file_stat["size"];
 echo ":";
 echo $file_stat[7];
 echo ":";
 echo $file_stat["mode"] > 0 ? "mode" : "no-mode";
 fclose($file);
+$read = fopen($path, "r");
+$read_meta_initial = stream_get_meta_data($read);
+fread($read, 4);
+$read_meta_after_read = stream_get_meta_data($read);
+fseek($read, 0);
+$read_meta_after_seek = stream_get_meta_data($read);
+echo "|";
+echo $read_meta_initial["unread_bytes"];
+echo ":";
+echo $read_meta_after_read["unread_bytes"];
+echo ":";
+echo $read_meta_after_seek["unread_bytes"];
+fclose($read);
 "#,
         path.display()
     );
@@ -783,10 +885,156 @@ fclose($file);
 
     assert_eq!(
         execution.stdout,
-        "PHP:MEMORY:w+b:php://memory:3:3:eof|TEMP:w+b:10|plainfile:STDIO:w+:seekable:same-uri:12:12:mode"
+        "PHP:MEMORY:w+b:php://memory:3:3:eof|TEMP:w+b:10|plainfile:STDIO:w+:seekable:same-uri:0:8:12:12:mode|0:8:0"
     );
     assert_eq!(execution.exit_code, 0);
     let _ = fs::remove_file(path);
+}
+
+#[test]
+fn fstat_on_closed_stream_raises_catchable_type_error() {
+    let path = temp_stream_path("phpc-stream-resource-fstat-closed.txt");
+    let source = format!(
+        r#"<?php
+$stream = fopen("{}", "w");
+echo fstat($stream)["size"];
+fclose($stream);
+try {{
+    fstat($stream);
+}} catch (TypeError $e) {{
+    echo "|", $e->getMessage();
+}}
+"#,
+        path.display()
+    );
+    let execution = run_source(&source).unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "0|fstat(): Argument #1 ($stream) must be an open stream resource"
+    );
+    assert_eq!(execution.exit_code, 0);
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn stream_metadata_accepts_uppercase_file_url_and_closed_meta_errors_are_type_errors() {
+    let path = temp_stream_path("phpc-stream-resource-file-url.txt");
+    let uri = format!("File://{}", path.display());
+    let source = format!(
+        r#"<?php
+$stream = fopen("{}", "w+");
+$meta = stream_get_meta_data($stream);
+echo $meta["uri"] === "{}" ? "uri-kept" : $meta["uri"];
+fclose($stream);
+echo "|";
+try {{
+    stream_get_meta_data($stream);
+}} catch (TypeError $e) {{
+    echo $e->getMessage();
+}}
+"#,
+        uri, uri
+    );
+    let execution = run_source(&source).unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "uri-kept|stream_get_meta_data(): Argument #1 ($stream) must be an open stream resource"
+    );
+    assert_eq!(execution.exit_code, 0);
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn stream_get_transports_reports_bounded_builtin_transport_names() {
+    let execution = run_source(
+        r#"<?php
+$transports = stream_get_transports();
+echo is_array($transports) ? "array" : "not-array";
+echo "|";
+echo in_array("tcp", $transports, true) ? "tcp" : "missing";
+echo ":";
+echo in_array("udp", $transports, true) ? "udp" : "missing";
+echo ":";
+echo in_array("unix", $transports, true) ? "unix" : "missing";
+echo ":";
+echo in_array("udg", $transports, true) ? "udg" : "missing";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "array|tcp:udp:unix:udg");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn stream_context_option_shape_errors_match_reached_phpts() {
+    let execution = run_source(
+        r#"<?php
+try {
+    stream_context_create(array("ssl" => "abc"));
+} catch (ValueError $exception) {
+    echo $exception->getMessage(), "\n";
+}
+
+try {
+    stream_context_create(array("ssl" => array("verify_peer" => false)), array("options" => array("ssl" => "abc")));
+} catch (ValueError $exception) {
+    echo $exception->getMessage(), "\n";
+}
+
+try {
+    stream_context_create(array("ssl" => array("verify_peer" => false)), array("options" => false));
+} catch (TypeError $exception) {
+    echo $exception->getMessage(), "\n";
+}
+
+$options = array();
+$options[0]["A"] = 0;
+try {
+    stream_context_get_default($options);
+} catch (ValueError $exception) {
+    echo $exception->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Options should have the form [\"wrappername\"][\"optionname\"] = $value\n\
+Options should have the form [\"wrappername\"][\"optionname\"] = $value\n\
+Invalid stream/context parameter\n\
+Options should have the form [\"wrappername\"][\"optionname\"] = $value\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn stream_get_meta_data_reports_bounded_directory_resource_metadata() {
+    let path = std::env::temp_dir();
+    let source = format!(
+        r#"<?php
+$dir = opendir("{}");
+$meta = stream_get_meta_data($dir);
+echo $meta["wrapper_type"];
+echo ":";
+echo $meta["stream_type"];
+echo ":";
+echo $meta["mode"];
+echo ":";
+echo $meta["seekable"] ? "seekable" : "fixed";
+echo ":";
+echo array_key_exists("uri", $meta) ? "uri" : "no-uri";
+closedir($dir);
+"#,
+        path.display()
+    );
+    let execution = run_source(&source).unwrap();
+
+    assert_eq!(execution.stdout, "plainfile:dir:r:seekable:no-uri");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -883,6 +1131,43 @@ echo file_get_contents("{}", false, $replacement);
 }
 
 #[test]
+fn stream_context_resource_ids_follow_lazy_default_order() {
+    let create_before_default = run_source(
+        r#"<?php
+$created = stream_context_create();
+$default = stream_context_get_default();
+echo get_resource_id($created), ":", get_resource_id($default);
+"#,
+    )
+    .unwrap();
+    assert_eq!(create_before_default.stdout, "4:5");
+    assert_eq!(create_before_default.exit_code, 0);
+
+    let explicit_context_fopen = run_source(
+        r#"<?php
+$context = stream_context_create();
+$stream = fopen("php://memory", "r", false, $context);
+$default = stream_context_get_default();
+echo get_resource_id($context), ":", get_resource_id($stream), ":", get_resource_id($default);
+"#,
+    )
+    .unwrap();
+    assert_eq!(explicit_context_fopen.stdout, "4:5:6");
+    assert_eq!(explicit_context_fopen.exit_code, 0);
+
+    let implicit_context_fopen = run_source(
+        r#"<?php
+$stream = fopen("php://memory", "r");
+$default = stream_context_get_default();
+echo get_resource_id($default), ":", get_resource_id($stream);
+"#,
+    )
+    .unwrap();
+    assert_eq!(implicit_context_fopen.stdout, "4:5");
+    assert_eq!(implicit_context_fopen.exit_code, 0);
+}
+
+#[test]
 fn stream_context_params_persist_notification_and_merge_option_params() {
     let execution = run_source(
         r#"<?php
@@ -944,6 +1229,60 @@ echo $preserved["options"]["http"]["header"];
 }
 
 #[test]
+fn stream_context_diagnostics_are_catchable_php_errors() {
+    let execution = run_source(
+        r#"<?php
+function valid_notice() {}
+$context = stream_context_create();
+
+try {
+    stream_context_set_option($context, [], "x");
+} catch (Error $error) {
+    echo $error->getMessage(), "\n";
+}
+
+try {
+    stream_context_set_option($context, [], null, "x");
+} catch (Error $error) {
+    echo $error->getMessage(), "\n";
+}
+
+try {
+    stream_context_set_option($context, "http", "method");
+} catch (Error $error) {
+    echo $error->getMessage(), "\n";
+}
+
+stream_context_set_params($context, array("notification" => "valid_notice"));
+try {
+    stream_context_set_params($context, array("notification" => "missing_notice"));
+} catch (TypeError $error) {
+    echo $error->getMessage(), "\n";
+}
+
+try {
+    stream_context_set_params($context, array("notification" => array("MissingNotice", "handle")));
+} catch (TypeError $error) {
+    echo $error->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "stream_context_set_option(): Argument #3 ($option_name) must be null when argument #2 ($wrapper_or_options) is an array\n",
+            "stream_context_set_option(): Argument #4 ($value) cannot be provided when argument #2 ($wrapper_or_options) is an array\n",
+            "stream_context_set_option(): Argument #4 ($value) must be provided when argument #2 ($wrapper_or_options) is a string\n",
+            "stream_context_set_params(): Argument #1 ($context) must be an array with valid callbacks as values, function \"missing_notice\" not found or invalid function name\n",
+            "stream_context_set_params(): Argument #1 ($context) must be an array with valid callbacks as values, class \"MissingNotice\" not found\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn local_directory_handle_builtins_iterate_rewind_and_close_entries() {
     let root = temp_stream_path("phpc-directory-handle-root");
     let nested = root.join("nested");
@@ -986,10 +1325,98 @@ echo opendir("{}") === false ? "missing-false" : "missing-open";
     );
     let execution = run_source(&source).unwrap();
 
-    assert_eq!(
-        execution.stdout,
-        "resource|.:..|alpha:beta:nested:3|.|missing-false"
+    assert!(
+        execution
+            .stdout
+            .starts_with("resource|.:..|alpha:beta:nested:3|.|\nWarning: opendir("),
+        "{}",
+        execution.stdout
     );
+    assert!(
+        execution
+            .stdout
+            .contains("): Failed to open directory: No such file or directory"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution.stdout.ends_with("missing-false"),
+        "{}",
+        execution.stdout
+    );
+    assert_eq!(execution.exit_code, 0);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn local_directory_omitted_handle_and_path_diagnostics_are_php_shaped() {
+    let root = temp_stream_path("phpc-directory-diagnostics-root");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).expect("temporary directory fixture can be created");
+    fs::write(root.join("file.txt"), "payload").expect("fixture file can be written");
+
+    let source = format!(
+        r#"<?php
+$dir = opendir("{root}");
+echo readdir();
+echo "|";
+var_dump(rewinddir());
+echo "|";
+var_dump(closedir());
+try {{
+    closedir();
+}} catch (TypeError $e) {{
+    echo "|" . $e->getMessage();
+}}
+try {{
+    scandir("");
+}} catch (ValueError $e) {{
+    echo "|" . $e->getMessage();
+}}
+echo "|";
+var_dump(chdir("{file}/missing"));
+"#,
+        root = root.display(),
+        file = root.join("file.txt").display()
+    );
+    let execution = run_source(&source).unwrap();
+
+    assert!(
+        execution
+            .stdout
+            .contains("Deprecated: readdir(): Passing null is deprecated"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution
+            .stdout
+            .contains("Deprecated: rewinddir(): Passing null is deprecated"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution
+            .stdout
+            .contains("Deprecated: closedir(): Passing null is deprecated"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution.stdout.contains(
+            "|No resource supplied|scandir(): Argument #1 ($directory) must not be empty|"
+        ),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution.stdout.contains("Warning: chdir(): ")
+            && execution.stdout.contains(" (errno ")
+            && execution.stdout.ends_with("bool(false)\n"),
+        "{}",
+        execution.stdout
+    );
+    assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
     let _ = fs::remove_dir_all(root);
 }
@@ -1083,13 +1510,13 @@ fn stream_resource_builtins_reject_forms_outside_current_subset() {
     );
 
     let bad_length =
-        run_source("<?php\n$s = fopen('php://memory', 'w+'); fread($s, -1);\n").unwrap_err();
+        run_source("<?php\n$s = fopen('php://memory', 'w+'); fread($s, 'bad');\n").unwrap_err();
     assert_eq!(bad_length.phase, Phase::Runtime);
     assert_eq!(bad_length.line, 2);
     assert_eq!(bad_length.column, 35);
     assert_eq!(
         bad_length.message,
-        "unsupported call fread(): length argument must be non-negative in the current subset"
+        "unsupported call fread(): length argument must be int in the current subset, got string"
     );
 
     let bad_whence =
@@ -1169,6 +1596,7 @@ echo defined("SEEK_END") ? "1" : "0";
 echo function_exists("fstat") ? "1" : "0";
 echo is_callable("stream_get_meta_data") ? "1" : "0";
 echo function_exists("stream_get_wrappers") ? "1" : "0";
+echo function_exists("stream_get_transports") ? "1" : "0";
 echo function_exists("opendir") ? "1" : "0";
 echo is_callable("readdir") ? "1" : "0";
 echo function_exists("is_uploaded_file") ? "1" : "0";
@@ -1177,7 +1605,7 @@ echo is_callable("move_uploaded_file") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 25, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 26, "{ir}");
 
     let error = emit_ir_source("<?php\nis_uploaded_file('/tmp/phpc-upload');\n").unwrap_err();
     assert_eq!(error.phase, Phase::Codegen);

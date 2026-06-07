@@ -1,0 +1,4 @@
+Fatal error: Uncaught Error: Call to undefined function add_action() in tests/fixtures/unsupported_syntax_features/unsupported_argument_unpacking.php:3
+Stack trace:
+#0 {main}
+  thrown in tests/fixtures/unsupported_syntax_features/unsupported_argument_unpacking.php on line 3

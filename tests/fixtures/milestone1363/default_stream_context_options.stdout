@@ -1,1 +1,2 @@
+Deprecated: Calling stream_context_set_option() with 2 arguments is deprecated, use stream_context_set_options() instead in tests/fixtures/milestone1363/default_stream_context_options.php on line 11
 resource|same:null-same|POST:X-WP: one:skip|same-default:7|context-default

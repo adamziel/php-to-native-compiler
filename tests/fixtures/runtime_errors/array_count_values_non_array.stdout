@@ -1,0 +1,5 @@
+Fatal error: Uncaught TypeError: array_count_values(): Argument #1 ($array) must be of type array, int given, called in tests/fixtures/runtime_errors/array_count_values_non_array.php:2
+Stack trace:
+#0 tests/fixtures/runtime_errors/array_count_values_non_array.php(2): array_count_values()
+#1 {main}
+  thrown in tests/fixtures/runtime_errors/array_count_values_non_array.php on line 2

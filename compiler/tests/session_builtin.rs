@@ -412,6 +412,34 @@ echo $_SESSION["stage"];
 }
 
 #[test]
+fn session_destroy_closes_bounded_active_session_without_resetting_cache_expire() {
+    let execution = run_source(
+        r#"<?php
+ob_start();
+ini_set("session.cache_expire", 360);
+echo session_cache_expire();
+echo "|";
+session_cache_expire(180);
+session_start(["use_cookies" => false]);
+$_SESSION["token"] = "live";
+$destroyed = session_destroy();
+echo $destroyed ? "destroyed" : "failed";
+echo "|";
+echo session_status() === PHP_SESSION_NONE ? "none" : "active";
+echo "|";
+echo session_cache_expire();
+echo "|";
+echo isset($_SESSION["token"]) ? "kept" : "removed";
+ob_end_flush();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "360|destroyed|none|180|kept");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn session_start_read_and_close_option_closes_after_materializing_session() {
     let execution = run_source(
         r#"<?php

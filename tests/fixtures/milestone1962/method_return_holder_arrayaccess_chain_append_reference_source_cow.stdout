@@ -1,1 +1,2 @@
+Deprecated: Using null as an array offset is deprecated, use an empty string instead in tests/fixtures/milestone1962/method_return_holder_arrayaccess_chain_append_reference_source_cow.php on line 14
 leaf=appended|outer=box|inner=

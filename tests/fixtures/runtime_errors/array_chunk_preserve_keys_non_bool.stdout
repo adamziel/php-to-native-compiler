@@ -1,0 +1,5 @@
+Fatal error: Uncaught TypeError: array_chunk(): Argument #3 ($preserve_keys) must be of type bool, array given, called in tests/fixtures/runtime_errors/array_chunk_preserve_keys_non_bool.php:3
+Stack trace:
+#0 tests/fixtures/runtime_errors/array_chunk_preserve_keys_non_bool.php(3): array_chunk()
+#1 {main}
+  thrown in tests/fixtures/runtime_errors/array_chunk_preserve_keys_non_bool.php on line 3

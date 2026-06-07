@@ -80,8 +80,8 @@ echo $boolean ? 1 : 0, "z";
         !ir.contains("select i1 %tmp2, i1 true, i1 %tmp1"),
         "single-result boolean ternary should fold without a select:\n{ir}"
     );
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 1)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 %tmp4)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 1)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 %tmp4)"), "{ir}");
 }
 
 #[test]
@@ -103,7 +103,7 @@ echo $choice + 5;
         "{ir}"
     );
     assert!(ir.contains("%tmp3 = add i64 %tmp2, 5"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 %tmp3)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 %tmp3)"), "{ir}");
 }
 
 #[test]
@@ -129,7 +129,7 @@ echo $same + 4;
         !ir.contains("add i64 %tmp0, 4"),
         "known single-result integer ternary should fold into later arithmetic:\n{ir}"
     );
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 7)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 7)"), "{ir}");
 }
 
 #[test]
@@ -156,7 +156,7 @@ echo $same;
         !ir.contains("select i1 %tmp2, i64 %tmp0, i64 %tmp0"),
         "untracked identical integer branches should not emit an integer select:\n{ir}"
     );
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 %tmp0)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 %tmp0)"), "{ir}");
 }
 
 #[test]
@@ -179,7 +179,7 @@ echo $value ? $value : $value;
         "identical full ternary should not require truthiness lowering:\n{ir}"
     );
     assert!(
-        ir.contains("@printf(ptr @.fmt_int, i64 %tmp0)"),
+        ir.contains("@phpc_native_int(i64 %tmp0)"),
         "full ternary should reuse the untracked integer expression:\n{ir}"
     );
 }
@@ -199,7 +199,7 @@ fn emit_ir_folds_identical_float_variable_full_ternary_without_truthiness() {
         "identical full ternary should not require float truthiness lowering:\n{ir}"
     );
     assert!(
-        ir.contains("@printf(ptr @.fmt_float, double %tmp0)"),
+        ir.contains("@phpc_native_float(double %tmp0)"),
         "full ternary should reuse the untracked float expression:\n{ir}"
     );
 }
@@ -222,10 +222,7 @@ fn emit_ir_folds_untracked_identical_float_ternary_branches_without_select() {
         !ir.contains("select i1 %tmp2, double %tmp0, double %tmp0"),
         "untracked identical float branches should not emit a float select:\n{ir}"
     );
-    assert!(
-        ir.contains("@printf(ptr @.fmt_float, double %tmp0)"),
-        "{ir}"
-    );
+    assert!(ir.contains("@phpc_native_float(double %tmp0)"), "{ir}");
 }
 
 #[test]
@@ -253,7 +250,7 @@ echo $left + $right;
         "{ir}"
     );
     assert!(ir.contains("%tmp6 = add i64 %tmp2, %tmp5"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 %tmp6)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 %tmp6)"), "{ir}");
 }
 
 #[test]
@@ -301,7 +298,7 @@ echo $ambiguous + 1;
     );
     assert!(ir.contains("add i64 3, 4"), "{ir}");
     assert!(ir.contains("fadd double 3.75, 1.25"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 1)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 1)"), "{ir}");
 }
 
 #[test]
@@ -330,10 +327,7 @@ echo $second, "z";
         ir.contains("%tmp4 = select i1 %tmp2, double 9.25, double %tmp3"),
         "{ir}"
     );
-    assert!(
-        ir.contains("@printf(ptr @.fmt_float, double %tmp3)"),
-        "{ir}"
-    );
+    assert!(ir.contains("@phpc_native_float(double %tmp3)"), "{ir}");
 }
 
 #[test]
@@ -361,7 +355,7 @@ echo $same + 1.5;
         !ir.contains("fadd double %tmp0, 1.5"),
         "known single-result float ternary should fold into later arithmetic:\n{ir}"
     );
-    assert!(ir.contains("@printf(ptr @.fmt_float, double 5.5)"), "{ir}");
+    assert!(ir.contains("@phpc_native_float(double 5.5)"), "{ir}");
 }
 
 #[test]
@@ -391,8 +385,14 @@ echo $float + 1.5;
     );
     assert!(ir.contains("add i64 5, 7"), "{ir}");
     assert!(ir.contains("fadd double 2.5, 1.5"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_float"), "{ir}");
+    assert!(
+        ir.contains("call %phpc.NativeScalarValue @phpc_native_int"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("call %phpc.NativeScalarValue @phpc_native_float"),
+        "{ir}"
+    );
 }
 
 #[test]
@@ -427,11 +427,11 @@ echo $second, "!";
         "{ir}"
     );
     assert!(
-        ir.contains("@phpc_native_string_from_bytes(ptr %tmp3, i64 %tmp4)"),
+        ir.contains("@phpc_native_value_from_string_bytes_with_diagnostic(ptr %tmp3, i64 %tmp4"),
         "{ir}"
     );
     assert!(
-        ir.contains("@phpc_native_string_from_bytes(ptr %tmp5, i64 %tmp6)"),
+        ir.contains("@phpc_native_value_from_string_bytes_with_diagnostic(ptr %tmp5, i64 %tmp6"),
         "{ir}"
     );
 }
@@ -457,11 +457,11 @@ echo $same;
     );
     assert_eq!(ir.matches("c\"same!\\00\"").count(), 1, "{ir}");
     assert!(
-        ir.contains("@phpc_native_string_from_bytes(ptr @.str.0, i64 5)"),
+        ir.contains("@phpc_native_value_from_string_bytes_with_diagnostic(ptr @.str.0, i64 5"),
         "{ir}"
     );
     assert!(
-        ir.contains("@phpc_native_value_format_stdout_with_diagnostic"),
+        ir.contains("@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"),
         "{ir}"
     );
 }
@@ -491,7 +491,10 @@ echo $same ? 1 : 0;
         ir.contains("select i1 %tmp1, i64 1, i64 0"),
         "the later integer ternary should still use the reused boolean expression:\n{ir}"
     );
-    assert!(ir.contains("@printf(ptr @.fmt_int"), "{ir}");
+    assert!(
+        ir.contains("call %phpc.NativeScalarValue @phpc_native_int"),
+        "{ir}"
+    );
 }
 
 #[test]
@@ -536,8 +539,8 @@ echo $never ? 1 : 0;
         "known inverse boolean literal ternary result should fold without an explicit xor:\n{ir}"
     );
     assert!(ir.contains("select i1 %tmp1, i64 1, i64 0"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 1)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 0)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 1)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 0)"), "{ir}");
 }
 
 #[test]
@@ -583,7 +586,7 @@ echo (false ?: $is_four) ? 1 : 0;
         1,
         "{ir}"
     );
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 1)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 1)"), "{ir}");
     assert!(
         ir.contains("select i1 %tmp2, i64 1, i64 0"),
         "static false short ternary should reuse the boolean fallback expression:\n{ir}"
@@ -636,7 +639,7 @@ echo $text ?: $text;
         "untracked source string expression should stay emitted through pointer and length selects:\n{ir}"
     );
     assert!(
-        ir.contains("@phpc_native_string_from_bytes(ptr %tmp9, i64 %tmp10)"),
+        ir.contains("@phpc_native_value_from_string_bytes_with_diagnostic(ptr %tmp9, i64 %tmp10"),
         "identical short ternary should reuse the string pointer and length expression:\n{ir}"
     );
     assert!(
@@ -675,7 +678,7 @@ echo $text ? $text : $text;
         "untracked source string expression should stay emitted through pointer and length selects only:\n{ir}"
     );
     assert!(
-        ir.contains("@phpc_native_string_from_bytes(ptr %tmp9, i64 %tmp10)"),
+        ir.contains("@phpc_native_value_from_string_bytes_with_diagnostic(ptr %tmp9, i64 %tmp10"),
         "identical full ternary should reuse the string pointer and length expression:\n{ir}"
     );
     assert!(
@@ -704,7 +707,7 @@ echo $value ?: $value;
         "identical integer short ternary should not require truthiness lowering:\n{ir}"
     );
     assert!(
-        ir.contains("@printf(ptr @.fmt_int, i64 %tmp0)"),
+        ir.contains("@phpc_native_int(i64 %tmp0)"),
         "short ternary should reuse the untracked integer expression:\n{ir}"
     );
 }
@@ -724,7 +727,7 @@ fn emit_ir_folds_identical_untracked_float_short_ternary_without_truthiness() {
         "identical float short ternary should not require truthiness lowering:\n{ir}"
     );
     assert!(
-        ir.contains("@printf(ptr @.fmt_float, double %tmp0)"),
+        ir.contains("@phpc_native_float(double %tmp0)"),
         "short ternary should reuse the untracked float expression:\n{ir}"
     );
 }
@@ -755,8 +758,8 @@ echo $flag ?: $flag;
     );
     assert_eq!(
         ir.matches("select i1").count(),
-        1,
-        "only the boolean echo string conversion should need a select:\n{ir}"
+        0,
+        "boxed boolean echo should not require an extra string-conversion select:\n{ir}"
     );
 }
 
@@ -786,8 +789,8 @@ echo $flag ? $flag : $flag;
     );
     assert_eq!(
         ir.matches("select i1").count(),
-        1,
-        "only the boolean echo string conversion should need a select:\n{ir}"
+        0,
+        "boxed boolean echo should not require an extra string-conversion select:\n{ir}"
     );
 }
 
@@ -807,7 +810,7 @@ echo "a", $value ? $value : $value, "b";
         "identical null full ternary should not require truthiness lowering:\n{ir}"
     );
     assert!(
-        !ir.contains("@printf(ptr @.fmt_int"),
+        !ir.contains("call %phpc.NativeScalarValue @phpc_native_int"),
         "null full ternary should not emit numeric output:\n{ir}"
     );
     assert!(ir.contains("c\"a\\00\""), "{ir}");
@@ -867,7 +870,7 @@ echo $falsey ?: "falsey";
     assert!(ir.contains("c\"zero\\00\""), "{ir}");
     assert!(ir.contains("c\"falsey\\00\""), "{ir}");
     assert!(
-        ir.contains("@phpc_native_string_from_bytes(ptr %tmp2, i64 %tmp3)"),
+        ir.contains("@phpc_native_value_from_string_bytes_with_diagnostic(ptr %tmp2, i64 %tmp3"),
         "known-truthy string expression should be reused as the short ternary result:\n{ir}"
     );
     assert!(
@@ -875,7 +878,7 @@ echo $falsey ?: "falsey";
         "known-truthy string short ternary should not lower the fallback:\n{ir}"
     );
     assert!(
-        !ir.contains("array"),
+        !ir.contains("LLVM array lowering rejects arrays"),
         "truthy string literal short ternary should not lower the unsupported array fallback:\n{ir}"
     );
 }
@@ -894,9 +897,9 @@ echo $sum ?: "fallback";
     .unwrap();
 
     assert!(ir.contains("%tmp0 = fadd double 1.25, 2.5"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_float, double 1.5)"), "{ir}");
+    assert!(ir.contains("@phpc_native_float(double 1.5)"), "{ir}");
     assert!(
-        ir.contains("@printf(ptr @.fmt_float, double %tmp0)"),
+        ir.contains("@phpc_native_float(double %tmp0)"),
         "single-known nonzero float expression should be reused as the short ternary result:\n{ir}"
     );
     assert!(ir.contains("c\"zero\\00\""), "{ir}");
@@ -921,9 +924,9 @@ echo $sum ?: "fallback";
     .unwrap();
 
     assert!(ir.contains("%tmp0 = add i64 1, 2"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 1)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 1)"), "{ir}");
     assert!(
-        ir.contains("@printf(ptr @.fmt_int, i64 %tmp0)"),
+        ir.contains("@phpc_native_int(i64 %tmp0)"),
         "single-known nonzero integer expression should be reused as the short ternary result:\n{ir}"
     );
     assert!(ir.contains("c\"zero\\00\""), "{ir}");
@@ -950,7 +953,7 @@ echo $sum ? 7 : 9;
     assert!(ir.contains("%tmp0 = add i64 1, 2"), "{ir}");
     assert!(ir.contains("c\"one\\00\""), "{ir}");
     assert!(ir.contains("c\"zero\\00\""), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 7)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 7)"), "{ir}");
     assert!(!ir.contains("select i1"), "{ir}");
 
     let error = emit_ir_source(
@@ -982,7 +985,7 @@ echo $sum ? 7.5 : 9.5;
     assert!(ir.contains("%tmp0 = fadd double 1.25, 2.5"), "{ir}");
     assert!(ir.contains("c\"one\\00\""), "{ir}");
     assert!(ir.contains("c\"zero\\00\""), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_float, double 7.5)"), "{ir}");
+    assert!(ir.contains("@phpc_native_float(double 7.5)"), "{ir}");
     assert!(!ir.contains("select i1"), "{ir}");
 
     let error = emit_ir_source(
@@ -1025,7 +1028,7 @@ echo $falsey ? "bad" : "falsey";
     assert!(ir.contains("c\"one\\00\""), "{ir}");
     assert!(ir.contains("c\"empty\\00\""), "{ir}");
     assert!(ir.contains("c\"zero\\00\""), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 7)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 7)"), "{ir}");
     assert!(ir.contains("c\"falsey\\00\""), "{ir}");
     assert_eq!(ir.matches("select i1").count(), 4, "{ir}");
 
@@ -1054,7 +1057,7 @@ echo "a", null ? 1 : null, "b";
     .unwrap();
 
     assert!(ir.contains("c\"fallback\\00\""), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 7)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 7)"), "{ir}");
     assert!(ir.contains("c\"a\\00\""), "{ir}");
     assert!(ir.contains("c\"b\\00\""), "{ir}");
     assert!(!ir.contains("select i1"), "{ir}");
@@ -1084,8 +1087,8 @@ echo "php" ? "string" : [];
 
     assert!(ir.contains("c\"truthy\\00\""), "{ir}");
     assert!(ir.contains("c\"falsey\\00\""), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 7)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 9)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 7)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 9)"), "{ir}");
     assert!(ir.contains("c\"null\\00\""), "{ir}");
     assert!(ir.contains("c\"string\\00\""), "{ir}");
     assert!(!ir.contains("select i1"), "{ir}");
@@ -1119,13 +1122,13 @@ echo true ?: [];
     )
     .unwrap();
 
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 42)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_float, double 2.5)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 42)"), "{ir}");
+    assert!(ir.contains("@phpc_native_float(double 2.5)"), "{ir}");
     assert!(ir.contains("c\"fallback\\00\""), "{ir}");
     assert!(ir.contains("c\"a\\00\""), "{ir}");
     assert!(ir.contains("c\"b\\00\""), "{ir}");
     assert!(
-        ir.contains("c\"1\\00\""),
+        ir.contains("@phpc_native_bool(i1 true)"),
         "static true short ternary should print true without lowering the unsupported array fallback:\n{ir}"
     );
     assert!(!ir.contains("select i1"), "{ir}");
@@ -1143,7 +1146,7 @@ echo "a", null ?: null, "b";
     .unwrap();
 
     assert!(ir.contains("c\"fallback\\00\""), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 7)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 7)"), "{ir}");
     assert!(ir.contains("c\"a\\00\""), "{ir}");
     assert!(ir.contains("c\"b\\00\""), "{ir}");
     assert!(!ir.contains("select i1"), "{ir}");
@@ -1165,7 +1168,7 @@ echo "a", $value ?: $value, "b";
         "direct null-variable short ternary should not require truthiness lowering:\n{ir}"
     );
     assert!(
-        !ir.contains("@printf(ptr @.fmt_int"),
+        !ir.contains("call %phpc.NativeScalarValue @phpc_native_int"),
         "null short ternary should not emit numeric output:\n{ir}"
     );
     assert!(ir.contains("c\"a\\00\""), "{ir}");
@@ -1188,8 +1191,14 @@ echo "a", $nil, "b";
     assert!(ir.contains("%tmp0 = add i64 1, 2"), "{ir}");
     assert!(ir.contains("%tmp1 = icmp eq i64 %tmp0, 3"), "{ir}");
     assert!(!ir.contains("select i1 %tmp1"), "{ir}");
-    assert!(!ir.contains("@printf(ptr @.fmt_int"), "{ir}");
-    assert!(!ir.contains("@printf(ptr @.fmt_float"), "{ir}");
+    assert!(
+        !ir.contains("call %phpc.NativeScalarValue @phpc_native_int"),
+        "{ir}"
+    );
+    assert!(
+        !ir.contains("call %phpc.NativeScalarValue @phpc_native_float"),
+        "{ir}"
+    );
     assert!(ir.contains("c\"a\\00\""), "{ir}");
     assert!(ir.contains("c\"b\\00\""), "{ir}");
 }
@@ -1209,9 +1218,9 @@ echo (1 === "1") ? false : 7;
         !ir.contains(" select "),
         "static boolean ternary should fold without select:\n{ir}"
     );
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 1)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 1)"), "{ir}");
     assert!(ir.contains("c\"picked\\00\""), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 7)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 7)"), "{ir}");
 }
 
 #[test]

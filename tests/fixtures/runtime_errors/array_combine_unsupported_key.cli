@@ -2,5 +2,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-runtime error at tests/fixtures/runtime_errors/array_combine_unsupported_key.php:4:6: unsupported call array_combine(): key values must be null, bool, int, string, or integral finite float in the current subset, got array
+runtime error at tests/fixtures/runtime_errors/array_combine_unsupported_key.php:4:6: unsupported call array_combine(): key values must be null, bool, int, float, string, binary string, resource, or object with __toString() in the current subset, got array
 --- stderr end ---

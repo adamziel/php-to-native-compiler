@@ -1,6 +1,6 @@
-exit: 1
+exit: 0
 stdout:
---- stdout end ---
+Warning: array_product(): Multiplication is not supported on type array in tests/fixtures/runtime_errors/array_product_array_value.php on line 3
+1--- stdout end ---
 stderr:
-runtime error at tests/fixtures/runtime_errors/array_product_array_value.php:3:6: unsupported call array_product(): values must be numeric scalar in the current subset, got array
 --- stderr end ---

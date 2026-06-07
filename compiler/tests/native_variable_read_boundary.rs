@@ -8,11 +8,15 @@ use php_compiler::{emit_asm_source, emit_ir_source, run_source};
 const LLVM_VARIABLE_READ_REJECTION: &str = "LLVM variable-read lowering rejects reads that are not statically assigned earlier in the same straight-line native subset until native symbol-table storage, undefined-variable diagnostics, references/copy-on-write, and exact native error behavior exist; phpc run handles current variable-read behavior";
 
 #[test]
-fn phpc_run_reports_current_undefined_variable_runtime_error() {
-    let error = run_source("<?php\necho $missing;\n").unwrap_err();
+fn phpc_run_reports_current_undefined_variable_warning() {
+    let execution = run_source("<?php\necho $missing;\n").unwrap();
 
-    assert_eq!(error.phase, Phase::Runtime);
-    assert_eq!(error.message, "undefined variable '$missing'");
+    assert_eq!(
+        execution.stdout,
+        "Warning: Undefined variable $missing in Command line code on line 2\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
