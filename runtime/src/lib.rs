@@ -68955,7 +68955,7 @@ mod tests {
     }
 
     #[test]
-    fn native_string_value_conversion_rejects_missing_or_non_utf8_handles() {
+    fn native_string_value_conversion_rejects_missing_and_preserves_binary_handles() {
         let null_value = unsafe { phpc_native_value_from_string(NativeStringHandle::null()) };
         assert!(null_value.is_null());
         let null_echo = unsafe { phpc_native_value_echo_bytes(null_value) };
@@ -69178,7 +69178,7 @@ mod tests {
     }
 
     #[test]
-    fn native_string_value_conversion_reports_diagnostics_for_failures() {
+    fn native_string_value_conversion_reports_missing_handle_diagnostics() {
         let mut diagnostic = NativeDiagnosticHandle::null();
         let null_value = unsafe {
             phpc_native_value_from_string_with_diagnostic(

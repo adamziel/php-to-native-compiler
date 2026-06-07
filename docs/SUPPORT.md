@@ -9267,21 +9267,22 @@
   expression whose possible string values have different byte lengths now emit
   a selected `usize` byte-length value and pass that selected length with the
   selected pointer to the same runtime-helper path. This does not yet cover
-  arbitrary dynamic string-pointer expression output, binary PHP string values
-  beyond valid UTF-8 byte payloads, diagnostics handles for failed stdout
-  writes, linked native execution, production array lowering beyond the empty
-  array handle ABI probe, object/resource/reference storage beyond null-only
-  opaque ABI handle shapes, or the C fallback assembly helper-call path.
+  arbitrary dynamic string-pointer expression output, broader binary string
+  operations beyond the current byte-backed string value surfaces, diagnostic
+  handles for failed stdout writes, linked native execution, production array
+  lowering beyond the empty array handle ABI probe, object/resource/reference
+  storage beyond null-only opaque ABI handle shapes, or the C fallback assembly
+  helper-call path.
   The compiler-side native runtime helper probe now renders `usize`-shaped
   helper signatures from an explicit pointer-width target, with committed
   32-bit and current host-width coverage. The probe includes scalar echo
   helpers, owned byte-buffer helpers, an opaque copied PHP string-handle
-  helper surface, and a bounded valid-UTF-8 string-handle-to-runtime-value
-  bridge plus the value stdout helper. Null string handles and non-UTF-8
-  payloads return null value handles until diagnostics handles and binary PHP
-  string values exist. The probe also declares the first nullable array-handle
-  storage slice with null handles, allocated empty handles, length reads, and
-  handle free. Object, resource, and reference handle shapes remain null-only
+  helper surface, and a bounded string-handle-to-runtime-value bridge plus the
+  value stdout helper for valid UTF-8 and byte-backed PHP strings. Null string
+  handles return null value handles. The probe also declares the first nullable
+  array-handle storage slice with null handles, allocated empty handles, length
+  reads, and handle free. Object, resource, and reference handle shapes remain
+  null-only
   with exported null constructors and predicates. This is still a bounded ABI
   slice: linked native execution, broad production string helper lowering,
   string interning, production array lowering beyond empty-handle probes,
@@ -12526,18 +12527,18 @@
   equality for representable literals and does not claim broader `NAN`/`INF`
   precision edge-case coverage.
 - Native runtime ABI gaps: the ABI exposes scalar echo helpers, runtime-owned
-  byte buffers, opaque copied string handles, valid-UTF-8 string-to-value
-  handles, stdout echo helpers for those value handles, and a bounded
-  diagnostic-handle path for null string-handle and non-UTF-8 string-byte
-  failures from `phpc_native_value_from_string_with_diagnostic`. The
+  byte buffers, opaque copied string handles, valid-UTF-8 and byte-backed
+  string-to-value handles, stdout echo helpers for those value handles, and a
+  bounded diagnostic-handle path for null string-handle failures from
+  `phpc_native_value_from_string_with_diagnostic`. The
   deterministic native runtime probe now includes one branch on a nullable
   value-handle return and clones/reports/frees the diagnostic message on the
   failure path. It also includes the first nullable array-handle storage probe:
   a real allocated empty array handle can be distinguished from null, queried
   for length, and freed. Production `--emit-ir` uses the same nullable-value
   branch and stderr diagnostic-reporting helper for the documented direct and
-  selected string output slices. Linked native execution, binary PHP string
-  value handles, diagnostics for stdout writes or arbitrary runtime failures,
+  selected string output slices. Linked native execution, broader binary PHP
+  string operations, diagnostics for stdout writes or arbitrary runtime failures,
   request-state storage/population beyond the null-only ABI handle shape,
   generated array reads/writes or non-empty array storage, object/resource/
   reference storage beyond null-only ABI shapes, WordPress host-state ABI, and
