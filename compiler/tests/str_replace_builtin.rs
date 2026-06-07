@@ -236,17 +236,23 @@ var_dump($array_count);
 
 #[test]
 fn str_replace_covers_array_forms_and_rejects_remaining_boundaries() {
-    let missing = runtime_error(
+    let missing = run_source(
         r#"<?php
 echo str_replace("a", "b");
 "#,
-    );
-    assert_eq!(missing.line, 2);
-    assert_eq!(missing.column, 6);
+    )
+    .unwrap();
     assert_eq!(
-        missing.message,
-        "arity mismatch for str_replace(): expected 3 to 4 argument(s), got 2"
+        missing.stdout,
+        concat!(
+            "Fatal error: Uncaught ArgumentCountError: str_replace() expects at least 3 arguments, 2 given in Command line code:2\n",
+            "Stack trace:\n",
+            "#0 {main}\n",
+            "  thrown in Command line code on line 2"
+        )
     );
+    assert_eq!(missing.stderr, "");
+    assert_eq!(missing.exit_code, 255);
 
     let count_target = runtime_error(
         r#"<?php
