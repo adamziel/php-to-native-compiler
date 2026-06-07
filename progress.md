@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-07T20:53:22+00:00
+Last generated: 2026-06-07T21:08:23+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -207,6 +207,8 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1846 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
+| 1845 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
 | 1844 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
 | 1843 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
 | 1842 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
@@ -215,28 +217,26 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | 1839 | Verify card 1808 gate fix readiness | Auditor | integration-support | planned | queued |  | 0.0 |
 | 1838 | Audit current php_runtime gate failure for card 1808 | Auditor | integration-support | development | assigned |  | 0.0 |
 | 1837 | Gate verifier for tools/run-tests.sh after php_runtime fix | Developer | implementation | planned | queued |  | 0.0 |
-| 1836 | Gate reproducer for php_runtime invocation cleanup failures | Developer | implementation | planned | queued |  | 0.0 |
-| 1835 | Maintain Developer capacity after worklane 139 | Developer | implementation | planned | queued |  | 0.0 |
 
 ## Tests
 failed — tools/run-tests.sh (error=0, failed=1, passed=0, skipped=0)
 
 ## Resource samples
-Latest: CPU 10.93%, RAM 57.78%, disk free 98.45 GB.
+Latest: CPU 7.61%, RAM 56.86%, disk free 98.42 GB.
 
 ## Recent events
-- 2026-06-07T20:53:18+00:00 **terminal_agent_window_closed**: Closed terminal developer-96 tmux window
-- 2026-06-07T20:53:18+00:00 **terminal_agent_window_closed**: Closed terminal developer-97 tmux window
-- 2026-06-07T20:53:18+00:00 **terminal_agent_window_closed**: Closed terminal developer-98 tmux window
-- 2026-06-07T20:53:18+00:00 **terminal_agent_window_closed**: Closed terminal developer-99 tmux window
-- 2026-06-07T20:53:18+00:00 **terminal_agent_window_closed**: Closed terminal integrator-1 tmux window
-- 2026-06-07T20:53:18+00:00 **terminal_agent_window_closed**: Closed terminal integrator-2 tmux window
-- 2026-06-07T20:53:18+00:00 **terminal_agent_window_closed**: Closed terminal integrator-3 tmux window
-- 2026-06-07T20:53:18+00:00 **terminal_agent_window_closed**: Closed terminal integrator-4 tmux window
-- 2026-06-07T20:53:18+00:00 **terminal_agent_window_closed**: Closed terminal integrator-5 tmux window
-- 2026-06-07T20:53:18+00:00 **terminal_agent_window_closed**: Closed terminal integrator-6 tmux window
-- 2026-06-07T20:53:18+00:00 **terminal_agent_window_closed**: Closed terminal integrator-7 tmux window
-- 2026-06-07T20:53:18+00:00 **terminal_agent_window_closed**: Closed terminal integrator-8 tmux window
+- 2026-06-07T21:08:22+00:00 **terminal_agent_window_closed**: Closed terminal developer-96 tmux window
+- 2026-06-07T21:08:22+00:00 **terminal_agent_window_closed**: Closed terminal developer-97 tmux window
+- 2026-06-07T21:08:22+00:00 **terminal_agent_window_closed**: Closed terminal developer-98 tmux window
+- 2026-06-07T21:08:22+00:00 **terminal_agent_window_closed**: Closed terminal developer-99 tmux window
+- 2026-06-07T21:08:22+00:00 **terminal_agent_window_closed**: Closed terminal integrator-1 tmux window
+- 2026-06-07T21:08:22+00:00 **terminal_agent_window_closed**: Closed terminal integrator-2 tmux window
+- 2026-06-07T21:08:22+00:00 **terminal_agent_window_closed**: Closed terminal integrator-3 tmux window
+- 2026-06-07T21:08:22+00:00 **terminal_agent_window_closed**: Closed terminal integrator-4 tmux window
+- 2026-06-07T21:08:22+00:00 **terminal_agent_window_closed**: Closed terminal integrator-5 tmux window
+- 2026-06-07T21:08:22+00:00 **terminal_agent_window_closed**: Closed terminal integrator-6 tmux window
+- 2026-06-07T21:08:22+00:00 **terminal_agent_window_closed**: Closed terminal integrator-7 tmux window
+- 2026-06-07T21:08:22+00:00 **terminal_agent_window_closed**: Closed terminal integrator-8 tmux window
 
 ## Next steps
 Move next worklane forward: Investigate scheduler alert
