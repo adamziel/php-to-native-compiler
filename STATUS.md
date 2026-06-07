@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-07T23:18:48+00:00
+Last generated: 2026-06-07T23:33:49+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -11,6 +11,9 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Agents
 | name | role | current_status | tmux_window | worktree |
 | --- | --- | --- | --- | --- |
+| architect-1 | Architect | crash | architect-1 |  |
+| architect-2 | Architect | crash | architect-2 |  |
+| architect-3 | Architect | running | architect-3 |  |
 | auditor-1 | Auditor | stopped | auditor-1 |  |
 | auditor-10 | Auditor | crash | auditor-10 |  |
 | auditor-11 | Auditor | crash | auditor-11 |  |
@@ -67,6 +70,11 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-39 | Coordinator | stopped | coordinator-39 |  |
 | coordinator-4 | Coordinator | stopped | coordinator-4 |  |
 | coordinator-40 | Coordinator | stopped | coordinator-40 |  |
+| coordinator-41 | Coordinator | crash | coordinator-41 |  |
+| coordinator-42 | Coordinator | crash | coordinator-42 |  |
+| coordinator-43 | Coordinator | crash | coordinator-43 |  |
+| coordinator-44 | Coordinator | success | coordinator-44 |  |
+| coordinator-45 | Coordinator | running | coordinator-45 |  |
 | coordinator-5 | Coordinator | stopped | coordinator-5 |  |
 | coordinator-6 | Coordinator | crash | coordinator-6 |  |
 | coordinator-7 | Coordinator | crash | coordinator-7 |  |
@@ -130,7 +138,19 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-149 | Developer | stopped | developer-149 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-149 |
 | developer-15 | Developer | stopped | developer-15 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-15 |
 | developer-150 | Developer | stopped | developer-150 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-150 |
+| developer-151 | Developer | crash | developer-151 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-151 |
+| developer-152 | Developer | crash | developer-152 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-152 |
+| developer-153 | Developer | crash | developer-153 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-153 |
+| developer-154 | Developer | crash | developer-154 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-154 |
+| developer-155 | Developer | crash | developer-155 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-155 |
+| developer-156 | Developer | crash | developer-156 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-156 |
+| developer-157 | Developer | running | developer-157 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-157 |
+| developer-158 | Developer | running | developer-158 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-158 |
+| developer-159 | Developer | stopped | developer-159 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-159 |
 | developer-16 | Developer | stopped | developer-16 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-16 |
+| developer-160 | Developer | stopped | developer-160 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-160 |
+| developer-161 | Developer | stopped | developer-161 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-161 |
+| developer-162 | Developer | stopped | developer-162 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-162 |
 | developer-17 | Developer | stopped | developer-17 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-17 |
 | developer-18 | Developer | stopped | developer-18 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-18 |
 | developer-19 | Developer | stopped | developer-19 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-19 |
@@ -236,36 +256,36 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1891 | Implement known-failure no-regression gate without runtime edits | Developer | implementation | planned | queued |  | 0.0 |
-| 1890 | Resume current-base str_ireplace resolver after conflict-resolver-8 crash | Conflict Resolver | integration-support | planned | queued |  | 0.0 |
-| 1889 | Resume requeued integration backlog drain after integrator-9 crash | Integrator | integration-support | done | stale |  | 0.0 |
-| 1888 | Respond to scheduler alert | Coordinator | control-plane | development | assigned |  | 0.0 |
-| 1887 | Implement known-failure no-regression gate for current php_runtime blocker | Developer | implementation | planned | queued |  | 0.0 |
-| 1886 | Current-base resolver for str_ireplace chain worklane 1849 | Conflict Resolver | integration-support | planned | queued |  | 0.0 |
-| 1885 | Drain integration backlog: ready resolver and satisfied failed lanes | Integrator | integration-support | planned | queued |  | 0.0 |
-| 1884 | Verify known-failure gate policy does not mask metric failures | Auditor | integration-support | planned | queued |  | 0.0 |
-| 1883 | Implement known-failure no-regression integration gate for current php_runtime blocker | Developer | implementation | planned | queued |  | 0.0 |
-| 1882 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
+| 1903 | Integrate ready current-base str_ireplace resolver 1886 | Integrator | integration-support | planned | queued |  | 0.0 |
+| 1902 | Find systemic cause for repeated failure: tests::native_constructor_allocation_invoke_carrier_cleans_up_failure_paths | Architect | advisory | planned | queued |  | 0.0 |
+| 1901 | Find systemic cause for repeated failure: tests::native_constructor_allocation_invoke_reference_carrier_owns_receiver_cell | Architect | advisory | planned | queued |  | 0.0 |
+| 1900 | Find systemic cause for repeated failure: tests::native_closure_invoke_helpers_bridge_call_arguments_to_call_results | Architect | advisory | planned | queued |  | 0.0 |
+| 1899 | Find systemic cause for repeated failure: tests::native_constructor_allocation_invoke_carrier_cleans_up_failure_paths | Architect | advisory | done | done |  | 0.0 |
+| 1898 | Find systemic cause for repeated failure: tests::native_method_lookup_plus_invoke_dispatches_missing_and_inaccessible_methods_to_magic_call | Architect | advisory | planned | queued |  | 0.0 |
+| 1897 | Find systemic cause for repeated failure: tests::native_constructor_allocation_invoke_carrier_owns_receiver_arguments_and_diagnostics | Architect | advisory | planned | queued |  | 0.0 |
+| 1896 | Find systemic cause for repeated failure: tests::native_magic_method_lookup_rejects_malformed_signature_metadata_before_fallback | Architect | advisory | planned | queued |  | 0.0 |
+| 1895 | Find systemic cause for repeated failure: tests::native_static_method_lookup_plus_invoke_dispatches_missing_and_inaccessible_methods_to_magic_call_static | Architect | advisory | development | assigned |  | 0.0 |
+| 1894 | Find systemic cause for repeated failure: tests::native_method_lookup_plus_invoke_uses_access_context_for_private_diagnostics | Architect | advisory | planned | queued |  | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=1, passed=0, skipped=0)
+failed — tools/run-tests.sh (error=0, failed=3, passed=416, skipped=0)
 
 ## Resource samples
-Latest: CPU 100.0%, RAM 55.49%, disk free 25.13 GB.
+Latest: CPU 49.54%, RAM 55.53%, disk free 162.3 GB.
 
 ## Recent events
-- 2026-06-07T23:18:41+00:00 **terminal_agent_window_closed**: Closed terminal integrator-10 tmux window
-- 2026-06-07T23:18:41+00:00 **terminal_agent_window_closed**: Closed terminal integrator-2 tmux window
-- 2026-06-07T23:18:41+00:00 **terminal_agent_window_closed**: Closed terminal integrator-3 tmux window
-- 2026-06-07T23:18:41+00:00 **terminal_agent_window_closed**: Closed terminal integrator-4 tmux window
-- 2026-06-07T23:18:41+00:00 **terminal_agent_window_closed**: Closed terminal integrator-5 tmux window
-- 2026-06-07T23:18:41+00:00 **terminal_agent_window_closed**: Closed terminal integrator-6 tmux window
-- 2026-06-07T23:18:41+00:00 **terminal_agent_window_closed**: Closed terminal integrator-7 tmux window
-- 2026-06-07T23:18:41+00:00 **terminal_agent_window_closed**: Closed terminal integrator-8 tmux window
-- 2026-06-07T23:18:41+00:00 **terminal_agent_window_closed**: Closed terminal integrator-9 tmux window
-- 2026-06-07T23:18:46+00:00 **stop**: Stopped harness runtime
-- 2026-06-07T23:18:48+00:00 **mcp**: Harness MCP tools exposed to Codex workers
-- 2026-06-07T23:18:48+00:00 **tmux**: Interactive support windows ready
+- 2026-06-07T23:33:48+00:00 **spawn_deferred**: Deferred Architect work because architect-3 already has a card
+- 2026-06-07T23:33:48+00:00 **spawn_deferred**: Deferred Architect work because architect-3 already has a card
+- 2026-06-07T23:33:48+00:00 **coordination_decision**: Coordinator-45 capacity decision: hold new Architect/Developer spawns; keep card/worklane 1808 developer-158 as the sole source owner for the native helper/runtime gate; treat repeated Architect cards 1893-1902 as duplicate evidence of the same cluster already covered by architect reports 307/310; treat str_ireplace lane 1886 as integrated and duplicate 1864/1890 branches as noncanonical unless they produce unique current-base evidence.
+- 2026-06-07T23:33:48+00:00 **spawn_deferred**: Deferred Architect work because architect-3 already has a card
+- 2026-06-07T23:33:48+00:00 **agent_report**: coordinator-45 reported completed_support_added
+- 2026-06-07T23:33:49+00:00 **terminal_agent_window_closed**: Closed terminal architect-1 tmux window
+- 2026-06-07T23:33:49+00:00 **terminal_agent_window_closed**: Closed terminal architect-2 tmux window
+- 2026-06-07T23:33:49+00:00 **terminal_agent_window_closed**: Closed terminal auditor-1 tmux window
+- 2026-06-07T23:33:49+00:00 **terminal_agent_window_closed**: Closed terminal auditor-10 tmux window
+- 2026-06-07T23:33:49+00:00 **terminal_agent_window_closed**: Closed terminal auditor-11 tmux window
+- 2026-06-07T23:33:49+00:00 **terminal_agent_window_closed**: Closed terminal auditor-12 tmux window
+- 2026-06-07T23:33:49+00:00 **terminal_agent_window_closed**: Closed terminal auditor-2 tmux window
 
 ## Next steps
-Move next worklane forward: Implement known-failure no-regression gate without runtime edits
+Move next worklane forward: Integrate ready current-base str_ireplace resolver 1886
