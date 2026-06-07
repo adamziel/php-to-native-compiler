@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-07T17:50:17+00:00
+Last generated: 2026-06-07T18:05:18+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -39,6 +39,8 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-18 | Coordinator | success | coordinator-18 |  |
 | coordinator-19 | Coordinator | stopped | coordinator-19 |  |
 | coordinator-2 | Coordinator | crash | coordinator-2 |  |
+| coordinator-20 | Coordinator | crash | coordinator-20 |  |
+| coordinator-21 | Coordinator | running | coordinator-21 |  |
 | coordinator-3 | Coordinator | crash | coordinator-3 |  |
 | coordinator-4 | Coordinator | stopped | coordinator-4 |  |
 | coordinator-5 | Coordinator | stopped | coordinator-5 |  |
@@ -48,6 +50,12 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-9 | Coordinator | success | coordinator-9 |  |
 | developer-1 | Developer | stopped | developer-1 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-1 |
 | developer-10 | Developer | stopped | developer-10 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-10 |
+| developer-100 | Developer | running | developer-100 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-100 |
+| developer-101 | Developer | running | developer-101 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-101 |
+| developer-102 | Developer | running | developer-102 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-102 |
+| developer-103 | Developer | running | developer-103 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-103 |
+| developer-104 | Developer | running | developer-104 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-104 |
+| developer-105 | Developer | running | developer-105 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-105 |
 | developer-11 | Developer | stopped | developer-11 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-11 |
 | developer-12 | Developer | stopped | developer-12 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-12 |
 | developer-13 | Developer | stopped | developer-13 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-13 |
@@ -142,6 +150,9 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-94 | Developer | stopped | developer-94 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-94 |
 | developer-95 | Developer | stopped | developer-95 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-95 |
 | developer-96 | Developer | stopped | developer-96 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-96 |
+| developer-97 | Developer | crash | developer-97 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-97 |
+| developer-98 | Developer | crash | developer-98 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-98 |
+| developer-99 | Developer | crash | developer-99 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-99 |
 | integrator-1 | Integrator | stopped | integrator-1 |  |
 | integrator-2 | Integrator | stopped | integrator-2 |  |
 | integrator-3 | Integrator | stopped | integrator-3 |  |
@@ -154,42 +165,36 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1803 | Fix global test suite failures | Developer | implementation | development | assigned |  | 0.0 |
+| 1802 | Assign next sanctioned Developer card after developer-105 completed worklane 1800 | Developer | implementation | planned | queued |  | 0.0 |
+| 1801 | Assign fresh narrow Developer card after stale lane 78 verification | Developer | implementation | planned | queued |  | 0.0 |
+| 1800 | Fix global test suite failures | Developer | implementation | done | integrated | ready_fast_path | 0.0 |
 | 1799 | Next concrete Developer card after lane 70 | Developer | implementation | planned | queued |  | 0.0 |
 | 1798 | Provide next sanctioned Developer lane after developer-89 card 70 | Developer | implementation | planned | queued |  | 0.0 |
 | 1797 | Provide next sanctioned Developer card after developer-90 lane 71 | Developer | implementation | planned | queued |  | 0.0 |
-| 1796 | Resolve card 1795 integration conflict for developer-92 str_replace slice | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
-| 1795 | Resolve integration failure for card #1769: Resolve integration failure for card #1595: Resolve integration failure for card #1533: Resolve integration failure for card #11: developer-43 focused standard-library compatibility slice | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
-| 1794 | Fix global test suite failures | Developer | implementation | development | assigned |  | 0.0 |
-| 1793 | Fix global test suite failures | Developer | implementation | done | stale |  | 0.0 |
-| 1792 | Fix global test suite failures | Developer | implementation | done | stale |  | 0.0 |
-| 1791 | Fix global test suite failures | Developer | implementation | done | stale |  | 0.0 |
-| 1790 | Fix global test suite failures | Developer | implementation | done | stale |  | 0.0 |
+| 1796 | Resolve card 1795 integration conflict for developer-92 str_replace slice | Conflict Resolver | integration-support | development | blocked |  | 0.0 |
+| 1795 | Resolve integration failure for card #1769: Resolve integration failure for card #1595: Resolve integration failure for card #1533: Resolve integration failure for card #11: developer-43 focused standard-library compatibility slice | Conflict Resolver | integration-support | done | integrated | ready_fast_path | 0.0 |
+| 1794 | Fix global test suite failures | Developer | implementation | done | stale |  | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=1, passed=0, skipped=0)
+failed — python -m unittest discover -s tests -v (error=0, failed=1, passed=0, skipped=0)
 
 ## Resource samples
-Latest: CPU 5.07%, RAM 62.09%, disk free 187.49 GB.
+Latest: CPU 7.22%, RAM 58.35%, disk free 187.58 GB.
 
 ## Recent events
-- 2026-06-07T17:48:27+00:00 **status_publish_failed**: Committed status files but failed to push: To https://github.com/adamziel/php-to-native-compiler.git
- ! [rejected]          HEAD -> master (non-fast-forward)
-error: failed to push some refs to 'https://github.com/adamziel/php-to-native-compiler.git'
-hint: Updates were rejected because the tip of your current branch is behind
-hint: its remote counterpart. If you want to integrate the remote changes,
-hint: use 'git pull' before pushing again.
-hint: See the 'Note about fast-forwards' in 'git push --help' for details.
-- 2026-06-07T17:48:27+00:00 **status**: Updated STATUS.md and STATUS.html
-- 2026-06-07T17:48:35+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-07T17:48:42+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-07T17:49:06+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-07T17:49:37+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-07T17:50:04+00:00 **manhole_action_authorized**: User authorized acting on diagnosis: stop status/report-only churn, repair live harness selector, and prioritize real code conflict resolution. Manhole will route durable work through harness scheduler/MCP.
-- 2026-06-07T17:50:08+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-07T17:50:10+00:00 **scheduler**: Harness scheduler stopped by user
-- 2026-06-07T17:50:15+00:00 **stop**: Stopped harness runtime
-- 2026-06-07T17:50:16+00:00 **mcp**: Harness MCP tools exposed to Codex workers
-- 2026-06-07T17:50:16+00:00 **tmux**: Support windows ready
+- 2026-06-07T18:05:17+00:00 **terminal_agent_window_closed**: Closed terminal developer-23 tmux window
+- 2026-06-07T18:05:17+00:00 **terminal_agent_window_closed**: Closed terminal developer-24 tmux window
+- 2026-06-07T18:05:17+00:00 **terminal_agent_window_closed**: Closed terminal developer-25 tmux window
+- 2026-06-07T18:05:18+00:00 **terminal_agent_window_closed**: Closed terminal developer-26 tmux window
+- 2026-06-07T18:05:18+00:00 **terminal_agent_window_closed**: Closed terminal developer-27 tmux window
+- 2026-06-07T18:05:18+00:00 **terminal_agent_window_closed**: Closed terminal developer-28 tmux window
+- 2026-06-07T18:05:18+00:00 **terminal_agent_window_closed**: Closed terminal developer-29 tmux window
+- 2026-06-07T18:05:18+00:00 **terminal_agent_window_closed**: Closed terminal developer-3 tmux window
+- 2026-06-07T18:05:18+00:00 **terminal_agent_window_closed**: Closed terminal developer-30 tmux window
+- 2026-06-07T18:05:18+00:00 **terminal_agent_window_closed**: Closed terminal developer-31 tmux window
+- 2026-06-07T18:05:18+00:00 **terminal_agent_window_closed**: Closed terminal developer-32 tmux window
+- 2026-06-07T18:05:18+00:00 **terminal_agent_window_closed**: Closed terminal developer-33 tmux window
 
 ## Next steps
-Move next worklane forward: Next concrete Developer card after lane 70
+Move next worklane forward: Fix global test suite failures
