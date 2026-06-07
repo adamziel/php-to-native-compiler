@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-07T18:05:18+00:00
+Last generated: 2026-06-07T18:18:15+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -40,7 +40,8 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-19 | Coordinator | stopped | coordinator-19 |  |
 | coordinator-2 | Coordinator | crash | coordinator-2 |  |
 | coordinator-20 | Coordinator | crash | coordinator-20 |  |
-| coordinator-21 | Coordinator | running | coordinator-21 |  |
+| coordinator-21 | Coordinator | crash | coordinator-21 |  |
+| coordinator-22 | Coordinator | running | coordinator-22 |  |
 | coordinator-3 | Coordinator | crash | coordinator-3 |  |
 | coordinator-4 | Coordinator | stopped | coordinator-4 |  |
 | coordinator-5 | Coordinator | stopped | coordinator-5 |  |
@@ -50,13 +51,19 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-9 | Coordinator | success | coordinator-9 |  |
 | developer-1 | Developer | stopped | developer-1 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-1 |
 | developer-10 | Developer | stopped | developer-10 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-10 |
-| developer-100 | Developer | running | developer-100 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-100 |
-| developer-101 | Developer | running | developer-101 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-101 |
-| developer-102 | Developer | running | developer-102 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-102 |
-| developer-103 | Developer | running | developer-103 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-103 |
-| developer-104 | Developer | running | developer-104 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-104 |
-| developer-105 | Developer | running | developer-105 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-105 |
+| developer-100 | Developer | crash | developer-100 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-100 |
+| developer-101 | Developer | crash | developer-101 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-101 |
+| developer-102 | Developer | crash | developer-102 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-102 |
+| developer-103 | Developer | crash | developer-103 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-103 |
+| developer-104 | Developer | crash | developer-104 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-104 |
+| developer-105 | Developer | crash | developer-105 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-105 |
+| developer-106 | Developer | running | developer-106 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-106 |
+| developer-107 | Developer | running | developer-107 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-107 |
+| developer-108 | Developer | running | developer-108 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-108 |
+| developer-109 | Developer | running | developer-109 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-109 |
 | developer-11 | Developer | stopped | developer-11 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-11 |
+| developer-110 | Developer | running | developer-110 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-110 |
+| developer-111 | Developer | running | developer-111 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-111 |
 | developer-12 | Developer | stopped | developer-12 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-12 |
 | developer-13 | Developer | stopped | developer-13 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-13 |
 | developer-14 | Developer | stopped | developer-14 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-14 |
@@ -165,6 +172,8 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1805 | Assign fresh narrow Developer card after stale card 82 SPL replay verification | Developer | implementation | planned | queued |  | 0.0 |
+| 1804 | Provide next sanctioned Developer card after lane85 stale artifact verification | Developer | implementation | planned | queued |  | 0.0 |
 | 1803 | Fix global test suite failures | Developer | implementation | development | assigned |  | 0.0 |
 | 1802 | Assign next sanctioned Developer card after developer-105 completed worklane 1800 | Developer | implementation | planned | queued |  | 0.0 |
 | 1801 | Assign fresh narrow Developer card after stale lane 78 verification | Developer | implementation | planned | queued |  | 0.0 |
@@ -172,29 +181,27 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | 1799 | Next concrete Developer card after lane 70 | Developer | implementation | planned | queued |  | 0.0 |
 | 1798 | Provide next sanctioned Developer lane after developer-89 card 70 | Developer | implementation | planned | queued |  | 0.0 |
 | 1797 | Provide next sanctioned Developer card after developer-90 lane 71 | Developer | implementation | planned | queued |  | 0.0 |
-| 1796 | Resolve card 1795 integration conflict for developer-92 str_replace slice | Conflict Resolver | integration-support | development | blocked |  | 0.0 |
-| 1795 | Resolve integration failure for card #1769: Resolve integration failure for card #1595: Resolve integration failure for card #1533: Resolve integration failure for card #11: developer-43 focused standard-library compatibility slice | Conflict Resolver | integration-support | done | integrated | ready_fast_path | 0.0 |
-| 1794 | Fix global test suite failures | Developer | implementation | done | stale |  | 0.0 |
+| 1796 | Resolve card 1795 integration conflict for developer-92 str_replace slice | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
 
 ## Tests
 failed — python -m unittest discover -s tests -v (error=0, failed=1, passed=0, skipped=0)
 
 ## Resource samples
-Latest: CPU 7.22%, RAM 58.35%, disk free 187.58 GB.
+Latest: CPU 20.1%, RAM 58.61%, disk free 185.97 GB.
 
 ## Recent events
-- 2026-06-07T18:05:17+00:00 **terminal_agent_window_closed**: Closed terminal developer-23 tmux window
-- 2026-06-07T18:05:17+00:00 **terminal_agent_window_closed**: Closed terminal developer-24 tmux window
-- 2026-06-07T18:05:17+00:00 **terminal_agent_window_closed**: Closed terminal developer-25 tmux window
-- 2026-06-07T18:05:18+00:00 **terminal_agent_window_closed**: Closed terminal developer-26 tmux window
-- 2026-06-07T18:05:18+00:00 **terminal_agent_window_closed**: Closed terminal developer-27 tmux window
-- 2026-06-07T18:05:18+00:00 **terminal_agent_window_closed**: Closed terminal developer-28 tmux window
-- 2026-06-07T18:05:18+00:00 **terminal_agent_window_closed**: Closed terminal developer-29 tmux window
-- 2026-06-07T18:05:18+00:00 **terminal_agent_window_closed**: Closed terminal developer-3 tmux window
-- 2026-06-07T18:05:18+00:00 **terminal_agent_window_closed**: Closed terminal developer-30 tmux window
-- 2026-06-07T18:05:18+00:00 **terminal_agent_window_closed**: Closed terminal developer-31 tmux window
-- 2026-06-07T18:05:18+00:00 **terminal_agent_window_closed**: Closed terminal developer-32 tmux window
-- 2026-06-07T18:05:18+00:00 **terminal_agent_window_closed**: Closed terminal developer-33 tmux window
+- 2026-06-07T18:18:15+00:00 **terminal_agent_window_closed**: Closed terminal developer-59 tmux window
+- 2026-06-07T18:18:15+00:00 **terminal_agent_window_closed**: Closed terminal developer-6 tmux window
+- 2026-06-07T18:18:15+00:00 **terminal_agent_window_closed**: Closed terminal developer-60 tmux window
+- 2026-06-07T18:18:15+00:00 **terminal_agent_window_closed**: Closed terminal developer-61 tmux window
+- 2026-06-07T18:18:15+00:00 **terminal_agent_window_closed**: Closed terminal developer-62 tmux window
+- 2026-06-07T18:18:15+00:00 **terminal_agent_window_closed**: Closed terminal developer-63 tmux window
+- 2026-06-07T18:18:15+00:00 **terminal_agent_window_closed**: Closed terminal developer-64 tmux window
+- 2026-06-07T18:18:15+00:00 **poke**: Queued message for broadcast
+- 2026-06-07T18:18:15+00:00 **terminal_agent_window_closed**: Closed terminal developer-65 tmux window
+- 2026-06-07T18:18:15+00:00 **terminal_agent_window_closed**: Closed terminal developer-66 tmux window
+- 2026-06-07T18:18:15+00:00 **terminal_agent_window_closed**: Closed terminal developer-67 tmux window
+- 2026-06-07T18:18:15+00:00 **poke_delivered**: Delivered poke to 6 agents
 
 ## Next steps
-Move next worklane forward: Fix global test suite failures
+Move next worklane forward: Assign fresh narrow Developer card after stale card 82 SPL replay verification
