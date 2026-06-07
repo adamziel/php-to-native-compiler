@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-07T18:18:32+00:00
+Last generated: 2026-06-07T18:20:19+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -41,7 +41,8 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-2 | Coordinator | crash | coordinator-2 |  |
 | coordinator-20 | Coordinator | crash | coordinator-20 |  |
 | coordinator-21 | Coordinator | crash | coordinator-21 |  |
-| coordinator-22 | Coordinator | running | coordinator-22 |  |
+| coordinator-22 | Coordinator | crash | coordinator-22 |  |
+| coordinator-23 | Coordinator | running | coordinator-23 |  |
 | coordinator-3 | Coordinator | crash | coordinator-3 |  |
 | coordinator-4 | Coordinator | stopped | coordinator-4 |  |
 | coordinator-5 | Coordinator | stopped | coordinator-5 |  |
@@ -172,36 +173,36 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1807 | Resolve integration failure for card #1803: Fix global test suite failures | Conflict Resolver | integration-support | planned | queued |  | 0.0 |
+| 1806 | Assign next sanctioned Developer card after developer-111 completed worklane 86 | Developer | implementation | planned | queued |  | 0.0 |
 | 1805 | Assign fresh narrow Developer card after stale card 82 SPL replay verification | Developer | implementation | planned | queued |  | 0.0 |
 | 1804 | Provide next sanctioned Developer card after lane85 stale artifact verification | Developer | implementation | planned | queued |  | 0.0 |
-| 1803 | Fix global test suite failures | Developer | implementation | development | assigned |  | 0.0 |
+| 1803 | Fix global test suite failures | Developer | implementation | integration | integration_failed | ready_fast_path | 0.0 |
 | 1802 | Assign next sanctioned Developer card after developer-105 completed worklane 1800 | Developer | implementation | planned | queued |  | 0.0 |
 | 1801 | Assign fresh narrow Developer card after stale lane 78 verification | Developer | implementation | planned | queued |  | 0.0 |
 | 1800 | Fix global test suite failures | Developer | implementation | done | integrated | ready_fast_path | 0.0 |
 | 1799 | Next concrete Developer card after lane 70 | Developer | implementation | planned | queued |  | 0.0 |
 | 1798 | Provide next sanctioned Developer lane after developer-89 card 70 | Developer | implementation | planned | queued |  | 0.0 |
-| 1797 | Provide next sanctioned Developer card after developer-90 lane 71 | Developer | implementation | planned | queued |  | 0.0 |
-| 1796 | Resolve card 1795 integration conflict for developer-92 str_replace slice | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
 
 ## Tests
 failed — python -m unittest discover -s tests -v (error=0, failed=1, passed=0, skipped=0)
 
 ## Resource samples
-Latest: CPU 19.65%, RAM 60.68%, disk free 185.97 GB.
+Latest: CPU 12.68%, RAM 57.91%, disk free 185.75 GB.
 
 ## Recent events
-- 2026-06-07T18:18:31+00:00 **terminal_agent_window_closed**: Closed terminal developer-98 tmux window
-- 2026-06-07T18:18:31+00:00 **terminal_agent_window_closed**: Closed terminal developer-99 tmux window
-- 2026-06-07T18:18:31+00:00 **terminal_agent_window_closed**: Closed terminal integrator-1 tmux window
-- 2026-06-07T18:18:31+00:00 **terminal_agent_window_closed**: Closed terminal integrator-2 tmux window
-- 2026-06-07T18:18:31+00:00 **terminal_agent_window_closed**: Closed terminal integrator-3 tmux window
-- 2026-06-07T18:18:31+00:00 **terminal_agent_window_closed**: Closed terminal integrator-4 tmux window
-- 2026-06-07T18:18:31+00:00 **terminal_agent_window_closed**: Closed terminal integrator-5 tmux window
-- 2026-06-07T18:18:31+00:00 **terminal_agent_window_closed**: Closed terminal integrator-6 tmux window
-- 2026-06-07T18:18:31+00:00 **terminal_agent_window_closed**: Closed terminal integrator-7 tmux window
-- 2026-06-07T18:18:31+00:00 **terminal_agent_window_closed**: Closed terminal integrator-8 tmux window
-- 2026-06-07T18:18:32+00:00 **poke**: Queued message for coordinator-22
-- 2026-06-07T18:18:32+00:00 **poke_delivered**: Delivered poke to 0 agents
+- 2026-06-07T18:20:16+00:00 **terminal_agent_window_closed**: Closed terminal developer-96 tmux window
+- 2026-06-07T18:20:16+00:00 **terminal_agent_window_closed**: Closed terminal developer-97 tmux window
+- 2026-06-07T18:20:16+00:00 **terminal_agent_window_closed**: Closed terminal developer-98 tmux window
+- 2026-06-07T18:20:16+00:00 **terminal_agent_window_closed**: Closed terminal developer-99 tmux window
+- 2026-06-07T18:20:16+00:00 **terminal_agent_window_closed**: Closed terminal integrator-1 tmux window
+- 2026-06-07T18:20:16+00:00 **terminal_agent_window_closed**: Closed terminal integrator-2 tmux window
+- 2026-06-07T18:20:16+00:00 **terminal_agent_window_closed**: Closed terminal integrator-3 tmux window
+- 2026-06-07T18:20:16+00:00 **terminal_agent_window_closed**: Closed terminal integrator-4 tmux window
+- 2026-06-07T18:20:16+00:00 **terminal_agent_window_closed**: Closed terminal integrator-5 tmux window
+- 2026-06-07T18:20:16+00:00 **terminal_agent_window_closed**: Closed terminal integrator-6 tmux window
+- 2026-06-07T18:20:16+00:00 **terminal_agent_window_closed**: Closed terminal integrator-7 tmux window
+- 2026-06-07T18:20:16+00:00 **terminal_agent_window_closed**: Closed terminal integrator-8 tmux window
 
 ## Next steps
-Move next worklane forward: Assign fresh narrow Developer card after stale card 82 SPL replay verification
+Move next worklane forward: Resolve integration failure for card #1803: Fix global test suite failures
