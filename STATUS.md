@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-07T22:08:28+00:00
+Last generated: 2026-06-07T22:23:30+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -14,6 +14,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | auditor-1 | Auditor | stopped | auditor-1 |  |
 | auditor-10 | Auditor | crash | auditor-10 |  |
 | auditor-11 | Auditor | crash | auditor-11 |  |
+| auditor-12 | Auditor | running | auditor-12 |  |
 | auditor-2 | Auditor | crash | auditor-2 |  |
 | auditor-3 | Auditor | stopped | auditor-3 |  |
 | auditor-4 | Auditor | stopped | auditor-4 |  |
@@ -224,6 +225,9 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1879 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
+| 1878 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
+| 1877 | Investigate scheduler alert | Auditor | integration-support | development | assigned |  | 0.0 |
 | 1876 | Assign concrete Developer worklane after capacity placeholder 1835 | Developer | implementation | planned | queued |  | 0.0 |
 | 1875 | Assign concrete Developer worklane after capacity placeholder 1833 | Developer | implementation | planned | queued |  | 0.0 |
 | 1874 | Assign concrete Developer worklane after capacity placeholder 1832 | Developer | implementation | planned | queued |  | 0.0 |
@@ -231,29 +235,26 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | 1872 | Assign concrete Developer worklane after capacity placeholder 1829 | Developer | implementation | planned | queued |  | 0.0 |
 | 1871 | Assign concrete Developer worklane after capacity placeholder 1826 | Developer | implementation | planned | queued |  | 0.0 |
 | 1870 | Assign concrete Developer worklane after capacity placeholder 1824 | Developer | implementation | planned | queued |  | 0.0 |
-| 1869 | Assign concrete Developer worklane after capacity placeholder 1822 | Developer | implementation | planned | queued |  | 0.0 |
-| 1868 | Assign concrete Developer worklane after capacity placeholder 1813 | Developer | implementation | planned | queued |  | 0.0 |
-| 1867 | Assign concrete Developer worklane after capacity placeholder 1812 | Developer | implementation | planned | queued |  | 0.0 |
 
 ## Tests
 failed — tools/run-tests.sh (error=0, failed=1, passed=0, skipped=0)
 
 ## Resource samples
-Latest: CPU 24.88%, RAM 57.01%, disk free 77.0 GB.
+Latest: CPU 9.17%, RAM 56.55%, disk free 62.85 GB.
 
 ## Recent events
-- 2026-06-07T22:08:27+00:00 **terminal_agent_window_closed**: Closed terminal developer-6 tmux window
-- 2026-06-07T22:08:27+00:00 **terminal_agent_window_closed**: Closed terminal developer-65 tmux window
-- 2026-06-07T22:08:27+00:00 **terminal_agent_window_closed**: Closed terminal developer-60 tmux window
-- 2026-06-07T22:08:27+00:00 **terminal_agent_window_closed**: Closed terminal developer-66 tmux window
-- 2026-06-07T22:08:27+00:00 **terminal_agent_window_closed**: Closed terminal developer-61 tmux window
-- 2026-06-07T22:08:27+00:00 **terminal_agent_window_closed**: Closed terminal developer-67 tmux window
-- 2026-06-07T22:08:27+00:00 **terminal_agent_window_closed**: Closed terminal developer-62 tmux window
-- 2026-06-07T22:08:27+00:00 **terminal_agent_window_closed**: Closed terminal developer-68 tmux window
-- 2026-06-07T22:08:27+00:00 **terminal_agent_window_closed**: Closed terminal developer-63 tmux window
-- 2026-06-07T22:08:27+00:00 **terminal_agent_window_closed**: Closed terminal developer-69 tmux window
-- 2026-06-07T22:08:27+00:00 **terminal_agent_window_closed**: Closed terminal developer-64 tmux window
-- 2026-06-07T22:08:27+00:00 **terminal_agent_window_closed**: Closed terminal developer-7 tmux window
+- 2026-06-07T22:23:26+00:00 **terminal_agent_window_closed**: Closed terminal developer-96 tmux window
+- 2026-06-07T22:23:26+00:00 **terminal_agent_window_closed**: Closed terminal developer-97 tmux window
+- 2026-06-07T22:23:26+00:00 **terminal_agent_window_closed**: Closed terminal developer-98 tmux window
+- 2026-06-07T22:23:26+00:00 **terminal_agent_window_closed**: Closed terminal developer-99 tmux window
+- 2026-06-07T22:23:26+00:00 **terminal_agent_window_closed**: Closed terminal integrator-1 tmux window
+- 2026-06-07T22:23:26+00:00 **terminal_agent_window_closed**: Closed terminal integrator-2 tmux window
+- 2026-06-07T22:23:26+00:00 **terminal_agent_window_closed**: Closed terminal integrator-3 tmux window
+- 2026-06-07T22:23:26+00:00 **terminal_agent_window_closed**: Closed terminal integrator-4 tmux window
+- 2026-06-07T22:23:26+00:00 **terminal_agent_window_closed**: Closed terminal integrator-5 tmux window
+- 2026-06-07T22:23:26+00:00 **terminal_agent_window_closed**: Closed terminal integrator-6 tmux window
+- 2026-06-07T22:23:26+00:00 **terminal_agent_window_closed**: Closed terminal integrator-7 tmux window
+- 2026-06-07T22:23:26+00:00 **terminal_agent_window_closed**: Closed terminal integrator-8 tmux window
 
 ## Next steps
-Move next worklane forward: Assign concrete Developer worklane after capacity placeholder 1835
+Move next worklane forward: Investigate scheduler alert
