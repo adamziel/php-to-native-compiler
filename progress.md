@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-07T18:53:10+00:00
+Last generated: 2026-06-07T18:53:11+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -199,18 +199,18 @@ failed — tools/run-tests.sh (error=0, failed=1, passed=0, skipped=0)
 Latest: CPU 15.24%, RAM 57.74%, disk free 164.45 GB.
 
 ## Recent events
-- 2026-06-07T18:53:10+00:00 **terminal_agent_window_closed**: Closed terminal integrator-3 tmux window
-- 2026-06-07T18:53:10+00:00 **terminal_agent_window_closed**: Closed terminal developer-33 tmux window
-- 2026-06-07T18:53:10+00:00 **terminal_agent_window_closed**: Closed terminal integrator-4 tmux window
-- 2026-06-07T18:53:10+00:00 **terminal_agent_window_closed**: Closed terminal developer-34 tmux window
-- 2026-06-07T18:53:10+00:00 **terminal_agent_window_closed**: Closed terminal integrator-5 tmux window
-- 2026-06-07T18:53:10+00:00 **terminal_agent_window_closed**: Closed terminal developer-35 tmux window
-- 2026-06-07T18:53:10+00:00 **terminal_agent_window_closed**: Closed terminal integrator-6 tmux window
-- 2026-06-07T18:53:10+00:00 **terminal_agent_window_closed**: Closed terminal developer-36 tmux window
 - 2026-06-07T18:53:10+00:00 **terminal_agent_window_closed**: Closed terminal integrator-7 tmux window
 - 2026-06-07T18:53:10+00:00 **terminal_agent_window_closed**: Closed terminal developer-37 tmux window
 - 2026-06-07T18:53:10+00:00 **terminal_agent_window_closed**: Closed terminal integrator-8 tmux window
 - 2026-06-07T18:53:10+00:00 **terminal_agent_window_closed**: Closed terminal developer-38 tmux window
+- 2026-06-07T18:53:10+00:00 **terminal_agent_window_closed**: Closed terminal developer-39 tmux window
+- 2026-06-07T18:53:10+00:00 **terminal_agent_window_closed**: Closed terminal developer-4 tmux window
+- 2026-06-07T18:53:10+00:00 **terminal_agent_window_closed**: Closed terminal developer-40 tmux window
+- 2026-06-07T18:53:10+00:00 **terminal_agent_window_closed**: Closed terminal developer-41 tmux window
+- 2026-06-07T18:53:10+00:00 **terminal_agent_window_closed**: Closed terminal developer-42 tmux window
+- 2026-06-07T18:53:11+00:00 **terminal_agent_window_closed**: Closed terminal developer-43 tmux window
+- 2026-06-07T18:53:11+00:00 **terminal_agent_window_closed**: Closed terminal developer-44 tmux window
+- 2026-06-07T18:53:11+00:00 **terminal_agent_window_closed**: Closed terminal developer-45 tmux window
 
 ## Next steps
 Move next worklane forward: Resolve integration failure for card #91: Replay standard array/string accepted-vs-candidate PHPT samples
