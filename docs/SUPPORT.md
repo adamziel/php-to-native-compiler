@@ -5,8 +5,8 @@
 - PHP opening tag `<?php`; text between `?>` and the next PHP open tag is
   treated as inline HTML output through the interpreter path, including the
   current PHP-compatible single-newline consumption immediately after `?>`.
-  Short echo tags such as `<?= $value ?>` remain unsupported and stop at a
-  dedicated lex boundary before execution.
+  Short echo tags such as `<?= $value ?>` use the existing `echo` statement
+  parser/runtime path. Short open tags `<?` remain unsupported.
 - Bounded `declare` directives: file-scope `declare(strict_types=0|1);` and
   `declare(encoding="...");` parse as interpreter no-ops so source ordering
   around namespaces can proceed. `declare(strict_types=...) { ... }` reports

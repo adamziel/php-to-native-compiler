@@ -108,32 +108,25 @@ fn unsupported_heredoc_nowdoc_forms_have_stable_lex_errors() {
 }
 
 #[test]
-fn unsupported_short_echo_tags_have_stable_lex_errors() {
-    let cases = [
-        ("<?= $name ?>\n", 1, 1),
-        ("<?php\n?>\n<?= $name ?>\n", 3, 1),
-    ];
+fn short_echo_tags_execute_as_echo_statements() {
+    let execution = run_source(
+        r#"<?php
+$name = "Ada";
+?>
+<?= $name ?>|<?= "B", "C" ?>"#,
+    )
+    .unwrap();
 
-    for (source, line, column) in cases {
-        let error = lex_error(source);
-        assert_eq!(error.line, line);
-        assert_eq!(error.column, column);
-        assert_eq!(
-            error.message,
-            "unsupported short echo tag: <?= is not implemented; use <?php echo ... ?> in the current subset"
-        );
-    }
+    assert_eq!(execution.stdout, "Ada|BC");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
-fn emit_ir_rejects_short_echo_tags_at_lex_boundary() {
-    let error = php_compiler::emit_ir_source("<?= $name ?>\n").unwrap_err();
+fn emit_ir_lowers_short_echo_tags_through_existing_echo_path() {
+    let ir = php_compiler::emit_ir_source("<?= \"native\" ?>").unwrap();
 
-    assert_eq!(error.phase, Phase::Lex);
-    assert_eq!(
-        error.message,
-        "unsupported short echo tag: <?= is not implemented; use <?php echo ... ?> in the current subset"
-    );
+    assert!(ir.contains("c\"native\\00\""), "{ir}");
+    assert!(!ir.contains("short echo"), "{ir}");
 }
 
 #[test]

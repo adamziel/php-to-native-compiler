@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added bounded PHP short echo tag support in the language lexer. `<?= expr ?>`
+  now expands to the existing `echo` token path, preserving the current close
+  tag semicolon insertion and inline-HTML handling; `phpc run` executes the
+  covered expression-list form, and `phpc compile --emit-ir` accepts short
+  echo tags only when the resulting echo statement is already lowerable.
+  Focused checks passed:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-conflict-resolver-5 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -q -p phpc --test syntax_boundaries short_echo -- --test-threads=1`
+  with `2 passed`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-conflict-resolver-5 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -q -p phpc -- test tests/fixtures/milestone2305`
+  with `3 passed`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-conflict-resolver-5 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -q -p phpc -- run tests/fixtures/milestone2305/short_echo_tags.php`
+  with `Ada|BC|done`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-conflict-resolver-5 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo fmt --check`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-conflict-resolver-5 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo check -q -p phpc`;
+  and `git diff --check`. Unsupported edges remain short open tags `<?`, any
+  short-echo expression forms already outside the parser or runtime subset,
+  and native lowering beyond the existing echo boundary.
+
 - Repaired the focused `php_runtime --lib` stabilization gate by refreshing
   stale runtime ABI unit expectations to current executable behavior for
   binary PHP string materialization, core class metadata, and typed-reference

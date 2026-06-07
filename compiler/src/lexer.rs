@@ -179,7 +179,16 @@ impl<'a> Lexer<'a> {
             }
 
             if self.starts_with("<?=") {
-                return Err(self.error_at(self.span(), unsupported_short_echo_tag_message()));
+                let span = self.span();
+                for _ in 0..3 {
+                    self.advance();
+                }
+                self.at_initial_php_boundary = false;
+                tokens.push(Token {
+                    kind: TokenKind::Echo,
+                    span,
+                });
+                continue;
             }
 
             if self.starts_with("?>") {
@@ -1562,10 +1571,6 @@ fn unsupported_string_interpolation_message() -> &'static str {
 
 fn unsupported_heredoc_message() -> &'static str {
     "unsupported heredoc/nowdoc string syntax: only unindented identifier labels are implemented; indentation stripping, label expressions, and malformed labels are not implemented"
-}
-
-fn unsupported_short_echo_tag_message() -> &'static str {
-    "unsupported short echo tag: <?= is not implemented; use <?php echo ... ?> in the current subset"
 }
 
 fn unsupported_backtick_operator_message() -> &'static str {

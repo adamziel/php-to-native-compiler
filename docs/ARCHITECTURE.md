@@ -1028,9 +1028,10 @@ When the lexer sees `?>`, it emits the intervening inline HTML up to the next
 PHP open tag as a token consumed by the parser into an echo statement. The
 current slice consumes one immediate newline after `?>`, matching PHP's common
 close-tag newline behavior for the covered fixtures. Short echo open tags
-such as `<?= $value ?>` stop in lexing with a dedicated unsupported diagnostic
-until the lexer/parser can expand them into echo statements with correct source
-mapping, inline-HTML interaction, and native rejection behavior.
+such as `<?= $value ?>` are expanded directly to the same lexer `Echo` token
+used by `<?php echo`, so parser/runtime execution and narrow native lowering
+reuse the existing echo statement boundary. Short open tags `<?` remain a
+separate unsupported syntax boundary.
 Backtick shell execution expressions such as `` `whoami` `` also stop in
 lexing with a dedicated unsupported diagnostic until command-string
 interpolation, process execution, stdout capture, platform error behavior,
