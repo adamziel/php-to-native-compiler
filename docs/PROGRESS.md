@@ -1,5 +1,24 @@
 # Progress Log
 
+## 2026-06-08
+
+Implemented:
+
+- Repaired the assigned `php_runtime` global-suite failure lane without
+  changing production runtime semantics. The test-only
+  `NativeCallArgumentsHandle` free counter is now isolated per Rust test thread
+  instead of sharing one process-global atomic, with a guard proving the
+  counter is thread-local. Stale runtime expectations were also refreshed to
+  match already-implemented byte-backed native PHP strings, string-offset
+  truncation warnings, current core class/reflection metadata, and typed
+  static-property reference diagnostics. Focused checks passed:
+  `cargo test -q -p php_runtime native_ --lib`,
+  `cargo test -q -p php_runtime --lib`,
+  `cargo check -q -p php_runtime`,
+  `cargo fmt -q -p php_runtime --check`, and `git diff --check --cached`.
+  No PHP support-matrix behavior changed, and unsupported runtime/native
+  edges remain as previously documented.
+
 ## 2026-06-07
 
 Implemented:
