@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-07T21:23:24+00:00
+Last generated: 2026-06-07T21:38:25+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -13,7 +13,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | --- | --- | --- | --- | --- |
 | auditor-1 | Auditor | stopped | auditor-1 |  |
 | auditor-10 | Auditor | crash | auditor-10 |  |
-| auditor-11 | Auditor | running | auditor-11 |  |
+| auditor-11 | Auditor | crash | auditor-11 |  |
 | auditor-2 | Auditor | crash | auditor-2 |  |
 | auditor-3 | Auditor | stopped | auditor-3 |  |
 | auditor-4 | Auditor | stopped | auditor-4 |  |
@@ -53,7 +53,9 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-29 | Coordinator | crash | coordinator-29 |  |
 | coordinator-3 | Coordinator | crash | coordinator-3 |  |
 | coordinator-30 | Coordinator | crash | coordinator-30 |  |
-| coordinator-31 | Coordinator | running | coordinator-31 |  |
+| coordinator-31 | Coordinator | crash | coordinator-31 |  |
+| coordinator-32 | Coordinator | crash | coordinator-32 |  |
+| coordinator-33 | Coordinator | running | coordinator-33 |  |
 | coordinator-4 | Coordinator | stopped | coordinator-4 |  |
 | coordinator-5 | Coordinator | stopped | coordinator-5 |  |
 | coordinator-6 | Coordinator | crash | coordinator-6 |  |
@@ -95,13 +97,20 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-128 | Developer | crash | developer-128 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-128 |
 | developer-129 | Developer | crash | developer-129 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-129 |
 | developer-13 | Developer | stopped | developer-13 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-13 |
-| developer-130 | Developer | running | developer-130 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-130 |
-| developer-131 | Developer | running | developer-131 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-131 |
-| developer-132 | Developer | running | developer-132 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-132 |
-| developer-133 | Developer | running | developer-133 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-133 |
-| developer-134 | Developer | running | developer-134 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-134 |
-| developer-135 | Developer | running | developer-135 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-135 |
+| developer-130 | Developer | crash | developer-130 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-130 |
+| developer-131 | Developer | crash | developer-131 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-131 |
+| developer-132 | Developer | crash | developer-132 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-132 |
+| developer-133 | Developer | crash | developer-133 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-133 |
+| developer-134 | Developer | crash | developer-134 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-134 |
+| developer-135 | Developer | crash | developer-135 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-135 |
+| developer-136 | Developer | running | developer-136 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-136 |
+| developer-137 | Developer | running | developer-137 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-137 |
+| developer-138 | Developer | running | developer-138 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-138 |
+| developer-139 | Developer | running | developer-139 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-139 |
 | developer-14 | Developer | stopped | developer-14 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-14 |
+| developer-140 | Developer | crash | developer-140 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-140 |
+| developer-141 | Developer | running | developer-141 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-141 |
+| developer-142 | Developer | running | developer-142 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-142 |
 | developer-15 | Developer | stopped | developer-15 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-15 |
 | developer-16 | Developer | stopped | developer-16 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-16 |
 | developer-17 | Developer | stopped | developer-17 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-17 |
@@ -207,36 +216,36 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1853 | Resolve integration failure for card #1808: Fix global test suite failures | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
+| 1852 | Resolve integration failure for card #140: Self-selected runtime builtin slice: similar_text() | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
+| 1851 | Maintain Developer capacity after worklane 140 | Developer | implementation | planned | queued |  | 0.0 |
+| 1850 | Assign next sanctioned Developer card after developer-136 completed worklane 1834 | Developer | implementation | development | assigned |  | 0.0 |
+| 1849 | Resolve integration failure for card #1834: Resolve integration failure for card #1828: Resolve integration failure for card #137: Self-selected bounded str_ireplace compatibility slice | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
+| 1848 | Assign next sanctioned Developer card after developer-140 completed capacity lane 1563 | Developer | implementation | planned | queued |  | 0.0 |
+| 1847 | Assign next sanctioned Developer card after developer-141 lane 1571 | Developer | implementation | planned | queued |  | 0.0 |
 | 1846 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
 | 1845 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
 | 1844 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
-| 1843 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
-| 1842 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
-| 1841 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
-| 1840 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
-| 1839 | Verify card 1808 gate fix readiness | Auditor | integration-support | planned | queued |  | 0.0 |
-| 1838 | Audit current php_runtime gate failure for card 1808 | Auditor | integration-support | development | assigned |  | 0.0 |
-| 1837 | Gate verifier for tools/run-tests.sh after php_runtime fix | Developer | implementation | planned | queued |  | 0.0 |
 
 ## Tests
 failed — tools/run-tests.sh (error=0, failed=1, passed=0, skipped=0)
 
 ## Resource samples
-Latest: CPU 14.48%, RAM 57.17%, disk free 98.38 GB.
+Latest: CPU 6.5%, RAM 56.68%, disk free 96.03 GB.
 
 ## Recent events
-- 2026-06-07T21:23:23+00:00 **terminal_agent_window_closed**: Closed terminal developer-96 tmux window
-- 2026-06-07T21:23:23+00:00 **terminal_agent_window_closed**: Closed terminal developer-97 tmux window
-- 2026-06-07T21:23:23+00:00 **terminal_agent_window_closed**: Closed terminal developer-98 tmux window
-- 2026-06-07T21:23:23+00:00 **terminal_agent_window_closed**: Closed terminal developer-99 tmux window
-- 2026-06-07T21:23:24+00:00 **terminal_agent_window_closed**: Closed terminal integrator-1 tmux window
-- 2026-06-07T21:23:24+00:00 **terminal_agent_window_closed**: Closed terminal integrator-2 tmux window
-- 2026-06-07T21:23:24+00:00 **terminal_agent_window_closed**: Closed terminal integrator-3 tmux window
-- 2026-06-07T21:23:24+00:00 **terminal_agent_window_closed**: Closed terminal integrator-4 tmux window
-- 2026-06-07T21:23:24+00:00 **terminal_agent_window_closed**: Closed terminal integrator-5 tmux window
-- 2026-06-07T21:23:24+00:00 **terminal_agent_window_closed**: Closed terminal integrator-6 tmux window
-- 2026-06-07T21:23:24+00:00 **terminal_agent_window_closed**: Closed terminal integrator-7 tmux window
-- 2026-06-07T21:23:24+00:00 **terminal_agent_window_closed**: Closed terminal integrator-8 tmux window
+- 2026-06-07T21:38:25+00:00 **terminal_agent_window_closed**: Closed terminal developer-115 tmux window
+- 2026-06-07T21:38:25+00:00 **terminal_agent_window_closed**: Closed terminal developer-116 tmux window
+- 2026-06-07T21:38:25+00:00 **terminal_agent_window_closed**: Closed terminal developer-117 tmux window
+- 2026-06-07T21:38:25+00:00 **terminal_agent_window_closed**: Closed terminal developer-118 tmux window
+- 2026-06-07T21:38:25+00:00 **terminal_agent_window_closed**: Closed terminal developer-119 tmux window
+- 2026-06-07T21:38:25+00:00 **terminal_agent_window_closed**: Closed terminal developer-12 tmux window
+- 2026-06-07T21:38:25+00:00 **terminal_agent_window_closed**: Closed terminal developer-120 tmux window
+- 2026-06-07T21:38:25+00:00 **terminal_agent_window_closed**: Closed terminal developer-121 tmux window
+- 2026-06-07T21:38:25+00:00 **terminal_agent_window_closed**: Closed terminal developer-122 tmux window
+- 2026-06-07T21:38:25+00:00 **terminal_agent_window_closed**: Closed terminal developer-123 tmux window
+- 2026-06-07T21:38:25+00:00 **terminal_agent_window_closed**: Closed terminal developer-124 tmux window
+- 2026-06-07T21:38:25+00:00 **terminal_agent_window_closed**: Closed terminal developer-125 tmux window
 
 ## Next steps
-Move next worklane forward: Investigate scheduler alert
+Move next worklane forward: Resolve integration failure for card #1808: Fix global test suite failures
