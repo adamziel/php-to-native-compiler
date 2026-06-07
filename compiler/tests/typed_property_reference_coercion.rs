@@ -26,7 +26,7 @@ var_dump($ref, $val);
 
 #[test]
 fn typed_property_reference_assignment_rejects_incompatible_writes() {
-    let error = run_source(
+    let execution = run_source(
         r#"<?php
 class Packet {
     public int $id;
@@ -38,12 +38,15 @@ $packet->id =& $ref;
 $ref = [];
 "#,
     )
-    .expect_err("array write through int typed property reference should fail");
+    .expect("array write through int typed property reference should produce a PHP fatal");
 
     assert!(
-        error
-            .to_string()
-            .contains("typed property Packet::$id expects int, got array"),
-        "unexpected error: {error}"
+        execution
+            .stdout
+            .contains("Cannot assign array to reference held by property Packet::$id of type int"),
+        "unexpected stdout: {}",
+        execution.stdout
     );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 255);
 }

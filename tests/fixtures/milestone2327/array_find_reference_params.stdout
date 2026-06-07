@@ -1,0 +1,23 @@
+fn:1:a
+int(1)
+closure:1:a
+string(1) "a"
+static-string:1:a
+int(1)
+static:1:a
+bool(true)
+object:3:z
+bool(true)
+bool(true)
+a,b|1,2
+find_ref(): Argument #1 ($value) must be passed by reference, value given
+find_ref(): Argument #2 ($key) must be passed by reference, value given
+{closure}(): Argument #1 ($value) must be passed by reference, value given
+{closure}(): Argument #2 ($key) must be passed by reference, value given
+RefChecker::staticFind(): Argument #1 ($value) must be passed by reference, value given
+RefChecker::staticFind(): Argument #2 ($key) must be passed by reference, value given
+RefChecker::staticAny(): Argument #1 ($value) must be passed by reference, value given
+RefChecker::staticAny(): Argument #2 ($key) must be passed by reference, value given
+RefChecker::instanceAll(): Argument #1 ($value) must be passed by reference, value given
+RefChecker::instanceAll(): Argument #2 ($key) must be passed by reference, value given
+sort(): Argument #1 ($array) must be passed by reference, value given

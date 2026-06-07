@@ -1,1 +1,1 @@
-Project-specific stable runtime diagnostic; system PHP throws a native DivisionByZeroError for modulo by zero.
+phpc run emits the PHP-shaped fatal on stdout in fixture mode; system PHP routes the native DivisionByZeroError to stderr.

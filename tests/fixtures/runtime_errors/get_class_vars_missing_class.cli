@@ -1,6 +1,9 @@
-exit: 1
+exit: 255
 stdout:
---- stdout end ---
+Fatal error: Uncaught TypeError: get_class_vars(): Argument #1 ($class) must be a valid class name, Missing given, called in tests/fixtures/runtime_errors/get_class_vars_missing_class.php:2
+Stack trace:
+#0 tests/fixtures/runtime_errors/get_class_vars_missing_class.php(2): get_class_vars()
+#1 {main}
+  thrown in tests/fixtures/runtime_errors/get_class_vars_missing_class.php on line 2--- stdout end ---
 stderr:
-runtime error at tests/fixtures/runtime_errors/get_class_vars_missing_class.php:2:10: unsupported call get_class_vars(): string argument must name a declared class in the current subset
 --- stderr end ---

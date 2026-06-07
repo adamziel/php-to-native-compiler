@@ -43,26 +43,24 @@ var_dump($value);
 
 #[test]
 fn shift_negative_count_has_stable_runtime_error() {
-    let error = run_source("<?php\necho 8 << -1;\n").unwrap_err();
+    let execution = run_source("<?php\necho 8 << -1;\n").unwrap();
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
-    assert_eq!(
-        error.message,
-        "invalid arithmetic for <<: bit shift by negative number"
-    );
+    assert!(execution
+        .stdout
+        .starts_with("Fatal error: Uncaught ArithmeticError: Bit shift by negative number"));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 255);
 }
 
 #[test]
 fn shift_non_numeric_string_has_stable_runtime_error() {
-    let error = run_source("<?php\necho \"abc\" >> 1;\n").unwrap_err();
+    let execution = run_source("<?php\necho \"abc\" >> 1;\n").unwrap();
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
-    assert_eq!(
-        error.message,
-        "invalid arithmetic for >>: string is not numeric"
-    );
+    assert!(execution
+        .stdout
+        .starts_with("Fatal error: Uncaught TypeError: Unsupported operand types: string >> int"));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 255);
 }
 
 #[test]

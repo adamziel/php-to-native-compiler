@@ -1,2 +1,1 @@
-runtime error at 7:15: unsupported class inheritance for Child: property Child::$name cannot reduce visibility of inherited public property Base::$name
-
+Fatal error: Access level to Child::$name must be public (as in class Base) in tests/fixtures/milestone658/property_override_visibility_reduction.php on line 6

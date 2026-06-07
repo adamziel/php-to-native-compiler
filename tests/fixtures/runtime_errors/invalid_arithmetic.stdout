@@ -1,0 +1,4 @@
+Fatal error: Uncaught DivisionByZeroError: Division by zero in tests/fixtures/runtime_errors/invalid_arithmetic.php:2
+Stack trace:
+#0 {main}
+  thrown in tests/fixtures/runtime_errors/invalid_arithmetic.php on line 2

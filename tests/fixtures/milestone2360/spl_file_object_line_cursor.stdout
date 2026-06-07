@@ -1,0 +1,7 @@
+<?php
+2:// beta
+3:// gamma
+bool(false)
+0=<?php
+1=// alpha
+caught:SplFileObject::seek(): Argument #1 ($line) must be greater than or equal to 0

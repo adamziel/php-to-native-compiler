@@ -4,12 +4,6 @@ use php_compiler::run_source;
 
 const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
 
-fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
-    let error = run_source(source).unwrap_err();
-    assert_eq!(error.phase, Phase::Runtime);
-    error
-}
-
 #[test]
 fn preg_match_executes_current_literal_pattern_subset() {
     let execution = run_source(
@@ -208,67 +202,114 @@ echo preg_match($insert, "delete from wp_options");
 }
 
 #[test]
-fn preg_match_rejects_forms_outside_current_subset() {
-    let output_args = runtime_error(
+fn preg_match_supports_direct_output_flags_offsets_and_regex_modifiers() {
+    let execution = run_source(
         r#"<?php
 $bag = [];
-preg_match('/wp/', 'wp-settings', $bag['matches']);
+echo preg_match('/wp/', 'wp-settings', $matches);
+echo "|", $matches[0], "\n";
+echo preg_match('/bar/', 'foo bar', $matches, 0, 4);
+echo "|", $matches[0], "\n";
+echo preg_match('/wp.*/', 'wp-settings');
+echo "|";
+echo preg_match('/wp/i', 'WP');
 "#,
-    );
-    assert_eq!(output_args.line, 3);
-    assert_eq!(output_args.column, 1);
-    assert_eq!(
-        output_args.message,
-        "unsupported call preg_match(): matches output must be a direct variable in the current subset"
-    );
+    )
+    .unwrap();
 
-    let flags_args = runtime_error(
-        r#"<?php
-preg_match('/wp/', 'wp-settings', $matches, 0);
-"#,
-    );
-    assert_eq!(flags_args.line, 2);
-    assert_eq!(flags_args.column, 1);
-    assert_eq!(
-        flags_args.message,
-        "unsupported call preg_match(): flags and offset arguments are not implemented; pass at most a direct matches variable in the current subset"
-    );
+    assert_eq!(execution.stdout, "1|wp\n1|bar\n1|1");
+    assert_eq!(execution.exit_code, 0);
+}
 
-    let unsupported_pattern = runtime_error(
+#[test]
+fn preg_match_handles_backtrack_offsets_utf8_and_trailing_unmatched_captures() {
+    let execution = run_source(
         r#"<?php
-preg_match('/wp.*/', 'wp-settings');
+ini_set('pcre.backtrack_limit', '1');
+var_dump(preg_match('/(?:\D+|<\d+>)*[!?]/', 'foobar foobar foobar'));
+var_dump(preg_last_error());
+var_dump(preg_match('/a/', 'a', $simple));
+var_dump(preg_last_error());
+var_dump($simple);
+var_dump(preg_match('/(?:a|b)*z/', 'aaaaa'));
+var_dump(preg_last_error());
+var_dump(preg_match('/^foo(?:a|b)*[z]/', 'aaaaa'));
+var_dump(preg_last_error());
+var_dump(preg_match('/(?:a+|b+)*[z]/', 'a'));
+var_dump(preg_last_error());
+var_dump(preg_match('/(?:a+|b+)*[z]/', 'ab'));
+var_dump(preg_last_error());
+var_dump(preg_match('/(?:a+|b+)*[z]/', 'az'));
+var_dump(preg_last_error());
+var_dump(preg_match('/^foo(?:a+|b+)*[z]/', 'fooa'));
+var_dump(preg_last_error());
+var_dump(preg_match('/(?:ab+|cd+)*[z]/', 'ab'));
+var_dump(preg_last_error());
+var_dump(preg_match('/(?:ab+|cd+)*[z]/', 'az', $later));
+var_dump(preg_last_error());
+var_dump($later[0]);
+var_dump(preg_match('/(?:ab+|cd+)*[z]/', 'acz', $later));
+var_dump(preg_last_error());
+var_dump($later[0]);
+var_dump(preg_match('/(?:ab+|cd+)*[z]/', 'a z', $later));
+var_dump(preg_last_error());
+var_dump($later[0]);
+var_dump(preg_match('/(?:ab+|cd+)*[z]/', 'xabz'));
+var_dump(preg_last_error());
+var_dump(preg_match('/foo(?:a+|b+)*[z]/', 'zfooa'));
+var_dump(preg_last_error());
+var_dump(preg_match('/foo(?:a+|b+)*[z]/', 'zzfooa'));
+var_dump(preg_last_error());
+var_dump(preg_match('/xfoo(?:a+|b+)*[z]/', 'zxfooa'));
+var_dump(preg_last_error());
+var_dump(preg_match('/foo(?:a+|b+)*[!?]/', 'zfooa!'));
+var_dump(preg_last_error());
+var_dump(preg_match('/(?:a|b)*[c]/', 'a'));
+var_dump(preg_last_error());
+var_dump(preg_match('/(?:a|b)*[c]/', 'd'));
+var_dump(preg_last_error());
+var_dump(preg_match('/(?:\D+|<\d+>)*[!?]/', '123'));
+var_dump(preg_last_error());
+var_dump(preg_match('/\S+/', 'foo bar', $matches, 0, 99999));
+var_dump(preg_last_error());
+var_dump(preg_match("/foo/i\r", 'FOO'));
+var_dump(preg_last_error());
+$text = json_decode('"\u2019"');
+$pattern = '/\b/u';
+var_dump(preg_match($pattern, $text, $matches, 0, 0));
+var_dump(preg_match($pattern, $text, $matches, 0, 1));
+var_dump(preg_last_error() == PREG_BAD_UTF8_OFFSET_ERROR);
+$text = "VA\xff"; $text .= "LID";
+var_dump(preg_match($pattern, $text, $matches, 0, 4));
+var_dump(preg_match($pattern, $text, $matches, 0, 0));
+var_dump(preg_last_error() == PREG_BAD_UTF8_ERROR);
+var_dump(preg_match('/(?P<size>\d+)m|M/', '4M', $m));
+var_dump($m);
 "#,
-    );
-    assert_eq!(unsupported_pattern.line, 2);
-    assert_eq!(unsupported_pattern.column, 1);
-    assert_eq!(
-        unsupported_pattern.message,
-        "unsupported call preg_match(): regex metacharacter * is not implemented in the current subset"
-    );
+    )
+    .unwrap();
 
-    let unsupported_modifier = runtime_error(
-        r#"<?php
-preg_match('/wp/i', 'WP');
-"#,
-    );
-    assert_eq!(unsupported_modifier.line, 2);
-    assert_eq!(unsupported_modifier.column, 1);
     assert_eq!(
-        unsupported_modifier.message,
-        "unsupported call preg_match(): only the u pattern modifier is implemented in the current subset"
+        execution.stdout,
+        "bool(false)\nint(2)\nint(1)\nint(0)\narray(1) {\n  [0]=>\n  string(1) \"a\"\n}\nint(0)\nint(0)\nint(0)\nint(0)\nint(0)\nint(0)\nint(0)\nint(0)\nbool(false)\nint(2)\nint(0)\nint(0)\nint(0)\nint(0)\nint(1)\nint(0)\nstring(1) \"z\"\nint(1)\nint(0)\nstring(1) \"z\"\nint(1)\nint(0)\nstring(1) \"z\"\nbool(false)\nint(2)\nint(0)\nint(0)\nint(0)\nint(0)\nint(0)\nint(0)\nbool(false)\nint(2)\nint(0)\nint(0)\nint(0)\nint(0)\nint(0)\nint(0)\nbool(false)\nint(1)\nint(1)\nint(0)\nint(0)\nbool(false)\nbool(true)\nint(1)\nbool(false)\nbool(true)\nint(1)\narray(1) {\n  [0]=>\n  string(1) \"M\"\n}\n"
     );
+    assert_eq!(execution.exit_code, 0);
+}
 
-    let array_subject = runtime_error(
+#[test]
+fn preg_match_ignores_line_breaks_after_pattern_delimiter() {
+    let execution = run_source(
         r#"<?php
-preg_match('/wp/', ['wp-settings']);
+var_dump(preg_match("/foo/i\r", 'FOO'));
+$pattern = hex2bin('2f5c583f3d3f223f3536ff3636ffffffff36a8a8a83636367a7a7a7a3d2aff2f0a');
+preg_match($pattern, $pattern);
+echo "DONE\n";
 "#,
-    );
-    assert_eq!(array_subject.line, 2);
-    assert_eq!(array_subject.column, 1);
-    assert_eq!(
-        array_subject.message,
-        "unsupported call preg_match(): subject argument arrays are not implemented in the current subset"
-    );
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "int(1)\nDONE\n");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

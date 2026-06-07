@@ -1,12 +1,6 @@
 use php_compiler::error::Phase;
 use php_compiler::{emit_ir_source, run_source};
 
-fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
-    let error = run_source(source).unwrap_err();
-    assert_eq!(error.phase, Phase::Runtime);
-    error
-}
-
 #[test]
 fn array_product_accumulates_supported_scalar_values() {
     let source = r#"<?php
@@ -37,15 +31,62 @@ echo $call($mixed);
 }
 
 #[test]
-fn array_product_requires_array_argument() {
-    let error = runtime_error("<?php\necho array_product(42);\n");
+fn array_product_consumes_64_bit_unsigned_sprintf_values() {
+    let execution = run_source(
+        r#"<?php
+var_dump(array_product([2, sprintf("%u", -1)]));
+var_dump(array_product([8.993, 7443241, 988, sprintf("%u", -1) + 0.44]));
+"#,
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
     assert_eq!(
-        error.message,
-        "unsupported call array_product(): argument must be array, got int"
+        execution.stdout,
+        "float(3.6893488147419103E+19)\nfloat(1.219953680144986E+30)\n"
     );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn array_product_non_arrays_raise_catchable_type_errors() {
+    let source = r#"<?php
+function check($label, $value) {
+    try {
+        var_dump(array_product($value));
+    } catch (TypeError $e) {
+        echo $label, ": ", $e->getMessage(), "\n";
+    }
+}
+
+check("null", null);
+check("int", 42);
+check("float", 1.25);
+check("string", "items");
+check("object", new stdClass());
+check("true", true);
+check("false", false);
+
+$call = "array_product";
+try {
+    $call(42);
+} catch (TypeError $e) {
+    echo "dynamic: ", $e->getMessage();
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "null: array_product(): Argument #1 ($array) must be of type array, null given\n\
+int: array_product(): Argument #1 ($array) must be of type array, int given\n\
+float: array_product(): Argument #1 ($array) must be of type array, float given\n\
+string: array_product(): Argument #1 ($array) must be of type array, string given\n\
+object: array_product(): Argument #1 ($array) must be of type array, stdClass given\n\
+true: array_product(): Argument #1 ($array) must be of type array, true given\n\
+false: array_product(): Argument #1 ($array) must be of type array, false given\n\
+dynamic: array_product(): Argument #1 ($array) must be of type array, int given"
+    );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

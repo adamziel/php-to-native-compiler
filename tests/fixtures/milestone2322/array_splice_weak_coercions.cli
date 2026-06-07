@@ -1,0 +1,10 @@
+exit: 0
+stdout:
+2|0,1,x,3
+0|x,1,2,3
+0,1,2,3|x
+0|0,9,1,2,3
+array_splice(): Argument #2 ($offset) must be of type int, array given
+array_splice(): Argument #3 ($length) must be of type ?int, array given--- stdout end ---
+stderr:
+--- stderr end ---

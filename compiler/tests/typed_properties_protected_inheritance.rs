@@ -37,7 +37,7 @@ class ChildBox extends ParentBox { protected string $value; }
 
     assert_eq!(
         stderr,
-        "Fatal error: Type of ChildBox::$value must not be defined (as in class ParentBox) in tests/type_declarations/typed_property_untyped_parent.php on line 3"
+        "Fatal error: Type of ChildBox::$value must be omitted to match the parent definition in class ParentBox in tests/type_declarations/typed_property_untyped_parent.php on line 3"
     );
 }
 
@@ -54,6 +54,29 @@ echo "ready";
     .expect("private parent property should not constrain child property type");
 
     assert_eq!(execution.stdout, "ready");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn iterable_alias_property_types_are_invariant_with_object_array_union() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+class A {
+    public object|iterable $x;
+    public object|array $y;
+}
+class B extends A {
+    public object|array $x;
+    public object|iterable $y;
+}
+echo "done";
+"#,
+        "Zend/tests/type_declarations/iterable/iterable_alias_redundancy_object_variance.php",
+    )
+    .expect("iterable alias should be invariant-compatible with object|array");
+
+    assert_eq!(execution.stdout, "done");
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
 }
