@@ -32,9 +32,13 @@ echo "array";
 
 $call = "register_shutdown_function";
 echo "|";
-$call(function () {
-    echo "not-now";
-});
+$tag = "closure";
+$call(function ($value) use ($tag) {
+    echo $tag, ":", $value, "\n";
+    register_shutdown_function(function () {
+        echo "closure:nested";
+    });
+}, "soon");
 echo "closure";
 echo "|body";
 "#,
@@ -43,7 +47,7 @@ echo "|body";
 
     assert_eq!(
         execution.stdout,
-        "string|array|closure|bodystring:late\narray:later\n"
+        "string|array|closure|bodystring:late\narray:later\nclosure:soon\nclosure:nested"
     );
     assert_eq!(execution.exit_code, 0);
 }

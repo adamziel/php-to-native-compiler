@@ -1,7 +1,10 @@
 use std::env;
 use std::fs;
+use std::io::{self, Write};
+use std::panic;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
+use std::thread;
 
 use php_compiler::codegen::{
     emit_assembly, emit_llvm_ir, emit_native_executable_c_source_for_include_units,
@@ -17,11 +20,30 @@ use php_compiler::test_runner::{
     TestSummary,
 };
 
+const CLI_THREAD_STACK_SIZE: usize = 256 * 1024 * 1024;
+
 fn main() -> ExitCode {
-    match real_main() {
+    let result = match thread::Builder::new()
+        .name("phpc-main".to_string())
+        .stack_size(CLI_THREAD_STACK_SIZE)
+        .spawn(real_main)
+    {
+        Ok(handle) => match handle.join() {
+            Ok(result) => result,
+            Err(payload) => panic::resume_unwind(payload),
+        },
+        Err(error) => Err(Diagnostic::new(
+            Phase::Cli,
+            0,
+            0,
+            format!("failed to start phpc main thread: {error}"),
+        )),
+    };
+
+    match result {
         Ok(code) => ExitCode::from(code),
         Err(error) => {
-            eprintln!("{error}");
+            eprintln!("{}", error.cli_display());
             ExitCode::from(1)
         }
     }
@@ -252,7 +274,9 @@ fn command_run(args: &[String]) -> CompileResult<u8> {
     let execution =
         run_program_with_source_file_and_options(&program, input.display().to_string(), options)
             .map_err(|error| error.with_file(&input))?;
-    print!("{}", execution.stdout);
+    io::stdout()
+        .write_all(&execution.stdout_bytes)
+        .map_err(|error| Diagnostic::new(Phase::Io, 0, 0, error.to_string()))?;
     eprint!("{}", execution.stderr);
     Ok(execution.exit_code as u8)
 }

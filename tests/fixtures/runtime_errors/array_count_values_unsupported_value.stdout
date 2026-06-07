@@ -1,0 +1,2 @@
+Warning: array_count_values(): Can only count string and integer values, entry skipped in tests/fixtures/runtime_errors/array_count_values_unsupported_value.php on line 3
+Array

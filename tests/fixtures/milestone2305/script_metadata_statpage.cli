@@ -1,0 +1,2 @@
+$ phpc run tests/fixtures/milestone2305/script_metadata_statpage.php
+lastmod|inode|uid|pid|gid|fn|0/0

@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone2360/spl_file_object_line_cursor.php

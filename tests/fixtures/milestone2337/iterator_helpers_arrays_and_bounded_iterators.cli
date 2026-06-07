@@ -1,0 +1,1 @@
+phpc run tests/fixtures/milestone2337/iterator_helpers_arrays_and_bounded_iterators.php

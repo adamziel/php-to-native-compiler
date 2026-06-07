@@ -1,0 +1,10 @@
+exit: 0
+stdout:
+syntax:1:b
+syntax:2:c
+syntax:3:invalid
+method:0:b
+method:1:c
+--- stdout end ---
+stderr:
+--- stderr end ---

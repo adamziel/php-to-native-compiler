@@ -1,7 +1,10 @@
-$ phpc run tests/fixtures/milestone1685/non_direct_holder_property_held_arrayaccess_exact_append_offsetset_empty_key_reference_slot_cow.php
+exit: 0
 stdout:
-via-non-direct-empty-key|via-non-direct-empty-label|via-non-direct-empty-key|via-non-direct-empty-label|1|plain|plain
---- stdout end ---
+Deprecated: Using null as an array offset is deprecated, use an empty string instead in tests/fixtures/milestone1685/non_direct_holder_property_held_arrayaccess_exact_append_offsetset_empty_key_reference_slot_cow.php on line 17
+
+Deprecated: Using null as an array offset is deprecated, use an empty string instead in tests/fixtures/milestone1685/non_direct_holder_property_held_arrayaccess_exact_append_offsetset_empty_key_reference_slot_cow.php on line 12
+
+Deprecated: Using null as an array offset is deprecated, use an empty string instead in tests/fixtures/milestone1685/non_direct_holder_property_held_arrayaccess_exact_append_offsetset_empty_key_reference_slot_cow.php on line 12
+via-non-direct-empty-key|via-non-direct-empty-label|via-non-direct-empty-key|via-non-direct-empty-label|1|plain|plain--- stdout end ---
 stderr:
 --- stderr end ---
-exit: 0

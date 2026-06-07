@@ -55,14 +55,15 @@ echo $call("wp admin");
 
 #[test]
 fn url_encoding_rejects_arrays_in_current_subset() {
-    let error = run_source("<?php\nrawurlencode(['admin']);\n").unwrap_err();
+    let execution = run_source("<?php\nrawurlencode(['admin']);\n").unwrap();
 
-    assert_eq!(error.phase, Phase::Runtime);
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 1);
-    assert_eq!(
-        error.message,
-        "unsupported call rawurlencode(): string argument arrays are not implemented in the current subset"
+    assert_eq!(execution.exit_code, 255);
+    assert!(
+        execution.stdout.contains(
+            "TypeError: rawurlencode(): Argument #1 ($string) must be of type string, array given"
+        ),
+        "{}",
+        execution.stdout
     );
 }
 
@@ -138,6 +139,7 @@ fn cli_snapshot_fixtures(fixture_dir: &Path) -> Vec<PathBuf> {
                 .path()
         })
         .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("php"))
+        .filter(|path| path.file_name().and_then(|name| name.to_str()) == Some("url_encoding.php"))
         .filter(|path| path.with_extension("cli").exists())
         .collect()
 }

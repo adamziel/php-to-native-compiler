@@ -4,6 +4,8 @@ a+b%7E%2B
 a%20b~%2B
 a b+~
 a+b+~
-ff20--- stdout end ---
+%zz%
+ff20
+00202b--- stdout end ---
 stderr:
 --- stderr end ---

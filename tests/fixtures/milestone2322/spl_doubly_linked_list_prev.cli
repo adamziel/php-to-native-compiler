@@ -1,0 +1,10 @@
+$ phpc run tests/fixtures/milestone2322/spl_doubly_linked_list_prev.php
+NULL
+int(1)
+int(2)
+int(4)
+int(3)
+int(4)
+int(3)
+int(4)
+NULL

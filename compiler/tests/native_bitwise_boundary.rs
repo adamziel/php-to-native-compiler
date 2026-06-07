@@ -64,9 +64,9 @@ echo $not, "z";
         "tracked single-result integer bitwise XOR should fold:\n{ir}"
     );
     assert!(!ir.contains("xor i64 3, -1"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 0)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 11)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 -4)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 0)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 11)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 -4)"), "{ir}");
 }
 
 #[test]
@@ -105,8 +105,8 @@ echo $xor + $not;
         !ir.contains("add i64 %tmp1, -4"),
         "tracked single-result integer arithmetic should fold after bitwise XOR:\n{ir}"
     );
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 5)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 4)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 5)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 4)"), "{ir}");
 }
 
 #[test]
@@ -131,7 +131,7 @@ echo $expr;
         !ir.contains("xor i64 %tmp0, -1"),
         "single known integer expression bitwise-not should fold to the known result:\n{ir}"
     );
-    assert_eq!(ir.matches("@printf(ptr @.fmt_int, i64 -4)").count(), 2);
+    assert_eq!(ir.matches("@phpc_native_int(i64 -4)").count(), 2);
 }
 
 #[test]
@@ -158,7 +158,7 @@ echo $same;
         !ir.contains("xor i64 %tmp1, -1"),
         "double bitwise-not should not emit the second redundant invert:\n{ir}"
     );
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 %tmp0)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 %tmp0)"), "{ir}");
 }
 
 #[test]
@@ -168,8 +168,8 @@ fn emit_ir_folds_single_known_integer_bitwise_xor_all_ones() {
 $value = 6 + 2;
 $all_ones = 0 - 1;
 
-echo 5 ^ -1, "\n";
-echo -1 ^ 7, "\n";
+echo 5 ^ $all_ones, "\n";
+echo $all_ones ^ 7, "\n";
 echo ($value ^ $all_ones) + 0;
 "#,
     )
@@ -178,12 +178,12 @@ echo ($value ^ $all_ones) + 0;
     assert!(ir.contains("%tmp0 = add i64 6, 2"), "{ir}");
     assert!(ir.contains("%tmp1 = sub i64 0, 1"), "{ir}");
     assert!(
-        !ir.contains("xor i64 5, -1"),
-        "literal right all-ones XOR should fold to the known integer result:\n{ir}"
+        !ir.contains("xor i64 5, %tmp1"),
+        "right all-ones XOR should fold to the known integer result:\n{ir}"
     );
     assert!(
-        !ir.contains("xor i64 -1, 7"),
-        "literal left all-ones XOR should fold to the known integer result:\n{ir}"
+        !ir.contains("xor i64 %tmp1, 7"),
+        "left all-ones XOR should fold to the known integer result:\n{ir}"
     );
     assert!(
         !ir.contains("xor i64 %tmp0, %tmp1"),
@@ -193,9 +193,9 @@ echo ($value ^ $all_ones) + 0;
         !ir.contains("add i64 -9, 0"),
         "known XOR-all-ones result should fold through later addition:\n{ir}"
     );
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 -6)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 -8)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 -9)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 -6)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 -8)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 -9)"), "{ir}");
 }
 
 #[test]
@@ -234,8 +234,8 @@ echo $same_xor + 5;
         !ir.contains("add i64 0, 5"),
         "later literal additive identity should fold after identical xor to zero:\n{ir}"
     );
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 5)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 16)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 5)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 16)"), "{ir}");
 }
 
 #[test]
@@ -265,12 +265,8 @@ echo $value ^ $value;
             "untracked identical integer bitwise operation should fold `{redundant}`:\n{ir}"
         );
     }
-    assert_eq!(
-        ir.matches("@printf(ptr @.fmt_int, i64 %tmp0)").count(),
-        2,
-        "{ir}"
-    );
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 0)"), "{ir}");
+    assert_eq!(ir.matches("@phpc_native_int(i64 %tmp0)").count(), 2, "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 0)"), "{ir}");
 }
 
 #[test]
@@ -309,10 +305,7 @@ echo $or_right + $or_left + $xor_right + $xor_left;
         !ir.contains("add i64 %tmp0, %tmp0"),
         "known tracked zero-identity bitwise results should fold through later addition:\n{ir}"
     );
-    assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 32)"),
-        "{ir}"
-    );
+    assert!(ir.contains("@phpc_native_int(i64 32)"), "{ir}");
 }
 
 #[test]
@@ -320,9 +313,10 @@ fn emit_ir_folds_untracked_integer_expression_bitwise_identities() {
     let ir = emit_ir_source(
         r#"<?php
 $value = 4 << 62;
+$all_ones = 0 - 1;
 
-echo ($value & -1), "\n";
-echo (-1 & $value), "\n";
+echo ($value & $all_ones), "\n";
+echo ($all_ones & $value), "\n";
 echo ($value | 0), "\n";
 echo (0 | $value), "\n";
 echo ($value ^ 0), "\n";
@@ -337,9 +331,10 @@ echo 0 & $value;
         ir.contains("%tmp0 = shl i64 4, 62"),
         "overflow-sensitive left shift should stay emitted and untracked:\n{ir}"
     );
+    assert!(ir.contains("%tmp1 = sub i64 0, 1"), "{ir}");
     for redundant in [
-        "and i64 %tmp0, -1",
-        "and i64 -1, %tmp0",
+        "and i64 %tmp0, %tmp1",
+        "and i64 %tmp1, %tmp0",
         "or i64 %tmp0, 0",
         "or i64 0, %tmp0",
         "xor i64 %tmp0, 0",
@@ -352,16 +347,8 @@ echo 0 & $value;
             "untracked integer bitwise identity should fold `{redundant}`:\n{ir}"
         );
     }
-    assert_eq!(
-        ir.matches("@printf(ptr @.fmt_int, i64 %tmp0)").count(),
-        6,
-        "{ir}"
-    );
-    assert_eq!(
-        ir.matches("@printf(ptr @.fmt_int, i64 0)").count(),
-        2,
-        "{ir}"
-    );
+    assert_eq!(ir.matches("@phpc_native_int(i64 %tmp0)").count(), 6, "{ir}");
+    assert_eq!(ir.matches("@phpc_native_int(i64 0)").count(), 2, "{ir}");
 }
 
 #[test]
@@ -392,10 +379,7 @@ echo $and_right + $and_left;
         !ir.contains("add i64 %tmp0, %tmp0"),
         "known tracked all-ones identity bitwise results should fold through later addition:\n{ir}"
     );
-    assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 16)"),
-        "{ir}"
-    );
+    assert!(ir.contains("@phpc_native_int(i64 16)"), "{ir}");
 }
 
 #[test]
@@ -431,11 +415,7 @@ echo 0 + $or_left;
         !ir.contains("add i64 0, -1"),
         "known OR-all-ones result should fold through later addition:\n{ir}"
     );
-    assert_eq!(
-        ir.matches("@printf(ptr @.fmt_int, i64 -1)").count(),
-        2,
-        "{ir}"
-    );
+    assert_eq!(ir.matches("@phpc_native_int(i64 -1)").count(), 2, "{ir}");
 }
 
 #[test]
@@ -468,8 +448,8 @@ echo $and_right + 5, "\n", $and_left + 7;
         !ir.contains("add i64 0, 7"),
         "later literal additive identity should fold after bitwise AND zero:\n{ir}"
     );
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 5)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 7)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 5)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 7)"), "{ir}");
 }
 
 #[test]
@@ -512,18 +492,9 @@ echo $left & $right;
         !ir.contains("xor i64 %tmp0, 5"),
         "tracked single-result integer bitwise XOR should fold:\n{ir}"
     );
-    assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 0)"),
-        "{ir}"
-    );
-    assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 9)"),
-        "{ir}"
-    );
-    assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 13)"),
-        "{ir}"
-    );
+    assert!(ir.contains("@phpc_native_int(i64 0)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 9)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 13)"), "{ir}");
     assert!(
         ir.contains("and i64 6, 3"),
         "literal-only integer bitwise should still be emitted:\n{ir}"
@@ -575,18 +546,9 @@ echo $amb_left & $amb_right;
         !ir.contains("xor i64 %tmp2, %tmp3"),
         "tracked-expression integer bitwise XOR should fold when the result is known:\n{ir}"
     );
-    assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 0)"),
-        "{ir}"
-    );
-    assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 13)"),
-        "{ir}"
-    );
-    assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 15)"),
-        "{ir}"
-    );
+    assert!(ir.contains("@phpc_native_int(i64 0)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 13)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 15)"), "{ir}");
     assert!(
         ir.contains("and i64 6, 3"),
         "literal-only integer bitwise should still be emitted:\n{ir}"
@@ -606,8 +568,9 @@ $same_or = 6 | 6;
 $same_xor = 7 ^ 7;
 $and_zero_right = 8 & 0;
 $and_zero_left = 0 & 9;
-$and_all_ones_right = 10 & -1;
-$and_all_ones_left = -1 & 11;
+$all_ones = 0 - 1;
+$and_all_ones_right = 10 & $all_ones;
+$and_all_ones_left = $all_ones & 11;
 $or_zero_right = 12 | 0;
 $or_zero_left = 0 | 13;
 $xor_zero_right = 14 ^ 0;
@@ -634,8 +597,8 @@ echo $xor_zero_left;
         "xor i64 7, 7",
         "and i64 8, 0",
         "and i64 0, 9",
-        "and i64 10, -1",
-        "and i64 -1, 11",
+        "and i64 10, %tmp0",
+        "and i64 %tmp0, 11",
         "or i64 12, 0",
         "or i64 0, 13",
         "xor i64 14, 0",
@@ -646,15 +609,15 @@ echo $xor_zero_left;
             "integer literal bitwise identity should fold `{redundant}`:\n{ir}"
         );
     }
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 5)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 6)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 0)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 10)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 11)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 12)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 13)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 14)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 15)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 5)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 6)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 0)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 10)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 11)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 12)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 13)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 14)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 15)"), "{ir}");
 }
 
 #[test]
@@ -682,8 +645,8 @@ echo $flipped + 20;
     assert!(ir.contains("%tmp5 = xor i64 %tmp3, -1"), "{ir}");
     assert!(ir.contains("%tmp6 = add i64 %tmp4, 10"), "{ir}");
     assert!(ir.contains(" = add i64 %tmp5, 20"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 %tmp6)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 %tmp13)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 %tmp6)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 %tmp20)"), "{ir}");
 }
 
 #[test]
@@ -691,7 +654,7 @@ fn emit_ir_lowers_integer_shifts_with_static_safe_counts() {
     let ir = emit_ir_source(
         r#"<?php
 $left = 6 + 2;
-$negative = -8;
+$negative = 0 - 8;
 $shift_left = $left << 2;
 $shift_right = $left >> 1;
 $shift_negative = $negative >> 1;
@@ -704,7 +667,7 @@ echo $shift_negative, "z";
     .unwrap();
 
     assert!(ir.contains("%tmp0 = add i64 6, 2"), "{ir}");
-    assert!(!ir.contains("sub i64 0, 8"), "{ir}");
+    assert!(ir.contains("%tmp1 = sub i64 0, 8"), "{ir}");
     assert!(
         !ir.contains("shl i64 %tmp0, 2"),
         "tracked single-result integer left shift should fold:\n{ir}"
@@ -713,10 +676,9 @@ echo $shift_negative, "z";
         !ir.contains("ashr i64 %tmp0, 1"),
         "tracked single-result integer right shift should fold:\n{ir}"
     );
-    assert!(ir.contains("%tmp1 = ashr i64 -8, 1"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 32)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 4)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 %tmp1)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 32)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 4)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 -4)"), "{ir}");
 }
 
 #[test]
@@ -745,10 +707,7 @@ echo $shift_left + $shift_right;
         !ir.contains("add i64 %tmp0, %tmp0"),
         "known tracked shift-by-zero results should fold through later addition:\n{ir}"
     );
-    assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 16)"),
-        "{ir}"
-    );
+    assert!(ir.contains("@phpc_native_int(i64 16)"), "{ir}");
 }
 
 #[test]
@@ -772,8 +731,8 @@ echo $right;
         !ir.contains("ashr i64 9, 0"),
         "integer literal right shift by zero should reuse the literal:\n{ir}"
     );
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 8)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 9)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 8)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 9)"), "{ir}");
 }
 
 #[test]
@@ -800,11 +759,7 @@ echo $value >> 0;
         !ir.contains("ashr i64 %tmp0, 0"),
         "untracked integer expression right shift by zero should reuse the expression:\n{ir}"
     );
-    assert_eq!(
-        ir.matches("@printf(ptr @.fmt_int, i64 %tmp0)").count(),
-        2,
-        "{ir}"
-    );
+    assert_eq!(ir.matches("@phpc_native_int(i64 %tmp0)").count(), 2, "{ir}");
 }
 
 #[test]
@@ -847,14 +802,8 @@ echo $bounded << 1;
         ir.contains("shl i64 %tmp"),
         "non-single tracked integer shift should stay emitted:\n{ir}"
     );
-    assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 32)"),
-        "{ir}"
-    );
-    assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 4)"),
-        "{ir}"
-    );
+    assert!(ir.contains("@phpc_native_int(i64 32)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 4)"), "{ir}");
 }
 
 #[test]
@@ -885,14 +834,8 @@ echo 8 << $count;
         ir.contains("shl i64 8, 2"),
         "literal left operand should still emit with the proven static count:\n{ir}"
     );
-    assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 32)"),
-        "{ir}"
-    );
-    assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 2)"),
-        "{ir}"
-    );
+    assert!(ir.contains("@phpc_native_int(i64 32)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 2)"), "{ir}");
 }
 
 #[test]
@@ -919,7 +862,7 @@ fn emit_ir_tracks_safe_integer_shift_results_for_later_arithmetic() {
 $left = 6 + 2;
 $shift_left = $left << 2;
 $shift_right = $shift_left >> 3;
-$negative = -8;
+$negative = 0 - 8;
 $shift_negative = $negative >> 1;
 
 echo $shift_left + 5, "\n";
@@ -933,16 +876,15 @@ echo $shift_right + $shift_negative;
         !ir.contains("shl i64 %tmp0, 2"),
         "tracked single-result integer left shift should fold:\n{ir}"
     );
-    assert!(ir.contains("%tmp1 = ashr i64 32, 3"), "{ir}");
-    assert!(!ir.contains("sub i64 0, 8"), "{ir}");
-    assert!(ir.contains("%tmp2 = ashr i64 -8, 1"), "{ir}");
+    assert!(ir.contains("ashr i64 32, 3"), "{ir}");
+    assert!(ir.contains("sub i64 0, 8"), "{ir}");
     assert!(ir.contains("%tmp3 = add i64 32, 5"), "{ir}");
     assert!(
         !ir.contains("add i64 %tmp1, %tmp2"),
         "known tracked shift results should fold through later addition:\n{ir}"
     );
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 %tmp3)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 0)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 %tmp3)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 0)"), "{ir}");
 }
 
 #[test]
@@ -953,7 +895,7 @@ $seed = 1 + 2;
 $flag = $seed === 3;
 $value = $flag ? 5 : 6;
 $shifted = $value << 1;
-$negated = -$value;
+$negated = 0 - $value;
 
 echo $shifted + $negated;
 "#,
@@ -966,7 +908,7 @@ echo $shifted + $negated;
     assert!(ir.contains("%tmp3 = shl i64 %tmp2, 1"), "{ir}");
     assert!(ir.contains("%tmp4 = sub i64 0, %tmp2"), "{ir}");
     assert!(ir.contains("%tmp5 = add i64 %tmp3, %tmp4"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 %tmp5)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 %tmp5)"), "{ir}");
 }
 
 #[test]

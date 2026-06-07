@@ -72,6 +72,12 @@ $row = fgetcsv($memory, 1024, "-", "-", escape: "\\");
 echo $row[0] . ":" . $row[1] . ":" . $row[2] . ":" . ftell($memory) . "\n";
 var_dump(fgetcsv($memory));
 fclose($memory);
+$escaped = fopen("php://memory", "w+");
+fwrite($escaped, "\"a\\\"b\",tail\n");
+rewind($escaped);
+$row = fgetcsv($escaped, 0, ",", "\"", escape: "\\");
+echo $row[0] . ":" . $row[1] . ":" . ftell($escaped) . "\n";
+fclose($escaped);
 $path = {path};
 file_put_contents($path, "^alpha^ ^beta^\n");
 $file = fopen($path, "r");
@@ -94,7 +100,53 @@ unlink($path);
             "water=fruit::30\n",
             "water-fruit:air::52\n",
             "bool(false)\n",
+            "a\\\"b:tail:12\n",
             "alpha:beta:15\n",
+        )
+    );
+}
+
+#[test]
+fn fgetcsv_preserves_escaped_enclosures_and_multiline_fields() {
+    let fixture = TempFsFixture::new("csv-multiline-reads");
+    let path = php_string(&fixture.root.join("records.csv"));
+    let source = format!(
+        r#"<?php
+$memory = fopen("php://memory", "w+");
+fwrite($memory, '"aaa",   "bbb"' . "\n");
+fwrite($memory, '"\\"","tail"' . "\n");
+fwrite($memory, '"line1' . "\n" . 'line2",done' . "\n");
+rewind($memory);
+$row = fgetcsv($memory, 1024, ",", "\"", escape: "\\");
+echo $row[0] . ":" . $row[1] . ":" . ftell($memory) . "\n";
+$row = fgetcsv($memory, 1024, ",", "\"", escape: "\\");
+echo strlen($row[0]) . ":" . $row[0] . ":" . $row[1] . ":" . ftell($memory) . "\n";
+$row = fgetcsv($memory, 1024, ",", "\"", escape: "");
+echo $row[0] . "|" . $row[1] . "|" . ftell($memory) . "\n";
+fclose($memory);
+$path = {path};
+file_put_contents($path, '"water"\\"fruit"\\"""""' . "\n" . "This is line of text without csv fields\n\n");
+$file = fopen($path, "r");
+$row = fgetcsv($file, 1024, "\\", "\"", escape: "\\");
+echo count($row) . ":" . $row[0] . ":" . $row[1] . ":" . strlen($row[2]) . ":" . ftell($file) . ":" . (feof($file) ? "eof" : "more") . "\n";
+fclose($file);
+unlink($path);
+"#,
+        path = path
+    );
+
+    let execution = run_source(&source).unwrap();
+
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "aaa:bbb:15\n",
+            "2:\\\":tail:27\n",
+            "line1\n",
+            "line2|done|46\n",
+            "3:water:fruit:44:63:eof\n",
         )
     );
 }

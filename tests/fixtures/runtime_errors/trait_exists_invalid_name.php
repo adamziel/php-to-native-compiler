@@ -1,2 +1,2 @@
 <?php
-var_dump(trait_exists(42));
+var_dump(trait_exists([]));

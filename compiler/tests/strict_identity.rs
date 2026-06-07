@@ -113,9 +113,12 @@ echo $sum === 3;
 
     assert!(ir.contains("%tmp0 = add i64 1, 2"), "{ir}");
     assert!(ir.contains("%tmp1 = icmp eq i64 %tmp0, 3"), "{ir}");
-    assert!(ir.contains("select i1 %tmp1"), "{ir}");
     assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_str"),
+        ir.contains("call %phpc.NativeScalarValue @phpc_native_bool(i1 %tmp1)"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"),
         "{ir}"
     );
 }
@@ -138,5 +141,12 @@ echo $maybe === true;
     assert!(ir.contains("%tmp2 = select i1 %tmp1, i64 3, i64 4"), "{ir}");
     assert!(ir.contains("%tmp3 = icmp eq i64 %tmp0, %tmp2"), "{ir}");
     assert!(!ir.contains("icmp eq i1 %tmp3, true"), "{ir}");
-    assert!(ir.contains("select i1 %tmp3"), "{ir}");
+    assert!(
+        ir.contains("call %phpc.NativeScalarValue @phpc_native_bool(i1 %tmp3)"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"),
+        "{ir}"
+    );
 }

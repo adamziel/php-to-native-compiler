@@ -1,0 +1,1 @@
+phpc-only: bounded stream_context_set_params() callback validation differs from the current system PHP comparison baseline for string callback names.

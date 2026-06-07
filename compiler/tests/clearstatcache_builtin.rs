@@ -56,7 +56,7 @@ echo filesize(__FILE__) > 0 ? "size-positive" : "size-empty";
 }
 
 #[test]
-fn clearstatcache_invalidates_bounded_filesize_stat_cache_by_path() {
+fn local_writes_invalidate_bounded_filesize_stat_cache_for_link_aliases() {
     let path = std::env::temp_dir().join(format!(
         "phpc-stat-cache-{}-{}.txt",
         std::process::id(),
@@ -65,24 +65,31 @@ fn clearstatcache_invalidates_bounded_filesize_stat_cache_by_path() {
             .expect("system clock is after Unix epoch")
             .as_nanos()
     ));
+    let alias_path = path.with_extension("alias.txt");
     let path_string = path
         .to_str()
         .expect("temporary stat-cache fixture path is UTF-8");
+    let alias_path_string = alias_path
+        .to_str()
+        .expect("temporary stat-cache alias path is UTF-8");
     let path_literal = php_single_quoted(path_string);
+    let alias_path_literal = php_single_quoted(alias_path_string);
     let source = format!(
         r#"<?php
 $path = '{path_literal}';
+$alias = '{alias_path_literal}';
 $h = fopen($path, "w");
 fwrite($h, "abc");
 fclose($h);
+link($path, $alias);
 $first = filesize($path);
-$h = fopen($path, "w");
+$h = fopen($alias, "w");
 fwrite($h, "abcdef");
 fclose($h);
 $cached = filesize($path);
 clearstatcache(false, $path);
 $cleared = filesize($path);
-$h = fopen($path, "w");
+$h = fopen($alias, "w");
 fwrite($h, "abcdefghi");
 fclose($h);
 $cached_again = filesize($path);
@@ -102,8 +109,9 @@ echo $cleared_all;
 
     let execution = run_source_with_source_file(&source, fixture_source_file()).unwrap();
     let _ = std::fs::remove_file(path);
+    let _ = std::fs::remove_file(alias_path);
 
-    assert_eq!(execution.stdout, "3|3|6|6|9");
+    assert_eq!(execution.stdout, "3|6|6|9|9");
     assert_eq!(execution.exit_code, 0);
 }
 

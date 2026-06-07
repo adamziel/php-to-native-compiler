@@ -50,7 +50,7 @@ fn emit_ir_routes_non_integer_modulo_coercion_through_value_result_boundary() {
 }
 
 #[test]
-fn emit_ir_lowers_static_primitive_scalar_coercion_arithmetic() {
+fn emit_ir_lowers_static_scalar_binary_coercion_and_routes_string_unary_coercion() {
     let ir = emit_ir_source(
         r#"<?php
 echo true * 4, "\n";
@@ -62,15 +62,18 @@ echo -"3";
     )
     .unwrap();
 
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 4)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 2)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 6)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_float, double 3.5)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 -3)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 4)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 2)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 6)"), "{ir}");
+    assert!(ir.contains("@phpc_native_float(double 3.5)"), "{ir}");
+    assert!(
+        ir.contains("@phpc_native_conversion_source_numeric_unary"),
+        "string unary coercion should route through the native conversion boundary:\n{ir}"
+    );
 }
 
 #[test]
-fn native_c_lowers_static_primitive_scalar_coercion_arithmetic() {
+fn native_c_routes_static_scalar_coercion_arithmetic_through_value_result_boundary() {
     let program = parse(
         r#"<?php
 echo true * 4, "\n";
@@ -85,18 +88,19 @@ echo -"3";
     let source = emit_native_executable_c_source(&program).unwrap();
 
     assert!(
-        !source.contains("phpc_native_value_binary_result"),
-        "primitive arithmetic should be resolved before the generic value-operation ABI:\n{source}"
+        source.contains("phpc_native_value_binary_result"),
+        "scalar coercion arithmetic should route through the generic value-operation ABI:\n{source}"
     );
     assert!(
-        !source.contains("phpc_native_value_unary_result"),
-        "primitive unary arithmetic should be resolved before the generic value-operation ABI:\n{source}"
+        source.contains("phpc_native_conversion_source_numeric_unary"),
+        "string unary negation should route through numeric conversion:\n{source}"
     );
-    assert!(source.contains("int_value = 4;"), "{source}");
-    assert!(source.contains("int_value = 2;"), "{source}");
-    assert!(source.contains("int_value = 6;"), "{source}");
-    assert!(source.contains("float_value = 3.5;"), "{source}");
-    assert!(source.contains("int_value = -3;"), "{source}");
+    assert!(source.contains("PHPC_NATIVE_VALUE_BINARY_MUL"), "{source}");
+    assert!(source.contains("PHPC_NATIVE_VALUE_BINARY_ADD"), "{source}");
+    assert!(
+        source.contains("diagnostic_result_report_stderr_echo_stdout"),
+        "{source}"
+    );
 }
 
 #[test]
@@ -133,7 +137,9 @@ echo -strrev("6");
         "{ir}"
     );
     assert!(
-        ir.contains("call %phpc.NativeValueOperationResult @phpc_native_value_unary_result"),
+        ir.contains(
+            "call %phpc.NativeConversionResult @phpc_native_conversion_source_numeric_unary"
+        ),
         "{ir}"
     );
     for tag in [0, 1, 2, 3, 4] {
@@ -159,8 +165,10 @@ echo -strrev("6");
         "operation-result errors should have a generated native failure edge:\n{ir}"
     );
     assert!(
-        ir.matches("call i64 @phpc_native_value_format_stdout_with_diagnostic")
-            .count()
+        ir.matches(
+            "call i64 @phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"
+        )
+        .count()
             >= 7,
         "{ir}"
     );
@@ -170,7 +178,6 @@ echo -strrev("6");
 fn emit_ir_rejects_integer_arithmetic_overflow_with_specific_boundary() {
     for source in [
         "<?php\necho 9223372036854775807 + 1;\n",
-        "<?php\necho -9223372036854775807 - 2;\n",
         "<?php\necho 3037000500 * 3037000500;\n",
     ] {
         let error = emit_ir_source(source).unwrap_err();
@@ -178,6 +185,14 @@ fn emit_ir_rejects_integer_arithmetic_overflow_with_specific_boundary() {
         assert_eq!(error.phase, Phase::Codegen);
         assert_eq!(error.message, LLVM_INTEGER_OVERFLOW_ARITHMETIC_REJECTION);
     }
+
+    let routed = emit_ir_source("<?php\necho -9223372036854775807 - 2;\n").unwrap();
+    assert!(
+        routed.contains("call %phpc.NativeValueOperationResult @phpc_native_value_binary_result"),
+        "{routed}"
+    );
+    assert!(routed.contains("i8 1"), "{routed}");
+    assert!(routed.contains("native_value_operation_error"), "{routed}");
 }
 
 #[test]
@@ -211,9 +226,9 @@ echo 3 * 2.5;
     )
     .unwrap();
 
-    assert!(ir.contains("@printf(ptr @.fmt_float, double 3.5)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_float, double 5.5)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_float, double 7.5)"), "{ir}");
+    assert!(ir.contains("@phpc_native_float(double 3.5)"), "{ir}");
+    assert!(ir.contains("@phpc_native_float(double 5.5)"), "{ir}");
+    assert!(ir.contains("@phpc_native_float(double 7.5)"), "{ir}");
 }
 
 #[test]
@@ -282,18 +297,9 @@ echo $a, "\n", $b, "\n", $c;
         "tracked single-result integer multiplication by a literal should fold:\n{ir}"
     );
     assert!(ir.contains("%tmp1 = sub i64 12, 5"), "{ir}");
-    assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 %tmp0)"),
-        "{ir}"
-    );
-    assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 12)"),
-        "{ir}"
-    );
-    assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 %tmp1)"),
-        "{ir}"
-    );
+    assert!(ir.contains("@phpc_native_int(i64 %tmp0)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 12)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 %tmp1)"), "{ir}");
 }
 
 #[test]
@@ -316,10 +322,7 @@ echo $same + 5;
         !ir.contains("add i64 0, 5"),
         "later literal additive identity should fold after subtraction to zero:\n{ir}"
     );
-    assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 5)"),
-        "{ir}"
-    );
+    assert!(ir.contains("@phpc_native_int(i64 5)"), "{ir}");
 }
 
 #[test]
@@ -342,8 +345,8 @@ echo $value - $value;
         !ir.contains("sub i64 %tmp0, %tmp0"),
         "untracked identical integer expression subtraction should fold to zero:\n{ir}"
     );
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 %tmp0)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 0)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 %tmp0)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 0)"), "{ir}");
 }
 
 #[test]
@@ -381,10 +384,7 @@ echo $plus_right + $plus_left + $minus_zero;
         !ir.contains("add i64 %tmp1, %tmp0"),
         "chained tracked integer expression addition should fold when the result is known:\n{ir}"
     );
-    assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 24)"),
-        "{ir}"
-    );
+    assert!(ir.contains("@phpc_native_int(i64 24)"), "{ir}");
 }
 
 #[test]
@@ -413,10 +413,7 @@ echo $times_right + $times_left;
         !ir.contains("add i64 %tmp0, %tmp0"),
         "tracked integer expression addition should fold when the result is known:\n{ir}"
     );
-    assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 16)"),
-        "{ir}"
-    );
+    assert!(ir.contains("@phpc_native_int(i64 16)"), "{ir}");
 }
 
 #[test]
@@ -449,8 +446,8 @@ echo $zero_right + 5, "\n", $zero_left + 7;
         !ir.contains("add i64 0, 7"),
         "later literal additive identity should fold after multiplication by zero:\n{ir}"
     );
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 5)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 7)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 5)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 7)"), "{ir}");
 }
 
 #[test]
@@ -488,16 +485,8 @@ echo 0 * $value;
             "untracked integer arithmetic identity should fold `{redundant}`:\n{ir}"
         );
     }
-    assert_eq!(
-        ir.matches("@printf(ptr @.fmt_int, i64 %tmp0)").count(),
-        5,
-        "{ir}"
-    );
-    assert_eq!(
-        ir.matches("@printf(ptr @.fmt_int, i64 0)").count(),
-        2,
-        "{ir}"
-    );
+    assert_eq!(ir.matches("@phpc_native_int(i64 %tmp0)").count(), 5, "{ir}");
+    assert_eq!(ir.matches("@phpc_native_int(i64 0)").count(), 2, "{ir}");
 }
 
 #[test]
@@ -534,14 +523,8 @@ echo $left + $right;
         !ir.contains("mul i64 %tmp0, 5"),
         "tracked single-result integer multiplication should fold:\n{ir}"
     );
-    assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 7)"),
-        "{ir}"
-    );
-    assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 15)"),
-        "{ir}"
-    );
+    assert!(ir.contains("@phpc_native_int(i64 7)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 15)"), "{ir}");
     assert!(
         ir.contains("add i64 1, 2"),
         "literal-only integer arithmetic should still be emitted:\n{ir}"
@@ -592,9 +575,9 @@ echo $amb_left + $amb_right;
         !ir.contains("mul i64 %tmp2, %tmp3"),
         "tracked-expression plus tracked-expression multiplication should fold:\n{ir}"
     );
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 12)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 6)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 30)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 12)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 6)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 30)"), "{ir}");
     assert!(
         ir.contains("add i64 %tmp5, %tmp6"),
         "ambiguous tracked-expression integer arithmetic should stay emitted:\n{ir}"
@@ -650,15 +633,15 @@ echo $float_times_left;
             "numeric literal identity should fold `{redundant}`:\n{ir}"
         );
     }
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 5)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 6)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 7)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 0)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 9)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 10)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_float, double 0.0)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_float, double 3.5)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_float, double 4.5)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 5)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 6)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 7)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 0)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 9)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 10)"), "{ir}");
+    assert!(ir.contains("@phpc_native_float(double 0.0)"), "{ir}");
+    assert!(ir.contains("@phpc_native_float(double 3.5)"), "{ir}");
+    assert!(ir.contains("@phpc_native_float(double 4.5)"), "{ir}");
 }
 
 #[test]
@@ -679,18 +662,9 @@ echo $a, "\n", $b, "\n", $c;
         "tracked single-result float multiplication by a literal should fold:\n{ir}"
     );
     assert!(ir.contains("%tmp1 = fsub double 9.375, 1.25"), "{ir}");
-    assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_float, double %tmp0)"),
-        "{ir}"
-    );
-    assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_float, double 9.375)"),
-        "{ir}"
-    );
-    assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_float, double %tmp1)"),
-        "{ir}"
-    );
+    assert!(ir.contains("@phpc_native_float(double %tmp0)"), "{ir}");
+    assert!(ir.contains("@phpc_native_float(double 9.375)"), "{ir}");
+    assert!(ir.contains("@phpc_native_float(double %tmp1)"), "{ir}");
 }
 
 #[test]
@@ -713,10 +687,7 @@ echo $same + 1.25;
         !ir.contains("fadd double 0.0, 1.25"),
         "nonzero float additive identity after subtraction-to-zero should fold:\n{ir}"
     );
-    assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_float, double 1.25)"),
-        "{ir}"
-    );
+    assert!(ir.contains("@phpc_native_float(double 1.25)"), "{ir}");
 }
 
 #[test]
@@ -745,10 +716,7 @@ echo $times_right + $times_left;
         !ir.contains("fadd double %tmp0, %tmp0"),
         "known tracked float identity results should fold through later nonzero addition:\n{ir}"
     );
-    assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_float, double 8.0)"),
-        "{ir}"
-    );
+    assert!(ir.contains("@phpc_native_float(double 8.0)"), "{ir}");
 }
 
 #[test]
@@ -807,14 +775,8 @@ echo 0.0 - $zero;
         !ir.contains("fsub double 0.0, 2.5"),
         "nonzero float literal left-zero subtraction should fold:\n{ir}"
     );
-    assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_float, double -3.75)"),
-        "{ir}"
-    );
-    assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_float, double -2.5)"),
-        "{ir}"
-    );
+    assert!(ir.contains("@phpc_native_float(double -3.75)"), "{ir}");
+    assert!(ir.contains("@phpc_native_float(double -2.5)"), "{ir}");
     assert!(
         ir.contains("fsub double 0.0, %tmp1"),
         "possible signed-zero float subtraction should stay emitted:\n{ir}"
@@ -844,10 +806,7 @@ echo $negative * 0.0;
         !ir.contains("fmul double 0.0, %tmp0"),
         "tracked positive float expression times left zero should fold to positive zero:\n{ir}"
     );
-    assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_float, double 0.0)"),
-        "{ir}"
-    );
+    assert!(ir.contains("@phpc_native_float(double 0.0)"), "{ir}");
     assert!(
         ir.contains("fmul double -4.0, 0.0"),
         "negative float multiplication by zero should stay emitted to preserve signed-zero behavior:\n{ir}"
@@ -855,7 +814,7 @@ echo $negative * 0.0;
 }
 
 #[test]
-fn emit_ir_folds_single_known_nonzero_float_multiplication_by_negative_one() {
+fn emit_ir_routes_float_multiplication_by_unary_negative_one_through_value_result() {
     let ir = emit_ir_source(
         r#"<?php
 $value = 1.5 + 2.25;
@@ -870,25 +829,22 @@ echo $zero * -1.0;
 
     assert!(ir.contains("%tmp0 = fadd double 1.5, 2.25"), "{ir}");
     assert!(
-        !ir.contains("fmul double %tmp0, -1.0"),
-        "single-known nonzero float times right negative one should fold:\n{ir}"
+        ir.matches("call %phpc.NativeValueOperationResult @phpc_native_value_binary_result")
+            .count()
+            >= 3,
+        "unary negative-one multiplication should route through native value-operation results:\n{ir}"
     );
     assert!(
-        !ir.contains("fmul double -1.0, 2.5"),
-        "nonzero float literal times left negative one should fold:\n{ir}"
+        ir.matches(
+            "call %phpc.NativeConversionResult @phpc_native_conversion_source_numeric_unary"
+        )
+        .count()
+            >= 3,
+        "unary negative-one operands should use numeric conversion before value operations:\n{ir}"
     );
-    assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_float, double -3.75)"),
-        "{ir}"
-    );
-    assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_float, double -2.5)"),
-        "{ir}"
-    );
-    assert!(
-        ir.contains("fmul double %tmp1, -1.0"),
-        "possible signed-zero float multiplication by negative one should stay emitted:\n{ir}"
-    );
+    assert!(ir.contains("@phpc_native_float(double %tmp0)"), "{ir}");
+    assert!(ir.contains("@phpc_native_float(double 2.5)"), "{ir}");
+    assert!(ir.contains("@phpc_native_float(double %tmp1)"), "{ir}");
 }
 
 #[test]
@@ -919,18 +875,9 @@ echo (0.0 + 0.0) + 0.0;
         !ir.contains("fmul double %tmp0, 2.0"),
         "tracked single-result float multiplication should fold:\n{ir}"
     );
-    assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_float, double 5.0)"),
-        "{ir}"
-    );
-    assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_float, double 3.5)"),
-        "{ir}"
-    );
-    assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_float, double 7.5)"),
-        "{ir}"
-    );
+    assert!(ir.contains("@phpc_native_float(double 5.0)"), "{ir}");
+    assert!(ir.contains("@phpc_native_float(double 3.5)"), "{ir}");
+    assert!(ir.contains("@phpc_native_float(double 7.5)"), "{ir}");
     assert!(
         ir.contains("fadd double 1.5, 2.25"),
         "literal-only float arithmetic should still be emitted:\n{ir}"
@@ -982,18 +929,9 @@ echo $amb_left + $amb_right;
         !ir.contains("fmul double %tmp2, %tmp3"),
         "tracked-expression float multiplication should fold when the nonzero result is known:\n{ir}"
     );
-    assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_float, double 8.25)"),
-        "{ir}"
-    );
-    assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_float, double 0.75)"),
-        "{ir}"
-    );
-    assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_float, double 4.5)"),
-        "{ir}"
-    );
+    assert!(ir.contains("@phpc_native_float(double 8.25)"), "{ir}");
+    assert!(ir.contains("@phpc_native_float(double 0.75)"), "{ir}");
+    assert!(ir.contains("@phpc_native_float(double 4.5)"), "{ir}");
     assert!(
         ir.contains("fadd double 1.5, 2.25"),
         "literal-only float arithmetic should still be emitted:\n{ir}"
@@ -1026,10 +964,7 @@ echo ($ambiguous === 4.0) ? 1 : 0;
     .unwrap();
 
     assert!(ir.contains("%tmp2 = fadd double 1.25, 2.75"), "{ir}");
-    assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 10)"),
-        "{ir}"
-    );
+    assert!(ir.contains("@phpc_native_int(i64 10)"), "{ir}");
     assert!(
         !ir.contains("fcmp oeq double %tmp2, 4.0"),
         "proven float arithmetic identity should fold:\n{ir}"
@@ -1056,14 +991,8 @@ echo 17 % 5;
     assert!(ir.contains("%tmp0 = add i64 10, 5"), "{ir}");
     assert!(ir.contains("%tmp1 = srem i64 %tmp0, 4"), "{ir}");
     assert!(ir.contains("srem i64 17, 5"), "{ir}");
-    assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 %tmp1)"),
-        "{ir}"
-    );
-    assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 %tmp"),
-        "{ir}"
-    );
+    assert!(ir.contains("@phpc_native_int(i64 %tmp1)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 %tmp"), "{ir}");
 }
 
 #[test]
@@ -1087,10 +1016,7 @@ echo $remainder + 5;
     );
     assert!(ir.contains("%tmp3 = srem i64 %tmp2, 3"), "{ir}");
     assert!(ir.contains("%tmp4 = add i64 %tmp3, 5"), "{ir}");
-    assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 %tmp4)"),
-        "{ir}"
-    );
+    assert!(ir.contains("@phpc_native_int(i64 %tmp4)"), "{ir}");
 }
 
 #[test]
@@ -1119,8 +1045,8 @@ echo $literal + 7;
         !ir.contains("srem i64 17, 1"),
         "literal integer modulo by one should fold to zero:\n{ir}"
     );
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 5)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 7)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 5)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 7)"), "{ir}");
 }
 
 #[test]
@@ -1143,8 +1069,8 @@ echo $value % 1;
         !ir.contains("srem i64 %tmp0, 1"),
         "untracked integer modulo by one should fold to zero:\n{ir}"
     );
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 %tmp0)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 0)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 %tmp0)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 0)"), "{ir}");
 }
 
 #[test]
@@ -1168,14 +1094,13 @@ echo $remainder + 5;
         "bounded integer modulo should fold when every remainder matches:\n{ir}"
     );
     assert!(ir.contains("%tmp3 = add i64 1, 5"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 %tmp3)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 %tmp3)"), "{ir}");
 }
 
 #[test]
-fn emit_ir_rejects_integer_modulo_without_static_positive_divisor() {
+fn emit_ir_rejects_zero_and_dynamic_modulo_but_routes_unary_negative_literal_divisor() {
     for source in [
         "<?php\necho 8 % 0;\n",
-        "<?php\necho 8 % -2;\n",
         "<?php\n$divisor = 4 - 2;\necho 8 % $divisor;\n",
     ] {
         let error = emit_ir_source(source).unwrap_err();
@@ -1183,6 +1108,14 @@ fn emit_ir_rejects_integer_modulo_without_static_positive_divisor() {
         assert_eq!(error.phase, Phase::Codegen);
         assert_eq!(error.message, LLVM_MODULO_RUNTIME_CHECK_REJECTION);
     }
+
+    let routed = emit_ir_source("<?php\necho 8 % -2;\n").unwrap();
+    assert!(
+        routed.contains("call %phpc.NativeValueOperationResult @phpc_native_value_binary_result"),
+        "{routed}"
+    );
+    assert!(routed.contains("i8 4"), "{routed}");
+    assert!(routed.contains("native_value_operation_error"), "{routed}");
 }
 
 #[test]

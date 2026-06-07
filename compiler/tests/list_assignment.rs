@@ -1,7 +1,7 @@
 use php_compiler::error::Phase;
 use php_compiler::{emit_ir_source, run_source};
 
-const LLVM_ARRAY_DESTRUCTURING_REJECTION: &str = "LLVM array destructuring lowering rejects list(...) and [...] assignment targets until native array storage layout, ordered key lookup, missing-key diagnostics, nested destructuring, references/copy-on-write, and exact native assignment ordering exist; phpc run handles current simple destructuring assignment behavior";
+const LLVM_ARRAY_DESTRUCTURING_REJECTION: &str = "LLVM array destructuring lowering rejects list(...) and [...] assignment targets until native array storage layout, ordered key lookup, missing-key diagnostics, nested destructuring, references/copy-on-write, and exact native assignment ordering exist; phpc run handles current bounded destructuring assignment behavior";
 
 #[test]
 fn simple_positional_list_assignment_reads_numeric_keys() {
@@ -93,43 +93,149 @@ echo $a;
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "local|null\nglobal");
+    assert_eq!(
+        execution.stdout,
+        "Warning: Undefined array key 1 in Command line code on line 5\nlocal|null\nglobal"
+    );
     assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
-fn list_assignment_rejects_non_array_rhs_before_target_writes() {
-    let error = run_source(
+fn list_assignment_non_array_rhs_emits_warnings_and_assigns_null() {
+    let execution = run_source(
         r#"<?php
 $a = "old";
 $b = "old";
 list($a, $b) = 42;
+echo $a === null ? "null" : "value", "|", $b === null ? "null" : "value";
 "#,
     )
-    .unwrap_err();
+    .unwrap();
 
-    assert_eq!(error.phase, Phase::Runtime);
-    assert_eq!(error.line, 4);
-    assert_eq!(error.column, 1);
     assert_eq!(
-        error.message,
-        "unsupported call list(): right-hand side must be array, got int"
+        execution.stdout,
+        "Warning: Cannot use int as array in Command line code on line 4\n\nWarning: Cannot use int as array in Command line code on line 4\nnull|null"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn list_assignment_supports_nested_keyed_and_missing_slots() {
+    let execution = run_source(
+        r#"<?php
+$data = [
+    "names" => ["first" => "Ada", "last" => "Lovelace"],
+    "values" => [1, 2],
+];
+
+list(
+    "names" => list("first" => $first, "last" => $last),
+    "values" => list($one, $two),
+    "missing" => $missing
+) = $data;
+
+echo $first, "|", $last, "|", $one, "|", $two, "|", $missing === null ? "null" : "value";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Warning: Undefined array key \"missing\" in Command line code on line 7\nAda|Lovelace|1|2|null"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn list_assignment_collects_nested_writes_before_mutating_targets() {
+    let execution = run_source(
+        r#"<?php
+$a = [[1, 2], 3];
+list(list($a, $b), $c) = $a;
+echo $a, "|", $b, "|", $c, "\n";
+
+$b = [1, [2, 3]];
+list($a, list($b, $c)) = $b;
+echo $a, "|", $b, "|", $c;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "1|2|3\n1|2|3");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn list_assignment_rejects_static_invalid_target_shapes_with_php_fatals() {
+    assert_parse_error("<?php\nlist() = [];\n", "php fatal: Cannot use empty list");
+    assert_parse_error(
+        "<?php\n[1] = [1];\n",
+        "php fatal: Assignments can only happen to writable values",
+    );
+    assert_parse_error(
+        "<?php\nlist([$a]) = [[1]];\n",
+        "php fatal: Cannot mix [] and list()",
+    );
+    assert_parse_error(
+        "<?php\n[list($a)] = [[1]];\n",
+        "php fatal: Cannot mix [] and list()",
+    );
+    assert_parse_error(
+        "<?php\nlist(array($a)) = [[1]];\n",
+        "php fatal: Cannot assign to array(), use [] instead",
+    );
+    assert_parse_error(
+        "<?php\n[\"x\" => ,] = [];\n",
+        "php fatal: Cannot use empty array entries in keyed array assignment",
+    );
+    assert_parse_error(
+        "<?php\n[\"x\" => $a, $b] = [];\n",
+        "php fatal: Cannot mix keyed and unkeyed array entries in assignments",
     );
 }
 
 #[test]
+fn array_literals_reject_empty_elements_with_php_fatal() {
+    assert_parse_error(
+        "<?php\n$values = array(1,,2);\n",
+        "php fatal: Cannot use empty array elements in arrays",
+    );
+    assert_parse_error(
+        "<?php\n$values = [1,,2];\n",
+        "php fatal: Cannot use empty array elements in arrays",
+    );
+}
+
+#[test]
+fn list_assignment_rejects_non_arrayaccess_object_sources_as_fatal_array_access() {
+    let execution = run_source("<?php\nlist($a, $b) = function () {};\n").unwrap();
+
+    assert_eq!(execution.exit_code, 255);
+    assert!(execution.stdout.starts_with(
+        "Fatal error: Uncaught Error: Cannot use object of type Closure as array in Command line code:2"
+    ));
+}
+
+#[test]
 fn emit_ir_rejects_list_assignment_until_native_array_destructuring_exists() {
-    let error = emit_ir_source("<?php\nlist($a, $b) = missing_call();\n").unwrap_err();
+    let error = emit_ir_source("<?php\nlist($a, $b) = [1, 2];\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 1);
     assert_eq!(error.message, LLVM_ARRAY_DESTRUCTURING_REJECTION);
 
-    let short_error = emit_ir_source("<?php\n[$a, $b] = missing_call();\n").unwrap_err();
+    let short_error = emit_ir_source("<?php\n[$a, $b] = [1, 2];\n").unwrap_err();
 
     assert_eq!(short_error.phase, Phase::Codegen);
     assert_eq!(short_error.line, 2);
     assert_eq!(short_error.column, 1);
     assert_eq!(short_error.message, LLVM_ARRAY_DESTRUCTURING_REJECTION);
+}
+
+fn assert_parse_error(source: &str, expected_message: &str) {
+    let error = run_source(source).unwrap_err();
+
+    assert_eq!(error.phase, Phase::Parse);
+    assert_eq!(error.message, expected_message);
 }
