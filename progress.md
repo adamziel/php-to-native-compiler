@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-07T16:26:40+00:00
+Last generated: 2026-06-07T16:26:41+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -140,7 +140,6 @@ failed — tools/run-tests.sh (error=0, failed=1, passed=0, skipped=0)
 Latest: CPU 15.72%, RAM 23.86%, disk free 13.71 GB.
 
 ## Recent events
-- 2026-06-07T16:26:10+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
 - 2026-06-07T16:26:15+00:00 **worklane_deduplicated**: Updated existing failing-test card#1579 from run 28360
 - 2026-06-07T16:26:15+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
 - 2026-06-07T16:26:21+00:00 **worklane_deduplicated**: Updated existing failing-test card#1579 from run 28361
@@ -152,6 +151,13 @@ Latest: CPU 15.72%, RAM 23.86%, disk free 13.71 GB.
 - 2026-06-07T16:26:32+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
 - 2026-06-07T16:26:38+00:00 **worklane_deduplicated**: Updated existing failing-test card#1579 from run 28364
 - 2026-06-07T16:26:38+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-07T16:26:41+00:00 **status_publish_failed**: Committed status files but failed to push: To https://github.com/adamziel/php-to-native-compiler.git
+ ! [rejected]          HEAD -> master (non-fast-forward)
+error: failed to push some refs to 'https://github.com/adamziel/php-to-native-compiler.git'
+hint: Updates were rejected because the tip of your current branch is behind
+hint: its remote counterpart. If you want to integrate the remote changes,
+hint: use 'git pull' before pushing again.
+hint: See the 'Note about fast-forwards' in 'git push --help' for details.
 
 ## Next steps
 Move next worklane forward: Resolve integration failure for card #1573: Resolve integration failure for card #1566: Resolve integration failure for card #1477: Resolve integration failure for card #174: Fix failing tests from run 234
