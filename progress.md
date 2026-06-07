@@ -191,7 +191,6 @@ failed — python -m unittest discover -s tests -v (error=0, failed=1, passed=0,
 Latest: CPU 14.84%, RAM 58.74%, disk free 185.11 GB.
 
 ## Recent events
-- 2026-06-07T18:23:06+00:00 **terminal_agent_window_closed**: Closed terminal developer-99 tmux window
 - 2026-06-07T18:23:06+00:00 **terminal_agent_window_closed**: Closed terminal integrator-1 tmux window
 - 2026-06-07T18:23:06+00:00 **terminal_agent_window_closed**: Closed terminal integrator-2 tmux window
 - 2026-06-07T18:23:06+00:00 **terminal_agent_window_closed**: Closed terminal integrator-3 tmux window
@@ -203,6 +202,7 @@ Latest: CPU 14.84%, RAM 58.74%, disk free 185.11 GB.
 - 2026-06-07T18:23:07+00:00 **stop**: Stopped harness runtime
 - 2026-06-07T18:23:08+00:00 **mcp**: Harness MCP tools exposed to Codex workers
 - 2026-06-07T18:23:08+00:00 **tmux**: Support windows ready
+- 2026-06-07T18:23:08+00:00 **terminal_agent_window_closed**: Closed terminal auditor-1 tmux window
 
 ## Next steps
 Move next worklane forward: Resolve integration failure for card #1803: Fix global test suite failures
