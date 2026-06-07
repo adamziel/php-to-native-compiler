@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-07T22:28:45+00:00
+Last generated: 2026-06-07T22:34:50+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -14,7 +14,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | auditor-1 | Auditor | stopped | auditor-1 |  |
 | auditor-10 | Auditor | crash | auditor-10 |  |
 | auditor-11 | Auditor | crash | auditor-11 |  |
-| auditor-12 | Auditor | running | auditor-12 |  |
+| auditor-12 | Auditor | stopped | auditor-12 |  |
 | auditor-2 | Auditor | crash | auditor-2 |  |
 | auditor-3 | Auditor | stopped | auditor-3 |  |
 | auditor-4 | Auditor | stopped | auditor-4 |  |
@@ -58,7 +58,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-32 | Coordinator | crash | coordinator-32 |  |
 | coordinator-33 | Coordinator | crash | coordinator-33 |  |
 | coordinator-34 | Coordinator | crash | coordinator-34 |  |
-| coordinator-35 | Coordinator | running | coordinator-35 |  |
+| coordinator-35 | Coordinator | stopped | coordinator-35 |  |
 | coordinator-4 | Coordinator | stopped | coordinator-4 |  |
 | coordinator-5 | Coordinator | stopped | coordinator-5 |  |
 | coordinator-6 | Coordinator | crash | coordinator-6 |  |
@@ -114,12 +114,12 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-140 | Developer | crash | developer-140 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-140 |
 | developer-141 | Developer | crash | developer-141 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-141 |
 | developer-142 | Developer | crash | developer-142 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-142 |
-| developer-143 | Developer | running | developer-143 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-143 |
-| developer-144 | Developer | running | developer-144 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-144 |
-| developer-145 | Developer | running | developer-145 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-145 |
-| developer-146 | Developer | running | developer-146 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-146 |
-| developer-147 | Developer | running | developer-147 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-147 |
-| developer-148 | Developer | running | developer-148 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-148 |
+| developer-143 | Developer | stopped | developer-143 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-143 |
+| developer-144 | Developer | stopped | developer-144 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-144 |
+| developer-145 | Developer | stopped | developer-145 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-145 |
+| developer-146 | Developer | stopped | developer-146 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-146 |
+| developer-147 | Developer | stopped | developer-147 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-147 |
+| developer-148 | Developer | stopped | developer-148 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-148 |
 | developer-15 | Developer | stopped | developer-15 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-15 |
 | developer-16 | Developer | stopped | developer-16 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-16 |
 | developer-17 | Developer | stopped | developer-17 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-17 |
@@ -240,21 +240,21 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 failed — tools/run-tests.sh (error=0, failed=1, passed=0, skipped=0)
 
 ## Resource samples
-Latest: CPU 25.03%, RAM 57.52%, disk free 63.51 GB.
+Latest: CPU 15.16%, RAM 56.77%, disk free 63.46 GB.
 
 ## Recent events
-- 2026-06-07T22:28:45+00:00 **terminal_agent_window_closed**: Closed terminal integrator-6 tmux window
-- 2026-06-07T22:28:45+00:00 **terminal_agent_window_closed**: Closed terminal developer-87 tmux window
-- 2026-06-07T22:28:45+00:00 **terminal_agent_window_closed**: Closed terminal integrator-7 tmux window
-- 2026-06-07T22:28:45+00:00 **terminal_agent_window_closed**: Closed terminal developer-88 tmux window
-- 2026-06-07T22:28:45+00:00 **terminal_agent_window_closed**: Closed terminal integrator-8 tmux window
-- 2026-06-07T22:28:45+00:00 **terminal_agent_window_closed**: Closed terminal developer-89 tmux window
-- 2026-06-07T22:28:45+00:00 **terminal_agent_window_closed**: Closed terminal developer-9 tmux window
-- 2026-06-07T22:28:45+00:00 **terminal_agent_window_closed**: Closed terminal developer-90 tmux window
-- 2026-06-07T22:28:45+00:00 **terminal_agent_window_closed**: Closed terminal developer-91 tmux window
-- 2026-06-07T22:28:45+00:00 **poke**: Queued message for coordinator-35
-- 2026-06-07T22:28:45+00:00 **terminal_agent_window_closed**: Closed terminal developer-92 tmux window
-- 2026-06-07T22:28:45+00:00 **poke_delivered**: Delivered poke to 0 agents
+- 2026-06-07T22:34:48+00:00 **terminal_agent_window_closed**: Closed terminal developer-17 tmux window
+- 2026-06-07T22:34:48+00:00 **terminal_agent_window_closed**: Closed terminal developer-18 tmux window
+- 2026-06-07T22:34:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-19 tmux window
+- 2026-06-07T22:34:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-2 tmux window
+- 2026-06-07T22:34:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-20 tmux window
+- 2026-06-07T22:34:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-21 tmux window
+- 2026-06-07T22:34:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-22 tmux window
+- 2026-06-07T22:34:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-23 tmux window
+- 2026-06-07T22:34:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-24 tmux window
+- 2026-06-07T22:34:49+00:00 **stop**: Stopped harness runtime
+- 2026-06-07T22:34:50+00:00 **mcp**: Harness MCP tools exposed to Codex workers
+- 2026-06-07T22:34:50+00:00 **tmux**: Interactive support windows ready
 
 ## Next steps
 Move next worklane forward: Verify known-failure gate policy does not mask metric failures
