@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-07T18:53:11+00:00
+Last generated: 2026-06-07T19:08:12+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -12,6 +12,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | name | role | current_status | tmux_window | worktree |
 | --- | --- | --- | --- | --- |
 | auditor-1 | Auditor | stopped | auditor-1 |  |
+| auditor-10 | Auditor | running | auditor-10 |  |
 | auditor-2 | Auditor | crash | auditor-2 |  |
 | auditor-3 | Auditor | stopped | auditor-3 |  |
 | auditor-4 | Auditor | stopped | auditor-4 |  |
@@ -181,36 +182,36 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1818 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
+| 1817 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
+| 1816 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
+| 1815 | Investigate scheduler alert | Auditor | integration-support | development | assigned |  | 0.0 |
 | 1814 | Resolve integration failure for card #91: Replay standard array/string accepted-vs-candidate PHPT samples | Conflict Resolver | integration-support | planned | queued |  | 0.0 |
 | 1813 | Maintain Developer capacity after card 91 | Developer | implementation | planned | queued |  | 0.0 |
 | 1812 | Provide next sanctioned Developer lane after developer-115 lane 89 audit | Developer | implementation | planned | queued |  | 0.0 |
 | 1811 | Resolve integration failure for card #89: Manager-6 queue hygiene and integration handoff audit | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
 | 1810 | Resolve integration failure for card #87: Absent-row rerun prioritizer for post-abort gate recovery | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
 | 1809 | Assign next sanctioned Developer card after developer-114 lane 87 reconciliation | Developer | implementation | planned | queued |  | 0.0 |
-| 1808 | Fix global test suite failures | Developer | implementation | development | assigned |  | 0.0 |
-| 1807 | Resolve integration failure for card #1803: Fix global test suite failures | Conflict Resolver | integration-support | done | stale |  | 0.0 |
-| 1806 | Assign next sanctioned Developer card after developer-111 completed worklane 86 | Developer | implementation | planned | queued |  | 0.0 |
-| 1805 | Assign fresh narrow Developer card after stale card 82 SPL replay verification | Developer | implementation | planned | queued |  | 0.0 |
 
 ## Tests
 failed — tools/run-tests.sh (error=0, failed=1, passed=0, skipped=0)
 
 ## Resource samples
-Latest: CPU 15.24%, RAM 57.74%, disk free 164.45 GB.
+Latest: CPU 9.9%, RAM 58.52%, disk free 165.27 GB.
 
 ## Recent events
-- 2026-06-07T18:53:10+00:00 **terminal_agent_window_closed**: Closed terminal integrator-7 tmux window
-- 2026-06-07T18:53:10+00:00 **terminal_agent_window_closed**: Closed terminal developer-37 tmux window
-- 2026-06-07T18:53:10+00:00 **terminal_agent_window_closed**: Closed terminal integrator-8 tmux window
-- 2026-06-07T18:53:10+00:00 **terminal_agent_window_closed**: Closed terminal developer-38 tmux window
-- 2026-06-07T18:53:10+00:00 **terminal_agent_window_closed**: Closed terminal developer-39 tmux window
-- 2026-06-07T18:53:10+00:00 **terminal_agent_window_closed**: Closed terminal developer-4 tmux window
-- 2026-06-07T18:53:10+00:00 **terminal_agent_window_closed**: Closed terminal developer-40 tmux window
-- 2026-06-07T18:53:10+00:00 **terminal_agent_window_closed**: Closed terminal developer-41 tmux window
-- 2026-06-07T18:53:10+00:00 **terminal_agent_window_closed**: Closed terminal developer-42 tmux window
-- 2026-06-07T18:53:11+00:00 **terminal_agent_window_closed**: Closed terminal developer-43 tmux window
-- 2026-06-07T18:53:11+00:00 **terminal_agent_window_closed**: Closed terminal developer-44 tmux window
-- 2026-06-07T18:53:11+00:00 **terminal_agent_window_closed**: Closed terminal developer-45 tmux window
+- 2026-06-07T19:08:07+00:00 **terminal_agent_window_closed**: Closed terminal developer-96 tmux window
+- 2026-06-07T19:08:07+00:00 **terminal_agent_window_closed**: Closed terminal developer-97 tmux window
+- 2026-06-07T19:08:07+00:00 **terminal_agent_window_closed**: Closed terminal developer-98 tmux window
+- 2026-06-07T19:08:07+00:00 **terminal_agent_window_closed**: Closed terminal developer-99 tmux window
+- 2026-06-07T19:08:07+00:00 **terminal_agent_window_closed**: Closed terminal integrator-1 tmux window
+- 2026-06-07T19:08:07+00:00 **terminal_agent_window_closed**: Closed terminal integrator-2 tmux window
+- 2026-06-07T19:08:07+00:00 **terminal_agent_window_closed**: Closed terminal integrator-3 tmux window
+- 2026-06-07T19:08:08+00:00 **terminal_agent_window_closed**: Closed terminal integrator-4 tmux window
+- 2026-06-07T19:08:08+00:00 **terminal_agent_window_closed**: Closed terminal integrator-5 tmux window
+- 2026-06-07T19:08:08+00:00 **terminal_agent_window_closed**: Closed terminal integrator-6 tmux window
+- 2026-06-07T19:08:08+00:00 **terminal_agent_window_closed**: Closed terminal integrator-7 tmux window
+- 2026-06-07T19:08:08+00:00 **terminal_agent_window_closed**: Closed terminal integrator-8 tmux window
 
 ## Next steps
-Move next worklane forward: Resolve integration failure for card #91: Replay standard array/string accepted-vs-candidate PHPT samples
+Move next worklane forward: Investigate scheduler alert
