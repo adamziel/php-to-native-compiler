@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-07T18:18:15+00:00
+Last generated: 2026-06-07T18:18:32+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -187,21 +187,21 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 failed — python -m unittest discover -s tests -v (error=0, failed=1, passed=0, skipped=0)
 
 ## Resource samples
-Latest: CPU 20.1%, RAM 58.61%, disk free 185.97 GB.
+Latest: CPU 19.65%, RAM 60.68%, disk free 185.97 GB.
 
 ## Recent events
-- 2026-06-07T18:18:15+00:00 **terminal_agent_window_closed**: Closed terminal developer-59 tmux window
-- 2026-06-07T18:18:15+00:00 **terminal_agent_window_closed**: Closed terminal developer-6 tmux window
-- 2026-06-07T18:18:15+00:00 **terminal_agent_window_closed**: Closed terminal developer-60 tmux window
-- 2026-06-07T18:18:15+00:00 **terminal_agent_window_closed**: Closed terminal developer-61 tmux window
-- 2026-06-07T18:18:15+00:00 **terminal_agent_window_closed**: Closed terminal developer-62 tmux window
-- 2026-06-07T18:18:15+00:00 **terminal_agent_window_closed**: Closed terminal developer-63 tmux window
-- 2026-06-07T18:18:15+00:00 **terminal_agent_window_closed**: Closed terminal developer-64 tmux window
-- 2026-06-07T18:18:15+00:00 **poke**: Queued message for broadcast
-- 2026-06-07T18:18:15+00:00 **terminal_agent_window_closed**: Closed terminal developer-65 tmux window
-- 2026-06-07T18:18:15+00:00 **terminal_agent_window_closed**: Closed terminal developer-66 tmux window
-- 2026-06-07T18:18:15+00:00 **terminal_agent_window_closed**: Closed terminal developer-67 tmux window
-- 2026-06-07T18:18:15+00:00 **poke_delivered**: Delivered poke to 6 agents
+- 2026-06-07T18:18:31+00:00 **terminal_agent_window_closed**: Closed terminal developer-98 tmux window
+- 2026-06-07T18:18:31+00:00 **terminal_agent_window_closed**: Closed terminal developer-99 tmux window
+- 2026-06-07T18:18:31+00:00 **terminal_agent_window_closed**: Closed terminal integrator-1 tmux window
+- 2026-06-07T18:18:31+00:00 **terminal_agent_window_closed**: Closed terminal integrator-2 tmux window
+- 2026-06-07T18:18:31+00:00 **terminal_agent_window_closed**: Closed terminal integrator-3 tmux window
+- 2026-06-07T18:18:31+00:00 **terminal_agent_window_closed**: Closed terminal integrator-4 tmux window
+- 2026-06-07T18:18:31+00:00 **terminal_agent_window_closed**: Closed terminal integrator-5 tmux window
+- 2026-06-07T18:18:31+00:00 **terminal_agent_window_closed**: Closed terminal integrator-6 tmux window
+- 2026-06-07T18:18:31+00:00 **terminal_agent_window_closed**: Closed terminal integrator-7 tmux window
+- 2026-06-07T18:18:31+00:00 **terminal_agent_window_closed**: Closed terminal integrator-8 tmux window
+- 2026-06-07T18:18:32+00:00 **poke**: Queued message for coordinator-22
+- 2026-06-07T18:18:32+00:00 **poke_delivered**: Delivered poke to 0 agents
 
 ## Next steps
 Move next worklane forward: Assign fresh narrow Developer card after stale card 82 SPL replay verification
