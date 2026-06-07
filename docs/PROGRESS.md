@@ -1,5 +1,17 @@
 # Progress Log
 
+## 2026-06-07
+
+Implemented:
+
+- Restored the interpreter runaway user-function recursion guard to the
+  documented 64-frame limit. `phpc run` now reports the bounded
+  `maximum user function call depth exceeded` runtime error for the
+  `runaway_recursion` fixture before the Rust process stack can overflow.
+  Also refreshed two stale unsupported-dynamic fixture expectations to current
+  behavior: simple const imports now surface missing constants through the
+  PHP-shaped fatal path, and top-level bracketed namespace blocks execute.
+
 ## 2026-06-06
 
 Implemented:
