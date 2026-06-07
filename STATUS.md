@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-07T17:33:25+00:00
+Last generated: 2026-06-07T17:48:26+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -133,7 +133,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-86 | Developer | crash | developer-86 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-86 |
 | developer-87 | Developer | crash | developer-87 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-87 |
 | developer-88 | Developer | crash | developer-88 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-88 |
-| developer-89 | Developer | crash | developer-89 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-89 |
+| developer-89 | Developer | running | developer-89 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-89 |
 | developer-9 | Developer | stopped | developer-9 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-9 |
 | developer-90 | Developer | running | developer-90 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-90 |
 | developer-91 | Developer | running | developer-91 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-91 |
@@ -154,36 +154,36 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1795 | Resolve integration failure for card #1769: Resolve integration failure for card #1595: Resolve integration failure for card #1533: Resolve integration failure for card #11: developer-43 focused standard-library compatibility slice | Conflict Resolver | integration-support | planned | queued |  | 0.0 |
+| 1799 | Next concrete Developer card after lane 70 | Developer | implementation | planned | queued |  | 0.0 |
+| 1798 | Provide next sanctioned Developer lane after developer-89 card 70 | Developer | implementation | planned | queued |  | 0.0 |
+| 1797 | Provide next sanctioned Developer card after developer-90 lane 71 | Developer | implementation | planned | queued |  | 0.0 |
+| 1796 | Resolve card 1795 integration conflict for developer-92 str_replace slice | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
+| 1795 | Resolve integration failure for card #1769: Resolve integration failure for card #1595: Resolve integration failure for card #1533: Resolve integration failure for card #11: developer-43 focused standard-library compatibility slice | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
 | 1794 | Fix global test suite failures | Developer | implementation | development | assigned |  | 0.0 |
 | 1793 | Fix global test suite failures | Developer | implementation | done | stale |  | 0.0 |
 | 1792 | Fix global test suite failures | Developer | implementation | done | stale |  | 0.0 |
 | 1791 | Fix global test suite failures | Developer | implementation | done | stale |  | 0.0 |
 | 1790 | Fix global test suite failures | Developer | implementation | done | stale |  | 0.0 |
-| 1789 | Fix global test suite failures | Developer | implementation | done | stale |  | 0.0 |
-| 1788 | Resolve queued lane 1778 runtime merge conflict only | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
-| 1787 | Fix global test suite failures | Developer | implementation | done | stale |  | 0.0 |
-| 1786 | Fix global test suite failures | Developer | implementation | done | stale |  | 0.0 |
 
 ## Tests
 failed — tools/run-tests.sh (error=0, failed=1, passed=0, skipped=0)
 
 ## Resource samples
-Latest: CPU 17.85%, RAM 64.71%, disk free 187.8 GB.
+Latest: CPU 4.95%, RAM 62.3%, disk free 187.49 GB.
 
 ## Recent events
-- 2026-06-07T17:31:56+00:00 **worklane_assigned**: Assigned worklane#1794 to developer-92
-- 2026-06-07T17:31:56+00:00 **developer_reassigned**: Reassigned developer-92 to card#1794
-- 2026-06-07T17:32:00+00:00 **ready_for_next_card**: developer-92 completed worklane #1769 and submitted report #236; ready for scheduler-assigned next card.
-- 2026-06-07T17:32:03+00:00 **worklane_status**: worklane#1769 -> integration_failed
-- 2026-06-07T17:32:03+00:00 **worklane_created**: Resolve integration failure for card #1769: Resolve integration failure for card #1595: Resolve integration failure for card #1533: Resolve integration failure for card #11: developer-43 focused standard-library compatibility slice
-- 2026-06-07T17:32:05+00:00 **agent_report**: auditor-9 reported audit_complete_progress_recovered
-- 2026-06-07T17:32:32+00:00 **developer_progress**: developer-90 completed lane 71 focused standard strings replacement replay: accepted and candidate rebuilt binaries both passed the three selected rows.
-- 2026-06-07T17:32:34+00:00 **coordinator_start**: Coordinator session started; loaded AGENTS.md, README.md, docs/PROGRESS.md, docs/ARCHITECTURE.md, docs/SUPPORT.md, docs/LOOP_MEMORY.md, and supervised-team skill before harness inspection.
-- 2026-06-07T17:32:34+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-07T17:33:02+00:00 **build_result**: Lane 70 candidate commit release phpc rebuilt successfully with isolated target for focused PHPT replay.
-- 2026-06-07T17:33:04+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-07T17:33:09+00:00 **build_result**: Lane 70 candidate release phpc built successfully; starting accepted focused PHPT replay.
+- 2026-06-07T17:43:37+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-07T17:43:57+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-07T17:44:28+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-07T17:44:59+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-07T17:45:16+00:00 **manhole_answer_context**: User asked why recent integration commits do not move passing-test metrics; inspected recent origin/master and integration attempts. Recent integrated commits include status/report/control-plane lanes with only git diff --check smoke, while metric_samples remain at accepted_public_phpt_passes 7873/20294.
+- 2026-06-07T17:45:30+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-07T17:46:01+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-07T17:46:32+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-07T17:46:49+00:00 **worklane_deduplicated**: Updated existing failing-test card#1794 from run 29180
+- 2026-06-07T17:47:03+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-07T17:47:34+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-07T17:48:05+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
 
 ## Next steps
-Move next worklane forward: Resolve integration failure for card #1769: Resolve integration failure for card #1595: Resolve integration failure for card #1533: Resolve integration failure for card #11: developer-43 focused standard-library compatibility slice
+Move next worklane forward: Next concrete Developer card after lane 70
