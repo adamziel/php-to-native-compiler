@@ -63,7 +63,7 @@ use crate::parser::parse_source;
 use crate::php_tokenizer::{self, PhpTokenizerToken};
 use crate::trait_semantics;
 
-pub const MAX_USER_FUNCTION_CALL_DEPTH: usize = 4096;
+pub const MAX_USER_FUNCTION_CALL_DEPTH: usize = 64;
 const SESSION_NOCACHE_HEADERS: [&str; 3] = [
     "Expires: Thu, 19 Nov 1981 08:52:00 GMT",
     "Cache-Control: no-store, no-cache, must-revalidate",
