@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-07T22:39:01+00:00
+Last generated: 2026-06-07T22:52:18+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -60,6 +60,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-34 | Coordinator | crash | coordinator-34 |  |
 | coordinator-35 | Coordinator | stopped | coordinator-35 |  |
 | coordinator-36 | Coordinator | stopped | coordinator-36 |  |
+| coordinator-37 | Coordinator | stopped | coordinator-37 |  |
 | coordinator-4 | Coordinator | stopped | coordinator-4 |  |
 | coordinator-5 | Coordinator | stopped | coordinator-5 |  |
 | coordinator-6 | Coordinator | crash | coordinator-6 |  |
@@ -241,21 +242,21 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 failed — tools/run-tests.sh (error=0, failed=1, passed=0, skipped=0)
 
 ## Resource samples
-Latest: CPU 34.22%, RAM 54.72%, disk free 63.46 GB.
+Latest: CPU 1.03%, RAM 54.66%, disk free 63.45 GB.
 
 ## Recent events
-- 2026-06-07T22:36:58+00:00 **terminal_agent_window_closed**: Closed terminal developer-99 tmux window
-- 2026-06-07T22:36:58+00:00 **terminal_agent_window_closed**: Closed terminal integrator-1 tmux window
-- 2026-06-07T22:36:58+00:00 **terminal_agent_window_closed**: Closed terminal integrator-2 tmux window
-- 2026-06-07T22:36:58+00:00 **terminal_agent_window_closed**: Closed terminal integrator-3 tmux window
-- 2026-06-07T22:36:58+00:00 **terminal_agent_window_closed**: Closed terminal integrator-4 tmux window
-- 2026-06-07T22:36:58+00:00 **terminal_agent_window_closed**: Closed terminal integrator-5 tmux window
-- 2026-06-07T22:36:58+00:00 **terminal_agent_window_closed**: Closed terminal integrator-6 tmux window
-- 2026-06-07T22:36:58+00:00 **terminal_agent_window_closed**: Closed terminal integrator-7 tmux window
-- 2026-06-07T22:36:58+00:00 **terminal_agent_window_closed**: Closed terminal integrator-8 tmux window
-- 2026-06-07T22:39:00+00:00 **stop**: Stopped harness runtime
-- 2026-06-07T22:39:01+00:00 **mcp**: Harness MCP tools exposed to Codex workers
-- 2026-06-07T22:39:01+00:00 **tmux**: Interactive support windows ready
+- 2026-06-07T22:43:51+00:00 **terminal_agent_window_closed**: Closed terminal integrator-1 tmux window
+- 2026-06-07T22:43:51+00:00 **terminal_agent_window_closed**: Closed terminal integrator-2 tmux window
+- 2026-06-07T22:43:51+00:00 **terminal_agent_window_closed**: Closed terminal integrator-3 tmux window
+- 2026-06-07T22:43:51+00:00 **terminal_agent_window_closed**: Closed terminal integrator-4 tmux window
+- 2026-06-07T22:43:51+00:00 **terminal_agent_window_closed**: Closed terminal integrator-5 tmux window
+- 2026-06-07T22:43:51+00:00 **terminal_agent_window_closed**: Closed terminal integrator-6 tmux window
+- 2026-06-07T22:43:51+00:00 **terminal_agent_window_closed**: Closed terminal integrator-7 tmux window
+- 2026-06-07T22:43:51+00:00 **terminal_agent_window_closed**: Closed terminal integrator-8 tmux window
+- 2026-06-07T22:43:52+00:00 **scheduler**: Harness supervisor stopped by user
+- 2026-06-07T22:52:16+00:00 **stop**: Stopped harness runtime
+- 2026-06-07T22:52:18+00:00 **mcp**: Harness MCP tools exposed to Codex workers
+- 2026-06-07T22:52:18+00:00 **tmux**: Interactive support windows ready
 
 ## Next steps
 Move next worklane forward: Verify known-failure gate policy does not mask metric failures
