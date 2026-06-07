@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-07T20:08:16+00:00
+Last generated: 2026-06-07T20:08:17+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -216,10 +216,6 @@ failed — tools/run-tests.sh (error=0, failed=1, passed=0, skipped=0)
 Latest: CPU 10.67%, RAM 57.97%, disk free 119.62 GB.
 
 ## Recent events
-- 2026-06-07T20:08:15+00:00 **terminal_agent_window_closed**: Closed terminal integrator-5 tmux window
-- 2026-06-07T20:08:15+00:00 **terminal_agent_window_closed**: Closed terminal developer-43 tmux window
-- 2026-06-07T20:08:15+00:00 **terminal_agent_window_closed**: Closed terminal integrator-6 tmux window
-- 2026-06-07T20:08:15+00:00 **terminal_agent_window_closed**: Closed terminal developer-44 tmux window
 - 2026-06-07T20:08:15+00:00 **terminal_agent_window_closed**: Closed terminal developer-45 tmux window
 - 2026-06-07T20:08:15+00:00 **terminal_agent_window_closed**: Closed terminal integrator-7 tmux window
 - 2026-06-07T20:08:15+00:00 **terminal_agent_window_closed**: Closed terminal developer-46 tmux window
@@ -228,6 +224,10 @@ Latest: CPU 10.67%, RAM 57.97%, disk free 119.62 GB.
 - 2026-06-07T20:08:15+00:00 **terminal_agent_window_closed**: Closed terminal developer-48 tmux window
 - 2026-06-07T20:08:16+00:00 **terminal_agent_window_closed**: Closed terminal developer-49 tmux window
 - 2026-06-07T20:08:16+00:00 **coordinator_prompt_deferred**: CPU and RAM are underused, but integration is backed up. Add integration or conflict-resolution support instead of more feature Developers.
+- 2026-06-07T20:08:16+00:00 **terminal_agent_window_closed**: Closed terminal developer-5 tmux window
+- 2026-06-07T20:08:16+00:00 **terminal_agent_window_closed**: Closed terminal developer-50 tmux window
+- 2026-06-07T20:08:16+00:00 **terminal_agent_window_closed**: Closed terminal developer-51 tmux window
+- 2026-06-07T20:08:16+00:00 **terminal_agent_window_closed**: Closed terminal developer-52 tmux window
 
 ## Next steps
 Move next worklane forward: Resolve integration failure for card #136: Self-selected compiler-output coverage slice
