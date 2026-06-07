@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-07T17:00:12+00:00
+Last generated: 2026-06-07T17:15:12+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -135,36 +135,36 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1597 | Assign next sanctioned Developer card after developer-82 retired superseded lane 72 | Developer | implementation | planned | queued |  | 0.0 |
-| 1596 | Maintain Developer capacity after worklane 1533 | Developer | implementation | planned | queued |  | 0.0 |
-| 1595 | Resolve integration failure for card #1533: Resolve integration failure for card #11: developer-43 focused standard-library compatibility slice | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
-| 1594 | Provide next sanctioned Developer card after developer-84 card 13 evidence report | Developer | implementation | planned | queued |  | 0.0 |
-| 1593 | Assign next sanctioned Developer card after developer-82 retired stale lane 67 | Developer | implementation | planned | queued |  | 0.0 |
-| 1592 | Provide next sanctioned Developer lane after developer-79 card 1586 | Developer | implementation | planned | queued |  | 0.0 |
-| 1591 | Resolve integration failure for card #1586: Fix global test suite failures | Conflict Resolver | integration-support | done | integrated | ready_fast_path | 0.0 |
-| 1590 | Assign next sanctioned Developer card after developer-81 superseded lane 1562 | Developer | implementation | planned | queued |  | 0.0 |
-| 1589 | Assign next sanctioned Developer card after developer-82 verified lane 1532 duplicate resolution | Developer | implementation | planned | queued |  | 0.0 |
-| 1588 | Integrate resolved lane 10 and drain ready conflict outputs | Integrator | integration-support | done | done |  | 0.0 |
+| 1651 | Fix global test suite failures | Developer | implementation | done | stale |  | 0.0 |
+| 1650 | Fix global test suite failures | Developer | implementation | done | stale |  | 0.0 |
+| 1649 | Fix global test suite failures | Developer | implementation | done | stale |  | 0.0 |
+| 1648 | Fix global test suite failures | Developer | implementation | done | stale |  | 0.0 |
+| 1647 | Fix global test suite failures | Developer | implementation | done | stale |  | 0.0 |
+| 1646 | Fix global test suite failures | Developer | implementation | done | stale |  | 0.0 |
+| 1645 | Fix global test suite failures | Developer | implementation | done | stale |  | 0.0 |
+| 1644 | Fix global test suite failures | Developer | implementation | done | stale |  | 0.0 |
+| 1643 | Fix global test suite failures | Developer | implementation | done | stale |  | 0.0 |
+| 1642 | Fix global test suite failures | Developer | implementation | done | stale |  | 0.0 |
 
 ## Tests
-failed — python -m unittest discover -s tests -v (error=0, failed=1, passed=0, skipped=0)
+failed — tools/run-tests.sh (error=0, failed=1, passed=0, skipped=0)
 
 ## Resource samples
-Latest: CPU 22.54%, RAM 58.47%, disk free 108.47 GB.
+Latest: CPU 11.4%, RAM 55.74%, disk free 191.26 GB.
 
 ## Recent events
-- 2026-06-07T16:59:40+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-07T16:59:46+00:00 **worklane_deduplicated**: Updated existing failing-test card#1586 from run 28701
-- 2026-06-07T16:59:46+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-07T16:59:51+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-07T16:59:51+00:00 **worklane_deduplicated**: Updated existing failing-test card#1586 from run 28702
-- 2026-06-07T16:59:51+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-07T16:59:57+00:00 **worklane_deduplicated**: Updated existing failing-test card#1586 from run 28703
-- 2026-06-07T16:59:57+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-07T17:00:02+00:00 **worklane_deduplicated**: Updated existing failing-test card#1586 from run 28704
-- 2026-06-07T17:00:02+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-07T17:00:08+00:00 **worklane_deduplicated**: Updated existing failing-test card#1586 from run 28705
-- 2026-06-07T17:00:08+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-07T17:14:52+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-07T17:14:53+00:00 **card_repair**: Retired 1 duplicate global test-failure cards
+- 2026-06-07T17:14:57+00:00 **worklane_created**: Fix global test suite failures
+- 2026-06-07T17:14:57+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-07T17:14:58+00:00 **card_repair**: Retired 1 duplicate global test-failure cards
+- 2026-06-07T17:15:00+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-07T17:15:03+00:00 **worklane_created**: Fix global test suite failures
+- 2026-06-07T17:15:03+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-07T17:15:04+00:00 **card_repair**: Retired 1 duplicate global test-failure cards
+- 2026-06-07T17:15:08+00:00 **worklane_created**: Fix global test suite failures
+- 2026-06-07T17:15:08+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-07T17:15:09+00:00 **card_repair**: Retired 1 duplicate global test-failure cards
 
 ## Next steps
-Move next worklane forward: Assign next sanctioned Developer card after developer-82 retired superseded lane 72
+Keep scheduler loops running, refresh status, and audit measurable progress.
