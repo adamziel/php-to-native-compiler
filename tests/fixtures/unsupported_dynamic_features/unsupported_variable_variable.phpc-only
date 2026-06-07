@@ -1,1 +1,1 @@
-
+phpc keeps variable variables as an explicit unsupported dynamic-feature boundary with a stable parse diagnostic.

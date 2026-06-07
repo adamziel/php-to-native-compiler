@@ -504,13 +504,19 @@ fn array_filter_callback_requires_string_callable() {
 
 #[test]
 fn array_filter_callback_reports_unknown_function() {
-    let error = runtime_error(
-        "<?php\n$items = [\"Ada\"];\necho array_filter($items, \"missing_filter\");\n",
-    );
+    let execution =
+        run_source("<?php\n$items = [\"Ada\"];\necho array_filter($items, \"missing_filter\");\n")
+            .unwrap();
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
-    assert_eq!(error.message, "undefined function missing_filter()");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 255);
+    assert!(
+        execution.stdout.contains(
+            "Fatal error: Uncaught Error: Call to undefined function missing_filter() in Command line code:3"
+        ),
+        "{}",
+        execution.stdout
+    );
 }
 
 #[test]

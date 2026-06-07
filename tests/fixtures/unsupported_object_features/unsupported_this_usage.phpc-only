@@ -1,1 +1,1 @@
-phpc reports a stable diagnostic for $this outside instance method execution.
+phpc emits its current PHP-shaped fatal for $this outside instance method execution.

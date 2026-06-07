@@ -1,1 +1,1 @@
-
+phpc emits its current PHP-shaped fatal for expression arguments passed to by-reference parameters.

@@ -243,7 +243,7 @@ preg_match('/wp.*/', 'wp-settings');
     assert_eq!(unsupported_pattern.column, 1);
     assert_eq!(
         unsupported_pattern.message,
-        "unsupported call preg_match(): regex metacharacter * is not implemented in the current subset"
+        "unsupported call preg_match(): regex metacharacter . is not implemented in the current subset"
     );
 
     let unsupported_modifier = runtime_error(
@@ -255,7 +255,7 @@ preg_match('/wp/i', 'WP');
     assert_eq!(unsupported_modifier.column, 1);
     assert_eq!(
         unsupported_modifier.message,
-        "unsupported call preg_match(): only the u pattern modifier is implemented in the current subset"
+        "unsupported call preg_match(): only the u and x pattern modifiers are implemented in the current subset"
     );
 
     let array_subject = runtime_error(

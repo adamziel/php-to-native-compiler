@@ -972,9 +972,12 @@ echo "|", $bag["outer"][0];
 
 #[test]
 fn other_superglobals_remain_ordinary_missing_variables_for_now() {
-    let error = runtime_error("<?php\necho $_SESSION;\n");
+    let execution = run_source("<?php\necho $_SESSION;\n").unwrap();
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
-    assert_eq!(error.message, "undefined variable '$_SESSION'");
+    assert_eq!(
+        execution.stdout,
+        "Warning: Undefined variable $_SESSION in Command line code on line 2\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
 }

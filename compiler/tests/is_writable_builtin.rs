@@ -57,13 +57,14 @@ echo $call({target}) ? "writable" : "not-writable";
 
 #[test]
 fn is_writable_rejects_forms_outside_current_subset() {
-    let arity = run_source("<?php\necho is_writable();\n").unwrap_err();
-    assert_eq!(arity.phase, Phase::Runtime);
-    assert_eq!(arity.line, 2);
-    assert_eq!(arity.column, 6);
-    assert_eq!(
-        arity.message,
-        "arity mismatch for is_writable(): expected 1 argument(s), got 0"
+    let arity = run_source("<?php\necho is_writable();\n").unwrap();
+    assert_eq!(arity.exit_code, 255);
+    assert!(
+        arity
+            .stdout
+            .contains("Too few arguments to function is_writable(), 0 passed"),
+        "{}",
+        arity.stdout
     );
 
     let type_error = run_source("<?php\necho is_writable(42);\n").unwrap_err();

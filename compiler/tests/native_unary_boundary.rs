@@ -7,6 +7,21 @@ use php_compiler::{emit_asm_source, emit_ir_source, run_source};
 
 const LLVM_UNARY_REJECTION: &str = "LLVM unary lowering rejects unsupported unary operators, cast expressions, or operands until native PHP numeric coercion, truthiness conversion, scalar casts, overflow behavior, references/copy-on-write, and exact native error behavior exist; phpc run handles current unary and cast behavior";
 
+fn assert_ir_uses_diagnostic_result_stdout(ir: &str, minimum_reports: usize) {
+    assert!(
+        ir.contains(
+            "declare %phpc.NativeDiagnosticResult @phpc_native_diagnostic_result_from_value"
+        ),
+        "{ir}"
+    );
+    assert!(
+        ir.matches("@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free")
+            .count()
+            >= minimum_reports,
+        "{ir}"
+    );
+}
+
 #[test]
 fn phpc_run_still_handles_current_unary_subset() {
     let execution = run_source(
@@ -27,11 +42,10 @@ echo !"php", "empty";
 }
 
 #[test]
-fn emit_ir_rejects_unary_minus_and_logical_not_with_specific_boundary() {
-    for source in [
-        "<?php\necho -true;\n",
-        "<?php\n$sum = 1 + 2;\n$flag = $sum === 3;\n$value = $flag ? 0 : 5;\necho !$value;\n",
-    ] {
+fn emit_ir_rejects_dynamic_logical_not_with_specific_boundary() {
+    for source in
+        ["<?php\n$sum = 1 + 2;\n$flag = $sum === 3;\n$value = $flag ? 0 : 5;\necho !$value;\n"]
+    {
         let error = emit_ir_source(source).unwrap_err();
 
         assert_eq!(error.phase, Phase::Codegen);
@@ -40,9 +54,8 @@ fn emit_ir_rejects_unary_minus_and_logical_not_with_specific_boundary() {
 }
 
 #[test]
-fn emit_ir_rejects_unary_forms_before_lowering_operands() {
+fn emit_ir_rejects_dynamic_logical_not_before_lowering_operands() {
     for source in [
-        "<?php\necho -\"5\";\n",
         "<?php\n$sum = 1 + 2;\n$flag = $sum === 3;\n$value = $flag ? 0 : 5;\necho !$value;\n",
         "<?php\n$sum = 1 + 2;\n$flag = $sum === 3;\n$value = $flag ? 0.0 : 2.5;\necho !$value;\n",
         "<?php\n$sum = 1 + 2;\n$flag = $sum === 3;\n$value = $flag ? \"\" : \"php\";\necho !$value;\n",
@@ -52,6 +65,21 @@ fn emit_ir_rejects_unary_forms_before_lowering_operands() {
         assert_eq!(error.phase, Phase::Codegen);
         assert_eq!(error.message, LLVM_UNARY_REJECTION);
     }
+}
+
+#[test]
+fn emit_ir_lowers_static_bool_and_numeric_string_unary_minus() {
+    let ir = emit_ir_source(
+        r#"<?php
+echo -true, "\n", -"5";
+"#,
+    )
+    .unwrap();
+
+    assert!(ir.contains("@phpc_native_int(i64 -1)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 -5)"), "{ir}");
+    assert_ir_uses_diagnostic_result_stdout(&ir, 3);
+    assert!(!ir.contains("LLVM unary lowering rejects"), "{ir}");
 }
 
 #[test]
@@ -82,13 +110,14 @@ echo $a, "\n", $c;
     assert!(!ir.contains("sub i64 0, 5"), "{ir}");
     assert!(!ir.contains("sub i64 0, %tmp0"), "{ir}");
     assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 -5)"),
+        ir.contains("call %phpc.NativeScalarValue @phpc_native_int(i64 -5)"),
         "{ir}"
     );
     assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 -12)"),
+        ir.contains("call %phpc.NativeScalarValue @phpc_native_int(i64 -12)"),
         "{ir}"
     );
+    assert_ir_uses_diagnostic_result_stdout(&ir, 3);
 }
 
 #[test]
@@ -113,8 +142,9 @@ echo $expr;
         !ir.contains("sub i64 0, %tmp0"),
         "single known integer expression unary minus should fold to the known result:\n{ir}"
     );
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 -5)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 -12)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 -5)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 -12)"), "{ir}");
+    assert_ir_uses_diagnostic_result_stdout(&ir, 3);
 }
 
 #[test]
@@ -132,9 +162,10 @@ echo $negated + 15;
     assert!(!ir.contains("sub i64 0, %tmp0"), "{ir}");
     assert!(ir.contains("%tmp1 = add i64 -12, 15"), "{ir}");
     assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 %tmp1)"),
+        ir.contains("call %phpc.NativeScalarValue @phpc_native_int(i64 %tmp1)"),
         "{ir}"
     );
+    assert_ir_uses_diagnostic_result_stdout(&ir, 1);
 }
 
 #[test]
@@ -153,13 +184,14 @@ echo $a, "\n", $c;
     assert!(!ir.contains("fsub double 0.0, 2.5"), "{ir}");
     assert!(!ir.contains("fsub double 0.0, %tmp0"), "{ir}");
     assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_float, double -2.5)"),
+        ir.contains("call %phpc.NativeScalarValue @phpc_native_float(double -2.5)"),
         "{ir}"
     );
     assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_float, double -3.75)"),
+        ir.contains("call %phpc.NativeScalarValue @phpc_native_float(double -3.75)"),
         "{ir}"
     );
+    assert_ir_uses_diagnostic_result_stdout(&ir, 3);
 }
 
 #[test]
@@ -184,11 +216,9 @@ echo $expr;
         !ir.contains("fsub double 0.0, %tmp0"),
         "single known nonzero float expression unary minus should fold to the known result:\n{ir}"
     );
-    assert!(ir.contains("@printf(ptr @.fmt_float, double -2.5)"), "{ir}");
-    assert!(
-        ir.contains("@printf(ptr @.fmt_float, double -3.75)"),
-        "{ir}"
-    );
+    assert!(ir.contains("@phpc_native_float(double -2.5)"), "{ir}");
+    assert!(ir.contains("@phpc_native_float(double -3.75)"), "{ir}");
+    assert_ir_uses_diagnostic_result_stdout(&ir, 3);
 }
 
 #[test]
@@ -217,16 +247,9 @@ echo !$falsey ? 1 : 0;
         !ir.contains("xor i1"),
         "known string logical-not should fold to static booleans:\n{ir}"
     );
-    assert_eq!(
-        ir.matches("@printf(ptr @.fmt_int, i64 1)").count(),
-        3,
-        "{ir}"
-    );
-    assert_eq!(
-        ir.matches("@printf(ptr @.fmt_int, i64 0)").count(),
-        2,
-        "{ir}"
-    );
+    assert_eq!(ir.matches("@phpc_native_int(i64 1)").count(), 3, "{ir}");
+    assert_eq!(ir.matches("@phpc_native_int(i64 0)").count(), 2, "{ir}");
+    assert_ir_uses_diagnostic_result_stdout(&ir, 9);
 }
 
 #[test]
@@ -252,16 +275,9 @@ echo !$float ? 1 : 0;
         !ir.contains("xor i1"),
         "known numeric logical-not should fold to static booleans:\n{ir}"
     );
-    assert_eq!(
-        ir.matches("@printf(ptr @.fmt_int, i64 1)").count(),
-        2,
-        "{ir}"
-    );
-    assert_eq!(
-        ir.matches("@printf(ptr @.fmt_int, i64 0)").count(),
-        4,
-        "{ir}"
-    );
+    assert_eq!(ir.matches("@phpc_native_int(i64 1)").count(), 2, "{ir}");
+    assert_eq!(ir.matches("@phpc_native_int(i64 0)").count(), 4, "{ir}");
+    assert_ir_uses_diagnostic_result_stdout(&ir, 11);
 }
 
 #[test]
@@ -278,11 +294,8 @@ echo !NULL ? 1 : 0;
         !ir.contains("xor i1"),
         "null logical-not should fold to true without a boolean op:\n{ir}"
     );
-    assert_eq!(
-        ir.matches("@printf(ptr @.fmt_int, i64 1)").count(),
-        2,
-        "{ir}"
-    );
+    assert_eq!(ir.matches("@phpc_native_int(i64 1)").count(), 2, "{ir}");
+    assert_ir_uses_diagnostic_result_stdout(&ir, 3);
 }
 
 #[test]
@@ -296,9 +309,11 @@ echo !$truth, "\n", !$falsey, "done";
     )
     .unwrap();
 
-    assert!(ir.contains("c\"1\\00\""), "{ir}");
+    assert!(ir.contains("@phpc_native_bool(i1 true)"), "{ir}");
+    assert!(ir.contains("@phpc_native_bool(i1 false)"), "{ir}");
     assert!(ir.contains("c\"done\\00\""), "{ir}");
     assert!(!ir.contains("@printf(ptr @.fmt_int"), "{ir}");
+    assert_ir_uses_diagnostic_result_stdout(&ir, 4);
 }
 
 #[test]
@@ -324,9 +339,11 @@ echo !$is_three, "\n", !$is_four, "x";
         !ir.contains("xor i1 %tmp2, true"),
         "single-known false boolean logical-not should fold to true:\n{ir}"
     );
-    assert!(ir.contains("c\"1\\00\""), "{ir}");
+    assert!(ir.contains("@phpc_native_bool(i1 true)"), "{ir}");
+    assert!(ir.contains("@phpc_native_bool(i1 false)"), "{ir}");
     assert!(ir.contains("c\"x\\00\""), "{ir}");
     assert!(!ir.contains("@printf(ptr @.fmt_int"), "{ir}");
+    assert_ir_uses_diagnostic_result_stdout(&ir, 4);
 }
 
 #[test]
@@ -354,8 +371,9 @@ echo !$is_four ? 1 : 0;
         !ir.contains("xor i1 %tmp2, true"),
         "single-known false boolean logical-not should fold to true:\n{ir}"
     );
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 0)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 1)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 0)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 1)"), "{ir}");
+    assert_ir_uses_diagnostic_result_stdout(&ir, 3);
 }
 
 #[test]
@@ -379,9 +397,10 @@ echo $same ? 1 : 0;
     );
     assert!(ir.contains("%tmp2 = select i1 %tmp1, i64 1, i64 0"), "{ir}");
     assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 %tmp2)"),
+        ir.contains("call %phpc.NativeScalarValue @phpc_native_int(i64 %tmp2)"),
         "{ir}"
     );
+    assert_ir_uses_diagnostic_result_stdout(&ir, 1);
 }
 
 #[test]
@@ -409,16 +428,9 @@ echo !!null ? 1 : 0;
         !ir.contains("xor i1"),
         "known scalar double logical-not should fold without boolean ops:\n{ir}"
     );
-    assert_eq!(
-        ir.matches("@printf(ptr @.fmt_int, i64 1)").count(),
-        3,
-        "{ir}"
-    );
-    assert_eq!(
-        ir.matches("@printf(ptr @.fmt_int, i64 0)").count(),
-        5,
-        "{ir}"
-    );
+    assert_eq!(ir.matches("@phpc_native_int(i64 1)").count(), 3, "{ir}");
+    assert_eq!(ir.matches("@phpc_native_int(i64 0)").count(), 5, "{ir}");
+    assert_ir_uses_diagnostic_result_stdout(&ir, 15);
 }
 
 #[test]

@@ -169,7 +169,7 @@ echo "|leaf=", $leaf, "|other=", $other;
 
 #[test]
 fn unset_array_offsets_preserves_detached_typed_reference_cells() {
-    let error = runtime_error(
+    let fatal = run_source(
         r#"<?php
 class Box {
     public int $id = 1;
@@ -184,11 +184,14 @@ unset($items["copy"]);
 $slot = array("bad");
 "#,
     );
-    assert_eq!(error.line, 12);
-    assert_eq!(error.column, 1);
-    assert_eq!(
-        error.message,
-        "invalid property access: typed property Box::$id expects int, got array"
+    let fatal = fatal.unwrap();
+    assert_eq!(fatal.exit_code, 255);
+    assert!(
+        fatal.stdout.contains(
+            "Fatal error: Uncaught TypeError: Cannot assign array to reference held by property Box::$id of type int in Command line code:12"
+        ),
+        "{}",
+        fatal.stdout
     );
 
     let execution = run_source(

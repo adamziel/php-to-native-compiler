@@ -1,1 +1,1 @@
-
+phpc keeps append-target null coalescing assignment as an explicit unsupported syntax boundary.

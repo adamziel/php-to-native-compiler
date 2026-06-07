@@ -104,20 +104,21 @@ try {
 
 #[test]
 fn reached_throw_statement_reports_uncaught_runtime_boundary() {
-    let error = run_source(
+    let execution = run_source(
         r#"<?php
 echo "before";
 throw new Exception();
 "#,
     )
-    .unwrap_err();
+    .unwrap();
 
-    assert_eq!(error.phase, Phase::Runtime);
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 1);
-    assert_eq!(
-        error.message,
-        "unsupported call throw: uncaught Exception propagation beyond catch/finally is not implemented"
+    assert_eq!(execution.exit_code, 255);
+    assert!(
+        execution.stdout.contains(
+            "before\nFatal error: Uncaught Exception in Command line code:3\nStack trace:\n#0 {main}\n  thrown in Command line code on line 3"
+        ),
+        "{}",
+        execution.stdout
     );
 }
 

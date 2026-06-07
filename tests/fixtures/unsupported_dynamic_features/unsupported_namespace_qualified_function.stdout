@@ -1,0 +1,4 @@
+Fatal error: Uncaught Error: Call to undefined function App\make() in tests/fixtures/unsupported_dynamic_features/unsupported_namespace_qualified_function.php:2
+Stack trace:
+#0 {main}
+  thrown in tests/fixtures/unsupported_dynamic_features/unsupported_namespace_qualified_function.php on line 2

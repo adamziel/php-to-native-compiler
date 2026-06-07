@@ -1,0 +1,1 @@
+Project runtime emits the current stream_context_set_option() deprecation shape; host PHP versions before that diagnostic differ.

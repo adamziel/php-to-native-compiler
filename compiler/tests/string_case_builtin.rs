@@ -78,7 +78,8 @@ echo is_callable("strtolower") ? "1" : "0";
     );
     assert!(direct_ir.contains("i8 48, ptr %"), "{direct_ir}");
     assert!(
-        direct_ir.contains("phpc_native_value_format_stdout_with_diagnostic"),
+        direct_ir
+            .contains("@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"),
         "{direct_ir}"
     );
     assert!(

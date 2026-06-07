@@ -5,23 +5,17 @@ use std::process::Command;
 use php_compiler::{codegen::emit_native_executable_c_source, parse};
 
 const DYNAMIC_STRING_COMPARISON_SOURCE: &str = r#"<?php
-$flag = 1 < 2;
-$left = $flag ? "10" : "20";
-$right = $flag ? "02" : "12";
-echo ($left > 2) ? 1 : 0, "\n";
-echo (2 < $left) ? 1 : 0, "\n";
-echo ($left !== 10) ? 1 : 0, "\n";
-echo ($right == 2) ? 1 : 0;
+echo ((extension_loaded("Json") ? "10" : "20") > 2), "\n";
+echo (2 < (extension_loaded("Json") ? "10" : "20")), "\n";
+echo ((extension_loaded("Json") ? "10" : "20") !== 10), "\n";
+echo ((extension_loaded("Json") ? "02" : "12") == 2);
 "#;
 
 const MIXED_LENGTH_DYNAMIC_STRING_COMPARISON_SOURCE: &str = r#"<?php
-$flag = 1 < 2;
-$left = $flag ? "10" : "100";
-$right = $flag ? "2" : "20";
-echo ($left > $right) ? 1 : 0, "\n";
-echo ($right < $left) ? 1 : 0, "\n";
-echo ($left !== 10) ? 1 : 0, "\n";
-echo ($right == 2) ? 1 : 0;
+echo ((extension_loaded("Json") ? "10" : "100") > (extension_loaded("Json") ? "2" : "20")), "\n";
+echo ((extension_loaded("Json") ? "2" : "20") < (extension_loaded("Json") ? "10" : "100")), "\n";
+echo ((extension_loaded("Json") ? "10" : "100") !== 10), "\n";
+echo ((extension_loaded("Json") ? "2" : "20") == 2);
 "#;
 
 #[test]
@@ -30,19 +24,18 @@ fn native_executable_c_source_materializes_known_length_string_expr_comparisons(
     let source = emit_native_executable_c_source(&program).unwrap();
 
     assert!(
-        source.contains("phpc_native_comparison_operand_from_string_bytes((const uint8_t *)("),
-        "dynamic string comparison operands should materialize through the native comparison operand ABI:\n{source}"
+        source.contains("phpc_native_value_from_string_bytes_with_diagnostic((const uint8_t *)("),
+        "dynamic string comparison operands should materialize string bytes through the native value comparison ABI:\n{source}"
     );
     assert!(
-        source.contains("phpc_native_comparison_operation_from_opcode")
-            && source.contains("phpc_native_comparison_operand_compare_operation_decision_and_free")
-            && source.contains("phpc_native_comparison_branch_decision_is_true"),
-        "dynamic string comparison operands should feed the shared comparison operand-decision ABI:\n{source}"
+        source.contains("phpc_native_value_compare_result")
+            && source.contains("phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"),
+        "dynamic string comparison operands should feed the runtime value comparison and diagnostic output ABI:\n{source}"
     );
     assert!(
         !source.contains("phpc_native_comparison_operand_compare_operation_branch_and_free")
             && !source.contains("phpc_native_comparison_branch_decision_from_result"),
-        "dynamic string comparison operands should not materialize intermediate branch results:\n{source}"
+        "dynamic string comparison output should not materialize intermediate branch results:\n{source}"
     );
     assert!(
         !source.contains("comparison_string_handle_"),
@@ -72,19 +65,18 @@ fn native_executable_c_source_materializes_mixed_length_string_expr_comparisons(
         "mixed-length string expression comparison operands should use tracked byte lengths instead of C string length:\n{source}"
     );
     assert!(
-        source.contains("phpc_native_comparison_operand_from_string_bytes((const uint8_t *)("),
-        "mixed-length dynamic string comparison operands should materialize through the native comparison operand ABI:\n{source}"
+        source.contains("phpc_native_value_from_string_bytes_with_diagnostic((const uint8_t *)("),
+        "mixed-length dynamic string comparison operands should materialize string bytes through the native value comparison ABI:\n{source}"
     );
     assert!(
-        source.contains("phpc_native_comparison_operation_from_opcode")
-            && source.contains("phpc_native_comparison_operand_compare_operation_decision_and_free")
-            && source.contains("phpc_native_comparison_branch_decision_is_true"),
-        "mixed-length dynamic string comparison operands should feed the shared comparison operand-decision ABI:\n{source}"
+        source.contains("phpc_native_value_compare_result")
+            && source.contains("phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"),
+        "mixed-length dynamic string comparison operands should feed the runtime value comparison and diagnostic output ABI:\n{source}"
     );
     assert!(
         !source.contains("phpc_native_comparison_operand_compare_operation_branch_and_free")
             && !source.contains("phpc_native_comparison_branch_decision_from_result"),
-        "mixed-length dynamic string comparison operands should not materialize intermediate branch results:\n{source}"
+        "mixed-length dynamic string comparison output should not materialize intermediate branch results:\n{source}"
     );
     assert!(
         !source.contains("phpc_native_value_compare_branch_and_free"),

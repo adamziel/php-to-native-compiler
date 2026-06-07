@@ -44,16 +44,20 @@ echo "|", $call(-9);
 
 #[test]
 fn abs_rejects_forms_outside_current_subset() {
-    let missing = runtime_error(
+    let missing = run_source(
         r#"<?php
 echo abs();
 "#,
-    );
-    assert_eq!(missing.line, 2);
-    assert_eq!(missing.column, 6);
-    assert_eq!(
-        missing.message,
-        "arity mismatch for abs(): expected 1 argument(s), got 0"
+    )
+    .unwrap();
+    assert_eq!(missing.stderr, "");
+    assert_eq!(missing.exit_code, 255);
+    assert!(
+        missing.stdout.contains(
+            "Fatal error: Uncaught TypeError: Too few arguments to function abs(), 0 passed in Command line code on line 2 and exactly 1 expected"
+        ),
+        "{}",
+        missing.stdout
     );
 
     let string = runtime_error(

@@ -1,1 +1,1 @@
-Project-specific stable parse diagnostic for unsupported call-site argument unpacking.
+phpc parses call-site argument unpacking and reaches its current PHP-shaped undefined-function fatal for this fixture.

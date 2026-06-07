@@ -1,1 +1,0 @@
-phpc intentionally limits bare global constants to the documented built-in/runtime-defined subset and reports unknown names with a stable project diagnostic.

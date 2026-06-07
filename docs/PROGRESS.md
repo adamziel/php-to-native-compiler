@@ -1,5 +1,43 @@
 # Progress Log
 
+## 2026-06-06
+
+Implemented:
+
+- Fixed interpreter dispatch for user subclasses of seeded `Exception`/`Error`
+  objects so supported core throwable methods such as `getMessage()` keep the
+  core path while other user-declared subclass methods resolve through normal
+  instance method dispatch. The bounded `Exception` constructor state for
+  `(message, code, previous)` is preserved for subclasses. Broader `Throwable`
+  methods, stack traces, and exception unwinding remain unsupported.
+- Aligned the milestone 79 `__NAMESPACE__` CLI fixture and active support docs
+  with current `phpc run` behavior: the magic constant evaluates to the
+  current lexical namespace name, and to an empty string in the global
+  namespace. Namespace-aware native lowering and broader exact namespace/source
+  mapping remain unsupported.
+- Refreshed the generated-C native executable path for the current runtime ABI:
+  PHP escaped-byte sentinels are decoded before native string/value byte
+  materialization, static unary numeric negation can fold in LLVM/C when the
+  primitive source proves the result, runtime dynamic callable lookup now
+  includes `strpos`, and callable source-signature frames can be rebound when
+  dynamic invocation crosses from a runtime carrier into user functions with
+  global-import roots.
+- Updated native-link source-shape expectations to the current shared runtime
+  carriers: diagnostics now flow through diagnostic-result consumers,
+  comparisons use native value comparison results, branch-local offset reads
+  join as native values, method/constructor/static calls use source-call
+  argument carriers, global-import frames share one root symbol table, and root
+  offset mutations use symbol-table references plus array-lvalue owners. The
+  current generated-C runtime-dynamic by-reference literal case still evaluates
+  later arguments before reporting the unsupported by-reference materialization
+  diagnostic; that ordering gap is named as unsupported.
+
+Validated:
+
+- `CARGO_TARGET_DIR=/dev/shm/phpc-target-dev21-run CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -q -p php_runtime --lib`
+- `CARGO_TARGET_DIR=/dev/shm/phpc-target-dev21-run CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -q -p phpc --test abs_builtin --test array_filter --test preg_replace_callback_builtin --test dynamic_features --test namespace_resolution --test functions_and_scopes --test object_model`
+- `CARGO_TARGET_DIR=/dev/shm/phpc-target-dev21-run CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -q -p phpc --test native_link`
+
 ## 2026-05-27
 
 Implemented:
@@ -43250,3 +43288,33 @@ Next:
   split-lane batch. A checkpoint was still not created because
   `tools/checkpoint.sh` stages the full dirty tree and this worker was not
   asked to checkpoint.
+
+Next:
+
+- Card 176 repaired the stale run-236 fixture and test expectations against
+  current executable behavior. The updates align formerly unsupported fixture
+  sidecars with implemented runtime/interpreter/native slices, keep
+  `phpc compile --emit-ir`/`--emit-asm` rejection boundaries explicit, and add
+  `.phpc-only` markers where project behavior is intentional but system PHP
+  comparison still has named host-parity gaps.
+- Fixed the statement-position `yield from` diagnostic test to use the
+  dedicated generator-delegation boundary, updated the unset-variable test to
+  assert PHP-shaped warning-and-continue output, and made the file metadata
+  fixtures resolve their source paths consistently from both the CLI root and
+  the compiler test working directory.
+- Named remaining unsupported edges in docs: stream-context notification
+  callback-name resolution/validation, host-exact `ArrayAccess` append
+  null-offset deprecation parity, whole-array reference identity through
+  by-reference magic/`ArrayAccess` accessors, and dynamic variable variables
+  or `eval` execution.
+- Focused checks passed for unsupported syntax/feature fixtures,
+  `syntax_boundaries`, `variable_unset`, `filemtime`/`clearstatcache`
+  metadata fixtures, and the milestone fixture comparison path. The final full
+  gate also passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-dev21-run CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 tools/run-tests.sh`
+  reported `fixture tests: 2420 passed, 0 failed` and
+  `system php comparison: 1701 compared, 719 skipped (0 missing php, 719 phpc-only)`.
+- Post-doc `cargo fmt --check` passed. Full `git diff --check` reports only
+  the three intentional two-newline sidecars needed for the fixture runner to
+  preserve actual trailing output newlines; scoped `git diff --check`
+  excluding those sidecars passed.

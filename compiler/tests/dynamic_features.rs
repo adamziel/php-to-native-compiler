@@ -16,6 +16,13 @@ fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
     error
 }
 
+fn fatal_stdout(source: &str) -> String {
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 255);
+    execution.stdout
+}
+
 fn lex_error(source: &str) -> php_compiler::error::Diagnostic {
     let error = run_source(source).unwrap_err();
     assert_eq!(error.phase, Phase::Lex);
@@ -614,17 +621,20 @@ try {
 }
 
 #[test]
-fn unresolved_dynamic_function_name_has_stable_runtime_error() {
-    let error = runtime_error(
+fn unresolved_dynamic_function_name_emits_php_fatal_error() {
+    let stdout = fatal_stdout(
         r#"<?php
 $call = "missing";
 echo $call();
 "#,
     );
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
-    assert_eq!(error.message, "undefined function missing()");
+    assert!(
+        stdout.contains(
+            "Fatal error: Uncaught Error: Call to undefined function missing() in Command line code:3"
+        ),
+        "{stdout}"
+    );
 }
 
 #[test]
@@ -645,8 +655,8 @@ echo $call();
 }
 
 #[test]
-fn variable_variables_are_rejected_with_stable_lex_error() {
-    let error = lex_error(
+fn variable_variables_are_rejected_with_stable_parse_error() {
+    let error = parse_error(
         r#"<?php
 $name = "value";
 $$name = "dynamic";
@@ -1127,41 +1137,33 @@ $result = eval('return 1;');
 }
 
 #[test]
-fn unsupported_namespace_and_use_forms_are_rejected_with_stable_parse_errors() {
-    let cases = [
-        (
-            r#"<?php
+fn unsupported_namespace_blocks_are_rejected_and_import_declarations_are_accepted() {
+    let error = parse_error(
+        r#"<?php
 namespace App\Demo {
     echo "blocked";
 }
 "#,
-            2,
-            1,
-            "unsupported namespace declaration: bracketed namespace blocks are not implemented",
-        ),
-        (
-            r#"<?php
+    );
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "unsupported namespace declaration: bracketed namespace blocks are not implemented"
+    );
+
+    for source in [
+        r#"<?php
 use function App\Demo\make_service;
 "#,
-            2,
-            1,
-            "unsupported function use declaration: missing function import metadata, namespace-aware function lookup, alias handling, fallback lookup, and native lowering",
-        ),
-        (
-            r#"<?php
+        r#"<?php
 use const App\Demo\VALUE;
 "#,
-            2,
-            1,
-            "unsupported const use declaration: missing constant import metadata, namespace-aware constant lookup, alias handling, fallback lookup, and native lowering",
-        ),
-    ];
-
-    for (source, line, column, message) in cases {
-        let error = parse_error(source);
-        assert_eq!(error.line, line);
-        assert_eq!(error.column, column);
-        assert_eq!(error.message, message);
+    ] {
+        let execution = run_source(source).unwrap();
+        assert_eq!(execution.stdout, "");
+        assert_eq!(execution.stderr, "");
+        assert_eq!(execution.exit_code, 0);
     }
 }
 
@@ -1180,15 +1182,18 @@ echo namespace\make();
 
     assert_eq!(execution.stdout, "App\\make");
 
-    let error = runtime_error(
+    let stdout = fatal_stdout(
         r#"<?php
 namespace App;
 App\make();
 "#,
     );
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 1);
-    assert_eq!(error.message, "undefined function App\\App\\make()");
+    assert!(
+        stdout.contains(
+            "Fatal error: Uncaught Error: Call to undefined function App\\App\\make() in Command line code:3"
+        ),
+        "{stdout}"
+    );
 }
 
 #[test]
@@ -1581,18 +1586,26 @@ echo constant("SecretBox::SECRET");
 }
 
 #[test]
-fn constant_builtin_rejects_unknown_constant_names() {
-    let error = runtime_error(
+fn constant_builtin_resolves_builtins_and_rejects_unknown_constant_names() {
+    let execution = run_source(
         r#"<?php
 echo constant("PHP_OS");
 "#,
-    );
+    )
+    .unwrap();
+    assert_eq!(execution.stdout, "Linux");
+    assert_eq!(execution.exit_code, 0);
 
+    let error = runtime_error(
+        r#"<?php
+echo constant("PHP_DOES_NOT_EXIST");
+"#,
+    );
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 6);
     assert_eq!(
         error.message,
-        "unsupported call constant(): constant PHP_OS is not defined in the current runtime-defined or built-in constant subset"
+        "unsupported call constant(): constant PHP_DOES_NOT_EXIST is not defined in the current runtime-defined or built-in constant subset"
     );
 
     let class_constant = runtime_error(
@@ -1608,7 +1621,7 @@ echo constant("Box::MISSING");
 }
 
 #[test]
-fn error_control_operator_evaluates_operand_without_suppression() {
+fn error_control_operator_evaluates_operand_and_suppresses_undefined_reads() {
     let execution = run_source(
         r#"<?php
 $c = 5;
@@ -1622,15 +1635,16 @@ echo @"ok", "\n";
     assert_eq!(execution.stdout, "5\n5\nok\n");
     assert_eq!(execution.exit_code, 0);
 
-    let error = runtime_error(
+    let suppressed = run_source(
         r#"<?php
 echo @$missing;
 "#,
-    );
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 7);
-    assert_eq!(error.message, "undefined variable '$missing'");
+    assert_eq!(suppressed.stdout, "");
+    assert_eq!(suppressed.stderr, "");
+    assert_eq!(suppressed.exit_code, 0);
 }
 
 #[test]

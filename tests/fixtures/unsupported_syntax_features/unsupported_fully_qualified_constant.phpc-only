@@ -1,1 +1,1 @@
-Project-specific stable parse diagnostic for leading-backslash fully-qualified constant reads before exact constant-table lookup exists.
+Project runtime intentionally reports its pinned PHP_VERSION value, which can differ from the host PHP used by compare-php.

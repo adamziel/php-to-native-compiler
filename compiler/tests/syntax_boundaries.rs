@@ -12,6 +12,9 @@ const LLVM_INTERFACE_REJECTION: &str = "LLVM interface lowering rejects interfac
 const LLVM_TRAIT_REJECTION: &str = "LLVM trait lowering rejects trait declarations until native trait tables, class trait-use composition, conflict resolution, aliasing, relationship metadata, autoload interaction, and exact native error behavior exist; phpc run handles current trait metadata behavior";
 const LLVM_ENUM_REJECTION: &str = "LLVM enum lowering rejects enum declarations until native class/enum tables, enum case objects, backed enum values, interface implementation, relationship queries, autoload interaction, and exact native error behavior exist; phpc run handles current enum metadata behavior";
 const LLVM_FUNCTION_DECLARATION_REJECTION: &str = "LLVM user-function lowering rejects function declarations and return statements until native function symbol tables, stack-frame layout, default parameter binding, recursion guards, return-value flow, and exact native error behavior exist; phpc run handles current user-function declaration and return behavior";
+const LLVM_OBJECT_INSTANTIATION_REJECTION: &str = "LLVM object-instantiation lowering rejects new expressions and constructor dispatch until native object allocation, object handles, constructor calls, visibility checks, autoload/class lookup, references/copy-on-write, and exact native object-instantiation errors exist; phpc run handles current bounded new behavior";
+const LLVM_NATIVE_ARRAY_NON_LOCAL_UNSET_REJECTION: &str = "LLVM native array non-local unset lowering rejects object, dynamic-object, non-direct object, and static property unsets until non-local owner cells, magic __unset dispatch, typed/static property state, references/copy-on-write, and exact diagnostics share one unset owner contract; local variables and native array offset unsets use their shared native lvalue unset contracts";
+const LLVM_GLOBAL_CONSTANT_REJECTION: &str = "LLVM global-constant lowering rejects built-in constant values, runtime-defined constants, bare constant reads, top-level const declarations, define()/constant(), and unsupported defined() forms until native constant tables, source-order definitions, namespace-aware lookup, and exact native error behavior exist; phpc run handles current global constant behavior";
 
 fn parse_error(source: &str) -> php_compiler::error::Diagnostic {
     let error = run_source(source).unwrap_err();
@@ -22,6 +25,12 @@ fn parse_error(source: &str) -> php_compiler::error::Diagnostic {
 fn lex_error(source: &str) -> php_compiler::error::Diagnostic {
     let error = run_source(source).unwrap_err();
     assert_eq!(error.phase, Phase::Lex);
+    error
+}
+
+fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
+    let error = run_source(source).unwrap_err();
+    assert_eq!(error.phase, Phase::Runtime);
     error
 }
 
@@ -139,50 +148,29 @@ echo $value?>"#,
 }
 
 #[test]
-fn unsupported_php_attribute_arguments_have_stable_lex_errors() {
+fn php_attribute_arguments_parse_and_execute_current_metadata_subset() {
     let cases = [
-        (
-            "<?php\n#[Route('/wp-json/demo')]\nfunction handler() {}\n",
-            2,
-            1,
-        ),
-        (
-            "<?php\nclass Box {\n    #[Inject]\n    public $service;\n}\n",
-            0,
-            0,
-        ),
-        (
-            "<?php\nclass Box {\n    #[Inject('service')]\n    public $service;\n}\n",
-            3,
-            5,
-        ),
+        "<?php\n#[Route('/wp-json/demo')]\nfunction handler() {}\n",
+        "<?php\nclass Box {\n    #[Inject]\n    public $service;\n}\n",
+        "<?php\nclass Box {\n    #[Inject('service')]\n    public $service;\n}\n",
     ];
 
-    for (source, line, column) in cases {
-        if line == 0 {
-            run_source(source).unwrap();
-            continue;
-        }
-        let error = lex_error(source);
-        assert_eq!(error.line, line);
-        assert_eq!(error.column, column);
-        assert_eq!(
-            error.message,
-            "unsupported PHP attribute arguments: constructor argument evaluation, target validation, reflection visibility, namespace-aware attribute names, repeatability rules, references/copy-on-write, and native lowering are not implemented"
-        );
+    for source in cases {
+        parse(source).unwrap();
+        let execution = run_source(source).unwrap();
+        assert_eq!(execution.stdout, "");
+        assert_eq!(execution.stderr, "");
+        assert_eq!(execution.exit_code, 0);
     }
 }
 
 #[test]
-fn emit_ir_rejects_php_attributes_at_lex_boundary() {
+fn emit_ir_rejects_php_attributes_at_function_declaration_boundary() {
     let error =
         php_compiler::emit_ir_source("<?php\n#[Hook('init')]\nfunction boot() {}\n").unwrap_err();
 
-    assert_eq!(error.phase, Phase::Lex);
-    assert_eq!(
-        error.message,
-        "unsupported PHP attribute arguments: constructor argument evaluation, target validation, reflection visibility, namespace-aware attribute names, repeatability rules, references/copy-on-write, and native lowering are not implemented"
-    );
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, LLVM_FUNCTION_DECLARATION_REJECTION);
 }
 
 #[test]
@@ -330,7 +318,7 @@ fn emit_ir_rejects_object_property_unset_lowering() {
     let error = php_compiler::emit_ir_source("<?php\nunset($box->name);\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.message, LLVM_MUTATION_REJECTION);
+    assert_eq!(error.message, LLVM_NATIVE_ARRAY_NON_LOCAL_UNSET_REJECTION);
 }
 
 #[test]
@@ -395,10 +383,7 @@ fn emit_ir_rejects_throw_statement_at_codegen_boundary() {
     let error = php_compiler::emit_ir_source("<?php\nthrow new Exception('boom');\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(
-        error.message,
-        "LLVM exception lowering rejects throw statements and try/catch/finally blocks until native Throwable objects, stack unwinding, catch/finally dispatch, stack traces, and exact native error behavior exist; phpc run handles the current exception boundary"
-    );
+    assert_eq!(error.message, LLVM_OBJECT_INSTANTIATION_REJECTION);
 }
 
 #[test]
@@ -414,7 +399,7 @@ fn unsupported_yield_syntax_has_stable_parse_errors() {
             "<?php\nYIELD from [1, 2];\n",
             2,
             1,
-            "unsupported yield expression: generators and generator object execution are not implemented",
+            "unsupported yield from expression: generator delegation requires Traversable iteration, yielded key/value forwarding, send/throw propagation, generator return values, references/copy-on-write, and native lowering",
         ),
         (
             "<?php\necho yield 1;\n",
@@ -524,38 +509,32 @@ fn emit_ir_rejects_exponentiation_syntax_at_parse_boundary() {
 }
 
 #[test]
-fn unsupported_first_class_callable_syntax_has_stable_parse_errors() {
-    let cases = [
-        (
-            "<?php\n$callback = strlen(...);\n",
-            2,
-            20,
-            "unsupported first-class callable syntax: Closure creation with ... is not implemented",
-        ),
-        (
-            "<?php\n$callback = 'strlen';\necho $callback(...);\n",
-            3,
-            16,
-            "unsupported first-class callable syntax: Closure creation with ... is not implemented",
-        ),
-    ];
+fn first_class_callable_syntax_parses_and_executes_current_minimal_subset() {
+    let source = "<?php\n$callback = strlen(...);\n";
 
-    for (source, line, column, message) in cases {
-        let error = parse_error(source);
-        assert_eq!(error.line, line);
-        assert_eq!(error.column, column);
-        assert_eq!(error.message, message);
-    }
+    parse(source).unwrap();
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.stdout, "");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+
+    let dynamic = parse_error("<?php\n$callback = 'strlen';\necho $callback(...);\n");
+    assert_eq!(dynamic.line, 3);
+    assert_eq!(dynamic.column, 16);
+    assert_eq!(
+        dynamic.message,
+        "unsupported first-class callable syntax: Closure creation with ... is not implemented"
+    );
 }
 
 #[test]
-fn emit_ir_rejects_first_class_callable_syntax_at_parse_boundary() {
-    let error = php_compiler::emit_ir_source("<?php\n$callback = strlen(...);\n").unwrap_err();
+fn emit_ir_accepts_first_class_callable_syntax_in_current_minimal_subset() {
+    let ir = php_compiler::emit_ir_source("<?php\n$callback = strlen(...);\n").unwrap();
 
-    assert_eq!(error.phase, Phase::Parse);
-    assert_eq!(
-        error.message,
-        "unsupported first-class callable syntax: Closure creation with ... is not implemented"
+    assert!(ir.contains("; generated by phpc milestone 1"), "{ir}");
+    assert!(
+        !ir.contains("unsupported first-class callable syntax"),
+        "{ir}"
     );
 }
 
@@ -595,54 +574,48 @@ fn spread_arguments_parse_as_source_ordered_call_argument_nodes() {
 }
 
 #[test]
-fn native_codegen_rejects_argument_unpacking_at_shared_finalization_bridge() {
+fn native_codegen_lowers_argument_unpacking_through_shared_finalization_bridge() {
     let cases = [
-        (
-            "<?php\nclass Handler { public function run($first, $value) {} }\n$handler = new Handler();\n$args = ['init'];\n$handler->run('first', ...$args);\n",
-            1,
-        ),
-        (
-            "<?php\nclass Handler { public static function run($first, $value) {} }\n$args = ['init'];\nHandler::run('first', ...$args);\n",
-            1,
-        ),
+        "<?php\nclass Handler { public function run($first, $value) {} }\n$handler = new Handler();\n$args = ['init'];\n$handler->run('first', ...$args);\n",
+        "<?php\nclass Handler { public static function run($first, $value) {} }\n$args = ['init'];\nHandler::run('first', ...$args);\n",
     ];
 
-    for (source, source_index) in cases {
+    for source in cases {
         let program = parse(source).unwrap();
-        let error = emit_native_executable_c_source(&program).unwrap_err();
+        let generated = emit_native_executable_c_source(&program).unwrap();
 
-        assert_eq!(error.phase, Phase::Codegen);
         assert!(
-            error.message.contains(&format!(
-                "spread call argument at source slot {source_index} requires runtime unpack normalization"
-            )),
-            "{}",
-            error.message
+            generated
+                .contains("phpc_native_materialized_call_arguments_unpack_array_value_and_free"),
+            "{generated}"
+        );
+        assert!(
+            generated.contains("phpc_native_materialized_call_arguments_finalize_with_diagnostic"),
+            "{generated}"
         );
     }
 }
 
 #[test]
-fn native_codegen_blocks_descriptor_closure_spread_until_unpacked_handle_bridge_exists() {
+fn native_codegen_lowers_descriptor_closure_spread_through_unpacked_handle_bridge() {
     let program = parse(
         "<?php\n$closure = function ($first, $value) { return $first . $value; };\n$args = ['tail'];\necho $closure('head', ...$args);\n",
     )
     .unwrap();
 
-    let error = emit_native_executable_c_source(&program).unwrap_err();
+    let generated = emit_native_executable_c_source(&program).unwrap();
 
-    assert_eq!(error.phase, Phase::Codegen);
     assert!(
-        error
-            .message
-            .contains("spread operands need a materialized-entry producer plus finalized NativeCallArgumentsHandle bridge"),
-        "{}",
-        error.message
+        generated.contains("phpc_native_materialized_call_arguments_unpack_array_value_and_free"),
+        "{generated}"
     );
     assert!(
-        error.message.contains("descriptor closure"),
-        "{}",
-        error.message
+        generated.contains("phpc_native_materialized_call_arguments_finalize_with_diagnostic"),
+        "{generated}"
+    );
+    assert!(
+        generated.contains("phpc_native_closure_invoke_value_with_diagnostic_and_free_arguments"),
+        "{generated}"
     );
 }
 
@@ -811,33 +784,31 @@ fn emit_ir_rejects_anonymous_class_expression_at_parse_boundary() {
 }
 
 #[test]
-fn unsupported_parenthesized_dynamic_new_class_expressions_have_stable_parse_errors() {
-    let cases = [
-        ("<?php\n$class = \"Box\";\n$box = new ($class)();\n", 3, 12),
-        ("<?php\necho new (factory())();\n", 2, 10),
-    ];
+fn parenthesized_dynamic_new_class_expressions_reach_runtime_boundaries() {
+    let missing_class = run_source("<?php\n$class = \"Box\";\n$box = new ($class)();\n").unwrap();
+    assert_eq!(
+        missing_class.stdout,
+        "Fatal error: Uncaught Error: Class \"Box\" not found in Command line code:3\nStack trace:\n#0 {main}\n  thrown in Command line code on line 3"
+    );
+    assert_eq!(missing_class.stderr, "");
+    assert_eq!(missing_class.exit_code, 255);
 
-    for (source, line, column) in cases {
-        let error = parse_error(source);
-        assert_eq!(error.line, line);
-        assert_eq!(error.column, column);
-        assert_eq!(
-            error.message,
-            "unsupported dynamic class-name expression in new: only named classes, self/parent/static, and direct variable class names are implemented; parenthesized and arbitrary class-name expressions require expression evaluation ordering, autoload interaction, exact PHP diagnostics, and native lowering"
-        );
-    }
+    let missing_factory = run_source("<?php\necho new (factory())();\n").unwrap();
+    assert_eq!(
+        missing_factory.stdout,
+        "Fatal error: Uncaught Error: Call to undefined function factory() in Command line code:2\nStack trace:\n#0 {main}\n  thrown in Command line code on line 2"
+    );
+    assert_eq!(missing_factory.stderr, "");
+    assert_eq!(missing_factory.exit_code, 255);
 }
 
 #[test]
-fn emit_ir_rejects_parenthesized_dynamic_new_class_expression_at_parse_boundary() {
+fn emit_ir_rejects_parenthesized_dynamic_new_class_expression_at_codegen_boundary() {
     let error = php_compiler::emit_ir_source("<?php\n$class = \"Box\";\n$box = new ($class)();\n")
         .unwrap_err();
 
-    assert_eq!(error.phase, Phase::Parse);
-    assert_eq!(
-        error.message,
-        "unsupported dynamic class-name expression in new: only named classes, self/parent/static, and direct variable class names are implemented; parenthesized and arbitrary class-name expressions require expression evaluation ordering, autoload interaction, exact PHP diagnostics, and native lowering"
-    );
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, LLVM_OBJECT_INSTANTIATION_REJECTION);
 }
 
 #[test]
@@ -889,18 +860,30 @@ fn emit_ir_rejects_promoted_property_parameters_at_parse_boundary() {
 }
 
 #[test]
-fn unsupported_dnf_type_declarations_have_stable_parse_errors() {
+fn dnf_type_declarations_parse_as_type_metadata() {
     let cases = [
-        (
-            "<?php\nfunction accepts((Iterator&Countable)|ArrayAccess $value) {}\n",
-            2,
-            18,
-        ),
-        (
-            "<?php\nfunction returns(): (Iterator&Countable)|ArrayAccess { return null; }\n",
-            2,
-            21,
-        ),
+        "<?php\nfunction accepts((Iterator&Countable)|ArrayAccess $value) {}\n",
+        "<?php\nfunction returns(): (Iterator&Countable)|ArrayAccess { return null; }\n",
+    ];
+
+    for source in cases {
+        parse(source).unwrap();
+    }
+
+    let program =
+        parse("<?php\nfunction accepts((Iterator&Countable)|ArrayAccess $value) {}\n").unwrap();
+    let Stmt::Function(function) = &program.statements[0] else {
+        panic!(
+            "expected function declaration, got {:#?}",
+            program.statements[0]
+        );
+    };
+    assert_eq!(
+        function.params[0].type_decl.as_ref().unwrap().text,
+        "(Iterator&Countable)|ArrayAccess"
+    );
+
+    let property_cases = [
         (
             "<?php\nclass Box {\n    public (Iterator&Countable)|ArrayAccess $value;\n}\n",
             3,
@@ -913,7 +896,7 @@ fn unsupported_dnf_type_declarations_have_stable_parse_errors() {
         ),
     ];
 
-    for (source, line, column) in cases {
+    for (source, line, column) in property_cases {
         let error = parse_error(source);
         assert_eq!(error.line, line);
         assert_eq!(error.column, column);
@@ -925,17 +908,14 @@ fn unsupported_dnf_type_declarations_have_stable_parse_errors() {
 }
 
 #[test]
-fn emit_ir_rejects_dnf_type_declarations_at_parse_boundary() {
+fn emit_ir_rejects_dnf_type_declarations_at_function_declaration_boundary() {
     let error = php_compiler::emit_ir_source(
         "<?php\nfunction accepts((Iterator&Countable)|ArrayAccess $value) {}\n",
     )
     .unwrap_err();
 
-    assert_eq!(error.phase, Phase::Parse);
-    assert_eq!(
-        error.message,
-        "unsupported DNF type declaration: parenthesized union/intersection type declarations are not implemented"
-    );
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, LLVM_FUNCTION_DECLARATION_REJECTION);
 }
 
 #[test]
@@ -1059,7 +1039,7 @@ $e = \strlen();
 }
 
 #[test]
-fn unsupported_namespace_qualified_constant_reads_have_stable_parse_errors() {
+fn namespace_qualified_constant_reads_have_stable_parse_errors() {
     let cases = [
         (
             "<?php\n$value = App\\VERSION;\n",
@@ -1073,12 +1053,6 @@ fn unsupported_namespace_qualified_constant_reads_have_stable_parse_errors() {
             10,
             "unsupported namespace-qualified constant name: namespace-aware constant lookup, fallback behavior, constant imports, and native lowering are not implemented",
         ),
-        (
-            "<?php\necho \\PHP_VERSION;\n",
-            2,
-            6,
-            "unsupported fully-qualified constant name: leading global namespace constant reads require exact constant-table lookup, namespace fallback bypass, import interaction, and native lowering",
-        ),
     ];
 
     for (source, line, column, message) in cases {
@@ -1090,14 +1064,20 @@ fn unsupported_namespace_qualified_constant_reads_have_stable_parse_errors() {
 }
 
 #[test]
-fn emit_ir_rejects_fully_qualified_constant_reads_at_parse_boundary() {
+fn fully_qualified_builtin_constant_reads_execute_current_subset() {
+    let execution = run_source("<?php\necho \\PHP_VERSION;\n").unwrap();
+
+    assert_eq!(execution.stdout, "8.3.0");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn emit_ir_rejects_fully_qualified_constant_reads_at_global_constant_boundary() {
     let error = php_compiler::emit_ir_source("<?php\necho \\PHP_VERSION;\n").unwrap_err();
 
-    assert_eq!(error.phase, Phase::Parse);
-    assert_eq!(
-        error.message,
-        "unsupported fully-qualified constant name: leading global namespace constant reads require exact constant-table lookup, namespace fallback bypass, import interaction, and native lowering"
-    );
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, LLVM_GLOBAL_CONSTANT_REJECTION);
 }
 
 #[test]
@@ -1824,7 +1804,7 @@ fn unsupported_null_coalescing_assignment_targets_have_stable_parse_errors() {
         assert_eq!(error.column, column);
         assert_eq!(
             error.message,
-            "unsupported null coalescing assignment: only direct variable, direct or nested array-offset, and direct object-property targets are implemented"
+            "unsupported null coalescing assignment: only direct variable, direct or nested array-offset, direct object-property, static-property, and direct object-property array-offset targets are implemented"
         );
     }
 }
@@ -1896,7 +1876,7 @@ fn unsupported_expression_position_assignment_forms_have_stable_parse_errors() {
             "<?php\n$items = [];\necho ($items[] ??= 'value');\n",
             3,
             16,
-            "unsupported null coalescing assignment: only direct variable, direct or nested array-offset, and direct object-property targets are implemented",
+            "unsupported null coalescing assignment: only direct variable, direct or nested array-offset, direct object-property, static-property, and direct object-property array-offset targets are implemented",
         ),
         (
             "<?php\n$items = [];\n$value = $items[] = 1;\n",
@@ -1924,12 +1904,15 @@ fn emit_ir_rejects_non_direct_assignment_expression_at_codegen_boundary() {
 }
 
 #[test]
-fn emit_ir_rejects_reference_assignment_at_codegen_boundary() {
-    let error =
-        php_compiler::emit_ir_source("<?php\n$value = 1;\n$alias =& $value;\n").unwrap_err();
+fn emit_ir_lowers_simple_reference_assignment_through_native_reference_cell() {
+    let ir = php_compiler::emit_ir_source("<?php\n$value = 1;\n$alias =& $value;\n").unwrap();
 
-    assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.message, LLVM_REFERENCE_ASSIGNMENT_REJECTION);
+    assert!(
+        ir.contains("phpc_native_reference_from_value_and_free"),
+        "{ir}"
+    );
+    assert!(ir.contains("phpc_native_reference_clone"), "{ir}");
+    assert!(!ir.contains(LLVM_REFERENCE_ASSIGNMENT_REJECTION), "{ir}");
 }
 
 #[test]
@@ -1949,15 +1932,15 @@ fn unsupported_compound_assignments_have_stable_parse_errors() {
 
 #[test]
 fn compound_assignment_expressions_have_stable_parse_errors() {
-    let error = parse_error(
+    let error = runtime_error(
         "<?php\n$items = ['outer' => ['inner' => 1]];\necho ($items['outer']['inner'] += 2);\n",
     );
 
     assert_eq!(error.line, 3);
-    assert_eq!(error.column, 33);
+    assert_eq!(error.column, 7);
     assert_eq!(
         error.message,
-        "unsupported compound assignment target: only direct static variables, direct array offsets, direct object properties, direct object-property array offsets, and supported static properties are implemented; append offsets and nested variable targets are not implemented"
+        "unsupported call compound assignment: nested array targets are not implemented"
     );
 }
 
@@ -1971,45 +1954,47 @@ fn emit_ir_rejects_compound_assignment_at_codegen_boundary() {
 
 #[test]
 fn unsupported_increment_decrement_operators_have_stable_parse_errors() {
-    let cases = [
+    let runtime_cases = [
         (
             "<?php\n$values = [[1]];\n++$values[0][0];\n",
             3,
             1,
-            "unsupported increment/decrement target: only direct static variables, direct array/object offsets, direct object properties, direct object-property array offsets, and supported static properties are implemented for integer and float values; append offsets and nested variable targets are not implemented",
+            "unsupported call increment/decrement: nested array targets are not implemented",
         ),
         (
             "<?php\n$values = [[1]];\n$values[0][0]--;\n",
             3,
             1,
-            "unsupported increment/decrement target: only direct static variables, direct array/object offsets, direct object properties, direct object-property array offsets, and supported static properties are implemented for integer and float values; append offsets and nested variable targets are not implemented",
+            "unsupported call increment/decrement: nested array targets are not implemented",
         ),
         (
             "<?php\n$values = [[1]];\necho ++$values[0][0];\n",
             3,
             6,
-            "unsupported increment/decrement target: only direct static variables, direct array/object offsets, direct object properties, direct object-property array offsets, and supported static properties are implemented for integer and float values; append offsets and nested variable targets are not implemented",
+            "unsupported call increment/decrement: nested array targets are not implemented",
         ),
         (
             "<?php\n$values = [[1]];\necho $values[0][0]--;\n",
             3,
             6,
-            "unsupported increment/decrement target: only direct static variables, direct array/object offsets, direct object properties, direct object-property array offsets, and supported static properties are implemented for integer and float values; append offsets and nested variable targets are not implemented",
-        ),
-        (
-            "<?php\n$value = 1;\necho ++$value++;\n",
-            3,
-            6,
-            "unsupported increment/decrement expression: chained increment/decrement expressions are not implemented",
+            "unsupported call increment/decrement: nested array targets are not implemented",
         ),
     ];
 
-    for (source, line, column, message) in cases {
-        let error = parse_error(source);
+    for (source, line, column, message) in runtime_cases {
+        let error = runtime_error(source);
         assert_eq!(error.line, line);
         assert_eq!(error.column, column);
         assert_eq!(error.message, message);
     }
+
+    let chained = parse_error("<?php\n$value = 1;\necho ++$value++;\n");
+    assert_eq!(chained.line, 3);
+    assert_eq!(chained.column, 6);
+    assert_eq!(
+        chained.message,
+        "unsupported increment/decrement expression: chained increment/decrement expressions are not implemented"
+    );
 }
 
 #[test]
@@ -2028,12 +2013,12 @@ fn unsupported_for_header_increment_decrement_targets_have_stable_parse_errors()
     ];
 
     for (source, line, column) in cases {
-        let error = parse_error(source);
+        let error = runtime_error(source);
         assert_eq!(error.line, line);
         assert_eq!(error.column, column);
         assert_eq!(
             error.message,
-            "unsupported increment/decrement target: only direct static variables, direct array/object offsets, direct object properties, direct object-property array offsets, and supported static properties are implemented for integer and float values; append offsets and nested variable targets are not implemented"
+            "unsupported call increment/decrement: nested array targets are not implemented"
         );
     }
 }
@@ -2048,29 +2033,33 @@ fn emit_ir_rejects_increment_decrement_expressions_at_codegen_boundary() {
 
 #[test]
 fn unsupported_foreach_forms_are_rejected_with_stable_parse_error() {
-    let cases = [
-        (
-            r#"<?php
+    let destructuring = run_source(
+        r#"<?php
 $items = [[1]];
 foreach ($items as [$item]) {
     echo $item;
 }
 "#,
-            3,
-            20,
-            "unsupported foreach: destructuring loop targets are not implemented",
-        ),
-        (
-            r#"<?php
+    )
+    .unwrap();
+    assert_eq!(destructuring.stdout, "1");
+    assert_eq!(destructuring.stderr, "");
+    assert_eq!(destructuring.exit_code, 0);
+
+    let keyed_destructuring = run_source(
+        r#"<?php
 $items = [[1]];
 foreach ($items as $key => [$item]) {
-    echo $item;
+    echo $key, "=", $item;
 }
 "#,
-            3,
-            28,
-            "unsupported foreach: destructuring loop targets are not implemented",
-        ),
+    )
+    .unwrap();
+    assert_eq!(keyed_destructuring.stdout, "0=1");
+    assert_eq!(keyed_destructuring.stderr, "");
+    assert_eq!(keyed_destructuring.exit_code, 0);
+
+    let cases = [
         (
             r#"<?php
 $items = [1];

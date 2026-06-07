@@ -111,13 +111,14 @@ fn ini_builtins_reject_forms_outside_current_subset() {
         "arity mismatch for ini_get(): expected 1 argument(s), got 2"
     );
 
-    let too_few = run_source("<?php\nini_set('memory_limit');\n").unwrap_err();
-    assert_eq!(too_few.phase, Phase::Runtime);
-    assert_eq!(too_few.line, 2);
-    assert_eq!(too_few.column, 1);
-    assert_eq!(
-        too_few.message,
-        "arity mismatch for ini_set(): expected 2 argument(s), got 1"
+    let too_few = run_source("<?php\nini_set('memory_limit');\n").unwrap();
+    assert_eq!(too_few.exit_code, 255);
+    assert!(
+        too_few
+            .stdout
+            .contains("Too few arguments to function ini_set(), 1 passed"),
+        "{}",
+        too_few.stdout
     );
 }
 

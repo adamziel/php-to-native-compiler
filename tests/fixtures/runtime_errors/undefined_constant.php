@@ -1,2 +1,2 @@
 <?php
-echo PHP_OS;
+echo PHP_DOES_NOT_EXIST;

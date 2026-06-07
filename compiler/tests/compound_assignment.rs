@@ -509,7 +509,11 @@ fn emit_ir_lowers_direct_variable_compound_assignment_expressions() {
         "compound assignment expressions should read the left value and evaluate the RHS through existing value semantics:\n{ir}"
     );
     assert!(
-        ir.matches("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 %")
+        ir.matches("call %phpc.NativeValueHandle @phpc_native_value_from_scalar")
+            .count()
+            >= 2
+            && ir
+                .matches("phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free")
             .count()
             >= 2,
         "compound assignment expression result and later variable read should both echo the stored result:\n{ir}"

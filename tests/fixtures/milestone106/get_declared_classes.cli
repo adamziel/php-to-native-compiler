@@ -3,27 +3,55 @@ stdout:
 Array
 (
     [0] => Exception
-    [1] => stdClass
-    [2] => mysqli
-    [3] => mysqli_result
-    [4] => mysqli_stmt
-    [5] => PDO
-    [6] => PDOStatement
-    [7] => ReflectionException
-    [8] => ReflectionClass
-    [9] => ReflectionObject
-    [10] => ReflectionFunction
-    [11] => ReflectionMethod
-    [12] => ReflectionParameter
-    [13] => ReflectionType
-    [14] => ReflectionNamedType
-    [15] => ReflectionUnionType
-    [16] => ReflectionIntersectionType
-    [17] => ReflectionProperty
-    [18] => Box
-    [19] => Profile
+    [1] => Error
+    [2] => stdClass
+    [3] => mysqli
+    [4] => mysqli_result
+    [5] => mysqli_stmt
+    [6] => PDO
+    [7] => PDOStatement
+    [8] => RoundingMode
+    [9] => BcMath\Number
+    [10] => DateTimeZone
+    [11] => ReflectionException
+    [12] => Attribute
+    [13] => ReflectionClass
+    [14] => ReflectionObject
+    [15] => ReflectionFunction
+    [16] => ReflectionMethod
+    [17] => ReflectionParameter
+    [18] => ReflectionType
+    [19] => ReflectionNamedType
+    [20] => ReflectionUnionType
+    [21] => ReflectionIntersectionType
+    [22] => ReflectionProperty
+    [23] => ReflectionClassConstant
+    [24] => ReflectionAttribute
+    [25] => TypeError
+    [26] => ArgumentCountError
+    [27] => ValueError
+    [28] => ArithmeticError
+    [29] => DivisionByZeroError
+    [30] => RuntimeException
+    [31] => OutOfRangeException
+    [32] => UnexpectedValueException
+    [33] => OutOfBoundsException
+    [34] => Directory
+    [35] => SplFixedArray
+    [36] => ArrayObject
+    [37] => ArrayIterator
+    [38] => SplDoublyLinkedList
+    [39] => SplQueue
+    [40] => SplStack
+    [41] => SplObjectStorage
+    [42] => ReflectionExtension
+    [43] => ReflectionZendExtension
+    [44] => DateTime
+    [45] => Generator
+    [46] => Box
+    [47] => Profile
 )
-20|Exception|stdClass|mysqli
-Exception|stdClass|mysqli--- stdout end ---
+48|Exception|Error|stdClass
+Exception|Error|stdClass--- stdout end ---
 stderr:
 --- stderr end ---

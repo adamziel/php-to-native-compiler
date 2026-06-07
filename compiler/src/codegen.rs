@@ -14487,6 +14487,15 @@ impl LlvmGenerator {
         KnownInt::from_values(value.values().iter().map(|value| !value))
     }
 
+    fn static_integer_negate(&self, value: &str) -> Option<KnownInt> {
+        let value = self.known_integer_values(value)?;
+        let mut results = Vec::new();
+        for value in value.values() {
+            results.push(value.checked_neg()?);
+        }
+        KnownInt::from_values(results)
+    }
+
     fn emit_integer_bitwise_binary(
         &mut self,
         left: IrValue,
@@ -15678,6 +15687,29 @@ impl LlvmGenerator {
     }
 
     fn emit_numeric_negate(&mut self, value: IrValue, span: Span) -> CompileResult<IrValue> {
+        if let Some(source) = self.primitive_source_for_value(&value) {
+            if let Ok(Some(result)) =
+                source.unary_arithmetic_result(PhpPrimitiveArithmeticOperation::Negate)
+            {
+                if let Some(value) = result.into_single_ir_value() {
+                    return Ok(value);
+                }
+            }
+        }
+
+        if let IrValue::Int(value) = &value {
+            if let Some(result) = self.static_integer_negate(value) {
+                if result.is_single() {
+                    return Ok(IrValue::Int(result.values()[0].to_string()));
+                }
+
+                let temp = self.next_temp();
+                self.body.push(format!("{temp} = sub i64 0, {value}"));
+                self.known_ints.insert(temp.clone(), result);
+                return Ok(IrValue::Int(temp));
+            }
+        }
+
         self.emit_native_numeric_unary_source_result(
             value,
             native_numeric_unary_op_tag_value(UnaryOp::Negate)
@@ -15913,10 +15945,11 @@ impl LlvmGenerator {
     fn emit_native_value_string_stdout(&mut self, value: &str) {
         let usize_type = NativeRuntimeIrTarget::host().usize_ir_type();
         let global = self.add_string(value);
+        let byte_len = php_string_literal_bytes(value).len();
         self.emit_native_value_string_pointer_stdout(
             &format!("@{global}"),
             usize_type,
-            &value.len().to_string(),
+            &byte_len.to_string(),
         );
     }
 
@@ -16468,9 +16501,10 @@ impl LlvmGenerator {
             ))),
             IrValue::String(value) => {
                 let global = self.add_string(&value);
+                let byte_len = php_string_literal_bytes(&value).len();
                 Ok(self.emit_native_value_from_string_bytes(
                     &format!("@{global}"),
-                    &value.len().to_string(),
+                    &byte_len.to_string(),
                 ))
             }
             IrValue::StringPtr(value) => {
@@ -18025,6 +18059,7 @@ enum CNativeValueOwnerCommit {
 enum CDynamicCallableBuiltinRuntimeCandidate {
     StringLength,
     StringPredicate(NativeStringPredicate),
+    StringSearch(NativeStringSearchOperation),
     StringResult(NativeStringResultOperation),
     Cast(&'static str),
     TypeName(&'static str),
@@ -18227,6 +18262,24 @@ impl BackendPrimitiveSource {
                     Some(right.as_php_primitive()),
                 )?);
             }
+        }
+        Ok(BackendArithmeticResult::from_values(results))
+    }
+
+    fn unary_arithmetic_result(
+        &self,
+        operation: PhpPrimitiveArithmeticOperation,
+    ) -> Result<Option<BackendArithmeticResult>, PhpPrimitiveArithmeticError> {
+        let Some(values) = self.known_primitives() else {
+            return Ok(None);
+        };
+        let mut results = Vec::new();
+        for value in &values {
+            results.push(php_primitive_arithmetic_result(
+                value.as_php_primitive(),
+                operation,
+                None,
+            )?);
         }
         Ok(BackendArithmeticResult::from_values(results))
     }
@@ -25000,11 +25053,9 @@ impl CGenerator {
                 output.push_str("extern bool phpc_native_value_type_predicate(phpc_NativeValueHandle value, uint8_t predicate);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_type_name_with_diagnostic(phpc_NativeValueHandle value, bool debug, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern bool phpc_native_value_type_predicate_with_diagnostic(phpc_NativeValueHandle value, uint8_t predicate, phpc_NativeDiagnosticHandle *diagnostic);\n");
-                if self.uses_native_reference_helpers || self.uses_native_symbol_table_helpers {
-                    output.push_str("extern phpc_NativeValueHandle phpc_native_value_type_name_with_reference_slot_with_diagnostic(phpc_NativeValueHandle value, phpc_NativeReferenceHandle reference, bool debug, phpc_NativeDiagnosticHandle *diagnostic);\n");
-                    output.push_str("extern bool phpc_native_value_type_predicate_with_reference_slot_with_diagnostic(phpc_NativeValueHandle value, phpc_NativeReferenceHandle reference, uint8_t predicate, phpc_NativeDiagnosticHandle *diagnostic);\n");
-                    output.push_str("extern bool phpc_native_reference_predicate(phpc_NativeReferenceHandle reference, uint8_t predicate, phpc_NativeDiagnosticHandle *diagnostic);\n");
-                }
+                output.push_str("extern phpc_NativeValueHandle phpc_native_value_type_name_with_reference_slot_with_diagnostic(phpc_NativeValueHandle value, phpc_NativeReferenceHandle reference, bool debug, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern bool phpc_native_value_type_predicate_with_reference_slot_with_diagnostic(phpc_NativeValueHandle value, phpc_NativeReferenceHandle reference, uint8_t predicate, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern bool phpc_native_reference_predicate(phpc_NativeReferenceHandle reference, uint8_t predicate, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern bool phpc_native_value_array_key_exists_value_with_diagnostic(phpc_NativeValueHandle key, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 if self.uses_native_reference_helpers || self.uses_native_symbol_table_helpers {
                     output.push_str("extern bool phpc_native_reference_array_key_exists_value_with_diagnostic(phpc_NativeValueHandle key, phpc_NativeReferenceHandle reference, phpc_NativeDiagnosticHandle *diagnostic);\n");
@@ -25380,12 +25431,14 @@ impl CGenerator {
 
         let index = self.next_static_data;
         self.next_static_data += 1;
-        let bytes = c_byte_array(value.as_bytes());
+        let value_bytes = php_string_literal_bytes(value);
+        let byte_len = value_bytes.len();
+        let bytes = c_byte_array(&value_bytes);
         let bytes_name = format!("{prefix}_{index}");
         self.static_data.push(format!(
             "static const uint8_t {bytes_name}[] = {{{bytes}}};"
         ));
-        (bytes_name, value.len().to_string())
+        (bytes_name, byte_len.to_string())
     }
 
     fn emit_declared_class_property_metadata_arrays(
@@ -26175,6 +26228,12 @@ impl CGenerator {
             NativeCallCallee::ConstructorDispatch,
             "constructor source-call",
         )?;
+        if native_function_variadic_param(&constructor.decl.params).is_some() {
+            let mark_error_exit = self.native_error_exit(&call_cleanup);
+            self.body.push(format!(
+                "if (!phpc_native_call_arguments_mark_finalized_variadic({arguments})) {{ {mark_error_exit} }}"
+            ));
+        }
         let binding = NativeSourceCallBindingOperands {
             target,
             arguments,
@@ -26259,6 +26318,12 @@ impl CGenerator {
             NativeCallCallee::ConstructorDispatch,
             "constructor source-call",
         )?;
+        if native_function_variadic_param(&constructor.decl.params).is_some() {
+            let mark_error_exit = self.native_error_exit(&call_cleanup);
+            self.body.push(format!(
+                "if (!phpc_native_call_arguments_mark_finalized_variadic({arguments})) {{ {mark_error_exit} }}"
+            ));
+        }
         let invoke_diagnostic = self.next_native_name("constructor_reference_diagnostic");
         self.body.push(format!(
             "phpc_NativeDiagnosticHandle {invoke_diagnostic} = {{0}};"
@@ -40007,11 +40072,13 @@ impl CGenerator {
                 let index = self.next_static_data;
                 self.next_static_data += 1;
                 let data = format!("{prefix}_{index}");
+                let value_bytes = php_string_literal_bytes(&value);
+                let byte_len = value_bytes.len();
                 self.static_data.push(format!(
                     "static const uint8_t {data}[] = {{{}}};",
-                    c_byte_array(value.as_bytes())
+                    c_byte_array(&value_bytes)
                 ));
-                Ok((data, value.len().to_string()))
+                Ok((data, byte_len.to_string()))
             }
             CValue::StringExpr(value) => {
                 let Some(byte_len) = self.c_string_expr_byte_len_operand(&value) else {
@@ -47733,6 +47800,21 @@ impl CGenerator {
                 );
                 self.materialize_native_array_c_value_handle(value, span)
                     .map(Some)
+            }
+            CDynamicCallableBuiltinRuntimeCandidate::StringSearch(operation)
+                if arg_values.len() == 2 =>
+            {
+                Ok(Some(
+                    self.emit_native_string_search_result_operation_handle(
+                        borrowed_native_arg(arg_values, 0),
+                        borrowed_native_arg(arg_values, 1),
+                        "0".to_string(),
+                        "0".to_string(),
+                        false,
+                        operation,
+                        failure_cleanup,
+                    ),
+                ))
             }
             CDynamicCallableBuiltinRuntimeCandidate::StringResult(operation)
                 if arg_values.len() == 1 =>
@@ -58223,11 +58305,13 @@ impl CGenerator {
                 let (bytes, byte_len) = if value.is_empty() {
                     ("NULL".to_string(), "0".to_string())
                 } else {
-                    let bytes = c_byte_array(value.as_bytes());
+                    let value_bytes = php_string_literal_bytes(&value);
+                    let byte_len = value_bytes.len();
+                    let bytes = c_byte_array(&value_bytes);
                     let data = format!("phpc_native_comparison_bytes_{index}");
                     self.static_data
                         .push(format!("static const uint8_t {data}[] = {{{bytes}}};"));
-                    (data, value.len().to_string())
+                    (data, byte_len.to_string())
                 };
                 self.body.push(format!(
                     "phpc_NativeStringHandle {string} = phpc_native_string_from_bytes({bytes}, {byte_len});"
@@ -58294,11 +58378,13 @@ impl CGenerator {
                 let (bytes, byte_len) = if value.is_empty() {
                     ("NULL".to_string(), "0".to_string())
                 } else {
-                    let bytes = c_byte_array(value.as_bytes());
+                    let value_bytes = php_string_literal_bytes(&value);
+                    let byte_len = value_bytes.len();
+                    let bytes = c_byte_array(&value_bytes);
                     let data = format!("phpc_native_value_bytes_{index}");
                     self.static_data
                         .push(format!("static const uint8_t {data}[] = {{{bytes}}};"));
-                    (data, value.len().to_string())
+                    (data, byte_len.to_string())
                 };
                 self.body.push(format!(
                     "phpc_NativeDiagnosticHandle {diagnostic_handle} = {{0}};"
@@ -58716,6 +58802,15 @@ impl CGenerator {
     fn static_integer_bitwise_not(&self, value: &str) -> Option<KnownInt> {
         let value = self.known_integer_values(value)?;
         KnownInt::from_values(value.values().iter().map(|value| !value))
+    }
+
+    fn static_integer_negate(&self, value: &str) -> Option<KnownInt> {
+        let value = self.known_integer_values(value)?;
+        let mut results = Vec::new();
+        for value in value.values() {
+            results.push(value.checked_neg()?);
+        }
+        KnownInt::from_values(results)
     }
 
     fn emit_static_string_concat_expr(
@@ -59197,7 +59292,7 @@ impl CGenerator {
 
     fn c_string_value_byte_len_operand(&mut self, value: &CValue) -> Option<String> {
         match value {
-            CValue::String(value) => Some(value.len().to_string()),
+            CValue::String(value) => Some(php_string_literal_bytes(value).len().to_string()),
             CValue::StringExpr(value) => self.c_string_expr_byte_len_operand(value),
             _ => None,
         }
@@ -59996,6 +60091,28 @@ impl CGenerator {
     }
 
     fn emit_numeric_negate(&mut self, value: CValue, span: Span) -> CompileResult<CValue> {
+        if let Some(source) = self.primitive_source_for_value(&value) {
+            if let Ok(Some(result)) =
+                source.unary_arithmetic_result(PhpPrimitiveArithmeticOperation::Negate)
+            {
+                if let Some(value) = result.into_single_c_value() {
+                    return Ok(value);
+                }
+            }
+        }
+
+        if let CValue::Int(value) = &value {
+            if let Some(result) = self.static_integer_negate(value) {
+                if result.is_single() {
+                    return Ok(CValue::Int(result.values()[0].to_string()));
+                }
+
+                let expression = format!("(0 - {value})");
+                self.known_ints.insert(expression.clone(), result);
+                return Ok(CValue::Int(expression));
+            }
+        }
+
         let value = self.materialize_native_array_c_value_handle(value, span)?;
         let result = self.emit_native_numeric_unary_source_result_handle(
             value,
@@ -65102,11 +65219,13 @@ impl CGenerator {
     fn emit_native_string_helper_echo(&mut self, value: &str) {
         let index = self.next_static_data;
         self.next_static_data += 1;
-        let bytes = c_byte_array(value.as_bytes());
+        let value_bytes = php_string_literal_bytes(value);
+        let byte_len = value_bytes.len();
+        let bytes = c_byte_array(&value_bytes);
         let data = format!("phpc_native_bytes_{index}");
         self.static_data
             .push(format!("static const uint8_t {data}[] = {{{bytes}}};"));
-        self.emit_native_string_pointer_helper_echo(&data, &value.len().to_string());
+        self.emit_native_string_pointer_helper_echo(&data, &byte_len.to_string());
     }
 
     fn emit_native_string_pointer_helper_echo(&mut self, value: &str, len: &str) {
@@ -65230,19 +65349,51 @@ impl CGenerator {
 
 fn llvm_c_string(value: &str) -> String {
     let mut escaped = String::new();
-    for byte in value.as_bytes() {
-        match *byte {
+    for byte in php_string_literal_bytes(value) {
+        match byte {
             b'\\' => escaped.push_str("\\5C"),
             b'"' => escaped.push_str("\\22"),
             b'\n' => escaped.push_str("\\0A"),
             b'\r' => escaped.push_str("\\0D"),
             b'\t' => escaped.push_str("\\09"),
-            0x20..=0x7e => escaped.push(*byte as char),
+            0x20..=0x7e => escaped.push(byte as char),
             other => escaped.push_str(&format!("\\{other:02X}")),
         }
     }
     escaped.push_str("\\00");
     escaped
+}
+
+const PHP_ESCAPED_BYTE_SENTINEL_BASE: u32 = 0xE000;
+const PHP_ESCAPED_BYTE_SENTINEL_END: u32 = PHP_ESCAPED_BYTE_SENTINEL_BASE + 0xFF;
+
+fn php_escaped_byte_sentinel_value(ch: char) -> Option<u8> {
+    let value = ch as u32;
+    if (PHP_ESCAPED_BYTE_SENTINEL_BASE..=PHP_ESCAPED_BYTE_SENTINEL_END).contains(&value) {
+        Some((value - PHP_ESCAPED_BYTE_SENTINEL_BASE) as u8)
+    } else {
+        None
+    }
+}
+
+fn php_string_literal_bytes(value: &str) -> Vec<u8> {
+    if !value
+        .chars()
+        .any(|ch| php_escaped_byte_sentinel_value(ch).is_some())
+    {
+        return value.as_bytes().to_vec();
+    }
+
+    let mut bytes = Vec::with_capacity(value.len());
+    for ch in value.chars() {
+        if let Some(byte) = php_escaped_byte_sentinel_value(ch) {
+            bytes.push(byte);
+        } else {
+            let mut buffer = [0_u8; 4];
+            bytes.extend_from_slice(ch.encode_utf8(&mut buffer).as_bytes());
+        }
+    }
+    bytes
 }
 
 fn c_string(value: &str) -> String {
@@ -67507,7 +67658,7 @@ fn native_builtin_runtime_source_call_signature_for_values(
 fn native_dynamic_callable_builtin_runtime_candidates(
 ) -> &'static [(&'static str, CDynamicCallableBuiltinRuntimeCandidate)] {
     use CDynamicCallableBuiltinRuntimeCandidate::{
-        Cast, StringLength, StringPredicate, StringResult, TypeName, TypePredicate,
+        Cast, StringLength, StringPredicate, StringResult, StringSearch, TypeName, TypePredicate,
     };
 
     &[
@@ -67523,6 +67674,10 @@ fn native_dynamic_callable_builtin_runtime_candidates(
         (
             "str_ends_with",
             StringPredicate(NativeStringPredicate::EndsWith),
+        ),
+        (
+            "strpos",
+            StringSearch(NativeStringSearchOperation::Position),
         ),
         ("strrev", StringResult(NativeStringResultOperation::Reverse)),
         (
@@ -72174,8 +72329,9 @@ echo " 10" < "zeta";
             .expect("known binary string comparison pairs should lower through C fallback");
 
         assert!(
-            c_source.contains("strcmp("),
-            "numeric-vs-nonnumeric, leading-numeric, and sign/dot-prefixed nonnumeric pairs should lower through generated-C binary string comparison:\n{c_source}"
+            c_source.contains("phpc_native_value_from_string_bytes_with_diagnostic(")
+                && c_source.contains("phpc_native_value_compare_result("),
+            "numeric-vs-nonnumeric, leading-numeric, and sign/dot-prefixed nonnumeric pairs should lower through generated-C runtime string comparison:\n{c_source}"
         );
 
         for source in [
@@ -72185,10 +72341,12 @@ echo " 10" < "zeta";
             "<?php\necho \".5\" < \"5.\";\n",
         ] {
             let program = crate::parse(source).expect("parse numeric string comparison source");
-            let error = emit_c_source_for_assembly(&program).unwrap_err();
-
-            assert_eq!(error.phase, Phase::Codegen);
-            assert_eq!(error.message, assembly_comparison_rejection());
+            let c_source = emit_c_source_for_assembly(&program)
+                .expect("numeric string comparison should lower through runtime comparison");
+            assert!(
+                c_source.contains("phpc_native_value_compare_result("),
+                "numeric string comparison should use the runtime value comparator:\n{c_source}"
+            );
         }
     }
 
@@ -75706,8 +75864,18 @@ echo $call("Ada");
 
     #[test]
     fn c_assembly_non_local_assignment_families_share_assignment_owner_boundary() {
+        let direct_dynamic_property =
+            crate::parse("<?php\n$box->$name = 1;\n").expect("parse direct dynamic property write");
+        let c_source = emit_c_source_for_assembly(&direct_dynamic_property)
+            .expect("direct dynamic property writes should lower through object-property mutation");
+        assert!(
+            c_source.contains(
+                "phpc_native_object_property_mutation_operation_with_magic_reference_slots_with_diagnostic("
+            ),
+            "direct dynamic property writes should share the generated-C object-property mutation ABI:\n{c_source}"
+        );
+
         for source in [
-            "<?php\n$box->$name = 1;\n",
             "<?php\n$box->child->name = 1;\n",
             "<?php\nRoot::$name = 1;\n",
             "<?php\nself::$name = 1;\n",

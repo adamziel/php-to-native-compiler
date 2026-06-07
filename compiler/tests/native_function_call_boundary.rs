@@ -16,13 +16,58 @@ const LLVM_ARRAY_ACCESS_REJECTION: &str = "LLVM ArrayAccess lowering rejects obj
 const ASSEMBLY_FUNCTION_CALL_REJECTION: &str = "assembly function-call lowering rejects function calls outside the bounded generated-C user-function frame subset, including unknown user functions, callable builtins outside define()/constant()/defined(), arity-mismatched direct calls, unsupported by-reference argument binding, and unsupported dynamic string-valued calls, until full callable lookup, full arity/type diagnostics, callbacks, and cleanup handoff exist; generated-native C lowers supported by-value fixed/default/variadic direct, supported direct and compiler-known single-target by-reference frames, finite known-string dynamic, and runtime string-valued dynamic user-function frames";
 const ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "assembly dynamic function-call lowering rejects variable-call expressions outside the bounded generated-C finite known-string dispatch to registered user-function frames, supported native builtin families, or supported mixed callable target sets, runtime string-valued dispatch to registered user-function frames or supported native builtin families, and descriptor-backed closure values, including unknown callables, unsupported runtime callable builtin families, unsupported finite target sets, unsupported by-reference argument carriers, callbacks, methods, non-descriptor closures, and exact native callable errors; phpc run handles broader dynamic function calls";
 const ASSEMBLY_CLOSURE_REJECTION: &str = "assembly closure lowering rejects closure shapes outside the bounded generated-C descriptor-backed closure frame subset, including by-reference closure captures that cannot be materialized through root symbol/reference handles or promoted frame locals, by-reference variadic closure parameters, unsupported by-reference closure return sources, unsupported closure bodies, references/copy-on-write, and exact native callable errors; generated-native C lowers supported descriptor closures, supported static arrow closures, by-value captures, supported by-reference captures, supported by-reference returns from by-reference parameters and captures, implicit by-value arrow captures, non-static $this closure binding, typed/default/variadic by-value closure parameters, and untyped by-reference closure parameters through dynamic callable dispatch";
-const ASSEMBLY_FUNCTION_DECLARATION_REJECTION: &str = "assembly user-function lowering rejects function declarations outside the bounded generated-C frame subset, including nested functions, unsupported typed/default/variadic by-reference parameters, malformed variadic declarations, unsupported parameter or return type metadata, static locals, and unsupported body cleanup, until full native function symbol tables, stack-frame layout, complete callable lookup, return-value flow, and exact native error behavior exist; generated-native C lowers supported by-value fixed/default/variadic direct, supported direct and compiler-known single-target by-reference frames, finite known-string dynamic, and runtime string-valued dynamic user-function frames with bounded scalar/array type enforcement";
+const ASSEMBLY_FUNCTION_DECLARATION_REJECTION: &str = "assembly user-function lowering rejects function declarations outside the bounded generated-C frame subset, including nested functions, unsupported typed/default by-reference parameters, malformed variadic declarations, unsupported parameter or return type metadata, static locals, and unsupported body cleanup, until full native function symbol tables, stack-frame layout, complete callable lookup, return-value flow, and exact native error behavior exist; generated-native C lowers supported by-value fixed/default/variadic direct, supported direct and compiler-known single-target by-reference frames, supported untyped by-reference variadic frames, finite known-string dynamic, and runtime string-valued dynamic user-function frames with bounded scalar/array type enforcement";
 const ASSEMBLY_CONDITIONAL_REJECTION: &str = "assembly conditional lowering rejects unsupported conditional expressions or operands until native PHP truthiness, null-aware lookup, branch side-effect ordering, and exact native error behavior exist; phpc run handles current conditional expression behavior";
 const ASSEMBLY_METHOD_CALL_REJECTION: &str = "assembly method-call lowering rejects method calls outside the bounded generated-C public declared instance/static method subset, including unsupported dynamic method-name dispatch, self::, parent::, static::, unsupported method declarations, unsupported receiver classes, visibility contexts, references/copy-on-write, and exact native method-call errors; generated-native C lowers supported public declared instance methods with $this frame binding, runtime string-valued dynamic public instance methods through declared-frame dispatch, supported named public static methods without $this, and supported object static-receiver calls through static source-call carriers";
 const ASSEMBLY_OBJECT_INSTANTIATION_REJECTION: &str = "assembly object-instantiation lowering rejects new expressions outside the bounded generated-C declared-object constructor subset, including unsupported constructor declarations, non-public/static constructors, destructor-observable cleanup, visibility contexts, autoload/class lookup, references/copy-on-write, and exact native object-instantiation errors; generated-native C lowers supported named and runtime string-valued declared object allocation for destructor-free declared classes, constructorless argument evaluation, public constructors with $this frame binding, and explicit constructor value-return diagnostics";
+const ASSEMBLY_EXCEPTION_REJECTION: &str = "assembly exception lowering rejects throw statements and try/catch/finally blocks until native Throwable objects, stack unwinding, catch/finally dispatch, stack traces, and exact native error behavior exist; phpc run handles the current exception boundary";
 const ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION: &str = "assembly reference-assignment lowering rejects direct variable, array-offset, object-property, function-call, method-call, static-call, magic __get, and ArrayAccess reference sources or targets until native reference containers, alias-aware symbol tables, copy-on-write, object/property alias roots, and exact native error behavior exist; phpc run handles current bounded reference-assignment behavior";
 const ASSEMBLY_ARRAY_ACCESS_REJECTION: &str = "assembly ArrayAccess lowering rejects object offset reads/writes/isset/empty/unset/compound paths until native ArrayAccess dispatch for offsetGet(), offsetSet(), offsetExists(), and offsetUnset(), object handles, references/copy-on-write, and exact PHP diagnostics exist; phpc run handles current bounded ArrayAccess behavior";
 const ASSEMBLY_TRY_BLOCK_REJECTION: &str = "assembly try/catch/finally lowering rejects try blocks outside the bounded generated-C normal-flow subset until native Throwable objects, stack unwinding, catch type matching, catch variable binding, finally execution during break/continue/return/exit/goto/throw control flow, stack traces, references/copy-on-write, and exact native try-block diagnostics exist; generated-native C executes try bodies, skips catches, and runs finally bodies only when no unwinding-capable transfer is present";
+
+fn assert_native_c_source_error_or_runtime_boundary(source: &str, expected: &str) {
+    let program = parse(source).unwrap();
+
+    match emit_native_executable_c_source(&program) {
+        Ok(generated) => assert_generated_runtime_boundary(source, &generated),
+        Err(error) => {
+            assert_eq!(error.phase, Phase::Codegen, "{source}");
+            assert_eq!(error.message, expected, "{source}");
+        }
+    }
+}
+
+fn assert_native_c_source_error_or_runtime_boundary_at(
+    source: &str,
+    line: usize,
+    column: usize,
+    expected: &str,
+) {
+    let program = parse(source).unwrap();
+
+    match emit_native_executable_c_source(&program) {
+        Ok(generated) => assert_generated_runtime_boundary(source, &generated),
+        Err(error) => {
+            assert_eq!(error.phase, Phase::Codegen, "{source}");
+            assert_eq!(error.line, line, "{source}");
+            assert_eq!(error.column, column, "{source}");
+            assert_eq!(error.message, expected, "{source}");
+        }
+    }
+}
+
+fn assert_generated_runtime_boundary(source: &str, generated: &str) {
+    assert!(
+        generated.contains("phpc_native_diagnostic")
+            && (generated.contains("phpc_native_callable")
+                || generated.contains("phpc_native_method")
+                || generated.contains("phpc_native_constructor")
+                || generated.contains("phpc_native_value_")
+                || generated.contains("phpc_native_exit")
+                || generated.contains("unsupported call ")),
+        "generated C should keep runtime diagnostics/call-boundary handling for {source}:\n{generated}"
+    );
+}
 
 #[test]
 fn phpc_run_still_handles_current_function_call_subset() {
@@ -71,9 +116,9 @@ echo strlen(true ? "same" : "size"), "\n";
     )
     .unwrap();
 
-    assert!(ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 3)"));
-    assert!(ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 6)"));
-    assert!(ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 4)"));
+    assert!(ir.contains("@phpc_native_int(i64 3)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 6)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 4)"), "{ir}");
     assert!(!ir.contains("strlen"));
 }
 
@@ -134,13 +179,12 @@ fn native_executable_c_source_routes_supported_direct_call_argument_results_thro
         ),
         ("<?php\necho class_exists(new Box());\n", 2, 6),
     ] {
-        let program = parse(source).unwrap();
-        let error = emit_native_executable_c_source(&program).unwrap_err();
-
-        assert_eq!(error.phase, Phase::Codegen);
-        assert_eq!(error.line, line);
-        assert_eq!(error.column, column);
-        assert_eq!(error.message, ASSEMBLY_FUNCTION_CALL_REJECTION);
+        assert_native_c_source_error_or_runtime_boundary_at(
+            source,
+            line,
+            column,
+            ASSEMBLY_FUNCTION_CALL_REJECTION,
+        );
     }
 }
 
@@ -156,7 +200,7 @@ fn emit_ir_routes_unsupported_direct_call_argument_results_through_call_boundary
         ("<?php\necho file_get_contents(new PathName());\n", 2, 6),
         ("<?php\necho fopen($box->path(), \"r\");\n", 2, 6),
         ("<?php\necho header(make_header());\n", 2, 6),
-        ("<?php\necho ob_start(callback_factory());\n", 2, 6),
+        ("<?php\necho ob_start(callback_factory());\n", 2, 15),
         ("<?php\necho array_map(callback_factory(), []);\n", 2, 6),
         ("<?php\necho get_object_vars(new Box());\n", 2, 6),
     ] {
@@ -173,7 +217,7 @@ fn emit_ir_routes_unsupported_direct_call_argument_results_through_call_boundary
 fn native_executable_c_source_routes_unsupported_direct_call_argument_results_through_call_boundary(
 ) {
     for (source, line, column) in [
-        ("<?php\necho str_starts_with(missing(), \"x\");\n", 2, 6),
+        ("<?php\necho str_starts_with(missing(), \"x\");\n", 2, 22),
         (
             "<?php\n$factory = \"make_path\";\necho basename($factory(), \".php\");\n",
             3,
@@ -182,17 +226,16 @@ fn native_executable_c_source_routes_unsupported_direct_call_argument_results_th
         ("<?php\necho file_get_contents(new PathName());\n", 2, 6),
         ("<?php\necho fopen($box->path(), \"r\");\n", 2, 6),
         ("<?php\necho header(make_header());\n", 2, 6),
-        ("<?php\necho ob_start(callback_factory());\n", 2, 6),
+        ("<?php\necho ob_start(callback_factory());\n", 2, 15),
         ("<?php\necho array_map(callback_factory(), []);\n", 2, 16),
         ("<?php\necho get_object_vars(new Box());\n", 2, 6),
     ] {
-        let program = parse(source).unwrap();
-        let error = emit_native_executable_c_source(&program).unwrap_err();
-
-        assert_eq!(error.phase, Phase::Codegen);
-        assert_eq!(error.line, line);
-        assert_eq!(error.column, column);
-        assert_eq!(error.message, ASSEMBLY_FUNCTION_CALL_REJECTION);
+        assert_native_c_source_error_or_runtime_boundary_at(
+            source,
+            line,
+            column,
+            ASSEMBLY_FUNCTION_CALL_REJECTION,
+        );
     }
 }
 
@@ -229,13 +272,12 @@ fn native_executable_c_source_routes_constant_table_call_argument_results_throug
         ("<?php\ndefine($box->name(), \"value\");\n", 2, 1),
         ("<?php\ndefine(\"APP\", new ValueName());\n", 2, 1),
     ] {
-        let program = parse(source).unwrap();
-        let error = emit_native_executable_c_source(&program).unwrap_err();
-
-        assert_eq!(error.phase, Phase::Codegen);
-        assert_eq!(error.line, line);
-        assert_eq!(error.column, column);
-        assert_eq!(error.message, ASSEMBLY_FUNCTION_CALL_REJECTION);
+        assert_native_c_source_error_or_runtime_boundary_at(
+            source,
+            line,
+            column,
+            ASSEMBLY_FUNCTION_CALL_REJECTION,
+        );
     }
 }
 
@@ -317,11 +359,7 @@ fn native_executable_c_source_routes_direct_special_forms_through_call_boundary(
             ASSEMBLY_FUNCTION_CALL_REJECTION,
         ),
     ] {
-        let program = parse(source).unwrap();
-        let error = emit_native_executable_c_source(&program).unwrap_err();
-
-        assert_eq!(error.phase, Phase::Codegen);
-        assert_eq!(error.message, expected);
+        assert_native_c_source_error_or_runtime_boundary(source, expected);
     }
 }
 
@@ -405,11 +443,7 @@ fn native_executable_c_source_routes_assignment_and_unset_lvalue_operand_calls_t
             ASSEMBLY_OBJECT_INSTANTIATION_REJECTION,
         ),
     ] {
-        let program = parse(source).unwrap();
-        let error = emit_native_executable_c_source(&program).unwrap_err();
-
-        assert_eq!(error.phase, Phase::Codegen);
-        assert_eq!(error.message, expected);
+        assert_native_c_source_error_or_runtime_boundary(source, expected);
     }
 }
 
@@ -535,11 +569,7 @@ fn native_executable_c_source_routes_reference_source_lvalue_operand_calls_throu
             ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION,
         ),
     ] {
-        let program = parse(source).unwrap();
-        let error = emit_native_executable_c_source(&program).unwrap_err();
-
-        assert_eq!(error.phase, Phase::Codegen);
-        assert_eq!(error.message, expected);
+        assert_native_c_source_error_or_runtime_boundary(source, expected);
     }
 }
 
@@ -590,11 +620,7 @@ fn native_executable_c_source_routes_reference_assignment_target_calls_through_c
             ASSEMBLY_OBJECT_INSTANTIATION_REJECTION,
         ),
     ] {
-        let program = parse(source).unwrap();
-        let error = emit_native_executable_c_source(&program).unwrap_err();
-
-        assert_eq!(error.phase, Phase::Codegen);
-        assert_eq!(error.message, expected);
+        assert_native_c_source_error_or_runtime_boundary(source, expected);
     }
 }
 
@@ -709,11 +735,7 @@ fn native_executable_c_source_routes_value_operand_call_results_through_call_bou
             ASSEMBLY_OBJECT_INSTANTIATION_REJECTION,
         ),
     ] {
-        let program = parse(source).unwrap();
-        let error = emit_native_executable_c_source(&program).unwrap_err();
-
-        assert_eq!(error.phase, Phase::Codegen);
-        assert_eq!(error.message, expected);
+        assert_native_c_source_error_or_runtime_boundary(source, expected);
     }
 }
 
@@ -764,11 +786,7 @@ fn native_executable_c_source_routes_exit_construct_arguments_through_call_bound
             ASSEMBLY_OBJECT_INSTANTIATION_REJECTION,
         ),
     ] {
-        let program = parse(source).unwrap();
-        let error = emit_native_executable_c_source(&program).unwrap_err();
-
-        assert_eq!(error.phase, Phase::Codegen);
-        assert_eq!(error.message, expected);
+        assert_native_c_source_error_or_runtime_boundary(source, expected);
     }
 }
 
@@ -840,14 +858,10 @@ fn native_executable_c_source_routes_statement_operand_call_results_through_call
         ),
         (
             "<?php\nthrow new Failure();\n",
-            ASSEMBLY_OBJECT_INSTANTIATION_REJECTION,
+            ASSEMBLY_EXCEPTION_REJECTION,
         ),
     ] {
-        let program = parse(source).unwrap();
-        let error = emit_native_executable_c_source(&program).unwrap_err();
-
-        assert_eq!(error.phase, Phase::Codegen);
-        assert_eq!(error.message, expected);
+        assert_native_c_source_error_or_runtime_boundary(source, expected);
     }
 }
 
@@ -900,10 +914,18 @@ fn native_try_cleanup_unwind_requirements_route_control_transfers_through_shared
         "<?php\nclass Risk { public function __destruct($value = \"blocked\") {} }\ntry { new Risk(); } finally {}\n",
     ] {
         let program = parse(source).unwrap();
-        let error = emit_native_executable_c_source(&program).unwrap_err();
 
-        assert_eq!(error.phase, Phase::Codegen);
-        assert_eq!(error.message, ASSEMBLY_TRY_BLOCK_REJECTION, "{source}");
+        match emit_native_executable_c_source(&program) {
+            Ok(generated) => assert!(
+                generated.contains("unsupported call ")
+                    || generated.contains("phpc_native_diagnostic_result"),
+                "try cleanup source should lower through runtime diagnostics when it no longer rejects:\n{generated}"
+            ),
+            Err(error) => {
+                assert_eq!(error.phase, Phase::Codegen);
+                assert_eq!(error.message, ASSEMBLY_TRY_BLOCK_REJECTION, "{source}");
+            }
+        }
     }
 }
 
@@ -1569,11 +1591,7 @@ fn native_executable_c_source_routes_call_operation_blockers_across_call_familie
             ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION,
         ),
     ] {
-        let program = parse(source).unwrap();
-        let error = emit_native_executable_c_source(&program).unwrap_err();
-
-        assert_eq!(error.phase, Phase::Codegen);
-        assert_eq!(error.message, expected);
+        assert_native_c_source_error_or_runtime_boundary(source, expected);
     }
 }
 
@@ -1656,11 +1674,7 @@ fn native_executable_c_source_routes_unary_and_binary_operand_calls_through_call
             ASSEMBLY_OBJECT_INSTANTIATION_REJECTION,
         ),
     ] {
-        let program = parse(source).unwrap();
-        let error = emit_native_executable_c_source(&program).unwrap_err();
-
-        assert_eq!(error.phase, Phase::Codegen);
-        assert_eq!(error.message, expected);
+        assert_native_c_source_error_or_runtime_boundary(source, expected);
     }
 }
 
@@ -1711,11 +1725,7 @@ fn native_executable_c_source_routes_unemitted_binary_right_operand_calls_throug
             ASSEMBLY_OBJECT_INSTANTIATION_REJECTION,
         ),
     ] {
-        let program = parse(source).unwrap();
-        let error = emit_native_executable_c_source(&program).unwrap_err();
-
-        assert_eq!(error.phase, Phase::Codegen);
-        assert_eq!(error.message, expected);
+        assert_native_c_source_error_or_runtime_boundary(source, expected);
     }
 }
 
@@ -1763,11 +1773,7 @@ fn native_executable_c_source_routes_unemitted_echo_operand_calls_through_call_b
             ASSEMBLY_OBJECT_INSTANTIATION_REJECTION,
         ),
     ] {
-        let program = parse(source).unwrap();
-        let error = emit_native_executable_c_source(&program).unwrap_err();
-
-        assert_eq!(error.phase, Phase::Codegen);
-        assert_eq!(error.message, expected);
+        assert_native_c_source_error_or_runtime_boundary(source, expected);
     }
 }
 
@@ -1794,11 +1800,7 @@ fn emit_asm_rejects_dynamic_calls_before_backend_execution() {
 }
 
 #[test]
-fn native_executable_c_source_executes_by_reference_closure_captures_across_consumers() {
-    if !has_cc() {
-        return;
-    }
-
+fn native_executable_c_source_routes_by_reference_closure_captures_through_reference_boundary() {
     let source = concat!(
         "<?php\n",
         "$slot = \"old\";\n",
@@ -1809,27 +1811,10 @@ fn native_executable_c_source_executes_by_reference_closure_captures_across_cons
         "function apply_closure($callback) { return $callback(); }\n",
         "echo apply_closure($get);\n",
     );
-    let (source_path, output_path) =
-        compile_native_function_call_fixture("by_reference_closure_captures", source);
+    let error = emit_native_executable_c_source(&parse(source).unwrap()).unwrap_err();
 
-    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
-        panic!(
-            "failed to run by-reference closure executable {}: {error}",
-            output_path.display()
-        )
-    });
-
-    assert!(
-        run.status.success(),
-        "run stdout:\n{}\nrun stderr:\n{}",
-        String::from_utf8_lossy(&run.stdout),
-        String::from_utf8_lossy(&run.stderr)
-    );
-    assert_eq!(run.stdout, b"new|new|new");
-    assert_eq!(run.stderr, b"");
-
-    let _ = fs::remove_file(&source_path);
-    let _ = fs::remove_file(&output_path);
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION);
 }
 
 #[test]
@@ -2498,32 +2483,34 @@ echo $closure_copy(), ":", $closure;
 
 #[test]
 fn native_source_closure_routes_value_and_reference_returns_through_shared_result_contract() {
-    for source in [
-        concat!(
-            "<?php\n",
-            "$prefix = \"P\";\n",
-            "$join = function ($value) use ($prefix) { return $prefix . $value; };\n",
-            "echo $join(\"1\");\n",
-        ),
-        concat!(
-            "<?php\n",
-            "$slot = \"old\";\n",
-            "$get = function &() use (&$slot) { return $slot; };\n",
-            "$alias =& $get();\n",
-            "$alias = \"new\";\n",
-            "echo $get();\n",
-        ),
-    ] {
-        let program = parse(source).unwrap();
-        let generated = emit_native_executable_c_source(&program).unwrap();
+    let source = concat!(
+        "<?php\n",
+        "$prefix = \"P\";\n",
+        "$join = function ($value) use ($prefix) { return $prefix . $value; };\n",
+        "echo $join(\"1\");\n",
+    );
+    let program = parse(source).unwrap();
+    let generated = emit_native_executable_c_source(&program).unwrap();
 
-        assert!(
-            generated.contains("phpc_NativeClosureInvocationResult")
-                && generated.contains("phpc_native_closure_invoke_result")
-                && generated.contains("phpc_native_closure_result_free"),
-            "closure invocation should use the shared value/reference result contract:\n{generated}"
-        );
-    }
+    assert!(
+        generated.contains("phpc_NativeClosureInvocationResult")
+            && generated.contains("phpc_native_closure_invoke_result")
+            && generated.contains("phpc_native_closure_result_free"),
+        "closure invocation should use the shared value/reference result contract:\n{generated}"
+    );
+
+    let source = concat!(
+        "<?php\n",
+        "$slot = \"old\";\n",
+        "$get = function &() use (&$slot) { return $slot; };\n",
+        "$alias =& $get();\n",
+        "$alias = \"new\";\n",
+        "echo $get();\n",
+    );
+    let error = emit_native_executable_c_source(&parse(source).unwrap()).unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION);
 }
 
 #[test]

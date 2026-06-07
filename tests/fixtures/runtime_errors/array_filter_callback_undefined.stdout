@@ -1,0 +1,4 @@
+Fatal error: Uncaught Error: Call to undefined function missing_filter() in tests/fixtures/runtime_errors/array_filter_callback_undefined.php:3
+Stack trace:
+#0 {main}
+  thrown in tests/fixtures/runtime_errors/array_filter_callback_undefined.php on line 3

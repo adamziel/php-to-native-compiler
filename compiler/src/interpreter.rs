@@ -21138,7 +21138,11 @@ impl Interpreter {
         while self.shutdown_callback_index < self.shutdown_callbacks.len() {
             let callback = self.shutdown_callbacks[self.shutdown_callback_index].clone();
             self.shutdown_callback_index += 1;
-            self.call_shutdown_callback(callback)?;
+            let prior_exit_signal = self.exit_signal.take();
+            let result = self.call_shutdown_callback(callback);
+            let callback_exit_signal = self.exit_signal.take();
+            self.exit_signal = callback_exit_signal.or(prior_exit_signal);
+            result?;
         }
 
         Ok(())
@@ -43241,8 +43245,9 @@ impl Interpreter {
                 ));
             }
         };
-        if object.is_instance_of_class_name("Error")
-            || object.is_instance_of_class_name("Exception")
+        if (object.is_instance_of_class_name("Error")
+            || object.is_instance_of_class_name("Exception"))
+            && method_name.eq_ignore_ascii_case("getmessage")
         {
             return self
                 .call_core_error_method(object, method_name, args, span)

@@ -1,3 +1,5 @@
+#[cfg(test)]
+use std::cell::Cell;
 use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
@@ -12,7 +14,9 @@ use std::sync::atomic::{AtomicI64, Ordering as AtomicOrdering};
 pub type RuntimeResult<T> = Result<T, RuntimeError>;
 
 #[cfg(test)]
-static NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST: AtomicI64 = AtomicI64::new(0);
+thread_local! {
+    static NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST: Cell<i64> = const { Cell::new(0) };
+}
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1698,6 +1702,7 @@ enum NativeCallableValueDispatch {
 enum NativeCallableBuiltin {
     StringLength,
     StringPredicate(NativeStringPredicate),
+    StringSearch(NativeStringSearchOperation),
     StringResult(NativeStringResultOperation),
     StringTrim(NativeTrimMode),
     ArraySort(NativeArraySortOperation),
@@ -1747,6 +1752,8 @@ impl NativeCallableBuiltin {
             Self::StringPredicate(NativeStringPredicate::Contains) => "str_contains",
             Self::StringPredicate(NativeStringPredicate::StartsWith) => "str_starts_with",
             Self::StringPredicate(NativeStringPredicate::EndsWith) => "str_ends_with",
+            Self::StringSearch(NativeStringSearchOperation::Position) => "strpos",
+            Self::StringSearch(NativeStringSearchOperation::Count) => "substr_count",
             Self::StringResult(NativeStringResultOperation::Reverse) => "strrev",
             Self::StringResult(NativeStringResultOperation::BinToHex) => "bin2hex",
             Self::StringResult(NativeStringResultOperation::Rot13) => "str_rot13",
@@ -1827,6 +1834,26 @@ impl NativeCallableBuiltin {
                 accepts_variadic_args: false,
                 returns_by_reference: false,
             },
+            Self::StringSearch(NativeStringSearchOperation::Position) => {
+                NativeCallableBuiltinSignature {
+                    required_arg_count: 2,
+                    fixed_param_names: PARAM_HAYSTACK_NEEDLE,
+                    fixed_param_by_reference: BY_VALUE_2,
+                    fixed_param_defaults: DEFAULTS_NONE_2,
+                    accepts_variadic_args: false,
+                    returns_by_reference: false,
+                }
+            }
+            Self::StringSearch(NativeStringSearchOperation::Count) => {
+                NativeCallableBuiltinSignature {
+                    required_arg_count: usize::MAX,
+                    fixed_param_names: &[],
+                    fixed_param_by_reference: &[],
+                    fixed_param_defaults: &[],
+                    accepts_variadic_args: false,
+                    returns_by_reference: false,
+                }
+            }
             Self::StringTrim(_) => NativeCallableBuiltinSignature {
                 required_arg_count: 1,
                 fixed_param_names: PARAM_STRING_CHARACTERS,
@@ -10219,6 +10246,9 @@ fn native_callable_builtin_for_function_name(name: &str) -> Option<NativeCallabl
         "str_ends_with" => Some(NativeCallableBuiltin::StringPredicate(
             NativeStringPredicate::EndsWith,
         )),
+        "strpos" => Some(NativeCallableBuiltin::StringSearch(
+            NativeStringSearchOperation::Position,
+        )),
         "strrev" => Some(NativeCallableBuiltin::StringResult(
             NativeStringResultOperation::Reverse,
         )),
@@ -12438,7 +12468,7 @@ pub unsafe extern "C" fn phpc_native_call_arguments_mark_finalized_variadic(
 #[no_mangle]
 pub unsafe extern "C" fn phpc_native_call_arguments_free(handle: NativeCallArgumentsHandle) {
     #[cfg(test)]
-    NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST.fetch_add(1, AtomicOrdering::SeqCst);
+    NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST.with(|count| count.set(count.get() + 1));
 
     if handle.ptr.is_null() {
         return;
@@ -14347,6 +14377,9 @@ unsafe fn native_callable_builtin_invoke_value(
         NativeCallableBuiltin::StringPredicate(predicate) => unsafe {
             native_value_string_predicate(values[0], values[1], predicate as u8).map(Value::Bool)
         },
+        NativeCallableBuiltin::StringSearch(operation) => unsafe {
+            native_value_string_search_result(values[0], values[1], 0, 0, 0, operation as u8)
+        },
         NativeCallableBuiltin::StringResult(operation) => unsafe {
             native_value_string_result_operation_value(values[0], 0, operation as u8)
         },
@@ -14399,6 +14432,95 @@ unsafe fn native_callable_builtin_invoke_result(
     }
 }
 
+unsafe fn native_call_arguments_clone_for_source_signature(
+    arguments: &NativeCallArguments,
+    signature: &NativeCallableSourceSignature,
+) -> Result<NativeCallArguments, String> {
+    let entries = arguments
+        .slots
+        .iter()
+        .enumerate()
+        .map(|(index, slot)| NativeMaterializedCallArgumentEntry {
+            name: arguments.names.get(index).cloned().unwrap_or(None),
+            slot: unsafe { slot.clone_slot() },
+        })
+        .collect::<Vec<_>>();
+    let materialized = NativeMaterializedCallArguments { entries };
+    let defaults = signature
+        .parameter_defaults
+        .iter()
+        .cloned()
+        .map(NativeValueHandle::from_value)
+        .collect::<Vec<_>>();
+    let result = unsafe {
+        native_materialized_call_arguments_finalize(
+            &materialized,
+            signature.parameter_names.clone(),
+            &signature.parameter_required,
+            &signature.parameter_by_reference,
+            &defaults,
+            signature.variadic_parameter_name.clone(),
+            signature.variadic_parameter_name.is_some(),
+            signature.variadic_by_reference,
+        )
+    };
+    for default in defaults {
+        unsafe { phpc_native_value_free(default) };
+    }
+    for entry in materialized.entries {
+        unsafe { entry.slot.free() };
+    }
+
+    let handle = result?;
+    if handle.ptr.is_null() {
+        return Err(
+            "native callable-value invocation failed: source-signature finalization returned a null argument handle"
+                .to_string(),
+        );
+    }
+    let finalized = unsafe { *Box::from_raw(handle.ptr) };
+    Ok(finalized)
+}
+
+fn native_call_arguments_need_source_signature_rebind(
+    arguments: &NativeCallArguments,
+    signature: &NativeCallableSourceSignature,
+) -> bool {
+    if arguments.finalized_variadic || arguments.names.iter().any(Option::is_some) {
+        return false;
+    }
+
+    signature.variadic_parameter_name.is_some()
+        || arguments.slots.len() != signature.parameter_names.len()
+        || signature
+            .parameter_by_reference
+            .iter()
+            .any(|by_reference| *by_reference != 0)
+}
+
+unsafe fn native_call_arguments_clone_for_frame(
+    arguments: &NativeCallArguments,
+    signature: Option<&NativeCallableSourceSignature>,
+) -> Result<NativeCallArguments, String> {
+    if let Some(signature) = signature {
+        if native_call_arguments_need_source_signature_rebind(arguments, signature) {
+            return unsafe {
+                native_call_arguments_clone_for_source_signature(arguments, signature)
+            };
+        }
+    }
+
+    Ok(NativeCallArguments {
+        slots: arguments
+            .slots
+            .iter()
+            .map(|slot| unsafe { slot.clone_slot() })
+            .collect(),
+        names: arguments.names.clone(),
+        finalized_variadic: arguments.finalized_variadic,
+    })
+}
+
 unsafe fn native_callable_value_invoke_table_result(
     callable: &NativeCallable,
     bound_receiver: Option<&Value>,
@@ -14414,13 +14536,22 @@ unsafe fn native_callable_value_invoke_table_result(
         };
         return NativeCallResultHandle::null();
     };
-    let mut slots = Vec::with_capacity(arguments_ref.slots.len());
-    for slot in &arguments_ref.slots {
-        slots.push(unsafe { slot.clone_slot() });
-    }
+    let frame_arguments = match unsafe {
+        native_call_arguments_clone_for_frame(
+            arguments_ref,
+            callable.descriptor.source_signature.as_ref(),
+        )
+    } {
+        Ok(arguments) => arguments,
+        Err(message) => {
+            return NativeCallResultHandle::from_slot(NativeCallResultSlot::Failure(
+                NativeDiagnosticHandle::from_message(message),
+            ))
+        }
+    };
     let receiver = bound_receiver.cloned().map(NativeValueHandle::from_value);
     let frame = NativeCallFrameHandle::from_frame(NativeCallFrame {
-        slots,
+        slots: frame_arguments.slots,
         called_scope: callable.called_scope.clone(),
         receiver,
     });
@@ -47263,11 +47394,11 @@ mod tests {
     }
 
     fn reset_call_arguments_free_count_for_test() {
-        NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST.store(0, AtomicOrdering::SeqCst);
+        NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST.with(|count| count.set(0));
     }
 
     fn call_arguments_free_count_for_test() -> i64 {
-        NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST.load(AtomicOrdering::SeqCst)
+        NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST.with(Cell::get)
     }
 
     #[test]
@@ -65822,28 +65953,12 @@ mod tests {
         let mut diagnostic = NativeDiagnosticHandle::null();
         let invalid_value =
             unsafe { phpc_native_value_from_string_with_diagnostic(string, &mut diagnostic) };
-        assert!(invalid_value.is_null());
-        assert!(!diagnostic.is_null());
-        assert_eq!(unsafe { phpc_native_diagnostic_count(diagnostic) }, 1);
-        assert_eq!(
-            unsafe { phpc_native_diagnostic_severity_at(diagnostic, 0) },
-            NativeDiagnosticSeverity::Error.tag()
-        );
-        assert!(unsafe {
-            phpc_native_diagnostic_contains_severity(
-                diagnostic,
-                NativeDiagnosticSeverity::Error.tag(),
-            )
-        });
-        let message = unsafe { phpc_native_diagnostic_message_clone_bytes(diagnostic) };
-        let message_bytes = unsafe { std::slice::from_raw_parts(message.ptr(), message.len()) };
-        assert_eq!(
-            message_bytes,
-            b"native value conversion failed: string bytes are not valid UTF-8"
-        );
+        assert!(diagnostic.is_null());
+        assert!(matches!(
+            unsafe { invalid_value.as_ref() },
+            Some(Value::BinaryString(value)) if value == &invalid_bytes
+        ));
 
-        unsafe { phpc_native_byte_buffer_free(message) };
-        unsafe { phpc_native_diagnostic_free(diagnostic) };
         unsafe { phpc_native_value_free(invalid_value) };
         unsafe { phpc_native_string_free(string) };
     }
@@ -65909,16 +66024,11 @@ mod tests {
                 &mut diagnostic,
             )
         };
-        assert!(invalid_value.is_null());
-        assert!(!diagnostic.is_null());
-        let message = unsafe { phpc_native_diagnostic_message_clone_bytes(diagnostic) };
-        let message_bytes = unsafe { std::slice::from_raw_parts(message.ptr(), message.len()) };
-        assert_eq!(
-            message_bytes,
-            b"native value conversion failed: string bytes are not valid UTF-8"
-        );
-        unsafe { phpc_native_byte_buffer_free(message) };
-        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        assert!(diagnostic.is_null());
+        assert!(matches!(
+            unsafe { invalid_value.as_ref() },
+            Some(Value::BinaryString(value)) if value == &invalid
+        ));
         unsafe { phpc_native_value_free(invalid_value) };
     }
 
@@ -65970,29 +66080,34 @@ mod tests {
             unsafe { phpc_native_value_free(left) };
         }
 
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let value = unsafe {
+            phpc_native_value_from_string_bytes_with_diagnostic(ptr::null(), 4, &mut diagnostic)
+        };
+        assert!(value.is_null(), "null pointer with nonzero length");
+        assert_eq!(
+            unsafe { phpc_native_value_materialization_failure_exit_code(value, diagnostic) },
+            1,
+            "null pointer with nonzero length"
+        );
+        unsafe { phpc_native_value_free(value) };
+
         let invalid_bytes = [0xff, b'p'];
-        for (label, bytes, len) in [
-            ("null pointer with nonzero length", ptr::null(), 4),
-            (
-                "invalid UTF-8 bytes",
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let value = unsafe {
+            phpc_native_value_from_string_bytes_with_diagnostic(
                 invalid_bytes.as_ptr(),
                 invalid_bytes.len(),
-            ),
-        ] {
-            let mut diagnostic = NativeDiagnosticHandle::null();
-            let value = unsafe {
-                phpc_native_value_from_string_bytes_with_diagnostic(bytes, len, &mut diagnostic)
-            };
-
-            assert!(value.is_null(), "{label}");
-            assert_eq!(
-                unsafe { phpc_native_value_materialization_failure_exit_code(value, diagnostic) },
-                1,
-                "{label}"
-            );
-
-            unsafe { phpc_native_value_free(value) };
-        }
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null(), "invalid byte strings are PHP strings");
+        assert_eq!(
+            unsafe { phpc_native_value_materialization_failure_exit_code(value, diagnostic) },
+            0,
+            "invalid byte strings are PHP strings"
+        );
+        unsafe { phpc_native_value_free(value) };
     }
 
     #[test]
@@ -66152,11 +66267,11 @@ mod tests {
         };
         assert_eq!(
             phpc_native_comparison_branch_decision_exit_code(failed_right_decision),
-            1
+            0
         );
         assert!(
-            !phpc_native_comparison_branch_decision_is_true(failed_right_decision),
-            "right materialization blocker should not produce a truthy decision"
+            phpc_native_comparison_branch_decision_is_true(failed_right_decision),
+            "byte-string materialization should compare as a supported PHP string"
         );
     }
 
@@ -66692,8 +66807,8 @@ mod tests {
         let invalid_bytes = [0xff];
         let invalid_handle =
             unsafe { phpc_native_string_from_bytes(invalid_bytes.as_ptr(), invalid_bytes.len()) };
-        assert_native_comparison_blocked(
-            "invalid string-handle materialization diagnostic",
+        assert_native_comparison_ok(
+            "binary string-handle materialization compares as a PHP string",
             unsafe {
                 phpc_native_comparison_operand_compare_and_free(
                     phpc_native_comparison_operand_from_string_and_free(invalid_handle),
@@ -66701,7 +66816,7 @@ mod tests {
                     phpc_native_comparison_operand_from_scalar(phpc_native_int(1)),
                 )
             },
-            "string bytes are not valid UTF-8",
+            false,
         );
     }
 
@@ -68804,11 +68919,11 @@ mod tests {
             Value::String("B".to_string()),
             "invalid string conversion: native string offset operation failed: array subjects are not supported; only null, bool, int, float, and string subjects are implemented",
         );
-        assert_diagnostic(
+        assert_written_warning(
             Value::String("abc".to_string()),
             Value::Int(1),
             Value::String(String::from_utf8(vec![0xc3, 0xa9]).unwrap()),
-            "unsupported call native string offset write: byte strings with invalid UTF-8 require the binary string value boundary",
+            b"a\xc3c",
         );
 
         let subject = NativeValueHandle::from_value(Value::String("ab".to_string()));
@@ -79278,9 +79393,12 @@ mod tests {
                 "DivisionByZeroError",
                 "RuntimeException",
                 "OutOfRangeException",
+                "UnexpectedValueException",
                 "OutOfBoundsException",
                 "Directory",
                 "SplFixedArray",
+                "ArrayObject",
+                "ArrayIterator",
                 "SplDoublyLinkedList",
                 "SplQueue",
                 "SplStack",
@@ -79541,7 +79659,14 @@ mod tests {
         assert_eq!(reflection_parameter.name(), "ReflectionParameter");
         assert_eq!(reflection_parameter.id().index(), 17);
         assert!(reflection_parameter.parent_id().is_none());
-        assert!(reflection_parameter.properties().is_empty());
+        assert_eq!(
+            reflection_parameter
+                .properties()
+                .iter()
+                .map(PhpPropertyMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["name"]
+        );
         assert!(reflection_parameter.method("getDefaultValue").is_some());
         assert!(reflection_parameter.method("getType").is_some());
         assert!(reflection_parameter.method("getAttributes").is_some());
@@ -79592,7 +79717,14 @@ mod tests {
         assert_eq!(reflection_property.name(), "ReflectionProperty");
         assert_eq!(reflection_property.id().index(), 22);
         assert!(reflection_property.parent_id().is_none());
-        assert!(reflection_property.properties().is_empty());
+        assert_eq!(
+            reflection_property
+                .properties()
+                .iter()
+                .map(PhpPropertyMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["name", "class"]
+        );
         assert!(reflection_property.constant("IS_PUBLIC").is_some());
         assert!(reflection_property.method("getDefaultValue").is_some());
         assert!(reflection_property.method("getAttributes").is_some());
@@ -79601,7 +79733,14 @@ mod tests {
         assert_eq!(reflection_class_constant.name(), "ReflectionClassConstant");
         assert_eq!(reflection_class_constant.id().index(), 23);
         assert!(reflection_class_constant.parent_id().is_none());
-        assert!(reflection_class_constant.properties().is_empty());
+        assert_eq!(
+            reflection_class_constant
+                .properties()
+                .iter()
+                .map(PhpPropertyMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["name", "class"]
+        );
         assert!(reflection_class_constant.constant("IS_PUBLIC").is_some());
         assert!(reflection_class_constant.method("getValue").is_some());
         assert!(reflection_class_constant.method("getAttributes").is_some());
@@ -80312,7 +80451,9 @@ mod tests {
             .map(|diagnostic| diagnostic.message.clone())
             .unwrap_or_default();
         assert!(
-            message.contains("typed property StaticRefCounter::$count expects int"),
+            message.contains(
+                "Cannot assign array to reference held by property StaticRefCounter::$count of type int"
+            ),
             "{message}"
         );
         unsafe { phpc_native_diagnostic_free(diagnostic) };
@@ -80460,7 +80601,9 @@ mod tests {
             .map(|diagnostic| diagnostic.message.clone())
             .unwrap_or_default();
         assert!(
-            message.contains("typed property StaticBindRefCounter::$count expects int"),
+            message.contains(
+                "Cannot assign array to reference held by property StaticBindRefCounter::$count of type int"
+            ),
             "{message}"
         );
 
@@ -80595,7 +80738,9 @@ mod tests {
             .map(|diagnostic| diagnostic.message.clone())
             .unwrap_or_default();
         assert!(
-            message.contains("typed property StaticOffsetRefCounter::$typed expects ?string"),
+            message.contains(
+                "Cannot assign array to reference held by property StaticOffsetRefCounter::$typed of type ?string"
+            ),
             "{message}"
         );
 
@@ -81080,7 +81225,7 @@ mod tests {
             .unwrap_err();
         assert_eq!(
             type_error.message(),
-            "invalid property access: typed property Counter::$count expects int, got array"
+            "invalid property access: Cannot assign array to reference held by property Counter::$count of type int"
         );
     }
 

@@ -82,14 +82,18 @@ echo $invert ? 1 : 0;
         !ir.contains("xor i1"),
         "known xor-with-true result should fold for later scalar lowering:\n{ir}"
     );
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 10)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 20)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 10)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 20)"), "{ir}");
     assert_eq!(
         ir.matches("select i1 %tmp1, i64 1, i64 0").count(),
         2,
         "{ir}"
     );
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 0)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 0)"), "{ir}");
+    assert!(
+        ir.contains("@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"),
+        "{ir}"
+    );
 }
 
 #[test]
@@ -165,14 +169,10 @@ echo ("" xor 0.0) ? 1 : 0;
     assert!(!ir.contains(" and i1 "), "{ir}");
     assert!(!ir.contains(" or i1 "), "{ir}");
     assert!(!ir.contains(" xor i1 "), "{ir}");
-    assert_eq!(
-        ir.matches("@printf(ptr @.fmt_int, i64 1)").count(),
-        4,
-        "{ir}"
-    );
-    assert_eq!(
-        ir.matches("@printf(ptr @.fmt_int, i64 0)").count(),
-        2,
+    assert_eq!(ir.matches("@phpc_native_int(i64 1)").count(), 4, "{ir}");
+    assert_eq!(ir.matches("@phpc_native_int(i64 0)").count(), 2, "{ir}");
+    assert!(
+        ir.contains("@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"),
         "{ir}"
     );
 }
@@ -193,14 +193,10 @@ echo (true && null) ? 1 : 0;
     assert!(!ir.contains(" and i1 "), "{ir}");
     assert!(!ir.contains(" or i1 "), "{ir}");
     assert!(!ir.contains(" xor i1 "), "{ir}");
-    assert_eq!(
-        ir.matches("@printf(ptr @.fmt_int, i64 1)").count(),
-        2,
-        "{ir}"
-    );
-    assert_eq!(
-        ir.matches("@printf(ptr @.fmt_int, i64 0)").count(),
-        3,
+    assert_eq!(ir.matches("@phpc_native_int(i64 1)").count(), 2, "{ir}");
+    assert_eq!(ir.matches("@phpc_native_int(i64 0)").count(), 3, "{ir}");
+    assert!(
+        ir.contains("@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"),
         "{ir}"
     );
 
@@ -230,17 +226,13 @@ echo (null && []) ? 1 : 0;
     assert!(!ir.contains(" or i1 "), "{ir}");
     assert!(!ir.contains(" xor i1 "), "{ir}");
     assert!(
-        !ir.contains("array"),
+        !ir.contains("phpc_native_array_") && !ir.contains("@phpc_native_array"),
         "unselected array operands should not be lowered:\n{ir}"
     );
-    assert_eq!(
-        ir.matches("@printf(ptr @.fmt_int, i64 1)").count(),
-        2,
-        "{ir}"
-    );
-    assert_eq!(
-        ir.matches("@printf(ptr @.fmt_int, i64 0)").count(),
-        3,
+    assert_eq!(ir.matches("@phpc_native_int(i64 1)").count(), 2, "{ir}");
+    assert_eq!(ir.matches("@phpc_native_int(i64 0)").count(), 3, "{ir}");
+    assert!(
+        ir.contains("@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"),
         "{ir}"
     );
 
@@ -288,7 +280,10 @@ echo $both ? 1 : 0, "\n", $either ? 1 : 0;
         "identical boolean expression || should reuse the expression:\n{ir}"
     );
     assert!(ir.contains("select i1 %tmp1, i64 1, i64 0"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int"), "{ir}");
+    assert!(
+        ir.contains("@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"),
+        "{ir}"
+    );
 }
 
 #[test]
@@ -311,7 +306,11 @@ echo $different ? 1 : 0;
         "identical boolean expression xor should fold to false:\n{ir}"
     );
     assert!(!ir.contains("select i1 %tmp1"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 0)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 0)"), "{ir}");
+    assert!(
+        ir.contains("@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"),
+        "{ir}"
+    );
 }
 
 #[test]

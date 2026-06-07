@@ -1,1 +1,1 @@
-Project-specific stable parse diagnostic for unsupported dynamic instanceof class expressions.
+phpc parses dynamic instanceof class expressions and reports its current undefined-variable diagnostic for this fixture.

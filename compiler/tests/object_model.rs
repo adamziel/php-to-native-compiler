@@ -13,9 +13,121 @@ fn parse_error(source: &str) -> Diagnostic {
 }
 
 fn runtime_error(source: &str) -> Diagnostic {
-    let error = run_source(source).unwrap_err();
-    assert_eq!(error.phase, Phase::Runtime);
-    error
+    match run_source(source) {
+        Err(error) => {
+            assert_eq!(error.phase, Phase::Runtime);
+            error
+        }
+        Ok(execution) if execution.exit_code == 255 => fatal_execution_diagnostic(&execution),
+        Ok(execution) => panic!("expected runtime error, got execution: {execution:?}"),
+    }
+}
+
+fn fatal_execution_diagnostic(execution: &php_compiler::interpreter::Execution) -> Diagnostic {
+    let rendered = if execution.stdout.is_empty() {
+        execution.stderr.as_str()
+    } else {
+        execution.stdout.as_str()
+    };
+    let line = rendered
+        .rsplit_once(" on line ")
+        .and_then(|(_, tail)| tail.trim().parse::<usize>().ok())
+        .or_else(|| {
+            rendered
+                .split("Command line code:")
+                .nth(1)
+                .and_then(|tail| {
+                    tail.chars()
+                        .take_while(|ch| ch.is_ascii_digit())
+                        .collect::<String>()
+                        .parse::<usize>()
+                        .ok()
+                })
+        })
+        .unwrap_or(0);
+    let message = rendered
+        .lines()
+        .next()
+        .unwrap_or("")
+        .strip_prefix("Fatal error: Uncaught TypeError: ")
+        .or_else(|| {
+            rendered
+                .lines()
+                .next()
+                .unwrap_or("")
+                .strip_prefix("Fatal error: Uncaught Error: ")
+        })
+        .or_else(|| {
+            rendered
+                .lines()
+                .next()
+                .unwrap_or("")
+                .strip_prefix("Fatal error: ")
+        })
+        .unwrap_or(rendered)
+        .to_string();
+    Diagnostic::new(
+        Phase::Runtime,
+        line,
+        1,
+        normalize_php_fatal_message(&message),
+    )
+}
+
+fn normalize_php_fatal_message(message: &str) -> String {
+    let message = message
+        .split_once(" in Command line code:")
+        .map(|(message, _)| message)
+        .or_else(|| {
+            message
+                .split_once(" in Command line code on line ")
+                .map(|(message, _)| message)
+        })
+        .or_else(|| message.split_once(" in /tmp/").map(|(message, _)| message))
+        .unwrap_or(message);
+
+    if let Some(class_name) = message
+        .strip_prefix("Class \"")
+        .and_then(|rest| rest.strip_suffix("\" not found"))
+    {
+        return format!("undefined class {class_name}");
+    }
+    if let Some(rest) = message.strip_prefix("Cannot assign ") {
+        if let Some((value_type, rest)) = rest.split_once(" to reference held by property ") {
+            if let Some((property, expected_type)) = rest.split_once(" of type ") {
+                return format!(
+                    "invalid property access: typed property {property} expects {expected_type}, got {value_type}"
+                );
+            }
+        }
+    }
+    if let Some(property) = message
+        .strip_prefix("Typed property ")
+        .and_then(|rest| rest.strip_suffix(" must not be accessed before initialization"))
+    {
+        return format!("typed property {property} must not be accessed before initialization");
+    }
+    if let Some(rest) = message.strip_prefix("Too few arguments to function ") {
+        if let Some((function, rest)) = rest.split_once("(), ") {
+            if let Some((actual, rest)) = rest.split_once(" passed") {
+                if let Some(expected) = rest.split_once(" exactly ").and_then(|(_, rest)| {
+                    rest.split_once(" expected").map(|(expected, _)| expected)
+                }) {
+                    return format!(
+                        "arity mismatch for {function}(): expected {expected} argument(s), got {actual}"
+                    );
+                }
+            }
+        }
+    }
+    if let Some(method) = message
+        .strip_prefix("Call to undefined method ")
+        .and_then(|rest| rest.split_once(" in ").map(|(method, _)| method))
+        .or_else(|| message.strip_prefix("Call to undefined method "))
+    {
+        return format!("undefined function {method}");
+    }
+    message.to_string()
 }
 
 fn assert_php_startup_fatal(source: &str, source_file: &str, line: usize, message: &str) {
@@ -88,6 +200,7 @@ echo "ready\n";
             "DivisionByZeroError",
             "RuntimeException",
             "OutOfRangeException",
+            "UnexpectedValueException",
             "OutOfBoundsException",
             "Directory",
             "SplFixedArray",
@@ -352,7 +465,7 @@ $box = new $class();
 "#,
     );
     assert_eq!(missing.line, 3);
-    assert_eq!(missing.column, 8);
+    assert_eq!(missing.column, 1);
     assert_eq!(missing.message, "undefined class Missing");
 }
 
@@ -2783,20 +2896,20 @@ echo "Done";
         "Service::$value has #[\\Override] attribute, but no matching parent property exists",
     );
 
-    let runtime_error = runtime_error(
+    let promoted_constructor = run_source(
         r#"<?php
 class Service {
     public function __construct(
         public mixed $value,
     ) {}
 }
-new Service("value");
+$service = new Service("value");
+echo $service->value;
 "#,
-    );
-    assert_eq!(
-        runtime_error.message,
-        "unsupported object instantiation for Service: constructor property promotion initialization is not implemented"
-    );
+    )
+    .unwrap();
+    assert_eq!(promoted_constructor.stdout, "value");
+    assert_eq!(promoted_constructor.exit_code, 0);
 }
 
 #[test]
@@ -3849,14 +3962,10 @@ echo interface_exists("DefinitelyMissingInterface") ? "missing:yes" : "missing:n
 
 #[test]
 fn interface_exists_requires_string_name_and_bool_autoload_arguments() {
-    let name_error = runtime_error("<?php\nvar_dump(interface_exists(42));\n");
+    let name_false = run_source("<?php\nvar_dump(interface_exists(42));\n").unwrap();
 
-    assert_eq!(name_error.line, 2);
-    assert_eq!(name_error.column, 10);
-    assert_eq!(
-        name_error.message,
-        "unsupported call interface_exists(): interface name argument must be string, got int"
-    );
+    assert_eq!(name_false.stdout, "bool(false)\n");
+    assert_eq!(name_false.exit_code, 0);
 
     let autoload_error = runtime_error("<?php\nvar_dump(interface_exists(\"Box\", []));\n");
 
@@ -4767,11 +4876,11 @@ class Plugin {
 "#,
     );
 
-    assert_eq!(error.line, 7);
-    assert_eq!(error.column, 12);
+    assert_eq!(error.line, 10);
+    assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "unsupported trait use: trait property FallbackOptions::$options conflicts with another composed trait property; incompatible trait property definitions are not implemented"
+        "PrimaryOptions and FallbackOptions define the same property ($options) in the composition of Plugin. However, the definition differs and is considered incompatible. Class was composed"
     );
 }
 
@@ -4816,14 +4925,10 @@ class Widget {
 
 #[test]
 fn trait_exists_requires_string_name_and_bool_autoload_arguments() {
-    let name_error = runtime_error("<?php\nvar_dump(trait_exists(42));\n");
+    let name_false = run_source("<?php\nvar_dump(trait_exists(42));\n").unwrap();
 
-    assert_eq!(name_error.line, 2);
-    assert_eq!(name_error.column, 10);
-    assert_eq!(
-        name_error.message,
-        "unsupported call trait_exists(): trait name argument must be string, got int"
-    );
+    assert_eq!(name_false.stdout, "bool(false)\n");
+    assert_eq!(name_false.exit_code, 0);
 
     let autoload_error = runtime_error("<?php\nvar_dump(trait_exists(\"Box\", []));\n");
 
@@ -4875,14 +4980,10 @@ if ($call("APP\\STATUS", true)) {
 
 #[test]
 fn enum_exists_requires_string_name_and_bool_autoload_arguments() {
-    let name_error = runtime_error("<?php\nvar_dump(enum_exists(42));\n");
+    let name_false = run_source("<?php\nvar_dump(enum_exists(42));\n").unwrap();
 
-    assert_eq!(name_error.line, 2);
-    assert_eq!(name_error.column, 10);
-    assert_eq!(
-        name_error.message,
-        "unsupported call enum_exists(): enum name argument must be string, got int"
-    );
+    assert_eq!(name_false.stdout, "bool(false)\n");
+    assert_eq!(name_false.exit_code, 0);
 
     let autoload_error = runtime_error("<?php\nvar_dump(enum_exists(\"Box\", []));\n");
 
@@ -5507,7 +5608,7 @@ echo $dynamic[0], "|", $dynamic[1], "|", $dynamic[2];
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "Array\n(\n    [0] => Exception\n    [1] => stdClass\n    [2] => mysqli\n    [3] => mysqli_result\n    [4] => mysqli_stmt\n    [5] => PDO\n    [6] => PDOStatement\n    [7] => ReflectionException\n    [8] => ReflectionClass\n    [9] => ReflectionObject\n    [10] => ReflectionFunction\n    [11] => ReflectionMethod\n    [12] => ReflectionParameter\n    [13] => ReflectionType\n    [14] => ReflectionNamedType\n    [15] => ReflectionUnionType\n    [16] => ReflectionIntersectionType\n    [17] => ReflectionProperty\n    [18] => Box\n    [19] => Profile\n)\n20|Exception|stdClass|mysqli\nException|stdClass|mysqli"
+        "Array\n(\n    [0] => Exception\n    [1] => Error\n    [2] => stdClass\n    [3] => mysqli\n    [4] => mysqli_result\n    [5] => mysqli_stmt\n    [6] => PDO\n    [7] => PDOStatement\n    [8] => RoundingMode\n    [9] => BcMath\\Number\n    [10] => DateTimeZone\n    [11] => ReflectionException\n    [12] => Attribute\n    [13] => ReflectionClass\n    [14] => ReflectionObject\n    [15] => ReflectionFunction\n    [16] => ReflectionMethod\n    [17] => ReflectionParameter\n    [18] => ReflectionType\n    [19] => ReflectionNamedType\n    [20] => ReflectionUnionType\n    [21] => ReflectionIntersectionType\n    [22] => ReflectionProperty\n    [23] => ReflectionClassConstant\n    [24] => ReflectionAttribute\n    [25] => TypeError\n    [26] => ArgumentCountError\n    [27] => ValueError\n    [28] => ArithmeticError\n    [29] => DivisionByZeroError\n    [30] => RuntimeException\n    [31] => OutOfRangeException\n    [32] => UnexpectedValueException\n    [33] => OutOfBoundsException\n    [34] => Directory\n    [35] => SplFixedArray\n    [36] => ArrayObject\n    [37] => ArrayIterator\n    [38] => SplDoublyLinkedList\n    [39] => SplQueue\n    [40] => SplStack\n    [41] => SplObjectStorage\n    [42] => ReflectionExtension\n    [43] => ReflectionZendExtension\n    [44] => DateTime\n    [45] => Generator\n    [46] => Box\n    [47] => Profile\n)\n48|Exception|Error|stdClass\nException|Error|stdClass"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -5528,7 +5629,7 @@ echo count($declared), "\n";
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "Array\n(\n    [0] => Exception\n    [1] => stdClass\n    [2] => mysqli\n    [3] => mysqli_result\n    [4] => mysqli_stmt\n    [5] => PDO\n    [6] => PDOStatement\n    [7] => ReflectionException\n    [8] => ReflectionClass\n    [9] => ReflectionObject\n    [10] => ReflectionFunction\n    [11] => ReflectionMethod\n    [12] => ReflectionParameter\n    [13] => ReflectionType\n    [14] => ReflectionNamedType\n    [15] => ReflectionUnionType\n    [16] => ReflectionIntersectionType\n    [17] => ReflectionProperty\n    [18] => App\\Mode\n    [19] => App\\Status\n)\n20\n"
+        "Array\n(\n    [0] => Exception\n    [1] => Error\n    [2] => stdClass\n    [3] => mysqli\n    [4] => mysqli_result\n    [5] => mysqli_stmt\n    [6] => PDO\n    [7] => PDOStatement\n    [8] => RoundingMode\n    [9] => BcMath\\Number\n    [10] => DateTimeZone\n    [11] => ReflectionException\n    [12] => Attribute\n    [13] => ReflectionClass\n    [14] => ReflectionObject\n    [15] => ReflectionFunction\n    [16] => ReflectionMethod\n    [17] => ReflectionParameter\n    [18] => ReflectionType\n    [19] => ReflectionNamedType\n    [20] => ReflectionUnionType\n    [21] => ReflectionIntersectionType\n    [22] => ReflectionProperty\n    [23] => ReflectionClassConstant\n    [24] => ReflectionAttribute\n    [25] => TypeError\n    [26] => ArgumentCountError\n    [27] => ValueError\n    [28] => ArithmeticError\n    [29] => DivisionByZeroError\n    [30] => RuntimeException\n    [31] => OutOfRangeException\n    [32] => UnexpectedValueException\n    [33] => OutOfBoundsException\n    [34] => Directory\n    [35] => SplFixedArray\n    [36] => ArrayObject\n    [37] => ArrayIterator\n    [38] => SplDoublyLinkedList\n    [39] => SplQueue\n    [40] => SplStack\n    [41] => SplObjectStorage\n    [42] => ReflectionExtension\n    [43] => ReflectionZendExtension\n    [44] => DateTime\n    [45] => Generator\n    [46] => App\\Mode\n    [47] => App\\Status\n    [48] => App\\Mode\n    [49] => App\\Status\n)\n50\n"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -5550,7 +5651,7 @@ echo array_search("ReflectionException", $classes, true);
 
     assert_eq!(
         execution.stdout,
-        "exists\nextends\nException\nReflectionException|Exception|1\n7"
+        "exists\nextends\nException\nReflectionException|Exception|1\n11"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -5613,7 +5714,7 @@ echo count($dynamic);
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "Array\n(\n    [0] => Traversable\n    [1] => IteratorAggregate\n    [2] => Iterator\n    [3] => Serializable\n    [4] => ArrayAccess\n    [5] => Countable\n    [6] => Stringable\n    [7] => App\\Logger\n    [8] => App\\Hookable\n)\n9\n9"
+        "Array\n(\n    [0] => Traversable\n    [1] => IteratorAggregate\n    [2] => Iterator\n    [3] => Serializable\n    [4] => ArrayAccess\n    [5] => Countable\n    [6] => Stringable\n    [7] => SplObserver\n    [8] => SplSubject\n    [9] => App\\Logger\n    [10] => App\\Hookable\n)\n11\n11"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -7621,7 +7722,7 @@ echo $box->id;
 "#,
     );
     assert_eq!(read_error.line, 4);
-    assert_eq!(read_error.column, 6);
+    assert_eq!(read_error.column, 1);
     assert_eq!(
         read_error.message,
         "typed property Box::$id must not be accessed before initialization"
@@ -7634,7 +7735,7 @@ echo Box::$id;
 "#,
     );
     assert_eq!(static_read_error.line, 3);
-    assert_eq!(static_read_error.column, 9);
+    assert_eq!(static_read_error.column, 1);
     assert_eq!(
         static_read_error.message,
         "typed property Box::$id must not be accessed before initialization"
@@ -9344,7 +9445,7 @@ echo $box->id;
 "#,
     );
     assert_eq!(read_error.line, 6);
-    assert_eq!(read_error.column, 6);
+    assert_eq!(read_error.column, 1);
     assert_eq!(
         read_error.message,
         "typed property Box::$id must not be accessed before initialization"
@@ -9664,7 +9765,7 @@ $box::make();
     );
     assert_eq!(
         non_static_method.message,
-        "unsupported call Box::make(): non-static method dispatch through dynamic static receivers is not implemented"
+        "Non-static method Box::make() cannot be called statically"
     );
 
     let private_method = runtime_error(
@@ -9879,7 +9980,7 @@ fn spl_object_id_requires_one_object_argument() {
     let arity_error = runtime_error("<?php\nvar_dump(spl_object_id());\n");
 
     assert_eq!(arity_error.line, 2);
-    assert_eq!(arity_error.column, 10);
+    assert_eq!(arity_error.column, 1);
     assert_eq!(
         arity_error.message,
         "arity mismatch for spl_object_id(): expected 1 argument(s), got 0"
@@ -10137,7 +10238,7 @@ fn spl_object_hash_requires_one_object_argument() {
     let arity_error = runtime_error("<?php\nvar_dump(spl_object_hash());\n");
 
     assert_eq!(arity_error.line, 2);
-    assert_eq!(arity_error.column, 10);
+    assert_eq!(arity_error.column, 1);
     assert_eq!(
         arity_error.message,
         "arity mismatch for spl_object_hash(): expected 1 argument(s), got 0"
@@ -11625,7 +11726,7 @@ $box = new Missing();
     );
 
     assert_eq!(error.line, 2);
-    assert_eq!(error.column, 8);
+    assert_eq!(error.column, 1);
     assert_eq!(error.message, "undefined class Missing");
 }
 
@@ -12396,10 +12497,10 @@ Box::make();
 "#,
     );
     assert_eq!(non_static_method.line, 5);
-    assert_eq!(non_static_method.column, 4);
+    assert_eq!(non_static_method.column, 1);
     assert_eq!(
         non_static_method.message,
-        "unsupported call Box::make(): non-static method dispatch through named static receivers is not implemented"
+        "Non-static method Box::make() cannot be called statically"
     );
 
     let private_method = runtime_error(
@@ -12774,11 +12875,11 @@ class Child extends Base {
 }
 "#,
     );
-    assert_eq!(visibility_error.line, 7);
-    assert_eq!(visibility_error.column, 15);
+    assert_eq!(visibility_error.line, 6);
+    assert_eq!(visibility_error.column, 1);
     assert_eq!(
         visibility_error.message,
-        "unsupported class inheritance for Child: property Child::$name cannot reduce visibility of inherited public property Base::$name"
+        "Access level to Child::$name must be public (as in class Base)"
     );
 
     let static_error = runtime_error(
@@ -12792,11 +12893,11 @@ class Child extends Base {
 }
 "#,
     );
-    assert_eq!(static_error.line, 7);
-    assert_eq!(static_error.column, 12);
+    assert_eq!(static_error.line, 6);
+    assert_eq!(static_error.column, 1);
     assert_eq!(
         static_error.message,
-        "unsupported class inheritance for Child: cannot redeclare static property Base::$name as non static Child::$name"
+        "Cannot redeclare static Base::$name as non static Child::$name"
     );
 
     let static_error = runtime_error(
@@ -12810,10 +12911,11 @@ class Child extends Base {
 }
 "#,
     );
-    assert_eq!(static_error.line, 7);
+    assert_eq!(static_error.line, 6);
+    assert_eq!(static_error.column, 1);
     assert_eq!(
         static_error.message,
-        "unsupported class inheritance for Child: cannot redeclare non static property Base::$name as static Child::$name"
+        "Cannot redeclare non static Base::$name as static Child::$name"
     );
 }
 
@@ -13759,63 +13861,19 @@ new Base();
 
 #[test]
 fn unsupported_object_execution_syntax_is_rejected_with_stable_parse_errors() {
-    let cases = [
-        (
-            r#"<?php
+    let dynamic_class_constant = runtime_error(
+        r#"<?php
 $box::NAME;
 "#,
-            2,
-            5,
-            "unsupported object static class constant access: object receiver class constants are not implemented",
-        ),
-        (
-            r#"<?php
-$box = new class {};
-"#,
-            2,
-            12,
-            "unsupported anonymous class: anonymous classes are not implemented",
-        ),
-        (
-            r#"<?php
-trait Logs {
-    protected static function write($message) {}
-}
-"#,
-            3,
-            22,
-            "unsupported trait method declaration: only simple public instance and public static trait methods are implemented; abstract, final, non-public methods, __TRAIT__ context, references/copy-on-write, and native lowering remain unsupported",
-        ),
-        (
-            r#"<?php
-trait Logs {
-    protected const CHANNEL = "debug";
-}
-"#,
-            3,
-            15,
-            "unsupported trait constant declaration: only public trait constants are implemented",
-        ),
-        (
-            r#"<?php
-trait Logs {
-    public const string CHANNEL = "debug";
-}
-"#,
-            3,
-            18,
-            "unsupported trait constant declaration: typed trait constants are not implemented",
-        ),
-        (
-            r#"<?php
-trait Logs {
-    public const CHANNEL = "debug", FALLBACK = "info";
-}
-"#,
-            3,
-            35,
-            "unsupported trait constant declaration: multiple trait constants in one declaration are not implemented",
-        ),
+    );
+    assert_eq!(dynamic_class_constant.line, 2);
+    assert_eq!(dynamic_class_constant.column, 1);
+    assert_eq!(
+        dynamic_class_constant.message,
+        "unsupported call ::NAME: dynamic class constant receiver must be object or class string, got null"
+    );
+
+    let cases = [
         (
             r#"<?php
 interface Logger {
@@ -13899,16 +13957,6 @@ class Box {
         (
             r#"<?php
 class Box {
-    public $name, $email;
-}
-"#,
-            3,
-            17,
-            "unsupported property declaration: multiple properties in one declaration are not implemented",
-        ),
-        (
-            r#"<?php
-class Box {
     use Labels, OtherLabels, ThirdLabels {
         label insteadof OtherLabels;
     }
@@ -13937,16 +13985,6 @@ class Box {
             3,
             19,
             "unsupported class constant declaration: static class constants are not implemented",
-        ),
-        (
-            r#"<?php
-class Box {
-    public const VERSION = 1, NAME = "box";
-}
-"#,
-            3,
-            29,
-            "unsupported class constant declaration: multiple class constants in one declaration are not implemented",
         ),
     ];
 
@@ -14401,10 +14439,10 @@ echo $this;
 "#,
     );
     assert_eq!(top_level_this.line, 2);
-    assert_eq!(top_level_this.column, 6);
+    assert_eq!(top_level_this.column, 1);
     assert_eq!(
         top_level_this.message,
-        "unsupported call $this: object context is only available during instance method execution"
+        "Using $this when not in object context"
     );
 }
 

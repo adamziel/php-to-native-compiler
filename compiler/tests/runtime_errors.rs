@@ -19,26 +19,32 @@ fn with_large_stack<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -
 }
 
 #[test]
-fn undefined_variable_has_stable_runtime_error() {
-    let error = runtime_error("<?php\necho $missing;\n");
+fn undefined_variable_plain_read_emits_warning_and_continues() {
+    let execution = run_source("<?php\necho $missing;\n").unwrap();
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
-    assert_eq!(error.message, "undefined variable '$missing'");
+    assert_eq!(
+        execution.stdout,
+        "Warning: Undefined variable $missing in Command line code on line 2\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
-fn user_function_arity_mismatch_has_stable_runtime_error() {
-    let error = runtime_error(
-        "<?php\nfunction identity($value) {\n    return $value;\n}\necho identity();\n",
-    );
+fn user_function_arity_mismatch_emits_php_fatal_output() {
+    let execution =
+        run_source("<?php\nfunction identity($value) {\n    return $value;\n}\necho identity();\n")
+            .unwrap();
 
-    assert_eq!(error.line, 5);
-    assert_eq!(error.column, 6);
-    assert_eq!(
-        error.message,
-        "arity mismatch for identity(): expected 1 argument(s), got 0"
+    assert!(
+        execution.stdout.contains(
+            "Fatal error: Uncaught TypeError: Too few arguments to function identity(), 0 passed in Command line code on line 5 and exactly 1 expected"
+        ),
+        "{}",
+        execution.stdout
     );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 255);
 }
 
 #[test]
@@ -96,12 +102,18 @@ fn duplicate_class_has_stable_runtime_error() {
 }
 
 #[test]
-fn undefined_class_has_stable_runtime_error() {
-    let error = runtime_error("<?php\n$box = new Missing();\n");
+fn undefined_class_emits_php_fatal_output() {
+    let execution = run_source("<?php\n$box = new Missing();\n").unwrap();
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 8);
-    assert_eq!(error.message, "undefined class Missing");
+    assert!(
+        execution.stdout.contains(
+            "Fatal error: Uncaught Error: Class \"Missing\" not found in Command line code:2"
+        ),
+        "{}",
+        execution.stdout
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 255);
 }
 
 #[test]
@@ -123,22 +135,20 @@ echo $box;
 }
 
 #[test]
-fn object_comparison_has_stable_runtime_error() {
-    let error = runtime_error(
+fn empty_object_loose_comparison_matches_php_property_equality() {
+    let execution = run_source(
         r#"<?php
 class Box {}
 $left = new Box();
 $right = new Box();
 echo $left == $right;
 "#,
-    );
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 5);
-    assert_eq!(error.column, 6);
-    assert_eq!(
-        error.message,
-        "unsupported comparison: object comparisons are not implemented"
-    );
+    assert_eq!(execution.stdout, "1");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

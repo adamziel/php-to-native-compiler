@@ -1,2 +1,2 @@
 <?php
-echo constant("PHP_OS");
+echo constant("PHP_DOES_NOT_EXIST");

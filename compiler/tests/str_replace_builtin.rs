@@ -125,17 +125,18 @@ echo str_replace("a", "b", "abc", $counts["n"]);
         "unsupported call str_replace(): count output must be a direct variable in the current subset"
     );
 
-    let indirect_count = runtime_error(
+    let indirect_count = run_source(
         r#"<?php
 echo call_user_func("str_replace", "a", "b", "abc", 0);
 "#,
-    );
-    assert_eq!(indirect_count.line, 2);
-    assert_eq!(indirect_count.column, 6);
+    )
+    .unwrap();
     assert_eq!(
-        indirect_count.message,
-        "unsupported call str_replace(): count output requires a direct str_replace() call with a direct variable in the current subset"
+        indirect_count.stdout,
+        "Warning: str_replace(): Argument #4 ($count) must be passed by reference, value given in Command line code on line 2\nbbc"
     );
+    assert_eq!(indirect_count.stderr, "");
+    assert_eq!(indirect_count.exit_code, 0);
 
     let array_replace = runtime_error(
         r#"<?php
