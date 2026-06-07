@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-07T07:09:19+00:00
+Last generated: 2026-06-07T07:24:19+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -91,6 +91,8 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1559 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
+| 1558 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
 | 1557 | Investigate scheduler alert | Auditor | integration-support | development | assigned |  | 0.0 |
 | 1556 | Reorganize developer-47 idle zero-metric lane | Coordinator | control-plane | planned | queued |  | 0.0 |
 | 1555 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
@@ -99,28 +101,26 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | 1552 | Resolve current integration conflict for card 1531 lane 9 | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
 | 1551 | Provide next sanctioned Developer card after developer-47 superseded lane 7 | Developer | implementation | planned | queued |  | 0.0 |
 | 1550 | Fix global test suite failures | Developer | implementation | development | assigned |  | 0.0 |
-| 1549 | Respond to scheduler alert | Coordinator | control-plane | development | assigned |  | 0.0 |
-| 1548 | Resolve integration failure for card #1545: Fix global test suite failures | Conflict Resolver | integration-support | planned | queued |  | 0.0 |
 
 ## Tests
 failed — python -m unittest discover -s tests -v (error=0, failed=1, passed=0, skipped=0)
 
 ## Resource samples
-Latest: CPU 4.24%, RAM 16.5%, disk free 1.12 GB.
+Latest: CPU 3.81%, RAM 15.24%, disk free 1.08 GB.
 
 ## Recent events
-- 2026-06-07T07:08:56+00:00 **worklane_deduplicated**: Updated existing failing-test card#1550 from run 22239
-- 2026-06-07T07:08:56+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-07T07:08:58+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-07T07:09:01+00:00 **worklane_deduplicated**: Updated existing failing-test card#1550 from run 22240
-- 2026-06-07T07:09:01+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-07T07:09:07+00:00 **worklane_deduplicated**: Updated existing failing-test card#1550 from run 22241
-- 2026-06-07T07:09:07+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-07T07:09:12+00:00 **worklane_deduplicated**: Updated existing failing-test card#1550 from run 22242
-- 2026-06-07T07:09:12+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-07T07:09:18+00:00 **worklane_deduplicated**: Updated existing failing-test card#1550 from run 22243
-- 2026-06-07T07:09:18+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-07T07:09:19+00:00 **janitor**: Cleaned 0 tmp entries and 0 old prompt files
+- 2026-06-07T07:23:53+00:00 **worklane_deduplicated**: Updated existing failing-test card#1550 from run 22404
+- 2026-06-07T07:23:53+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-07T07:23:53+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-07T07:23:58+00:00 **worklane_deduplicated**: Updated existing failing-test card#1550 from run 22405
+- 2026-06-07T07:23:58+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-07T07:24:04+00:00 **worklane_deduplicated**: Updated existing failing-test card#1550 from run 22406
+- 2026-06-07T07:24:04+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-07T07:24:09+00:00 **worklane_deduplicated**: Updated existing failing-test card#1550 from run 22407
+- 2026-06-07T07:24:09+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-07T07:24:12+00:00 **test**: Focused native_empty_boundary passed after updating guard expectations and emit-IR snapshot.
+- 2026-06-07T07:24:14+00:00 **worklane_deduplicated**: Updated existing failing-test card#1550 from run 22408
+- 2026-06-07T07:24:14+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
 
 ## Next steps
 Move next worklane forward: Investigate scheduler alert
