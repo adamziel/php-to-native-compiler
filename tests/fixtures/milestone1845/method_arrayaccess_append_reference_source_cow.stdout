@@ -1,1 +1,2 @@
+Deprecated: Using null as an array offset is deprecated, use an empty string instead in tests/fixtures/milestone1845/method_arrayaccess_append_reference_source_cow.php on line 14
 changed|NULL

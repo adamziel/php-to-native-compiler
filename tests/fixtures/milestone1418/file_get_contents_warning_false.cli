@@ -1,1 +1,6 @@
-run
+exit: 0
+stdout:
+Warning: file_get_contents(tests/fixtures/milestone1418/missing-local-read.txt): Failed to open stream: No such file or directory in tests/fixtures/milestone1418/file_get_contents_warning_false.php on line 2
+missing=false|offset=false--- stdout end ---
+stderr:
+PHP Warning:  file_get_contents(): Failed to seek to position -1 in the stream in tests/fixtures/milestone1418/file_get_contents_warning_false.php on line 5--- stderr end ---

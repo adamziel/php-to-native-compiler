@@ -1,6 +1,5 @@
-exit: 1
+exit: 0
 stdout:
 --- stdout end ---
 stderr:
-parse error at tests/fixtures/unsupported_syntax_features/unsupported_dnf_type_declaration.php:2:18: unsupported DNF type declaration: parenthesized union/intersection type declarations are not implemented
 --- stderr end ---

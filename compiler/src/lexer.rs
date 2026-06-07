@@ -113,6 +113,8 @@ pub enum TokenKind {
     StrictBangEqual,
     Less,
     LessEqual,
+    LessGreater,
+    Spaceship,
     LeftShift,
     Greater,
     GreaterEqual,
@@ -137,6 +139,7 @@ struct Lexer<'a> {
     byte_index: usize,
     line: usize,
     column: usize,
+    at_initial_php_boundary: bool,
 }
 
 impl<'a> Lexer<'a> {
@@ -148,27 +151,48 @@ impl<'a> Lexer<'a> {
             byte_index: 0,
             line: 1,
             column: 1,
+            at_initial_php_boundary: true,
         }
     }
 
     fn tokenize(mut self) -> CompileResult<Vec<Token>> {
         let mut tokens = Vec::new();
+        self.skip_initial_shebang_line();
 
         while !self.is_at_end() {
+            if self.at_initial_php_boundary && !self.starts_with("<?") {
+                let span = self.span();
+                if let Some(kind) = self.lex_initial_inline_html_before_open_tag() {
+                    tokens.push(Token { kind, span });
+                    continue;
+                }
+            }
+
             self.skip_whitespace_and_comments()?;
             if self.is_at_end() {
                 break;
             }
 
             if self.matches_php_open_tag() {
+                self.at_initial_php_boundary = false;
                 continue;
             }
 
             if self.starts_with("<?=") {
-                return Err(self.error_at(self.span(), unsupported_short_echo_tag_message()));
+                let span = self.span();
+                for _ in 0..3 {
+                    self.advance();
+                }
+                self.at_initial_php_boundary = false;
+                tokens.push(Token {
+                    kind: TokenKind::Echo,
+                    span,
+                });
+                continue;
             }
 
             if self.starts_with("?>") {
+                self.at_initial_php_boundary = false;
                 let span = self.span();
                 if should_insert_close_tag_statement_terminator(&tokens) {
                     tokens.push(Token {
@@ -182,7 +206,7 @@ impl<'a> Lexer<'a> {
                 continue;
             }
 
-            if self.starts_with("/**") && !self.starts_with("/**/") {
+            if self.is_doc_comment_start() {
                 let span = self.span();
                 let kind = self.lex_doc_comment(span)?;
                 tokens.push(Token { kind, span });
@@ -310,7 +334,13 @@ impl<'a> Lexer<'a> {
                 }
                 '<' => {
                     if self.match_char('=') {
-                        TokenKind::LessEqual
+                        if self.match_char('>') {
+                            TokenKind::Spaceship
+                        } else {
+                            TokenKind::LessEqual
+                        }
+                    } else if self.match_char('>') {
+                        TokenKind::LessGreater
                     } else if self.match_char('<') {
                         if self.match_char('<') {
                             self.lex_heredoc(span)?
@@ -335,6 +365,7 @@ impl<'a> Lexer<'a> {
                 }
             };
 
+            self.at_initial_php_boundary = false;
             tokens.push(Token { kind, span });
         }
 
@@ -369,7 +400,7 @@ impl<'a> Lexer<'a> {
             }
 
             if self.peek() == Some('/') && self.peek_next() == Some('*') {
-                if self.starts_with("/**") && !self.starts_with("/**/") {
+                if self.is_doc_comment_start() {
                     break;
                 }
                 self.advance();
@@ -512,6 +543,35 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    fn lex_initial_inline_html_before_open_tag(&mut self) -> Option<TokenKind> {
+        if !self.source[self.byte_index()..].contains("<?") {
+            return None;
+        }
+
+        let mut html = String::new();
+        while !self.is_at_end() && !self.starts_with("<?") {
+            html.push(self.advance());
+        }
+
+        if html.is_empty() {
+            None
+        } else {
+            Some(TokenKind::InlineHtml(html))
+        }
+    }
+
+    fn skip_initial_shebang_line(&mut self) {
+        if self.index != 0 || !self.starts_with("#!") {
+            return;
+        }
+
+        while !self.is_at_end() {
+            if self.advance() == '\n' {
+                break;
+            }
+        }
+    }
+
     fn lex_variable(&mut self, span: Span) -> CompileResult<TokenKind> {
         let mut name = String::new();
         match self.peek() {
@@ -585,13 +645,47 @@ impl<'a> Lexer<'a> {
                     }
 
                     let name = self.lex_identifier_name();
-                    let part = self.lex_interpolated_suffix(name, span)?;
+                    let part = self.lex_interpolated_suffix(name, span, false)?;
                     parts.push(part);
                     continue;
                 }
 
-                if matches!(self.peek_next(), Some('$' | '{')) {
-                    return Err(self.error_at(span, unsupported_string_interpolation_message()));
+                match self.peek_next() {
+                    Some('$') if self.dollar_run_is_literal() => {
+                        value.push(self.advance());
+                        continue;
+                    }
+                    Some('{') => {
+                        self.advance();
+                        self.advance();
+                        if !value.is_empty() {
+                            parts.push(InterpolatedStringPart::Literal(value));
+                            value = String::new();
+                        }
+
+                        let Some(first) = self.peek() else {
+                            return Err(self.error_at(span, "unterminated string literal"));
+                        };
+                        if !is_identifier_start(first) {
+                            return Err(
+                                self.error_at(span, unsupported_string_interpolation_message())
+                            );
+                        }
+
+                        let name = self.lex_identifier_name();
+                        if self.peek() != Some('}') {
+                            return Err(
+                                self.error_at(span, unsupported_string_interpolation_message())
+                            );
+                        }
+                        self.advance();
+                        parts.push(InterpolatedStringPart::DeprecatedDollarBraceVariable(name));
+                        continue;
+                    }
+                    Some('$') => {
+                        return Err(self.error_at(span, unsupported_string_interpolation_message()));
+                    }
+                    _ => {}
                 }
             }
 
@@ -611,7 +705,7 @@ impl<'a> Lexer<'a> {
                 }
 
                 let name = self.lex_identifier_name();
-                let part = self.lex_interpolated_suffix(name, span)?;
+                let part = self.lex_interpolated_suffix(name, span, true)?;
                 if self.peek() != Some('}') {
                     return Err(self.error_at(span, unsupported_string_interpolation_message()));
                 }
@@ -707,13 +801,47 @@ impl<'a> Lexer<'a> {
                     }
 
                     let name = self.lex_identifier_name();
-                    let part = self.lex_interpolated_suffix(name, span)?;
+                    let part = self.lex_interpolated_suffix(name, span, false)?;
                     parts.push(part);
                     continue;
                 }
 
-                if matches!(self.peek_next(), Some('$' | '{')) {
-                    return Err(self.error_at(span, unsupported_string_interpolation_message()));
+                match self.peek_next() {
+                    Some('$') if self.dollar_run_is_literal() => {
+                        value.push(self.advance());
+                        continue;
+                    }
+                    Some('{') => {
+                        self.advance();
+                        self.advance();
+                        if !value.is_empty() {
+                            parts.push(InterpolatedStringPart::Literal(value));
+                            value = String::new();
+                        }
+
+                        let Some(first) = self.peek() else {
+                            return Err(self.error_at(span, "unterminated heredoc string literal"));
+                        };
+                        if !is_identifier_start(first) {
+                            return Err(
+                                self.error_at(span, unsupported_string_interpolation_message())
+                            );
+                        }
+
+                        let name = self.lex_identifier_name();
+                        if self.peek() != Some('}') {
+                            return Err(
+                                self.error_at(span, unsupported_string_interpolation_message())
+                            );
+                        }
+                        self.advance();
+                        parts.push(InterpolatedStringPart::DeprecatedDollarBraceVariable(name));
+                        continue;
+                    }
+                    Some('$') => {
+                        return Err(self.error_at(span, unsupported_string_interpolation_message()));
+                    }
+                    _ => {}
                 }
             }
 
@@ -733,7 +861,7 @@ impl<'a> Lexer<'a> {
                 }
 
                 let name = self.lex_identifier_name();
-                let part = self.lex_interpolated_suffix(name, span)?;
+                let part = self.lex_interpolated_suffix(name, span, true)?;
                 if self.peek() != Some('}') {
                     return Err(self.error_at(span, unsupported_string_interpolation_message()));
                 }
@@ -782,6 +910,7 @@ impl<'a> Lexer<'a> {
         &mut self,
         name: String,
         span: Span,
+        allow_method_call: bool,
     ) -> CompileResult<InterpolatedStringPart> {
         let mut segments = Vec::new();
 
@@ -802,7 +931,13 @@ impl<'a> Lexer<'a> {
                     return Err(self.error_at(span, unsupported_string_interpolation_message()));
                 }
                 let property = self.lex_identifier_name();
-                segments.push(InterpolatedAccessSegment::ObjectProperty(property));
+                if allow_method_call && self.starts_with("()") {
+                    self.advance();
+                    self.advance();
+                    segments.push(InterpolatedAccessSegment::MethodCall(property));
+                } else {
+                    segments.push(InterpolatedAccessSegment::ObjectProperty(property));
+                }
                 continue;
             }
 
@@ -814,6 +949,15 @@ impl<'a> Lexer<'a> {
         }
 
         if segments.len() == 1 {
+            if matches!(
+                segments.first(),
+                Some(InterpolatedAccessSegment::MethodCall(_))
+            ) {
+                return Ok(InterpolatedStringPart::AccessChain {
+                    variable: name,
+                    segments,
+                });
+            }
             return match segments.remove(0) {
                 InterpolatedAccessSegment::ArrayOffset(key) => {
                     Ok(InterpolatedStringPart::ArrayOffset {
@@ -827,6 +971,7 @@ impl<'a> Lexer<'a> {
                         property,
                     })
                 }
+                InterpolatedAccessSegment::MethodCall(_) => unreachable!(),
             };
         }
 
@@ -1034,48 +1179,65 @@ impl<'a> Lexer<'a> {
         let mut text = String::new();
         text.push(first);
 
-        if first == '0' && matches!(self.peek(), Some('x' | 'X')) {
+        if first == '0'
+            && matches!(self.peek(), Some('x' | 'X'))
+            && self
+                .chars
+                .get(self.index + 1)
+                .is_some_and(|ch| ch.is_ascii_hexdigit())
+        {
             text.push(self.advance());
             let mut digits = String::new();
-            while matches!(self.peek(), Some(ch) if ch.is_ascii_hexdigit()) {
-                let ch = self.advance();
-                text.push(ch);
-                digits.push(ch);
-            }
-            if digits.is_empty() {
-                return Err(self.error_at(span, format!("invalid integer literal '{text}'")));
-            }
-            let value = i64::from_str_radix(&digits, 16)
-                .map_err(|_| self.error_at(span, format!("invalid integer literal '{text}'")))?;
-            return Ok(TokenKind::Int(value));
+            self.consume_digits_with_numeric_separators(
+                |ch| ch.is_ascii_hexdigit(),
+                false,
+                Some(&mut text),
+                &mut digits,
+            );
+            return match i64::from_str_radix(&digits, 16) {
+                Ok(value) => Ok(TokenKind::Int(value)),
+                Err(_) => Ok(TokenKind::Float(radix_digits_to_f64(&digits, 16))),
+            };
         }
 
-        if first == '0' && matches!(self.peek(), Some('0'..='9')) {
-            let mut digits = String::from("0");
-            while matches!(self.peek(), Some('0'..='9')) {
-                let ch = self.advance();
-                text.push(ch);
-                digits.push(ch);
-            }
-            if digits.bytes().any(|byte| !matches!(byte, b'0'..=b'7')) {
-                return Err(self.error_at(span, format!("invalid integer literal '{text}'")));
-            }
-            let value = i64::from_str_radix(&digits, 8)
-                .map_err(|_| self.error_at(span, format!("invalid integer literal '{text}'")))?;
-            return Ok(TokenKind::Int(value));
-        }
-
-        while matches!(self.peek(), Some('0'..='9')) {
+        if first == '0'
+            && matches!(self.peek(), Some('b' | 'B'))
+            && self
+                .chars
+                .get(self.index + 1)
+                .is_some_and(|ch| matches!(ch, '0' | '1'))
+        {
             text.push(self.advance());
+            let mut digits = String::new();
+            self.consume_digits_with_numeric_separators(
+                |ch| matches!(ch, '0' | '1'),
+                false,
+                Some(&mut text),
+                &mut digits,
+            );
+            return match i64::from_str_radix(&digits, 2) {
+                Ok(value) => Ok(TokenKind::Int(value)),
+                Err(_) => Ok(TokenKind::Float(radix_digits_to_f64(&digits, 2))),
+            };
         }
+
+        self.consume_digits_with_numeric_separators(
+            |ch| ch.is_ascii_digit(),
+            true,
+            None,
+            &mut text,
+        );
 
         let mut is_float = false;
-        if self.peek() == Some('.') && matches!(self.peek_next(), Some('0'..='9')) {
+        if self.peek() == Some('.') {
             is_float = true;
             text.push(self.advance());
-            while matches!(self.peek(), Some('0'..='9')) {
-                text.push(self.advance());
-            }
+            self.consume_digits_with_numeric_separators(
+                |ch| ch.is_ascii_digit(),
+                false,
+                None,
+                &mut text,
+            );
         }
 
         if self.peek().is_some_and(|ch| matches!(ch, 'e' | 'E'))
@@ -1097,9 +1259,12 @@ impl<'a> Lexer<'a> {
             if self.peek().is_some_and(|ch| matches!(ch, '+' | '-')) {
                 text.push(self.advance());
             }
-            while matches!(self.peek(), Some('0'..='9')) {
-                text.push(self.advance());
-            }
+            self.consume_digits_with_numeric_separators(
+                |ch| ch.is_ascii_digit(),
+                false,
+                None,
+                &mut text,
+            );
         }
 
         if is_float {
@@ -1109,17 +1274,75 @@ impl<'a> Lexer<'a> {
             return Ok(TokenKind::Float(value));
         }
 
-        let value = text
-            .parse::<i64>()
-            .map_err(|_| self.error_at(span, format!("invalid integer literal '{text}'")))?;
-        Ok(TokenKind::Int(value))
+        if first == '0' && text.len() > 1 {
+            if text.bytes().any(|byte| !matches!(byte, b'0'..=b'7')) {
+                return Err(self.error_at(span, format!("invalid integer literal '{text}'")));
+            }
+            return match i64::from_str_radix(&text, 8) {
+                Ok(value) => Ok(TokenKind::Int(value)),
+                Err(_) => Ok(TokenKind::Float(radix_digits_to_f64(&text, 8))),
+            };
+        }
+
+        match text.parse::<i64>() {
+            Ok(value) => Ok(TokenKind::Int(value)),
+            Err(_) => {
+                let value = text.parse::<f64>().map_err(|_| {
+                    self.error_at(span, format!("invalid integer literal '{text}'"))
+                })?;
+                Ok(TokenKind::Float(value))
+            }
+        }
+    }
+
+    fn consume_digits_with_numeric_separators(
+        &mut self,
+        is_digit: impl Fn(char) -> bool,
+        mut previous_was_digit: bool,
+        mut raw_text: Option<&mut String>,
+        normalized_digits: &mut String,
+    ) {
+        while let Some(ch) = self.peek() {
+            if is_digit(ch) {
+                let ch = self.advance();
+                if let Some(raw_text) = raw_text.as_mut() {
+                    raw_text.push(ch);
+                }
+                normalized_digits.push(ch);
+                previous_was_digit = true;
+                continue;
+            }
+            if previous_was_digit
+                && ch == '_'
+                && self
+                    .chars
+                    .get(self.index + 1)
+                    .is_some_and(|next| is_digit(*next))
+            {
+                if let Some(raw_text) = raw_text.as_mut() {
+                    raw_text.push(self.advance());
+                    let digit = self.advance();
+                    raw_text.push(digit);
+                    normalized_digits.push(digit);
+                } else {
+                    self.advance();
+                    normalized_digits.push(self.advance());
+                }
+                previous_was_digit = true;
+                continue;
+            }
+            break;
+        }
     }
 
     fn lex_leading_dot_number(&mut self, span: Span) -> CompileResult<TokenKind> {
         let mut text = String::from(".");
-        while matches!(self.peek(), Some('0'..='9')) {
-            text.push(self.advance());
-        }
+        self.consume_digits_with_numeric_separators(
+            |ch| ch.is_ascii_digit(),
+            false,
+            None,
+            &mut text,
+        );
 
         if self.peek().is_some_and(|ch| matches!(ch, 'e' | 'E'))
             && (self
@@ -1139,9 +1362,12 @@ impl<'a> Lexer<'a> {
             if self.peek().is_some_and(|ch| matches!(ch, '+' | '-')) {
                 text.push(self.advance());
             }
-            while matches!(self.peek(), Some('0'..='9')) {
-                text.push(self.advance());
-            }
+            self.consume_digits_with_numeric_separators(
+                |ch| ch.is_ascii_digit(),
+                false,
+                None,
+                &mut text,
+            );
         }
 
         let value = text
@@ -1162,7 +1388,7 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        match text.as_str() {
+        match text.to_ascii_lowercase().as_str() {
             "echo" => TokenKind::Echo,
             "print" => TokenKind::Print,
             "function" => TokenKind::Function,
@@ -1241,6 +1467,14 @@ impl<'a> Lexer<'a> {
         self.source[self.byte_index()..].starts_with(needle)
     }
 
+    fn is_doc_comment_start(&self) -> bool {
+        self.starts_with("/**")
+            && matches!(
+                self.chars.get(self.index + 3),
+                Some(' ' | '\t' | '\r' | '\n')
+            )
+    }
+
     fn byte_index(&self) -> usize {
         self.byte_index
     }
@@ -1251,6 +1485,18 @@ impl<'a> Lexer<'a> {
 
     fn peek_next(&self) -> Option<char> {
         self.chars.get(self.index + 1).copied()
+    }
+
+    fn dollar_run_is_literal(&self) -> bool {
+        let mut lookahead = self.index;
+        while matches!(self.chars.get(lookahead), Some('$')) {
+            lookahead += 1;
+        }
+
+        !matches!(
+            self.chars.get(lookahead).copied(),
+            Some(next) if is_identifier_start(next) || next == '{'
+        )
     }
 
     fn is_at_end(&self) -> bool {
@@ -1302,6 +1548,15 @@ fn should_insert_close_tag_statement_terminator(tokens: &[Token]) -> bool {
     }
 }
 
+fn radix_digits_to_f64(digits: &str, radix: u32) -> f64 {
+    digits.chars().fold(0.0, |value, ch| {
+        let digit = ch
+            .to_digit(radix)
+            .expect("lexer must validate radix digits before float fallback");
+        value.mul_add(radix as f64, digit as f64)
+    })
+}
+
 fn is_identifier_start(ch: char) -> bool {
     ch == '_' || ch.is_ascii_alphabetic()
 }
@@ -1311,15 +1566,11 @@ fn is_identifier_part(ch: char) -> bool {
 }
 
 fn unsupported_string_interpolation_message() -> &'static str {
-    "unsupported string interpolation: only simple $name, {$name}, array offsets, and object properties in double-quoted strings are implemented; ${...}, dynamic properties, static properties, arbitrary expressions, and complex interpolation are not implemented"
+    "unsupported string interpolation: only simple $name, {$name}, ${name}, array offsets, and object properties in double-quoted strings are implemented; variable variables, dynamic properties, static properties, arbitrary expressions, and complex interpolation are not implemented"
 }
 
 fn unsupported_heredoc_message() -> &'static str {
     "unsupported heredoc/nowdoc string syntax: only unindented identifier labels are implemented; indentation stripping, label expressions, and malformed labels are not implemented"
-}
-
-fn unsupported_short_echo_tag_message() -> &'static str {
-    "unsupported short echo tag: <?= is not implemented; use <?php echo ... ?> in the current subset"
 }
 
 fn unsupported_backtick_operator_message() -> &'static str {

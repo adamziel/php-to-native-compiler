@@ -58,29 +58,68 @@ echo $call(__DIR__) ? "dir" : "missing";
 }
 
 #[test]
+fn is_dir_scalar_false_cases_match_bounded_metadata_slice() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+var_dump(is_dir(-2.34555));
+var_dump(is_dir(true));
+var_dump(is_dir(false));
+var_dump(is_dir(" "));
+var_dump(is_dir(0));
+var_dump(is_dir(1234));
+var_dump(is_dir(null));
+var_dump(is_dir("contains\0nul"));
+"#,
+        fixture_source_file(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn is_dir_rejects_forms_outside_current_subset() {
-    let arity = runtime_error(
+    let arity = run_source_with_source_file(
         r#"<?php
 echo is_dir();
 "#,
-    );
-    assert_eq!(arity.line, 2);
-    assert_eq!(arity.column, 6);
-    assert_eq!(
-        arity.message,
-        "arity mismatch for is_dir(): expected 1 argument(s), got 0"
+        fixture_source_file(),
+    )
+    .unwrap();
+    assert_eq!(arity.exit_code, 255);
+    assert_eq!(arity.stderr, "");
+    assert!(
+        arity
+            .stdout
+            .contains("Too few arguments to function is_dir(), 0 passed"),
+        "{}",
+        arity.stdout
     );
 
     let type_error = runtime_error(
         r#"<?php
-echo is_dir(42);
+echo is_dir([]);
 "#,
     );
     assert_eq!(type_error.line, 2);
     assert_eq!(type_error.column, 6);
     assert_eq!(
         type_error.message,
-        "unsupported call is_dir(): path argument must be string in the current subset, got int"
+        "unsupported call is_dir(): path argument must be string in the current subset, got array"
     );
 
     let stream = runtime_error(

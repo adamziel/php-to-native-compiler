@@ -4,6 +4,8 @@ notice:Indirect modification of overloaded element of Milestone1680_ByValueBag h
 value-nested:nested-changed|nested
 notice:Indirect modification of overloaded element of Milestone1680_ByValueBag has no effect
 value-dynamic:dynamic-changed|seed
+
+Deprecated: Using null as an array offset is deprecated, use an empty string instead in tests/fixtures/milestone1680/magic_property_by_value_arrayaccess_reference_source_noop.php on line 15
 notice:Indirect modification of overloaded element of Milestone1680_ByValueBag has no effect
 value-append:append-changed|empty
 notice:Indirect modification of overloaded element of Milestone1680_ByValueBag has no effect
@@ -12,9 +14,13 @@ notice:Indirect modification of overloaded element of Milestone1680_ByValueBag h
 refget-nested:refget-nested-changed|nested
 notice:Indirect modification of overloaded element of Milestone1680_ByValueBag has no effect
 refget-dynamic:refget-dynamic-changed|seed
+
+Deprecated: Using null as an array offset is deprecated, use an empty string instead in tests/fixtures/milestone1680/magic_property_by_value_arrayaccess_reference_source_noop.php on line 15
 notice:Indirect modification of overloaded element of Milestone1680_ByValueBag has no effect
 refget-append:refget-append-changed|empty
 ref-offset:ref-changed|ref-changed
+
+Deprecated: Using null as an array offset is deprecated, use an empty string instead in tests/fixtures/milestone1680/magic_property_by_value_arrayaccess_reference_source_noop.php on line 31
 ref-append:ref-append-changed|ref-append-changed
 plain-offset:plain-changed|plain-changed
 plain-nested:plain-nested-changed|plain-nested-changed

@@ -16,6 +16,10 @@ echo strpos("abc", "", 2) === 2 ? "empty2" : "no";
 echo "|";
 echo strpos("abcabc", "b", 2) === 4 ? "offset" : "no";
 echo "|";
+echo strpos("abcabc", "a", "0") === 0 ? "numeric-string-offset" : "no";
+echo "|";
+echo strpos("abcabc", "a", true) === 3 ? "bool-offset" : "no";
+echo "|";
 echo strpos("abc", "c", -1) === 2 ? "negative" : "no";
 echo "|";
 echo strpos(12345, 34) === 2 ? "coerced" : "no";
@@ -25,7 +29,7 @@ echo strpos(12345, 34) === 2 ? "coerced" : "no";
 
     assert_eq!(
         execution.stdout,
-        "colon|false|empty0|empty2|offset|negative|coerced"
+        "colon|false|empty0|empty2|offset|numeric-string-offset|bool-offset|negative|coerced"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -49,6 +53,22 @@ echo $call("abc", "b") === 1 ? "found" : "missing";
 }
 
 #[test]
+fn strpos_preserves_binary_byte_offsets_for_non_utf8_strings() {
+    let execution = run_source(
+        r#"<?php
+$payload = chr(0) . chr(128) . chr(129) . chr(234) . chr(235) . chr(254) . chr(255);
+echo strpos($payload, chr(128)), "|";
+echo strpos($payload, chr(255), 3), "|";
+echo strpos($payload, chr(0));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "1|6|0");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn strpos_rejects_forms_outside_current_subset() {
     let array_haystack = run_source("<?php\nstrpos(['abc'], 'a');\n").unwrap_err();
     assert_eq!(array_haystack.phase, Phase::Runtime);
@@ -68,24 +88,6 @@ fn strpos_rejects_forms_outside_current_subset() {
         "unsupported call strpos(): needle argument arrays are not implemented in the current subset"
     );
 
-    let bad_offset = run_source("<?php\nstrpos('abc', 'a', '1');\n").unwrap_err();
-    assert_eq!(bad_offset.phase, Phase::Runtime);
-    assert_eq!(bad_offset.line, 2);
-    assert_eq!(bad_offset.column, 1);
-    assert_eq!(
-        bad_offset.message,
-        "unsupported call strpos(): offset argument must be int in the current subset, got string"
-    );
-
-    let out_of_bounds = run_source("<?php\nstrpos('abc', 'a', 4);\n").unwrap_err();
-    assert_eq!(out_of_bounds.phase, Phase::Runtime);
-    assert_eq!(out_of_bounds.line, 2);
-    assert_eq!(out_of_bounds.column, 1);
-    assert_eq!(
-        out_of_bounds.message,
-        "unsupported call strpos(): offset must be within the haystack bounds in the current subset"
-    );
-
     let too_few = run_source("<?php\nstrpos('abc');\n").unwrap_err();
     assert_eq!(too_few.phase, Phase::Runtime);
     assert_eq!(too_few.line, 2);
@@ -94,6 +96,81 @@ fn strpos_rejects_forms_outside_current_subset() {
         too_few.message,
         "arity mismatch for strpos(): expected 2 to 3 argument(s), got 1"
     );
+}
+
+#[test]
+fn strpos_reports_php_shaped_offset_type_errors() {
+    let execution = run_source(
+        r#"<?php
+foreach (["string", "", "string12", []] as $offset) {
+    try {
+        strpos("Hello Hello", "Hello", $offset);
+    } catch (TypeError $exception) {
+        echo $exception->getMessage(), "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "strpos(): Argument #3 ($offset) must be of type int, string given\nstrpos(): Argument #3 ($offset) must be of type int, string given\nstrpos(): Argument #3 ($offset) must be of type int, string given\nstrpos(): Argument #3 ($offset) must be of type int, array given\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn strpos_reports_php_shaped_null_argument_deprecations() {
+    let execution = run_source(
+        r#"<?php
+var_dump(strpos("", null));
+var_dump(strpos(null, null));
+var_dump(stripos("a", null));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout.matches("Deprecated: strpos():").count(), 3);
+    assert!(execution.stdout.contains(
+        "strpos(): Passing null to parameter #1 ($haystack) of type string is deprecated"
+    ));
+    assert_eq!(
+        execution
+            .stdout
+            .matches(
+                "strpos(): Passing null to parameter #2 ($needle) of type string is deprecated"
+            )
+            .count(),
+        2
+    );
+    assert!(execution.stdout.contains(
+        "stripos(): Passing null to parameter #2 ($needle) of type string is deprecated"
+    ));
+    assert!(execution.stdout.contains("int(0)"));
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn strpos_reports_php_shaped_offset_value_errors() {
+    let execution = run_source(
+        r#"<?php
+foreach ([4, -4] as $offset) {
+    try {
+        strpos("abc", "a", $offset);
+    } catch (ValueError $exception) {
+        echo $exception->getMessage(), "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "strpos(): Argument #3 ($offset) must be contained in argument #1 ($haystack)\nstrpos(): Argument #3 ($offset) must be contained in argument #1 ($haystack)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -119,7 +196,7 @@ echo is_callable("strpos") ? "1" : "0";
     );
     assert!(routed.contains("i8 0, ptr %"), "{routed}");
     assert!(
-        routed.contains("phpc_native_value_format_stdout_with_diagnostic"),
+        routed.contains("phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"),
         "{routed}"
     );
     assert!(

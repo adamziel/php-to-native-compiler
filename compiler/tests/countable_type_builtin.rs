@@ -166,21 +166,48 @@ count(new Basket());
 
 #[test]
 fn count_rejects_non_countable_objects() {
-    let error = run_source(
+    let execution = run_source(
         r#"<?php
 class Box {}
 count(new Box());
 "#,
     )
-    .unwrap_err();
+    .unwrap();
 
-    assert_eq!(error.phase, Phase::Runtime);
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 1);
+    assert_eq!(execution.exit_code, 255);
     assert_eq!(
-        error.message,
-        "unsupported call count(): only arrays and Countable objects are supported"
+        execution.stdout,
+        "Fatal error: Uncaught TypeError: count(): Argument #1 ($value) must be of type Countable|array, Box given, called in Command line code:3\nStack trace:\n#0 Command line code(3): count()\n#1 {main}\n  thrown in Command line code on line 3"
     );
+}
+
+#[test]
+fn count_and_sizeof_typeerrors_use_php_operand_names() {
+    let execution = run_source(
+        r#"<?php
+class Box {}
+$values = [null, "string", 123, true, false, (object) [], new Box()];
+foreach ($values as $value) {
+    try {
+        count($value);
+    } catch (TypeError $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
+try {
+    sizeof(new Box());
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "count(): Argument #1 ($value) must be of type Countable|array, null given\ncount(): Argument #1 ($value) must be of type Countable|array, string given\ncount(): Argument #1 ($value) must be of type Countable|array, int given\ncount(): Argument #1 ($value) must be of type Countable|array, true given\ncount(): Argument #1 ($value) must be of type Countable|array, false given\ncount(): Argument #1 ($value) must be of type Countable|array, stdClass given\ncount(): Argument #1 ($value) must be of type Countable|array, Box given\nsizeof(): Argument #1 ($value) must be of type Countable|array, Box given"
+    );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

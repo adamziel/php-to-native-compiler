@@ -4,12 +4,6 @@ use php_compiler::run_source;
 
 const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
 
-fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
-    let error = run_source(source).unwrap_err();
-    assert_eq!(error.phase, Phase::Runtime);
-    error
-}
-
 const WP_SANITIZE_REDIRECT_SOURCE: &str = r#"<?php
 function _wp_sanitize_utf8_in_redirect($matches) {
     return urlencode($matches[0]);
@@ -82,68 +76,31 @@ echo is_callable($call) ? "callable" : "missing";
 }
 
 #[test]
-fn preg_replace_callback_rejects_forms_outside_current_subset() {
-    let unsupported_pattern = runtime_error(
+fn preg_replace_callback_executes_general_forms() {
+    let execution = run_source(
         r#"<?php
-preg_replace_callback('/./', 'cb', 'abc');
+function cb($matches) { return "[" . $matches[0] . "]"; }
+$count = 0;
+echo preg_replace_callback('/./', 'cb', 'abc', 2, $count);
+echo ":$count|";
+echo preg_replace_callback('|[^a-z0-9_]|i', 'cb', 'ab-c');
 "#,
-    );
-    assert_eq!(unsupported_pattern.line, 2);
-    assert_eq!(unsupported_pattern.column, 1);
-    assert_eq!(
-        unsupported_pattern.message,
-        "unsupported call preg_replace_callback(): regex metacharacter . is not implemented in the current subset"
-    );
+    )
+    .unwrap();
 
-    let unsupported_callback = runtime_error(
+    assert_eq!(execution.stdout, "[a][b]c:2|ab[-]c");
+    assert_eq!(execution.exit_code, 0);
+
+    let missing = run_source(
         r#"<?php
 preg_replace_callback('/x/', 'other_callback', '/x');
 "#,
-    );
-    assert_eq!(unsupported_callback.line, 2);
-    assert_eq!(unsupported_callback.column, 1);
+    )
+    .unwrap();
+    assert_eq!(missing.exit_code, 255);
     assert_eq!(
-        unsupported_callback.message,
-        "undefined function other_callback()"
-    );
-
-    let unsupported_limit = runtime_error(
-        r#"<?php
-function cb($matches) { return $matches[0]; }
-preg_replace_callback('/x/', 'cb', '/x', 1);
-"#,
-    );
-    assert_eq!(unsupported_limit.line, 3);
-    assert_eq!(unsupported_limit.column, 1);
-    assert_eq!(
-        unsupported_limit.message,
-        "unsupported call preg_replace_callback(): limit, count output, and flags arguments are not implemented; pass exactly three arguments in the current subset"
-    );
-
-    let unsupported_empty_match = runtime_error(
-        r#"<?php
-function cb($matches) { return $matches[0]; }
-preg_replace_callback('//', 'cb', 'abc');
-"#,
-    );
-    assert_eq!(unsupported_empty_match.line, 3);
-    assert_eq!(unsupported_empty_match.column, 1);
-    assert_eq!(
-        unsupported_empty_match.message,
-        "unsupported call preg_replace_callback(): zero-length regex matches are not implemented in the current subset"
-    );
-
-    let unsupported_legacy_exact_gate = runtime_error(
-        r#"<?php
-function cb($matches) { return $matches[0]; }
-preg_replace_callback('|[^a-z0-9_]|i', 'cb', 'ab-c');
-"#,
-    );
-    assert_eq!(unsupported_legacy_exact_gate.line, 3);
-    assert_eq!(unsupported_legacy_exact_gate.column, 1);
-    assert_eq!(
-        unsupported_legacy_exact_gate.message,
-        "unsupported call preg_replace_callback(): only slash-delimited patterns are implemented in the current subset"
+        missing.stdout,
+        "Fatal error: Uncaught Error: Call to undefined function other_callback() in Command line code:2\nStack trace:\n#0 {main}\n  thrown in Command line code on line 2"
     );
 }
 
@@ -182,20 +139,23 @@ echo preg_replace_callback($regex, 'bracket_match', 'ABZ12C');
 }
 
 #[test]
-fn preg_replace_callback_rejects_unsupported_extended_regex_shapes() {
-    let unsupported_optional_repeat = runtime_error(
+fn preg_replace_callback_executes_optional_repeats_without_looping() {
+    let execution = run_source(
         r#"<?php
-function cb($matches) { return $matches[0]; }
-preg_replace_callback('/[\x41-\x43]{0,1}/x', 'cb', 'ABC');
+function bracket_match($matches) {
+    return "[" . $matches[0] . "]";
+}
+echo preg_replace_callback('/[\x41-\x43]{0,1}/x', 'bracket_match', 'ABC');
 "#,
-    );
+    )
+    .unwrap();
 
-    assert_eq!(unsupported_optional_repeat.line, 3);
-    assert_eq!(unsupported_optional_repeat.column, 1);
-    assert_eq!(
-        unsupported_optional_repeat.message,
-        "unsupported call preg_replace_callback(): zero-length regex repeats are not implemented in the current subset"
+    assert!(
+        execution.stdout.starts_with("[A][B][C]"),
+        "{}",
+        execution.stdout
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

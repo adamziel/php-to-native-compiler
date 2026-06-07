@@ -1,6 +1,6 @@
-exit: 1
+exit: 0
 stdout:
+Warning: Undefined property: Box::$missing in tests/fixtures/runtime_errors/undefined_object_property.php on line 4
 --- stdout end ---
 stderr:
-runtime error at tests/fixtures/runtime_errors/undefined_object_property.php:4:6: undefined property Box::$missing
 --- stderr end ---

@@ -234,3 +234,303 @@ try {
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
 }
+
+#[test]
+fn bcmath_number_pow_compound_and_incdec_operators_are_generalized() {
+    let execution = run_source(
+        r#"<?php
+$pow = (new BcMath\Number("3")) ** -2;
+echo $pow->value, "|", $pow->scale, "\n";
+$decimalPow = (new BcMath\Number("0.01")) ** new BcMath\Number("-1");
+echo $decimalPow->value, "|", $decimalPow->scale, "\n";
+try {
+    (new BcMath\Number("0")) ** -1;
+} catch (DivisionByZeroError $e) {
+    echo $e->getMessage(), "\n";
+}
+$num = new BcMath\Number("10");
+$old = $num;
+$num **= 3;
+echo $num, "|", $old, "\n";
+$num += "5";
+$num /= new BcMath\Number("30");
+echo $num->value, "|", $num->scale, "\n";
+$step = new BcMath\Number("0.01");
+$step++;
+echo $step->value, "|", $step->scale, "\n";
+$step--;
+echo $step->value, "|", $step->scale, "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "0.1111111111|10\n",
+            "100.00|2\n",
+            "Negative power of zero\n",
+            "1000|10\n",
+            "33.5|1\n",
+            "1.01|2\n",
+            "0.01|2\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn bcmath_number_default_scales_serialization_comparison_and_handles_are_generalized() {
+    let execution = run_source(
+        r#"<?php
+foreach (["0", "0.00", "123"] as $value) {
+    $tmp = new BcMath\Number($value);
+    var_dump($tmp);
+    unset($tmp);
+}
+var_dump((new BcMath\Number("1"))->div("1000"));
+var_dump((new BcMath\Number("1"))->div("2000"));
+
+$num = new BcMath\Number("100.012");
+$div = $num->div("-30");
+echo $div->value, "|", $div->scale, "\n";
+[$quot, $rem] = $num->divmod("80.3");
+echo $quot->value, "|", $quot->scale, "|", $rem->value, "|", $rem->scale, "\n";
+$pow = (new BcMath\Number("12.5"))->pow("-2");
+echo $pow->value, "|", $pow->scale, "\n";
+$sqrt = (new BcMath\Number("15151324141414.412312232141241"))->sqrt();
+echo $sqrt->value, "|", $sqrt->scale, "\n";
+$zeroPow = pow(new BcMath\Number("0"), 2);
+echo $zeroPow->value, "|", $zeroPow->scale, "\n";
+var_dump((new BcMath\Number("100.0000")) > "99.9999");
+var_dump("100.00001" > new BcMath\Number("100.0000"));
+var_dump(new BcMath\Number("100.0000") == 100);
+echo serialize(new BcMath\Number("0.1230")), "\n";
+$copy = unserialize('O:13:"BcMath\Number":1:{s:5:"value";s:6:"0.1230";}');
+echo $copy->value, "|", $copy->scale, "\n";
+try {
+    (new BcMath\Number(1))->__unserialize(["value" => "5"]);
+} catch (Error $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+try {
+    unserialize('O:13:"BcMath\Number":1:{s:5:"value";s:1:"a";}');
+} catch (Exception $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+try {
+    unserialize('O:13:"BcMath\Number":1:{s:5:"value";s:0:"";}');
+} catch (Exception $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "object(BcMath\\Number)#1 (2) {\n",
+            "  [\"value\"]=>\n",
+            "  string(1) \"0\"\n",
+            "  [\"scale\"]=>\n",
+            "  int(0)\n",
+            "}\n",
+            "object(BcMath\\Number)#1 (2) {\n",
+            "  [\"value\"]=>\n",
+            "  string(4) \"0.00\"\n",
+            "  [\"scale\"]=>\n",
+            "  int(2)\n",
+            "}\n",
+            "object(BcMath\\Number)#1 (2) {\n",
+            "  [\"value\"]=>\n",
+            "  string(3) \"123\"\n",
+            "  [\"scale\"]=>\n",
+            "  int(0)\n",
+            "}\n",
+            "object(BcMath\\Number)#2 (2) {\n",
+            "  [\"value\"]=>\n",
+            "  string(5) \"0.001\"\n",
+            "  [\"scale\"]=>\n",
+            "  int(3)\n",
+            "}\n",
+            "object(BcMath\\Number)#1 (2) {\n",
+            "  [\"value\"]=>\n",
+            "  string(6) \"0.0005\"\n",
+            "  [\"scale\"]=>\n",
+            "  int(4)\n",
+            "}\n",
+            "-3.3337333333333|13\n",
+            "1|0|19.712|3\n",
+            "0.0064|4\n",
+            "3892470.1850385973524458288799178|25\n",
+            "0|0\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "O:13:\"BcMath\\Number\":1:{s:5:\"value\";s:6:\"0.1230\";}\n",
+            "0.1230|4\n",
+            "Error:Cannot modify readonly property BcMath\\Number::$value\n",
+            "Exception:Invalid serialization data for BcMath\\Number object\n",
+            "Exception:Invalid serialization data for BcMath\\Number object\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn bcmath_number_invalid_operands_are_catchable_and_coerced_like_php() {
+    let execution = run_source(
+        r#"<?php
+function show($e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+
+$num = new BcMath\Number("10");
+try { $num->add("not-a-number"); } catch (Throwable $e) { show($e); }
+try { $num->add([]); } catch (Throwable $e) { show($e); }
+try { $num->add(1, []); } catch (Throwable $e) { show($e); }
+$num->add(0.1);
+$num->add(null);
+try { $num->div(0.1); } catch (Throwable $e) { show($e); }
+try { $num + []; } catch (Throwable $e) { show($e); }
+try { $num + "not-a-number"; } catch (Throwable $e) { show($e); }
+$num + 1.01;
+var_dump($num > null);
+var_dump($num < "not-a-number");
+var_dump("not-a-number" > $num);
+"#,
+    )
+    .unwrap();
+
+    assert!(
+        execution
+            .stdout
+            .contains("ValueError:BcMath\\Number::add(): Argument #1 ($num) is not well-formed\n"),
+        "stdout:\n{}",
+        execution.stdout
+    );
+    assert!(execution.stdout.contains(
+        "TypeError:BcMath\\Number::add(): Argument #1 ($num) must be of type int, string, or BcMath\\Number, array given\n"
+    ));
+    assert!(execution.stdout.contains(
+        "TypeError:BcMath\\Number::add(): Argument #2 ($scale) must be of type ?int, array given\n"
+    ));
+    assert!(execution
+        .stdout
+        .contains("Deprecated: Implicit conversion from float 0.1 to int loses precision"));
+    assert!(execution.stdout.contains(
+        "Deprecated: BcMath\\Number::add(): Passing null to parameter #1 ($num) of type BcMath\\Number|string|int is deprecated"
+    ));
+    assert!(execution
+        .stdout
+        .contains("DivisionByZeroError:Division by zero\n"));
+    assert!(execution
+        .stdout
+        .contains("TypeError:Unsupported operand types: BcMath\\Number + array\n"));
+    assert!(execution
+        .stdout
+        .contains("TypeError:Right string operand cannot be converted to BcMath\\Number\n"));
+    assert!(execution
+        .stdout
+        .contains("Deprecated: Implicit conversion from float 1.01 to int loses precision"));
+    assert!(execution
+        .stdout
+        .ends_with("bool(true)\nbool(false)\nbool(false)\n"));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn bcmath_number_readonly_properties_can_be_read_by_reference_as_values() {
+    let execution = run_source(
+        r#"<?php
+$num = new BcMath\Number("1.25");
+$value = &$num->value;
+$scale = &$num->scale;
+var_dump($value, $scale);
+$value = "changed";
+var_dump($num->value);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "string(4) \"1.25\"\nint(2)\nstring(4) \"1.25\"\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn bcmath_number_object_cast_properties_and_constructor_diagnostics_are_generalized() {
+    let execution = run_source(
+        r#"<?php
+$zero = new BcMath\Number("0.0");
+$nonzero = new BcMath\Number("-0.125");
+var_dump((bool) $zero);
+var_dump(boolval($nonzero));
+echo (string) $zero, "|", $zero->value, "|", $zero->scale, "\n";
+print_r((array) $nonzero);
+var_dump($zero->missing);
+try {
+    $zero->value = "3";
+} catch (Error $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+try {
+    unset($zero->scale);
+} catch (Error $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+try {
+    $zero->dynamic = "no";
+} catch (Error $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+try {
+    $zero->__construct("1");
+} catch (Error $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+try {
+    new BcMath\Number("not-a-number");
+} catch (Error $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+$float = new BcMath\Number(0.1234);
+echo (string) $float, "|", $float->scale, "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "bool(false)\n",
+            "bool(true)\n",
+            "0.0|0.0|1\n",
+            "Array\n",
+            "(\n",
+            "    [value] => -0.125\n",
+            "    [scale] => 3\n",
+            ")\n",
+            "\n",
+            "Warning: Undefined property: BcMath\\Number::$missing in Command line code on line 8\n",
+            "NULL\n",
+            "Error:Cannot modify protected(set) readonly property BcMath\\Number::$value from global scope\n",
+            "Error:Cannot unset protected(set) readonly property BcMath\\Number::$scale from global scope\n",
+            "Error:Cannot create dynamic property BcMath\\Number::$dynamic\n",
+            "Error:Cannot modify readonly property BcMath\\Number::$value\n",
+            "ValueError:BcMath\\Number::__construct(): Argument #1 ($num) is not well-formed\n",
+            "\n",
+            "Deprecated: Implicit conversion from float 0.1234 to int loses precision in Command line code on line 34\n",
+            "0|0\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}

@@ -2,5 +2,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-parse error at tests/fixtures/unsupported_syntax_features/unsupported_exponentiation.php:2:8: unsupported exponentiation operator: ** and **= are not implemented
+runtime error at tests/fixtures/unsupported_syntax_features/unsupported_exponentiation.php:2:6: unsupported call operator **: non-BcMath\Number exponentiation is not implemented in the current subset
 --- stderr end ---

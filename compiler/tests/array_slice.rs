@@ -140,6 +140,15 @@ echo $preserved[6], "\n";
 $default_false = array_slice($items, 1, 3, false);
 echo count($default_false), "|", $default_false[0], "|", $default_false[1], "|", $default_false["02"], "\n";
 
+$int_preserved = array_slice($items, 1, 3, 1);
+echo count($int_preserved), "|", $int_preserved[5], "|", $int_preserved[2], "|", $int_preserved["02"], "\n";
+
+$int_false = array_slice($items, 1, 3, 0);
+echo count($int_false), "|", $int_false[0], "|", $int_false[1], "|", $int_false["02"], "\n";
+
+$string_preserved = array_slice($items, 1, 3, "1");
+echo count($string_preserved), "|", $string_preserved[5], "|", $string_preserved[2], "|", $string_preserved["02"], "\n";
+
 $tail = array_slice($items, -3, null, true);
 echo count($tail), "|", $tail["02"], "|", $tail[-1], "|", $tail[6], "\n";
 
@@ -152,21 +161,63 @@ echo $items["name"], "|", $items[5], "|", $items[2], "|", $items["02"], "|", $it
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "3|five|two|zero two\nafter\n3|five|two|zero two\n3|zero two|negative|next\n6|Ada|five|two|zero two|negative|next\nAda|five|two|zero two|negative|next"
+        "3|five|two|zero two\nafter\n3|five|two|zero two\n3|five|two|zero two\n3|five|two|zero two\n3|five|two|zero two\n3|zero two|negative|next\n6|Ada|five|two|zero two|negative|next\nAda|five|two|zero two|negative|next"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn array_slice_preserves_reference_backed_value_slots() {
+    let source = r#"<?php
+$first = "one";
+$second = "two";
+$third = "three";
+$items = [3 => &$first, 2 => &$second, 1 => &$third];
+$slice = array_slice($items, 1, 2);
+var_dump($slice);
+$second = "changed";
+var_dump(array_slice($items, 1, 2, true));
+"#;
+
+    let execution = run_source(source).unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "array(2) {\n  [0]=>\n  &string(3) \"two\"\n  [1]=>\n  &string(5) \"three\"\n}\narray(2) {\n  [2]=>\n  &string(7) \"changed\"\n  [1]=>\n  &string(5) \"three\"\n}\n"
     );
     assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
 fn array_slice_requires_array_first_argument() {
-    let error = runtime_error("<?php\necho array_slice(42, 0);\n");
+    let source = r#"<?php
+foreach ([null, 42, "items", true, false] as $value) {
+    try {
+        array_slice($value, 0);
+    } catch (TypeError $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
+$call = "array_slice";
+try {
+    $call(42, 0);
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#;
+
+    let execution = run_source(source).unwrap();
     assert_eq!(
-        error.message,
-        "unsupported call array_slice(): first argument must be array, got int"
+        execution.stdout,
+        "array_slice(): Argument #1 ($array) must be of type array, null given\n\
+array_slice(): Argument #1 ($array) must be of type array, int given\n\
+array_slice(): Argument #1 ($array) must be of type array, string given\n\
+array_slice(): Argument #1 ($array) must be of type array, true given\n\
+array_slice(): Argument #1 ($array) must be of type array, false given\n\
+array_slice(): Argument #1 ($array) must be of type array, int given"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -182,27 +233,61 @@ fn array_slice_requires_int_offset_argument() {
 }
 
 #[test]
-fn array_slice_requires_int_length_argument() {
-    let error = runtime_error("<?php\n$items = [1];\necho array_slice($items, 0, \"1\");\n");
+fn array_slice_coerces_weak_length_and_reports_nullable_int_type_errors() {
+    let source = r#"<?php
+$items = [1, 2, 3, 4];
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
+try {
+    array_slice($items, 0, "foo");
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+
+$float_length = array_slice($items, 0, 2.9);
+echo count($float_length), "|", $float_length[0], "|", $float_length[1], "\n";
+
+$string_length = array_slice($items, 0, "3");
+echo count($string_length), "|", $string_length[0], "|", $string_length[1], "|", $string_length[2], "\n";
+
+try {
+    array_slice($items, 0, PHP_INT_MAX * 1.0);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+
+try {
+    array_slice($items, 0, "9223372036854775808");
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#;
+
+    let execution = run_source(source).unwrap();
     assert_eq!(
-        error.message,
-        "unsupported call array_slice(): length argument must be int or null in the current subset, got string"
+        execution.stdout,
+        "array_slice(): Argument #3 ($length) must be of type ?int, string given\n2|1|2\n3|1|2|3\narray_slice(): Argument #3 ($length) must be of type ?int, float given\narray_slice(): Argument #3 ($length) must be of type ?int, string given"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
-fn array_slice_requires_bool_preserve_keys_argument() {
-    let error = runtime_error("<?php\n$items = [1];\necho array_slice($items, 0, 1, 1);\n");
+fn array_slice_reports_bool_type_error_for_invalid_preserve_keys_argument() {
+    let source = r#"<?php
+$items = [1];
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
+try {
+    array_slice($items, 0, 1, []);
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#;
+
+    let execution = run_source(source).unwrap();
     assert_eq!(
-        error.message,
-        "unsupported call array_slice(): preserve_keys argument must be bool in the current subset, got int"
+        execution.stdout,
+        "array_slice(): Argument #4 ($preserve_keys) must be of type bool, array given"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

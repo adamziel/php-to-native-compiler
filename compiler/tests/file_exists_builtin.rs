@@ -39,6 +39,26 @@ echo file_exists(__DIR__ . "/missing-file.php") ? "exists" : "missing";
 }
 
 #[test]
+fn file_exists_returns_false_for_false_and_empty_path_inputs() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+echo file_exists(false) ? "true" : "false";
+echo "|";
+echo file_exists("") ? "true" : "false";
+echo "|";
+echo file_exists(" ") ? "true" : "false";
+echo "|";
+echo file_exists("|") ? "true" : "false";
+"#,
+        fixture_source_file(),
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "false|false|false|false");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn file_exists_is_available_through_string_valued_calls() {
     let execution = run_source_with_source_file(
         r#"<?php
@@ -58,7 +78,7 @@ echo $call(__FILE__) ? "file" : "missing";
 }
 
 #[test]
-fn file_exists_resolves_repo_relative_fixture_source_paths() {
+fn file_exists_with_synthetic_relative_source_paths_uses_existing_repo_relative_resolution() {
     let execution = run_source_with_source_file(
         r#"<?php
 echo file_exists(__FILE__) ? "file" : "missing";
@@ -75,17 +95,19 @@ echo file_exists(__DIR__) ? "dir" : "missing";
 
 #[test]
 fn file_exists_rejects_forms_outside_current_subset() {
-    let arity = runtime_error(
+    let arity = run_source_with_source_file(
         r#"<?php
 echo file_exists();
 "#,
-    );
-    assert_eq!(arity.line, 2);
-    assert_eq!(arity.column, 6);
-    assert_eq!(
-        arity.message,
-        "arity mismatch for file_exists(): expected 1 argument(s), got 0"
-    );
+        fixture_source_file(),
+    )
+    .unwrap();
+    assert_eq!(arity.stderr, "");
+    assert_eq!(arity.exit_code, 255);
+    assert!(arity
+        .stdout
+        .contains("Too few arguments to function file_exists()"));
+    assert!(arity.stdout.contains("exactly 1 expected"));
 
     let type_error = runtime_error(
         r#"<?php

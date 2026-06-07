@@ -28,6 +28,10 @@ fn milestone1601_fixture_source_file() -> String {
         .to_string()
 }
 
+fn source_dir_cache_fixture() -> PathBuf {
+    workspace_root().join("tests/fixtures/milestone1207/realpath_cache_source_dir.php")
+}
+
 fn target_path() -> PathBuf {
     workspace_root().join("tests/fixtures/milestone1207/realpath_target.txt")
 }
@@ -107,6 +111,71 @@ echo array_key_exists($resolved, realpath_cache_get()) ? "kept" : "cleared";
         "resolved|cached|same|file|expires-int|kept|cleared"
     );
     assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn realpath_cache_get_starts_with_main_source_directory_entry() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+$cache = realpath_cache_get();
+$dir = __DIR__;
+echo array_key_exists($dir, $cache) ? "dir-cached" : "dir-missing";
+$entry = $cache[$dir];
+echo "|";
+echo $entry["is_dir"] === true ? "dir" : "not-dir";
+echo "|";
+echo $entry["realpath"] === $dir ? "same" : "different";
+clearstatcache(true, $dir);
+echo "|";
+echo array_key_exists($dir, realpath_cache_get()) ? "kept" : "cleared";
+"#,
+        fixture_source_file(),
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "dir-cached|dir|same|cleared");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn realpath_cache_get_does_not_seed_missing_main_source_file_parent() {
+    let missing_source = workspace_root()
+        .join("tests/fixtures/milestone1207/missing_source.php")
+        .display()
+        .to_string();
+
+    let execution = run_source_with_source_file(
+        r#"<?php
+$cache = realpath_cache_get();
+echo count($cache) === 0 ? "empty" : "seeded";
+"#,
+        missing_source,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "empty");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn phpc_run_seeds_main_source_directory_realpath_cache_entry() {
+    let workspace_root = workspace_root();
+    let fixture = source_dir_cache_fixture();
+    let fixture = fixture
+        .to_str()
+        .expect("fixture path is valid UTF-8")
+        .to_string();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(&workspace_root)
+        .args(["run", &fixture])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run {fixture}: {error}"));
+
+    assert_eq!(
+        render_cli_snapshot(&output),
+        "exit: 0\nstdout:\ndir-cached|dir|cleared--- stdout end ---\nstderr:\n--- stderr end ---\n"
+    );
 }
 
 #[test]

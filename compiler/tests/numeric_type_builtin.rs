@@ -48,6 +48,38 @@ echo $call("10.5") ? "1" : "0", $call("text") ? "1" : "0";
 }
 
 #[test]
+fn is_numeric_accepts_php_numeric_literal_boundaries_with_leading_zeroes() {
+    let execution = run_source(
+        r#"<?php
+$values = [
+    01000000000000000000000,
+    0200001.7,
+    -0200001.7,
+    +09.5,
+    0123e0,
+    0x10000000000000000,
+];
+foreach ($values as $value) {
+    echo gettype($value), ":", is_numeric($value) ? "1" : "0", "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "double:1\ndouble:1\ndouble:1\ndouble:1\ndouble:1\ndouble:1\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let invalid_octal = run_source("<?php\nvar_dump(09);\n").unwrap_err();
+    assert_eq!(invalid_octal.phase, Phase::Lex);
+    assert_eq!(invalid_octal.line, 2);
+    assert_eq!(invalid_octal.column, 10);
+    assert_eq!(invalid_octal.message, "invalid integer literal '09'");
+}
+
+#[test]
 fn emit_ir_folds_direct_scalar_null_is_numeric_calls() {
     let ir = emit_ir_source(
         r#"<?php

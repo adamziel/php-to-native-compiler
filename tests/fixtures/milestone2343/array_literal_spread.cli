@@ -1,0 +1,10 @@
+exit: 0
+stdout:
+0=start
+1=two
+a=middle
+b=keep
+2=nine
+3=tail--- stdout end ---
+stderr:
+--- stderr end ---
