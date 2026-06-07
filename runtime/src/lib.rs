@@ -69405,6 +69405,28 @@ mod tests {
 
             unsafe { phpc_native_value_free(value) };
         }
+
+        let invalid_bytes = [0xff, b'p'];
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let value = unsafe {
+            phpc_native_value_from_string_bytes_with_diagnostic(
+                invalid_bytes.as_ptr(),
+                invalid_bytes.len(),
+                &mut diagnostic,
+            )
+        };
+        assert!(!value.is_null());
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            unsafe { phpc_native_value_materialization_failure_exit_code(value, diagnostic) },
+            0
+        );
+        let right = phpc_native_value_from_scalar(phpc_native_int(1));
+        let result =
+            unsafe { phpc_native_value_compare(value, NativeComparisonOp::StrictNe as u8, right) };
+        assert_native_comparison_ok("invalid byte-string is materialized", result, true);
+        unsafe { phpc_native_value_free(right) };
+        unsafe { phpc_native_value_free(value) };
     }
 
     #[test]
@@ -69568,6 +69590,36 @@ mod tests {
         assert!(
             !phpc_native_comparison_branch_decision_is_true(failed_right_decision),
             "right materialization blocker should not produce a truthy decision"
+        );
+
+        let invalid_bytes = [0xff, b'p'];
+        let mut binary_right_diagnostic = NativeDiagnosticHandle::null();
+        let binary_right = unsafe {
+            phpc_native_value_from_string_bytes_with_diagnostic(
+                invalid_bytes.as_ptr(),
+                invalid_bytes.len(),
+                &mut binary_right_diagnostic,
+            )
+        };
+        assert!(binary_right_diagnostic.is_null());
+        let binary_right_decision = unsafe {
+            phpc_native_value_compare_operation_decision_with_materialization_and_free(
+                phpc_native_value_from_scalar(phpc_native_int(1)),
+                NativeDiagnosticHandle::null(),
+                phpc_native_comparison_operation_from_opcode(
+                    NativeComparisonOp::StrictNe.abi_opcode(),
+                ),
+                binary_right,
+                binary_right_diagnostic,
+            )
+        };
+        assert_eq!(
+            phpc_native_comparison_branch_decision_exit_code(binary_right_decision),
+            0
+        );
+        assert!(
+            phpc_native_comparison_branch_decision_is_true(binary_right_decision),
+            "binary string materialization should produce a truthy strict non-identity decision"
         );
     }
 
@@ -70117,6 +70169,21 @@ mod tests {
                 )
             },
             true,
+        );
+
+        let invalid_bytes = [0xff];
+        let invalid_handle =
+            unsafe { phpc_native_string_from_bytes(invalid_bytes.as_ptr(), invalid_bytes.len()) };
+        assert_native_comparison_ok(
+            "invalid string-handle materializes as byte string",
+            unsafe {
+                phpc_native_comparison_operand_compare_and_free(
+                    phpc_native_comparison_operand_from_string_and_free(invalid_handle),
+                    NativeComparisonOp::StrictEq.abi_opcode(),
+                    phpc_native_comparison_operand_from_scalar(phpc_native_int(1)),
+                )
+            },
+            false,
         );
     }
 
@@ -83840,6 +83907,52 @@ mod tests {
         assert_eq!(runtime_exception.parent_id(), Some(exception.id()));
         assert!(runtime_exception.properties().is_empty());
         assert!(runtime_exception.methods().is_empty());
+
+        let array_object = classes.lookup_class("arrayobject").unwrap();
+        assert_eq!(array_object.name(), "ArrayObject");
+        assert_eq!(array_object.id().index(), 58);
+        assert!(array_object.parent_id().is_none());
+        assert_eq!(
+            array_object
+                .properties()
+                .iter()
+                .map(PhpPropertyMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["storage"]
+        );
+        assert_eq!(
+            array_object
+                .constants()
+                .iter()
+                .map(PhpClassConstantMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["STD_PROP_LIST", "ARRAY_AS_PROPS"]
+        );
+        assert!(array_object.method("getIterator").is_some());
+        assert!(array_object.method("offsetGet").is_some());
+
+        let array_iterator = classes.lookup_class("arrayiterator").unwrap();
+        assert_eq!(array_iterator.name(), "ArrayIterator");
+        assert_eq!(array_iterator.id().index(), 59);
+        assert!(array_iterator.parent_id().is_none());
+        assert_eq!(
+            array_iterator
+                .properties()
+                .iter()
+                .map(PhpPropertyMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["storage"]
+        );
+        assert_eq!(
+            array_iterator
+                .constants()
+                .iter()
+                .map(PhpClassConstantMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["STD_PROP_LIST", "ARRAY_AS_PROPS"]
+        );
+        assert!(array_iterator.method("current").is_some());
+        assert!(array_iterator.method("offsetSet").is_some());
 
         let reflection = classes.lookup_class("reflection").unwrap();
         assert_eq!(reflection.name(), "Reflection");
