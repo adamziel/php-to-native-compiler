@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T17:25:18+00:00
+Last generated: 2026-06-08T17:40:18+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -319,7 +319,9 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-262 | Coordinator | success | coordinator-262 |  |
 | coordinator-263 | Coordinator | success | coordinator-263 |  |
 | coordinator-264 | Coordinator | crash | coordinator-264 |  |
-| coordinator-265 | Coordinator | running | coordinator-265 |  |
+| coordinator-265 | Coordinator | crash | coordinator-265 |  |
+| coordinator-266 | Coordinator | success | coordinator-266 |  |
+| coordinator-267 | Coordinator | running | coordinator-267 |  |
 | coordinator-27 | Coordinator | crash | coordinator-27 |  |
 | coordinator-28 | Coordinator | crash | coordinator-28 |  |
 | coordinator-29 | Coordinator | crash | coordinator-29 |  |
@@ -751,10 +753,13 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-412 | Developer | crash | developer-412 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-412 |
 | developer-413 | Developer | crash | developer-413 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-413 |
 | developer-414 | Developer | crash | developer-414 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-414 |
-| developer-415 | Developer | running | developer-415 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-415 |
-| developer-416 | Developer | running | developer-416 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-416 |
-| developer-417 | Developer | running | developer-417 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-417 |
+| developer-415 | Developer | crash | developer-415 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-415 |
+| developer-416 | Developer | crash | developer-416 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-416 |
+| developer-417 | Developer | crash | developer-417 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-417 |
+| developer-418 | Developer | running | developer-418 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-418 |
+| developer-419 | Developer | running | developer-419 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-419 |
 | developer-42 | Developer | crash | developer-42 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-42 |
+| developer-420 | Developer | running | developer-420 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-420 |
 | developer-43 | Developer | stopped | developer-43 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-43 |
 | developer-44 | Developer | stopped | developer-44 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-44 |
 | developer-45 | Developer | stopped | developer-45 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-45 |
@@ -864,36 +869,36 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2134 | Assign next sanctioned Developer card after card2075 read-only support | Developer | implementation | done | stale |  | 0.0 |
+| 2133 | Assign next sanctioned Developer card after worklane 2130 report | Developer | implementation | done | stale |  | 0.0 |
+| 2132 | Assign next sanctioned Developer card after worklane2117 report | Developer | implementation | done | stale |  | 0.0 |
 | 2131 | Fix global test suite failures | Developer | implementation | development | assigned |  | 0.0 |
-| 2130 | Read-only verify card2075 runtime free-count dirty diff | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
+| 2130 | Read-only verify card2075 runtime free-count dirty diff | Conflict Resolver | integration-support | done | integrated | ready_fast_path | 0.0 |
 | 2129 | Assign next sanctioned Developer card after card2075 read-only support | Developer | implementation | done | stale |  | 0.0 |
 | 2128 | Dispose requeued already-integrated cleanup rows 2125 and 2126 | Integrator | integration-support | planned | queued |  | 0.0 |
 | 2127 | Fix current abs() fatal-path test contract hard blocker | Developer | implementation | done | integrated | ready_fast_path | 0.0 |
 | 2126 | Integrate card2123 duplicate-report resolver branch | Integrator | integration-support | planned | queued |  | 0.0 |
 | 2125 | Dispose stale already-integrated integration rows 2068 and 2077 | Integrator | integration-support | planned | queued |  | 0.0 |
-| 2124 | Resume queued card2119 abs hard-blocker analysis | Architect | advisory | planned | queued |  | 0.0 |
-| 2123 | Resolve integration failure for card #2120: Assign next narrow Developer card after card2075 conflict support | Conflict Resolver | integration-support | done | integrated | ready_fast_path | 0.0 |
-| 2122 | Assign next sanctioned Developer card after card2120 reserve report | Developer | implementation | done | stale |  | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=3, passed=416, skipped=0)
+failed — tools/run-tests.sh (error=0, failed=3, passed=417, skipped=0)
 
 ## Resource samples
-Latest: CPU 57.2%, RAM 24.06%, disk free 37.64 GB.
+Latest: CPU 18.41%, RAM 20.3%, disk free 48.96 GB.
 
 ## Recent events
-- 2026-06-08T17:14:04+00:00 **session_start**: developer-417 started in worktree; required docs read/being read before coding.
-- 2026-06-08T17:14:11+00:00 **terminal_agent_windows_closed**: Closed 845 terminal agent tmux windows
-- 2026-06-08T17:14:12+00:00 **terminal_agent_windows_closed**: Closed 845 terminal agent tmux windows
-- 2026-06-08T17:14:23+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-08T17:14:23+00:00 **terminal_agent_windows_closed**: Closed 845 terminal agent tmux windows
-- 2026-06-08T17:14:26+00:00 **terminal_agent_windows_closed**: Closed 845 terminal agent tmux windows
-- 2026-06-08T17:14:32+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-08T17:14:34+00:00 **terminal_agent_windows_closed**: Closed 845 terminal agent tmux windows
-- 2026-06-08T17:14:35+00:00 **worklane_start**: developer-415 picked up assigned worklane 2131: Fix global test suite failures.
-- 2026-06-08T17:14:41+00:00 **terminal_agent_windows_closed**: Closed 845 terminal agent tmux windows
-- 2026-06-08T17:14:42+00:00 **conflict_support_started**: Started read-only verification for card2075 support worklane 2130; rechecking developer-412 dirty runtime free-count diff against current origin/master.
-- 2026-06-08T17:25:18+00:00 **supervisor_error**: integration: database is locked
+- 2026-06-08T17:39:47+00:00 **terminal_agent_windows_closed**: Closed 849 terminal agent tmux windows
+- 2026-06-08T17:39:51+00:00 **card_stage**: card#2130 integration -> done
+- 2026-06-08T17:39:51+00:00 **integration_pushed**: Integrated worklane#2130 and pushed origin/master
+- 2026-06-08T17:39:51+00:00 **coordinator_report_filed**: Coordinator-266 filed agent_report 781 for worklane/card 2054 and ended successfully.
+- 2026-06-08T17:39:51+00:00 **terminal_agent_windows_closed**: Closed 849 terminal agent tmux windows
+- 2026-06-08T17:39:52+00:00 **card_stage**: card#2054 development -> planned
+- 2026-06-08T17:39:52+00:00 **card_repair**: Requeued 1 cards owned by terminal workers
+- 2026-06-08T17:39:52+00:00 **agent_started**: Started coordinator-267 for Maintain Coordinator capacity
+- 2026-06-08T17:40:01+00:00 **terminal_agent_windows_closed**: Closed 850 terminal agent tmux windows
+- 2026-06-08T17:40:02+00:00 **terminal_agent_windows_closed**: Closed 850 terminal agent tmux windows
+- 2026-06-08T17:40:12+00:00 **terminal_agent_windows_closed**: Closed 850 terminal agent tmux windows
+- 2026-06-08T17:40:17+00:00 **terminal_agent_windows_closed**: Closed 850 terminal agent tmux windows
 
 ## Next steps
 Move next worklane forward: Fix global test suite failures
