@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T04:18:49+00:00
+Last generated: 2026-06-08T04:33:49+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -434,6 +434,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | integrator-10 | Integrator | crash | integrator-10 |  |
 | integrator-11 | Integrator | crash | integrator-11 |  |
 | integrator-12 | Integrator | crash | integrator-12 |  |
+| integrator-13 | Integrator | crash | integrator-13 |  |
 | integrator-2 | Integrator | stopped | integrator-2 |  |
 | integrator-3 | Integrator | stopped | integrator-3 |  |
 | integrator-4 | Integrator | crash | integrator-4 |  |
@@ -461,21 +462,21 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 failed — tools/run-tests.sh (error=0, failed=6, passed=413, skipped=0)
 
 ## Resource samples
-Latest: CPU 17.82%, RAM 16.69%, disk free 36.89 GB.
+Latest: CPU 14.34%, RAM 17.25%, disk free 36.86 GB.
 
 ## Recent events
-- 2026-06-08T04:18:49+00:00 **terminal_agent_window_closed**: Closed terminal integrator-6 tmux window
-- 2026-06-08T04:18:49+00:00 **terminal_agent_window_closed**: Closed terminal integrator-7 tmux window
-- 2026-06-08T04:18:49+00:00 **terminal_agent_window_closed**: Closed terminal integrator-8 tmux window
-- 2026-06-08T04:18:49+00:00 **terminal_agent_window_closed**: Closed terminal integrator-9 tmux window
-- 2026-06-08T04:18:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-26 tmux window
-- 2026-06-08T04:18:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-27 tmux window
-- 2026-06-08T04:18:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-28 tmux window
-- 2026-06-08T04:18:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-29 tmux window
-- 2026-06-08T04:18:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-3 tmux window
-- 2026-06-08T04:18:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-30 tmux window
-- 2026-06-08T04:18:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-31 tmux window
-- 2026-06-08T04:18:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-32 tmux window
+- 2026-06-08T04:33:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-42 tmux window
+- 2026-06-08T04:33:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-62 tmux window
+- 2026-06-08T04:33:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-43 tmux window
+- 2026-06-08T04:33:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-63 tmux window
+- 2026-06-08T04:33:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-44 tmux window
+- 2026-06-08T04:33:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-64 tmux window
+- 2026-06-08T04:33:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-45 tmux window
+- 2026-06-08T04:33:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-65 tmux window
+- 2026-06-08T04:33:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-46 tmux window
+- 2026-06-08T04:33:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-66 tmux window
+- 2026-06-08T04:33:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-47 tmux window
+- 2026-06-08T04:33:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-48 tmux window
 
 ## Next steps
 Move next worklane forward: Recover stale architect-25 and reconcile card 1902
