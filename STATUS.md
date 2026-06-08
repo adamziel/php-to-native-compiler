@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T19:21:24+00:00
+Last generated: 2026-06-08T19:22:05+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -903,21 +903,21 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 failed — tools/run-tests.sh (error=0, failed=4, passed=415, skipped=0)
 
 ## Resource samples
-Latest: CPU 57.5%, RAM 23.02%, disk free 167.11 GB.
+Latest: CPU 100.0%, RAM 22.9%, disk free 148.3 GB.
 
 ## Recent events
-- 2026-06-08T19:20:56+00:00 **agent_report**: integrator-44 reported integrated
-- 2026-06-08T19:20:58+00:00 **terminal_agent_windows_closed**: Closed 868 terminal agent tmux windows
-- 2026-06-08T19:20:59+00:00 **disk_cleanup_completed**: Removed generated target directories for ended/crashed worktrees and current lane after ENOSPC gate failure.
-- 2026-06-08T19:21:04+00:00 **coordinator_start**: Coordinator session started; reading AGENTS, progress, architecture, support, README, and loop memory docs before inspecting lanes.
-- 2026-06-08T19:21:06+00:00 **terminal_agent_windows_closed**: Closed 868 terminal agent tmux windows
-- 2026-06-08T19:21:09+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-08T19:21:12+00:00 **agent_report**: integrator-44 reported disposition_complete
-- 2026-06-08T19:21:13+00:00 **terminal_agent_windows_closed**: Closed 868 terminal agent tmux windows
-- 2026-06-08T19:21:15+00:00 **manhole_progress_refresh**: After user-authorized quarantine push: coordinator-272 spawned developer-426/card2147 for intl/openssl SKIPIF constants; integrator-44 reported card2068 already integrated/contained; developer-424/card2131 remains sole native-helper/global gate owner, latest sampled tools/run-tests.sh run45346 at 5b3cfa has 417 passed / 2 failed inside quarantine; cards2145/2146 remain queued; developer-425/card113 appears stale despite report793 and was poked for disposition; OS df now shows ample free space after ENOSPC cleanup event.
-- 2026-06-08T19:21:18+00:00 **terminal_agent_windows_closed**: Closed 868 terminal agent tmux windows
-- 2026-06-08T19:21:24+00:00 **poke**: Queued message for coordinator-273
-- 2026-06-08T19:21:24+00:00 **poke_delivered**: Delivered poke to 1 agents
+- 2026-06-08T19:21:29+00:00 **terminal_agent_windows_closed**: Closed 868 terminal agent tmux windows
+- 2026-06-08T19:21:31+00:00 **test_gate_quarantined_known_red**: 8 known failures are quarantined; metric acceptance remains blocked, but unrelated work may continue.
+- 2026-06-08T19:21:39+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-08T19:21:43+00:00 **terminal_agent_windows_closed**: Closed 868 terminal agent tmux windows
+- 2026-06-08T19:21:49+00:00 **terminal_agent_windows_closed**: Closed 868 terminal agent tmux windows
+- 2026-06-08T19:21:54+00:00 **agent_report**: integrator-44 reported superseded
+- 2026-06-08T19:21:55+00:00 **agent_report**: integrator-44 reported superseded
+- 2026-06-08T19:21:55+00:00 **agent_report**: integrator-44 reported superseded
+- 2026-06-08T19:21:59+00:00 **terminal_agent_windows_closed**: Closed 868 terminal agent tmux windows
+- 2026-06-08T19:21:59+00:00 **developer_capacity_stale_evidence**: Read-only tmux inspection of developer-425 pane %1357 shows the agent is idle at the Codex prompt after accepted report793 and after receiving card113/manhole follow-up text; no visible active command or response. Recommend scheduler/coordinator recycle or disposition card113 to free Developer capacity for queued PHPT progress cards2145/2146.
+- 2026-06-08T19:22:05+00:00 **poke**: Queued message for coordinator-273
+- 2026-06-08T19:22:05+00:00 **poke_delivered**: Delivered poke to 1 agents
 
 ## Next steps
 Move next worklane forward: Fix intl/openssl SKIPIF constants for PHPT rows without touching native-helper gate
