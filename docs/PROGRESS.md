@@ -1,5 +1,21 @@
 # Progress Log
 
+## 2026-06-07
+
+Implemented:
+
+- Added a bounded interpreter `str_ireplace()` compatibility slice beside the
+  existing `str_replace()` engine. Direct calls, string-valued dynamic calls,
+  `call_user_func()`, and `call_user_func_array()` now support the current
+  scalar/null string-convertible subject/replacement subset, scalar/null or
+  one-level search arrays, and direct-variable/count-reference output paths
+  with ASCII case-insensitive matching. Native function-table introspection now
+  recognizes `str_ireplace`, while direct native calls continue to reject under
+  the existing function-call boundary. Replacement arrays, subject arrays,
+  nested search arrays, non-variable count outputs, Unicode case folding,
+  binary string edge cases, exact diagnostics, references/COW beyond the
+  existing output slot, and native lowering remain unsupported.
+
 ## 2026-05-27
 
 Implemented:

@@ -66299,6 +66299,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "substr_replace",
     "substr_count",
     "str_replace",
+    "str_ireplace",
     "str_getcsv",
     "parse_str",
     "levenshtein",

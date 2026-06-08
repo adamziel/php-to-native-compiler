@@ -51731,8 +51731,13 @@ impl Interpreter {
                     }
                     return self.call_preg_replace_callback(values, span);
                 }
-                if key == "str_replace" {
-                    return self.call_str_replace_with_optional_count(args, span, caller_scope);
+                if matches!(key.as_str(), "str_replace" | "str_ireplace") {
+                    return self.call_str_replace_with_optional_count(
+                        &key,
+                        args,
+                        span,
+                        caller_scope,
+                    );
                 }
                 if key == "parse_str" {
                     return self.call_parse_str_direct(args, span, caller_scope);
@@ -51905,8 +51910,13 @@ impl Interpreter {
                     }
                     return self.call_preg_replace_callback(values, span);
                 }
-                if key == "str_replace" {
-                    return self.call_str_replace_with_optional_count(args, span, caller_scope);
+                if matches!(key.as_str(), "str_replace" | "str_ireplace") {
+                    return self.call_str_replace_with_optional_count(
+                        &key,
+                        args,
+                        span,
+                        caller_scope,
+                    );
                 }
                 if key == "parse_str" {
                     return self.call_parse_str_direct(args, span, caller_scope);
@@ -53874,6 +53884,18 @@ impl Interpreter {
     ) -> CompileResult<Value> {
         let callable = format!("{key}()");
         let values = self.evaluate_builtin_value_call_arguments(&callable, args, caller_scope)?;
+        if matches!(key, "str_replace" | "str_ireplace") && values.len() == 4 {
+            let function = str_replace_function_name(key);
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    format!(
+                        "count output requires a direct {function} call with a direct variable in the current subset"
+                    ),
+                ),
+            ));
+        }
         self.call_builtin_callback_with_values(key, values, span, true)
     }
 
@@ -53901,9 +53923,12 @@ impl Interpreter {
         argument_array: &PhpArray,
         span: Span,
     ) -> CompileResult<Value> {
-        if key == "str_replace" {
-            return self
-                .call_str_replace_builtin_callback_with_argument_array(argument_array, span);
+        if matches!(key, "str_replace" | "str_ireplace") {
+            return self.call_str_replace_builtin_callback_with_argument_array(
+                key,
+                argument_array,
+                span,
+            );
         }
 
         if !Self::builtin_callback_has_first_reference_array_param(key) {
@@ -53943,13 +53968,14 @@ impl Interpreter {
 
     fn call_str_replace_builtin_callback_with_argument_array(
         &mut self,
+        key: &str,
         argument_array: &PhpArray,
         span: Span,
     ) -> CompileResult<Value> {
-        let function = reflection_internal_function_state("str_replace")
-            .expect("str_replace() reflection metadata is required for callback argument binding");
+        let function = reflection_internal_function_state(key)
+            .expect("str_replace()/str_ireplace() reflection metadata is required for callback argument binding");
         let values = Self::call_user_func_array_values_from_reflection_params(
-            "str_replace",
+            key,
             &function.params,
             argument_array,
             span,
@@ -53963,7 +53989,7 @@ impl Interpreter {
                 )
             })
             .flatten();
-        self.call_str_replace_builtin_callback_with_values(values, count_reference, span, true)
+        self.call_str_replace_builtin_callback_with_values(key, values, count_reference, span, true)
     }
 
     fn call_reference_builtin_callback_with_named_argument_array(
@@ -54294,33 +54320,37 @@ impl Interpreter {
 
     fn call_str_replace_builtin_callback_with_values(
         &mut self,
+        key: &str,
         args: Vec<Value>,
         count_reference: Option<PhpReferenceCell>,
         span: Span,
         warn_for_reference_value: bool,
     ) -> CompileResult<Value> {
+        let function = str_replace_function_name(key);
         if !(3..=4).contains(&args.len()) {
             return Err(runtime_error(
                 span,
                 RuntimeError::arity_mismatch(
-                    "str_replace()",
+                    function,
                     ArityExpectation::Between { min: 3, max: 4 },
                     args.len(),
                 ),
             ));
         }
 
-        let (result, count) = str_replace_scalar_result(&args[0], &args[1], &args[2], span)?;
+        let (result, count) = str_replace_scalar_result(
+            function,
+            &args[0],
+            &args[1],
+            &args[2],
+            str_replace_is_case_insensitive(key),
+            span,
+        )?;
         if args.len() == 4 {
             if let Some(reference) = count_reference {
                 reference.set_value(Value::Int(count));
             } else if warn_for_reference_value {
-                self.emit_builtin_callback_reference_value_warning(
-                    "str_replace",
-                    3,
-                    "count",
-                    span,
-                )?;
+                self.emit_builtin_callback_reference_value_warning(key, 3, "count", span)?;
             }
         }
 
@@ -54367,7 +54397,8 @@ impl Interpreter {
                     .map_err(|error| runtime_error(span, error))?;
                 Ok(Value::Bool(true))
             }
-            "str_replace" => self.call_str_replace_builtin_callback_with_values(
+            "str_replace" | "str_ireplace" => self.call_str_replace_builtin_callback_with_values(
+                key,
                 args,
                 None,
                 span,
@@ -59322,15 +59353,17 @@ impl Interpreter {
 
     fn call_str_replace_with_optional_count(
         &mut self,
+        key: &str,
         args: &[Expr],
         span: Span,
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
+        let function = str_replace_function_name(key);
         if !(3..=4).contains(&args.len()) {
             return Err(runtime_error(
                 span,
                 RuntimeError::arity_mismatch(
-                    "str_replace()",
+                    function,
                     ArityExpectation::Between { min: 3, max: 4 },
                     args.len(),
                 ),
@@ -59340,14 +59373,21 @@ impl Interpreter {
         let search = self.evaluate(&args[0], caller_scope)?;
         let replace = self.evaluate(&args[1], caller_scope)?;
         let subject = self.evaluate(&args[2], caller_scope)?;
-        let (result, count) = str_replace_scalar_result(&search, &replace, &subject, span)?;
+        let (result, count) = str_replace_scalar_result(
+            function,
+            &search,
+            &replace,
+            &subject,
+            str_replace_is_case_insensitive(key),
+            span,
+        )?;
 
         if args.len() == 4 {
             let Expr::Variable(count_name, _) = &args[3] else {
                 return Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
-                        "str_replace()",
+                        function,
                         "count output must be a direct variable in the current subset",
                     ),
                 ));
@@ -76087,7 +76127,7 @@ impl Interpreter {
             "substr" => call_substr(&args, span),
             "substr_replace" => call_substr_replace(&args, span),
             "substr_count" => call_substr_count(&args, span),
-            "str_replace" => call_str_replace(&args, span),
+            "str_replace" | "str_ireplace" => call_str_replace(name, &args, span),
             "str_getcsv" => call_str_getcsv(&args, span),
             "parse_str" => Err(runtime_error(
                 span,
@@ -89681,7 +89721,7 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_null_param("length", "array|int"),
             ],
         ),
-        "str_replace" => (
+        "str_replace" | "str_ireplace" => (
             "array|string",
             vec![
                 reflection_internal_param("search", "array|string"),
@@ -92934,6 +92974,7 @@ fn is_builtin(name: &str) -> bool {
             | "substr_replace"
             | "substr_count"
             | "str_replace"
+            | "str_ireplace"
             | "str_getcsv"
             | "parse_str"
             | "urlencode"
@@ -105603,12 +105644,13 @@ fn ascii_case_insensitive_compare(left: &str, right: &str) -> i64 {
     }
 }
 
-fn call_str_replace(args: &[Value], span: Span) -> CompileResult<Value> {
+fn call_str_replace(key: &str, args: &[Value], span: Span) -> CompileResult<Value> {
+    let function = str_replace_function_name(key);
     if !(3..=4).contains(&args.len()) {
         return Err(runtime_error(
             span,
             RuntimeError::arity_mismatch(
-                "str_replace()",
+                function,
                 ArityExpectation::Between { min: 3, max: 4 },
                 args.len(),
             ),
@@ -105619,13 +105661,22 @@ fn call_str_replace(args: &[Value], span: Span) -> CompileResult<Value> {
         return Err(runtime_error(
             span,
             RuntimeError::unsupported_call(
-                "str_replace()",
-                "count output requires a direct str_replace() call with a direct variable in the current subset",
+                function,
+                format!(
+                    "count output requires a direct {function} call with a direct variable in the current subset"
+                ),
             ),
         ));
     }
 
-    let (result, _) = str_replace_scalar_result(&args[0], &args[1], &args[2], span)?;
+    let (result, _) = str_replace_scalar_result(
+        function,
+        &args[0],
+        &args[1],
+        &args[2],
+        str_replace_is_case_insensitive(key),
+        span,
+    )?;
 
     Ok(Value::String(result))
 }
@@ -105651,23 +105702,25 @@ fn form_urlencode_component(value: &str) -> String {
 }
 
 fn str_replace_scalar_result(
+    function: &str,
     search: &Value,
     replace: &Value,
     subject: &Value,
+    case_insensitive: bool,
     span: Span,
 ) -> CompileResult<(String, i64)> {
-    let search_values = string_replace_search_values(search, span)?;
+    let search_values = string_replace_search_values(function, search, span)?;
     if matches!(replace, Value::Array(_)) {
         return Err(runtime_error(
             span,
             RuntimeError::unsupported_call(
-                "str_replace()",
+                function,
                 "replacement argument arrays are not implemented in the current subset",
             ),
         ));
     }
-    let replace = string_replace_argument("str_replace()", "replace", replace, span)?;
-    let subject = string_replace_argument("str_replace()", "subject", subject, span)?;
+    let replace = string_replace_argument(function, "replace", replace, span)?;
+    let subject = string_replace_argument(function, "subject", subject, span)?;
 
     let mut result = subject;
     let mut total_count = 0;
@@ -105676,17 +105729,20 @@ fn str_replace_scalar_result(
             continue;
         }
 
-        let count = result.matches(&search).count() as i64;
-        if count > 0 {
-            result = result.replace(&search, &replace);
-            total_count += count;
-        }
+        let (replaced, count) =
+            string_replace_once_mode(&result, &search, &replace, case_insensitive);
+        result = replaced;
+        total_count += count;
     }
 
     Ok((result, total_count))
 }
 
-fn string_replace_search_values(search: &Value, span: Span) -> CompileResult<Vec<String>> {
+fn string_replace_search_values(
+    function: &str,
+    search: &Value,
+    span: Span,
+) -> CompileResult<Vec<String>> {
     match search {
         Value::Array(array) => {
             let mut values = Vec::with_capacity(array.len());
@@ -105696,14 +105752,14 @@ fn string_replace_search_values(search: &Value, span: Span) -> CompileResult<Vec
                         return Err(runtime_error(
                             span,
                             RuntimeError::unsupported_call(
-                                "str_replace()",
+                                function,
                                 "search array values must be null, bool, int, float, or string in the current subset, got array",
                             ),
                         ));
                     }
                     value => {
                         values.push(string_replace_argument(
-                            "str_replace()",
+                            function,
                             "search array value",
                             value,
                             span,
@@ -105714,12 +105770,62 @@ fn string_replace_search_values(search: &Value, span: Span) -> CompileResult<Vec
             Ok(values)
         }
         value => Ok(vec![string_replace_argument(
-            "str_replace()",
-            "search",
-            value,
-            span,
+            function, "search", value, span,
         )?]),
     }
+}
+
+fn string_replace_once_mode(
+    subject: &str,
+    search: &str,
+    replace: &str,
+    case_insensitive: bool,
+) -> (String, i64) {
+    if !case_insensitive {
+        let count = subject.matches(search).count() as i64;
+        if count == 0 {
+            return (subject.to_string(), 0);
+        }
+        return (subject.replace(search, replace), count);
+    }
+
+    let subject_bytes = subject.as_bytes();
+    let search_bytes = search.as_bytes();
+    let mut result = String::with_capacity(subject.len());
+    let mut count = 0;
+    let mut cursor = 0;
+
+    while cursor < subject_bytes.len() {
+        if cursor + search_bytes.len() <= subject_bytes.len()
+            && subject_bytes[cursor..cursor + search_bytes.len()].eq_ignore_ascii_case(search_bytes)
+        {
+            result.push_str(replace);
+            cursor += search_bytes.len();
+            count += 1;
+            continue;
+        }
+
+        let ch = subject[cursor..]
+            .chars()
+            .next()
+            .expect("cursor is always on a valid UTF-8 boundary");
+        result.push(ch);
+        cursor += ch.len_utf8();
+    }
+
+    (result, count)
+}
+
+fn str_replace_function_name(key: &str) -> &'static str {
+    if str_replace_is_case_insensitive(key) {
+        "str_ireplace()"
+    } else {
+        "str_replace()"
+    }
+}
+
+fn str_replace_is_case_insensitive(key: &str) -> bool {
+    key == "str_ireplace"
 }
 
 fn string_replace_argument(
