@@ -66,25 +66,60 @@ echo $function->getName(), ":", $function->getNumberOfParameters(), ":", $functi
 }
 
 #[test]
-fn strspn_and_strcspn_reject_arrays_and_bad_arity() {
-    let array_subject = run_source("<?php\nstrspn(['abc'], 'a');\n").unwrap_err();
-    assert_eq!(array_subject.phase, Phase::Runtime);
-    assert_eq!(array_subject.line, 2);
-    assert_eq!(array_subject.column, 1);
-    assert_eq!(
-        array_subject.message,
-        "unsupported call strspn(): string argument arrays are not implemented in the current subset"
-    );
+fn strspn_and_strcspn_use_php_string_argument_boundary() {
+    let execution = run_source(
+        r#"<?php
+class LeadingSpan {
+    public function __toString() {
+        return "abc123";
+    }
+}
+class LeadingSkip {
+    public function __toString() {
+        return "123abc";
+    }
+}
+class Characters {
+    public function __toString() {
+        return "abc";
+    }
+}
 
-    let array_characters = run_source("<?php\nstrcspn('abc', ['a']);\n").unwrap_err();
-    assert_eq!(array_characters.phase, Phase::Runtime);
-    assert_eq!(array_characters.line, 2);
-    assert_eq!(array_characters.column, 1);
-    assert_eq!(
-        array_characters.message,
-        "unsupported call strcspn(): characters argument arrays are not implemented in the current subset"
-    );
+$cspn = "strcspn";
+echo strspn(new LeadingSpan(), new Characters()), "|";
+echo $cspn(new LeadingSkip(), new Characters()), "|";
 
+set_error_handler(function($_, $message) {
+    echo "deprecated:", $message, "|";
+    return true;
+});
+echo strspn(null, "a"), "|";
+echo strcspn("abc", null), "|";
+restore_error_handler();
+
+try {
+    strspn([], "a");
+} catch (TypeError $e) {
+    echo $e->getMessage(), "|";
+}
+try {
+    strcspn("abc", new stdClass());
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "3|3|deprecated:strspn(): Passing null to parameter #1 ($string) of type string is deprecated|0|deprecated:strcspn(): Passing null to parameter #2 ($characters) of type string is deprecated|3|strspn(): Argument #1 ($string) must be of type string, array given|strcspn(): Argument #2 ($characters) must be of type string, stdClass given"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn strspn_and_strcspn_reject_bad_offsets_and_bad_arity() {
     let bad_offset = run_source("<?php\nstrspn('abc', 'a', []);\n").unwrap();
     assert_eq!(bad_offset.exit_code, 255);
     assert!(

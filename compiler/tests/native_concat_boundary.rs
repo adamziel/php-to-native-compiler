@@ -177,7 +177,7 @@ echo "" . $text;
         "untracked source string expression should stay emitted through pointer and length selects:\n{ir}"
     );
     assert_eq!(
-        ir.matches("@phpc_native_string_from_bytes(ptr %tmp9, i64 %tmp10)")
+        ir.matches("@phpc_native_value_from_string_bytes_with_diagnostic(ptr %tmp9, i64 %tmp10")
             .count(),
         2,
         "empty-string concatenation should reuse the string pointer and length expression:\n{ir}"

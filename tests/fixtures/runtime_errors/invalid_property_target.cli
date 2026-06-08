@@ -1,6 +1,6 @@
-exit: 1
+exit: 0
 stdout:
+Warning: Attempt to read property "name" on int in tests/fixtures/runtime_errors/invalid_property_target.php on line 3
 --- stdout end ---
 stderr:
-runtime error at tests/fixtures/runtime_errors/invalid_property_target.php:3:6: invalid property access: cannot read property $name from int
 --- stderr end ---

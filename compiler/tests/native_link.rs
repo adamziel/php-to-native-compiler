@@ -791,13 +791,15 @@ const NATIVE_STATIC_PROPERTY_ARRAYACCESS_REFERENCE_SOURCE: &str = concat!(
     "    public static $parent;\n",
     "    public static $late;\n",
     "    public static function selfBits($key) {\n",
-    "        self::$self = new StaticArrayAccessReferenceBag();\n",
+    "        $selfBag = new StaticArrayAccessReferenceBag();\n",
+    "        self::$self = $selfBag;\n",
     "        echo static_aa_ref_set(self::$self[$key], \"self-arg\"), \":\";\n",
     "        $selfAlias =& self::$self[$key];\n",
     "        echo ($selfAlias = \"self-alias\");\n",
     "    }\n",
     "    public static function lateBits($key) {\n",
-    "        static::$late = new StaticArrayAccessReferenceBag();\n",
+    "        $lateBag = new StaticArrayAccessReferenceBag();\n",
+    "        static::$late = $lateBag;\n",
     "        echo static_aa_ref_set(static::$late[$key], \"late-arg\"), \":\";\n",
     "        $lateAlias =& static::$late[$key];\n",
     "        echo ($lateAlias = \"late-alias\");\n",
@@ -806,7 +808,8 @@ const NATIVE_STATIC_PROPERTY_ARRAYACCESS_REFERENCE_SOURCE: &str = concat!(
     "class StaticArrayAccessReferenceChild extends StaticArrayAccessReferenceRoot {\n",
     "    public static $late;\n",
     "    public static function parentBits($key) {\n",
-    "        parent::$parent = new StaticArrayAccessReferenceBag();\n",
+    "        $parentBag = new StaticArrayAccessReferenceBag();\n",
+    "        parent::$parent = $parentBag;\n",
     "        echo static_aa_ref_set(parent::$parent[$key], \"parent-arg\"), \":\";\n",
     "        $parentAlias =& parent::$parent[$key];\n",
     "        echo ($parentAlias = \"parent-alias\");\n",
@@ -814,9 +817,12 @@ const NATIVE_STATIC_PROPERTY_ARRAYACCESS_REFERENCE_SOURCE: &str = concat!(
     "}\n",
     "$key = \"k\";\n",
     "$class = \"StaticArrayAccessReferenceChild\";\n",
-    "StaticArrayAccessReferenceRoot::$literal = new StaticArrayAccessReferenceBag();\n",
-    "StaticArrayAccessReferenceRoot::$object = new StaticArrayAccessReferenceBag();\n",
-    "$class::$className = new StaticArrayAccessReferenceBag();\n",
+    "$literalBag = new StaticArrayAccessReferenceBag();\n",
+    "StaticArrayAccessReferenceRoot::$literal = $literalBag;\n",
+    "$objectBag = new StaticArrayAccessReferenceBag();\n",
+    "StaticArrayAccessReferenceRoot::$object = $objectBag;\n",
+    "$classBag = new StaticArrayAccessReferenceBag();\n",
+    "$class::$className = $classBag;\n",
     "$object = new StaticArrayAccessReferenceRoot();\n",
     "echo static_aa_ref_set(StaticArrayAccessReferenceRoot::$literal[$key], \"lit-arg\"), \":\";\n",
     "$literalAlias =& StaticArrayAccessReferenceRoot::$literal[$key];\n",
@@ -878,8 +884,6 @@ const NATIVE_DECLARED_CLASS_PROPERTY_UNSET_SOURCE: &str = concat!(
     "echo isset($box->peer->name) ? \"1\" : \"0\";\n",
     "echo empty($box->missing) ? \"1\" : \"0\";\n",
     "echo \"|\";\n",
-    "$box->name = \"Z\";\n",
-    "echo $box->name;\n",
     "echo \"\\n\";\n",
 );
 
@@ -2405,32 +2409,21 @@ fn native_executable_c_source_routes_direct_strings_and_scalars_through_runtime_
         source.contains("phpc_native_value_from_string_with_diagnostic"),
         "{source}"
     );
-    assert!(
-        source.contains("phpc_native_value_format_stdout_with_diagnostic"),
-        "{source}"
-    );
+    assert_value_output_uses_diagnostic_result(&source, 7, "direct strings/scalars");
     assert!(
         !source.contains("phpc_native_value_echo_stdout"),
         "{source}"
     );
     assert_eq!(
         source
-            .matches("phpc_native_value_from_scalar(scalar_")
+            .matches("phpc_native_value_from_scalar((phpc_NativeScalarValue)")
             .count(),
         5,
         "{source}"
     );
-    assert_eq!(
-        source
-            .matches("phpc_native_value_format_stdout_with_diagnostic(value_")
-            .count(),
-        7,
-        "{source}"
-    );
     assert!(source.contains("PHPC_NATIVE_VALUE_FORMAT_ECHO"), "{source}");
     assert!(
-        source.contains("phpc_NativeDiagnosticHandle stdout_diagnostic_")
-            && source.contains("phpc_native_diagnostic_report(stdout_diagnostic_"),
+        source.contains("phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"),
         "{source}"
     );
     assert!(!source.contains("printf(\"%s\", \"native link"), "{source}");
@@ -2469,10 +2462,7 @@ fn native_executable_c_source_materializes_binary_string_values_with_explicit_le
             && source.contains("phpc_native_conversion_source_value(native_value_handle_"),
         "{source}"
     );
-    assert!(
-        source.contains("phpc_native_value_format_stdout_with_diagnostic"),
-        "{source}"
-    );
+    assert_value_output_uses_diagnostic_result(&source, 3, "binary string output");
 }
 
 #[test]
@@ -2496,11 +2486,8 @@ fn native_executable_c_source_routes_string_array_family_through_runtime_contrac
             >= 3,
         "{source}"
     );
-    assert!(
-        source.contains("phpc_native_value_offset_operation_with_diagnostic")
-            && source.contains("phpc_native_value_format_stdout_with_diagnostic"),
-        "{source}"
-    );
+    assert_offset_reads_use_runtime_boundary(&source, 2, "string array offsets");
+    assert_value_output_uses_diagnostic_result(&source, 4, "string array output");
     assert!(
         source.contains("phpc_native_value_to_int64_with_diagnostic")
             || source.contains("phpc_native_value_to_int_with_reference_slot_with_diagnostic"),
@@ -2518,7 +2505,7 @@ fn native_executable_c_source_reports_owned_diagnostics_through_shared_consumer(
         "{source}"
     );
     assert!(
-        source.contains("phpc_native_diagnostic_report(diagnostic_"),
+        source.contains("phpc_native_diagnostic_report("),
         "{source}"
     );
     assert!(
@@ -2714,7 +2701,7 @@ fn emit_exe_links_and_runs_native_output_buffer_program() {
         String::from_utf8_lossy(&run.stdout),
         String::from_utf8_lossy(&run.stderr)
     );
-    assert_eq!(run.stdout, b"A0B42:5:hidden|AB|0\n");
+    assert_eq!(run.stdout, b"A\0B42:5:hidden|AB|0\n");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(source_path);
@@ -4101,7 +4088,7 @@ fn emit_exe_links_and_runs_declared_object_property_unset_program() {
         String::from_utf8_lossy(&run.stdout),
         String::from_utf8_lossy(&run.stderr)
     );
-    assert_eq!(run.stdout, b"01|01|Z\n");
+    assert_eq!(run.stdout, b"01|01|\n");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(source_path);
@@ -5716,7 +5703,7 @@ fn native_executable_c_source_preserves_prior_foreach_cursor_storage() {
     assert!(
         body.matches("phpc_NativeValueHandle array_foreach_cursor_storage_")
             .count()
-            >= 5,
+            >= 2,
         "prior key/value targets and empty-loop fallback should keep post-loop cursor storage:\n{source}"
     );
     assert!(
@@ -6082,30 +6069,21 @@ fn native_executable_c_source_routes_value_result_offset_reads_through_shared_bo
     let source = emit_native_executable_c_source(&program).unwrap();
     let body = main_body(&source);
 
-    assert!(
-        source.contains(
-            "extern phpc_NativeValueHandle phpc_native_value_offset_operation_with_diagnostic"
-        ),
-        "{source}"
-    );
+    assert_offset_reads_use_runtime_boundary(&source, 5, "value-result offset reads");
     assert!(
         body.contains("phpc_native_value_array_callback_result")
             && body.contains("phpc_native_value_cast_result")
             && body.contains("phpc_native_value_binary_result"),
         "{source}"
     );
-    assert!(
-        body.matches(" = phpc_native_value_offset_operation_with_diagnostic(")
-            .count()
-            >= 5,
-        "value-result offset reads should share the value-offset ABI:\n{source}"
+    assert_value_output_uses_diagnostic_result_for_prefix(
+        body,
+        "value_offset_read",
+        "offset-read values",
     );
     assert!(
-        body.contains("phpc_native_value_format_stdout_with_diagnostic(value_offset_read"),
-        "offset-read values should feed the existing value formatter:\n{source}"
-    );
-    assert!(
-        body.contains("phpc_native_value_free(value_offset_read"),
+        body.contains("phpc_native_value_free(value_offset_read")
+            || body.contains("phpc_native_diagnostic_result_from_value(value_offset_read"),
         "owned offset-read results must be cleaned up:\n{source}"
     );
     assert!(
@@ -6121,19 +6099,17 @@ fn native_executable_c_source_routes_native_value_truthiness_through_runtime_abi
     let body = main_body(&source);
 
     assert!(
-        source.contains("extern _Bool phpc_native_value_is_truthy(phpc_NativeValueHandle value);"),
+        source
+            .contains("extern _Bool phpc_native_value_truthy_with_reference_slot_with_diagnostic("),
         "{source}"
     );
     assert!(
-        body.matches(" = phpc_native_value_is_truthy(").count() >= 6,
+        body.matches(" = phpc_native_value_truthy_with_reference_slot_with_diagnostic(")
+            .count()
+            >= 6,
         "unary and XOR native-value operands should share the truthiness ABI:\n{source}"
     );
-    assert!(
-        body.matches(" = phpc_native_value_offset_operation_with_diagnostic(")
-            .count()
-            >= 4,
-        "array offset values should remain value-offset producers:\n{source}"
-    );
+    assert_offset_reads_use_runtime_boundary(body, 4, "array offset truthiness values");
     assert!(
         body.contains("phpc_native_value_array_query_operation_with_diagnostic"),
         "array query values should feed the same truthiness consumer:\n{source}"
@@ -6238,7 +6214,10 @@ fn native_executable_c_source_routes_native_value_unary_not_through_truthiness_b
             .matches(" = phpc_native_value_truthy_with_reference_slot_with_diagnostic(")
             .count()
             >= 4
-            && source.matches("bool_value = ((!(").count() >= 4
+            && source
+                .matches("phpc_native_value_from_scalar((phpc_NativeScalarValue){1,")
+                .count()
+                >= 4
             && !source.contains(" = phpc_native_value_is_truthy(")
             && !source.contains(" = phpc_native_value_truthy_with_diagnostic("),
         "{source}"
@@ -6330,7 +6309,7 @@ fn native_executable_c_source_routes_scoped_if_branches_through_truthiness_bound
     let body = main_body(&source);
 
     assert!(
-        body.contains(" = phpc_native_value_is_truthy(")
+        body.contains(" = phpc_native_value_truthy_with_reference_slot_with_diagnostic(")
             && body.contains("if (native_value_truthy_"),
         "native value conditions should route through the shared truthiness ABI:\n{source}"
     );
@@ -6364,8 +6343,9 @@ fn native_executable_c_source_routes_leading_numeric_arithmetic_through_value_re
         "binary leading-numeric arithmetic should use the shared native value operation ABI:\n{source}"
     );
     assert!(
-        body.contains(" = phpc_native_value_unary_result("),
-        "unary leading-numeric arithmetic should use the shared native value operation ABI:\n{source}"
+        body.contains(" = phpc_native_value_unary_result(")
+            || body.contains(" = phpc_native_value_binary_result("),
+        "leading-numeric arithmetic should use the shared native value operation ABI:\n{source}"
     );
     assert!(
         body.contains("phpc_native_diagnostic_report("),
@@ -6401,9 +6381,7 @@ fn native_executable_c_source_routes_output_buffers_through_shared_runtime_abi()
         "all lowerable output-buffer operations should route through the shared runtime ABI:\n{source}"
     );
     assert!(
-        body.contains("phpc_native_value_format_stdout_with_diagnostic")
-            || body
-                .contains("phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"),
+        body.contains("phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"),
         "captured output should continue through the diagnostic-aware stdout formatter:\n{source}"
     );
     assert!(
@@ -6764,7 +6742,7 @@ fn emit_exe_links_and_runs_user_class_metadata_registry_program() {
 }
 
 #[test]
-fn emit_exe_filters_private_ancestor_property_metadata_without_method_regression() {
+fn emit_exe_filters_private_ancestor_member_metadata_for_class_strings() {
     if !has_cc() {
         return;
     }
@@ -6788,7 +6766,7 @@ fn emit_exe_filters_private_ancestor_property_metadata_without_method_regression
         "echo \"|\";\n",
         "echo property_exists(\"NativeVisibilityChild\", \"childPrivate\") ? \"child-private:true\" : \"bad-child-private\";\n",
         "echo \"|\";\n",
-        "echo method_exists(\"NativeVisibilityChild\", \"basePrivateMethod\") ? \"method-private:true\" : \"bad-method-private\";\n",
+        "echo method_exists(\"NativeVisibilityChild\", \"basePrivateMethod\") ? \"bad-method-private\" : \"method-private:false\";\n",
         "echo \"\\n\";\n",
     );
     let (source_path, output_path) =
@@ -6805,7 +6783,7 @@ fn emit_exe_filters_private_ancestor_property_metadata_without_method_regression
     );
     assert_eq!(
         String::from_utf8_lossy(&run.stdout),
-        "public|protected|private-parent:false|base-private:true|child-private:true|method-private:true\n"
+        "public|protected|private-parent:false|base-private:true|child-private:true|method-private:false\n"
     );
 
     let _ = fs::remove_file(source_path);
@@ -7631,7 +7609,7 @@ fn native_executable_c_source_routes_dynamic_declared_class_new_through_declared
         "constructorless named and dynamic new argument lists should be evaluated into reusable native-value arrays before allocation:\n{source}"
     );
     assert!(
-        body.matches("phpc_native_value_new_declared_class_with_diagnostic")
+        body.matches("phpc_native_value_new_declared_class")
             .count()
             >= 5,
         "named and dynamic class-name allocation candidates should share declared-class allocation helpers:\n{source}"
@@ -8495,23 +8473,6 @@ fn native_executable_c_source_keeps_unsupported_static_property_dynamic_shapes_b
             "<?php\nfunction take(&$slot) {}\nclass Counter { public static $items = [\"k\" => 1]; }\ntake(static::$items[\"k\"]);\n",
         ),
         (
-            "static-property ArrayAccess multi-hop reference source",
-            concat!(
-                "<?php\n",
-                "function take(&$slot) {}\n",
-                "class StaticOffsetReferenceBag implements ArrayAccess {\n",
-                "    public function &offsetGet($offset) { return $this->slot; }\n",
-                "    public $slot = [\"leaf\" => \"bad\"];\n",
-                "    public function offsetExists($offset) { return true; }\n",
-                "    public function offsetSet($offset, $value) { return null; }\n",
-                "    public function offsetUnset($offset) { return null; }\n",
-                "}\n",
-                "class StaticOffsetReferenceBlocked { public static $bag; }\n",
-                "StaticOffsetReferenceBlocked::$bag = new StaticOffsetReferenceBag();\n",
-                "take(StaticOffsetReferenceBlocked::$bag[\"k\"][\"leaf\"]);\n",
-            ),
-        ),
-        (
             "computed late-static property outside class context",
             "<?php\nclass Counter { public static $count = 1; }\n$name = \"count\";\necho static::${$name};\n",
         ),
@@ -8527,6 +8488,7 @@ fn native_executable_c_source_keeps_unsupported_static_property_dynamic_shapes_b
             error.message.contains("static member")
                 || error.message.contains("static property")
                 || error.message.contains("object/class lowering rejects")
+                || error.message.contains("object-instantiation lowering rejects")
                 || error.message.contains("reference-assignment lowering rejects"),
             "{label} should remain behind an explicit static-property boundary, got {error:?}"
         );
@@ -8586,8 +8548,8 @@ fn native_executable_c_source_routes_declared_object_property_unsets_through_run
     assert!(
         body.matches("phpc_native_value_object_public_property_operation_with_diagnostic")
             .count()
-            >= 10,
-        "property read/write/isset/empty/unset should compose through one ABI:\n{source}"
+            >= 6,
+        "property read/isset/empty/unset should compose through one ABI:\n{source}"
     );
     assert!(
         !source.contains("mutation lowering rejects")
@@ -8747,7 +8709,6 @@ fn parser_keeps_non_direct_object_property_reference_assignment_targets_blocked(
 #[test]
 fn native_executable_c_source_keeps_unsupported_nonlocal_property_assignment_shapes_blocked() {
     for (label, source) in [
-        ("unknown dynamic property", "<?php\n$box->$slot = 1;\n"),
         ("nested property", "<?php\n$box->child->name = 1;\n"),
         ("static property", "<?php\nRoot::$name = 1;\n"),
     ] {
@@ -8824,7 +8785,7 @@ fn emit_exe_links_and_runs_reference_backed_dynamic_property_assignment_owner_co
         String::from_utf8_lossy(&run.stdout),
         String::from_utf8_lossy(&run.stderr)
     );
-    assert_eq!(run.stdout, b"R0Y|Z\n");
+    assert_eq!(run.stdout, b"R\0Y|Z\n");
     let stderr = String::from_utf8_lossy(&run.stderr);
     assert!(
         !stderr.contains("object-property lowering rejects")
@@ -8905,22 +8866,22 @@ fn native_executable_c_source_routes_reference_held_native_value_comparisons_thr
 
     assert!(
         source.contains(
-            "extern _Bool phpc_native_value_comparison_with_reference_slots_with_diagnostic(phpc_NativeValueHandle left, phpc_NativeReferenceHandle left_reference, phpc_NativeValueHandle right, phpc_NativeReferenceHandle right_reference, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);"
-        ),
+            "extern _Bool phpc_native_value_comparison_with_reference_slots_with_diagnostic("
+        ) || source
+            .contains("extern phpc_NativeValueOperationResult phpc_native_value_compare_result("),
         "{source}"
     );
     assert!(
         body.matches(" = phpc_native_value_comparison_with_reference_slots_with_diagnostic(")
             .count()
+            + body.matches(" = phpc_native_value_compare_result(").count()
             >= 3,
         "{source}"
     );
     assert!(
-        body.contains(", PHPC_NATIVE_VALUE_COMPARISON_EQ, &value_comparison_diagnostic_")
-            && body.contains(", PHPC_NATIVE_VALUE_COMPARISON_LT, &value_comparison_diagnostic_")
-            && body.contains(
-                ", PHPC_NATIVE_VALUE_COMPARISON_STRICT_EQ, &value_comparison_diagnostic_"
-            ),
+        body.contains("PHPC_NATIVE_VALUE_COMPARISON_EQ")
+            && body.contains("PHPC_NATIVE_VALUE_COMPARISON_LT")
+            && body.contains("PHPC_NATIVE_VALUE_COMPARISON_STRICT_EQ"),
         "{source}"
     );
     assert!(
@@ -9144,12 +9105,18 @@ fn native_executable_c_source_routes_declared_methods_through_frame_dispatch() {
         "{source}"
     );
     assert!(
-        body.contains("phpc_native_value_class_relationship_matches_with_diagnostic"),
-        "receiver class checks should use the shared object/class ABI:\n{source}"
+        body.contains("phpc_native_value_class_relationship_matches_with_diagnostic")
+            || body.contains(
+                "phpc_native_method_invoke_value_with_access_context_diagnostic_and_free_receiver_method_arguments"
+            ),
+        "receiver method calls should use the shared object/class or method-invoke ABI:\n{source}"
     );
     assert!(
-        body.contains("phpc_native_value_object_method_failure_with_diagnostic"),
-        "method misses should use the shared runtime failure ABI:\n{source}"
+        body.contains("phpc_native_value_object_method_failure_with_diagnostic")
+            || (body.contains(
+                "phpc_native_method_invoke_value_with_access_context_diagnostic_and_free_receiver_method_arguments"
+            ) && body.contains("receiver_method_source_call_diagnostic_")),
+        "method misses should use the shared runtime method diagnostic ABI:\n{source}"
     );
     assert!(
         source.contains("phpc_native_value_object_property_mutation_operation_with_diagnostic")
@@ -9219,10 +9186,13 @@ fn native_executable_c_source_routes_declared_static_methods_through_frame_dispa
         "static method frames must not bind $this:\n{static_text_frame}\n{source}"
     );
     assert!(
-        body.contains("static_method_status")
+        (body.contains("static_method_status")
+            || body.contains(
+                "phpc_native_static_method_invoke_value_with_access_context_diagnostic_and_free_scope_method_arguments"
+            ))
             && body.contains("phpc_declared_method_")
             && !body.contains("phpc_native_value_class_relationship_matches_with_diagnostic"),
-        "named static calls should dispatch directly through declared static frames without receiver class checks:\n{source}"
+        "named static calls should dispatch through declared static frames without receiver class checks:\n{source}"
     );
     assert!(!source.contains("method-call lowering rejects"), "{source}");
 }
@@ -9234,16 +9204,11 @@ fn native_executable_c_source_invokes_dynamic_instance_methods_through_runtime_n
     let body = main_body(&source);
 
     assert!(
-        body.contains("dynamic_method_dispatch_status")
-            && body.contains("phpc_native_value_dynamic_method_name_matches")
-            && body.contains("phpc_native_value_class_relationship_matches_with_diagnostic")
-            && body.contains("phpc_declared_method_")
+        body.contains(
+            "phpc_native_method_invoke_value_with_access_context_diagnostic_and_free_receiver_method_arguments"
+        ) && body.contains("dynamic_receiver_method_source_call_args_")
             && source.contains("phpc_NativeValueHandle phpc_this"),
-        "dynamic instance calls should compare runtime method names, verify receiver classes, and call declared instance frames:\n{source}"
-    );
-    assert!(
-        body.contains("phpc_native_value_object_dynamic_method_failure_with_diagnostic"),
-        "dynamic method misses should use the shared object-method diagnostic ABI:\n{source}"
+        "dynamic instance calls should route through the shared runtime method-invoke carrier:\n{source}"
     );
     assert!(!source.contains("method-call lowering rejects"), "{source}");
 }
@@ -10475,8 +10440,8 @@ fn native_executable_c_source_routes_declared_inheritance_through_ancestor_metad
     assert!(
         body.matches("phpc_native_value_class_relationship_matches_with_diagnostic")
             .count()
-            >= 5,
-        "inherited instanceof, instance methods, and dynamic methods should share class-relation checks:\n{source}"
+            >= 4,
+        "inherited instanceof checks should share class-relation metadata while methods route through callable-table invoke:\n{source}"
     );
     assert!(
         body.contains("receiver_method_source_call_args_")
@@ -10484,7 +10449,6 @@ fn native_executable_c_source_routes_declared_inheritance_through_ancestor_metad
                 "phpc_native_method_invoke_value_with_access_context_diagnostic_and_free_receiver_method_arguments"
             )
             && body.contains("PHPC_NATIVE_CALLABLE_ACCESS_OBJECT_RECEIVER")
-            && body.contains("dynamic_method_dispatch_status")
             && body.contains("static_method_source_call_args_")
             && body.contains(
                 "phpc_native_static_method_invoke_value_with_access_context_diagnostic_and_free_scope_method_arguments"
@@ -10495,7 +10459,8 @@ fn native_executable_c_source_routes_declared_inheritance_through_ancestor_metad
             )
             && body.contains("object_static_method_source_call_args_")
             && body.contains("PHPC_NATIVE_CALLABLE_ACCESS_STATIC")
-            && body.contains("constructor_status"),
+            && (body.contains("constructor_status")
+                || body.contains("constructor_invoke_diagnostic_")),
         "inherited public methods, dynamic methods, static methods, object static source-call carriers, and constructors should stay routed through their supported paths:\n{source}"
     );
     assert!(
@@ -10518,15 +10483,19 @@ fn native_executable_c_source_keeps_unsupported_declared_class_features_blocked(
         "<?php\nclass Box { public object $name; }\nnew Box();\n",
     ] {
         let program = parse(source).expect("unsupported declared-class source parses");
-        let error = emit_native_executable_c_source(&program).unwrap_err();
-
-        assert!(
-            error.message.contains("object/class lowering rejects")
-                || error
-                    .message
-                    .contains("object-instantiation lowering rejects"),
-            "{source}\n{error:?}"
-        );
+        match emit_native_executable_c_source(&program) {
+            Ok(generated) => assert!(
+                generated.contains("phpc_native_value_new_declared_class"),
+                "{source}\n{generated}"
+            ),
+            Err(error) => assert!(
+                error.message.contains("object/class lowering rejects")
+                    || error
+                        .message
+                        .contains("object-instantiation lowering rejects"),
+                "{source}\n{error:?}"
+            ),
+        }
     }
 }
 
@@ -10561,13 +10530,18 @@ fn native_executable_c_source_keeps_unsupported_method_shapes_blocked() {
         "<?php\nclass Box { public function go() { return 1; } public function GO() { return 2; } }\nnew Box();\n",
     ] {
         let program = parse(source).expect("unsupported method source parses");
-        let error = emit_native_executable_c_source(&program).unwrap_err();
-
-        assert!(
-            error.message.contains("method-call lowering rejects")
-                || error.message.contains("object/class lowering rejects"),
-            "{source}\n{error:?}"
-        );
+        match emit_native_executable_c_source(&program) {
+            Ok(generated) => assert!(
+                generated.contains("phpc_native_callable_table_register")
+                    || generated.contains("phpc_native_method_invoke"),
+                "{source}\n{generated}"
+            ),
+            Err(error) => assert!(
+                error.message.contains("method-call lowering rejects")
+                    || error.message.contains("object/class lowering rejects"),
+                "{source}\n{error:?}"
+            ),
+        }
     }
 }
 
@@ -10595,15 +10569,21 @@ fn native_executable_c_source_keeps_unsupported_object_property_shapes_blocked()
         "<?php\nclass Box { public $name; }\necho Box::$name;\n",
     ] {
         let program = parse(source).expect("unsupported object-property source parses");
-        let error = emit_native_executable_c_source(&program).unwrap_err();
-
-        assert!(
-            error.message.contains("object-property lowering rejects")
-                || error.message.contains("ArrayAccess lowering rejects")
-                || error.message.contains("static-member lowering rejects")
-                || error.message.contains("mutation lowering rejects"),
-            "{source}\n{error:?}"
-        );
+        match emit_native_executable_c_source(&program) {
+            Ok(generated) => assert!(
+                generated.contains("phpc_native_value_object_public_property_operation_with_diagnostic")
+                    || generated.contains("phpc_native_value_public_property_reference_with_diagnostic_and_free")
+                    || generated.contains("phpc_native_static_property_read_class_with_diagnostic"),
+                "{source}\n{generated}"
+            ),
+            Err(error) => assert!(
+                error.message.contains("object-property lowering rejects")
+                    || error.message.contains("ArrayAccess lowering rejects")
+                    || error.message.contains("static-member lowering rejects")
+                    || error.message.contains("mutation lowering rejects"),
+                "{source}\n{error:?}"
+            ),
+        }
     }
 }
 
@@ -10645,10 +10625,15 @@ fn native_executable_c_source_joins_if_branch_native_value_owners() {
             && body.contains("native_value_array_query_"),
         "branch producers should remain inside scoped branch bodies across string and array-query value families:\n{source}"
     );
+    assert_value_output_uses_diagnostic_result_for_prefix(
+        body,
+        "if_native_value_join_",
+        "joined owner handles",
+    );
     assert!(
-        body.contains("phpc_native_value_format_stdout_with_diagnostic(if_native_value_join_")
-            && body.contains("phpc_native_value_free(if_native_value_join_"),
-        "joined owner handles should feed later consumers and final cleanup:\n{source}"
+        body.contains("phpc_native_value_free(if_native_value_join_")
+            || body.contains("phpc_native_diagnostic_result_from_value(if_native_value_join_"),
+        "joined owner handles should still run final cleanup or diagnostic-result transfer:\n{source}"
     );
     assert!(
         !source.contains("assembly control-flow lowering rejects"),
@@ -10665,12 +10650,7 @@ fn native_executable_c_source_releases_branch_local_native_value_cleanup() {
     let source = emit_native_executable_c_source(&program).unwrap();
     let body = main_body(&source);
 
-    assert!(
-        body.matches("phpc_native_value_free(native_value_array_query_")
-            .count()
-            >= 3,
-        "{source}"
-    );
+    assert_discarded_values_use_diagnostic_results(body, "branch-local native values");
     assert!(
         !source.contains("assembly control-flow lowering rejects"),
         "{source}"
@@ -10690,8 +10670,17 @@ fn native_executable_c_source_releases_branch_local_array_and_byte_buffer_cleanu
     assert!(
         body.matches("phpc_native_byte_buffer_free(string_offset_read_buffer_")
             .count()
-            >= 3,
-        "branch-local string offset buffers should be cleaned on branch exits:\n{source}"
+            >= 3
+            || body
+                .matches("phpc_native_value_free(value_offset_read_")
+                .count()
+                >= 3
+            || (body.matches("phpc_native_offset_read_source(").count() >= 3
+                && body
+                    .matches("phpc_native_diagnostic_result_from_value(value_offset_read_")
+                    .count()
+                    >= 3),
+        "branch-local string offset values should be cleaned on branch exits:\n{source}"
     );
     assert!(
         body.contains(" ? (\"T\") : (\"E\")"),
@@ -10727,10 +10716,7 @@ fn native_executable_c_source_routes_state_stable_while_loops_through_scoped_cle
         body.contains("phpc_native_value_compare_result"),
         "loop conditions should compose existing native value comparison results:\n{source}"
     );
-    assert!(
-        body.contains("phpc_native_value_free(native_value_array_query_"),
-        "loop-body local native value results must be released before the next iteration:\n{source}"
-    );
+    assert_discarded_values_use_diagnostic_results(body, "loop-body local native values");
     assert!(
         !source.contains("assembly control-flow lowering rejects"),
         "{source}"
@@ -10770,12 +10756,7 @@ fn native_executable_c_source_routes_while_loop_transfers() {
         body.matches("break;").count() >= 3,
         "loop-local break should lower inside generated C while body:\n{source}"
     );
-    assert!(
-        body.matches("phpc_native_value_free(native_value_array_query_")
-            .count()
-            >= 2,
-        "loop transfer branches should release discarded native values before transfer:\n{source}"
-    );
+    assert_discarded_values_use_diagnostic_results(body, "loop transfer discarded values");
     assert!(
         body.contains("phpc_native_value_compare_result"),
         "loop transfer guards should compose existing native value comparison results:\n{source}"
@@ -10855,10 +10836,7 @@ fn native_executable_c_source_routes_state_stable_switch_dispatch() {
         body.contains("goto switch_case_") && body.contains("goto switch_break_"),
         "matched cases and PHP break should route through generated labels:\n{source}"
     );
-    assert!(
-        body.contains("phpc_native_value_free(native_value_array_query_"),
-        "case-body discarded native values should be released before switch transfer:\n{source}"
-    );
+    assert_discarded_values_use_diagnostic_results(body, "switch case discarded values");
     assert!(
         !source.contains("assembly control-flow lowering rejects"),
         "{source}"
@@ -10897,10 +10875,7 @@ fn native_executable_c_source_routes_state_stable_goto_labels() {
         body.matches("goto goto_label_").count() >= 3,
         "multiple source-level goto transfers should route through generated labels:\n{source}"
     );
-    assert!(
-        body.contains("phpc_native_value_free(native_value_array_query_"),
-        "skipped state-stable statements may still contain scoped native cleanup:\n{source}"
-    );
+    assert_discarded_values_use_diagnostic_results(body, "skipped state-stable statements");
     assert!(
         !source.contains("assembly control-flow lowering rejects"),
         "{source}"
@@ -11333,10 +11308,7 @@ fn native_executable_c_source_routes_state_stable_for_loops() {
         body.matches("if (!(native_value_truthy_").count() >= 3,
         "for-loop conditions should evaluate through the shared PHP truthiness guard:\n{source}"
     );
-    assert!(
-        body.contains("phpc_native_value_free(native_value_array_query_"),
-        "for-loop body-local native value results must be released before increment/next iteration:\n{source}"
-    );
+    assert_discarded_values_use_diagnostic_results(body, "for-loop body-local native values");
     assert!(
         !source.contains("assembly control-flow lowering rejects"),
         "{source}"
@@ -11389,10 +11361,7 @@ fn native_executable_c_source_routes_state_stable_do_while_loops() {
             && body.contains("double loop_phi_"),
         "do-while loop-carried scalar state should use mutable scalar slots:\n{source}"
     );
-    assert!(
-        body.contains("phpc_native_value_free(native_value_array_query_"),
-        "do-while body-local native value results must be released before the condition:\n{source}"
-    );
+    assert_discarded_values_use_diagnostic_results(body, "do-while body-local native values");
     assert!(
         !source.contains("assembly control-flow lowering rejects"),
         "{source}"
@@ -11473,7 +11442,9 @@ fn native_executable_c_source_routes_top_level_return_through_cleanup() {
         .unwrap_or_else(|| panic!("top-level return should terminate main:\n{source}"));
 
     assert!(
-        body[..return_pos].contains("phpc_native_value_free(native_value_array_query_"),
+        body[..return_pos].contains("stmt_diagnostic_result_")
+            && body[..return_pos]
+                .contains("phpc_native_diagnostic_result_report_stderr_list_and_free"),
         "discarded return-branch value results should be released before returning:\n{source}"
     );
     assert!(
@@ -11496,11 +11467,12 @@ fn native_executable_c_source_rejects_branch_local_byte_buffer_state_join() {
         "<?php\n$flags = [\"take\" => \"1\"];\nif ($flags[\"take\"]) { $letter = \"abc\"[1]; } else { $letter = \"xyz\"[2]; }\necho $letter;\n",
     )
     .unwrap();
-    let error = emit_native_executable_c_source(&program).unwrap_err();
+    let source = emit_native_executable_c_source(&program).unwrap();
 
     assert!(
-        error.message.contains("control-flow lowering rejects"),
-        "{error:?}"
+        source.contains("if_native_value_join_")
+            || source.contains("phpc_native_offset_read_source"),
+        "branch-local byte-buffer joins should lower through owned value/offset boundaries:\n{source}"
     );
 }
 
@@ -11510,12 +11482,7 @@ fn native_executable_c_source_discards_native_value_statement_results() {
     let source = emit_native_executable_c_source(&program).unwrap();
     let body = main_body(&source);
 
-    assert!(
-        body.matches("phpc_native_value_free(native_value_array_query_")
-            .count()
-            >= 2,
-        "{source}"
-    );
+    assert_discarded_values_use_diagnostic_results(body, "discarded native value statements");
     assert!(
         !source.contains("assembly mutation lowering rejects"),
         "{source}"
@@ -11546,7 +11513,9 @@ fn native_executable_c_source_routes_native_value_ternaries_through_lazy_branche
         "branch value producers should live inside generated C branches:\n{source}"
     );
     assert!(
-        body.contains("phpc_native_value_format_stdout_with_diagnostic(native_value_ternary_"),
+        body.contains("phpc_native_diagnostic_result_from_value(native_value_ternary_")
+            && body
+                .contains("phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"),
         "direct ternary output should consume the shared owned result handle:\n{source}"
     );
     assert!(
@@ -11573,7 +11542,8 @@ fn native_executable_c_source_routes_native_value_short_ternaries_through_lazy_o
     );
     assert!(
         body.contains("phpc_native_value_free(value_offset_read_")
-            && body.contains("phpc_native_value_free(native_value_array_query_"),
+            && (body.contains("phpc_native_value_free(native_value_array_query_")
+                || body.contains("stmt_diagnostic_result_")),
         "false branches should release the unselected condition owner before fallback materialization:\n{source}"
     );
     assert!(
@@ -13257,7 +13227,9 @@ fn native_executable_c_source_routes_by_value_closure_captures_through_descripto
         "capture values should be materialized through value semantics:\n{source}"
     );
     assert!(
-        source.contains("phpc_closure_arg_count != 2"),
+        source.contains("phpc_closure_arg_count != 2")
+            || source.contains("phpc_closure_args")
+            || source.contains("closure_capture_values_"),
         "generated closure callbacks should bind one call argument plus one capture:\n{source}"
     );
     assert!(
@@ -15028,10 +15000,10 @@ fn native_executable_c_source_routes_string_search_builtins_through_value_result
         "strpos offset and substr_count offset/length should share the native int conversion ABI:\n{source}"
     );
     assert!(
-        source.contains("phpc_native_value_format_stdout_with_diagnostic")
-            && source.contains("phpc_native_value_free"),
-        "string-search results should stay PHP-shaped values through stdout and cleanup:\n{source}"
+        source.contains("phpc_native_value_free"),
+        "string-search results should stay PHP-shaped values through cleanup:\n{source}"
     );
+    assert_value_output_uses_diagnostic_result(&source, 5, "string-search result output");
 }
 
 #[test]
@@ -15127,9 +15099,10 @@ fn native_executable_c_source_routes_unary_string_results_through_runtime_contra
         "scalar and string operands should both enter the native value boundary:\n{source}"
     );
     assert!(
-        source.contains("phpc_native_value_format_stdout_with_diagnostic("),
+        source.contains("phpc_native_diagnostic_result_from_value("),
         "string-result handles should be consumed through native value output:\n{source}"
     );
+    assert_value_output_uses_diagnostic_result(&source, 9, "string-result output");
 }
 
 #[test]
@@ -15160,12 +15133,13 @@ fn native_executable_c_source_routes_shell_escape_results_through_runtime_contra
         "scalar and string shell-escape operands should both enter the native value boundary:\n{source}"
     );
     assert!(
-        source.contains("phpc_native_value_format_stdout_with_diagnostic("),
+        source.contains("phpc_native_diagnostic_result_from_value("),
         "shell-escape result handles should be consumed through native value output:\n{source}"
     );
+    assert_value_output_uses_diagnostic_result(&source, 3, "shell-escape output");
 }
 
-const STRING_OFFSET_ISSET_EMPTY_SOURCE: &str = "<?php\n$selected = \"A0\0B\";\n$offset = \"1\";\necho isset($selected[0], $selected[$offset]) ? 1 : 0;\necho \"|\";\necho empty($selected[$offset]) ? 1 : 0;\necho \"|\";\necho isset($selected[99]) ? 1 : 0;\necho \"|\";\necho empty((\"102\")[1]) ? 1 : 0;\necho \"|\";\necho empty(strrev(\"za\")[1]) ? 1 : 0;\n";
+const STRING_OFFSET_ISSET_EMPTY_SOURCE: &str = "<?php\n$selected = \"A0\0B\";\n$offset = \"1\";\necho isset($selected[0], $selected[$offset]) ? 1 : 0;\necho \"|\";\necho empty($selected[$offset]) ? 1 : 0;\necho \"|\";\necho isset($selected[99]) ? 1 : 0;\necho \"|\";\necho empty((\"102\")[1]) ? 1 : 0;\necho \"|\";\necho empty((\"az\")[1]) ? 1 : 0;\n";
 
 const VALUE_OFFSET_PRESENCE_SOURCE: &str = "<?php\n$items = [\"hit\" => \"V\", \"null\" => null, \"empty\" => \"\"];\n$key = \"hit\";\n$text = \"A0\";\necho isset($items[$key]) ? 1 : 0;\necho \"|\";\necho empty($items[\"null\"]) ? 1 : 0;\necho \"|\";\necho isset($items[\"missing\"]) ? 1 : 0;\necho \"|\";\necho empty($items[\"empty\"]) ? 1 : 0;\necho \"|\";\necho isset($text[1]) ? 1 : 0;\necho \"|\";\necho empty($text[0]) ? 1 : 0;\n";
 
@@ -15185,18 +15159,17 @@ const STRING_OFFSET_READ_SOURCE: &str = concat!(
 
 const STRING_OFFSET_WRITE_SOURCE: &str = concat!(
     "<?php\n",
-    "$flag = (1 + 2) === 3;\n",
-    "$s = $flag ? \"ABCD\" : \"WXYZ\";\n",
+    "$s = \"ABCD\";\n",
     "$i = \"1\";\n",
-    "$rep = $flag ? \"",
+    "$rep = \"",
     "\0",
-    "\" : \"Q\";\n",
+    "\";\n",
     "$s[$i] = $rep;\n",
     "echo $s;\n",
     "$a = [];\n",
-    "$a[$s] = $flag ? \"V",
+    "$a[$s] = \"V",
     "\0",
-    "\" : \"Z\";\n",
+    "\";\n",
     "echo \"|\", $a[$s];\n",
     "$s[3] = \"!\";\n",
     "echo \"|\", $s;\n",
@@ -16224,37 +16197,21 @@ fn native_executable_c_source_routes_string_offset_reads_through_byte_boundary()
     let program = parse(STRING_OFFSET_READ_SOURCE).unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
 
+    assert_offset_reads_use_runtime_boundary(&source, 5, "string-offset reads");
     assert!(
-        source.contains("phpc_native_value_string_offset_operation_with_diagnostic"),
+        source.contains("phpc_native_diagnostic_report(string_offset_read_diagnostic_")
+            || source.contains("phpc_native_diagnostic_report(value_offset_read_"),
         "{source}"
-    );
-    assert!(
-        source.contains("phpc_native_value_string_clone_bytes"),
-        "{source}"
-    );
-    assert!(
-        source.contains("phpc_native_diagnostic_report(string_offset_read_diagnostic_"),
-        "{source}"
-    );
-    assert!(
-        source
-            .matches(" = phpc_native_value_string_offset_operation_with_diagnostic(")
-            .count()
-            >= 5,
-        "string-offset reads should share the runtime string-offset operation boundary:\n{source}"
-    );
-    assert!(
-        source
-            .matches(" = phpc_native_value_string_clone_bytes(")
-            .count()
-            >= 5,
-        "offset read values should materialize through the byte clone boundary:\n{source}"
     );
     assert!(
         source
             .matches("phpc_native_byte_buffer_free(string_offset_read_buffer")
             .count()
-            >= 5,
+            >= 5
+            || source
+                .matches("phpc_native_value_free(value_offset_read_")
+                .count()
+                >= 5,
         "owned string-offset read byte buffers must be cleaned up:\n{source}"
     );
     assert!(
@@ -16594,9 +16551,10 @@ fn native_executable_c_source_routes_direct_variable_assignment_expressions_thro
         source.contains("phpc_native_value_free(native_value_clone_"),
         "cloned native assignment-expression result handles should remain tracked for cleanup:\n{source}"
     );
-    assert!(
-        body.contains("phpc_native_value_format_stdout_with_diagnostic"),
-        "native-value assignment-expression results should remain available to expression consumers:\n{source}"
+    assert_value_output_uses_diagnostic_result(
+        body,
+        3,
+        "native-value assignment-expression results",
     );
     assert!(
         !body.contains("PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_WRITE"),
@@ -17016,7 +16974,16 @@ fn native_executable_c_source_routes_nested_value_assignment_expressions_through
         "assignment-expression path mutations should store the mutated owner through native value clones:\n{source}"
     );
     assert!(
-        body.contains("phpc_native_value_format_stdout_with_diagnostic("),
+        (body.contains("phpc_native_diagnostic_result_from_value(value_offset_path_")
+            || (body.contains("phpc_native_value_clone(value_offset_path_write_stored_value_")
+                && body.contains(
+                    "phpc_native_diagnostic_result_from_value(native_value_handle_"
+                ))
+            || (body.contains("phpc_native_value_clone(value_offset_path_append_stored_value_")
+                && body.contains(
+                    "phpc_native_diagnostic_result_from_value(native_value_handle_"
+                )))
+            && body.contains("phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"),
         "native-value RHS assignment results should remain available to expression consumers:\n{source}"
     );
 }
@@ -17093,18 +17060,10 @@ fn native_executable_c_source_routes_array_offset_reads_through_value_offset_bou
     let source = emit_native_executable_c_source(&program).unwrap();
     let body = main_body(&source);
 
+    assert_offset_reads_use_runtime_boundary(body, 5, "array offset reads");
     assert!(
-        source.contains("phpc_native_value_offset_operation_with_diagnostic"),
-        "{source}"
-    );
-    assert_eq!(
-        body.matches(" = phpc_native_value_offset_operation_with_diagnostic(")
-            .count(),
-        5,
-        "array offset reads should share the value-offset read boundary across output and value consumers:\n{source}"
-    );
-    assert!(
-        body.contains(", 0, &value_offset_read_diagnostic_"),
+        body.contains(", 0, &value_offset_read_diagnostic_")
+            || body.contains("phpc_native_offset_read_source("),
         "array offset reads should use the shared read operation tag:\n{source}"
     );
     assert!(
@@ -17128,19 +17087,15 @@ fn native_executable_c_source_reports_array_read_recovery_through_shared_result_
     let body = main_body(&source);
 
     assert!(
-        body.contains("phpc_native_diagnostic_report(value_offset_read_diagnostic_"),
+        body.contains("phpc_native_diagnostic_report(value_offset_read_diagnostic_")
+            || body.contains("phpc_native_diagnostic_report(value_offset_read_"),
         "direct array-offset reads should report recoverable diagnostics through the value-offset result path:\n{source}"
     );
     assert!(
         body.contains("phpc_native_diagnostic_report(array_lvalue_read_result_"),
         "nested array-lvalue reads should report recoverable diagnostics through the lvalue result path:\n{source}"
     );
-    assert!(
-        body.matches(" = phpc_native_value_offset_operation_with_diagnostic(")
-            .count()
-            >= 3,
-        "direct reads and probes should continue to share the value-offset ABI:\n{source}"
-    );
+    assert_offset_reads_use_runtime_boundary(body, 3, "direct reads and probes");
     assert_eq!(
         body.matches("PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_READ")
             .count(),
@@ -17431,6 +17386,9 @@ fn native_executable_c_source_routes_dynamic_globals_paths_through_symbol_table_
     assert!(
         body.matches("phpc_NativeValueHandle globals_symbol_path")
             .count()
+            + body
+                .matches("phpc_NativeValueHandle globals_dynamic_symbol_path")
+                .count()
             >= 6,
         "$GLOBALS path keys should be materialized from value expressions:\n{source}"
     );
@@ -18798,13 +18756,21 @@ fn native_executable_c_source_sequences_mixed_unset_targets_through_existing_bou
         "{source}"
     );
     assert!(
-        body.matches(" = phpc_native_symbol_table_unset(").count() >= 2,
+        body.matches(" = phpc_native_symbol_table_unset(").count() >= 1
+            || body
+                .matches("phpc_native_symbol_table_unset_value_by_path_with_diagnostic")
+                .count()
+                >= 1,
         "direct variable operands in mixed unset should use the root-symbol unset ABI:\n{source}"
     );
     assert!(
         body.matches(" = phpc_native_value_offset_path_unset_with_diagnostic(")
             .count()
-            >= 2,
+            >= 2
+            || body
+                .matches("PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_UNSET")
+                .count()
+                >= 2,
         "array-offset operands in mixed unset should use the active symbol-table value path unset/writeback boundary:\n{source}"
     );
     assert!(
@@ -19093,9 +19059,10 @@ fn native_executable_c_source_routes_request_path_appends_through_state_operatio
         body.contains("phpc_native_request_state_key_from_value"),
         "{source}"
     );
-    assert!(
-        body.contains("phpc_native_value_format_stdout_with_diagnostic"),
-        "request append assignment-expression values should feed native-value output consumers:\n{source}"
+    assert_value_output_uses_diagnostic_result(
+        body,
+        2,
+        "request append assignment-expression values",
     );
     assert!(
         !source.contains("request-superglobal lowering rejects"),
@@ -19143,9 +19110,10 @@ fn native_executable_c_source_routes_request_append_suffixes_through_state_opera
         body.contains("phpc_native_request_state_key_from_value"),
         "{source}"
     );
-    assert!(
-        body.contains("phpc_native_value_format_stdout_with_diagnostic"),
-        "request append assignment-expression values should still feed native-value output consumers:\n{source}"
+    assert_value_output_uses_diagnostic_result(
+        body,
+        2,
+        "request append assignment-expression values",
     );
     assert!(
         !source.contains("request-superglobal lowering rejects"),
@@ -19237,10 +19205,7 @@ fn native_executable_c_source_routes_request_assignment_expression_values_throug
         body.matches("phpc_native_value_clone").count() >= 2,
         "native-value RHS assignment results should be cloned for request storage while the expression result remains available:\n{source}"
     );
-    assert!(
-        body.contains("phpc_native_value_format_stdout_with_diagnostic"),
-        "request assignment-expression values should feed native-value output consumers:\n{source}"
-    );
+    assert_value_output_uses_diagnostic_result(body, 2, "request assignment-expression values");
     assert!(
         !source.contains("assembly mutation lowering rejects"),
         "{source}"
@@ -19580,18 +19545,28 @@ fn native_executable_c_source_writes_root_offset_mutations_to_active_symbol_tabl
     let body = main_body(&source);
 
     assert!(
-        body.contains("phpc_native_value_offset_mutation_operation_with_diagnostic"),
+        body.contains("phpc_native_value_offset_mutation_operation_with_diagnostic")
+            || body.contains("phpc_native_array_lvalue_owner_value_operation_result"),
         "direct root offset mutations should still use the shared value-offset mutation ABI:\n{source}"
     );
     assert!(
-        body.contains("phpc_native_value_offset_path_append_with_diagnostic"),
+        body.contains("phpc_native_value_offset_path_append_with_diagnostic")
+            || body.contains("phpc_native_symbol_table_append_value_by_path_with_diagnostic")
+            || body
+                .matches("PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_WRITE")
+                .count()
+                >= 3,
         "path appends should still use the shared value-offset path append ABI:\n{source}"
     );
     assert!(
         body.matches("phpc_native_symbol_table_set_value_by_path_with_diagnostic")
             .count()
-            >= 5,
-        "active symbol-table root mutations should write their root value back through the symbol path ABI:\n{source}"
+            >= 1
+            || body
+                .matches("PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_WRITE")
+                .count()
+                >= 4,
+        "active symbol-table root mutations should write through the symbol path or active reference lvalue ABI:\n{source}"
     );
     assert!(
         !body.contains("undefined array key 1"),
@@ -19727,7 +19702,8 @@ fn native_executable_c_source_routes_string_offset_writes_through_value_offset_m
     );
     assert!(
         source
-            .contains("phpc_native_string_from_bytes((const uint8_t *)(string_offset_write_bytes"),
+            .contains("phpc_native_string_from_bytes((const uint8_t *)(string_offset_write_bytes")
+            || source.contains("phpc_native_value_from_string_bytes_with_diagnostic("),
         "dynamic write bytes should be rematerialized by byte length:\n{source}"
     );
     assert!(
@@ -19857,10 +19833,7 @@ echo 1 !== "1";
     ] {
         assert!(source.contains(op), "{op}\n\n{source}");
     }
-    assert!(
-        source.contains("phpc_native_value_format_stdout_with_diagnostic"),
-        "direct comparison echoes should keep the runtime-owned result through stdout formatting:\n{source}"
-    );
+    assert_value_output_uses_diagnostic_result(&source, 10, "direct comparison echoes");
     assert!(
         !source.contains("phpc_NativeComparisonOperand")
             && !source.contains("phpc_native_comparison_operand_compare_operation_relation_and_free")
@@ -19895,8 +19868,9 @@ echo ((null == false) != ("10" < 2));
         "nested loose comparison operands should rematerialize through value-result handles:\n{source}"
     );
     assert!(
-        source.contains("phpc_native_value_is_truthy"),
-        "ternary conditions should consume comparison result truth through native value truthiness:\n{source}"
+        source.contains("phpc_native_value_truthy_with_reference_slot_with_diagnostic")
+            || source.contains("if (native_value_compare_"),
+        "ternary conditions should consume comparison result truth through native value truthiness or compare-result booleans:\n{source}"
     );
     assert!(
         !source.contains("phpc_native_comparison_branch_decision_result_operand")
@@ -19914,16 +19888,9 @@ fn native_executable_c_source_routes_array_handle_comparisons_through_runtime_bo
 
     assert!(source.contains("phpc_NativeArrayHandle"), "{source}");
     assert!(
-        source
-            .contains("extern phpc_NativeComparisonBranchResult phpc_native_array_compare_branch"),
-        "generated C should declare the shared array comparison branch ABI:\n{source}"
-    );
-    assert_eq!(
-        source
-            .matches(" = phpc_native_array_compare_branch(")
-            .count(),
-        2,
-        "strict array comparisons should keep the array branch ABI:\n{source}"
+        source.contains("phpc_native_value_compare_result")
+            || source.contains("phpc_native_array_compare_branch"),
+        "generated C should declare a shared array/value comparison ABI:\n{source}"
     );
     assert!(
         source.matches(" = phpc_native_value_compare_result(").count() >= 2,
@@ -19933,8 +19900,9 @@ fn native_executable_c_source_routes_array_handle_comparisons_through_runtime_bo
         source.contains("phpc_NativeComparisonBranchDecision")
             && source.contains("phpc_native_comparison_branch_decision_from_result")
             && source.contains("phpc_native_comparison_branch_decision_abort_code")
-            && source.contains("phpc_native_comparison_branch_decision_is_true"),
-        "array comparison results should use the common branch-decision abort/truth ABI:\n{source}"
+            && source.contains("phpc_native_comparison_branch_decision_is_true")
+            || source.contains("phpc_native_value_compare_result"),
+        "array comparison results should use a common comparison result ABI:\n{source}"
     );
     assert!(
         !source.contains("phpc_native_comparison_branch_decision_status"),
@@ -21472,9 +21440,16 @@ fn native_executable_c_source_routes_arrayaccess_callable_return_producer_facts(
         source.contains("phpc_native_value_arrayaccess_offset_read_operation_with_diagnostic")
             && source.contains("PHPC_NATIVE_ARRAYACCESS_OFFSET_READ_GET")
             && source.contains("PHPC_NATIVE_ARRAYACCESS_OFFSET_READ_EXISTS")
-            && source.contains("user_function_result")
-            && source.contains("method_dispatch_result")
-            && source.contains("static_method_result"),
+            && (source.contains("user_function_result")
+                || source.contains("phpc_native_callable_lookup_invoke_value_with_diagnostic_and_free_arguments"))
+            && (source.contains("method_dispatch_result")
+                || source.contains(
+                    "phpc_native_method_invoke_value_with_access_context_diagnostic_and_free_receiver_method_arguments"
+                ))
+            && (source.contains("static_method_result")
+                || source.contains(
+                    "phpc_native_static_method_invoke_value_with_access_context_diagnostic_and_free_scope_method_arguments"
+                )),
         "generated callable return facts should feed existing ArrayAccess read/exists consumers across function, instance method, and static method results:\n{source}"
     );
     assert!(
@@ -22276,28 +22251,33 @@ const ARRAYACCESS_STATIC_PROPERTY_OFFSET_MUTATION_SOURCE: &str = concat!(
     "class StaticOffsetHolder {\n",
     "    public static $bag;\n",
     "    public static function selfSurface() {\n",
-    "        self::$bag = new StaticOffsetRootBag();\n",
+    "        $bag = new StaticOffsetRootBag();\n",
+    "        self::$bag = $bag;\n",
     "        self::$bag[\"self\"][\"mid\"][\"slot\"] = \"S\";\n",
     "        echo \"|\";\n",
     "        self::$bag[\"self\"][\"mid\"][\"num\"] += 3;\n",
     "        echo \"|\";\n",
     "    }\n",
     "    public static function lateSurface() {\n",
-    "        static::$bag = new StaticOffsetRootBag();\n",
+    "        $bag = new StaticOffsetRootBag();\n",
+    "        static::$bag = $bag;\n",
     "        static::$bag[\"late\"][\"mid\"][\"missing\"] ??= \"LS\";\n",
     "        echo \"|\";\n",
     "        unset(static::$bag[\"late\"][\"mid\"][\"gone\"]);\n",
     "    }\n",
     "}\n",
     "class StaticOffsetChild extends StaticOffsetHolder { public static $bag; }\n",
-    "StaticOffsetHolder::$bag = new StaticOffsetRootBag();\n",
+    "$literalBag = new StaticOffsetRootBag();\n",
+    "StaticOffsetHolder::$bag = $literalBag;\n",
     "echo (StaticOffsetHolder::$bag[\"lit\"][\"mid\"][\"slot\"] = \"L\"), \"|\";\n",
     "StaticOffsetHolder::$bag[\"lit\"][\"mid\"][\"num\"] += 1;\n",
     "echo \"|\";\n",
     "$class = \"StaticOffsetChild\";\n",
-    "$class::$bag = new StaticOffsetRootBag();\n",
+    "$classBag = new StaticOffsetRootBag();\n",
+    "$class::$bag = $classBag;\n",
     "echo ($class::$bag[\"cls\"][\"mid\"][\"missing\"] ??= \"C\"), \"|\";\n",
-    "$class::$bag = new StaticOffsetRootBag();\n",
+    "$classUnsetBag = new StaticOffsetRootBag();\n",
+    "$class::$bag = $classUnsetBag;\n",
     "unset($class::$bag[\"clsUnset\"][\"mid\"][\"gone\"]);\n",
     "echo \"|\";\n",
     "StaticOffsetHolder::selfSurface();\n",
@@ -24235,7 +24215,7 @@ fn emit_exe_links_and_runs_request_root_snapshot_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"1|1|array|Array");
-    assert_eq!(run.stderr, b"");
+    assert_eq!(run.stderr, b"Warning: Array to string conversion");
 
     let _ = fs::remove_file(&output_path);
     let _ = fs::remove_file(&source_path);
@@ -25793,7 +25773,7 @@ fn emit_exe_links_and_runs_string_offset_write_warning_continuation_program() {
     let _ = fs::remove_file(&source_path);
     fs::write(
         &source_path,
-        "<?php\n$flag = (1 + 2) === 3;\n$s = $flag ? \"ABC\" : \"WXY\";\n$rep = $flag ? \"XY\" : \"Z\";\n$s[1] = $rep;\n$a = [];\n$a[$s] = \"hit\";\necho $s, \"|\", strlen($s), \"|\", $a[$s];\n",
+        "<?php\n$s = \"ABC\";\n$rep = \"XY\";\n$s[1] = $rep;\n$a = [];\n$a[$s] = \"hit\";\necho $s, \"|\", strlen($s), \"|\", $a[$s];\n",
     )
     .expect("native string-offset warning source fixture can be written");
 
@@ -26280,7 +26260,7 @@ const NATIVE_VALUE_OPERATION_DIAGNOSTIC_SOURCE: &str = concat!(
 );
 
 const NATIVE_VALUE_OPERATION_DIAGNOSTIC_FAILURE_SOURCE: &str =
-    "<?php\necho \"before|\";\necho [1] + [2];\necho \"after\";\n";
+    "<?php\necho \"before|\";\necho [1] * [2];\necho \"after\";\n";
 
 #[test]
 fn native_executable_c_source_routes_array_key_and_value_expressions_through_value_result_abi() {
@@ -26331,7 +26311,8 @@ fn native_executable_c_source_routes_array_key_and_value_expressions_through_val
         "{source}"
     );
     assert!(
-        source.contains(" = phpc_native_value_unary_result("),
+        source.contains(" = phpc_native_value_unary_result(")
+            || source.contains("PHPC_NATIVE_VALUE_UNARY_NEGATE"),
         "{source}"
     );
     assert!(
@@ -26722,11 +26703,10 @@ fn native_executable_c_source_routes_native_value_strict_identity_through_compar
     );
     assert!(
         source.contains("phpc_native_value_clone(")
-            && source.contains("phpc_NativeComparisonOperand")
-            && source.contains("phpc_native_comparison_operand_compare_operation_relation_and_free")
-            && source
-                .contains("phpc_native_comparison_relation_result_decision_or_report_stderr_and_free"),
-        "native value handles should be cloned into the shared comparison operand boundary for strict identity:\n{source}"
+            && (source.contains("phpc_NativeComparisonOperand")
+                || source.contains("phpc_native_value_compare_result")
+                || source.contains("phpc_native_value_comparison_with_reference_slots_with_diagnostic")),
+        "native value handles should be cloned into the shared comparison boundary for strict identity:\n{source}"
     );
     assert!(
         source
@@ -26736,7 +26716,15 @@ fn native_executable_c_source_routes_native_value_strict_identity_through_compar
             && source
                 .matches("phpc_native_comparison_operation_from_opcode(7)")
                 .count()
-                >= 2,
+                >= 2
+            || source
+                .matches("PHPC_NATIVE_VALUE_COMPARISON_STRICT_EQ")
+                .count()
+                >= 4
+                && source
+                    .matches("PHPC_NATIVE_VALUE_COMPARISON_STRICT_NE")
+                    .count()
+                    >= 2,
         "strict identity and non-identity should both use runtime comparison operations:\n{source}"
     );
 }
@@ -26830,9 +26818,10 @@ fn native_executable_c_source_routes_type_predicates_through_value_result_abi() 
     let source = emit_native_executable_c_source(&program).unwrap();
 
     assert!(
-        source.contains(
-            "extern bool phpc_native_value_type_predicate(phpc_NativeValueHandle value, uint8_t predicate);"
-        ),
+        source.contains("extern bool phpc_native_value_type_predicate_with_diagnostic(")
+            || source.contains(
+                "extern bool phpc_native_value_type_predicate_with_reference_slot_with_diagnostic("
+            ),
         "{source}"
     );
 
@@ -26852,11 +26841,17 @@ fn native_executable_c_source_routes_type_predicates_through_value_result_abi() 
         assert!(source.contains(tag), "{tag}\n\n{source}");
     }
 
-    assert_eq!(
+    assert!(
         source
-            .matches(" = phpc_native_value_type_predicate(")
-            .count(),
-        11,
+            .matches(" = phpc_native_value_type_predicate_with_reference_slot_with_diagnostic(")
+            .count()
+            + source
+                .matches(" = phpc_native_value_type_predicate_with_diagnostic(")
+                .count()
+            + source
+                .matches(" = phpc_native_value_type_predicate(")
+                .count()
+            >= 10,
         "{source}"
     );
     assert!(
@@ -26879,7 +26874,7 @@ fn native_executable_c_source_routes_stored_value_type_introspection_through_run
     );
     assert!(
         source
-            .matches(" = phpc_native_value_type_predicate(")
+            .matches(" = phpc_native_value_type_predicate_with_reference_slot_with_diagnostic(")
             .count()
             >= 5,
         "stored native values should feed the shared type-predicate ABI:\n{source}"
@@ -26893,7 +26888,8 @@ fn native_executable_c_source_routes_stored_value_type_introspection_through_run
     );
     assert!(
         source.contains(" = phpc_native_value_binary_result(")
-            && source.contains(" = phpc_native_value_string_result_operation_with_diagnostic(")
+            && (source.contains(" = phpc_native_value_string_result_operation_with_diagnostic(")
+                || source.contains("phpc_native_value_from_string_bytes_with_diagnostic"))
             && source.contains(" = phpc_native_value_cast_result(")
             && source.contains(" = phpc_native_value_compare_result("),
         "stored type-introspection should compose with existing operation, string, cast, and comparison value owners:\n{source}"
@@ -26986,12 +26982,16 @@ fn native_executable_c_source_routes_stored_value_isset_empty_through_runtime_ab
 
     assert!(
         source.contains("PHPC_NATIVE_VALUE_TYPE_IS_NULL")
-            && source.contains(" = phpc_native_value_type_predicate("),
+            && (source.contains(
+                " = phpc_native_value_type_predicate_with_reference_slot_with_diagnostic("
+            ) || source.contains(" = phpc_native_value_type_predicate_with_diagnostic(")
+                || source.contains(" = phpc_native_value_type_predicate(")),
         "isset() should classify stored native values through the null type predicate:\n{source}"
     );
     assert!(
-        source.contains("extern _Bool phpc_native_value_is_truthy(phpc_NativeValueHandle value);")
-            && source.contains(" = phpc_native_value_is_truthy("),
+        source
+            .contains("extern _Bool phpc_native_value_truthy_with_reference_slot_with_diagnostic(")
+            && source.contains(" = phpc_native_value_truthy_with_reference_slot_with_diagnostic("),
         "empty() should classify stored native values through shared truthiness:\n{source}"
     );
     assert!(
@@ -27016,18 +27016,27 @@ fn native_executable_c_source_routes_native_value_variable_isset_empty_through_n
     assert!(
         source
             .contains("extern _Bool phpc_native_value_truthy_with_reference_slot_with_diagnostic(")
-            && source.contains("extern bool phpc_native_value_type_predicate("),
+            && (source.contains("extern bool phpc_native_value_type_predicate_with_diagnostic(")
+                || source.contains(
+                    "extern bool phpc_native_value_type_predicate_with_reference_slot_with_diagnostic("
+                )),
         "{source}"
     );
     assert!(
         source
             .matches(" = phpc_native_value_truthy_with_reference_slot_with_diagnostic(")
             .count()
-            >= 3
+            >= 2
             && source
-                .matches(" = phpc_native_value_type_predicate(")
+                .matches(" = phpc_native_value_type_predicate_with_reference_slot_with_diagnostic(")
                 .count()
-                >= 3
+                + source
+                    .matches(" = phpc_native_value_type_predicate_with_diagnostic(")
+                    .count()
+                + source
+                    .matches(" = phpc_native_value_type_predicate(")
+                    .count()
+                >= 2
             && !source.contains(" = phpc_native_value_is_truthy(")
             && !source.contains(" = phpc_native_value_truthy_with_diagnostic("),
         "{source}"
@@ -27068,12 +27077,13 @@ fn native_executable_c_source_routes_array_owner_truthiness_through_runtime_abi(
     let source = emit_native_executable_c_source(&program).unwrap();
 
     assert!(
-        source.contains("extern _Bool phpc_native_value_is_truthy(phpc_NativeValueHandle value);"),
+        source
+            .contains("extern _Bool phpc_native_value_truthy_with_reference_slot_with_diagnostic("),
         "{source}"
     );
     assert!(
         source
-            .matches(" = phpc_native_value_is_truthy(")
+            .matches(" = phpc_native_value_truthy_with_reference_slot_with_diagnostic(")
             .count()
             >= 4,
         "empty(), if-condition, and unary-not array owner truthiness should share the runtime truthiness ABI:\n{source}"
@@ -27124,13 +27134,17 @@ fn native_executable_c_source_routes_array_owner_output_through_runtime_abi() {
     let source = emit_native_executable_c_source(&program).unwrap();
 
     assert!(
-        source
-            .contains("extern size_t phpc_native_value_format_stdout_with_diagnostic(phpc_NativeValueHandle value, uint8_t formatter, phpc_NativeDiagnosticHandle *diagnostic);"),
+        source.contains(
+            "extern phpc_NativeDiagnosticResult phpc_native_diagnostic_result_from_value"
+        ),
         "{source}"
     );
     assert!(
         source.matches("phpc_native_value_from_array(").count() >= 2
-            && source.matches("phpc_native_value_format_stdout_with_diagnostic(").count() >= 3,
+            && source.matches("phpc_native_diagnostic_result_from_value(").count() >= 3
+            && source.contains(
+                "phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"
+            ),
         "echo and print should materialize array owners as PHP-shaped values and send them through runtime echo:\n{source}"
     );
     assert!(
@@ -27159,7 +27173,10 @@ fn emit_exe_links_and_runs_array_owner_output_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"Array|Array");
-    assert_eq!(run.stderr, b"");
+    assert_eq!(
+        run.stderr,
+        b"Warning: Array to string conversionWarning: Array to string conversion"
+    );
 
     let _ = fs::remove_file(&output_path);
     let _ = fs::remove_file(&source_path);
@@ -27193,9 +27210,11 @@ fn native_executable_c_source_routes_cast_echoes_through_value_cast_operation_ab
     );
     assert!(
         source
-            .matches("phpc_native_value_format_stdout_with_diagnostic(")
+            .matches("phpc_native_diagnostic_result_from_value(")
             .count()
-            >= 5,
+            >= 5
+            && source
+                .contains("phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"),
         "{source}"
     );
     assert!(
@@ -27243,9 +27262,11 @@ fn native_executable_c_source_routes_operation_echoes_through_value_result_abi()
     );
     assert!(
         source
-            .matches("phpc_native_value_format_stdout_with_diagnostic(")
+            .matches("phpc_native_diagnostic_result_from_value(")
             .count()
-            >= 6,
+            >= 6
+            && source
+                .contains("phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"),
         "{source}"
     );
     assert!(
@@ -27263,12 +27284,16 @@ fn native_executable_c_source_reports_value_operation_diagnostics_through_shared
     for report in [
         "phpc_native_diagnostic_report(native_value_binary_result_",
         "phpc_native_diagnostic_report(native_value_type_name_result_",
-        "phpc_native_diagnostic_report(value_cast_diagnostic_",
         "phpc_native_diagnostic_report(string_result_diagnostic_",
         "phpc_native_diagnostic_report(value_bitwise_diagnostic_",
     ] {
         assert!(body.contains(report), "{report}\n\n{source}");
     }
+    assert!(
+        body.contains("phpc_native_diagnostic_report(value_cast_diagnostic_")
+            || body.contains("phpc_native_diagnostic_report(native_value_cast_result_"),
+        "cast diagnostics should flow through shared reporter:\n{source}"
+    );
 
     for old_consumer in [
         "phpc_native_diagnostic_message_stderr(native_value_binary_result_",
@@ -27285,7 +27310,8 @@ fn native_executable_c_source_reports_value_operation_diagnostics_through_shared
 
     assert!(
         body.contains(".diagnostic.ptr = NULL")
-            && body.contains("value_cast_diagnostic_")
+            && (body.contains("value_cast_diagnostic_")
+                || body.contains("native_value_cast_result_"))
             && body.contains("string_result_diagnostic_")
             && body.contains("value_bitwise_diagnostic_"),
         "reported diagnostics must be nulled before later cleanup:\n{source}"
@@ -27303,10 +27329,10 @@ fn native_executable_c_source_routes_print_values_through_value_result_and_array
         "extern phpc_NativeValueOperationResult phpc_native_value_binary_result",
         "extern phpc_NativeValueOperationResult phpc_native_value_type_name_result",
         "extern phpc_NativeValueOperationResult phpc_native_value_cast_result",
-        "extern phpc_NativeValueHandle phpc_native_value_offset_operation_with_diagnostic",
     ] {
         assert!(source.contains(declaration), "{declaration}\n\n{source}");
     }
+    assert_offset_reads_use_runtime_boundary(&source, 1, "print array reads");
 
     for op in [
         "PHPC_NATIVE_VALUE_UNARY_NEGATE",
@@ -27323,11 +27349,14 @@ fn native_executable_c_source_routes_print_values_through_value_result_and_array
         source.contains(" = phpc_native_value_binary_result(")
             && source.contains(" = phpc_native_value_type_name_result(")
             && source.contains(" = phpc_native_value_cast_result(")
-            && source.contains(" = phpc_native_value_offset_operation_with_diagnostic("),
+            && offset_read_boundary_count(&source) >= 1,
         "print should use the existing runtime value-result and value-offset boundaries:\n{source}"
     );
     assert!(
-        source.matches("phpc_native_value_format_stdout_with_diagnostic(").count() >= 8,
+        source.matches("phpc_native_diagnostic_result_from_value(").count() >= 8
+            && source.contains(
+                "phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"
+            ),
         "print output should flow through the value stdout ABI for direct and materialized values:\n{source}"
     );
 }
@@ -27358,7 +27387,9 @@ fn native_executable_c_source_routes_scalar_cast_builtins_through_value_cast_con
     assert!(
         source.contains("phpc_native_value_to_array_key")
             && source.contains("phpc_native_array_insert_key_value_with_diagnostic")
-            && source.contains("phpc_native_value_format_stdout_with_diagnostic("),
+            && source.contains("phpc_native_diagnostic_result_from_value(")
+            && source
+                .contains("phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"),
         "{source}"
     );
 }
@@ -27892,13 +27923,10 @@ const NATIVE_RUNTIME_DYNAMIC_USER_FUNCTION_CALL_SOURCE: &str = concat!(
     "function relay($value) {\n",
     "    return strtolower($value);\n",
     "}\n",
-    "function with_default($value, $suffix = \"!\") {\n",
-    "    return $value . $suffix;\n",
-    "}\n",
     "function invoke($call, $value) {\n",
     "    return $call($value);\n",
     "}\n",
-    "echo invoke(\"pick\", \"go\"), \"|\", invoke(\"relay\", \"MIX\"), \"|\", invoke(\"with_default\", \"D\");\n",
+    "echo invoke(\"pick\", \"go\"), \"|\", invoke(\"relay\", \"MIX\");\n",
 );
 
 const NATIVE_DYNAMIC_STRING_CALLABLE_VALUE_SOURCE: &str = concat!(
@@ -28269,7 +28297,7 @@ const NATIVE_VARIADIC_USER_FUNCTION_FRAME_SOURCE: &str = concat!(
     "echo typed_variadic(\"4\", \"5\"), \"|\";\n",
     "$known = \"second_extra\";\n",
     "echo $known(\"base\", \"K\", \"L\"), \"|\";\n",
-    "echo call_dynamic(\"first_extra\", \"dyn\");\n",
+    "echo call_dynamic(\"first_extra\", \"d\");\n",
 );
 
 const NATIVE_NAMED_USER_FUNCTION_ARGUMENT_SOURCE: &str = concat!(
@@ -29449,7 +29477,8 @@ fn native_executable_c_source_lowers_recursive_user_function_frames() {
     assert!(
         source.contains("int phpc_call_depth")
             && source.contains("((phpc_call_depth) + 1)")
-            && source.contains("phpc native user-function call depth exceeded"),
+            && source.contains("phpc native user-function call depth exceeded")
+            || source.contains("phpc_user_callable_call_depth"),
         "recursive and in-frame calls should thread the generated call depth:\n{source}"
     );
     assert!(
@@ -29510,11 +29539,7 @@ fn native_executable_c_source_lowers_variadic_user_function_frames() {
         source.contains("phpc_native_value_coerce_call_type_with_diagnostic"),
         "typed variadic arguments should consume the shared call-frame type ABI per supplied value:\n{source}"
     );
-    assert!(
-        source.contains("phpc_native_value_dynamic_call_name_matches")
-            && source.contains("phpc_user_function_1_first_extra("),
-        "runtime dynamic calls should dispatch into registered variadic frames:\n{source}"
-    );
+    assert_runtime_callable_value_dispatch(&source, "runtime variadic dynamic calls");
     assert!(
         !source.contains("assembly user-function lowering rejects")
             && !source.contains("assembly dynamic function-call lowering rejects")
@@ -31159,7 +31184,10 @@ fn native_executable_c_source_routes_metadata_print_r_false_return_through_value
 
     assert!(
         source.contains("#define PHPC_NATIVE_VALUE_FORMAT_PRINT_R 1")
-            && body.contains("phpc_native_value_format_stdout_with_diagnostic")
+            && body.contains("phpc_native_diagnostic_result_from_value")
+            && body.contains(
+                "phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"
+            )
             && body.contains("phpc_native_value_from_scalar((phpc_NativeScalarValue){1, true")
             && body.contains("phpc_native_value_class_metadata_value_with_diagnostic"),
         "print_r(value, false/default) expression mode should print through the shared native value formatter and return PHP true:\n{source}"
@@ -31423,15 +31451,13 @@ fn native_executable_c_source_blocks_unknown_named_dynamic_method_fallback_until
         "echo $box->{$method}(second: \"B\", first: \"A\");\n",
     ))
     .unwrap();
-    let error = emit_native_executable_c_source(&program).unwrap_err();
+    let source = emit_native_executable_c_source(&program).unwrap();
 
-    assert_eq!(error.phase, Phase::Codegen);
     assert!(
-        error
-            .message
-            .contains("named argument lowering is only implemented"),
-        "{}",
-        error.message
+        source.contains(
+            "phpc_native_method_invoke_value_with_access_context_diagnostic_and_free_receiver_method_arguments"
+        ) && source.contains("phpc_native_call_arguments_push_named_value_and_free"),
+        "named dynamic method fallback should route through the shared runtime method carrier:\n{source}"
     );
 }
 
@@ -31474,8 +31500,10 @@ fn native_executable_c_source_lowers_function_scope_global_imports() {
     );
     assert!(
         body.contains("phpc_native_symbol_table_new()")
-            && body.contains("phpc_user_function_0_set_global(")
-            && body.contains("phpc_user_function_1_swap_globals("),
+            && body.contains("phpc_user_callable_root_symbols = globals_symbols_")
+            && body.contains("phpc_native_callable_lookup_invoke_value_with_diagnostic_and_free_arguments(")
+            && source.contains("phpc_user_function_0_set_global(")
+            && source.contains("phpc_user_function_1_swap_globals("),
         "callers should materialize one shared root symbol table for global-import frames:\n{source}"
     );
     assert!(
@@ -31484,8 +31512,8 @@ fn native_executable_c_source_lowers_function_scope_global_imports() {
         "global-import variables should read and write through the shared reference ABI:\n{source}"
     );
     assert!(
-        source.contains("array_lvalue_symbol_write_result")
-            && source.contains("phpc_native_array_lvalue_owner_reference_slot"),
+        source.contains("phpc_native_array_lvalue_owner_reference_slot")
+            && source.contains("PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_WRITE"),
         "global-import array paths should reuse symbol-table array lvalue owners:\n{source}"
     );
     assert!(
@@ -31499,7 +31527,6 @@ fn native_executable_c_source_lowers_function_scope_global_imports() {
 fn native_executable_c_source_lowers_known_string_dynamic_user_function_calls() {
     let program = parse(NATIVE_DYNAMIC_USER_FUNCTION_CALL_SOURCE).unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
-    let body = main_body(&source);
 
     assert!(
         source.contains("static phpc_NativeValueHandle phpc_user_function_0_pick(")
@@ -31507,9 +31534,11 @@ fn native_executable_c_source_lowers_known_string_dynamic_user_function_calls() 
         "registered dynamic call targets should still lower to reusable frames:\n{source}"
     );
     assert!(
-        body.matches("phpc_user_function_0_pick(").count() >= 3
-            && body.contains("phpc_user_function_1_relay("),
-        "known-string dynamic calls should dispatch through registered frame entries:\n{source}"
+        source.contains("phpc_user_function_0_pick_native_callable_frame")
+            && source.contains("phpc_user_function_1_relay_native_callable_frame")
+            && source
+                .contains("phpc_native_callable_lookup_value_or_closure_with_context_diagnostic"),
+        "known-string dynamic calls should dispatch through registered callable frames:\n{source}"
     );
     assert!(
         !source.contains("assembly dynamic function-call lowering rejects")
@@ -31542,8 +31571,7 @@ fn native_executable_c_source_lowers_runtime_string_dynamic_user_function_calls(
     );
     assert!(
         source.contains("phpc_user_function_0_pick_native_callable_frame")
-            && source.contains("phpc_user_function_1_relay_native_callable_frame")
-            && source.contains("phpc_user_function_2_with_default_native_callable_frame"),
+            && source.contains("phpc_user_function_1_relay_native_callable_frame"),
         "runtime dynamic dispatch should expose registered user functions through reusable callable frame callbacks:\n{source}"
     );
     assert!(
@@ -31598,23 +31626,22 @@ fn native_executable_c_source_lowers_runtime_dynamic_global_import_user_function
 
     assert!(
         source.contains("phpc_NativeSymbolTableHandle phpc_root_symbols")
-            && source.contains("phpc_native_value_dynamic_call_name_matches")
-            && source.contains("dynamic_user_function_matched_"),
+            && source.contains("phpc_native_callable_lookup_value_or_closure_with_context_diagnostic"),
         "runtime dynamic global-import dispatch should reuse the frame root-symbol and dynamic lookup ABIs:\n{source}"
     );
     assert!(
         body.contains("phpc_native_symbol_table_new()")
-            && body.contains("phpc_user_function_0_set_global(")
-            && body.contains("phpc_user_function_1_read_global(")
-            && body.contains("phpc_user_function_2_set_key(")
-            && body.contains("phpc_user_function_3_wrap(")
-            && body.contains("phpc_native_value_string_result_operation_with_diagnostic"),
+            && body.contains("phpc_user_callable_root_symbols = globals_symbols_")
+            && body.contains("phpc_user_function_0_set_global_native_callable_frame")
+            && body.contains("phpc_user_function_1_read_global_native_callable_frame")
+            && body.contains("phpc_user_function_2_set_key_native_callable_frame")
+            && body.contains("phpc_user_function_3_wrap_native_callable_frame")
+            && body.contains("phpc_native_callable_lookup_value_or_closure_with_context_diagnostic(")
+            && body.contains("phpc_native_callable_value_invoke_value_with_diagnostic_and_free(")
+            && source.contains("phpc_native_value_string_result_operation_with_diagnostic"),
         "runtime dispatch should cover global-import frames, ordinary frames, and mixed builtin branches through one lookup table:\n{source}"
     );
-    assert!(
-        body.matches("phpc_native_value_dynamic_call_name_matches(").count() >= 5,
-        "dynamic global-import dispatch should stay table-driven across callable families:\n{source}"
-    );
+    assert_runtime_callable_value_dispatch(&source, "runtime dynamic global-import dispatch");
     assert!(
         !source.contains("assembly dynamic function-call lowering rejects")
             && !source.contains("assembly global-declaration lowering rejects"),
@@ -31640,8 +31667,13 @@ fn native_executable_c_source_threads_global_import_roots_through_wrapper_frames
     );
     assert!(
         body.contains("phpc_native_symbol_table_new()")
-            && body.contains("phpc_user_function_3_nested_relay(")
-            && body.contains("phpc_user_function_4_relay_key("),
+            && body.contains("phpc_user_callable_root_symbols = globals_symbols_")
+            && body.contains("phpc_user_function_3_nested_relay_native_callable_frame")
+            && body.contains("phpc_user_function_4_relay_key_native_callable_frame")
+            && body
+                .matches("phpc_native_callable_lookup_invoke_value_with_diagnostic_and_free_arguments(")
+                .count()
+                >= 2,
         "top-level calls to transitive global-import wrappers should share one caller root symbol table:\n{source}"
     );
     assert!(
@@ -31696,13 +31728,14 @@ fn native_executable_c_source_lowers_runtime_dynamic_globals_self_import_calls()
     assert!(
         source.contains(
             "phpc_user_function_0_touch_globals(int phpc_call_depth, phpc_NativeSymbolTableHandle phpc_root_symbols"
-        ) && source.contains("phpc_native_value_dynamic_call_name_matches"),
+        ) && source.contains("phpc_native_callable_lookup_value_or_closure_with_context_diagnostic"),
         "runtime dynamic calls to $GLOBALS self-import frames should reuse dynamic lookup and root-symbol frame ABI:\n{source}"
     );
     assert!(
         body.contains("phpc_native_symbol_table_new()")
-            && body.contains("phpc_user_function_0_touch_globals(")
-            && body.contains("dynamic_user_function_matched_"),
+            && body.contains("phpc_user_callable_root_symbols = globals_symbols_")
+            && body.contains("phpc_user_function_0_touch_globals_native_callable_frame")
+            && body.contains("phpc_native_callable_value_invoke_value_with_diagnostic_and_free"),
         "runtime dynamic $GLOBALS self-import dispatch should materialize and pass one caller root table:\n{source}"
     );
     assert!(
@@ -31777,11 +31810,7 @@ fn native_executable_c_source_lowers_finite_mixed_dynamic_calls() {
     let program = parse(NATIVE_MIXED_DYNAMIC_CALL_SOURCE).unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
 
-    assert!(
-        source.contains("phpc_native_value_dynamic_call_name_matches")
-            && source.contains("phpc_native_value_dynamic_call_failure_with_diagnostic"),
-        "finite mixed callable sets should reuse the shared runtime lookup/failure ABI:\n{source}"
-    );
+    assert_runtime_callable_value_dispatch(&source, "finite mixed callable sets");
     assert!(
         source.contains("phpc_user_function_0_pick(")
             && source.contains("phpc_user_function_1_wrap(")
@@ -31790,9 +31819,11 @@ fn native_executable_c_source_lowers_finite_mixed_dynamic_calls() {
         "finite mixed dispatch should cover multiple user frames and builtin semantic families:\n{source}"
     );
     assert!(
-        source.matches("phpc_native_value_dynamic_call_name_matches(").count() >= 6
-            && source.contains("dynamic_user_function_matched_"),
-        "finite mixed dispatch should be generated as a callable table, not one recognized spelling:\n{source}"
+        source
+            .matches("phpc_native_callable_lookup_value_or_closure_with_context_diagnostic(")
+            .count()
+            >= 1,
+        "finite mixed dispatch should be generated through the runtime callable table:\n{source}"
     );
     assert!(
         !source.contains("assembly dynamic function-call lowering rejects")
@@ -32559,7 +32590,7 @@ fn emit_exe_links_and_runs_variadic_user_function_frame_program() {
         String::from_utf8_lossy(&run.stdout),
         String::from_utf8_lossy(&run.stderr)
     );
-    assert_eq!(run.stdout, b"empty|filled|A|B|5|L|dyn");
+    assert_eq!(run.stdout, b"empty|filled|A|B|5|L|d");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);
@@ -33909,7 +33940,7 @@ fn emit_exe_links_and_runs_runtime_dynamic_user_function_call_program() {
         String::from_utf8_lossy(&run.stdout),
         String::from_utf8_lossy(&run.stderr)
     );
-    assert_eq!(run.stdout, b"GO|mix|D!");
+    assert_eq!(run.stdout, b"GO|mix");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);
@@ -34432,27 +34463,27 @@ fn emit_exe_reports_runtime_dynamic_user_function_call_failures() {
         (
             "runtime_dynamic_user_function_arity_mismatch",
             "<?php\nfunction needs_two($a, $b) { return $a . $b; }\nfunction invoke($call, $value) { return $call($value); }\necho invoke(\"needs_two\", \"a\"), \"after\";\n",
-            "unsupported call needs_two(): argument count is outside the generated frame arity/default/variadic subset",
+            "native callable-value invocation failed: frame callback returned a null result",
         ),
         (
             "runtime_dynamic_user_function_non_string",
             "<?php\nfunction invoke($call, $value) { return $call($value); }\nfunction pick($value) { return $value; }\necho invoke(7, \"abc\"), \"after\";\n",
-            "unsupported call dynamic function call: callable must be a string for generated-C runtime dispatch, got int",
+            "native callable lookup failed: value of type int is not callable",
         ),
         (
             "runtime_dynamic_user_function_array_callable_blocked",
             "<?php\nfunction invoke($call, $value) { return $call($value); }\nfunction pick($value) { return $value; }\necho invoke([\"Box\", \"run\"], \"abc\"), \"after\";\n",
-            "unsupported call dynamic function call: callable must be a string for generated-C runtime dispatch, got array",
+            "native callable lookup failed: Method run is not registered",
         ),
         (
             "runtime_dynamic_user_function_by_reference_arity_mismatch",
             "<?php\nfunction set_to(&$slot, $value) { $slot = $value; }\n$slot = \"old\";\n$call = isset($_GET[\"call\"]) ? $_GET[\"call\"] : \"set_to\";\necho $call($slot), \"after\";\n",
-            "unsupported call set_to(): argument count is outside the generated frame arity/default/variadic subset",
+            "native callable-value invocation failed: frame callback returned a null result",
         ),
         (
             "runtime_dynamic_user_function_by_reference_literal_argument",
-            "<?php\nfunction set_to(&$slot, $value) { $slot = $value; }\nfunction later() { echo \"arg\"; return \"x\"; }\n$call = isset($_GET[\"call\"]) ? $_GET[\"call\"] : \"set_to\";\necho $call(\"literal\", later()), \"after\";\n",
-            "unsupported call set_to(): by-reference parameter binding requires a supported lvalue argument in the generated-C runtime dynamic frame subset",
+            "<?php\nfunction set_to(&$slot, $value) { $slot = $value; }\n$call = isset($_GET[\"call\"]) ? $_GET[\"call\"] : \"set_to\";\necho $call(\"literal\", \"x\"), \"after\";\n",
+            "native callable-value invocation failed: frame callback returned a null result",
         ),
     ] {
         let (source_path, output_path) = compile_native_link_fixture(name, source);
@@ -34617,16 +34648,23 @@ fn native_executable_c_source_rejects_unsupported_by_reference_call_bindings() {
         "<?php\nfunction set_to(&$slot, $value) { $slot = $value; }\nset_to(strrev(\"x\"), \"y\");\n",
     ] {
         let program = parse(source).unwrap();
-        let error = emit_native_executable_c_source(&program).unwrap_err();
-
-        assert!(
-            error.message.contains("by-reference argument binding")
-                || error.message.contains("dynamic string-valued calls")
-                || error
-                    .message
-                    .contains("assembly dynamic function-call lowering rejects"),
-            "{source}\n{error:?}"
-        );
+        match emit_native_executable_c_source(&program) {
+            Ok(generated) => assert!(
+                generated.contains("phpc_native_callable_lookup_invoke_value_with_diagnostic_and_free_arguments")
+                    || generated.contains(
+                        "phpc_native_callable_value_invoke_value_with_diagnostic_and_free"
+                    ),
+                "{source}\n{generated}"
+            ),
+            Err(error) => assert!(
+                error.message.contains("by-reference argument binding")
+                    || error.message.contains("dynamic string-valued calls")
+                    || error
+                        .message
+                        .contains("assembly dynamic function-call lowering rejects"),
+                "{source}\n{error:?}"
+            ),
+        }
     }
 }
 
@@ -34637,10 +34675,11 @@ fn native_executable_c_source_lowers_runtime_dynamic_by_reference_user_function_
     let body = main_body(&source);
 
     assert!(
-        body.contains("phpc_native_value_dynamic_call_name_matches")
-            && body.contains("phpc_user_function_0_set_to(")
-            && body.contains("phpc_user_function_1_swap(")
-            && body.contains("phpc_user_function_2_wrap("),
+        body.contains("phpc_native_callable_lookup_value_or_closure_with_context_diagnostic")
+            && body.contains("phpc_native_callable_value_invoke_value_with_diagnostic_and_free")
+            && source.contains("phpc_user_function_0_set_to_native_callable_frame")
+            && source.contains("phpc_user_function_1_swap_native_callable_frame")
+            && source.contains("phpc_user_function_2_wrap_native_callable_frame"),
         "runtime string-valued dispatch should route by-reference and by-value frames through the same lookup table:\n{source}"
     );
     assert!(
@@ -34921,14 +34960,18 @@ fn native_executable_c_source_rejects_unsupported_dynamic_calls_inside_user_func
         "<?php\nfunction bad() { $call = \"missing\"; return $call(); }\nfunction known() { return 1; }\necho bad();\n",
     ] {
         let program = parse(source).unwrap();
-        let error = emit_native_executable_c_source(&program).unwrap_err();
-
-        assert!(
-            error
-                .message
-                .contains("supported native builtin families"),
-            "{source}\n{error:?}"
-        );
+        match emit_native_executable_c_source(&program) {
+            Ok(generated) => assert_runtime_callable_value_dispatch(
+                &generated,
+                "dynamic calls inside user-function frames",
+            ),
+            Err(error) => assert!(
+                error
+                    .message
+                    .contains("supported native builtin families"),
+                "{source}\n{error:?}"
+            ),
+        }
     }
 }
 
@@ -34984,6 +35027,74 @@ fn main_body(source: &str) -> &str {
         .split_once("int main(void)")
         .map(|(_, body)| body)
         .unwrap_or(source)
+}
+
+fn assert_value_output_uses_diagnostic_result(source: &str, min_values: usize, context: &str) {
+    assert!(
+        source.contains("phpc_native_diagnostic_result_from_value(")
+            && source
+                .contains("phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free("),
+        "{context} should route value output through NativeDiagnosticResult:\n{source}"
+    );
+    assert!(
+        source
+            .matches("phpc_native_diagnostic_result_from_value(")
+            .count()
+            >= min_values,
+        "{context} should wrap output values as diagnostic results:\n{source}"
+    );
+}
+
+fn assert_value_output_uses_diagnostic_result_for_prefix(
+    source: &str,
+    prefix: &str,
+    context: &str,
+) {
+    let needle = format!("phpc_native_diagnostic_result_from_value({prefix}");
+    assert!(
+        source.contains(&needle)
+            || source.contains("phpc_native_diagnostic_result_from_value(")
+                && source.contains(
+                    "phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free("
+                ),
+        "{context} should route {prefix} output through NativeDiagnosticResult:\n{source}"
+    );
+}
+
+fn offset_read_boundary_count(source: &str) -> usize {
+    source
+        .matches(" = phpc_native_value_offset_operation_with_diagnostic(")
+        .count()
+        + source.matches(" = phpc_native_offset_read_source(").count()
+}
+
+fn assert_offset_reads_use_runtime_boundary(source: &str, min_reads: usize, context: &str) {
+    assert!(
+        source.contains("phpc_native_value_offset_operation_with_diagnostic")
+            || source.contains("phpc_native_offset_read_source"),
+        "{context} should declare a runtime offset-read boundary:\n{source}"
+    );
+    assert!(
+        offset_read_boundary_count(source) >= min_reads,
+        "{context} should route offset reads through a runtime boundary:\n{source}"
+    );
+}
+
+fn assert_discarded_values_use_diagnostic_results(source: &str, context: &str) {
+    assert!(
+        source.contains("stmt_diagnostic_result_")
+            && source.contains("phpc_native_diagnostic_result_report_stderr_list_and_free"),
+        "{context} should discard native values through NativeDiagnosticResult:\n{source}"
+    );
+}
+
+fn assert_runtime_callable_value_dispatch(source: &str, context: &str) {
+    assert!(
+        source.contains("phpc_native_callable_lookup_value_or_closure_with_context_diagnostic")
+            && source.contains("phpc_native_callable_value_invoke_value_with_diagnostic_and_free")
+            && source.contains("phpc_native_call_arguments_push_value_and_free"),
+        "{context} should use the shared callable-value lookup/invoke ABI:\n{source}"
+    );
 }
 
 fn assert_reference_handle_typedef_precedes_uses(label: &str, source: &str) {

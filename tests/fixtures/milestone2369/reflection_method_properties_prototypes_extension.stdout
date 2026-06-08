@@ -1,0 +1,11 @@
+label|ChildProto::label|label|ChildProto
+interpolated|ChildProto::label()
+label-prototype|BaseProto::label|label|BaseProto
+run|ChildProto::run|run|ChildProto
+run-has-prototype|1
+run-prototype|ProtoContract::run|run|ProtoContract
+hidden-has-prototype|0
+hidden-prototype|Method ChildProto::hidden does not have a prototype
+missing|Method ChildProto::missing() does not exist
+extension|ReflectionExtension|standard
+NULL

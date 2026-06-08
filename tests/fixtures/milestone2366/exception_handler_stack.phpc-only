@@ -1,0 +1,1 @@
+get_exception_handler() is unavailable in the host PHP 8.2 used by the local fixture comparator.

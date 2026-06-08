@@ -1,1 +1,1 @@
-Project-specific stable parse diagnostic for unsupported exponentiation syntax.
+Project-specific stable runtime diagnostic for non-BcMath exponentiation.

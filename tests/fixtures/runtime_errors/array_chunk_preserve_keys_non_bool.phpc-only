@@ -1,1 +1,1 @@
-Project-specific stable runtime diagnostic for unsupported non-bool array_chunk preserve_keys argument.
+project-specific diagnostic for unsupported non-coercible array_chunk preserve_keys flag

@@ -1,0 +1,9 @@
+exit: 0
+stdout:
+superman,acuaman
+robin10,robin11
+10,11|robin10,robin11
+robin10|robin11
+10,11--- stdout end ---
+stderr:
+--- stderr end ---

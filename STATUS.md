@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T00:48:49+00:00
+Last generated: 2026-06-07T18:05:18+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -11,22 +11,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Agents
 | name | role | current_status | tmux_window | worktree |
 | --- | --- | --- | --- | --- |
-| architect-1 | Architect | crash | architect-1 |  |
-| architect-10 | Architect | crash | architect-10 |  |
-| architect-11 | Architect | crash | architect-11 |  |
-| architect-12 | Architect | running | architect-12 |  |
-| architect-2 | Architect | crash | architect-2 |  |
-| architect-3 | Architect | crash | architect-3 |  |
-| architect-4 | Architect | crash | architect-4 |  |
-| architect-5 | Architect | crash | architect-5 |  |
-| architect-6 | Architect | crash | architect-6 |  |
-| architect-7 | Architect | crash | architect-7 |  |
-| architect-8 | Architect | crash | architect-8 |  |
-| architect-9 | Architect | crash | architect-9 |  |
 | auditor-1 | Auditor | stopped | auditor-1 |  |
-| auditor-10 | Auditor | crash | auditor-10 |  |
-| auditor-11 | Auditor | crash | auditor-11 |  |
-| auditor-12 | Auditor | stopped | auditor-12 |  |
 | auditor-2 | Auditor | crash | auditor-2 |  |
 | auditor-3 | Auditor | stopped | auditor-3 |  |
 | auditor-4 | Auditor | stopped | auditor-4 |  |
@@ -36,15 +21,12 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | auditor-8 | Auditor | stopped | auditor-8 |  |
 | auditor-9 | Auditor | stopped | auditor-9 |  |
 | conflict-resolver-1 | Conflict Resolver | crash | conflict-resolver-1 |  |
-| conflict-resolver-10 | Conflict Resolver | running | conflict-resolver-10 |  |
 | conflict-resolver-2 | Conflict Resolver | crash | conflict-resolver-2 |  |
 | conflict-resolver-3 | Conflict Resolver | crash | conflict-resolver-3 |  |
 | conflict-resolver-4 | Conflict Resolver | crash | conflict-resolver-4 |  |
 | conflict-resolver-5 | Conflict Resolver | stopped | conflict-resolver-5 |  |
 | conflict-resolver-6 | Conflict Resolver | stopped | conflict-resolver-6 |  |
 | conflict-resolver-7 | Conflict Resolver | stopped | conflict-resolver-7 |  |
-| conflict-resolver-8 | Conflict Resolver | crash | conflict-resolver-8 |  |
-| conflict-resolver-9 | Conflict Resolver | stopped | conflict-resolver-9 |  |
 | coordinator-1 | Coordinator | stopped | coordinator-1 |  |
 | coordinator-10 | Coordinator | success | coordinator-10 |  |
 | coordinator-11 | Coordinator | stopped | coordinator-11 |  |
@@ -58,155 +40,31 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-19 | Coordinator | stopped | coordinator-19 |  |
 | coordinator-2 | Coordinator | crash | coordinator-2 |  |
 | coordinator-20 | Coordinator | crash | coordinator-20 |  |
-| coordinator-21 | Coordinator | crash | coordinator-21 |  |
-| coordinator-22 | Coordinator | crash | coordinator-22 |  |
-| coordinator-23 | Coordinator | stopped | coordinator-23 |  |
-| coordinator-24 | Coordinator | crash | coordinator-24 |  |
-| coordinator-25 | Coordinator | crash | coordinator-25 |  |
-| coordinator-26 | Coordinator | crash | coordinator-26 |  |
-| coordinator-27 | Coordinator | crash | coordinator-27 |  |
-| coordinator-28 | Coordinator | crash | coordinator-28 |  |
-| coordinator-29 | Coordinator | crash | coordinator-29 |  |
+| coordinator-21 | Coordinator | running | coordinator-21 |  |
 | coordinator-3 | Coordinator | crash | coordinator-3 |  |
-| coordinator-30 | Coordinator | crash | coordinator-30 |  |
-| coordinator-31 | Coordinator | crash | coordinator-31 |  |
-| coordinator-32 | Coordinator | crash | coordinator-32 |  |
-| coordinator-33 | Coordinator | crash | coordinator-33 |  |
-| coordinator-34 | Coordinator | crash | coordinator-34 |  |
-| coordinator-35 | Coordinator | stopped | coordinator-35 |  |
-| coordinator-36 | Coordinator | stopped | coordinator-36 |  |
-| coordinator-37 | Coordinator | stopped | coordinator-37 |  |
-| coordinator-38 | Coordinator | crash | coordinator-38 |  |
-| coordinator-39 | Coordinator | stopped | coordinator-39 |  |
 | coordinator-4 | Coordinator | stopped | coordinator-4 |  |
-| coordinator-40 | Coordinator | stopped | coordinator-40 |  |
-| coordinator-41 | Coordinator | crash | coordinator-41 |  |
-| coordinator-42 | Coordinator | crash | coordinator-42 |  |
-| coordinator-43 | Coordinator | crash | coordinator-43 |  |
-| coordinator-44 | Coordinator | success | coordinator-44 |  |
-| coordinator-45 | Coordinator | crash | coordinator-45 |  |
-| coordinator-46 | Coordinator | crash | coordinator-46 |  |
-| coordinator-47 | Coordinator | crash | coordinator-47 |  |
-| coordinator-48 | Coordinator | success | coordinator-48 |  |
-| coordinator-49 | Coordinator | crash | coordinator-49 |  |
 | coordinator-5 | Coordinator | stopped | coordinator-5 |  |
-| coordinator-50 | Coordinator | success | coordinator-50 |  |
-| coordinator-51 | Coordinator | crash | coordinator-51 |  |
-| coordinator-52 | Coordinator | success | coordinator-52 |  |
-| coordinator-53 | Coordinator | running | coordinator-53 |  |
 | coordinator-6 | Coordinator | crash | coordinator-6 |  |
 | coordinator-7 | Coordinator | crash | coordinator-7 |  |
 | coordinator-8 | Coordinator | crash | coordinator-8 |  |
 | coordinator-9 | Coordinator | success | coordinator-9 |  |
 | developer-1 | Developer | stopped | developer-1 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-1 |
 | developer-10 | Developer | stopped | developer-10 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-10 |
-| developer-100 | Developer | crash | developer-100 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-100 |
-| developer-101 | Developer | crash | developer-101 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-101 |
-| developer-102 | Developer | crash | developer-102 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-102 |
-| developer-103 | Developer | crash | developer-103 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-103 |
-| developer-104 | Developer | crash | developer-104 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-104 |
-| developer-105 | Developer | crash | developer-105 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-105 |
-| developer-106 | Developer | stopped | developer-106 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-106 |
-| developer-107 | Developer | stopped | developer-107 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-107 |
-| developer-108 | Developer | stopped | developer-108 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-108 |
-| developer-109 | Developer | stopped | developer-109 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-109 |
+| developer-100 | Developer | running | developer-100 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-100 |
+| developer-101 | Developer | running | developer-101 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-101 |
+| developer-102 | Developer | running | developer-102 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-102 |
+| developer-103 | Developer | running | developer-103 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-103 |
+| developer-104 | Developer | running | developer-104 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-104 |
+| developer-105 | Developer | running | developer-105 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-105 |
 | developer-11 | Developer | stopped | developer-11 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-11 |
-| developer-110 | Developer | stopped | developer-110 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-110 |
-| developer-111 | Developer | stopped | developer-111 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-111 |
-| developer-112 | Developer | crash | developer-112 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-112 |
-| developer-113 | Developer | crash | developer-113 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-113 |
-| developer-114 | Developer | crash | developer-114 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-114 |
-| developer-115 | Developer | crash | developer-115 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-115 |
-| developer-116 | Developer | crash | developer-116 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-116 |
-| developer-117 | Developer | crash | developer-117 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-117 |
-| developer-118 | Developer | crash | developer-118 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-118 |
-| developer-119 | Developer | crash | developer-119 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-119 |
 | developer-12 | Developer | stopped | developer-12 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-12 |
-| developer-120 | Developer | crash | developer-120 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-120 |
-| developer-121 | Developer | crash | developer-121 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-121 |
-| developer-122 | Developer | crash | developer-122 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-122 |
-| developer-123 | Developer | crash | developer-123 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-123 |
-| developer-124 | Developer | crash | developer-124 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-124 |
-| developer-125 | Developer | crash | developer-125 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-125 |
-| developer-126 | Developer | crash | developer-126 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-126 |
-| developer-127 | Developer | crash | developer-127 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-127 |
-| developer-128 | Developer | crash | developer-128 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-128 |
-| developer-129 | Developer | crash | developer-129 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-129 |
 | developer-13 | Developer | stopped | developer-13 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-13 |
-| developer-130 | Developer | crash | developer-130 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-130 |
-| developer-131 | Developer | crash | developer-131 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-131 |
-| developer-132 | Developer | crash | developer-132 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-132 |
-| developer-133 | Developer | crash | developer-133 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-133 |
-| developer-134 | Developer | crash | developer-134 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-134 |
-| developer-135 | Developer | crash | developer-135 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-135 |
-| developer-136 | Developer | crash | developer-136 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-136 |
-| developer-137 | Developer | crash | developer-137 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-137 |
-| developer-138 | Developer | crash | developer-138 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-138 |
-| developer-139 | Developer | crash | developer-139 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-139 |
 | developer-14 | Developer | stopped | developer-14 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-14 |
-| developer-140 | Developer | crash | developer-140 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-140 |
-| developer-141 | Developer | crash | developer-141 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-141 |
-| developer-142 | Developer | crash | developer-142 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-142 |
-| developer-143 | Developer | stopped | developer-143 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-143 |
-| developer-144 | Developer | stopped | developer-144 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-144 |
-| developer-145 | Developer | stopped | developer-145 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-145 |
-| developer-146 | Developer | stopped | developer-146 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-146 |
-| developer-147 | Developer | stopped | developer-147 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-147 |
-| developer-148 | Developer | stopped | developer-148 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-148 |
-| developer-149 | Developer | stopped | developer-149 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-149 |
 | developer-15 | Developer | stopped | developer-15 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-15 |
-| developer-150 | Developer | stopped | developer-150 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-150 |
-| developer-151 | Developer | crash | developer-151 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-151 |
-| developer-152 | Developer | crash | developer-152 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-152 |
-| developer-153 | Developer | crash | developer-153 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-153 |
-| developer-154 | Developer | crash | developer-154 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-154 |
-| developer-155 | Developer | crash | developer-155 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-155 |
-| developer-156 | Developer | crash | developer-156 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-156 |
-| developer-157 | Developer | crash | developer-157 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-157 |
-| developer-158 | Developer | crash | developer-158 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-158 |
-| developer-159 | Developer | stopped | developer-159 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-159 |
 | developer-16 | Developer | stopped | developer-16 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-16 |
-| developer-160 | Developer | stopped | developer-160 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-160 |
-| developer-161 | Developer | stopped | developer-161 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-161 |
-| developer-162 | Developer | stopped | developer-162 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-162 |
-| developer-163 | Developer | stopped | developer-163 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-163 |
-| developer-164 | Developer | crash | developer-164 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-164 |
-| developer-165 | Developer | stopped | developer-165 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-165 |
-| developer-166 | Developer | crash | developer-166 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-166 |
-| developer-167 | Developer | stopped | developer-167 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-167 |
-| developer-168 | Developer | crash | developer-168 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-168 |
-| developer-169 | Developer | stopped | developer-169 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-169 |
 | developer-17 | Developer | stopped | developer-17 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-17 |
-| developer-170 | Developer | crash | developer-170 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-170 |
-| developer-171 | Developer | stopped | developer-171 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-171 |
-| developer-172 | Developer | stopped | developer-172 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-172 |
-| developer-173 | Developer | crash | developer-173 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-173 |
-| developer-174 | Developer | crash | developer-174 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-174 |
-| developer-175 | Developer | crash | developer-175 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-175 |
-| developer-176 | Developer | stopped | developer-176 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-176 |
-| developer-177 | Developer | stopped | developer-177 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-177 |
-| developer-178 | Developer | stopped | developer-178 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-178 |
-| developer-179 | Developer | crash | developer-179 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-179 |
 | developer-18 | Developer | stopped | developer-18 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-18 |
-| developer-180 | Developer | stopped | developer-180 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-180 |
-| developer-181 | Developer | crash | developer-181 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-181 |
-| developer-182 | Developer | stopped | developer-182 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-182 |
-| developer-183 | Developer | stopped | developer-183 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-183 |
-| developer-184 | Developer | crash | developer-184 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-184 |
-| developer-185 | Developer | crash | developer-185 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-185 |
-| developer-186 | Developer | crash | developer-186 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-186 |
-| developer-187 | Developer | running | developer-187 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-187 |
-| developer-188 | Developer | running | developer-188 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-188 |
-| developer-189 | Developer | stopped | developer-189 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-189 |
 | developer-19 | Developer | stopped | developer-19 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-19 |
-| developer-190 | Developer | stopped | developer-190 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-190 |
-| developer-191 | Developer | stopped | developer-191 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-191 |
-| developer-192 | Developer | running | developer-192 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-192 |
-| developer-193 | Developer | running | developer-193 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-193 |
-| developer-194 | Developer | stopped | developer-194 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-194 |
-| developer-195 | Developer | stopped | developer-195 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-195 |
-| developer-196 | Developer | running | developer-196 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-196 |
-| developer-197 | Developer | running | developer-197 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-197 |
 | developer-2 | Developer | stopped | developer-2 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-2 |
 | developer-20 | Developer | stopped | developer-20 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-20 |
 | developer-21 | Developer | stopped | developer-21 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-21 |
@@ -296,8 +154,6 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-98 | Developer | crash | developer-98 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-98 |
 | developer-99 | Developer | crash | developer-99 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-99 |
 | integrator-1 | Integrator | stopped | integrator-1 |  |
-| integrator-10 | Integrator | crash | integrator-10 |  |
-| integrator-11 | Integrator | crash | integrator-11 |  |
 | integrator-2 | Integrator | stopped | integrator-2 |  |
 | integrator-3 | Integrator | stopped | integrator-3 |  |
 | integrator-4 | Integrator | crash | integrator-4 |  |
@@ -305,41 +161,40 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | integrator-6 | Integrator | success | integrator-6 |  |
 | integrator-7 | Integrator | stopped | integrator-7 |  |
 | integrator-8 | Integrator | stopped | integrator-8 |  |
-| integrator-9 | Integrator | crash | integrator-9 |  |
 
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1937 | Resolve integration failure for card #1909: Resolve integration failure for card #1864: Resolve integration failure for card #1849: Resolve integration failure for card #1834: Resolve integration failure for card #1828: Resolve integration failure for card #137: Self-selected bounded str_ireplace compatibility slice | Conflict Resolver | integration-support | planned | queued |  | 0.0 |
-| 1936 | Resolve integration failure for card #1808: Fix global test suite failures | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
-| 1935 | Resolve integration failure for card #1933: Resolve integration failure for card #1922: Resolve integration failure for card #1920: Resolve integration failure for card #1808: Fix global test suite failures | Conflict Resolver | integration-support | done | integrated | ready_fast_path | 0.0 |
-| 1934 | Resolve current-base card 1933 preflight conflict for native gate | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
-| 1933 | Resolve integration failure for card #1922: Resolve integration failure for card #1920: Resolve integration failure for card #1808: Fix global test suite failures | Conflict Resolver | integration-support | integration | integration_failed | ready_fast_path | 0.0 |
-| 1932 | Resolve integration failure for card #1927: Resolve integration failure for card #1808: Fix global test suite failures | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
-| 1931 | Drain current native-gate integration backpressure | Integrator | integration-support | planned | queued |  | 0.0 |
-| 1930 | Assign fresh concrete Developer card after developer-193 capacity lane 1859 | Developer | implementation | planned | queued |  | 0.0 |
-| 1929 | Execute queued card 1925: fix milestone2333 CLI snapshot mismatch | Developer | implementation | planned | queued |  | 0.0 |
-| 1928 | Provide next concrete sanctioned Developer card after developer-185 capacity placeholder 1854 | Developer | implementation | planned | queued |  | 0.0 |
+| 1803 | Fix global test suite failures | Developer | implementation | development | assigned |  | 0.0 |
+| 1802 | Assign next sanctioned Developer card after developer-105 completed worklane 1800 | Developer | implementation | planned | queued |  | 0.0 |
+| 1801 | Assign fresh narrow Developer card after stale lane 78 verification | Developer | implementation | planned | queued |  | 0.0 |
+| 1800 | Fix global test suite failures | Developer | implementation | done | integrated | ready_fast_path | 0.0 |
+| 1799 | Next concrete Developer card after lane 70 | Developer | implementation | planned | queued |  | 0.0 |
+| 1798 | Provide next sanctioned Developer lane after developer-89 card 70 | Developer | implementation | planned | queued |  | 0.0 |
+| 1797 | Provide next sanctioned Developer card after developer-90 lane 71 | Developer | implementation | planned | queued |  | 0.0 |
+| 1796 | Resolve card 1795 integration conflict for developer-92 str_replace slice | Conflict Resolver | integration-support | development | blocked |  | 0.0 |
+| 1795 | Resolve integration failure for card #1769: Resolve integration failure for card #1595: Resolve integration failure for card #1533: Resolve integration failure for card #11: developer-43 focused standard-library compatibility slice | Conflict Resolver | integration-support | done | integrated | ready_fast_path | 0.0 |
+| 1794 | Fix global test suite failures | Developer | implementation | done | stale |  | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=2, passed=417, skipped=0)
+failed — python -m unittest discover -s tests -v (error=0, failed=1, passed=0, skipped=0)
 
 ## Resource samples
-Latest: CPU 10.72%, RAM 56.76%, disk free 95.56 GB.
+Latest: CPU 7.22%, RAM 58.35%, disk free 187.58 GB.
 
 ## Recent events
-- 2026-06-08T00:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-136 tmux window
-- 2026-06-08T00:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-89 tmux window
-- 2026-06-08T00:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-137 tmux window
-- 2026-06-08T00:48:49+00:00 **card_stage**: card#1916 development -> review
-- 2026-06-08T00:48:49+00:00 **agent_report**: conflict-resolver-10 reported ready_for_integration
-- 2026-06-08T00:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-9 tmux window
-- 2026-06-08T00:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-138 tmux window
-- 2026-06-08T00:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-139 tmux window
-- 2026-06-08T00:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-14 tmux window
-- 2026-06-08T00:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-90 tmux window
-- 2026-06-08T00:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-140 tmux window
-- 2026-06-08T00:48:49+00:00 **resolver_completed**: Completed card 1916 resolver as no-op current origin branch; runtime checks green, full suite red only on unrelated CLI snapshot mismatch.
+- 2026-06-07T18:05:17+00:00 **terminal_agent_window_closed**: Closed terminal developer-23 tmux window
+- 2026-06-07T18:05:17+00:00 **terminal_agent_window_closed**: Closed terminal developer-24 tmux window
+- 2026-06-07T18:05:17+00:00 **terminal_agent_window_closed**: Closed terminal developer-25 tmux window
+- 2026-06-07T18:05:18+00:00 **terminal_agent_window_closed**: Closed terminal developer-26 tmux window
+- 2026-06-07T18:05:18+00:00 **terminal_agent_window_closed**: Closed terminal developer-27 tmux window
+- 2026-06-07T18:05:18+00:00 **terminal_agent_window_closed**: Closed terminal developer-28 tmux window
+- 2026-06-07T18:05:18+00:00 **terminal_agent_window_closed**: Closed terminal developer-29 tmux window
+- 2026-06-07T18:05:18+00:00 **terminal_agent_window_closed**: Closed terminal developer-3 tmux window
+- 2026-06-07T18:05:18+00:00 **terminal_agent_window_closed**: Closed terminal developer-30 tmux window
+- 2026-06-07T18:05:18+00:00 **terminal_agent_window_closed**: Closed terminal developer-31 tmux window
+- 2026-06-07T18:05:18+00:00 **terminal_agent_window_closed**: Closed terminal developer-32 tmux window
+- 2026-06-07T18:05:18+00:00 **terminal_agent_window_closed**: Closed terminal developer-33 tmux window
 
 ## Next steps
-Move next worklane forward: Resolve integration failure for card #1909: Resolve integration failure for card #1864: Resolve integration failure for card #1849: Resolve integration failure for card #1834: Resolve integration failure for card #1828: Resolve integration failure for card #137: Self-selected bounded str_ireplace compatibility slice
+Move next worklane forward: Fix global test suite failures

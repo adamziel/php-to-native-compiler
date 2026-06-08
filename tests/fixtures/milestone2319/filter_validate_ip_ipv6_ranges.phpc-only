@@ -1,0 +1,1 @@
+Tracks current php-src ext/filter IPv6 range-flag rows; the host system PHP may predate the GH-16944 IPv4-mapped IPv6 reserved-range behavior.

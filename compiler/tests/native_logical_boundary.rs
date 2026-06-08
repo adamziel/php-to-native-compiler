@@ -82,14 +82,14 @@ echo $invert ? 1 : 0;
         !ir.contains("xor i1"),
         "known xor-with-true result should fold for later scalar lowering:\n{ir}"
     );
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 10)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 20)"), "{ir}");
+    assert!(native_int_output_count(&ir, 10) >= 1, "{ir}");
+    assert!(native_int_output_count(&ir, 20) >= 1, "{ir}");
     assert_eq!(
         ir.matches("select i1 %tmp1, i64 1, i64 0").count(),
         2,
         "{ir}"
     );
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 0)"), "{ir}");
+    assert!(native_int_output_count(&ir, 0) >= 1, "{ir}");
 }
 
 #[test]
@@ -165,16 +165,8 @@ echo ("" xor 0.0) ? 1 : 0;
     assert!(!ir.contains(" and i1 "), "{ir}");
     assert!(!ir.contains(" or i1 "), "{ir}");
     assert!(!ir.contains(" xor i1 "), "{ir}");
-    assert_eq!(
-        ir.matches("@printf(ptr @.fmt_int, i64 1)").count(),
-        4,
-        "{ir}"
-    );
-    assert_eq!(
-        ir.matches("@printf(ptr @.fmt_int, i64 0)").count(),
-        2,
-        "{ir}"
-    );
+    assert_eq!(native_int_output_count(&ir, 1), 4, "{ir}");
+    assert_eq!(native_int_output_count(&ir, 0), 2, "{ir}");
 }
 
 #[test]
@@ -193,16 +185,8 @@ echo (true && null) ? 1 : 0;
     assert!(!ir.contains(" and i1 "), "{ir}");
     assert!(!ir.contains(" or i1 "), "{ir}");
     assert!(!ir.contains(" xor i1 "), "{ir}");
-    assert_eq!(
-        ir.matches("@printf(ptr @.fmt_int, i64 1)").count(),
-        2,
-        "{ir}"
-    );
-    assert_eq!(
-        ir.matches("@printf(ptr @.fmt_int, i64 0)").count(),
-        3,
-        "{ir}"
-    );
+    assert_eq!(native_int_output_count(&ir, 1), 2, "{ir}");
+    assert_eq!(native_int_output_count(&ir, 0), 3, "{ir}");
 
     let error = emit_ir_source("<?php\necho null || [];\n").unwrap_err();
     assert_eq!(error.phase, Phase::Codegen);
@@ -230,19 +214,11 @@ echo (null && []) ? 1 : 0;
     assert!(!ir.contains(" or i1 "), "{ir}");
     assert!(!ir.contains(" xor i1 "), "{ir}");
     assert!(
-        !ir.contains("array"),
+        !ir.contains("@phpc_native_array_new") && !ir.contains("@phpc_native_array_append"),
         "unselected array operands should not be lowered:\n{ir}"
     );
-    assert_eq!(
-        ir.matches("@printf(ptr @.fmt_int, i64 1)").count(),
-        2,
-        "{ir}"
-    );
-    assert_eq!(
-        ir.matches("@printf(ptr @.fmt_int, i64 0)").count(),
-        3,
-        "{ir}"
-    );
+    assert_eq!(native_int_output_count(&ir, 1), 2, "{ir}");
+    assert_eq!(native_int_output_count(&ir, 0), 3, "{ir}");
 
     for source in ["<?php\necho true && [];\n", "<?php\necho false || [];\n"] {
         let error = emit_ir_source(source).unwrap_err();
@@ -288,7 +264,7 @@ echo $both ? 1 : 0, "\n", $either ? 1 : 0;
         "identical boolean expression || should reuse the expression:\n{ir}"
     );
     assert!(ir.contains("select i1 %tmp1, i64 1, i64 0"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int"), "{ir}");
+    assert!(uses_native_diagnostic_result_output(&ir), "{ir}");
 }
 
 #[test]
@@ -311,7 +287,7 @@ echo $different ? 1 : 0;
         "identical boolean expression xor should fold to false:\n{ir}"
     );
     assert!(!ir.contains("select i1 %tmp1"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 0)"), "{ir}");
+    assert!(native_int_output_count(&ir, 0) >= 1, "{ir}");
 }
 
 #[test]
@@ -593,4 +569,16 @@ fn render_cli_snapshot(output: &Output) -> String {
     format!(
         "exit: {exit_code}\nstdout:\n{stdout}--- stdout end ---\nstderr:\n{stderr}--- stderr end ---\n"
     )
+}
+
+fn native_int_output_count(ir: &str, value: i64) -> usize {
+    let direct_printf = format!("@printf(ptr @.fmt_int, i64 {value})");
+    let boxed_native_int = format!("@phpc_native_int(i64 {value})");
+
+    ir.matches(&direct_printf).count() + ir.matches(&boxed_native_int).count()
+}
+
+fn uses_native_diagnostic_result_output(ir: &str) -> bool {
+    ir.contains("@phpc_native_diagnostic_result_from_value")
+        && ir.contains("@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free")
 }

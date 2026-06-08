@@ -1,6 +1,6 @@
-exit: 1
+exit: 0
 stdout:
+Warning: Undefined variable $missing in tests/fixtures/runtime_errors/undefined_increment_decrement.php on line 2
 --- stdout end ---
 stderr:
-runtime error at tests/fixtures/runtime_errors/undefined_increment_decrement.php:2:1: undefined variable '$missing'
 --- stderr end ---

@@ -52,6 +52,56 @@ echo strripos("abc", "Z") === false ? "miss" : "bad";
 }
 
 #[test]
+fn reverse_position_builtins_coerce_php_internal_offsets() {
+    let execution = run_source(
+        r#"<?php
+$last = "strrpos";
+$ilast = "strripos";
+echo strrpos("abcabc", "a", "2") === 3 ? "numeric-string" : "bad";
+echo "|";
+echo strrpos("abcabc", "a", true) === 3 ? "bool" : "bad";
+echo "|";
+echo strrpos("abcabc", "a", null) === 3 ? "null" : "bad";
+echo "|";
+echo strripos("xxABxxab", "ab", 2.0) === 6 ? "float" : "bad";
+echo "|";
+echo $last("haystack", "a", "-3") === 5 ? "dynamic-negative" : "bad";
+echo "|";
+echo $ilast("ABCabc", "a", false) === 3 ? "dynamic-bool" : "bad";
+echo "|";
+try {
+    strrpos("abc", "a", []);
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "numeric-string|bool|null|float|dynamic-negative|dynamic-bool|strrpos(): Argument #3 ($offset) must be of type int, array given"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reverse_position_builtins_preserve_binary_byte_offsets_for_non_utf8_strings() {
+    let execution = run_source(
+        r#"<?php
+$payload = chr(0) . chr(128) . chr(129) . chr(234) . chr(235) . chr(254) . chr(255);
+echo strrpos($payload, chr(128)), "|";
+echo strrpos($payload, chr(255), -1), "|";
+echo strripos($payload, chr(254));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "1|6|5");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reverse_position_builtins_handle_empty_needles_and_catchable_offset_errors() {
     let execution = run_source(
         r#"<?php
