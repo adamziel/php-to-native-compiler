@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T17:09:53+00:00
+Last generated: 2026-06-08T17:25:18+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -318,7 +318,8 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-261 | Coordinator | success | coordinator-261 |  |
 | coordinator-262 | Coordinator | success | coordinator-262 |  |
 | coordinator-263 | Coordinator | success | coordinator-263 |  |
-| coordinator-264 | Coordinator | running | coordinator-264 |  |
+| coordinator-264 | Coordinator | crash | coordinator-264 |  |
+| coordinator-265 | Coordinator | running | coordinator-265 |  |
 | coordinator-27 | Coordinator | crash | coordinator-27 |  |
 | coordinator-28 | Coordinator | crash | coordinator-28 |  |
 | coordinator-29 | Coordinator | crash | coordinator-29 |  |
@@ -747,9 +748,12 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-41 | Developer | crash | developer-41 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-41 |
 | developer-410 | Developer | stopped | developer-410 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-410 |
 | developer-411 | Developer | stopped | developer-411 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-411 |
-| developer-412 | Developer | running | developer-412 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-412 |
-| developer-413 | Developer | running | developer-413 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-413 |
-| developer-414 | Developer | running | developer-414 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-414 |
+| developer-412 | Developer | crash | developer-412 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-412 |
+| developer-413 | Developer | crash | developer-413 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-413 |
+| developer-414 | Developer | crash | developer-414 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-414 |
+| developer-415 | Developer | running | developer-415 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-415 |
+| developer-416 | Developer | running | developer-416 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-416 |
+| developer-417 | Developer | running | developer-417 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-417 |
 | developer-42 | Developer | crash | developer-42 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-42 |
 | developer-43 | Developer | stopped | developer-43 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-43 |
 | developer-44 | Developer | stopped | developer-44 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-44 |
@@ -872,24 +876,24 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | 2122 | Assign next sanctioned Developer card after card2120 reserve report | Developer | implementation | done | stale |  | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=1, passed=418, skipped=0)
+failed — tools/run-tests.sh (error=0, failed=3, passed=416, skipped=0)
 
 ## Resource samples
-Latest: CPU 24.36%, RAM 24.81%, disk free 69.49 GB.
+Latest: CPU 57.2%, RAM 24.06%, disk free 37.64 GB.
 
 ## Recent events
-- 2026-06-08T17:09:01+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-08T17:09:05+00:00 **terminal_agent_windows_closed**: Closed 841 terminal agent tmux windows
-- 2026-06-08T17:09:06+00:00 **terminal_agent_windows_closed**: Closed 841 terminal agent tmux windows
-- 2026-06-08T17:09:16+00:00 **terminal_agent_windows_closed**: Closed 841 terminal agent tmux windows
-- 2026-06-08T17:09:20+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-08T17:09:20+00:00 **test_progress**: Focused runtime filters and full php_runtime crate now pass after thread-local test counter and stale runtime ABI expectation fixes. Starting exact tools/run-tests.sh acceptance gate.
-- 2026-06-08T17:09:22+00:00 **terminal_agent_windows_closed**: Closed 841 terminal agent tmux windows
-- 2026-06-08T17:09:27+00:00 **terminal_agent_windows_closed**: Closed 841 terminal agent tmux windows
-- 2026-06-08T17:09:31+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-08T17:09:37+00:00 **terminal_agent_windows_closed**: Closed 841 terminal agent tmux windows
-- 2026-06-08T17:09:38+00:00 **terminal_agent_windows_closed**: Closed 841 terminal agent tmux windows
-- 2026-06-08T17:09:51+00:00 **terminal_agent_windows_closed**: Closed 841 terminal agent tmux windows
+- 2026-06-08T17:14:04+00:00 **session_start**: developer-417 started in worktree; required docs read/being read before coding.
+- 2026-06-08T17:14:11+00:00 **terminal_agent_windows_closed**: Closed 845 terminal agent tmux windows
+- 2026-06-08T17:14:12+00:00 **terminal_agent_windows_closed**: Closed 845 terminal agent tmux windows
+- 2026-06-08T17:14:23+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-08T17:14:23+00:00 **terminal_agent_windows_closed**: Closed 845 terminal agent tmux windows
+- 2026-06-08T17:14:26+00:00 **terminal_agent_windows_closed**: Closed 845 terminal agent tmux windows
+- 2026-06-08T17:14:32+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-08T17:14:34+00:00 **terminal_agent_windows_closed**: Closed 845 terminal agent tmux windows
+- 2026-06-08T17:14:35+00:00 **worklane_start**: developer-415 picked up assigned worklane 2131: Fix global test suite failures.
+- 2026-06-08T17:14:41+00:00 **terminal_agent_windows_closed**: Closed 845 terminal agent tmux windows
+- 2026-06-08T17:14:42+00:00 **conflict_support_started**: Started read-only verification for card2075 support worklane 2130; rechecking developer-412 dirty runtime free-count diff against current origin/master.
+- 2026-06-08T17:25:18+00:00 **supervisor_error**: integration: database is locked
 
 ## Next steps
 Move next worklane forward: Fix global test suite failures
