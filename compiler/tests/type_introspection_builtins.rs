@@ -61,6 +61,12 @@ fn is_callable_checks_current_string_function_name_subset() {
 function local_name() {
     return "ok";
 }
+class NamedCallable {
+    public function instance() {}
+    public static function direct() {}
+    protected static function hidden() {}
+    public static function __callStatic($name, $args) {}
+}
 
 echo is_callable("local_name") ? "1" : "0";
 echo is_callable("LOCAL_NAME") ? "1" : "0";
@@ -69,6 +75,11 @@ echo is_callable("extension_loaded") ? "1" : "0";
 echo is_callable("dirname") ? "1" : "0";
 echo is_callable("spl_autoload_register") ? "1" : "0";
 echo is_callable("assert") ? "1" : "0";
+echo is_callable("NamedCallable::direct") ? "1" : "0";
+echo is_callable("NamedCallable::instance") ? "1" : "0";
+echo is_callable("NamedCallable::hidden") ? "1" : "0";
+echo is_callable("NamedCallable::missing") ? "1" : "0";
+echo is_callable("MissingCallable::direct") ? "1" : "0";
 echo is_callable("missing") ? "1" : "0";
 echo is_callable(42) ? "1" : "0";
 $arrow = fn($value) => $value;
@@ -80,7 +91,7 @@ echo $call("local_name") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "1111111000\n1");
+    assert_eq!(execution.stdout, "111111110110000\n1");
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -172,7 +183,7 @@ echo is_callable(["Box", "named"], false) ? "1" : "0";
 }
 
 #[test]
-fn is_callable_rejects_unsupported_output_arguments_and_invokes_array_callables() {
+fn is_callable_writes_current_callable_name_output_subset_and_invokes_array_callables() {
     let syntax_error = run_source("<?php\nvar_dump(is_callable(\"missing\", 1));\n").unwrap_err();
 
     assert_eq!(syntax_error.phase, Phase::Runtime);
@@ -183,16 +194,56 @@ fn is_callable_rejects_unsupported_output_arguments_and_invokes_array_callables(
         "unsupported call is_callable(): syntax_only argument must be bool in the current subset, got int"
     );
 
-    let output_error =
+    let output_target_error =
         run_source("<?php\nvar_dump(is_callable(\"missing\", true, null));\n").unwrap_err();
 
-    assert_eq!(output_error.phase, Phase::Runtime);
-    assert_eq!(output_error.line, 2);
-    assert_eq!(output_error.column, 10);
+    assert_eq!(output_target_error.phase, Phase::Runtime);
+    assert_eq!(output_target_error.line, 2);
+    assert_eq!(output_target_error.column, 39);
     assert_eq!(
-        output_error.message,
-        "arity mismatch for is_callable(): expected 1 to 2 argument(s), got 3"
+        output_target_error.message,
+        "unsupported call is_callable(): callable_name output must be a direct variable in the current subset"
     );
+
+    let metadata = run_source(
+        r#"<?php
+function local_name() {}
+class Box {
+    public function open() {}
+    public static function named() {}
+    public function __call($name, $args) {}
+    public static function __callStatic($name, $args) {}
+}
+$box = new Box();
+$cases = [
+    "local_name",
+    "missing",
+    "Box::named",
+    "Box::open",
+    [$box, "open"],
+    [$box, "missing"],
+    ["Box", "named"],
+    ["Box", "open"],
+    ["Box", "missing"],
+    [1 => "Box", 2 => "open"],
+    42,
+    null,
+];
+foreach ($cases as $case) {
+    $name = "seed";
+    echo is_callable($case, false, $name) ? "1" : "0", ":", $name, "\n";
+}
+$name = "seed";
+echo is_callable(["Missing", "open"], true, $name) ? "1" : "0", ":", $name;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        metadata.stdout,
+        "1:local_name\n0:missing\n1:Box::named\n0:Box::open\n1:Box::open\n1:Box::missing\n1:Box::named\n0:Box::open\n1:Box::missing\n0:Array\n0:42\n0:\n1:Missing::open"
+    );
+    assert_eq!(metadata.exit_code, 0);
 
     let execution = run_source(
         r#"<?php

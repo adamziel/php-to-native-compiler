@@ -49,6 +49,33 @@ echo "|", stream_get_contents($stream);
 }
 
 #[test]
+fn vfprintf_stream_type_error_is_catchable_and_value_error_continues() {
+    let execution = run_source(
+        r#"<?php
+$stream = fopen("php://memory", "w+");
+try {
+    var_dump(vfprintf("foo", "bar", ["baz"]));
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    var_dump(vfprintf($stream, 'Foo %$c-0202Sd', [2]));
+} catch (ValueError $e) {
+    echo "Error found: ", $e->getMessage(), ".\n";
+}
+echo "continued";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "vfprintf(): Argument #1 ($stream) must be of type resource, string given\nError found: Argument number specifier must be greater than zero and less than 2147483647.\ncontinued"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn fprintf_and_vfprintf_reject_unsupported_operands() {
     let arity = runtime_error("<?php\nfprintf();\n");
     assert_eq!(arity.line, 2);

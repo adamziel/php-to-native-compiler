@@ -99,6 +99,107 @@ echo $call("a", "b", "a-a", $count), "|", $count;
 }
 
 #[test]
+fn str_replace_handles_array_subjects_and_search_array_replacements() {
+    let execution = run_source(
+        r#"<?php
+$subject = array(1, 0, -1, "php", "key" => "1-php");
+$result = str_replace(array(1, "php"), array("ONE", "PHP"), $subject, $count);
+foreach ($result as $key => $value) {
+    echo $key, "=", $value, "\n";
+}
+echo "count=", $count, "\n";
+
+$nested = str_replace("z", "x", array(array("value")), $nested_count);
+var_dump($nested);
+var_dump($nested_count);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "0=ONE\n",
+            "1=0\n",
+            "2=-ONE\n",
+            "3=PHP\n",
+            "key=ONE-PHP\n",
+            "count=5\n",
+            "\n",
+            "Warning: Array to string conversion in Command line code on line 9\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  string(5) \"Array\"\n",
+            "}\n",
+            "int(0)\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn str_ireplace_reuses_replacement_engine_case_insensitively() {
+    let execution = run_source(
+        r#"<?php
+echo str_ireplace("tt", "a", "ttttTttttttttTT", $count), "|", $count, "\n";
+$result = str_ireplace(
+    array("tt", "y"),
+    array("aaa", "bbb"),
+    array("key" => "ttttTttttttttTT", "test" => "aayyaayasdayYahsdYYY"),
+    $array_count
+);
+echo $result["key"], "\n";
+echo $result["test"], "\n";
+echo $array_count;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "aaaaaaaT|7\n",
+            "aaaaaaaaaaaaaaaaaaaaaT\n",
+            "aabbbbbbaabbbasdabbbbbbahsdbbbbbbbbb\n",
+            "15",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn str_replace_resource_type_error_preserves_count_variable() {
+    let execution = run_source(
+        r#"<?php
+$fp = fopen("php://memory", "w+");
+$fp_copy = $fp;
+try {
+    var_dump(str_replace($fp_copy, $fp_copy, $fp_copy, $fp_copy));
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+var_dump($fp_copy);
+fclose($fp);
+"#,
+    )
+    .unwrap();
+
+    let mut lines = execution.stdout.lines();
+    assert_eq!(
+        lines.next(),
+        Some("str_replace(): Argument #1 ($search) must be of type array|string, resource given")
+    );
+    let resource_line = lines.next().expect("resource dump should be present");
+    assert!(resource_line.starts_with("resource("), "{resource_line}");
+    assert!(
+        resource_line.ends_with(") of type (stream)"),
+        "{resource_line}"
+    );
+    assert_eq!(lines.next(), None);
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn str_replace_rejects_forms_outside_current_subset() {
     let missing = runtime_error(
         r#"<?php
@@ -125,17 +226,17 @@ echo str_replace("a", "b", "abc", $counts["n"]);
         "unsupported call str_replace(): count output must be a direct variable in the current subset"
     );
 
-    let indirect_count = runtime_error(
+    let indirect_count = run_source(
         r#"<?php
 echo call_user_func("str_replace", "a", "b", "abc", 0);
 "#,
-    );
-    assert_eq!(indirect_count.line, 2);
-    assert_eq!(indirect_count.column, 6);
+    )
+    .unwrap();
     assert_eq!(
-        indirect_count.message,
-        "unsupported call str_replace(): count output requires a direct str_replace() call with a direct variable in the current subset"
+        indirect_count.stdout,
+        "Warning: str_replace(): Argument #4 ($count) must be passed by reference, value given in Command line code on line 2\nbbc"
     );
+    assert_eq!(indirect_count.exit_code, 0);
 
     let array_replace = runtime_error(
         r#"<?php
@@ -161,16 +262,16 @@ echo str_replace([["a"]], "b", "abc");
         "unsupported call str_replace(): search array values must be null, bool, int, float, or string in the current subset, got array"
     );
 
-    let array_subject = runtime_error(
+    let nested_array_replace = runtime_error(
         r#"<?php
-echo str_replace("a", "b", ["abc"]);
+echo str_replace(["a"], [["b"]], "abc");
 "#,
     );
-    assert_eq!(array_subject.line, 2);
-    assert_eq!(array_subject.column, 6);
+    assert_eq!(nested_array_replace.line, 2);
+    assert_eq!(nested_array_replace.column, 6);
     assert_eq!(
-        array_subject.message,
-        "unsupported call str_replace(): subject argument arrays are not implemented in the current subset"
+        nested_array_replace.message,
+        "unsupported call str_replace(): replacement array values must be null, bool, int, float, or string in the current subset, got array"
     );
 }
 

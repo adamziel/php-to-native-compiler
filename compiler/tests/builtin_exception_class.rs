@@ -59,39 +59,49 @@ class Exception {}
 }
 
 #[test]
-fn builtin_exception_constructor_arguments_remain_explicitly_unsupported() {
-    let error = run_source(
+fn builtin_exception_constructor_and_getters_expose_bounded_state() {
+    let execution = run_source(
         r#"<?php
-$exception = new Exception("message");
+$previous = new Exception("inner", 7);
+$exception = new Exception("message", 42, $previous);
+echo method_exists("Exception", "getCode") ? "yes" : "no", "|";
+echo method_exists("Error", "getPrevious") ? "yes" : "no", "\n";
+echo $exception->getMessage(), "|", $exception->getCode(), "\n";
+$observed = $exception->getPrevious();
+echo get_class($observed), "|", $observed->getMessage(), "|", $observed->getCode(), "\n";
+
+try {
+    $x = null;
+    $x->method();
+} catch (Error $e) {
+    echo get_class($e), "|", $e->getCode(), "|", $e->getMessage(), "\n";
+}
 "#,
     )
-    .unwrap_err();
+    .unwrap();
 
-    assert_eq!(error.phase, Phase::Runtime);
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 14);
     assert_eq!(
-        error.message,
-        "unsupported object instantiation for Exception: constructor arguments are not implemented"
+        execution.stdout,
+        "yes|yes\nmessage|42\nException|inner|7\nError|0|Call to a member function method() on null\n"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
 fn throw_new_exception_reports_uncaught_boundary_after_operand_evaluation() {
-    let error = run_source(
+    let execution = run_source(
         r#"<?php
 throw new Exception();
 "#,
     )
-    .unwrap_err();
+    .unwrap();
 
-    assert_eq!(error.phase, Phase::Runtime);
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 1);
     assert_eq!(
-        error.message,
-        "unsupported call throw: uncaught Exception propagation beyond catch/finally is not implemented"
+        execution.stdout,
+        "Fatal error: Uncaught Exception in Command line code:2\nStack trace:\n#0 {main}\n  thrown in Command line code on line 2"
     );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 255);
 }
 
 #[test]

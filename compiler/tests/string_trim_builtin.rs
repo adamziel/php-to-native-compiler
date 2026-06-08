@@ -34,6 +34,27 @@ echo trim(\" unchanged \", \"\");\n",
 }
 
 #[test]
+fn trim_family_covers_public_phpt_mask_edges() {
+    let execution = run_source(
+        r#"<?php
+var_dump("ABC" === trim(" \0\t\nABC \0\t\n"));
+var_dump(" \0\t\nABC \0\t\n" === trim(" \0\t\nABC \0\t\n", ""));
+var_dump("ABC" === trim("ABC\x50\xC1\x60\x90", "\x50..\xC1"));
+var_dump("ABC" === trim("\fABC\f"));
+var_dump("ABC" === ltrim("\fABC"));
+var_dump("ABC" === rtrim("ABC\f"));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "bool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn trim_is_available_through_string_valued_calls() {
     let execution = run_source(
         "<?php\n\
@@ -88,6 +109,30 @@ echo $call(\"example.test///\", \"/\");\n",
     assert_eq!(
         execution.stdout,
         " \t128M|localhost|/wp-admin|PAYLOAD||example.test"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn rtrim_coerces_public_phpt_object_and_charlist_values() {
+    let execution = run_source(
+        r#"<?php
+class string1 {
+    public function __toString() {
+        return "Object";
+    }
+}
+
+echo "[" . rtrim("rtrim test        ", true) . "]|";
+echo rtrim(new string1, "tc"), "|";
+echo bin2hex(rtrim("234\x0005678\x0000efgh\xijkl\x0n1", "\x0n1"));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "[rtrim test        ]|Obje|323334003035363738003030656667685c78696a6b6c"
     );
     assert_eq!(execution.exit_code, 0);
 }

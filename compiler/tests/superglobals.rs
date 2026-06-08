@@ -809,6 +809,107 @@ echo "|", $GLOBALS["wp_object_cache"];
 }
 
 #[test]
+fn globals_direct_string_offsets_route_empty_to_root_symbols() {
+    let execution = run_source(
+        r#"<?php
+$filled = "value";
+$zero = 0;
+$null = null;
+$GLOBALS["nested"]["child"] = "value";
+
+function probe_empty_globals() {
+    echo empty($GLOBALS["filled"]) ? "filled-empty" : "filled-value";
+    echo "|";
+    echo empty($GLOBALS["zero"]) ? "zero-empty" : "zero-value";
+    echo "|";
+    echo empty($GLOBALS["null"]) ? "null-empty" : "null-value";
+    echo "|";
+    echo empty($GLOBALS["missing"]) ? "missing-empty" : "missing-value";
+    echo "|";
+    echo empty($GLOBALS["nested"]["child"]) ? "nested-empty" : "nested-value";
+    echo "|";
+    echo empty($GLOBALS["nested"]["missing"]) ? "nested-missing-empty" : "nested-missing-value";
+}
+
+probe_empty_globals();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "filled-value|zero-empty|null-empty|missing-empty|nested-value|nested-missing-empty"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn globals_direct_string_offsets_route_unset_to_root_symbols() {
+    let execution = run_source(
+        r#"<?php
+$GLOBALS["target"] = "root";
+$GLOBALS["bag"]["slot"] = "gone";
+$GLOBALS["bag"]["keep"] = "stay";
+$alias =& $GLOBALS["bag"]["slot"];
+
+unset($GLOBALS["target"]);
+unset($GLOBALS["bag"]["slot"]);
+echo isset($target) ? "target:set" : "target:unset";
+echo "|";
+echo isset($GLOBALS["target"]) ? "global-target:set" : "global-target:unset";
+echo "|";
+echo array_key_exists("slot", $bag) ? "slot:set" : "slot:unset";
+echo "|keep=", $GLOBALS["bag"]["keep"];
+echo "|alias=", $alias;
+$alias = "changed";
+echo "|";
+echo array_key_exists("slot", $GLOBALS["bag"]) ? "slot:set" : "slot:unset";
+echo "|alias=", $alias;
+
+function clear_global_nested() {
+    $GLOBALS["bag"]["function"] = "value";
+    unset($GLOBALS["bag"]["function"]);
+}
+
+clear_global_nested();
+echo "|", isset($GLOBALS["bag"]["function"]) ? "function:set" : "function:unset";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "target:unset|global-target:unset|slot:unset|keep=stay|alias=gone|slot:unset|alias=changed|function:unset"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn globals_count_tracks_direct_and_globals_offset_unsets() {
+    let execution = run_source(
+        r#"<?php
+$c1 = 0;
+$c2 = 0;
+$a = 1;
+$b = 1;
+$c1 = count($GLOBALS);
+unset($a);
+unset($GLOBALS["b"]);
+$c2 = count($GLOBALS);
+
+var_dump($c1 - $c2);
+$c = 1;
+$c1 = count($GLOBALS);
+var_dump($c1 - $c2);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "int(2)\nint(1)\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn globals_direct_string_offsets_bind_reference_targets_to_direct_sources() {
     let execution = run_source(
         r#"<?php
@@ -972,9 +1073,12 @@ echo "|", $bag["outer"][0];
 
 #[test]
 fn other_superglobals_remain_ordinary_missing_variables_for_now() {
-    let error = runtime_error("<?php\necho $_SESSION;\n");
+    let execution = run_source("<?php\necho $_SESSION;\n").unwrap();
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
-    assert_eq!(error.message, "undefined variable '$_SESSION'");
+    assert_eq!(
+        execution.stdout,
+        "Warning: Undefined variable $_SESSION in Command line code on line 2\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
 }

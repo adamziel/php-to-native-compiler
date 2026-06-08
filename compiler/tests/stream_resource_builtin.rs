@@ -186,6 +186,46 @@ echo count($wrappers);
 }
 
 #[test]
+fn stream_get_transports_reports_bounded_metadata_array() {
+    let execution = run_source(
+        r#"<?php
+$transports = stream_get_transports();
+echo function_exists("stream_get_transports") ? "exists" : "missing";
+echo "|";
+echo is_callable("stream_get_transports") ? "callable" : "missing";
+echo "|";
+echo is_array($transports) ? "array" : "not-array";
+echo "|";
+echo in_array("tcp", $transports, true) ? "tcp" : "no-tcp";
+echo "|";
+echo in_array("udp", $transports, true) ? "udp" : "no-udp";
+echo "|";
+echo in_array("unix", $transports, true) ? "unix" : "no-unix";
+echo "|";
+echo in_array("tlsv1.3", $transports, true) ? "tls13" : "no-tls13";
+echo "|";
+echo in_array("http", $transports, true) ? "http" : "no-http";
+echo "|";
+echo count($transports);
+echo "|";
+$fn = "stream_get_transports";
+echo count($fn());
+echo "|";
+$reflection = new ReflectionFunction("stream_get_transports");
+echo $reflection->getExtensionName(), ":", $reflection->getNumberOfRequiredParameters(), "/", $reflection->getNumberOfParameters();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "exists|callable|array|tcp|udp|unix|tls13|no-http|10|10|standard:0/0"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn stream_wrapper_registry_mutations_are_request_local_and_visible() {
     let execution = run_source(
         r#"<?php

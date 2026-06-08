@@ -1,5 +1,5 @@
 use php_compiler::error::Phase;
-use php_compiler::{emit_ir_source, run_source};
+use php_compiler::{emit_ir_source, run_source, run_source_with_source_file};
 
 const LLVM_ARRAY_REJECTION: &str = "LLVM array lowering rejects arrays, array literals, array indexing, array assignment, foreach array iteration, array offset unset, and array builtin function calls until native array storage layout, key normalization, copy-on-write, references, callbacks, and exact native error behavior exist; phpc run handles current array behavior";
 
@@ -82,6 +82,28 @@ echo reset($items), "|", key($items);
 }
 
 #[test]
+fn current_observes_append_after_exhausted_tail_unset() {
+    let execution = run_source(
+        r#"<?php
+$array = ["foo" => 1, "bar" => 2, "baz" => 3];
+reset($array);
+while ($cur = current($array)) {
+    var_dump($cur);
+    next($array);
+}
+
+unset($array["baz"]);
+$array[] = 4;
+var_dump(current($array));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "int(1)\nint(2)\nint(3)\nint(4)\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn next_advances_direct_object_property_array_offsets() {
     let execution = run_source(
         r#"<?php
@@ -105,6 +127,48 @@ $hook->run();
 
     assert_eq!(execution.stdout, "10|20|20");
     assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn next_accepts_function_result_temporary_with_notice() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+function f() {
+    return array(1, 2);
+}
+var_dump(next(f()));
+"#,
+        "/tmp/array_next_error1.php",
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Notice: Only variables should be passed by reference in /tmp/array_next_error1.php on line 5\nint(2)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn next_array_literal_reports_php_reference_argument_fatal() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+function f() {
+    return array(1, 2);
+}
+var_dump(next(array(1, 2)));
+echo "after";
+"#,
+        "/tmp/array_next_error2.php",
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Fatal error: Uncaught Error: next(): Argument #1 ($array) could not be passed by reference in /tmp/array_next_error2.php:5\nStack trace:\n#0 {main}\n  thrown in /tmp/array_next_error2.php on line 5"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 255);
 }
 
 #[test]

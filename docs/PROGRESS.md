@@ -1,5 +1,871 @@
 # Progress Log
 
+## 2026-06-01
+
+Implemented:
+
+- Worker standard array/string residual PHPT lane closed the assigned
+  array/string rows. The supervisor precheck for `array_count_values.phpt`,
+  `array_count_values2.phpt`, `array_intersect_variation9.phpt`,
+  `similar_text_basic.phpt`, `str_word_count.phpt`, and
+  `str_word_count1.phpt` reported `5 PASS / 1 FAIL / 0 SKIP`, with only
+  `array_intersect_variation9.phpt` failing there; the local worker binary
+  additionally needed `array_count_values()` warning-skip parity for the two
+  count-values rows. `array_intersect()` now keeps the existing scalar fast
+  path but uses a warning-aware interpreter path when compared values contain
+  arrays: comparisons convert array values to `"Array"` with PHP-shaped
+  `Array to string conversion` warnings, including the reached variadic
+  warning-count behavior. `array_count_values()` now skips unsupported source
+  values after emitting PHP-shaped `Can only count string and integer values`
+  warnings, with `@` error-control suppression handled by the existing warning
+  path. Focused checks passed:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-array-string CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test array_intersect -- --test-threads=1`
+  with `8 passed`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-array-string CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test array_count_values -- --test-threads=1`
+  with `4 passed`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-array-string CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo build -p phpc --bin phpc`; and
+  `PHPC_BIN=/tmp/phpc-target-array-string/debug/phpc TEST_PHP_EXECUTABLE=/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper TEST_PHP_ARGS= TMPDIR=/tmp/phpc-array-string-phpt TEMP=/tmp/phpc-array-string-phpt TMP=/tmp/phpc-array-string-phpt php run-tests.php -q -p /home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper ext/standard/tests/array/array_count_values.phpt ext/standard/tests/array/array_count_values2.phpt ext/standard/tests/array/array_intersect_variation9.phpt ext/standard/tests/strings/similar_text_basic.phpt ext/standard/tests/strings/str_word_count.phpt ext/standard/tests/strings/str_word_count1.phpt`
+  from `/home/claude/php-src-phpt` with `6 PASS / 0 FAIL / 0 SKIP`.
+  Unsupported edge cases remain object/closure/resource value comparison
+  parity for `array_intersect()`, object `__toString()` comparison behavior,
+  references/copy-on-write containers, exact native `TypeError` objects, exact
+  warning integration beyond the covered warning texts and error-control
+  suppression, and native lowering.
+
+- Worker reflection metadata PHPT lane added bounded
+  `ReflectionClass::getConstructor()` for own and inherited user-class
+  constructors, scalar string-convertible `ReflectionClass::hasMethod()`
+  arguments for the covered int/float/bool false-result probes, and the
+  object-vs-null `==`/`!=` comparison slice needed by the public constructor
+  PHPT row. The existing `ReflectionFunction::isVariadic()` metadata path was
+  kept covered by the same focused lane. Focused checks passed:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-reflection-worker CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test reflection_metadata -- --test-threads=1`
+  with `1 passed`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-reflection-worker CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo build -p phpc --bin phpc`;
+  and
+  `PHPC_BIN=/tmp/phpc-target-reflection-worker/debug/phpc TEST_PHP_EXECUTABLE=/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper TEST_PHP_ARGS= TMPDIR=/tmp/phpc-reflection-phpt-final TEMP=/tmp/phpc-reflection-phpt-final TMP=/tmp/phpc-reflection-phpt-final php run-tests.php -q -p /home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper ext/reflection/tests/ReflectionFunction_isVariadic_basic.phpt ext/reflection/tests/ReflectionClass_getConstructor_basic.phpt ext/reflection/tests/ReflectionClass_hasMethod_002.phpt`
+  from `/home/claude/php-src-phpt` with `3 PASS / 0 FAIL / 0 SKIP`.
+  Current-supervisor precheck for those same three PHPT rows before this lane
+  showed `0 PASS / 3 FAIL / 0 SKIP`. Unsupported edge cases remain
+  constructor metadata beyond declared user-class method tables, exact
+  `ReflectionClass::hasMethod()` parameter object/type diagnostics outside
+  scalar string-convertible probes, non-UTF-8 method names, broader
+  object/scalar comparison parity beyond object-vs-null equality, and native
+  lowering.
+
+- Worker ext/hash scalar residual PHPT lane added bounded interpreter support
+  for `hash_algos()` and `hash($algo, $data, $binary = false)` over the
+  current CRC algorithm slice. `hash_algos()` returns the deterministic PHP 8.2
+  algorithm-name registry needed by `ext/hash/tests/hash_algos.phpt`;
+  `hash()` supports `crc32`, `crc32b`, and `crc32c` over scalar/null
+  string-convertible byte strings, returns lowercase hex by default, and
+  returns the raw 4-byte digest when the third argument is truthy. The two
+  builtins are visible to string-valued dynamic calls, `function_exists()`,
+  `is_callable()`, and bounded `ReflectionFunction` metadata under the `hash`
+  extension. The assigned precheck on
+  `ext/hash/tests/crc32.phpt` and `ext/hash/tests/hash_algos.phpt` reported
+  `0 PASS / 2 FAIL / 0 SKIP` before this lane. Focused checks passed:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-hash-residuals CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test hash_builtin -- --test-threads=1`
+  with `4 passed`; and
+  `CARGO_TARGET_DIR=/tmp/phpc-target-hash-residuals CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo build -p phpc --bin phpc`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-hash-residuals CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo fmt --check`;
+  `git diff --check`; and
+  `PHPC_BIN=/tmp/phpc-target-hash-residuals/debug/phpc TEST_PHP_EXECUTABLE=/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper TEST_PHP_ARGS= TMPDIR=/tmp/phpc-hash-residuals-phpt TEMP=/tmp/phpc-hash-residuals-phpt TMP=/tmp/phpc-hash-residuals-phpt php run-tests.php -q -p /home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper ext/hash/tests/crc32.phpt ext/hash/tests/hash_algos.phpt`
+  from `/home/claude/php-src-phpt` with `2 PASS / 0 FAIL / 0 SKIP`.
+  Unsupported edge cases remain `hash()` algorithms beyond `crc32`, `crc32b`,
+  and `crc32c`, hash contexts, `hash_file()`, `hash_equals()`,
+  `hash_hmac_algos()`, HMAC algorithms beyond SHA-256, HMAC raw binary output,
+  exact diagnostics beyond the covered scalar slice, array/object/resource
+  coercions, provider/FIPS policy, streaming/large-input accounting beyond the
+  current in-memory string model, and native lowering.
+
+- Worker DateTime mutable metadata lane added bounded interpreter dispatch for
+  `DateTime::getOffset()`, `DateTime::getTimezone()`, and
+  `DateTime::setTimezone()` over the existing `DateTime` timestamp plus
+  bounded timezone state. `setTimezone()` accepts implemented `DateTimeZone`
+  objects, preserves the timestamp, refreshes the visible `date`,
+  `timezone_type`, and `timezone` object properties, and returns the same
+  mutable `DateTime` object. Core `DateTime` method metadata now advertises
+  the three methods. The assigned supervisor precheck on
+  `ext/date/tests/DateTime_getOffset_basic1.phpt`,
+  `ext/date/tests/DateTime_getTimeZone_basic1.phpt`, and
+  `ext/date/tests/DateTime_setTimezone_basic1.phpt` reported
+  `0 PASS / 3 FAIL / 0 SKIP` before this lane. Focused checks passed:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-datetime-metadata CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test date_time_builtin datetime_mutable_timezone_metadata_matches_basic_rows -- --test-threads=1`
+  with `1 passed`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-datetime-metadata CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo build -p phpc --bin phpc`; and
+  `PHPC_BIN=/tmp/phpc-target-datetime-metadata/debug/phpc TEST_PHP_EXECUTABLE=/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper TEST_PHP_ARGS= TMPDIR=/tmp/phpc-datetime-metadata-phpt TEMP=/tmp/phpc-datetime-metadata-phpt TMP=/tmp/phpc-datetime-metadata-phpt php run-tests.php -q -p /home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper ext/date/tests/DateTime_getOffset_basic1.phpt ext/date/tests/DateTime_getTimeZone_basic1.phpt ext/date/tests/DateTime_setTimezone_basic1.phpt`
+  from `/home/claude/php-src-phpt` with `3 PASS / 0 FAIL / 0 SKIP`.
+  Unsupported edge cases remain `DateTime` constructor timezone arguments,
+  `DateTimeImmutable`, general `DateTimeInterface` implementation, broad
+  timezone database parity, exact PHP diagnostics/type errors,
+  invalid/uninitialized date object recovery beyond the bounded runtime
+  errors, microsecond/timezone transition breadth beyond existing date
+  support, and native lowering.
+
+- Worker JSON encode numeric-check PHPT lane added bounded interpreter support
+  for `JSON_NUMERIC_CHECK` in `json_encode($value, $flags = 0)`. The flag now
+  converts well-formed numeric strings to JSON integer/float literals using the
+  existing runtime numeric-string classifier, while preserving leading-numeric
+  strings such as invalid exponent forms as JSON strings. The global
+  `JSON_NUMERIC_CHECK` constant is available to the interpreter. Focused
+  checks passed:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-json-worker-current CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test json_encode_flags -- --test-threads=1`
+  with `3 passed`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-json-worker-current CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo build -p phpc --bin phpc`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-json-worker-current CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo fmt --check`;
+  `git diff --check`; and
+  `PHPC_BIN=/tmp/phpc-target-json-worker-current/debug/phpc TEST_PHP_EXECUTABLE=/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper TEST_PHP_ARGS= TMPDIR=/tmp/phpc-json-numeric-phpt TEMP=/tmp/phpc-json-numeric-phpt TMP=/tmp/phpc-json-numeric-phpt php run-tests.php -q -p /home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper ext/json/tests/json_encode_numeric.phpt ext/json/tests/bug55543.phpt ext/json/tests/bug64695.phpt`
+  from `/home/claude/php-src-phpt` with `3 PASS / 0 FAIL / 0 SKIP`.
+  Unsupported edge cases remain `json_decode()`, unsupported encode flags such
+  as `JSON_PRETTY_PRINT`, `JSON_UNESCAPED_UNICODE`,
+  `JSON_PRESERVE_ZERO_FRACTION`, and `JSON_PARTIAL_OUTPUT_ON_ERROR`, depth
+  enforcement, invalid UTF-8 recovery/ignore/substitute behavior, real
+  last-error state updates, recursion detection, unsupported-type and INF/NAN
+  error parity, exact float formatting parity beyond the current formatter,
+  and native lowering.
+
+- Worker standard-string SHA1 PHPT lane added bounded interpreter support for
+  `sha1($string, $binary = false)` over the current scalar/null
+  string-convertible byte-string slice. The digest helper now returns lowercase
+  hex by default, returns the raw 20-byte binary-string digest when the second
+  argument is truthy, and is visible to string-valued dynamic calls,
+  `function_exists()`, `is_callable()`, and `ReflectionFunction` metadata.
+  Focused checks passed:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-sha1-worker CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test string_sha1_builtins -- --test-threads=1`
+  with `2 passed`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-sha1-worker CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo build -p phpc --bin phpc`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-sha1-worker CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo fmt --check`;
+  `git diff --check`;
+  and
+  `PHPC_BIN=/tmp/phpc-target-sha1-worker/debug/phpc TEST_PHP_EXECUTABLE=/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper TEST_PHP_ARGS= TMPDIR=/tmp/phpc-sha1-phpt-after TEMP=/tmp/phpc-sha1-phpt-after TMP=/tmp/phpc-sha1-phpt-after php run-tests.php -q -p /home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper ext/standard/tests/strings/sha1_basic.phpt ext/standard/tests/strings/sha1raw.phpt`
+  from `/home/claude/php-src-phpt` with `2 PASS / 0 FAIL / 0 SKIP`.
+  Unsupported edge cases remain `sha1_file()`, object/resource coercions,
+  non-bool exact flag diagnostics beyond current truthiness,
+  FIPS/provider-policy behavior, streaming hash contexts, extremely large
+  input length accounting beyond the current in-memory string model, and
+  native lowering.
+
+- Worker general-functions diagnostic PHPT lane added bounded interpreter
+  support for `settype()` invalid-type/resource diagnostics,
+  `php_uname()` invalid-mode diagnostics, and the negative-argument
+  `sleep()` `ValueError` path. The current `settype()` slice is
+  diagnostic-only: direct variable calls avoid reading an undefined target
+  before validating the requested type, invalid type names raise
+  `settype(): Argument #2 ($type) must be a valid type`, and `resource`
+  raises `Cannot convert to resource type`, while value-changing conversions
+  remain unsupported. `php_uname()` exposes deterministic CLI metadata for
+  valid one-character modes and PHP-shaped catchable `ValueError` objects for
+  empty, multi-character, or unknown modes. Negative `sleep()` calls now report
+  PHP's catchable `ValueError` and retain the internal-call stack frame needed
+  by the public PHPT row. Direct calls, string-valued dynamic calls,
+  `function_exists()`, `is_callable()`, and bounded `ReflectionFunction`
+  metadata recognize the new metadata functions. Focused checks passed:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-worker-metadata CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test settype_sleep_diagnostics -- --test-threads=1`
+  with `3 passed`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-worker-metadata CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo build -p phpc --bin phpc`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-worker-metadata CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo fmt --check`;
+  `git diff --check`; and
+  `PHPC_BIN=/tmp/phpc-target-worker-metadata/debug/phpc TEST_PHP_EXECUTABLE=/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper TEST_PHP_ARGS= TMPDIR=/tmp/phpc-settype-sleep-phpt TEMP=/tmp/phpc-settype-sleep-phpt TMP=/tmp/phpc-settype-sleep-phpt php run-tests.php -q -p /home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper ext/standard/tests/general_functions/gettype_settype_error.phpt ext/standard/tests/general_functions/sleep_error.phpt ext/standard/tests/general_functions/php_uname_error.phpt`
+  from `/home/claude/php-src-phpt` with `3 PASS / 0 FAIL / 0 SKIP`.
+  Unsupported edge cases remain `settype()` value-changing conversions,
+  non-direct/reference-preserving `settype()` semantics, `settype()` exact
+  argument/coercion diagnostics beyond the covered invalid type/resource
+  paths, real host `php_uname()` discovery and platform-specific output,
+  interrupted sleep return values, alarm/signal behavior, broader scalar
+  coercions, and native lowering.
+
+- Worker standard-directory metadata PHPT lane added bounded interpreter
+  diagnostics for deterministic local directory helpers. `dir()` and
+  `opendir()` now return `false` with PHP-shaped display warnings for missing,
+  non-directory, or unreadable local UTF-8 paths, while existing successful
+  directory resources and `Directory` objects continue to use deterministic
+  `.`/`..`/sorted entry ordering. `scandir()` invalid sorting-order constants
+  now raise the covered catchable `ValueError` text instead of escaping as an
+  unsupported runtime error. Focused checks passed:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-dir-worker CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test directory_metadata_helpers -- --test-threads=1`
+  with `2 passed`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-dir-worker CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo build -p phpc --bin phpc`;
+  `git diff --check`; and
+  `PHPC_BIN=/tmp/phpc-target-dir-worker/debug/phpc TEST_PHP_EXECUTABLE=/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper TEST_PHP_ARGS= TMPDIR=/tmp/phpc-dir-phpt TEMP=/tmp/phpc-dir-phpt TMP=/tmp/phpc-dir-phpt php run-tests.php -q -p /home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper ext/standard/tests/dir/dir_variation5.phpt ext/standard/tests/dir/dir_variation6.phpt ext/standard/tests/dir/opendir_error2.phpt ext/standard/tests/dir/scandir_invalid_flag.phpt`
+  from `/home/claude/php-src-phpt` with `4 PASS / 0 FAIL / 0 SKIP`.
+  `cargo fmt --check` was attempted with the same target settings but remains
+  blocked by unrelated concurrent formatting drift in
+  `compiler/src/interpreter.rs` (`settype()` and scalar-helper metadata) and
+  `compiler/tests/variable_scalar_helpers.rs`. Unsupported edge cases remain
+  directory stream wrappers and context behavior, non-UTF-8 paths and entry
+  names, exact host iteration ordering, real platform-specific permission
+  parity, exact diagnostics beyond the covered local failed-open warnings and
+  invalid `scandir()` sorting-order `ValueError`, and native lowering.
+
+- Worker standard-variable scalar helper PHPT lane added bounded interpreter
+  support for `boolval()`, `floatval()`, and `doubleval()`, plus the
+  catchable `ValueError` paths for `settype()` invalid type names and
+  `resource`. `boolval()` uses the current PHP-shaped truthiness model, and
+  `floatval()`/`doubleval()` cover null, booleans, integers, floats, finite
+  numeric strings including leading-numeric prefixes, invalid UTF-8/non-numeric
+  strings as `0.0`, and current resource ids. String-valued dynamic calls,
+  `function_exists()`, `is_callable()`, and bounded `ReflectionFunction`
+  metadata recognize the three scalar helpers. Focused checks passed:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-variable-worker CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test variable_scalar_helpers -- --test-threads=1`
+  with `4 passed`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-variable-worker CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo build -p phpc --bin phpc`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-variable-worker CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo fmt --check`;
+  `git diff --check`; and
+  `PHPC_BIN=/tmp/phpc-target-variable-worker/debug/phpc TEST_PHP_EXECUTABLE=/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper TEST_PHP_ARGS= TMPDIR=/tmp/phpc-variable-phpt TEMP=/tmp/phpc-variable-phpt TMP=/tmp/phpc-variable-phpt php run-tests.php -q -p /home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper ext/standard/tests/general_functions/boolval.phpt ext/standard/tests/general_functions/floatval_basic.phpt ext/standard/tests/general_functions/gettype_settype_error.phpt`
+  from `/home/claude/php-src-phpt` with `3 PASS / 0 FAIL / 0 SKIP`.
+  Unsupported edge cases remain `settype()` value-changing conversions,
+  `floatval()`/`doubleval()` array/object/Closure conversion and exact warning
+  text, non-finite numeric string conversion, broader resource lifecycle
+  parity beyond current ids, exact diagnostics beyond the covered catchable
+  `settype()` errors, and native lowering changes.
+
+- Worker standard-math scalar helper PHPT lane added bounded interpreter
+  support for `sqrt()` and `intdiv()`. `sqrt()` uses the existing unary
+  float-math argument path for the finite positive scalar row, while `intdiv()`
+  covers integer scalar truncation toward zero plus catchable
+  `ArithmeticError` for `PHP_INT_MIN / -1` and catchable
+  `DivisionByZeroError` for division by zero. String-valued dynamic calls,
+  `function_exists()`, `is_callable()`, and bounded `ReflectionFunction`
+  metadata recognize both builtins. Focused checks passed:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-math-scalars CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test math_builtins -- --test-threads=1`
+  with `2 passed`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-math-scalars CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo build -p phpc --bin phpc`;
+  `git diff --check`; and
+  `PHPC_BIN=/tmp/phpc-target-math-scalars/debug/phpc TEST_PHP_EXECUTABLE=/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper TEST_PHP_ARGS= TMPDIR=/tmp/phpc-math-scalars-phpt TEMP=/tmp/phpc-math-scalars-phpt TMP=/tmp/phpc-math-scalars-phpt php run-tests.php -q -p /home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper ext/standard/tests/math/sqrt_basic.phpt ext/standard/tests/math/intdiv.phpt`
+  from `/home/claude/php-src-phpt` with `2 PASS / 0 FAIL / 0 SKIP`.
+  `CARGO_TARGET_DIR=/tmp/phpc-target-math-scalars CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo fmt --check`
+  was attempted after the local math formatting fix but remains blocked by
+  unrelated pre-existing formatting drift in `compiler/src/interpreter.rs`,
+  `compiler/tests/directory_metadata_helpers.rs`, and
+  `compiler/tests/variable_scalar_helpers.rs`. Unsupported edge cases remain
+  `sqrt()` array/object/resource operands, exact PHP `TypeError`/deprecation
+  objects and text, platform/libm last-bit parity for broader domain and
+  non-finite edges, broad `intdiv()` scalar coercion and diagnostic parity,
+  exact PHP exception object metadata beyond the covered messages, references,
+  and native lowering beyond function-table introspection.
+
+- Worker standard-url scalar PHPT lane added bounded interpreter support for
+  `rawurlencode()`, `rawurldecode()`, and one-argument `parse_url()`.
+  The current parse slice returns PHP-shaped ordered arrays for the reached
+  scheme/authority host/numeric port/user/password/path/query/fragment forms,
+  including relative `//host` URLs and `?` inside fragments. String-valued
+  dynamic calls, `function_exists()`, and `is_callable()` recognize the three
+  builtins. Focused checks passed:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-url-worker CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test url_scalar_builtins -- --test-threads=1`
+  with `4 passed`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-url-worker CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo build -p phpc --bin phpc`;
+  `git diff --check`; and
+  `PHPC_BIN=/tmp/phpc-target-url-worker/debug/phpc TEST_PHP_EXECUTABLE=/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper TEST_PHP_ARGS= TMPDIR=/tmp/phpc-url-phpt-final TEMP=/tmp/phpc-url-phpt-final TMP=/tmp/phpc-url-phpt-final php run-tests.php -q -p /home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper ext/standard/tests/url/bug53248.phpt ext/standard/tests/url/parse_url_relative_scheme.phpt ext/standard/tests/url/bug54180.phpt ext/standard/tests/url/bug63162.phpt`
+  from `/home/claude/php-src-phpt` with `4 PASS / 0 FAIL / 0 SKIP`.
+  `CARGO_TARGET_DIR=/tmp/phpc-target-url-worker CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo fmt --check`
+  was attempted but remains blocked by unrelated pre-existing formatting
+  drift in the shared `settype()`/scalar-helper lane
+  (`compiler/src/interpreter.rs` and
+  `compiler/tests/variable_scalar_helpers.rs`). Unsupported edge cases remain
+  `parse_url()` component selection, `PHP_URL_*` constants, IPv6 bracket
+  hosts, full RFC/PHP malformed-URL recovery, non-UTF-8 URLs, exact
+  diagnostics, raw URL object/resource coercions, exact binary display edge
+  parity beyond represented runtime bytes, and native lowering.
+
+- Worker JSON scalar encoding flags PHPT lane added bounded interpreter support
+  for `json_encode($value, $flags = 0)` over the existing scalar/null, array,
+  and public object-property value subset. The current slice now emits
+  PHP-shaped default slash, control-byte, non-ASCII Unicode, and non-BMP
+  surrogate escaping, plus the reached encode flags/constants
+  `JSON_HEX_TAG`, `JSON_HEX_AMP`, `JSON_HEX_APOS`, `JSON_HEX_QUOT`,
+  `JSON_FORCE_OBJECT`, and `JSON_UNESCAPED_SLASHES`. `ReflectionFunction`
+  metadata reports the optional `flags` parameter under the `json` extension.
+  Focused checks passed:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-json-encode-flags CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test json_encode_flags -- --test-threads=1`
+  with `2 passed`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-json-encode-flags CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo build -p phpc --bin phpc`;
+  `git diff --check`; and
+  `PHPC_BIN=/tmp/phpc-target-json-encode-flags/debug/phpc TEST_PHP_EXECUTABLE=/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper TEST_PHP_ARGS= TMPDIR=/tmp/phpc-json-encode-flags-phpt TEMP=/tmp/phpc-json-encode-flags-phpt TMP=/tmp/phpc-json-encode-flags-phpt php run-tests.php -q -p /home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper ext/json/tests/json_encode_unescaped_slashes.phpt ext/json/tests/002.phpt ext/json/tests/006.phpt ext/json/tests/json_encode_basic_utf8.phpt`
+  from `/home/claude/php-src-phpt` with `4 PASS / 0 FAIL / 0 SKIP`.
+  `CARGO_TARGET_DIR=/tmp/phpc-target-json-encode-flags CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo fmt --check`
+  remains blocked by unrelated pre-existing formatting drift in the shared
+  `settype()` and `parse_url()` branches in `compiler/src/interpreter.rs`.
+  Unsupported edge cases remain `json_decode()`, unsupported JSON flags such
+  as `JSON_NUMERIC_CHECK`, `JSON_PRETTY_PRINT`, `JSON_UNESCAPED_UNICODE`, and
+  `JSON_PARTIAL_OUTPUT_ON_ERROR`, depth enforcement, invalid UTF-8
+  recovery/ignore/substitute behavior, real last-error state updates,
+  recursion detection, unsupported-type and INF/NAN error parity, exact float
+  formatting parity beyond the current formatter, and native lowering.
+
+- Worker standard-math inverse-hyperbolic PHPT lane added bounded interpreter
+  support for `acosh()`, `asinh()`, and `atanh()` through the existing unary
+  float-math argument path. Direct calls, string-valued dynamic calls,
+  `function_exists()`, `is_callable()`, and bounded `ReflectionFunction`
+  metadata recognize the three standard math builtins. Focused checks passed:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-math-worker CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test math_builtins -- --test-threads=1`
+  with `1 passed`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-math-worker CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo build -p phpc --bin phpc`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-math-worker CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo fmt --check`;
+  `git diff --check`; and
+  `PHPC_BIN=/tmp/phpc-target-math-worker/debug/phpc TEST_PHP_EXECUTABLE=/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper TEST_PHP_ARGS= TMPDIR=/tmp/phpc-math-phpt TEMP=/tmp/phpc-math-phpt TMP=/tmp/phpc-math-phpt php run-tests.php -q -p /home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper ext/standard/tests/math/acosh_basic.phpt ext/standard/tests/math/asinh_basic.phpt ext/standard/tests/math/atanh_basic.phpt`
+  from `/home/claude/php-src-phpt` with `3 PASS / 0 FAIL / 0 SKIP`.
+  Unsupported edge cases remain array/object/resource operands, exact PHP
+  `TypeError`/deprecation objects and text, platform/libm last-bit parity for
+  broader domain and non-finite edges, and native lowering beyond
+  function-table introspection.
+
+- Worker standard-string introspection PHPT lane added bounded interpreter
+  support for `similar_text()` and `str_word_count()`. `similar_text()` now
+  uses the PHP recursive longest-common-substring scoring model over the
+  current byte-string value slice and writes the optional percent result to a
+  direct variable for direct and string-valued direct dynamic calls.
+  `str_word_count()` now supports ASCII-letter words, the reached apostrophe
+  and hyphen continuation behavior, literal extra word bytes, formats `0`,
+  `1`, and `2`, and the catchable invalid-format `ValueError`. String-valued
+  dynamic calls, `function_exists()`, `is_callable()`, and
+  `ReflectionFunction` metadata recognize both builtins. Focused checks
+  passed:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-string-introspection CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test string_introspection_builtins -- --test-threads=1`
+  with `3 passed`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-string-introspection CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo build -p phpc --bin phpc`;
+  `git diff --check`; and
+  `PHPC_BIN=/tmp/phpc-target-string-introspection/debug/phpc TEST_PHP_EXECUTABLE=/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper TEST_PHP_ARGS= TMPDIR=/tmp/phpc-string-introspection-phpt TEMP=/tmp/phpc-string-introspection-phpt TMP=/tmp/phpc-string-introspection-phpt php run-tests.php -q -p /home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper ext/standard/tests/strings/similar_text_basic.phpt ext/standard/tests/strings/str_word_count.phpt ext/standard/tests/strings/str_word_count1.phpt`
+  from `/home/claude/php-src-phpt` with `3 PASS / 0 FAIL / 0 SKIP`.
+  `CARGO_TARGET_DIR=/tmp/phpc-target-string-introspection CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo fmt --check`
+  passed after the string-introspection formatting fix; a later re-run in the
+  shared dirty worktree is currently blocked by unrelated concurrent math-lane
+  formatting drift in `compiler/src/interpreter.rs` and
+  `compiler/tests/math_builtins.rs`.
+  Unsupported edge cases remain Unicode/locale-aware word classification,
+  `str_word_count()` character-list range syntax and escaping, broad binary
+  edge cases beyond represented runtime byte strings, object/resource
+  coercions, callback and `call_user_func_array()` by-reference percent
+  writeback for `similar_text()`, exact diagnostics beyond the covered
+  invalid-format `ValueError`, and native lowering.
+
+- Worker general-functions metadata PHPT lane added bounded interpreter support
+  for `connection_aborted()`, `connection_status()`,
+  `get_loaded_extensions()`, and `getmypid()`. The current slice reports the
+  CLI no-disconnect connection state (`0`/`CONNECTION_NORMAL`), exposes
+  `CONNECTION_NORMAL`, `CONNECTION_ABORTED`, and `CONNECTION_TIMEOUT`,
+  returns the current host process id from `getmypid()`, and returns the
+  deterministic bounded extension registry from `get_loaded_extensions()`.
+  String-valued dynamic calls, `function_exists()`, and `is_callable()`
+  recognize the four builtins. Focused checks passed:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-general-metadata CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test general_function_metadata_builtins -- --test-threads=1`
+  with `3 passed`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-general-metadata CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo build -p phpc --bin phpc`;
+  `git diff --check`; and
+  `PHPC_BIN=/tmp/phpc-target-general-metadata/debug/phpc TEST_PHP_EXECUTABLE=/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper TEST_PHP_ARGS= TMPDIR=/tmp/phpc-general-metadata-phpt TEMP=/tmp/phpc-general-metadata-phpt TMP=/tmp/phpc-general-metadata-phpt php run-tests.php -q -p /home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper ext/standard/tests/general_functions/get_loaded_extensions_basic.phpt ext/standard/tests/general_functions/getmypid_basic.phpt ext/standard/tests/general_functions/connection_status.phpt ext/standard/tests/general_functions/connection_aborted.phpt`
+  from `/home/claude/php-src-phpt` with `4 PASS / 0 FAIL / 0 SKIP`.
+  `CARGO_TARGET_DIR=/tmp/phpc-target-general-metadata CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo fmt --check`
+  was attempted but remains blocked by an unrelated pre-existing
+  `similar_text` formatting diff in `compiler/src/interpreter.rs`.
+  Unsupported edge cases remain real client disconnect/timeout state, request
+  finishing, web-server/SAPI connection behavior, host PID virtualization,
+  exact extension inventory/Zend-extension selection, host PHP/module
+  discovery, dynamic extension loading, extension versions, exact diagnostics,
+  and native lowering.
+
+- Worker standard-file umask/current-user PHPT lane added bounded interpreter
+  support for `get_current_user()` and request-local `umask()`. The current
+  slice exposes a non-empty CLI user string from `USER`/`LOGNAME` or
+  `unknown`, tracks an interpreter-local permission mask without mutating the
+  host process umask, and applies that mask to newly created local files from
+  `fopen("w"/"a"/"c")`, `file_put_contents()`, `touch()`, and directories
+  from `mkdir()`. String-valued dynamic calls, `function_exists()`,
+  `is_callable()`, and bounded `ReflectionFunction` metadata recognize both
+  builtins. Focused checks passed:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-file-worker CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test file_umask_current_user -- --test-threads=1`
+  with `2 passed`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-file-worker CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo build -p phpc --bin phpc`;
+  `git diff --check`; and
+  `PHPC_BIN=/tmp/phpc-target-file-worker/debug/phpc TEST_PHP_EXECUTABLE=/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper TEST_PHP_ARGS= TMPDIR=/tmp/phpc-file-phpt TEMP=/tmp/phpc-file-phpt TMP=/tmp/phpc-file-phpt php run-tests.php -q -p /home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper ext/standard/tests/file/get_current_user.phpt ext/standard/tests/file/umask_basic.phpt ext/standard/tests/file/umask_variation1.phpt ext/standard/tests/file/umask_variation2.phpt`
+  from `/home/claude/php-src-phpt` with `4 PASS / 0 FAIL / 0 SKIP`.
+  `cargo fmt --check` was attempted with the same target settings but remains
+  blocked by pre-existing unrelated formatting drift in the shared
+  `similar_text()` branch in `compiler/src/interpreter.rs`. Unsupported edge
+  cases remain exact current-script-owner lookup for `get_current_user()`,
+  passwd database and SAPI-specific user resolution, host process umask
+  discovery, process-wide umask side effects, umask effects on filesystem
+  creation helpers beyond the documented local subset, broader scalar
+  coercions, exact diagnostics, and native lowering.
+
+- Worker libxml empty-error metadata PHPT lane added bounded interpreter support
+  for `libxml_use_internal_errors()`, `libxml_get_errors()`,
+  `libxml_get_last_error()`, and `libxml_clear_errors()` over the no-parse
+  request-local libxml state. The current slice tracks the internal-errors
+  bool flag, reports an empty error queue, exposes no last error, and returns
+  `null` from clear. String-valued dynamic calls, `function_exists()`,
+  `is_callable()`, and `ReflectionFunction` metadata recognize the four
+  builtins under the `libxml` extension name without claiming XML parsing.
+  Focused checks passed:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-libxml-worker CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test libxml_error_metadata -- --test-threads=1`
+  with `2 passed`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-libxml-worker CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo build -p phpc --bin phpc`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-libxml-worker CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo fmt --check`;
+  `git diff --check`; and
+  `PHPC_BIN=/tmp/phpc-target-libxml-worker/debug/phpc TEST_PHP_EXECUTABLE=/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper TEST_PHP_ARGS= TMPDIR=/tmp/phpc-libxml-phpt-tmp TEMP=/tmp/phpc-libxml-phpt-tmp TMP=/tmp/phpc-libxml-phpt-tmp php run-tests.php -q -p /home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper ext/libxml/tests/001.phpt`
+  from `/home/claude/php-src-phpt` with `1 PASS / 0 FAIL / 0 SKIP`.
+  Unsupported edge cases remain actual XML parsing, `LibXMLError` object
+  creation/population, parser error queues, SimpleXML/DOM integration,
+  external entity loader behavior, `libxml_set_streams_context()`, `LIBXML_*`
+  constants, broad bool coercion parity beyond scalar/null values, exact
+  diagnostics, `extension_loaded("libxml")`, and native lowering.
+
+- Worker DateTime constants PHPT lane added bounded interpreter support for
+  direct `DateTimeInterface::*`, `DateTime::*`, and `DateTimeImmutable::*`
+  format constants backed by the existing global `DATE_*` values, plus the
+  pinned PHP 8.5 deprecation diagnostics for `DATE_RFC7231` and
+  `DateTimeInterface::RFC7231`. The slice is constant-only and does not claim
+  broader DateTimeImmutable objects, DateTimeInterface reflection metadata, or
+  arbitrary date class APIs. Focused checks passed:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-datetime-constants CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test date_time_builtin datetime_format_constants_match_global_constants -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-datetime-constants CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test date_time_builtin -- --test-threads=1`
+  with `10 passed`;
+  `git diff --check`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-datetime-constants CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo build -p phpc --bin phpc`;
+  and
+  `PHPC_BIN=/tmp/phpc-target-datetime-constants/debug/phpc TEST_PHP_EXECUTABLE=/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper TEST_PHP_ARGS= TMPDIR=/tmp/phpc-datetime-constants-phpt TEMP=/tmp/phpc-datetime-constants-phpt TMP=/tmp/phpc-datetime-constants-phpt php run-tests.php -q -p /home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper ext/date/tests/DateTimeInterface_constants.phpt ext/date/tests/DateTime_constants.phpt ext/date/tests/DateTimeImmutable_constants.phpt`
+  from `/home/claude/php-src-phpt` with `3 PASS / 0 FAIL / 0 SKIP`.
+  `cargo fmt --check` remains blocked by a pre-existing unrelated libxml
+  formatting diff in `compiler/src/interpreter.rs`.
+
+- Worker array first/last PHPT lane added bounded interpreter support for
+  `array_first()` and `array_last()`. The current slice accepts arrays only,
+  returns the first or last inserted value, returns `null` for empty arrays,
+  and recognizes the two functions through string-valued dynamic calls,
+  `function_exists()`, `is_callable()`, and bounded `ReflectionFunction`
+  metadata. `json_encode()` now reads array entries through cloned slot values
+  so reference-backed array slots reached by the public PHPT proof do not
+  panic. Focused checks passed:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-array-first-last CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test array_first_last -- --test-threads=1`;
+  `git diff --check`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-array-first-last CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo build -p phpc --bin phpc`;
+  and
+  `PHPC_BIN=/tmp/phpc-target-array-first-last/debug/phpc TEST_PHP_EXECUTABLE=/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper TEST_PHP_ARGS= TMPDIR=/tmp/phpc-array-first-last-phpt-main TEMP=/tmp/phpc-array-first-last-phpt-main TMP=/tmp/phpc-array-first-last-phpt-main php run-tests.php -q -p /home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper ext/standard/tests/array/array_first_last.phpt ext/standard/tests/array/array_first_last_errors.phpt`
+  from `/home/claude/php-src-phpt` with `2 PASS / 0 FAIL / 0 SKIP`.
+  `CARGO_TARGET_DIR=/tmp/phpc-target-array-first-last CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo fmt --check`
+  was attempted in the shared dirty worktree but remains blocked by unrelated
+  pre-existing formatting diffs in `compiler/src/interpreter.rs`,
+  `compiler/src/lexer.rs`, and `runtime/src/lib.rs`; the same patch in a clean
+  auxiliary worktree passed `cargo fmt --check`. Unsupported edge cases remain
+  non-array operand PHP `TypeError` object parity, reference/copy-on-write
+  return semantics beyond cloned current values, broader `json_encode()`
+  recursion/flags/error-state behavior, and native lowering.
+
+- Worker throwable diagnostics PHPT lane added the narrow catchable
+  non-object method-call diagnostic used by
+  `Zend/tests/methods-on-non-objects-catch.phpt` and
+  `Zend/tests/methods-on-non-objects-usort.phpt`, mapping direct calls on
+  `null` to PHP's catchable `Error` message. Core `Exception`/`Error`
+  metadata now exposes `getCode()` and `getPrevious()` alongside
+  `getMessage()`, with `getCode()` returning constructor-stored exception
+  codes or `0` for catchable runtime `Error` objects and `getPrevious()`
+  returning the bounded constructor-provided previous exception or `null`.
+  Focused checks passed:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-throwable-worker CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test builtin_exception_class -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-throwable-worker CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo build -p phpc --bin phpc`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-throwable-worker CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo fmt --check`;
+  `git diff --check`; and
+  `PHPC_BIN=/tmp/phpc-target-throwable-worker/debug/phpc TEST_PHP_EXECUTABLE=/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper TEST_PHP_ARGS= TMPDIR=/tmp/phpc-throwable-phpt-final TEMP=/tmp/phpc-throwable-phpt-final TMP=/tmp/phpc-throwable-phpt-final php run-tests.php -q -p /home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper Zend/tests/methods-on-non-objects-catch.phpt Zend/tests/methods-on-non-objects-usort.phpt`
+  with `2 PASS / 0 FAIL / 0 SKIP`. Unsupported edge cases remain broad
+  method-call diagnostics for non-null non-object receivers, `Error`
+  constructor arguments, `getFile()`/`getLine()`/`getTrace()`/
+  `getTraceAsString()`, exact stack-frame capture, `Throwable::__toString()`,
+  exception-handler APIs, previous-chain rewriting during nested
+  try/finally replacement, serialization, and native lowering.
+
+- Worker numeric-literal separator PHPT lane added lexer support for PHP
+  numeric literal separators between digits in decimal integer, float,
+  hexadecimal, binary, legacy-octal, and explicit-octal literal forms.
+  Binary (`0b`/`0B`) and explicit-octal (`0o`/`0O`) integer literals are
+  bounded to the current signed 64-bit subset, and malformed separator shapes
+  such as trailing, adjacent, exponent-adjacent, and prefix-adjacent
+  underscores remain parse errors instead of being accepted as literal text.
+  Focused checks passed:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-numeric-literals CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test numeric_literals -- --test-threads=1`
+  with `3 passed`;
+  `git diff --check`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-numeric-literals CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo build -p phpc --bin phpc`;
+  and
+  `PHPC_BIN=/tmp/phpc-target-numeric-literals/debug/phpc TEST_PHP_EXECUTABLE=/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper TEST_PHP_ARGS= TMPDIR=/tmp/phpc-numeric-literals-phpt TEMP=/tmp/phpc-numeric-literals-phpt TMP=/tmp/phpc-numeric-literals-phpt php run-tests.php -q -p /home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper Zend/tests/numeric_literal_separator/numeric_literal_separator_001.phpt`
+  from `/home/claude/php-src-phpt` with `1 PASS / 0 FAIL / 0 SKIP`.
+  `cargo fmt --check` was attempted with the same target settings but remains
+  blocked by pre-existing unrelated formatting drift in the DateTimeZone
+  `getLocation()` branch in `compiler/src/interpreter.rs`. Unsupported edge
+  cases remain integer literal overflow to PHP floats/`INF` for binary,
+  octal, decimal, and hexadecimal forms, exact PHP parse text for malformed
+  numeric separators and base prefixes, exact invalid numeric literal
+  diagnostics beyond the existing bounded lex errors, and native overflow
+  parity.
+
+- Worker standard-string uuencode PHPT lane added bounded interpreter support
+  for `convert_uuencode()` and `convert_uudecode()` over the current PHP
+  byte-string value model. The encoder emits standard 45-byte uuencode lines
+  with backtick zero encoding and the terminating zero-length line; the
+  decoder accepts terminated encoded payloads plus the reached complete
+  single-line payload shape, and returns `false` with the PHP invalid-data
+  warning for malformed, truncated, or unterminated inputs. String-valued
+  dynamic calls, `function_exists()`, `is_callable()`, `ReflectionFunction`,
+  and native metadata folds recognize the two builtins. `var_dump()` now has a
+  minimal binary-string display boundary that reports byte length and a lossy
+  printable body for invalid UTF-8 bytes, covering the uuencode diagnostic row
+  without claiming raw invalid-byte stdout fidelity. Focused checks passed:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-uucode-worker CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test string_residual_builtins uu -- --test-threads=1`
+  with `2 passed`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-uucode-worker CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test string_residual_builtins -- --test-threads=1`
+  with `6 passed`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-uucode-worker CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo build -p phpc --bin phpc`;
+  and
+  `PHPC_BIN=/tmp/phpc-target-uucode-worker/debug/phpc TEST_PHP_EXECUTABLE=/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper TEST_PHP_ARGS= TMPDIR=/tmp/phpc-uucode-phpt-tmp TEMP=/tmp/phpc-uucode-phpt-tmp TMP=/tmp/phpc-uucode-phpt-tmp php run-tests.php -q -p /home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper ext/standard/tests/strings/convert_uuencode_basic.phpt ext/standard/tests/strings/convert_uudecode_basic.phpt ext/standard/tests/strings/uuencode.phpt ext/standard/tests/strings/bug67252.phpt`
+  from `/home/claude/php-src-phpt` with `4 PASS / 0 FAIL / 0 SKIP`.
+  `cargo fmt --check` was attempted and remains blocked by pre-existing
+  unrelated formatting drift in the DateTimeZone `getLocation()` branch in
+  `compiler/src/interpreter.rs` and the core `Error::getMessage` metadata in
+  `runtime/src/lib.rs`. Unsupported edge cases remain begin/end uuencoded
+  file wrappers, whitespace/noise tolerance beyond the reached line format,
+  exact malformed-input parity, broad object/resource coercions, very large
+  outputs, raw invalid-byte stdout fidelity for `var_dump()`, exact
+  diagnostics beyond the covered invalid-data warning, and native lowering
+  beyond metadata folds.
+
+- Worker JSON last-error metadata PHPT lane added bounded interpreter support
+  for `json_last_error()` and `json_last_error_msg()`. The current slice
+  exposes only the initial/success no-error state (`0` and `"No error"`),
+  plus catchable PHP-shaped zero-argument diagnostics, and string-valued
+  dynamic calls, `function_exists()`, `is_callable()`, and
+  `ReflectionFunction` metadata recognize the two builtins under the `json`
+  extension. Focused checks passed:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-json-worker CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test json_error_metadata -- --test-threads=1`;
+  `git diff --check`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-json-worker CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo build -p phpc --bin phpc`;
+  and
+  `PHPC_BIN=/tmp/phpc-target-json-worker/debug/phpc TEST_PHP_EXECUTABLE=/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper TEST_PHP_ARGS= TMPDIR=/tmp/phpc-json-phpt-tmp TEMP=/tmp/phpc-json-phpt-tmp TMP=/tmp/phpc-json-phpt-tmp php run-tests.php -q -p /home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper ext/json/tests/json_last_error_error.phpt ext/json/tests/json_last_error_msg_error.phpt`
+  from `/home/claude/php-src-phpt` with `2 PASS / 0 FAIL / 0 SKIP`.
+  `cargo fmt --check` was attempted with the same target settings but remains
+  blocked by pre-existing unrelated formatting drift in the DateTimeZone
+  `getLocation()` branch in `compiler/src/interpreter.rs` and the core
+  `Error::getMessage` metadata in `runtime/src/lib.rs`. Unsupported edge
+  cases remain `json_decode()`, JSON constants and flags, real last-error
+  state updates for parse/encode/depth/UTF-8/recursion/unsupported-type and
+  throwable failures, exact JSON warning/deprecation behavior, and native
+  lowering.
+
+- Worker stream transport metadata PHPT lane added bounded interpreter support
+  for `stream_get_transports()` as a deterministic metadata-only array. Direct
+  calls, string-valued dynamic calls, `function_exists()`, `is_callable()`, and
+  `ReflectionFunction` metadata now recognize the builtin without claiming
+  socket transport behavior. Focused checks passed:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-stream-transports CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test stream_resource_builtin stream_get_transports_reports_bounded_metadata_array -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-stream-transports CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test stream_resource_builtin -- --test-threads=1`
+  with `27 passed`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-stream-transports CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo build -p phpc --bin phpc`;
+  and
+  `PHPC_BIN=/tmp/phpc-target-stream-transports/debug/phpc TEST_PHP_EXECUTABLE=/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper TEST_PHP_ARGS= TMPDIR=/tmp/phpc-stream-transports-phpt TEMP=/tmp/phpc-stream-transports-phpt TMP=/tmp/phpc-stream-transports-phpt php run-tests.php -q -p /home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper ext/standard/tests/streams/stream_get_transports.phpt`
+  from `/home/claude/php-src-phpt` with `1 PASS / 0 FAIL / 0 SKIP`.
+  `cargo fmt --check` was attempted with the same target settings but remains
+  blocked by pre-existing unrelated formatting diffs in the DateTimeZone,
+  lexer numeric-literal, and runtime core metadata areas outside this lane.
+  Unsupported edge cases remain real socket/network transport
+  operations, host/OpenSSL capability discovery, platform-specific transport
+  list variance, stream socket creation/accept/connect APIs, exact warning
+  coverage beyond zero-argument arity, and native lowering.
+
+- Worker date/time timezone-metadata PHPT lane added bounded
+  `timezone_location_get()` and `DateTimeZone::getLocation()` support for the
+  current regional timezone metadata subset, plus recoverable display warnings
+  for unsupported `timezone_open()` identifiers after supported scalar
+  stringification. The slice covers `Europe/Oslo` and the small abbreviation
+  rows needed by current location PHPTs (`Australia/Adelaide`,
+  `America/Halifax`, `Africa/Addis_Ababa`, and `America/New_York`) without
+  claiming a full timezone database. Focused checks passed:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-date-worker CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test date_time_builtin timezone_location_metadata_and_open_warnings_cover_current_rows -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-date-worker CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test date_time_builtin -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-date-worker CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo build -p phpc --bin phpc`;
+  and
+  `PHPC_BIN=/tmp/phpc-target-date-worker/debug/phpc TEST_PHP_EXECUTABLE=/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper TEST_PHP_ARGS= TMPDIR=/tmp/phpc-date-proof-phpt TEMP=/tmp/phpc-date-proof-phpt TMP=/tmp/phpc-date-proof-phpt php run-tests.php -q -p /home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper ext/date/tests/timezone_location_get.phpt ext/date/tests/DateTimeZone_getLocation.phpt ext/date/tests/timezone_open_warning.phpt`
+  with `3 PASS / 0 FAIL / 0 SKIP`. Broader adjacent checks remain dirty-worktree
+  blocked: `timezone_builtin` still has a stale zero-argument
+  `date_default_timezone_set()` expectation, and the runtime core class-table
+  test fails on an existing ArrayObject/SplDoublyLinkedList class-list
+  mismatch before this lane's `DateTimeZone::getLocation` metadata assertion.
+  Unsupported edge cases remain the full timezone/location database, exact
+  abbreviation catalog breadth and counts, location metadata for fixed-offset
+  and abbreviation-only zones, object/array/resource timezone coercions, exact
+  constructor exception classes, and native lowering.
+
+- Worker output-buffer residual PHPT lane added bounded interpreter support for
+  `flush()` and `ob_implicit_flush()`. `flush()` is a deterministic CLI no-op
+  returning `null` that does not drain active user buffers, and
+  `ob_implicit_flush()` accepts the current zero-argument plus bool/int toggle
+  slice, returns `null`, and intentionally leaves user-buffer behavior
+  unchanged. String-valued dynamic calls, `function_exists()`,
+  `is_callable()`, `ReflectionFunction`, and native function-table
+  introspection recognize the two standard builtins. Focused checks passed:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-ob-worker CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test output_buffer_builtin flush_and_ob_implicit_flush -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-ob-worker CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test output_buffer_builtin -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-ob-worker CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo build -p phpc --bin phpc`;
+  and
+  `PHPC_BIN=/tmp/phpc-target-ob-worker/debug/phpc TEST_PHP_EXECUTABLE=/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper TEST_PHP_ARGS= TMPDIR=/tmp/phpc-ob-proof-phpt TEMP=/tmp/phpc-ob-proof-phpt TMP=/tmp/phpc-ob-proof-phpt php run-tests.php -q -p /home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper tests/output/flush_basic_001.phpt tests/output/ob_implicit_flush_basic_001.phpt tests/output/ob_implicit_flush_basic_002.phpt`
+  from `/home/claude/php-src-phpt` with `3 PASS / 0 FAIL / 0 SKIP`.
+  `cargo fmt --check` was attempted with the same target settings but remains
+  blocked by a pre-existing unrelated DateTimeZone formatting diff outside
+  this output-buffer lane. Unsupported edge cases remain real SAPI flush
+  behavior, implicit-flush effects beyond the no-op toggle, broad bool
+  coercions for `ob_implicit_flush()`, custom output callbacks, chunk sizes,
+  non-default flags, exact output-handler metadata/warnings, fatal-error
+  cleanup, and native lowering beyond function-table introspection.
+
+- Worker XML parser option PHPT lane added a bounded interpreter-owned parser
+  option state for zero-argument `xml_parser_create()` and
+  `xml_parser_create_ns()`. The current slice defines
+  `XML_OPTION_CASE_FOLDING`, `XML_OPTION_TARGET_ENCODING`,
+  `XML_OPTION_SKIP_TAGSTART`, and `XML_OPTION_SKIP_WHITE`, reads default and
+  updated case-folding/target-encoding values through
+  `xml_parser_get_option()`, updates case folding and the canonical `UTF-8`,
+  `ISO-8859-1`, and `US-ASCII` target encodings through
+  `xml_parser_set_option()`, and reports unknown option reads as the
+  PHP-shaped catchable `ValueError`. Focused checks passed:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-xml-worker CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test xml_parser_options -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-xml-worker CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo build -p phpc --bin phpc`;
+  and
+  `PHPC_BIN=/tmp/phpc-target-xml-worker/debug/phpc TEST_PHP_EXECUTABLE=/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper TEST_PHP_ARGS= TMPDIR=/tmp/phpc-xml-proof-phpt TEMP=/tmp/phpc-xml-proof-phpt TMP=/tmp/phpc-xml-proof-phpt php run-tests.php -q -p /home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper ext/xml/tests/xml_parser_get_option_variation4.phpt ext/xml/tests/xml_parser_set_option_basic.phpt`
+  with `2 PASS / 0 FAIL / 0 SKIP`. Unsupported edge cases remain XML
+  document parsing, callbacks/handlers, namespace behavior, parser creation
+  with explicit encodings/separators, public `XMLParser` object identity,
+  `xml_parse()`, `xml_get_error_code()`, `xml_error_string()`, phpinfo XML
+  module reporting, broad value coercions, exact warnings, and native
+  lowering.
+
+- Worker ext/filter metadata PHPT lane added interpreter support for
+  `filter_list()` and `filter_id()` over the deterministic PHP 8.x public
+  filter table. `filter_list()` returns the ordered filter-name array used by
+  ext/filter PHPTs, while `filter_id()` accepts exact lowercase filter names
+  plus the current scalar/null string-conversion slice and returns the matching
+  integer id or `false`. String-valued dynamic calls, `function_exists()`,
+  `is_callable()`, and `ReflectionFunction` metadata recognize the two
+  builtins under the `filter` extension name. Focused checks passed:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-filter-worker CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test filter_builtin -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-filter-worker CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo build -p phpc --bin phpc`;
+  and
+  `PHPC_BIN=/tmp/phpc-target-filter-worker/debug/phpc TEST_PHP_EXECUTABLE=/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper TEST_PHP_ARGS= TMPDIR=/tmp/phpc-filter-phpt-tmp TEMP=/tmp/phpc-filter-phpt-tmp TMP=/tmp/phpc-filter-phpt-tmp php run-tests.php -q -p /home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper ext/filter/tests/008.phpt ext/filter/tests/009.phpt`
+  with `2 PASS / 0 FAIL / 0 SKIP`. Unsupported edge cases remain
+  `filter_var()`, `filter_input()`, `filter_has_var()`, `filter_var_array()`,
+  `filter_input_array()`, filter constants, actual validation/sanitization
+  execution, options and flags, callback filters, default request filtering,
+  exact deprecations/diagnostics beyond this metadata slice, and native
+  lowering.
+
+- Worker random PHPT lane expanded the interpreter's deterministic random
+  subset from no-argument `rand()` to bounded range-style `rand()`/`mt_rand()`,
+  `getrandmax()`/`mt_getrandmax()`, no-op integer-compatible
+  `srand()`/`mt_srand()` seed metadata, and deterministic in-range
+  `lcg_value()`. The implementation intentionally returns reproducible
+  in-range values rather than modeling PHP RNG state; `rand()` normalizes
+  inverted bounds for the legacy compatibility row, while `mt_rand()` reports
+  the PHP-shaped catchable inverted-bound `ValueError`. Unsupported edge cases
+  remain PHP random-state and seeded sequence parity, MT_RAND_PHP mode and
+  deprecation behavior, cryptographic randomness, `random_int()`/
+  `random_bytes()`, broader exact diagnostics, and native lowering. The shared
+  dirty worktree was blocked by a concurrent XML option constant compile error
+  outside the random lane, so this slice was also verified in a clean auxiliary
+  worktree with only the random patch applied. Focused checks passed:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-random-verify CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test random_builtin -- --test-threads=1`
+  with `6 passed`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-random-verify CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo build -p phpc --bin phpc`;
+  and
+  `PHPC_BIN=/tmp/phpc-target-random-verify/debug/phpc TEST_PHP_EXECUTABLE=/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper TEST_PHP_ARGS= TMPDIR=/tmp/phpc-random-verify-phpt TEMP=/tmp/phpc-random-verify-phpt TMP=/tmp/phpc-random-verify-phpt php run-tests.php -q -p /home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper ext/standard/tests/math/getrandmax_basic.phpt ext/random/tests/01_functions/mt_getrandmax_basic.phpt ext/random/tests/01_functions/rand_inverted_order.phpt ext/standard/tests/general_functions/rand.phpt ext/random/tests/01_functions/lcg_value_basic.phpt ext/random/tests/01_functions/bug46587.phpt`
+  from `/home/claude/php-src-phpt` with `6 PASS / 0 FAIL / 0 SKIP`.
+
+- Worker reflection metadata PHPT lane added bounded
+  `ReflectionFunction::isVariadic()`, `ReflectionMethod::isVariadic()`, and
+  `getStaticVariables()` for user functions/methods, including ordered
+  static-local metadata with parsed defaults before initialization and current
+  interpreter values after supported execution. Internal reflection targets
+  report empty static-variable arrays, and `new ReflectionFunction("extract")`
+  is accepted for bounded internal metadata inspection. Focused checks passed:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-reflection-worker CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test object_model reflection_reports_variadic_and_static_local_metadata -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-reflection-worker CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo build -p phpc --bin phpc`;
+  and
+  `PHPC_BIN=/tmp/phpc-target-reflection-worker/debug/phpc TEST_PHP_EXECUTABLE=/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper TEST_PHP_ARGS= TMPDIR=/tmp/phpc-reflection-phpt-proof TEMP=/tmp/phpc-reflection-phpt-proof TMP=/tmp/phpc-reflection-phpt-proof php run-tests.php -q -p /home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper ext/reflection/tests/ReflectionFunction_isVariadic_basic.phpt ext/reflection/tests/ReflectionFunction_001.phpt ext/reflection/tests/ReflectionMethod_getStaticVariables_basic.phpt`
+  from `/home/claude/php-src-phpt` with `3 PASS / 0 FAIL / 0 SKIP`.
+  Unsupported edge cases remain class-qualified method and closure
+  static-local identity, dynamic or side-effecting static initializers, exact
+  uninitialized/reference/COW static-local state, broader internal reflection
+  metadata beyond the named target list, reflection invocation for
+  metadata-only internal targets such as `extract`, and native lowering.
+
+- Worker `call_user_func_002` PHPT lane now routes class-string array
+  callables through the bounded SPL autoload stack before reporting the
+  catchable invalid-callback `TypeError`. Non-empty missing class names invoke
+  registered closure autoload callbacks with the requested class name, while an
+  empty class-string target skips autoload and reports the invalid callback
+  directly. Null/undefined first array members still report the first array
+  member invalid-callback message. The adjacent Rust
+  `call_user_func_rejects_forms_outside_current_subset` issue is no longer a
+  focused-suite blocker: arity/type expectations were updated to the current
+  PHP-shaped fatal `TypeError` output, and the out-of-scope named
+  by-reference `call_user_func_array()` cases are covered as current bounded
+  warning/diagnostic behavior rather than widened PHP named-reference parity.
+  Focused checks passed:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-cuf002e CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test call_user_func_builtin call_user_func_invalid_array_callbacks_match_autoload_type_error_slice -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-cuf002e CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test call_user_func_builtin call_user_func_rejects_forms_outside_current_subset -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-cuf002e CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test call_user_func_builtin -- --test-threads=1`
+  with `53 passed`; `CARGO_TARGET_DIR=/tmp/phpc-target-cuf002e CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test autoload_builtins -- --test-threads=1`
+  with `18 passed`; `CARGO_TARGET_DIR=/tmp/phpc-target-cuf002e CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo build -p phpc --bin phpc`;
+  and
+  `PHPC_BIN=/tmp/phpc-target-cuf002e/debug/phpc TEST_PHP_EXECUTABLE=/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper TEST_PHP_ARGS= TMPDIR=/tmp/phpc-cuf002-phpt TEMP=/tmp/phpc-cuf002-phpt TMP=/tmp/phpc-cuf002-phpt php run-tests.php -q -p /home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper Zend/tests/call_user_functions/call_user_func_002.phpt`
+  with `1 PASS / 0 FAIL / 0 SKIP`. Unsupported edge cases remain exact PHP
+  callable validation, `self`/`parent`/`static` callback resolution,
+  non-public/static `__invoke`, invokable-object dispatch outside autoloading,
+  non-public method callbacks, exact named by-reference
+  `call_user_func_array()` parity, broader autoload exception/warning behavior,
+  and native lowering.
+
+- Worker intval PHPT lane added interpreter `intval($value, $base = 10)` for
+  the bounded scalar/null conversion slice and explicit string-base scanning.
+  Direct and dynamic `intval` calls now handle `null`, booleans, integers,
+  finite in-range floats, default/base-10 numeric strings through the existing
+  integer-cast boundary, and string bases `0` plus `2..36`, including `0b`/
+  `0B` binary prefixes for base `0`/`2`, `0x`/`0X` prefixes for base `0`/`16`,
+  and leading-zero octal for base `0`. Invalid explicit bases on strings
+  return `0`, while non-string scalar values ignore the base. Focused checks
+  passed:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-intval-worker CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test scalar_casts intval_ -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-intval-worker CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo build -p phpc --bin phpc`;
+  and
+  `PHPC_BIN=/tmp/phpc-target-intval-worker/debug/phpc TEST_PHP_EXECUTABLE=/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper TEST_PHP_ARGS= TMPDIR=/tmp/phpc-intval-phpt-tmp TEMP=/tmp/phpc-intval-phpt-tmp TMP=/tmp/phpc-intval-phpt-tmp php run-tests.php -q -p /home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper ext/standard/tests/general_functions/intval_binary_prefix.phpt`
+  with `1 PASS / 0 FAIL / 0 SKIP`. Unsupported edge cases remain array,
+  object, Closure, and resource value conversion, exact PHP warnings for
+  object/resource conversion, exact deprecations for null or lossy base
+  coercions, invalid UTF-8/default-base byte-string parity, native lowering,
+  and broader cast warning/recovery parity.
+
+- Worker array-pointer PHPT lane tightened the `PhpArray` internal cursor
+  bookkeeping when removing entries before an exhausted cursor, so
+  `current()` observes an appended replacement after unsetting the former tail.
+  Direct `next(function_returning_array())` now evaluates the call-result
+  temporary, emits the bounded PHP "Only variables should be passed by
+  reference" notice, and advances only that temporary, while direct array
+  literal temporaries passed to `next()` produce the PHP-shaped uncaught
+  reference-argument `Error`. Focused checks passed:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-array-pointer-worker CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p php_runtime array_remove_keeps_internal_pointer_on_same_logical_bucket -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-array-pointer-worker CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test current_builtin -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-array-pointer-worker CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test array_unset -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-array-pointer-worker CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo build -p phpc --bin phpc`;
+  and
+  `PHPC_BIN=/tmp/phpc-target-array-pointer-worker/debug/phpc TEST_PHP_EXECUTABLE=/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper TEST_PHP_ARGS= TMPDIR=/tmp/phpc-array-pointer-phpt-tmp TEMP=/tmp/phpc-array-pointer-phpt-tmp TMP=/tmp/phpc-array-pointer-phpt-tmp php run-tests.php -q -p /home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper ext/standard/tests/array/array_next_error1.phpt ext/standard/tests/array/array_next_error2.phpt ext/standard/tests/array/current_variation6.phpt`
+  with `3 PASS / 0 FAIL / 0 SKIP`. Unsupported edge cases remain broad
+  pointer lvalue targets, object operands, reference-return temporaries, full
+  references/copy-on-write, exact warning coverage beyond the focused slice,
+  and native lowering.
+
+- Worker str_replace/str_ireplace PHPT lane expanded the shared interpreter
+  replacement engine to cover one-level subject arrays with key preservation,
+  aggregate `$count`, replacement arrays paired with search arrays by insertion
+  position, bounded nested subject-array stringification warnings, null-search
+  deprecation display, and ASCII case-insensitive `str_ireplace()` reuse. The
+  scalar-search replacement-array rejection, nested search/replacement arrays,
+  non-direct count targets, binary edge cases, and native lowering remain
+  unsupported or unchanged. Focused checks passed:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-strreplace-worker CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test str_replace_builtin -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-strreplace-worker CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo build -p phpc --bin phpc`;
+  and
+  `PHPC_BIN=/tmp/phpc-target-strreplace-worker/debug/phpc TEST_PHP_EXECUTABLE=/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper TEST_PHP_ARGS= TMPDIR=/tmp/phpc-strreplace-worker-phpt TEMP=/tmp/phpc-strreplace-worker-phpt TMP=/tmp/phpc-strreplace-worker-phpt php run-tests.php -p /home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper ext/standard/tests/strings/str_ireplace.phpt ext/standard/tests/strings/str_replace_variation1.phpt`
+  with `2 PASS / 0 FAIL / 0 SKIP`.
+
+- Worker vfprintf PHPT lane now validates `vfprintf()` stream argument type
+  before formatting and raises the PHP-shaped catchable `TypeError` for
+  non-resource streams. The shared sprintf-family parser also reports the `%$`
+  argument-number-specifier case as the catchable `ValueError` reached by
+  `vfprintf_error4.phpt`, so execution continues through the second catch
+  block. Focused checks passed:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-vfprintf CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test fprintf_builtin vfprintf_stream_type_error_is_catchable_and_value_error_continues -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-vfprintf CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo build -p phpc --bin phpc`;
+  and, after pre-creating `/home/claude/php-src-phpt/vfprintf_error4.txt` for
+  the local wrapper's relative-file CLEAN path,
+  `PHPC_BIN=/tmp/phpc-target-vfprintf/debug/phpc TEST_PHP_EXECUTABLE=/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper TEST_PHP_ARGS= TMPDIR=/tmp/phpc-vfprintf-phpt-tmp TEMP=/tmp/phpc-vfprintf-phpt-tmp TMP=/tmp/phpc-vfprintf-phpt-tmp php run-tests.php -p /home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper ext/standard/tests/strings/vfprintf_error4.phpt`
+  with `1 PASS / 0 FAIL / 0 SKIP`.
+
+- Worker is_file PHPT lane now treats direct local regular-file paths with a
+  trailing directory separator as non-files, matching PHP's directory-required
+  trailing-slash metadata rule for `is_file($file . "/")` without widening
+  stream wrappers or native lowering. Focused checks passed:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-isfile CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test is_file_builtin is_file_treats_trailing_slash_regular_file_path_as_not_file -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-isfile CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test is_file_builtin -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-isfile CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo build -p phpc --bin phpc`;
+  and
+  `PHPC_BIN=/tmp/phpc-target-isfile/debug/phpc TEST_PHP_EXECUTABLE=/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper TEST_PHP_ARGS= TMPDIR=/tmp/phpc-isfile-phpt-tmp TEMP=/tmp/phpc-isfile-phpt-tmp TMP=/tmp/phpc-isfile-phpt-tmp php run-tests.php -q -p /home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper ext/standard/tests/file/is_file_variation4.phpt`
+  with `1 PASS / 0 FAIL / 0 SKIP`.
+
+- Worker str_replace PHPT lane rejects stream/resource values at the shared
+  `str_replace()` string-conversion boundary with the PHP-shaped catchable
+  `TypeError` message for `array|string` parameters, so the count/output
+  variable is not overwritten after a failed resource search conversion.
+  Focused checks passed:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-strreplace CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test str_replace_builtin str_replace_resource_type_error_preserves_count_variable -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-strreplace CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo build -p phpc --bin phpc`;
+  and
+  `PHPC_BIN=/tmp/phpc-target-strreplace/debug/phpc TEST_PHP_EXECUTABLE=/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper TEST_PHP_ARGS= TMPDIR=/tmp/phpc-strreplace-phpt-tmp TEMP=/tmp/phpc-strreplace-phpt-tmp TMP=/tmp/phpc-strreplace-phpt-tmp php run-tests.php -p /home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper ext/standard/tests/strings/str_replace_basic.phpt`
+  with `1 PASS / 0 FAIL / 0 SKIP`.
+
+- Worker trim/rtrim PHPT lane expanded the interpreter trim family to route
+  arguments through supported `__toString()` coercion, added form-feed to the
+  current default trim mask, and kept empty masks plus incrementing byte ranges
+  on the bounded character-list path. The runtime native callable trim helper
+  uses the same default mask. Focused checks passed:
+  `CARGO_TARGET_DIR=/tmp/phpc-target-trim CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test string_trim_builtin -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-trim CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p php_runtime native_callable_trim_ -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/tmp/phpc-target-trim CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo build -p phpc --bin phpc`;
+  and
+  `PHPC_BIN=/tmp/phpc-target-trim/debug/phpc php run-tests.php -p /home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper ext/standard/tests/strings/trim.phpt ext/standard/tests/strings/rtrim.phpt`
+  with `2 PASS / 0 FAIL / 0 SKIP`.
+
+- Worker strcasecmp lane fixed PHP byte-delta parity for `strcasecmp()` in the
+  interpreter and native string-int runtime helper. Case-insensitive compares
+  now return the first differing ASCII-folded byte delta, such as `-3` for
+  `strcasecmp("aef", "dfsgbdf")`, while prefix-only differences still return
+  sign values. Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-strcasecmp CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test strcasecmp_builtin -- --test-threads=1`
+  and
+  `CARGO_TARGET_DIR=/tmp/phpc-target-strcasecmp-basic-worker CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p php_runtime native_string_int_operations_reuse_value_to_string_boundary -- --test-threads=1`
+  and
+  `PHPC_BIN=/dev/shm/phpc-target-strcasecmp/debug/phpc TEST_PHP_EXECUTABLE=/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper php /home/claude/php-src-phpt/run-tests.php -q /home/claude/php-src-phpt/Zend/tests/strcasecmp_basic.phpt`.
+
+- Worker 04 type/introspection lane extended the interpreter `is_callable()`
+  metadata slice with direct third-argument callable-name output variables and
+  `Class::method` string checks against current declared static-method and
+  `__callStatic` metadata. Non-direct output targets, callable-object
+  `__invoke`, private/protected caller-context callability, namespace/autoload
+  resolution, and native lowering remain unsupported. Focused checks passed:
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-worker04 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test type_introspection_builtins is_callable_ -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/dev/shm/phpc-target-worker04 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test countable_type_builtin -- --test-threads=1`;
+  and a direct `phpc run` CLI smoke test printed `1:Box::named`.
+  The broader native type-introspection snapshot remains blocked in this dirty
+  worktree by pre-existing native IR snapshot drift outside this runtime lane.
+
+- Worker 06 variable/symbol lane routed string-keyed `$GLOBALS[...]`
+  `empty()` checks and direct/nested `unset()` operations through the root
+  symbol table, and `count($GLOBALS)` now observes the bounded live root symbol
+  table snapshot after supported direct-variable and string-keyed `$GLOBALS`
+  unsets. Focused Rust tests were added in `compiler/tests/superglobals.rs`.
+  The lane also refreshed stale assertions for the current `$_SESSION`
+  undefined-variable warning path, typed-reference unset fatal output, and
+  native direct-variable `isset()` diagnostic-result CLI shape. Focused checks
+  passed: `cargo test -p phpc --test superglobals`,
+  `cargo test -p phpc --test array_unset`, `cargo test -p phpc --test empty`,
+  and `cargo test -p phpc --test native_isset_boundary`, all with
+  `--test-threads=1`.
+
+- Worker 03 filesystem/stat lane added bounded `open_basedir` enforcement for
+  local metadata predicates that still bypassed the request-local allow-list:
+  `file_exists()`, `is_file()`, `is_dir()`, `is_readable()`, `is_writable()`,
+  `is_link()`, `filesize()`, and existing-path `realpath()` now return `false`
+  with the recoverable warning path before exposing denied local metadata. The
+  shared warning text now carries the PHP-shaped `File(...) is not within the
+  allowed path(s)` detail used by existing read/open enforcement. Focused
+  verification passed for `file_exists_builtin`, `filesize_builtin`,
+  `is_dir_builtin`, `is_file_builtin`, `is_readable_builtin`,
+  `is_writable_builtin`, `is_link_builtin`, and
+  `standard_file_metadata_builtins` with `--test-threads=1`.
+
 ## 2026-05-27
 
 Implemented:

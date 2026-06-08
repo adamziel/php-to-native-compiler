@@ -52,6 +52,38 @@ echo "|inner";
 }
 
 #[test]
+fn flush_and_ob_implicit_flush_are_bounded_cli_noops() {
+    let execution = run_source(
+        r#"<?php
+$implicit = "ob_implicit_flush";
+$flush = "flush";
+echo function_exists($implicit) ? "implicit-exists" : "implicit-missing";
+echo "|";
+echo is_callable($flush) ? "flush-callable" : "flush-missing";
+echo "|";
+echo ob_implicit_flush() === null ? "implicit-null" : "implicit-other";
+echo "|";
+echo $implicit(true) === null ? "dynamic-null" : "dynamic-other";
+ob_start();
+ob_implicit_flush(1);
+echo "|buffered";
+flush();
+ob_end_clean();
+echo "|after-clean";
+echo $flush() === null ? "|flush-null" : "|flush-other";
+echo ob_implicit_flush(false) === null ? "|disabled-null" : "|disabled-other";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "implicit-exists|flush-callable|implicit-null|dynamic-null|after-clean|flush-null|disabled-null"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn ob_get_clean_without_active_buffer_returns_false() {
     let execution = run_source(
         r#"<?php
@@ -521,6 +553,45 @@ echo ob_end_flush(1);
     assert_eq!(
         end_flush_arg.message,
         "arity mismatch for ob_end_flush(): expected 0 argument(s), got 1"
+    );
+}
+
+#[test]
+fn flush_and_ob_implicit_flush_reject_forms_outside_current_subset() {
+    let flush_arg = runtime_error(
+        r#"<?php
+echo flush(1);
+"#,
+    );
+    assert_eq!(flush_arg.line, 2);
+    assert_eq!(flush_arg.column, 6);
+    assert_eq!(
+        flush_arg.message,
+        "arity mismatch for flush(): expected 0 argument(s), got 1"
+    );
+
+    let implicit_too_many = runtime_error(
+        r#"<?php
+echo ob_implicit_flush(true, false);
+"#,
+    );
+    assert_eq!(implicit_too_many.line, 2);
+    assert_eq!(implicit_too_many.column, 6);
+    assert_eq!(
+        implicit_too_many.message,
+        "arity mismatch for ob_implicit_flush(): expected 0 to 1 argument(s), got 2"
+    );
+
+    let implicit_type = runtime_error(
+        r#"<?php
+echo ob_implicit_flush("yes");
+"#,
+    );
+    assert_eq!(implicit_type.line, 2);
+    assert_eq!(implicit_type.column, 6);
+    assert_eq!(
+        implicit_type.message,
+        "unsupported call ob_implicit_flush(): enable argument must be bool or int in the current subset, got string"
     );
 }
 

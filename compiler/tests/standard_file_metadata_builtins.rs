@@ -150,6 +150,57 @@ var_dump(touch(""));
     assert_eq!(execution.exit_code, 0);
 }
 
+#[test]
+fn file_metadata_predicates_enforce_bounded_open_basedir_before_local_metadata_reads() {
+    let fixture = TempFsFixture::new("open-basedir-metadata");
+    let allowed = fixture.root.join("allowed");
+    let denied = fixture.root.join("denied");
+    fs::create_dir(&allowed).expect("allowed open_basedir directory is created");
+    fs::create_dir(&denied).expect("denied open_basedir directory is created");
+    let allowed_file = allowed.join("visible.txt");
+    let denied_file = denied.join("secret.txt");
+    fs::write(&allowed_file, "visible").expect("allowed fixture file is written");
+    fs::write(&denied_file, "secret").expect("denied fixture file is written");
+
+    let source = format!(
+        r#"<?php
+function capture_basedir_warning($errno, $errstr) {{
+    echo str_contains($errstr, "open_basedir restriction in effect") ? "W:basedir\n" : "W:other\n";
+    return true;
+}}
+
+ini_set("open_basedir", {allowed});
+set_error_handler("capture_basedir_warning", E_WARNING);
+echo file_exists({allowed_file}) ? "allowed\n" : "bad\n";
+var_dump(file_exists({denied_file}));
+var_dump(is_file({denied_file}));
+var_dump(is_dir({denied_dir}));
+var_dump(is_readable({denied_file}));
+var_dump(is_writable({denied_file}));
+var_dump(is_link({denied_file}));
+var_dump(filesize({denied_file}));
+var_dump(stat({denied_file}));
+var_dump(realpath({denied_file}));
+"#,
+        allowed = php_string(&allowed),
+        allowed_file = php_string(&allowed_file),
+        denied_file = php_string(&denied_file),
+        denied_dir = php_string(&denied),
+    );
+
+    let execution = run_source(&source).unwrap();
+
+    assert!(
+        execution.stdout.starts_with("allowed\n"),
+        "{}",
+        execution.stdout
+    );
+    assert_eq!(execution.stdout.matches("W:basedir\n").count(), 9);
+    assert_eq!(execution.stdout.matches("bool(false)\n").count(), 9);
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
 struct TempFsFixture {
     root: PathBuf,
 }

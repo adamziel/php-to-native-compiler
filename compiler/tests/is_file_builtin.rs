@@ -1,3 +1,6 @@
+use std::fs;
+use std::path::{Path, PathBuf};
+
 use php_compiler::emit_ir_source;
 use php_compiler::error::Phase;
 use php_compiler::run_source_with_source_file;
@@ -58,18 +61,46 @@ echo $call(__FILE__) ? "file" : "missing";
 }
 
 #[test]
+fn is_file_treats_trailing_slash_regular_file_path_as_not_file() {
+    let fixture = TempFsFixture::new("is-file-trailing-slash");
+    let file = fixture.root.join("regular.tmp");
+    fs::write(&file, "payload").expect("regular fixture file is written");
+    let trailing_file = format!("{}/", file.to_str().expect("temporary path is valid UTF-8"));
+
+    let source = format!(
+        r#"<?php
+var_dump(is_file({file}));
+var_dump(is_file({trailing_file}));
+"#,
+        file = php_string(&file),
+        trailing_file = php_string(&trailing_file),
+    );
+
+    let execution = run_source_with_source_file(&source, fixture_source_file()).unwrap();
+
+    assert_eq!(execution.stdout, "bool(true)\nbool(false)\n");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn is_file_rejects_forms_outside_current_subset() {
-    let arity = runtime_error(
+    let arity = run_source_with_source_file(
         r#"<?php
 echo is_file();
 "#,
+        fixture_source_file(),
     );
-    assert_eq!(arity.line, 2);
-    assert_eq!(arity.column, 6);
-    assert_eq!(
-        arity.message,
-        "arity mismatch for is_file(): expected 1 argument(s), got 0"
+    let arity = arity.unwrap();
+    assert_eq!(arity.exit_code, 255);
+    assert!(
+        arity
+            .stdout
+            .contains("Too few arguments to function is_file(), 0 passed"),
+        "{}",
+        arity.stdout
     );
+    assert_eq!(arity.stderr, "");
 
     let type_error = runtime_error(
         r#"<?php
@@ -94,6 +125,39 @@ echo is_file("php://memory");
         stream.message,
         "unsupported call is_file(): stream wrappers are not supported in the current subset"
     );
+}
+
+struct TempFsFixture {
+    root: PathBuf,
+}
+
+impl TempFsFixture {
+    fn new(label: &str) -> Self {
+        let root = std::env::temp_dir().join(format!(
+            "phpc-{label}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time is after Unix epoch")
+                .as_nanos()
+        ));
+        fs::create_dir(&root).expect("temporary filesystem fixture root is created");
+        Self { root }
+    }
+}
+
+impl Drop for TempFsFixture {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.root);
+    }
+}
+
+fn php_string(value: impl AsRef<Path>) -> String {
+    let value = value
+        .as_ref()
+        .to_str()
+        .expect("temporary path is valid UTF-8");
+    format!("'{}'", value.replace('\\', "\\\\").replace('\'', "\\'"))
 }
 
 #[test]

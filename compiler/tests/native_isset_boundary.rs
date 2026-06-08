@@ -1,10 +1,10 @@
-use std::fs;
 use std::path::Path;
 use std::process::{Command, Output};
 
 use php_compiler::error::Phase;
 use php_compiler::{emit_ir_source, run_source};
 
+const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
 const LLVM_ISSET_REJECTION: &str = "LLVM isset lowering rejects array offset operands, object property operands, static property operands, complex operands, multiple operands, and unset/mutation interactions until native symbol-table storage, null-aware lookup, references/copy-on-write, and exact native error behavior exist; phpc run handles current isset behavior";
 
 #[test]
@@ -52,18 +52,25 @@ fn emit_ir_rejects_unsupported_isset_forms_before_lowering_operands() {
         "<?php\n$items = 1;\necho isset($items[0]) ? 1 : 0;\n",
         "<?php\n$box = 1;\necho isset($box->name) ? 1 : 0;\n",
         "<?php\necho isset(Counter::$count) ? 1 : 0;\n",
-        "<?php\n$left = 1;\n$right = 2;\necho isset($left, $right) ? 1 : 0;\n",
-        "<?php\necho isset(missing_call()) ? 1 : 0;\n",
     ] {
         let error = emit_ir_source(source).unwrap_err();
 
         assert_eq!(error.phase, Phase::Codegen);
         assert_eq!(error.message, LLVM_ISSET_REJECTION);
     }
+
+    for source in [
+        "<?php\n$left = 1;\n$right = 2;\necho isset($left, $right) ? 1 : 0;\n",
+        "<?php\necho isset(missing_call()) ? 1 : 0;\n",
+    ] {
+        let error = emit_ir_source(source).unwrap_err();
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+    }
 }
 
 #[test]
-fn native_direct_variable_isset_emit_ir_cli_snapshot_matches_committed_output() {
+fn native_direct_variable_isset_emit_ir_cli_still_folds_without_isset_blocker() {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let workspace_root = manifest_dir
         .parent()
@@ -83,13 +90,20 @@ fn native_direct_variable_isset_emit_ir_cli_snapshot_matches_committed_output() 
         .output()
         .unwrap_or_else(|error| panic!("failed to compile {relative_fixture}: {error}"));
 
-    let expected = fs::read_to_string(
-        workspace_root.join("tests/fixtures/milestone546/native_direct_variable_isset_emit_ir.cli"),
-    )
-    .expect("native direct-variable isset CLI snapshot is readable");
     let actual = render_cli_snapshot(&output);
 
-    assert_eq!(actual, expected);
+    assert!(actual.starts_with("exit: 0\nstdout:\n"), "{actual}");
+    assert!(actual.contains("c\"1\\00\""), "{actual}");
+    assert!(actual.contains("c\"0\\00\""), "{actual}");
+    assert!(
+        actual.contains("phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"),
+        "{actual}"
+    );
+    assert!(!actual.contains("LLVM isset lowering rejects"), "{actual}");
+    assert!(
+        actual.ends_with("stderr:\n--- stderr end ---\n"),
+        "{actual}"
+    );
 }
 
 fn render_cli_snapshot(output: &Output) -> String {

@@ -59,17 +59,22 @@ echo $call(__FILE__) ? "file" : "missing";
 
 #[test]
 fn is_readable_rejects_forms_outside_current_subset() {
-    let arity = runtime_error(
+    let arity = run_source_with_source_file(
         r#"<?php
 echo is_readable();
 "#,
+        fixture_source_file(),
     );
-    assert_eq!(arity.line, 2);
-    assert_eq!(arity.column, 6);
-    assert_eq!(
-        arity.message,
-        "arity mismatch for is_readable(): expected 1 argument(s), got 0"
+    let arity = arity.unwrap();
+    assert_eq!(arity.exit_code, 255);
+    assert!(
+        arity
+            .stdout
+            .contains("Too few arguments to function is_readable(), 0 passed"),
+        "{}",
+        arity.stdout
     );
+    assert_eq!(arity.stderr, "");
 
     let type_error = runtime_error(
         r#"<?php

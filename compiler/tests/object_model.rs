@@ -6632,6 +6632,65 @@ type_line("raw-return", (new ReflectionFunction("raw_hook"))->getReturnType());
 }
 
 #[test]
+fn reflection_reports_variadic_and_static_local_metadata() {
+    let execution = run_source(
+        r#"<?php
+function label($value) {
+    if (is_array($value)) {
+        return "array:" . count($value);
+    }
+    if ($value === null) {
+        return "null";
+    }
+    return $value;
+}
+
+function dump_reflection($label, $reflection) {
+    $vars = $reflection->getStaticVariables();
+    echo $label, "|", ($reflection->isVariadic() ? "1" : "0"), "|", count($vars);
+    foreach ($vars as $name => $value) {
+        echo "|", $name, "=", label($value);
+    }
+    echo "\n";
+}
+
+function worker($required, ...$rest) {
+    static $count;
+    static $name = "hook", $items = array("a" => 1);
+}
+
+function counter() {
+    static $count = 1;
+    $count = $count + 1;
+}
+
+class Box {
+    public function method(...$args) {
+        static $seen = 1;
+    }
+
+    public function emptyMethod() {}
+}
+
+dump_reflection("function", new ReflectionFunction("worker"));
+dump_reflection("method", new ReflectionMethod(Box::class, "method"));
+dump_reflection("empty-method", new ReflectionMethod(Box::class, "emptyMethod"));
+counter();
+dump_reflection("current", new ReflectionFunction("counter"));
+$extract = new ReflectionFunction("extract");
+echo "extract|", ($extract->isInternal() ? "1" : "0"), "|", count($extract->getStaticVariables()), "|", $extract->getNumberOfParameters();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "function|1|3|count=null|name=hook|items=array:1\nmethod|1|1|seen=1\nempty-method|0|0\ncurrent|0|1|count=2\nextract|1|0|3"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reflection_function_reports_namespace_identity_and_extension_metadata() {
     let execution = run_source(
         r#"<?php

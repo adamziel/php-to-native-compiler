@@ -168,17 +168,26 @@ fn array_intersect_requires_array_variadic_arguments() {
 }
 
 #[test]
-fn array_intersect_rejects_non_scalar_value_comparisons() {
-    let array_error =
-        runtime_error("<?php\n$left = [[]];\n$right = [];\necho array_intersect($left, $right);\n");
+fn array_intersect_warns_and_compares_array_values_as_array_string() {
+    let execution = run_source(
+        "<?php\n$left = [[1]];\n$right = [[2]];\nvar_dump(array_intersect($left, $right));\n",
+    )
+    .unwrap();
 
-    assert_eq!(array_error.line, 4);
-    assert_eq!(array_error.column, 6);
     assert_eq!(
-        array_error.message,
-        "unsupported call array_intersect(): values must be scalar in the current subset, got array"
+        execution
+            .stdout
+            .matches("Warning: Array to string conversion")
+            .count(),
+        2
     );
+    assert!(execution.stdout.contains("array(1) {\n  [0]=>\n  array(1)"));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
 
+#[test]
+fn array_intersect_rejects_unsupported_object_value_comparisons() {
     let object_error = runtime_error(
         r#"<?php
 class Box {}

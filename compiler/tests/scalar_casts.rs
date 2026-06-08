@@ -49,6 +49,46 @@ echo (int) ".5m", "|", (int) "-.5m", "|", (int) "1e3m", "|", (int) "1e";
 }
 
 #[test]
+fn intval_executes_current_scalar_and_base_string_subset() {
+    let execution = run_source(
+        r#"<?php
+echo intval(null, 2), "|", intval(true, 2), "|", intval(-3.8, 2), "\n";
+echo intval("0b101", 0), "|", intval(" \t\n\r\f\v0b101", 0), "|", intval("+0b101", 2), "|", intval("-0b101", 2), "|", intval("0b1 1", 0), "|", intval("0b00200", 0), "\n";
+echo intval("0x10", 0), "|", intval("0XFA", 16), "|", intval("0755", 0), "|", intval("42abc", 16), "|", intval("1e3", 10), "|", intval("1e3", 0), "\n";
+$call = "intval";
+echo $call("zz", 36), "|", function_exists("intval") ? "1" : "0";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "0|1|-3\n5|5|5|-5|1|0\n16|250|493|273084|1000|1\n1295|1"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn intval_keeps_unsupported_conversion_edges_named() {
+    let error = run_source("<?php\necho intval([1]);\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Runtime);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 6);
+    assert_eq!(
+        error.message,
+        "unsupported call intval(): array-to-int conversion is not implemented in the current subset"
+    );
+
+    let execution = run_source("<?php\necho intval(\"10\", []);\n").unwrap();
+
+    assert_eq!(execution.exit_code, 255);
+    assert!(execution.stdout.contains(
+        "Fatal error: Uncaught TypeError: intval(): Argument #2 ($base) must be of type int, array given"
+    ));
+}
+
+#[test]
 fn bool_casts_execute_for_current_value_subset() {
     let execution = run_source(
         r#"<?php

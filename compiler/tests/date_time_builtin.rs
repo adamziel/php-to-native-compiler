@@ -95,6 +95,41 @@ var_dump(strtotime("mayy 2 2009"));
 }
 
 #[test]
+fn datetime_format_constants_match_global_constants() {
+    let execution = run_source(
+        r#"<?php
+var_dump(
+    DATE_ATOM === DateTimeInterface::ATOM,
+    DATE_COOKIE === DateTime::COOKIE,
+    DATE_ISO8601 === DateTimeImmutable::ISO8601,
+    DATE_ISO8601_EXPANDED === DateTimeInterface::ISO8601_EXPANDED,
+    DATE_RFC822 === DateTime::RFC822,
+    DATE_RFC850 === DateTimeImmutable::RFC850,
+    DATE_RFC1036 === DateTimeInterface::RFC1036,
+    DATE_RFC1123 === DateTime::RFC1123,
+    DATE_RFC7231 === DateTimeImmutable::RFC7231,
+    DATE_RFC2822 === DateTimeInterface::RFC2822,
+    DATE_RFC3339 === DateTime::RFC3339,
+    DATE_RFC3339_EXTENDED === DateTimeImmutable::RFC3339_EXTENDED,
+    DATE_RSS === DateTimeInterface::RSS,
+    DATE_W3C === DateTime::W3C
+);
+"#,
+    )
+    .unwrap();
+
+    assert!(execution.stdout.contains(
+        "Deprecated: Constant DATE_RFC7231 is deprecated since 8.5, as this format ignores the associated timezone and always uses GMT in Command line code on line 11"
+    ));
+    assert!(execution.stdout.contains(
+        "Deprecated: Constant DateTimeInterface::RFC7231 is deprecated since 8.5, as this format ignores the associated timezone and always uses GMT in Command line code on line 11"
+    ));
+    assert_eq!(execution.stdout.matches("bool(true)\n").count(), 14);
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn timezone_metadata_helpers_cover_current_public_rows() {
     let execution = run_source(
         r#"<?php
@@ -118,6 +153,51 @@ var_dump(timezone_name_from_abbr("", -14400, 0));
         execution.stdout,
         "version\narray\nlondon\nny\nutc\noslo\nno-ny\nstring(13) \"Europe/Berlin\"\nstring(15) \"America/Halifax\"\n"
     );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn timezone_location_metadata_and_open_warnings_cover_current_rows() {
+    let execution = run_source(
+        r#"<?php
+$location = timezone_location_get(new DateTimeZone("Europe/Oslo"));
+echo $location["country_code"], "|", $location["latitude"], "|", $location["longitude"], "|", $location["comments"], "\n";
+var_dump((new DateTimeZone("UTC"))->getLocation());
+$seen = [];
+foreach (DateTimeZone::listAbbreviations() as $value) {
+    if (NULL != $value[0]["timezone_id"]) {
+        $tz = new DateTimeZone($value[0]["timezone_id"]);
+        $tz_location = $tz->getLocation();
+        if ($tz_location !== false && in_array($tz_location["country_code"], ["AU", "CA", "ET", "US"]) && !in_array($tz_location["country_code"], $seen)) {
+            $seen[] = $tz_location["country_code"];
+            echo $tz_location["country_code"], "\n";
+        }
+    }
+}
+$timezones = [ "+02:30", "Europe/Kyiv", 2.5, "99:60", "Europe/Lviv" ];
+foreach ($timezones as $timezone) {
+    $d = timezone_open($timezone);
+    if ($d) {
+        echo "In: {$timezone}; Out: ", $d->getName(), "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    assert!(execution.stdout.starts_with(
+        "NO|59.91666|10.75|\nbool(false)\nAU\nCA\nET\nUS\nIn: +02:30; Out: +02:30\nIn: Europe/Kyiv; Out: Europe/Kyiv\n"
+    ));
+    assert!(execution
+        .stdout
+        .contains("Warning: timezone_open(): Unknown or bad timezone (2.5)"));
+    assert!(execution
+        .stdout
+        .contains("Warning: timezone_open(): Unknown or bad timezone (99:60)"));
+    assert!(execution
+        .stdout
+        .contains("Warning: timezone_open(): Unknown or bad timezone (Europe/Lviv)"));
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
 }
@@ -204,6 +284,34 @@ echo count($tran), "|", $tran[6]["ts"], "|", $tran[6]["abbr"], "\n";
             "America/New_York|-18000\n",
             "18|-213228000|BST\n"
         )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn datetime_mutable_timezone_metadata_matches_basic_rows() {
+    let execution = run_source(
+        r#"<?php
+date_default_timezone_set("Europe/London");
+$winter = new DateTime("2008-12-25 14:25:41");
+$summer = new DateTime("2008-07-02 14:25:41");
+echo "offsets=", $winter->getOffset() / 3600, "|", $summer->getOffset() / 3600, "\n";
+$object = new DateTime("2009-01-30 17:57:32");
+echo $object->getTimeZone()->getName(), "\n";
+date_default_timezone_set("America/New_York");
+$object = new DateTime("2009-01-30 17:57:32");
+echo $object->getTimeZone()->getName(), "\n";
+$returned = $object->setTimeZone(new DateTimeZone("America/Los_Angeles"));
+echo date_timezone_get($object)->getName(), "|";
+echo ($returned === $object ? "same" : "different"), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "offsets=0|1\nEurope/London\nAmerica/New_York\nAmerica/Los_Angeles|same\n"
     );
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);

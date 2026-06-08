@@ -1034,29 +1034,60 @@ impl<'a> Lexer<'a> {
         let mut text = String::new();
         text.push(first);
 
-        if first == '0' && matches!(self.peek(), Some('x' | 'X')) {
+        if first == '0'
+            && matches!(self.peek(), Some('x' | 'X'))
+            && self
+                .chars
+                .get(self.index + 1)
+                .is_some_and(|ch| ch.is_ascii_hexdigit())
+        {
             text.push(self.advance());
             let mut digits = String::new();
-            while matches!(self.peek(), Some(ch) if ch.is_ascii_hexdigit()) {
-                let ch = self.advance();
-                text.push(ch);
-                digits.push(ch);
-            }
-            if digits.is_empty() {
-                return Err(self.error_at(span, format!("invalid integer literal '{text}'")));
-            }
+            self.consume_digits_with_separators(&mut text, &mut digits, |ch| {
+                ch.is_ascii_hexdigit()
+            });
             let value = i64::from_str_radix(&digits, 16)
                 .map_err(|_| self.error_at(span, format!("invalid integer literal '{text}'")))?;
             return Ok(TokenKind::Int(value));
         }
 
-        if first == '0' && matches!(self.peek(), Some('0'..='9')) {
+        if first == '0'
+            && matches!(self.peek(), Some('b' | 'B'))
+            && self
+                .chars
+                .get(self.index + 1)
+                .is_some_and(|ch| is_binary_digit(*ch))
+        {
+            text.push(self.advance());
+            let mut digits = String::new();
+            self.consume_digits_with_separators(&mut text, &mut digits, is_binary_digit);
+            let value = i64::from_str_radix(&digits, 2)
+                .map_err(|_| self.error_at(span, format!("invalid integer literal '{text}'")))?;
+            return Ok(TokenKind::Int(value));
+        }
+
+        if first == '0'
+            && matches!(self.peek(), Some('o' | 'O'))
+            && self
+                .chars
+                .get(self.index + 1)
+                .is_some_and(|ch| is_octal_digit(*ch))
+        {
+            text.push(self.advance());
+            let mut digits = String::new();
+            self.consume_digits_with_separators(&mut text, &mut digits, is_octal_digit);
+            let value = i64::from_str_radix(&digits, 8)
+                .map_err(|_| self.error_at(span, format!("invalid integer literal '{text}'")))?;
+            return Ok(TokenKind::Int(value));
+        }
+
+        if first == '0'
+            && (matches!(self.peek(), Some('0'..='9'))
+                || (self.peek() == Some('_')
+                    && self.peek_next().is_some_and(|ch| ch.is_ascii_digit())))
+        {
             let mut digits = String::from("0");
-            while matches!(self.peek(), Some('0'..='9')) {
-                let ch = self.advance();
-                text.push(ch);
-                digits.push(ch);
-            }
+            self.consume_digits_with_separators(&mut text, &mut digits, |ch| ch.is_ascii_digit());
             if digits.bytes().any(|byte| !matches!(byte, b'0'..=b'7')) {
                 return Err(self.error_at(span, format!("invalid integer literal '{text}'")));
             }
@@ -1065,17 +1096,18 @@ impl<'a> Lexer<'a> {
             return Ok(TokenKind::Int(value));
         }
 
-        while matches!(self.peek(), Some('0'..='9')) {
-            text.push(self.advance());
-        }
+        let mut digits = String::new();
+        digits.push(first);
+        self.consume_digits_with_separators(&mut text, &mut digits, |ch| ch.is_ascii_digit());
 
         let mut is_float = false;
         if self.peek() == Some('.') && matches!(self.peek_next(), Some('0'..='9')) {
             is_float = true;
             text.push(self.advance());
-            while matches!(self.peek(), Some('0'..='9')) {
-                text.push(self.advance());
-            }
+            let mut fractional_digits = String::new();
+            self.consume_digits_with_separators(&mut text, &mut fractional_digits, |ch| {
+                ch.is_ascii_digit()
+            });
         }
 
         if self.peek().is_some_and(|ch| matches!(ch, 'e' | 'E'))
@@ -1097,22 +1129,50 @@ impl<'a> Lexer<'a> {
             if self.peek().is_some_and(|ch| matches!(ch, '+' | '-')) {
                 text.push(self.advance());
             }
-            while matches!(self.peek(), Some('0'..='9')) {
-                text.push(self.advance());
-            }
+            let mut exponent_digits = String::new();
+            self.consume_digits_with_separators(&mut text, &mut exponent_digits, |ch| {
+                ch.is_ascii_digit()
+            });
         }
 
         if is_float {
-            let value = text
+            let normalized_text = text.replace('_', "");
+            let value = normalized_text
                 .parse::<f64>()
                 .map_err(|_| self.error_at(span, format!("invalid float literal '{text}'")))?;
             return Ok(TokenKind::Float(value));
         }
 
-        let value = text
+        let value = digits
             .parse::<i64>()
             .map_err(|_| self.error_at(span, format!("invalid integer literal '{text}'")))?;
         Ok(TokenKind::Int(value))
+    }
+
+    fn consume_digits_with_separators(
+        &mut self,
+        text: &mut String,
+        digits: &mut String,
+        is_digit: impl Fn(char) -> bool,
+    ) {
+        loop {
+            match self.peek() {
+                Some(ch) if is_digit(ch) => {
+                    let ch = self.advance();
+                    text.push(ch);
+                    digits.push(ch);
+                }
+                Some('_')
+                    if !digits.is_empty() && self.peek_next().is_some_and(|ch| is_digit(ch)) =>
+                {
+                    text.push(self.advance());
+                    let ch = self.advance();
+                    text.push(ch);
+                    digits.push(ch);
+                }
+                _ => break,
+            }
+        }
     }
 
     fn lex_leading_dot_number(&mut self, span: Span) -> CompileResult<TokenKind> {
@@ -1308,6 +1368,14 @@ fn is_identifier_start(ch: char) -> bool {
 
 fn is_identifier_part(ch: char) -> bool {
     is_identifier_start(ch) || ch.is_ascii_digit()
+}
+
+fn is_binary_digit(ch: char) -> bool {
+    matches!(ch, '0' | '1')
+}
+
+fn is_octal_digit(ch: char) -> bool {
+    matches!(ch, '0'..='7')
 }
 
 fn unsupported_string_interpolation_message() -> &'static str {

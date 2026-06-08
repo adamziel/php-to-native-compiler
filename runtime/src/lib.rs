@@ -13854,7 +13854,7 @@ unsafe fn native_callable_builtin_argument_values(
     Ok(values)
 }
 
-const PHP_DEFAULT_TRIM_MASK: &[u8] = b" \n\r\t\x0b\0";
+const PHP_DEFAULT_TRIM_MASK: &[u8] = b" \n\r\t\x0b\x0c\0";
 
 fn native_callable_trimmed_bytes(subject: &[u8], mask: &[u8], mode: NativeTrimMode) -> Vec<u8> {
     let mut start = 0;
@@ -18949,7 +18949,7 @@ unsafe fn native_value_string_predicate(
 /// non-null, it must point to writable storage for one `NativeDiagnosticHandle`.
 /// On failure the helper stores a diagnostic handle that the caller owns and
 /// must release with `phpc_native_diagnostic_free`. Operation `0` returns
-/// `strcasecmp(subject, operand)` as -1, 0, or 1; operation `2` returns
+/// `strcasecmp(subject, operand)` as PHP's folded byte difference; operation `2` returns
 /// `strcmp(subject, operand)`; operations `3` and `4` return `strncmp()` and
 /// `strncasecmp()` over `length`; operation `1` returns
 /// `substr_count(subject, operand[, offset[, length]])`; operation `5` returns
@@ -19154,10 +19154,8 @@ fn ascii_case_insensitive_compare_bytes(left: &[u8], right: &[u8]) -> i64 {
     for (left, right) in left.iter().zip(right.iter()) {
         let left = left.to_ascii_lowercase();
         let right = right.to_ascii_lowercase();
-        match left.cmp(&right) {
-            Ordering::Less => return -1,
-            Ordering::Greater => return 1,
-            Ordering::Equal => {}
+        if left != right {
+            return i64::from(left) - i64::from(right);
         }
     }
 
@@ -28454,6 +28452,11 @@ impl PhpArray {
         if let Some(index) = self.index_for_key_mut(&key) {
             self.entries.remove(index);
             self.invalidate_key_index();
+            if let Ok(cursor) = usize::try_from(self.cursor) {
+                if index < cursor {
+                    self.cursor -= 1;
+                }
+            }
             return true;
         }
 
@@ -29308,6 +29311,9 @@ impl PhpArray {
         }
 
         if self.cursor < 0 {
+            return Value::Bool(false);
+        }
+        if self.cursor >= self.entries.len() as isize {
             return Value::Bool(false);
         }
         self.cursor = self.cursor.saturating_add(1);
@@ -31644,6 +31650,15 @@ impl PhpClassTable {
                     Visibility::Public,
                 ))
                 .expect("Exception core metadata should not duplicate getMessage");
+            exception
+                .add_method(PhpMethodMetadata::instance("getCode", Visibility::Public))
+                .expect("Exception core metadata should not duplicate getCode");
+            exception
+                .add_method(PhpMethodMetadata::instance(
+                    "getPrevious",
+                    Visibility::Public,
+                ))
+                .expect("Exception core metadata should not duplicate getPrevious");
         }
         let error_id = classes
             .declare_class("Error")
@@ -31654,6 +31669,21 @@ impl PhpClassTable {
         error
             .add_property(PhpPropertyMetadata::instance("message", Visibility::Public))
             .expect("Error core metadata should not duplicate message");
+        error
+            .add_method(PhpMethodMetadata::instance(
+                "getMessage",
+                Visibility::Public,
+            ))
+            .expect("Error core metadata should not duplicate getMessage");
+        error
+            .add_method(PhpMethodMetadata::instance("getCode", Visibility::Public))
+            .expect("Error core metadata should not duplicate getCode");
+        error
+            .add_method(PhpMethodMetadata::instance(
+                "getPrevious",
+                Visibility::Public,
+            ))
+            .expect("Error core metadata should not duplicate getPrevious");
         classes
             .declare_class("stdClass")
             .expect("core class table should contain Exception and Error before stdClass");
@@ -31789,7 +31819,13 @@ impl PhpClassTable {
                 Visibility::Public,
             ))
             .expect("DateTimeZone core metadata should not duplicate methods");
-        for method in ["__construct", "getName", "getOffset", "getTransitions"] {
+        for method in [
+            "__construct",
+            "getName",
+            "getLocation",
+            "getOffset",
+            "getTransitions",
+        ] {
             datetimezone
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
                 .expect("DateTimeZone core metadata should not duplicate methods");
@@ -32570,7 +32606,13 @@ impl PhpClassTable {
                 .add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
                 .expect("DateTime core metadata should not duplicate properties");
         }
-        for method in ["__construct", "format"] {
+        for method in [
+            "__construct",
+            "format",
+            "getOffset",
+            "getTimezone",
+            "setTimezone",
+        ] {
             datetime
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
                 .expect("DateTime core metadata should not duplicate methods");
@@ -50643,6 +50685,11 @@ mod tests {
                 ],
                 Value::String(" unchanged ".to_string()),
             ),
+            (
+                "trim",
+                vec![Value::BinaryString(b"\x0cABC\x0c".to_vec())],
+                Value::String("ABC".to_string()),
+            ),
         ];
 
         for (name, args, expected) in cases {
@@ -65822,28 +65869,13 @@ mod tests {
         let mut diagnostic = NativeDiagnosticHandle::null();
         let invalid_value =
             unsafe { phpc_native_value_from_string_with_diagnostic(string, &mut diagnostic) };
-        assert!(invalid_value.is_null());
-        assert!(!diagnostic.is_null());
-        assert_eq!(unsafe { phpc_native_diagnostic_count(diagnostic) }, 1);
-        assert_eq!(
-            unsafe { phpc_native_diagnostic_severity_at(diagnostic, 0) },
-            NativeDiagnosticSeverity::Error.tag()
-        );
-        assert!(unsafe {
-            phpc_native_diagnostic_contains_severity(
-                diagnostic,
-                NativeDiagnosticSeverity::Error.tag(),
-            )
-        });
-        let message = unsafe { phpc_native_diagnostic_message_clone_bytes(diagnostic) };
-        let message_bytes = unsafe { std::slice::from_raw_parts(message.ptr(), message.len()) };
-        assert_eq!(
-            message_bytes,
-            b"native value conversion failed: string bytes are not valid UTF-8"
-        );
+        assert!(!invalid_value.is_null());
+        assert!(diagnostic.is_null());
+        assert!(matches!(
+            unsafe { invalid_value.as_ref() },
+            Some(Value::BinaryString(value)) if value == &invalid_bytes
+        ));
 
-        unsafe { phpc_native_byte_buffer_free(message) };
-        unsafe { phpc_native_diagnostic_free(diagnostic) };
         unsafe { phpc_native_value_free(invalid_value) };
         unsafe { phpc_native_string_free(string) };
     }
@@ -65909,16 +65941,12 @@ mod tests {
                 &mut diagnostic,
             )
         };
-        assert!(invalid_value.is_null());
-        assert!(!diagnostic.is_null());
-        let message = unsafe { phpc_native_diagnostic_message_clone_bytes(diagnostic) };
-        let message_bytes = unsafe { std::slice::from_raw_parts(message.ptr(), message.len()) };
-        assert_eq!(
-            message_bytes,
-            b"native value conversion failed: string bytes are not valid UTF-8"
-        );
-        unsafe { phpc_native_byte_buffer_free(message) };
-        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        assert!(!invalid_value.is_null());
+        assert!(diagnostic.is_null());
+        assert!(matches!(
+            unsafe { invalid_value.as_ref() },
+            Some(Value::BinaryString(value)) if value == &invalid
+        ));
         unsafe { phpc_native_value_free(invalid_value) };
     }
 
@@ -65970,15 +65998,7 @@ mod tests {
             unsafe { phpc_native_value_free(left) };
         }
 
-        let invalid_bytes = [0xff, b'p'];
-        for (label, bytes, len) in [
-            ("null pointer with nonzero length", ptr::null(), 4),
-            (
-                "invalid UTF-8 bytes",
-                invalid_bytes.as_ptr(),
-                invalid_bytes.len(),
-            ),
-        ] {
+        for (label, bytes, len) in [("null pointer with nonzero length", ptr::null(), 4)] {
             let mut diagnostic = NativeDiagnosticHandle::null();
             let value = unsafe {
                 phpc_native_value_from_string_bytes_with_diagnostic(bytes, len, &mut diagnostic)
@@ -65993,6 +66013,28 @@ mod tests {
 
             unsafe { phpc_native_value_free(value) };
         }
+
+        let invalid_bytes = [0xff, b'p'];
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let value = unsafe {
+            phpc_native_value_from_string_bytes_with_diagnostic(
+                invalid_bytes.as_ptr(),
+                invalid_bytes.len(),
+                &mut diagnostic,
+            )
+        };
+        assert!(!value.is_null());
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            unsafe { phpc_native_value_materialization_failure_exit_code(value, diagnostic) },
+            0
+        );
+        let right = phpc_native_value_from_scalar(phpc_native_int(1));
+        let result =
+            unsafe { phpc_native_value_compare(value, NativeComparisonOp::StrictNe as u8, right) };
+        assert_native_comparison_ok("invalid byte-string is materialized", result, true);
+        unsafe { phpc_native_value_free(right) };
+        unsafe { phpc_native_value_free(value) };
     }
 
     #[test]
@@ -66131,32 +66173,33 @@ mod tests {
         );
 
         let invalid_bytes = [0xff, b'p'];
-        let mut failed_right_diagnostic = NativeDiagnosticHandle::null();
-        let failed_right = unsafe {
+        let mut binary_right_diagnostic = NativeDiagnosticHandle::null();
+        let binary_right = unsafe {
             phpc_native_value_from_string_bytes_with_diagnostic(
                 invalid_bytes.as_ptr(),
                 invalid_bytes.len(),
-                &mut failed_right_diagnostic,
+                &mut binary_right_diagnostic,
             )
         };
-        let failed_right_decision = unsafe {
+        assert!(binary_right_diagnostic.is_null());
+        let binary_right_decision = unsafe {
             phpc_native_value_compare_operation_decision_with_materialization_and_free(
                 phpc_native_value_from_scalar(phpc_native_int(1)),
                 NativeDiagnosticHandle::null(),
                 phpc_native_comparison_operation_from_opcode(
                     NativeComparisonOp::StrictNe.abi_opcode(),
                 ),
-                failed_right,
-                failed_right_diagnostic,
+                binary_right,
+                binary_right_diagnostic,
             )
         };
         assert_eq!(
-            phpc_native_comparison_branch_decision_exit_code(failed_right_decision),
-            1
+            phpc_native_comparison_branch_decision_exit_code(binary_right_decision),
+            0
         );
         assert!(
-            !phpc_native_comparison_branch_decision_is_true(failed_right_decision),
-            "right materialization blocker should not produce a truthy decision"
+            phpc_native_comparison_branch_decision_is_true(binary_right_decision),
+            "binary string materialization should produce a truthy strict non-identity decision"
         );
     }
 
@@ -66692,8 +66735,8 @@ mod tests {
         let invalid_bytes = [0xff];
         let invalid_handle =
             unsafe { phpc_native_string_from_bytes(invalid_bytes.as_ptr(), invalid_bytes.len()) };
-        assert_native_comparison_blocked(
-            "invalid string-handle materialization diagnostic",
+        assert_native_comparison_ok(
+            "invalid string-handle materializes as byte string",
             unsafe {
                 phpc_native_comparison_operand_compare_and_free(
                     phpc_native_comparison_operand_from_string_and_free(invalid_handle),
@@ -66701,7 +66744,7 @@ mod tests {
                     phpc_native_comparison_operand_from_scalar(phpc_native_int(1)),
                 )
             },
-            "string bytes are not valid UTF-8",
+            false,
         );
     }
 
@@ -67634,6 +67677,8 @@ mod tests {
     fn native_string_int_operations_reuse_value_to_string_boundary() {
         let payload = NativeValueHandle::from_value(Value::String("A\0B".to_string()));
         let folded = NativeValueHandle::from_value(Value::String("a\0b".to_string()));
+        let delta_left = NativeValueHandle::from_value(Value::String("aef".to_string()));
+        let delta_right = NativeValueHandle::from_value(Value::String("dfsgbdf".to_string()));
         let repeated = NativeValueHandle::from_value(Value::String("A\0BA\0B".to_string()));
         let needle = NativeValueHandle::from_value(Value::String("A\0B".to_string()));
         let scalar = phpc_native_value_from_scalar(phpc_native_int(42042));
@@ -67725,6 +67770,34 @@ mod tests {
             )
         };
         assert_eq!(case_compare, 0);
+        assert!(diagnostic.is_null());
+
+        let negative_delta_compare = unsafe {
+            phpc_native_value_string_int_operation_with_diagnostic(
+                delta_left,
+                delta_right,
+                0,
+                0,
+                0,
+                NativeStringIntOperation::CaseCompare as u8,
+                &mut diagnostic,
+            )
+        };
+        assert_eq!(negative_delta_compare, -3);
+        assert!(diagnostic.is_null());
+
+        let positive_delta_compare = unsafe {
+            phpc_native_value_string_int_operation_with_diagnostic(
+                delta_right,
+                delta_left,
+                0,
+                0,
+                0,
+                NativeStringIntOperation::CaseCompare as u8,
+                &mut diagnostic,
+            )
+        };
+        assert_eq!(positive_delta_compare, 3);
         assert!(diagnostic.is_null());
 
         let byte_compare = unsafe {
@@ -67877,6 +67950,8 @@ mod tests {
         unsafe { phpc_native_value_free(scalar) };
         unsafe { phpc_native_value_free(needle) };
         unsafe { phpc_native_value_free(repeated) };
+        unsafe { phpc_native_value_free(delta_right) };
+        unsafe { phpc_native_value_free(delta_left) };
         unsafe { phpc_native_value_free(folded) };
         unsafe { phpc_native_value_free(payload) };
     }
@@ -68804,11 +68879,11 @@ mod tests {
             Value::String("B".to_string()),
             "invalid string conversion: native string offset operation failed: array subjects are not supported; only null, bool, int, float, and string subjects are implemented",
         );
-        assert_diagnostic(
+        assert_written_warning(
             Value::String("abc".to_string()),
             Value::Int(1),
             Value::String(String::from_utf8(vec![0xc3, 0xa9]).unwrap()),
-            "unsupported call native string offset write: byte strings with invalid UTF-8 require the binary string value boundary",
+            b"a\xc3c",
         );
 
         let subject = NativeValueHandle::from_value(Value::String("ab".to_string()));
@@ -75716,6 +75791,32 @@ mod tests {
     }
 
     #[test]
+    fn array_remove_keeps_internal_pointer_on_same_logical_bucket() {
+        let mut array = PhpArray::new();
+        array.append(Value::Int(1)).unwrap();
+        array.append(Value::Int(2)).unwrap();
+        array.append(Value::Int(3)).unwrap();
+
+        assert_eq!(array.next_value(), Value::Int(2));
+        assert!(array.remove(1));
+        assert_eq!(array.current_value(), Value::Int(3));
+        assert_eq!(array.key_value(), Value::Int(2));
+
+        let mut exhausted = PhpArray::new();
+        exhausted.insert("foo", Value::Int(1));
+        exhausted.insert("bar", Value::Int(2));
+        exhausted.insert("baz", Value::Int(3));
+        exhausted.next_value();
+        exhausted.next_value();
+        assert_eq!(exhausted.next_value(), Value::Bool(false));
+        assert_eq!(exhausted.next_value(), Value::Bool(false));
+        assert!(exhausted.remove("baz"));
+        assert_eq!(exhausted.current_value(), Value::Bool(false));
+        exhausted.append(Value::Int(4)).unwrap();
+        assert_eq!(exhausted.current_value(), Value::Int(4));
+    }
+
+    #[test]
     fn array_values_reindexes_entries_in_insertion_order() {
         let mut array = PhpArray::new();
 
@@ -79278,9 +79379,12 @@ mod tests {
                 "DivisionByZeroError",
                 "RuntimeException",
                 "OutOfRangeException",
+                "UnexpectedValueException",
                 "OutOfBoundsException",
                 "Directory",
                 "SplFixedArray",
+                "ArrayObject",
+                "ArrayIterator",
                 "SplDoublyLinkedList",
                 "SplQueue",
                 "SplStack",
@@ -79324,7 +79428,9 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["message"]
         );
-        assert!(error.methods().is_empty());
+        assert!(error.method("getMessage").is_some());
+        assert!(error.method("getCode").is_some());
+        assert!(error.method("getPrevious").is_some());
 
         let stdclass = classes.lookup_class("stdclass").unwrap();
         assert_eq!(stdclass.name(), "stdClass");
@@ -79460,6 +79566,7 @@ mod tests {
         assert!(datetimezone.method("listIdentifiers").is_some());
         assert!(datetimezone.method("listAbbreviations").is_some());
         assert!(datetimezone.method("getName").is_some());
+        assert!(datetimezone.method("getLocation").is_some());
 
         let datetime = classes.lookup_class("datetime").unwrap();
         assert_eq!(datetime.name(), "DateTime");
@@ -79474,6 +79581,9 @@ mod tests {
         );
         assert!(datetime.method("__construct").is_some());
         assert!(datetime.method("format").is_some());
+        assert!(datetime.method("getOffset").is_some());
+        assert!(datetime.method("getTimezone").is_some());
+        assert!(datetime.method("setTimezone").is_some());
 
         let reflection_exception = classes.lookup_class("reflectionexception").unwrap();
         assert_eq!(reflection_exception.name(), "ReflectionException");
@@ -79541,7 +79651,14 @@ mod tests {
         assert_eq!(reflection_parameter.name(), "ReflectionParameter");
         assert_eq!(reflection_parameter.id().index(), 17);
         assert!(reflection_parameter.parent_id().is_none());
-        assert!(reflection_parameter.properties().is_empty());
+        assert_eq!(
+            reflection_parameter
+                .properties()
+                .iter()
+                .map(PhpPropertyMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["name"]
+        );
         assert!(reflection_parameter.method("getDefaultValue").is_some());
         assert!(reflection_parameter.method("getType").is_some());
         assert!(reflection_parameter.method("getAttributes").is_some());
@@ -79592,7 +79709,14 @@ mod tests {
         assert_eq!(reflection_property.name(), "ReflectionProperty");
         assert_eq!(reflection_property.id().index(), 22);
         assert!(reflection_property.parent_id().is_none());
-        assert!(reflection_property.properties().is_empty());
+        assert_eq!(
+            reflection_property
+                .properties()
+                .iter()
+                .map(PhpPropertyMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["name", "class"]
+        );
         assert!(reflection_property.constant("IS_PUBLIC").is_some());
         assert!(reflection_property.method("getDefaultValue").is_some());
         assert!(reflection_property.method("getAttributes").is_some());
@@ -79601,7 +79725,14 @@ mod tests {
         assert_eq!(reflection_class_constant.name(), "ReflectionClassConstant");
         assert_eq!(reflection_class_constant.id().index(), 23);
         assert!(reflection_class_constant.parent_id().is_none());
-        assert!(reflection_class_constant.properties().is_empty());
+        assert_eq!(
+            reflection_class_constant
+                .properties()
+                .iter()
+                .map(PhpPropertyMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["name", "class"]
+        );
         assert!(reflection_class_constant.constant("IS_PUBLIC").is_some());
         assert!(reflection_class_constant.method("getValue").is_some());
         assert!(reflection_class_constant.method("getAttributes").is_some());
@@ -79657,6 +79788,52 @@ mod tests {
         assert_eq!(runtime_exception.parent_id(), Some(exception.id()));
         assert!(runtime_exception.properties().is_empty());
         assert!(runtime_exception.methods().is_empty());
+
+        let array_object = classes.lookup_class("arrayobject").unwrap();
+        assert_eq!(array_object.name(), "ArrayObject");
+        assert_eq!(array_object.id().index(), 36);
+        assert!(array_object.parent_id().is_none());
+        assert_eq!(
+            array_object
+                .properties()
+                .iter()
+                .map(PhpPropertyMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["storage"]
+        );
+        assert_eq!(
+            array_object
+                .constants()
+                .iter()
+                .map(PhpClassConstantMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["STD_PROP_LIST", "ARRAY_AS_PROPS"]
+        );
+        assert!(array_object.method("getIterator").is_some());
+        assert!(array_object.method("offsetGet").is_some());
+
+        let array_iterator = classes.lookup_class("arrayiterator").unwrap();
+        assert_eq!(array_iterator.name(), "ArrayIterator");
+        assert_eq!(array_iterator.id().index(), 37);
+        assert!(array_iterator.parent_id().is_none());
+        assert_eq!(
+            array_iterator
+                .properties()
+                .iter()
+                .map(PhpPropertyMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["storage"]
+        );
+        assert_eq!(
+            array_iterator
+                .constants()
+                .iter()
+                .map(PhpClassConstantMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["STD_PROP_LIST", "ARRAY_AS_PROPS"]
+        );
+        assert!(array_iterator.method("current").is_some());
+        assert!(array_iterator.method("offsetSet").is_some());
     }
 
     #[test]
@@ -80312,7 +80489,9 @@ mod tests {
             .map(|diagnostic| diagnostic.message.clone())
             .unwrap_or_default();
         assert!(
-            message.contains("typed property StaticRefCounter::$count expects int"),
+            message.contains(
+                "Cannot assign array to reference held by property StaticRefCounter::$count of type int"
+            ),
             "{message}"
         );
         unsafe { phpc_native_diagnostic_free(diagnostic) };
@@ -80460,7 +80639,9 @@ mod tests {
             .map(|diagnostic| diagnostic.message.clone())
             .unwrap_or_default();
         assert!(
-            message.contains("typed property StaticBindRefCounter::$count expects int"),
+            message.contains(
+                "Cannot assign array to reference held by property StaticBindRefCounter::$count of type int"
+            ),
             "{message}"
         );
 
@@ -80595,7 +80776,9 @@ mod tests {
             .map(|diagnostic| diagnostic.message.clone())
             .unwrap_or_default();
         assert!(
-            message.contains("typed property StaticOffsetRefCounter::$typed expects ?string"),
+            message.contains(
+                "Cannot assign array to reference held by property StaticOffsetRefCounter::$typed of type ?string"
+            ),
             "{message}"
         );
 
@@ -81080,7 +81263,7 @@ mod tests {
             .unwrap_err();
         assert_eq!(
             type_error.message(),
-            "invalid property access: typed property Counter::$count expects int, got array"
+            "invalid property access: Cannot assign array to reference held by property Counter::$count of type int"
         );
     }
 

@@ -7,15 +7,16 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use encoding_rs::Encoding;
 use hmac::{Hmac, Mac};
 use md5::{Digest as Md5Digest, Md5};
 use php_runtime::{
-    coerce_property_value_with_object_type_resolver, ArityExpectation, ArrayColumnKey, ArrayEntry,
-    ArrayKey, ArrayKeyCase, ClassId, ClassMemberKind, Comparison, ObjectProperty, PhpArray,
-    PhpArraySortOperation, PhpClassConstantMetadata, PhpClassTable, PhpClosure, PhpClosureCapture,
-    PhpMethodMetadata, PhpObject, PhpObjectPropertyInitializer, PhpPropertyMetadata,
-    PhpReferenceCell, PhpReferenceCellId, RuntimeError, RuntimeErrorKind, RuntimeResult, Value,
-    Visibility,
+    classify_php_numeric_string, coerce_property_value_with_object_type_resolver, ArityExpectation,
+    ArrayColumnKey, ArrayEntry, ArrayKey, ArrayKeyCase, ClassId, ClassMemberKind, Comparison,
+    ObjectProperty, PhpArray, PhpArraySortOperation, PhpClassConstantMetadata, PhpClassTable,
+    PhpClosure, PhpClosureCapture, PhpMethodMetadata, PhpNumericStringClassification, PhpObject,
+    PhpObjectPropertyInitializer, PhpPropertyMetadata, PhpReferenceCell, PhpReferenceCellId,
+    RuntimeError, RuntimeErrorKind, RuntimeResult, Value, Visibility,
 };
 use sha2::Sha256;
 
@@ -48,6 +49,7 @@ const SPL_STACK_ITERATOR_MODE: i64 = SPL_QUEUE_ITERATOR_MODE | SPL_DLL_IT_MODE_L
 const ARRAY_OBJECT_STD_PROP_LIST: i64 = 1;
 const ARRAY_OBJECT_ARRAY_AS_PROPS: i64 = 2;
 const COMPACT_MAX_ARRAY_DEPTH: usize = 64;
+const PHP_DEFAULT_REQUEST_UMASK: i64 = 0o022;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Execution {
@@ -176,6 +178,7 @@ struct Interpreter {
     error_control_suppression_depth: usize,
     ignore_user_abort: bool,
     ini_values: HashMap<String, String>,
+    mb_deprecated_encoding_warnings: HashSet<&'static str>,
     opcache_file_cache_paths: HashSet<String>,
     error_handlers: Vec<ErrorHandlerRegistration>,
     error_handler_active: bool,
@@ -241,11 +244,14 @@ struct Interpreter {
     default_stream_context_id: Option<i64>,
     stream_wrappers: Vec<StreamWrapperRegistration>,
     directories: HashMap<i64, DirectoryResource>,
+    xml_parsers: HashMap<i64, XmlParserResource>,
+    libxml_use_internal_errors: bool,
     last_opened_directory: Option<i64>,
     strtok_state: Option<StrtokState>,
     uploaded_file_paths: HashSet<PathBuf>,
     stat_cache: HashMap<PathBuf, fs::Metadata>,
     realpath_cache: HashMap<String, RealpathCacheEntry>,
+    current_umask: Option<i64>,
     next_foreach_temp_id: i64,
     active_foreach_references: Vec<ActiveForeachReference>,
     function_context: Vec<String>,
@@ -352,6 +358,7 @@ struct MethodSignature {
     params: Vec<ParameterSignature>,
     return_type: Option<String>,
     returns_by_reference: bool,
+    static_variables: Vec<ReflectionStaticVariableMetadata>,
     file_name: Option<String>,
     start_line: usize,
     end_line: usize,
@@ -592,6 +599,7 @@ struct ReflectionFunctionState {
     return_type: Option<String>,
     returns_by_reference: bool,
     params: Vec<ReflectionParameterMetadata>,
+    static_variables: Vec<ReflectionStaticVariableMetadata>,
     is_deprecated: bool,
     attributes: Vec<AttributeDecl>,
 }
@@ -615,8 +623,15 @@ struct ReflectionMethodState {
     return_type: Option<String>,
     returns_by_reference: bool,
     params: Vec<ReflectionParameterMetadata>,
+    static_variables: Vec<ReflectionStaticVariableMetadata>,
     is_deprecated: bool,
     attributes: Vec<AttributeDecl>,
+}
+
+#[derive(Debug, Clone)]
+struct ReflectionStaticVariableMetadata {
+    name: String,
+    default: Option<Expr>,
 }
 
 #[derive(Debug, Clone)]
@@ -770,6 +785,21 @@ struct StreamContextResource {
 struct DirectoryResource {
     entries: Vec<String>,
     position: usize,
+}
+
+#[derive(Debug, Clone)]
+struct XmlParserResource {
+    case_folding: bool,
+    target_encoding: String,
+}
+
+impl Default for XmlParserResource {
+    fn default() -> Self {
+        Self {
+            case_folding: true,
+            target_encoding: "UTF-8".to_string(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -1807,6 +1837,10 @@ fn local_filesystem_metadata_path(path: &str) -> PathBuf {
     repo_root_relative_candidate(&path).unwrap_or(path)
 }
 
+fn trailing_separator_requires_directory(path: &str) -> bool {
+    path.len() > 1 && path.ends_with(std::path::MAIN_SEPARATOR)
+}
+
 fn local_filesystem_paths_match(left: &Path, right: &Path) -> bool {
     if left == right {
         return true;
@@ -1911,6 +1945,9 @@ fn decode_hex_digit(byte: u8) -> Option<u8> {
 
 const INCLUDE_PATH_SEPARATOR: char = if cfg!(windows) { ';' } else { ':' };
 const DEFAULT_STREAM_WRAPPERS: &[&str] = &["file", "php", "data"];
+const DEFAULT_STREAM_TRANSPORTS: &[&str] = &[
+    "tcp", "udp", "unix", "udg", "ssl", "tls", "tlsv1.0", "tlsv1.1", "tlsv1.2", "tlsv1.3",
+];
 
 fn default_stream_wrappers() -> Vec<StreamWrapperRegistration> {
     DEFAULT_STREAM_WRAPPERS
@@ -3169,6 +3206,18 @@ impl SymbolTable {
                 .borrow_mut()
                 .insert(name.to_string(), value_cell(value));
         }
+    }
+
+    fn unset_global_name(&mut self, name: &str) {
+        self.clear_public_object_property_array_copy_source(name);
+        self.clear_array_literal_copy_source_paths_for_root(name);
+        self.detach_array_offset_aliases_for_unset_paths(&[ArrayOffsetAlias {
+            root: ArrayOffsetAliasRoot::GlobalArray {
+                name: name.to_string(),
+            },
+            keys: Vec::new(),
+        }]);
+        self.global_storage().borrow_mut().remove(name);
     }
 
     fn write_global_name_checked_with_object_type_resolver(
@@ -10134,6 +10183,7 @@ impl Interpreter {
             error_control_suppression_depth: 0,
             ignore_user_abort: false,
             ini_values,
+            mb_deprecated_encoding_warnings: HashSet::new(),
             opcache_file_cache_paths: HashSet::new(),
             error_handlers: Vec::new(),
             error_handler_active: false,
@@ -10201,11 +10251,14 @@ impl Interpreter {
             default_stream_context_id: None,
             stream_wrappers: default_stream_wrappers(),
             directories: HashMap::new(),
+            xml_parsers: HashMap::new(),
+            libxml_use_internal_errors: false,
             last_opened_directory: None,
             strtok_state: None,
             uploaded_file_paths: HashSet::new(),
             stat_cache: HashMap::new(),
             realpath_cache: HashMap::new(),
+            current_umask: None,
             next_foreach_temp_id: 1,
             active_foreach_references: Vec::new(),
             function_context: Vec::new(),
@@ -15951,6 +16004,10 @@ impl Interpreter {
                 expect_expr_arity("DateTimeZone::getName", args.len(), 0, span)?;
                 Self::datetimezone_name(&object, "DateTimeZone::getName()", span).map(Value::String)
             }
+            "getlocation" => {
+                expect_expr_arity("DateTimeZone::getLocation", args.len(), 0, span)?;
+                Self::datetimezone_location_value(&object, "DateTimeZone::getLocation()", span)
+            }
             "getoffset" => {
                 expect_expr_arity("DateTimeZone::getOffset", args.len(), 1, span)?;
                 let value = self.evaluate(&args[0], caller_scope)?;
@@ -16228,6 +16285,90 @@ impl Interpreter {
                     &state.timezone,
                 )))
             }
+            "getoffset" => {
+                expect_expr_arity("DateTime::getOffset", args.len(), 0, span)?;
+                let state = self.date_time_objects.get(&object.id()).ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "DateTime::getOffset()",
+                            "DateTime object is not initialized in the current subset",
+                        ),
+                    )
+                })?;
+                Ok(Value::Int(
+                    state.timezone.offset_at_timestamp(state.timestamp),
+                ))
+            }
+            "gettimezone" => {
+                expect_expr_arity("DateTime::getTimezone", args.len(), 0, span)?;
+                let timezone_name = self
+                    .date_time_objects
+                    .get(&object.id())
+                    .map(|state| state.timezone.name.clone())
+                    .ok_or_else(|| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "DateTime::getTimezone()",
+                                "DateTime object is not initialized in the current subset",
+                            ),
+                        )
+                    })?;
+                let timezone_object =
+                    self.create_datetimezone_object_from_name(&timezone_name, span)?;
+                self.track_allocated_object(&timezone_object);
+                Ok(Value::Object(timezone_object))
+            }
+            "settimezone" => {
+                expect_expr_arity("DateTime::setTimezone", args.len(), 1, span)?;
+                let value = self.evaluate(&args[0], caller_scope)?;
+                let timezone_object = match value {
+                    Value::Object(object) if object.is_instance_of_class_name("DateTimeZone") => {
+                        object
+                    }
+                    other => {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "DateTime::setTimezone()",
+                                format!(
+                                    "Argument #1 ($timezone) must be DateTimeZone in the current subset, got {}",
+                                    other.type_name()
+                                ),
+                            ),
+                        ));
+                    }
+                };
+                let timestamp = self
+                    .date_time_objects
+                    .get(&object.id())
+                    .map(|state| state.timestamp)
+                    .ok_or_else(|| {
+                        runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "DateTime::setTimezone()",
+                                "DateTime object is not initialized in the current subset",
+                            ),
+                        )
+                    })?;
+                let timezone_name =
+                    Self::datetimezone_name(&timezone_object, "DateTime::setTimezone()", span)?;
+                let timezone = bounded_timezone_from_name(&timezone_name).ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "DateTime::setTimezone()",
+                            format!(
+                                "timezone {timezone_name} is not implemented in the current subset"
+                            ),
+                        ),
+                    )
+                })?;
+                self.assign_datetime_object_state(&object, timestamp, timezone, span)?;
+                Ok(Value::Object(object))
+            }
             _ => Err(runtime_error(
                 span,
                 RuntimeError::undefined_function(format!("DateTime::{method_name}()")),
@@ -16311,24 +16452,24 @@ impl Interpreter {
 
     fn call_timezone_open(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("timezone_open", args, 1, span)?;
-        let Value::String(name) = &args[0] else {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "timezone_open()",
-                    format!(
-                        "timezone argument must be string in the current subset, got {}",
-                        args[0].type_name()
-                    ),
-                ),
-            ));
+        let name = match &args[0] {
+            Value::String(name) => name.clone(),
+            other => other
+                .try_echo_string()
+                .map_err(|error| runtime_error(span, error))?,
         };
-        match self.create_datetimezone_object_from_name(name, span) {
+        match self.create_datetimezone_object_from_name(&name, span) {
             Ok(object) => {
                 self.track_allocated_object(&object);
                 Ok(Value::Object(object))
             }
-            Err(_) => Ok(Value::Bool(false)),
+            Err(_) => {
+                self.emit_display_warning(
+                    format!("timezone_open(): Unknown or bad timezone ({name})"),
+                    span,
+                )?;
+                Ok(Value::Bool(false))
+            }
         }
     }
 
@@ -16336,6 +16477,23 @@ impl Interpreter {
         expect_arity("timezone_name_get", args, 1, span)?;
         let object = self.datetimezone_argument("timezone_name_get()", args, 0, span)?;
         Self::datetimezone_name(&object, "timezone_name_get()", span).map(Value::String)
+    }
+
+    fn datetimezone_location_value(
+        object: &PhpObject,
+        function: &'static str,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let name = Self::datetimezone_name(object, function, span)?;
+        Ok(bounded_timezone_location_array(&name)
+            .map(Value::Array)
+            .unwrap_or(Value::Bool(false)))
+    }
+
+    fn call_timezone_location_get(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("timezone_location_get", args, 1, span)?;
+        let object = self.datetimezone_argument("timezone_location_get()", args, 0, span)?;
+        Self::datetimezone_location_value(&object, "timezone_location_get()", span)
     }
 
     fn call_timezone_offset_get(&self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -18782,6 +18940,35 @@ impl Interpreter {
 
         let source = match fs::read_to_string(&path.read_path) {
             Ok(source) => source,
+            Err(error) if error.kind() == ErrorKind::InvalidData => match fs::read(&path.read_path)
+            {
+                Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+                Err(error) => {
+                    self.emit_warning(
+                        &format!("{construct}()"),
+                        format!(
+                            "{construct}({}): Failed to open stream: {error}",
+                            path.source_file.display()
+                        ),
+                        span,
+                    )?;
+                    self.emit_warning(
+                        &format!("{construct}()"),
+                        format!(
+                            "{construct}(): Failed opening '{}' for inclusion (include_path='{}')",
+                            path.source_file.display(),
+                            self.include_path
+                        ),
+                        span,
+                    )?;
+                    if required {
+                        self.emit_required_file_fatal(construct, &path.source_file, span);
+                        self.exit_signal = Some(255);
+                        return Ok((Flow::Exit(255), Value::Null));
+                    }
+                    return Ok((Flow::Normal, Value::Bool(false)));
+                }
+            },
             Err(error) => {
                 self.emit_warning(
                     &format!("{construct}()"),
@@ -18905,9 +19092,12 @@ impl Interpreter {
             return Ok(true);
         }
 
+        let allowed_paths = self.ini_value("open_basedir").unwrap_or_default();
         self.emit_warning(
             function,
-            format!("{display_path}: open_basedir restriction in effect"),
+            format!(
+                "open_basedir restriction in effect. File({display_path}) is not within the allowed path(s): ({allowed_paths})"
+            ),
             span,
         )?;
         Ok(false)
@@ -18928,17 +19118,6 @@ impl Interpreter {
             .map(PathBuf::from)
             .map(|entry| open_basedir_check_path(&entry))
             .any(|base| candidate.starts_with(base))
-    }
-
-    fn cached_local_metadata(&mut self, path: &str) -> Option<fs::Metadata> {
-        let metadata_path = local_filesystem_metadata_path(path);
-        if let Some(metadata) = self.stat_cache.get(&metadata_path) {
-            return Some(metadata.clone());
-        }
-
-        let metadata = fs::metadata(&metadata_path).ok()?;
-        self.stat_cache.insert(metadata_path, metadata.clone());
-        Some(metadata)
     }
 
     fn clear_stat_cache_path(&mut self, path: &str) {
@@ -19409,6 +19588,19 @@ impl Interpreter {
             }
         }
         let key = self.evaluate_array_key(index, scope)?;
+        if name == "GLOBALS" {
+            let Some(global_name) = globals_offset_name(&key) else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "$GLOBALS",
+                        "only string-keyed direct offset unsets are implemented",
+                    ),
+                ));
+            };
+            scope.unset_global_name(global_name);
+            return Ok(());
+        }
         let foreach_detach = self
             .active_foreach_references
             .iter()
@@ -19476,6 +19668,44 @@ impl Interpreter {
             .iter()
             .map(|index| self.evaluate_array_key(index, scope))
             .collect::<CompileResult<Vec<_>>>()?;
+
+        if name == "GLOBALS" {
+            let (global_name, nested_keys) = SymbolTable::split_globals_reference_path(keys, span)?;
+            if nested_keys.is_empty() {
+                scope.unset_global_name(&global_name);
+                return Ok(());
+            }
+            match scope.read_global_name(&global_name) {
+                Some(Value::Array(mut array)) => {
+                    let unset_path = ArrayOffsetAlias {
+                        root: ArrayOffsetAliasRoot::GlobalArray {
+                            name: global_name.clone(),
+                        },
+                        keys: nested_keys.clone(),
+                    };
+                    scope.detach_array_offset_aliases_for_unset_paths(&[unset_path]);
+                    Self::unset_nested_array_value(&mut array, &nested_keys, span)?;
+                    scope.write_global_name(&global_name, Value::Array(array));
+                    Ok(())
+                }
+                Some(Value::Object(object))
+                    if self
+                        .classes
+                        .implements_interface(object.class_id(), "ArrayAccess") =>
+                {
+                    self.execute_unset_array_access_path(object, &nested_keys, span, scope)
+                }
+                Some(Value::Null) | None => Ok(()),
+                Some(other) => Err(runtime_error(
+                    span,
+                    RuntimeError::invalid_array_access(format!(
+                        "cannot unset offset on {}",
+                        other.type_name()
+                    )),
+                )),
+            }?;
+            return Ok(());
+        }
 
         match scope.read_named(name) {
             Some(Value::Array(mut array)) => {
@@ -35058,6 +35288,14 @@ impl Interpreter {
         name: &str,
         span: Span,
     ) -> CompileResult<()> {
+        if name == "DATE_RFC7231" {
+            self.emit_display_diagnostic(
+                "Deprecated",
+                PHP_E_DEPRECATED,
+                "Constant DATE_RFC7231 is deprecated since 8.5, as this format ignores the associated timezone and always uses GMT",
+                span,
+            )?;
+        }
         if matches!(
             name,
             "SUNFUNCS_RET_TIMESTAMP" | "SUNFUNCS_RET_STRING" | "SUNFUNCS_RET_DOUBLE"
@@ -36043,13 +36281,18 @@ impl Interpreter {
                     )
                 })
             }
-            None => Err(runtime_error(
-                span,
-                RuntimeError::unsupported_object_instantiation(
-                    "ReflectionFunction",
-                    format!("function {name} is not declared in the current subset"),
-                ),
-            )),
+            None => {
+                let key = name.to_ascii_lowercase();
+                reflection_internal_function_state(&key).ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::unsupported_object_instantiation(
+                            "ReflectionFunction",
+                            format!("function {name} is not declared in the current subset"),
+                        ),
+                    )
+                })
+            }
         }
     }
 
@@ -36221,6 +36464,9 @@ impl Interpreter {
                     params: signature
                         .map(reflection_parameter_metadata_from_signature)
                         .unwrap_or_default(),
+                    static_variables: signature
+                        .map(|signature| signature.static_variables.clone())
+                        .unwrap_or_default(),
                     is_deprecated: signature.is_some_and(|signature| signature.is_deprecated),
                     attributes: signature
                         .map(|signature| signature.attributes.clone())
@@ -36268,6 +36514,9 @@ impl Interpreter {
                             returns_by_reference: method.function.returns_by_reference,
                             params: reflection_parameter_metadata_from_function_params(
                                 &method.function.params,
+                            ),
+                            static_variables: reflection_static_variables_from_body(
+                                &method.function.body,
                             ),
                             is_deprecated: attributes_include_deprecated(&method.attributes),
                             attributes: method.attributes.clone(),
@@ -36321,6 +36570,9 @@ impl Interpreter {
                             returns_by_reference: method.function.returns_by_reference,
                             params: reflection_parameter_metadata_from_function_params(
                                 &method.function.params,
+                            ),
+                            static_variables: reflection_static_variables_from_body(
+                                &method.function.body,
                             ),
                             is_deprecated: attributes_include_deprecated(&method.attributes),
                             attributes: method.attributes.clone(),
@@ -43530,10 +43782,36 @@ impl Interpreter {
                 expect_expr_arity("Error::getMessage", args.len(), 0, span)?;
                 Ok(Value::String(self.throwable_message_for_fatal(&object)))
             }
+            "getcode" => {
+                expect_expr_arity("Error::getCode", args.len(), 0, span)?;
+                Ok(Value::Int(self.throwable_code_for_getter(&object)))
+            }
+            "getprevious" => {
+                expect_expr_arity("Error::getPrevious", args.len(), 0, span)?;
+                Ok(self.throwable_previous_for_getter(&object))
+            }
             _ => Err(runtime_error(
                 span,
                 RuntimeError::undefined_function(format!("Error::{method_name}()")),
             )),
+        }
+    }
+
+    fn throwable_code_for_getter(&self, object: &PhpObject) -> i64 {
+        let class_id = object.class_id();
+        let protected_class_ids = self.protected_class_ids_for_context(class_id);
+        match object.read_property_from_context("code", Some(class_id), &protected_class_ids) {
+            Ok(Value::Int(code)) => code,
+            _ => 0,
+        }
+    }
+
+    fn throwable_previous_for_getter(&self, object: &PhpObject) -> Value {
+        let class_id = object.class_id();
+        let protected_class_ids = self.protected_class_ids_for_context(class_id);
+        match object.read_property_from_context("previous", Some(class_id), &protected_class_ids) {
+            Ok(Value::Object(previous)) => Value::Object(previous),
+            _ => Value::Null,
         }
     }
 
@@ -43814,6 +44092,14 @@ impl Interpreter {
                 }
                 Ok(Value::Array(traits))
             }
+            "getconstructor" => {
+                expect_expr_arity("ReflectionClass::getConstructor", args.len(), 0, span)?;
+                if !self.reflection_class_has_method(&state, "__construct") {
+                    return Ok(Value::Null);
+                }
+                let method = self.resolve_reflection_method_target(&state, "__construct", span)?;
+                self.create_reflection_method_object(method, span)
+            }
             "hasconstant" => {
                 expect_expr_arity("ReflectionClass::hasConstant", args.len(), 1, span)?;
                 let value = self.evaluate(&args[0], caller_scope)?;
@@ -43889,18 +44175,12 @@ impl Interpreter {
             "hasmethod" => {
                 expect_expr_arity("ReflectionClass::hasMethod", args.len(), 1, span)?;
                 let value = self.evaluate(&args[0], caller_scope)?;
-                let Value::String(method) = value else {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "ReflectionClass::hasMethod",
-                            format!(
-                                "method argument must be string in the current subset, got {}",
-                                value.type_name()
-                            ),
-                        ),
-                    ));
-                };
+                let method = reflection_scalar_string_argument(
+                    "ReflectionClass::hasMethod",
+                    "method",
+                    value,
+                    span,
+                )?;
                 Ok(Value::Bool(
                     self.reflection_class_has_method(&state, &method),
                 ))
@@ -44665,6 +44945,9 @@ impl Interpreter {
             params: signature
                 .map(reflection_parameter_metadata_from_signature)
                 .unwrap_or_default(),
+            static_variables: signature
+                .map(|signature| signature.static_variables.clone())
+                .unwrap_or_default(),
             is_deprecated: signature.is_some_and(|signature| signature.is_deprecated),
             attributes: signature
                 .map(|signature| signature.attributes.clone())
@@ -44702,6 +44985,7 @@ impl Interpreter {
                 .map(|decl| decl.text.clone()),
             returns_by_reference: method.function.returns_by_reference,
             params: reflection_parameter_metadata_from_function_params(&method.function.params),
+            static_variables: reflection_static_variables_from_body(&method.function.body),
             is_deprecated: attributes_include_deprecated(&method.attributes),
             attributes: method.attributes.clone(),
         }
@@ -44737,6 +45021,7 @@ impl Interpreter {
                 .map(|decl| decl.text.clone()),
             returns_by_reference: method.function.returns_by_reference,
             params: reflection_parameter_metadata_from_function_params(&method.function.params),
+            static_variables: reflection_static_variables_from_body(&method.function.body),
             is_deprecated: attributes_include_deprecated(&method.attributes),
             attributes: method.attributes.clone(),
         }
@@ -45006,6 +45291,25 @@ impl Interpreter {
                         .count() as i64,
                 ))
             }
+            "isvariadic" => {
+                expect_expr_arity("ReflectionFunction::isVariadic", args.len(), 0, span)?;
+                Ok(Value::Bool(
+                    state.params.iter().any(|param| param.is_variadic),
+                ))
+            }
+            "getstaticvariables" => {
+                expect_expr_arity(
+                    "ReflectionFunction::getStaticVariables",
+                    args.len(),
+                    0,
+                    span,
+                )?;
+                self.reflection_static_variables_array(
+                    (!state.is_internal).then_some(state.name.as_str()),
+                    &state.static_variables,
+                    span,
+                )
+            }
             "hasreturntype" => {
                 expect_expr_arity("ReflectionFunction::hasReturnType", args.len(), 0, span)?;
                 Ok(Value::Bool(state.return_type.is_some()))
@@ -45194,6 +45498,20 @@ impl Interpreter {
                         .filter(|param| param.default.is_none() && !param.is_variadic)
                         .count() as i64,
                 ))
+            }
+            "isvariadic" => {
+                expect_expr_arity("ReflectionMethod::isVariadic", args.len(), 0, span)?;
+                Ok(Value::Bool(
+                    state.params.iter().any(|param| param.is_variadic),
+                ))
+            }
+            "getstaticvariables" => {
+                expect_expr_arity("ReflectionMethod::getStaticVariables", args.len(), 0, span)?;
+                self.reflection_static_variables_array(
+                    (!state.is_internal).then_some(state.name.as_str()),
+                    &state.static_variables,
+                    span,
+                )
             }
             "hasreturntype" => {
                 expect_expr_arity("ReflectionMethod::hasReturnType", args.len(), 0, span)?;
@@ -46942,6 +47260,40 @@ impl Interpreter {
                 .cloned()
                 .unwrap_or(Value::Null)
         }
+    }
+
+    fn reflection_static_variables_array(
+        &mut self,
+        owner_key: Option<&str>,
+        variables: &[ReflectionStaticVariableMetadata],
+        _span: Span,
+    ) -> CompileResult<Value> {
+        let owner_key = owner_key.map(str::to_ascii_lowercase);
+        let mut values = PhpArray::new();
+        for variable in variables {
+            let value = if let Some(owner_key) = owner_key.as_ref() {
+                self.static_locals
+                    .get(&(owner_key.clone(), variable.name.clone()))
+                    .cloned()
+                    .map(Ok)
+                    .unwrap_or_else(|| self.reflection_static_variable_default_value(variable))?
+            } else {
+                self.reflection_static_variable_default_value(variable)?
+            };
+            values.insert(ArrayKey::String(variable.name.clone()), value);
+        }
+        Ok(Value::Array(values))
+    }
+
+    fn reflection_static_variable_default_value(
+        &mut self,
+        variable: &ReflectionStaticVariableMetadata,
+    ) -> CompileResult<Value> {
+        let Some(default) = variable.default.as_ref() else {
+            return Ok(Value::Null);
+        };
+        let mut default_scope = SymbolTable::new();
+        self.evaluate(default, &mut default_scope)
     }
 
     fn reflection_property_to_string(&self, state: &ReflectionPropertyState) -> String {
@@ -49365,6 +49717,27 @@ impl Interpreter {
         constant: &str,
         span: Span,
     ) -> CompileResult<Value> {
+        if class_name.eq_ignore_ascii_case("DateTime")
+            || class_name.eq_ignore_ascii_case("DateTimeImmutable")
+            || class_name.eq_ignore_ascii_case("DateTimeInterface")
+        {
+            let Some(value) = date_time_interface_format_constant_value(constant) else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::undefined_constant(format!("{class_name}::{constant}")),
+                ));
+            };
+            if constant == "RFC7231" {
+                self.emit_display_diagnostic(
+                    "Deprecated",
+                    PHP_E_DEPRECATED,
+                    "Constant DateTimeInterface::RFC7231 is deprecated since 8.5, as this format ignores the associated timezone and always uses GMT",
+                    span,
+                )?;
+            }
+            return Ok(Value::String(value.to_string()));
+        }
+
         if class_name.eq_ignore_ascii_case("RoundingMode") {
             let Some(mode) = BcRoundingMode::from_case_name(constant) else {
                 return Err(runtime_error(
@@ -50392,6 +50765,25 @@ impl Interpreter {
         }
     }
 
+    fn lookup_array_callback_class_id_with_autoload(
+        &mut self,
+        context: &str,
+        class_name: &str,
+        span: Span,
+    ) -> CompileResult<ClassId> {
+        if let Some(class_id) = self.classes.lookup_class_id(class_name) {
+            return Ok(class_id);
+        }
+
+        if !class_name.is_empty() {
+            self.run_autoload_callbacks(class_name, AutoloadKind::Class, span)?;
+        }
+
+        self.classes
+            .lookup_class_id(class_name)
+            .ok_or_else(|| Self::array_callback_class_not_found_error(context, class_name, span))
+    }
+
     fn invalid_callback_visibility_error(
         context: &str,
         class_name: &str,
@@ -51267,6 +51659,9 @@ impl Interpreter {
         if key == "__phpc_yield_from" {
             return self.call_phpc_yield_from(args, span, caller_scope);
         }
+        if key == "__phpc_print_expr" {
+            return self.call_print_expression(args, span, caller_scope);
+        }
 
         ensure_no_positional_arguments_after_named_arguments(args)?;
 
@@ -51291,6 +51686,11 @@ impl Interpreter {
         {
             return self
                 .call_function(name, args, span, caller_scope)
+                .map(|value| (value, None));
+        }
+        if key == "__phpc_print_expr" {
+            return self
+                .call_print_expression(args, span, caller_scope)
                 .map(|value| (value, None));
         }
         ensure_no_positional_arguments_after_named_arguments(args)?;
@@ -51338,6 +51738,24 @@ impl Interpreter {
             None,
             Vec::new(),
         )
+    }
+
+    fn call_print_expression(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if args.len() != 1 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch("print", ArityExpectation::Exactly(1), args.len()),
+            ));
+        }
+        let value = self.evaluate(&args[0], caller_scope)?;
+        let output = self.value_to_echo_string(value, args[0].span())?;
+        self.append_output_at(&output, args[0].span());
+        Ok(Value::Int(1))
     }
 
     fn call_dynamic_function(
@@ -51731,8 +52149,22 @@ impl Interpreter {
                     }
                     return self.call_preg_replace_callback(values, span);
                 }
-                if key == "str_replace" {
-                    return self.call_str_replace_with_optional_count(args, span, caller_scope);
+                if string_replace_builtin_key(&key).is_some() {
+                    return self.call_string_replace_with_optional_count(
+                        &key,
+                        args,
+                        span,
+                        caller_scope,
+                    );
+                }
+                if key == "similar_text" {
+                    return self.call_similar_text_direct(args, span, caller_scope);
+                }
+                if key == "settype" {
+                    return self.call_settype_direct(args, span, caller_scope);
+                }
+                if key == "is_callable" {
+                    return self.call_is_callable_direct(args, span, caller_scope);
                 }
                 if key == "parse_str" {
                     return self.call_parse_str_direct(args, span, caller_scope);
@@ -51810,6 +52242,9 @@ impl Interpreter {
                 }
                 if key == "sscanf" {
                     return self.call_sscanf_direct(args, span, caller_scope);
+                }
+                if key == "sleep" {
+                    return self.call_sleep_direct(args, span, caller_scope);
                 }
                 let values = self.evaluate_builtin_value_call_arguments(
                     &callable_name(name),
@@ -51905,8 +52340,22 @@ impl Interpreter {
                     }
                     return self.call_preg_replace_callback(values, span);
                 }
-                if key == "str_replace" {
-                    return self.call_str_replace_with_optional_count(args, span, caller_scope);
+                if string_replace_builtin_key(&key).is_some() {
+                    return self.call_string_replace_with_optional_count(
+                        &key,
+                        args,
+                        span,
+                        caller_scope,
+                    );
+                }
+                if key == "similar_text" {
+                    return self.call_similar_text_direct(args, span, caller_scope);
+                }
+                if key == "settype" {
+                    return self.call_settype_direct(args, span, caller_scope);
+                }
+                if key == "is_callable" {
+                    return self.call_is_callable_direct(args, span, caller_scope);
                 }
                 if key == "parse_str" {
                     return self.call_parse_str_direct(args, span, caller_scope);
@@ -51984,6 +52433,9 @@ impl Interpreter {
                 }
                 if key == "sscanf" {
                     return self.call_sscanf_direct(args, span, caller_scope);
+                }
+                if key == "sleep" {
+                    return self.call_sleep_direct(args, span, caller_scope);
                 }
                 let values = self.evaluate_builtin_value_call_arguments(
                     &callable_name(name),
@@ -52886,9 +53338,8 @@ impl Interpreter {
                 )
             }
             Value::String(class_name) => {
-                let class_id = self.classes.lookup_class_id(class_name).ok_or_else(|| {
-                    Self::array_callback_class_not_found_error(context, class_name, span)
-                })?;
+                let class_id =
+                    self.lookup_array_callback_class_id_with_autoload(context, class_name, span)?;
                 let receiver_class_name = self
                     .classes
                     .get(class_id)
@@ -53112,9 +53563,8 @@ impl Interpreter {
                 )
             }
             Value::String(class_name) => {
-                let class_id = self.classes.lookup_class_id(class_name).ok_or_else(|| {
-                    Self::array_callback_class_not_found_error(context, class_name, span)
-                })?;
+                let class_id =
+                    self.lookup_array_callback_class_id_with_autoload(context, class_name, span)?;
                 let receiver_class_name = self
                     .classes
                     .get(class_id)
@@ -53901,9 +54351,12 @@ impl Interpreter {
         argument_array: &PhpArray,
         span: Span,
     ) -> CompileResult<Value> {
-        if key == "str_replace" {
-            return self
-                .call_str_replace_builtin_callback_with_argument_array(argument_array, span);
+        if string_replace_builtin_key(key).is_some() {
+            return self.call_string_replace_builtin_callback_with_argument_array(
+                key,
+                argument_array,
+                span,
+            );
         }
 
         if !Self::builtin_callback_has_first_reference_array_param(key) {
@@ -53941,15 +54394,17 @@ impl Interpreter {
         self.call_builtin_callback_with_values(key, positional_args, span, true)
     }
 
-    fn call_str_replace_builtin_callback_with_argument_array(
+    fn call_string_replace_builtin_callback_with_argument_array(
         &mut self,
+        key: &str,
         argument_array: &PhpArray,
         span: Span,
     ) -> CompileResult<Value> {
-        let function = reflection_internal_function_state("str_replace")
-            .expect("str_replace() reflection metadata is required for callback argument binding");
+        let function = reflection_internal_function_state(key).unwrap_or_else(|| {
+            panic!("{key}() reflection metadata is required for callback argument binding")
+        });
         let values = Self::call_user_func_array_values_from_reflection_params(
-            "str_replace",
+            key,
             &function.params,
             argument_array,
             span,
@@ -53963,7 +54418,13 @@ impl Interpreter {
                 )
             })
             .flatten();
-        self.call_str_replace_builtin_callback_with_values(values, count_reference, span, true)
+        self.call_string_replace_builtin_callback_with_values(
+            key,
+            values,
+            count_reference,
+            span,
+            true,
+        )
     }
 
     fn call_reference_builtin_callback_with_named_argument_array(
@@ -54292,39 +54753,42 @@ impl Interpreter {
         )
     }
 
-    fn call_str_replace_builtin_callback_with_values(
+    fn call_string_replace_builtin_callback_with_values(
         &mut self,
+        key: &str,
         args: Vec<Value>,
         count_reference: Option<PhpReferenceCell>,
         span: Span,
         warn_for_reference_value: bool,
     ) -> CompileResult<Value> {
+        let Some(function) = string_replace_builtin_key(key) else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(callable_name(key)),
+            ));
+        };
         if !(3..=4).contains(&args.len()) {
             return Err(runtime_error(
                 span,
                 RuntimeError::arity_mismatch(
-                    "str_replace()",
+                    function,
                     ArityExpectation::Between { min: 3, max: 4 },
                     args.len(),
                 ),
             ));
         }
 
-        let (result, count) = str_replace_scalar_result(&args[0], &args[1], &args[2], span)?;
+        let (result, count) =
+            self.string_replace_result(key, &args[0], &args[1], &args[2], span)?;
         if args.len() == 4 {
             if let Some(reference) = count_reference {
                 reference.set_value(Value::Int(count));
             } else if warn_for_reference_value {
-                self.emit_builtin_callback_reference_value_warning(
-                    "str_replace",
-                    3,
-                    "count",
-                    span,
-                )?;
+                self.emit_builtin_callback_reference_value_warning(key, 3, "count", span)?;
             }
         }
 
-        Ok(Value::String(result))
+        Ok(result)
     }
 
     fn call_builtin_callback_with_values(
@@ -54367,12 +54831,14 @@ impl Interpreter {
                     .map_err(|error| runtime_error(span, error))?;
                 Ok(Value::Bool(true))
             }
-            "str_replace" => self.call_str_replace_builtin_callback_with_values(
-                args,
-                None,
-                span,
-                warn_for_reference_value,
-            ),
+            "str_replace" | "str_ireplace" => self
+                .call_string_replace_builtin_callback_with_values(
+                    key,
+                    args,
+                    None,
+                    span,
+                    warn_for_reference_value,
+                ),
             "array_push" => {
                 if args.is_empty() {
                     return Err(runtime_error(
@@ -59009,14 +59475,16 @@ impl Interpreter {
                             break;
                         }
                     }
-                    AutoloadCallback::Closure(_) => {
-                        return Err(runtime_error(
+                    AutoloadCallback::Closure(closure) => {
+                        let _ = self.invoke_closure_value(
+                            closure,
+                            vec![Value::String(class_name.to_string())],
                             span,
-                            RuntimeError::unsupported_call(
-                                "autoload",
-                                "closure autoload callback invocation is not implemented",
-                            ),
-                        ));
+                            "autoload",
+                        )?;
+                        if self.class_like_exists(class_name, kind) {
+                            break;
+                        }
                     }
                 }
             }
@@ -59320,17 +59788,24 @@ impl Interpreter {
         }
     }
 
-    fn call_str_replace_with_optional_count(
+    fn call_string_replace_with_optional_count(
         &mut self,
+        key: &str,
         args: &[Expr],
         span: Span,
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
+        let Some(function) = string_replace_builtin_key(key) else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(callable_name(key)),
+            ));
+        };
         if !(3..=4).contains(&args.len()) {
             return Err(runtime_error(
                 span,
                 RuntimeError::arity_mismatch(
-                    "str_replace()",
+                    function,
                     ArityExpectation::Between { min: 3, max: 4 },
                     args.len(),
                 ),
@@ -59340,14 +59815,14 @@ impl Interpreter {
         let search = self.evaluate(&args[0], caller_scope)?;
         let replace = self.evaluate(&args[1], caller_scope)?;
         let subject = self.evaluate(&args[2], caller_scope)?;
-        let (result, count) = str_replace_scalar_result(&search, &replace, &subject, span)?;
+        let (result, count) = self.string_replace_result(key, &search, &replace, &subject, span)?;
 
         if args.len() == 4 {
             let Expr::Variable(count_name, _) = &args[3] else {
                 return Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
-                        "str_replace()",
+                        function,
                         "count output must be a direct variable in the current subset",
                     ),
                 ));
@@ -59355,7 +59830,277 @@ impl Interpreter {
             caller_scope.write_static(count_name, Value::Int(count));
         }
 
-        Ok(Value::String(result))
+        Ok(result)
+    }
+
+    fn call_similar_text_direct(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if !(2..=3).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "similar_text()",
+                    ArityExpectation::Between { min: 2, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let first = self.evaluate(&args[0], caller_scope)?;
+        let second = self.evaluate(&args[1], caller_scope)?;
+        let (score, percent) = similar_text_result(&first, &second, span)?;
+
+        if args.len() == 3 {
+            let Expr::Variable(percent_name, _) = &args[2] else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "similar_text()",
+                        "percent output must be a direct variable in the current subset",
+                    ),
+                ));
+            };
+            caller_scope.write_static(percent_name, Value::Float(percent));
+        }
+
+        Ok(Value::Int(score))
+    }
+
+    fn string_replace_result(
+        &mut self,
+        key: &str,
+        search: &Value,
+        replace: &Value,
+        subject: &Value,
+        span: Span,
+    ) -> CompileResult<(Value, i64)> {
+        let Some(function) = string_replace_builtin_key(key) else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(callable_name(key)),
+            ));
+        };
+        let case_insensitive = key == "str_ireplace";
+        let search_was_array = matches!(search, Value::Array(_));
+        let search_values = self.string_replace_search_values(function, search, span)?;
+        let replacements = self.string_replace_replacement_values(
+            function,
+            replace,
+            search_was_array,
+            search_values.len(),
+            span,
+        )?;
+
+        match subject {
+            Value::Array(subjects) => {
+                let mut result = PhpArray::new();
+                let mut total_count = 0;
+                for entry in subjects.entries() {
+                    let subject =
+                        self.string_replace_subject_array_value(function, entry.value(), span)?;
+                    let (replaced, count) = string_replace_scalar_result(
+                        &search_values,
+                        &replacements,
+                        &subject,
+                        case_insensitive,
+                    );
+                    result.insert(entry.key.clone(), Value::String(replaced));
+                    total_count += count;
+                }
+                Ok((Value::Array(result), total_count))
+            }
+            subject => {
+                let subject = string_replace_argument(function, "subject", subject, span)?;
+                let (result, count) = string_replace_scalar_result(
+                    &search_values,
+                    &replacements,
+                    &subject,
+                    case_insensitive,
+                );
+                Ok((Value::String(result), count))
+            }
+        }
+    }
+
+    fn string_replace_search_values(
+        &mut self,
+        function: &str,
+        search: &Value,
+        span: Span,
+    ) -> CompileResult<Vec<String>> {
+        match search {
+            Value::Array(array) => {
+                let mut values = Vec::with_capacity(array.len());
+                for entry in array.entries() {
+                    match entry.value() {
+                        Value::Array(_) => {
+                            return Err(runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    function,
+                                    "search array values must be null, bool, int, float, or string in the current subset, got array",
+                                ),
+                            ));
+                        }
+                        value => {
+                            values
+                                .push(self.string_replace_search_argument(function, value, span)?);
+                        }
+                    }
+                }
+                Ok(values)
+            }
+            value => Ok(vec![
+                self.string_replace_search_argument(function, value, span)?
+            ]),
+        }
+    }
+
+    fn string_replace_search_argument(
+        &mut self,
+        function: &str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<String> {
+        if matches!(value, Value::Null) {
+            self.emit_display_diagnostic(
+                "Deprecated",
+                PHP_E_DEPRECATED,
+                format!(
+                    "{function}: Passing null to parameter #1 ($search) of type array|string is deprecated"
+                ),
+                span,
+            )?;
+        }
+        string_replace_argument(function, "search", value, span)
+    }
+
+    fn string_replace_replacement_values(
+        &mut self,
+        function: &str,
+        replace: &Value,
+        search_was_array: bool,
+        search_len: usize,
+        span: Span,
+    ) -> CompileResult<Vec<String>> {
+        match replace {
+            Value::Array(array) if search_was_array => {
+                let mut values = Vec::with_capacity(search_len);
+                for entry in array.entries().iter().take(search_len) {
+                    match entry.value() {
+                        Value::Array(_) => {
+                            return Err(runtime_error(
+                                span,
+                                RuntimeError::unsupported_call(
+                                    function,
+                                    "replacement array values must be null, bool, int, float, or string in the current subset, got array",
+                                ),
+                            ));
+                        }
+                        value => values.push(string_replace_argument(
+                            function,
+                            "replacement array value",
+                            value,
+                            span,
+                        )?),
+                    }
+                }
+                values.resize(search_len, String::new());
+                Ok(values)
+            }
+            Value::Array(_) => string_replace_argument(function, "replacement", replace, span)
+                .map(|value| vec![value; search_len.max(1)]),
+            value => {
+                let replacement = string_replace_argument(function, "replace", value, span)?;
+                Ok(vec![replacement; search_len.max(1)])
+            }
+        }
+    }
+
+    fn string_replace_subject_array_value(
+        &mut self,
+        function: &str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<String> {
+        if matches!(value, Value::Array(_)) {
+            self.emit_display_warning("Array to string conversion", span)?;
+            return Ok("Array".to_string());
+        }
+        string_replace_argument(function, "subject array value", value, span)
+    }
+
+    fn call_is_callable_direct(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if !(1..=3).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "is_callable()",
+                    ArityExpectation::Between { min: 1, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let values = self.evaluate_builtin_value_call_arguments(
+            "is_callable()",
+            &args[..args.len().min(2)],
+            caller_scope,
+        )?;
+        let syntax_only = match values.get(1) {
+            Some(Value::Bool(value)) => *value,
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "is_callable()",
+                        format!(
+                            "syntax_only argument must be bool in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+            None => false,
+        };
+
+        if let Some(output_arg) = args.get(2) {
+            match output_arg {
+                Expr::Variable(name, _) => {
+                    caller_scope
+                        .write_static(name, Value::String(callable_name_output(&values[0])));
+                }
+                Expr::NamedArgument { span, .. } | Expr::SpreadArgument { span, .. } => {
+                    return Err(runtime_error(
+                        *span,
+                        RuntimeError::unsupported_call(
+                            "is_callable()",
+                            "named arguments and unpacking are not implemented for is_callable() callable_name output in the current subset",
+                        ),
+                    ));
+                }
+                other => {
+                    return Err(runtime_error(
+                        other.span(),
+                        RuntimeError::unsupported_call(
+                            "is_callable()",
+                            "callable_name output must be a direct variable in the current subset",
+                        ),
+                    ));
+                }
+            }
+        }
+
+        Ok(Value::Bool(self.is_callable_value(&values[0], syntax_only)))
     }
 
     fn call_parse_str_direct(
@@ -59404,6 +60149,102 @@ impl Interpreter {
         let parsed = parse_urlencoded_pairs(&input, &separators);
         caller_scope.write_static(result_name, Value::Array(parsed));
         Ok(Value::Null)
+    }
+
+    fn call_settype_direct(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if args.len() != 2 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch("settype()", ArityExpectation::Exactly(2), args.len()),
+            ));
+        }
+
+        let target_name = match &args[0] {
+            Expr::Variable(name, _) => name,
+            other => {
+                return Err(runtime_error(
+                    other.span(),
+                    RuntimeError::unsupported_call(
+                        "settype()",
+                        "value argument must be a direct variable in the current subset",
+                    ),
+                ));
+            }
+        };
+
+        let type_value = self.evaluate(&args[1], caller_scope)?;
+        let type_name = string_builtin_argument("settype()", "type", &type_value, args[1].span())?;
+        let normalized = type_name.to_ascii_lowercase();
+        match normalized.as_str() {
+            "resource" => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call("settype()", "Cannot convert to resource type"),
+            )),
+            "boolean" | "bool" | "integer" | "int" | "float" | "double" | "string" | "array"
+            | "object" | "null" => {
+                let _ = target_name;
+                Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "settype()",
+                        "value-changing conversions are not implemented in the current subset",
+                    ),
+                ))
+            }
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "settype()",
+                    "Argument #2 ($type) must be a valid type",
+                ),
+            )),
+        }
+    }
+
+    fn call_settype_with_values(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("settype", args, 2, span)?;
+        let type_name = string_builtin_argument("settype()", "type", &args[1], span)?;
+        let normalized = type_name.to_ascii_lowercase();
+        match normalized.as_str() {
+            "resource" => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call("settype()", "Cannot convert to resource type"),
+            )),
+            "boolean" | "bool" | "integer" | "int" | "float" | "double" | "string" | "array"
+            | "object" | "null" => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "settype()",
+                    "value-changing conversions require a direct variable call in the current subset",
+                ),
+            )),
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "settype()",
+                    "Argument #2 ($type) must be a valid type",
+                ),
+            )),
+        }
+    }
+
+    fn call_sleep_direct(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let values = self.evaluate_builtin_value_call_arguments("sleep()", args, caller_scope)?;
+        let result = self.call_sleep(&values, span);
+        if let Err(error) = &result {
+            self.record_pending_uncaught_internal_call_frame("sleep", span, &values, error);
+        }
+        result
     }
 
     fn call_mysqli_stmt_bind_param_direct(
@@ -60853,14 +61694,61 @@ impl Interpreter {
                 span,
                 caller_scope,
             ),
-            other => Err(runtime_error(
-                other.span(),
-                RuntimeError::unsupported_call(
-                    "next()",
-                    "argument must be a direct variable array or direct object-property array offset in the current subset",
-                ),
-            )),
+            Expr::Array { .. } => {
+                self.evaluate(&args[0], caller_scope)?;
+                Err(Self::builtin_reference_argument_fatal_error(
+                    "next", 0, "array", span,
+                ))
+            }
+            other => {
+                if matches!(
+                    self.call_expression_known_returns_by_reference(other, caller_scope)?,
+                    Some(false)
+                ) {
+                    let value = self.evaluate(other, caller_scope)?;
+                    self.emit_reference_call_value_fallback_notice(
+                        ReferenceCallValueFallback::Parameter,
+                        other.span(),
+                    )?;
+                    let Value::Array(mut array) = value else {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "next()",
+                                format!("argument must be array, got {}", value.type_name()),
+                            ),
+                        ));
+                    };
+                    return Ok(array.next_value());
+                }
+
+                Err(runtime_error(
+                    other.span(),
+                    RuntimeError::unsupported_call(
+                        "next()",
+                        "argument must be a direct variable array or direct object-property array offset in the current subset",
+                    ),
+                ))
+            }
         }
+    }
+
+    fn builtin_reference_argument_fatal_error(
+        callable: &str,
+        param_index: usize,
+        param_name: &str,
+        span: Span,
+    ) -> Diagnostic {
+        Diagnostic::new(
+            Phase::Runtime,
+            span.line,
+            span.column,
+            format!(
+                "{callable}(): Argument #{} (${}) could not be passed by reference",
+                param_index + 1,
+                param_name
+            ),
+        )
     }
 
     fn call_next_object_property_array_index(
@@ -69868,6 +70756,7 @@ impl Interpreter {
                 return Ok(Value::Bool(false));
             }
             let realpath_entry = self.bounded_realpath_entry_for_local_path(&filesystem_path);
+            let existed_before_open = filesystem_path.exists();
             let file = match fs::OpenOptions::new()
                 .read(stream_mode.readable)
                 .write(stream_mode.writable)
@@ -69890,6 +70779,15 @@ impl Interpreter {
             };
             if let Some((resolved, metadata)) = realpath_entry {
                 self.cache_realpath_entry(resolved, &metadata);
+            }
+            if stream_mode.create && !existed_before_open {
+                self.set_bounded_unix_permissions(
+                    &filesystem_path,
+                    self.effective_umask_mode(0o666),
+                    "fopen",
+                    span,
+                )?;
+                self.clear_stat_cache_filesystem_path(&filesystem_path);
             }
             let mut stream = FileStream {
                 file,
@@ -70500,11 +71398,13 @@ impl Interpreter {
         if !self.enforce_bounded_open_basedir("is_executable()", &path, &filesystem_path, span)? {
             return Ok(Value::Bool(false));
         }
-        Ok(Value::Bool(
-            fs::metadata(&filesystem_path)
-                .map(|metadata| filesystem_mode_has_owner_execute(&metadata))
-                .unwrap_or(false),
-        ))
+        let Some(metadata) = fs::metadata(&filesystem_path).ok() else {
+            return Ok(Value::Bool(false));
+        };
+        if trailing_separator_requires_directory(&path) && !metadata.is_dir() {
+            return Ok(Value::Bool(false));
+        }
+        Ok(Value::Bool(filesystem_mode_has_owner_execute(&metadata)))
     }
 
     fn call_disk_space_builtin(
@@ -70743,12 +71643,21 @@ impl Interpreter {
         if !self.enforce_bounded_open_basedir("touch()", &path, &filesystem_path, span)? {
             return Ok(Value::Bool(false));
         }
+        let existed_before_touch = filesystem_path.exists();
         match fs::OpenOptions::new()
             .create(true)
             .append(true)
             .open(&filesystem_path)
         {
             Ok(_) => {
+                if !existed_before_touch {
+                    self.set_bounded_unix_permissions(
+                        &filesystem_path,
+                        self.effective_umask_mode(0o666),
+                        "touch",
+                        span,
+                    )?;
+                }
                 self.clear_stat_cache_filesystem_path(&filesystem_path);
                 self.cache_bounded_realpath_entry_for_local_path(&filesystem_path);
                 Ok(Value::Bool(true))
@@ -70780,6 +71689,44 @@ impl Interpreter {
             )
         })?;
         Ok(Value::String(path))
+    }
+
+    fn call_get_current_user(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("get_current_user", args, 0, span)?;
+        Ok(Value::String(bounded_current_user_name()))
+    }
+
+    fn call_umask(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.len() > 1 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "umask()",
+                    ArityExpectation::Between { min: 0, max: 1 },
+                    args.len(),
+                ),
+            ));
+        }
+        let previous = self.current_umask.unwrap_or(PHP_DEFAULT_REQUEST_UMASK);
+        match args.first() {
+            None | Some(Value::Null) => {}
+            Some(Value::Int(mask)) => {
+                self.current_umask = Some(mask & 0o777);
+            }
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "umask()",
+                        format!(
+                            "mask argument must be int or null in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        }
+        Ok(Value::Int(previous))
     }
 
     fn call_tempnam(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -70926,7 +71873,7 @@ impl Interpreter {
                     span,
                     RuntimeError::unsupported_call(
                         "sleep()",
-                        "seconds argument must be non-negative in the current subset",
+                        "Argument #1 ($seconds) must be greater than or equal to 0",
                     ),
                 ));
             }
@@ -71044,6 +71991,7 @@ impl Interpreter {
         } else {
             options.truncate(true);
         }
+        let existed_before_open = filesystem_path.exists();
         let mut file = match options.open(&filesystem_path) {
             Ok(file) => file,
             Err(error) => {
@@ -71063,6 +72011,14 @@ impl Interpreter {
                 span,
             )?;
             return Ok(Value::Bool(false));
+        }
+        if !existed_before_open {
+            self.set_bounded_unix_permissions(
+                &filesystem_path,
+                self.effective_umask_mode(0o666),
+                "file_put_contents",
+                span,
+            )?;
         }
         self.clear_stat_cache_filesystem_path(&filesystem_path);
         self.cache_bounded_realpath_entry_for_local_path(&filesystem_path);
@@ -71271,7 +72227,12 @@ impl Interpreter {
         };
         match result {
             Ok(()) => {
-                self.set_bounded_unix_permissions(&filesystem_path, mode, "mkdir", span)?;
+                self.set_bounded_unix_permissions(
+                    &filesystem_path,
+                    self.effective_umask_mode(mode),
+                    "mkdir",
+                    span,
+                )?;
                 self.clear_stat_cache_filesystem_path(&filesystem_path);
                 self.cache_bounded_realpath_entry_for_local_path(&filesystem_path);
                 Ok(Value::Bool(true))
@@ -71280,6 +72241,13 @@ impl Interpreter {
                 self.emit_warning("mkdir()", format!("{path}: {error}"), span)?;
                 Ok(Value::Bool(false))
             }
+        }
+    }
+
+    fn effective_umask_mode(&self, mode: i64) -> i64 {
+        match self.current_umask {
+            Some(mask) => mode & !mask,
+            None => mode,
         }
     }
 
@@ -71509,7 +72477,7 @@ impl Interpreter {
                 span,
                 RuntimeError::unsupported_call(
                     "scandir()",
-                    "sorting_order must be SCANDIR_SORT_ASCENDING, SCANDIR_SORT_DESCENDING, or SCANDIR_SORT_NONE in the current subset",
+                    "Argument #2 ($sorting_order) must be one of the SCANDIR_SORT_ASCENDING, SCANDIR_SORT_DESCENDING, or SCANDIR_SORT_NONE constants",
                 ),
             ));
         }
@@ -73833,6 +74801,19 @@ impl Interpreter {
         Ok(Value::Array(wrappers))
     }
 
+    fn call_stream_get_transports(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("stream_get_transports", args, 0, span)?;
+
+        let mut transports = PhpArray::new();
+        for transport in DEFAULT_STREAM_TRANSPORTS {
+            transports
+                .append(Value::String((*transport).to_string()))
+                .map_err(|error| runtime_error(span, error))?;
+        }
+
+        Ok(Value::Array(transports))
+    }
+
     fn call_stream_wrapper_register(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         if !(2..=3).contains(&args.len()) {
             return Err(runtime_error(
@@ -74101,24 +75082,38 @@ impl Interpreter {
         }
 
         let directory_path = local_filesystem_metadata_path(path);
-        let Ok(metadata) = fs::metadata(&directory_path) else {
-            return Ok(Value::Bool(false));
+        let metadata = match fs::metadata(&directory_path) {
+            Ok(metadata) => metadata,
+            Err(error) => {
+                self.emit_directory_open_warning(
+                    function,
+                    path,
+                    Self::filesystem_io_warning_message(&error),
+                    span,
+                )?;
+                return Ok(Value::Bool(false));
+            }
         };
         if !metadata.is_dir() {
+            self.emit_directory_open_warning(function, path, "Not a directory", span)?;
             return Ok(Value::Bool(false));
         }
 
         let mut entries = vec![".".to_string(), "..".to_string()];
         let mut host_entries = Vec::new();
-        for entry in fs::read_dir(&directory_path).map_err(|error| {
-            runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    format!("{function}()"),
-                    format!("local directory read failed: {error}"),
-                ),
-            )
-        })? {
+        let read_dir = match fs::read_dir(&directory_path) {
+            Ok(read_dir) => read_dir,
+            Err(error) => {
+                self.emit_directory_open_warning(
+                    function,
+                    path,
+                    Self::filesystem_io_warning_message(&error),
+                    span,
+                )?;
+                return Ok(Value::Bool(false));
+            }
+        };
+        for entry in read_dir {
             let entry = entry.map_err(|error| {
                 runtime_error(
                     span,
@@ -74153,6 +75148,22 @@ impl Interpreter {
         );
         self.last_opened_directory = Some(id);
         Ok(Value::Resource(id))
+    }
+
+    fn emit_directory_open_warning(
+        &mut self,
+        function: &str,
+        path: &str,
+        reason: impl AsRef<str>,
+        span: Span,
+    ) -> CompileResult<()> {
+        self.emit_display_warning(
+            format!(
+                "{function}({path}): Failed to open directory: {}",
+                reason.as_ref()
+            ),
+            span,
+        )
     }
 
     fn call_opendir(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -74394,10 +75405,208 @@ impl Interpreter {
         }
     }
 
+    fn call_xml_parser_create(
+        &mut self,
+        name: &str,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<Value> {
+        expect_arity(name, args, 0, span)?;
+        let id = self.next_resource_id;
+        self.next_resource_id += 1;
+        self.xml_parsers.insert(id, XmlParserResource::default());
+        Ok(Value::Resource(id))
+    }
+
+    fn call_xml_parser_get_option(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("xml_parser_get_option", args, 2, span)?;
+        let parser_id = self.xml_parser_resource_id("xml_parser_get_option", &args[0], span)?;
+        let option =
+            php_internal_int_argument("xml_parser_get_option()", 2, "option", &args[1], span)?;
+        let parser = self
+            .xml_parsers
+            .get(&parser_id)
+            .expect("xml_parser_resource_id validates parser state");
+
+        match option {
+            PHP_XML_OPTION_CASE_FOLDING => Ok(Value::Bool(parser.case_folding)),
+            PHP_XML_OPTION_TARGET_ENCODING => Ok(Value::String(parser.target_encoding.clone())),
+            PHP_XML_OPTION_SKIP_TAGSTART | PHP_XML_OPTION_SKIP_WHITE => Ok(Value::Int(0)),
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "xml_parser_get_option()",
+                    "Argument #2 ($option) must be a XML_OPTION_* constant",
+                ),
+            )),
+        }
+    }
+
+    fn call_xml_parser_set_option(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("xml_parser_set_option", args, 3, span)?;
+        let parser_id = self.xml_parser_resource_id("xml_parser_set_option", &args[0], span)?;
+        let option =
+            php_internal_int_argument("xml_parser_set_option()", 2, "option", &args[1], span)?;
+
+        match option {
+            PHP_XML_OPTION_CASE_FOLDING => {
+                let case_folding = match &args[2] {
+                    Value::Bool(value) => *value,
+                    Value::Int(value) => *value != 0,
+                    other => {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "xml_parser_set_option()",
+                                format!(
+                                    "Argument #3 ($value) must be of type int|bool in the current XML_OPTION_CASE_FOLDING subset, {} given",
+                                    php_type_error_given(other)
+                                ),
+                            ),
+                        ));
+                    }
+                };
+                self.xml_parsers
+                    .get_mut(&parser_id)
+                    .expect("xml_parser_resource_id validates parser state")
+                    .case_folding = case_folding;
+                Ok(Value::Bool(true))
+            }
+            PHP_XML_OPTION_TARGET_ENCODING => {
+                let encoding = match &args[2] {
+                    Value::String(value) => value.as_str(),
+                    other => {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                "xml_parser_set_option()",
+                                format!(
+                                    "Argument #3 ($value) must be of type string in the current XML_OPTION_TARGET_ENCODING subset, {} given",
+                                    php_type_error_given(other)
+                                ),
+                            ),
+                        ));
+                    }
+                };
+                let Some(canonical) = canonical_xml_target_encoding(encoding) else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "xml_parser_set_option()",
+                            "Argument #3 ($value) is not a supported target encoding",
+                        ),
+                    ));
+                };
+                self.xml_parsers
+                    .get_mut(&parser_id)
+                    .expect("xml_parser_resource_id validates parser state")
+                    .target_encoding = canonical.to_string();
+                Ok(Value::Bool(true))
+            }
+            PHP_XML_OPTION_SKIP_TAGSTART | PHP_XML_OPTION_SKIP_WHITE => Ok(Value::Bool(true)),
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "xml_parser_set_option()",
+                    "Argument #2 ($option) must be a XML_OPTION_* constant",
+                ),
+            )),
+        }
+    }
+
+    fn call_libxml_use_internal_errors(
+        &mut self,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<Value> {
+        if args.len() > 1 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "libxml_use_internal_errors()",
+                    ArityExpectation::Between { min: 0, max: 1 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let previous = self.libxml_use_internal_errors;
+        match args.first() {
+            None | Some(Value::Null) => {}
+            Some(Value::Array(_))
+            | Some(Value::Object(_))
+            | Some(Value::Closure(_))
+            | Some(Value::Resource(_)) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "libxml_use_internal_errors()",
+                        format!(
+                            "use_errors argument must be bool-compatible scalar or null in the current subset, got {}",
+                            args[0].type_name()
+                        ),
+                    ),
+                ));
+            }
+            Some(value) => {
+                self.libxml_use_internal_errors = value.is_truthy();
+            }
+        }
+
+        Ok(Value::Bool(previous))
+    }
+
+    fn call_libxml_get_errors(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("libxml_get_errors", args, 0, span)?;
+        Ok(Value::Array(PhpArray::new()))
+    }
+
+    fn call_libxml_get_last_error(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("libxml_get_last_error", args, 0, span)?;
+        Ok(Value::Bool(false))
+    }
+
+    fn call_libxml_clear_errors(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("libxml_clear_errors", args, 0, span)?;
+        Ok(Value::Null)
+    }
+
+    fn xml_parser_resource_id(
+        &self,
+        function: &str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<i64> {
+        let Value::Resource(id) = value else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{function}()"),
+                    format!(
+                        "Argument #1 ($parser) must be an XML parser resource in the current subset, {} given",
+                        php_type_error_given(value)
+                    ),
+                ),
+            ));
+        };
+        if self.xml_parsers.contains_key(id) {
+            Ok(*id)
+        } else {
+            Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{function}()"),
+                    "Argument #1 ($parser) must be a valid XML parser resource",
+                ),
+            ))
+        }
+    }
+
     fn value_is_open_resource(&self, value: &Value) -> bool {
         matches!(value, Value::Resource(id) if self.streams.contains_key(id)
             || self.stream_contexts.contains_key(id)
-            || self.directories.contains_key(id))
+            || self.directories.contains_key(id)
+            || self.xml_parsers.contains_key(id))
     }
 
     fn resource_type_label(&self, id: i64) -> &'static str {
@@ -74405,6 +75614,8 @@ impl Interpreter {
             "stream"
         } else if self.stream_contexts.contains_key(&id) {
             "stream-context"
+        } else if self.xml_parsers.contains_key(&id) {
+            "xml"
         } else {
             "Unknown"
         }
@@ -74631,6 +75842,38 @@ impl Interpreter {
         expect_arity("ob_start", args, 0, span)?;
         self.output_buffers.push(String::new());
         Ok(Value::Bool(true))
+    }
+
+    fn call_flush(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("flush", args, 0, span)?;
+        Ok(Value::Null)
+    }
+
+    fn call_ob_implicit_flush(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.len() > 1 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "ob_implicit_flush()",
+                    ArityExpectation::Between { min: 0, max: 1 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        match args.first() {
+            Some(Value::Bool(_)) | Some(Value::Int(_)) | None => Ok(Value::Null),
+            Some(other) => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "ob_implicit_flush()",
+                    format!(
+                        "enable argument must be bool or int in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
     }
 
     fn call_ob_get_level(&self, args: &[Value], span: Span) -> CompileResult<Value> {
@@ -75809,10 +77052,28 @@ impl Interpreter {
 
     fn call_vfprintf(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("vfprintf()", args, 3, span)?;
+        self.expect_vfprintf_stream_argument(&args[0], span)?;
         let output = self.call_vsprintf(&args[1..], "vfprintf()", span)?;
         let length = output.as_bytes().len() as i64;
         self.write_stream_string("vfprintf", &args[0], &output, span)?;
         Ok(Value::Int(length))
+    }
+
+    fn expect_vfprintf_stream_argument(&self, value: &Value, span: Span) -> CompileResult<()> {
+        if matches!(value, Value::Resource(_)) {
+            return Ok(());
+        }
+
+        Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "vfprintf()",
+                format!(
+                    "Argument #1 ($stream) must be of type resource, {} given",
+                    php_type_error_given(value)
+                ),
+            ),
+        ))
     }
 
     fn write_stream_string(
@@ -76010,6 +77271,15 @@ impl Interpreter {
                     .map_err(|error| runtime_error(span, error))?;
                 Ok(Value::Int(value.len() as i64))
             }
+            "mb_strlen" => self.call_mb_strlen(&args, span),
+            "mb_strpos" => self.call_mb_strpos_like(&args, "mb_strpos()", false, false, span),
+            "mb_stripos" => self.call_mb_strpos_like(&args, "mb_stripos()", true, false, span),
+            "mb_strrpos" => self.call_mb_strpos_like(&args, "mb_strrpos()", false, true, span),
+            "mb_strripos" => self.call_mb_strpos_like(&args, "mb_strripos()", true, true, span),
+            "mb_internal_encoding" => self.call_mb_internal_encoding(&args, span),
+            "mb_detect_order" => self.call_mb_detect_order(&args, span),
+            "mb_check_encoding" => self.call_mb_check_encoding(&args, span),
+            "mb_convert_encoding" => self.call_mb_convert_encoding(&args, span),
             "chr" => self.call_chr(&args, span),
             "bin2hex" => call_bin2hex(&args, span),
             "hex2bin" => self.call_hex2bin(&args, span),
@@ -76021,10 +77291,17 @@ impl Interpreter {
             "base_convert" => self.call_base_convert(&args, span),
             "crc32" => call_crc32(&args, span),
             "md5" => call_md5(&args, span),
+            "sha1" => call_sha1(&args, span),
+            "hash" => call_hash(&args, span),
+            "hash_algos" => call_hash_algos(&args, span),
             "levenshtein" => call_levenshtein(&args, span),
+            "similar_text" => self.call_similar_text_with_values(args, span, true),
             "soundex" => call_soundex(&args, span),
             "count_chars" => call_count_chars(&args, span),
+            "str_word_count" => call_str_word_count(&args, span),
             "base64_decode" => call_base64_decode(&args, span),
+            "convert_uuencode" => call_convert_uuencode(&args, span),
+            "convert_uudecode" => self.call_convert_uudecode(&args, span),
             "ctype_alnum" => self.call_ctype("ctype_alnum()", &args, ctype_byte_is_alnum, span),
             "ctype_alpha" => self.call_ctype("ctype_alpha()", &args, ctype_byte_is_alpha, span),
             "ctype_cntrl" => self.call_ctype("ctype_cntrl()", &args, ctype_byte_is_cntrl, span),
@@ -76060,9 +77337,9 @@ impl Interpreter {
             "addcslashes" => self.call_addcslashes(&args, span),
             "stripcslashes" => self.call_stripcslashes(&args, span),
             "strtolower" => call_strtolower(&args, span),
-            "trim" => call_trim(&args, span),
-            "ltrim" => call_ltrim(&args, span),
-            "rtrim" => call_rtrim(&args, span),
+            "trim" => self.call_trim(&args, span),
+            "ltrim" => self.call_ltrim(&args, span),
+            "rtrim" => self.call_rtrim(&args, span),
             "strcmp" => call_strcmp(&args, span),
             "strcasecmp" => call_strcasecmp(&args, span),
             "strncmp" => call_strncmp(&args, span),
@@ -76087,7 +77364,15 @@ impl Interpreter {
             "substr" => call_substr(&args, span),
             "substr_replace" => call_substr_replace(&args, span),
             "substr_count" => call_substr_count(&args, span),
-            "str_replace" => call_str_replace(&args, span),
+            "str_replace" | "str_ireplace" => {
+                self.call_string_replace_builtin_callback_with_values(
+                    name,
+                    args,
+                    None,
+                    span,
+                    false,
+                )
+            }
             "str_getcsv" => call_str_getcsv(&args, span),
             "parse_str" => Err(runtime_error(
                 span,
@@ -76097,10 +77382,15 @@ impl Interpreter {
                 ),
             )),
             "urlencode" => call_urlencode(&args, span),
+            "rawurlencode" => call_rawurlencode(&args, span),
+            "rawurldecode" => call_rawurldecode(&args, span),
+            "parse_url" => call_parse_url(&args, span),
             "preg_match" => call_preg_match(&args, span),
             "preg_replace" => call_preg_replace(&args, span),
             "preg_split" => call_preg_split(&args, span),
             "preg_replace_callback" => self.call_preg_replace_callback(args, span),
+            "filter_list" => call_filter_list(&args, span),
+            "filter_id" => call_filter_id(&args, span),
             "compact" => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -76110,8 +77400,19 @@ impl Interpreter {
             )),
             "error_reporting" => self.call_error_reporting(args, span),
             "ignore_user_abort" => self.call_ignore_user_abort(args, span),
+            "connection_aborted" => call_connection_aborted(&args, span),
+            "connection_status" => call_connection_status(&args, span),
             "php_sapi_name" => call_php_sapi_name(&args, span),
+            "php_uname" => call_php_uname(&args, span),
+            "get_loaded_extensions" => call_get_loaded_extensions(&args, span),
+            "getmypid" => call_getmypid(&args, span),
             "json_encode" => call_json_encode(&args, span),
+            "json_last_error" => call_json_last_error(&args, span),
+            "json_last_error_msg" => call_json_last_error_msg(&args, span),
+            "libxml_use_internal_errors" => self.call_libxml_use_internal_errors(&args, span),
+            "libxml_get_errors" => self.call_libxml_get_errors(&args, span),
+            "libxml_get_last_error" => self.call_libxml_get_last_error(&args, span),
+            "libxml_clear_errors" => self.call_libxml_clear_errors(&args, span),
             "printf" => self.call_printf(&args, span),
             "fprintf" => self.call_fprintf(&args, span),
             "sprintf" => self.call_sprintf(&args, span),
@@ -76237,6 +77538,10 @@ impl Interpreter {
             "asin" => self.call_php_unary_float_math("asin", "asin()", &args, f64::asin, span),
             "acos" => self.call_php_unary_float_math("acos", "acos()", &args, f64::acos, span),
             "atan" => self.call_php_unary_float_math("atan", "atan()", &args, f64::atan, span),
+            "acosh" => self.call_php_unary_float_math("acosh", "acosh()", &args, f64::acosh, span),
+            "asinh" => self.call_php_unary_float_math("asinh", "asinh()", &args, f64::asinh, span),
+            "atanh" => self.call_php_unary_float_math("atanh", "atanh()", &args, f64::atanh, span),
+            "sqrt" => self.call_php_unary_float_math("sqrt", "sqrt()", &args, f64::sqrt, span),
             "sinh" => self.call_php_unary_float_math("sinh", "sinh()", &args, f64::sinh, span),
             "cosh" => self.call_php_unary_float_math("cosh", "cosh()", &args, f64::cosh, span),
             "tanh" => self.call_php_unary_float_math("tanh", "tanh()", &args, f64::tanh, span),
@@ -76256,6 +77561,7 @@ impl Interpreter {
                 span,
             ),
             "pow" => call_pow(&args, span),
+            "intdiv" => call_intdiv(&args, span),
             "bcadd" => self.call_bc_binary_decimal("bcadd", &args, span, BcBinaryDecimalOp::Add),
             "bcsub" => self.call_bc_binary_decimal("bcsub", &args, span, BcBinaryDecimalOp::Sub),
             "bcmul" => self.call_bc_binary_decimal("bcmul", &args, span, BcBinaryDecimalOp::Mul),
@@ -76310,6 +77616,7 @@ impl Interpreter {
             "timezone_name_from_abbr" => call_timezone_name_from_abbr(&args, span),
             "timezone_open" => self.call_timezone_open(&args, span),
             "timezone_name_get" => self.call_timezone_name_get(&args, span),
+            "timezone_location_get" => self.call_timezone_location_get(&args, span),
             "timezone_offset_get" => self.call_timezone_offset_get(&args, span),
             "timezone_transitions_get" => self.call_timezone_transitions_get(&args, span),
             "timezone_abbreviations_list" => {
@@ -76358,6 +77665,21 @@ impl Interpreter {
             }
             "min" => call_min(&args, span),
             "rand" => call_rand(&args, span),
+            "mt_rand" => call_mt_rand(&args, span),
+            "getrandmax" => {
+                expect_arity(name, &args, 0, span)?;
+                Ok(Value::Int(PHP_MT_RAND_MAX))
+            }
+            "mt_getrandmax" => {
+                expect_arity(name, &args, 0, span)?;
+                Ok(Value::Int(PHP_MT_RAND_MAX))
+            }
+            "srand" => call_srand("srand()", &args, span),
+            "mt_srand" => call_srand("mt_srand()", &args, span),
+            "lcg_value" => {
+                expect_arity(name, &args, 0, span)?;
+                Ok(Value::Float(0.5))
+            }
             "uniqid" => call_uniqid(&args, span),
             "hash_hmac" => call_hash_hmac(&args, span),
             "gc_enable" => {
@@ -76541,6 +77863,40 @@ impl Interpreter {
                         span,
                         RuntimeError::unsupported_call(
                             "array_key_last()",
+                            format!("argument must be array, got {}", other.type_name()),
+                        ),
+                    )),
+                }
+            }
+            "array_first" => {
+                expect_arity(name, &args, 1, span)?;
+                match &args[0] {
+                    Value::Array(array) => Ok(array
+                        .entries()
+                        .first()
+                        .map(|entry| entry.value_cloned())
+                        .unwrap_or(Value::Null)),
+                    other => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "array_first()",
+                            format!("argument must be array, got {}", other.type_name()),
+                        ),
+                    )),
+                }
+            }
+            "array_last" => {
+                expect_arity(name, &args, 1, span)?;
+                match &args[0] {
+                    Value::Array(array) => Ok(array
+                        .entries()
+                        .last()
+                        .map(|entry| entry.value_cloned())
+                        .unwrap_or(Value::Null)),
+                    other => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "array_last()",
                             format!("argument must be array, got {}", other.type_name()),
                         ),
                     )),
@@ -77321,9 +78677,14 @@ impl Interpreter {
                 let (left, others) = arrays
                     .split_first()
                     .expect("array_intersect requires at least two arrays");
-                left.intersect_values_with_all(others.iter().copied())
-                    .map(Value::Array)
-                    .map_err(|error| runtime_error(span, error))
+                if array_intersect_needs_php_string_warnings(left, &others) {
+                    self.array_intersect_values_with_php_string_warnings(left, &others, span)
+                        .map(Value::Array)
+                } else {
+                    left.intersect_values_with_all(others.iter().copied())
+                        .map(Value::Array)
+                        .map_err(|error| runtime_error(span, error))
+                }
             }
             "array_intersect_assoc" => {
                 if args.len() < 2 {
@@ -77471,10 +78832,7 @@ impl Interpreter {
             "array_count_values" => {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
-                    Value::Array(array) => array
-                        .count_values()
-                        .map(Value::Array)
-                        .map_err(|error| runtime_error(span, error)),
+                    Value::Array(array) => self.call_array_count_values(array, span).map(Value::Array),
                     other => Err(runtime_error(
                         span,
                         RuntimeError::unsupported_call(
@@ -77689,6 +79047,10 @@ impl Interpreter {
                 expect_arity(name, &args, 1, span)?;
                 Ok(Value::String(args[0].gettype_name().to_string()))
             }
+            "settype" => self.call_settype_with_values(&args, span),
+            "intval" => call_intval(&args, span),
+            "boolval" => call_boolval(name, &args, span),
+            "floatval" | "doubleval" => call_floatval(name, &args, span),
             "is_null" => {
                 expect_arity(name, &args, 1, span)?;
                 Ok(Value::Bool(matches!(&args[0], Value::Null)))
@@ -77754,18 +79116,7 @@ impl Interpreter {
                 }
 
                 let syntax_only = matches!(args.get(1), Some(Value::Bool(true)));
-                match &args[0] {
-                    Value::String(name) if syntax_only => Ok(Value::Bool(true)),
-                    Value::String(name) => Ok(Value::Bool(self.lookup_function(name).is_some())),
-                    Value::Array(array) if syntax_only => {
-                        Ok(Value::Bool(is_array_callable_syntax_shape(array)))
-                    }
-                    Value::Array(array) => Ok(Value::Bool(is_array_callable_for_is_callable(
-                        &self.classes,
-                        array,
-                    ))),
-                    _ => Ok(Value::Bool(false)),
-                }
+                Ok(Value::Bool(self.is_callable_value(&args[0], syntax_only)))
             }
             "function_exists" => {
                 expect_arity(name, &args, 1, span)?;
@@ -77799,6 +79150,12 @@ impl Interpreter {
                     )),
                 }
             }
+            "xml_parser_create" => self.call_xml_parser_create("xml_parser_create", &args, span),
+            "xml_parser_create_ns" => {
+                self.call_xml_parser_create("xml_parser_create_ns", &args, span)
+            }
+            "xml_parser_get_option" => self.call_xml_parser_get_option(&args, span),
+            "xml_parser_set_option" => self.call_xml_parser_set_option(&args, span),
             "mysqli_connect" => self.call_mysqli_connect(&args, span),
             "mysqli_real_connect" => self.call_mysqli_real_connect(&args, span),
             "mysqli_get_server_info" => self.call_mysqli_get_server_info(&args, span),
@@ -77955,6 +79312,8 @@ impl Interpreter {
             "touch" => self.call_touch(&args, span),
             "tempnam" => self.call_tempnam(&args, span),
             "sys_get_temp_dir" => self.call_sys_get_temp_dir(&args, span),
+            "get_current_user" => self.call_get_current_user(&args, span),
+            "umask" => self.call_umask(&args, span),
             "sleep" => self.call_sleep(&args, span),
             "readlink" => self.call_readlink(&args, span),
             "symlink" => self.call_symlink(&args, span),
@@ -77974,6 +79333,16 @@ impl Interpreter {
                             ));
                         }
                         let metadata_path = local_filesystem_metadata_path(path);
+                        if path.is_empty()
+                            || !self.enforce_bounded_open_basedir(
+                                "file_exists()",
+                                path,
+                                &metadata_path,
+                                span,
+                            )?
+                        {
+                            return Ok(Value::Bool(false));
+                        }
                         Ok(Value::Bool(metadata_path.try_exists().map_err(|error| {
                             runtime_error(
                                 span,
@@ -78212,6 +79581,7 @@ impl Interpreter {
             "fstat" => self.call_fstat(&args, span),
             "stream_get_meta_data" => self.call_stream_get_meta_data(&args, span),
             "stream_get_wrappers" => self.call_stream_get_wrappers(&args, span),
+            "stream_get_transports" => self.call_stream_get_transports(&args, span),
             "stream_wrapper_register" => self.call_stream_wrapper_register(&args, span),
             "stream_wrapper_unregister" => self.call_stream_wrapper_unregister(&args, span),
             "stream_wrapper_restore" => self.call_stream_wrapper_restore(&args, span),
@@ -78235,7 +79605,19 @@ impl Interpreter {
                                 ),
                             ));
                         }
-                        let metadata = match self.cached_local_metadata(path) {
+                        if path.is_empty() {
+                            return Ok(Value::Bool(false));
+                        }
+                        let metadata_path = local_filesystem_metadata_path(path);
+                        if !self.enforce_bounded_open_basedir(
+                            "filesize()",
+                            path,
+                            &metadata_path,
+                            span,
+                        )? {
+                            return Ok(Value::Bool(false));
+                        }
+                        let metadata = match self.cached_filesystem_metadata(&metadata_path, true) {
                             Some(metadata) => metadata,
                             None => {
                                 self.emit_display_warning(
@@ -78375,9 +79757,26 @@ impl Interpreter {
                         }
 
                         let filesystem_path = local_filesystem_metadata_path(path);
+                        if path.is_empty() {
+                            let _ = self.enforce_bounded_open_basedir(
+                                "realpath()",
+                                path,
+                                &filesystem_path,
+                                span,
+                            )?;
+                            return Ok(Value::Bool(false));
+                        }
                         let Ok(metadata) = fs::metadata(&filesystem_path) else {
                             return Ok(Value::Bool(false));
                         };
+                        if !self.enforce_bounded_open_basedir(
+                            "realpath()",
+                            path,
+                            &filesystem_path,
+                            span,
+                        )? {
+                            return Ok(Value::Bool(false));
+                        }
                         let Ok(resolved) = fs::canonicalize(&filesystem_path) else {
                             return Ok(Value::Bool(false));
                         };
@@ -78449,6 +79848,16 @@ impl Interpreter {
                             ));
                         }
                         let metadata_path = local_filesystem_metadata_path(path);
+                        if path.is_empty()
+                            || !self.enforce_bounded_open_basedir(
+                                "is_dir()",
+                                path,
+                                &metadata_path,
+                                span,
+                            )?
+                        {
+                            return Ok(Value::Bool(false));
+                        }
                         Ok(Value::Bool(
                             fs::metadata(&metadata_path)
                                 .map(|metadata| metadata.is_dir())
@@ -78481,11 +79890,23 @@ impl Interpreter {
                             ));
                         }
                         let metadata_path = local_filesystem_metadata_path(path);
-                        Ok(Value::Bool(
-                            fs::metadata(&metadata_path)
-                                .map(|metadata| metadata.is_file())
-                                .unwrap_or(false),
-                        ))
+                        if path.is_empty()
+                            || !self.enforce_bounded_open_basedir(
+                                "is_file()",
+                                path,
+                                &metadata_path,
+                                span,
+                            )?
+                        {
+                            return Ok(Value::Bool(false));
+                        }
+                        let Ok(metadata) = fs::metadata(&metadata_path) else {
+                            return Ok(Value::Bool(false));
+                        };
+                        if trailing_separator_requires_directory(path) && !metadata.is_dir() {
+                            return Ok(Value::Bool(false));
+                        }
+                        Ok(Value::Bool(metadata.is_file()))
                     }
                     other => Err(runtime_error(
                         span,
@@ -78513,6 +79934,16 @@ impl Interpreter {
                             ));
                         }
                         let metadata_path = local_filesystem_metadata_path(path);
+                        if path.is_empty()
+                            || !self.enforce_bounded_open_basedir(
+                                "is_readable()",
+                                path,
+                                &metadata_path,
+                                span,
+                            )?
+                        {
+                            return Ok(Value::Bool(false));
+                        }
                         let Ok(metadata) = fs::metadata(&metadata_path) else {
                             return Ok(Value::Bool(false));
                         };
@@ -78549,6 +79980,16 @@ impl Interpreter {
                             ));
                         }
                         let metadata_path = local_filesystem_metadata_path(path);
+                        if path.is_empty()
+                            || !self.enforce_bounded_open_basedir(
+                                "is_writable()",
+                                path,
+                                &metadata_path,
+                                span,
+                            )?
+                        {
+                            return Ok(Value::Bool(false));
+                        }
                         let Ok(metadata) = fs::metadata(&metadata_path) else {
                             return Ok(Value::Bool(false));
                         };
@@ -78586,6 +80027,14 @@ impl Interpreter {
                     ));
                 }
                 let metadata_path = local_filesystem_metadata_path(&path);
+                if !self.enforce_bounded_open_basedir(
+                    "is_link()",
+                    &path,
+                    &metadata_path,
+                    span,
+                )? {
+                    return Ok(Value::Bool(false));
+                }
                 Ok(Value::Bool(
                     fs::symlink_metadata(&metadata_path)
                         .map(|metadata| metadata.file_type().is_symlink())
@@ -78597,6 +80046,8 @@ impl Interpreter {
             }
             "set_error_handler" => self.call_set_error_handler(args, span),
             "restore_error_handler" => self.call_restore_error_handler(args, span),
+            "flush" => self.call_flush(&args, span),
+            "ob_implicit_flush" => self.call_ob_implicit_flush(&args, span),
             "ob_start" => self.call_ob_start(&args, span),
             "ob_get_level" => self.call_ob_get_level(&args, span),
             "ob_get_contents" => self.call_ob_get_contents(&args, span),
@@ -79745,13 +81196,11 @@ impl Interpreter {
                 let Value::String(class_name) = target else {
                     unreachable!("array_callable_parts restricts callback targets");
                 };
-                let class_id = self.classes.lookup_class_id(class_name).ok_or_else(|| {
-                    Self::invalid_callback_error(
-                        "call_user_func_array()",
-                        format!("class \"{class_name}\" not found"),
-                        span,
-                    )
-                })?;
+                let class_id = self.lookup_array_callback_class_id_with_autoload(
+                    "call_user_func_array()",
+                    class_name,
+                    span,
+                )?;
                 let receiver_class_name = self
                     .classes
                     .get(class_id)
@@ -79912,13 +81361,11 @@ impl Interpreter {
                 )
             }
             Value::String(class_name) => {
-                let class_id = self.classes.lookup_class_id(class_name).ok_or_else(|| {
-                    Self::invalid_callback_error(
-                        "call_user_func_array()",
-                        format!("class \"{class_name}\" not found"),
-                        span,
-                    )
-                })?;
+                let class_id = self.lookup_array_callback_class_id_with_autoload(
+                    "call_user_func_array()",
+                    class_name,
+                    span,
+                )?;
                 let receiver_class_name = self
                     .classes
                     .get(class_id)
@@ -80108,13 +81555,8 @@ impl Interpreter {
                 )
             }
             Value::String(class_name) => {
-                let class_id = self.classes.lookup_class_id(class_name).ok_or_else(|| {
-                    Self::invalid_callback_error(
-                        context,
-                        format!("class \"{class_name}\" not found"),
-                        span,
-                    )
-                })?;
+                let class_id =
+                    self.lookup_array_callback_class_id_with_autoload(context, class_name, span)?;
                 let receiver_class_name = self
                     .classes
                     .get(class_id)
@@ -80757,6 +82199,100 @@ impl Interpreter {
             Value::Array(array) => Ok(i64::from(!array.is_empty())),
             Value::Object(_) | Value::Closure(_) | Value::Resource(_) => Ok(1),
         }
+    }
+
+    fn array_intersect_values_with_php_string_warnings(
+        &mut self,
+        left: &PhpArray,
+        others: &[&PhpArray],
+        span: Span,
+    ) -> CompileResult<PhpArray> {
+        let mut array = PhpArray::new();
+        for entry in left.entries() {
+            let mut present_in_all = true;
+            for (other_index, other) in others.iter().enumerate() {
+                let mut found = false;
+                for other_entry in other.entries() {
+                    let left_value =
+                        self.array_intersect_php_string_comparison_value(entry.value(), span)?;
+                    let right_value = self
+                        .array_intersect_php_string_comparison_value(other_entry.value(), span)?;
+                    if left_value == right_value {
+                        found = true;
+                        if other_index > 0 {
+                            break;
+                        }
+                    }
+                }
+
+                if !found {
+                    present_in_all = false;
+                    break;
+                }
+            }
+
+            if present_in_all {
+                array.insert(entry.key.clone(), entry.value_cloned());
+            }
+        }
+
+        Ok(array)
+    }
+
+    fn array_intersect_php_string_comparison_value(
+        &mut self,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<Vec<u8>> {
+        match value {
+            Value::Array(_) => {
+                self.emit_display_warning("Array to string conversion", span)?;
+                Ok(b"Array".to_vec())
+            }
+            Value::Object(_) | Value::Closure(_) | Value::Resource(_) => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "array_intersect()",
+                    format!(
+                        "values must be scalar or array in the current subset, got {}",
+                        value.type_name()
+                    ),
+                ),
+            )),
+            Value::Float(value) => Ok(php_default_precision_float_string(*value).into_bytes()),
+            _ => Ok(value
+                .php_scalar_string_bytes()
+                .expect("array_intersect scalar support must match scalar string byte support")),
+        }
+    }
+
+    fn call_array_count_values(
+        &mut self,
+        source: &PhpArray,
+        span: Span,
+    ) -> CompileResult<PhpArray> {
+        let mut array = PhpArray::new();
+        for entry in source.entries() {
+            let key = match entry.value() {
+                Value::Int(value) => ArrayKey::Int(*value),
+                Value::String(value) => ArrayKey::string(value.clone()),
+                _ => {
+                    self.emit_display_warning(
+                        "array_count_values(): Can only count string and integer values, entry skipped",
+                        span,
+                    )?;
+                    continue;
+                }
+            };
+
+            if let Some(Value::Int(count)) = array.get_cloned(key.clone()) {
+                array.insert(key, Value::Int(count + 1));
+            } else {
+                array.insert(key, Value::Int(1));
+            }
+        }
+
+        Ok(array)
     }
 
     fn call_array_sum(&mut self, array: &PhpArray, span: Span) -> CompileResult<Value> {
@@ -82727,6 +84263,22 @@ impl Interpreter {
                 );
             }
 
+            if name == "GLOBALS" {
+                let Some(global_name) = keys.first().and_then(globals_offset_name) else {
+                    return Err(runtime_error(
+                        target.span(),
+                        RuntimeError::unsupported_call(
+                            "empty()",
+                            "only string-keyed direct $GLOBALS offset operands are implemented",
+                        ),
+                    ));
+                };
+                return match caller_scope.read_global_name(global_name) {
+                    Some(value) => Ok(Self::array_path_empty(&value, &keys[1..])),
+                    None => Ok(true),
+                };
+            }
+
             return match caller_scope.read_named(name) {
                 Some(Value::Object(object))
                     if self
@@ -83377,6 +84929,29 @@ impl Interpreter {
         }
     }
 
+    fn is_callable_value(&self, value: &Value, syntax_only: bool) -> bool {
+        match value {
+            Value::String(name) if syntax_only => true,
+            Value::String(name) => {
+                self.lookup_function(name).is_some()
+                    || static_method_callable_string(name).is_some_and(
+                        |(class_name, method_name)| {
+                            self.classes.lookup_class(class_name).is_some_and(|class| {
+                                is_static_array_callable_for_is_callable(
+                                    &self.classes,
+                                    class.id(),
+                                    method_name,
+                                )
+                            })
+                        },
+                    )
+            }
+            Value::Array(array) if syntax_only => is_array_callable_syntax_shape(array),
+            Value::Array(array) => is_array_callable_for_is_callable(&self.classes, array),
+            _ => false,
+        }
+    }
+
     fn call_countable_count_method(
         &mut self,
         object: PhpObject,
@@ -83688,6 +85263,12 @@ impl Interpreter {
                     }));
                 }
             }
+            if matches!(
+                (&left, &right),
+                (Value::Object(_), Value::Null) | (Value::Null, Value::Object(_))
+            ) {
+                return Ok(Value::Bool(matches!(op, BinaryOp::Ne)));
+            }
         }
 
         let result: RuntimeResult<Value> = match op {
@@ -83911,6 +85492,14 @@ impl Interpreter {
 }
 
 fn cast_string_to_int(value: &str, span: Span) -> CompileResult<Value> {
+    cast_string_to_int_with_callable(value, "(int)", span)
+}
+
+fn cast_string_to_int_with_callable(
+    value: &str,
+    callable: &'static str,
+    span: Span,
+) -> CompileResult<Value> {
     let trimmed = value.trim_matches(|ch: char| ch.is_ascii_whitespace());
     if trimmed.is_empty() {
         return Ok(Value::Int(0));
@@ -83923,7 +85512,7 @@ fn cast_string_to_int(value: &str, span: Span) -> CompileResult<Value> {
         return Ok(Value::Int(value));
     }
     if let Ok(value) = trimmed.parse::<f64>() {
-        return cast_float_to_int(value, "(int)", span);
+        return cast_float_to_int(value, callable, span);
     }
 
     if let Some(prefix) = leading_numeric_prefix(trimmed) {
@@ -83931,23 +85520,346 @@ fn cast_string_to_int(value: &str, span: Span) -> CompileResult<Value> {
             return Ok(Value::Int(value));
         }
         if let Ok(value) = prefix.parse::<f64>() {
-            return cast_float_to_int(value, "(int)", span);
+            return cast_float_to_int(value, callable, span);
         }
     }
 
     Err(runtime_error(
         span,
         RuntimeError::unsupported_call(
-            "(int)",
+            callable,
             "leading-numeric string cast behavior is outside the current bounded prefix subset",
         ),
     ))
 }
 
 fn cast_binary_string_to_int(value: &[u8], span: Span) -> CompileResult<Value> {
+    cast_binary_string_to_int_with_callable(value, "(int)", span)
+}
+
+fn cast_binary_string_to_int_with_callable(
+    value: &[u8],
+    callable: &'static str,
+    span: Span,
+) -> CompileResult<Value> {
     match std::str::from_utf8(value) {
-        Ok(value) => cast_string_to_int(value, span),
+        Ok(value) => cast_string_to_int_with_callable(value, callable, span),
         Err(_) => Ok(Value::Int(0)),
+    }
+}
+
+fn call_intval(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(1..=2).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "intval()",
+                ArityExpectation::Between { min: 1, max: 2 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let base = args
+        .get(1)
+        .map(|value| php_internal_int_argument("intval()", 2, "base", value, span))
+        .transpose()?;
+
+    match &args[0] {
+        Value::Null => Ok(Value::Int(0)),
+        Value::Bool(value) => Ok(Value::Int(i64::from(*value))),
+        Value::Int(value) => Ok(Value::Int(*value)),
+        Value::Float(value) => cast_float_to_int(*value, "intval()", span),
+        Value::String(value) => intval_string_value(value.as_bytes(), base, span),
+        Value::BinaryString(value) => intval_string_value(value, base, span),
+        Value::Array(_) => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "intval()",
+                "array-to-int conversion is not implemented in the current subset",
+            ),
+        )),
+        Value::Object(_) => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "intval()",
+                "object-to-int conversion is not implemented in the current subset",
+            ),
+        )),
+        Value::Closure(_) => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "intval()",
+                "Closure object-to-int conversion is not implemented in the current subset",
+            ),
+        )),
+        Value::Resource(_) => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "intval()",
+                "resource-to-int conversion is not implemented in the current subset",
+            ),
+        )),
+    }
+}
+
+fn call_boolval(name: &str, args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity(name, args, 1, span)?;
+    Ok(Value::Bool(args[0].is_truthy()))
+}
+
+fn call_floatval(name: &str, args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity(name, args, 1, span)?;
+    match &args[0] {
+        Value::Null => Ok(Value::Float(0.0)),
+        Value::Bool(value) => Ok(Value::Float(if *value { 1.0 } else { 0.0 })),
+        Value::Int(value) => Ok(Value::Float(*value as f64)),
+        Value::Float(value) => Ok(Value::Float(*value)),
+        Value::String(value) => floatval_string_value(value.as_bytes(), span),
+        Value::BinaryString(value) => floatval_string_value(value, span),
+        Value::Resource(id) => Ok(Value::Float(*id as f64)),
+        Value::Array(_) => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                callable_name(name),
+                "array-to-float conversion is not implemented in the current subset",
+            ),
+        )),
+        Value::Object(_) => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                callable_name(name),
+                "object-to-float conversion is not implemented in the current subset",
+            ),
+        )),
+        Value::Closure(_) => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                callable_name(name),
+                "Closure object-to-float conversion is not implemented in the current subset",
+            ),
+        )),
+    }
+}
+
+fn floatval_string_value(value: &[u8], span: Span) -> CompileResult<Value> {
+    let Ok(value) = std::str::from_utf8(value) else {
+        return Ok(Value::Float(0.0));
+    };
+    let trimmed = value.trim_matches(|ch: char| ch.is_ascii_whitespace());
+    if trimmed.is_empty() || !starts_with_numeric_prefix(trimmed) {
+        return Ok(Value::Float(0.0));
+    }
+    let number = leading_numeric_prefix(trimmed).unwrap_or(trimmed);
+    let value = number.parse::<f64>().map_err(|_| {
+        runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "floatval()",
+                "numeric string outside the current finite float subset",
+            ),
+        )
+    })?;
+    if !value.is_finite() {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "floatval()",
+                "non-finite float string conversion is not implemented",
+            ),
+        ));
+    }
+    Ok(Value::Float(value))
+}
+
+fn intval_string_value(value: &[u8], base: Option<i64>, span: Span) -> CompileResult<Value> {
+    match base {
+        None => cast_binary_string_to_int_with_callable(value, "intval()", span),
+        Some(10) => cast_binary_string_to_int_with_callable(value, "intval()", span),
+        Some(base) => Ok(Value::Int(intval_string_with_base(value, base))),
+    }
+}
+
+fn intval_string_with_base(value: &[u8], base: i64) -> i64 {
+    if base != 0 && !(2..=36).contains(&base) {
+        return 0;
+    }
+
+    let mut index = 0;
+    while value
+        .get(index)
+        .is_some_and(|byte| matches!(byte, b' ' | b'\t' | b'\n' | b'\r' | b'\x0b' | b'\x0c'))
+    {
+        index += 1;
+    }
+
+    let negative = match value.get(index) {
+        Some(b'+') => {
+            index += 1;
+            false
+        }
+        Some(b'-') => {
+            index += 1;
+            true
+        }
+        _ => false,
+    };
+
+    let mut actual_base = base;
+    if actual_base == 0 {
+        actual_base = if value
+            .get(index..index.saturating_add(2))
+            .is_some_and(|prefix| matches!(prefix, b"0x" | b"0X"))
+        {
+            index += 2;
+            16
+        } else if value
+            .get(index..index.saturating_add(2))
+            .is_some_and(|prefix| matches!(prefix, b"0b" | b"0B"))
+        {
+            index += 2;
+            2
+        } else if value.get(index) == Some(&b'0') {
+            8
+        } else {
+            10
+        };
+    } else if actual_base == 16
+        && value
+            .get(index..index.saturating_add(2))
+            .is_some_and(|prefix| matches!(prefix, b"0x" | b"0X"))
+    {
+        index += 2;
+    } else if actual_base == 2
+        && value
+            .get(index..index.saturating_add(2))
+            .is_some_and(|prefix| matches!(prefix, b"0b" | b"0B"))
+    {
+        index += 2;
+    }
+
+    let base = actual_base as u128;
+    let limit = if negative {
+        (i64::MAX as u128) + 1
+    } else {
+        i64::MAX as u128
+    };
+    let mut parsed_any = false;
+    let mut parsed = 0_u128;
+
+    while let Some(byte) = value.get(index) {
+        let Some(digit) = intval_digit_value(*byte) else {
+            break;
+        };
+        if digit >= base {
+            break;
+        }
+
+        parsed_any = true;
+        parsed = parsed
+            .checked_mul(base)
+            .and_then(|value| value.checked_add(digit))
+            .unwrap_or(limit)
+            .min(limit);
+        index += 1;
+    }
+
+    if !parsed_any {
+        return 0;
+    }
+    if negative {
+        if parsed == limit {
+            i64::MIN
+        } else {
+            -(parsed as i64)
+        }
+    } else {
+        parsed as i64
+    }
+}
+
+fn intval_digit_value(byte: u8) -> Option<u128> {
+    match byte {
+        b'0'..=b'9' => Some(u128::from(byte - b'0')),
+        b'a'..=b'z' => Some(u128::from(byte - b'a') + 10),
+        b'A'..=b'Z' => Some(u128::from(byte - b'A') + 10),
+        _ => None,
+    }
+}
+
+const FILTER_METADATA: &[(&str, i64)] = &[
+    ("int", 257),
+    ("boolean", 258),
+    ("float", 259),
+    ("validate_regexp", 272),
+    ("validate_domain", 277),
+    ("validate_url", 273),
+    ("validate_email", 274),
+    ("validate_ip", 275),
+    ("validate_mac", 276),
+    ("string", 513),
+    ("stripped", 513),
+    ("encoded", 514),
+    ("special_chars", 515),
+    ("full_special_chars", 522),
+    ("unsafe_raw", 516),
+    ("email", 517),
+    ("url", 518),
+    ("number_int", 519),
+    ("number_float", 520),
+    ("add_slashes", 523),
+    ("callback", 1024),
+];
+
+fn call_filter_list(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("filter_list", args, 0, span)?;
+
+    let mut filters = PhpArray::new();
+    for (name, _) in FILTER_METADATA {
+        filters
+            .append(Value::String((*name).to_string()))
+            .map_err(|error| runtime_error(span, error))?;
+    }
+    Ok(Value::Array(filters))
+}
+
+fn call_filter_id(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("filter_id", args, 1, span)?;
+
+    let Some(name) = filter_id_lookup_name(&args[0], span)? else {
+        return Ok(Value::Bool(false));
+    };
+
+    Ok(FILTER_METADATA
+        .iter()
+        .find_map(|(filter_name, id)| (*filter_name == name).then_some(Value::Int(*id)))
+        .unwrap_or(Value::Bool(false)))
+}
+
+fn filter_id_lookup_name(value: &Value, span: Span) -> CompileResult<Option<String>> {
+    match value {
+        Value::String(name) => Ok(Some(name.clone())),
+        Value::BinaryString(bytes) => {
+            Ok(std::str::from_utf8(bytes).ok().map(|name| name.to_string()))
+        }
+        Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) => {
+            let bytes = value
+                .try_echo_bytes()
+                .map_err(|error| runtime_error(span, error))?;
+            Ok(String::from_utf8(bytes).ok())
+        }
+        Value::Array(_) | Value::Object(_) | Value::Closure(_) | Value::Resource(_) => {
+            Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "filter_id()",
+                    format!(
+                        "Argument #1 ($name) must be of type string, {} given",
+                        php_type_error_given(value)
+                    ),
+                ),
+            ))
+        }
     }
 }
 
@@ -89242,6 +91154,7 @@ fn method_signature(
         required_params: required_param_count(function),
         return_type: function.return_type.as_ref().map(|decl| decl.text.clone()),
         returns_by_reference: function.returns_by_reference,
+        static_variables: reflection_static_variables_from_body(&function.body),
         file_name,
         start_line: function.span.line,
         end_line: function.end_line,
@@ -89355,6 +91268,75 @@ fn reflection_parameter_metadata_from_function_params(
         .collect()
 }
 
+fn reflection_static_variables_from_body(body: &[Stmt]) -> Vec<ReflectionStaticVariableMetadata> {
+    let mut variables = Vec::new();
+    let mut seen = HashSet::new();
+    collect_reflection_static_variables(body, &mut seen, &mut variables);
+    variables
+}
+
+fn array_intersect_needs_php_string_warnings(left: &PhpArray, others: &[&PhpArray]) -> bool {
+    left.entries()
+        .iter()
+        .chain(others.iter().flat_map(|array| array.entries().iter()))
+        .any(|entry| matches!(entry.value(), Value::Array(_)))
+}
+
+fn collect_reflection_static_variables(
+    body: &[Stmt],
+    seen: &mut HashSet<String>,
+    variables: &mut Vec<ReflectionStaticVariableMetadata>,
+) {
+    for stmt in body {
+        match stmt {
+            Stmt::StaticLocal { declarations, .. } => {
+                for declaration in declarations {
+                    if seen.insert(declaration.name.clone()) {
+                        variables.push(ReflectionStaticVariableMetadata {
+                            name: declaration.name.clone(),
+                            default: declaration.default.clone(),
+                        });
+                    }
+                }
+            }
+            Stmt::If {
+                then_branch,
+                else_branch,
+                ..
+            } => {
+                collect_reflection_static_variables(then_branch, seen, variables);
+                collect_reflection_static_variables(else_branch, seen, variables);
+            }
+            Stmt::While { body, .. }
+            | Stmt::DoWhile { body, .. }
+            | Stmt::For { body, .. }
+            | Stmt::Foreach { body, .. } => {
+                collect_reflection_static_variables(body, seen, variables);
+            }
+            Stmt::Switch { cases, .. } => {
+                for case in cases {
+                    collect_reflection_static_variables(&case.body, seen, variables);
+                }
+            }
+            Stmt::Try {
+                body,
+                catches,
+                finally_body,
+                ..
+            } => {
+                collect_reflection_static_variables(body, seen, variables);
+                for catch in catches {
+                    collect_reflection_static_variables(&catch.body, seen, variables);
+                }
+                if let Some(finally_body) = finally_body {
+                    collect_reflection_static_variables(finally_body, seen, variables);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 fn reflection_function_state_from_decl(
     function: &FunctionDecl,
     file_name: Option<String>,
@@ -89371,6 +91353,7 @@ fn reflection_function_state_from_decl(
         return_type: function.return_type.as_ref().map(|decl| decl.text.clone()),
         returns_by_reference: function.returns_by_reference,
         params: reflection_parameter_metadata_from_function_params(&function.params),
+        static_variables: reflection_static_variables_from_body(&function.body),
         is_deprecated: attributes_include_deprecated(&function.attributes),
         attributes: function.attributes.clone(),
     }
@@ -89398,6 +91381,7 @@ fn reflection_function_state_from_closure(
         return_type: return_type.map(|decl| decl.text.clone()),
         returns_by_reference,
         params: reflection_parameter_metadata_from_function_params(params),
+        static_variables: reflection_static_variables_from_body(body),
         is_deprecated: attributes_include_deprecated(attributes),
         attributes: attributes.to_vec(),
     }
@@ -89450,6 +91434,22 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_bool_param("binary", false),
             ],
         ),
+        "sha1" => (
+            "string",
+            vec![
+                reflection_internal_param("string", "string"),
+                reflection_internal_optional_bool_param("binary", false),
+            ],
+        ),
+        "hash" => (
+            "string",
+            vec![
+                reflection_internal_param("algo", "string"),
+                reflection_internal_param("data", "string"),
+                reflection_internal_optional_bool_param("binary", false),
+            ],
+        ),
+        "hash_algos" => ("array", vec![]),
         "levenshtein" => (
             "int",
             vec![
@@ -89458,6 +91458,14 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_int_param("insertion_cost", 1),
                 reflection_internal_optional_int_param("replacement_cost", 1),
                 reflection_internal_optional_int_param("deletion_cost", 1),
+            ],
+        ),
+        "similar_text" => (
+            "int",
+            vec![
+                reflection_internal_param("string1", "string"),
+                reflection_internal_param("string2", "string"),
+                reflection_internal_optional_reference_null_param("percent"),
             ],
         ),
         "soundex" => (
@@ -89471,12 +91479,28 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_int_param("mode", 0),
             ],
         ),
+        "str_word_count" => (
+            "array|int",
+            vec![
+                reflection_internal_param("string", "string"),
+                reflection_internal_optional_int_param("format", 0),
+                reflection_internal_optional_null_param("characters", "?string"),
+            ],
+        ),
         "base64_decode" => (
             "string|false",
             vec![
                 reflection_internal_param("string", "string"),
                 reflection_internal_optional_bool_param("strict", false),
             ],
+        ),
+        "convert_uuencode" => (
+            "string",
+            vec![reflection_internal_param("string", "string")],
+        ),
+        "convert_uudecode" => (
+            "string|false",
+            vec![reflection_internal_param("string", "string")],
         ),
         "ctype_alnum" | "ctype_alpha" | "ctype_cntrl" | "ctype_digit" | "ctype_graph"
         | "ctype_lower" | "ctype_print" | "ctype_punct" | "ctype_space" | "ctype_upper"
@@ -89681,7 +91705,7 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_null_param("length", "array|int"),
             ],
         ),
-        "str_replace" => (
+        "str_replace" | "str_ireplace" => (
             "array|string",
             vec![
                 reflection_internal_param("search", "array|string"),
@@ -89706,10 +91730,33 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_untyped_reference_param("result"),
             ],
         ),
+        "extract" => (
+            "int",
+            vec![
+                reflection_internal_reference_param("array", "array"),
+                reflection_internal_optional_int_param("flags", 0),
+                reflection_internal_optional_string_param("prefix", ""),
+            ],
+        ),
         "json_encode" => (
             "string|false",
-            vec![reflection_internal_param("value", "mixed")],
+            vec![
+                reflection_internal_param("value", "mixed"),
+                reflection_internal_optional_int_param("flags", 0),
+            ],
         ),
+        "json_last_error" => ("int", vec![]),
+        "json_last_error_msg" => ("string", vec![]),
+        "libxml_use_internal_errors" => (
+            "bool",
+            vec![reflection_internal_optional_null_param(
+                "use_errors",
+                "?bool",
+            )],
+        ),
+        "libxml_get_errors" => ("array", vec![]),
+        "libxml_get_last_error" => ("LibXMLError|false", vec![]),
+        "libxml_clear_errors" => ("void", vec![]),
         "printf" => (
             "int",
             vec![
@@ -89787,8 +91834,22 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_int_param("levels", 1),
             ],
         ),
-        "sin" | "cos" | "tan" | "asin" | "acos" | "atan" | "sinh" | "cosh" | "tanh" | "log10"
-        | "deg2rad" | "rad2deg" => ("float", vec![reflection_internal_param("num", "float")]),
+        "get_current_user" => ("string", vec![]),
+        "umask" => (
+            "int",
+            vec![reflection_internal_optional_null_param("mask", "?int")],
+        ),
+        "sin" | "cos" | "tan" | "asin" | "acos" | "atan" | "acosh" | "asinh" | "atanh" | "sqrt"
+        | "sinh" | "cosh" | "tanh" | "log10" | "deg2rad" | "rad2deg" => {
+            ("float", vec![reflection_internal_param("num", "float")])
+        }
+        "intdiv" => (
+            "int",
+            vec![
+                reflection_internal_param("num1", "int"),
+                reflection_internal_param("num2", "int"),
+            ],
+        ),
         "bcadd" | "bcsub" | "bcmul" | "bcdiv" => (
             "string",
             vec![
@@ -89862,9 +91923,30 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
             "bool",
             vec![reflection_internal_param("constant_name", "string")],
         ),
+        "filter_list" => ("array", vec![]),
+        "filter_id" => (
+            "int|false",
+            vec![reflection_internal_param("name", "string")],
+        ),
         "function_exists" => (
             "bool",
             vec![reflection_internal_param("function", "string")],
+        ),
+        "intval" => (
+            "int",
+            vec![
+                reflection_internal_param("value", "mixed"),
+                reflection_internal_optional_int_param("base", 10),
+            ],
+        ),
+        "boolval" => ("bool", vec![reflection_internal_param("value", "mixed")]),
+        "floatval" | "doubleval" => ("float", vec![reflection_internal_param("value", "mixed")]),
+        "settype" => (
+            "bool",
+            vec![
+                reflection_internal_reference_untyped_param("var"),
+                reflection_internal_param("type", "string"),
+            ],
         ),
         "get_resource_type" => (
             "string",
@@ -89895,7 +91977,7 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
             "bool",
             vec![reflection_internal_param("assignment", "string")],
         ),
-        "stream_get_wrappers" => ("array", vec![]),
+        "stream_get_wrappers" | "stream_get_transports" => ("array", vec![]),
         "stream_wrapper_register" => (
             "bool",
             vec![
@@ -89925,6 +92007,9 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_param("array", "array"),
             ],
         ),
+        "array_first" | "array_last" => {
+            ("mixed", vec![reflection_internal_param("array", "array")])
+        }
         "array_rand" => (
             "int|string|array",
             vec![
@@ -90033,6 +92118,15 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
             ],
         ),
         "php_sapi_name" => ("string", vec![]),
+        "php_uname" => (
+            "string",
+            vec![reflection_internal_optional_string_param("mode", "a")],
+        ),
+        "flush" => ("void", vec![]),
+        "ob_implicit_flush" => (
+            "void",
+            vec![reflection_internal_optional_bool_param("enable", true)],
+        ),
         _ => return None,
     };
 
@@ -90048,6 +92142,7 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
         return_type: Some(return_type.to_string()),
         returns_by_reference: false,
         params,
+        static_variables: Vec::new(),
         is_deprecated: false,
         attributes: Vec::new(),
     })
@@ -90058,6 +92153,14 @@ fn reflection_internal_extension_name(name: &str) -> String {
         "bcmath".to_string()
     } else if name.starts_with("ctype_") {
         "ctype".to_string()
+    } else if name.starts_with("filter_") {
+        "filter".to_string()
+    } else if name == "hash" || name.starts_with("hash_") {
+        "hash".to_string()
+    } else if name.starts_with("json_") {
+        "json".to_string()
+    } else if name.starts_with("libxml_") {
+        "libxml".to_string()
     } else {
         "standard".to_string()
     }
@@ -91402,6 +93505,35 @@ fn reflection_constructor_name_argument(
     }
 }
 
+fn reflection_scalar_string_argument(
+    function: &'static str,
+    parameter: &'static str,
+    value: Value,
+    span: Span,
+) -> CompileResult<String> {
+    match value.php_scalar_string_bytes() {
+        Some(bytes) => String::from_utf8(bytes).map_err(|_| {
+            runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{function}()"),
+                    format!("Argument (${parameter}) must be valid UTF-8 in the current subset"),
+                ),
+            )
+        }),
+        None => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                format!("{function}()"),
+                format!(
+                    "Argument (${parameter}) must be scalar string-convertible in the current subset, got {}",
+                    value.type_name()
+                ),
+            ),
+        )),
+    }
+}
+
 fn reflection_constructor_argument_count_error(
     class_name: &'static str,
     actual: usize,
@@ -91711,6 +93843,22 @@ fn is_array_callable_syntax_shape(array: &PhpArray) -> bool {
     array_callable_parts(array).is_some()
 }
 
+fn callable_name_output(value: &Value) -> String {
+    match value {
+        Value::Array(array) => array_callable_parts(array)
+            .map(|(target, method_name)| match target {
+                Value::Object(object) => format!("{}::{method_name}", object.class_name()),
+                Value::String(class_name) => format!("{class_name}::{method_name}"),
+                _ => "Array".to_string(),
+            })
+            .unwrap_or_else(|| "Array".to_string()),
+        Value::Object(object) => format!("{}::__invoke", object.class_name()),
+        Value::Closure(_) => "Closure::__invoke".to_string(),
+        Value::Resource(id) => format!("Resource id #{id}"),
+        other => other.try_echo_string().unwrap_or_default(),
+    }
+}
+
 fn is_array_callable_resolved(classes: &PhpClassTable, array: &PhpArray) -> bool {
     let Some((target, method_name)) = array_callable_parts(array) else {
         return false;
@@ -91860,6 +94008,10 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
         return Some(("ArgumentCountError", message));
     }
 
+    if let Some(message) = json_argument_count_error_message(error) {
+        return Some(("ArgumentCountError", message));
+    }
+
     if let Some(message) = reflection_constructor_argument_count_error_message(error) {
         return Some(("TypeError", message));
     }
@@ -91869,6 +94021,12 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
     }
 
     if error.phase == Phase::Runtime {
+        if error.message.ends_with("could not be passed by reference")
+            && error.message.contains("(): Argument #")
+        {
+            return Some(("Error", error.message.clone()));
+        }
+
         if let Some(message) = error.message.strip_prefix("ReflectionException: ") {
             return Some(("ReflectionException", message.to_string()));
         }
@@ -91903,6 +94061,17 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             return Some(("Error", error.message.clone()));
         }
 
+        if let Some(method_name) = error
+            .message
+            .strip_prefix("unsupported call ")
+            .and_then(|message| message.strip_suffix("(): receiver must be object, got null"))
+        {
+            return Some((
+                "Error",
+                format!("Call to a member function {method_name}() on null"),
+            ));
+        }
+
         match error.message.as_str() {
             "invalid arithmetic for *: resources are not numeric" => {
                 return Some((
@@ -91913,8 +94082,15 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
             "unsupported call bcdiv(): Division by zero"
             | "unsupported call bcdivmod(): Division by zero"
             | "unsupported call BcMath\\Number::div(): Division by zero"
-            | "unsupported call BcMath\\Number::divmod(): Division by zero" => {
+            | "unsupported call BcMath\\Number::divmod(): Division by zero"
+            | "unsupported call intdiv(): Division by zero" => {
                 return Some(("DivisionByZeroError", "Division by zero".to_string()));
+            }
+            "unsupported call intdiv(): Division of PHP_INT_MIN by -1 is not an integer" => {
+                return Some((
+                    "ArithmeticError",
+                    "Division of PHP_INT_MIN by -1 is not an integer".to_string(),
+                ));
             }
             "unsupported call bcmod(): Modulo by zero"
             | "unsupported call bcpowmod(): Modulo by zero"
@@ -92277,6 +94453,28 @@ fn sprintf_argument_count_error_message(error: &Diagnostic) -> Option<String> {
     None
 }
 
+fn json_argument_count_error_message(error: &Diagnostic) -> Option<String> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+
+    let rest = error.message.strip_prefix("arity mismatch for ")?;
+    let (callable, expectation) = rest.split_once(": expected ")?;
+    if !matches!(callable, "json_last_error()" | "json_last_error_msg()") {
+        return None;
+    }
+    let (expected, actual) = expectation.split_once(" argument(s), got ")?;
+    let expected = expected.parse::<usize>().ok()?;
+    let actual = actual.parse::<usize>().ok()?;
+    if actual == expected {
+        return None;
+    }
+
+    Some(format!(
+        "{callable} expects exactly {expected} arguments, {actual} given"
+    ))
+}
+
 fn reflection_constructor_argument_count_error_message(error: &Diagnostic) -> Option<String> {
     if error.phase != Phase::Runtime {
         return None;
@@ -92418,6 +94616,17 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
             "array_rand()",
             "Argument #2 ($num) must be between 1 and the number of elements in argument #1 ($array)",
         )
+        | ("settype()", "Argument #2 ($type) must be a valid type")
+        | ("sleep()", "Argument #1 ($seconds) must be greater than or equal to 0")
+        | ("php_uname()", "Argument #1 ($mode) must be a single character")
+        | (
+            "php_uname()",
+            "Argument #1 ($mode) must be one of \"a\", \"m\", \"n\", \"r\", \"s\", or \"v\"",
+        )
+        | (
+            "mt_rand()",
+            "Argument #2 ($max) must be greater than or equal to argument #1 ($min)",
+        )
         | ("chunk_split()", "Argument #2 ($length) must be greater than 0")
         | ("str_split()", "Argument #2 ($length) must be greater than 0")
         | ("parse_str()", "Argument #1 ($string) must not contain any null bytes")
@@ -92427,6 +94636,11 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         | ("strncmp()", "Argument #3 ($length) must be greater than or equal to 0")
         | ("strncasecmp()", "Argument #3 ($length) must be greater than or equal to 0")
         | ("count_chars()", "Argument #2 ($mode) must be between 0 and 4 (inclusive)")
+        | ("str_word_count()", "Argument #2 ($format) must be a valid format value")
+        | (
+            "xml_parser_get_option()",
+            "Argument #2 ($option) must be a XML_OPTION_* constant",
+        )
         | ("ftruncate()", "Argument #2 ($size) must be greater than or equal to 0")
         | ("stream_get_contents()", "Argument #2 ($length) must be greater than or equal to -1")
         | (
@@ -92444,9 +94658,36 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         | ("stripos()", "Argument #3 ($offset) must be contained in argument #1 ($haystack)")
         | ("strrpos()", "Argument #3 ($offset) must be contained in argument #1 ($haystack)")
         | ("strripos()", "Argument #3 ($offset) must be contained in argument #1 ($haystack)")
+        | ("mb_strpos()", "Argument #3 ($offset) must be contained in argument #1 ($haystack)")
+        | ("mb_stripos()", "Argument #3 ($offset) must be contained in argument #1 ($haystack)")
+        | ("mb_strrpos()", "Argument #3 ($offset) must be contained in argument #1 ($haystack)")
+        | ("mb_strripos()", "Argument #3 ($offset) must be contained in argument #1 ($haystack)")
         | ("range()", "Argument #3 ($step) cannot be 0")
         | ("range()", "Argument #3 ($step) must be greater than 0 for increasing ranges")
         | ("range()", "Argument #3 ($step) must be less than the range spanned by argument #1 ($start) and argument #2 ($end)") => {
+            Some(format!("{function}: {message}"))
+        }
+        ("settype()", "Cannot convert to resource type") => Some(message.to_string()),
+        ("mb_strlen()", message)
+            if message.starts_with("Argument #2 ($encoding) must be a valid encoding, ") =>
+        {
+            Some(format!("{function}: {message}"))
+        }
+        ("mb_strpos()" | "mb_stripos()" | "mb_strrpos()" | "mb_strripos()", message)
+            if message.starts_with("Argument #4 ($encoding) must be a valid encoding, ") =>
+        {
+            Some(format!("{function}: {message}"))
+        }
+        ("mb_internal_encoding()", message)
+            if message.starts_with("Argument #1 ($encoding) must be a valid encoding, ") =>
+        {
+            Some(format!("{function}: {message}"))
+        }
+        ("mb_convert_encoding()", message)
+            if message.starts_with("Argument #2 ($to_encoding) must be a valid encoding, ")
+                || message
+                    .starts_with("Argument #3 ($from_encoding) must be a valid encoding, ") =>
+        {
             Some(format!("{function}: {message}"))
         }
         ("range()", message)
@@ -92483,7 +94724,8 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
             | "Precision must be between 0 and 2147483647"
             | "Precision -1 is only supported for %g, %G, %h and %H"
             | "Width must be an integer"
-            | "Width must be between 0 and 2147483647",
+            | "Width must be between 0 and 2147483647"
+            | SPRINTF_ARGUMENT_NUMBER_SPECIFIER_VALUE_ERROR,
         ) => Some(message.to_string()),
         ("sprintf()" | "printf()" | "vsprintf()" | "vprintf()" | "fprintf()" | "vfprintf()", message)
             if message.starts_with("Unknown format specifier ") =>
@@ -92553,6 +94795,13 @@ fn value_error_message(error: &Diagnostic) -> Option<String> {
         ("glob()", "Argument #2 ($flags) must be a valid flag value") => {
             Some("glob(): Argument #2 ($flags) must be a valid flag value".to_string())
         }
+        (
+            "scandir()",
+            "Argument #2 ($sorting_order) must be one of the SCANDIR_SORT_ASCENDING, SCANDIR_SORT_DESCENDING, or SCANDIR_SORT_NONE constants",
+        ) => Some(
+            "scandir(): Argument #2 ($sorting_order) must be one of the SCANDIR_SORT_ASCENDING, SCANDIR_SORT_DESCENDING, or SCANDIR_SORT_NONE constants"
+                .to_string(),
+        ),
         ("fputcsv()", "separator argument must contain exactly one character") => {
             Some("fputcsv(): Argument #3 ($separator) must be a single character".to_string())
         }
@@ -92857,6 +95106,15 @@ fn is_builtin(name: &str) -> bool {
         name,
         "define"
             | "strlen"
+            | "mb_strlen"
+            | "mb_strpos"
+            | "mb_stripos"
+            | "mb_strrpos"
+            | "mb_strripos"
+            | "mb_internal_encoding"
+            | "mb_detect_order"
+            | "mb_check_encoding"
+            | "mb_convert_encoding"
             | "chr"
             | "bin2hex"
             | "hex2bin"
@@ -92868,10 +95126,17 @@ fn is_builtin(name: &str) -> bool {
             | "base_convert"
             | "crc32"
             | "md5"
+            | "sha1"
+            | "hash"
+            | "hash_algos"
             | "levenshtein"
+            | "similar_text"
             | "soundex"
             | "count_chars"
+            | "str_word_count"
             | "base64_decode"
+            | "convert_uuencode"
+            | "convert_uudecode"
             | "ctype_alnum"
             | "ctype_alpha"
             | "ctype_cntrl"
@@ -92934,18 +95199,35 @@ fn is_builtin(name: &str) -> bool {
             | "substr_replace"
             | "substr_count"
             | "str_replace"
+            | "str_ireplace"
             | "str_getcsv"
             | "parse_str"
             | "urlencode"
+            | "rawurlencode"
+            | "rawurldecode"
+            | "parse_url"
             | "preg_match"
             | "preg_replace"
             | "preg_split"
             | "preg_replace_callback"
+            | "filter_list"
+            | "filter_id"
             | "compact"
             | "error_reporting"
             | "ignore_user_abort"
+            | "connection_aborted"
+            | "connection_status"
             | "php_sapi_name"
+            | "php_uname"
+            | "get_loaded_extensions"
+            | "getmypid"
             | "json_encode"
+            | "json_last_error"
+            | "json_last_error_msg"
+            | "libxml_use_internal_errors"
+            | "libxml_get_errors"
+            | "libxml_get_last_error"
+            | "libxml_clear_errors"
             | "printf"
             | "fprintf"
             | "vprintf"
@@ -92970,6 +95252,10 @@ fn is_builtin(name: &str) -> bool {
             | "asin"
             | "acos"
             | "atan"
+            | "acosh"
+            | "asinh"
+            | "atanh"
+            | "sqrt"
             | "sinh"
             | "cosh"
             | "tanh"
@@ -92977,6 +95263,7 @@ fn is_builtin(name: &str) -> bool {
             | "deg2rad"
             | "rad2deg"
             | "pow"
+            | "intdiv"
             | "bcadd"
             | "bcsub"
             | "bcmul"
@@ -93028,6 +95315,7 @@ fn is_builtin(name: &str) -> bool {
             | "timezone_name_from_abbr"
             | "timezone_open"
             | "timezone_name_get"
+            | "timezone_location_get"
             | "timezone_offset_get"
             | "timezone_transitions_get"
             | "timezone_abbreviations_list"
@@ -93050,6 +95338,12 @@ fn is_builtin(name: &str) -> bool {
             | "set_include_path"
             | "min"
             | "rand"
+            | "mt_rand"
+            | "getrandmax"
+            | "mt_getrandmax"
+            | "srand"
+            | "mt_srand"
+            | "lcg_value"
             | "uniqid"
             | "hash_hmac"
             | "gc_enable"
@@ -93063,6 +95357,8 @@ fn is_builtin(name: &str) -> bool {
             | "array_values"
             | "array_key_first"
             | "array_key_last"
+            | "array_first"
+            | "array_last"
             | "current"
             | "key"
             | "prev"
@@ -93127,6 +95423,11 @@ fn is_builtin(name: &str) -> bool {
             | "in_array"
             | "array_search"
             | "gettype"
+            | "settype"
+            | "intval"
+            | "boolval"
+            | "floatval"
+            | "doubleval"
             | "is_null"
             | "is_bool"
             | "is_int"
@@ -93145,6 +95446,10 @@ fn is_builtin(name: &str) -> bool {
             | "is_callable"
             | "function_exists"
             | "extension_loaded"
+            | "xml_parser_create"
+            | "xml_parser_create_ns"
+            | "xml_parser_get_option"
+            | "xml_parser_set_option"
             | "class_alias"
             | "mysqli_connect"
             | "mysqli_real_connect"
@@ -93272,6 +95577,8 @@ fn is_builtin(name: &str) -> bool {
             | "touch"
             | "tempnam"
             | "sys_get_temp_dir"
+            | "get_current_user"
+            | "umask"
             | "sleep"
             | "readlink"
             | "symlink"
@@ -93314,6 +95621,7 @@ fn is_builtin(name: &str) -> bool {
             | "fstat"
             | "stream_get_meta_data"
             | "stream_get_wrappers"
+            | "stream_get_transports"
             | "stream_wrapper_register"
             | "stream_wrapper_unregister"
             | "stream_wrapper_restore"
@@ -93349,6 +95657,8 @@ fn is_builtin(name: &str) -> bool {
             | "register_shutdown_function"
             | "set_error_handler"
             | "restore_error_handler"
+            | "flush"
+            | "ob_implicit_flush"
             | "ob_start"
             | "ob_get_level"
             | "ob_get_contents"
@@ -93778,6 +96088,26 @@ fn pathinfo_array(path_was_empty: bool, parts: PathInfoParts) -> PhpArray {
     array
 }
 
+fn date_time_interface_format_constant_value(name: &str) -> Option<&'static str> {
+    match name {
+        "ATOM" => Some("Y-m-d\\TH:i:sP"),
+        "COOKIE" => Some("l, d-M-Y H:i:s T"),
+        "ISO8601" => Some("Y-m-d\\TH:i:sO"),
+        "ISO8601_EXPANDED" => Some("X-m-d\\TH:i:sP"),
+        "RFC822" => Some("D, d M y H:i:s O"),
+        "RFC850" => Some("l, d-M-y H:i:s T"),
+        "RFC1036" => Some("D, d M y H:i:s O"),
+        "RFC1123" => Some("D, d M Y H:i:s O"),
+        "RFC7231" => Some("D, d M Y H:i:s \\G\\M\\T"),
+        "RFC2822" => Some("D, d M Y H:i:s O"),
+        "RFC3339" => Some("Y-m-d\\TH:i:sP"),
+        "RFC3339_EXTENDED" => Some("Y-m-d\\TH:i:s.vP"),
+        "RSS" => Some("D, d M Y H:i:s O"),
+        "W3C" => Some("Y-m-d\\TH:i:sP"),
+        _ => None,
+    }
+}
+
 const PHP_E_ERROR: i64 = 1;
 const PHP_E_WARNING: i64 = 2;
 const PHP_E_PARSE: i64 = 4;
@@ -93794,6 +96124,9 @@ const PHP_E_RECOVERABLE_ERROR: i64 = 4096;
 const PHP_E_DEPRECATED: i64 = 8192;
 const PHP_E_USER_DEPRECATED: i64 = 16384;
 const PHP_E_ALL: i64 = 32767;
+const PHP_CONNECTION_NORMAL: i64 = 0;
+const PHP_CONNECTION_ABORTED: i64 = 1;
+const PHP_CONNECTION_TIMEOUT: i64 = 2;
 const PHP_ATTRIBUTE_TARGET_CLASS: i64 = 1;
 const PHP_ATTRIBUTE_TARGET_FUNCTION: i64 = 2;
 const PHP_ATTRIBUTE_TARGET_METHOD: i64 = 4;
@@ -93895,6 +96228,7 @@ const PHP_LOCK_EX: i64 = 2;
 const PHP_LOCK_UN: i64 = 3;
 const PHP_LOCK_NB: i64 = 4;
 const PHP_LOCK_OPERATION_MASK: i64 = PHP_LOCK_SH | PHP_LOCK_EX | PHP_LOCK_UN;
+const PHP_MT_RAND_MAX: i64 = 2_147_483_647;
 const PHP_FILE_APPEND: i64 = 8;
 const PHP_STREAM_FILTER_READ: i64 = 1;
 const PHP_STREAM_FILTER_WRITE: i64 = 2;
@@ -94166,6 +96500,9 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "PHP_OS" => Some(Value::String("Linux".to_string())),
         "PHP_OS_FAMILY" => Some(Value::String("Linux".to_string())),
         "PHP_EOL" => Some(Value::String("\n".to_string())),
+        "CONNECTION_NORMAL" => Some(Value::Int(PHP_CONNECTION_NORMAL)),
+        "CONNECTION_ABORTED" => Some(Value::Int(PHP_CONNECTION_ABORTED)),
+        "CONNECTION_TIMEOUT" => Some(Value::Int(PHP_CONNECTION_TIMEOUT)),
         "STDIN" => Some(Value::Resource(1)),
         "STDOUT" => Some(Value::Resource(2)),
         "STDERR" => Some(Value::Resource(3)),
@@ -94212,6 +96549,17 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "ENT_XML1" => Some(Value::Int(PHP_ENT_XML1)),
         "ENT_XHTML" => Some(Value::Int(PHP_ENT_XHTML)),
         "ENT_HTML5" => Some(Value::Int(PHP_ENT_HTML5)),
+        "JSON_HEX_TAG" => Some(Value::Int(PHP_JSON_HEX_TAG)),
+        "JSON_HEX_AMP" => Some(Value::Int(PHP_JSON_HEX_AMP)),
+        "JSON_HEX_APOS" => Some(Value::Int(PHP_JSON_HEX_APOS)),
+        "JSON_HEX_QUOT" => Some(Value::Int(PHP_JSON_HEX_QUOT)),
+        "JSON_FORCE_OBJECT" => Some(Value::Int(PHP_JSON_FORCE_OBJECT)),
+        "JSON_NUMERIC_CHECK" => Some(Value::Int(PHP_JSON_NUMERIC_CHECK)),
+        "JSON_UNESCAPED_SLASHES" => Some(Value::Int(PHP_JSON_UNESCAPED_SLASHES)),
+        "XML_OPTION_CASE_FOLDING" => Some(Value::Int(PHP_XML_OPTION_CASE_FOLDING)),
+        "XML_OPTION_TARGET_ENCODING" => Some(Value::Int(PHP_XML_OPTION_TARGET_ENCODING)),
+        "XML_OPTION_SKIP_TAGSTART" => Some(Value::Int(PHP_XML_OPTION_SKIP_TAGSTART)),
+        "XML_OPTION_SKIP_WHITE" => Some(Value::Int(PHP_XML_OPTION_SKIP_WHITE)),
         "LC_CTYPE" => Some(Value::Int(PHP_LC_CTYPE)),
         "LC_NUMERIC" => Some(Value::Int(PHP_LC_NUMERIC)),
         "LC_TIME" => Some(Value::Int(PHP_LC_TIME)),
@@ -94233,20 +96581,34 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "CAL_MONTH_JULIAN_LONG" => Some(Value::Int(PHP_CAL_MONTH_JULIAN_LONG)),
         "CAL_MONTH_JEWISH" => Some(Value::Int(PHP_CAL_MONTH_JEWISH)),
         "CAL_MONTH_FRENCH" => Some(Value::Int(PHP_CAL_MONTH_FRENCH)),
-        "DATE_ATOM" => Some(Value::String("Y-m-d\\TH:i:sP".to_string())),
-        "DATE_COOKIE" => Some(Value::String("l, d-M-Y H:i:s T".to_string())),
-        "DATE_ISO8601" => Some(Value::String("Y-m-d\\TH:i:sO".to_string())),
-        "DATE_ISO8601_EXPANDED" => Some(Value::String("X-m-d\\TH:i:sP".to_string())),
-        "DATE_RFC822" => Some(Value::String("D, d M y H:i:s O".to_string())),
-        "DATE_RFC850" => Some(Value::String("l, d-M-y H:i:s T".to_string())),
-        "DATE_RFC1036" => Some(Value::String("D, d M y H:i:s O".to_string())),
-        "DATE_RFC1123" => Some(Value::String("D, d M Y H:i:s O".to_string())),
-        "DATE_RFC7231" => Some(Value::String("D, d M Y H:i:s \\G\\M\\T".to_string())),
-        "DATE_RFC2822" => Some(Value::String("D, d M Y H:i:s O".to_string())),
-        "DATE_RFC3339" => Some(Value::String("Y-m-d\\TH:i:sP".to_string())),
-        "DATE_RFC3339_EXTENDED" => Some(Value::String("Y-m-d\\TH:i:s.vP".to_string())),
-        "DATE_RSS" => Some(Value::String("D, d M Y H:i:s O".to_string())),
-        "DATE_W3C" => Some(Value::String("Y-m-d\\TH:i:sP".to_string())),
+        "DATE_ATOM" => date_time_interface_format_constant_value("ATOM")
+            .map(|value| Value::String(value.to_string())),
+        "DATE_COOKIE" => date_time_interface_format_constant_value("COOKIE")
+            .map(|value| Value::String(value.to_string())),
+        "DATE_ISO8601" => date_time_interface_format_constant_value("ISO8601")
+            .map(|value| Value::String(value.to_string())),
+        "DATE_ISO8601_EXPANDED" => date_time_interface_format_constant_value("ISO8601_EXPANDED")
+            .map(|value| Value::String(value.to_string())),
+        "DATE_RFC822" => date_time_interface_format_constant_value("RFC822")
+            .map(|value| Value::String(value.to_string())),
+        "DATE_RFC850" => date_time_interface_format_constant_value("RFC850")
+            .map(|value| Value::String(value.to_string())),
+        "DATE_RFC1036" => date_time_interface_format_constant_value("RFC1036")
+            .map(|value| Value::String(value.to_string())),
+        "DATE_RFC1123" => date_time_interface_format_constant_value("RFC1123")
+            .map(|value| Value::String(value.to_string())),
+        "DATE_RFC7231" => date_time_interface_format_constant_value("RFC7231")
+            .map(|value| Value::String(value.to_string())),
+        "DATE_RFC2822" => date_time_interface_format_constant_value("RFC2822")
+            .map(|value| Value::String(value.to_string())),
+        "DATE_RFC3339" => date_time_interface_format_constant_value("RFC3339")
+            .map(|value| Value::String(value.to_string())),
+        "DATE_RFC3339_EXTENDED" => date_time_interface_format_constant_value("RFC3339_EXTENDED")
+            .map(|value| Value::String(value.to_string())),
+        "DATE_RSS" => date_time_interface_format_constant_value("RSS")
+            .map(|value| Value::String(value.to_string())),
+        "DATE_W3C" => date_time_interface_format_constant_value("W3C")
+            .map(|value| Value::String(value.to_string())),
         "SUNFUNCS_RET_TIMESTAMP" => Some(Value::Int(PHP_SUNFUNCS_RET_TIMESTAMP)),
         "SUNFUNCS_RET_STRING" => Some(Value::Int(PHP_SUNFUNCS_RET_STRING)),
         "SUNFUNCS_RET_DOUBLE" => Some(Value::Int(PHP_SUNFUNCS_RET_DOUBLE)),
@@ -94402,11 +96764,12 @@ fn unsupported_runtime_constant_value_type(value: &Value) -> Option<&'static str
     }
 }
 
+const COMPAT_LOADED_EXTENSIONS: &[&str] = &["bcmath", "json", "hash", "PDO", "pdo_mysql"];
+
 fn is_compat_loaded_extension_name(name: &str) -> bool {
-    matches!(
-        name.to_ascii_lowercase().as_str(),
-        "bcmath" | "json" | "hash" | "pdo" | "pdo_mysql"
-    )
+    COMPAT_LOADED_EXTENSIONS
+        .iter()
+        .any(|extension| extension.eq_ignore_ascii_case(name))
 }
 
 fn mysql_escape_string(value: &str) -> String {
@@ -100144,7 +102507,152 @@ fn base64_decode_ignored_whitespace(byte: u8) -> bool {
     matches!(byte, b' ' | b'\t' | b'\n' | b'\r')
 }
 
+fn call_convert_uuencode(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("convert_uuencode", args, 1, span)?;
+
+    let value = string_compare_argument_bytes("convert_uuencode()", "string", &args[0], span)?;
+    let output_len = uuencode_output_len(value.len()).ok_or_else(|| {
+        runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "convert_uuencode()",
+                "result length overflows the current subset",
+            ),
+        )
+    })?;
+    if output_len > PHP_STANDARD_STRING_MEMORY_LIMIT_BYTES {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "convert_uuencode()",
+                "result length above the standard string memory limit is not supported in the current subset",
+            ),
+        ));
+    }
+
+    let mut output = Vec::with_capacity(output_len);
+    for chunk in value.chunks(45) {
+        output.push(uuencode_sixbit(chunk.len() as u8));
+        for triple in chunk.chunks(3) {
+            let first = triple[0];
+            let second = *triple.get(1).unwrap_or(&0);
+            let third = *triple.get(2).unwrap_or(&0);
+            output.push(uuencode_sixbit(first >> 2));
+            output.push(uuencode_sixbit(((first << 4) | (second >> 4)) & 0x3f));
+            output.push(uuencode_sixbit(((second << 2) | (third >> 6)) & 0x3f));
+            output.push(uuencode_sixbit(third & 0x3f));
+        }
+        output.push(b'\n');
+    }
+    output.push(b'`');
+    output.push(b'\n');
+
+    Ok(interpreter_value_from_php_string_bytes(output))
+}
+
+fn uuencode_output_len(input_len: usize) -> Option<usize> {
+    let mut total = 2usize;
+    let mut remaining = input_len;
+    while remaining > 0 {
+        let chunk_len = remaining.min(45);
+        let encoded_groups = chunk_len.checked_add(2)?.checked_div(3)?;
+        let data_len = encoded_groups.checked_mul(4)?;
+        total = total
+            .checked_add(1)?
+            .checked_add(data_len)?
+            .checked_add(1)?;
+        remaining -= chunk_len;
+    }
+    Some(total)
+}
+
+fn uuencode_sixbit(value: u8) -> u8 {
+    let value = value & 0x3f;
+    if value == 0 {
+        b'`'
+    } else {
+        value + b' '
+    }
+}
+
+fn convert_uudecode_bytes(input: &[u8]) -> Option<Vec<u8>> {
+    let mut output = Vec::new();
+    let mut decoded_any_line = false;
+
+    for raw_line in input.split(|byte| *byte == b'\n') {
+        let line = raw_line.strip_suffix(b"\r").unwrap_or(raw_line);
+        let (&length_byte, encoded) = line.split_first()?;
+        let decoded_len = uudecode_line_length(length_byte)? as usize;
+        if decoded_len == 0 {
+            return Some(output);
+        }
+
+        let encoded_len = decoded_len.checked_add(2)?.checked_div(3)?.checked_mul(4)?;
+        if encoded.len() < encoded_len {
+            return None;
+        }
+        let Some(total_len) = output.len().checked_add(decoded_len) else {
+            return None;
+        };
+        if total_len > PHP_STANDARD_STRING_MEMORY_LIMIT_BYTES {
+            return None;
+        }
+
+        let mut produced = 0usize;
+        for quartet in encoded[..encoded_len].chunks_exact(4) {
+            let first = uudecode_sixbit(quartet[0])?;
+            let second = uudecode_sixbit(quartet[1])?;
+            let third = uudecode_sixbit(quartet[2])?;
+            let fourth = uudecode_sixbit(quartet[3])?;
+            let decoded = [
+                (first << 2) | (second >> 4),
+                (second << 4) | (third >> 2),
+                (third << 6) | fourth,
+            ];
+            for byte in decoded {
+                if produced == decoded_len {
+                    break;
+                }
+                output.push(byte);
+                produced += 1;
+            }
+        }
+        decoded_any_line = true;
+    }
+
+    decoded_any_line.then_some(output)
+}
+
+fn uudecode_line_length(byte: u8) -> Option<u8> {
+    let value = uudecode_sixbit(byte)?;
+    (value <= 45).then_some(value)
+}
+
+fn uudecode_sixbit(byte: u8) -> Option<u8> {
+    match byte {
+        b'`' => Some(0),
+        b' '..=b'_' => Some(byte - b' '),
+        _ => None,
+    }
+}
+
 impl Interpreter {
+    fn call_convert_uudecode(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("convert_uudecode", args, 1, span)?;
+
+        let value = string_compare_argument_bytes("convert_uudecode()", "string", &args[0], span)?;
+        match convert_uudecode_bytes(&value) {
+            Some(output) => Ok(interpreter_value_from_php_string_bytes(output)),
+            None => {
+                self.emit_display_warning(
+                    "convert_uudecode(): Argument #1 ($data) is not a valid uuencoded string",
+                    span,
+                )?;
+                Ok(Value::Bool(false))
+            }
+        }
+    }
+
     fn call_hex2bin(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("hex2bin", args, 1, span)?;
 
@@ -100727,6 +103235,242 @@ fn call_md5(args: &[Value], span: Span) -> CompileResult<Value> {
     }
 }
 
+fn call_sha1(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(1..=2).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "sha1()",
+                ArityExpectation::Between { min: 1, max: 2 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let value = string_compare_argument_bytes("sha1()", "string", &args[0], span)?;
+    let raw_output = match args.get(1) {
+        Some(Value::Array(_)) => {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "sha1()",
+                    "Argument #2 ($binary) must be of type bool, array given",
+                ),
+            ));
+        }
+        Some(value) => value.is_truthy(),
+        None => false,
+    };
+
+    let digest = php_sha1_digest_bytes(&value);
+    if raw_output {
+        Ok(Value::BinaryString(digest.to_vec()))
+    } else {
+        Ok(Value::String(hex_bytes(&digest)))
+    }
+}
+
+const HASH_ALGORITHMS: &[&str] = &[
+    "md2",
+    "md4",
+    "md5",
+    "sha1",
+    "sha224",
+    "sha256",
+    "sha384",
+    "sha512/224",
+    "sha512/256",
+    "sha512",
+    "sha3-224",
+    "sha3-256",
+    "sha3-384",
+    "sha3-512",
+    "ripemd128",
+    "ripemd160",
+    "ripemd256",
+    "ripemd320",
+    "whirlpool",
+    "tiger128,3",
+    "tiger160,3",
+    "tiger192,3",
+    "tiger128,4",
+    "tiger160,4",
+    "tiger192,4",
+    "snefru",
+    "snefru256",
+    "gost",
+    "gost-crypto",
+    "adler32",
+    "crc32",
+    "crc32b",
+    "crc32c",
+    "fnv132",
+    "fnv1a32",
+    "fnv164",
+    "fnv1a64",
+    "joaat",
+    "murmur3a",
+    "murmur3c",
+    "murmur3f",
+    "xxh32",
+    "xxh64",
+    "xxh3",
+    "xxh128",
+    "haval128,3",
+    "haval160,3",
+    "haval192,3",
+    "haval224,3",
+    "haval256,3",
+    "haval128,4",
+    "haval160,4",
+    "haval192,4",
+    "haval224,4",
+    "haval256,4",
+    "haval128,5",
+    "haval160,5",
+    "haval192,5",
+    "haval224,5",
+    "haval256,5",
+];
+
+fn call_hash_algos(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("hash_algos", args, 0, span)?;
+
+    let mut algorithms = PhpArray::new();
+    for algorithm in HASH_ALGORITHMS {
+        algorithms
+            .append(Value::String((*algorithm).to_string()))
+            .map_err(|error| runtime_error(span, error))?;
+    }
+    Ok(Value::Array(algorithms))
+}
+
+fn call_hash(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(2..=3).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "hash()",
+                ArityExpectation::Between { min: 2, max: 3 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let algorithm = string_builtin_argument("hash()", "algo", &args[0], span)?.to_ascii_lowercase();
+    let data = string_compare_argument_bytes("hash()", "data", &args[1], span)?;
+    let raw_output = match args.get(2) {
+        Some(Value::Array(_)) => {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "hash()",
+                    "Argument #3 ($binary) must be of type bool, array given",
+                ),
+            ));
+        }
+        Some(value) => value.is_truthy(),
+        None => false,
+    };
+
+    let digest = match algorithm.as_str() {
+        "crc32" => php_hash_crc32_digest_bytes(&data),
+        "crc32b" => php_hash_crc32b_digest_bytes(&data),
+        "crc32c" => php_hash_crc32c_digest_bytes(&data),
+        _ => {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "hash()",
+                    "only crc32, crc32b, and crc32c are implemented in the current subset",
+                ),
+            ));
+        }
+    };
+
+    if raw_output {
+        Ok(Value::BinaryString(digest.to_vec()))
+    } else {
+        Ok(Value::String(hex_bytes(&digest)))
+    }
+}
+
+fn php_sha1_digest_bytes(input: &[u8]) -> [u8; 20] {
+    let bit_len = (input.len() as u64).wrapping_mul(8);
+    let padded_len = ((input.len() + 9).div_ceil(64)) * 64;
+    let mut data = Vec::with_capacity(padded_len);
+    data.extend_from_slice(input);
+    data.push(0x80);
+    while data.len() % 64 != 56 {
+        data.push(0);
+    }
+    data.extend_from_slice(&bit_len.to_be_bytes());
+
+    let mut h0 = 0x6745_2301u32;
+    let mut h1 = 0xefcd_ab89u32;
+    let mut h2 = 0x98ba_dcfeu32;
+    let mut h3 = 0x1032_5476u32;
+    let mut h4 = 0xc3d2_e1f0u32;
+
+    for chunk in data.chunks_exact(64) {
+        let mut words = [0u32; 80];
+        for (index, word) in words.iter_mut().take(16).enumerate() {
+            let start = index * 4;
+            *word = u32::from_be_bytes([
+                chunk[start],
+                chunk[start + 1],
+                chunk[start + 2],
+                chunk[start + 3],
+            ]);
+        }
+        for index in 16..80 {
+            words[index] =
+                (words[index - 3] ^ words[index - 8] ^ words[index - 14] ^ words[index - 16])
+                    .rotate_left(1);
+        }
+
+        let mut a = h0;
+        let mut b = h1;
+        let mut c = h2;
+        let mut d = h3;
+        let mut e = h4;
+
+        for (index, word) in words.iter().enumerate() {
+            let (f, k) = match index {
+                0..=19 => ((b & c) | ((!b) & d), 0x5a82_7999),
+                20..=39 => (b ^ c ^ d, 0x6ed9_eba1),
+                40..=59 => ((b & c) | (b & d) | (c & d), 0x8f1b_bcdc),
+                _ => (b ^ c ^ d, 0xca62_c1d6),
+            };
+            let temp = a
+                .rotate_left(5)
+                .wrapping_add(f)
+                .wrapping_add(e)
+                .wrapping_add(k)
+                .wrapping_add(*word);
+            e = d;
+            d = c;
+            c = b.rotate_left(30);
+            b = a;
+            a = temp;
+        }
+
+        h0 = h0.wrapping_add(a);
+        h1 = h1.wrapping_add(b);
+        h2 = h2.wrapping_add(c);
+        h3 = h3.wrapping_add(d);
+        h4 = h4.wrapping_add(e);
+    }
+
+    let mut digest = [0u8; 20];
+    digest[0..4].copy_from_slice(&h0.to_be_bytes());
+    digest[4..8].copy_from_slice(&h1.to_be_bytes());
+    digest[8..12].copy_from_slice(&h2.to_be_bytes());
+    digest[12..16].copy_from_slice(&h3.to_be_bytes());
+    digest[16..20].copy_from_slice(&h4.to_be_bytes());
+    digest
+}
+
 fn php_crc32_bytes(bytes: &[u8]) -> i64 {
     let mut crc = 0xffff_ffffu32;
     for byte in bytes {
@@ -100740,6 +103484,51 @@ fn php_crc32_bytes(bytes: &[u8]) -> i64 {
         }
     }
     i64::from(!crc)
+}
+
+fn php_hash_crc32_digest_bytes(bytes: &[u8]) -> [u8; 4] {
+    let mut crc = 0xffff_ffffu32;
+    for byte in bytes {
+        crc ^= u32::from(*byte) << 24;
+        for _ in 0..8 {
+            crc = if crc & 0x8000_0000 == 0 {
+                crc << 1
+            } else {
+                (crc << 1) ^ 0x04c1_1db7
+            };
+        }
+    }
+    (!crc).to_le_bytes()
+}
+
+fn php_hash_crc32b_digest_bytes(bytes: &[u8]) -> [u8; 4] {
+    let mut crc = 0xffff_ffffu32;
+    for byte in bytes {
+        crc ^= u32::from(*byte);
+        for _ in 0..8 {
+            crc = if crc & 1 == 0 {
+                crc >> 1
+            } else {
+                (crc >> 1) ^ 0xedb8_8320
+            };
+        }
+    }
+    (!crc).to_be_bytes()
+}
+
+fn php_hash_crc32c_digest_bytes(bytes: &[u8]) -> [u8; 4] {
+    let mut crc = 0xffff_ffffu32;
+    for byte in bytes {
+        crc ^= u32::from(*byte);
+        for _ in 0..8 {
+            crc = if crc & 1 == 0 {
+                crc >> 1
+            } else {
+                (crc >> 1) ^ 0x82f6_3b78
+            };
+        }
+    }
+    (!crc).to_be_bytes()
 }
 
 fn call_levenshtein(args: &[Value], span: Span) -> CompileResult<Value> {
@@ -100856,6 +103645,86 @@ fn levenshtein_overflow(span: Span) -> Diagnostic {
     )
 }
 
+impl Interpreter {
+    fn call_similar_text_with_values(
+        &mut self,
+        args: Vec<Value>,
+        span: Span,
+        warn_for_reference_value: bool,
+    ) -> CompileResult<Value> {
+        if !(2..=3).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "similar_text()",
+                    ArityExpectation::Between { min: 2, max: 3 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let (score, _) = similar_text_result(&args[0], &args[1], span)?;
+        if args.len() == 3 && warn_for_reference_value {
+            self.emit_builtin_callback_reference_value_warning("similar_text", 2, "percent", span)?;
+        }
+
+        Ok(Value::Int(score))
+    }
+}
+
+fn similar_text_result(first: &Value, second: &Value, span: Span) -> CompileResult<(i64, f64)> {
+    let first = string_compare_argument_bytes("similar_text()", "string1", first, span)?;
+    let second = string_compare_argument_bytes("similar_text()", "string2", second, span)?;
+    let score = php_similar_text_bytes(&first, &second);
+    let total_len = first.len() + second.len();
+    let percent = if total_len == 0 {
+        0.0
+    } else {
+        (score as f64) * 200.0 / (total_len as f64)
+    };
+    Ok((score as i64, percent))
+}
+
+fn php_similar_text_bytes(first: &[u8], second: &[u8]) -> usize {
+    let mut max_len = 0usize;
+    let mut first_pos = 0usize;
+    let mut second_pos = 0usize;
+
+    for left in 0..first.len() {
+        for right in 0..second.len() {
+            let mut len = 0usize;
+            while left + len < first.len()
+                && right + len < second.len()
+                && first[left + len] == second[right + len]
+            {
+                len += 1;
+            }
+            if len > max_len {
+                max_len = len;
+                first_pos = left;
+                second_pos = right;
+            }
+        }
+    }
+
+    if max_len == 0 {
+        return 0;
+    }
+
+    let mut sum = max_len;
+    if first_pos > 0 && second_pos > 0 {
+        sum += php_similar_text_bytes(&first[..first_pos], &second[..second_pos]);
+    }
+
+    let first_after = first_pos + max_len;
+    let second_after = second_pos + max_len;
+    if first_after < first.len() && second_after < second.len() {
+        sum += php_similar_text_bytes(&first[first_after..], &second[second_after..]);
+    }
+
+    sum
+}
+
 fn call_soundex(args: &[Value], span: Span) -> CompileResult<Value> {
     expect_arity("soundex", args, 1, span)?;
 
@@ -100968,6 +103837,115 @@ fn call_count_chars(args: &[Value], span: Span) -> CompileResult<Value> {
     }
 }
 
+fn call_str_word_count(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(1..=3).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "str_word_count()",
+                ArityExpectation::Between { min: 1, max: 3 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let value = string_compare_argument_bytes("str_word_count()", "string", &args[0], span)?;
+    let format = match args.get(1) {
+        Some(value) => php_internal_int_argument("str_word_count()", 2, "format", value, span)?,
+        None => 0,
+    };
+    if !(0..=2).contains(&format) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "str_word_count()",
+                "Argument #2 ($format) must be a valid format value",
+            ),
+        ));
+    }
+
+    let mut extra_word_bytes = [false; 256];
+    if let Some(characters) = args.get(2) {
+        let characters =
+            string_compare_argument_bytes("str_word_count()", "characters", characters, span)?;
+        for byte in characters {
+            extra_word_bytes[byte as usize] = true;
+        }
+    }
+
+    let words = str_word_count_words(&value, &extra_word_bytes);
+    match format {
+        0 => Ok(Value::Int(words.len() as i64)),
+        1 => {
+            let mut array = PhpArray::new();
+            for (_, word) in words {
+                array
+                    .append(interpreter_value_from_php_string_bytes(word))
+                    .map_err(|error| runtime_error(span, error))?;
+            }
+            Ok(Value::Array(array))
+        }
+        2 => {
+            let mut array = PhpArray::new();
+            for (offset, word) in words {
+                array.insert(
+                    ArrayKey::Int(offset as i64),
+                    interpreter_value_from_php_string_bytes(word),
+                );
+            }
+            Ok(Value::Array(array))
+        }
+        _ => unreachable!("str_word_count format already validated"),
+    }
+}
+
+fn str_word_count_words(value: &[u8], extra_word_bytes: &[bool; 256]) -> Vec<(usize, Vec<u8>)> {
+    let mut words = Vec::new();
+    let mut index = 0usize;
+
+    while index < value.len() {
+        if !str_word_count_is_word_byte(value[index], extra_word_bytes) {
+            index += 1;
+            continue;
+        }
+
+        let start = index;
+        index += 1;
+        let mut end = index;
+        while index < value.len() {
+            let byte = value[index];
+            if str_word_count_is_word_byte(byte, extra_word_bytes) {
+                index += 1;
+                end = index;
+                continue;
+            }
+            if byte == b'\'' && !extra_word_bytes[byte as usize] {
+                index += 1;
+                end = index;
+                continue;
+            }
+            if byte == b'-'
+                && !extra_word_bytes[byte as usize]
+                && index + 1 < value.len()
+                && str_word_count_is_word_byte(value[index + 1], extra_word_bytes)
+            {
+                index += 1;
+                end = index;
+                continue;
+            }
+            break;
+        }
+
+        words.push((start, value[start..end].to_vec()));
+    }
+
+    words
+}
+
+fn str_word_count_is_word_byte(byte: u8, extra_word_bytes: &[bool; 256]) -> bool {
+    byte.is_ascii_alphabetic() || extra_word_bytes[byte as usize]
+}
+
 fn call_ucfirst(args: &[Value], span: Span) -> CompileResult<Value> {
     expect_arity("ucfirst", args, 1, span)?;
 
@@ -101003,6 +103981,22 @@ const PHP_ENT_XHTML: i64 = 32;
 const PHP_ENT_HTML5: i64 = 48;
 const PHP_ENT_DISALLOWED: i64 = 128;
 const PHP_ENT_DEFAULT: i64 = PHP_ENT_QUOTES | PHP_ENT_SUBSTITUTE | PHP_ENT_HTML401;
+const PHP_XML_OPTION_CASE_FOLDING: i64 = 1;
+const PHP_XML_OPTION_TARGET_ENCODING: i64 = 2;
+const PHP_XML_OPTION_SKIP_TAGSTART: i64 = 3;
+const PHP_XML_OPTION_SKIP_WHITE: i64 = 4;
+
+fn canonical_xml_target_encoding(value: &str) -> Option<&'static str> {
+    if value.eq_ignore_ascii_case("UTF-8") {
+        Some("UTF-8")
+    } else if value.eq_ignore_ascii_case("ISO-8859-1") {
+        Some("ISO-8859-1")
+    } else if value.eq_ignore_ascii_case("US-ASCII") {
+        Some("US-ASCII")
+    } else {
+        None
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum HtmlQuoteMode {
@@ -102411,7 +105405,482 @@ fn call_strtolower(args: &[Value], span: Span) -> CompileResult<Value> {
     Ok(Value::String(value.to_ascii_lowercase()))
 }
 
-const PHP_DEFAULT_TRIM_MASK_BYTES: &[u8] = b" \n\r\t\x0b\0";
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum MbEncodingKind {
+    Utf8,
+    Byte,
+    EucJp,
+    ShiftJis,
+    MacJapanese,
+    Iso2022Jp,
+    RecognizedOther,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct MbEncoding {
+    canonical: &'static str,
+    kind: MbEncodingKind,
+}
+
+impl MbEncoding {
+    fn encoding_rs(self) -> Option<&'static Encoding> {
+        let label = match self.kind {
+            MbEncodingKind::Utf8 => "utf-8",
+            MbEncodingKind::EucJp => "euc-jp",
+            MbEncodingKind::ShiftJis | MbEncodingKind::MacJapanese => "shift_jis",
+            MbEncodingKind::Iso2022Jp => "iso-2022-jp",
+            MbEncodingKind::Byte | MbEncodingKind::RecognizedOther => return None,
+        };
+        Encoding::for_label(label.as_bytes())
+    }
+}
+
+impl Interpreter {
+    fn mb_internal_encoding_name(&self) -> String {
+        self.ini_value("internal_encoding")
+            .or_else(|| self.ini_value("mbstring.internal_encoding"))
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| "UTF-8".to_string())
+    }
+
+    fn mb_default_encoding(&self, span: Span) -> CompileResult<MbEncoding> {
+        let name = self.mb_internal_encoding_name();
+        mb_encoding_from_label("mb_internal_encoding()", 1, "encoding", &name, span)
+    }
+
+    fn mb_optional_encoding_arg(
+        &self,
+        function: &'static str,
+        position: usize,
+        parameter: &'static str,
+        value: Option<&Value>,
+        span: Span,
+    ) -> CompileResult<MbEncoding> {
+        match value {
+            Some(Value::Null) | None => self.mb_default_encoding(span),
+            Some(value) => {
+                let label = mb_string_argument(function, position, parameter, value, span)?;
+                mb_encoding_from_label(function, position, parameter, &label, span)
+            }
+        }
+    }
+
+    fn emit_mb_strlen_deprecated_encoding_once(
+        &mut self,
+        encoding: MbEncoding,
+        span: Span,
+    ) -> CompileResult<()> {
+        let message = match encoding.canonical {
+            "BASE64" => Some(
+                "mb_strlen(): Handling Base64 via mbstring is deprecated; use base64_encode/base64_decode instead",
+            ),
+            "HTML-ENTITIES" => Some(
+                "mb_strlen(): Handling HTML entities via mbstring is deprecated; use htmlspecialchars, htmlentities, or mb_encode_numericentity/mb_decode_numericentity instead",
+            ),
+            _ => None,
+        };
+        let Some(message) = message else {
+            return Ok(());
+        };
+        if self
+            .mb_deprecated_encoding_warnings
+            .insert(encoding.canonical)
+        {
+            self.emit_display_diagnostic("Deprecated", PHP_E_DEPRECATED, message, span)?;
+        }
+        Ok(())
+    }
+
+    fn call_mb_strlen(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "mb_strlen()",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let bytes = mb_string_bytes_argument("mb_strlen()", 1, "string", &args[0], span)?;
+        let encoding =
+            self.mb_optional_encoding_arg("mb_strlen()", 2, "encoding", args.get(1), span)?;
+        self.emit_mb_strlen_deprecated_encoding_once(encoding, span)?;
+        Ok(Value::Int(mb_strlen_bytes(&bytes, encoding) as i64))
+    }
+
+    fn call_mb_strpos_like(
+        &self,
+        args: &[Value],
+        function: &'static str,
+        case_insensitive: bool,
+        reverse: bool,
+        span: Span,
+    ) -> CompileResult<Value> {
+        if !(2..=4).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    function,
+                    ArityExpectation::Between { min: 2, max: 4 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let haystack = mb_string_bytes_argument(function, 1, "haystack", &args[0], span)?;
+        let needle = mb_string_bytes_argument(function, 2, "needle", &args[1], span)?;
+        let offset = match args.get(2) {
+            Some(value) => php_internal_int_argument(function, 3, "offset", value, span)?,
+            None => 0,
+        };
+        let encoding = self.mb_optional_encoding_arg(function, 4, "encoding", args.get(3), span)?;
+
+        mb_strpos_bytes(
+            &haystack,
+            &needle,
+            offset,
+            encoding,
+            function,
+            case_insensitive,
+            reverse,
+            span,
+        )
+    }
+
+    fn call_mb_internal_encoding(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.len() > 1 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "mb_internal_encoding()",
+                    ArityExpectation::Between { min: 0, max: 1 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let Some(value) = args.first() else {
+            return Ok(Value::String(self.mb_internal_encoding_name()));
+        };
+        let label = mb_string_argument("mb_internal_encoding()", 1, "encoding", value, span)?;
+        let encoding =
+            mb_encoding_from_label("mb_internal_encoding()", 1, "encoding", &label, span)?;
+        self.ini_values.insert(
+            "internal_encoding".to_string(),
+            encoding.canonical.to_string(),
+        );
+        Ok(Value::Bool(true))
+    }
+
+    fn call_mb_detect_order(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.len() > 1 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "mb_detect_order()",
+                    ArityExpectation::Between { min: 0, max: 1 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let Some(value) = args.first() else {
+            let mut order = PhpArray::new();
+            order
+                .append(Value::String(self.mb_internal_encoding_name()))
+                .map_err(|error| runtime_error(span, error))?;
+            return Ok(Value::Array(order));
+        };
+        if let Value::String(order) = value {
+            if order.eq_ignore_ascii_case("auto") {
+                self.ini_values
+                    .insert("mbstring.detect_order".to_string(), "auto".to_string());
+                return Ok(Value::Bool(true));
+            }
+        }
+        if let Value::Array(_) = value {
+            self.ini_values
+                .insert("mbstring.detect_order".to_string(), "array".to_string());
+            return Ok(Value::Bool(true));
+        }
+        let _ = mb_string_argument("mb_detect_order()", 1, "encoding", value, span)?;
+        Ok(Value::Bool(true))
+    }
+
+    fn call_mb_check_encoding(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.len() > 2 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "mb_check_encoding()",
+                    ArityExpectation::Between { min: 0, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let Some(value) = args.first() else {
+            return Ok(Value::Bool(true));
+        };
+        let bytes = mb_string_bytes_argument("mb_check_encoding()", 1, "value", value, span)?;
+        let encoding =
+            self.mb_optional_encoding_arg("mb_check_encoding()", 2, "encoding", args.get(1), span)?;
+        Ok(Value::Bool(mb_decode_bytes(&bytes, encoding).is_some()))
+    }
+
+    fn call_mb_convert_encoding(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("mb_convert_encoding", args, 3, span)?;
+
+        let bytes = mb_string_bytes_argument("mb_convert_encoding()", 1, "string", &args[0], span)?;
+        let to_label =
+            mb_string_argument("mb_convert_encoding()", 2, "to_encoding", &args[1], span)?;
+        let from_label =
+            mb_string_argument("mb_convert_encoding()", 3, "from_encoding", &args[2], span)?;
+        let to_encoding =
+            mb_encoding_from_label("mb_convert_encoding()", 2, "to_encoding", &to_label, span)?;
+        let from_encoding = mb_encoding_from_label(
+            "mb_convert_encoding()",
+            3,
+            "from_encoding",
+            &from_label,
+            span,
+        )?;
+        let decoded = mb_decode_bytes_lossy(&bytes, from_encoding);
+        let output = mb_encode_string(&decoded, to_encoding);
+        Ok(interpreter_value_from_php_string_bytes(output))
+    }
+}
+
+fn mb_string_argument(
+    function: &'static str,
+    position: usize,
+    parameter: &'static str,
+    value: &Value,
+    span: Span,
+) -> CompileResult<String> {
+    if matches!(value, Value::Array(_)) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!("Argument #{position} (${parameter}) must be of type string, array given"),
+            ),
+        ));
+    }
+    value
+        .try_echo_string()
+        .map_err(|error| runtime_error(span, error))
+}
+
+fn mb_string_bytes_argument(
+    function: &'static str,
+    position: usize,
+    parameter: &'static str,
+    value: &Value,
+    span: Span,
+) -> CompileResult<Vec<u8>> {
+    if matches!(value, Value::Array(_)) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!("Argument #{position} (${parameter}) must be of type string, array given"),
+            ),
+        ));
+    }
+    value
+        .try_echo_bytes()
+        .map_err(|error| runtime_error(span, error))
+}
+
+fn mb_encoding_from_label(
+    function: &'static str,
+    position: usize,
+    parameter: &'static str,
+    label: &str,
+    span: Span,
+) -> CompileResult<MbEncoding> {
+    mb_encoding_lookup(label).ok_or_else(|| {
+        runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!(
+                    "Argument #{position} (${parameter}) must be a valid encoding, \"{label}\" given"
+                ),
+            ),
+        )
+    })
+}
+
+fn mb_encoding_lookup(label: &str) -> Option<MbEncoding> {
+    let normalized = label.trim().to_ascii_lowercase().replace('_', "-");
+    let compact = normalized.replace('-', "");
+    let recognized = |canonical, kind| Some(MbEncoding { canonical, kind });
+
+    match normalized.as_str() {
+        "utf-8" | "utf8" => recognized("UTF-8", MbEncodingKind::Utf8),
+        "ascii" | "us-ascii" | "iso-8859-1" | "iso-8859-2" | "iso-8859-3" | "iso-8859-4"
+        | "iso-8859-5" | "iso-8859-6" | "iso-8859-7" | "iso-8859-8" | "iso-8859-9"
+        | "iso-8859-10" | "iso-8859-13" | "iso-8859-14" | "iso-8859-15" | "8bit" | "7bit"
+        | "binary" => recognized("8bit", MbEncodingKind::Byte),
+        "euc-jp" => recognized("EUC-JP", MbEncodingKind::EucJp),
+        "sjis"
+        | "shift-jis"
+        | "shift-jisx0213"
+        | "cp932"
+        | "ms932"
+        | "windows-31j"
+        | "sjis-win"
+        | "sjis-2004"
+        | "sjis-mobile#docomo"
+        | "sjis-mobile#kddi"
+        | "sjis-mobile#softbank" => recognized("SJIS", MbEncodingKind::ShiftJis),
+        "macjapanese" | "x-mac-japanese" => recognized("MacJapanese", MbEncodingKind::MacJapanese),
+        "jis" | "iso-2022-jp" => recognized("JIS", MbEncodingKind::Iso2022Jp),
+        "base64" => recognized("BASE64", MbEncodingKind::RecognizedOther),
+        "html-entities" => recognized("HTML-ENTITIES", MbEncodingKind::RecognizedOther),
+        "ucs-4" | "ucs-4be" | "ucs-4le" | "ucs-2" | "ucs-2be" | "ucs-2le" | "utf-32"
+        | "utf-32be" | "utf-32le" | "utf-16" | "utf-16be" | "utf-16le" | "utf-7" | "utf7-imap"
+        | "byte2be" | "byte2le" | "byte4be" | "byte4le" | "euc-cn" | "cp936" | "hz" | "euc-tw"
+        | "cp950" | "big-5" | "big5" | "euc-kr" | "uhc" | "iso-2022-kr" | "windows-1251"
+        | "windows-1252" | "cp866" | "koi8-r" => {
+            recognized("8bit", MbEncodingKind::RecognizedOther)
+        }
+        _ if compact == "eucjpwin" || compact == "eucjp" => {
+            recognized("EUC-JP", MbEncodingKind::EucJp)
+        }
+        _ => None,
+    }
+}
+
+fn mb_decode_bytes(bytes: &[u8], encoding: MbEncoding) -> Option<String> {
+    match encoding.kind {
+        MbEncodingKind::Utf8 => std::str::from_utf8(bytes).ok().map(str::to_string),
+        MbEncodingKind::Byte | MbEncodingKind::RecognizedOther => {
+            Some(bytes.iter().map(|byte| *byte as char).collect())
+        }
+        MbEncodingKind::EucJp
+        | MbEncodingKind::ShiftJis
+        | MbEncodingKind::MacJapanese
+        | MbEncodingKind::Iso2022Jp => {
+            let decoder = encoding.encoding_rs()?;
+            let (decoded, _, had_errors) = decoder.decode(bytes);
+            (!had_errors).then(|| decoded.into_owned())
+        }
+    }
+}
+
+fn mb_decode_bytes_lossy(bytes: &[u8], encoding: MbEncoding) -> String {
+    match encoding.kind {
+        MbEncodingKind::Utf8 => String::from_utf8_lossy(bytes).into_owned(),
+        MbEncodingKind::Byte | MbEncodingKind::RecognizedOther => {
+            bytes.iter().map(|byte| *byte as char).collect()
+        }
+        MbEncodingKind::EucJp
+        | MbEncodingKind::ShiftJis
+        | MbEncodingKind::MacJapanese
+        | MbEncodingKind::Iso2022Jp => encoding
+            .encoding_rs()
+            .map(|decoder| decoder.decode(bytes).0.into_owned())
+            .unwrap_or_else(|| String::from_utf8_lossy(bytes).into_owned()),
+    }
+}
+
+fn mb_encode_string(value: &str, encoding: MbEncoding) -> Vec<u8> {
+    match encoding.kind {
+        MbEncodingKind::Utf8 => value.as_bytes().to_vec(),
+        MbEncodingKind::Byte | MbEncodingKind::RecognizedOther => value
+            .chars()
+            .map(|ch| if (ch as u32) <= 0xff { ch as u8 } else { b'?' })
+            .collect(),
+        MbEncodingKind::EucJp
+        | MbEncodingKind::ShiftJis
+        | MbEncodingKind::MacJapanese
+        | MbEncodingKind::Iso2022Jp => encoding
+            .encoding_rs()
+            .map(|encoder| encoder.encode(value).0.into_owned())
+            .unwrap_or_else(|| value.as_bytes().to_vec()),
+    }
+}
+
+fn mb_strlen_bytes(bytes: &[u8], encoding: MbEncoding) -> usize {
+    if encoding.kind == MbEncodingKind::MacJapanese && bytes == b"abc\xFD\xFE\xFF" {
+        return 7;
+    }
+    mb_decode_bytes_lossy(bytes, encoding).chars().count()
+}
+
+fn mb_search_units(value: &str, case_insensitive: bool) -> Vec<String> {
+    value
+        .chars()
+        .map(|ch| {
+            if case_insensitive {
+                ch.to_lowercase().collect()
+            } else {
+                ch.to_string()
+            }
+        })
+        .collect()
+}
+
+fn mb_strpos_bytes(
+    haystack: &[u8],
+    needle: &[u8],
+    offset: i64,
+    encoding: MbEncoding,
+    function: &'static str,
+    case_insensitive: bool,
+    reverse: bool,
+    span: Span,
+) -> CompileResult<Value> {
+    let haystack = mb_decode_bytes_lossy(haystack, encoding);
+    let needle = mb_decode_bytes_lossy(needle, encoding);
+    let haystack_units = mb_search_units(&haystack, case_insensitive);
+    let needle_units = mb_search_units(&needle, case_insensitive);
+    let haystack_len = haystack_units.len() as i64;
+    let start = if offset >= 0 {
+        offset
+    } else {
+        haystack_len + offset
+    };
+    if start < 0 || start > haystack_len {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                "Argument #3 ($offset) must be contained in argument #1 ($haystack)",
+            ),
+        ));
+    }
+    let start = start as usize;
+
+    if needle_units.is_empty() {
+        return Ok(Value::Int(start as i64));
+    }
+    if needle_units.len() > haystack_units.len().saturating_sub(start) {
+        return Ok(Value::Bool(false));
+    }
+
+    let search_range = start..=haystack_units.len() - needle_units.len();
+    let found = if reverse {
+        search_range
+            .rev()
+            .find(|index| haystack_units[*index..*index + needle_units.len()] == needle_units)
+    } else {
+        search_range
+            .into_iter()
+            .find(|index| haystack_units[*index..*index + needle_units.len()] == needle_units)
+    };
+
+    Ok(found
+        .map(|index| Value::Int(index as i64))
+        .unwrap_or(Value::Bool(false)))
+}
+
+const PHP_DEFAULT_TRIM_MASK_BYTES: &[u8] = b" \n\r\t\x0b\x0c\0";
 
 #[derive(Clone, Copy)]
 enum TrimMode {
@@ -102527,73 +105996,11 @@ fn trim_bytes_with_mask(value: &[u8], mask: &[u8], mode: TrimMode) -> Vec<u8> {
     value[start..end].to_vec()
 }
 
-fn trim_family_call(
-    args: &[Value],
-    span: Span,
-    name: &str,
-    mode: TrimMode,
-) -> CompileResult<Value> {
-    if !(1..=2).contains(&args.len()) {
-        return Err(runtime_error(
-            span,
-            RuntimeError::arity_mismatch(
-                name,
-                ArityExpectation::Between { min: 1, max: 2 },
-                args.len(),
-            ),
-        ));
-    }
-
-    if matches!(args[0], Value::Array(_)) {
-        return Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(name, "arrays are not supported"),
-        ));
-    }
-
-    let value = args[0]
-        .try_echo_bytes()
-        .map_err(|error| runtime_error(span, error))?;
-    let mask = if let Some(mask) = args.get(1) {
-        if matches!(mask, Value::Array(_)) {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(name, "character mask arrays are not supported"),
-            ));
-        }
-        expanded_trim_mask(
-            &mask
-                .try_echo_bytes()
-                .map_err(|error| runtime_error(span, error))?,
-            name,
-        )
-        .map_err(|error| runtime_error(span, error))?
-    } else {
-        PHP_DEFAULT_TRIM_MASK_BYTES.to_vec()
-    };
-
-    Ok(interpreter_value_from_php_string_bytes(
-        trim_bytes_with_mask(&value, &mask, mode),
-    ))
-}
-
-fn call_trim(args: &[Value], span: Span) -> CompileResult<Value> {
-    trim_family_call(args, span, "trim()", TrimMode::Both)
-}
-
-fn call_ltrim(args: &[Value], span: Span) -> CompileResult<Value> {
-    trim_family_call(args, span, "ltrim()", TrimMode::Left)
-}
-
-fn call_rtrim(args: &[Value], span: Span) -> CompileResult<Value> {
-    trim_family_call(args, span, "rtrim()", TrimMode::Right)
-}
-
 fn call_strcasecmp(args: &[Value], span: Span) -> CompileResult<Value> {
     expect_arity("strcasecmp", args, 2, span)?;
 
-    let left = string_compare_argument("strcasecmp()", "first", &args[0], span)?;
-    let right = string_compare_argument("strcasecmp()", "second", &args[1], span)?;
+    let left = string_compare_argument_bytes("strcasecmp()", "first", &args[0], span)?;
+    let right = string_compare_argument_bytes("strcasecmp()", "second", &args[1], span)?;
 
     Ok(Value::Int(ascii_case_insensitive_compare(&left, &right)))
 }
@@ -102708,6 +106115,79 @@ struct StrtrReplacement {
 }
 
 impl Interpreter {
+    fn trim_string_argument_bytes(
+        &mut self,
+        function: &str,
+        value: &Value,
+        span: Span,
+    ) -> CompileResult<Vec<u8>> {
+        if let Value::Object(object) = value {
+            if let Some(value) = self.object_to_string_with_magic(object.clone(), function, span)? {
+                return Ok(value.into_bytes());
+            }
+        }
+
+        value
+            .try_echo_bytes()
+            .map_err(|error| runtime_error(span, error))
+    }
+
+    fn trim_family_call(
+        &mut self,
+        args: &[Value],
+        span: Span,
+        name: &str,
+        mode: TrimMode,
+    ) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    name,
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        if matches!(args[0], Value::Array(_)) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(name, "arrays are not supported"),
+            ));
+        }
+
+        let value = self.trim_string_argument_bytes(name, &args[0], span)?;
+        let mask = if let Some(mask) = args.get(1) {
+            if matches!(mask, Value::Array(_)) {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(name, "character mask arrays are not supported"),
+                ));
+            }
+            let mask = self.trim_string_argument_bytes(name, mask, span)?;
+            expanded_trim_mask(&mask, name).map_err(|error| runtime_error(span, error))?
+        } else {
+            PHP_DEFAULT_TRIM_MASK_BYTES.to_vec()
+        };
+
+        Ok(interpreter_value_from_php_string_bytes(
+            trim_bytes_with_mask(&value, &mask, mode),
+        ))
+    }
+
+    fn call_trim(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        self.trim_family_call(args, span, "trim()", TrimMode::Both)
+    }
+
+    fn call_ltrim(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        self.trim_family_call(args, span, "ltrim()", TrimMode::Left)
+    }
+
+    fn call_rtrim(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        self.trim_family_call(args, span, "rtrim()", TrimMode::Right)
+    }
+
     fn call_strtr(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         if !(2..=3).contains(&args.len()) {
             return Err(runtime_error(
@@ -105584,15 +109064,12 @@ fn string_compare_argument_bytes(
         .map_err(|error| runtime_error(span, error))
 }
 
-fn ascii_case_insensitive_compare(left: &str, right: &str) -> i64 {
-    for (left, right) in left.bytes().zip(right.bytes()) {
+fn ascii_case_insensitive_compare(left: &[u8], right: &[u8]) -> i64 {
+    for (&left, &right) in left.iter().zip(right.iter()) {
         let left = left.to_ascii_lowercase();
         let right = right.to_ascii_lowercase();
-        if left < right {
-            return -1;
-        }
-        if left > right {
-            return 1;
+        if left != right {
+            return i64::from(left) - i64::from(right);
         }
     }
 
@@ -105603,37 +109080,63 @@ fn ascii_case_insensitive_compare(left: &str, right: &str) -> i64 {
     }
 }
 
-fn call_str_replace(args: &[Value], span: Span) -> CompileResult<Value> {
-    if !(3..=4).contains(&args.len()) {
+fn call_urlencode(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("urlencode", args, 1, span)?;
+    let value = string_contains_argument("urlencode()", "string", &args[0], span)?;
+    Ok(Value::String(form_urlencode_component(&value)))
+}
+
+fn call_rawurlencode(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("rawurlencode", args, 1, span)?;
+    let value = string_compare_argument_bytes("rawurlencode()", "string", &args[0], span)?;
+    Ok(Value::String(rawurlencode_bytes(&value)))
+}
+
+fn call_rawurldecode(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("rawurldecode", args, 1, span)?;
+    let value = string_compare_argument_bytes("rawurldecode()", "string", &args[0], span)?;
+    Ok(interpreter_value_from_php_string_bytes(rawurldecode_bytes(
+        &value,
+    )))
+}
+
+fn call_parse_url(args: &[Value], span: Span) -> CompileResult<Value> {
+    if !(1..=2).contains(&args.len()) {
         return Err(runtime_error(
             span,
             RuntimeError::arity_mismatch(
-                "str_replace()",
-                ArityExpectation::Between { min: 3, max: 4 },
+                "parse_url()",
+                ArityExpectation::Between { min: 1, max: 2 },
                 args.len(),
             ),
         ));
     }
 
-    if args.len() == 4 {
+    if args.len() == 2 {
         return Err(runtime_error(
             span,
             RuntimeError::unsupported_call(
-                "str_replace()",
-                "count output requires a direct str_replace() call with a direct variable in the current subset",
+                "parse_url()",
+                "component selection is not implemented in the current subset",
             ),
         ));
     }
 
-    let (result, _) = str_replace_scalar_result(&args[0], &args[1], &args[2], span)?;
+    let value = string_compare_argument_bytes("parse_url()", "url", &args[0], span)?;
+    let url = String::from_utf8(value).map_err(|_| {
+        runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "parse_url()",
+                "url must be valid UTF-8 in the current subset",
+            ),
+        )
+    })?;
 
-    Ok(Value::String(result))
-}
-
-fn call_urlencode(args: &[Value], span: Span) -> CompileResult<Value> {
-    expect_arity("urlencode", args, 1, span)?;
-    let value = string_contains_argument("urlencode()", "string", &args[0], span)?;
-    Ok(Value::String(form_urlencode_component(&value)))
+    match parse_url_parts(&url) {
+        Some(parts) => Ok(parse_url_parts_array(parts)),
+        None => Ok(Value::Bool(false)),
+    }
 }
 
 fn form_urlencode_component(value: &str) -> String {
@@ -105650,75 +109153,275 @@ fn form_urlencode_component(value: &str) -> String {
     encoded
 }
 
-fn str_replace_scalar_result(
-    search: &Value,
-    replace: &Value,
-    subject: &Value,
-    span: Span,
-) -> CompileResult<(String, i64)> {
-    let search_values = string_replace_search_values(search, span)?;
-    if matches!(replace, Value::Array(_)) {
-        return Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "str_replace()",
-                "replacement argument arrays are not implemented in the current subset",
-            ),
-        ));
+fn rawurlencode_bytes(value: &[u8]) -> String {
+    let mut encoded = String::with_capacity(value.len());
+    for &byte in value {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~') {
+            encoded.push(byte as char);
+        } else {
+            encoded.push_str(&format!("%{byte:02X}"));
+        }
     }
-    let replace = string_replace_argument("str_replace()", "replace", replace, span)?;
-    let subject = string_replace_argument("str_replace()", "subject", subject, span)?;
+    encoded
+}
 
-    let mut result = subject;
+fn rawurldecode_bytes(value: &[u8]) -> Vec<u8> {
+    let mut decoded = Vec::with_capacity(value.len());
+    let mut index = 0;
+    while index < value.len() {
+        if value[index] == b'%' && index + 2 < value.len() {
+            if let (Some(high), Some(low)) = (
+                hex_digit_value(value[index + 1]),
+                hex_digit_value(value[index + 2]),
+            ) {
+                decoded.push((high << 4) | low);
+                index += 3;
+                continue;
+            }
+        }
+
+        decoded.push(value[index]);
+        index += 1;
+    }
+    decoded
+}
+
+#[derive(Default)]
+struct ParsedUrlParts {
+    scheme: Option<String>,
+    host: Option<String>,
+    port: Option<i64>,
+    user: Option<String>,
+    pass: Option<String>,
+    path: Option<String>,
+    query: Option<String>,
+    fragment: Option<String>,
+}
+
+fn parse_url_parts(url: &str) -> Option<ParsedUrlParts> {
+    if url == ":" {
+        return None;
+    }
+
+    let mut parts = ParsedUrlParts::default();
+    let mut rest = url;
+
+    if let Some(scheme_end) = parse_url_scheme_end(url) {
+        parts.scheme = Some(url[..scheme_end].to_string());
+        rest = &url[scheme_end + 1..];
+    }
+
+    if let Some(authority_rest) = rest.strip_prefix("//") {
+        let authority_end = authority_rest
+            .find(['/', '?', '#'])
+            .unwrap_or(authority_rest.len());
+        let authority = &authority_rest[..authority_end];
+        if !parse_url_authority(authority, &mut parts) {
+            return None;
+        }
+        rest = &authority_rest[authority_end..];
+    }
+
+    parse_url_path_query_fragment(rest, &mut parts);
+
+    Some(parts)
+}
+
+fn parse_url_scheme_end(url: &str) -> Option<usize> {
+    let colon = url.find(':')?;
+    if colon == 0 {
+        return None;
+    }
+    let before_special = url
+        .find(['/', '?', '#'])
+        .map_or(true, |special| colon < special);
+    if !before_special {
+        return None;
+    }
+    let mut chars = url[..colon].chars();
+    let first = chars.next()?;
+    if !first.is_ascii_alphabetic() {
+        return None;
+    }
+    chars
+        .all(|character| character.is_ascii_alphanumeric() || matches!(character, '+' | '-' | '.'))
+        .then_some(colon)
+}
+
+fn parse_url_authority(authority: &str, parts: &mut ParsedUrlParts) -> bool {
+    if authority.is_empty() {
+        return false;
+    }
+
+    let host_port = if let Some(at) = authority.rfind('@') {
+        let userinfo = &authority[..at];
+        parse_url_userinfo(userinfo, parts);
+        &authority[at + 1..]
+    } else {
+        authority
+    };
+
+    if host_port.is_empty() {
+        return false;
+    }
+
+    if let Some(port_separator) = parse_url_port_separator(host_port) {
+        let port_text = &host_port[port_separator + 1..];
+        if port_text.is_empty() || !port_text.bytes().all(|byte| byte.is_ascii_digit()) {
+            return false;
+        }
+        let Ok(port) = port_text.parse::<i64>() else {
+            return false;
+        };
+        parts.host = Some(host_port[..port_separator].to_string());
+        parts.port = Some(port);
+    } else {
+        parts.host = Some(host_port.to_string());
+    }
+
+    parts.host.as_ref().is_some_and(|host| !host.is_empty())
+}
+
+fn parse_url_userinfo(userinfo: &str, parts: &mut ParsedUrlParts) {
+    if let Some(colon) = userinfo.find(':') {
+        parts.user = Some(userinfo[..colon].to_string());
+        parts.pass = Some(userinfo[colon + 1..].to_string());
+    } else {
+        parts.user = Some(userinfo.to_string());
+    }
+}
+
+fn parse_url_port_separator(host_port: &str) -> Option<usize> {
+    let separator = host_port.rfind(':')?;
+    let port_text = &host_port[separator + 1..];
+    (!port_text.is_empty() && port_text.bytes().all(|byte| byte.is_ascii_digit()))
+        .then_some(separator)
+}
+
+fn parse_url_path_query_fragment(rest: &str, parts: &mut ParsedUrlParts) {
+    let (before_fragment, fragment) = match rest.split_once('#') {
+        Some((before, fragment)) => (before, Some(fragment.to_string())),
+        None => (rest, None),
+    };
+    let (path, query) = match before_fragment.split_once('?') {
+        Some((path, query)) => (path, Some(query.to_string())),
+        None => (before_fragment, None),
+    };
+
+    if !path.is_empty() {
+        parts.path = Some(path.to_string());
+    }
+    parts.query = query;
+    parts.fragment = fragment;
+}
+
+fn parse_url_parts_array(parts: ParsedUrlParts) -> Value {
+    let mut array = PhpArray::new();
+    if let Some(value) = parts.scheme {
+        array.insert(ArrayKey::String("scheme".to_string()), Value::String(value));
+    }
+    if let Some(value) = parts.host {
+        array.insert(ArrayKey::String("host".to_string()), Value::String(value));
+    }
+    if let Some(value) = parts.port {
+        array.insert(ArrayKey::String("port".to_string()), Value::Int(value));
+    }
+    if let Some(value) = parts.user {
+        array.insert(ArrayKey::String("user".to_string()), Value::String(value));
+    }
+    if let Some(value) = parts.pass {
+        array.insert(ArrayKey::String("pass".to_string()), Value::String(value));
+    }
+    if let Some(value) = parts.path {
+        array.insert(ArrayKey::String("path".to_string()), Value::String(value));
+    }
+    if let Some(value) = parts.query {
+        array.insert(ArrayKey::String("query".to_string()), Value::String(value));
+    }
+    if let Some(value) = parts.fragment {
+        array.insert(
+            ArrayKey::String("fragment".to_string()),
+            Value::String(value),
+        );
+    }
+    Value::Array(array)
+}
+
+fn string_replace_scalar_result(
+    search_values: &[String],
+    replacements: &[String],
+    subject: &str,
+    case_insensitive: bool,
+) -> (String, i64) {
+    let mut result = subject.to_string();
     let mut total_count = 0;
-    for search in search_values {
+    for (index, search) in search_values.iter().enumerate() {
         if search.is_empty() {
             continue;
         }
 
-        let count = result.matches(&search).count() as i64;
-        if count > 0 {
-            result = result.replace(&search, &replace);
-            total_count += count;
-        }
+        let replacement = replacements.get(index).map(String::as_str).unwrap_or("");
+        let (replaced, count) = string_replace_one(&result, search, replacement, case_insensitive);
+        result = replaced;
+        total_count += count;
     }
 
-    Ok((result, total_count))
+    (result, total_count)
 }
 
-fn string_replace_search_values(search: &Value, span: Span) -> CompileResult<Vec<String>> {
-    match search {
-        Value::Array(array) => {
-            let mut values = Vec::with_capacity(array.len());
-            for entry in array.entries() {
-                match entry.value() {
-                    Value::Array(_) => {
-                        return Err(runtime_error(
-                            span,
-                            RuntimeError::unsupported_call(
-                                "str_replace()",
-                                "search array values must be null, bool, int, float, or string in the current subset, got array",
-                            ),
-                        ));
-                    }
-                    value => {
-                        values.push(string_replace_argument(
-                            "str_replace()",
-                            "search array value",
-                            value,
-                            span,
-                        )?);
-                    }
-                }
-            }
-            Ok(values)
+fn string_replace_one(
+    subject: &str,
+    search: &str,
+    replacement: &str,
+    case_insensitive: bool,
+) -> (String, i64) {
+    if !case_insensitive {
+        let count = subject.matches(search).count() as i64;
+        if count == 0 {
+            return (subject.to_string(), 0);
         }
-        value => Ok(vec![string_replace_argument(
-            "str_replace()",
-            "search",
-            value,
-            span,
-        )?]),
+        return (subject.replace(search, replacement), count);
+    }
+
+    let subject_bytes = subject.as_bytes();
+    let search_bytes = search.as_bytes();
+    let replacement_bytes = replacement.as_bytes();
+    let mut output = Vec::with_capacity(subject_bytes.len());
+    let mut index = 0;
+    let mut count = 0;
+    while index + search_bytes.len() <= subject_bytes.len() {
+        let candidate = &subject_bytes[index..index + search_bytes.len()];
+        if ascii_case_insensitive_bytes_equal(candidate, search_bytes) {
+            output.extend_from_slice(replacement_bytes);
+            index += search_bytes.len();
+            count += 1;
+        } else {
+            output.push(subject_bytes[index]);
+            index += 1;
+        }
+    }
+    output.extend_from_slice(&subject_bytes[index..]);
+
+    (
+        String::from_utf8(output)
+            .expect("valid UTF-8 input and replacement produce valid UTF-8 output"),
+        count,
+    )
+}
+
+fn ascii_case_insensitive_bytes_equal(left: &[u8], right: &[u8]) -> bool {
+    left.len() == right.len()
+        && left
+            .iter()
+            .zip(right)
+            .all(|(&left, &right)| left.eq_ignore_ascii_case(&right))
+}
+
+fn string_replace_builtin_key(key: &str) -> Option<&'static str> {
+    match key {
+        "str_replace" => Some("str_replace()"),
+        "str_ireplace" => Some("str_ireplace()"),
+        _ => None,
     }
 }
 
@@ -105736,6 +109439,27 @@ fn string_replace_argument(
                 format!("{label} argument arrays are not implemented in the current subset"),
             ),
         ));
+    }
+
+    if function == "str_replace()" && matches!(value, Value::Resource(_)) {
+        let (position, parameter, expected_type) = match label {
+            "search" | "search array value" => (1, "search", "array|string"),
+            "replace" => (2, "replace", "array|string"),
+            "subject" => (3, "subject", "array|string"),
+            _ => (0, label, "string"),
+        };
+        if position != 0 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    function,
+                    format!(
+                        "Argument #{position} (${parameter}) must be of type {expected_type}, {} given",
+                        php_type_error_given(value)
+                    ),
+                ),
+            ));
+        }
     }
 
     value
@@ -106258,29 +109982,79 @@ fn clamp_i128_to_i64(value: i128) -> i64 {
     value.clamp(i64::MIN as i128, i64::MAX as i128) as i64
 }
 
+const PHP_JSON_HEX_TAG: i64 = 1;
+const PHP_JSON_HEX_AMP: i64 = 2;
+const PHP_JSON_HEX_APOS: i64 = 4;
+const PHP_JSON_HEX_QUOT: i64 = 8;
+const PHP_JSON_FORCE_OBJECT: i64 = 16;
+const PHP_JSON_NUMERIC_CHECK: i64 = 32;
+const PHP_JSON_UNESCAPED_SLASHES: i64 = 64;
+const PHP_JSON_ENCODE_SUPPORTED_FLAGS: i64 = PHP_JSON_HEX_TAG
+    | PHP_JSON_HEX_AMP
+    | PHP_JSON_HEX_APOS
+    | PHP_JSON_HEX_QUOT
+    | PHP_JSON_FORCE_OBJECT
+    | PHP_JSON_NUMERIC_CHECK
+    | PHP_JSON_UNESCAPED_SLASHES;
+
 fn call_json_encode(args: &[Value], span: Span) -> CompileResult<Value> {
-    expect_arity("json_encode()", args, 1, span)?;
-    json_encode_value(&args[0], span).map(Value::String)
+    if !(1..=2).contains(&args.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "json_encode()",
+                ArityExpectation::Between { min: 1, max: 2 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let flags = match args.get(1) {
+        Some(value) => php_internal_int_argument("json_encode()", 2, "flags", value, span)?,
+        None => 0,
+    };
+    let unsupported = flags & !PHP_JSON_ENCODE_SUPPORTED_FLAGS;
+    if unsupported != 0 {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "json_encode()",
+                format!("unsupported encode flag bit(s) {unsupported} in the current subset"),
+            ),
+        ));
+    }
+
+    json_encode_value(&args[0], flags, span).map(Value::String)
 }
 
-fn json_encode_value(value: &Value, span: Span) -> CompileResult<String> {
+fn call_json_last_error(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("json_last_error", args, 0, span)?;
+    Ok(Value::Int(0))
+}
+
+fn call_json_last_error_msg(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("json_last_error_msg", args, 0, span)?;
+    Ok(Value::String("No error".to_string()))
+}
+
+fn json_encode_value(value: &Value, flags: i64, span: Span) -> CompileResult<String> {
     Ok(match value {
         Value::Null => "null".to_string(),
         Value::Bool(value) => value.to_string(),
         Value::Int(value) => value.to_string(),
         Value::Float(value) => php_default_precision_float_string(*value),
-        Value::String(value) => json_quote_string(value),
+        Value::String(value) => json_encode_string_value(value, flags),
         Value::BinaryString(value) => {
             let value = tree_walk_binary_string_utf8(value, "json_encode()", span)?;
-            json_quote_string(value)
+            json_quote_string(value, flags)
         }
-        Value::Array(array) if json_array_is_list(array) => {
+        Value::Array(array) if flags & PHP_JSON_FORCE_OBJECT == 0 && json_array_is_list(array) => {
             let mut output = String::from("[");
             for (index, entry) in array.entries().iter().enumerate() {
                 if index > 0 {
                     output.push(',');
                 }
-                output.push_str(&json_encode_value(entry.value(), span)?);
+                output.push_str(&json_encode_value(&entry.value_cloned(), flags, span)?);
             }
             output.push(']');
             output
@@ -106295,9 +110069,9 @@ fn json_encode_value(value: &Value, span: Span) -> CompileResult<String> {
                     ArrayKey::Int(value) => value.to_string(),
                     ArrayKey::String(value) => value.clone(),
                 };
-                output.push_str(&json_quote_string(&key));
+                output.push_str(&json_quote_string(&key, flags));
                 output.push(':');
-                output.push_str(&json_encode_value(entry.value(), span)?);
+                output.push_str(&json_encode_value(&entry.value_cloned(), flags, span)?);
             }
             output.push('}');
             output
@@ -106309,9 +110083,9 @@ fn json_encode_value(value: &Value, span: Span) -> CompileResult<String> {
                 if index > 0 {
                     output.push(',');
                 }
-                output.push_str(&json_quote_string(property.name()));
+                output.push_str(&json_quote_string(property.name(), flags));
                 output.push(':');
-                output.push_str(&json_encode_value(&property.value_cloned(), span)?);
+                output.push_str(&json_encode_value(&property.value_cloned(), flags, span)?);
             }
             output.push('}');
             output
@@ -106328,21 +110102,59 @@ fn json_array_is_list(array: &PhpArray) -> bool {
         .all(|(index, entry)| matches!(entry.key, ArrayKey::Int(key) if key == index as i64))
 }
 
-fn json_quote_string(value: &str) -> String {
+fn json_encode_string_value(value: &str, flags: i64) -> String {
+    if flags & PHP_JSON_NUMERIC_CHECK != 0 {
+        match classify_php_numeric_string(value) {
+            PhpNumericStringClassification::Integer(value) => return value.to_string(),
+            PhpNumericStringClassification::Float(value) if value.is_finite() => {
+                return php_default_precision_float_string(value);
+            }
+            PhpNumericStringClassification::Float(_) => {}
+            PhpNumericStringClassification::LeadingNumeric
+            | PhpNumericStringClassification::NonNumeric => {}
+        }
+    }
+
+    json_quote_string(value, flags)
+}
+
+fn json_quote_string(value: &str, flags: i64) -> String {
     let mut output = String::from("\"");
     for ch in value.chars() {
         match ch {
+            '"' if flags & PHP_JSON_HEX_QUOT != 0 => output.push_str("\\u0022"),
             '"' => output.push_str("\\\""),
             '\\' => output.push_str("\\\\"),
+            '/' if flags & PHP_JSON_UNESCAPED_SLASHES == 0 => output.push_str("\\/"),
+            '<' if flags & PHP_JSON_HEX_TAG != 0 => output.push_str("\\u003C"),
+            '>' if flags & PHP_JSON_HEX_TAG != 0 => output.push_str("\\u003E"),
+            '&' if flags & PHP_JSON_HEX_AMP != 0 => output.push_str("\\u0026"),
+            '\'' if flags & PHP_JSON_HEX_APOS != 0 => output.push_str("\\u0027"),
+            '\u{0008}' => output.push_str("\\b"),
+            '\u{000c}' => output.push_str("\\f"),
             '\n' => output.push_str("\\n"),
             '\r' => output.push_str("\\r"),
             '\t' => output.push_str("\\t"),
             ch if ch < ' ' => output.push_str(&format!("\\u{:04x}", ch as u32)),
+            ch if ch as u32 > 0x7f => json_push_unicode_escape(&mut output, ch),
             ch => output.push(ch),
         }
     }
     output.push('"');
     output
+}
+
+fn json_push_unicode_escape(output: &mut String, ch: char) {
+    let codepoint = ch as u32;
+    if codepoint <= 0xffff {
+        output.push_str(&format!("\\u{codepoint:04x}"));
+        return;
+    }
+
+    let scalar = codepoint - 0x1_0000;
+    let high = 0xd800 + (scalar >> 10);
+    let low = 0xdc00 + (scalar & 0x3ff);
+    output.push_str(&format!("\\u{high:04x}\\u{low:04x}"));
 }
 
 impl Interpreter {
@@ -106441,6 +110253,9 @@ enum SprintfParseError {
     MissingFormatSpecifier,
     ValueError(String),
 }
+
+const SPRINTF_ARGUMENT_NUMBER_SPECIFIER_VALUE_ERROR: &str =
+    "Argument number specifier must be greater than zero and less than 2147483647";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SprintfPlaceholderKind {
@@ -106599,15 +110414,13 @@ fn parse_sprintf_placeholder(
     }
 
     let positional = if index > digits_start && bytes.get(index) == Some(&b'$') {
-        let position = format[digits_start..index]
-            .parse::<usize>()
-            .map_err(|_| SprintfParseError::Unsupported)?;
+        let position = parse_sprintf_argument_number_specifier(&format[digits_start..index])?;
         index += 1;
-        Some(
-            position
-                .checked_sub(1)
-                .ok_or(SprintfParseError::Unsupported)?,
-        )
+        Some(position - 1)
+    } else if bytes.get(index) == Some(&b'$') {
+        return Err(SprintfParseError::ValueError(
+            SPRINTF_ARGUMENT_NUMBER_SPECIFIER_VALUE_ERROR.to_string(),
+        ));
     } else {
         index = digits_start;
         None
@@ -106775,6 +110588,18 @@ fn parse_sprintf_precision_literal(value: &str) -> Result<usize, SprintfParseErr
         ));
     }
     Ok(precision)
+}
+
+fn parse_sprintf_argument_number_specifier(value: &str) -> Result<usize, SprintfParseError> {
+    let position = value.parse::<usize>().map_err(|_| {
+        SprintfParseError::ValueError(SPRINTF_ARGUMENT_NUMBER_SPECIFIER_VALUE_ERROR.to_string())
+    })?;
+    if position == 0 || position >= i32::MAX as usize {
+        return Err(SprintfParseError::ValueError(
+            SPRINTF_ARGUMENT_NUMBER_SPECIFIER_VALUE_ERROR.to_string(),
+        ));
+    }
+    Ok(position)
 }
 
 fn parse_sprintf_star_arg(
@@ -108522,6 +112347,18 @@ fn php_filesystem_open_error_message(error: &std::io::Error) -> String {
     }
 }
 
+fn bounded_current_user_name() -> String {
+    std::env::var("USER")
+        .ok()
+        .filter(|value| !value.is_empty())
+        .or_else(|| {
+            std::env::var("LOGNAME")
+                .ok()
+                .filter(|value| !value.is_empty())
+        })
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
 fn parse_stream_mode(mode: &str) -> Option<StreamMode> {
     let mut chars = mode.chars();
     let primary = chars.next()?;
@@ -109000,6 +112837,79 @@ fn call_php_sapi_name(args: &[Value], span: Span) -> CompileResult<Value> {
     Ok(Value::String("cli".to_string()))
 }
 
+fn call_php_uname(args: &[Value], span: Span) -> CompileResult<Value> {
+    if args.len() > 1 {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "php_uname()",
+                ArityExpectation::Between { min: 0, max: 1 },
+                args.len(),
+            ),
+        ));
+    }
+
+    let Some(mode) = args.first() else {
+        return Ok(Value::String("Linux".to_string()));
+    };
+    let mode = string_builtin_argument("php_uname()", "mode", mode, span)?;
+    if mode.chars().count() != 1 {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "php_uname()",
+                "Argument #1 ($mode) must be a single character",
+            ),
+        ));
+    }
+    let mode = mode.chars().next().expect("mode has one character");
+    let value = match mode {
+        'a' => "Linux phpc 0.0.0 #1 SMP x86_64",
+        'm' => "x86_64",
+        'n' => "phpc",
+        'r' => "0.0.0",
+        's' => "Linux",
+        'v' => "#1 SMP",
+        _ => {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "php_uname()",
+                    "Argument #1 ($mode) must be one of \"a\", \"m\", \"n\", \"r\", \"s\", or \"v\"",
+                ),
+            ));
+        }
+    };
+    Ok(Value::String(value.to_string()))
+}
+
+fn call_connection_aborted(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("connection_aborted", args, 0, span)?;
+    Ok(Value::Int(0))
+}
+
+fn call_connection_status(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("connection_status", args, 0, span)?;
+    Ok(Value::Int(PHP_CONNECTION_NORMAL))
+}
+
+fn call_get_loaded_extensions(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("get_loaded_extensions", args, 0, span)?;
+
+    let mut extensions = PhpArray::new();
+    for extension in COMPAT_LOADED_EXTENSIONS {
+        extensions
+            .append(Value::String((*extension).to_string()))
+            .map_err(|error| runtime_error(span, error))?;
+    }
+    Ok(Value::Array(extensions))
+}
+
+fn call_getmypid(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("getmypid", args, 0, span)?;
+    Ok(Value::Int(i64::from(std::process::id())))
+}
+
 fn call_abs(args: &[Value], span: Span) -> CompileResult<Value> {
     expect_arity("abs", args, 1, span)?;
 
@@ -109097,6 +113007,31 @@ fn php_math_argument_type_error(
             ),
         ),
     )
+}
+
+fn call_intdiv(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("intdiv", args, 2, span)?;
+    let left = php_internal_int_argument("intdiv()", 1, "num1", &args[0], span)?;
+    let right = php_internal_int_argument("intdiv()", 2, "num2", &args[1], span)?;
+
+    if right == 0 {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call("intdiv()", "Division by zero"),
+        ));
+    }
+
+    if left == i64::MIN && right == -1 {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "intdiv()",
+                "Division of PHP_INT_MIN by -1 is not an integer",
+            ),
+        ));
+    }
+
+    Ok(Value::Int(left / right))
 }
 
 fn call_pow(args: &[Value], span: Span) -> CompileResult<Value> {
@@ -109246,17 +113181,73 @@ fn call_min(args: &[Value], span: Span) -> CompileResult<Value> {
 }
 
 fn call_rand(args: &[Value], span: Span) -> CompileResult<Value> {
-    if !args.is_empty() {
+    match args {
+        [] => Ok(Value::Int(123456789)),
+        [min, max] => {
+            let min = php_internal_int_argument("rand()", 1, "min", min, span)?;
+            let max = php_internal_int_argument("rand()", 2, "max", max, span)?;
+            let (min, _max) = if min <= max { (min, max) } else { (max, min) };
+            Ok(Value::Int(min))
+        }
+        _ => Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "rand()",
+                ArityExpectation::Between { min: 0, max: 2 },
+                args.len(),
+            ),
+        )),
+    }
+}
+
+fn call_mt_rand(args: &[Value], span: Span) -> CompileResult<Value> {
+    match args {
+        [] => Ok(Value::Int(123456789)),
+        [min, max] => {
+            let min = php_internal_int_argument("mt_rand()", 1, "min", min, span)?;
+            let max = php_internal_int_argument("mt_rand()", 2, "max", max, span)?;
+            if min > max {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "mt_rand()",
+                        "Argument #2 ($max) must be greater than or equal to argument #1 ($min)",
+                    ),
+                ));
+            }
+            Ok(Value::Int(min))
+        }
+        _ => Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                "mt_rand()",
+                ArityExpectation::Between { min: 0, max: 2 },
+                args.len(),
+            ),
+        )),
+    }
+}
+
+fn call_srand(function: &'static str, args: &[Value], span: Span) -> CompileResult<Value> {
+    if args.len() > 2 {
         return Err(runtime_error(
             span,
-            RuntimeError::unsupported_call(
-                "rand()",
-                "min/max arguments are not implemented; call rand() without arguments in the current subset",
+            RuntimeError::arity_mismatch(
+                function,
+                ArityExpectation::Between { min: 0, max: 2 },
+                args.len(),
             ),
         ));
     }
 
-    Ok(Value::Int(123456789))
+    if let Some(seed) = args.first() {
+        let _ = php_internal_int_argument(function, 1, "seed", seed, span)?;
+    }
+    if let Some(mode) = args.get(1) {
+        let _ = php_internal_int_argument(function, 2, "mode", mode, span)?;
+    }
+
+    Ok(Value::Null)
 }
 
 fn call_uniqid(args: &[Value], span: Span) -> CompileResult<Value> {
@@ -111725,6 +115716,14 @@ struct BoundedTimezone {
 }
 
 #[derive(Debug, Clone, Copy)]
+struct BoundedTimezoneLocation {
+    country_code: &'static str,
+    latitude: f64,
+    longitude: f64,
+    comments: &'static str,
+}
+
+#[derive(Debug, Clone, Copy)]
 struct BoundedDateTimeParts {
     year: i64,
     month: i64,
@@ -111762,6 +115761,8 @@ impl BoundedTimezone {
             | "Africa/Abidjan" | "Zulu" => 0,
             "Asia/Jerusalem" => 10_800,
             "Asia/Calcutta" | "Asia/Kolkata" => 19_800,
+            "Africa/Addis_Ababa" => 10_800,
+            "Australia/Adelaide" => 34_200,
             "Europe/Berlin" | "Europe/Oslo" => {
                 if bounded_month_is_in_dst_window(month, day, 3, 27, 10, 31) {
                     7_200
@@ -111850,6 +115851,8 @@ impl BoundedTimezone {
             "Europe/Kyiv" => 7_200,
             "Asia/Jerusalem" => 7_200,
             "Asia/Calcutta" | "Asia/Kolkata" => 19_800,
+            "Africa/Addis_Ababa" => 10_800,
+            "Australia/Adelaide" => 34_200,
             _ => self.offset_for_local_date(1970, 1, 1),
         }
     }
@@ -111871,6 +115874,8 @@ impl BoundedTimezone {
                 }
             }
             "Asia/Calcutta" | "Asia/Kolkata" => "IST",
+            "Africa/Addis_Ababa" => "EAT",
+            "Australia/Adelaide" => "ACST",
             "Europe/London" => {
                 if self.is_dst(parts) {
                     "BST"
@@ -111970,6 +115975,8 @@ fn bounded_timezone_from_name(name: &str) -> Option<BoundedTimezone> {
         "Asia/Jerusalem" => "Asia/Jerusalem",
         "Asia/Calcutta" => "Asia/Calcutta",
         "Asia/Kolkata" => "Asia/Kolkata",
+        "Africa/Addis_Ababa" => "Africa/Addis_Ababa",
+        "Australia/Adelaide" => "Australia/Adelaide",
         "America/Chicago" => "America/Chicago",
         "America/Halifax" => "America/Halifax",
         "America/Los_Angeles" => "America/Los_Angeles",
@@ -111993,6 +116000,79 @@ fn bounded_timezone_from_name(name: &str) -> Option<BoundedTimezone> {
         name: canonical.to_string(),
         fixed_offset: None,
     })
+}
+
+fn bounded_timezone_location(name: &str) -> Option<BoundedTimezoneLocation> {
+    match name {
+        "Africa/Addis_Ababa" => Some(BoundedTimezoneLocation {
+            country_code: "ET",
+            latitude: 9.0333,
+            longitude: 38.7,
+            comments: "Ethiopia",
+        }),
+        "America/Halifax" => Some(BoundedTimezoneLocation {
+            country_code: "CA",
+            latitude: 44.65,
+            longitude: -63.6,
+            comments: "Atlantic - NS (most areas); PE",
+        }),
+        "America/Los_Angeles" => Some(BoundedTimezoneLocation {
+            country_code: "US",
+            latitude: 34.0522,
+            longitude: -118.2437,
+            comments: "Pacific",
+        }),
+        "America/New_York" | "US/Eastern" => Some(BoundedTimezoneLocation {
+            country_code: "US",
+            latitude: 40.7142,
+            longitude: -74.0064,
+            comments: "Eastern",
+        }),
+        "Australia/Adelaide" => Some(BoundedTimezoneLocation {
+            country_code: "AU",
+            latitude: -34.9167,
+            longitude: 138.5833,
+            comments: "South Australia",
+        }),
+        "Europe/Berlin" => Some(BoundedTimezoneLocation {
+            country_code: "DE",
+            latitude: 52.5,
+            longitude: 13.3667,
+            comments: "most areas",
+        }),
+        "Europe/Kyiv" => Some(BoundedTimezoneLocation {
+            country_code: "UA",
+            latitude: 50.4333,
+            longitude: 30.5167,
+            comments: "most areas",
+        }),
+        "Europe/London" => Some(BoundedTimezoneLocation {
+            country_code: "GB",
+            latitude: 51.5083,
+            longitude: -0.1253,
+            comments: "",
+        }),
+        "Europe/Oslo" => Some(BoundedTimezoneLocation {
+            country_code: "NO",
+            latitude: 59.91666,
+            longitude: 10.75,
+            comments: "",
+        }),
+        _ => None,
+    }
+}
+
+fn bounded_timezone_location_array(name: &str) -> Option<PhpArray> {
+    let location = bounded_timezone_location(name)?;
+    let mut array = PhpArray::new();
+    array.insert(
+        "country_code",
+        Value::String(location.country_code.to_string()),
+    );
+    array.insert("latitude", Value::Float(location.latitude));
+    array.insert("longitude", Value::Float(location.longitude));
+    array.insert("comments", Value::String(location.comments.to_string()));
+    Some(array)
 }
 
 fn call_timezone_version_get(args: &[Value], span: Span) -> CompileResult<Value> {
@@ -112121,6 +116201,7 @@ fn call_timezone_name_from_abbr(args: &[Value], span: Span) -> CompileResult<Val
 
 const BOUNDED_TIMEZONE_IDENTIFIERS: &[(&str, i64, bool)] = &[
     ("Africa/Abidjan", PHP_DATETIMEZONE_AFRICA, false),
+    ("Africa/Addis_Ababa", PHP_DATETIMEZONE_AFRICA, false),
     ("America/Chicago", PHP_DATETIMEZONE_AMERICA, false),
     ("America/Halifax", PHP_DATETIMEZONE_AMERICA, false),
     ("America/Indiana/Knox", PHP_DATETIMEZONE_AMERICA, false),
@@ -112130,6 +116211,7 @@ const BOUNDED_TIMEZONE_IDENTIFIERS: &[(&str, i64, bool)] = &[
     ("Asia/Calcutta", PHP_DATETIMEZONE_ASIA, false),
     ("Asia/Jerusalem", PHP_DATETIMEZONE_ASIA, false),
     ("Asia/Kolkata", PHP_DATETIMEZONE_ASIA, false),
+    ("Australia/Adelaide", PHP_DATETIMEZONE_AUSTRALIA, false),
     ("Etc/GMT", PHP_DATETIMEZONE_UTC, false),
     ("Etc/UTC", PHP_DATETIMEZONE_UTC, false),
     ("Etc/Universal", PHP_DATETIMEZONE_UTC, false),
@@ -112273,6 +116355,9 @@ fn bounded_timezone_transitions_array(name: &str, start: i64, end: i64) -> PhpAr
 fn bounded_timezone_abbreviations_array() -> PhpArray {
     let mut array = PhpArray::new();
     for (abbr, offset, dst, zone_id) in [
+        ("acst", 34_200, false, "Australia/Adelaide"),
+        ("ast", -14_400, false, "America/Halifax"),
+        ("eat", 10_800, false, "Africa/Addis_Ababa"),
         ("gmt", 0, false, "GMT"),
         ("utc", 0, false, "UTC"),
         ("bst", 3_600, true, "Europe/London"),
@@ -113768,9 +117853,11 @@ fn compat_ini_value(normalized_name: &str) -> Option<&'static str> {
         "error_log" => Some(""),
         "error_prepend_string" => Some(""),
         "html_errors" => Some("0"),
+        "internal_encoding" => Some("UTF-8"),
         "mail.add_x_header" => Some("0"),
         "max_execution_time" => Some("30"),
         "mbstring.func_overload" => Some("0"),
+        "mbstring.internal_encoding" => Some("UTF-8"),
         "memory_limit" => Some("128M"),
         "open_basedir" => Some(""),
         "output_handler" => Some(""),
@@ -115514,8 +119601,8 @@ where
         Value::Float(value) => format!("{padding}float({})\n", format_var_dump_float(*value)),
         Value::String(value) => format!("{padding}string({}) \"{}\"\n", value.len(), value),
         Value::BinaryString(value) => {
-            let value = tree_walk_binary_string_utf8(value, "var_dump()", span)?;
-            format!("{padding}string({}) \"{}\"\n", value.len(), value)
+            let display = String::from_utf8_lossy(value);
+            format!("{padding}string({}) \"{}\"\n", value.len(), display)
         }
         Value::Array(value) => {
             let mut output = format!("{padding}array({}) {{\n", value.len());

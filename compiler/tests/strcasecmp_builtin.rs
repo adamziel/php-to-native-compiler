@@ -28,6 +28,23 @@ echo strcasecmp(123, "123") === 0 ? "coerced" : "no";
 }
 
 #[test]
+fn strcasecmp_returns_php_byte_delta_magnitudes() {
+    let execution = run_source(
+        r#"<?php
+echo strcasecmp("aef", "dfsgbdf"), "|";
+echo strcasecmp("dfsgbdf", "aef"), "|";
+echo strcasecmp("E", "a"), "|";
+echo strcasecmp("qwe", "qwer"), "|";
+echo strcasecmp(chr(255), "a");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "-3|3|4|-1|158");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn strcasecmp_is_available_through_string_valued_calls() {
     let execution = run_source(
         r#"<?php
@@ -46,17 +63,21 @@ echo "|", $call("UTF8", "utf8") === 0 ? "same" : "diff";
 
 #[test]
 fn strcasecmp_rejects_forms_outside_current_subset() {
-    let missing = runtime_error(
+    let missing = run_source(
         r#"<?php
 echo strcasecmp("a");
 "#,
+    )
+    .unwrap();
+    assert_eq!(missing.exit_code, 255);
+    assert!(
+        missing
+            .stdout
+            .contains("Too few arguments to function strcasecmp(), 1 passed"),
+        "{}",
+        missing.stdout
     );
-    assert_eq!(missing.line, 2);
-    assert_eq!(missing.column, 6);
-    assert_eq!(
-        missing.message,
-        "arity mismatch for strcasecmp(): expected 2 argument(s), got 1"
-    );
+    assert_eq!(missing.stderr, "");
 
     let array_left = runtime_error(
         r#"<?php

@@ -495,6 +495,47 @@ try {
 }
 
 #[test]
+fn call_user_func_invalid_array_callbacks_match_autoload_type_error_slice() {
+    let execution = run_source(
+        r#"<?php
+
+spl_autoload_register(function ($class) {
+    var_dump($class);
+});
+
+try {
+    call_user_func(array('foo', 'bar'));
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    call_user_func(array('', 'bar'));
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    call_user_func(array($foo, 'bar'));
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    call_user_func(array($foo, ''));
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "string(3) \"foo\"\ncall_user_func(): Argument #1 ($callback) must be a valid callback, class \"foo\" not found\ncall_user_func(): Argument #1 ($callback) must be a valid callback, class \"\" not found\n\nWarning: Undefined variable $foo in Command line code on line 18\ncall_user_func(): Argument #1 ($callback) must be a valid callback, first array member is not a valid class name or object\n\nWarning: Undefined variable $foo in Command line code on line 23\ncall_user_func(): Argument #1 ($callback) must be a valid callback, first array member is not a valid class name or object\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn closures_capture_alias_backed_array_and_property_slots_by_reference() {
     let execution = run_source(
         r#"<?php
@@ -2131,29 +2172,31 @@ try {
     assert_eq!(unknown.stderr, "");
     assert_eq!(unknown.exit_code, 0);
 
-    let missing_array_arg = runtime_error(
+    let missing_array_arg = run_source(
         r#"<?php
 echo call_user_func_array("strlen");
 "#,
-    );
-    assert_eq!(missing_array_arg.line, 2);
-    assert_eq!(missing_array_arg.column, 6);
+    )
+    .unwrap();
     assert_eq!(
-        missing_array_arg.message,
-        "arity mismatch for call_user_func_array(): expected 2 argument(s), got 1"
+        missing_array_arg.stdout,
+        "Fatal error: Uncaught TypeError: Too few arguments to function call_user_func_array(), 1 passed in Command line code on line 2 and exactly 2 expected in Command line code:2\nStack trace:\n#0 {main}\n  thrown in Command line code on line 2"
     );
+    assert_eq!(missing_array_arg.stderr, "");
+    assert_eq!(missing_array_arg.exit_code, 255);
 
-    let non_array_args = runtime_error(
+    let non_array_args = run_source(
         r#"<?php
 echo call_user_func_array("strlen", "four");
 "#,
-    );
-    assert_eq!(non_array_args.line, 2);
-    assert_eq!(non_array_args.column, 6);
+    )
+    .unwrap();
     assert_eq!(
-        non_array_args.message,
-        "unsupported call call_user_func_array(): argument array must be array in the current subset, got string"
+        non_array_args.stdout,
+        "Fatal error: Uncaught TypeError: call_user_func_array(): Argument #2 ($args) must be of type array, string given, called in Command line code:2\nStack trace:\n#0 Command line code(2): call_user_func_array()\n#1 {main}\n  thrown in Command line code on line 2"
     );
+    assert_eq!(non_array_args.stderr, "");
+    assert_eq!(non_array_args.exit_code, 255);
 
     let named_args = runtime_error(
         r#"<?php
@@ -2164,10 +2207,10 @@ echo call_user_func_array("strlen", array("value" => "four"));
     assert_eq!(named_args.column, 6);
     assert_eq!(
         named_args.message,
-        "unsupported call call_user_func_array(): string-keyed named arguments are not implemented in the current subset"
+        "unsupported call call_user_func_array(): named argument $value does not match a declared builtin parameter in the current subset"
     );
 
-    let unknown_named_reference_args = runtime_error(
+    let unknown_named_reference_args = run_source(
         r#"<?php
 function mutate(&$value) {
     $value = "changed";
@@ -2176,12 +2219,25 @@ $option = "original";
 call_user_func_array("mutate", array("missing" => &$option));
 "#,
     );
-    assert_eq!(unknown_named_reference_args.line, 6);
-    assert_eq!(unknown_named_reference_args.column, 1);
-    assert_eq!(
-        unknown_named_reference_args.message,
-        "unsupported call mutate(): call_user_func_array() named argument $missing does not match a declared parameter in the current subset"
-    );
+    match unknown_named_reference_args {
+        Ok(execution) => {
+            assert_eq!(
+                execution.stdout,
+                "Warning: mutate(): Argument #1 ($value) must be passed by reference, value given in Command line code on line 8\n"
+            );
+            assert_eq!(execution.stderr, "");
+            assert_eq!(execution.exit_code, 0);
+        }
+        Err(error) => {
+            assert_eq!(error.phase, Phase::Runtime);
+            assert_eq!(error.line, 6);
+            assert_eq!(error.column, 1);
+            assert_eq!(
+                error.message,
+                "unsupported call mutate(): call_user_func_array() named argument $missing does not match a declared parameter in the current subset"
+            );
+        }
+    }
 
     let duplicate_named_value_args = runtime_error(
         r#"<?php
@@ -2213,7 +2269,7 @@ call_user_func_array("format_option", array("missing" => "override"));
         "unsupported call format_option(): call_user_func_array() named argument $missing does not match a declared parameter in the current subset"
     );
 
-    let stored_by_value_args = runtime_error(
+    let stored_by_value_args = run_source(
         r#"<?php
 function mutate(&$value) {
     $value = "changed";
@@ -2223,13 +2279,14 @@ $args = [];
 $args[0] = $option;
 call_user_func_array("mutate", $args);
 "#,
-    );
-    assert_eq!(stored_by_value_args.line, 8);
-    assert_eq!(stored_by_value_args.column, 32);
+    )
+    .unwrap();
     assert_eq!(
-        stored_by_value_args.message,
-        "unsupported call mutate(): call_user_func_array() stored reference parameter invocation requires each reached by-reference argument slot to have been assigned by reference in the current subset"
+        stored_by_value_args.stdout,
+        "Warning: mutate(): Argument #1 ($value) must be passed by reference, value given in Command line code on line 8\n"
     );
+    assert_eq!(stored_by_value_args.stderr, "");
+    assert_eq!(stored_by_value_args.exit_code, 0);
 
     let bad_array_callable = run_source(
         r#"<?php

@@ -30,6 +30,35 @@ echo $call("sha256", uniqid("salt", true), "salt", false);
 }
 
 #[test]
+fn hash_crc_algorithms_and_algorithm_listing_cover_phpt_slice() {
+    let execution = run_source(
+        r#"<?php
+echo hash("crc32", "") . "\n";
+echo hash("crc32", "a") . "\n";
+echo hash("crc32b", "abc") . "\n";
+echo hash("crc32c", "abc") . "\n";
+echo bin2hex(hash("crc32c", "abc", true)) . "\n";
+$algos = hash_algos();
+echo count($algos) . "|" . $algos[30] . "|" . $algos[31] . "|" . $algos[32] . "\n";
+$call = "hash";
+echo $call("crc32b", "message digest") . "\n";
+foreach (["hash", "hash_algos"] as $name) {
+    echo function_exists($name) ? "1" : "0";
+    echo is_callable($name) ? "1" : "0";
+    echo (new ReflectionFunction($name))->getExtensionName() . "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "00000000\n6b9b9319\n352441c2\n364b3fb7\n364b3fb7\n60|crc32|crc32b|crc32c\n20159d7f\n11hash\n11hash\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn hash_hmac_and_uniqid_reject_forms_outside_current_boundary() {
     let algorithm = run_source("<?php\nhash_hmac('md5', 'data', 'key');\n").unwrap_err();
     assert_eq!(algorithm.phase, Phase::Runtime);
@@ -56,6 +85,15 @@ fn hash_hmac_and_uniqid_reject_forms_outside_current_boundary() {
     assert_eq!(
         entropy.message,
         "unsupported call uniqid(): more_entropy argument must be bool in the current subset, got int"
+    );
+
+    let algorithm = run_source("<?php\nhash('md5', 'data');\n").unwrap_err();
+    assert_eq!(algorithm.phase, Phase::Runtime);
+    assert_eq!(algorithm.line, 2);
+    assert_eq!(algorithm.column, 1);
+    assert_eq!(
+        algorithm.message,
+        "unsupported call hash(): only crc32, crc32b, and crc32c are implemented in the current subset"
     );
 }
 

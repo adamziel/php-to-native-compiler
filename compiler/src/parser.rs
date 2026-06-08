@@ -2135,6 +2135,22 @@ impl Parser {
         Ok(Stmt::Print { expr, span })
     }
 
+    fn parse_print_expression(&mut self, span: Span) -> CompileResult<Expr> {
+        let expr = if self.match_token(|kind| matches!(kind, TokenKind::LParen)) {
+            let expr = self.parse_expression()?;
+            self.consume_keyword(TokenKind::RParen, "expected ')' after print expression")?;
+            expr
+        } else {
+            self.parse_expression()?
+        };
+
+        Ok(Expr::Call {
+            name: "__phpc_print_expr".to_string(),
+            args: vec![expr],
+            span,
+        })
+    }
+
     fn parse_if(&mut self) -> CompileResult<Stmt> {
         let span = self.consume_keyword(TokenKind::If, "expected 'if'")?.span;
         self.parse_if_after_keyword(span, "if")
@@ -6427,6 +6443,7 @@ impl Parser {
             }
             TokenKind::Function => self.parse_closure_expression(token.span, false),
             TokenKind::Fn => self.parse_arrow_function_expression(token.span, false),
+            TokenKind::Print => self.parse_print_expression(token.span),
             TokenKind::Eval => Err(self.error_at(token.span, unsupported_eval_message())),
             TokenKind::Do => {
                 Err(self.error_at(token.span, unsupported_do_while_expression_message()))

@@ -26,21 +26,53 @@ echo $call();
 }
 
 #[test]
-fn rand_rejects_min_max_forms_for_now() {
-    let error = run_source(
+fn rand_family_supports_bounded_range_and_seed_metadata_slice() {
+    let execution = run_source(
         r#"<?php
-rand(1, 10);
+echo getrandmax();
+echo "|";
+echo mt_getrandmax();
+echo "|";
+echo rand(10, 20);
+echo "|";
+echo rand(20, 10);
+echo "|";
+echo mt_rand(3, 8);
+echo "|";
+var_dump(srand());
+var_dump(mt_srand(-1, 0));
+try {
+    mt_rand(8, 3);
+} catch (ValueError $e) {
+    echo $e->getMessage();
+}
 "#,
     )
-    .unwrap_err();
+    .unwrap();
 
-    assert_eq!(error.phase, Phase::Runtime);
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 1);
     assert_eq!(
-        error.message,
-        "unsupported call rand(): min/max arguments are not implemented; call rand() without arguments in the current subset"
+        execution.stdout,
+        "2147483647|2147483647|10|10|3|NULL\nNULL\nmt_rand(): Argument #2 ($max) must be greater than or equal to argument #1 ($min)"
     );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn lcg_value_returns_current_deterministic_float() {
+    let execution = run_source(
+        r#"<?php
+$call = "lcg_value";
+echo function_exists($call) ? "yes" : "no";
+echo "|";
+echo is_float(lcg_value()) ? "float" : "not-float";
+echo "|";
+echo lcg_value() >= 0 && lcg_value() <= 1 ? "in-range" : "out-of-range";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "yes|float|in-range");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
