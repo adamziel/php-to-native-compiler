@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T19:17:52+00:00
+Last generated: 2026-06-08T19:18:25+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -898,24 +898,30 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | 2137 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=2, passed=417, skipped=0)
+failed — tools/run-tests.sh (error=0, failed=3, passed=416, skipped=0)
 
 ## Resource samples
-Latest: CPU 16.96%, RAM 20.07%, disk free 8.08 GB.
+Latest: CPU 16.0%, RAM 20.12%, disk free 8.07 GB.
 
 ## Recent events
-- 2026-06-08T19:17:26+00:00 **terminal_agent_windows_closed**: Closed 867 terminal agent tmux windows
-- 2026-06-08T19:17:26+00:00 **spawn_rejected**: Rejected Developer spawn request: no queued Developer worklane is available
-- 2026-06-08T19:17:28+00:00 **terminal_agent_windows_closed**: Closed 867 terminal agent tmux windows
-- 2026-06-08T19:17:36+00:00 **terminal_agent_windows_closed**: Closed 867 terminal agent tmux windows
-- 2026-06-08T19:17:39+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-08T19:17:43+00:00 **terminal_agent_windows_closed**: Closed 867 terminal agent tmux windows
-- 2026-06-08T19:17:44+00:00 **worklane_created**: Focused standard string/path PHPT selector toward 10000
-- 2026-06-08T19:17:44+00:00 **spawn_request**: manhole requested Developer: Focused standard string/path PHPT selector toward 10000
-- 2026-06-08T19:17:47+00:00 **terminal_agent_windows_closed**: Closed 867 terminal agent tmux windows
-- 2026-06-08T19:17:47+00:00 **spawn_rejected**: Rejected Developer spawn request: no queued Developer worklane is available
 - 2026-06-08T19:17:51+00:00 **poke**: Queued message for coordinator-272
 - 2026-06-08T19:17:51+00:00 **poke_delivered**: Delivered poke to 1 agents
+- 2026-06-08T19:17:52+00:00 **status_publish_failed**: Committed status files but failed to push: To https://github.com/adamziel/php-to-native-compiler.git
+ ! [rejected]          HEAD -> master (non-fast-forward)
+error: failed to push some refs to 'https://github.com/adamziel/php-to-native-compiler.git'
+hint: Updates were rejected because the tip of your current branch is behind
+hint: its remote counterpart. If you want to integrate the remote changes,
+hint: use 'git pull' before pushing again.
+hint: See the 'Note about fast-forwards' in 'git push --help' for details.
+- 2026-06-08T19:17:58+00:00 **terminal_agent_windows_closed**: Closed 867 terminal agent tmux windows
+- 2026-06-08T19:17:58+00:00 **terminal_agent_windows_closed**: Closed 867 terminal agent tmux windows
+- 2026-06-08T19:18:09+00:00 **terminal_agent_windows_closed**: Closed 867 terminal agent tmux windows
+- 2026-06-08T19:18:09+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-08T19:18:14+00:00 **terminal_agent_windows_closed**: Closed 867 terminal agent tmux windows
+- 2026-06-08T19:18:19+00:00 **terminal_agent_windows_closed**: Closed 867 terminal agent tmux windows
+- 2026-06-08T19:18:20+00:00 **integrator_card_started**: Started card 2144 ready/stale integration backlog triage after reading required startup context; no source edits or broad gates planned.
+- 2026-06-08T19:18:25+00:00 **poke**: Queued message for developer-425
+- 2026-06-08T19:18:25+00:00 **poke_delivered**: Delivered poke to 1 agents
 
 ## Next steps
 Move next worklane forward: Focused standard string/path PHPT selector toward 10000
