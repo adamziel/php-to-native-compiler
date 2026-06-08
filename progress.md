@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T14:30:18+00:00
+Last generated: 2026-06-08T14:39:49+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -90,6 +90,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | architect-79 | Architect | crash | architect-79 |  |
 | architect-8 | Architect | crash | architect-8 |  |
 | architect-80 | Architect | crash | architect-80 |  |
+| architect-81 | Architect | stopped | architect-81 |  |
 | architect-9 | Architect | crash | architect-9 |  |
 | auditor-1 | Auditor | stopped | auditor-1 |  |
 | auditor-10 | Auditor | crash | auditor-10 |  |
@@ -106,6 +107,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | auditor-20 | Auditor | crash | auditor-20 |  |
 | auditor-21 | Auditor | success | auditor-21 |  |
 | auditor-22 | Auditor | success | auditor-22 |  |
+| auditor-23 | Auditor | crash | auditor-23 |  |
 | auditor-3 | Auditor | stopped | auditor-3 |  |
 | auditor-4 | Auditor | stopped | auditor-4 |  |
 | auditor-5 | Auditor | crash | auditor-5 |  |
@@ -261,7 +263,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-215 | Coordinator | success | coordinator-215 |  |
 | coordinator-216 | Coordinator | crash | coordinator-216 |  |
 | coordinator-217 | Coordinator | success | coordinator-217 |  |
-| coordinator-218 | Coordinator | running | coordinator-218 |  |
+| coordinator-218 | Coordinator | stopped | coordinator-218 |  |
 | coordinator-22 | Coordinator | crash | coordinator-22 |  |
 | coordinator-23 | Coordinator | stopped | coordinator-23 |  |
 | coordinator-24 | Coordinator | crash | coordinator-24 |  |
@@ -660,10 +662,12 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-379 | Developer | crash | developer-379 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-379 |
 | developer-38 | Developer | stopped | developer-38 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-38 |
 | developer-380 | Developer | stopped | developer-380 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-380 |
-| developer-381 | Developer | running | developer-381 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-381 |
-| developer-382 | Developer | running | developer-382 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-382 |
-| developer-383 | Developer | running | developer-383 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-383 |
-| developer-384 | Developer | running | developer-384 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-384 |
+| developer-381 | Developer | stopped | developer-381 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-381 |
+| developer-382 | Developer | stopped | developer-382 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-382 |
+| developer-383 | Developer | stopped | developer-383 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-383 |
+| developer-384 | Developer | stopped | developer-384 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-384 |
+| developer-385 | Developer | stopped | developer-385 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-385 |
+| developer-386 | Developer | stopped | developer-386 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-386 |
 | developer-39 | Developer | stopped | developer-39 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-39 |
 | developer-4 | Developer | stopped | developer-4 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-4 |
 | developer-40 | Developer | crash | developer-40 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-40 |
@@ -757,8 +761,8 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | integrator-30 | Integrator | crash | integrator-30 |  |
 | integrator-31 | Integrator | crash | integrator-31 |  |
 | integrator-32 | Integrator | crash | integrator-32 |  |
-| integrator-33 | Integrator | running | integrator-33 |  |
-| integrator-34 | Integrator | running | integrator-34 |  |
+| integrator-33 | Integrator | stopped | integrator-33 |  |
+| integrator-34 | Integrator | stopped | integrator-34 |  |
 | integrator-4 | Integrator | crash | integrator-4 |  |
 | integrator-5 | Integrator | success | integrator-5 |  |
 | integrator-6 | Integrator | success | integrator-6 |  |
@@ -769,36 +773,36 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2100 | Fix second distinct non-native-helper failure target under known-red quarantine | Developer | implementation | development | assigned |  | 0.0 |
+| 2099 | Fix next non-native-helper PHPT/focused failure under known-red quarantine | Developer | implementation | development | assigned |  | 0.0 |
+| 2098 | Investigate harness scheduler DB-lock and stale active rows | Architect | advisory | development | assigned |  | 0.0 |
+| 2097 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
 | 2096 | Integrate lane110 open bug crosswalk report | Integrator | integration-support | development | assigned |  | 0.0 |
 | 2095 | Resolve integration failure for card #110: Open bug report to active lane crosswalk | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
 | 2094 | Assign next Developer card after developer-382 card110 report | Developer | implementation | development | assigned |  | 0.0 |
 | 2093 | Dispose stale report-only rows 68 87 89 replacement | Integrator | integration-support | development | assigned |  | 0.0 |
 | 2092 | Dispose stale report-only rows 68 87 89 | Integrator | integration-support | planned | queued |  | 0.0 |
 | 2091 | Integrate lane107 artifact/source map report | Integrator | integration-support | planned | queued |  | 0.0 |
-| 2090 | Resolve integration failure for card #107: Blocked 221205Z artifact/source path map | Conflict Resolver | integration-support | done | integrated | ready_fast_path | 0.0 |
-| 2089 | Assign next sanctioned Developer card after lane 107 artifact/source map | Developer | implementation | done | stale |  | 0.0 |
-| 2088 | Reconcile stale integration backlog after accepted disposition reports | Integrator | integration-support | planned | queued |  | 0.0 |
-| 2087 | Find systemic cause for repeated failure: abs_rejects_forms_outside_current_subset | Architect | advisory | planned | queued |  | 0.0 |
 
 ## Tests
 failed — tools/run-tests.sh (error=0, failed=4, passed=415, skipped=0)
 
 ## Resource samples
-Latest: CPU 28.06%, RAM 18.76%, disk free 95.75 GB.
+Latest: CPU 17.96%, RAM 21.75%, disk free 94.41 GB.
 
 ## Recent events
-- 2026-06-08T13:57:37+00:00 **spawn_request**: coordinator-218 requested Integrator: Integrate lane110 open bug crosswalk report
-- 2026-06-08T13:57:37+00:00 **integration_support_requested**: Lane110 became branch-backed ready_for_integration after developer-382 report705; requested one scoped Integrator for report-only artifact integration.
-- 2026-06-08T13:57:38+00:00 **terminal_agent_windows_closed**: Closed 747 terminal agent tmux windows
-- 2026-06-08T13:57:38+00:00 **worklane_assigned**: Assigned worklane#2096 to integrator-34
-- 2026-06-08T13:57:38+00:00 **agent_started**: Started integrator-34 for Integrate lane110 open bug crosswalk report
-- 2026-06-08T13:57:47+00:00 **terminal_agent_windows_closed**: Closed 747 terminal agent tmux windows
-- 2026-06-08T13:57:48+00:00 **terminal_agent_windows_closed**: Closed 747 terminal agent tmux windows
-- 2026-06-08T13:57:56+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-08T13:57:56+00:00 **terminal_agent_windows_closed**: Closed 747 terminal agent tmux windows
-- 2026-06-08T13:57:59+00:00 **developer_start**: Developer session started; loading repository docs before taking work.
-- 2026-06-08T14:30:18+00:00 **tool_timeout**: code_search refresh timed out while locating static-property assertion text; falling back to local rg in runtime/src/lib.rs.
-- 2026-06-08T14:30:18+00:00 **test_pass**: Focused runtime package suite passed after patch: CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -q -p php_runtime -> 419 passed.
+- 2026-06-08T14:35:50+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-08T14:35:56+00:00 **terminal_agent_windows_closed**: Closed 748 terminal agent tmux windows
+- 2026-06-08T14:36:06+00:00 **terminal_agent_windows_closed**: Closed 748 terminal agent tmux windows
+- 2026-06-08T14:36:16+00:00 **terminal_agent_windows_closed**: Closed 748 terminal agent tmux windows
+- 2026-06-08T14:36:20+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-08T14:36:26+00:00 **scheduler**: Harness supervisor stopped by user
+- 2026-06-08T14:36:26+00:00 **terminal_agent_windows_closed**: Closed 746 terminal agent tmux windows
+- 2026-06-08T14:36:28+00:00 **focused_failure_reproduced**: Focused reproducer failed for abs_rejects_forms_outside_current_subset: zero-arg abs now returns PHP-shaped fatal Execution exit 255, while the test still expects a Runtime diagnostic Err.
+- 2026-06-08T14:36:36+00:00 **lane_selected**: Selected distinct non-native-helper target PCRE_JIT_SUPPORT / php-src/ext/pcre/tests/grep2.phpt BORKED SKIPIF constant exposure for card 2100; explicitly avoiding developer-385 target abs_rejects_forms_outside_current_subset.
+- 2026-06-08T14:39:48+00:00 **stop**: Stopped harness runtime
+- 2026-06-08T14:39:49+00:00 **mcp**: Harness MCP tools exposed to Codex workers
+- 2026-06-08T14:39:49+00:00 **tmux**: Interactive support windows ready
 
 ## Next steps
-Move next worklane forward: Integrate lane110 open bug crosswalk report
+Move next worklane forward: Fix second distinct non-native-helper failure target under known-red quarantine
