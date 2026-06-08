@@ -64,14 +64,21 @@ fn str_starts_with_rejects_forms_outside_current_subset() {
         "unsupported call str_starts_with(): needle argument arrays are not implemented in the current subset"
     );
 
-    let too_few = run_source("<?php\nstr_starts_with('abc');\n").unwrap_err();
-    assert_eq!(too_few.phase, Phase::Runtime);
-    assert_eq!(too_few.line, 2);
-    assert_eq!(too_few.column, 1);
-    assert_eq!(
-        too_few.message,
-        "arity mismatch for str_starts_with(): expected 2 argument(s), got 1"
+    let too_few = run_source("<?php\nstr_starts_with('abc');\n").unwrap();
+    assert!(
+        too_few.stdout.contains(
+            "Fatal error: Uncaught TypeError: Too few arguments to function str_starts_with(), 1 passed"
+        ),
+        "{}",
+        too_few.stdout
     );
+    assert!(
+        too_few.stdout.contains("exactly 2 expected"),
+        "{}",
+        too_few.stdout
+    );
+    assert_eq!(too_few.stderr, "");
+    assert_eq!(too_few.exit_code, 255);
 }
 
 #[test]
@@ -116,13 +123,16 @@ fn emit_ir_rejects_str_starts_with_before_lowering_arguments() {
 }
 
 #[test]
-fn emit_asm_keeps_str_starts_with_on_shared_predicate_blocker() {
-    let error = emit_asm_source("<?php\necho str_starts_with('abc', 'a');\n").unwrap_err();
+fn emit_asm_routes_str_starts_with_through_shared_predicate_abi() {
+    let asm = emit_asm_source("<?php\necho str_starts_with('abc', 'a');\n").unwrap();
 
-    assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
-    assert!(error
-        .message
-        .contains("assembly string-predicate lowering rejects"));
+    assert!(
+        asm.contains("call\tphpc_native_value_string_predicate_with_diagnostic"),
+        "{asm}"
+    );
+    assert!(asm.contains("movl\t$0, %edx"), "{asm}");
+    assert!(
+        !asm.contains("assembly string-predicate lowering rejects"),
+        "{asm}"
+    );
 }

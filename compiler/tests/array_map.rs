@@ -124,6 +124,35 @@ fn array_map_requires_array_argument() {
 }
 
 #[test]
+fn array_map_reports_php_type_errors_for_non_array_operands() {
+    let source = r#"<?php
+foreach ([42, false, null, new stdClass] as $value) {
+    try {
+        array_map(null, $value);
+    } catch (Throwable $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
+
+$call = "array_map";
+foreach ([42, new stdClass] as $value) {
+    try {
+        $call("strlen", ["ok"], $value);
+    } catch (Throwable $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "array_map(): Argument #2 ($array) must be of type array, int given\narray_map(): Argument #2 ($array) must be of type array, bool given\narray_map(): Argument #2 ($array) must be of type array, null given\narray_map(): Argument #2 ($array) must be of type array, stdClass given\narray_map(): Argument #3 must be of type array, int given\narray_map(): Argument #3 must be of type array, stdClass given\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_map_callback_requires_string_callable() {
     let stdout = fatal_stdout("<?php\n$items = [\"Ada\"];\necho array_map(42, $items);\n");
 
@@ -405,7 +434,7 @@ fn array_map_requires_third_array_argument() {
 
     assert!(
         stdout.contains(
-            "Fatal error: Uncaught TypeError: array_map(): Argument #3 ($array) must be of type array, int given"
+            "Fatal error: Uncaught TypeError: array_map(): Argument #3 must be of type array, int given"
         ),
         "{stdout}"
     );
@@ -419,7 +448,7 @@ fn array_map_requires_variadic_array_arguments() {
 
     assert!(
         stdout.contains(
-            "Fatal error: Uncaught TypeError: array_map(): Argument #5 ($array) must be of type array, int given"
+            "Fatal error: Uncaught TypeError: array_map(): Argument #5 must be of type array, int given"
         ),
         "{stdout}"
     );
@@ -433,6 +462,66 @@ fn array_map_variadic_callback_allows_extra_callback_arguments() {
     .unwrap();
 
     assert_eq!(execution.stdout, "Array\n(\n    [0] => Ada:Grace\n)\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn array_map_user_callbacks_with_reference_params_warn_and_receive_values() {
+    let execution = run_source(
+        r#"<?php
+$messages = [];
+set_error_handler(function($errno, $errstr) use (&$messages) {
+    $messages[] = $errstr;
+    return true;
+});
+
+function map_ref(&$value) {
+    $value = "local-" . $value;
+    return $value;
+}
+
+$closure = function(&$value) {
+    return "closure-" . $value;
+};
+
+class MapHelper {
+    public static function stat(&$value) {
+        return "static-" . $value;
+    }
+
+    public function inst(&$value) {
+        return "instance-" . $value;
+    }
+}
+
+$items = ["x" => "one", "y" => "two"];
+$mapped = array_map("map_ref", $items);
+print_r($mapped);
+print_r($items);
+
+$closure_result = array_map($closure, ["c" => "three"]);
+$static_result = array_map(["MapHelper", "stat"], ["four"]);
+$instance_result = array_map([new MapHelper(), "inst"], ["five"]);
+echo $closure_result["c"], "|", $static_result[0], "|", $instance_result[0], "\n";
+
+foreach ($messages as $message) {
+    echo $message, "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Array\n(\n    [x] => local-one\n    [y] => local-two\n)\n\
+Array\n(\n    [x] => one\n    [y] => two\n)\n\
+closure-three|static-four|instance-five\n\
+map_ref(): Argument #1 ($value) must be passed by reference, value given\n\
+map_ref(): Argument #1 ($value) must be passed by reference, value given\n\
+{closure}(): Argument #1 ($value) must be passed by reference, value given\n\
+MapHelper::stat(): Argument #1 ($value) must be passed by reference, value given\n\
+MapHelper::inst(): Argument #1 ($value) must be passed by reference, value given\n"
+    );
     assert_eq!(execution.exit_code, 0);
 }
 

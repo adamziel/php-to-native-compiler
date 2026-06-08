@@ -1,6 +1,5 @@
-exit: 1
+exit: 0
 stdout:
 --- stdout end ---
 stderr:
-runtime error at tests/fixtures/milestone704/exception_constructor_args.php:2:14: unsupported object instantiation for Exception: constructor arguments are not implemented
 --- stderr end ---

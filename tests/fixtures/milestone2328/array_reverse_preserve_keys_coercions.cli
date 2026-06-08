@@ -1,0 +1,14 @@
+exit: 0
+stdout:
+int-one:preserved:next|negative|Ada
+int-zero:reindexed:next|negative|Ada
+string-one:preserved:next|negative|Ada
+string-zero:reindexed:next|negative|Ada
+empty-string:reindexed:next|negative|Ada
+null:reindexed:next|negative|Ada
+float:preserved:next|negative|Ada
+dynamic:next|negative|Ada
+type-error:array_reverse(): Argument #2 ($preserve_keys) must be of type bool, array given
+source:Ada|five|two|zero two|negative|next--- stdout end ---
+stderr:
+--- stderr end ---

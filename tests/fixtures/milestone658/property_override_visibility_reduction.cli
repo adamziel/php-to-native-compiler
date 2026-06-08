@@ -1,6 +1,5 @@
-exit: 1
+exit: 255
 stdout:
 --- stdout end ---
 stderr:
-runtime error at tests/fixtures/milestone658/property_override_visibility_reduction.php:7:15: unsupported class inheritance for Child: property Child::$name cannot reduce visibility of inherited public property Base::$name
---- stderr end ---
+Fatal error: Access level to Child::$name must be public (as in class Base) in tests/fixtures/milestone658/property_override_visibility_reduction.php on line 6--- stderr end ---

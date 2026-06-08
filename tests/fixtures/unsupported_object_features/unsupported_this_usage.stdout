@@ -1,0 +1,4 @@
+Fatal error: Uncaught Error: Using $this when not in object context in tests/fixtures/unsupported_object_features/unsupported_this_usage.php:2
+Stack trace:
+#0 {main}
+  thrown in tests/fixtures/unsupported_object_features/unsupported_this_usage.php on line 2

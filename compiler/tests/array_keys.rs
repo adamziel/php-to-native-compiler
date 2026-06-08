@@ -39,14 +39,33 @@ echo $again[0], "|", $again[5];
 
 #[test]
 fn array_keys_requires_array_argument() {
-    let error = runtime_error("<?php\necho array_keys(42);\n");
+    let source = r#"<?php
+foreach ([42, "items", true, null] as $value) {
+    try {
+        array_keys($value);
+    } catch (TypeError $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
+$call = "array_keys";
+try {
+    $call(new stdClass, "needle", true);
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#;
+
+    let execution = run_source(source).unwrap();
     assert_eq!(
-        error.message,
-        "unsupported call array_keys(): argument must be array, got int"
+        execution.stdout,
+        "array_keys(): Argument #1 ($array) must be of type array, int given\n\
+array_keys(): Argument #1 ($array) must be of type array, string given\n\
+array_keys(): Argument #1 ($array) must be of type array, true given\n\
+array_keys(): Argument #1 ($array) must be of type array, null given\n\
+array_keys(): Argument #1 ($array) must be of type array, stdClass given"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -91,6 +110,35 @@ echo $dynamic[0], "|", $dynamic[1], "|", $dynamic[2];
     assert_eq!(
         execution.stdout,
         "3\nnull|false|empty\n3\nfalse|int-zero|string-zero\n3\nint-ten|string-ten|numeric-string\n1\ntext\n0\nint-ten|string-ten|numeric-string"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn array_keys_loose_mode_matches_empty_arrays_like_php_membership_searches() {
+    let source = r#"<?php
+$items = [1 => "1", 0 => "0", -1 => "-1", 2 => null, 3 => [], "php" => "php", "" => ""];
+
+function show_keys($keys) {
+    echo count($keys), ":";
+    foreach ($keys as $key) {
+        echo "[", $key === "" ? "<empty>" : $key, "]";
+    }
+    echo "\n";
+}
+
+show_keys(array_keys($items, []));
+show_keys(array_keys($items, false));
+show_keys(array_keys($items, true));
+show_keys(array_keys($items, null));
+show_keys(array_keys($items, ""));
+show_keys(array_keys($items, 0));
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "2:[2][3]\n4:[0][2][3][<empty>]\n3:[1][-1][php]\n3:[2][3][<empty>]\n2:[2][<empty>]\n2:[0][2]\n"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -191,39 +239,108 @@ echo count($missing_object);
 }
 
 #[test]
-fn array_keys_rejects_non_bool_strict_mode_argument() {
-    let error = runtime_error("<?php\n$items = [1];\necho array_keys($items, 1, \"yes\");\n");
+fn array_keys_strict_mode_reads_reference_backed_values() {
+    let source = r#"<?php
+$arr = array(1, "1", "", NULL, 0, false, true, array());
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
+$s = &$arr[0];
+var_dump(array_keys($arr, $s, true));
+
+$s = &$arr[1];
+var_dump(array_keys($arr, $s, true));
+
+$s = &$arr[2];
+var_dump(array_keys($arr, $s, true));
+
+$s = &$arr[3];
+var_dump(array_keys($arr, $s, true));
+
+$s = &$arr[4];
+var_dump(array_keys($arr, $s, true));
+
+$s = &$arr[5];
+var_dump(array_keys($arr, $s, true));
+
+$s = &$arr[6];
+var_dump(array_keys($arr, $s, true));
+
+$s = &$arr[7];
+var_dump(array_keys($arr, $s, true));
+"#;
+
+    let execution = run_source(source).unwrap();
     assert_eq!(
-        error.message,
-        "unsupported call array_keys(): strict mode argument must be bool in the current subset, got string"
+        execution.stdout,
+        "array(1) {\n  [0]=>\n  int(0)\n}\narray(1) {\n  [0]=>\n  int(1)\n}\narray(1) {\n  [0]=>\n  int(2)\n}\narray(1) {\n  [0]=>\n  int(3)\n}\narray(1) {\n  [0]=>\n  int(4)\n}\narray(1) {\n  [0]=>\n  int(5)\n}\narray(1) {\n  [0]=>\n  int(6)\n}\narray(1) {\n  [0]=>\n  int(7)\n}\n"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
-fn array_keys_rejects_loose_array_and_object_search_gaps() {
-    let array_search_value_error =
-        runtime_error("<?php\n$items = [1];\necho array_keys($items, []);\n");
+fn array_keys_filters_resource_values_by_identity() {
+    let execution = run_source(
+        r#"<?php
+$file = fopen(__FILE__, "r");
+$dir = opendir(".");
+$items = [$file, $dir];
+foreach ([array_keys($items, $file), array_keys($items, $file, true), array_keys($items, $dir), array_keys($items, $dir, true)] as $keys) {
+    echo count($keys), ":", $keys[0], "\n";
+}
+fclose($file);
+closedir($dir);
+"#,
+    )
+    .unwrap();
 
-    assert_eq!(array_search_value_error.line, 3);
-    assert_eq!(array_search_value_error.column, 6);
+    assert_eq!(execution.stdout, "1:0\n1:0\n1:1\n1:1\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn array_keys_coerces_scalar_strict_mode_argument() {
+    let source = r#"<?php
+$items = [0, "0", false, true, "x"];
+
+foreach ([true, 1, 2, "yes"] as $strict) {
+    var_dump(array_keys($items, "0", $strict));
+}
+foreach ([false, 0, "", "0"] as $loose) {
+    var_dump(array_keys($items, "0", $loose));
+}
+
+$call = "array_keys";
+var_dump($call($items, false, "1"));
+"#;
+
+    let execution = run_source(source).unwrap();
     assert_eq!(
-        array_search_value_error.message,
-        "unsupported call array_keys(): array search values and array values are not implemented"
+        execution.stdout,
+        "array(1) {\n  [0]=>\n  int(1)\n}\narray(1) {\n  [0]=>\n  int(1)\n}\narray(1) {\n  [0]=>\n  int(1)\n}\narray(1) {\n  [0]=>\n  int(1)\n}\narray(3) {\n  [0]=>\n  int(0)\n  [1]=>\n  int(1)\n  [2]=>\n  int(2)\n}\narray(3) {\n  [0]=>\n  int(0)\n  [1]=>\n  int(1)\n  [2]=>\n  int(2)\n}\narray(3) {\n  [0]=>\n  int(0)\n  [1]=>\n  int(1)\n  [2]=>\n  int(2)\n}\narray(3) {\n  [0]=>\n  int(0)\n  [1]=>\n  int(1)\n  [2]=>\n  int(2)\n}\narray(1) {\n  [0]=>\n  int(2)\n}\n"
     );
+    assert_eq!(execution.exit_code, 0);
+}
 
-    let array_value_error =
-        runtime_error("<?php\n$items = [[]];\necho array_keys($items, \"needle\");\n");
+#[test]
+fn array_keys_rejects_non_coercible_strict_mode_argument() {
+    let source = r#"<?php
+$items = [1];
+try {
+    var_dump(array_keys($items, 1, []));
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#;
 
-    assert_eq!(array_value_error.line, 3);
-    assert_eq!(array_value_error.column, 6);
+    let execution = run_source(source).unwrap();
     assert_eq!(
-        array_value_error.message,
-        "unsupported call array_keys(): array search values and array values are not implemented"
+        execution.stdout,
+        "array_keys(): Argument #3 ($strict) must be of type bool, array given"
     );
+    assert_eq!(execution.exit_code, 0);
+}
 
+#[test]
+fn array_keys_rejects_loose_object_search_gaps() {
     let object_error = runtime_error(
         r#"<?php
 class Box {}

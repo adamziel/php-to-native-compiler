@@ -98,6 +98,157 @@ var_dump(fscanf($empty, "%s"));
     assert_eq!(execution.exit_code, 0);
 }
 
+#[test]
+fn fscanf_phase2_return_array_rows_cover_blank_char_scanset_and_float_widths() {
+    let source = r#"<?php
+$stream = fopen("php://memory", "w+");
+fwrite($stream, "\n \n0\nResource id #7\n");
+rewind($stream);
+var_dump(fscanf($stream, "%c"));
+var_dump(fscanf($stream, "%c"));
+var_dump(fscanf($stream, "%c"));
+var_dump(fscanf($stream, "%30c"));
+
+$stream = fopen("php://memory", "w+");
+fwrite($stream, "\n \n0\n");
+rewind($stream);
+var_dump(fscanf($stream, "%[0-9]"));
+var_dump(fscanf($stream, "%[0-9]"));
+var_dump(fscanf($stream, "%[0-9]"));
+
+$stream = fopen("php://memory", "w+");
+fwrite($stream, "\0\n2147483648\n-2147483649\n");
+rewind($stream);
+var_dump(fscanf($stream, "%s"));
+var_dump(fscanf($stream, "%d"));
+var_dump(fscanf($stream, "%d"));
+
+$stream = fopen("php://memory", "w+");
+foreach ([1e-5, .6e-19, .05E+44, -.05E+44] as $value) {
+    fprintf($stream, $value);
+    fprintf($stream, "\n");
+}
+rewind($stream);
+var_dump(fscanf($stream, "%4f"));
+var_dump(fscanf($stream, "%4f"));
+var_dump(fscanf($stream, "%4f"));
+var_dump(fscanf($stream, "%4f"));
+"#;
+
+    let execution = run_source(source).unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  string(0) \"\"\n",
+            "}\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  string(0) \"\"\n",
+            "}\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  string(1) \"0\"\n",
+            "}\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  string(8) \"Resource\"\n",
+            "}\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  NULL\n",
+            "}\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  NULL\n",
+            "}\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  string(1) \"0\"\n",
+            "}\n",
+            "NULL\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  int(2147483647)\n",
+            "}\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  int(-2147483648)\n",
+            "}\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  float(1)\n",
+            "}\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  float(6)\n",
+            "}\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  float(5)\n",
+            "}\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  float(-5)\n",
+            "}\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn fprintf_invalid_format_is_catchable_for_file_generation_rows() {
+    let execution = run_source(
+        r#"<?php
+$stream = fopen("php://memory", "w+");
+try {
+    fprintf($stream, "@#$#$%%$^^$%^%^$^&");
+} catch (ValueError|ArgumentCountError $e) {
+    echo "caught:" . $e->getMessage() . "\n";
+}
+rewind($stream);
+var_dump(stream_get_contents($stream));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "caught:Unknown format specifier \"^\"\nstring(0) \"\"\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn fwrite_accepts_stringable_objects_for_scan_file_generation() {
+    let execution = run_source(
+        r#"<?php
+class WritableThing {
+    public function __toString() {
+        return "Object";
+    }
+}
+
+$stream = fopen("php://memory", "w+");
+echo fwrite($stream, new WritableThing);
+rewind($stream);
+var_dump(fscanf($stream, "%s"));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "6array(1) {\n  [0]=>\n  string(6) \"Object\"\n}\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
 struct TempFsFixture {
     root: PathBuf,
 }

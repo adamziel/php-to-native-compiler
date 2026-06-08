@@ -1,8 +1,9 @@
-exit: 0
+exit: 1
 stdout:
-nonempty: true
-contains_main: true
-contains_printf: true
+nonempty: false
+contains_main: false
+contains_printf: false
 --- stdout end ---
 stderr:
+codegen error at tests/fixtures/milestone454/native_integer_literal_bitwise_identity.php:7:23: LLVM bitwise lowering rejects unsupported bitwise or shift operators or operands until native PHP bitwise string semantics, scalar-to-int coercion, shift diagnostics, references/copy-on-write, and exact native error behavior exist; phpc run handles current bitwise/shift behavior
 --- stderr end ---

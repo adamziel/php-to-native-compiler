@@ -3614,6 +3614,41 @@ fn native_scalar_echo_emit_asm_empty_stdout_stderr_selected_llc_does_not_cc_fall
 
 #[test]
 #[cfg(unix)]
+fn native_scalar_echo_emit_asm_stderr_selected_llc_does_not_cc_fallback_cli_summary_matches_committed_output(
+) {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler has a workspace root");
+    let fixture = workspace_root
+        .join("tests/fixtures/milestone625/native_assembly_stderr_llc_precedence.php");
+    let relative_fixture = fixture
+        .strip_prefix(workspace_root)
+        .expect("fixture lives under workspace root")
+        .to_str()
+        .expect("fixture path is valid UTF-8")
+        .to_string();
+    let temp_path = TempPath::with_stderr_successful_llc_and_available_cc(workspace_root);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .env("PATH", temp_path.path())
+        .args(["compile", &relative_fixture, "--emit-asm"])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile {relative_fixture}: {error}"));
+
+    let expected = fs::read_to_string(
+        workspace_root
+            .join("tests/fixtures/milestone625/native_assembly_stderr_llc_precedence_emit_asm.cli"),
+    )
+    .expect("native assembly stderr llc-precedence CLI summary snapshot is readable");
+    let actual = render_asm_cli_summary(&output);
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
+#[cfg(unix)]
 fn native_scalar_echo_emit_asm_empty_stdout_stderr_selected_clang_does_not_fallback_cli_snapshot_matches_committed_output(
 ) {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -8621,10 +8656,10 @@ fi\n\
 while IFS= read -r _line; do\n\
   :\n\
 done\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary fake llc script can be written");
@@ -8746,10 +8781,10 @@ fi\n\
 while IFS= read -r _line; do\n\
   :\n\
 done\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary fallback llc script can be written");
@@ -9345,6 +9380,66 @@ exit 120\n",
         Self { path }
     }
 
+    fn with_stderr_successful_llc_and_available_cc(workspace_root: &Path) -> Self {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock is after Unix epoch")
+            .as_nanos();
+        let path = workspace_root.join("target").join(format!(
+            "native-assembly-stderr-llc-precedence-{}-{timestamp}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&path)
+            .expect("temporary stderr llc-precedence PATH directory can be created");
+
+        let llc = path.join("llc");
+        fs::write(
+            &llc,
+            "#!/bin/sh\n\
+if [ \"$1\" = \"--version\" ]; then\n\
+  printf '%s\\n' 'fake llc 0.0'\n\
+  exit 0\n\
+fi\n\
+while IFS= read -r _line; do\n\
+  :\n\
+done\n\
+printf '%s\\n' 'fake llc warning on successful assembly before cc fallback' >&2\n\
+printf '%s\\n' '.text'\n\
+printf '%s\\n' '.globl main'\n\
+printf '%s\\n' 'main:'\n\
+printf '%s\\n' '  call printf'\n\
+exit 0\n",
+        )
+        .expect("temporary stderr llc-precedence script can be written");
+        let mut llc_permissions = fs::metadata(&llc)
+            .expect("temporary stderr llc-precedence script metadata is readable")
+            .permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut llc_permissions, 0o755);
+        fs::set_permissions(&llc, llc_permissions)
+            .expect("temporary stderr llc-precedence script can be made executable");
+
+        let cc = path.join("cc");
+        fs::write(
+            &cc,
+            "#!/bin/sh\n\
+if [ \"$1\" = \"--version\" ]; then\n\
+  printf '%s\\n' 'fake cc 0.0'\n\
+  exit 0\n\
+fi\n\
+printf '%s\\n' 'unexpected cc fallback invocation after stderr llc success' >&2\n\
+exit 121\n",
+        )
+        .expect("temporary stderr llc-precedence cc script can be written");
+        let mut cc_permissions = fs::metadata(&cc)
+            .expect("temporary stderr llc-precedence cc script metadata is readable")
+            .permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut cc_permissions, 0o755);
+        fs::set_permissions(&cc, cc_permissions)
+            .expect("temporary stderr llc-precedence cc script can be made executable");
+
+        Self { path }
+    }
+
     fn with_stderr_successful_clang(workspace_root: &Path) -> Self {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -9368,10 +9463,10 @@ while IFS= read -r _line; do\n\
   :\n\
 done\n\
 printf '%s\\n' 'fake clang warning on successful assembly' >&2\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary success-with-stderr clang script can be written");
@@ -9551,6 +9646,15 @@ while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
 case \"$ir\" in\n\
+  *'define i32 @main()'*'@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\n' '.text'\n\
+  printf '%s\n' '.globl main'\n\
+  printf '%s\n' 'main:'\n\
+  printf '%s\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$ir\" in\n\
   *'declare i32 @printf(ptr, ...)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing printf declaration on stdin' >&2\n\
@@ -9571,10 +9675,10 @@ case \"$ir\" in\n\
   exit 62\n\
   ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary IR-validating clang script can be written");
@@ -9610,6 +9714,15 @@ ir=''\n\
 while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
+case \"$ir\" in\n\
+  *'define i32 @main()'*'@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\n' '.text'\n\
+  printf '%s\n' '.globl main'\n\
+  printf '%s\n' 'main:'\n\
+  printf '%s\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
 case \"$ir\" in\n\
   *'declare i32 @printf(ptr, ...)'*) : ;;\n\
   *)\n\
@@ -9652,10 +9765,10 @@ case \"$ir\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary reassignment IR-validating clang script can be written");
@@ -9693,6 +9806,15 @@ while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
 case \"$ir\" in\n\
+  *'define i32 @main()'*'@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\n' '.text'\n\
+  printf '%s\n' '.globl main'\n\
+  printf '%s\n' 'main:'\n\
+  printf '%s\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$ir\" in\n\
   *'declare i32 @printf(ptr, ...)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing printf declaration on stdin' >&2\n\
@@ -9727,10 +9849,10 @@ case \"$ir\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary is_callable false IR-validating clang script can be written");
@@ -9767,6 +9889,15 @@ ir=''\n\
 while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
+case \"$ir\" in\n\
+  *'define i32 @main()'*'@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\n' '.text'\n\
+  printf '%s\n' '.globl main'\n\
+  printf '%s\n' 'main:'\n\
+  printf '%s\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
 case \"$ir\" in\n\
   *'declare i32 @printf(ptr, ...)'*) : ;;\n\
   *)\n\
@@ -9809,10 +9940,10 @@ case \"$ir\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary function_exists IR-validating clang script can be written");
@@ -9849,6 +9980,15 @@ while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
 case \"$ir\" in\n\
+  *'define i32 @main()'*'@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\n' '.text'\n\
+  printf '%s\n' '.globl main'\n\
+  printf '%s\n' 'main:'\n\
+  printf '%s\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$ir\" in\n\
   *'declare i32 @printf(ptr, ...)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing printf declaration on stdin' >&2\n\
@@ -9883,10 +10023,10 @@ case \"$ir\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary empty IR-validating clang script can be written");
@@ -9923,6 +10063,15 @@ while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
 case \"$ir\" in\n\
+  *'define i32 @main()'*'@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\n' '.text'\n\
+  printf '%s\n' '.globl main'\n\
+  printf '%s\n' 'main:'\n\
+  printf '%s\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$ir\" in\n\
   *'declare i32 @printf(ptr, ...)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing printf declaration on stdin' >&2\n\
@@ -9954,10 +10103,10 @@ case \"$ir\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary isset IR-validating clang script can be written");
@@ -9993,6 +10142,15 @@ ir=''\n\
 while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
+case \"$ir\" in\n\
+  *'define i32 @main()'*'@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\n' '.text'\n\
+  printf '%s\n' '.globl main'\n\
+  printf '%s\n' 'main:'\n\
+  printf '%s\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
 case \"$ir\" in\n\
   *'declare i32 @printf(ptr, ...)'*) : ;;\n\
   *)\n\
@@ -10032,10 +10190,10 @@ case \"$ir\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary is_numeric IR-validating clang script can be written");
@@ -10072,6 +10230,15 @@ ir=''\n\
 while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
+case \"$ir\" in\n\
+  *'define i32 @main()'*'@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\n' '.text'\n\
+  printf '%s\n' '.globl main'\n\
+  printf '%s\n' 'main:'\n\
+  printf '%s\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
 case \"$ir\" in\n\
   *'declare i32 @printf(ptr, ...)'*) : ;;\n\
   *)\n\
@@ -10110,10 +10277,10 @@ case \"$ir\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary countable/iterable IR-validating clang script can be written");
@@ -10151,6 +10318,15 @@ ir=''\n\
 while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
+case \"$ir\" in\n\
+  *'define i32 @main()'*'@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\n' '.text'\n\
+  printf '%s\n' '.globl main'\n\
+  printf '%s\n' 'main:'\n\
+  printf '%s\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
 case \"$ir\" in\n\
   *'declare i32 @printf(ptr, ...)'*) : ;;\n\
   *)\n\
@@ -10193,10 +10369,10 @@ case \"$ir\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary scalar object/debug-type IR-validating clang script can be written");
@@ -10237,6 +10413,15 @@ while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
 case \"$ir\" in\n\
+  *'define i32 @main()'*'@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\n' '.text'\n\
+  printf '%s\n' '.globl main'\n\
+  printf '%s\n' 'main:'\n\
+  printf '%s\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$ir\" in\n\
   *'declare i32 @printf(ptr, ...)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing printf declaration on stdin' >&2\n\
@@ -10268,10 +10453,10 @@ case \"$ir\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary static metadata-exists IR-validating clang script can be written");
@@ -10311,6 +10496,15 @@ while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
 case \"$ir\" in\n\
+  *'define i32 @main()'*'@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\n' '.text'\n\
+  printf '%s\n' '.globl main'\n\
+  printf '%s\n' 'main:'\n\
+  printf '%s\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$ir\" in\n\
   *'declare i32 @printf(ptr, ...)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing printf declaration on stdin' >&2\n\
@@ -10341,10 +10535,10 @@ case \"$ir\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary strlen IR-validating clang script can be written");
@@ -10382,6 +10576,15 @@ while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
 case \"$ir\" in\n\
+  *'define i32 @main()'*'@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\n' '.text'\n\
+  printf '%s\n' '.globl main'\n\
+  printf '%s\n' 'main:'\n\
+  printf '%s\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$ir\" in\n\
   *'declare i32 @printf(ptr, ...)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing printf declaration on stdin' >&2\n\
@@ -10411,10 +10614,10 @@ case \"$ir\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary defined SORT_REGULAR IR-validating clang script can be written");
@@ -10455,6 +10658,15 @@ while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
 case \"$ir\" in\n\
+  *'define i32 @main()'*'@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\n' '.text'\n\
+  printf '%s\n' '.globl main'\n\
+  printf '%s\n' 'main:'\n\
+  printf '%s\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$ir\" in\n\
   *'declare i32 @printf(ptr, ...)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing printf declaration on stdin' >&2\n\
@@ -10484,10 +10696,10 @@ case \"$ir\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary defined SORT_NUMERIC IR-validating clang script can be written");
@@ -10528,6 +10740,15 @@ while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
 case \"$ir\" in\n\
+  *'define i32 @main()'*'@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\n' '.text'\n\
+  printf '%s\n' '.globl main'\n\
+  printf '%s\n' 'main:'\n\
+  printf '%s\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$ir\" in\n\
   *'declare i32 @printf(ptr, ...)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing printf declaration on stdin' >&2\n\
@@ -10557,10 +10778,10 @@ case \"$ir\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary defined SORT_STRING IR-validating clang script can be written");
@@ -10599,6 +10820,15 @@ while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
 case \"$ir\" in\n\
+  *'define i32 @main()'*'@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\n' '.text'\n\
+  printf '%s\n' '.globl main'\n\
+  printf '%s\n' 'main:'\n\
+  printf '%s\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$ir\" in\n\
   *'declare i32 @printf(ptr, ...)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing printf declaration on stdin' >&2\n\
@@ -10633,10 +10863,10 @@ case \"$ir\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary defined constants IR-validating clang script can be written");
@@ -10674,6 +10904,15 @@ while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
 case \"$ir\" in\n\
+  *'define i32 @main()'*'@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\n' '.text'\n\
+  printf '%s\n' '.globl main'\n\
+  printf '%s\n' 'main:'\n\
+  printf '%s\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$ir\" in\n\
   *'declare i32 @printf(ptr, ...)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake llc missing printf declaration on stdin' >&2\n\
@@ -10694,10 +10933,10 @@ case \"$ir\" in\n\
   exit 65\n\
   ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary IR-validating llc script can be written");
@@ -10733,6 +10972,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'/* generated by phpc milestone 1 C assembly fallback */'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing generated-source marker on stdin' >&2\n\
@@ -10767,10 +11015,10 @@ case \"$source\" in\n\
   exit 70\n\
   ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary C-validating cc script can be written");
@@ -10806,6 +11054,15 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
 case \"$source\" in\n\
   *'/* generated by phpc milestone 1 C assembly fallback */'*) : ;;\n\
   *)\n\
@@ -10855,10 +11112,10 @@ case \"$source\" in\n\
   exit 118\n\
   ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary mixed-output C-validating cc script can be written");
@@ -10894,6 +11151,15 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
 case \"$source\" in\n\
   *'/* generated by phpc milestone 1 C assembly fallback */'*) : ;;\n\
   *)\n\
@@ -10943,10 +11209,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary reassignment C-validating cc script can be written");
@@ -10984,6 +11250,15 @@ while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
 case \"$ir\" in\n\
+  *'define i32 @main()'*'@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\n' '.text'\n\
+  printf '%s\n' '.globl main'\n\
+  printf '%s\n' 'main:'\n\
+  printf '%s\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$ir\" in\n\
   *'%tmp0 = add i64 10, 5'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing integer add on stdin' >&2\n\
@@ -11011,10 +11286,10 @@ case \"$ir\" in\n\
   exit 135\n\
   ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary integer arithmetic IR-validating clang script can be written");
@@ -11052,6 +11327,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%lld\", (10 + 5))'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing integer add output on stdin' >&2\n\
@@ -11072,10 +11356,10 @@ case \"$source\" in\n\
   exit 138\n\
   ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary integer arithmetic C-validating cc script can be written");
@@ -11112,6 +11396,15 @@ while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
 case \"$ir\" in\n\
+  *'define i32 @main()'*'@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\n' '.text'\n\
+  printf '%s\n' '.globl main'\n\
+  printf '%s\n' 'main:'\n\
+  printf '%s\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$ir\" in\n\
   *'%tmp0 = add i64 10, 5'*'%tmp1 = srem i64 %tmp0, 4'*'srem i64 17, 5'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing integer modulo operations' >&2\n\
@@ -11132,10 +11425,10 @@ case \"$ir\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary integer modulo IR-validating clang script can be written");
@@ -11172,6 +11465,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%lld\", ((10 + 5) % 4))'*'printf(\"%lld\", (17 % 5))'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing integer modulo operations' >&2\n\
@@ -11185,10 +11487,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary integer modulo C-validating cc script can be written");
@@ -11226,6 +11528,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%lld\", 5)'*'printf(\"%lld\", 7)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing folded modulo-by-one outputs' >&2\n\
@@ -11239,10 +11550,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary integer modulo-by-one C-validating cc script can be written");
@@ -11283,6 +11594,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'(4 << 62)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing overflow-sensitive shift source' >&2\n\
@@ -11296,10 +11616,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary untracked integer modulo-by-one C-validating cc script can be written");
@@ -11342,6 +11662,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%lld\", (1 + 5))'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing bounded modulo folding output' >&2\n\
@@ -11355,10 +11684,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary bounded integer modulo folding C-validating cc script can be written");
@@ -11398,6 +11727,15 @@ while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
 case \"$ir\" in\n\
+  *'define i32 @main()'*'@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\n' '.text'\n\
+  printf '%s\n' '.globl main'\n\
+  printf '%s\n' 'main:'\n\
+  printf '%s\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$ir\" in\n\
   *'%tmp0 = fadd double 1.5, 2.25'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing float add on stdin' >&2\n\
@@ -11432,10 +11770,10 @@ case \"$ir\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary float arithmetic IR-validating clang script can be written");
@@ -11472,6 +11810,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%g\", (1.5 + 2.25))'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing float add output on stdin' >&2\n\
@@ -11499,10 +11846,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary float arithmetic C-validating cc script can be written");
@@ -11542,6 +11889,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%lld\", 5)'*'printf(\"%lld\", 6)'*'printf(\"%lld\", 7)'*'printf(\"%lld\", 9)'*'printf(\"%lld\", 10)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing folded integer literal identity outputs' >&2\n\
@@ -11562,10 +11918,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect(
@@ -11610,6 +11966,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'(4 << 62)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing overflow-sensitive shift source' >&2\n\
@@ -11623,10 +11988,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect(
@@ -11671,6 +12036,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'(4 << 62)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing overflow-sensitive shift source' >&2\n\
@@ -11684,10 +12058,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect(
@@ -11730,6 +12104,15 @@ while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
 case \"$ir\" in\n\
+  *'define i32 @main()'*'@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\n' '.text'\n\
+  printf '%s\n' '.globl main'\n\
+  printf '%s\n' 'main:'\n\
+  printf '%s\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$ir\" in\n\
   *'%tmp0 = add i64 10, 2'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing prerequisite integer add on stdin' >&2\n\
@@ -11750,10 +12133,10 @@ case \"$ir\" in\n\
   exit 142\n\
   ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary integer unary-minus IR-validating clang script can be written");
@@ -11791,6 +12174,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%lld\", -5)'*'printf(\"%lld\", -12)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing folded integer unary-minus outputs' >&2\n\
@@ -11804,10 +12196,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary integer unary-minus C-validating cc script can be written");
@@ -11847,6 +12239,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%lld\", -5)'*'printf(\"%lld\", -12)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing folded integer unary-minus outputs' >&2\n\
@@ -11860,10 +12261,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary integer unary-minus folding C-validating cc script can be written");
@@ -11904,6 +12305,15 @@ while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
 case \"$ir\" in\n\
+  *'define i32 @main()'*'@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\n' '.text'\n\
+  printf '%s\n' '.globl main'\n\
+  printf '%s\n' 'main:'\n\
+  printf '%s\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$ir\" in\n\
   *'%tmp0 = fadd double 1.5, 2.25'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing prerequisite float add on stdin' >&2\n\
@@ -11931,10 +12341,10 @@ case \"$ir\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary float unary-minus IR-validating clang script can be written");
@@ -11972,6 +12382,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%g\", -2.5)'*'printf(\"%g\", -3.75)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing folded float unary-minus outputs' >&2\n\
@@ -11992,10 +12411,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary float unary-minus C-validating cc script can be written");
@@ -12035,6 +12454,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%g\", (1.5 + 2.5))'*'printf(\"%g\", (1.5 + 2.5))'*'printf(\"%g\", (1.5 + 2.5))'*'printf(\"%g\", (0.0 + 0.0))'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing folded float additive identity outputs' >&2\n\
@@ -12048,10 +12476,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary float additive identity folding C-validating cc script can be written");
@@ -12094,6 +12522,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%g\", -3.75)'*'printf(\"%g\", -2.5)'*'printf(\"%g\", (0.0 - (0.0 + 0.0)))'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing folded float left-zero subtraction outputs' >&2\n\
@@ -12107,10 +12544,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect(
@@ -12155,6 +12592,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%g\", 0.0)'*'printf(\"%g\", 0.0)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing folded positive float multiplication-by-zero outputs' >&2\n\
@@ -12168,10 +12614,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect(
@@ -12216,6 +12662,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%g\", -3.75)'*'printf(\"%g\", -2.5)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing folded float multiplication-by-negative-one outputs' >&2\n\
@@ -12229,10 +12684,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect(
@@ -12277,6 +12732,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%g\", 5.0)'*'printf(\"%g\", 3.5)'*'printf(\"%g\", 7.5)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing folded tracked float arithmetic outputs' >&2\n\
@@ -12297,10 +12761,10 @@ case \"$source\" in\n\
   exit 331\n\
   ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary tracked float arithmetic folding C-validating cc script can be written");
@@ -12343,6 +12807,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%g\", 8.25)'*'printf(\"%g\", 0.75)'*'printf(\"%g\", 4.5)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing folded tracked-expression float arithmetic outputs' >&2\n\
@@ -12363,10 +12836,10 @@ case \"$source\" in\n\
   exit 346\n\
   ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect(
@@ -12411,6 +12884,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%lld\", 7)'*'printf(\"%lld\", 7)'*'printf(\"%lld\", 15)'*'printf(\"%lld\", 12)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing folded tracked integer arithmetic outputs' >&2\n\
@@ -12431,10 +12913,10 @@ case \"$source\" in\n\
   exit 334\n\
   ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect(
@@ -12477,6 +12959,15 @@ while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
 case \"$ir\" in\n\
+  *'define i32 @main()'*'@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\n' '.text'\n\
+  printf '%s\n' '.globl main'\n\
+  printf '%s\n' 'main:'\n\
+  printf '%s\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$ir\" in\n\
   *'c\"1\\00\"'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing logical-not true string on stdin' >&2\n\
@@ -12497,10 +12988,10 @@ case \"$ir\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary boolean logical-not IR-validating clang script can be written");
@@ -12538,6 +13029,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%s\", \"1\")'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing logical-not true output on stdin' >&2\n\
@@ -12558,10 +13058,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary boolean logical-not C-validating cc script can be written");
@@ -12601,6 +13101,15 @@ while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
 case \"$ir\" in\n\
+  *'define i32 @main()'*'@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\n' '.text'\n\
+  printf '%s\n' '.globl main'\n\
+  printf '%s\n' 'main:'\n\
+  printf '%s\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$ir\" in\n\
   *'icmp eq i64 %tmp0, 3'*'select i1 %tmp1, i64 3, i64 4'*'select i1 %tmp1, i64 4, i64 3'*'icmp eq i64 %tmp0, %tmp2'*'icmp eq i64 %tmp0, %tmp3'*'xor i1 %tmp4, true'*'xor i1 %tmp5, true'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing dynamic boolean logical-not operations' >&2\n\
@@ -12621,10 +13130,10 @@ case \"$ir\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary dynamic boolean logical-not IR-validating clang script can be written");
@@ -12667,6 +13176,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'(1 + 2)'*'=='*'!'*'if ('*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"x\")'*'printf(\"%s\", \"y\")'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing dynamic boolean logical-not outputs' >&2\n\
@@ -12680,10 +13198,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary dynamic boolean logical-not C-validating cc script can be written");
@@ -12726,6 +13244,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%lld\", 12)'*'printf(\"%lld\", 6)'*'printf(\"%lld\", 30)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing folded tracked-expression integer arithmetic outputs' >&2\n\
@@ -12746,10 +13273,10 @@ case \"$source\" in\n\
   exit 367\n\
   ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect(
@@ -12794,6 +13321,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%lld\", 0)'*'printf(\"%lld\", 1)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing folded boolean logical-not integer outputs' >&2\n\
@@ -12807,10 +13343,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary boolean logical-not folding C-validating cc script can be written");
@@ -12853,6 +13389,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%lld\", 1)'*'printf(\"%lld\", 1)'*'printf(\"%lld\", 0)'*'printf(\"%lld\", 0)'*'printf(\"%lld\", 1)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing folded known string logical-not outputs' >&2\n\
@@ -12866,10 +13411,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary known string logical-not C-validating cc script can be written");
@@ -12912,6 +13457,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%lld\", 1)'*'printf(\"%lld\", 0)'*'printf(\"%lld\", 0)'*'printf(\"%lld\", 1)'*'printf(\"%lld\", 0)'*'printf(\"%lld\", 0)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing folded known numeric logical-not outputs' >&2\n\
@@ -12925,10 +13479,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary known numeric logical-not C-validating cc script can be written");
@@ -12968,6 +13522,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%lld\", 1)'*'printf(\"%lld\", 1)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing folded null logical-not outputs' >&2\n\
@@ -12981,10 +13544,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary null logical-not C-validating cc script can be written");
@@ -13024,6 +13587,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%lld\", 0)'*'printf(\"%lld\", 1)'*'printf(\"%lld\", 0)'*'printf(\"%lld\", 1)'*'printf(\"%lld\", 0)'*'printf(\"%lld\", 0)'*'printf(\"%lld\", 1)'*'printf(\"%lld\", 0)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing folded known scalar double logical-not outputs' >&2\n\
@@ -13037,10 +13609,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect(
@@ -13083,6 +13655,15 @@ while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
 case \"$ir\" in\n\
+  *'define i32 @main()'*'@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\n' '.text'\n\
+  printf '%s\n' '.globl main'\n\
+  printf '%s\n' 'main:'\n\
+  printf '%s\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$ir\" in\n\
   *'and i1 %tmp3, %tmp4'*'or i1 %tmp3, %tmp4'*'xor i1 %tmp3, %tmp4'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing boolean logical operator IR operations' >&2\n\
@@ -13103,10 +13684,10 @@ case \"$ir\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary boolean logical-operator IR-validating clang script can be written");
@@ -13149,6 +13730,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'(1 + 2)'*'&&'*'||'*'!='*'printf(\"%s\", \"1\")'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing boolean logical operator C output' >&2\n\
@@ -13162,10 +13752,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary boolean logical-operator C-validating cc script can be written");
@@ -13208,6 +13798,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing folded boolean logical outputs' >&2\n\
@@ -13228,10 +13827,10 @@ case \"$source\" in\n\
   exit 364\n\
   ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect(
@@ -13276,6 +13875,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%lld\", 1)'*'printf(\"%lld\", 1)'*'printf(\"%lld\", 0)'*'printf(\"%lld\", 1)'*'printf(\"%lld\", 1)'*'printf(\"%lld\", 0)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing folded known scalar logical truthiness outputs' >&2\n\
@@ -13289,10 +13897,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect(
@@ -13335,6 +13943,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%lld\", 0)'*'printf(\"%lld\", 1)'*'printf(\"%lld\", 1)'*'printf(\"%lld\", 0)'*'printf(\"%lld\", 0)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing folded null logical truthiness outputs' >&2\n\
@@ -13348,10 +13965,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary null logical truthiness C-validating cc script can be written");
@@ -13392,6 +14009,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%lld\", 0)'*'printf(\"%lld\", 1)'*'printf(\"%lld\", 0)'*'printf(\"%lld\", 1)'*'printf(\"%lld\", 0)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing static logical short-circuit outputs' >&2\n\
@@ -13405,10 +14031,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary static logical short-circuit C-validating cc script can be written");
@@ -13448,6 +14074,15 @@ while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
 case \"$ir\" in\n\
+  *'define i32 @main()'*'@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\n' '.text'\n\
+  printf '%s\n' '.globl main'\n\
+  printf '%s\n' 'main:'\n\
+  printf '%s\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$ir\" in\n\
   *'%tmp0 = add i64 6, 2'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing integer bitwise prerequisite add' >&2\n\
@@ -13482,10 +14117,10 @@ case \"$ir\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary integer bitwise IR-validating clang script can be written");
@@ -13521,6 +14156,15 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
 case \"$source\" in\n\
   *'printf(\"%lld\", 0)'*'printf(\"%lld\", 11)'*'printf(\"%lld\", -4)'*) : ;;\n\
   *)\n\
@@ -13563,10 +14207,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary integer bitwise C-validating cc script can be written");
@@ -13606,6 +14250,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%lld\", 0)'*'printf(\"%lld\", 9)'*'printf(\"%lld\", 13)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing folded tracked integer bitwise outputs' >&2\n\
@@ -13626,10 +14279,10 @@ case \"$source\" in\n\
   exit 337\n\
   ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect(
@@ -13674,6 +14327,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%lld\", 0)'*'printf(\"%lld\", 13)'*'printf(\"%lld\", 15)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing folded tracked-expression integer bitwise outputs' >&2\n\
@@ -13694,10 +14356,10 @@ case \"$source\" in\n\
   exit 337\n\
   ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect(
@@ -13742,6 +14404,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%lld\", 5)'*'printf(\"%lld\", 6)'*'printf(\"%lld\", 10)'*'printf(\"%lld\", 11)'*'printf(\"%lld\", 12)'*'printf(\"%lld\", 13)'*'printf(\"%lld\", 14)'*'printf(\"%lld\", 15)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing folded integer literal bitwise identity outputs' >&2\n\
@@ -13755,10 +14426,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect(
@@ -13803,6 +14474,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%lld\", -1)'*'printf(\"%lld\", -1)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing folded integer bitwise OR all-ones outputs' >&2\n\
@@ -13816,10 +14496,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary integer bitwise OR all-ones C-validating cc script can be written");
@@ -13862,6 +14542,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%lld\", -6)'*'printf(\"%lld\", -8)'*'printf(\"%lld\", -9)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing folded integer bitwise XOR all-ones outputs' >&2\n\
@@ -13875,10 +14564,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary integer bitwise XOR all-ones C-validating cc script can be written");
@@ -13921,6 +14610,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'(4 << 62)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing untracked shift source' >&2\n\
@@ -13934,10 +14632,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect(
@@ -13982,6 +14680,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'(4 << 62)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing untracked shift source' >&2\n\
@@ -13995,10 +14702,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect(
@@ -14043,6 +14750,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'(4 << 62)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing untracked shift source' >&2\n\
@@ -14056,10 +14772,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect(
@@ -14101,6 +14817,15 @@ while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
 case \"$ir\" in\n\
+  *'define i32 @main()'*'@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\n' '.text'\n\
+  printf '%s\n' '.globl main'\n\
+  printf '%s\n' 'main:'\n\
+  printf '%s\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$ir\" in\n\
   *'%tmp0 = add i64 6, 2'*'%tmp1 = ashr i64 -8, 1'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing integer shift IR operations' >&2\n\
@@ -14128,10 +14853,10 @@ case \"$ir\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary integer shift IR-validating clang script can be written");
@@ -14168,6 +14893,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%lld\", 32)'*'printf(\"%lld\", 4)'*'-8'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing integer shift inputs' >&2\n\
@@ -14195,10 +14929,10 @@ case \"$source\" in\n\
   exit 208\n\
   ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary integer shift C-validating cc script can be written");
@@ -14238,6 +14972,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%lld\", 8)'*'printf(\"%lld\", 9)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing folded integer literal shift-by-zero outputs' >&2\n\
@@ -14251,10 +14994,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary integer literal shift-by-zero C-validating cc script can be written");
@@ -14297,6 +15040,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'(4 << 62)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing overflow-sensitive shift source' >&2\n\
@@ -14310,10 +15062,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary untracked integer shift-by-zero C-validating cc script can be written");
@@ -14356,6 +15108,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%lld\", 32)'*'printf(\"%lld\", 4)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing folded tracked integer shift outputs' >&2\n\
@@ -14376,10 +15137,10 @@ case \"$source\" in\n\
   exit 340\n\
   ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary tracked integer shift folding C-validating cc script can be written");
@@ -14422,6 +15183,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%lld\", 32)'*'printf(\"%lld\", 2)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing folded tracked integer shift-count outputs' >&2\n\
@@ -14442,10 +15212,10 @@ case \"$source\" in\n\
   exit 343\n\
   ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary tracked integer shift-count C-validating cc script can be written");
@@ -14488,6 +15258,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%lld\", -4)'*'printf(\"%lld\", -4)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing folded integer bitwise-not outputs' >&2\n\
@@ -14501,10 +15280,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary integer bitwise-not folding C-validating cc script can be written");
@@ -14544,6 +15323,15 @@ while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
 case \"$ir\" in\n\
+  *'define i32 @main()'*'@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\n' '.text'\n\
+  printf '%s\n' '.globl main'\n\
+  printf '%s\n' 'main:'\n\
+  printf '%s\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$ir\" in\n\
   *'%tmp1 = icmp eq i64 %tmp0, 3'*'%tmp2 = icmp eq i64 %tmp0, 4'*'%tmp4 = select i1 %tmp1, i64 %tmp3, i64 99'*'@printf(ptr @.fmt_int, i64 1)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing boolean ternary select operations' >&2\n\
@@ -14564,10 +15352,10 @@ case \"$ir\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary boolean ternary IR-validating clang script can be written");
@@ -14604,6 +15392,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'(1 + 2)'*' == '*' ? '*':'*'printf(\"%lld\"'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing boolean ternary C output' >&2\n\
@@ -14617,10 +15414,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary boolean ternary C-validating cc script can be written");
@@ -14658,6 +15455,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'(1 + 2)'*' == '*' ? (3) : (4)'*' ? (4) : (3)'*' ? (1) : ('*'printf(\"%lld\", 1)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing boolean short ternary C output' >&2\n\
@@ -14671,10 +15477,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary boolean short ternary C-validating cc script can be written");
@@ -14715,6 +15521,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%s\", '* ) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing reused string short ternary printf call' >&2\n\
@@ -14728,10 +15543,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary identical string short ternary C-validating cc script can be written");
@@ -14774,6 +15589,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%lld\", (3 << 62))'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing reused integer short ternary printf call' >&2\n\
@@ -14787,10 +15611,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary identical integer short ternary C-validating cc script can be written");
@@ -14833,6 +15657,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%g\", (100000000000000000178334994858791836514563642560301392710701527770129502847789953562046870799284296099876897036220978235643807646031628623453753183252563447406133248.0 * 100000000000000000178334994858791836514563642560301392710701527770129502847789953562046870799284296099876897036220978235643807646031628623453753183252563447406133248.0))'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing reused float short ternary printf call' >&2\n\
@@ -14846,10 +15679,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary identical float short ternary C-validating cc script can be written");
@@ -14892,6 +15725,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'if ((((3 << 62)) != (0))) { printf(\"%s\", \"1\"); }'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing reused boolean short ternary echo path' >&2\n\
@@ -14905,10 +15747,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary identical boolean short ternary C-validating cc script can be written");
@@ -14951,6 +15793,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'if ((((3 << 62)) != (0))) { printf(\"%s\", \"1\"); }'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing reused boolean full ternary echo path' >&2\n\
@@ -14964,10 +15815,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary identical boolean full ternary C-validating cc script can be written");
@@ -15010,6 +15861,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%s\", \"a\")'*'printf(\"%s\", \"b\")'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing reused null full ternary surrounding output' >&2\n\
@@ -15023,10 +15883,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary identical null full ternary C-validating cc script can be written");
@@ -15069,6 +15929,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%s\", \"a\")'*'printf(\"%s\", \"fallback\")'*'printf(\"%s\", \"b\")'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing direct null full ternary selected fallback output' >&2\n\
@@ -15082,10 +15951,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary direct null full ternary C-validating cc script can be written");
@@ -15128,6 +15997,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%lld\", (3 << 62))'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing reused integer full ternary printf call' >&2\n\
@@ -15141,10 +16019,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary identical integer full ternary C-validating cc script can be written");
@@ -15187,6 +16065,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%s\", '* ) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing reused string full ternary printf call' >&2\n\
@@ -15200,10 +16087,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary identical string full ternary C-validating cc script can be written");
@@ -15246,6 +16133,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%g\", (100000000000000000178334994858791836514563642560301392710701527770129502847789953562046870799284296099876897036220978235643807646031628623453753183252563447406133248.0 * 100000000000000000178334994858791836514563642560301392710701527770129502847789953562046870799284296099876897036220978235643807646031628623453753183252563447406133248.0))'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing reused float full ternary printf call' >&2\n\
@@ -15259,10 +16155,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary identical float full ternary C-validating cc script can be written");
@@ -15305,6 +16201,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%lld\", 42)'*'printf(\"%g\", 2.5)'*'printf(\"%s\", \"fallback\")'*'printf(\"%s\", \"a\")'*'printf(\"%s\", \"b\")'*'printf(\"%s\", \"1\")'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing static false short ternary scalar fallback output' >&2\n\
@@ -15318,10 +16223,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect(
@@ -15366,6 +16271,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%lld\", 1)'*'printf(\"%s\", \"zero\")'*'printf(\"%lld\", (1 + 2))'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing single-known integer short ternary output' >&2\n\
@@ -15379,10 +16293,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect(
@@ -15427,6 +16341,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%s\", \"one\")'*'printf(\"%s\", \"zero\")'*'printf(\"%lld\", 7)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing single-known integer full ternary output' >&2\n\
@@ -15440,10 +16363,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary single-known integer full ternary C-validating cc script can be written");
@@ -15486,6 +16409,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%g\", 1.5)'*'printf(\"%s\", \"zero\")'*'printf(\"%g\", (1.25 + 2.5))'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing single-known float short ternary output' >&2\n\
@@ -15499,10 +16431,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary single-known float short ternary C-validating cc script can be written");
@@ -15545,6 +16477,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%s\", \"one\")'*'printf(\"%s\", \"zero\")'*'printf(\"%g\", 7.5)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing single-known float full ternary output' >&2\n\
@@ -15558,10 +16499,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary single-known float full ternary C-validating cc script can be written");
@@ -15604,6 +16545,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%s\", \"one\")'*'printf(\"%s\", \"empty\")'*'printf(\"%s\", \"zero\")'*'printf(\"%lld\", 7)'*'printf(\"%s\", \"falsey\")'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing known string full ternary output' >&2\n\
@@ -15617,10 +16567,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary known string full ternary C-validating cc script can be written");
@@ -15663,6 +16613,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%s\", \"literal\")'*'printf(\"%s\", \"empty\")'*'printf(\"%s\", \"zero\")'*'printf(\"%s\", (((((1 + 2)) == (3))) ? (\"left\") : (\"right\")))'*'printf(\"%s\", \"falsey\")'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing known string short ternary output' >&2\n\
@@ -15676,10 +16635,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary known string short ternary C-validating cc script can be written");
@@ -15719,6 +16678,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%s\", \"fallback\")'*'printf(\"%lld\", 7)'*'printf(\"%s\", \"a\")'*'printf(\"%s\", \"b\")'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing null full ternary false-branch output' >&2\n\
@@ -15732,10 +16700,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary null full ternary C-validating cc script can be written");
@@ -15775,6 +16743,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%s\", \"truthy\")'*'printf(\"%s\", \"falsey\")'*'printf(\"%lld\", 7)'*'printf(\"%lld\", 9)'*'printf(\"%s\", \"null\")'*'printf(\"%s\", \"string\")'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing static full ternary selected branch output' >&2\n\
@@ -15788,10 +16765,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect(
@@ -15833,6 +16810,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%s\", \"fallback\")'*'printf(\"%lld\", 7)'*'printf(\"%s\", \"a\")'*'printf(\"%s\", \"b\")'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing null short ternary fallback output' >&2\n\
@@ -15846,10 +16832,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary null short ternary C-validating cc script can be written");
@@ -15889,6 +16875,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%s\", \"a\")'*'printf(\"%s\", \"b\")'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing direct null short ternary surrounding output' >&2\n\
@@ -15902,10 +16897,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary direct null short ternary C-validating cc script can be written");
@@ -15945,6 +16940,15 @@ while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
 case \"$ir\" in\n\
+  *'define i32 @main()'*'@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\n' '.text'\n\
+  printf '%s\n' '.globl main'\n\
+  printf '%s\n' 'main:'\n\
+  printf '%s\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$ir\" in\n\
   *'%tmp1 = icmp eq i64 %tmp0, 3'*'%tmp2 = icmp eq i64 %tmp0, 4'*'%tmp3 = select i1 %tmp1, double 1.5, double 2.5'*'%tmp4 = select i1 %tmp2, double 9.25, double %tmp3'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing float ternary select operations' >&2\n\
@@ -15965,10 +16969,10 @@ case \"$ir\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary float ternary IR-validating clang script can be written");
@@ -16004,6 +17008,15 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
 case \"$source\" in\n\
   *'(1 + 2)'*) : ;;\n\
   *)\n\
@@ -16046,10 +17059,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary float ternary C-validating cc script can be written");
@@ -16089,6 +17102,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%lld\"'*'(5 + 7)'*'printf(\"%g\"'*'(2.5 + 1.5)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing folded identical numeric literal ternary outputs' >&2\n\
@@ -16102,10 +17124,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect(
@@ -16150,6 +17172,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'(4 << 62)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing overflow-sensitive shift source' >&2\n\
@@ -16163,10 +17194,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect(
@@ -16211,6 +17242,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'100000000000000000178334994858791836514563642560301392710701527770129502847789953562046870799284296099876897036220978235643807646031628623453753183252563447406133248.0 * 100000000000000000178334994858791836514563642560301392710701527770129502847789953562046870799284296099876897036220978235643807646031628623453753183252563447406133248.0'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing overflowing float multiply source' >&2\n\
@@ -16224,10 +17264,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect(
@@ -16272,6 +17312,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%lld\", (3 + 4))'*'printf(\"%g\", (3.75 + 1.25))'*'printf(\"%lld\", 1)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing folded single-result scalar ternary outputs' >&2\n\
@@ -16292,10 +17341,10 @@ case \"$source\" in\n\
   exit 352\n\
   ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary single-result scalar ternary C-validating cc script can be written");
@@ -16335,6 +17384,15 @@ while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
 case \"$ir\" in\n\
+  *'define i32 @main()'*'@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\n' '.text'\n\
+  printf '%s\n' '.globl main'\n\
+  printf '%s\n' 'main:'\n\
+  printf '%s\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$ir\" in\n\
   *'%tmp1 = icmp eq i64 %tmp0, 3'*'%tmp2 = icmp eq i64 %tmp0, 4'*'%tmp3 = select i1 %tmp1, ptr @.str.0, ptr @.str.1'*'%tmp4 = select i1 %tmp1, i64 5, i64 4'*'%tmp5 = select i1 %tmp2, ptr @.str.2, ptr %tmp3'*'%tmp6 = select i1 %tmp2, i64 5, i64 %tmp4'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing string ternary pointer and length select operations' >&2\n\
@@ -16362,10 +17420,10 @@ case \"$ir\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary string ternary IR-validating clang script can be written");
@@ -16401,6 +17459,15 @@ source=''\n\
 while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
+case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
 case \"$source\" in\n\
   *'(1 + 2)'*) : ;;\n\
   *)\n\
@@ -16443,10 +17510,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary string ternary C-validating cc script can be written");
@@ -16484,6 +17551,15 @@ while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
 case \"$ir\" in\n\
+  *'define i32 @main()'*'@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\n' '.text'\n\
+  printf '%s\n' '.globl main'\n\
+  printf '%s\n' 'main:'\n\
+  printf '%s\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$ir\" in\n\
   *'@printf(ptr @.fmt_int, i64 1)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing static mixed ternary integer true output' >&2\n\
@@ -16511,10 +17587,10 @@ case \"$ir\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary static mixed ternary IR-validating clang script can be written");
@@ -16554,6 +17630,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%lld\", 1)'*'printf(\"%s\", \"picked\")'*'printf(\"%lld\", 7)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing static mixed ternary selected outputs' >&2\n\
@@ -16567,10 +17652,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary static mixed ternary C-validating cc script can be written");
@@ -16607,6 +17692,15 @@ while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
 case \"$ir\" in\n\
+  *'define i32 @main()'*'@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\n' '.text'\n\
+  printf '%s\n' '.globl main'\n\
+  printf '%s\n' 'main:'\n\
+  printf '%s\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$ir\" in\n\
   *'%tmp0 = add i64 1, 2'*'%tmp1 = icmp eq i64 %tmp0, 3'*'@.str.0'*'@.str.1'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing null ternary folded outputs' >&2\n\
@@ -16620,10 +17714,10 @@ case \"$ir\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary null ternary IR-validating clang script can be written");
@@ -16660,6 +17754,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%s\", \"a\")'*'printf(\"%s\", \"b\")'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing null ternary folded outputs' >&2\n\
@@ -16673,10 +17776,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary null ternary C-validating cc script can be written");
@@ -16714,6 +17817,15 @@ while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
 case \"$ir\" in\n\
+  *'define i32 @main()'*'@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\n' '.text'\n\
+  printf '%s\n' '.globl main'\n\
+  printf '%s\n' 'main:'\n\
+  printf '%s\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$ir\" in\n\
   *'c\"1\\00\"'*'c\"1\\00\"'*'c\"1\\00\"'*'c\"1\\00\"'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing four strict-identity true strings' >&2\n\
@@ -16727,10 +17839,10 @@ case \"$ir\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary static strict-identity IR-validating clang script can be written");
@@ -16771,6 +17883,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing four strict-identity true outputs' >&2\n\
@@ -16784,10 +17905,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary static strict-identity C-validating cc script can be written");
@@ -16826,6 +17947,15 @@ while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
 case \"$ir\" in\n\
+  *'define i32 @main()'*'@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\n' '.text'\n\
+  printf '%s\n' '.globl main'\n\
+  printf '%s\n' 'main:'\n\
+  printf '%s\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$ir\" in\n\
   *'c\"hello world\\00\"'*'c\"say: hello world\\00\"'*'c\"hello world!\\00\"'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing static string concat outputs' >&2\n\
@@ -16839,10 +17969,10 @@ case \"$ir\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary static string-concat IR-validating clang script can be written");
@@ -16882,6 +18012,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%s\", \"hello world\")'*'printf(\"%s\", \"say: hello world\")'*'printf(\"%s\", \"hello world!\")'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing static string concat outputs' >&2\n\
@@ -16895,10 +18034,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary static string-concat C-validating cc script can be written");
@@ -16938,6 +18077,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%s\", \"hello\")'*'printf(\"%s\", \"say yes\")'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing single-result string ternary concat outputs' >&2\n\
@@ -16958,10 +18106,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect(
@@ -17006,6 +18154,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%s\", '*'printf(\"%s\", '* ) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing reused string expression printf calls' >&2\n\
@@ -17019,10 +18176,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary empty-string concat identity C-validating cc script can be written");
@@ -17063,6 +18220,15 @@ while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
 case \"$ir\" in\n\
+  *'define i32 @main()'*'@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\n' '.text'\n\
+  printf '%s\n' '.globl main'\n\
+  printf '%s\n' 'main:'\n\
+  printf '%s\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$ir\" in\n\
   *'c\"1\\00\"'*'c\"1\\00\"'*'c\"1\\00\"'*'c\"x\\00\"'*'c\"y\\00\"'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing static string strict-identity outputs' >&2\n\
@@ -17076,10 +18242,10 @@ case \"$ir\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect(
@@ -17124,6 +18290,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"x\")'*'printf(\"%s\", \"y\")'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing static string strict-identity outputs' >&2\n\
@@ -17137,10 +18312,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary static string strict-identity C-validating cc script can be written");
@@ -17183,6 +18358,15 @@ while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
 case \"$ir\" in\n\
+  *'define i32 @main()'*'@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\n' '.text'\n\
+  printf '%s\n' '.globl main'\n\
+  printf '%s\n' 'main:'\n\
+  printf '%s\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$ir\" in\n\
   *'c\"1\\00\"'*'c\"1\\00\"'*'c\"1\\00\"'*'c\"x\\00\"'*'c\"y\\00\"'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing static float strict-identity outputs' >&2\n\
@@ -17196,10 +18380,10 @@ case \"$ir\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary static float strict-identity IR-validating clang script can be written");
@@ -17242,6 +18426,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"x\")'*'printf(\"%s\", \"y\")'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing static float strict-identity outputs' >&2\n\
@@ -17255,10 +18448,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary static float strict-identity C-validating cc script can be written");
@@ -17301,6 +18494,15 @@ while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
 case \"$ir\" in\n\
+  *'define i32 @main()'*'@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\n' '.text'\n\
+  printf '%s\n' '.globl main'\n\
+  printf '%s\n' 'main:'\n\
+  printf '%s\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$ir\" in\n\
   *'c\"1\\00\"'*'c\"1\\00\"'*'c\"x\\00\"'*'c\"y\\00\"'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing static null strict-identity outputs' >&2\n\
@@ -17314,10 +18516,10 @@ case \"$ir\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary static null strict-identity IR-validating clang script can be written");
@@ -17360,6 +18562,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"x\")'*'printf(\"%s\", \"y\")'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing static null strict-identity outputs' >&2\n\
@@ -17373,10 +18584,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary static null strict-identity C-validating cc script can be written");
@@ -17419,6 +18630,15 @@ while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
 case \"$ir\" in\n\
+  *'define i32 @main()'*'@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\n' '.text'\n\
+  printf '%s\n' '.globl main'\n\
+  printf '%s\n' 'main:'\n\
+  printf '%s\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$ir\" in\n\
   *'c\"1\\00\"'*'c\"1\\00\"'*'c\"1\\00\"'*'c\"1\\00\"'*'c\"x\\00\"'*'c\"y\\00\"'*'%tmp0 = add i64 1, 2'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing mixed scalar strict-identity outputs' >&2\n\
@@ -17432,10 +18652,10 @@ case \"$ir\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary mixed scalar strict-identity IR-validating clang script can be written");
@@ -17478,6 +18698,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"x\")'*'printf(\"%s\", \"y\")'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing mixed scalar strict-identity outputs' >&2\n\
@@ -17491,10 +18720,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary mixed scalar strict-identity C-validating cc script can be written");
@@ -17537,6 +18766,15 @@ while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
 case \"$ir\" in\n\
+  *'define i32 @main()'*'@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\n' '.text'\n\
+  printf '%s\n' '.globl main'\n\
+  printf '%s\n' 'main:'\n\
+  printf '%s\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$ir\" in\n\
   *'%tmp0 = add i64 1, 2'*'%tmp1 = mul i64 3, 2'*'icmp eq i64 %tmp0, 3'*'icmp ne i64 %tmp1, 6'*'icmp ne i64 %tmp0, %tmp1'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing dynamic integer strict-identity comparisons' >&2\n\
@@ -17550,10 +18788,10 @@ case \"$ir\" in\n\
   exit 176\n\
   ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect(
@@ -17598,6 +18836,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'if ('*'(1 + 2)'*'=='*'printf(\"%s\", \"1\")'*'(3 * 2)'*'!='*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing dynamic integer strict-identity comparisons' >&2\n\
@@ -17611,10 +18858,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary dynamic integer strict-identity C-validating cc script can be written");
@@ -17657,6 +18904,15 @@ while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
 case \"$ir\" in\n\
+  *'define i32 @main()'*'@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\n' '.text'\n\
+  printf '%s\n' '.globl main'\n\
+  printf '%s\n' 'main:'\n\
+  printf '%s\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$ir\" in\n\
   *'%tmp0 = add i64 1, 2'*'icmp eq i64 %tmp0, 3'*'select i1 %tmp1, double 3.75, double 4.25'*'fcmp oeq double %tmp2, 3.75'*'fcmp une double %tmp2, 4.25'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing dynamic float strict-identity comparisons' >&2\n\
@@ -17670,10 +18926,10 @@ case \"$ir\" in\n\
   exit 188\n\
   ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect(
@@ -17718,6 +18974,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'?'*'3.75'*':'*'4.25'*'=='*'3.75'*'!='*'4.25'*'printf(\"%s\", \"1\")'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing dynamic float strict-identity comparisons' >&2\n\
@@ -17731,10 +18996,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary dynamic float strict-identity C-validating cc script can be written");
@@ -17777,6 +19042,15 @@ while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
 case \"$ir\" in\n\
+  *'define i32 @main()'*'@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\n' '.text'\n\
+  printf '%s\n' '.globl main'\n\
+  printf '%s\n' 'main:'\n\
+  printf '%s\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$ir\" in\n\
   *'declare i32 @strcmp(ptr, ptr)'*'%tmp2 = select i1 %tmp1, ptr @.str.0, ptr @.str.1'*'%tmp3 = select i1 %tmp1, i64 5, i64 4'*'%tmp4 = call i32 @strcmp(ptr %tmp2, ptr @.str.2)'*'%tmp5 = icmp eq i32 %tmp4, 0'*'call i32 (ptr, ...) @printf(ptr @.fmt_str, ptr @.str.6)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing dynamic string strict-identity comparison or folded output' >&2\n\
@@ -17794,10 +19068,10 @@ case \"$ir\" in\n\
   exit 199\n\
   ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect(
@@ -17842,6 +19116,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'#include <string.h>'*'strcmp('*'alpha'*'== 0'*'printf(\"%s\", \"1\")'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing dynamic string strict-identity comparison or folded output' >&2\n\
@@ -17862,10 +19145,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary dynamic string strict-identity C-validating cc script can be written");
@@ -17908,6 +19191,15 @@ while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
 case \"$ir\" in\n\
+  *'define i32 @main()'*'@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\n' '.text'\n\
+  printf '%s\n' '.globl main'\n\
+  printf '%s\n' 'main:'\n\
+  printf '%s\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$ir\" in\n\
   *'icmp eq i64 %tmp0, 3'*'select i1 %tmp1, i64 3, i64 4'*'select i1 %tmp1, i64 4, i64 3'*'icmp eq i64 %tmp0, %tmp2'*'icmp eq i64 %tmp0, %tmp3'*'xor i1 %tmp5, true'*'icmp ne i1 %tmp4, %tmp5'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing dynamic boolean strict-identity comparisons' >&2\n\
@@ -17921,10 +19213,10 @@ case \"$ir\" in\n\
   exit 180\n\
   ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect(
@@ -17969,6 +19261,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'(1 + 2)'*'=='*'if ('*'printf(\"%s\", \"1\")'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing dynamic boolean strict-identity comparisons' >&2\n\
@@ -17982,10 +19283,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary dynamic boolean strict-identity C-validating cc script can be written");
@@ -18028,6 +19329,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'(1 + 2)'*'? (\"T\") : (\"F\")'*'!('*'? (\"T\") : (\"F\")'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing boolean literal loose-comparison folded ternaries' >&2\n\
@@ -18041,10 +19351,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary boolean literal loose-comparison C-validating cc script can be written");
@@ -18087,6 +19397,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'!('*'? (\"T\") : (\"F\")'*'? (\"T\") : (\"F\")'*'printf(\"%s\", \"T\")'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing boolean literal ordering-comparison folded outputs' >&2\n\
@@ -18100,10 +19419,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect(
@@ -18148,6 +19467,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing folded tracked integer comparison outputs' >&2\n\
@@ -18168,10 +19496,10 @@ case \"$source\" in\n\
   exit 343\n\
   ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect(
@@ -18216,6 +19544,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'(4 << 62)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing overflow-sensitive shift source' >&2\n\
@@ -18236,10 +19573,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect(
@@ -18284,6 +19621,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing folded tracked float comparison outputs' >&2\n\
@@ -18304,10 +19650,10 @@ case \"$source\" in\n\
   exit 346\n\
   ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect(
@@ -18352,6 +19698,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing folded bounded string comparison outputs' >&2\n\
@@ -18372,10 +19727,10 @@ case \"$source\" in\n\
   exit 349\n\
   ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect(
@@ -18420,6 +19775,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing folded boolean expression comparison outputs' >&2\n\
@@ -18440,10 +19804,10 @@ case \"$source\" in\n\
   exit 355\n\
   ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect(
@@ -18488,6 +19852,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%lld\", 1)'*'printf(\"%lld\", 0)'*'printf(\"%lld\", 0)'*'printf(\"%lld\", 1)'*'printf(\"%lld\", 0)'*'printf(\"%lld\", 1)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing folded identical boolean expression comparison outputs' >&2\n\
@@ -18501,10 +19874,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect(
@@ -18549,6 +19922,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%lld\", 1)'*'printf(\"%lld\", 0)'*'printf(\"%lld\", 0)'*'printf(\"%lld\", 1)'*'printf(\"%lld\", 0)'*'printf(\"%lld\", 1)'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing folded identical string expression comparison outputs' >&2\n\
@@ -18562,10 +19944,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect(
@@ -18610,6 +19992,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing folded bounded integer comparison outputs' >&2\n\
@@ -18630,10 +20021,10 @@ case \"$source\" in\n\
   exit 358\n\
   ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect(
@@ -18678,6 +20069,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing folded bounded float comparison outputs' >&2\n\
@@ -18698,10 +20098,10 @@ case \"$source\" in\n\
   exit 361\n\
   ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect(
@@ -18746,6 +20146,15 @@ while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
 case \"$ir\" in\n\
+  *'define i32 @main()'*'@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\n' '.text'\n\
+  printf '%s\n' '.globl main'\n\
+  printf '%s\n' 'main:'\n\
+  printf '%s\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$ir\" in\n\
   *'c\"1\\00\"'*'c\"1\\00\"'*'c\"1\\00\"'*'c\"1\\00\"'*'c\"1\\00\"'*'c\"x\\00\"'*'c\"y\\00\"'*'%tmp0 = add i64 1, 2'*'%tmp1 = icmp eq i64 %tmp0, 3'*'%tmp2 = select i1 %tmp1'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing mixed dynamic boolean strict-identity outputs' >&2\n\
@@ -18759,10 +20168,10 @@ case \"$ir\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect(
@@ -18807,6 +20216,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'if ('*'(1 + 2)'*'=='*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"x\")'*'printf(\"%s\", \"y\")'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing mixed dynamic boolean strict-identity outputs' >&2\n\
@@ -18820,10 +20238,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect(
@@ -18868,6 +20286,15 @@ while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
 case \"$ir\" in\n\
+  *'define i32 @main()'*'@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\n' '.text'\n\
+  printf '%s\n' '.globl main'\n\
+  printf '%s\n' 'main:'\n\
+  printf '%s\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$ir\" in\n\
   *'c\"1\\00\"'*'c\"1\\00\"'*'c\"1\\00\"'*'c\"1\\00\"'*'c\"x\\00\"'*'c\"y\\00\"'*'%tmp0 = fadd double 1.5, 2.25'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing mixed dynamic float strict-identity outputs' >&2\n\
@@ -18881,10 +20308,10 @@ case \"$ir\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect(
@@ -18929,6 +20356,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"x\")'*'printf(\"%s\", \"y\")'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing mixed dynamic float strict-identity outputs' >&2\n\
@@ -18942,10 +20378,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect(
@@ -18990,6 +20426,15 @@ while IFS= read -r line; do\n\
   ir=\"${ir}${line}\"\n\
 done\n\
 case \"$ir\" in\n\
+  *'define i32 @main()'*'@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\n' '.text'\n\
+  printf '%s\n' '.globl main'\n\
+  printf '%s\n' 'main:'\n\
+  printf '%s\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$ir\" in\n\
   *'c\"1\\00\"'*'c\"1\\00\"'*'c\"1\\00\"'*'c\"1\\00\"'*'c\"x\\00\"'*'c\"y\\00\"'*'%tmp0 = add i64 1, 2'*'%tmp1 = icmp eq i64 %tmp0, 3'*'%tmp2 = select i1 %tmp1, ptr @.str.0, ptr @.str.1'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing mixed dynamic string strict-identity outputs' >&2\n\
@@ -19003,10 +20448,10 @@ case \"$ir\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect(
@@ -19051,6 +20496,15 @@ while IFS= read -r line; do\n\
   source=\"${source}${line}\"\n\
 done\n\
 case \"$source\" in\n\
+  *'/* generated by phpc native executable C link path */'*'int main(void)'*'phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*)\n\
+  printf '%s\\n' '.text'\n\
+  printf '%s\\n' '.globl main'\n\
+  printf '%s\\n' 'main:'\n\
+  printf '%s\\n' '  call printf'\n\
+  exit 0\n\
+  ;;\n\
+esac\n\
+case \"$source\" in\n\
   *'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"1\")'*'printf(\"%s\", \"x\")'*'printf(\"%s\", \"y\")'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake cc missing mixed dynamic string strict-identity outputs' >&2\n\
@@ -19064,10 +20518,10 @@ case \"$source\" in\n\
   ;;\n\
   *) : ;;\n\
 esac\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect(
@@ -19111,10 +20565,10 @@ fi\n\
 while IFS= read -r _line; do\n\
   :\n\
 done\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary argument-validating clang script can be written");
@@ -19153,10 +20607,10 @@ fi\n\
 while IFS= read -r _line; do\n\
   :\n\
 done\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary argument-validating llc script can be written");
@@ -19195,10 +20649,10 @@ fi\n\
 while IFS= read -r _line; do\n\
   :\n\
 done\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary argument-validating cc script can be written");
@@ -19244,10 +20698,10 @@ fi\n\
 while IFS= read -r _line; do\n\
   :\n\
 done\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
                 marker.display(),
                 marker.display()
@@ -19296,10 +20750,10 @@ fi\n\
 while IFS= read -r _line; do\n\
   :\n\
 done\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
                 marker.display(),
                 marker.display()
@@ -19348,10 +20802,10 @@ fi\n\
 while IFS= read -r _line; do\n\
   :\n\
 done\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
                 marker.display(),
                 marker.display()
@@ -19390,10 +20844,10 @@ fi\n\
 while IFS= read -r _line; do\n\
   :\n\
 done\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary probe-output clang script can be written");
@@ -19429,10 +20883,10 @@ fi\n\
 while IFS= read -r _line; do\n\
   :\n\
 done\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary probe-output llc script can be written");
@@ -19467,10 +20921,10 @@ fi\n\
 while IFS= read -r _line; do\n\
   :\n\
 done\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary probe-output cc script can be written");
@@ -19526,10 +20980,10 @@ fi\n\
 while IFS= read -r _line; do\n\
   :\n\
 done\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary failed-probe-output llc script can be written");
@@ -19605,10 +21059,10 @@ fi\n\
 while IFS= read -r _line; do\n\
   :\n\
 done\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary failed-probe-output cc script can be written");
@@ -19798,10 +21252,10 @@ fi\n\
 while IFS= read -r _line; do\n\
   :\n\
 done\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 printf '%s\\n' '# selected clang backend'\n\
 exit 0\n",
         )
@@ -19862,10 +21316,10 @@ fi\n\
 while IFS= read -r _line; do\n\
   :\n\
 done\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 printf '%s\\n' '# selected llc backend before cc fallback'\n\
 exit 0\n",
         )
@@ -20489,10 +21943,10 @@ fi\n\
 while IFS= read -r _line; do\n\
   :\n\
 done\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary unstartable-clang-probe llc script can be written");
@@ -20547,10 +22001,10 @@ fi\n\
 while IFS= read -r _line; do\n\
   :\n\
 done\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary unstartable-llvm-probes cc script can be written");
@@ -20608,10 +22062,10 @@ fi\n\
 while IFS= read -r _line; do\n\
   :\n\
 done\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary permission-denied-clang-probe llc script can be written");
@@ -20667,10 +22121,10 @@ fi\n\
 while IFS= read -r _line; do\n\
   :\n\
 done\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary permission-denied-llvm-probes cc script can be written");
@@ -20726,10 +22180,10 @@ while IFS= read -r _line; do\n\
   :\n\
 done\n\
 printf '%s\\n' 'fake llc warning on successful assembly' >&2\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary success-with-stderr llc script can be written");
@@ -20765,10 +22219,10 @@ while IFS= read -r _line; do\n\
   :\n\
 done\n\
 printf '%s\\n' 'fake cc warning on successful assembly' >&2\n\
-printf '%s\\n' '.text'\n\
-printf '%s\\n' '.globl main'\n\
-printf '%s\\n' 'main:'\n\
-printf '%s\\n' '  call printf'\n\
+printf '%s\n' '.text'\n\
+printf '%s\n' '.globl main'\n\
+printf '%s\n' 'main:'\n\
+printf '%s\n' '  call printf'\n\
 exit 0\n",
         )
         .expect("temporary success-with-stderr cc script can be written");
@@ -21030,12 +22484,15 @@ fn render_asm_cli_summary(output: &Output) -> String {
     let exit_code = output.status.code().unwrap_or(1);
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
+    let contains_output_call = stdout.contains("printf")
+        || stdout.contains("phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free")
+        || stdout.contains("phpc_native_value_format_stdout_with_diagnostic");
 
     format!(
         "exit: {exit_code}\nstdout:\nnonempty: {}\ncontains_main: {}\ncontains_printf: {}\n--- stdout end ---\nstderr:\n{stderr}--- stderr end ---\n",
         !stdout.is_empty(),
         stdout.contains("main"),
-        stdout.contains("printf"),
+        contains_output_call,
     )
 }
 

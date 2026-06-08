@@ -1,0 +1,4 @@
+Fatal error: Uncaught DivisionByZeroError: Modulo by zero in tests/fixtures/milestone159/modulo_by_zero.php:2
+Stack trace:
+#0 {main}
+  thrown in tests/fixtures/milestone159/modulo_by_zero.php on line 2

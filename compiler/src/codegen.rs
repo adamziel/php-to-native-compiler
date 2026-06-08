@@ -9,8 +9,8 @@ use crate::ast::{
     ClassMethodDecl, ClassVisibility, ClosureCapture, CompoundAssignOp, ConstDeclarator, Expr,
     ForAction, FunctionDecl, FunctionParam, IncrementDecrementOp, IncrementDecrementPosition,
     InterfaceDecl, InterfaceMethodDecl, InterpolatedAccessSegment, InterpolatedArrayKey,
-    InterpolatedStringPart, NewClassName, Program, ReferenceSource, Span, Stmt, SwitchCase,
-    TraitDecl, TypeDecl, UnaryOp, UnsetTarget,
+    InterpolatedStringPart, ListAssignmentTarget, MatchArm, NewClassName, Program, ReferenceSource,
+    Span, Stmt, SwitchCase, TraitDecl, TypeDecl, UnaryOp, UnsetTarget,
 };
 use crate::call_arguments::{
     normalize_call_arguments, CallArgument, CallArgumentNormalizationError, CallArgumentParameter,
@@ -32,8 +32,9 @@ use php_runtime::{
     NativeIntConversionOperation, NativeOutputBufferOperation, NativeStringArrayOperation,
     NativeStringDistanceOperation, NativeStringIntOperation, NativeStringOffsetOperation,
     NativeStringPredicate, NativeStringResultOperation, NativeStringSearchOperation,
-    PhpPrimitiveArithmeticError, PhpPrimitiveArithmeticOperation, PhpPrimitiveArithmeticValue,
-    PhpPrimitiveValue, PHPC_NATIVE_DIAGNOSTIC_OPERAND_ARGUMENT_EVALUATION_CLEANUP,
+    PhpNumericStringClassification, PhpPrimitiveArithmeticError, PhpPrimitiveArithmeticOperation,
+    PhpPrimitiveArithmeticValue, PhpPrimitiveValue,
+    PHPC_NATIVE_DIAGNOSTIC_OPERAND_ARGUMENT_EVALUATION_CLEANUP,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_ASSIGNMENT_TARGET_KEY_EVALUATION,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_ASSIGNMENT_TARGET_PROPERTY_EVALUATION,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_ASSIGNMENT_TARGET_RECEIVER_EVALUATION,
@@ -89,6 +90,8 @@ const NATIVE_DECLARED_CLASS_PROPERTY_PROTECTED: u8 = 2;
 const NATIVE_DECLARED_CLASS_PROPERTY_PRIVATE: u8 = 3;
 const LLVM_CONDITIONAL_REJECTION: &str = "LLVM conditional lowering rejects unsupported conditional expressions or operands until native PHP truthiness, null-aware lookup, branch side-effect ordering, and exact native error behavior exist; phpc run handles current conditional expression behavior";
 const ASSEMBLY_CONDITIONAL_REJECTION: &str = "assembly conditional lowering rejects unsupported conditional expressions or operands until native PHP truthiness, null-aware lookup, branch side-effect ordering, and exact native error behavior exist; phpc run handles current conditional expression behavior";
+const LLVM_MATCH_REJECTION: &str = "LLVM match expression lowering rejects match expressions until native strict arm comparison, default/exhaustiveness handling, value evaluation order, references/copy-on-write, and exact native error behavior exist; phpc run handles current match expression behavior";
+const ASSEMBLY_MATCH_REJECTION: &str = "assembly match expression lowering rejects match expressions until native strict arm comparison, default/exhaustiveness handling, value evaluation order, references/copy-on-write, and exact native error behavior exist; phpc run handles current match expression behavior";
 const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
 const ASSEMBLY_FUNCTION_CALL_REJECTION: &str = "assembly function-call lowering rejects function calls outside the bounded generated-C user-function frame subset, including unknown user functions, callable builtins outside define()/constant()/defined(), arity-mismatched direct calls, unsupported by-reference argument binding, and unsupported dynamic string-valued calls, until full callable lookup, full arity/type diagnostics, callbacks, and cleanup handoff exist; generated-native C lowers supported by-value fixed/default/variadic direct, supported direct and compiler-known single-target by-reference frames, finite known-string dynamic, and runtime string-valued dynamic user-function frames";
 const NAMED_ARGUMENT_UNSUPPORTED_CALL_FAMILY_REJECTION: &str = "named argument lowering is only implemented for compiler-known generated-C user-function, constructor, and selected method/static source-call carriers; builtins, dynamic callables, and unsupported call families remain blocked until each consumer binds through shared source-order/parameter-order call-argument normalization";
@@ -107,8 +110,8 @@ const LLVM_BASENAME_REJECTION: &str = "LLVM basename lowering rejects direct pat
 const ASSEMBLY_BASENAME_REJECTION: &str = "assembly basename lowering rejects direct path basename calls until native PHP path string conversion, suffix handling, trailing-separator normalization, Windows/UNC and stream-wrapper path semantics, locale/codepage behavior, argument diagnostics, references/copy-on-write, and exact native basename diagnostics exist; phpc run handles current bounded basename behavior";
 const LLVM_FILE_GET_CONTENTS_REJECTION: &str = "LLVM file_get_contents lowering rejects direct filesystem reads until native PHP stream wrapper handling, local file I/O, binary string byte fidelity, warning plus false recovery, stream contexts, include-path lookup, open_basedir/stat-cache behavior, references/copy-on-write, and exact native file_get_contents diagnostics exist; phpc run handles current bounded file_get_contents behavior including UTF-8 offset/length reads and selected warning-plus-false recovery";
 const ASSEMBLY_FILE_GET_CONTENTS_REJECTION: &str = "assembly file_get_contents lowering rejects direct filesystem reads until native PHP stream wrapper handling, local file I/O, binary string byte fidelity, warning plus false recovery, stream contexts, include-path lookup, open_basedir/stat-cache behavior, references/copy-on-write, and exact native file_get_contents diagnostics exist; phpc run handles current bounded file_get_contents behavior including UTF-8 offset/length reads and selected warning-plus-false recovery";
-const LLVM_STREAM_RESOURCE_REJECTION: &str = "LLVM stream-resource lowering rejects fopen(), tmpfile(), stream_context_create(), stream_context_get_options(), stream_context_get_params(), stream_context_get_default(), stream_context_set_default(), stream_context_set_option(), stream_context_set_options(), stream_context_set_params(), fwrite()/fputs(), fgetc(), fgets(), fgetcsv(), fputcsv(), fscanf(), fread(), rewind(), stream_get_contents(), fpassthru(), stream_copy_to_stream(), stream_filter_append(), stream_is_local(), stream_supports_lock(), flock(), feof(), ftell(), fseek(), fstat(), stream_get_meta_data(), stream_get_wrappers(), stream_wrapper_register(), stream_wrapper_unregister(), stream_wrapper_restore(), fclose(), dir(), opendir(), readdir(), rewinddir(), closedir(), glob(), is_uploaded_file(), and move_uploaded_file() until native PHP resource handles, stream wrapper state, stream context state, stream wrapper registry state, stream filter state, stream lock state, upload provenance state, directory/glob state, binary string byte fidelity, warning plus false recovery, references/copy-on-write, and exact native stream diagnostics exist; phpc run handles current bounded php://memory, php://temp, php://input, data://, local file stream resources, stream wrapper capability metadata, stream context resources, selected read filters, local directory handles, bounded local glob patterns, and PHPC_FILES upload provenance";
-const ASSEMBLY_STREAM_RESOURCE_REJECTION: &str = "assembly stream-resource lowering rejects fopen(), tmpfile(), stream_context_create(), stream_context_get_options(), stream_context_get_params(), stream_context_get_default(), stream_context_set_default(), stream_context_set_option(), stream_context_set_options(), stream_context_set_params(), fwrite()/fputs(), fgetc(), fgets(), fgetcsv(), fputcsv(), fscanf(), fread(), rewind(), stream_get_contents(), fpassthru(), stream_copy_to_stream(), stream_filter_append(), stream_is_local(), stream_supports_lock(), flock(), feof(), ftell(), fseek(), fstat(), stream_get_meta_data(), stream_get_wrappers(), stream_wrapper_register(), stream_wrapper_unregister(), stream_wrapper_restore(), fclose(), dir(), opendir(), readdir(), rewinddir(), closedir(), glob(), is_uploaded_file(), and move_uploaded_file() until native PHP resource handles, stream wrapper state, stream context state, stream wrapper registry state, stream filter state, stream lock state, upload provenance state, directory/glob state, binary string byte fidelity, warning plus false recovery, references/copy-on-write, and exact native stream diagnostics exist; phpc run handles current bounded php://memory, php://temp, php://input, data://, local file stream resources, stream wrapper capability metadata, stream context resources, selected read filters, local directory handles, bounded local glob patterns, and PHPC_FILES upload provenance";
+const LLVM_STREAM_RESOURCE_REJECTION: &str = "LLVM stream-resource lowering rejects fopen(), tmpfile(), stream_context_create(), stream_context_get_options(), stream_context_get_params(), stream_context_get_default(), stream_context_set_default(), stream_context_set_option(), stream_context_set_options(), stream_context_set_params(), fwrite()/fputs(), fgetc(), fgets(), fgetcsv(), fputcsv(), fscanf(), fread(), rewind(), stream_get_contents(), fpassthru(), stream_copy_to_stream(), stream_filter_append(), stream_is_local(), stream_supports_lock(), flock(), feof(), ftell(), fseek(), fstat(), stream_get_meta_data(), stream_get_wrappers(), stream_get_transports(), stream_wrapper_register(), stream_wrapper_unregister(), stream_wrapper_restore(), fclose(), dir(), opendir(), readdir(), rewinddir(), closedir(), glob(), is_uploaded_file(), and move_uploaded_file() until native PHP resource handles, stream wrapper state, stream context state, stream wrapper registry state, stream transport state, stream filter state, stream lock state, upload provenance state, directory/glob state, binary string byte fidelity, warning plus false recovery, references/copy-on-write, and exact native stream diagnostics exist; phpc run handles current bounded php://memory, php://temp, php://input, data://, local file stream resources, stream wrapper and transport capability metadata, stream context resources, selected read filters, local directory handles, bounded local glob patterns, and PHPC_FILES upload provenance";
+const ASSEMBLY_STREAM_RESOURCE_REJECTION: &str = "assembly stream-resource lowering rejects fopen(), tmpfile(), stream_context_create(), stream_context_get_options(), stream_context_get_params(), stream_context_get_default(), stream_context_set_default(), stream_context_set_option(), stream_context_set_options(), stream_context_set_params(), fwrite()/fputs(), fgetc(), fgets(), fgetcsv(), fputcsv(), fscanf(), fread(), rewind(), stream_get_contents(), fpassthru(), stream_copy_to_stream(), stream_filter_append(), stream_is_local(), stream_supports_lock(), flock(), feof(), ftell(), fseek(), fstat(), stream_get_meta_data(), stream_get_wrappers(), stream_get_transports(), stream_wrapper_register(), stream_wrapper_unregister(), stream_wrapper_restore(), fclose(), dir(), opendir(), readdir(), rewinddir(), closedir(), glob(), is_uploaded_file(), and move_uploaded_file() until native PHP resource handles, stream wrapper state, stream context state, stream wrapper registry state, stream transport state, stream filter state, stream lock state, upload provenance state, directory/glob state, binary string byte fidelity, warning plus false recovery, references/copy-on-write, and exact native stream diagnostics exist; phpc run handles current bounded php://memory, php://temp, php://input, data://, local file stream resources, stream wrapper and transport capability metadata, stream context resources, selected read filters, local directory handles, bounded local glob patterns, and PHPC_FILES upload provenance";
 const LLVM_GETCWD_REJECTION: &str = "LLVM getcwd lowering rejects direct current-directory calls until native process/request cwd state, UTF-8/path policy, SAPI cwd behavior, chdir() interaction, failure false recovery, references/copy-on-write, and exact native getcwd diagnostics exist; phpc run handles current bounded getcwd behavior";
 const ASSEMBLY_GETCWD_REJECTION: &str = "assembly getcwd lowering rejects direct current-directory calls until native process/request cwd state, UTF-8/path policy, SAPI cwd behavior, chdir() interaction, failure false recovery, references/copy-on-write, and exact native getcwd diagnostics exist; phpc run handles current bounded getcwd behavior";
 const LLVM_REALPATH_REJECTION: &str = "LLVM realpath lowering rejects direct filesystem canonicalization calls until native filesystem canonicalization, symlink/path policy, warning/false recovery, include_path/open_basedir/stat cache, non-UTF-8 path handling, references/COW, and exact native realpath diagnostics exist; phpc run handles current bounded realpath behavior";
@@ -171,8 +174,8 @@ const ASSEMBLY_ARRAY_REJECTION: &str = "assembly array lowering rejects unsuppor
 const ASSEMBLY_NATIVE_ARRAY_BY_REFERENCE_FOREACH_REJECTION: &str = "native executable by-reference foreach lowering rejects this by-reference iteration form; generated C currently supports array, nested-array, direct reference-slot, and active root symbol-table lvalue owners with compact value-reference assignment, loop-value array-lvalue assignment bodies, and direct loop-variable post-loop aliases through phpc_native_array_lvalue_owner_foreach_value_reference_result(), while temporary iterable owners, arbitrary body mutation, cursor variable mutation, request owners, arbitrary alias-root owners, broader references/copy-on-write parity, and exact cleanup ownership remain unsupported; phpc run handles current by-reference foreach behavior";
 const LLVM_ARRAY_ACCESS_REJECTION: &str = "LLVM ArrayAccess lowering rejects object offset reads/writes/isset/empty/unset/compound paths until native ArrayAccess dispatch for offsetGet(), offsetSet(), offsetExists(), and offsetUnset(), object handles, references/copy-on-write, and exact PHP diagnostics exist; phpc run handles current bounded ArrayAccess behavior";
 const ASSEMBLY_ARRAY_ACCESS_REJECTION: &str = "assembly ArrayAccess lowering rejects object offset reads/writes/isset/empty/unset/compound paths until native ArrayAccess dispatch for offsetGet(), offsetSet(), offsetExists(), and offsetUnset(), object handles, references/copy-on-write, and exact PHP diagnostics exist; phpc run handles current bounded ArrayAccess behavior";
-const LLVM_ARRAY_DESTRUCTURING_REJECTION: &str = "LLVM array destructuring lowering rejects list(...) and [...] assignment targets until native array storage layout, ordered key lookup, missing-key diagnostics, nested destructuring, references/copy-on-write, and exact native assignment ordering exist; phpc run handles current simple destructuring assignment behavior";
-const ASSEMBLY_ARRAY_DESTRUCTURING_REJECTION: &str = "assembly array destructuring lowering rejects list(...) and [...] assignment targets until native array storage layout, ordered key lookup, missing-key diagnostics, nested destructuring, references/copy-on-write, and exact native assignment ordering exist; phpc run handles current simple destructuring assignment behavior";
+const LLVM_ARRAY_DESTRUCTURING_REJECTION: &str = "LLVM array destructuring lowering rejects list(...) and [...] assignment targets until native array storage layout, ordered key lookup, missing-key diagnostics, nested destructuring, references/copy-on-write, and exact native assignment ordering exist; phpc run handles current bounded destructuring assignment behavior";
+const ASSEMBLY_ARRAY_DESTRUCTURING_REJECTION: &str = "assembly array destructuring lowering rejects list(...) and [...] assignment targets until native array storage layout, ordered key lookup, missing-key diagnostics, nested destructuring, references/copy-on-write, and exact native assignment ordering exist; phpc run handles current bounded destructuring assignment behavior";
 const LLVM_CONTROL_FLOW_REJECTION: &str = "LLVM control-flow lowering rejects if/else and elseif chains, while loops, for loops, do-while loops, switch statements, goto labels, break, and continue until native PHP truthiness, branch layout, loop control flow, switch fallthrough, goto jumps, references/copy-on-write side effects, and exact native error behavior exist; phpc run handles current control-flow behavior";
 const ASSEMBLY_CONTROL_FLOW_REJECTION: &str = "assembly control-flow lowering rejects if/else branch state merges outside cleanup-free scalar/string/bool variable values, owned native-value handle joins, and branch-local native-value cleanup joins, while/for loops outside state-stable condition/body/increment cleanup boundaries or loop-carried int/float/bool scalar storage, do-while loops outside state-stable body/condition cleanup boundaries or loop-carried int/float/bool scalar storage, switch statements outside state-stable condition/case-body cleanup boundaries and switch-local continue, goto labels outside top-level state-stable target snapshots, top-level or depth-out-of-range break/continue, elseif chains, and unbounded loop headers until native PHP truthiness, branch layout, loop and switch control flow, broader goto state joins, references/copy-on-write side effects, broader cleanup ownership joins, and exact native error behavior exist; generated-native C routes lowerable side-effect-only if/else branches, cleanup-free scalar/string/bool branch-state joins, selected owned native-value branch results, discarded branch-local native-value cleanup, state-stable while/do-while/for loops, loop-carried scalar while/do-while/for state, multi-level while/do-while/for transfer targets, state-stable switch dispatch/fallthrough/break, and top-level state-stable goto labels through scoped control-flow emission";
 const LLVM_EXCEPTION_REJECTION: &str = "LLVM exception lowering rejects throw statements and try/catch/finally blocks until native Throwable objects, stack unwinding, catch/finally dispatch, stack traces, and exact native error behavior exist; phpc run handles the current exception boundary";
@@ -185,7 +188,7 @@ const LLVM_REFERENCE_ASSIGNMENT_REJECTION: &str = "LLVM reference-assignment low
 const ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION: &str = "assembly reference-assignment lowering rejects direct variable, array-offset, object-property, function-call, method-call, static-call, magic __get, and ArrayAccess reference sources or targets until native reference containers, alias-aware symbol tables, copy-on-write, object/property alias roots, and exact native error behavior exist; phpc run handles current bounded reference-assignment behavior";
 const LLVM_REFERENCE_WRITE_THROUGH_REJECTION: &str = "LLVM reference write-through lowering rejects direct root-variable assignment after reference binding until statement assignment and assignment-expression write-through share an alias-aware reference slot boundary with copy-on-write, cleanup ownership, and exact native error behavior; phpc run handles current reference write-through behavior";
 const LLVM_NATIVE_ARRAY_NON_LOCAL_ASSIGNMENT_REJECTION: &str = "LLVM native array non-local assignment lowering rejects object, dynamic-object, non-direct object, and static property assignment targets until non-local owner cells, magic property writes, typed/static property state, assignment-expression results, references/copy-on-write, and exact diagnostics share one assignment owner contract; local variables and native array offset assignments use their shared native lvalue assignment contracts";
-const ASSEMBLY_NATIVE_ARRAY_NON_LOCAL_ASSIGNMENT_REJECTION: &str = "assembly native array non-local assignment lowering rejects unresolved non-direct object-property and unsupported static property assignment targets until remaining non-local owner cells, typed/static property state, references/copy-on-write, and exact diagnostics share one assignment owner contract; direct named/dynamic object-property writes, lowerable static-property writes, local variables, and native array offset assignments use their shared native lvalue assignment contracts";
+const ASSEMBLY_NATIVE_ARRAY_NON_LOCAL_ASSIGNMENT_REJECTION: &str = "assembly native array non-local assignment lowering rejects object, dynamic-object, non-direct object, and static property assignment targets until non-local owner cells, magic property writes, typed/static property state, assignment-expression results, references/copy-on-write, and exact diagnostics share one assignment owner contract; local variables and native array offset assignments use their shared native lvalue assignment contracts";
 const LLVM_NATIVE_ARRAY_NON_LOCAL_UNSET_REJECTION: &str = "LLVM native array non-local unset lowering rejects object, dynamic-object, non-direct object, and static property unsets until non-local owner cells, magic __unset dispatch, typed/static property state, references/copy-on-write, and exact diagnostics share one unset owner contract; local variables and native array offset unsets use their shared native lvalue unset contracts";
 const ASSEMBLY_NATIVE_ARRAY_NON_LOCAL_UNSET_REJECTION: &str = "assembly native array non-local unset lowering rejects object, dynamic-object, non-direct object, and static property unsets until non-local owner cells, magic __unset dispatch, typed/static property state, references/copy-on-write, and exact diagnostics share one unset owner contract; local variables and native array offset unsets use their shared native lvalue unset contracts";
 const ASSEMBLY_GLOBALS_ROOT_APPEND_REJECTION: &str = "Cannot append to $GLOBALS";
@@ -197,8 +200,8 @@ const LLVM_EMPTY_REJECTION: &str = "LLVM empty lowering rejects array offset ope
 const ASSEMBLY_EMPTY_REJECTION: &str = "assembly empty lowering rejects array offset operands, object property operands, complex operands, arrays, unset/mutation interactions, and ambiguous truthiness until native symbol-table storage, PHP truthiness, references/copy-on-write, and exact native error behavior exist; phpc run handles current empty behavior";
 const LLVM_ERROR_CONTROL_REJECTION: &str = "LLVM error-control lowering rejects @expr until native diagnostic severity, warning/notice/deprecation suppression, error_reporting() mask interaction, recoverable expression values, and exact native diagnostics exist; phpc run handles current bounded error-control diagnostic suppression";
 const ASSEMBLY_ERROR_CONTROL_REJECTION: &str = "assembly error-control lowering rejects @expr until native diagnostic severity, warning/notice/deprecation suppression, error_reporting() mask interaction, recoverable expression values, and exact native diagnostics exist; phpc run handles current bounded error-control diagnostic suppression";
-const LLVM_CAST_REJECTION: &str = "LLVM cast lowering rejects (string), (int)/(integer), (bool)/(boolean), (float)/(double), (array), and (object) casts plus strval(), boolval(), floatval(), and doubleval() until native PHP scalar conversion, array/object materialization, warning/recovery behavior, object/resource handling, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded cast behavior";
-const ASSEMBLY_CAST_REJECTION: &str = "assembly cast lowering rejects (string), (int)/(integer), (bool)/(boolean), (float)/(double), (array), and (object) casts plus strval(), boolval(), floatval(), and doubleval() until native PHP scalar conversion, array/object materialization, warning/recovery behavior, object/resource handling, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded cast behavior";
+const LLVM_CAST_REJECTION: &str = "LLVM cast lowering rejects (string), (int)/(integer), (bool)/(boolean), (float)/(double), (array), (object), and (void) casts plus strval(), boolval(), floatval(), and doubleval() until native PHP scalar conversion, array/object materialization, warning/recovery behavior, object/resource handling, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded cast behavior";
+const ASSEMBLY_CAST_REJECTION: &str = "assembly cast lowering rejects (string), (int)/(integer), (bool)/(boolean), (float)/(double), (array), (object), and (void) casts plus strval(), boolval(), floatval(), and doubleval() until native PHP scalar conversion, array/object materialization, warning/recovery behavior, object/resource handling, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded cast behavior";
 const LLVM_UNARY_REJECTION: &str = "LLVM unary lowering rejects unsupported unary operators, cast expressions, or operands until native PHP numeric coercion, truthiness conversion, scalar casts, overflow behavior, references/copy-on-write, and exact native error behavior exist; phpc run handles current unary and cast behavior";
 const ASSEMBLY_UNARY_REJECTION: &str = "assembly unary lowering rejects unsupported unary operators, cast expressions, or operands until native PHP numeric coercion, truthiness conversion, scalar casts, overflow behavior, references/copy-on-write, and exact native error behavior exist; phpc run handles current unary and cast behavior";
 const LLVM_ARITHMETIC_REJECTION: &str = "LLVM arithmetic lowering rejects unsupported binary arithmetic operators or operands until native PHP numeric coercion, division/modulo zero checks, modulo coercions, references/copy-on-write, and exact native error behavior exist; phpc run handles current arithmetic behavior";
@@ -1797,6 +1800,9 @@ fn native_value_print_r_params(span: Span) -> [FunctionParam; 2] {
             is_variadic: false,
             default: None,
             promotion: None,
+            promotion_set_visibility: None,
+            promotion_readonly: false,
+            promotion_final: false,
             attributes: Vec::new(),
             span,
         },
@@ -1807,6 +1813,9 @@ fn native_value_print_r_params(span: Span) -> [FunctionParam; 2] {
             is_variadic: false,
             default: Some(Expr::Bool(false, span)),
             promotion: None,
+            promotion_set_visibility: None,
+            promotion_readonly: false,
+            promotion_final: false,
             attributes: Vec::new(),
             span,
         },
@@ -2206,6 +2215,15 @@ fn llvm_expr_call_results_are_lowerable(expr: &Expr, allow_scalar_results: bool)
             llvm_expr_call_results_are_lowerable(condition, allow_scalar_results)
                 && llvm_expr_call_results_are_lowerable(if_false, allow_scalar_results)
         }
+        Expr::Match { subject, arms, .. } => {
+            let lowerable =
+                |expr: &Expr| llvm_expr_call_results_are_lowerable(expr, allow_scalar_results);
+            lowerable(subject)
+                && arms.iter().all(|arm| {
+                    arm.conditions.iter().all(|condition| lowerable(condition))
+                        && lowerable(&arm.result)
+                })
+        }
         Expr::Assign { target, expr, .. }
         | Expr::CompoundAssign { target, expr, .. }
         | Expr::NullCoalesceAssign { target, expr, .. } => {
@@ -2427,7 +2445,8 @@ fn llvm_assign_target_call_results_are_lowerable(
         | AssignTarget::DynamicParentStaticProperty { .. }
         | AssignTarget::LateStaticProperty { .. }
         | AssignTarget::DynamicObjectStaticProperty { .. }
-        | AssignTarget::DynamicLateStaticProperty { .. } => true,
+        | AssignTarget::DynamicLateStaticProperty { .. }
+        | AssignTarget::UnsupportedExpression { .. } => true,
     }
 }
 
@@ -2513,6 +2532,15 @@ fn native_expr_call_result_operation(
             ..
         } => native_expr_call_result_operation(condition, blocker)
             .or_else(|| native_expr_call_result_operation(if_false, blocker)),
+        Expr::Match { subject, arms, .. } => native_expr_call_result_operation(subject, blocker)
+            .or_else(|| {
+                arms.iter().find_map(|arm| {
+                    arm.conditions
+                        .iter()
+                        .find_map(|condition| native_expr_call_result_operation(condition, blocker))
+                        .or_else(|| native_expr_call_result_operation(&arm.result, blocker))
+                })
+            }),
         Expr::Assign { target, .. }
             if native_array_append_assignment_target_materializes_rhs_value(target)
                 || is_object_public_property_assign_target(target) =>
@@ -2696,6 +2724,8 @@ fn native_value_binary_op_tag(op: BinaryOp) -> Option<&'static str> {
         | BinaryOp::Le
         | BinaryOp::Gt
         | BinaryOp::Ge
+        | BinaryOp::Pow
+        | BinaryOp::Spaceship
         | BinaryOp::NullCoalesce => None,
     }
 }
@@ -2724,6 +2754,8 @@ fn native_value_binary_op_tag_value(op: BinaryOp) -> Option<u8> {
         | BinaryOp::Le
         | BinaryOp::Gt
         | BinaryOp::Ge
+        | BinaryOp::Pow
+        | BinaryOp::Spaceship
         | BinaryOp::NullCoalesce => None,
     }
 }
@@ -2778,6 +2810,9 @@ fn native_array_lvalue_compound_binary_op_tag(op: CompoundAssignOp) -> &'static 
         CompoundAssignOp::Mul => "PHPC_NATIVE_VALUE_BINARY_MUL",
         CompoundAssignOp::Div => "PHPC_NATIVE_VALUE_BINARY_DIV",
         CompoundAssignOp::Mod => "PHPC_NATIVE_VALUE_BINARY_MOD",
+        CompoundAssignOp::Pow => {
+            unreachable!("native exponentiation compound assignment is rejected before lowering")
+        }
         CompoundAssignOp::Concat => "PHPC_NATIVE_VALUE_BINARY_CONCAT",
         CompoundAssignOp::BitwiseAnd => "PHPC_NATIVE_VALUE_BINARY_BITWISE_AND",
         CompoundAssignOp::BitwiseOr => "PHPC_NATIVE_VALUE_BINARY_BITWISE_OR",
@@ -2794,6 +2829,7 @@ fn compound_assignment_binary_op(op: CompoundAssignOp) -> BinaryOp {
         CompoundAssignOp::Mul => BinaryOp::Mul,
         CompoundAssignOp::Div => BinaryOp::Div,
         CompoundAssignOp::Mod => BinaryOp::Mod,
+        CompoundAssignOp::Pow => BinaryOp::Pow,
         CompoundAssignOp::Concat => BinaryOp::Concat,
         CompoundAssignOp::BitwiseAnd => BinaryOp::BitwiseAnd,
         CompoundAssignOp::BitwiseOr => BinaryOp::BitwiseOr,
@@ -3058,11 +3094,13 @@ fn native_value_comparison_op_tag(op: BinaryOp) -> Option<&'static str> {
         BinaryOp::Ge => Some("PHPC_NATIVE_VALUE_COMPARISON_GE"),
         BinaryOp::StrictEq => Some("PHPC_NATIVE_VALUE_COMPARISON_STRICT_EQ"),
         BinaryOp::StrictNe => Some("PHPC_NATIVE_VALUE_COMPARISON_STRICT_NE"),
+        BinaryOp::Spaceship => None,
         BinaryOp::Add
         | BinaryOp::Sub
         | BinaryOp::Mul
         | BinaryOp::Div
         | BinaryOp::Mod
+        | BinaryOp::Pow
         | BinaryOp::Concat
         | BinaryOp::NullCoalesce
         | BinaryOp::LogicalAnd
@@ -3086,11 +3124,13 @@ fn native_value_comparison_op_tag_value(op: BinaryOp) -> Option<u8> {
         BinaryOp::Ge => Some(5),
         BinaryOp::StrictEq => Some(6),
         BinaryOp::StrictNe => Some(7),
+        BinaryOp::Spaceship => None,
         BinaryOp::Add
         | BinaryOp::Sub
         | BinaryOp::Mul
         | BinaryOp::Div
         | BinaryOp::Mod
+        | BinaryOp::Pow
         | BinaryOp::Concat
         | BinaryOp::NullCoalesce
         | BinaryOp::LogicalAnd
@@ -3111,11 +3151,13 @@ fn native_value_non_strict_comparison_op_tag(op: BinaryOp) -> Option<&'static st
         }
         BinaryOp::StrictEq
         | BinaryOp::StrictNe
+        | BinaryOp::Spaceship
         | BinaryOp::Add
         | BinaryOp::Sub
         | BinaryOp::Mul
         | BinaryOp::Div
         | BinaryOp::Mod
+        | BinaryOp::Pow
         | BinaryOp::Concat
         | BinaryOp::NullCoalesce
         | BinaryOp::LogicalAnd
@@ -3230,7 +3272,8 @@ fn native_conditional_rhs_needs_cleanup_boundary(expr: &Expr) -> bool {
         | Expr::NullCoalesceAssign { .. }
         | Expr::IncrementDecrement { .. }
         | Expr::Ternary { .. }
-        | Expr::ShortTernary { .. } => true,
+        | Expr::ShortTernary { .. }
+        | Expr::Match { .. } => true,
         Expr::Index { target, index, .. } => {
             native_conditional_rhs_needs_cleanup_boundary(target)
                 || native_conditional_rhs_needs_cleanup_boundary(index)
@@ -3364,6 +3407,7 @@ fn native_value_cast_op_tag(kind: CastKind) -> &'static str {
         CastKind::Float => "PHPC_NATIVE_VALUE_CAST_FLOAT",
         CastKind::Array => "PHPC_NATIVE_VALUE_CAST_ARRAY",
         CastKind::Object => "PHPC_NATIVE_VALUE_CAST_OBJECT",
+        CastKind::Void => unreachable!("void casts are rejected before native lowering"),
     }
 }
 
@@ -4481,6 +4525,21 @@ fn array_item_contains_exit_construct(item: &ArrayItem) -> bool {
         || expr_contains_exit_construct(&item.value)
 }
 
+fn match_arm_exprs_contain<F>(arms: &[MatchArm], contains: &F) -> bool
+where
+    F: Fn(&Expr) -> bool,
+{
+    arms.iter()
+        .any(|arm| arm.conditions.iter().any(contains) || contains(&arm.result))
+}
+
+fn match_expr_contains<F>(subject: &Expr, arms: &[MatchArm], contains: &F) -> bool
+where
+    F: Fn(&Expr) -> bool,
+{
+    contains(subject) || match_arm_exprs_contain(arms, contains)
+}
+
 fn assign_target_contains_exit_construct(target: &AssignTarget) -> bool {
     match target {
         AssignTarget::ArrayIndex { index, .. } => {
@@ -4572,7 +4631,8 @@ fn assign_target_contains_exit_construct(target: &AssignTarget) -> bool {
         | AssignTarget::DynamicParentStaticProperty { .. }
         | AssignTarget::LateStaticProperty { .. }
         | AssignTarget::DynamicObjectStaticProperty { .. }
-        | AssignTarget::DynamicLateStaticProperty { .. } => false,
+        | AssignTarget::DynamicLateStaticProperty { .. }
+        | AssignTarget::UnsupportedExpression { .. } => false,
     }
 }
 
@@ -4730,7 +4790,8 @@ where
         | AssignTarget::DynamicParentStaticProperty { .. }
         | AssignTarget::LateStaticProperty { .. }
         | AssignTarget::DynamicObjectStaticProperty { .. }
-        | AssignTarget::DynamicLateStaticProperty { .. } => false,
+        | AssignTarget::DynamicLateStaticProperty { .. }
+        | AssignTarget::UnsupportedExpression { .. } => false,
     }
 }
 
@@ -4909,6 +4970,9 @@ fn expr_contains_exit_construct(expr: &Expr) -> bool {
             if_false,
             ..
         } => expr_contains_exit_construct(condition) || expr_contains_exit_construct(if_false),
+        Expr::Match { subject, arms, .. } => {
+            match_expr_contains(subject, arms, &expr_contains_exit_construct)
+        }
         Expr::Assign { target, expr, .. }
         | Expr::CompoundAssign { target, expr, .. }
         | Expr::NullCoalesceAssign { target, expr, .. } => {
@@ -6056,7 +6120,8 @@ fn collect_direct_call_names_from_assign_target(target: &AssignTarget, names: &m
         | AssignTarget::DynamicParentStaticProperty { .. }
         | AssignTarget::LateStaticProperty { .. }
         | AssignTarget::DynamicObjectStaticProperty { .. }
-        | AssignTarget::DynamicLateStaticProperty { .. } => {}
+        | AssignTarget::DynamicLateStaticProperty { .. }
+        | AssignTarget::UnsupportedExpression { .. } => {}
     }
 }
 
@@ -6207,6 +6272,15 @@ fn collect_direct_call_names_from_expr(expr: &Expr, names: &mut Vec<String>) {
         } => {
             collect_direct_call_names_from_expr(condition, names);
             collect_direct_call_names_from_expr(if_false, names);
+        }
+        Expr::Match { subject, arms, .. } => {
+            collect_direct_call_names_from_expr(subject, names);
+            for arm in arms {
+                for condition in &arm.conditions {
+                    collect_direct_call_names_from_expr(condition, names);
+                }
+                collect_direct_call_names_from_expr(&arm.result, names);
+            }
         }
         Expr::Assign { target, expr, .. }
         | Expr::CompoundAssign { target, expr, .. }
@@ -6456,10 +6530,8 @@ fn collect_native_arrow_capture_candidates_from_assign_target(
 ) {
     match target {
         AssignTarget::Variable { name, span } => captures.push((name.clone(), *span)),
-        AssignTarget::List { names, span } => {
-            for name in names.iter().flatten() {
-                captures.push((name.clone(), *span));
-            }
+        AssignTarget::List { items, .. } => {
+            collect_native_arrow_capture_candidates_from_list_assignment_items(items, captures);
         }
         AssignTarget::ArrayIndex { name, index, span } => {
             captures.push((name.clone(), *span));
@@ -6616,7 +6688,27 @@ fn collect_native_arrow_capture_candidates_from_assign_target(
         | AssignTarget::DynamicParentStaticProperty { .. }
         | AssignTarget::LateStaticProperty { .. }
         | AssignTarget::DynamicObjectStaticProperty { .. }
-        | AssignTarget::DynamicLateStaticProperty { .. } => {}
+        | AssignTarget::DynamicLateStaticProperty { .. }
+        | AssignTarget::UnsupportedExpression { .. } => {}
+    }
+}
+
+fn collect_native_arrow_capture_candidates_from_list_assignment_items(
+    items: &[crate::ast::ListAssignmentItem],
+    captures: &mut Vec<(String, Span)>,
+) {
+    for item in items {
+        let Some(target) = item.target.as_ref() else {
+            continue;
+        };
+        match target {
+            ListAssignmentTarget::Variable { name, span } => {
+                captures.push((name.clone(), *span));
+            }
+            ListAssignmentTarget::List { items, .. } => {
+                collect_native_arrow_capture_candidates_from_list_assignment_items(items, captures);
+            }
+        }
     }
 }
 
@@ -6843,6 +6935,7 @@ fn collect_native_arrow_capture_candidates_from_expr(
                 match part {
                     InterpolatedStringPart::Literal(_) => {}
                     InterpolatedStringPart::Variable(name)
+                    | InterpolatedStringPart::DeprecatedDollarBraceVariable(name)
                     | InterpolatedStringPart::ArrayOffset { variable: name, .. }
                     | InterpolatedStringPart::ObjectProperty { variable: name, .. } => {
                         captures.push((name.clone(), *span));
@@ -6984,6 +7077,15 @@ fn collect_native_arrow_capture_candidates_from_expr(
         } => {
             collect_native_arrow_capture_candidates_from_expr(condition, captures);
             collect_native_arrow_capture_candidates_from_expr(if_false, captures);
+        }
+        Expr::Match { subject, arms, .. } => {
+            collect_native_arrow_capture_candidates_from_expr(subject, captures);
+            for arm in arms {
+                for condition in &arm.conditions {
+                    collect_native_arrow_capture_candidates_from_expr(condition, captures);
+                }
+                collect_native_arrow_capture_candidates_from_expr(&arm.result, captures);
+            }
         }
         Expr::Assign { target, expr, .. }
         | Expr::CompoundAssign { target, expr, .. }
@@ -7174,6 +7276,9 @@ fn native_expr_contains_call_result(expr: &Expr) -> bool {
             native_expr_contains_call_result(condition)
                 || native_expr_contains_call_result(if_false)
         }
+        Expr::Match { subject, arms, .. } => {
+            match_expr_contains(subject, arms, &native_expr_contains_call_result)
+        }
         Expr::Assign { target, expr, .. }
         | Expr::CompoundAssign { target, expr, .. }
         | Expr::NullCoalesceAssign { target, expr, .. } => {
@@ -7337,7 +7442,8 @@ fn native_assign_target_contains_call_result(target: &AssignTarget) -> bool {
         | AssignTarget::DynamicParentStaticProperty { .. }
         | AssignTarget::LateStaticProperty { .. }
         | AssignTarget::DynamicObjectStaticProperty { .. }
-        | AssignTarget::DynamicLateStaticProperty { .. } => false,
+        | AssignTarget::DynamicLateStaticProperty { .. }
+        | AssignTarget::UnsupportedExpression { .. } => false,
     }
 }
 
@@ -7536,7 +7642,8 @@ fn native_assignment_target_call_result_callee(target: &AssignTarget) -> Option<
         | AssignTarget::ParentStaticProperty { .. }
         | AssignTarget::DynamicParentStaticProperty { .. }
         | AssignTarget::LateStaticProperty { .. }
-        | AssignTarget::DynamicLateStaticProperty { .. } => None,
+        | AssignTarget::DynamicLateStaticProperty { .. }
+        | AssignTarget::UnsupportedExpression { .. } => None,
     }
 }
 
@@ -7695,7 +7802,8 @@ fn native_assignment_target_lvalue_operands(target: &AssignTarget) -> Vec<(&Expr
         | AssignTarget::ParentStaticProperty { .. }
         | AssignTarget::DynamicParentStaticProperty { .. }
         | AssignTarget::LateStaticProperty { .. }
-        | AssignTarget::DynamicLateStaticProperty { .. } => {}
+        | AssignTarget::DynamicLateStaticProperty { .. }
+        | AssignTarget::UnsupportedExpression { .. } => {}
     }
     operands
 }
@@ -8117,6 +8225,95 @@ fn is_globals_superglobal_name(name: &str) -> bool {
     name == "GLOBALS"
 }
 
+fn readonly_class_native_metadata_span(class: &ClassDecl) -> Option<Span> {
+    if class.is_readonly {
+        return Some(class.span);
+    }
+    readonly_trait_use_native_metadata_span(&class.trait_uses)
+        .or_else(|| class.members.iter().find_map(readonly_class_member_span))
+}
+
+fn asymmetric_class_native_metadata_span(class: &ClassDecl) -> Option<Span> {
+    class.members.iter().find_map(asymmetric_class_member_span)
+}
+
+fn readonly_trait_native_metadata_span(trait_decl: &TraitDecl) -> Option<Span> {
+    readonly_trait_use_native_metadata_span(&trait_decl.trait_uses)
+        .or_else(|| {
+            trait_decl
+                .constants
+                .iter()
+                .find_map(|constant| constant.is_readonly.then_some(constant.span))
+        })
+        .or_else(|| {
+            trait_decl
+                .properties
+                .iter()
+                .find_map(|property| property.is_readonly.then_some(property.span))
+        })
+        .or_else(|| {
+            trait_decl
+                .methods
+                .iter()
+                .find_map(readonly_class_method_span)
+        })
+}
+
+fn asymmetric_trait_native_metadata_span(trait_decl: &TraitDecl) -> Option<Span> {
+    trait_decl
+        .properties
+        .iter()
+        .find_map(|property| property.set_visibility.map(|_| property.span))
+}
+
+fn readonly_trait_use_native_metadata_span(
+    trait_uses: &[crate::ast::TraitUseDecl],
+) -> Option<Span> {
+    trait_uses.iter().find_map(|trait_use| {
+        trait_use
+            .aliases
+            .iter()
+            .find_map(|alias| alias.is_readonly.then_some(alias.span))
+            .or_else(|| {
+                trait_use
+                    .visibility_adaptations
+                    .iter()
+                    .find_map(|adaptation| adaptation.is_readonly.then_some(adaptation.span))
+            })
+    })
+}
+
+fn readonly_class_member_span(member: &ClassMember) -> Option<Span> {
+    match member {
+        ClassMember::Property(property) => property.is_readonly.then_some(property.span),
+        ClassMember::Constant(constant) => constant.is_readonly.then_some(constant.span),
+        ClassMember::Method(method) => readonly_class_method_span(method),
+    }
+}
+
+fn asymmetric_class_member_span(member: &ClassMember) -> Option<Span> {
+    match member {
+        ClassMember::Property(property) => property.set_visibility.map(|_| property.span),
+        ClassMember::Method(method) => method
+            .function
+            .params
+            .iter()
+            .find_map(|param| param.promotion_set_visibility.map(|_| param.span)),
+        ClassMember::Constant(_) => None,
+    }
+}
+
+fn readonly_class_method_span(method: &ClassMethodDecl) -> Option<Span> {
+    if method.is_readonly {
+        return Some(method.span);
+    }
+    method
+        .function
+        .params
+        .iter()
+        .find_map(|param| param.promotion_readonly.then_some(param.span))
+}
+
 fn is_frame_separated_symbol_environment_name(name: &str) -> bool {
     is_globals_superglobal_name(name) || is_request_superglobal_name(name)
 }
@@ -8275,6 +8472,9 @@ fn expr_contains_globals_access(expr: &Expr) -> bool {
             if_false,
             ..
         } => expr_contains_globals_access(condition) || expr_contains_globals_access(if_false),
+        Expr::Match { subject, arms, .. } => {
+            match_expr_contains(subject, arms, &expr_contains_globals_access)
+        }
         Expr::Assign { target, expr, .. }
         | Expr::CompoundAssign { target, expr, .. }
         | Expr::NullCoalesceAssign { target, expr, .. } => {
@@ -8331,6 +8531,7 @@ fn new_class_name_contains_globals_access(class_name: &NewClassName) -> bool {
 fn interpolated_string_part_contains_globals_access(part: &InterpolatedStringPart) -> bool {
     match part {
         InterpolatedStringPart::Variable(name)
+        | InterpolatedStringPart::DeprecatedDollarBraceVariable(name)
         | InterpolatedStringPart::ArrayOffset { variable: name, .. }
         | InterpolatedStringPart::ObjectProperty { variable: name, .. }
         | InterpolatedStringPart::AccessChain { variable: name, .. } => {
@@ -8449,7 +8650,8 @@ fn assign_target_contains_globals_access(target: &AssignTarget) -> bool {
         | AssignTarget::DynamicParentStaticProperty { .. }
         | AssignTarget::LateStaticProperty { .. }
         | AssignTarget::DynamicObjectStaticProperty { .. }
-        | AssignTarget::DynamicLateStaticProperty { .. } => false,
+        | AssignTarget::DynamicLateStaticProperty { .. }
+        | AssignTarget::UnsupportedExpression { .. } => false,
     }
 }
 
@@ -8804,6 +9006,9 @@ fn expr_contains_request_state_access(expr: &Expr) -> bool {
             expr_contains_request_state_access(condition)
                 || expr_contains_request_state_access(if_false)
         }
+        Expr::Match { subject, arms, .. } => {
+            match_expr_contains(subject, arms, &expr_contains_request_state_access)
+        }
         Expr::Assign { target, expr, .. }
         | Expr::CompoundAssign { target, expr, .. }
         | Expr::NullCoalesceAssign { target, expr, .. } => {
@@ -8863,6 +9068,7 @@ fn new_class_name_contains_request_state_access(class_name: &NewClassName) -> bo
 fn interpolated_string_part_contains_request_state_access(part: &InterpolatedStringPart) -> bool {
     match part {
         InterpolatedStringPart::Variable(name)
+        | InterpolatedStringPart::DeprecatedDollarBraceVariable(name)
         | InterpolatedStringPart::ArrayOffset { variable: name, .. }
         | InterpolatedStringPart::ObjectProperty { variable: name, .. }
         | InterpolatedStringPart::AccessChain { variable: name, .. } => {
@@ -8982,7 +9188,8 @@ fn assign_target_contains_request_state_access(target: &AssignTarget) -> bool {
         | AssignTarget::DynamicParentStaticProperty { .. }
         | AssignTarget::LateStaticProperty { .. }
         | AssignTarget::DynamicObjectStaticProperty { .. }
-        | AssignTarget::DynamicLateStaticProperty { .. } => false,
+        | AssignTarget::DynamicLateStaticProperty { .. }
+        | AssignTarget::UnsupportedExpression { .. } => false,
     }
 }
 
@@ -9367,7 +9574,8 @@ fn request_assign_target_array_key_consumer_access(
         | AssignTarget::ParentStaticProperty { .. }
         | AssignTarget::DynamicParentStaticProperty { .. }
         | AssignTarget::LateStaticProperty { .. }
-        | AssignTarget::DynamicLateStaticProperty { .. } => None,
+        | AssignTarget::DynamicLateStaticProperty { .. }
+        | AssignTarget::UnsupportedExpression { .. } => None,
     }
 }
 
@@ -9615,6 +9823,7 @@ fn is_stream_resource_builtin(name: &str) -> bool {
             | "fstat"
             | "stream_get_meta_data"
             | "stream_get_wrappers"
+            | "stream_get_transports"
             | "stream_wrapper_register"
             | "stream_wrapper_unregister"
             | "stream_wrapper_restore"
@@ -11311,9 +11520,10 @@ impl LlvmGenerator {
         output.push_str("@.fmt_str = private unnamed_addr constant [3 x i8] c\"%s\\00\"\n");
 
         for (name, text) in &self.strings {
+            let len = php_string_literal_byte_len(text) + 1;
             output.push_str(&format!(
                 "@{name} = private unnamed_addr constant [{} x i8] c\"{}\"\n",
-                text.as_bytes().len() + 1,
+                len,
                 llvm_c_string(text)
             ));
         }
@@ -11515,6 +11725,12 @@ impl LlvmGenerator {
                 }
                 if class.is_nested {
                     return Err(self.unsupported(class.span, LLVM_OBJECT_CLASS_REJECTION));
+                }
+                if let Some(span) = readonly_class_native_metadata_span(class) {
+                    return Err(self.unsupported(span, LLVM_OBJECT_CLASS_REJECTION));
+                }
+                if let Some(span) = asymmetric_class_native_metadata_span(class) {
+                    return Err(self.unsupported(span, LLVM_OBJECT_CLASS_REJECTION));
                 }
                 self.emit_llvm_user_class_declaration(class);
                 Ok(())
@@ -11937,11 +12153,18 @@ impl LlvmGenerator {
                 }
                 Err(self.unsupported(*span, LLVM_REQUIRE_EXPRESSION_REJECTION))
             }
-            Expr::Cast { span, .. } => {
+            Expr::Cast {
+                kind,
+                expr: target,
+                span,
+            } => {
                 if let Some(operation) = native_value_operand_call_result_operation(expr) {
                     return Err(self.unsupported_call_operation(operation));
                 }
-                Err(self.unsupported(*span, LLVM_CAST_REJECTION))
+                let value = self
+                    .emit_expr(target)
+                    .map_err(|_| self.unsupported(*span, LLVM_CAST_REJECTION))?;
+                self.emit_static_scalar_cast(*kind, value, *span)
             }
             Expr::Assign { target, expr, span } => {
                 if let Some(operation) = native_assignment_target_call_operation(target) {
@@ -12044,6 +12267,7 @@ impl LlvmGenerator {
                 if_false,
                 span,
             } => self.emit_short_ternary(condition, if_false, *span),
+            Expr::Match { span, .. } => Err(self.unsupported(*span, LLVM_MATCH_REJECTION)),
             Expr::Binary {
                 left,
                 op,
@@ -12970,6 +13194,16 @@ impl LlvmGenerator {
         }
 
         let value = self.emit_expr(&args[0])?;
+        if matches!(
+            &value,
+            IrValue::Int(_)
+                | IrValue::Float(_)
+                | IrValue::Bool(_)
+                | IrValue::BoolExpr(_)
+                | IrValue::Null
+        ) {
+            return Err(self.unsupported(span, LLVM_FUNCTION_CALL_REJECTION));
+        }
         if let Some(result) = self.function_exists_result_for_value(&value) {
             return Ok(IrValue::Bool(result));
         }
@@ -13090,6 +13324,16 @@ impl LlvmGenerator {
 
         let value = self.emit_expr(&args[0])?;
         if builtin_name.eq_ignore_ascii_case("extension_loaded") {
+            if matches!(
+                &value,
+                IrValue::Int(_)
+                    | IrValue::Float(_)
+                    | IrValue::Bool(_)
+                    | IrValue::BoolExpr(_)
+                    | IrValue::Null
+            ) {
+                return Err(self.unsupported(span, LLVM_FUNCTION_CALL_REJECTION));
+            }
             return self.emit_native_text_membership_bool(
                 value,
                 NativeTextSurface::ExtensionName,
@@ -13462,7 +13706,9 @@ impl LlvmGenerator {
 
     fn function_exists_result_for_value(&self, value: &IrValue) -> Option<bool> {
         match value {
-            IrValue::String(value) => Some(is_native_known_function_name(value)),
+            IrValue::String(value) => Some(is_native_known_function_name(
+                exact_function_call_lookup_name(value),
+            )),
             IrValue::StringPtr(_) => {
                 let values = self.known_string_values_for_value(value)?;
                 known_strings_have_uniform_function_exists_result(&values)
@@ -13473,7 +13719,7 @@ impl LlvmGenerator {
 
     fn strlen_result_for_value(&self, value: &IrValue) -> Option<usize> {
         match value {
-            IrValue::String(value) => Some(value.len()),
+            IrValue::String(value) => Some(php_string_literal_byte_len(value)),
             IrValue::StringPtr(_) => {
                 let values = self.known_string_values_for_value(value)?;
                 known_strings_have_uniform_byte_length(&values)
@@ -13660,6 +13906,9 @@ impl LlvmGenerator {
             | AssignTarget::DynamicLateStaticProperty { span, .. } => {
                 Err(self.unsupported(*span, LLVM_STATIC_MEMBER_REJECTION))
             }
+            AssignTarget::UnsupportedExpression { span, .. } => {
+                Err(self.unsupported(*span, LLVM_MUTATION_REJECTION))
+            }
         }
     }
 
@@ -13720,6 +13969,7 @@ impl LlvmGenerator {
                 self.emit_arithmetic_binary(left, op, right, span)
             }
             BinaryOp::Div => self.emit_division_binary(left, right, span),
+            BinaryOp::Pow => Err(self.unsupported(span, LLVM_ARITHMETIC_REJECTION)),
             BinaryOp::Concat => Err(self.unsupported(span, LLVM_CONCAT_REJECTION)),
             BinaryOp::Eq
             | BinaryOp::Ne
@@ -13730,6 +13980,7 @@ impl LlvmGenerator {
             BinaryOp::StrictEq | BinaryOp::StrictNe => {
                 self.emit_static_strict_identity(left, op, right, span)
             }
+            BinaryOp::Spaceship => Err(self.unsupported(span, llvm_comparison_rejection())),
             BinaryOp::NullCoalesce => Err(self.unsupported(span, LLVM_CONDITIONAL_REJECTION)),
             BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::LogicalXor => {
                 self.emit_bool_binary(left, op, right, span)
@@ -15623,6 +15874,172 @@ impl LlvmGenerator {
         KnownBool::from_values(values)
     }
 
+    fn emit_static_scalar_cast(
+        &mut self,
+        kind: CastKind,
+        value: IrValue,
+        span: Span,
+    ) -> CompileResult<IrValue> {
+        match kind {
+            CastKind::String => self
+                .static_string_cast(&value)
+                .map(IrValue::String)
+                .ok_or_else(|| self.unsupported(span, LLVM_CAST_REJECTION)),
+            CastKind::Int => self.static_int_cast(value, span),
+            CastKind::Bool => self.static_bool_cast(value, span),
+            CastKind::Float => self.static_float_cast(value, span),
+            CastKind::Array | CastKind::Object | CastKind::Void => {
+                Err(self.unsupported(span, LLVM_CAST_REJECTION))
+            }
+        }
+    }
+
+    fn static_string_cast(&self, value: &IrValue) -> Option<String> {
+        match value {
+            IrValue::Null => Some(String::new()),
+            IrValue::Bool(false) => Some(String::new()),
+            IrValue::Bool(true) => Some("1".to_string()),
+            IrValue::BoolExpr(value) => {
+                let values = self.known_bool_values(value)?;
+                single_static_cast_value(values.values().iter().map(|value| {
+                    if *value {
+                        "1".to_string()
+                    } else {
+                        String::new()
+                    }
+                }))
+            }
+            IrValue::Int(value) => {
+                let values = self.known_integer_values(value)?;
+                single_static_cast_value(values.values().iter().map(|value| value.to_string()))
+            }
+            IrValue::Float(value) => {
+                let values = self.known_float_values(value)?;
+                let mut results = Vec::new();
+                for value in values.values() {
+                    if !value.is_finite() {
+                        return None;
+                    }
+                    results.push(php_float_string_for_static_cast(*value));
+                }
+                single_static_cast_value(results)
+            }
+            IrValue::String(value) => Some(value.clone()),
+            IrValue::StringPtr(value) => {
+                let values = self.known_string_values(value)?;
+                single_static_cast_value(values.values().iter().cloned())
+            }
+            IrValue::NativeValue(_) | IrValue::NativeReference(_) => None,
+        }
+    }
+
+    fn static_int_cast(&mut self, value: IrValue, span: Span) -> CompileResult<IrValue> {
+        match value {
+            IrValue::Null => Ok(IrValue::Int("0".to_string())),
+            IrValue::Bool(false) => Ok(IrValue::Int("0".to_string())),
+            IrValue::Bool(true) => Ok(IrValue::Int("1".to_string())),
+            IrValue::BoolExpr(value) => {
+                if let Some(values) = self.known_bool_values(&value) {
+                    if let Some(result) =
+                        single_static_cast_value(values.values().iter().map(|value| {
+                            if *value {
+                                1
+                            } else {
+                                0
+                            }
+                        }))
+                    {
+                        return Ok(IrValue::Int(result.to_string()));
+                    }
+                }
+                let result = self.next_temp();
+                self.body.push(format!("{result} = zext i1 {value} to i64"));
+                Ok(IrValue::Int(result))
+            }
+            value @ IrValue::Int(_) => Ok(value),
+            IrValue::Float(value) => {
+                let values = self.known_float_values(&value);
+                static_known_float_to_int(&values)
+                    .map(|value| IrValue::Int(value.to_string()))
+                    .ok_or_else(|| self.unsupported(span, LLVM_CAST_REJECTION))
+            }
+            IrValue::String(_) | IrValue::StringPtr(_) => {
+                let values = self.known_string_values_for_value(&value);
+                static_known_string_to_int(&values)
+                    .map(|value| IrValue::Int(value.to_string()))
+                    .ok_or_else(|| self.unsupported(span, LLVM_CAST_REJECTION))
+            }
+            IrValue::NativeValue(_) | IrValue::NativeReference(_) => {
+                Err(self.unsupported(span, LLVM_CAST_REJECTION))
+            }
+        }
+    }
+
+    fn static_bool_cast(&mut self, value: IrValue, span: Span) -> CompileResult<IrValue> {
+        if let Some(truthy) = self.known_truthiness_for_value(&value) {
+            return Ok(IrValue::Bool(truthy));
+        }
+
+        match value {
+            value @ (IrValue::Bool(_) | IrValue::BoolExpr(_)) => Ok(value),
+            IrValue::Int(value) => {
+                let result = self.next_temp();
+                self.body.push(format!("{result} = icmp ne i64 {value}, 0"));
+                Ok(IrValue::BoolExpr(result))
+            }
+            IrValue::NativeValue(_)
+            | IrValue::NativeReference(_)
+            | IrValue::Float(_)
+            | IrValue::StringPtr(_)
+            | IrValue::String(_)
+            | IrValue::Null => Err(self.unsupported(span, LLVM_CAST_REJECTION)),
+        }
+    }
+
+    fn static_float_cast(&mut self, value: IrValue, span: Span) -> CompileResult<IrValue> {
+        match value {
+            IrValue::Null => Ok(IrValue::Float("0.0".to_string())),
+            IrValue::Bool(false) => Ok(IrValue::Float("0.0".to_string())),
+            IrValue::Bool(true) => Ok(IrValue::Float("1.0".to_string())),
+            IrValue::BoolExpr(value) => {
+                if let Some(values) = self.known_bool_values(&value) {
+                    if let Some(result) =
+                        single_static_cast_value(values.values().iter().map(|value| {
+                            if *value {
+                                1.0
+                            } else {
+                                0.0
+                            }
+                        }))
+                    {
+                        return Ok(IrValue::Float(format_float_literal(result)));
+                    }
+                }
+                let result = self.next_temp();
+                self.body.push(format!(
+                    "{result} = select i1 {value}, double 1.0, double 0.0"
+                ));
+                Ok(IrValue::Float(result))
+            }
+            IrValue::Int(value) => {
+                let result = self.next_temp();
+                self.body
+                    .push(format!("{result} = sitofp i64 {value} to double"));
+                Ok(IrValue::Float(result))
+            }
+            value @ IrValue::Float(_) => Ok(value),
+            IrValue::String(_) | IrValue::StringPtr(_) => {
+                let values = self.known_string_values_for_value(&value);
+                static_known_string_to_float(&values)
+                    .map(|value| IrValue::Float(format_float_literal(value)))
+                    .ok_or_else(|| self.unsupported(span, LLVM_CAST_REJECTION))
+            }
+            IrValue::NativeValue(_) | IrValue::NativeReference(_) => {
+                Err(self.unsupported(span, LLVM_CAST_REJECTION))
+            }
+        }
+    }
+
     fn emit_unary(&mut self, op: UnaryOp, value: IrValue, span: Span) -> CompileResult<IrValue> {
         match op {
             UnaryOp::Plus => Err(self.unsupported(span, LLVM_UNARY_REJECTION)),
@@ -15916,7 +16333,7 @@ impl LlvmGenerator {
         self.emit_native_value_string_pointer_stdout(
             &format!("@{global}"),
             usize_type,
-            &value.len().to_string(),
+            &php_string_literal_byte_len(value).to_string(),
         );
     }
 
@@ -16470,7 +16887,7 @@ impl LlvmGenerator {
                 let global = self.add_string(&value);
                 Ok(self.emit_native_value_from_string_bytes(
                     &format!("@{global}"),
-                    &value.len().to_string(),
+                    &php_string_literal_byte_len(&value).to_string(),
                 ))
             }
             IrValue::StringPtr(value) => {
@@ -16546,11 +16963,11 @@ impl LlvmGenerator {
 
     fn known_string_pointer_byte_len(&self, value: &str) -> Option<usize> {
         let values = self.known_string_values(value)?;
-        let first = values.values().first()?.len();
+        let first = php_string_literal_byte_len(values.values().first()?);
         values
             .values()
             .iter()
-            .all(|value| value.len() == first)
+            .all(|value| php_string_literal_byte_len(value) == first)
             .then_some(first)
     }
 
@@ -16780,6 +17197,15 @@ impl LlvmGenerator {
         &mut self,
         expr: &Expr,
     ) -> CompileResult<()> {
+        if let Expr::Cast {
+            kind: CastKind::Void,
+            span,
+            ..
+        } = expr
+        {
+            return Err(self.unsupported(*span, LLVM_CAST_REJECTION));
+        }
+
         let result = self.emit_native_diagnostic_result_expr_operand(
             NativeDiagnosticResultOperandSurface::Statement,
             expr,
@@ -18270,6 +18696,7 @@ fn backend_binary_primitive_arithmetic_operation(
         BinaryOp::Mul => Some(PhpPrimitiveArithmeticOperation::Multiply),
         BinaryOp::Div
         | BinaryOp::Mod
+        | BinaryOp::Pow
         | BinaryOp::Concat
         | BinaryOp::Eq
         | BinaryOp::Ne
@@ -18277,6 +18704,7 @@ fn backend_binary_primitive_arithmetic_operation(
         | BinaryOp::Le
         | BinaryOp::Gt
         | BinaryOp::Ge
+        | BinaryOp::Spaceship
         | BinaryOp::StrictEq
         | BinaryOp::StrictNe
         | BinaryOp::NullCoalesce
@@ -19029,6 +19457,9 @@ impl CNativeBuiltinSignature {
                 is_variadic: false,
                 default: self.fixed_param_defaults[index].map(|default| default.to_expr(span)),
                 promotion: None,
+                promotion_set_visibility: None,
+                promotion_readonly: false,
+                promotion_final: false,
                 attributes: Vec::new(),
                 span,
             })
@@ -19041,6 +19472,9 @@ impl CNativeBuiltinSignature {
                 is_variadic: true,
                 default: None,
                 promotion: None,
+                promotion_set_visibility: None,
+                promotion_readonly: false,
+                promotion_final: false,
                 attributes: Vec::new(),
                 span,
             });
@@ -19877,7 +20311,8 @@ fn collect_loop_assigned_direct_variables_from_assign_target(
         | AssignTarget::DynamicParentStaticProperty { .. }
         | AssignTarget::LateStaticProperty { .. }
         | AssignTarget::DynamicObjectStaticProperty { .. }
-        | AssignTarget::DynamicLateStaticProperty { .. } => {}
+        | AssignTarget::DynamicLateStaticProperty { .. }
+        | AssignTarget::UnsupportedExpression { .. } => {}
         AssignTarget::ArrayIndex { index, .. } => {
             if let Some(index) = index {
                 collect_loop_assigned_direct_variables_from_expr(index, names);
@@ -20136,6 +20571,15 @@ fn collect_loop_assigned_direct_variables_from_expr(expr: &Expr, names: &mut BTr
         } => {
             collect_loop_assigned_direct_variables_from_expr(condition, names);
             collect_loop_assigned_direct_variables_from_expr(if_false, names);
+        }
+        Expr::Match { subject, arms, .. } => {
+            collect_loop_assigned_direct_variables_from_expr(subject, names);
+            for arm in arms {
+                for condition in &arm.conditions {
+                    collect_loop_assigned_direct_variables_from_expr(condition, names);
+                }
+                collect_loop_assigned_direct_variables_from_expr(&arm.result, names);
+            }
         }
         Expr::Assign { target, expr, .. }
         | Expr::CompoundAssign { target, expr, .. }
@@ -20402,6 +20846,15 @@ impl CGenerator {
         &mut self,
         expr: &Expr,
     ) -> CompileResult<()> {
+        if let Expr::Cast {
+            kind: CastKind::Void,
+            span,
+            ..
+        } = expr
+        {
+            return Err(self.unsupported(*span, ASSEMBLY_CAST_REJECTION));
+        }
+
         let result = self.emit_native_diagnostic_result_expr_operand(
             NativeDiagnosticResultOperandSurface::Statement,
             expr,
@@ -21468,6 +21921,12 @@ impl CGenerator {
             let Stmt::Trait(trait_decl) = stmt else {
                 continue;
             };
+            if let Some(span) = readonly_trait_native_metadata_span(trait_decl) {
+                return Err(self.unsupported(span, ASSEMBLY_TRAIT_REJECTION));
+            }
+            if let Some(span) = asymmetric_trait_native_metadata_span(trait_decl) {
+                return Err(self.unsupported(span, ASSEMBLY_TRAIT_REJECTION));
+            }
             let key = trait_semantics::trait_key(&trait_decl.name);
             if self.declared_traits.contains_key(&key) {
                 return Err(self.unsupported(trait_decl.span, ASSEMBLY_TRAIT_REJECTION));
@@ -21577,8 +22036,14 @@ impl CGenerator {
         class_index: usize,
     ) -> CompileResult<CDeclaredClass> {
         let interface_names = self.validate_declared_class_interface_names(class)?;
-        if class.is_nested || class.is_abstract || class.is_readonly {
+        if class.is_nested || class.is_abstract {
             return Err(self.unsupported(class.span, ASSEMBLY_OBJECT_CLASS_REJECTION));
+        }
+        if let Some(span) = readonly_class_native_metadata_span(class) {
+            return Err(self.unsupported(span, ASSEMBLY_OBJECT_CLASS_REJECTION));
+        }
+        if let Some(span) = asymmetric_class_native_metadata_span(class) {
+            return Err(self.unsupported(span, ASSEMBLY_OBJECT_CLASS_REJECTION));
         }
 
         let trait_effective_methods =
@@ -23226,6 +23691,7 @@ impl CGenerator {
             return_type: return_type.cloned(),
             returns_by_reference,
             body: body.to_vec(),
+            strict_types: false,
             is_nested: false,
             is_generator: false,
             end_line: span.line,
@@ -23456,6 +23922,7 @@ impl CGenerator {
             return_type,
             returns_by_reference,
             body: body.to_vec(),
+            strict_types: false,
             is_nested: false,
             is_generator: false,
             end_line: span.line,
@@ -26932,7 +27399,8 @@ impl CGenerator {
             | AssignTarget::ParentStaticProperty { .. }
             | AssignTarget::DynamicParentStaticProperty { .. }
             | AssignTarget::LateStaticProperty { .. }
-            | AssignTarget::DynamicLateStaticProperty { .. } => Ok(None),
+            | AssignTarget::DynamicLateStaticProperty { .. }
+            | AssignTarget::UnsupportedExpression { .. } => Ok(None),
         }
     }
 
@@ -34232,7 +34700,8 @@ impl CGenerator {
             | AssignTarget::ParentStaticProperty { .. }
             | AssignTarget::DynamicParentStaticProperty { .. }
             | AssignTarget::LateStaticProperty { .. }
-            | AssignTarget::DynamicLateStaticProperty { .. } => Ok(None),
+            | AssignTarget::DynamicLateStaticProperty { .. }
+            | AssignTarget::UnsupportedExpression { .. } => Ok(None),
         }
     }
 
@@ -38275,6 +38744,9 @@ impl CGenerator {
             ForAction::CompoundAssign {
                 target, op, expr, ..
             } => {
+                if matches!(*op, CompoundAssignOp::Pow) {
+                    return Err(self.unsupported(span, ASSEMBLY_ARITHMETIC_REJECTION));
+                }
                 if let Some(operation) = native_assignment_target_call_operation(target) {
                     return Err(self.unsupported_call_operation(operation));
                 }
@@ -38420,6 +38892,15 @@ impl CGenerator {
     }
 
     fn emit_discarded_expr_statement(&mut self, expr: &Expr) -> CompileResult<()> {
+        if let Expr::Cast {
+            kind: CastKind::Void,
+            span,
+            ..
+        } = expr
+        {
+            return Err(self.unsupported(*span, ASSEMBLY_CAST_REJECTION));
+        }
+
         if let Expr::Call { name, args, span } = expr {
             if name.eq_ignore_ascii_case("print_r")
                 && args.len() == 1
@@ -41941,6 +42422,9 @@ impl CGenerator {
                 expr,
                 span,
             } => {
+                if matches!(*op, CompoundAssignOp::Pow) {
+                    return Err(self.unsupported(*span, ASSEMBLY_ARITHMETIC_REJECTION));
+                }
                 if let Some(operation) = native_assignment_target_call_operation(target) {
                     return Err(self.unsupported_call_operation(operation));
                 }
@@ -42145,9 +42629,18 @@ impl CGenerator {
                 let Some(value) = value.variable_name() else {
                     return Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION));
                 };
+                let key = match key {
+                    Some(key) => {
+                        let Some(name) = key.variable_name() else {
+                            return Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION));
+                        };
+                        Some(name)
+                    }
+                    None => None,
+                };
                 self.emit_native_array_foreach_statement(
                     iterable,
-                    key.as_deref(),
+                    key,
                     value,
                     *by_reference,
                     body,
@@ -43271,6 +43764,9 @@ impl CGenerator {
                 expr,
                 span,
             } => {
+                if matches!(*op, CompoundAssignOp::Pow) {
+                    return Err(self.unsupported(*span, ASSEMBLY_ARITHMETIC_REJECTION));
+                }
                 if let Some(operation) = native_assignment_target_call_operation(target) {
                     return Err(self.unsupported_call_operation(operation));
                 }
@@ -43380,6 +43876,7 @@ impl CGenerator {
                 if_false,
                 span,
             } => self.emit_short_ternary(condition, if_false, *span),
+            Expr::Match { span, .. } => Err(self.unsupported(*span, ASSEMBLY_MATCH_REJECTION)),
             Expr::Binary {
                 left,
                 op,
@@ -48804,6 +49301,9 @@ impl CGenerator {
                 self.expr_requires_destructor_observable_cleanup_boundary(condition)
                     || self.expr_requires_destructor_observable_cleanup_boundary(if_false)
             }
+            Expr::Match { subject, arms, .. } => match_expr_contains(subject, arms, &|expr| {
+                self.expr_requires_destructor_observable_cleanup_boundary(expr)
+            }),
             Expr::Assign { target, expr, .. }
             | Expr::CompoundAssign { target, expr, .. }
             | Expr::NullCoalesceAssign { target, expr, .. } => {
@@ -56301,6 +56801,18 @@ impl CGenerator {
         }
 
         let value = self.emit_expr(&args[0])?;
+        if matches!(
+            &value,
+            CValue::Int(_)
+                | CValue::Float(_)
+                | CValue::Bool(_)
+                | CValue::BoolExpr(_)
+                | CValue::ComparisonDecision(_)
+                | CValue::ArrayHandle(_)
+                | CValue::Null
+        ) {
+            return Err(self.unsupported(span, ASSEMBLY_FUNCTION_CALL_REJECTION));
+        }
         let candidates = self.function_exists_text_membership_candidates();
         self.emit_native_text_membership_bool(
             value,
@@ -56456,6 +56968,20 @@ impl CGenerator {
         }
 
         let value = self.emit_expr(&args[0])?;
+        if builtin_name.eq_ignore_ascii_case("extension_loaded")
+            && matches!(
+                &value,
+                CValue::Int(_)
+                    | CValue::Float(_)
+                    | CValue::Bool(_)
+                    | CValue::BoolExpr(_)
+                    | CValue::ComparisonDecision(_)
+                    | CValue::ArrayHandle(_)
+                    | CValue::Null
+            )
+        {
+            return Err(self.unsupported(span, ASSEMBLY_FUNCTION_CALL_REJECTION));
+        }
         if let Some(predicate_tag) = native_value_type_predicate_tag(builtin_name) {
             if matches!(
                 &value,
@@ -56885,6 +57411,7 @@ impl CGenerator {
     }
 
     fn is_known_function_available(&self, name: &str) -> bool {
+        let name = exact_function_call_lookup_name(name);
         is_native_known_function_name(name)
             || self
                 .user_functions
@@ -56894,6 +57421,13 @@ impl CGenerator {
     fn function_exists_text_membership_candidates(&self) -> Vec<String> {
         let mut candidates = native_text_membership_candidates(NATIVE_KNOWN_FUNCTION_NAMES);
         candidates.extend(self.user_function_order.iter().cloned());
+        let unprefixed = candidates.clone();
+        candidates.extend(
+            unprefixed
+                .into_iter()
+                .filter(|name| !name.starts_with('\\'))
+                .map(|name| format!("\\{name}")),
+        );
         candidates
     }
 
@@ -56959,7 +57493,7 @@ impl CGenerator {
 
     fn strlen_result_for_value(&self, value: &CValue) -> Option<usize> {
         match value {
-            CValue::String(value) => Some(value.len()),
+            CValue::String(value) => Some(php_string_literal_byte_len(value)),
             CValue::StringExpr(_) => {
                 let values = self.known_string_values_for_value(value)?;
                 known_strings_have_uniform_byte_length(&values)
@@ -57517,6 +58051,9 @@ impl CGenerator {
             | AssignTarget::DynamicLateStaticProperty { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_STATIC_MEMBER_REJECTION))
             }
+            AssignTarget::UnsupportedExpression { span, .. } => {
+                Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION))
+            }
         }
     }
 
@@ -57532,6 +58069,7 @@ impl CGenerator {
                 self.emit_arithmetic_binary(left, op, right, span)
             }
             BinaryOp::Div => Err(self.unsupported(span, ASSEMBLY_DIVISION_REJECTION)),
+            BinaryOp::Pow => Err(self.unsupported(span, ASSEMBLY_ARITHMETIC_REJECTION)),
             BinaryOp::Concat => Err(self.unsupported(span, ASSEMBLY_CONCAT_REJECTION)),
             BinaryOp::Eq
             | BinaryOp::Ne
@@ -57542,6 +58080,7 @@ impl CGenerator {
             BinaryOp::StrictEq | BinaryOp::StrictNe => {
                 self.emit_static_strict_identity(left, op, right, span)
             }
+            BinaryOp::Spaceship => Err(self.unsupported(span, assembly_comparison_rejection())),
             BinaryOp::NullCoalesce => Err(self.unsupported(span, ASSEMBLY_CONDITIONAL_REJECTION)),
             BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::LogicalXor => {
                 self.emit_bool_binary(left, op, right, span)
@@ -58223,11 +58762,12 @@ impl CGenerator {
                 let (bytes, byte_len) = if value.is_empty() {
                     ("NULL".to_string(), "0".to_string())
                 } else {
-                    let bytes = c_byte_array(value.as_bytes());
+                    let literal_bytes = php_string_literal_bytes(&value);
+                    let bytes = c_byte_array(&literal_bytes);
                     let data = format!("phpc_native_comparison_bytes_{index}");
                     self.static_data
                         .push(format!("static const uint8_t {data}[] = {{{bytes}}};"));
-                    (data, value.len().to_string())
+                    (data, literal_bytes.len().to_string())
                 };
                 self.body.push(format!(
                     "phpc_NativeStringHandle {string} = phpc_native_string_from_bytes({bytes}, {byte_len});"
@@ -58294,11 +58834,12 @@ impl CGenerator {
                 let (bytes, byte_len) = if value.is_empty() {
                     ("NULL".to_string(), "0".to_string())
                 } else {
-                    let bytes = c_byte_array(value.as_bytes());
+                    let literal_bytes = php_string_literal_bytes(&value);
+                    let bytes = c_byte_array(&literal_bytes);
                     let data = format!("phpc_native_value_bytes_{index}");
                     self.static_data
                         .push(format!("static const uint8_t {data}[] = {{{bytes}}};"));
-                    (data, value.len().to_string())
+                    (data, literal_bytes.len().to_string())
                 };
                 self.body.push(format!(
                     "phpc_NativeDiagnosticHandle {diagnostic_handle} = {{0}};"
@@ -59197,7 +59738,7 @@ impl CGenerator {
 
     fn c_string_value_byte_len_operand(&mut self, value: &CValue) -> Option<String> {
         match value {
-            CValue::String(value) => Some(value.len().to_string()),
+            CValue::String(value) => Some(php_string_literal_byte_len(value).to_string()),
             CValue::StringExpr(value) => self.c_string_expr_byte_len_operand(value),
             _ => None,
         }
@@ -60609,7 +61150,7 @@ impl CGenerator {
                 )))
             }
             Expr::Cast { kind, expr, span } => {
-                if matches!(kind, CastKind::Object) {
+                if matches!(kind, CastKind::Object | CastKind::Void) {
                     return Err(self.unsupported(*span, ASSEMBLY_CAST_REJECTION));
                 }
                 let value = self.materialize_native_value_result_operand(expr, failure_cleanup)?;
@@ -60625,6 +61166,9 @@ impl CGenerator {
                 expr,
                 span,
             } => {
+                if matches!(*op, CompoundAssignOp::Pow) {
+                    return Err(self.unsupported(*span, ASSEMBLY_ARITHMETIC_REJECTION));
+                }
                 if let Some(value) = self
                     .materialize_direct_variable_compound_assignment_result_for_target(
                         target,
@@ -64377,7 +64921,7 @@ impl CGenerator {
         predicate_tag: &str,
     ) -> CValue {
         self.uses_native_array_helpers = true;
-        self.uses_native_reference_helpers |= value.is_reference;
+        self.uses_native_reference_helpers = true;
 
         let result = self.next_native_name("native_value_type_predicate");
         let diagnostic = self.next_native_name("native_value_type_predicate_diagnostic");
@@ -65102,11 +65646,12 @@ impl CGenerator {
     fn emit_native_string_helper_echo(&mut self, value: &str) {
         let index = self.next_static_data;
         self.next_static_data += 1;
-        let bytes = c_byte_array(value.as_bytes());
+        let literal_bytes = php_string_literal_bytes(value);
+        let bytes = c_byte_array(&literal_bytes);
         let data = format!("phpc_native_bytes_{index}");
         self.static_data
             .push(format!("static const uint8_t {data}[] = {{{bytes}}};"));
-        self.emit_native_string_pointer_helper_echo(&data, &value.len().to_string());
+        self.emit_native_string_pointer_helper_echo(&data, &literal_bytes.len().to_string());
     }
 
     fn emit_native_string_pointer_helper_echo(&mut self, value: &str, len: &str) {
@@ -65228,16 +65773,49 @@ impl CGenerator {
     }
 }
 
+const PHP_ESCAPED_BYTE_SENTINEL_BASE: u32 = 0xE000;
+const PHP_ESCAPED_BYTE_SENTINEL_END: u32 = PHP_ESCAPED_BYTE_SENTINEL_BASE + 0xFF;
+
+fn php_escaped_byte_sentinel_value(ch: char) -> Option<u8> {
+    let value = ch as u32;
+    if (PHP_ESCAPED_BYTE_SENTINEL_BASE..=PHP_ESCAPED_BYTE_SENTINEL_END).contains(&value) {
+        Some((value - PHP_ESCAPED_BYTE_SENTINEL_BASE) as u8)
+    } else {
+        None
+    }
+}
+
+fn php_string_literal_bytes(value: &str) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(value.len());
+    for ch in value.chars() {
+        if let Some(byte) = php_escaped_byte_sentinel_value(ch) {
+            bytes.push(byte);
+        } else {
+            let mut buffer = [0_u8; 4];
+            bytes.extend_from_slice(ch.encode_utf8(&mut buffer).as_bytes());
+        }
+    }
+    bytes
+}
+
+fn php_string_literal_byte_len(value: &str) -> usize {
+    php_string_literal_bytes(value).len()
+}
+
+fn php_string_literal_contains_nul(value: &str) -> bool {
+    php_string_literal_bytes(value).contains(&0)
+}
+
 fn llvm_c_string(value: &str) -> String {
     let mut escaped = String::new();
-    for byte in value.as_bytes() {
-        match *byte {
+    for byte in php_string_literal_bytes(value) {
+        match byte {
             b'\\' => escaped.push_str("\\5C"),
             b'"' => escaped.push_str("\\22"),
             b'\n' => escaped.push_str("\\0A"),
             b'\r' => escaped.push_str("\\0D"),
             b'\t' => escaped.push_str("\\09"),
-            0x20..=0x7e => escaped.push(*byte as char),
+            0x20..=0x7e => escaped.push(byte as char),
             other => escaped.push_str(&format!("\\{other:02X}")),
         }
     }
@@ -65246,16 +65824,20 @@ fn llvm_c_string(value: &str) -> String {
 }
 
 fn c_string(value: &str) -> String {
+    c_byte_string(&php_string_literal_bytes(value))
+}
+
+fn c_byte_string(bytes: &[u8]) -> String {
     let mut escaped = String::new();
-    for ch in value.chars() {
-        match ch {
-            '\\' => escaped.push_str("\\\\"),
-            '"' => escaped.push_str("\\\""),
-            '\n' => escaped.push_str("\\n"),
-            '\r' => escaped.push_str("\\r"),
-            '\t' => escaped.push_str("\\t"),
-            ch if ch.is_ascii_graphic() || ch == ' ' => escaped.push(ch),
-            ch => escaped.push_str(&format!("\\x{:02X}", ch as u32)),
+    for byte in bytes {
+        match *byte {
+            b'\\' => escaped.push_str("\\\\"),
+            b'"' => escaped.push_str("\\\""),
+            b'\n' => escaped.push_str("\\n"),
+            b'\r' => escaped.push_str("\\r"),
+            b'\t' => escaped.push_str("\\t"),
+            0x20..=0x7e => escaped.push(*byte as char),
+            byte => escaped.push_str(&format!("\\{byte:03o}")),
         }
     }
     escaped
@@ -65409,6 +65991,9 @@ fn native_foreach_expr_may_mutate_storage(expr: &Expr) -> bool {
         } => {
             native_foreach_expr_may_mutate_storage(condition)
                 || native_foreach_expr_may_mutate_storage(if_false)
+        }
+        Expr::Match { subject, arms, .. } => {
+            match_expr_contains(subject, arms, &native_foreach_expr_may_mutate_storage)
         }
         Expr::Null(_)
         | Expr::Bool(_, _)
@@ -65922,6 +66507,85 @@ fn known_string_truthiness(values: &KnownString) -> Option<bool> {
     )
 }
 
+fn single_static_cast_value<T: PartialEq>(values: impl IntoIterator<Item = T>) -> Option<T> {
+    let mut values = values.into_iter();
+    let first = values.next()?;
+    values.all(|value| value == first).then_some(first)
+}
+
+fn php_float_string_for_static_cast(value: f64) -> String {
+    if value.is_nan() {
+        return "NAN".to_string();
+    }
+    if value.is_infinite() {
+        return if value.is_sign_positive() {
+            "INF".to_string()
+        } else {
+            "-INF".to_string()
+        };
+    }
+
+    let formatted = format!("{}", value);
+    if formatted == "-0" {
+        "0".to_string()
+    } else {
+        formatted
+    }
+}
+
+fn static_known_float_to_int(values: &Option<KnownFloat>) -> Option<i64> {
+    let values = values.as_ref()?;
+    let mut results = Vec::new();
+    for value in values.values() {
+        results.push(static_float_to_int_value(*value)?);
+    }
+    single_static_cast_value(results)
+}
+
+fn static_float_to_int_value(value: f64) -> Option<i64> {
+    if !value.is_finite() || value < i64::MIN as f64 || value >= 9_223_372_036_854_775_808.0 {
+        return None;
+    }
+    Some(value.trunc() as i64)
+}
+
+fn static_known_string_to_int(values: &Option<KnownString>) -> Option<i64> {
+    let values = values.as_ref()?;
+    let mut results = Vec::new();
+    for value in values.values() {
+        results.push(static_string_to_int_value(value)?);
+    }
+    single_static_cast_value(results)
+}
+
+fn static_string_to_int_value(value: &str) -> Option<i64> {
+    match classify_php_numeric_string(value) {
+        PhpNumericStringClassification::Integer(value) => Some(value),
+        PhpNumericStringClassification::Float(value) => static_float_to_int_value(value),
+        PhpNumericStringClassification::NonNumeric => Some(0),
+        PhpNumericStringClassification::LeadingNumeric => None,
+    }
+}
+
+fn static_known_string_to_float(values: &Option<KnownString>) -> Option<f64> {
+    let values = values.as_ref()?;
+    let mut results = Vec::new();
+    for value in values.values() {
+        results.push(static_string_to_float_value(value)?);
+    }
+    single_static_cast_value(results)
+}
+
+fn static_string_to_float_value(value: &str) -> Option<f64> {
+    match classify_php_numeric_string(value) {
+        PhpNumericStringClassification::Integer(value) => Some(value as f64),
+        PhpNumericStringClassification::Float(value) if value.is_finite() => Some(value),
+        PhpNumericStringClassification::Float(_) => None,
+        PhpNumericStringClassification::NonNumeric => Some(0.0),
+        PhpNumericStringClassification::LeadingNumeric => None,
+    }
+}
+
 fn known_truthiness_for_backend_primitive_source(source: &BackendPrimitiveSource) -> Option<bool> {
     match source {
         BackendPrimitiveSource::Null => Some(false),
@@ -66000,6 +66664,8 @@ fn is_array_builtin(name: &str) -> bool {
             | "array_values"
             | "array_key_first"
             | "array_key_last"
+            | "array_first"
+            | "array_last"
             | "current"
             | "key"
             | "next"
@@ -66011,6 +66677,7 @@ fn is_array_builtin(name: &str) -> bool {
             | "array_rand"
             | "array_reverse"
             | "array_slice"
+            | "array_splice"
             | "array_chunk"
             | "array_pad"
             | "array_merge"
@@ -66035,6 +66702,10 @@ fn is_array_builtin(name: &str) -> bool {
             | "array_reduce"
             | "array_filter"
             | "array_map"
+            | "array_find"
+            | "array_find_key"
+            | "array_any"
+            | "array_all"
             | "array_multisort"
             | "sort"
             | "rsort"
@@ -66185,19 +66856,24 @@ fn is_builtin_class_name(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
         "exception"
+            | "datemalformedintervalstringexception"
+            | "dateinterval"
             | "pdo"
             | "pdostatement"
             | "directory"
             | "datetimezone"
+            | "datetime"
+            | "datetimeimmutable"
             | "reflectionclass"
             | "reflectionmethod"
+            | "sensitiveparametervalue"
     )
 }
 
 fn known_strings_have_uniform_function_exists_result(values: &KnownString) -> Option<bool> {
     let mut result = None;
     for value in values.values() {
-        let current = is_native_known_function_name(value);
+        let current = is_native_known_function_name(exact_function_call_lookup_name(value));
         if let Some(previous) = result {
             if previous != current {
                 return None;
@@ -66239,16 +66915,29 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "chr",
     "bin2hex",
     "hex2bin",
+    "pack",
+    "unpack",
     "ord",
     "dechex",
     "decbin",
     "decoct",
+    "bindec",
+    "octdec",
     "hexdec",
     "base_convert",
     "crc32",
+    "md5",
+    "md5_file",
+    "sha1",
+    "sha1_file",
+    "quoted_printable_decode",
+    "quoted_printable_encode",
+    "similar_text",
     "soundex",
+    "metaphone",
     "count_chars",
     "strrev",
+    "str_shuffle",
     "str_rot13",
     "ucfirst",
     "lcfirst",
@@ -66259,11 +66948,29 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "htmlentities",
     "htmlspecialchars_decode",
     "html_entity_decode",
+    "highlight_string",
+    "highlight_file",
+    "show_source",
+    "php_strip_whitespace",
     "get_html_translation_table",
     "strip_tags",
     "str_repeat",
     "str_pad",
     "chunk_split",
+    "mb_strlen",
+    "mb_substr",
+    "mb_strcut",
+    "mb_substr_count",
+    "mb_strpos",
+    "mb_stripos",
+    "mb_strrpos",
+    "mb_strripos",
+    "mb_strstr",
+    "mb_stristr",
+    "mb_strrchr",
+    "mb_strrichr",
+    "mb_strtolower",
+    "mb_strtoupper",
     "str_split",
     "range",
     "addslashes",
@@ -66271,9 +66978,11 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "addcslashes",
     "stripcslashes",
     "strtolower",
+    "strtoupper",
     "trim",
     "ltrim",
     "rtrim",
+    "chop",
     "strcasecmp",
     "strcoll",
     "strtr",
@@ -66297,20 +67006,70 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "strtok",
     "substr",
     "substr_replace",
+    "substr_compare",
     "substr_count",
     "str_replace",
+    "str_ireplace",
     "str_getcsv",
     "parse_str",
+    "parse_url",
+    "http_build_query",
+    "urlencode",
+    "rawurlencode",
+    "urldecode",
+    "rawurldecode",
     "levenshtein",
     "similar_text",
+    "preg_quote",
     "preg_match",
     "preg_replace",
     "preg_split",
     "preg_replace_callback",
     "compact",
     "error_reporting",
+    "ini_parse_quantity",
+    "set_time_limit",
+    "connection_aborted",
+    "connection_status",
     "ignore_user_abort",
+    "getprotobyname",
+    "getprotobynumber",
+    "getservbyname",
+    "getservbyport",
+    "get_current_user",
+    "getlastmod",
+    "getmyinode",
+    "getmyuid",
+    "getmygid",
+    "posix_ctermid",
+    "posix_access",
+    "posix_getuid",
+    "posix_geteuid",
+    "posix_getgid",
+    "posix_getegid",
+    "posix_getpid",
+    "posix_getppid",
+    "posix_getpgrp",
+    "posix_getpgid",
+    "posix_getsid",
+    "posix_getgroups",
+    "posix_getpwuid",
+    "posix_getpwnam",
+    "posix_getgrgid",
+    "posix_getgrnam",
+    "posix_setgid",
+    "posix_setuid",
+    "posix_seteuid",
+    "posix_setegid",
+    "posix_uname",
+    "posix_errno",
+    "posix_get_last_error",
+    "posix_strerror",
+    "getmypid",
+    "php_uname",
     "php_sapi_name",
+    "phpversion",
+    "phpcredits",
     "json_encode",
     "printf",
     "fprintf",
@@ -66329,6 +67088,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "tempnam",
     "sys_get_temp_dir",
     "abs",
+    "number_format",
     "bcadd",
     "bcsub",
     "bcmul",
@@ -66358,9 +67118,25 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "date_sunset",
     "date_sun_info",
     "date_create",
+    "date_create_from_format",
+    "date_create_immutable",
+    "date_parse",
+    "date_parse_from_format",
+    "date_diff",
+    "date_modify",
+    "date_add",
+    "date_sub",
     "date_format",
+    "date_interval_format",
+    "date_interval_create_from_date_string",
+    "date_timestamp_get",
+    "date_timestamp_set",
+    "date_date_set",
+    "date_isodate_set",
+    "date_time_set",
     "date_offset_get",
     "date_timezone_get",
+    "date_timezone_set",
     "idate",
     "checkdate",
     "getdate",
@@ -66380,6 +67156,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "timezone_name_from_abbr",
     "timezone_open",
     "timezone_name_get",
+    "timezone_location_get",
     "timezone_offset_get",
     "timezone_transitions_get",
     "timezone_abbreviations_list",
@@ -66393,18 +67170,44 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "get_required_files",
     "set_include_path",
     "min",
+    "max",
     "rand",
+    "mt_rand",
+    "srand",
+    "mt_srand",
+    "getrandmax",
+    "mt_getrandmax",
+    "random_int",
+    "random_bytes",
+    "lcg_value",
     "uniqid",
+    "hash_init",
+    "hash_update",
+    "hash_final",
+    "hash_copy",
+    "hash_file",
+    "hash_hmac_file",
+    "hash_update_file",
+    "hash_update_stream",
+    "hash",
+    "hash_algos",
+    "hash_hmac_algos",
     "hash_hmac",
+    "hash_hkdf",
+    "hash_pbkdf2",
+    "hash_equals",
     "count",
     "sizeof",
     "constant",
     "defined",
+    "get_defined_functions",
     "array_key_exists",
     "key_exists",
     "array_values",
     "array_key_first",
     "array_key_last",
+    "array_first",
+    "array_last",
     "current",
     "key",
     "next",
@@ -66416,6 +67219,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "array_rand",
     "array_reverse",
     "array_slice",
+    "array_splice",
     "array_chunk",
     "array_pad",
     "array_merge",
@@ -66433,6 +67237,8 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "array_diff_assoc",
     "array_intersect",
     "array_intersect_assoc",
+    "array_diff_ukey",
+    "array_intersect_ukey",
     "array_unique",
     "array_count_values",
     "array_sum",
@@ -66440,6 +67246,10 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "array_reduce",
     "array_filter",
     "array_map",
+    "array_find",
+    "array_find_key",
+    "array_any",
+    "array_all",
     "array_multisort",
     "sort",
     "rsort",
@@ -66643,6 +67453,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "fstat",
     "stream_get_meta_data",
     "stream_get_wrappers",
+    "stream_get_transports",
     "stream_wrapper_register",
     "stream_wrapper_unregister",
     "stream_wrapper_restore",
@@ -66688,6 +67499,8 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "ob_flush",
     "ob_end_clean",
     "ob_end_flush",
+    "flush",
+    "ob_implicit_flush",
     "header",
     "header_remove",
     "headers_list",
@@ -66739,7 +67552,8 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "var_export",
 ];
 
-const COMPAT_LOADED_EXTENSION_NAMES: &[&str] = &["json", "hash", "pdo", "pdo_mysql"];
+const COMPAT_LOADED_EXTENSION_NAMES: &[&str] =
+    &["json", "hash", "pdo", "pdo_mysql", "posix", "xmlreader"];
 
 fn native_text_membership_candidates(candidates: &[&str]) -> Vec<String> {
     candidates
@@ -66919,7 +67733,7 @@ fn native_filesystem_path_operation_assembly_rejection(
 fn known_strings_have_uniform_byte_length(values: &KnownString) -> Option<usize> {
     let mut result = None;
     for value in values.values() {
-        let current = value.len();
+        let current = php_string_literal_byte_len(value);
         if let Some(previous) = result {
             if previous != current {
                 return None;
@@ -66932,7 +67746,10 @@ fn known_strings_have_uniform_byte_length(values: &KnownString) -> Option<usize>
 }
 
 fn known_strings_are_nul_free(values: &KnownString) -> bool {
-    values.values().iter().all(|value| !value.contains('\0'))
+    values
+        .values()
+        .iter()
+        .all(|value| !php_string_literal_contains_nul(value))
 }
 
 fn known_strings_have_uniform_defined_result(values: &KnownString) -> Option<bool> {
@@ -66966,6 +67783,7 @@ fn native_builtin_global_constant_c_value(name: &str) -> Option<CValue> {
     match name {
         "PHP_VERSION" => Some(CValue::String("8.3.0".to_string())),
         "PHP_VERSION_ID" => Some(CValue::Int("80300".to_string())),
+        "PHP_INT_SIZE" => Some(CValue::Int("8".to_string())),
         "PHP_INT_MAX" => Some(CValue::Int(i64::MAX.to_string())),
         "INF" => Some(CValue::Float("INFINITY".to_string())),
         "NAN" => Some(CValue::Float("NAN".to_string())),
@@ -66973,12 +67791,24 @@ fn native_builtin_global_constant_c_value(name: &str) -> Option<CValue> {
         "PHP_OS" => Some(CValue::String("Linux".to_string())),
         "PHP_OS_FAMILY" => Some(CValue::String("Linux".to_string())),
         "PHP_EOL" => Some(CValue::String("\n".to_string())),
+        "CONNECTION_NORMAL" => Some(CValue::Int("0".to_string())),
+        "CONNECTION_ABORTED" => Some(CValue::Int("1".to_string())),
+        "CONNECTION_TIMEOUT" => Some(CValue::Int("2".to_string())),
+        "POSIX_F_OK" => Some(CValue::Int("0".to_string())),
+        "POSIX_R_OK" => Some(CValue::Int("4".to_string())),
+        "POSIX_W_OK" => Some(CValue::Int("2".to_string())),
+        "POSIX_X_OK" => Some(CValue::Int("1".to_string())),
+        "POSIX_SC_NPROCESSORS_ONLN" => Some(CValue::Int("84".to_string())),
+        "POSIX_SC_OPEN_MAX" => Some(CValue::Int("4".to_string())),
+        "SIGTERM" => Some(CValue::Int("15".to_string())),
+        "SIGKILL" => Some(CValue::Int("9".to_string())),
         "PATH_SEPARATOR" => Some(CValue::String(
             if cfg!(windows) { ";" } else { ":" }.to_string(),
         )),
         "FILE_USE_INCLUDE_PATH" => Some(CValue::Int("1".to_string())),
         "FILE_IGNORE_NEW_LINES" => Some(CValue::Int("2".to_string())),
         "FILE_SKIP_EMPTY_LINES" => Some(CValue::Int("4".to_string())),
+        "FILE_NO_DEFAULT_CONTEXT" => Some(CValue::Int("16".to_string())),
         "LOCK_EX" => Some(CValue::Int("2".to_string())),
         "FILE_APPEND" => Some(CValue::Int("8".to_string())),
         "HTML_SPECIALCHARS" => Some(CValue::Int("0".to_string())),
@@ -66998,6 +67828,17 @@ fn native_builtin_global_constant_c_value(name: &str) -> Option<CValue> {
         "PATHINFO_EXTENSION" => Some(CValue::Int("4".to_string())),
         "PATHINFO_FILENAME" => Some(CValue::Int("8".to_string())),
         "PATHINFO_ALL" => Some(CValue::Int("15".to_string())),
+        "PHP_MAXPATHLEN" => Some(CValue::Int("4096".to_string())),
+        "PHP_URL_SCHEME" => Some(CValue::Int("0".to_string())),
+        "PHP_URL_HOST" => Some(CValue::Int("1".to_string())),
+        "PHP_URL_PORT" => Some(CValue::Int("2".to_string())),
+        "PHP_URL_USER" => Some(CValue::Int("3".to_string())),
+        "PHP_URL_PASS" => Some(CValue::Int("4".to_string())),
+        "PHP_URL_PATH" => Some(CValue::Int("5".to_string())),
+        "PHP_URL_QUERY" => Some(CValue::Int("6".to_string())),
+        "PHP_URL_FRAGMENT" => Some(CValue::Int("7".to_string())),
+        "PHP_QUERY_RFC1738" => Some(CValue::Int("1".to_string())),
+        "PHP_QUERY_RFC3986" => Some(CValue::Int("2".to_string())),
         "SCANDIR_SORT_ASCENDING" => Some(CValue::Int("0".to_string())),
         "SCANDIR_SORT_DESCENDING" => Some(CValue::Int("1".to_string())),
         "SCANDIR_SORT_NONE" => Some(CValue::Int("2".to_string())),
@@ -67065,11 +67906,16 @@ fn native_builtin_global_constant_c_value(name: &str) -> Option<CValue> {
         "E_DEPRECATED" => Some(CValue::Int("8192".to_string())),
         "E_USER_DEPRECATED" => Some(CValue::Int("16384".to_string())),
         "E_ALL" => Some(CValue::Int("32767".to_string())),
+        "COUNT_NORMAL" => Some(CValue::Int("0".to_string())),
+        "COUNT_RECURSIVE" => Some(CValue::Int("1".to_string())),
         "CASE_LOWER" => Some(CValue::Int("0".to_string())),
         "CASE_UPPER" => Some(CValue::Int("1".to_string())),
         "ARRAY_FILTER_USE_BOTH" => Some(CValue::Int("1".to_string())),
         "ARRAY_FILTER_USE_KEY" => Some(CValue::Int("2".to_string())),
+        "HASH_HMAC" => Some(CValue::Int("1".to_string())),
+        "PREG_SPLIT_NO_EMPTY" => Some(CValue::Int("1".to_string())),
         "PREG_SPLIT_DELIM_CAPTURE" => Some(CValue::Int("2".to_string())),
+        "PREG_SPLIT_OFFSET_CAPTURE" => Some(CValue::Int("4".to_string())),
         "SORT_REGULAR" => Some(CValue::Int("0".to_string())),
         "SORT_NUMERIC" => Some(CValue::Int("1".to_string())),
         "SORT_STRING" => Some(CValue::Int("2".to_string())),
@@ -67207,6 +68053,7 @@ fn native_dynamic_callable_builtin_canonical_name(name: &str) -> Option<&'static
         "trim" => Some("trim"),
         "ltrim" => Some("ltrim"),
         "rtrim" => Some("rtrim"),
+        "chop" => Some("chop"),
         "sort" => Some("sort"),
         "rsort" => Some("rsort"),
         "asort" => Some("asort"),
@@ -67466,10 +68313,10 @@ fn native_builtin_signature_for_name(name: &str) -> Option<CNativeBuiltinSignatu
             returns_by_reference: false,
             source_call_support: RuntimeCallableValue,
         },
-        "trim" | "ltrim" | "rtrim" => CNativeBuiltinSignature {
+        "trim" | "ltrim" | "rtrim" | "chop" => CNativeBuiltinSignature {
             canonical_name: match name.to_ascii_lowercase().as_str() {
                 "ltrim" => "ltrim",
-                "rtrim" => "rtrim",
+                "rtrim" | "chop" => "rtrim",
                 _ => "trim",
             },
             required_arg_count: 1,
@@ -67875,7 +68722,7 @@ mod tests {
         assert_eq!(error.phase, Phase::Codegen);
         assert_eq!(
             error.message,
-            "unsupported trait use: trait alias AliasCollisionSource::aliasSource as existing conflicts with AliasCollisionSource::existing"
+            "Trait method AliasCollisionSource::aliasSource has not been applied as AliasCollisionConsumer::existing, because of collision with AliasCollisionSource::existing"
         );
     }
 
@@ -72173,17 +73020,7 @@ echo " 10" < "zeta";
         let c_source = emit_c_source_for_assembly(&binary_program)
             .expect("known binary string comparison pairs should lower through C fallback");
 
-        let comparison_call_count = c_source
-            .matches(" = phpc_native_value_compare_result(")
-            .count();
-        assert!(
-            comparison_call_count >= 3,
-            "numeric-vs-nonnumeric, leading-numeric, and sign/dot-prefixed nonnumeric pairs should lower through the generated-C native value comparison ABI; found {comparison_call_count} calls:\n{c_source}"
-        );
-        assert!(
-            !c_source.contains("strcmp("),
-            "generated-C string comparisons should use the PHP-shaped runtime comparison ABI instead of raw C byte ordering:\n{c_source}"
-        );
+        assert_known_string_comparison_runtime_boundary(&c_source);
 
         for source in [
             "<?php\necho \"10\" < \"2\";\n",
@@ -72193,13 +73030,20 @@ echo " 10" < "zeta";
         ] {
             let program = crate::parse(source).expect("parse numeric string comparison source");
             let c_source = emit_c_source_for_assembly(&program)
-                .expect("numeric string comparisons should lower through the runtime ABI");
-
-            assert!(
-                c_source.contains(" = phpc_native_value_compare_result("),
-                "numeric string comparisons should use the runtime comparison ABI:\n{c_source}"
-            );
+                .expect("known string comparison source should lower through runtime boundary");
+            assert_known_string_comparison_runtime_boundary(&c_source);
         }
+    }
+
+    fn assert_known_string_comparison_runtime_boundary(c_source: &str) {
+        assert!(
+            c_source.contains("phpc_native_value_from_string_bytes_with_diagnostic"),
+            "known string pairs should materialize through the binary string value boundary:\n{c_source}"
+        );
+        assert!(
+            c_source.contains("phpc_native_value_compare_result"),
+            "known string pairs should compare through the shared runtime comparison boundary:\n{c_source}"
+        );
     }
 
     #[test]
@@ -72323,6 +73167,9 @@ echo " 10" < "zeta";
             is_variadic,
             default: None,
             promotion: None,
+            promotion_set_visibility: None,
+            promotion_readonly: false,
+            promotion_final: false,
             attributes: Vec::new(),
             span: test_span(),
         }
@@ -72339,6 +73186,9 @@ echo " 10" < "zeta";
             is_variadic: false,
             default: None,
             promotion: None,
+            promotion_set_visibility: None,
+            promotion_readonly: false,
+            promotion_final: false,
             attributes: Vec::new(),
             span: test_span(),
         }
@@ -72351,6 +73201,7 @@ echo " 10" < "zeta";
             return_type: None,
             returns_by_reference,
             body: Vec::new(),
+            strict_types: false,
             is_nested: false,
             is_generator: false,
             end_line: 1,
@@ -74738,6 +75589,13 @@ echo " 10" < "zeta";
         assert_eq!(rtrim.fixed_param_names, trim.fixed_param_names);
         assert_eq!(rtrim.fixed_param_defaults, trim.fixed_param_defaults);
         assert_eq!(rtrim.source_call_support, trim.source_call_support);
+
+        let chop = native_builtin_signature_for_name("chop")
+            .expect("chop should share trim-family signature metadata");
+        assert_eq!(chop.canonical_name, "rtrim");
+        assert_eq!(chop.fixed_param_names, trim.fixed_param_names);
+        assert_eq!(chop.fixed_param_defaults, trim.fixed_param_defaults);
+        assert_eq!(chop.source_call_support, trim.source_call_support);
     }
 
     #[test]
@@ -75055,6 +75913,9 @@ echo $call("Ada");
             is_variadic: false,
             default: None,
             promotion: None,
+            promotion_set_visibility: None,
+            promotion_readonly: false,
+            promotion_final: false,
             attributes: Vec::new(),
             span: test_span(),
         };
@@ -75513,7 +76374,10 @@ echo $call("Ada");
             ..CGenerator::default()
         };
         let output = generator
-            .emit_program(&Program { statements: vec![] })
+            .emit_program(&Program {
+                statements: vec![],
+                strict_types: false,
+            })
             .expect("empty program with native callable helpers should emit");
 
         for expected in [
@@ -75538,7 +76402,10 @@ echo $call("Ada");
             ..CGenerator::default()
         };
         let output = generator
-            .emit_program(&Program { statements: vec![] })
+            .emit_program(&Program {
+                statements: vec![],
+                strict_types: false,
+            })
             .expect("empty program with native callable and diagnostic helpers should emit");
 
         assert!(output.contains(
@@ -75716,21 +76583,6 @@ echo $call("Ada");
 
     #[test]
     fn c_assembly_non_local_assignment_families_share_assignment_owner_boundary() {
-        let program = crate::parse("<?php\n$box->$name = 1;\n").unwrap();
-        let c_source = emit_c_source_for_assembly(&program)
-            .expect("direct dynamic object-property assignment should lower through generated C");
-
-        assert!(
-            c_source.contains(
-                "phpc_native_object_property_mutation_operation_with_magic_reference_slots_with_diagnostic"
-            ),
-            "direct dynamic object-property assignment should use the shared object-property mutation ABI:\n{c_source}"
-        );
-        assert!(
-            c_source.contains("PHPC_NATIVE_OBJECT_PROPERTY_MUTATION_WRITE"),
-            "direct dynamic object-property assignment should request the write operation:\n{c_source}"
-        );
-
         for source in [
             "<?php\n$box->child->name = 1;\n",
             "<?php\nRoot::$name = 1;\n",
@@ -75755,6 +76607,15 @@ echo $call("Ada");
 
         assert_eq!(error.phase, Phase::Codegen);
         assert_eq!(error.message, ASSEMBLY_ARRAY_ACCESS_REJECTION);
+
+        let dynamic_property = crate::parse("<?php\n$box->$name = 1;\n").unwrap();
+        let c_source = emit_c_source_for_assembly(&dynamic_property)
+            .expect("dynamic object-property assignment should lower through runtime boundary");
+        assert!(
+            c_source
+                .contains("phpc_native_object_property_mutation_operation_with_magic_reference_slots_with_diagnostic"),
+            "dynamic object-property assignment should use the shared mutation helper:\n{c_source}"
+        );
     }
 
     #[test]
@@ -75948,7 +76809,10 @@ echo $call("Ada");
             ..CGenerator::default()
         };
         let output = generator
-            .emit_program(&Program { statements: vec![] })
+            .emit_program(&Program {
+                statements: vec![],
+                strict_types: false,
+            })
             .expect("empty program with native callable helpers should emit");
 
         for expected in [

@@ -1,0 +1,4 @@
+Deprecated: Using ${var} in strings is deprecated, use {$var} instead in tests/fixtures/unsupported_dynamic_features/unsupported_dollar_brace_string_interpolation.php on line 2
+
+Warning: Undefined variable $constant in tests/fixtures/unsupported_dynamic_features/unsupported_dollar_brace_string_interpolation.php on line 2
+APP_

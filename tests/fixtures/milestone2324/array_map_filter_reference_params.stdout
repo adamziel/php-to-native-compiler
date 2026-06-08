@@ -1,0 +1,11 @@
+mapped-one|mapped-two|one
+1|keep
+closure-three
+1|inst-five
+map_ref(): Argument #1 ($value) must be passed by reference, value given
+map_ref(): Argument #1 ($value) must be passed by reference, value given
+filter_ref(): Argument #1 ($value) must be passed by reference, value given
+filter_ref(): Argument #2 ($key) must be passed by reference, value given
+{closure}(): Argument #1 ($value) must be passed by reference, value given
+CallbackBox::stat(): Argument #1 ($value) must be passed by reference, value given
+CallbackBox::inst(): Argument #1 ($value) must be passed by reference, value given

@@ -95,6 +95,37 @@ foreach ([["dir", "\0"], ["prefix", "\0"], ["dir", []], ["prefix", []]] as $case
     );
 }
 
+#[test]
+fn tempnam_reports_system_temp_fallback_before_open_basedir_denial() {
+    let source = r#"<?php
+ini_set("open_basedir", ".");
+var_dump(tempnam("missing-tempnam-directory", "prefix_"));
+"#;
+
+    let execution = run_source(source).unwrap();
+
+    let notice = execution
+        .stdout
+        .find("Notice: tempnam(): file created in the system's temporary directory")
+        .expect("tempnam fallback notice is emitted");
+    let warning = execution
+        .stdout
+        .find("Warning: tempnam(): open_basedir restriction in effect.")
+        .expect("tempnam open_basedir warning is emitted");
+    assert!(
+        notice < warning,
+        "fallback notice must precede open_basedir denial:\n{}",
+        execution.stdout
+    );
+    assert!(
+        execution.stdout.ends_with("bool(false)\n"),
+        "{}",
+        execution.stdout
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
 struct TempFsFixture {
     root: PathBuf,
 }

@@ -4,7 +4,6 @@ use php_compiler::{emit_ir_source, run_source};
 const LLVM_ARRAY_REJECTION: &str = "LLVM array lowering rejects arrays, array literals, array indexing, array assignment, foreach array iteration, array offset unset, and array builtin function calls until native array storage layout, key normalization, copy-on-write, references, callbacks, and exact native error behavior exist; phpc run handles current array behavior";
 const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
 const LLVM_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "LLVM dynamic function-call lowering rejects variable-call expressions such as $name(...) until native callable expression evaluation, runtime function lookup, stack frames, arity/type diagnostics, callback dispatch, and exact native callable errors exist; phpc run handles current string-valued dynamic function calls";
-const LLVM_OBJECT_INSTANTIATION_REJECTION: &str = "LLVM object-instantiation lowering rejects new expressions and constructor dispatch until native object allocation, object handles, constructor calls, visibility checks, autoload/class lookup, references/copy-on-write, and exact native object-instantiation errors exist; phpc run handles current bounded new behavior";
 
 #[test]
 fn gettype_reports_php_legacy_type_names_for_current_values() {
@@ -31,6 +30,23 @@ echo $call(true), "\n";
 }
 
 #[test]
+fn gettype_reports_closed_resource_legacy_name() {
+    let execution = run_source(
+        r#"<?php
+$stream = fopen("php://memory", "w+");
+echo gettype($stream), "\n";
+fclose($stream);
+echo gettype($stream), "\n";
+echo gettype(STDIN), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "resource\nresource (closed)\nresource\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn type_predicates_cover_current_value_model_and_aliases() {
     let execution = run_source(
         r#"<?php
@@ -51,6 +67,49 @@ echo $call(["dynamic"]) ? "1" : "0";
     .unwrap();
 
     assert_eq!(execution.stdout, "10\n10\n1110\n110\n10\n10\n1111000\n1");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn deprecated_attribute_calls_emit_user_deprecated_diagnostics() {
+    let execution = run_source(
+        r#"<?php
+set_error_handler(function ($errno, $message) {
+    echo "handler:", $errno, ":", $message, "\n";
+});
+
+#[Deprecated(message: "use current_fn", since: "1.0")]
+function old_fn() {}
+
+old_fn();
+restore_error_handler();
+
+class Box {
+    #[Deprecated("use current_method")]
+    public function old_method() {}
+}
+
+$box = new Box();
+$box->old_method();
+
+$closure = #[Deprecated(1234)] function () {};
+$closure();
+"#,
+    )
+    .unwrap();
+
+    assert!(execution
+        .stdout
+        .contains("handler:16384:Function old_fn() is deprecated since 1.0, use current_fn\n"));
+    assert!(execution.stdout.contains(
+        "Deprecated: Method Box::old_method() is deprecated, use current_method in Command line code on line "
+    ));
+    assert!(execution
+        .stdout
+        .contains("Deprecated: Function {closure:Command line code:"));
+    assert!(execution
+        .stdout
+        .contains("}() is deprecated, 1234 in Command line code on line "));
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -80,7 +139,7 @@ echo $call("local_name") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "1111111000\n1");
+    assert_eq!(execution.stdout, "1111111001\n1");
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -172,7 +231,7 @@ echo is_callable(["Box", "named"], false) ? "1" : "0";
 }
 
 #[test]
-fn is_callable_rejects_unsupported_output_arguments_and_invokes_array_callables() {
+fn is_callable_writes_current_callable_name_output_subset_and_invokes_array_callables() {
     let syntax_error = run_source("<?php\nvar_dump(is_callable(\"missing\", 1));\n").unwrap_err();
 
     assert_eq!(syntax_error.phase, Phase::Runtime);
@@ -183,16 +242,47 @@ fn is_callable_rejects_unsupported_output_arguments_and_invokes_array_callables(
         "unsupported call is_callable(): syntax_only argument must be bool in the current subset, got int"
     );
 
-    let output_error =
+    let output_target_error =
         run_source("<?php\nvar_dump(is_callable(\"missing\", true, null));\n").unwrap_err();
 
-    assert_eq!(output_error.phase, Phase::Runtime);
-    assert_eq!(output_error.line, 2);
-    assert_eq!(output_error.column, 10);
+    assert_eq!(output_target_error.phase, Phase::Runtime);
+    assert_eq!(output_target_error.line, 2);
+    assert_eq!(output_target_error.column, 39);
     assert_eq!(
-        output_error.message,
-        "arity mismatch for is_callable(): expected 1 to 2 argument(s), got 3"
+        output_target_error.message,
+        "unsupported call is_callable(): callable_name output must be a direct variable in the current subset"
     );
+
+    let metadata = run_source(
+        r#"<?php
+$cases = [
+    null,
+    0,
+    123,
+    -2.0,
+    .567,
+    false,
+    [1, 2, 3],
+    "strlen",
+    "missing",
+];
+foreach ($cases as $case) {
+    $name = "seed";
+    echo is_callable($case, true, $name) ? "1" : "0", ":", $name, "\n";
+}
+$name = "seed";
+echo is_callable("strlen", false, $name) ? "1" : "0", ":", $name, "\n";
+$name = "seed";
+echo is_callable("missing", false, $name) ? "1" : "0", ":", $name;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        metadata.stdout,
+        "0:\n0:0\n0:123\n0:-2\n0:0.567\n0:\n0:Array\n1:strlen\n1:missing\n1:strlen\n0:missing"
+    );
+    assert_eq!(metadata.exit_code, 0);
 
     let execution = run_source(
         r#"<?php
@@ -207,6 +297,86 @@ $callable();
     .expect("array callable variable invocation should execute");
 
     assert_eq!(execution.stdout, "ok");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn metadata_predicates_use_php_type_errors_and_class_string_method_visibility() {
+    let execution = run_source(
+        r#"<?php
+class BaseMetadata {
+    public function pub() {}
+    protected function prot() {}
+    private function hidden() {}
+    private static function staticHidden() {}
+}
+class ChildMetadata extends BaseMetadata {
+    private function ownHidden() {}
+}
+
+set_error_handler(function($errno, $message) {
+    echo "warning:", $errno, ":", $message, "\n";
+});
+$array = [];
+echo "interpolated:$array\n";
+
+foreach ([[], 1, 3.5, true, null] as $value) {
+    try {
+        property_exists($value, "pub");
+    } catch (Throwable $e) {
+        echo $e::class, ": ", $e->getMessage(), "\n";
+    }
+}
+
+try {
+    method_exists(false, "pub");
+} catch (Throwable $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+
+try {
+    method_exists(new ChildMetadata(), []);
+} catch (Throwable $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+
+echo method_exists("ChildMetadata", "pub") ? "1" : "0";
+echo method_exists("ChildMetadata", "prot") ? "1" : "0";
+echo method_exists("ChildMetadata", "hidden") ? "1" : "0";
+echo method_exists("ChildMetadata", "staticHidden") ? "1" : "0";
+echo method_exists("ChildMetadata", "ownHidden") ? "1" : "0";
+echo method_exists(new ChildMetadata(), "hidden") ? "1" : "0";
+echo "\n";
+
+foreach ([0, 1.5, [], null, false, "", "ChildMetadata"] as $value) {
+    echo is_subclass_of($value, "BaseMetadata") ? "1" : "0";
+}
+echo "\n";
+spl_autoload_register(function($name) {
+    echo "autoload:", $name, "\n";
+});
+echo is_subclass_of("MissingMetadata", "BaseMetadata") ? "1" : "0";
+echo is_subclass_of("MissingMetadataNoAutoload", "BaseMetadata", false) ? "1" : "0";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "warning:2:Array to string conversion\n\
+interpolated:Array\n\
+TypeError: property_exists(): Argument #1 ($object_or_class) must be of type object|string, array given\n\
+TypeError: property_exists(): Argument #1 ($object_or_class) must be of type object|string, int given\n\
+TypeError: property_exists(): Argument #1 ($object_or_class) must be of type object|string, float given\n\
+TypeError: property_exists(): Argument #1 ($object_or_class) must be of type object|string, true given\n\
+TypeError: property_exists(): Argument #1 ($object_or_class) must be of type object|string, null given\n\
+TypeError: method_exists(): Argument #1 ($object_or_class) must be of type object|string, false given\n\
+TypeError: method_exists(): Argument #2 ($method) must be of type string, array given\n\
+110011\n0000001\n\
+autoload:MissingMetadata\n\
+00"
+    );
+    assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -261,6 +431,45 @@ echo function_exists("namespaced_name") ? "1" : "0";
 }
 
 #[test]
+fn existence_helpers_accept_fully_qualified_lookup_strings() {
+    let execution = run_source(
+        r#"<?php
+namespace Test\Lookup;
+
+class Box {}
+interface Face {}
+trait Mix {}
+function helper() {}
+
+echo class_exists("Test\\Lookup\\Box") ? "1" : "0";
+echo class_exists("\\Test\\Lookup\\Box") ? "1" : "0";
+echo interface_exists("Test\\Lookup\\Face") ? "1" : "0";
+echo interface_exists("\\Test\\Lookup\\Face") ? "1" : "0";
+echo trait_exists("Test\\Lookup\\Mix") ? "1" : "0";
+echo trait_exists("\\Test\\Lookup\\Mix") ? "1" : "0";
+echo function_exists("Test\\Lookup\\helper") ? "1" : "0";
+echo function_exists("\\Test\\Lookup\\helper") ? "1" : "0";
+echo function_exists("\\strlen") ? "1" : "0";
+echo function_exists("helper") ? "1" : "0";
+echo "\n";
+
+spl_autoload_register(function ($class_name) {
+    echo "autoload:$class_name\n";
+});
+var_dump(interface_exists("\\Test\\Lookup\\MissingFace"));
+var_dump(trait_exists("\\Test\\Lookup\\MissingMix"));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "1111111110\nautoload:Test\\Lookup\\MissingFace\nbool(false)\nautoload:Test\\Lookup\\MissingMix\nbool(false)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn extension_loaded_uses_current_compatibility_registry() {
     let execution = run_source(
         r#"<?php
@@ -270,30 +479,63 @@ echo extension_loaded("json") ? "1" : "0";
 echo extension_loaded("HASH") ? "1" : "0";
 echo extension_loaded("pdo") ? "1" : "0";
 echo extension_loaded("pdo_mysql") ? "1" : "0";
+echo extension_loaded("posix") ? "1" : "0";
 echo "\n";
 $call = "extension_loaded";
 echo $call("simplexml") ? "1" : "0";
 echo $call("hash") ? "1" : "0";
 echo $call("pdo_mysql") ? "1" : "0";
+echo $call("posix") ? "1" : "0";
 "#,
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "001111\n011");
+    assert_eq!(execution.stdout, "0011111\n0111");
     assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
-fn extension_loaded_rejects_non_string_names_for_now() {
-    let error = run_source("<?php\nvar_dump(extension_loaded(42));\n").unwrap_err();
+fn extension_loaded_coerces_extension_names_and_reports_type_errors() {
+    let execution = run_source(
+        r#"<?php
+set_error_handler(function($_, $message) {
+    echo "deprecated:", $message, "\n";
+    return true;
+});
 
-    assert_eq!(error.phase, Phase::Runtime);
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 10);
+class ExtensionName {
+    public function __toString() {
+        return "json";
+    }
+}
+
+echo extension_loaded(new ExtensionName()) ? "1" : "0";
+echo extension_loaded(null) ? "1" : "0";
+foreach ([false, true, 42, 3.5] as $name) {
+    echo extension_loaded($name) ? "1" : "0";
+}
+echo "\n";
+
+foreach ([[], new stdClass()] as $name) {
+    try {
+        extension_loaded($name);
+    } catch (Throwable $e) {
+        echo $e::class, ": ", $e->getMessage(), "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+
     assert_eq!(
-        error.message,
-        "unsupported call extension_loaded(): extension name argument must be string in the current subset, got int"
+        execution.stdout,
+        "1deprecated:extension_loaded(): Passing null to parameter #1 ($extension) of type string is deprecated\n\
+00000\n\
+TypeError: extension_loaded(): Argument #1 ($extension) must be of type string, array given\n\
+TypeError: extension_loaded(): Argument #1 ($extension) must be of type string, stdClass given\n"
     );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -357,6 +599,7 @@ fn emit_ir_keeps_unsupported_type_introspection_boundaries_explicit() {
         "<?php\necho is_callable(\"strlen\", true, $name) ? 1 : 0;\n",
         "<?php\necho function_exists(42) ? 1 : 0;\n",
         "<?php\necho function_exists(\"strlen\", true) ? 1 : 0;\n",
+        "<?php\necho extension_loaded(42) ? 1 : 0;\n",
     ] {
         let error = emit_ir_source(source).unwrap_err();
 
@@ -381,7 +624,7 @@ fn emit_ir_keeps_unsupported_type_introspection_boundaries_explicit() {
 
     let error = emit_ir_source("<?php\necho gettype(new Box()) ? 1 : 0;\n").unwrap_err();
     assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.message, LLVM_OBJECT_INSTANTIATION_REJECTION);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
 }
 
 #[test]
@@ -390,8 +633,11 @@ fn emit_ir_folds_direct_function_exists_string_names() {
         r#"<?php
 $known = "assert";
 $missing = "missing_native_function";
+$fq_known = "\\assert";
+$fq_missing = "\\missing_native_function";
 
 echo function_exists("strlen") ? "1" : "0";
+echo function_exists("\\strlen") ? "1" : "0";
 echo function_exists("STRLEN") ? "1" : "0";
 echo function_exists("function_exists") ? "1" : "0";
 echo function_exists("extension_loaded") ? "1" : "0";
@@ -403,13 +649,15 @@ echo function_exists("ASSERT") ? "1" : "0";
 echo function_exists("missing_native_function") ? "1" : "0";
 echo function_exists($known) ? "1" : "0";
 echo function_exists($missing) ? "1" : "0";
+echo function_exists($fq_known) ? "1" : "0";
+echo function_exists($fq_missing) ? "1" : "0";
 echo "\n";
 "#,
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 10, "{ir}");
-    assert_eq!(ir.matches("c\"0\\00\"").count(), 2, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 12, "{ir}");
+    assert_eq!(ir.matches("c\"0\\00\"").count(), 3, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
 }
 
@@ -425,14 +673,26 @@ echo extension_loaded("json") ? "1" : "0";
 echo extension_loaded("HASH") ? "1" : "0";
 echo extension_loaded("pdo") ? "1" : "0";
 echo extension_loaded("pdo_mysql") ? "1" : "0";
+echo extension_loaded("posix") ? "1" : "0";
 echo extension_loaded($name) ? "1" : "0";
 echo "\n";
 "#,
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 4, "{ir}");
-    assert_eq!(ir.matches("c\"0\\00\"").count(), 3, "{ir}");
+    assert!(
+        ir.contains("@phpc_native_text_membership_with_reference_slot_with_diagnostic"),
+        "{ir}"
+    );
+    for expected in [
+        "c\"json\\00\"",
+        "c\"hash\\00\"",
+        "c\"pdo\\00\"",
+        "c\"pdo_mysql\\00\"",
+        "c\"posix\\00\"",
+    ] {
+        assert!(ir.contains(expected), "{ir}");
+    }
     assert!(!ir.contains("extension_loaded"), "{ir}");
 }
 

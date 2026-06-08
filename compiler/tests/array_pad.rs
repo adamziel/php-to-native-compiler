@@ -84,15 +84,26 @@ fn array_pad_requires_int_length_argument() {
 }
 
 #[test]
-fn array_pad_rejects_padding_over_current_limit() {
-    let error = runtime_error("<?php\necho array_pad([], 1048577, \"pad\");\n");
+fn array_pad_too_large_padding_is_catchable_value_error() {
+    let source = r#"<?php
+function test($length) {
+    try {
+        var_dump(array_pad(array("", -1, 2.0), $length, 0));
+    } catch (ValueError $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
+test(PHP_INT_MIN);
+test(PHP_INT_MAX);
+"#;
+
+    let execution = run_source(source).unwrap();
     assert_eq!(
-        error.message,
-        "unsupported call array_pad(): padding length must be at most 1048576 in the current subset, got 1048577"
+        execution.stdout,
+        "array_pad(): Argument #2 ($length) must not exceed the maximum allowed array size\narray_pad(): Argument #2 ($length) must not exceed the maximum allowed array size\n"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

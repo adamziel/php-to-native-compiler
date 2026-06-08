@@ -1,0 +1,5 @@
+Fatal error: Uncaught TypeError: array_intersect(): Argument #1 ($array) must be of type array, int given, called in tests/fixtures/runtime_errors/array_intersect_first_non_array.php:3
+Stack trace:
+#0 tests/fixtures/runtime_errors/array_intersect_first_non_array.php(3): array_intersect()
+#1 {main}
+  thrown in tests/fixtures/runtime_errors/array_intersect_first_non_array.php on line 3

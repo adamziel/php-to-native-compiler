@@ -1,6 +1,5 @@
-exit: 1
+exit: 0
 stdout:
---- stdout end ---
+unreachable--- stdout end ---
 stderr:
-parse error at tests/fixtures/unsupported_function_features/unsupported_declare_encoding.php:2:1: unsupported declare directive: encoding requires source encoding, lexer decoding, and runtime text handling, which are not implemented
 --- stderr end ---
