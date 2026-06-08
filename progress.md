@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T10:43:30+00:00
+Last generated: 2026-06-08T10:44:39+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -184,7 +184,8 @@ accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
 | coordinator-152 | Coordinator | crash | coordinator-152 |  |
 | coordinator-153 | Coordinator | success | coordinator-153 |  |
 | coordinator-154 | Coordinator | success | coordinator-154 |  |
-| coordinator-155 | Coordinator | running | coordinator-155 |  |
+| coordinator-155 | Coordinator | success | coordinator-155 |  |
+| coordinator-156 | Coordinator | running | coordinator-156 |  |
 | coordinator-16 | Coordinator | crash | coordinator-16 |  |
 | coordinator-17 | Coordinator | success | coordinator-17 |  |
 | coordinator-18 | Coordinator | success | coordinator-18 |  |
@@ -671,28 +672,28 @@ accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
 | 2057 | Assign next sanctioned Developer card after developer-353 capacity handoff 2045 | Developer | implementation | done | stale |  | 0.0 |
 | 2056 | Assign concrete Developer card after developer-352 capacity handoff 2043 | Developer | implementation | done | stale |  | 0.0 |
 | 2055 | Assign concrete sanctioned Developer card after placeholder lane 2048 | Developer | implementation | done | stale |  | 0.0 |
-| 2054 | Respond to scheduler alert | Coordinator | control-plane | development | assigned |  | 0.0 |
+| 2054 | Respond to scheduler alert | Coordinator | control-plane | planned | queued |  | 0.0 |
 | 2053 | Drain current integration backlog after card2051 resolver handoff | Integrator | integration-support | planned | queued |  | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=2, passed=601, skipped=0)
+failed — tools/run-tests.sh (error=0, failed=2, passed=417, skipped=0)
 
 ## Resource samples
-Latest: CPU 20.1%, RAM 22.06%, disk free 110.72 GB.
+Latest: CPU 21.75%, RAM 18.28%, disk free 110.48 GB.
 
 ## Recent events
-- 2026-06-08T10:43:03+00:00 **coordinator_decision**: Preserve current active owners; do not spawn duplicate feature or integration capacity until active owners report.
-- 2026-06-08T10:43:04+00:00 **terminal_agent_windows_closed**: Closed 645 terminal agent tmux windows
-- 2026-06-08T10:43:10+00:00 **terminal_agent_windows_closed**: Closed 645 terminal agent tmux windows
-- 2026-06-08T10:43:11+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-08T10:43:12+00:00 **terminal_agent_windows_closed**: Closed 645 terminal agent tmux windows
-- 2026-06-08T10:43:20+00:00 **terminal_agent_windows_closed**: Closed 645 terminal agent tmux windows
-- 2026-06-08T10:43:23+00:00 **terminal_agent_windows_closed**: Closed 645 terminal agent tmux windows
-- 2026-06-08T10:43:26+00:00 **test_gate_hard_blocker**: New failures appeared beyond the known-red quarantine: codegen::tests::c_assembly_non_local_assignment_families_share_assignment_owner_boundary, codegen::tests::generated_c_string_comparison_safety_uses_shared_pair_classifier
-- 2026-06-08T10:43:28+00:00 **agent_report**: coordinator-155 reported completed_capacity_preserved_existing_integration_support
-- 2026-06-08T10:43:28+00:00 **terminal_agent_windows_closed**: Closed 645 terminal agent tmux windows
-- 2026-06-08T10:43:30+00:00 **poke**: Queued message for developer-360
-- 2026-06-08T10:43:30+00:00 **poke_delivered**: Delivered poke to 1 agents
+- 2026-06-08T10:44:09+00:00 **terminal_agent_windows_closed**: Closed 646 terminal agent tmux windows
+- 2026-06-08T10:44:10+00:00 **coordinator_start**: Coordinator starting; reading required project documents and inspecting harness state.
+- 2026-06-08T10:44:11+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-08T10:44:14+00:00 **terminal_agent_windows_closed**: Closed 646 terminal agent tmux windows
+- 2026-06-08T10:44:18+00:00 **terminal_agent_windows_closed**: Closed 646 terminal agent tmux windows
+- 2026-06-08T10:44:22+00:00 **integration_disposition**: Completed deterministic triage for card 2061: lane 1769 superseded, lane 1823 cleanly mergeable with focused tests passing, stale rows classified from prior integrator reports without replay.
+- 2026-06-08T10:44:25+00:00 **terminal_agent_windows_closed**: Closed 646 terminal agent tmux windows
+- 2026-06-08T10:44:27+00:00 **terminal_agent_windows_closed**: Closed 646 terminal agent tmux windows
+- 2026-06-08T10:44:34+00:00 **agent_report**: integrator-21 reported superseded
+- 2026-06-08T10:44:34+00:00 **terminal_agent_windows_closed**: Closed 646 terminal agent tmux windows
+- 2026-06-08T10:44:39+00:00 **poke**: Queued message for developer-360
+- 2026-06-08T10:44:39+00:00 **poke_delivered**: Delivered poke to 1 agents
 
 ## Next steps
 Move next worklane forward: Drain live integration_failed endpoints and retire superseded rows
