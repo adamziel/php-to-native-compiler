@@ -1,11 +1,4 @@
-use php_compiler::error::Phase;
 use php_compiler::run_source;
-
-fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
-    let error = run_source(source).unwrap_err();
-    assert_eq!(error.phase, Phase::Runtime);
-    error
-}
 
 #[test]
 fn array_key_exists_checks_keys_without_null_filtering() {
@@ -54,15 +47,17 @@ if ($exists("present", $items)) {
 }
 
 #[test]
-fn array_key_exists_rejects_unsupported_key_types() {
-    let error = runtime_error("<?php\n$items = [];\necho array_key_exists([], $items);\n");
+fn array_key_exists_throws_type_error_for_unsupported_key_types() {
+    let execution = run_source(
+        "<?php\n$items = [];\ntry { array_key_exists([], $items); } catch (TypeError $e) { echo $e->getMessage(); }\n",
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
     assert_eq!(
-        error.message,
-        "invalid array key: array keys are not supported for array_key_exists(); only null, bool, int, string, and integral finite float keys are implemented"
+        execution.stdout,
+        "Cannot access offset of type array on array"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -96,7 +91,7 @@ if ($call(false, $items)) {
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "null:exists\nfalse:exists\ntrue:exists\nstring-one:exists\ndynamic:false"
+        "Deprecated: Using null as the key parameter for array_key_exists() is deprecated, use an empty string instead in Command line code on line 8\nnull:exists\nfalse:exists\ntrue:exists\nstring-one:exists\ndynamic:false"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -135,26 +130,43 @@ if ($call(0.0, $items)) {
 }
 
 #[test]
-fn array_key_exists_rejects_lossy_float_key_coercions() {
-    let error =
-        runtime_error("<?php\n$items = [1 => \"one\"];\necho array_key_exists(1.5, $items);\n");
+fn array_key_exists_accepts_lossy_float_key_coercions_with_deprecation() {
+    let execution = run_source(
+        "<?php\n$items = [0 => \"zero\", 1 => \"one\"];\necho array_key_exists(1.5, $items), \"\\n\";\necho array_key_exists(1.00000000000001, $items), \"\\n\";\necho array_key_exists(1.99999999999999, $items), \"\\n\";\necho array_key_exists(1.2345678900E-10, $items);\n",
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
     assert_eq!(
-        error.message,
-        "invalid array key: lossy or non-finite float keys are not supported for array_key_exists(); only null, bool, int, string, and integral finite float keys are implemented"
+        execution.stdout,
+        "Deprecated: Implicit conversion from float 1.5 to int loses precision in Command line code on line 3\n1\n\nDeprecated: Implicit conversion from float 1.00000000000001 to int loses precision in Command line code on line 4\n1\n\nDeprecated: Implicit conversion from float 1.99999999999999 to int loses precision in Command line code on line 5\n1\n\nDeprecated: Implicit conversion from float 1.23456789E-10 to int loses precision in Command line code on line 6\n1"
     );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn array_key_exists_casts_stream_resources_after_default_context_id() {
+    let execution = run_source(
+        "<?php\n$items = [4 => \"default-context\"];\n$stream = fopen(\"php://memory\", \"r\");\necho array_key_exists($stream, $items) ? \"hit\" : \"miss\";\n",
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Warning: Resource ID#5 used as offset, casting to integer (5) in Command line code on line 4\nmiss"
+    );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
 fn array_key_exists_requires_array_second_argument() {
-    let error = runtime_error("<?php\necho array_key_exists(\"name\", 42);\n");
+    let execution = run_source(
+        "<?php\ntry { array_key_exists(\"name\", 42); } catch (TypeError $e) { echo $e->getMessage(); }\n",
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
     assert_eq!(
-        error.message,
-        "unsupported call array_key_exists(): second argument must be array, got int"
+        execution.stdout,
+        "array_key_exists(): Argument #2 ($array) must be of type array, int given"
     );
+    assert_eq!(execution.exit_code, 0);
 }

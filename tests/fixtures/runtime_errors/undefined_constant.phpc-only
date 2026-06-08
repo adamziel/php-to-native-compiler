@@ -1,1 +1,1 @@
-phpc only implements bare global constants from the documented built-in/runtime-defined subset; unknown constants use a stable project diagnostic.
+phpc supports the documented built-in/runtime-defined global constant subset; unknown names use a stable project diagnostic.

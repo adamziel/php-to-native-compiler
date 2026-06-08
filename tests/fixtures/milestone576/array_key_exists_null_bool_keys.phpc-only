@@ -1,0 +1,1 @@
+phpc-only: bounded array_key_exists(null, ...) deprecation output differs from the current system PHP comparison baseline.

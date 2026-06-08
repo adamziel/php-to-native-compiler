@@ -1,2 +1,2 @@
-parse error at 2:26: unsupported instanceof class expression: dynamic class names are not implemented
+runtime error at 2:7: undefined variable '$class'
 

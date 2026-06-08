@@ -1,12 +1,6 @@
 use php_compiler::error::Phase;
 use php_compiler::{emit_ir_source, run_source};
 
-fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
-    let error = run_source(source).unwrap_err();
-    assert_eq!(error.phase, Phase::Runtime);
-    error
-}
-
 #[test]
 fn array_is_list_detects_zero_based_ordered_integer_keys() {
     let source = r#"<?php
@@ -63,15 +57,37 @@ var_dump($call([1 => "b", 0 => "a"]));
 }
 
 #[test]
-fn array_is_list_requires_array_argument() {
-    let error = runtime_error("<?php\necho array_is_list(42);\n");
+fn array_is_list_non_arrays_raise_catchable_type_errors() {
+    let source = r#"<?php
+function check($label, $value) {
+    try {
+        var_dump(array_is_list($value));
+    } catch (TypeError $e) {
+        echo $label, ": ", $e->getMessage(), "\n";
+    }
+}
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
+check("null", null);
+check("int", 123);
+check("float", 1.23);
+check("string", "string");
+check("object", new stdClass());
+check("true", true);
+check("false", false);
+"#;
+
+    let execution = run_source(source).unwrap();
     assert_eq!(
-        error.message,
-        "unsupported call array_is_list(): argument must be array, got int"
+        execution.stdout,
+        "null: array_is_list(): Argument #1 ($array) must be of type array, null given\n\
+int: array_is_list(): Argument #1 ($array) must be of type array, int given\n\
+float: array_is_list(): Argument #1 ($array) must be of type array, float given\n\
+string: array_is_list(): Argument #1 ($array) must be of type array, string given\n\
+object: array_is_list(): Argument #1 ($array) must be of type array, stdClass given\n\
+true: array_is_list(): Argument #1 ($array) must be of type array, true given\n\
+false: array_is_list(): Argument #1 ($array) must be of type array, false given\n"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

@@ -66,17 +66,24 @@ echo constant("PDO::ATTR_DEFAULT_FETCH_MODE");
     assert_eq!(execution.stdout, "defined|3:2:2:3:4:1002|19");
     assert_eq!(execution.exit_code, 0);
 
-    let error = run_source(
+    let missing = run_source(
         r#"<?php
 echo PDO::ATTR_TIMEOUT;
 "#,
     )
-    .unwrap_err();
+    .unwrap();
 
-    assert_eq!(error.phase, Phase::Runtime);
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 9);
-    assert_eq!(error.message, "undefined constant PDO::ATTR_TIMEOUT");
+    assert_eq!(
+        missing.stdout,
+        concat!(
+            "Fatal error: Uncaught Error: Undefined constant PDO::ATTR_TIMEOUT in Command line code:2\n",
+            "Stack trace:\n",
+            "#0 {main}\n",
+            "  thrown in Command line code on line 2"
+        )
+    );
+    assert_eq!(missing.stderr, "");
+    assert_eq!(missing.exit_code, 255);
 }
 
 #[test]

@@ -68,6 +68,41 @@ support claims.
 Add new required project-wide checks to `tools/run-tests.sh` so checkpoint and
 loop automation pick them up automatically.
 
+## Known-Failure Gate
+
+`tools/run-tests.sh` remains the release and metric gate. A failed full-suite
+run may be classified separately with:
+
+```sh
+tools/known_failure_gate.py --db .harness/harness.sqlite3
+```
+
+The gate writes `metadata.test_gate_mode` as one of:
+
+- `full_green`: the selected `tools/run-tests.sh` row passed and has no
+  recorded failures. Public metric sampling may proceed.
+- `quarantined_known_red_no_regressions`: the failure set exactly matches the
+  pinned known baseline. Work may continue, but public PHPT metrics must not be
+  sampled or reported as accepted progress.
+- `failed_new_regressions`: the selected run has missing baseline failures
+  without an approved baseline update, extra failures, or different failures.
+
+Current pinned baseline owner: card `1808`. Pinned failures:
+
+- `tests::native_closure_invoke_helpers_bridge_call_arguments_to_call_results`
+- `tests::native_magic_method_lookup_rejects_malformed_signature_metadata_before_fallback`
+
+Removal condition: update or remove this baseline only after card `1808` is
+reviewed/integrated or after a new scheduler-approved quarantine baseline is
+recorded. The checker is exact-set based: a one-failure run, a five-failure
+run, or any changed failure name is `failed_new_regressions`, not a broader
+quarantine. `accepted_public_phpt_passes` and
+`pinned_public_runnable_denominator` are valid only when
+`metadata.test_gate_metric_eligible` is `1`. Status/progress snapshots should
+present only `accepted_public_phpt_passes / pinned_public_runnable_denominator`
+as the project score; blocked or candidate pass counts are failed-run evidence,
+not accepted progress.
+
 ## Focused Lane Tests
 
 When a worker is handling one narrow lane milestone, run focused tests that

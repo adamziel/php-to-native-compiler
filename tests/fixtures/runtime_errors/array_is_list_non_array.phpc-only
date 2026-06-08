@@ -1,1 +1,1 @@
-Project-specific stable runtime diagnostic; system PHP throws a native TypeError.
+Project-specific fatal formatting for the otherwise PHP-shaped TypeError; system PHP includes its native stack frame details.

@@ -1,12 +1,6 @@
 use php_compiler::error::Phase;
 use php_compiler::{emit_ir_source, run_source};
 
-fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
-    let error = run_source(source).unwrap_err();
-    assert_eq!(error.phase, Phase::Runtime);
-    error
-}
-
 #[test]
 fn array_count_values_counts_int_string_values_and_normalizes_keys() {
     let source = r#"<?php
@@ -41,28 +35,71 @@ echo $again["name"], "|", $again[2], "|", $again["02"], "|", $again[-1];
 }
 
 #[test]
-fn array_count_values_requires_array_argument() {
-    let error = runtime_error("<?php\necho array_count_values(42);\n");
+fn array_count_values_non_arrays_raise_catchable_type_errors() {
+    let source = r#"<?php
+function check($label, $value) {
+    try {
+        var_dump(array_count_values($value));
+    } catch (TypeError $e) {
+        echo $label, ": ", $e->getMessage(), "\n";
+    }
+}
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
+check("null", null);
+check("int", 42);
+check("float", 1.25);
+check("string", "items");
+check("object", new stdClass());
+check("true", true);
+check("false", false);
+
+$call = "array_count_values";
+try {
+    $call(42);
+} catch (TypeError $e) {
+    echo "dynamic: ", $e->getMessage();
+}
+"#;
+
+    let execution = run_source(source).unwrap();
     assert_eq!(
-        error.message,
-        "unsupported call array_count_values(): argument must be array, got int"
+        execution.stdout,
+        "null: array_count_values(): Argument #1 ($array) must be of type array, null given\n\
+int: array_count_values(): Argument #1 ($array) must be of type array, int given\n\
+float: array_count_values(): Argument #1 ($array) must be of type array, float given\n\
+string: array_count_values(): Argument #1 ($array) must be of type array, string given\n\
+object: array_count_values(): Argument #1 ($array) must be of type array, stdClass given\n\
+true: array_count_values(): Argument #1 ($array) must be of type array, true given\n\
+false: array_count_values(): Argument #1 ($array) must be of type array, false given\n\
+dynamic: array_count_values(): Argument #1 ($array) must be of type array, int given"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
-fn array_count_values_rejects_unsupported_value_types() {
-    let error =
-        runtime_error("<?php\n$items = [\"ok\", true];\necho array_count_values($items);\n");
+fn array_count_values_warns_and_skips_unsupported_value_types() {
+    let execution = run_source(
+        r#"<?php
+$items = ["ok", true, false, null, []];
+print_r(array_count_values($items));
+$quiet = @array_count_values([[], "quiet", null]);
+print_r($quiet);
+"#,
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
     assert_eq!(
-        error.message,
-        "unsupported call array_count_values(): values must be int or string in the current subset, got bool"
+        execution
+            .stdout
+            .matches(
+                "array_count_values(): Can only count string and integer values, entry skipped"
+            )
+            .count(),
+        4
     );
+    assert!(execution.stdout.contains("    [ok] => 1\n"));
+    assert!(execution.stdout.contains("    [quiet] => 1\n"));
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

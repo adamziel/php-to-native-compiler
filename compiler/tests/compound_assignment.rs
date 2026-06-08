@@ -366,15 +366,15 @@ fn object_property_compound_assignment_reports_missing_properties() {
 
 #[test]
 fn object_property_compound_assignment_reports_non_public_properties() {
-    let error = runtime_error(
+    let execution = run_source(
         "<?php\nclass Box { private $secret; }\n$box = new Box();\n$box->secret += 2;\n",
-    );
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 4);
-    assert_eq!(error.column, 1);
+    assert_eq!(execution.exit_code, 255);
     assert_eq!(
-        error.message,
-        "unsupported object property access: non-public property Box::$secret requires same-class method context in the current subset"
+        execution.stdout,
+        "Fatal error: Uncaught Error: Cannot access private property Box::$secret in Command line code:4\nStack trace:\n#0 {main}\n  thrown in Command line code on line 4"
     );
 }
 
@@ -446,23 +446,24 @@ fn bitwise_compound_assignment_reuses_bitwise_diagnostics() {
 
 #[test]
 fn shift_compound_assignment_reuses_negative_shift_diagnostics() {
-    let error = runtime_error("<?php\n$value = 8;\n$value <<= -1;\n");
+    let execution = run_source("<?php\n$value = 8;\n$value <<= -1;\n").unwrap();
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 1);
+    assert_eq!(execution.exit_code, 255);
     assert_eq!(
-        error.message,
-        "invalid arithmetic for <<: bit shift by negative number"
+        execution.stdout,
+        "Fatal error: Uncaught ArithmeticError: Bit shift by negative number in Command line code:3\nStack trace:\n#0 {main}\n  thrown in Command line code on line 3"
     );
 }
 
 #[test]
 fn modulo_compound_assignment_reuses_modulo_diagnostics() {
-    let error = runtime_error("<?php\n$value = 10;\n$value %= 0;\n");
+    let execution = run_source("<?php\n$value = 10;\n$value %= 0;\n").unwrap();
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 1);
-    assert_eq!(error.message, "invalid arithmetic for %: modulo by zero");
+    assert_eq!(execution.exit_code, 255);
+    assert_eq!(
+        execution.stdout,
+        "Fatal error: Uncaught DivisionByZeroError: Modulo by zero in Command line code:3\nStack trace:\n#0 {main}\n  thrown in Command line code on line 3"
+    );
 }
 
 #[test]
@@ -509,7 +510,7 @@ fn emit_ir_lowers_direct_variable_compound_assignment_expressions() {
         "compound assignment expressions should read the left value and evaluate the RHS through existing value semantics:\n{ir}"
     );
     assert!(
-        ir.matches("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 %")
+        ir.matches("phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free")
             .count()
             >= 2,
         "compound assignment expression result and later variable read should both echo the stored result:\n{ir}"

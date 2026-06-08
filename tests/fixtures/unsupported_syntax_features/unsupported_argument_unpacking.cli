@@ -1,6 +1,8 @@
-exit: 1
+exit: 255
 stdout:
---- stdout end ---
+Fatal error: Uncaught Error: Call to undefined function add_action() in tests/fixtures/unsupported_syntax_features/unsupported_argument_unpacking.php:3
+Stack trace:
+#0 {main}
+  thrown in tests/fixtures/unsupported_syntax_features/unsupported_argument_unpacking.php on line 3--- stdout end ---
 stderr:
-parse error at tests/fixtures/unsupported_syntax_features/unsupported_argument_unpacking.php:3:12: unsupported argument unpacking: call-site ... expansion requires iterable unpacking order, string-keyed named-argument interaction, by-reference argument propagation, variadic collection, duplicate argument diagnostics, and native lowering
 --- stderr end ---

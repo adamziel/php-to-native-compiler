@@ -1,0 +1,5 @@
+Fatal error: Uncaught TypeError: array_search(): Argument #2 ($haystack) must be of type array, int given, called in tests/fixtures/runtime_errors/array_search_non_array.php:2
+Stack trace:
+#0 tests/fixtures/runtime_errors/array_search_non_array.php(2): array_search()
+#1 {main}
+  thrown in tests/fixtures/runtime_errors/array_search_non_array.php on line 2

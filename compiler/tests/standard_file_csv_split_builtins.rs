@@ -16,8 +16,10 @@ fputs($h, "alpha\n\nbeta\nlast");
 fclose($h);
 $plain = file($path);
 $trimmed = file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+$noDefaultContext = file($path, FILE_NO_DEFAULT_CONTEXT | FILE_IGNORE_NEW_LINES);
 echo count($plain) . ":" . $plain[0] . ":" . $plain[1] . ":" . $plain[3];
 echo "|" . count($trimmed) . ":" . implode(",", $trimmed);
+echo "|" . FILE_NO_DEFAULT_CONTEXT . ":" . implode("/", $noDefaultContext);
 unlink($path);
 "#,
         root = root
@@ -25,7 +27,97 @@ unlink($path);
 
     let execution = run_source(&source).unwrap();
 
-    assert_eq!(execution.stdout, "4:alpha\n:\n:last|3:alpha,beta,last");
+    assert_eq!(
+        execution.stdout,
+        "4:alpha\n:\n:last|3:alpha,beta,last|16:alpha//beta/last"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn file_accepts_no_default_context_and_normalizes_dotdot_paths() {
+    let fixture = TempFsFixture::new("file-dotdot");
+    let root = php_string(&fixture.root);
+    let source = format!(
+        r#"<?php
+$root = {root};
+mkdir($root . "/dir");
+file_put_contents($root . "/data.txt", "Line 1\nLine 2\n");
+$lines = file($root . "/dir/missing/../../data.txt", FILE_NO_DEFAULT_CONTEXT | FILE_IGNORE_NEW_LINES);
+echo implode("|", $lines);
+echo ":";
+var_dump(file($root . "/missing.txt"));
+"#,
+        root = root
+    );
+
+    let execution = run_source(&source).unwrap();
+
+    assert!(
+        execution
+            .stdout
+            .starts_with("Line 1|Line 2:\nWarning: file("),
+        "stdout was {:?}",
+        execution.stdout
+    );
+    assert!(
+        execution
+            .stdout
+            .contains("Failed to open stream: No such file or directory")
+            && execution.stdout.ends_with("bool(false)\n"),
+        "stdout was {:?}",
+        execution.stdout
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn file_open_basedir_denial_emits_stream_followup_warning() {
+    let fixture = TempFsFixture::new("file-open-basedir");
+    let allowed = fixture.root.join("allowed");
+    let denied = fixture.root.join("denied");
+    fs::create_dir_all(&allowed).expect("allowed directory is created");
+    fs::create_dir_all(&denied).expect("denied directory is created");
+    let allowed_file = allowed.join("payload.txt");
+    let denied_file = denied.join("secret.txt");
+    fs::write(&allowed_file, "allowed\n").expect("allowed payload is written");
+    fs::write(&denied_file, "denied\n").expect("denied payload is written");
+
+    let source = format!(
+        r#"<?php
+function capture_file_open_basedir_warning($errno, $errstr) {{
+    if (str_contains($errstr, "open_basedir restriction in effect")) {{
+        echo "|warning:basedir";
+        return true;
+    }}
+    if (str_contains($errstr, "Failed to open stream")) {{
+        echo "|warning:stream";
+        return true;
+    }}
+    echo "|warning:other";
+    return true;
+}}
+
+ini_set("open_basedir", {allowed_dir});
+set_error_handler("capture_file_open_basedir_warning", E_WARNING);
+$lines = file({allowed_file}, FILE_IGNORE_NEW_LINES);
+echo implode(",", $lines);
+$blocked = file({denied_file});
+echo $blocked === false ? "|blocked" : "|read";
+"#,
+        allowed_dir = php_string(&allowed),
+        allowed_file = php_string(&allowed_file),
+        denied_file = php_string(&denied_file),
+    );
+
+    let execution = run_source(&source).unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "allowed|warning:basedir|warning:stream|blocked"
+    );
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
 }
@@ -73,11 +165,24 @@ echo "|";
 echo fputcsv($disabled, array("a\\b"), escape: "") . "|";
 rewind($disabled);
 echo stream_get_contents($disabled);
+$escapedQuote = fopen("php://memory", "w+");
+echo "|";
+echo fputcsv($escapedQuote, array("a\\\"b"), escape: "\\") . "|";
+rewind($escapedQuote);
+echo stream_get_contents($escapedQuote);
+$empty = fopen("php://memory", "w+");
+echo "|";
+echo fputcsv($empty, array("")) . "|";
+rewind($empty);
+echo bin2hex(stream_get_contents($empty));
 "##,
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "6|\"a\\b\"\n|6|\"a#b\"\n|4|a\\b\n");
+    assert_eq!(
+        execution.stdout,
+        "6|\"a\\b\"\n|6|\"a#b\"\n|4|a\\b\n|7|\"a\\\"b\"\n|1|0a"
+    );
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
 }

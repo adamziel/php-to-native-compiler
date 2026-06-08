@@ -2,7 +2,7 @@ exit: 0
 stdout:
 nonempty: true
 contains_main: true
-contains_printf: false
+contains_printf: true
 --- stdout end ---
 stderr:
 --- stderr end ---

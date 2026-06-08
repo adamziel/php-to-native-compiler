@@ -1,0 +1,9 @@
+exit: 0
+stdout:
+1:1
+OutOfBoundsException:Seek position -1 is out of range
+OutOfBoundsException:Seek position 3 is out of range
+2:2
+--- stdout end ---
+stderr:
+--- stderr end ---

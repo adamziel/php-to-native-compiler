@@ -5,7 +5,7 @@ use std::process::{Command, Output};
 use php_compiler::error::Phase;
 use php_compiler::{emit_asm_source, emit_ir_source, run_source};
 
-const LLVM_CAST_REJECTION: &str = "LLVM cast lowering rejects (string), (int)/(integer), (bool)/(boolean), (float)/(double), and (array) casts plus strval(), boolval(), floatval(), and doubleval() until native PHP scalar conversion, array materialization, warning/recovery behavior, object/resource handling, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded cast behavior";
+const LLVM_CAST_REJECTION: &str = "LLVM cast lowering rejects (string), (int)/(integer), (bool)/(boolean), (float)/(double), (array), (object), and (void) casts plus strval(), boolval(), floatval(), and doubleval() until native PHP scalar conversion, array/object materialization, warning/recovery behavior, object/resource handling, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded cast behavior";
 
 #[test]
 fn phpc_run_still_handles_current_bounded_cast_behavior() {
@@ -35,6 +35,8 @@ fn emit_ir_rejects_casts_with_specific_boundary() {
         "<?php\necho (float) \"2.5\";\n",
         "<?php\necho (double) \"2.5\";\n",
         "<?php\necho (array) null;\n",
+        "<?php\necho (object) 1;\n",
+        "<?php\n(void) 1;\n",
     ] {
         let error = emit_ir_source(source).unwrap_err();
 

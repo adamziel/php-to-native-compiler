@@ -192,11 +192,11 @@ fn emit_ir_rejects_long_arrays_until_native_lowering_exists() {
 }
 
 #[test]
-fn emit_ir_rejects_array_indexing_until_native_lowering_exists() {
+fn emit_ir_rejects_unassigned_array_root_read_before_native_array_indexing_lowering() {
     let error = emit_ir_source("<?php\necho $items[0];\n").unwrap_err();
     assert_eq!(error.phase, php_compiler::error::Phase::Codegen);
     assert!(
-        error.message.contains("array indexing"),
+        error.message.contains("variable-read lowering"),
         "{}",
         error.message
     );
@@ -309,11 +309,11 @@ fn emit_ir_rejects_object_property_access_until_native_lowering_exists() {
 }
 
 #[test]
-fn emit_ir_rejects_object_property_assignment_until_native_lowering_exists() {
+fn emit_ir_rejects_object_property_assignment_until_native_non_local_assignment_lowering() {
     let error = emit_ir_source("<?php\n$box->name = \"Ada\";\n").unwrap_err();
     assert_eq!(error.phase, php_compiler::error::Phase::Codegen);
     assert!(
-        error.message.contains("object-property lowering"),
+        error.message.contains("non-local assignment lowering"),
         "{}",
         error.message
     );
