@@ -1,12 +1,12 @@
 # Harness Status
 
-Last generated: 2026-06-08T11:56:10+00:00
+Last generated: 2026-06-08T11:58:10+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
 
 ## Metric
-blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
+accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
 
 ## Agents
 | name | role | current_status | tmux_window | worktree |
@@ -713,24 +713,24 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | 2060 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=5, passed=414, skipped=0)
+failed — tools/run-tests.sh (error=0, failed=3, passed=416, skipped=0)
 
 ## Resource samples
-Latest: CPU 15.34%, RAM 18.33%, disk free 76.75 GB.
+Latest: CPU 12.97%, RAM 18.33%, disk free 76.89 GB.
 
 ## Recent events
-- 2026-06-08T11:55:41+00:00 **coordinator_prompt**: CPU and RAM are underused, but integration is backed up. Add integration or conflict-resolution support instead of more feature Developers.
-- 2026-06-08T11:55:42+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-08T11:55:43+00:00 **agent_report**: coordinator-183 reported completed_capacity_preserved_no_spawn
-- 2026-06-08T11:55:49+00:00 **terminal_agent_windows_closed**: Closed 683 terminal agent tmux windows
-- 2026-06-08T11:55:51+00:00 **coordinator_completed**: Coordinator-183 completed capacity pass and filed accepted report 652; no duplicate capacity spawned.
-- 2026-06-08T11:55:52+00:00 **terminal_agent_windows_closed**: Closed 683 terminal agent tmux windows
-- 2026-06-08T11:55:58+00:00 **terminal_agent_windows_closed**: Closed 683 terminal agent tmux windows
-- 2026-06-08T11:55:58+00:00 **card_stage**: card#2054 development -> planned
-- 2026-06-08T11:55:58+00:00 **card_repair**: Requeued 1 cards owned by terminal workers
-- 2026-06-08T11:55:59+00:00 **agent_started**: Started coordinator-184 for Maintain Coordinator capacity
-- 2026-06-08T11:56:06+00:00 **terminal_agent_windows_closed**: Closed 684 terminal agent tmux windows
-- 2026-06-08T11:56:07+00:00 **terminal_agent_windows_closed**: Closed 684 terminal agent tmux windows
+- 2026-06-08T11:57:31+00:00 **terminal_agent_windows_closed**: Closed 684 terminal agent tmux windows
+- 2026-06-08T11:57:37+00:00 **terminal_agent_windows_closed**: Closed 684 terminal agent tmux windows
+- 2026-06-08T11:57:42+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-08T11:57:44+00:00 **terminal_agent_windows_closed**: Closed 684 terminal agent tmux windows
+- 2026-06-08T11:57:45+00:00 **terminal_agent_windows_closed**: Closed 684 terminal agent tmux windows
+- 2026-06-08T11:57:51+00:00 **team_scaling_request**: User asked whether multiple developers can fix tests because one lane will take too long. Manhole using supervised-team workflow: scale only into independent test-target lanes/worktrees; keep developer-362 on native_arithmetic_boundary until stable; use no-fail-fast inventory to split remaining failures.
+- 2026-06-08T11:57:53+00:00 **terminal_agent_windows_closed**: Closed 684 terminal agent tmux windows
+- 2026-06-08T11:57:58+00:00 **terminal_agent_windows_closed**: Closed 684 terminal agent tmux windows
+- 2026-06-08T11:57:58+00:00 **terminal_agent_windows_closed**: Closed 684 terminal agent tmux windows
+- 2026-06-08T11:58:02+00:00 **terminal_agent_windows_closed**: Closed 684 terminal agent tmux windows
+- 2026-06-08T11:58:10+00:00 **poke**: Queued message for coordinator-184
+- 2026-06-08T11:58:10+00:00 **poke_delivered**: Delivered poke to 1 agents
 
 ## Next steps
 Move next worklane forward: Integrate ready row136 native scalar cast resolver
