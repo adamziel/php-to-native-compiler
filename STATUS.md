@@ -1,12 +1,12 @@
 # Harness Status
 
-Last generated: 2026-06-08T10:56:10+00:00
+Last generated: 2026-06-08T10:56:24+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
 
 ## Metric
-blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
+accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
 
 ## Agents
 | name | role | current_status | tmux_window | worktree |
@@ -681,24 +681,30 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | 2054 | Respond to scheduler alert | Coordinator | control-plane | planned | queued |  | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=1, passed=418, skipped=0)
+failed — tools/run-tests.sh (error=0, failed=3, passed=416, skipped=0)
 
 ## Resource samples
-Latest: CPU 16.47%, RAM 17.9%, disk free 108.92 GB.
+Latest: CPU 16.21%, RAM 17.88%, disk free 108.91 GB.
 
 ## Recent events
-- 2026-06-08T10:55:24+00:00 **terminal_agent_windows_closed**: Closed 652 terminal agent tmux windows
-- 2026-06-08T10:55:31+00:00 **terminal_agent_windows_closed**: Closed 652 terminal agent tmux windows
-- 2026-06-08T10:55:36+00:00 **terminal_agent_windows_closed**: Closed 652 terminal agent tmux windows
-- 2026-06-08T10:55:38+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-08T10:55:39+00:00 **terminal_agent_windows_closed**: Closed 652 terminal agent tmux windows
-- 2026-06-08T10:55:41+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-08T10:55:47+00:00 **terminal_agent_windows_closed**: Closed 652 terminal agent tmux windows
 - 2026-06-08T10:55:48+00:00 **worklane_deduplicated**: Updated existing failing-test card#2027 from run 40235
 - 2026-06-08T10:55:49+00:00 **terminal_agent_windows_closed**: Closed 652 terminal agent tmux windows
 - 2026-06-08T10:55:55+00:00 **terminal_agent_windows_closed**: Closed 652 terminal agent tmux windows
 - 2026-06-08T10:56:02+00:00 **terminal_agent_windows_closed**: Closed 652 terminal agent tmux windows
 - 2026-06-08T10:56:03+00:00 **terminal_agent_windows_closed**: Closed 652 terminal agent tmux windows
+- 2026-06-08T10:56:11+00:00 **terminal_agent_windows_closed**: Closed 652 terminal agent tmux windows
+- 2026-06-08T10:56:11+00:00 **status_publish_failed**: Committed status files but failed to push: To https://github.com/adamziel/php-to-native-compiler.git
+ ! [rejected]          HEAD -> master (non-fast-forward)
+error: failed to push some refs to 'https://github.com/adamziel/php-to-native-compiler.git'
+hint: Updates were rejected because the tip of your current branch is behind
+hint: its remote counterpart. If you want to integrate the remote changes,
+hint: use 'git pull' before pushing again.
+hint: See the 'Note about fast-forwards' in 'git push --help' for details.
+- 2026-06-08T10:56:11+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-08T10:56:15+00:00 **terminal_agent_windows_closed**: Closed 652 terminal agent tmux windows
+- 2026-06-08T10:56:19+00:00 **terminal_agent_windows_closed**: Closed 652 terminal agent tmux windows
+- 2026-06-08T10:56:24+00:00 **poke**: Queued message for developer-360
+- 2026-06-08T10:56:24+00:00 **poke_delivered**: Delivered poke to 1 agents
 
 ## Next steps
 Move next worklane forward: Integrate clean lane 1823 from work/developer-124
