@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T11:15:33+00:00
+Last generated: 2026-06-08T11:16:13+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -116,6 +116,7 @@ accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
 | conflict-resolver-12 | Conflict Resolver | crash | conflict-resolver-12 |  |
 | conflict-resolver-13 | Conflict Resolver | crash | conflict-resolver-13 |  |
 | conflict-resolver-14 | Conflict Resolver | crash | conflict-resolver-14 |  |
+| conflict-resolver-15 | Conflict Resolver | running | conflict-resolver-15 |  |
 | conflict-resolver-2 | Conflict Resolver | crash | conflict-resolver-2 |  |
 | conflict-resolver-3 | Conflict Resolver | crash | conflict-resolver-3 |  |
 | conflict-resolver-4 | Conflict Resolver | crash | conflict-resolver-4 |  |
@@ -681,6 +682,7 @@ accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2068 | Resolve current-base native scalar cast integration conflict for row136 | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
 | 2067 | Resolve current-base similar_text integration conflict for row140 | Conflict Resolver | integration-support | done | stale |  | 0.0 |
 | 2066 | Resolve current-base str_replace replacement-array integration conflict for row1595 | Conflict Resolver | integration-support | done | stale |  | 0.0 |
 | 2065 | Resume card2064 integration tail disposition after integrator-23 crash | Integrator | integration-support | done | done |  | 0.0 |
@@ -690,27 +692,26 @@ accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
 | 2061 | Drain live integration_failed endpoints and retire superseded rows | Integrator | integration-support | planned | queued |  | 0.0 |
 | 2060 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
 | 2059 | Resume integration backlog disposition after integrator-19 crash | Integrator | integration-support | planned | queued |  | 0.0 |
-| 2058 | Assign next Developer card after developer-357 lane 93 verification | Developer | implementation | done | integrated | ready_fast_path | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=5, passed=414, skipped=0)
+failed — tools/run-tests.sh (error=0, failed=3, passed=416, skipped=0)
 
 ## Resource samples
-Latest: CPU 14.77%, RAM 17.29%, disk free 77.25 GB.
+Latest: CPU 16.41%, RAM 17.49%, disk free 77.25 GB.
 
 ## Recent events
-- 2026-06-08T11:14:54+00:00 **terminal_agent_windows_closed**: Closed 663 terminal agent tmux windows
-- 2026-06-08T11:14:58+00:00 **terminal_agent_windows_closed**: Closed 663 terminal agent tmux windows
-- 2026-06-08T11:15:07+00:00 **terminal_agent_windows_closed**: Closed 664 terminal agent tmux windows
-- 2026-06-08T11:15:07+00:00 **worklane_assigned**: Assigned worklane#2054 to coordinator-166
-- 2026-06-08T11:15:07+00:00 **coordinator_prompt**: CPU and RAM are underused, but integration is backed up. Add integration or conflict-resolution support instead of more feature Developers.
-- 2026-06-08T11:15:08+00:00 **terminal_agent_windows_closed**: Closed 664 terminal agent tmux windows
-- 2026-06-08T11:15:12+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-08T11:15:16+00:00 **terminal_agent_windows_closed**: Closed 664 terminal agent tmux windows
-- 2026-06-08T11:15:21+00:00 **terminal_agent_windows_closed**: Closed 664 terminal agent tmux windows
-- 2026-06-08T11:15:25+00:00 **terminal_agent_windows_closed**: Closed 664 terminal agent tmux windows
-- 2026-06-08T11:15:33+00:00 **poke**: Queued message for developer-362
-- 2026-06-08T11:15:33+00:00 **poke_delivered**: Delivered poke to 1 agents
+- 2026-06-08T11:15:50+00:00 **terminal_agent_windows_closed**: Closed 664 terminal agent tmux windows
+- 2026-06-08T11:15:56+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-08T11:16:00+00:00 **terminal_agent_windows_closed**: Closed 664 terminal agent tmux windows
+- 2026-06-08T11:16:01+00:00 **coordinator_routed_conflict_resolver**: Row140/card2067 superseded by conflict-resolver-14 report633; requested one path-limited row136 native scalar cast Conflict Resolver via spawn_request 72186; preserved developer-362/card2027 as single global-gate owner.
+- 2026-06-08T11:16:02+00:00 **terminal_agent_windows_closed**: Closed 664 terminal agent tmux windows
+- 2026-06-08T11:16:06+00:00 **worklane_deduplicated**: Updated existing failing-test card#2027 from run 40472
+- 2026-06-08T11:16:06+00:00 **supervisor_interrupt**: Interrupted developer-362 after it proposed changing user-function extra-argument behavior to reject default-parameter over-arity. For PHP compatibility, extra user-function args should remain accepted; this is a stale test expectation, not a behavior bug.
+- 2026-06-08T11:16:08+00:00 **terminal_agent_windows_closed**: Closed 664 terminal agent tmux windows
+- 2026-06-08T11:16:12+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-08T11:16:12+00:00 **agent_report**: coordinator-166 reported completed_capacity_routed_row136_resolver
+- 2026-06-08T11:16:13+00:00 **poke**: Queued message for developer-362
+- 2026-06-08T11:16:13+00:00 **poke_delivered**: Delivered poke to 1 agents
 
 ## Next steps
-Move next worklane forward: Classify remaining integration_failed tail after lane1823
+Move next worklane forward: Resolve current-base native scalar cast integration conflict for row136
