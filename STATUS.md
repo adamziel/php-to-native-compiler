@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T01:48:49+00:00
+Last generated: 2026-06-08T02:03:49+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -17,7 +17,8 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | architect-12 | Architect | crash | architect-12 |  |
 | architect-13 | Architect | crash | architect-13 |  |
 | architect-14 | Architect | crash | architect-14 |  |
-| architect-15 | Architect | running | architect-15 |  |
+| architect-15 | Architect | crash | architect-15 |  |
+| architect-16 | Architect | running | architect-16 |  |
 | architect-2 | Architect | crash | architect-2 |  |
 | architect-3 | Architect | crash | architect-3 |  |
 | architect-4 | Architect | crash | architect-4 |  |
@@ -40,6 +41,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | auditor-9 | Auditor | stopped | auditor-9 |  |
 | conflict-resolver-1 | Conflict Resolver | crash | conflict-resolver-1 |  |
 | conflict-resolver-10 | Conflict Resolver | crash | conflict-resolver-10 |  |
+| conflict-resolver-11 | Conflict Resolver | crash | conflict-resolver-11 |  |
 | conflict-resolver-2 | Conflict Resolver | crash | conflict-resolver-2 |  |
 | conflict-resolver-3 | Conflict Resolver | crash | conflict-resolver-3 |  |
 | conflict-resolver-4 | Conflict Resolver | crash | conflict-resolver-4 |  |
@@ -111,8 +113,12 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-64 | Coordinator | success | coordinator-64 |  |
 | coordinator-65 | Coordinator | crash | coordinator-65 |  |
 | coordinator-66 | Coordinator | crash | coordinator-66 |  |
-| coordinator-67 | Coordinator | running | coordinator-67 |  |
+| coordinator-67 | Coordinator | success | coordinator-67 |  |
+| coordinator-68 | Coordinator | success | coordinator-68 |  |
+| coordinator-69 | Coordinator | crash | coordinator-69 |  |
 | coordinator-7 | Coordinator | crash | coordinator-7 |  |
+| coordinator-70 | Coordinator | crash | coordinator-70 |  |
+| coordinator-71 | Coordinator | running | coordinator-71 |  |
 | coordinator-8 | Coordinator | crash | coordinator-8 |  |
 | coordinator-9 | Coordinator | success | coordinator-9 |  |
 | developer-1 | Developer | stopped | developer-1 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-1 |
@@ -248,16 +254,20 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-216 | Developer | stopped | developer-216 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-216 |
 | developer-217 | Developer | crash | developer-217 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-217 |
 | developer-218 | Developer | crash | developer-218 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-218 |
-| developer-219 | Developer | running | developer-219 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-219 |
+| developer-219 | Developer | crash | developer-219 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-219 |
 | developer-22 | Developer | stopped | developer-22 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-22 |
-| developer-220 | Developer | running | developer-220 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-220 |
+| developer-220 | Developer | crash | developer-220 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-220 |
 | developer-221 | Developer | stopped | developer-221 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-221 |
-| developer-222 | Developer | running | developer-222 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-222 |
+| developer-222 | Developer | stopped | developer-222 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-222 |
 | developer-223 | Developer | stopped | developer-223 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-223 |
 | developer-224 | Developer | stopped | developer-224 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-224 |
 | developer-225 | Developer | stopped | developer-225 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-225 |
-| developer-226 | Developer | running | developer-226 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-226 |
+| developer-226 | Developer | crash | developer-226 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-226 |
+| developer-227 | Developer | running | developer-227 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-227 |
+| developer-228 | Developer | stopped | developer-228 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-228 |
+| developer-229 | Developer | running | developer-229 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-229 |
 | developer-23 | Developer | stopped | developer-23 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-23 |
+| developer-230 | Developer | stopped | developer-230 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-230 |
 | developer-24 | Developer | stopped | developer-24 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-24 |
 | developer-25 | Developer | stopped | developer-25 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-25 |
 | developer-26 | Developer | stopped | developer-26 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-26 |
@@ -369,24 +379,24 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | 1947 | Resolve integration failure for card #1808: Fix global test suite failures | Conflict Resolver | integration-support | integration | integration_failed | ready_fast_path | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=5, passed=414, skipped=0)
+failed — tools/run-tests.sh (error=0, failed=4, passed=415, skipped=0)
 
 ## Resource samples
-Latest: CPU 14.92%, RAM 56.13%, disk free 157.45 GB.
+Latest: CPU 13.01%, RAM 56.91%, disk free 157.69 GB.
 
 ## Recent events
-- 2026-06-08T01:48:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-27 tmux window
-- 2026-06-08T01:48:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-28 tmux window
-- 2026-06-08T01:48:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-29 tmux window
-- 2026-06-08T01:48:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-3 tmux window
-- 2026-06-08T01:48:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-30 tmux window
-- 2026-06-08T01:48:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-31 tmux window
-- 2026-06-08T01:48:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-32 tmux window
-- 2026-06-08T01:48:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-33 tmux window
-- 2026-06-08T01:48:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-34 tmux window
-- 2026-06-08T01:48:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-35 tmux window
-- 2026-06-08T01:48:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-36 tmux window
-- 2026-06-08T01:48:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-37 tmux window
+- 2026-06-08T02:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-223 tmux window
+- 2026-06-08T02:03:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-49 tmux window
+- 2026-06-08T02:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-224 tmux window
+- 2026-06-08T02:03:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-5 tmux window
+- 2026-06-08T02:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-225 tmux window
+- 2026-06-08T02:03:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-50 tmux window
+- 2026-06-08T02:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-226 tmux window
+- 2026-06-08T02:03:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-51 tmux window
+- 2026-06-08T02:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-228 tmux window
+- 2026-06-08T02:03:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-52 tmux window
+- 2026-06-08T02:03:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-53 tmux window
+- 2026-06-08T02:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-23 tmux window
 
 ## Next steps
 Move next worklane forward: Assign next sanctioned Developer card after developer-226 completed worklane 1954
