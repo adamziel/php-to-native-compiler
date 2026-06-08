@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T13:41:11+00:00
+Last generated: 2026-06-08T13:56:11+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -255,7 +255,13 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-21 | Coordinator | crash | coordinator-21 |  |
 | coordinator-210 | Coordinator | success | coordinator-210 |  |
 | coordinator-211 | Coordinator | success | coordinator-211 |  |
-| coordinator-212 | Coordinator | running | coordinator-212 |  |
+| coordinator-212 | Coordinator | success | coordinator-212 |  |
+| coordinator-213 | Coordinator | success | coordinator-213 |  |
+| coordinator-214 | Coordinator | success | coordinator-214 |  |
+| coordinator-215 | Coordinator | success | coordinator-215 |  |
+| coordinator-216 | Coordinator | crash | coordinator-216 |  |
+| coordinator-217 | Coordinator | success | coordinator-217 |  |
+| coordinator-218 | Coordinator | running | coordinator-218 |  |
 | coordinator-22 | Coordinator | crash | coordinator-22 |  |
 | coordinator-23 | Coordinator | stopped | coordinator-23 |  |
 | coordinator-24 | Coordinator | crash | coordinator-24 |  |
@@ -650,10 +656,12 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-375 | Developer | crash | developer-375 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-375 |
 | developer-376 | Developer | crash | developer-376 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-376 |
 | developer-377 | Developer | stopped | developer-377 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-377 |
-| developer-378 | Developer | running | developer-378 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-378 |
-| developer-379 | Developer | running | developer-379 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-379 |
+| developer-378 | Developer | crash | developer-378 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-378 |
+| developer-379 | Developer | crash | developer-379 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-379 |
 | developer-38 | Developer | stopped | developer-38 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-38 |
 | developer-380 | Developer | stopped | developer-380 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-380 |
+| developer-381 | Developer | running | developer-381 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-381 |
+| developer-382 | Developer | running | developer-382 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-382 |
 | developer-39 | Developer | stopped | developer-39 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-39 |
 | developer-4 | Developer | stopped | developer-4 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-4 |
 | developer-40 | Developer | crash | developer-40 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-40 |
@@ -746,6 +754,8 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | integrator-3 | Integrator | stopped | integrator-3 |  |
 | integrator-30 | Integrator | crash | integrator-30 |  |
 | integrator-31 | Integrator | crash | integrator-31 |  |
+| integrator-32 | Integrator | crash | integrator-32 |  |
+| integrator-33 | Integrator | running | integrator-33 |  |
 | integrator-4 | Integrator | crash | integrator-4 |  |
 | integrator-5 | Integrator | success | integrator-5 |  |
 | integrator-6 | Integrator | success | integrator-6 |  |
@@ -756,6 +766,8 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2093 | Dispose stale report-only rows 68 87 89 replacement | Integrator | integration-support | development | assigned |  | 0.0 |
+| 2092 | Dispose stale report-only rows 68 87 89 | Integrator | integration-support | planned | queued |  | 0.0 |
 | 2091 | Integrate lane107 artifact/source map report | Integrator | integration-support | planned | queued |  | 0.0 |
 | 2090 | Resolve integration failure for card #107: Blocked 221205Z artifact/source path map | Conflict Resolver | integration-support | done | integrated | ready_fast_path | 0.0 |
 | 2089 | Assign next sanctioned Developer card after lane 107 artifact/source map | Developer | implementation | done | stale |  | 0.0 |
@@ -764,28 +776,26 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | 2086 | Assign next concrete Developer card after worklane 2081 | Developer | implementation | done | stale |  | 0.0 |
 | 2085 | Consume card2084 lane105 report-only cleanup | Integrator | integration-support | planned | queued |  | 0.0 |
 | 2084 | Integrate ready card105 lane2081 report-only cleanup | Integrator | integration-support | planned | queued |  | 0.0 |
-| 2083 | Assign next concrete Developer card after worklane 2081 | Developer | implementation | done | stale |  | 0.0 |
-| 2082 | Resolve integration failure for card #2073: card2027 runtime native lookup/invoke cluster | Conflict Resolver | integration-support | done | stale |  | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=2, passed=417, skipped=0)
+failed — tools/run-tests.sh (error=0, failed=3, passed=416, skipped=0)
 
 ## Resource samples
-Latest: CPU 48.7%, RAM 18.61%, disk free 116.42 GB.
+Latest: CPU 20.83%, RAM 18.8%, disk free 115.33 GB.
 
 ## Recent events
-- 2026-06-08T13:40:45+00:00 **coordination_disposition**: Lane107 artifact report is already covered by integrated/pushed card2090; queued integrator card2091 is duplicate cleanup and should be retired by scheduler/Python rather than respawned.
-- 2026-06-08T13:40:49+00:00 **test_gate_hard_blocker**: New failures appeared beyond the known-red quarantine: abs_rejects_forms_outside_current_subset
-- 2026-06-08T13:40:50+00:00 **terminal_agent_windows_closed**: Closed 738 terminal agent tmux windows
-- 2026-06-08T13:40:54+00:00 **terminal_agent_windows_closed**: Closed 738 terminal agent tmux windows
-- 2026-06-08T13:40:54+00:00 **test_gate_quarantined_known_red**: 3 known failures are quarantined; metric acceptance remains blocked, but unrelated work may continue.
-- 2026-06-08T13:40:56+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-08T13:40:59+00:00 **test_gate_quarantined_known_red**: 5 known failures are quarantined; metric acceptance remains blocked, but unrelated work may continue.
-- 2026-06-08T13:40:59+00:00 **terminal_agent_windows_closed**: Closed 738 terminal agent tmux windows
-- 2026-06-08T13:41:04+00:00 **test_gate_quarantined_known_red**: 7 known failures are quarantined; metric acceptance remains blocked, but unrelated work may continue.
-- 2026-06-08T13:41:08+00:00 **terminal_agent_windows_closed**: Closed 738 terminal agent tmux windows
-- 2026-06-08T13:41:09+00:00 **terminal_agent_windows_closed**: Closed 738 terminal agent tmux windows
-- 2026-06-08T13:41:10+00:00 **test_gate_quarantined_known_red**: 8 known failures are quarantined; metric acceptance remains blocked, but unrelated work may continue.
+- 2026-06-08T13:55:24+00:00 **terminal_agent_windows_closed**: Closed 747 terminal agent tmux windows
+- 2026-06-08T13:55:26+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-08T13:55:32+00:00 **terminal_agent_windows_closed**: Closed 747 terminal agent tmux windows
+- 2026-06-08T13:55:39+00:00 **terminal_agent_windows_closed**: Closed 747 terminal agent tmux windows
+- 2026-06-08T13:55:41+00:00 **terminal_agent_windows_closed**: Closed 747 terminal agent tmux windows
+- 2026-06-08T13:55:50+00:00 **terminal_agent_windows_closed**: Closed 747 terminal agent tmux windows
+- 2026-06-08T13:55:53+00:00 **terminal_agent_windows_closed**: Closed 747 terminal agent tmux windows
+- 2026-06-08T13:55:56+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-08T13:55:57+00:00 **coordinator_started**: Coordinator session started; reading repo instructions and harness state before assigning or spawning work.
+- 2026-06-08T13:56:00+00:00 **terminal_agent_windows_closed**: Closed 747 terminal agent tmux windows
+- 2026-06-08T13:56:07+00:00 **terminal_agent_windows_closed**: Closed 747 terminal agent tmux windows
+- 2026-06-08T13:56:09+00:00 **terminal_agent_windows_closed**: Closed 747 terminal agent tmux windows
 
 ## Next steps
-Move next worklane forward: Integrate lane107 artifact/source map report
+Move next worklane forward: Dispose stale report-only rows 68 87 89 replacement
