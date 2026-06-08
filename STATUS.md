@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T03:03:49+00:00
+Last generated: 2026-06-08T03:18:49+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -20,8 +20,10 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | architect-15 | Architect | crash | architect-15 |  |
 | architect-16 | Architect | crash | architect-16 |  |
 | architect-17 | Architect | crash | architect-17 |  |
-| architect-18 | Architect | running | architect-18 |  |
+| architect-18 | Architect | crash | architect-18 |  |
+| architect-19 | Architect | crash | architect-19 |  |
 | architect-2 | Architect | crash | architect-2 |  |
+| architect-20 | Architect | running | architect-20 |  |
 | architect-3 | Architect | crash | architect-3 |  |
 | architect-4 | Architect | crash | architect-4 |  |
 | architect-5 | Architect | crash | architect-5 |  |
@@ -35,6 +37,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | auditor-12 | Auditor | stopped | auditor-12 |  |
 | auditor-13 | Auditor | crash | auditor-13 |  |
 | auditor-14 | Auditor | crash | auditor-14 |  |
+| auditor-15 | Auditor | crash | auditor-15 |  |
 | auditor-2 | Auditor | crash | auditor-2 |  |
 | auditor-3 | Auditor | stopped | auditor-3 |  |
 | auditor-4 | Auditor | stopped | auditor-4 |  |
@@ -129,8 +132,13 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-75 | Coordinator | success | coordinator-75 |  |
 | coordinator-76 | Coordinator | success | coordinator-76 |  |
 | coordinator-77 | Coordinator | success | coordinator-77 |  |
-| coordinator-78 | Coordinator | running | coordinator-78 |  |
+| coordinator-78 | Coordinator | success | coordinator-78 |  |
+| coordinator-79 | Coordinator | crash | coordinator-79 |  |
 | coordinator-8 | Coordinator | crash | coordinator-8 |  |
+| coordinator-80 | Coordinator | crash | coordinator-80 |  |
+| coordinator-81 | Coordinator | crash | coordinator-81 |  |
+| coordinator-82 | Coordinator | crash | coordinator-82 |  |
+| coordinator-83 | Coordinator | running | coordinator-83 |  |
 | coordinator-9 | Coordinator | success | coordinator-9 |  |
 | developer-1 | Developer | stopped | developer-1 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-1 |
 | developer-10 | Developer | stopped | developer-10 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-10 |
@@ -298,15 +306,20 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-246 | Developer | crash | developer-246 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-246 |
 | developer-247 | Developer | crash | developer-247 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-247 |
 | developer-248 | Developer | stopped | developer-248 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-248 |
-| developer-249 | Developer | running | developer-249 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-249 |
+| developer-249 | Developer | crash | developer-249 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-249 |
 | developer-25 | Developer | stopped | developer-25 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-25 |
-| developer-250 | Developer | running | developer-250 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-250 |
-| developer-251 | Developer | running | developer-251 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-251 |
-| developer-252 | Developer | running | developer-252 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-252 |
+| developer-250 | Developer | crash | developer-250 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-250 |
+| developer-251 | Developer | crash | developer-251 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-251 |
+| developer-252 | Developer | crash | developer-252 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-252 |
 | developer-253 | Developer | stopped | developer-253 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-253 |
 | developer-254 | Developer | running | developer-254 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-254 |
 | developer-255 | Developer | stopped | developer-255 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-255 |
+| developer-256 | Developer | stopped | developer-256 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-256 |
+| developer-257 | Developer | stopped | developer-257 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-257 |
+| developer-258 | Developer | stopped | developer-258 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-258 |
+| developer-259 | Developer | stopped | developer-259 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-259 |
 | developer-26 | Developer | stopped | developer-26 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-26 |
+| developer-260 | Developer | stopped | developer-260 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-260 |
 | developer-27 | Developer | stopped | developer-27 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-27 |
 | developer-28 | Developer | stopped | developer-28 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-28 |
 | developer-29 | Developer | crash | developer-29 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-29 |
@@ -403,36 +416,36 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1981 | Reconcile stale architect-18 assignment blocking Architect queue | Coordinator | control-plane | planned | queued |  | 0.0 |
+| 1980 | Repair test-loop duplicate Architect request flood | Developer | implementation | planned | queued |  | 0.0 |
+| 1979 | Investigate scheduler alert | Auditor | integration-support | done | done |  | 0.0 |
+| 1978 | Resolve integration failure for card #1974: Resolve integration failure for card #1962: Resolve integration failure for card #1960: Resolve integration failure for card #1905: Milestone 625 compiler-output CLI contract slice | Conflict Resolver | integration-support | done | integrated | ready_fast_path | 0.0 |
+| 1977 | Maintain Developer capacity after card 1974 | Developer | implementation | planned | queued |  | 0.0 |
 | 1976 | Fix card 1975 current-base native invoke parallel test failures | Developer | implementation | planned | queued |  | 0.0 |
 | 1975 | Fix global test suite failures | Developer | implementation | development | assigned |  | 0.0 |
-| 1974 | Resolve integration failure for card #1962: Resolve integration failure for card #1960: Resolve integration failure for card #1905: Milestone 625 compiler-output CLI contract slice | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
+| 1974 | Resolve integration failure for card #1962: Resolve integration failure for card #1960: Resolve integration failure for card #1905: Milestone 625 compiler-output CLI contract slice | Conflict Resolver | integration-support | integration | integration_failed | ready_fast_path | 0.0 |
 | 1973 | Provide next sanctioned Developer card after developer-251 completed lane 1962 | Developer | implementation | planned | queued |  | 0.0 |
 | 1972 | Provide next concrete Developer card after developer-252 capacity placeholder lane 1921 | Developer | implementation | planned | queued |  | 0.0 |
-| 1971 | Resolve integration failure for card #1968: Resolve integration failure for card #1808: Fix global test suite failures | Conflict Resolver | integration-support | done | stale |  | 0.0 |
-| 1970 | Resolve integration failure for card #1887: Implement known-failure no-regression gate for current php_runtime blocker | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
-| 1969 | Resolve integration failure for card #1808: Fix global test suite failures | Conflict Resolver | integration-support | done | stale |  | 0.0 |
-| 1968 | Resolve integration failure for card #1808: Fix global test suite failures | Conflict Resolver | integration-support | done | stale | ready_fast_path | 0.0 |
-| 1967 | Recover idle coordinator and metric routing | Coordinator | control-plane | planned | queued |  | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=5, passed=414, skipped=0)
+failed — tools/run-tests.sh (error=0, failed=6, passed=413, skipped=0)
 
 ## Resource samples
-Latest: CPU 10.65%, RAM 56.29%, disk free 57.37 GB.
+Latest: CPU 9.89%, RAM 55.29%, disk free 88.85 GB.
 
 ## Recent events
-- 2026-06-08T03:03:49+00:00 **terminal_agent_window_closed**: Closed terminal architect-2 tmux window
-- 2026-06-08T03:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-211 tmux window
-- 2026-06-08T03:03:49+00:00 **terminal_agent_window_closed**: Closed terminal architect-3 tmux window
-- 2026-06-08T03:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-212 tmux window
-- 2026-06-08T03:03:49+00:00 **terminal_agent_window_closed**: Closed terminal architect-4 tmux window
-- 2026-06-08T03:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-213 tmux window
-- 2026-06-08T03:03:49+00:00 **terminal_agent_window_closed**: Closed terminal architect-5 tmux window
-- 2026-06-08T03:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-214 tmux window
-- 2026-06-08T03:03:49+00:00 **terminal_agent_window_closed**: Closed terminal architect-6 tmux window
-- 2026-06-08T03:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-215 tmux window
-- 2026-06-08T03:03:49+00:00 **terminal_agent_window_closed**: Closed terminal architect-7 tmux window
-- 2026-06-08T03:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-216 tmux window
+- 2026-06-08T03:18:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-26 tmux window
+- 2026-06-08T03:18:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-260 tmux window
+- 2026-06-08T03:18:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-27 tmux window
+- 2026-06-08T03:18:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-28 tmux window
+- 2026-06-08T03:18:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-29 tmux window
+- 2026-06-08T03:18:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-3 tmux window
+- 2026-06-08T03:18:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-30 tmux window
+- 2026-06-08T03:18:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-31 tmux window
+- 2026-06-08T03:18:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-32 tmux window
+- 2026-06-08T03:18:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-33 tmux window
+- 2026-06-08T03:18:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-34 tmux window
+- 2026-06-08T03:18:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-35 tmux window
 
 ## Next steps
-Move next worklane forward: Fix card 1975 current-base native invoke parallel test failures
+Move next worklane forward: Reconcile stale architect-18 assignment blocking Architect queue
