@@ -12240,10 +12240,11 @@
   key parameters are declared by reference, including callable builtins with
   by-reference parameters, emit PHP-shaped value-given warnings and then
   receive the helper-supplied values; callback writes do not alias back into
-  the source array or key temporaries. First-class callable forms, unsupported
-  dynamic callable shapes, true callback-parameter aliasing, exact diagnostics
-  for every callback failure, broad reference/COW parity, and native lowering
-  remain unsupported.
+  the source array or key temporaries. Top-level too-few-argument calls for
+  this family report PHP-shaped fatal `TypeError`s. First-class callable forms,
+  unsupported dynamic callable shapes, true callback-parameter aliasing, exact
+  diagnostics for every callback failure, broad reference/COW parity, and
+  native lowering remain unsupported.
   `array_multisort($array, ...)` accepts direct interpreter calls with one or
   more scalar-valued arrays plus `SORT_ASC`, `SORT_DESC`, `SORT_REGULAR`,
   `SORT_NUMERIC`, `SORT_STRING`, `SORT_NATURAL`, and

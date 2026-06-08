@@ -32,6 +32,15 @@ accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
 | coordinator-11 | Coordinator | stopped | coordinator-11 |  |
 | coordinator-12 | Coordinator | stopped | coordinator-12 |  |
 | coordinator-13 | Coordinator | stopped | coordinator-13 |  |
+| coordinator-130 | Coordinator | success | coordinator-130 |  |
+| coordinator-131 | Coordinator | success | coordinator-131 |  |
+| coordinator-132 | Coordinator | success | coordinator-132 |  |
+| coordinator-133 | Coordinator | crash | coordinator-133 |  |
+| coordinator-134 | Coordinator | success | coordinator-134 |  |
+| coordinator-135 | Coordinator | success | coordinator-135 |  |
+| coordinator-136 | Coordinator | success | coordinator-136 |  |
+| coordinator-137 | Coordinator | success | coordinator-137 |  |
+| coordinator-138 | Coordinator | running | coordinator-138 |  |
 | coordinator-14 | Coordinator | success | coordinator-14 |  |
 | coordinator-15 | Coordinator | stopped | coordinator-15 |  |
 | coordinator-16 | Coordinator | crash | coordinator-16 |  |
@@ -80,8 +89,32 @@ accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
 | developer-30 | Developer | stopped | developer-30 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-30 |
 | developer-31 | Developer | crash | developer-31 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-31 |
 | developer-32 | Developer | crash | developer-32 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-32 |
+| developer-320 | Developer | stopped | developer-320 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-320 |
+| developer-321 | Developer | stopped | developer-321 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-321 |
+| developer-322 | Developer | stopped | developer-322 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-322 |
+| developer-323 | Developer | crash | developer-323 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-323 |
+| developer-324 | Developer | stopped | developer-324 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-324 |
+| developer-325 | Developer | stopped | developer-325 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-325 |
+| developer-326 | Developer | stopped | developer-326 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-326 |
+| developer-327 | Developer | stopped | developer-327 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-327 |
+| developer-328 | Developer | stopped | developer-328 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-328 |
+| developer-329 | Developer | crash | developer-329 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-329 |
 | developer-33 | Developer | crash | developer-33 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-33 |
+| developer-330 | Developer | stopped | developer-330 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-330 |
+| developer-331 | Developer | stopped | developer-331 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-331 |
+| developer-332 | Developer | crash | developer-332 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-332 |
+| developer-333 | Developer | crash | developer-333 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-333 |
+| developer-334 | Developer | crash | developer-334 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-334 |
+| developer-335 | Developer | crash | developer-335 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-335 |
+| developer-336 | Developer | crash | developer-336 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-336 |
+| developer-337 | Developer | crash | developer-337 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-337 |
+| developer-338 | Developer | running | developer-338 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-338 |
+| developer-339 | Developer | running | developer-339 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-339 |
 | developer-34 | Developer | crash | developer-34 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-34 |
+| developer-340 | Developer | running | developer-340 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-340 |
+| developer-341 | Developer | running | developer-341 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-341 |
+| developer-342 | Developer | running | developer-342 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-342 |
+| developer-343 | Developer | running | developer-343 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-343 |
 | developer-35 | Developer | crash | developer-35 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-35 |
 | developer-36 | Developer | crash | developer-36 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-36 |
 | developer-37 | Developer | stopped | developer-37 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-37 |

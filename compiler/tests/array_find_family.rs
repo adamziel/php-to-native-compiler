@@ -178,15 +178,19 @@ echo implode(",", array_keys($items)), "|", implode(",", $items), "\n";
 
 #[test]
 fn array_find_family_reports_arity_and_native_lowering_boundary() {
-    let execution = run_source("<?php\narray_any([1]);\n").unwrap();
-    assert_eq!(execution.exit_code, 255);
-    assert!(
-        execution.stdout.contains(
-            "Fatal error: Uncaught TypeError: Too few arguments to function array_any(), 1 passed"
-        ),
-        "{}",
-        execution.stdout
-    );
+    for function in ["array_find", "array_find_key", "array_any", "array_all"] {
+        let source = format!("<?php\n{function}([1]);\n");
+        let execution = run_source(&source).unwrap();
+        assert_eq!(execution.exit_code, 255, "{function}");
+        let expected = format!(
+            "Fatal error: Uncaught TypeError: Too few arguments to function {function}(), 1 passed"
+        );
+        assert!(
+            execution.stdout.contains(&expected),
+            "{function}: {}",
+            execution.stdout
+        );
+    }
 
     let error = emit_ir_source("<?php\narray_find([1], fn($v) => true);\n").unwrap_err();
     assert!(

@@ -4,6 +4,17 @@
 
 Implemented:
 
+- Fixed the current-base `array_find()` family top-level too-few-argument
+  fatal classification. `phpc run` now reports PHP-shaped `TypeError` fatals
+  for `array_find([1])`, `array_find_key([1])`, `array_any([1])`, and
+  `array_all([1])` while preserving the existing callback execution semantics
+  and native `compile --emit-ir` rejection boundary for `array_find(...)`.
+  Focused proof covers the Rust
+  `array_find_family_reports_arity_and_native_lowering_boundary` regression.
+  Unsupported edges remain exact diagnostics for every callback failure,
+  callback forms outside the current string/closure/public array-callable
+  subset, broad reference/COW graph parity, and native lowering.
+
 - Repaired the assigned `php_runtime` global-suite failure lane without
   changing production runtime semantics. The test-only
   `NativeCallArgumentsHandle` free counter is now isolated per Rust test thread
