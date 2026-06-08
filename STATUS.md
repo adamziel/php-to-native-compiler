@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T02:13:32+00:00
+Last generated: 2026-06-08T02:18:49+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -31,7 +31,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | auditor-10 | Auditor | crash | auditor-10 |  |
 | auditor-11 | Auditor | crash | auditor-11 |  |
 | auditor-12 | Auditor | stopped | auditor-12 |  |
-| auditor-13 | Auditor | running | auditor-13 |  |
+| auditor-13 | Auditor | crash | auditor-13 |  |
 | auditor-2 | Auditor | crash | auditor-2 |  |
 | auditor-3 | Auditor | stopped | auditor-3 |  |
 | auditor-4 | Auditor | stopped | auditor-4 |  |
@@ -271,8 +271,9 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-230 | Developer | stopped | developer-230 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-230 |
 | developer-231 | Developer | running | developer-231 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-231 |
 | developer-232 | Developer | running | developer-232 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-232 |
-| developer-233 | Developer | running | developer-233 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-233 |
+| developer-233 | Developer | stopped | developer-233 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-233 |
 | developer-234 | Developer | running | developer-234 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-234 |
+| developer-235 | Developer | running | developer-235 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-235 |
 | developer-24 | Developer | stopped | developer-24 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-24 |
 | developer-25 | Developer | stopped | developer-25 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-25 |
 | developer-26 | Developer | stopped | developer-26 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-26 |
@@ -372,36 +373,36 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1961 | Resolve integration failure for card #1808: Fix global test suite failures | Conflict Resolver | integration-support | planned | queued |  | 0.0 |
+| 1960 | Resolve integration failure for card #1905: Milestone 625 compiler-output CLI contract slice | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
 | 1959 | Provide next sanctioned Developer card after developer-231 worklane 1957 | Developer | implementation | planned | queued |  | 0.0 |
-| 1958 | Investigate scheduler alert | Auditor | integration-support | development | assigned |  | 0.0 |
+| 1958 | Investigate scheduler alert | Auditor | integration-support | done | done |  | 0.0 |
 | 1957 | Resolve integration failure for card #1808: Fix global test suite failures | Conflict Resolver | integration-support | done | integrated | ready_fast_path | 0.0 |
 | 1956 | Assign next sanctioned Developer card after developer-226 completed worklane 1954 | Developer | implementation | planned | queued |  | 0.0 |
 | 1955 | Provide next sanctioned Developer card after developer-219 worklane 1808 | Developer | implementation | planned | queued |  | 0.0 |
 | 1954 | Resolve integration failure for card #1808: Fix global test suite failures | Conflict Resolver | integration-support | done | integrated | ready_fast_path | 0.0 |
 | 1953 | Resolve integration failure for card #1949: Resolve integration failure for card #1947: Resolve integration failure for card #1808: Fix global test suite failures | Conflict Resolver | integration-support | done | integrated | ready_fast_path | 0.0 |
 | 1952 | Provide next sanctioned Developer card after developer-222 resolver | Developer | implementation | planned | queued |  | 0.0 |
-| 1951 | Drain current integration backlog and classify stale-root native gate conflicts | Integrator | integration-support | planned | queued |  | 0.0 |
-| 1950 | Resolve integration failure for card #1808: Fix global test suite failures | Conflict Resolver | integration-support | done | integrated | ready_fast_path | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=3, passed=416, skipped=0)
+failed — tools/run-tests.sh (error=0, failed=4, passed=415, skipped=0)
 
 ## Resource samples
-Latest: CPU 20.41%, RAM 57.91%, disk free 157.31 GB.
+Latest: CPU 11.01%, RAM 56.9%, disk free 157.29 GB.
 
 ## Recent events
-- 2026-06-08T02:13:32+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: tests::native_magic_method_lookup_rejects_malformed_signature_metadata_before_fallback
-- 2026-06-08T02:13:32+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: tests::native_constructor_allocation_invoke_carrier_owns_receiver_arguments_and_diagnostics
-- 2026-06-08T02:13:32+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: tests::native_lookup_plus_invoke_helpers_free_arguments_once_across_target_families
-- 2026-06-08T02:13:32+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: tests::native_method_lookup_plus_invoke_dispatches_missing_and_inaccessible_methods_to_magic_call
-- 2026-06-08T02:13:32+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: tests::native_static_method_lookup_plus_invoke_dispatches_missing_and_inaccessible_methods_to_magic_call_static
-- 2026-06-08T02:13:32+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: tests::native_method_lookup_plus_invoke_uses_access_context_for_private_diagnostics
-- 2026-06-08T02:13:32+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: tests::native_closure_invoke_helpers_bridge_call_arguments_to_call_results
-- 2026-06-08T02:13:32+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: tests::native_constructor_allocation_invoke_carrier_cleans_up_failure_paths
-- 2026-06-08T02:13:32+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: codegen::tests::generated_c_string_comparison_safety_uses_shared_pair_classifier
-- 2026-06-08T02:13:32+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: codegen::tests::c_assembly_non_local_assignment_families_share_assignment_owner_boundary
-- 2026-06-08T02:13:32+00:00 **poke**: Queued message for developer-233
-- 2026-06-08T02:13:32+00:00 **poke_delivered**: Delivered poke to 1 agents
+- 2026-06-08T02:18:49+00:00 **terminal_agent_window_closed**: Closed terminal conflict-resolver-11 tmux window
+- 2026-06-08T02:18:49+00:00 **terminal_agent_window_closed**: Closed terminal auditor-1 tmux window
+- 2026-06-08T02:18:49+00:00 **terminal_agent_window_closed**: Closed terminal conflict-resolver-2 tmux window
+- 2026-06-08T02:18:49+00:00 **terminal_agent_window_closed**: Closed terminal auditor-10 tmux window
+- 2026-06-08T02:18:49+00:00 **terminal_agent_window_closed**: Closed terminal conflict-resolver-3 tmux window
+- 2026-06-08T02:18:49+00:00 **terminal_agent_window_closed**: Closed terminal auditor-11 tmux window
+- 2026-06-08T02:18:49+00:00 **terminal_agent_window_closed**: Closed terminal conflict-resolver-4 tmux window
+- 2026-06-08T02:18:49+00:00 **terminal_agent_window_closed**: Closed terminal auditor-12 tmux window
+- 2026-06-08T02:18:49+00:00 **terminal_agent_window_closed**: Closed terminal conflict-resolver-5 tmux window
+- 2026-06-08T02:18:49+00:00 **terminal_agent_window_closed**: Closed terminal auditor-13 tmux window
+- 2026-06-08T02:18:49+00:00 **terminal_agent_window_closed**: Closed terminal conflict-resolver-6 tmux window
+- 2026-06-08T02:18:49+00:00 **terminal_agent_window_closed**: Closed terminal auditor-2 tmux window
 
 ## Next steps
-Move next worklane forward: Provide next sanctioned Developer card after developer-231 worklane 1957
+Move next worklane forward: Resolve integration failure for card #1808: Fix global test suite failures
