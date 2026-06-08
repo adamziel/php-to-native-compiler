@@ -6,7 +6,7 @@ Last generated: 2026-06-07T18:05:18+00:00
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
 
 ## Metric
-blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
+accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
 
 ## Agents
 | name | role | current_status | tmux_window | worktree |
@@ -48,16 +48,6 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-7 | Coordinator | crash | coordinator-7 |  |
 | coordinator-8 | Coordinator | crash | coordinator-8 |  |
 | coordinator-9 | Coordinator | success | coordinator-9 |  |
-| coordinator-90 | Coordinator | success | coordinator-90 |  |
-| coordinator-91 | Coordinator | success | coordinator-91 |  |
-| coordinator-92 | Coordinator | success | coordinator-92 |  |
-| coordinator-93 | Coordinator | crash | coordinator-93 |  |
-| coordinator-94 | Coordinator | crash | coordinator-94 |  |
-| coordinator-95 | Coordinator | crash | coordinator-95 |  |
-| coordinator-96 | Coordinator | crash | coordinator-96 |  |
-| coordinator-97 | Coordinator | crash | coordinator-97 |  |
-| coordinator-98 | Coordinator | success | coordinator-98 |  |
-| coordinator-99 | Coordinator | running | coordinator-99 |  |
 | developer-1 | Developer | stopped | developer-1 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-1 |
 | developer-10 | Developer | stopped | developer-10 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-10 |
 | developer-100 | Developer | running | developer-100 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-100 |
@@ -84,25 +74,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-25 | Developer | stopped | developer-25 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-25 |
 | developer-26 | Developer | stopped | developer-26 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-26 |
 | developer-27 | Developer | stopped | developer-27 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-27 |
-| developer-270 | Developer | crash | developer-270 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-270 |
-| developer-271 | Developer | crash | developer-271 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-271 |
-| developer-272 | Developer | crash | developer-272 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-272 |
-| developer-273 | Developer | crash | developer-273 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-273 |
-| developer-274 | Developer | stopped | developer-274 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-274 |
-| developer-275 | Developer | crash | developer-275 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-275 |
-| developer-276 | Developer | stopped | developer-276 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-276 |
-| developer-277 | Developer | stopped | developer-277 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-277 |
-| developer-278 | Developer | crash | developer-278 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-278 |
-| developer-279 | Developer | stopped | developer-279 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-279 |
 | developer-28 | Developer | stopped | developer-28 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-28 |
-| developer-280 | Developer | running | developer-280 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-280 |
-| developer-281 | Developer | stopped | developer-281 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-281 |
-| developer-282 | Developer | stopped | developer-282 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-282 |
-| developer-283 | Developer | running | developer-283 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-283 |
-| developer-284 | Developer | running | developer-284 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-284 |
-| developer-285 | Developer | running | developer-285 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-285 |
-| developer-286 | Developer | stopped | developer-286 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-286 |
-| developer-287 | Developer | stopped | developer-287 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-287 |
 | developer-29 | Developer | crash | developer-29 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-29 |
 | developer-3 | Developer | stopped | developer-3 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-3 |
 | developer-30 | Developer | stopped | developer-30 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-30 |
