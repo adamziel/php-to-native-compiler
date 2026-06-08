@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T10:56:24+00:00
+Last generated: 2026-06-08T10:57:23+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -190,7 +190,8 @@ accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
 | coordinator-158 | Coordinator | success | coordinator-158 |  |
 | coordinator-159 | Coordinator | success | coordinator-159 |  |
 | coordinator-16 | Coordinator | crash | coordinator-16 |  |
-| coordinator-160 | Coordinator | running | coordinator-160 |  |
+| coordinator-160 | Coordinator | crash | coordinator-160 |  |
+| coordinator-161 | Coordinator | running | coordinator-161 |  |
 | coordinator-17 | Coordinator | success | coordinator-17 |  |
 | coordinator-18 | Coordinator | success | coordinator-18 |  |
 | coordinator-19 | Coordinator | stopped | coordinator-19 |  |
@@ -572,8 +573,10 @@ accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
 | developer-358 | Developer | stopped | developer-358 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-358 |
 | developer-359 | Developer | crash | developer-359 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-359 |
 | developer-36 | Developer | crash | developer-36 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-36 |
-| developer-360 | Developer | running | developer-360 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-360 |
+| developer-360 | Developer | crash | developer-360 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-360 |
 | developer-361 | Developer | crash | developer-361 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-361 |
+| developer-362 | Developer | running | developer-362 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-362 |
+| developer-363 | Developer | running | developer-363 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-363 |
 | developer-37 | Developer | stopped | developer-37 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-37 |
 | developer-38 | Developer | stopped | developer-38 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-38 |
 | developer-39 | Developer | stopped | developer-39 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-39 |
@@ -658,6 +661,7 @@ accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
 | integrator-20 | Integrator | crash | integrator-20 |  |
 | integrator-21 | Integrator | crash | integrator-21 |  |
 | integrator-22 | Integrator | success | integrator-22 |  |
+| integrator-23 | Integrator | crash | integrator-23 |  |
 | integrator-3 | Integrator | stopped | integrator-3 |  |
 | integrator-4 | Integrator | crash | integrator-4 |  |
 | integrator-5 | Integrator | success | integrator-5 |  |
@@ -669,6 +673,7 @@ accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2064 | Classify remaining integration_failed tail after lane1823 | Integrator | integration-support | planned | queued |  | 0.0 |
 | 2063 | Integrate clean lane 1823 from work/developer-124 | Integrator | integration-support | planned | queued |  | 0.0 |
 | 2062 | Assign next sanctioned Developer card after lane 95 guardrail report | Developer | implementation | done | stale |  | 0.0 |
 | 2061 | Drain live integration_failed endpoints and retire superseded rows | Integrator | integration-support | planned | queued |  | 0.0 |
@@ -678,33 +683,26 @@ accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
 | 2057 | Assign next sanctioned Developer card after developer-353 capacity handoff 2045 | Developer | implementation | done | stale |  | 0.0 |
 | 2056 | Assign concrete Developer card after developer-352 capacity handoff 2043 | Developer | implementation | done | stale |  | 0.0 |
 | 2055 | Assign concrete sanctioned Developer card after placeholder lane 2048 | Developer | implementation | done | stale |  | 0.0 |
-| 2054 | Respond to scheduler alert | Coordinator | control-plane | planned | queued |  | 0.0 |
 
 ## Tests
 failed — tools/run-tests.sh (error=0, failed=3, passed=416, skipped=0)
 
 ## Resource samples
-Latest: CPU 16.21%, RAM 17.88%, disk free 108.91 GB.
+Latest: CPU 26.06%, RAM 18.16%, disk free 108.77 GB.
 
 ## Recent events
-- 2026-06-08T10:55:48+00:00 **worklane_deduplicated**: Updated existing failing-test card#2027 from run 40235
-- 2026-06-08T10:55:49+00:00 **terminal_agent_windows_closed**: Closed 652 terminal agent tmux windows
-- 2026-06-08T10:55:55+00:00 **terminal_agent_windows_closed**: Closed 652 terminal agent tmux windows
-- 2026-06-08T10:56:02+00:00 **terminal_agent_windows_closed**: Closed 652 terminal agent tmux windows
-- 2026-06-08T10:56:03+00:00 **terminal_agent_windows_closed**: Closed 652 terminal agent tmux windows
-- 2026-06-08T10:56:11+00:00 **terminal_agent_windows_closed**: Closed 652 terminal agent tmux windows
-- 2026-06-08T10:56:11+00:00 **status_publish_failed**: Committed status files but failed to push: To https://github.com/adamziel/php-to-native-compiler.git
- ! [rejected]          HEAD -> master (non-fast-forward)
-error: failed to push some refs to 'https://github.com/adamziel/php-to-native-compiler.git'
-hint: Updates were rejected because the tip of your current branch is behind
-hint: its remote counterpart. If you want to integrate the remote changes,
-hint: use 'git pull' before pushing again.
-hint: See the 'Note about fast-forwards' in 'git push --help' for details.
-- 2026-06-08T10:56:11+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-08T10:56:15+00:00 **terminal_agent_windows_closed**: Closed 652 terminal agent tmux windows
-- 2026-06-08T10:56:19+00:00 **terminal_agent_windows_closed**: Closed 652 terminal agent tmux windows
-- 2026-06-08T10:56:24+00:00 **poke**: Queued message for developer-360
-- 2026-06-08T10:56:24+00:00 **poke_delivered**: Delivered poke to 1 agents
+- 2026-06-08T10:56:52+00:00 **test_gate_quarantined_known_red**: 5 known failures are quarantined; metric acceptance remains blocked, but unrelated work may continue.
+- 2026-06-08T10:56:53+00:00 **terminal_agent_windows_closed**: Closed 655 terminal agent tmux windows
+- 2026-06-08T10:56:59+00:00 **terminal_agent_windows_closed**: Closed 655 terminal agent tmux windows
+- 2026-06-08T10:57:07+00:00 **terminal_agent_windows_closed**: Closed 655 terminal agent tmux windows
+- 2026-06-08T10:57:07+00:00 **test_gate_quarantined_known_red**: 8 known failures are quarantined; metric acceptance remains blocked, but unrelated work may continue.
+- 2026-06-08T10:57:08+00:00 **terminal_agent_windows_closed**: Closed 655 terminal agent tmux windows
+- 2026-06-08T10:57:11+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-08T10:57:16+00:00 **terminal_agent_windows_closed**: Closed 655 terminal agent tmux windows
+- 2026-06-08T10:57:20+00:00 **coordinator_start**: Coordinator session started; loading required project docs and harness state before routing work.
+- 2026-06-08T10:57:20+00:00 **terminal_agent_windows_closed**: Closed 655 terminal agent tmux windows
+- 2026-06-08T10:57:23+00:00 **poke**: Queued message for developer-362
+- 2026-06-08T10:57:23+00:00 **poke_delivered**: Delivered poke to 1 agents
 
 ## Next steps
-Move next worklane forward: Integrate clean lane 1823 from work/developer-124
+Move next worklane forward: Classify remaining integration_failed tail after lane1823
