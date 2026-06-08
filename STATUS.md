@@ -1,12 +1,12 @@
 # Harness Status
 
-Last generated: 2026-06-08T10:41:10+00:00
+Last generated: 2026-06-08T10:43:30+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
 
 ## Metric
-blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
+accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
 
 ## Agents
 | name | role | current_status | tmux_window | worktree |
@@ -568,7 +568,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-359 | Developer | crash | developer-359 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-359 |
 | developer-36 | Developer | crash | developer-36 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-36 |
 | developer-360 | Developer | running | developer-360 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-360 |
-| developer-361 | Developer | running | developer-361 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-361 |
+| developer-361 | Developer | crash | developer-361 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-361 |
 | developer-37 | Developer | stopped | developer-37 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-37 |
 | developer-38 | Developer | stopped | developer-38 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-38 |
 | developer-39 | Developer | stopped | developer-39 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-39 |
@@ -663,6 +663,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2062 | Assign next sanctioned Developer card after lane 95 guardrail report | Developer | implementation | done | stale |  | 0.0 |
 | 2061 | Drain live integration_failed endpoints and retire superseded rows | Integrator | integration-support | development | assigned |  | 0.0 |
 | 2060 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
 | 2059 | Resume integration backlog disposition after integrator-19 crash | Integrator | integration-support | planned | queued |  | 0.0 |
@@ -672,27 +673,26 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | 2055 | Assign concrete sanctioned Developer card after placeholder lane 2048 | Developer | implementation | done | stale |  | 0.0 |
 | 2054 | Respond to scheduler alert | Coordinator | control-plane | development | assigned |  | 0.0 |
 | 2053 | Drain current integration backlog after card2051 resolver handoff | Integrator | integration-support | planned | queued |  | 0.0 |
-| 2052 | Provide next sanctioned Developer card after developer-346 card 2018 | Developer | implementation | done | stale | ready_fast_path | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=2, passed=417, skipped=0)
+failed — tools/run-tests.sh (error=0, failed=2, passed=601, skipped=0)
 
 ## Resource samples
-Latest: CPU 30.98%, RAM 17.9%, disk free 111.24 GB.
+Latest: CPU 20.1%, RAM 22.06%, disk free 110.72 GB.
 
 ## Recent events
-- 2026-06-08T10:40:41+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-08T10:40:44+00:00 **agent_report**: coordinator-154 reported completed_capacity_preserved_no_spawn
-- 2026-06-08T10:40:45+00:00 **terminal_agent_windows_closed**: Closed 643 terminal agent tmux windows
-- 2026-06-08T10:40:46+00:00 **terminal_agent_windows_closed**: Closed 643 terminal agent tmux windows
-- 2026-06-08T10:40:53+00:00 **terminal_agent_windows_closed**: Closed 643 terminal agent tmux windows
-- 2026-06-08T10:40:54+00:00 **agent_started**: Started coordinator-155 for Maintain Coordinator capacity
-- 2026-06-08T10:40:58+00:00 **terminal_agent_windows_closed**: Closed 644 terminal agent tmux windows
-- 2026-06-08T10:41:01+00:00 **lane_progress**: Lane 95 report artifact written and validation passed; committing .harness/reports/disk-build-target-guardrails-dev361.md.
-- 2026-06-08T10:41:01+00:00 **terminal_agent_windows_closed**: Closed 644 terminal agent tmux windows
-- 2026-06-08T10:41:09+00:00 **terminal_agent_windows_closed**: Closed 644 terminal agent tmux windows
-- 2026-06-08T10:41:09+00:00 **worklane_assigned**: Assigned worklane#2054 to coordinator-155
-- 2026-06-08T10:41:09+00:00 **coordinator_prompt**: CPU and RAM are underused, but integration is backed up. Add integration or conflict-resolution support instead of more feature Developers.
+- 2026-06-08T10:43:03+00:00 **coordinator_decision**: Preserve current active owners; do not spawn duplicate feature or integration capacity until active owners report.
+- 2026-06-08T10:43:04+00:00 **terminal_agent_windows_closed**: Closed 645 terminal agent tmux windows
+- 2026-06-08T10:43:10+00:00 **terminal_agent_windows_closed**: Closed 645 terminal agent tmux windows
+- 2026-06-08T10:43:11+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-08T10:43:12+00:00 **terminal_agent_windows_closed**: Closed 645 terminal agent tmux windows
+- 2026-06-08T10:43:20+00:00 **terminal_agent_windows_closed**: Closed 645 terminal agent tmux windows
+- 2026-06-08T10:43:23+00:00 **terminal_agent_windows_closed**: Closed 645 terminal agent tmux windows
+- 2026-06-08T10:43:26+00:00 **test_gate_hard_blocker**: New failures appeared beyond the known-red quarantine: codegen::tests::c_assembly_non_local_assignment_families_share_assignment_owner_boundary, codegen::tests::generated_c_string_comparison_safety_uses_shared_pair_classifier
+- 2026-06-08T10:43:28+00:00 **agent_report**: coordinator-155 reported completed_capacity_preserved_existing_integration_support
+- 2026-06-08T10:43:28+00:00 **terminal_agent_windows_closed**: Closed 645 terminal agent tmux windows
+- 2026-06-08T10:43:30+00:00 **poke**: Queued message for developer-360
+- 2026-06-08T10:43:30+00:00 **poke_delivered**: Delivered poke to 1 agents
 
 ## Next steps
 Move next worklane forward: Drain live integration_failed endpoints and retire superseded rows
