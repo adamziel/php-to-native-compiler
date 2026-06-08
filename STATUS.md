@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T08:40:38+00:00
+Last generated: 2026-06-08T08:41:39+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -82,7 +82,9 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | architect-71 | Architect | crash | architect-71 |  |
 | architect-72 | Architect | crash | architect-72 |  |
 | architect-73 | Architect | crash | architect-73 |  |
-| architect-74 | Architect | running | architect-74 |  |
+| architect-74 | Architect | crash | architect-74 |  |
+| architect-75 | Architect | crash | architect-75 |  |
+| architect-76 | Architect | running | architect-76 |  |
 | architect-8 | Architect | crash | architect-8 |  |
 | architect-9 | Architect | crash | architect-9 |  |
 | auditor-1 | Auditor | stopped | auditor-1 |  |
@@ -599,21 +601,21 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 failed — tools/run-tests.sh (error=0, failed=5, passed=414, skipped=0)
 
 ## Resource samples
-Latest: CPU 19.19%, RAM 17.97%, disk free 96.12 GB.
+Latest: CPU 18.85%, RAM 18.1%, disk free 96.11 GB.
 
 ## Recent events
-- 2026-06-08T08:40:38+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: tests::native_constructor_allocation_invoke_carrier_cleans_up_failure_paths
-- 2026-06-08T08:40:38+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: codegen::tests::generated_c_string_comparison_safety_uses_shared_pair_classifier
-- 2026-06-08T08:40:38+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: codegen::tests::c_assembly_non_local_assignment_families_share_assignment_owner_boundary
-- 2026-06-08T08:40:37+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-100 tmux window
-- 2026-06-08T08:40:38+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-101 tmux window
-- 2026-06-08T08:40:38+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-102 tmux window
-- 2026-06-08T08:40:38+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-103 tmux window
-- 2026-06-08T08:40:38+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-104 tmux window
-- 2026-06-08T08:40:38+00:00 **poke**: Queued message for coordinator-127
-- 2026-06-08T08:40:38+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-105 tmux window
-- 2026-06-08T08:40:38+00:00 **poke_delivered**: Delivered poke to 1 agents
-- 2026-06-08T08:40:38+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-106 tmux window
+- 2026-06-08T08:41:35+00:00 **terminal_agent_window_closed**: Closed terminal integrator-13 tmux window
+- 2026-06-08T08:41:35+00:00 **terminal_agent_window_closed**: Closed terminal integrator-14 tmux window
+- 2026-06-08T08:41:35+00:00 **terminal_agent_window_closed**: Closed terminal integrator-2 tmux window
+- 2026-06-08T08:41:35+00:00 **terminal_agent_window_closed**: Closed terminal integrator-3 tmux window
+- 2026-06-08T08:41:35+00:00 **terminal_agent_window_closed**: Closed terminal integrator-4 tmux window
+- 2026-06-08T08:41:35+00:00 **terminal_agent_window_closed**: Closed terminal integrator-5 tmux window
+- 2026-06-08T08:41:35+00:00 **terminal_agent_window_closed**: Closed terminal integrator-6 tmux window
+- 2026-06-08T08:41:35+00:00 **terminal_agent_window_closed**: Closed terminal integrator-7 tmux window
+- 2026-06-08T08:41:36+00:00 **terminal_agent_window_closed**: Closed terminal integrator-8 tmux window
+- 2026-06-08T08:41:36+00:00 **terminal_agent_window_closed**: Closed terminal integrator-9 tmux window
+- 2026-06-08T08:41:39+00:00 **mcp**: Harness MCP tools exposed to Codex workers
+- 2026-06-08T08:41:39+00:00 **tmux**: Interactive support windows ready
 
 ## Next steps
 Move next worklane forward: Fix global test suite failures
