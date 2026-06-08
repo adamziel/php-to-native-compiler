@@ -906,8 +906,6 @@ failed — tools/run-tests.sh (error=0, failed=3, passed=416, skipped=0)
 Latest: CPU 90.38%, RAM 20.32%, disk free 0.39 GB.
 
 ## Recent events
-- 2026-06-08T19:20:31+00:00 **test_gate_hard_blocker**: New failures appeared beyond the known-red quarantine: abs_rejects_forms_outside_current_subset
-- 2026-06-08T19:20:33+00:00 **terminal_agent_windows_closed**: Closed 867 terminal agent tmux windows
 - 2026-06-08T19:20:33+00:00 **janitor**: Cleaned 0 tmp entries and 1 old prompt files
 - 2026-06-08T19:20:33+00:00 **resource_warning**: CPU or RAM stayed around 95%+; ran Janitor
 - 2026-06-08T19:20:33+00:00 **card_stage**: card#2054 development -> planned
@@ -918,6 +916,8 @@ Latest: CPU 90.38%, RAM 20.32%, disk free 0.39 GB.
 - 2026-06-08T19:20:39+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
 - 2026-06-08T19:20:40+00:00 **poke**: Queued message for developer-425
 - 2026-06-08T19:20:40+00:00 **poke_delivered**: Delivered poke to 1 agents
+- 2026-06-08T19:20:40+00:00 **poke**: Queued message for coordinator-272
+- 2026-06-08T19:20:40+00:00 **poke_delivered**: Delivered poke to 0 agents
 
 ## Next steps
 Move next worklane forward: Fix intl/openssl SKIPIF constants for PHPT rows without touching native-helper gate
