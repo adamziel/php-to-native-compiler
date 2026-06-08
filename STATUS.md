@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T08:55:15+00:00
+Last generated: 2026-06-08T08:55:44+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -154,7 +154,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-129 | Coordinator | success | coordinator-129 |  |
 | coordinator-13 | Coordinator | stopped | coordinator-13 |  |
 | coordinator-130 | Coordinator | success | coordinator-130 |  |
-| coordinator-131 | Coordinator | running | coordinator-131 |  |
+| coordinator-131 | Coordinator | success | coordinator-131 |  |
 | coordinator-14 | Coordinator | success | coordinator-14 |  |
 | coordinator-15 | Coordinator | stopped | coordinator-15 |  |
 | coordinator-16 | Coordinator | crash | coordinator-16 |  |
@@ -611,24 +611,24 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | 2023 | Resolve integration failure for card #2019: Fix global test suite failures | Conflict Resolver | integration-support | done | integrated | ready_fast_path | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=4, passed=415, skipped=0)
+failed — tools/run-tests.sh (error=0, failed=2, passed=417, skipped=0)
 
 ## Resource samples
-Latest: CPU 20.27%, RAM 19.7%, disk free 95.05 GB.
+Latest: CPU 100.0%, RAM 19.68%, disk free 76.17 GB.
 
 ## Recent events
-- 2026-06-08T08:55:14+00:00 **resolution_edit**: Applied mechanical restore of worktree/index to origin/master tree for worklane 2032 so branch tip can merge without replaying stale local-base changes.
-- 2026-06-08T08:55:13+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-83 tmux window
-- 2026-06-08T08:55:14+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-84 tmux window
-- 2026-06-08T08:55:14+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-85 tmux window
-- 2026-06-08T08:55:14+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-86 tmux window
-- 2026-06-08T08:55:15+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-87 tmux window
-- 2026-06-08T08:55:15+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-88 tmux window
-- 2026-06-08T08:55:15+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-89 tmux window
-- 2026-06-08T08:55:15+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-9 tmux window
-- 2026-06-08T08:55:15+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-90 tmux window
-- 2026-06-08T08:55:15+00:00 **mcp**: Harness MCP tools exposed to Codex workers
-- 2026-06-08T08:55:15+00:00 **tmux**: Interactive support windows ready
+- 2026-06-08T08:55:44+00:00 **terminal_agent_window_closed**: Closed terminal developer-276 tmux window
+- 2026-06-08T08:55:44+00:00 **terminal_agent_window_closed**: Closed terminal developer-277 tmux window
+- 2026-06-08T08:55:44+00:00 **terminal_agent_window_closed**: Closed terminal developer-278 tmux window
+- 2026-06-08T08:55:44+00:00 **terminal_agent_window_closed**: Closed terminal developer-279 tmux window
+- 2026-06-08T08:55:44+00:00 **terminal_agent_window_closed**: Closed terminal developer-28 tmux window
+- 2026-06-08T08:55:44+00:00 **terminal_agent_window_closed**: Closed terminal developer-280 tmux window
+- 2026-06-08T08:55:44+00:00 **terminal_agent_window_closed**: Closed terminal developer-281 tmux window
+- 2026-06-08T08:55:44+00:00 **terminal_agent_window_closed**: Closed terminal developer-282 tmux window
+- 2026-06-08T08:55:44+00:00 **terminal_agent_window_closed**: Closed terminal developer-283 tmux window
+- 2026-06-08T08:55:44+00:00 **terminal_agent_window_closed**: Closed terminal developer-284 tmux window
+- 2026-06-08T08:55:44+00:00 **mcp**: Harness MCP tools exposed to Codex workers
+- 2026-06-08T08:55:44+00:00 **tmux**: Interactive support windows ready
 
 ## Next steps
 Move next worklane forward: Resolve integration failure for card #1976: Fix card 1975 current-base native invoke parallel test failures
