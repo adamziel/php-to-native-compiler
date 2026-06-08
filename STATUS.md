@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T08:31:54+00:00
+Last generated: 2026-06-08T08:34:32+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -79,6 +79,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | architect-69 | Architect | crash | architect-69 |  |
 | architect-7 | Architect | crash | architect-7 |  |
 | architect-70 | Architect | stopped | architect-70 |  |
+| architect-71 | Architect | running | architect-71 |  |
 | architect-8 | Architect | crash | architect-8 |  |
 | architect-9 | Architect | crash | architect-9 |  |
 | auditor-1 | Auditor | stopped | auditor-1 |  |
@@ -141,6 +142,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-123 | Coordinator | success | coordinator-123 |  |
 | coordinator-124 | Coordinator | success | coordinator-124 |  |
 | coordinator-125 | Coordinator | stopped | coordinator-125 |  |
+| coordinator-126 | Coordinator | running | coordinator-126 |  |
 | coordinator-13 | Coordinator | stopped | coordinator-13 |  |
 | coordinator-14 | Coordinator | success | coordinator-14 |  |
 | coordinator-15 | Coordinator | stopped | coordinator-15 |  |
@@ -484,6 +486,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-32 | Developer | crash | developer-32 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-32 |
 | developer-320 | Developer | stopped | developer-320 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-320 |
 | developer-321 | Developer | stopped | developer-321 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-321 |
+| developer-322 | Developer | running | developer-322 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-322 |
 | developer-33 | Developer | crash | developer-33 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-33 |
 | developer-34 | Developer | crash | developer-34 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-34 |
 | developer-35 | Developer | crash | developer-35 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-35 |
@@ -590,21 +593,21 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 failed — tools/run-tests.sh (error=0, failed=4, passed=415, skipped=0)
 
 ## Resource samples
-Latest: CPU 22.27%, RAM 24.6%, disk free 115.21 GB.
+Latest: CPU 23.82%, RAM 16.98%, disk free 96.6 GB.
 
 ## Recent events
-- 2026-06-08T08:31:44+00:00 **terminal_agent_window_closed**: Closed terminal developer-3 tmux window
-- 2026-06-08T08:31:44+00:00 **terminal_agent_window_closed**: Closed terminal developer-30 tmux window
-- 2026-06-08T08:31:44+00:00 **terminal_agent_window_closed**: Closed terminal developer-300 tmux window
-- 2026-06-08T08:31:45+00:00 **terminal_agent_window_closed**: Closed terminal developer-301 tmux window
-- 2026-06-08T08:31:45+00:00 **terminal_agent_window_closed**: Closed terminal developer-302 tmux window
-- 2026-06-08T08:31:45+00:00 **terminal_agent_window_closed**: Closed terminal developer-303 tmux window
-- 2026-06-08T08:31:45+00:00 **terminal_agent_window_closed**: Closed terminal developer-304 tmux window
-- 2026-06-08T08:31:46+00:00 **terminal_agent_window_closed**: Closed terminal developer-305 tmux window
-- 2026-06-08T08:31:46+00:00 **terminal_agent_window_closed**: Closed terminal developer-306 tmux window
-- 2026-06-08T08:31:48+00:00 **stop**: Stopped harness runtime
-- 2026-06-08T08:31:53+00:00 **mcp**: Harness MCP tools exposed to Codex workers
-- 2026-06-08T08:31:54+00:00 **tmux**: Interactive support windows ready
+- 2026-06-08T08:34:31+00:00 **terminal_agent_window_closed**: Closed terminal developer-308 tmux window
+- 2026-06-08T08:34:31+00:00 **terminal_agent_window_closed**: Closed terminal developer-309 tmux window
+- 2026-06-08T08:34:31+00:00 **terminal_agent_window_closed**: Closed terminal developer-219 tmux window
+- 2026-06-08T08:34:31+00:00 **terminal_agent_window_closed**: Closed terminal developer-31 tmux window
+- 2026-06-08T08:34:31+00:00 **terminal_agent_window_closed**: Closed terminal developer-22 tmux window
+- 2026-06-08T08:34:31+00:00 **terminal_agent_window_closed**: Closed terminal developer-310 tmux window
+- 2026-06-08T08:34:31+00:00 **terminal_agent_window_closed**: Closed terminal developer-220 tmux window
+- 2026-06-08T08:34:31+00:00 **terminal_agent_window_closed**: Closed terminal developer-221 tmux window
+- 2026-06-08T08:34:31+00:00 **poke**: Queued message for coordinator-126
+- 2026-06-08T08:34:31+00:00 **terminal_agent_window_closed**: Closed terminal developer-311 tmux window
+- 2026-06-08T08:34:31+00:00 **poke_delivered**: Delivered poke to 1 agents
+- 2026-06-08T08:34:31+00:00 **terminal_agent_window_closed**: Closed terminal developer-312 tmux window
 
 ## Next steps
 Move next worklane forward: Provide next sanctioned Developer card after developer-319 worklane 2025
