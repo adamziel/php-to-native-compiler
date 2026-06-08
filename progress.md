@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T07:33:49+00:00
+Last generated: 2026-06-08T07:48:50+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -61,7 +61,10 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | architect-52 | Architect | crash | architect-52 |  |
 | architect-53 | Architect | crash | architect-53 |  |
 | architect-54 | Architect | crash | architect-54 |  |
-| architect-55 | Architect | running | architect-55 |  |
+| architect-55 | Architect | crash | architect-55 |  |
+| architect-56 | Architect | crash | architect-56 |  |
+| architect-57 | Architect | crash | architect-57 |  |
+| architect-58 | Architect | running | architect-58 |  |
 | architect-6 | Architect | crash | architect-6 |  |
 | architect-7 | Architect | crash | architect-7 |  |
 | architect-8 | Architect | crash | architect-8 |  |
@@ -115,7 +118,8 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-113 | Coordinator | success | coordinator-113 |  |
 | coordinator-114 | Coordinator | success | coordinator-114 |  |
 | coordinator-115 | Coordinator | crash | coordinator-115 |  |
-| coordinator-116 | Coordinator | running | coordinator-116 |  |
+| coordinator-116 | Coordinator | crash | coordinator-116 |  |
+| coordinator-117 | Coordinator | running | coordinator-117 |  |
 | coordinator-12 | Coordinator | stopped | coordinator-12 |  |
 | coordinator-13 | Coordinator | stopped | coordinator-13 |  |
 | coordinator-14 | Coordinator | success | coordinator-14 |  |
@@ -554,21 +558,21 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 failed — tools/run-tests.sh (error=0, failed=3, passed=416, skipped=0)
 
 ## Resource samples
-Latest: CPU 13.08%, RAM 17.88%, disk free 135.2 GB.
+Latest: CPU 14.37%, RAM 20.09%, disk free 117.98 GB.
 
 ## Recent events
-- 2026-06-08T07:33:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-97 tmux window
-- 2026-06-08T07:33:49+00:00 **terminal_agent_window_closed**: Closed terminal architect-17 tmux window
-- 2026-06-08T07:33:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-98 tmux window
-- 2026-06-08T07:33:49+00:00 **terminal_agent_window_closed**: Closed terminal architect-18 tmux window
-- 2026-06-08T07:33:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-99 tmux window
-- 2026-06-08T07:33:49+00:00 **terminal_agent_window_closed**: Closed terminal architect-19 tmux window
-- 2026-06-08T07:33:49+00:00 **terminal_agent_window_closed**: Closed terminal integrator-1 tmux window
-- 2026-06-08T07:33:49+00:00 **terminal_agent_window_closed**: Closed terminal architect-2 tmux window
-- 2026-06-08T07:33:49+00:00 **terminal_agent_window_closed**: Closed terminal integrator-10 tmux window
-- 2026-06-08T07:33:49+00:00 **terminal_agent_window_closed**: Closed terminal architect-20 tmux window
-- 2026-06-08T07:33:49+00:00 **terminal_agent_window_closed**: Closed terminal integrator-11 tmux window
-- 2026-06-08T07:33:49+00:00 **terminal_agent_window_closed**: Closed terminal integrator-12 tmux window
+- 2026-06-08T07:48:49+00:00 **terminal_agent_window_closed**: Closed terminal integrator-8 tmux window
+- 2026-06-08T07:48:49+00:00 **terminal_agent_window_closed**: Closed terminal architect-43 tmux window
+- 2026-06-08T07:48:49+00:00 **terminal_agent_window_closed**: Closed terminal integrator-9 tmux window
+- 2026-06-08T07:48:49+00:00 **terminal_agent_window_closed**: Closed terminal architect-44 tmux window
+- 2026-06-08T07:48:49+00:00 **spawn_deferred**: Deferred Architect work because architect-58 already has a card
+- 2026-06-08T07:48:49+00:00 **terminal_agent_window_closed**: Closed terminal architect-45 tmux window
+- 2026-06-08T07:48:49+00:00 **spawn_deferred**: Deferred Architect work because architect-58 already has a card
+- 2026-06-08T07:48:49+00:00 **terminal_agent_window_closed**: Closed terminal architect-46 tmux window
+- 2026-06-08T07:48:49+00:00 **spawn_deferred**: Deferred Architect work because architect-58 already has a card
+- 2026-06-08T07:48:49+00:00 **spawn_deferred**: Deferred Architect work because architect-58 already has a card
+- 2026-06-08T07:48:49+00:00 **terminal_agent_window_closed**: Closed terminal architect-47 tmux window
+- 2026-06-08T07:48:49+00:00 **spawn_deferred**: Deferred Architect work because architect-58 already has a card
 
 ## Next steps
 Move next worklane forward: Fix global test suite failures
