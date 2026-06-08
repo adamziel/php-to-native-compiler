@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T03:48:49+00:00
+Last generated: 2026-06-08T04:03:49+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -28,7 +28,8 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | architect-22 | Architect | crash | architect-22 |  |
 | architect-23 | Architect | crash | architect-23 |  |
 | architect-24 | Architect | crash | architect-24 |  |
-| architect-25 | Architect | running | architect-25 |  |
+| architect-25 | Architect | crash | architect-25 |  |
+| architect-26 | Architect | running | architect-26 |  |
 | architect-3 | Architect | crash | architect-3 |  |
 | architect-4 | Architect | crash | architect-4 |  |
 | architect-5 | Architect | crash | architect-5 |  |
@@ -43,6 +44,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | auditor-13 | Auditor | crash | auditor-13 |  |
 | auditor-14 | Auditor | crash | auditor-14 |  |
 | auditor-15 | Auditor | crash | auditor-15 |  |
+| auditor-16 | Auditor | crash | auditor-16 |  |
 | auditor-2 | Auditor | crash | auditor-2 |  |
 | auditor-3 | Auditor | stopped | auditor-3 |  |
 | auditor-4 | Auditor | stopped | auditor-4 |  |
@@ -148,8 +150,12 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-85 | Coordinator | crash | coordinator-85 |  |
 | coordinator-86 | Coordinator | success | coordinator-86 |  |
 | coordinator-87 | Coordinator | crash | coordinator-87 |  |
-| coordinator-88 | Coordinator | running | coordinator-88 |  |
+| coordinator-88 | Coordinator | crash | coordinator-88 |  |
+| coordinator-89 | Coordinator | crash | coordinator-89 |  |
 | coordinator-9 | Coordinator | success | coordinator-9 |  |
+| coordinator-90 | Coordinator | success | coordinator-90 |  |
+| coordinator-91 | Coordinator | success | coordinator-91 |  |
+| coordinator-92 | Coordinator | running | coordinator-92 |  |
 | developer-1 | Developer | stopped | developer-1 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-1 |
 | developer-10 | Developer | stopped | developer-10 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-10 |
 | developer-100 | Developer | crash | developer-100 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-100 |
@@ -433,6 +439,8 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1986 | Recover stale architect-25 and reconcile card 1902 | Coordinator | control-plane | planned | queued |  | 0.0 |
+| 1985 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
 | 1984 | Resolve integration failure for card #1975: Fix global test suite failures | Conflict Resolver | integration-support | done | integrated | ready_fast_path | 0.0 |
 | 1983 | Provide next sanctioned Developer lane after developer-261 worklane 1975 | Developer | implementation | planned | queued |  | 0.0 |
 | 1982 | Provide next concrete Developer card after developer-262 capacity check | Developer | implementation | planned | queued |  | 0.0 |
@@ -441,28 +449,26 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | 1979 | Investigate scheduler alert | Auditor | integration-support | done | done |  | 0.0 |
 | 1978 | Resolve integration failure for card #1974: Resolve integration failure for card #1962: Resolve integration failure for card #1960: Resolve integration failure for card #1905: Milestone 625 compiler-output CLI contract slice | Conflict Resolver | integration-support | done | integrated | ready_fast_path | 0.0 |
 | 1977 | Maintain Developer capacity after card 1974 | Developer | implementation | planned | queued |  | 0.0 |
-| 1976 | Fix card 1975 current-base native invoke parallel test failures | Developer | implementation | planned | queued |  | 0.0 |
-| 1975 | Fix global test suite failures | Developer | implementation | development | assigned | ready_fast_path | 0.0 |
 
 ## Tests
 failed — tools/run-tests.sh (error=0, failed=4, passed=415, skipped=0)
 
 ## Resource samples
-Latest: CPU 16.98%, RAM 55.09%, disk free 71.1 GB.
+Latest: CPU 11.27%, RAM 55.09%, disk free 54.08 GB.
 
 ## Recent events
-- 2026-06-08T03:48:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-53 tmux window
-- 2026-06-08T03:48:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-54 tmux window
-- 2026-06-08T03:48:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-55 tmux window
-- 2026-06-08T03:48:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-56 tmux window
-- 2026-06-08T03:48:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-57 tmux window
-- 2026-06-08T03:48:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-58 tmux window
-- 2026-06-08T03:48:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-59 tmux window
-- 2026-06-08T03:48:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-6 tmux window
-- 2026-06-08T03:48:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-60 tmux window
-- 2026-06-08T03:48:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-61 tmux window
-- 2026-06-08T03:48:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-62 tmux window
-- 2026-06-08T03:48:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-63 tmux window
+- 2026-06-08T04:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-215 tmux window
+- 2026-06-08T04:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-216 tmux window
+- 2026-06-08T04:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-217 tmux window
+- 2026-06-08T04:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-218 tmux window
+- 2026-06-08T04:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-219 tmux window
+- 2026-06-08T04:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-22 tmux window
+- 2026-06-08T04:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-220 tmux window
+- 2026-06-08T04:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-221 tmux window
+- 2026-06-08T04:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-222 tmux window
+- 2026-06-08T04:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-223 tmux window
+- 2026-06-08T04:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-224 tmux window
+- 2026-06-08T04:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-225 tmux window
 
 ## Next steps
-Move next worklane forward: Provide next sanctioned Developer lane after developer-261 worklane 1975
+Move next worklane forward: Recover stale architect-25 and reconcile card 1902
