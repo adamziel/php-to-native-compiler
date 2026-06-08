@@ -12,6 +12,39 @@
 | Full gate run | no |
 | Public score movement | none |
 
+## 2026-06-07 Revalidation Addendum
+
+Current owner `developer-111` was assigned lane 86 after `developer-105`
+ended without an accepted report. I preserved the existing integrated report
+artifact and rechecked whether the original evidence was still available for a
+focused accepted-vs-candidate replay.
+
+Current filesystem state:
+
+| Evidence | Current status |
+| --- | --- |
+| Integrated lane86 report artifact | present at `.harness/reports/focused-replay-standard-scalar-misc-dev117.md` |
+| Candidate run root under `/home/claude/supervised-php-compiler/state/logs/phpt-full-current-score-20260604T221205Z-php-src-f97ff59-public-56fe9377-source-56fe9377` | absent |
+| Accepted run root under `/home/claude/supervised-php-compiler/state/logs/phpt-full-current-score-20260604T135138Z-php-src-f97ff59-public-0b917f67-source-0b917f67` | absent |
+| Historical accepted release binary under `/tmp/phpt-full-current-score-20260604T135138Z-php-src-f97ff59-public-0b917f67-source-0b917f67/cargo-target/release/phpc` | absent |
+| Historical candidate release binary under `/tmp/phpt-full-current-score-20260604T221205Z-php-src-f97ff59-public-56fe9377-source-56fe9377/cargo-target/release/phpc` | absent |
+| Pinned php-src checkout | present at `/home/claude/php-src-phpt`, commit `f97ff597429a2fe633665a7e02d97c8077f9f90f` |
+| PHPT wrapper | present and executable at `/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper` |
+
+A shallow search under `/home/claude` found no relocated
+`regressions-from-latest-published-passes.txt`,
+`current-status.normalized.tsv`, or `all-results.txt` paths matching the
+`221205Z` or `135138Z` run ids. Because both the historical result artifacts
+and the historical binaries are absent, this revalidation could not recompute
+the 142-row accounting table or run an accepted-vs-candidate focused replay.
+
+The current deterministic conclusion remains the same as the original report:
+no standard scalar/misc semantic repair should start from this lane until the
+historical run roots are restored or approved replacement binaries are rebuilt
+for the accepted and candidate commits. The only current lane86 delta is this
+evidence-availability addendum; no compiler/runtime source files were edited
+and no full PHPT gate was run.
+
 ## Evidence Inputs
 
 | Evidence | Path or value |
@@ -221,6 +254,38 @@ PY
 No focused replay or full gate command was run. Focused replay requires restored
 or rebuilt historical accepted/candidate binaries. A full gate is outside this
 lane's scope.
+
+Developer-111 revalidation commands:
+
+```sh
+python3 - <<'PY'
+from pathlib import Path
+for label, p in [
+    ('accepted_bin', Path('/tmp/phpt-full-current-score-20260604T135138Z-php-src-f97ff59-public-0b917f67-source-0b917f67/cargo-target/release/phpc')),
+    ('candidate_bin', Path('/tmp/phpt-full-current-score-20260604T221205Z-php-src-f97ff59-public-56fe9377-source-56fe9377/cargo-target/release/phpc')),
+    ('candidate_regressions', Path('/home/claude/supervised-php-compiler/state/logs/phpt-full-current-score-20260604T221205Z-php-src-f97ff59-public-56fe9377-source-56fe9377/regressions-from-latest-published-passes.txt')),
+    ('candidate_status', Path('/home/claude/supervised-php-compiler/state/logs/phpt-full-current-score-20260604T221205Z-php-src-f97ff59-public-56fe9377-source-56fe9377/current-status.normalized.tsv')),
+    ('candidate_all_results', Path('/home/claude/supervised-php-compiler/state/logs/phpt-full-current-score-20260604T221205Z-php-src-f97ff59-public-56fe9377-source-56fe9377/all-results.txt')),
+    ('accepted_status', Path('/home/claude/supervised-php-compiler/state/logs/phpt-full-current-score-20260604T135138Z-php-src-f97ff59-public-0b917f67-source-0b917f67/current-status.normalized.tsv')),
+    ('php_src', Path('/home/claude/php-src-phpt')),
+    ('wrapper', Path('/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper')),
+]:
+    print(f'{label}\t{p}\texists={p.exists()}\texecutable={p.exists() and p.is_file() and (p.stat().st_mode & 0o111)!=0}')
+PY
+```
+
+```sh
+find /home/claude -maxdepth 5 \
+  \( -name 'regressions-from-latest-published-passes.txt' \
+     -o -name 'current-status.normalized.tsv' \
+     -o -name 'all-results.txt' \) 2>/dev/null |
+  rg '221205|135138|phpt-full-current-score'
+```
+
+```sh
+git -C /home/claude/php-src-phpt rev-parse HEAD
+test -x /home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper
+```
 
 ## SQLite Status
 

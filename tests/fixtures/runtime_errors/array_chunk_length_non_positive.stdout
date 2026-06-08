@@ -1,0 +1,4 @@
+Fatal error: Uncaught ValueError: array_chunk(): Argument #2 ($length) must be greater than 0 in tests/fixtures/runtime_errors/array_chunk_length_non_positive.php:3
+Stack trace:
+#0 {main}
+  thrown in tests/fixtures/runtime_errors/array_chunk_length_non_positive.php on line 3

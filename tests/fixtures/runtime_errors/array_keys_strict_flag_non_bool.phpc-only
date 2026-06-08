@@ -1,1 +1,1 @@
-project-specific diagnostic for unsupported non-bool array_keys strict flag
+project-specific diagnostic for unsupported non-coercible array_keys strict flag

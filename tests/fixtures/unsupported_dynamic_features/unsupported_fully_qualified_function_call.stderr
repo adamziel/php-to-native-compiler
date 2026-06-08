@@ -1,2 +1,0 @@
-parse error at 2:11: unsupported fully-qualified function call: leading global namespace function calls require exact function-table lookup, namespace fallback bypass, builtin/user dispatch, and native lowering
-

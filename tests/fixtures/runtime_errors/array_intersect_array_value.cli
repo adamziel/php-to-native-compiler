@@ -1,6 +1,5 @@
-exit: 1
+exit: 0
 stdout:
---- stdout end ---
+Array--- stdout end ---
 stderr:
-runtime error at tests/fixtures/runtime_errors/array_intersect_array_value.php:4:6: unsupported call array_intersect(): values must be scalar in the current subset, got array
 --- stderr end ---

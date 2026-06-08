@@ -1,6 +1,8 @@
-exit: 1
+exit: 255
 stdout:
---- stdout end ---
+Fatal error: Uncaught Error: Cannot instantiate abstract class Base in tests/fixtures/milestone755/abstract_class_instantiation_boundary.php:3
+Stack trace:
+#0 {main}
+  thrown in tests/fixtures/milestone755/abstract_class_instantiation_boundary.php on line 3--- stdout end ---
 stderr:
-runtime error at tests/fixtures/milestone755/abstract_class_instantiation_boundary.php:3:1: unsupported object instantiation for Base: abstract classes are not instantiable in the current subset
 --- stderr end ---

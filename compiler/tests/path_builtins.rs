@@ -266,23 +266,51 @@ echo $call("/a/b//c.php");
 
 #[test]
 fn dirname_reports_current_argument_boundaries() {
-    let non_string_path = run_source("<?php\necho dirname(42);\n").unwrap_err();
-    assert_eq!(non_string_path.phase, Phase::Runtime);
-    assert_eq!(non_string_path.line, 2);
-    assert_eq!(non_string_path.column, 6);
-    assert_eq!(
-        non_string_path.message,
-        "unsupported call dirname(): path argument must be string in the current subset, got int"
-    );
+    let scalar_path = run_source("<?php\necho dirname(42);\n").unwrap();
+    assert_eq!(scalar_path.stdout, ".");
+    assert_eq!(scalar_path.stderr, "");
+    assert_eq!(scalar_path.exit_code, 0);
 
-    let non_int_levels = run_source("<?php\necho dirname('/a', '2');\n").unwrap_err();
-    assert_eq!(non_int_levels.phase, Phase::Runtime);
-    assert_eq!(non_int_levels.line, 2);
-    assert_eq!(non_int_levels.column, 6);
+    let execution = run_source(
+        r#"<?php
+echo dirname("/a/b/c", "2"), "\n";
+echo dirname("/a/b/c", true), "\n";
+echo dirname("/a/b/c", 2.7), "\n";
+foreach ([null, false, "0", 0, -1] as $levels) {
+    try {
+        dirname("/a/b/c", $levels);
+    } catch (ValueError $e) {
+        echo $e::class, ":", $e->getMessage(), "\n";
+    }
+}
+foreach (["not-int", []] as $levels) {
+    try {
+        dirname("/a/b/c", $levels);
+    } catch (Throwable $e) {
+        echo $e::class, ":", $e->getMessage(), "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+
     assert_eq!(
-        non_int_levels.message,
-        "unsupported call dirname(): levels argument must be int in the current subset, got string"
+        execution.stdout,
+        concat!(
+            "/a\n",
+            "/a/b\n",
+            "/a\n",
+            "ValueError:dirname(): Argument #2 ($levels) must be greater than or equal to 1\n",
+            "ValueError:dirname(): Argument #2 ($levels) must be greater than or equal to 1\n",
+            "ValueError:dirname(): Argument #2 ($levels) must be greater than or equal to 1\n",
+            "ValueError:dirname(): Argument #2 ($levels) must be greater than or equal to 1\n",
+            "ValueError:dirname(): Argument #2 ($levels) must be greater than or equal to 1\n",
+            "TypeError:dirname(): Argument #2 ($levels) must be of type int, string given\n",
+            "TypeError:dirname(): Argument #2 ($levels) must be of type int, array given\n",
+        )
     );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

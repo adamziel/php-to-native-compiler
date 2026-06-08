@@ -1,0 +1,13 @@
+exit: 0
+stdout:
+Ada|five
+Ada|five
+negative|next
+negative|next
+Ada|five
+two|zero two
+Ada|five
+array_chunk(): Argument #3 ($preserve_keys) must be of type bool, array given
+array_chunk(): Argument #3 ($preserve_keys) must be of type bool, array given--- stdout end ---
+stderr:
+--- stderr end ---

@@ -1,6 +1,5 @@
-exit: 1
+exit: 0
 stdout:
 --- stdout end ---
 stderr:
-runtime error at tests/fixtures/runtime_errors/unsupported_array_key.php:2:11: invalid array key: bool keys are not supported; only null, int, and string keys are implemented
 --- stderr end ---

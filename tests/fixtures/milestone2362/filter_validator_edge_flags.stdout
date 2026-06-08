@@ -1,0 +1,15 @@
+int(-9223372036854775808)
+int(-1)
+bool(false)
+bool(true)
+int(268435456)
+int(1048576)
+bool(false)
+string(11) "185.85.0.29"
+bool(false)
+string(9) "64:ff9b::"
+bool(false)
+string(9) "224.0.0.0"
+bool(false)
+string(17) "http://test@[::1]"
+bad-domain-ok

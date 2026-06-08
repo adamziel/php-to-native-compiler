@@ -1,0 +1,4 @@
+Fatal error: Uncaught TypeError: Cannot access offset of type array on array in tests/fixtures/runtime_errors/array_key_exists_invalid_key.php:3
+Stack trace:
+#0 {main}
+  thrown in tests/fixtures/runtime_errors/array_key_exists_invalid_key.php on line 3

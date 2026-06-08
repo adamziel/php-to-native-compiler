@@ -55,6 +55,7 @@ pub struct EffectiveTraitConstant {
 struct ComposedTraitMethodName {
     declaring_trait_name: String,
     source_method_key: String,
+    applied_method_name: String,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -87,15 +88,73 @@ pub fn method_key(name: &str) -> String {
     name.to_ascii_lowercase()
 }
 
+pub fn is_php_trait_composition_fatal_message(message: &str) -> bool {
+    message.starts_with("An alias ")
+        || message.starts_with("A precedence rule ")
+        || message.starts_with("Trait method ")
+        || message.contains(" define the same property ")
+}
+
+fn trait_alias_missing_method_message(alias: &TraitMethodAliasDecl) -> String {
+    if let Some(trait_name) = alias.trait_name.as_deref() {
+        format!(
+            "An alias was defined for {}::{} but this method does not exist",
+            trait_name, alias.method_name
+        )
+    } else {
+        format!(
+            "An alias ({}) was defined for method {}(), but this method does not exist",
+            alias.alias, alias.method_name
+        )
+    }
+}
+
+fn trait_method_collision_message(
+    composing_name: &str,
+    loser_trait_name: &str,
+    loser_method_name: &str,
+    applied_method_name: &str,
+    winner_trait_name: &str,
+    winner_method_name: &str,
+) -> String {
+    format!(
+        "Trait method {loser_trait_name}::{loser_method_name} has not been applied as {composing_name}::{applied_method_name}, because of collision with {winner_trait_name}::{winner_method_name}"
+    )
+}
+
+fn trait_property_composition_message(
+    left_name: &str,
+    right_name: &str,
+    property_name: &str,
+    composing_name: &str,
+) -> String {
+    format!(
+        "{left_name} and {right_name} define the same property (${property_name}) in the composition of {composing_name}. However, the definition differs and is considered incompatible. Class was composed"
+    )
+}
+
 pub fn compose_class_effective_trait_methods(
     class: &ClassDecl,
     trait_lookup: &HashMap<String, Rc<TraitDecl>>,
 ) -> TraitSemanticResult<Vec<EffectiveTraitMethod>> {
     compose_effective_trait_methods_from_uses(
+        &class.name,
         &class.trait_uses,
         trait_lookup,
         &mut HashSet::new(),
         &declared_class_method_names(class),
+    )
+}
+
+pub fn compose_class_abstract_trait_method_requirements(
+    class: &ClassDecl,
+    trait_lookup: &HashMap<String, Rc<TraitDecl>>,
+) -> TraitSemanticResult<Vec<EffectiveTraitMethod>> {
+    compose_abstract_trait_method_requirements_from_uses(
+        &class.name,
+        &class.trait_uses,
+        trait_lookup,
+        &mut HashSet::new(),
     )
 }
 
@@ -125,9 +184,11 @@ pub fn compose_class_effective_trait_properties(
                 }
                 return Err(TraitSemanticError::new(
                     property.property.span,
-                    format!(
-                        "unsupported trait use: class {} and trait define incompatible property ${}",
-                        class.name, property.property.name
+                    trait_property_composition_message(
+                        &class.name,
+                        &property.declaring_trait_name,
+                        &property.property.name,
+                        &class.name,
                     ),
                 ));
             }
@@ -137,12 +198,11 @@ pub fn compose_class_effective_trait_properties(
                 }
                 return Err(TraitSemanticError::new(
                     property.property.span,
-                    format!(
-                        "unsupported trait use: trait property {}::${} conflicts with {}::${}; incompatible trait property definitions are not implemented",
-                        property.declaring_trait_name,
-                        property.property.name,
-                        existing.declaring_trait_name,
-                        property.property.name
+                    trait_property_composition_message(
+                        &existing.declaring_trait_name,
+                        &property.declaring_trait_name,
+                        &property.property.name,
+                        &class.name,
                     ),
                 ));
             }
@@ -226,10 +286,17 @@ fn compose_trait_methods_for_trait(
         })
         .collect::<Vec<_>>();
     methods.extend(compose_effective_trait_methods_from_uses(
+        &trait_decl.name,
         &trait_decl.trait_uses,
         trait_lookup,
         path,
         &declared_trait_method_names(trait_decl),
+    )?);
+    methods.extend(compose_abstract_trait_method_requirements_from_uses(
+        &trait_decl.name,
+        &trait_decl.trait_uses,
+        trait_lookup,
+        path,
     )?);
 
     path.remove(&key);
@@ -262,22 +329,27 @@ fn compose_trait_properties_for_trait(
                 if !trait_properties_are_compatible(direct_property, &property.property) {
                     return Err(TraitSemanticError::new(
                         direct_property.span,
-                        format!(
-                            "unsupported trait use: trait property {}::${} conflicts with {}::${}; incompatible trait property definitions are not implemented",
-                            trait_decl.name,
-                            direct_property.name,
-                            property.declaring_trait_name,
-                            property.property.name
+                        trait_property_composition_message(
+                            &trait_decl.name,
+                            &property.declaring_trait_name,
+                            &property.property.name,
+                            &trait_decl.name,
                         ),
                     ));
                 }
                 continue;
             }
-            insert_effective_trait_property(&mut properties, &mut composed, property)?;
+            insert_effective_trait_property(
+                &trait_decl.name,
+                &mut properties,
+                &mut composed,
+                property,
+            )?;
         }
     }
     for property in &trait_decl.properties {
         insert_effective_trait_property(
+            &trait_decl.name,
             &mut properties,
             &mut composed,
             EffectiveTraitProperty {
@@ -292,6 +364,7 @@ fn compose_trait_properties_for_trait(
 }
 
 fn insert_effective_trait_property(
+    composing_name: &str,
     properties: &mut Vec<EffectiveTraitProperty>,
     composed: &mut HashMap<String, EffectiveTraitProperty>,
     property: EffectiveTraitProperty,
@@ -303,12 +376,11 @@ fn insert_effective_trait_property(
         }
         return Err(TraitSemanticError::new(
             property.property.span,
-            format!(
-                "unsupported trait use: trait property {}::${} conflicts with {}::${}; incompatible trait property definitions are not implemented",
-                property.declaring_trait_name,
-                property.property.name,
-                existing.declaring_trait_name,
-                property.property.name
+            trait_property_composition_message(
+                &existing.declaring_trait_name,
+                &property.declaring_trait_name,
+                &property.property.name,
+                composing_name,
             ),
         ));
     }
@@ -383,6 +455,7 @@ fn insert_effective_trait_constant(
 }
 
 fn compose_effective_trait_methods_from_uses(
+    composing_name: &str,
     trait_uses: &[TraitUseDecl],
     trait_lookup: &HashMap<String, Rc<TraitDecl>>,
     path: &mut HashSet<String>,
@@ -413,13 +486,9 @@ fn compose_effective_trait_methods_from_uses(
                     .name
                     .eq_ignore_ascii_case(&alias.method_name)
             }) else {
-                let alias_trait_name = alias.trait_name.as_deref().unwrap_or(&trait_decl.name);
                 return Err(TraitSemanticError::new(
                     alias.span,
-                    format!(
-                        "unsupported trait use: trait alias {}::{} targets a missing method",
-                        alias_trait_name, alias.method_name
-                    ),
+                    trait_alias_missing_method_message(alias),
                 ));
             };
             aliases_by_method
@@ -429,6 +498,9 @@ fn compose_effective_trait_methods_from_uses(
         }
 
         for candidate in &trait_methods {
+            if candidate.method.is_abstract {
+                continue;
+            }
             let method_name_key = method_key(&candidate.method.function.name);
             if let Some(aliases) = aliases_by_method.remove(&method_name_key) {
                 for alias in aliases {
@@ -439,17 +511,15 @@ fn compose_effective_trait_methods_from_uses(
                     if alias_key == method_name_key
                         && alias.visibility != candidate.method.visibility
                     {
-                        let alias_trait_name =
-                            alias.trait_name.as_deref().unwrap_or(&trait_decl.name);
                         return Err(TraitSemanticError::new(
                             alias.span,
-                            format!(
-                                "unsupported trait use: trait alias {}::{} as {} conflicts with {}::{}",
-                                alias_trait_name,
-                                alias.method_name,
-                                alias.alias,
-                                candidate.declaring_trait_name,
-                                alias.alias
+                            trait_method_collision_message(
+                                composing_name,
+                                &candidate.declaring_trait_name,
+                                &candidate.method.function.name,
+                                &alias.alias,
+                                &candidate.declaring_trait_name,
+                                &candidate.method.function.name,
                             ),
                         ));
                     }
@@ -460,17 +530,15 @@ fn compose_effective_trait_methods_from_uses(
                             &method_name_key,
                         ) || alias.visibility != candidate.method.visibility
                         {
-                            let alias_trait_name =
-                                alias.trait_name.as_deref().unwrap_or(&trait_decl.name);
                             return Err(TraitSemanticError::new(
                                 alias.span,
-                                format!(
-                                    "unsupported trait use: trait alias {}::{} as {} conflicts with {}::{}",
-                                    alias_trait_name,
-                                    alias.method_name,
-                                    alias.alias,
-                                    existing.declaring_trait_name,
-                                    alias.alias
+                                trait_method_collision_message(
+                                    composing_name,
+                                    &candidate.declaring_trait_name,
+                                    &candidate.method.function.name,
+                                    &alias.alias,
+                                    &existing.declaring_trait_name,
+                                    &existing.applied_method_name,
                                 ),
                             ));
                         }
@@ -484,17 +552,15 @@ fn compose_effective_trait_methods_from_uses(
                                 &method_name_key,
                             )
                     }) {
-                        let alias_trait_name =
-                            alias.trait_name.as_deref().unwrap_or(&trait_decl.name);
                         return Err(TraitSemanticError::new(
                             alias.span,
-                            format!(
-                                "unsupported trait use: trait alias {}::{} as {} conflicts with {}::{}",
-                                alias_trait_name,
-                                alias.method_name,
-                                alias.alias,
-                                existing.declaring_trait_name,
-                                alias.alias
+                            trait_method_collision_message(
+                                composing_name,
+                                &candidate.declaring_trait_name,
+                                &candidate.method.function.name,
+                                &alias.alias,
+                                &existing.declaring_trait_name,
+                                &existing.method.function.name,
                             ),
                         ));
                     }
@@ -508,6 +574,7 @@ fn compose_effective_trait_methods_from_uses(
                         ComposedTraitMethodName {
                             declaring_trait_name: aliased.declaring_trait_name.clone(),
                             source_method_key: method_name_key.clone(),
+                            applied_method_name: aliased.method.function.name.clone(),
                         },
                     );
                     methods.push(aliased);
@@ -526,12 +593,13 @@ fn compose_effective_trait_methods_from_uses(
                 }
                 return Err(TraitSemanticError::new(
                     candidate.method.span,
-                    format!(
-                        "unsupported trait use: trait method {}::{} conflicts with {}::{}; add an insteadof adaptation or class override",
-                        candidate.declaring_trait_name,
-                        candidate.method.function.name,
-                        existing.declaring_trait_name,
-                        candidate.method.function.name
+                    trait_method_collision_message(
+                        composing_name,
+                        &candidate.declaring_trait_name,
+                        &candidate.method.function.name,
+                        &candidate.method.function.name,
+                        &existing.declaring_trait_name,
+                        &existing.applied_method_name,
                     ),
                 ));
             }
@@ -545,6 +613,7 @@ fn compose_effective_trait_methods_from_uses(
                 ComposedTraitMethodName {
                     declaring_trait_name: composed.declaring_trait_name.clone(),
                     source_method_key: method_name_key,
+                    applied_method_name: composed.method.function.name.clone(),
                 },
             );
             methods.push(composed);
@@ -552,6 +621,75 @@ fn compose_effective_trait_methods_from_uses(
     }
 
     Ok(methods)
+}
+
+fn compose_abstract_trait_method_requirements_from_uses(
+    _composing_name: &str,
+    trait_uses: &[TraitUseDecl],
+    trait_lookup: &HashMap<String, Rc<TraitDecl>>,
+    path: &mut HashSet<String>,
+) -> TraitSemanticResult<Vec<EffectiveTraitMethod>> {
+    let mut requirements = Vec::new();
+    let method_adaptations =
+        resolve_trait_method_adaptations_for_uses(trait_uses, trait_lookup, path)?;
+    let precedence_exclusions =
+        trait_precedence_exclusions_for_uses(trait_uses, trait_lookup, path)?;
+
+    for trait_use in trait_uses {
+        let used_trait_key = trait_key(&trait_use.name);
+        let trait_decl = resolve_trait_use_decl(trait_use, trait_lookup)?;
+        let trait_methods = compose_trait_methods_for_trait(trait_decl, trait_lookup, path)?;
+        let visibility_adaptations = trait_visibility_adaptations(
+            &trait_decl.name,
+            method_adaptations.visibility_adaptations_for(&used_trait_key),
+            &trait_methods,
+        )?;
+        let mut aliases_by_method: HashMap<String, Vec<_>> = HashMap::new();
+        for alias in method_adaptations.aliases_for(&used_trait_key) {
+            let Some(candidate) = trait_methods.iter().find(|candidate| {
+                candidate
+                    .method
+                    .function
+                    .name
+                    .eq_ignore_ascii_case(&alias.method_name)
+            }) else {
+                return Err(TraitSemanticError::new(
+                    alias.span,
+                    trait_alias_missing_method_message(alias),
+                ));
+            };
+            aliases_by_method
+                .entry(method_key(&candidate.method.function.name))
+                .or_default()
+                .push(alias);
+        }
+
+        for candidate in &trait_methods {
+            if !candidate.method.is_abstract {
+                continue;
+            }
+            let method_name_key = method_key(&candidate.method.function.name);
+            if let Some(aliases) = aliases_by_method.remove(&method_name_key) {
+                for alias in aliases {
+                    let mut aliased = candidate.clone();
+                    aliased.method.function.name = alias.alias.clone();
+                    aliased.method.visibility = alias.visibility;
+                    aliased.method.span = alias.span;
+                    requirements.push(aliased);
+                }
+            }
+            if precedence_exclusions.contains(&(used_trait_key.clone(), method_name_key.clone())) {
+                continue;
+            }
+            let mut requirement = candidate.clone();
+            if let Some(visibility) = visibility_adaptations.get(&method_name_key) {
+                requirement.method.visibility = *visibility;
+            }
+            requirements.push(requirement);
+        }
+    }
+
+    Ok(requirements)
 }
 
 fn resolve_trait_method_adaptations_for_uses(
@@ -569,6 +707,7 @@ fn resolve_trait_method_adaptations_for_uses(
                 path,
                 alias.trait_name.as_deref(),
                 &alias.method_name,
+                Some(&alias.alias),
                 alias.span,
                 "alias",
             )?;
@@ -586,6 +725,7 @@ fn resolve_trait_method_adaptations_for_uses(
                 path,
                 adaptation.trait_name.as_deref(),
                 &adaptation.method_name,
+                None,
                 adaptation.span,
                 "visibility adaptation",
             )?;
@@ -606,6 +746,7 @@ fn resolve_trait_method_adaptation_target_key(
     path: &mut HashSet<String>,
     explicit_trait_name: Option<&str>,
     method_name: &str,
+    alias_name: Option<&str>,
     span: Span,
     kind: &str,
 ) -> TraitSemanticResult<String> {
@@ -622,6 +763,7 @@ fn resolve_trait_method_adaptation_target_key(
         trait_lookup,
         path,
         method_name,
+        alias_name,
         span,
         kind,
     )
@@ -632,6 +774,7 @@ fn resolve_unqualified_trait_method_adaptation_target_key(
     trait_lookup: &HashMap<String, Rc<TraitDecl>>,
     path: &mut HashSet<String>,
     method_name: &str,
+    alias_name: Option<&str>,
     span: Span,
     kind: &str,
 ) -> TraitSemanticResult<String> {
@@ -651,6 +794,18 @@ fn resolve_unqualified_trait_method_adaptation_target_key(
     }
 
     match matches.as_slice() {
+        [] if kind == "alias" => Err(TraitSemanticError::new(
+            span,
+            if let Some(alias_name) = alias_name {
+                format!(
+                    "An alias ({alias_name}) was defined for method {method_name}(), but this method does not exist"
+                )
+            } else {
+                format!(
+                    "An alias was defined for method {method_name}(), but this method does not exist"
+                )
+            },
+        )),
         [] => Err(TraitSemanticError::new(
             span,
             format!(
@@ -658,6 +813,16 @@ fn resolve_unqualified_trait_method_adaptation_target_key(
             ),
         )),
         [(target_key, _)] => Ok(target_key.clone()),
+        _ if kind == "alias" => {
+            let first = &matches[0].1;
+            let second = &matches[1].1;
+            Err(TraitSemanticError::new(
+                span,
+                format!(
+                    "An alias was defined for method {method_name}(), which exists in both {first} and {second}. Use {first}::{method_name} or {second}::{method_name} to resolve the ambiguity"
+                ),
+            ))
+        }
         _ => {
             let trait_names = matches
                 .iter()
@@ -799,14 +964,21 @@ pub fn trait_properties_are_compatible(
     right: &ClassPropertyDecl,
 ) -> bool {
     left.visibility == right.visibility
+        && left.set_visibility == right.set_visibility
         && left.is_static == right.is_static
         && left.type_decl.as_ref().map(|decl| decl.text.as_str())
             == right.type_decl.as_ref().map(|decl| decl.text.as_str())
+        && left.is_abstract == right.is_abstract
+        && left.hooks == right.hooks
         && optional_default_exprs_are_compatible(left.default.as_ref(), right.default.as_ref())
 }
 
 pub fn trait_constants_are_compatible(left: &ClassConstantDecl, right: &ClassConstantDecl) -> bool {
-    left.visibility == right.visibility && default_exprs_are_compatible(&left.value, &right.value)
+    left.visibility == right.visibility
+        && left.is_final == right.is_final
+        && left.type_decl.as_ref().map(|decl| decl.text.as_str())
+            == right.type_decl.as_ref().map(|decl| decl.text.as_str())
+        && default_exprs_are_compatible(&left.value, &right.value)
 }
 
 fn optional_default_exprs_are_compatible(left: Option<&Expr>, right: Option<&Expr>) -> bool {
@@ -881,7 +1053,7 @@ fn trait_precedence_exclusions_for_uses(
                 return Err(TraitSemanticError::new(
                     precedence.span,
                     format!(
-                        "unsupported trait use: trait precedence {}::{} targets a missing winning method",
+                        "A precedence rule was defined for {}::{} but this method does not exist",
                         winner_trait.name, precedence.method_name
                     ),
                 ));
@@ -1105,9 +1277,10 @@ class Plugin {
 "#,
         );
         let alias_error = compose_class_effective_trait_methods(&class, &traits).unwrap_err();
-        assert!(alias_error
-            .message
-            .contains("unqualified trait alias label is ambiguous"));
+        assert_eq!(
+            alias_error.message,
+            "An alias was defined for method label(), which exists in both FirstLabel and SecondLabel. Use FirstLabel::label or SecondLabel::label to resolve the ambiguity"
+        );
 
         let (traits, class) = parsed_traits_and_class(
             r#"<?php
@@ -1162,7 +1335,10 @@ class Conflict { use A, B; }
 "#,
         );
         let conflict = compose_class_effective_trait_methods(&class, &traits).unwrap_err();
-        assert!(conflict.message.contains("conflicts"));
+        assert_eq!(
+            conflict.message,
+            "Trait method B::SAME has not been applied as Conflict::SAME, because of collision with A::same"
+        );
 
         let (traits, class) = parsed_traits_and_class(
             r#"<?php
@@ -1191,9 +1367,10 @@ class UsesCollidingAlias {
 "#,
         );
         let conflict = compose_class_effective_trait_methods(&class, &traits).unwrap_err();
-        assert!(conflict.message.contains(
-            "trait alias CollidingAlias::aliasSource as existing conflicts with CollidingAlias::existing"
-        ));
+        assert_eq!(
+            conflict.message,
+            "Trait method CollidingAlias::aliasSource has not been applied as UsesCollidingAlias::existing, because of collision with CollidingAlias::existing"
+        );
 
         let methods = effective_method_names(
             r#"<?php
@@ -1230,9 +1407,10 @@ class UsesSameNameVisibilityAlias {
         );
         let visibility_conflict =
             compose_class_effective_trait_methods(&class, &traits).unwrap_err();
-        assert!(visibility_conflict.message.contains(
-            "trait alias SameNameVisibilityAlias::existing as existing conflicts with SameNameVisibilityAlias::existing"
-        ));
+        assert_eq!(
+            visibility_conflict.message,
+            "Trait method SameNameVisibilityAlias::existing has not been applied as UsesSameNameVisibilityAlias::existing, because of collision with SameNameVisibilityAlias::existing"
+        );
     }
 
     #[test]
@@ -1295,7 +1473,10 @@ class UsesProperties { use FirstProperty, SecondProperty; }
 "#,
         );
         let property_error = compose_class_effective_trait_properties(&class, &traits).unwrap_err();
-        assert!(property_error.message.contains("trait property"));
+        assert_eq!(
+            property_error.message,
+            "FirstProperty and SecondProperty define the same property ($same) in the composition of UsesProperties. However, the definition differs and is considered incompatible. Class was composed"
+        );
 
         let (traits, class) = parsed_traits_and_class(
             r#"<?php
@@ -1306,7 +1487,10 @@ class UsesNestedProperty { use DirectProperty; }
         );
         let nested_property_error =
             compose_class_effective_trait_properties(&class, &traits).unwrap_err();
-        assert!(nested_property_error.message.contains("trait property"));
+        assert_eq!(
+            nested_property_error.message,
+            "DirectProperty and NestedProperty define the same property ($same) in the composition of DirectProperty. However, the definition differs and is considered incompatible. Class was composed"
+        );
 
         let (traits, class) = parsed_traits_and_class(
             r#"<?php

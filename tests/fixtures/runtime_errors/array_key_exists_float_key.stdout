@@ -1,0 +1,2 @@
+Deprecated: Implicit conversion from float 1.5 to int loses precision in tests/fixtures/runtime_errors/array_key_exists_float_key.php on line 3
+1

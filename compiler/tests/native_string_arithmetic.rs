@@ -30,9 +30,20 @@ echo "3e1" * 2;
     )
     .unwrap();
 
-    assert!(ir.contains("@printf(ptr @.fmt_int, i64 5)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_float, double 5.5)"), "{ir}");
-    assert!(ir.contains("@printf(ptr @.fmt_float, double 60.0)"), "{ir}");
+    assert!(
+        ir.contains("call %phpc.NativeScalarValue @phpc_native_int(i64 5)"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("call %phpc.NativeScalarValue @phpc_native_float(double 5.5)"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("call %phpc.NativeScalarValue @phpc_native_float(double 60.0)"),
+        "{ir}"
+    );
+    assert!(uses_native_diagnostic_result_output(&ir, 5), "{ir}");
+    assert!(!ir.contains("call i32 (ptr, ...) @printf"), "{ir}");
 
     for (source, tag) in [
         ("<?php\necho \"8\" % 3;\n", 4),
@@ -48,6 +59,15 @@ echo "3e1" * 2;
             "expected native value-operation tag {tag} for {source}:\n{ir}"
         );
     }
+}
+
+fn uses_native_diagnostic_result_output(ir: &str, minimum_sinks: usize) -> bool {
+    ir.contains("%phpc.NativeDiagnosticResult = type { ptr }")
+        && ir.contains("@phpc_native_diagnostic_result_from_value")
+        && ir
+            .matches("@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free")
+            .count()
+            >= minimum_sinks
 }
 
 #[test]

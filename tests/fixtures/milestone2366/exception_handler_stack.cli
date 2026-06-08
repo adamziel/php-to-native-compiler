@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone2366/exception_handler_stack.php

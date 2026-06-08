@@ -1,2 +1,1 @@
-parse error at 3:12: unsupported magic constant __TRAIT__: trait context evaluation requires original trait method context tracking through class composition, which is not implemented
 
