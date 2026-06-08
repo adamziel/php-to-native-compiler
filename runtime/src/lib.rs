@@ -12473,12 +12473,12 @@ pub unsafe extern "C" fn phpc_native_call_arguments_mark_finalized_variadic(
 /// runtime ABI and not yet freed.
 #[no_mangle]
 pub unsafe extern "C" fn phpc_native_call_arguments_free(handle: NativeCallArgumentsHandle) {
+    #[cfg(test)]
+    NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST.with(|count| count.set(count.get() + 1));
+
     if handle.ptr.is_null() {
         return;
     }
-
-    #[cfg(test)]
-    NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST.with(|count| count.set(count.get() + 1));
 
     let arguments = unsafe { Box::from_raw(handle.ptr) };
     for slot in arguments.slots {
@@ -50611,19 +50611,21 @@ mod tests {
     }
 
     #[test]
-    fn call_arguments_free_count_is_thread_local_for_parallel_tests() {
+    fn call_arguments_free_count_tracks_null_and_thread_local_for_parallel_tests() {
         reset_call_arguments_free_count_for_test();
         unsafe { phpc_native_call_arguments_free(NativeCallArgumentsHandle::null()) };
-        assert_eq!(call_arguments_free_count_for_test(), 0);
+        assert_eq!(call_arguments_free_count_for_test(), 1);
 
+        reset_call_arguments_free_count_for_test();
         unsafe { phpc_native_call_arguments_free(call_arguments_from_ints_for_test(&[1])) };
         assert_eq!(call_arguments_free_count_for_test(), 1);
 
         std::thread::spawn(|| {
             reset_call_arguments_free_count_for_test();
+            unsafe { phpc_native_call_arguments_free(NativeCallArgumentsHandle::null()) };
             unsafe { phpc_native_call_arguments_free(call_arguments_from_ints_for_test(&[2])) };
             unsafe { phpc_native_call_arguments_free(call_arguments_from_ints_for_test(&[3])) };
-            assert_eq!(call_arguments_free_count_for_test(), 2);
+            assert_eq!(call_arguments_free_count_for_test(), 3);
         })
         .join()
         .expect("thread-local free-count check should not panic");
