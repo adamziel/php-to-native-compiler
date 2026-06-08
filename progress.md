@@ -1,12 +1,12 @@
 # Harness Status
 
-Last generated: 2026-06-08T12:03:25+00:00
+Last generated: 2026-06-08T12:11:10+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
 
 ## Metric
-accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
+blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 
 ## Agents
 | name | role | current_status | tmux_window | worktree |
@@ -219,7 +219,9 @@ accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
 | coordinator-181 | Coordinator | success | coordinator-181 |  |
 | coordinator-182 | Coordinator | success | coordinator-182 |  |
 | coordinator-183 | Coordinator | success | coordinator-183 |  |
-| coordinator-184 | Coordinator | running | coordinator-184 |  |
+| coordinator-184 | Coordinator | crash | coordinator-184 |  |
+| coordinator-185 | Coordinator | success | coordinator-185 |  |
+| coordinator-186 | Coordinator | running | coordinator-186 |  |
 | coordinator-19 | Coordinator | stopped | coordinator-19 |  |
 | coordinator-2 | Coordinator | crash | coordinator-2 |  |
 | coordinator-20 | Coordinator | crash | coordinator-20 |  |
@@ -606,7 +608,8 @@ accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
 | developer-364 | Developer | running | developer-364 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-364 |
 | developer-365 | Developer | running | developer-365 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-365 |
 | developer-366 | Developer | running | developer-366 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-366 |
-| developer-367 | Developer | running | developer-367 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-367 |
+| developer-367 | Developer | stopped | developer-367 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-367 |
+| developer-368 | Developer | running | developer-368 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-368 |
 | developer-37 | Developer | stopped | developer-37 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-37 |
 | developer-38 | Developer | stopped | developer-38 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-38 |
 | developer-39 | Developer | stopped | developer-39 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-39 |
@@ -694,6 +697,7 @@ accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
 | integrator-23 | Integrator | crash | integrator-23 |  |
 | integrator-24 | Integrator | crash | integrator-24 |  |
 | integrator-25 | Integrator | crash | integrator-25 |  |
+| integrator-26 | Integrator | running | integrator-26 |  |
 | integrator-3 | Integrator | stopped | integrator-3 |  |
 | integrator-4 | Integrator | crash | integrator-4 |  |
 | integrator-5 | Integrator | success | integrator-5 |  |
@@ -705,36 +709,36 @@ accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2076 | Reconcile stale integration queue state after accepted row136/tail reports | Integrator | integration-support | development | assigned |  | 0.0 |
+| 2075 | Fix global test suite failures | Developer | implementation | development | assigned |  | 0.0 |
 | 2074 | card2027 codegen assertion cluster | Developer | implementation | development | assigned |  | 0.0 |
 | 2073 | card2027 runtime native lookup/invoke cluster | Developer | implementation | development | assigned |  | 0.0 |
 | 2072 | card2027 inventory: no-fail-fast failing target map | Developer | implementation | planned | queued |  | 0.0 |
-| 2071 | Split card2027 stabilization into parallel lanes | Coordinator | control-plane | development | assigned |  | 0.0 |
-| 2070 | Inventory remaining cargo test failures for card2027 parallel split | Developer | implementation | development | assigned |  | 0.0 |
+| 2071 | Split card2027 stabilization into parallel lanes | Coordinator | control-plane | planned | queued |  | 0.0 |
+| 2070 | Inventory remaining cargo test failures for card2027 parallel split | Developer | implementation | done | stale | ready_fast_path | 0.0 |
 | 2069 | Integrate ready row136 native scalar cast resolver | Integrator | integration-support | planned | queued |  | 0.0 |
 | 2068 | Resolve current-base native scalar cast integration conflict for row136 | Conflict Resolver | integration-support | integration | ready_for_integration | ready_fast_path | 0.0 |
 | 2067 | Resolve current-base similar_text integration conflict for row140 | Conflict Resolver | integration-support | done | stale |  | 0.0 |
-| 2066 | Resolve current-base str_replace replacement-array integration conflict for row1595 | Conflict Resolver | integration-support | done | stale |  | 0.0 |
-| 2065 | Resume card2064 integration tail disposition after integrator-23 crash | Integrator | integration-support | done | done |  | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=3, passed=416, skipped=0)
+failed — tools/run-tests.sh (error=0, failed=1, passed=418, skipped=0)
 
 ## Resource samples
-Latest: CPU 100.0%, RAM 19.12%, disk free 56.84 GB.
+Latest: CPU 27.36%, RAM 21.22%, disk free 21.09 GB.
 
 ## Recent events
-- 2026-06-08T12:03:03+00:00 **test_gate_quarantined_known_red**: 8 known failures are quarantined; metric acceptance remains blocked, but unrelated work may continue.
-- 2026-06-08T12:03:04+00:00 **terminal_agent_windows_closed**: Closed 685 terminal agent tmux windows
-- 2026-06-08T12:03:10+00:00 **terminal_agent_windows_closed**: Closed 685 terminal agent tmux windows
-- 2026-06-08T12:03:13+00:00 **test_gate_quarantined_known_red**: 9 known failures are quarantined; metric acceptance remains blocked, but unrelated work may continue.
-- 2026-06-08T12:03:14+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-08T12:03:13+00:00 **terminal_agent_windows_closed**: Closed 685 terminal agent tmux windows
-- 2026-06-08T12:03:23+00:00 **terminal_agent_windows_closed**: Closed 685 terminal agent tmux windows
-- 2026-06-08T12:03:23+00:00 **janitor**: Cleaned 0 tmp entries and 0 old prompt files
-- 2026-06-08T12:03:23+00:00 **resource_warning**: CPU or RAM stayed around 95%+; ran Janitor
-- 2026-06-08T12:03:24+00:00 **terminal_agent_windows_closed**: Closed 685 terminal agent tmux windows
-- 2026-06-08T12:03:25+00:00 **poke**: Queued message for developer-367
-- 2026-06-08T12:03:25+00:00 **poke_delivered**: Delivered poke to 1 agents
+- 2026-06-08T12:10:26+00:00 **agent_started**: Started coordinator-186 for Maintain Coordinator capacity
+- 2026-06-08T12:10:35+00:00 **terminal_agent_windows_closed**: Closed 688 terminal agent tmux windows
+- 2026-06-08T12:10:35+00:00 **terminal_agent_windows_closed**: Closed 688 terminal agent tmux windows
+- 2026-06-08T12:10:39+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-08T12:10:43+00:00 **terminal_agent_windows_closed**: Closed 688 terminal agent tmux windows
+- 2026-06-08T12:10:49+00:00 **terminal_agent_windows_closed**: Closed 688 terminal agent tmux windows
+- 2026-06-08T12:10:51+00:00 **terminal_agent_windows_closed**: Closed 688 terminal agent tmux windows
+- 2026-06-08T12:11:00+00:00 **terminal_agent_windows_closed**: Closed 688 terminal agent tmux windows
+- 2026-06-08T12:11:02+00:00 **terminal_agent_windows_closed**: Closed 688 terminal agent tmux windows
+- 2026-06-08T12:11:08+00:00 **coordinator_session_start**: Coordinator session started; reading required repository docs and preparing to inspect harness worklanes/agents/reports.
+- 2026-06-08T12:11:09+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-08T12:11:09+00:00 **terminal_agent_windows_closed**: Closed 688 terminal agent tmux windows
 
 ## Next steps
-Move next worklane forward: card2027 codegen assertion cluster
+Move next worklane forward: Reconcile stale integration queue state after accepted row136/tail reports
