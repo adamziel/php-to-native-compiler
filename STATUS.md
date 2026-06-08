@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T08:41:39+00:00
+Last generated: 2026-06-08T08:45:45+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -84,7 +84,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | architect-73 | Architect | crash | architect-73 |  |
 | architect-74 | Architect | crash | architect-74 |  |
 | architect-75 | Architect | crash | architect-75 |  |
-| architect-76 | Architect | running | architect-76 |  |
+| architect-76 | Architect | crash | architect-76 |  |
 | architect-8 | Architect | crash | architect-8 |  |
 | architect-9 | Architect | crash | architect-9 |  |
 | auditor-1 | Auditor | stopped | auditor-1 |  |
@@ -148,7 +148,8 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-124 | Coordinator | success | coordinator-124 |  |
 | coordinator-125 | Coordinator | stopped | coordinator-125 |  |
 | coordinator-126 | Coordinator | success | coordinator-126 |  |
-| coordinator-127 | Coordinator | running | coordinator-127 |  |
+| coordinator-127 | Coordinator | success | coordinator-127 |  |
+| coordinator-128 | Coordinator | stopped | coordinator-128 |  |
 | coordinator-13 | Coordinator | stopped | coordinator-13 |  |
 | coordinator-14 | Coordinator | success | coordinator-14 |  |
 | coordinator-15 | Coordinator | stopped | coordinator-15 |  |
@@ -494,7 +495,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-321 | Developer | stopped | developer-321 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-321 |
 | developer-322 | Developer | stopped | developer-322 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-322 |
 | developer-323 | Developer | crash | developer-323 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-323 |
-| developer-324 | Developer | running | developer-324 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-324 |
+| developer-324 | Developer | stopped | developer-324 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-324 |
 | developer-33 | Developer | crash | developer-33 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-33 |
 | developer-34 | Developer | crash | developer-34 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-34 |
 | developer-35 | Developer | crash | developer-35 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-35 |
@@ -574,6 +575,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | integrator-12 | Integrator | crash | integrator-12 |  |
 | integrator-13 | Integrator | crash | integrator-13 |  |
 | integrator-14 | Integrator | success | integrator-14 |  |
+| integrator-15 | Integrator | stopped | integrator-15 |  |
 | integrator-2 | Integrator | stopped | integrator-2 |  |
 | integrator-3 | Integrator | stopped | integrator-3 |  |
 | integrator-4 | Integrator | crash | integrator-4 |  |
@@ -586,6 +588,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2028 | Reconcile current integration backlog under known-red quarantine | Integrator | integration-support | development | assigned |  | 0.0 |
 | 2027 | Fix global test suite failures | Developer | implementation | development | assigned |  | 0.0 |
 | 2026 | Provide next sanctioned Developer card after developer-319 worklane 2025 | Developer | implementation | planned | queued |  | 0.0 |
 | 2025 | Resolve integration failure for card #2019: Fix global test suite failures | Conflict Resolver | integration-support | done | integrated |  | 0.0 |
@@ -595,27 +598,26 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | 2021 | Assign concrete Developer worklane after developer-313 capacity placeholder 1966 | Developer | implementation | planned | queued |  | 0.0 |
 | 2020 | Provide next sanctioned Developer card after developer-312 capacity placeholder lane 1963 | Developer | implementation | planned | queued |  | 0.0 |
 | 2019 | Fix global test suite failures | Developer | implementation | done | integrated | ready_fast_path | 0.0 |
-| 2018 | Fix current-origin array_find_family arity boundary | Developer | implementation | planned | queued |  | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=5, passed=414, skipped=0)
+failed — tools/run-tests.sh (error=0, failed=3, passed=416, skipped=0)
 
 ## Resource samples
-Latest: CPU 18.85%, RAM 18.1%, disk free 96.11 GB.
+Latest: CPU 15.39%, RAM 17.33%, disk free 96.01 GB.
 
 ## Recent events
-- 2026-06-08T08:41:35+00:00 **terminal_agent_window_closed**: Closed terminal integrator-13 tmux window
-- 2026-06-08T08:41:35+00:00 **terminal_agent_window_closed**: Closed terminal integrator-14 tmux window
-- 2026-06-08T08:41:35+00:00 **terminal_agent_window_closed**: Closed terminal integrator-2 tmux window
-- 2026-06-08T08:41:35+00:00 **terminal_agent_window_closed**: Closed terminal integrator-3 tmux window
-- 2026-06-08T08:41:35+00:00 **terminal_agent_window_closed**: Closed terminal integrator-4 tmux window
-- 2026-06-08T08:41:35+00:00 **terminal_agent_window_closed**: Closed terminal integrator-5 tmux window
-- 2026-06-08T08:41:35+00:00 **terminal_agent_window_closed**: Closed terminal integrator-6 tmux window
-- 2026-06-08T08:41:35+00:00 **terminal_agent_window_closed**: Closed terminal integrator-7 tmux window
-- 2026-06-08T08:41:36+00:00 **terminal_agent_window_closed**: Closed terminal integrator-8 tmux window
-- 2026-06-08T08:41:36+00:00 **terminal_agent_window_closed**: Closed terminal integrator-9 tmux window
-- 2026-06-08T08:41:39+00:00 **mcp**: Harness MCP tools exposed to Codex workers
-- 2026-06-08T08:41:39+00:00 **tmux**: Interactive support windows ready
+- 2026-06-08T08:45:41+00:00 **terminal_agent_window_closed**: Closed terminal integrator-14 tmux window
+- 2026-06-08T08:45:41+00:00 **terminal_agent_window_closed**: Closed terminal integrator-2 tmux window
+- 2026-06-08T08:45:41+00:00 **terminal_agent_window_closed**: Closed terminal integrator-3 tmux window
+- 2026-06-08T08:45:41+00:00 **terminal_agent_window_closed**: Closed terminal integrator-4 tmux window
+- 2026-06-08T08:45:41+00:00 **terminal_agent_window_closed**: Closed terminal integrator-5 tmux window
+- 2026-06-08T08:45:41+00:00 **terminal_agent_window_closed**: Closed terminal integrator-6 tmux window
+- 2026-06-08T08:45:41+00:00 **terminal_agent_window_closed**: Closed terminal integrator-7 tmux window
+- 2026-06-08T08:45:41+00:00 **terminal_agent_window_closed**: Closed terminal integrator-8 tmux window
+- 2026-06-08T08:45:41+00:00 **terminal_agent_window_closed**: Closed terminal integrator-9 tmux window
+- 2026-06-08T08:45:44+00:00 **stop**: Stopped harness runtime
+- 2026-06-08T08:45:45+00:00 **mcp**: Harness MCP tools exposed to Codex workers
+- 2026-06-08T08:45:45+00:00 **tmux**: Interactive support windows ready
 
 ## Next steps
-Move next worklane forward: Fix global test suite failures
+Move next worklane forward: Reconcile current integration backlog under known-red quarantine
