@@ -1,4 +1,3 @@
-$ phpc run tests/fixtures/milestone2333/disk_space_stringable_directory.php
 exit: 0
 stdout:
 free-object
@@ -6,7 +5,6 @@ alias-object
 total-object
 plain-object-caught
 array-caught
-diskfreespace(): Argument #1 ($directory) must not contain any null bytes
---- stdout end ---
+diskfreespace(): Argument #1 ($directory) must not contain any null bytes--- stdout end ---
 stderr:
 --- stderr end ---
