@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T08:34:32+00:00
+Last generated: 2026-06-08T08:35:06+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -79,7 +79,8 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | architect-69 | Architect | crash | architect-69 |  |
 | architect-7 | Architect | crash | architect-7 |  |
 | architect-70 | Architect | stopped | architect-70 |  |
-| architect-71 | Architect | running | architect-71 |  |
+| architect-71 | Architect | crash | architect-71 |  |
+| architect-72 | Architect | running | architect-72 |  |
 | architect-8 | Architect | crash | architect-8 |  |
 | architect-9 | Architect | crash | architect-9 |  |
 | auditor-1 | Auditor | stopped | auditor-1 |  |
@@ -590,24 +591,24 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | 2017 | Fix current global-suite native lookup-plus-invoke failures | Developer | implementation | planned | queued |  | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=4, passed=415, skipped=0)
+failed — tools/run-tests.sh (error=0, failed=3, passed=416, skipped=0)
 
 ## Resource samples
-Latest: CPU 23.82%, RAM 16.98%, disk free 96.6 GB.
+Latest: CPU 18.18%, RAM 16.93%, disk free 96.6 GB.
 
 ## Recent events
-- 2026-06-08T08:34:32+00:00 **terminal_agent_window_closed**: Closed terminal developer-226 tmux window
-- 2026-06-08T08:34:32+00:00 **terminal_agent_window_closed**: Closed terminal developer-319 tmux window
-- 2026-06-08T08:34:32+00:00 **terminal_agent_window_closed**: Closed terminal developer-227 tmux window
-- 2026-06-08T08:34:32+00:00 **terminal_agent_window_closed**: Closed terminal developer-32 tmux window
-- 2026-06-08T08:34:32+00:00 **terminal_agent_window_closed**: Closed terminal developer-228 tmux window
-- 2026-06-08T08:34:32+00:00 **terminal_agent_window_closed**: Closed terminal developer-320 tmux window
-- 2026-06-08T08:34:32+00:00 **terminal_agent_window_closed**: Closed terminal developer-229 tmux window
-- 2026-06-08T08:34:32+00:00 **terminal_agent_window_closed**: Closed terminal developer-321 tmux window
-- 2026-06-08T08:34:32+00:00 **terminal_agent_window_closed**: Closed terminal developer-33 tmux window
-- 2026-06-08T08:34:32+00:00 **poke**: Queued message for developer-322
-- 2026-06-08T08:34:32+00:00 **terminal_agent_window_closed**: Closed terminal developer-34 tmux window
-- 2026-06-08T08:34:32+00:00 **poke_delivered**: Delivered poke to 1 agents
+- 2026-06-08T08:35:05+00:00 **terminal_agent_window_closed**: Closed terminal developer-310 tmux window
+- 2026-06-08T08:35:05+00:00 **terminal_agent_window_closed**: Closed terminal developer-269 tmux window
+- 2026-06-08T08:35:05+00:00 **terminal_agent_window_closed**: Closed terminal developer-311 tmux window
+- 2026-06-08T08:35:05+00:00 **terminal_agent_window_closed**: Closed terminal developer-27 tmux window
+- 2026-06-08T08:35:05+00:00 **terminal_agent_window_closed**: Closed terminal developer-312 tmux window
+- 2026-06-08T08:35:05+00:00 **terminal_agent_window_closed**: Closed terminal developer-270 tmux window
+- 2026-06-08T08:35:05+00:00 **terminal_agent_window_closed**: Closed terminal developer-313 tmux window
+- 2026-06-08T08:35:05+00:00 **terminal_agent_window_closed**: Closed terminal developer-271 tmux window
+- 2026-06-08T08:35:05+00:00 **poke**: Queued message for coordinator-126
+- 2026-06-08T08:35:05+00:00 **terminal_agent_window_closed**: Closed terminal developer-314 tmux window
+- 2026-06-08T08:35:05+00:00 **poke_delivered**: Delivered poke to 1 agents
+- 2026-06-08T08:35:05+00:00 **terminal_agent_window_closed**: Closed terminal developer-315 tmux window
 
 ## Next steps
 Move next worklane forward: Provide next sanctioned Developer card after developer-319 worklane 2025
