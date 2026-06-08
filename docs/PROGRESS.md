@@ -1,5 +1,21 @@
 # Progress Log
 
+## 2026-06-08
+
+Implemented:
+
+- Repaired the `php_runtime` runtime-ABI regression expectations for current
+  byte-backed PHP string values, core class/reflection metadata, typed
+  static-property reference diagnostics, and parallel Rust test execution.
+  Non-UTF-8 native string handles now remain documented as successful
+  byte-backed `Value::BinaryString` values, while null string handles and
+  malformed raw byte inputs stay on the diagnostic path. The test-only native
+  call-arguments free counter is now thread-local and ignores null handles, so
+  parallel invoke-helper tests no longer race each other's reset/count windows.
+  Focused verification used `cargo test -q -p php_runtime
+  native_constructor_allocation_invoke_carrier_cleans_up_failure_paths`,
+  `cargo test -q -p php_runtime invoke`, and `cargo test -q -p php_runtime`.
+
 ## 2026-05-27
 
 Implemented:
@@ -6452,13 +6468,14 @@ Implemented:
   `phpc_native_value_from_string_with_diagnostic`,
   diagnostic message length/clone helpers, and diagnostic release. The helper
   preserves the existing null value-handle failure shape while optionally
-  returning stable diagnostic message bytes for null string handles and
-  non-UTF-8 native string payloads. The deterministic native runtime ABI probe
-  and 32-bit snapshot now declare the diagnostic helpers and include a failing
-  string-to-value conversion path. Normal generated `--emit-ir` output still
-  uses the existing non-diagnostic helper path and does not branch on helper
-  failures. This does not add linked native execution, binary PHP string value
-  handles, diagnostics for stdout writes or arbitrary runtime failures,
+  returning stable diagnostic message bytes for null string handles. Later
+  byte-backed PHP string support moved non-UTF-8 native string payloads onto a
+  successful `Value::BinaryString` path instead of this diagnostic path. The
+  deterministic native runtime ABI probe and 32-bit snapshot now declare the
+  diagnostic helpers and include a failing string-to-value conversion path.
+  Normal generated `--emit-ir` output still uses the existing non-diagnostic
+  helper path and does not branch on helper failures. This does not add linked
+  native execution, diagnostics for stdout writes or arbitrary runtime failures,
   request-state handles, array/object/resource/reference ABI shapes, WordPress
   host-state ABI, C fallback assembly helper calls, or production lowering that
   consumes diagnostics handles. Focused verification used

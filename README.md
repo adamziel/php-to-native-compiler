@@ -936,13 +936,14 @@ The current native path is focused on straight-line scalar lowering:
   selected constant-existence checks
 
 The native runtime ABI has an early helper surface for scalar echo conversion,
-owned byte buffers, opaque copied PHP string handles, and a bounded valid-UTF-8
-string-handle-to-runtime-value bridge with diagnostic handles for that
-conversion's null-handle and non-UTF-8 failure cases. It also exposes the first
-nullable native array handle slice: null array handles, allocated empty array
-handles, length reads, and handle free. Object, resource, and reference handles
-remain null-only opaque shapes for future native storage work. The deterministic
-probe includes string-to-value diagnostic message ownership/reporting and the
+owned byte buffers, opaque copied PHP string handles, and a bounded
+string-handle-to-runtime-value bridge that preserves arbitrary byte payloads as
+byte-backed PHP strings. Diagnostic handles cover that conversion's null-handle
+and malformed raw byte-input failure cases. It also exposes the first nullable
+native array handle slice: null array handles, allocated empty array handles,
+length reads, and handle free. Object, resource, and reference handles remain
+null-only opaque shapes for future native storage work. The deterministic probe
+includes string-to-value diagnostic message ownership/reporting and the
 empty-array handle length/free path. Normal generated LLVM now uses the
 string/value ABI for a narrow output path: statement-form `echo` and `print` of
 a direct compile-time string value or documented selected string pointer call
