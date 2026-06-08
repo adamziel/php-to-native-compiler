@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T18:10:19+00:00
+Last generated: 2026-06-08T18:25:18+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -110,7 +110,8 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | auditor-21 | Auditor | success | auditor-21 |  |
 | auditor-22 | Auditor | success | auditor-22 |  |
 | auditor-23 | Auditor | crash | auditor-23 |  |
-| auditor-24 | Auditor | running | auditor-24 |  |
+| auditor-24 | Auditor | success | auditor-24 |  |
+| auditor-25 | Auditor | success | auditor-25 |  |
 | auditor-3 | Auditor | stopped | auditor-3 |  |
 | auditor-4 | Auditor | stopped | auditor-4 |  |
 | auditor-5 | Auditor | crash | auditor-5 |  |
@@ -875,36 +876,36 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2140 | Recover idle coordinator-270 and force current-base metric path | Coordinator | control-plane | planned | queued |  | 0.0 |
+| 2139 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
+| 2138 | Resolve developer-419 stale support lane | Coordinator | control-plane | planned | queued |  | 0.0 |
 | 2137 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
-| 2136 | Investigate scheduler alert | Auditor | integration-support | development | assigned |  | 0.0 |
+| 2136 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
 | 2135 | Read-only current-base reconciliation for card2131 red gate | Conflict Resolver | integration-support | done | integrated | ready_fast_path | 0.0 |
 | 2134 | Assign next sanctioned Developer card after card2075 read-only support | Developer | implementation | done | stale |  | 0.0 |
 | 2133 | Assign next sanctioned Developer card after worklane 2130 report | Developer | implementation | done | stale |  | 0.0 |
 | 2132 | Assign next sanctioned Developer card after worklane2117 report | Developer | implementation | done | stale |  | 0.0 |
 | 2131 | Fix global test suite failures | Developer | implementation | development | assigned |  | 0.0 |
-| 2130 | Read-only verify card2075 runtime free-count dirty diff | Conflict Resolver | integration-support | done | integrated | ready_fast_path | 0.0 |
-| 2129 | Assign next sanctioned Developer card after card2075 read-only support | Developer | implementation | done | stale |  | 0.0 |
-| 2128 | Dispose requeued already-integrated cleanup rows 2125 and 2126 | Integrator | integration-support | planned | queued |  | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=5, passed=414, skipped=0)
+failed — tools/run-tests.sh (error=0, failed=4, passed=415, skipped=0)
 
 ## Resource samples
-Latest: CPU 14.47%, RAM 20.03%, disk free 29.76 GB.
+Latest: CPU 12.58%, RAM 19.83%, disk free 29.72 GB.
 
 ## Recent events
-- 2026-06-08T18:09:36+00:00 **worklane_assigned**: Assigned worklane#2136 to auditor-24
-- 2026-06-08T18:09:36+00:00 **agent_started**: Started auditor-24 for Investigate scheduler alert
-- 2026-06-08T18:09:38+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-08T18:09:46+00:00 **terminal_agent_windows_closed**: Closed 855 terminal agent tmux windows
-- 2026-06-08T18:09:46+00:00 **worklane_created**: Investigate scheduler alert
-- 2026-06-08T18:09:46+00:00 **auditor_prompt_deferred**: 1 agents appear idle for more than 30 minutes: developer-420. Diagnose and force progress toward the metric.
-- 2026-06-08T18:09:48+00:00 **terminal_agent_windows_closed**: Closed 855 terminal agent tmux windows
-- 2026-06-08T18:09:56+00:00 **terminal_agent_windows_closed**: Closed 855 terminal agent tmux windows
-- 2026-06-08T18:10:04+00:00 **terminal_agent_windows_closed**: Closed 855 terminal agent tmux windows
-- 2026-06-08T18:10:07+00:00 **terminal_agent_windows_closed**: Closed 855 terminal agent tmux windows
-- 2026-06-08T18:10:08+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-08T18:10:15+00:00 **audit_started**: Auditor started card 2136 scheduler-alert investigation for idle developer-419.
+- 2026-06-08T18:24:38+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-08T18:24:41+00:00 **terminal_agent_windows_closed**: Closed 856 terminal agent tmux windows
+- 2026-06-08T18:24:43+00:00 **agent_report**: auditor-25 reported audit_complete_action_required
+- 2026-06-08T18:24:46+00:00 **terminal_agent_windows_closed**: Closed 856 terminal agent tmux windows
+- 2026-06-08T18:24:52+00:00 **terminal_agent_windows_closed**: Closed 856 terminal agent tmux windows
+- 2026-06-08T18:24:52+00:00 **card_stage**: card#2139 development -> planned
+- 2026-06-08T18:24:52+00:00 **card_repair**: Requeued 1 cards owned by terminal workers
+- 2026-06-08T18:25:01+00:00 **terminal_agent_windows_closed**: Closed 857 terminal agent tmux windows
+- 2026-06-08T18:25:03+00:00 **terminal_agent_windows_closed**: Closed 857 terminal agent tmux windows
+- 2026-06-08T18:25:08+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-08T18:25:13+00:00 **terminal_agent_windows_closed**: Closed 857 terminal agent tmux windows
+- 2026-06-08T18:25:17+00:00 **terminal_agent_windows_closed**: Closed 857 terminal agent tmux windows
 
 ## Next steps
-Move next worklane forward: Investigate scheduler alert
+Move next worklane forward: Recover idle coordinator-270 and force current-base metric path
