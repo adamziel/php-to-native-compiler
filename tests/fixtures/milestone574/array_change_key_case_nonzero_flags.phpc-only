@@ -1,0 +1,1 @@
+phpc-only: pinned PHPT target rejects array_change_key_case() integer flags outside CASE_LOWER/CASE_UPPER while the local system PHP comparison baseline still accepts generic nonzero flags as uppercase.

@@ -8,6 +8,7 @@ use php_compiler::{emit_asm_source, emit_ir_source, run_source};
 const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
 const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound assignment outside lowerable direct variables, null coalescing assignment, increment/decrement, non-direct assignment expressions, direct variable unset, object property unset, static property unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
 const LLVM_REFERENCE_ASSIGNMENT_REJECTION: &str = "LLVM reference-assignment lowering rejects direct variable, array-offset, object-property, function-call, method-call, static-call, magic __get, and ArrayAccess reference sources or targets until native reference containers, alias-aware symbol tables, copy-on-write, object/property alias roots, and exact native error behavior exist; phpc run handles current bounded reference-assignment behavior";
+const LLVM_NONLOCAL_UNSET_REJECTION: &str = "LLVM native array non-local unset lowering rejects object, dynamic-object, non-direct object, and static property unsets until non-local owner cells, magic __unset dispatch, typed/static property state, references/copy-on-write, and exact diagnostics share one unset owner contract; local variables and native array offset unsets use their shared native lvalue unset contracts";
 
 #[test]
 fn phpc_run_still_handles_current_mutation_subset() {
@@ -81,19 +82,37 @@ echo $storage;
 
 #[test]
 fn emit_ir_rejects_mutation_forms_with_specific_boundary() {
-    for source in [
-        "<?php\n$value = null;\n$value ??= 2;\n",
-        "<?php\n$value = 1;\n$value++;\n",
-        "<?php\n$value = null;\necho ($value ??= 2);\n",
-        "<?php\n$value = 1;\necho ++$value;\n",
-        "<?php\n$value = 1;\nunset($value);\n",
-        "<?php\nunset(Box::$cache);\n",
-        "<?php\n$left = 1;\n$right = 2;\nunset($left, $right);\n",
+    for (source, expected) in [
+        (
+            "<?php\n$value = null;\n$value ??= 2;\n",
+            LLVM_MUTATION_REJECTION,
+        ),
+        ("<?php\n$value = 1;\n$value++;\n", LLVM_MUTATION_REJECTION),
+        (
+            "<?php\n$value = null;\necho ($value ??= 2);\n",
+            LLVM_MUTATION_REJECTION,
+        ),
+        (
+            "<?php\n$value = 1;\necho ++$value;\n",
+            LLVM_MUTATION_REJECTION,
+        ),
+        (
+            "<?php\n$value = 1;\nunset($value);\n",
+            LLVM_MUTATION_REJECTION,
+        ),
+        (
+            "<?php\nunset(Box::$cache);\n",
+            LLVM_NONLOCAL_UNSET_REJECTION,
+        ),
+        (
+            "<?php\n$left = 1;\n$right = 2;\nunset($left, $right);\n",
+            LLVM_MUTATION_REJECTION,
+        ),
     ] {
         let error = emit_ir_source(source).unwrap_err();
 
         assert_eq!(error.phase, Phase::Codegen);
-        assert_eq!(error.message, LLVM_MUTATION_REJECTION);
+        assert_eq!(error.message, expected);
     }
 }
 
@@ -109,10 +128,9 @@ fn emit_ir_lowers_direct_variable_compound_assignment_values() {
         "direct variable compound assignment statements and expressions should reuse primitive binary lowering:\n{ir}"
     );
     assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 %tmp0)")
-            && ir.matches("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 18)")
-                .count()
-                >= 2,
+        ir.contains("@phpc_native_int(i64 %tmp0)")
+            && native_int_output_count(&ir, 18) >= 2
+            && uses_native_diagnostic_result_output(&ir),
         "compound assignment expression results and later reads should remain available to echo, even when known-value tracking folds the expression result:\n{ir}"
     );
     assert!(
@@ -129,20 +147,23 @@ fn emit_ir_lowers_direct_variable_assignment_expression_values() {
     .expect("direct variable assignment expressions should lower for primitive value families");
 
     assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 2)")
-            && ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 3)")
+        native_int_output_count(&ir, 2) >= 2
+            && native_int_output_count(&ir, 3) >= 1
             && ir.contains(" = add i64 3, 4")
-            && ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 %"),
+            && ir.contains("@phpc_native_int(i64 %")
+            && uses_native_diagnostic_result_output(&ir),
         "integer assignment-expression values and later reads should be emitted:\n{ir}"
     );
     assert!(
-        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_str, ptr @")
-            && ir.matches("new\\00").count() >= 1,
+        ir.matches("new\\00").count() >= 1
+            && ir
+                .matches("@phpc_native_value_from_string_bytes_with_diagnostic")
+                .count()
+                >= 2,
         "string assignment-expression values should be emitted through ordinary string output:\n{ir}"
     );
     assert!(
-        ir.contains("c\"1\\00\"")
-            && ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_str, ptr @"),
+        ir.contains("@phpc_native_bool(i1 true)") && uses_native_diagnostic_result_output(&ir),
         "bool assignment-expression values should remain available to echo:\n{ir}"
     );
     assert!(
@@ -153,8 +174,15 @@ fn emit_ir_lowers_direct_variable_assignment_expression_values() {
 
 #[test]
 fn emit_ir_rejects_reference_assignment_forms_with_specific_boundary() {
+    let direct_variable_ir = emit_ir_source("<?php\n$a = 1;\n$b = 2;\n$a =& $b;\n")
+        .expect("direct variable reference assignment should lower to a native reference slot");
+    assert!(
+        direct_variable_ir.contains("@phpc_native_reference_from_value_and_free")
+            && direct_variable_ir.contains("@phpc_native_reference_clone"),
+        "direct variable reference assignment should use the native reference slot boundary:\n{direct_variable_ir}"
+    );
+
     for source in [
-        "<?php\n$a = 1;\n$b = 2;\n$a =& $b;\n",
         "<?php\n$alias =& $items[0];\n",
         "<?php\n$alias =& $items[];\n",
         "<?php\n$alias =& $box->items[0];\n",
@@ -311,4 +339,16 @@ fn render_cli_snapshot(output: &Output) -> String {
     format!(
         "exit: {exit_code}\nstdout:\n{stdout}--- stdout end ---\nstderr:\n{stderr}--- stderr end ---\n"
     )
+}
+
+fn native_int_output_count(ir: &str, value: i64) -> usize {
+    let direct_printf = format!("@printf(ptr @.fmt_int, i64 {value})");
+    let boxed_native_int = format!("@phpc_native_int(i64 {value})");
+
+    ir.matches(&direct_printf).count() + ir.matches(&boxed_native_int).count()
+}
+
+fn uses_native_diagnostic_result_output(ir: &str) -> bool {
+    ir.contains("@phpc_native_diagnostic_result_from_value")
+        && ir.contains("@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free")
 }

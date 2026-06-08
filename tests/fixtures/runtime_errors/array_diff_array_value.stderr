@@ -1,2 +1,0 @@
-runtime error at 4:6: unsupported call array_diff(): values must be scalar in the current subset, got array
-

@@ -1,2 +1,2 @@
-runtime error at 2:6: unsupported call constant(): constant PHP_OS is not defined in the current runtime-defined or built-in constant subset
+runtime error at 2:6: unsupported call constant(): constant PHP_OS_MISSING is not defined in the current runtime-defined or built-in constant subset
 

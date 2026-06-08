@@ -1,1 +1,6 @@
+Notice: Indirect modification of overloaded element of Bag has no effect in tests/fixtures/milestone1073/reference_assignment_array_access_target_boundary.php on line 10
 
+Fatal error: Uncaught Error: Cannot assign by reference to an array dimension of an object in tests/fixtures/milestone1073/reference_assignment_array_access_target_boundary.php:10
+Stack trace:
+#0 {main}
+  thrown in tests/fixtures/milestone1073/reference_assignment_array_access_target_boundary.php on line 10

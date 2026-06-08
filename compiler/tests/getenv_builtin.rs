@@ -162,6 +162,53 @@ var_dump(getenv("PHPC_PUTENV_VALUE"));
 }
 
 #[test]
+fn getenv_and_putenv_report_php_value_errors_for_invalid_environment_names() {
+    let _guard = env_lock();
+    remove_env_var("PHPC_PUTENV_NUL_TEST");
+
+    let execution = run_source(
+        r#"<?php
+foreach ([false, true] as $local_only) {
+    try {
+        getenv("PHPC_GETENV_NUL_TEST\0SUFFIX", $local_only);
+    } catch (ValueError $exception) {
+        echo $exception->getMessage(), "\n";
+    }
+}
+
+foreach ([
+    "=123",
+    "",
+    "PHPC_PUTENV_NUL_TEST\0SUFFIX=value",
+    "PHPC_PUTENV_NUL_TEST=va\0lue",
+] as $assignment) {
+    try {
+        putenv($assignment);
+    } catch (ValueError $exception) {
+        echo $exception->getMessage(), "\n";
+    }
+}
+
+var_dump(getenv("PHPC_PUTENV_NUL_TEST"));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "getenv(): Argument #1 ($name) must not contain any null bytes\n\
+getenv(): Argument #1 ($name) must not contain any null bytes\n\
+putenv(): Argument #1 ($assignment) must have a valid syntax\n\
+putenv(): Argument #1 ($assignment) must have a valid syntax\n\
+putenv(): Argument #1 ($assignment) must not contain any null bytes\n\
+putenv(): Argument #1 ($assignment) must not contain any null bytes\n\
+bool(false)\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn putenv_rejects_forms_outside_current_subset() {
     let non_string = run_source("<?php\nputenv([]);\n").unwrap_err();
     assert_eq!(non_string.phase, Phase::Runtime);

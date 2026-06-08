@@ -104,20 +104,18 @@ try {
 
 #[test]
 fn reached_throw_statement_reports_uncaught_runtime_boundary() {
-    let error = run_source(
+    let execution = run_source(
         r#"<?php
 echo "before";
 throw new Exception();
 "#,
     )
-    .unwrap_err();
+    .unwrap();
 
-    assert_eq!(error.phase, Phase::Runtime);
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 1);
+    assert_eq!(execution.exit_code, 255);
     assert_eq!(
-        error.message,
-        "unsupported call throw: uncaught Exception propagation beyond catch/finally is not implemented"
+        execution.stdout,
+        "before\nFatal error: Uncaught Exception in Command line code:3\nStack trace:\n#0 {main}\n  thrown in Command line code on line 3"
     );
 }
 
@@ -204,6 +202,128 @@ echo "after";
 }
 
 #[test]
+fn custom_exception_thrown_from_user_function_preserves_object_for_catch() {
+    let execution = run_source(
+        r#"<?php
+class CustomException extends Exception {
+    public $label = "kept";
+}
+function throw_custom() {
+    throw new CustomException("boom");
+}
+try {
+    throw_custom();
+} catch (CustomException $e) {
+    echo get_class($e), "|", $e->getMessage(), "|", $e->label;
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "CustomException|boom|kept");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn custom_exception_thrown_from_error_handler_preserves_object_for_catch() {
+    let execution = run_source(
+        r#"<?php
+class WarningException extends Exception {
+    public function __construct(public $errno, public $messageText) {}
+}
+set_error_handler(function($errno, $message) {
+    throw new WarningException($errno, $message);
+});
+try {
+    trigger_error("promoted", E_USER_WARNING);
+} catch (WarningException $e) {
+    echo $e->errno, "|", $e->messageText;
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "512|promoted");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn throwable_subclass_user_methods_are_dispatched_before_core_methods() {
+    let execution = run_source(
+        r#"<?php
+class MyException extends Exception {
+    public function __construct(public $error) {}
+    public function getException() { return $this->error; }
+}
+$e = new MyException("kept");
+echo $e->getException();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "kept");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn custom_assertion_exception_renders_as_uncaught_throwable() {
+    let execution = run_source(
+        r#"<?php
+class CustomAssertionException extends Exception {}
+assert(false, new CustomAssertionException("asserted"));
+"#,
+    )
+    .unwrap();
+
+    assert!(execution.stdout.starts_with(
+        "Fatal error: Uncaught CustomAssertionException: asserted in Command line code:3"
+    ));
+    assert_eq!(execution.exit_code, 255);
+}
+
+#[test]
+fn invalid_throw_operands_raise_php_shaped_errors() {
+    let non_object = run_source(
+        r#"<?php
+throw 1;
+"#,
+    )
+    .unwrap();
+    assert!(non_object
+        .stdout
+        .starts_with("Fatal error: Uncaught Error: Can only throw objects"));
+    assert_eq!(non_object.exit_code, 255);
+
+    let non_throwable = run_source(
+        r#"<?php
+class Box {}
+throw new Box();
+"#,
+    )
+    .unwrap();
+    assert!(non_throwable.stdout.starts_with(
+        "Fatal error: Uncaught Error: Cannot throw objects that do not implement Throwable"
+    ));
+    assert_eq!(non_throwable.exit_code, 255);
+}
+
+#[test]
+fn throwable_constructor_message_type_errors_are_php_shaped() {
+    let execution = run_source(
+        r#"<?php
+class CustomError extends Error {}
+throw new CustomError(new stdClass());
+"#,
+    )
+    .unwrap();
+
+    assert!(execution.stdout.starts_with(
+        "Fatal error: Uncaught TypeError: Error::__construct(): Argument #1 ($message) must be of type string, stdClass given"
+    ));
+    assert_eq!(execution.exit_code, 255);
+}
+
+#[test]
 fn include_statement_throw_can_be_caught_by_caller_try() {
     let suffix = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -238,6 +358,93 @@ try {
 
     let _ = fs::remove_file(fixture_dir.join("thrower.php"));
     let _ = fs::remove_dir(fixture_dir);
+}
+
+#[test]
+fn exception_handlers_invoke_restore_reset_and_report_current_handler() {
+    let execution = run_source(
+        r#"<?php
+function first($e) { echo "first:", get_class($e), "\n"; }
+function second($e) { echo "second:", get_class($e), "\n"; }
+
+echo get_exception_handler() === null ? "none\n" : "other\n";
+$previous = set_exception_handler("first");
+echo $previous === null ? "prev-null\n" : "prev-other\n";
+$previous = set_exception_handler("second");
+echo $previous === "first" ? "prev-first\n" : "prev-other\n";
+restore_exception_handler();
+echo get_exception_handler() === "first" ? "restored\n" : "missing\n";
+throw new Exception();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "none\nprev-null\nprev-first\nrestored\nfirst:Exception\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let reset = run_source(
+        r#"<?php
+function first($e) { echo "first"; }
+set_exception_handler("first");
+$previous = set_exception_handler(null);
+echo $previous === "first" ? "cleared\n" : "bad\n";
+throw new Exception();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(reset.exit_code, 255);
+    assert!(reset
+        .stdout
+        .starts_with("cleared\n\nFatal error: Uncaught Exception"));
+}
+
+#[test]
+fn exception_handler_object_array_callback_receives_throwable() {
+    let execution = run_source(
+        r#"<?php
+class Handler {
+    public function handle($e) {
+        echo "object:", get_class($e), "\n";
+    }
+}
+$handler = new Handler();
+set_exception_handler([$handler, "handle"]);
+throw new Exception();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "object:Exception\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn set_exception_handler_rejects_invalid_callbacks_with_type_errors() {
+    let execution = run_source(
+        r#"<?php
+try {
+    set_exception_handler("fo");
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    set_exception_handler(["", ""]);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "set_exception_handler(): Argument #1 ($callback) must be a valid callback or null, function \"fo\" not found or invalid function name\nset_exception_handler(): Argument #1 ($callback) must be a valid callback or null, class \"\" not found\n"
+    );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
