@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T08:18:49+00:00
+Last generated: 2026-06-08T08:31:54+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -71,8 +71,14 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | architect-61 | Architect | crash | architect-61 |  |
 | architect-62 | Architect | crash | architect-62 |  |
 | architect-63 | Architect | crash | architect-63 |  |
-| architect-64 | Architect | running | architect-64 |  |
+| architect-64 | Architect | crash | architect-64 |  |
+| architect-65 | Architect | crash | architect-65 |  |
+| architect-66 | Architect | crash | architect-66 |  |
+| architect-67 | Architect | crash | architect-67 |  |
+| architect-68 | Architect | crash | architect-68 |  |
+| architect-69 | Architect | crash | architect-69 |  |
 | architect-7 | Architect | crash | architect-7 |  |
+| architect-70 | Architect | stopped | architect-70 |  |
 | architect-8 | Architect | crash | architect-8 |  |
 | architect-9 | Architect | crash | architect-9 |  |
 | auditor-1 | Auditor | stopped | auditor-1 |  |
@@ -132,7 +138,9 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-120 | Coordinator | success | coordinator-120 |  |
 | coordinator-121 | Coordinator | success | coordinator-121 |  |
 | coordinator-122 | Coordinator | crash | coordinator-122 |  |
-| coordinator-123 | Coordinator | running | coordinator-123 |  |
+| coordinator-123 | Coordinator | success | coordinator-123 |  |
+| coordinator-124 | Coordinator | success | coordinator-124 |  |
+| coordinator-125 | Coordinator | stopped | coordinator-125 |  |
 | coordinator-13 | Coordinator | stopped | coordinator-13 |  |
 | coordinator-14 | Coordinator | success | coordinator-14 |  |
 | coordinator-15 | Coordinator | stopped | coordinator-15 |  |
@@ -471,8 +479,11 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-315 | Developer | crash | developer-315 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-315 |
 | developer-316 | Developer | stopped | developer-316 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-316 |
 | developer-317 | Developer | stopped | developer-317 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-317 |
-| developer-318 | Developer | running | developer-318 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-318 |
+| developer-318 | Developer | stopped | developer-318 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-318 |
+| developer-319 | Developer | stopped | developer-319 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-319 |
 | developer-32 | Developer | crash | developer-32 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-32 |
+| developer-320 | Developer | stopped | developer-320 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-320 |
+| developer-321 | Developer | stopped | developer-321 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-321 |
 | developer-33 | Developer | crash | developer-33 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-33 |
 | developer-34 | Developer | crash | developer-34 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-34 |
 | developer-35 | Developer | crash | developer-35 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-35 |
@@ -564,6 +575,8 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2026 | Provide next sanctioned Developer card after developer-319 worklane 2025 | Developer | implementation | planned | queued |  | 0.0 |
+| 2025 | Resolve integration failure for card #2019: Fix global test suite failures | Conflict Resolver | integration-support | done | integrated |  | 0.0 |
 | 2024 | Integrate ready card 2023 runtime stabilization branch | Integrator | integration-support | planned | queued |  | 0.0 |
 | 2023 | Resolve integration failure for card #2019: Fix global test suite failures | Conflict Resolver | integration-support | done | integrated | ready_fast_path | 0.0 |
 | 2022 | Provide next sanctioned Developer card after developer-312 completed capacity handoff card 1973 | Developer | implementation | planned | queued |  | 0.0 |
@@ -572,28 +585,26 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | 2019 | Fix global test suite failures | Developer | implementation | development | assigned | ready_fast_path | 0.0 |
 | 2018 | Fix current-origin array_find_family arity boundary | Developer | implementation | planned | queued |  | 0.0 |
 | 2017 | Fix current global-suite native lookup-plus-invoke failures | Developer | implementation | planned | queued |  | 0.0 |
-| 2016 | Resolve active compiler-output integration chain without generated artifact churn | Conflict Resolver | integration-support | done | integrated | ready_fast_path | 0.0 |
-| 2015 | Reconcile current integration backlog after stale runtime/gate chains | Integrator | integration-support | planned | queued |  | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=3, passed=416, skipped=0)
+failed — tools/run-tests.sh (error=0, failed=4, passed=415, skipped=0)
 
 ## Resource samples
-Latest: CPU 15.76%, RAM 16.89%, disk free 116.38 GB.
+Latest: CPU 22.27%, RAM 24.6%, disk free 115.21 GB.
 
 ## Recent events
-- 2026-06-08T08:18:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-84 tmux window
-- 2026-06-08T08:18:49+00:00 **terminal_agent_window_closed**: Closed terminal architect-58 tmux window
-- 2026-06-08T08:18:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-85 tmux window
-- 2026-06-08T08:18:49+00:00 **terminal_agent_window_closed**: Closed terminal architect-59 tmux window
-- 2026-06-08T08:18:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-86 tmux window
-- 2026-06-08T08:18:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-87 tmux window
-- 2026-06-08T08:18:49+00:00 **terminal_agent_window_closed**: Closed terminal architect-6 tmux window
-- 2026-06-08T08:18:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-88 tmux window
-- 2026-06-08T08:18:49+00:00 **terminal_agent_window_closed**: Closed terminal architect-60 tmux window
-- 2026-06-08T08:18:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-89 tmux window
-- 2026-06-08T08:18:49+00:00 **terminal_agent_window_closed**: Closed terminal architect-61 tmux window
-- 2026-06-08T08:18:49+00:00 **terminal_agent_window_closed**: Closed terminal architect-62 tmux window
+- 2026-06-08T08:31:44+00:00 **terminal_agent_window_closed**: Closed terminal developer-3 tmux window
+- 2026-06-08T08:31:44+00:00 **terminal_agent_window_closed**: Closed terminal developer-30 tmux window
+- 2026-06-08T08:31:44+00:00 **terminal_agent_window_closed**: Closed terminal developer-300 tmux window
+- 2026-06-08T08:31:45+00:00 **terminal_agent_window_closed**: Closed terminal developer-301 tmux window
+- 2026-06-08T08:31:45+00:00 **terminal_agent_window_closed**: Closed terminal developer-302 tmux window
+- 2026-06-08T08:31:45+00:00 **terminal_agent_window_closed**: Closed terminal developer-303 tmux window
+- 2026-06-08T08:31:45+00:00 **terminal_agent_window_closed**: Closed terminal developer-304 tmux window
+- 2026-06-08T08:31:46+00:00 **terminal_agent_window_closed**: Closed terminal developer-305 tmux window
+- 2026-06-08T08:31:46+00:00 **terminal_agent_window_closed**: Closed terminal developer-306 tmux window
+- 2026-06-08T08:31:48+00:00 **stop**: Stopped harness runtime
+- 2026-06-08T08:31:53+00:00 **mcp**: Harness MCP tools exposed to Codex workers
+- 2026-06-08T08:31:54+00:00 **tmux**: Interactive support windows ready
 
 ## Next steps
-Move next worklane forward: Integrate ready card 2023 runtime stabilization branch
+Move next worklane forward: Provide next sanctioned Developer card after developer-319 worklane 2025
