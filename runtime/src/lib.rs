@@ -1,3 +1,5 @@
+#[cfg(test)]
+use std::cell::Cell;
 use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
@@ -12,7 +14,9 @@ use std::sync::atomic::{AtomicI64, Ordering as AtomicOrdering};
 pub type RuntimeResult<T> = Result<T, RuntimeError>;
 
 #[cfg(test)]
-static NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST: AtomicI64 = AtomicI64::new(0);
+thread_local! {
+    static NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST: Cell<i64> = const { Cell::new(0) };
+}
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1699,6 +1703,7 @@ enum NativeCallableBuiltin {
     StringLength,
     StringPredicate(NativeStringPredicate),
     StringResult(NativeStringResultOperation),
+    StringSearch(NativeStringSearchOperation),
     StringTrim(NativeTrimMode),
     ArraySort(NativeArraySortOperation),
     ArrayMutation(NativeArrayMutationOperation),
@@ -1756,6 +1761,8 @@ impl NativeCallableBuiltin {
             Self::StringResult(NativeStringResultOperation::AsciiFirstLower) => "lcfirst",
             Self::StringResult(NativeStringResultOperation::ShellArgEscape) => "escapeshellarg",
             Self::StringResult(NativeStringResultOperation::ShellCommandEscape) => "escapeshellcmd",
+            Self::StringSearch(NativeStringSearchOperation::Position) => "strpos",
+            Self::StringSearch(NativeStringSearchOperation::Count) => "substr_count",
             Self::StringTrim(NativeTrimMode::Both) => "trim",
             Self::StringTrim(NativeTrimMode::Left) => "ltrim",
             Self::StringTrim(NativeTrimMode::Right) => "rtrim",
@@ -1800,6 +1807,7 @@ impl NativeCallableBuiltin {
     fn signature(self) -> NativeCallableBuiltinSignature {
         const BY_VALUE_1: &[bool] = &[false];
         const BY_VALUE_2: &[bool] = &[false, false];
+        const BY_VALUE_3: &[bool] = &[false, false, false];
         const BY_REF_1: &[bool] = &[true];
         const BY_REF_THEN_VALUE: &[bool] = &[true, false];
         const PARAM_ARRAY: &[&str] = &["array"];
@@ -1808,9 +1816,12 @@ impl NativeCallableBuiltin {
         const PARAM_STRING: &[&str] = &["string"];
         const PARAM_VALUE: &[&str] = &["value"];
         const PARAM_HAYSTACK_NEEDLE: &[&str] = &["haystack", "needle"];
+        const PARAM_HAYSTACK_NEEDLE_OFFSET: &[&str] = &["haystack", "needle", "offset"];
         const PARAM_STRING_CHARACTERS: &[&str] = &["string", "characters"];
         const DEFAULTS_NONE_1: &[Option<NativeCallableBuiltinDefaultValue>] = &[None];
         const DEFAULTS_NONE_2: &[Option<NativeCallableBuiltinDefaultValue>] = &[None, None];
+        const DEFAULTS_STRPOS: &[Option<NativeCallableBuiltinDefaultValue>] =
+            &[None, None, Some(NativeCallableBuiltinDefaultValue::Int(0))];
         const DEFAULTS_SORT_FLAGS: &[Option<NativeCallableBuiltinDefaultValue>] =
             &[None, Some(NativeCallableBuiltinDefaultValue::Int(0))];
         const DEFAULTS_TRIM_CHARACTERS: &[Option<NativeCallableBuiltinDefaultValue>] = &[
@@ -1827,6 +1838,26 @@ impl NativeCallableBuiltin {
                 accepts_variadic_args: false,
                 returns_by_reference: false,
             },
+            Self::StringSearch(NativeStringSearchOperation::Position) => {
+                NativeCallableBuiltinSignature {
+                    required_arg_count: 2,
+                    fixed_param_names: PARAM_HAYSTACK_NEEDLE_OFFSET,
+                    fixed_param_by_reference: BY_VALUE_3,
+                    fixed_param_defaults: DEFAULTS_STRPOS,
+                    accepts_variadic_args: false,
+                    returns_by_reference: false,
+                }
+            }
+            Self::StringSearch(NativeStringSearchOperation::Count) => {
+                NativeCallableBuiltinSignature {
+                    required_arg_count: usize::MAX,
+                    fixed_param_names: &[],
+                    fixed_param_by_reference: &[],
+                    fixed_param_defaults: &[],
+                    accepts_variadic_args: false,
+                    returns_by_reference: false,
+                }
+            }
             Self::StringTrim(_) => NativeCallableBuiltinSignature {
                 required_arg_count: 1,
                 fixed_param_names: PARAM_STRING_CHARACTERS,
@@ -6630,6 +6661,7 @@ unsafe fn native_value_coerce_call_type_result(
         value,
         callable,
         label,
+        false,
         |object, type_name| object.is_instance_of_class_name(type_name),
     )
     .map_err(|_| {
@@ -6673,6 +6705,7 @@ unsafe fn native_value_coerce_variadic_collection_type_result(
             value,
             callable,
             label,
+            false,
             |object, type_name| object.is_instance_of_class_name(type_name),
         )
         .map_err(|_| {
@@ -10246,6 +10279,9 @@ fn native_callable_builtin_for_function_name(name: &str) -> Option<NativeCallabl
         "escapeshellcmd" => Some(NativeCallableBuiltin::StringResult(
             NativeStringResultOperation::ShellCommandEscape,
         )),
+        "strpos" => Some(NativeCallableBuiltin::StringSearch(
+            NativeStringSearchOperation::Position,
+        )),
         "trim" => Some(NativeCallableBuiltin::StringTrim(NativeTrimMode::Both)),
         "ltrim" => Some(NativeCallableBuiltin::StringTrim(NativeTrimMode::Left)),
         "rtrim" => Some(NativeCallableBuiltin::StringTrim(NativeTrimMode::Right)),
@@ -12437,12 +12473,13 @@ pub unsafe extern "C" fn phpc_native_call_arguments_mark_finalized_variadic(
 /// runtime ABI and not yet freed.
 #[no_mangle]
 pub unsafe extern "C" fn phpc_native_call_arguments_free(handle: NativeCallArgumentsHandle) {
-    #[cfg(test)]
-    NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST.fetch_add(1, AtomicOrdering::SeqCst);
-
     if handle.ptr.is_null() {
         return;
     }
+
+    #[cfg(test)]
+    NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST.with(|count| count.set(count.get() + 1));
+
     let arguments = unsafe { Box::from_raw(handle.ptr) };
     for slot in arguments.slots {
         unsafe { slot.free() };
@@ -13854,7 +13891,7 @@ unsafe fn native_callable_builtin_argument_values(
     Ok(values)
 }
 
-const PHP_DEFAULT_TRIM_MASK: &[u8] = b" \n\r\t\x0b\0";
+const PHP_DEFAULT_TRIM_MASK: &[u8] = b" \n\r\t\x0b\x0c\0";
 
 fn native_callable_trimmed_bytes(subject: &[u8], mask: &[u8], mode: NativeTrimMode) -> Vec<u8> {
     let mut start = 0;
@@ -14350,6 +14387,34 @@ unsafe fn native_callable_builtin_invoke_value(
         NativeCallableBuiltin::StringResult(operation) => unsafe {
             native_value_string_result_operation_value(values[0], 0, operation as u8)
         },
+        NativeCallableBuiltin::StringSearch(NativeStringSearchOperation::Position) => {
+            let offset_result = if values.len() > 2 {
+                unsafe {
+                    native_value_to_int64(
+                        values[2],
+                        NativeIntConversionOperation::StringOffset as u8,
+                    )
+                }
+            } else {
+                Ok(0)
+            };
+            offset_result.and_then(|offset| unsafe {
+                native_value_string_search_result(
+                    values[0],
+                    values[1],
+                    offset,
+                    0,
+                    0,
+                    NativeStringSearchOperation::Position as u8,
+                )
+            })
+        }
+        NativeCallableBuiltin::StringSearch(NativeStringSearchOperation::Count) => {
+            Err(RuntimeError::unsupported_call(
+                "substr_count",
+                "runtime callable builtin invocation is not implemented",
+            ))
+        }
         NativeCallableBuiltin::StringTrim(mode) => unsafe { native_callable_trim_value(mode, &values) },
         NativeCallableBuiltin::ArraySort(_) => unreachable!(),
         NativeCallableBuiltin::ArrayMutation(_) => unreachable!(),
@@ -17980,8 +18045,14 @@ fn append_native_array_print_r_bytes(
             format!("{child_padding}[{}] => ", entry.key.display_key()).as_bytes(),
         );
         match entry.value_cloned() {
-            Value::Array(value) => append_native_array_print_r_bytes(output, &value, indent + 1)?,
-            Value::Object(value) => append_native_object_print_r_bytes(output, &value, indent + 1)?,
+            Value::Array(value) => {
+                append_native_array_print_r_bytes(output, &value, indent + 2)?;
+                output.push(b'\n');
+            }
+            Value::Object(value) => {
+                append_native_object_print_r_bytes(output, &value, indent + 2)?;
+                output.push(b'\n');
+            }
             value => {
                 output.extend_from_slice(&value.try_echo_bytes()?);
                 output.push(b'\n');
@@ -18011,8 +18082,14 @@ fn append_native_object_print_r_bytes(
             .as_bytes(),
         );
         match property.value_cloned() {
-            Value::Array(value) => append_native_array_print_r_bytes(output, &value, indent + 1)?,
-            Value::Object(value) => append_native_object_print_r_bytes(output, &value, indent + 1)?,
+            Value::Array(value) => {
+                append_native_array_print_r_bytes(output, &value, indent + 2)?;
+                output.push(b'\n');
+            }
+            Value::Object(value) => {
+                append_native_object_print_r_bytes(output, &value, indent + 2)?;
+                output.push(b'\n');
+            }
             value => {
                 output.extend_from_slice(&value.try_echo_bytes()?);
                 output.push(b'\n');
@@ -18949,7 +19026,7 @@ unsafe fn native_value_string_predicate(
 /// non-null, it must point to writable storage for one `NativeDiagnosticHandle`.
 /// On failure the helper stores a diagnostic handle that the caller owns and
 /// must release with `phpc_native_diagnostic_free`. Operation `0` returns
-/// `strcasecmp(subject, operand)` as -1, 0, or 1; operation `2` returns
+/// `strcasecmp(subject, operand)` as PHP's folded byte difference; operation `2` returns
 /// `strcmp(subject, operand)`; operations `3` and `4` return `strncmp()` and
 /// `strncasecmp()` over `length`; operation `1` returns
 /// `substr_count(subject, operand[, offset[, length]])`; operation `5` returns
@@ -19154,10 +19231,8 @@ fn ascii_case_insensitive_compare_bytes(left: &[u8], right: &[u8]) -> i64 {
     for (left, right) in left.iter().zip(right.iter()) {
         let left = left.to_ascii_lowercase();
         let right = right.to_ascii_lowercase();
-        match left.cmp(&right) {
-            Ordering::Less => return -1,
-            Ordering::Greater => return 1,
-            Ordering::Equal => {}
+        if left != right {
+            return i64::from(left) - i64::from(right);
         }
     }
 
@@ -19169,8 +19244,8 @@ fn ascii_case_insensitive_compare_bytes(left: &[u8], right: &[u8]) -> i64 {
 }
 
 fn php_strnatcmp_bytes(left: &[u8], right: &[u8], case_insensitive: bool) -> i64 {
-    let mut left_index = 0;
-    let mut right_index = 0;
+    let mut left_index = skip_initial_natural_compare_zeroes(left);
+    let mut right_index = skip_initial_natural_compare_zeroes(right);
 
     loop {
         left_index = skip_natural_compare_spaces(left, left_index);
@@ -19184,17 +19259,35 @@ fn php_strnatcmp_bytes(left: &[u8], right: &[u8], case_insensitive: bool) -> i64
                 if left_byte.is_ascii_digit() && right_byte.is_ascii_digit() =>
             {
                 let ordering = if left_byte == b'0' || right_byte == b'0' {
-                    compare_left_aligned_digit_runs(&left[left_index..], &right[right_index..])
+                    compare_left_aligned_digit_runs(left, right, &mut left_index, &mut right_index)
                 } else {
-                    compare_right_aligned_digit_runs(&left[left_index..], &right[right_index..])
+                    compare_right_aligned_digit_runs(left, right, &mut left_index, &mut right_index)
                 };
 
                 if ordering != 0 {
                     return ordering;
                 }
 
-                left_index = skip_natural_compare_digits(left, left_index);
-                right_index = skip_natural_compare_digits(right, right_index);
+                if left_index == left.len() && right_index == right.len() {
+                    return 0;
+                }
+                if left_index == left.len() {
+                    return -1;
+                }
+                if right_index == right.len() {
+                    return 1;
+                }
+
+                let left_byte = natural_compare_byte(left[left_index], case_insensitive);
+                let right_byte = natural_compare_byte(right[right_index], case_insensitive);
+                match left_byte.cmp(&right_byte) {
+                    Ordering::Less => return -1,
+                    Ordering::Greater => return 1,
+                    Ordering::Equal => {
+                        left_index += 1;
+                        right_index += 1;
+                    }
+                }
             }
             (None, None) => return 0,
             (None, Some(_)) => return -1,
@@ -19216,15 +19309,16 @@ fn php_strnatcmp_bytes(left: &[u8], right: &[u8], case_insensitive: bool) -> i64
     }
 }
 
-fn skip_natural_compare_spaces(bytes: &[u8], mut index: usize) -> usize {
-    while bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
+fn skip_initial_natural_compare_zeroes(bytes: &[u8]) -> usize {
+    let mut index = 0;
+    while index + 1 < bytes.len() && bytes[index] == b'0' && bytes[index + 1].is_ascii_digit() {
         index += 1;
     }
     index
 }
 
-fn skip_natural_compare_digits(bytes: &[u8], mut index: usize) -> usize {
-    while bytes.get(index).is_some_and(u8::is_ascii_digit) {
+fn skip_natural_compare_spaces(bytes: &[u8], mut index: usize) -> usize {
+    while bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
         index += 1;
     }
     index
@@ -19238,31 +19332,46 @@ fn natural_compare_byte(byte: u8, case_insensitive: bool) -> u8 {
     }
 }
 
-fn compare_left_aligned_digit_runs(left: &[u8], right: &[u8]) -> i64 {
-    let mut index = 0;
-
+fn compare_left_aligned_digit_runs(
+    left: &[u8],
+    right: &[u8],
+    left_index: &mut usize,
+    right_index: &mut usize,
+) -> i64 {
     loop {
-        match (left.get(index).copied(), right.get(index).copied()) {
-            (Some(left), Some(right)) if left.is_ascii_digit() && right.is_ascii_digit() => {
-                match left.cmp(&right) {
+        let left_digit = left.get(*left_index).copied().filter(u8::is_ascii_digit);
+        let right_digit = right.get(*right_index).copied().filter(u8::is_ascii_digit);
+
+        match (left_digit, right_digit) {
+            (None, None) => return 0,
+            (None, Some(_)) => return -1,
+            (Some(_), None) => return 1,
+            (Some(left_digit), Some(right_digit)) => {
+                match left_digit.cmp(&right_digit) {
                     Ordering::Less => return -1,
                     Ordering::Greater => return 1,
-                    Ordering::Equal => index += 1,
+                    Ordering::Equal => {}
                 }
+                *left_index += 1;
+                *right_index += 1;
             }
-            (Some(left), _) if left.is_ascii_digit() => return 1,
-            (_, Some(right)) if right.is_ascii_digit() => return -1,
-            _ => return 0,
         }
     }
 }
 
-fn compare_right_aligned_digit_runs(left: &[u8], right: &[u8]) -> i64 {
+fn compare_right_aligned_digit_runs(
+    left: &[u8],
+    right: &[u8],
+    left_index: &mut usize,
+    right_index: &mut usize,
+) -> i64 {
     let mut bias = 0;
-    let mut index = 0;
 
     loop {
-        match (left.get(index).copied(), right.get(index).copied()) {
+        match (
+            left.get(*left_index).copied(),
+            right.get(*right_index).copied(),
+        ) {
             (Some(left), Some(right)) if left.is_ascii_digit() && right.is_ascii_digit() => {
                 if bias == 0 {
                     match left.cmp(&right) {
@@ -19271,7 +19380,8 @@ fn compare_right_aligned_digit_runs(left: &[u8], right: &[u8]) -> i64 {
                         Ordering::Equal => {}
                     }
                 }
-                index += 1;
+                *left_index += 1;
+                *right_index += 1;
             }
             (Some(left), _) if left.is_ascii_digit() => return 1,
             (_, Some(right)) if right.is_ascii_digit() => return -1,
@@ -27896,6 +28006,18 @@ impl RuntimeError {
         })
     }
 
+    pub fn class_constant_visibility(
+        class_name: impl Into<String>,
+        constant_name: impl Into<String>,
+        visibility: Visibility,
+    ) -> Self {
+        Self::from_kind(RuntimeErrorKind::ClassConstantVisibility {
+            class_name: class_name.into(),
+            constant_name: constant_name.into(),
+            visibility,
+        })
+    }
+
     pub fn uninitialized_typed_property(
         class_name: impl Into<String>,
         property_name: impl Into<String>,
@@ -27906,8 +28028,24 @@ impl RuntimeError {
         })
     }
 
+    pub fn uninitialized_typed_static_property(
+        class_name: impl Into<String>,
+        property_name: impl Into<String>,
+    ) -> Self {
+        Self::from_kind(RuntimeErrorKind::UninitializedTypedStaticProperty {
+            class_name: class_name.into(),
+            property_name: property_name.into(),
+        })
+    }
+
     pub fn unsupported_property_access(reason: impl Into<String>) -> Self {
         Self::from_kind(RuntimeErrorKind::UnsupportedPropertyAccess {
+            reason: reason.into(),
+        })
+    }
+
+    pub fn property_set_visibility(reason: impl Into<String>) -> Self {
+        Self::from_kind(RuntimeErrorKind::PropertySetVisibility {
             reason: reason.into(),
         })
     }
@@ -28058,11 +28196,23 @@ pub enum RuntimeErrorKind {
     InvalidPropertyAccess {
         reason: String,
     },
+    ClassConstantVisibility {
+        class_name: String,
+        constant_name: String,
+        visibility: Visibility,
+    },
     UninitializedTypedProperty {
         class_name: String,
         property_name: String,
     },
+    UninitializedTypedStaticProperty {
+        class_name: String,
+        property_name: String,
+    },
     UnsupportedPropertyAccess {
+        reason: String,
+    },
+    PropertySetVisibility {
         reason: String,
     },
     ArityMismatch {
@@ -28264,6 +28414,21 @@ fn format_runtime_error(kind: &RuntimeErrorKind) -> String {
         RuntimeErrorKind::InvalidPropertyAccess { reason } => {
             format!("invalid property access: {reason}")
         }
+        RuntimeErrorKind::ClassConstantVisibility {
+            class_name,
+            constant_name,
+            visibility,
+        } => match visibility {
+            Visibility::Private => {
+                format!("Cannot access private constant {class_name}::{constant_name}")
+            }
+            Visibility::Protected => {
+                format!("Cannot access protected constant {class_name}::{constant_name}")
+            }
+            Visibility::Public => {
+                format!("Cannot access public constant {class_name}::{constant_name}")
+            }
+        },
         RuntimeErrorKind::UninitializedTypedProperty {
             class_name,
             property_name,
@@ -28272,9 +28437,18 @@ fn format_runtime_error(kind: &RuntimeErrorKind) -> String {
                 "typed property {class_name}::${property_name} must not be accessed before initialization"
             )
         }
+        RuntimeErrorKind::UninitializedTypedStaticProperty {
+            class_name,
+            property_name,
+        } => {
+            format!(
+                "typed static property {class_name}::${property_name} must not be accessed before initialization"
+            )
+        }
         RuntimeErrorKind::UnsupportedPropertyAccess { reason } => {
             format!("unsupported object property access: {reason}")
         }
+        RuntimeErrorKind::PropertySetVisibility { reason } => reason.clone(),
         RuntimeErrorKind::ArityMismatch {
             callable,
             expected,
@@ -28453,6 +28627,14 @@ impl PhpArray {
         let key = key.into().normalized();
         if let Some(index) = self.index_for_key_mut(&key) {
             self.entries.remove(index);
+            if let Ok(cursor) = usize::try_from(self.cursor) {
+                if cursor > index {
+                    self.cursor -= 1;
+                }
+                if self.cursor > self.entries.len() as isize {
+                    self.cursor = self.entries.len() as isize;
+                }
+            }
             self.invalidate_key_index();
             return true;
         }
@@ -28523,6 +28705,10 @@ impl PhpArray {
 
         self.push_entry(ArrayEntry::from_slot(key.clone(), slot));
         key
+    }
+
+    pub fn insert_shared_slot(&mut self, key: impl Into<ArrayKey>, slot: &ArraySlot) -> ArrayKey {
+        self.insert_slot(key, ArraySlot::share_cell_from(slot))
     }
 
     pub fn append(&mut self, value: Value) -> RuntimeResult<ArrayKey> {
@@ -28951,6 +29137,23 @@ impl PhpArray {
         Ok(())
     }
 
+    pub fn shuffle_for_php_builtin(&mut self) {
+        let entries = std::mem::take(&mut self.entries);
+        self.entries = entries
+            .into_iter()
+            .rev()
+            .enumerate()
+            .map(|(index, entry)| {
+                let key = i64::try_from(index).expect("array length fits in i64");
+                ArrayEntry::from_slot(ArrayKey::Int(key), entry.slot)
+            })
+            .collect();
+        self.invalidate_key_index();
+        self.next_auto_index = i64::try_from(self.entries.len()).expect("array length fits");
+        self.auto_index_exhausted = false;
+        self.cursor = 0;
+    }
+
     pub fn multisort_for_php_builtin(
         arrays: &mut [PhpArray],
         flags: &[Option<Value>],
@@ -29176,10 +29379,10 @@ impl PhpArray {
         for entry in &self.entries {
             match &entry.key {
                 ArrayKey::Int(_) => {
-                    array.append(entry.value_cloned())?;
+                    array.append_slot(entry.slot().clone())?;
                 }
                 ArrayKey::String(key) => {
-                    array.insert(key.clone(), entry.value_cloned());
+                    array.insert_slot(key.clone(), entry.slot().clone());
                 }
             }
         }
@@ -29196,16 +29399,12 @@ impl PhpArray {
         };
         self.invalidate_key_index();
 
-        if matches!(entry.key, ArrayKey::Int(key) if key >= 0 && key.checked_add(1) == Some(self.next_auto_index))
+        if matches!(entry.key, ArrayKey::Int(key) if key.checked_add(1) == Some(self.next_auto_index))
         {
             self.next_auto_index -= 1;
             self.auto_index_exhausted = false;
         }
-        if self.entries.is_empty() {
-            self.cursor = 0;
-        } else if self.cursor >= self.entries.len() as isize {
-            self.cursor = self.entries.len() as isize - 1;
-        }
+        self.cursor = 0;
 
         entry.into_value()
     }
@@ -29232,6 +29431,91 @@ impl PhpArray {
 
         *self = array;
         shifted.into_value()
+    }
+
+    pub fn splice_values(
+        &mut self,
+        offset: i64,
+        length: Option<i64>,
+        replacement: &[Value],
+    ) -> RuntimeResult<Self> {
+        let replacement_slots: Vec<ArraySlot> =
+            replacement.iter().cloned().map(ArraySlot::new).collect();
+        self.splice_slots(offset, length, &replacement_slots)
+    }
+
+    pub fn splice_slots(
+        &mut self,
+        offset: i64,
+        length: Option<i64>,
+        replacement: &[ArraySlot],
+    ) -> RuntimeResult<Self> {
+        let len = i64::try_from(self.entries.len()).expect("array length fits in i64");
+        let start = if offset >= 0 {
+            offset.min(len)
+        } else {
+            len.saturating_add(offset).max(0)
+        };
+        let end = match length {
+            Some(length) if length >= 0 => start.saturating_add(length).min(len),
+            Some(length) => len.saturating_add(length).max(0).min(len),
+            None => len,
+        }
+        .max(start);
+
+        let start = usize::try_from(start).expect("non-negative splice start fits in usize");
+        let end = usize::try_from(end).expect("non-negative splice end fits in usize");
+        let entries = std::mem::take(&mut self.entries);
+        self.invalidate_key_index();
+        let mut result = Self::new();
+        let mut removed = Self::new();
+        let mut inserted_replacement = false;
+
+        for (index, entry) in entries.into_iter().enumerate() {
+            if index == start {
+                Self::append_splice_replacement_slots(&mut result, replacement)?;
+                inserted_replacement = true;
+            }
+
+            if (start..end).contains(&index) {
+                Self::append_splice_preserving_string_key(&mut removed, entry)?;
+            } else {
+                Self::append_splice_preserving_string_key(&mut result, entry)?;
+            }
+        }
+
+        if !inserted_replacement {
+            Self::append_splice_replacement_slots(&mut result, replacement)?;
+        }
+
+        *self = result;
+        Ok(removed)
+    }
+
+    fn append_splice_replacement_slots(
+        array: &mut Self,
+        replacement: &[ArraySlot],
+    ) -> RuntimeResult<()> {
+        for slot in replacement {
+            array.append_slot(slot.clone())?;
+        }
+        Ok(())
+    }
+
+    fn append_splice_preserving_string_key(
+        array: &mut Self,
+        entry: ArrayEntry,
+    ) -> RuntimeResult<()> {
+        let ArrayEntry { key, slot } = entry;
+        match key {
+            ArrayKey::Int(_) => {
+                array.append_slot(slot)?;
+            }
+            ArrayKey::String(key) => {
+                array.insert_slot(key, slot);
+            }
+        }
+        Ok(())
     }
 
     pub fn keys_reindexed(&self) -> Self {
@@ -29395,14 +29679,39 @@ impl PhpArray {
         Ok(true)
     }
 
+    fn php_ordering_checked_with_context(
+        &self,
+        other: &Self,
+        context: &mut NativeValueComparisonContext,
+    ) -> RuntimeResult<Ordering> {
+        if self.entries.len() != other.entries.len() {
+            return Ok(self.entries.len().cmp(&other.entries.len()));
+        }
+
+        for left in &self.entries {
+            let Some(right) = other.get_slot(left.key.clone()) else {
+                return Ok(Ordering::Greater);
+            };
+            let left_value = left.value_cloned();
+            let right_value = right.value_cloned();
+            let ordering = left_value.php_ordering_checked_with_context(&right_value, context)?;
+            if ordering != Ordering::Equal {
+                return Ok(ordering);
+            }
+        }
+
+        Ok(Ordering::Equal)
+    }
+
     pub fn keys_matching_loose_scalar(&self, search_value: &Value) -> RuntimeResult<Self> {
         let mut array = Self::new();
         for entry in &self.entries {
+            let value = entry.value_cloned();
             if array_comparison_matches(
                 "array_keys()",
                 search_value,
                 PhpComparisonOp::LooseEq,
-                entry.value(),
+                &value,
             )? {
                 let key = i64::try_from(array.entries.len()).expect("array length fits in i64");
                 array.insert(key, array_key_to_value(&entry.key));
@@ -29415,11 +29724,12 @@ impl PhpArray {
     pub fn keys_matching_strict_scalar(&self, search_value: &Value) -> RuntimeResult<Self> {
         let mut array = Self::new();
         for entry in &self.entries {
+            let value = entry.value_cloned();
             if array_comparison_matches(
                 "array_keys()",
                 search_value,
                 PhpComparisonOp::StrictEq,
-                entry.value(),
+                &value,
             )? {
                 let key = i64::try_from(array.entries.len()).expect("array length fits in i64");
                 array.insert(key, array_key_to_value(&entry.key));
@@ -29436,14 +29746,15 @@ impl PhpArray {
     ) -> RuntimeResult<Self> {
         let mut array = Self::new();
         for entry in &self.entries {
+            let row = entry.value_cloned();
             let value = match &column_key {
-                None => Some(entry.value_cloned()),
-                Some(column_key) => array_column_row_value(entry.value(), column_key),
+                None => Some(row.clone()),
+                Some(column_key) => array_column_row_value(&row, column_key),
             };
 
             if let Some(value) = value {
                 match &index_key {
-                    Some(index_key) => match array_column_row_value(entry.value(), index_key) {
+                    Some(index_key) => match array_column_row_value(&row, index_key) {
                         Some(index_value) => {
                             let key = array_column_index_key_from_value(&index_value)?;
                             array.insert(key, value.clone());
@@ -29548,10 +29859,10 @@ impl PhpArray {
             let mut chunk = Self::new();
             for entry in entries {
                 if preserve_keys {
-                    chunk.insert(entry.key.clone(), entry.value_cloned());
+                    chunk.insert_slot(entry.key.clone(), entry.slot().clone());
                 } else {
                     chunk
-                        .append(entry.value_cloned())
+                        .append_slot(entry.slot().clone())
                         .expect("array length fits in i64");
                 }
             }
@@ -29582,16 +29893,16 @@ impl PhpArray {
         let mut array = Self::new();
         for entry in self.entries[start..end].iter() {
             if preserve_keys {
-                array.insert(entry.key.clone(), entry.value_cloned());
+                array.insert_slot(entry.key.clone(), entry.slot().clone());
             } else {
                 match &entry.key {
                     ArrayKey::Int(_) => {
                         array
-                            .append(entry.value_cloned())
+                            .append_slot(entry.slot().clone())
                             .expect("array length fits in i64");
                     }
                     ArrayKey::String(key) => {
-                        array.insert(key.clone(), entry.value_cloned());
+                        array.insert_slot(key.clone(), entry.slot().clone());
                     }
                 }
             }
@@ -29640,6 +29951,20 @@ impl PhpArray {
             array.insert(key, array_key_to_value(&entry.key));
         }
         Ok(array)
+    }
+
+    pub fn flipped_skipping_unsupported_values(&self) -> (Self, usize) {
+        let mut array = Self::new();
+        let mut skipped = 0;
+        for entry in &self.entries {
+            match array_flip_key_from_supported_value(entry.value()) {
+                Some(key) => {
+                    array.insert(key, array_key_to_value(&entry.key));
+                }
+                None => skipped += 1,
+            }
+        }
+        (array, skipped)
     }
 
     pub fn keys_with_ascii_case(&self, case: ArrayKeyCase) -> Self {
@@ -29697,17 +30022,14 @@ impl PhpArray {
         if self.entries.len() != values.entries.len() {
             return Err(RuntimeError::unsupported_call(
                 "array_combine()",
-                format!(
-                    "keys and values must have the same number of elements in the current subset, got {} and {}",
-                    self.entries.len(),
-                    values.entries.len()
-                ),
+                "Argument #1 ($keys) and argument #2 ($values) must have the same number of elements",
             ));
         }
 
         let mut array = Self::new();
         for (key_entry, value_entry) in self.entries.iter().zip(values.entries.iter()) {
-            let key = array_combine_key_from_value(key_entry.value())?;
+            let key_value = key_entry.value_cloned();
+            let key = array_combine_key_from_value(&key_value)?;
             array.insert(key, value_entry.value_cloned());
         }
         Ok(array)
@@ -29991,8 +30313,8 @@ impl PhpArray {
     pub fn filtered_without_callback(&self) -> Self {
         let mut array = Self::new();
         for entry in &self.entries {
-            if entry.value().is_truthy() {
-                array.insert(entry.key.clone(), entry.value_cloned());
+            if entry.value_cloned().is_truthy() {
+                array.insert_shared_slot(entry.key.clone(), entry.slot());
             }
         }
         array
@@ -30038,11 +30360,11 @@ impl PhpArray {
         for entry in &source.entries {
             match &entry.key {
                 ArrayKey::Int(_) => {
-                    self.append(entry.value_cloned())
+                    self.append_slot(entry.slot().clone())
                         .expect("array length fits in i64");
                 }
                 ArrayKey::String(key) => {
-                    self.insert(key.clone(), entry.value_cloned());
+                    self.insert_slot(key.clone(), entry.slot().clone());
                 }
             }
         }
@@ -30097,12 +30419,8 @@ impl PhpArray {
 
     pub fn contains_value_loose_scalar(&self, needle: &Value) -> RuntimeResult<bool> {
         for entry in &self.entries {
-            if array_comparison_matches(
-                "in_array()",
-                needle,
-                PhpComparisonOp::LooseEq,
-                entry.value(),
-            )? {
+            let value = entry.value_cloned();
+            if array_comparison_matches("in_array()", needle, PhpComparisonOp::LooseEq, &value)? {
                 return Ok(true);
             }
         }
@@ -30112,12 +30430,8 @@ impl PhpArray {
 
     pub fn contains_value_strict_scalar(&self, needle: &Value) -> RuntimeResult<bool> {
         for entry in &self.entries {
-            if array_comparison_matches(
-                "in_array()",
-                needle,
-                PhpComparisonOp::StrictEq,
-                entry.value(),
-            )? {
+            let value = entry.value_cloned();
+            if array_comparison_matches("in_array()", needle, PhpComparisonOp::StrictEq, &value)? {
                 return Ok(true);
             }
         }
@@ -30127,12 +30441,9 @@ impl PhpArray {
 
     pub fn search_value_loose_scalar(&self, needle: &Value) -> RuntimeResult<Option<ArrayKey>> {
         for entry in &self.entries {
-            if array_comparison_matches(
-                "array_search()",
-                needle,
-                PhpComparisonOp::LooseEq,
-                entry.value(),
-            )? {
+            let value = entry.value_cloned();
+            if array_comparison_matches("array_search()", needle, PhpComparisonOp::LooseEq, &value)?
+            {
                 return Ok(Some(entry.key.clone()));
             }
         }
@@ -30142,11 +30453,12 @@ impl PhpArray {
 
     pub fn search_value_strict_scalar(&self, needle: &Value) -> RuntimeResult<Option<ArrayKey>> {
         for entry in &self.entries {
+            let value = entry.value_cloned();
             if array_comparison_matches(
                 "array_search()",
                 needle,
                 PhpComparisonOp::StrictEq,
-                entry.value(),
+                &value,
             )? {
                 return Ok(Some(entry.key.clone()));
             }
@@ -30159,7 +30471,18 @@ impl PhpArray {
         let ArrayKey::Int(value) = key else {
             return;
         };
-        if *value < 0 || self.auto_index_exhausted || *value < self.next_auto_index {
+        if self.auto_index_exhausted {
+            return;
+        }
+
+        let should_advance = if *value >= 0 {
+            *value >= self.next_auto_index
+        } else if self.next_auto_index == 0 {
+            true
+        } else {
+            self.next_auto_index < 0 && *value >= self.next_auto_index
+        };
+        if !should_advance {
             return;
         }
 
@@ -30169,9 +30492,14 @@ impl PhpArray {
         }
     }
 
-    fn inherit_append_cursor_from(&mut self, source: &Self) {
+    pub fn inherit_append_cursor_from(&mut self, source: &Self) {
         self.next_auto_index = source.next_auto_index;
         self.auto_index_exhausted = source.auto_index_exhausted;
+    }
+
+    pub fn set_append_cursor(&mut self, next_auto_index: i64, auto_index_exhausted: bool) {
+        self.next_auto_index = next_auto_index;
+        self.auto_index_exhausted = auto_index_exhausted;
     }
 }
 
@@ -30192,6 +30520,10 @@ fn array_comparison_matches(
     }
 
     let family = op.operation_family();
+    if let Some(expected_identical) = family.strict_identity_expectation() {
+        return Ok(left.php_identical_checked(right)? == expected_identical);
+    }
+
     if let Some(blocker) = comparison_blocker_for_family(left, right, family) {
         return Err(RuntimeError::unsupported_call(
             callable,
@@ -30285,6 +30617,24 @@ fn array_scalar_string_comparison_value(callable: &str, value: &Value) -> Runtim
         .expect("array scalar support must match scalar string byte support"))
 }
 
+fn array_sort_string_comparison_value(callable: &str, value: &Value) -> RuntimeResult<Vec<u8>> {
+    match value {
+        Value::Array(_) => Ok(b"Array".to_vec()),
+        Value::Object(object) => object.array_sort_string_bytes(callable),
+        Value::Closure(_) | Value::Resource(_) => Err(RuntimeError::unsupported_call(
+            callable,
+            format!(
+                "values must be scalar, array, or stringable object in the current subset, got {}",
+                value.type_name()
+            ),
+        )),
+        Value::BinaryString(bytes) => Ok(bytes.clone()),
+        Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::String(_) => {
+            Ok(value.echo_string().into_bytes())
+        }
+    }
+}
+
 fn array_scalar_value_supported(callable: &str, value: &Value) -> RuntimeResult<()> {
     match value {
         Value::Array(_) | Value::Object(_) | Value::Closure(_) | Value::Resource(_) => {
@@ -30351,16 +30701,22 @@ fn array_key_to_value(key: &ArrayKey) -> Value {
 }
 
 fn array_flip_key_from_value(value: &Value) -> RuntimeResult<ArrayKey> {
-    match value {
-        Value::Int(value) => Ok(ArrayKey::Int(*value)),
-        Value::String(value) => Ok(ArrayKey::string(value.clone())),
-        other => Err(RuntimeError::unsupported_call(
+    array_flip_key_from_supported_value(value).ok_or_else(|| {
+        RuntimeError::unsupported_call(
             "array_flip()",
             format!(
                 "values must be int or string in the current subset, got {}",
-                other.type_name()
+                value.type_name()
             ),
-        )),
+        )
+    })
+}
+
+fn array_flip_key_from_supported_value(value: &Value) -> Option<ArrayKey> {
+    match value {
+        Value::Int(value) => Some(ArrayKey::Int(*value)),
+        Value::String(value) => Some(ArrayKey::string(value.clone())),
+        _ => None,
     }
 }
 
@@ -30370,55 +30726,36 @@ fn array_fill_key_from_value(value: &Value) -> RuntimeResult<ArrayKey> {
         Value::Bool(false) => Ok(ArrayKey::String(String::new())),
         Value::Bool(true) => Ok(ArrayKey::string("1")),
         Value::Int(value) => Ok(ArrayKey::Int(*value)),
-        Value::Float(value)
-            if value.is_finite()
-                && value.fract() == 0.0
-                && *value >= i64::MIN as f64
-                && *value < i64::MAX as f64 =>
-        {
-            Ok(ArrayKey::Int(*value as i64))
-        }
-        Value::Float(_) => Err(RuntimeError::unsupported_call(
-            "array_fill_keys()",
-            "lossy or non-finite float key values are not supported; only null, bool, int, string, and integral finite float key values are implemented",
-        )),
+        Value::Float(value) => Ok(ArrayKey::string(format_php_float_for_string_key(*value))),
         Value::String(value) => Ok(ArrayKey::string(value.clone())),
         other => Err(RuntimeError::unsupported_call(
             "array_fill_keys()",
             format!(
-                "key values must be null, bool, int, string, or integral finite float in the current subset, got {}",
+                "key values must be null, bool, int, float, or string in the current subset, got {}",
                 other.type_name()
             ),
         )),
     }
 }
 
-fn array_combine_key_from_value(value: &Value) -> RuntimeResult<ArrayKey> {
+pub fn array_combine_key_from_value(value: &Value) -> RuntimeResult<ArrayKey> {
     match value {
-        Value::Null => Ok(ArrayKey::String(String::new())),
-        Value::Bool(false) => Ok(ArrayKey::String(String::new())),
-        Value::Bool(true) => Ok(ArrayKey::string("1")),
-        Value::Int(value) => Ok(ArrayKey::Int(*value)),
-        Value::Float(value)
-            if value.is_finite()
-                && value.fract() == 0.0
-                && *value >= i64::MIN as f64
-                && *value < i64::MAX as f64 =>
-        {
-            Ok(ArrayKey::Int(*value as i64))
-        }
-        Value::Float(_) => Err(RuntimeError::unsupported_call(
-            "array_combine()",
-            "lossy or non-finite float key values are not supported; only null, bool, int, string, and integral finite float key values are implemented",
-        )),
-        Value::String(value) => Ok(ArrayKey::string(value.clone())),
-        other => Err(RuntimeError::unsupported_call(
-            "array_combine()",
-            format!(
-                "key values must be null, bool, int, string, or integral finite float in the current subset, got {}",
-                other.type_name()
+        Value::Array(_) | Value::Object(_) | Value::Closure(_) => Err(
+            RuntimeError::unsupported_call(
+                "array_combine()",
+                format!(
+                    "key values must be null, bool, int, float, string, binary string, resource, or object with __toString() in the current subset, got {}",
+                    value.type_name()
+                ),
             ),
-        )),
+        ),
+        Value::Null
+        | Value::Bool(_)
+        | Value::Int(_)
+        | Value::String(_)
+        | Value::Resource(_) => Ok(ArrayKey::string(value.echo_string())),
+        Value::BinaryString(value) => Ok(ArrayKey::String(binary_string_array_key(value))),
+        Value::Float(value) => Ok(ArrayKey::string(format_php_float_for_string_key(*value))),
     }
 }
 
@@ -30498,8 +30835,8 @@ fn array_sort_value_ordering(
             Ok(compare_numbers(left, right).unwrap_or(Ordering::Equal))
         }
         NativeArraySortMode::String => {
-            let left = array_scalar_string_comparison_value(callable, &left)?;
-            let right = array_scalar_string_comparison_value(callable, &right)?;
+            let left = array_sort_string_comparison_value(callable, &left)?;
+            let right = array_sort_string_comparison_value(callable, &right)?;
             Ok(left.cmp(&right))
         }
     }
@@ -30585,8 +30922,8 @@ fn array_sort_natural_value_ordering(
 ) -> RuntimeResult<Ordering> {
     let left = left.value_cloned();
     let right = right.value_cloned();
-    let left = array_scalar_string_comparison_value(callable, &left)?;
-    let right = array_scalar_string_comparison_value(callable, &right)?;
+    let left = array_sort_string_comparison_value(callable, &left)?;
+    let right = array_sort_string_comparison_value(callable, &right)?;
     Ok(
         match php_strnatcmp_bytes(left.as_slice(), right.as_slice(), case_insensitive) {
             value if value < 0 => Ordering::Less,
@@ -30604,8 +30941,8 @@ fn array_sort_string_value_ordering(
 ) -> RuntimeResult<Ordering> {
     let left = left.value_cloned();
     let right = right.value_cloned();
-    let left = array_scalar_string_comparison_value(callable, &left)?;
-    let right = array_scalar_string_comparison_value(callable, &right)?;
+    let left = array_sort_string_comparison_value(callable, &left)?;
+    let right = array_sort_string_comparison_value(callable, &right)?;
     Ok(if case_insensitive {
         ascii_case_insensitive_ordering(left.as_slice(), right.as_slice())
     } else {
@@ -30787,15 +31124,12 @@ fn php_regular_value_ordering(
     left: &Value,
     right: &Value,
 ) -> RuntimeResult<Ordering> {
-    array_scalar_value_supported(callable, left)?;
-    array_scalar_value_supported(callable, right)?;
-    if left.php_cmp_checked(right, Comparison::Lt)? {
-        Ok(Ordering::Less)
-    } else if left.php_cmp_checked(right, Comparison::Gt)? {
-        Ok(Ordering::Greater)
-    } else {
-        Ok(Ordering::Equal)
-    }
+    left.php_ordering_checked(right).map_err(|error| {
+        RuntimeError::unsupported_call(
+            callable,
+            format!("regular ordering failed: {}", error.message()),
+        )
+    })
 }
 
 fn add_array_sum_numbers(left: Number, right: Number) -> Number {
@@ -31157,12 +31491,13 @@ impl PhpReferenceCell {
         let constraints = self.state.borrow().constraints.clone();
         let mut value = value;
         for constraint in constraints {
-            let actual = value.type_name();
+            let actual = php_type_error_actual_name(&value);
             value = coerce_property_value_with_object_type_resolver(
                 &constraint.type_decl,
                 value,
                 &constraint.class_name,
                 &constraint.property_name,
+                false,
                 &object_type_resolver,
             )
             .map_err(|_| {
@@ -31175,7 +31510,7 @@ impl PhpReferenceCell {
         Ok(value)
     }
 
-    fn add_property_type_constraint(
+    pub fn add_property_type_constraint(
         &self,
         type_decl: Option<&str>,
         class_name: &str,
@@ -31195,7 +31530,7 @@ impl PhpReferenceCell {
         }
     }
 
-    fn remove_property_type_constraint(
+    pub fn remove_property_type_constraint(
         &self,
         type_decl: Option<&str>,
         class_name: &str,
@@ -31443,19 +31778,19 @@ impl ArrayKey {
             Value::Int(value) => Ok(Self::Int(*value)),
             Value::Float(value)
                 if value.is_finite()
-                    && value.fract() == 0.0
-                    && *value >= i64::MIN as f64
-                    && *value < i64::MAX as f64 =>
+                    && value.trunc() >= i64::MIN as f64
+                    && value.trunc() < i64::MAX as f64 =>
             {
-                Ok(Self::Int(*value as i64))
+                Ok(Self::Int(value.trunc() as i64))
             }
             Value::Float(_) => Err(RuntimeError::invalid_array_key(
-                "lossy or non-finite float keys are not supported for array_key_exists(); only null, bool, int, string, and integral finite float keys are implemented",
+                "non-finite float keys are not supported for array_key_exists(); only null, bool, int, string, resource, and finite float keys are implemented",
             )),
             Value::String(value) => Ok(Self::string(value.clone())),
             Value::BinaryString(value) => Ok(Self::String(binary_string_array_key(value))),
+            Value::Resource(id) => Ok(Self::Int(*id)),
             other => Err(RuntimeError::invalid_array_key(format!(
-                "{} keys are not supported for array_key_exists(); only null, bool, int, string, and integral finite float keys are implemented",
+                "{} keys are not supported for array_key_exists(); only null, bool, int, string, resource, and finite float keys are implemented",
                 other.type_name()
             ))),
         }
@@ -31614,6 +31949,7 @@ impl ClassId {
 pub struct PhpClassTable {
     classes: Vec<PhpClassMetadata>,
     lookup: HashMap<String, ClassId>,
+    declared_names: Vec<String>,
 }
 
 impl PhpClassTable {
@@ -31630,7 +31966,16 @@ impl PhpClassTable {
             let exception = classes
                 .get_mut(exception_id)
                 .expect("core Exception class id should resolve");
-            for property in ["message", "code", "previous"] {
+            exception
+                .add_property(PhpPropertyMetadata::instance(
+                    "message",
+                    Visibility::Protected,
+                ))
+                .expect("Exception core metadata should not duplicate message");
+            exception
+                .add_property(PhpPropertyMetadata::instance("string", Visibility::Private))
+                .expect("Exception core metadata should not duplicate string state");
+            for property in ["code", "file", "line"] {
                 exception
                     .add_property(PhpPropertyMetadata::instance(
                         property,
@@ -31638,12 +31983,24 @@ impl PhpClassTable {
                     ))
                     .expect("Exception core metadata should not duplicate constructor state");
             }
-            exception
-                .add_method(PhpMethodMetadata::instance(
-                    "getMessage",
-                    Visibility::Public,
-                ))
-                .expect("Exception core metadata should not duplicate getMessage");
+            for property in ["trace", "previous"] {
+                exception
+                    .add_property(PhpPropertyMetadata::instance(property, Visibility::Private))
+                    .expect("Exception core metadata should not duplicate private state");
+            }
+            for method in [
+                "getMessage",
+                "getCode",
+                "getFile",
+                "getLine",
+                "getPrevious",
+                "getTrace",
+                "getTraceAsString",
+            ] {
+                exception
+                    .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                    .expect("Exception core metadata should not duplicate methods");
+            }
         }
         let error_id = classes
             .declare_class("Error")
@@ -31651,12 +32008,93 @@ impl PhpClassTable {
         let error = classes
             .get_mut(error_id)
             .expect("core Error class id should resolve");
-        error
-            .add_property(PhpPropertyMetadata::instance("message", Visibility::Public))
-            .expect("Error core metadata should not duplicate message");
+        for property in ["message", "code", "file", "line", "previous"] {
+            error
+                .add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
+                .expect("Error core metadata should not duplicate properties");
+        }
+        for method in [
+            "getMessage",
+            "getCode",
+            "getFile",
+            "getLine",
+            "getPrevious",
+            "getTrace",
+            "getTraceAsString",
+        ] {
+            error
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("Error core metadata should not duplicate methods");
+        }
+        let invalid_uri_exception_id = classes
+            .declare_class("Uri\\InvalidUriException")
+            .expect("core class table should contain Error before Uri\\InvalidUriException");
+        classes
+            .set_parent(invalid_uri_exception_id, exception_id)
+            .expect("Uri\\InvalidUriException should extend Exception");
+        let invalid_url_exception_id = classes
+            .declare_class("Uri\\WhatWg\\InvalidUrlException")
+            .expect(
+                "core class table should contain Uri\\InvalidUriException before Uri\\WhatWg\\InvalidUrlException",
+            );
+        classes
+            .set_parent(invalid_url_exception_id, exception_id)
+            .expect("Uri\\WhatWg\\InvalidUrlException should extend Exception");
+        let request_parse_body_exception_id =
+            classes.declare_class("RequestParseBodyException").expect(
+                "core class table should contain Uri exceptions before RequestParseBodyException",
+            );
+        classes
+            .set_parent(request_parse_body_exception_id, exception_id)
+            .expect("RequestParseBodyException should extend Exception");
         classes
             .declare_class("stdClass")
-            .expect("core class table should contain Exception and Error before stdClass");
+            .expect("core class table should contain RequestParseBodyException before stdClass");
+        let incomplete_class_id = classes
+            .declare_class("__PHP_Incomplete_Class")
+            .expect("core class table should contain stdClass before __PHP_Incomplete_Class");
+        classes
+            .get_mut(incomplete_class_id)
+            .expect("core __PHP_Incomplete_Class id should resolve")
+            .set_allows_dynamic_properties(true);
+        let php_token_id = classes
+            .declare_class("PhpToken")
+            .expect("core class table should contain __PHP_Incomplete_Class before PhpToken");
+        let php_token = classes
+            .get_mut(php_token_id)
+            .expect("declared PhpToken class id should resolve");
+        for (property, type_decl) in [
+            ("id", "int"),
+            ("text", "string"),
+            ("line", "int"),
+            ("pos", "int"),
+        ] {
+            php_token
+                .add_property(
+                    PhpPropertyMetadata::instance(property, Visibility::Public)
+                        .with_type_decl(Some(type_decl.to_string())),
+                )
+                .expect("PhpToken core metadata should not duplicate properties");
+        }
+        php_token
+            .add_method(PhpMethodMetadata::static_method(
+                "tokenize",
+                Visibility::Public,
+            ))
+            .expect("PhpToken core metadata should not duplicate tokenize");
+        php_token
+            .add_method(PhpMethodMetadata::instance_with_flags(
+                "__construct",
+                Visibility::Public,
+                false,
+                true,
+            ))
+            .expect("PhpToken core metadata should not duplicate constructor");
+        for method in ["getTokenName", "__toString", "is", "isIgnorable"] {
+            php_token
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("PhpToken core metadata should not duplicate methods");
+        }
         let mysqli_id = classes
             .declare_class("mysqli")
             .expect("core class table should contain Exception and stdClass before mysqli");
@@ -31675,15 +32113,48 @@ impl PhpClassTable {
                 Visibility::Public,
             ))
             .expect("mysqli core metadata should not duplicate connect_error");
+        for method in ["__construct", "close"] {
+            mysqli
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("mysqli core metadata should not duplicate methods");
+        }
         classes
             .declare_class("mysqli_result")
             .expect("core class table should contain mysqli before mysqli_result");
         classes
             .declare_class("mysqli_stmt")
             .expect("core class table should contain mysqli_result before mysqli_stmt");
+        let mysqli_driver_id = classes
+            .declare_class("mysqli_driver")
+            .expect("core class table should contain mysqli_stmt before mysqli_driver");
+        let mysqli_driver = classes
+            .get_mut(mysqli_driver_id)
+            .expect("declared mysqli_driver class id should resolve");
+        mysqli_driver
+            .add_property(PhpPropertyMetadata::instance(
+                "client_info",
+                Visibility::Public,
+            ))
+            .expect("mysqli_driver core metadata should not duplicate client_info");
+        for property in ["client_version", "driver_version", "report_mode"] {
+            mysqli_driver
+                .add_property(
+                    PhpPropertyMetadata::instance(property, Visibility::Public)
+                        .with_type_decl(Some("int".to_string())),
+                )
+                .expect("mysqli_driver core metadata should not duplicate int properties");
+        }
+        for property in ["embedded", "reconnect"] {
+            mysqli_driver
+                .add_property(
+                    PhpPropertyMetadata::instance(property, Visibility::Public)
+                        .with_type_decl(Some("bool".to_string())),
+                )
+                .expect("mysqli_driver core metadata should not duplicate bool properties");
+        }
         let pdo_id = classes
             .declare_class("PDO")
-            .expect("core class table should contain mysqli_stmt before PDO");
+            .expect("core class table should contain mysqli_driver before PDO");
         let pdo = classes
             .get_mut(pdo_id)
             .expect("declared PDO class id should resolve");
@@ -31719,17 +32190,117 @@ impl PhpClassTable {
                 Visibility::Public,
             ))
             .expect("RoundingMode core metadata should not duplicate methods");
+        let uri_comparison_mode_id = classes
+            .declare_class("Uri\\UriComparisonMode")
+            .expect("core class table should contain RoundingMode before UriComparisonMode");
+        let uri_comparison_mode = classes
+            .get_mut(uri_comparison_mode_id)
+            .expect("declared UriComparisonMode class id should resolve");
+        uri_comparison_mode
+            .add_property(PhpPropertyMetadata::instance("name", Visibility::Public))
+            .expect("UriComparisonMode core metadata should not duplicate name");
+        let uri_host_type_id = classes
+            .declare_class("Uri\\Rfc3986\\UriHostType")
+            .expect("core class table should contain UriComparisonMode before UriHostType");
+        let uri_host_type = classes
+            .get_mut(uri_host_type_id)
+            .expect("declared UriHostType class id should resolve");
+        uri_host_type
+            .add_property(PhpPropertyMetadata::instance("name", Visibility::Public))
+            .expect("UriHostType core metadata should not duplicate name");
+        let uri_type_id = classes
+            .declare_class("Uri\\Rfc3986\\UriType")
+            .expect("core class table should contain UriHostType before UriType");
+        let uri_type = classes
+            .get_mut(uri_type_id)
+            .expect("declared UriType class id should resolve");
+        uri_type
+            .add_property(PhpPropertyMetadata::instance("name", Visibility::Public))
+            .expect("UriType core metadata should not duplicate name");
+        let uri_id = classes
+            .declare_class("Uri\\Rfc3986\\Uri")
+            .expect("core class table should contain UriType before Uri");
+        let uri = classes
+            .get_mut(uri_id)
+            .expect("declared Uri class id should resolve");
+        for property in [
+            "scheme", "username", "password", "host", "port", "path", "query", "fragment",
+        ] {
+            uri.add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
+                .expect("Uri core metadata should not duplicate properties");
+        }
+        uri.add_method(PhpMethodMetadata::instance(
+            "__construct",
+            Visibility::Public,
+        ))
+        .expect("Uri core metadata should not duplicate __construct");
+        uri.add_method(PhpMethodMetadata::static_method(
+            "parse",
+            Visibility::Public,
+        ))
+        .expect("Uri core metadata should not duplicate parse");
+        for method in [
+            "toRawString",
+            "toString",
+            "equals",
+            "getHostType",
+            "getUriType",
+        ] {
+            uri.add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("Uri core metadata should not duplicate methods");
+        }
+        let url_host_type_id = classes
+            .declare_class("Uri\\WhatWg\\UrlHostType")
+            .expect("core class table should contain Uri before UrlHostType");
+        let url_host_type = classes
+            .get_mut(url_host_type_id)
+            .expect("declared UrlHostType class id should resolve");
+        url_host_type
+            .add_property(PhpPropertyMetadata::instance("name", Visibility::Public))
+            .expect("UrlHostType core metadata should not duplicate name");
+        let url_id = classes
+            .declare_class("Uri\\WhatWg\\Url")
+            .expect("core class table should contain UrlHostType before Url");
+        let url = classes
+            .get_mut(url_id)
+            .expect("declared Url class id should resolve");
+        for property in [
+            "scheme", "username", "password", "host", "port", "path", "query", "fragment",
+        ] {
+            url.add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
+                .expect("Url core metadata should not duplicate properties");
+        }
+        url.add_method(PhpMethodMetadata::instance(
+            "__construct",
+            Visibility::Public,
+        ))
+        .expect("Url core metadata should not duplicate __construct");
+        url.add_method(PhpMethodMetadata::static_method(
+            "parse",
+            Visibility::Public,
+        ))
+        .expect("Url core metadata should not duplicate parse");
+        for method in [
+            "toAsciiString",
+            "toString",
+            "equals",
+            "getHostType",
+            "isSpecialScheme",
+        ] {
+            url.add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("Url core metadata should not duplicate methods");
+        }
         let bcmath_number_id = classes
             .declare_class("BcMath\\Number")
-            .expect("core class table should contain RoundingMode before BcMath\\Number");
+            .expect("core class table should contain Uri before BcMath\\Number");
         let bcmath_number = classes
             .get_mut(bcmath_number_id)
             .expect("declared BcMath\\Number class id should resolve");
         bcmath_number
-            .add_property(PhpPropertyMetadata::instance("value", Visibility::Public))
+            .add_property(PhpPropertyMetadata::instance("value", Visibility::Public).readonly())
             .expect("BcMath\\Number core metadata should not duplicate value");
         bcmath_number
-            .add_property(PhpPropertyMetadata::instance("scale", Visibility::Public))
+            .add_property(PhpPropertyMetadata::instance("scale", Visibility::Public).readonly())
             .expect("BcMath\\Number core metadata should not duplicate scale");
         for method in [
             "__construct",
@@ -31752,9 +32323,92 @@ impl PhpClassTable {
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
                 .expect("BcMath\\Number core metadata should not duplicate methods");
         }
+        let gmp_id = classes
+            .declare_class("GMP")
+            .expect("core class table should contain BcMath\\Number before GMP");
+        let gmp = classes
+            .get_mut(gmp_id)
+            .expect("declared GMP class id should resolve");
+        gmp.add_property(PhpPropertyMetadata::instance("num", Visibility::Public))
+            .expect("GMP core metadata should not duplicate num");
+        for method in ["__construct", "__toString"] {
+            gmp.add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("GMP core metadata should not duplicate methods");
+        }
+        let gd_image_id = classes
+            .declare_class("GdImage")
+            .expect("core class table should contain GMP before GdImage");
+        classes
+            .get_mut(gd_image_id)
+            .expect("declared GdImage class id should resolve")
+            .add_method(PhpMethodMetadata::instance_with_flags(
+                "__construct",
+                Visibility::Private,
+                false,
+                true,
+            ))
+            .expect("GdImage core metadata should not duplicate constructor");
+        let date_error_id = classes
+            .declare_class("DateError")
+            .expect("core class table should contain GdImage before DateError");
+        classes
+            .set_parent(date_error_id, error_id)
+            .expect("DateError should extend Error");
+        let date_object_error_id = classes
+            .declare_class("DateObjectError")
+            .expect("core class table should contain DateError before DateObjectError");
+        classes
+            .set_parent(date_object_error_id, date_error_id)
+            .expect("DateObjectError should extend DateError");
+        let date_range_error_id = classes
+            .declare_class("DateRangeError")
+            .expect("core class table should contain DateObjectError before DateRangeError");
+        classes
+            .set_parent(date_range_error_id, date_error_id)
+            .expect("DateRangeError should extend DateError");
+        let date_exception_id = classes
+            .declare_class("DateException")
+            .expect("core class table should contain DateRangeError before DateException");
+        let exception_id = classes
+            .lookup_class_id("Exception")
+            .expect("core Exception class id should resolve for DateException");
+        classes
+            .set_parent(date_exception_id, exception_id)
+            .expect("DateException should extend Exception");
+        let hash_context_id = classes
+            .declare_class("HashContext")
+            .expect("core class table should contain DateException before HashContext");
+        classes
+            .get_mut(hash_context_id)
+            .expect("declared HashContext class id should resolve")
+            .add_method(PhpMethodMetadata::instance_with_flags(
+                "__construct",
+                Visibility::Private,
+                false,
+                true,
+            ))
+            .expect("HashContext core metadata should not duplicate constructor");
+        let sensitive_parameter_value_id = classes
+            .declare_class("SensitiveParameterValue")
+            .expect("core class table should contain HashContext before SensitiveParameterValue");
+        let sensitive_parameter_value = classes
+            .get_mut(sensitive_parameter_value_id)
+            .expect("declared SensitiveParameterValue class id should resolve");
+        sensitive_parameter_value
+            .add_property(PhpPropertyMetadata::instance("value", Visibility::Private))
+            .expect("SensitiveParameterValue core metadata should not duplicate value");
+        sensitive_parameter_value
+            .add_method(PhpMethodMetadata::instance(
+                "__construct",
+                Visibility::Public,
+            ))
+            .expect("SensitiveParameterValue core metadata should not duplicate constructor");
+        sensitive_parameter_value
+            .add_method(PhpMethodMetadata::instance("getValue", Visibility::Public))
+            .expect("SensitiveParameterValue core metadata should not duplicate getValue");
         let datetimezone_id = classes
             .declare_class("DateTimeZone")
-            .expect("core class table should contain BcMath\\Number before DateTimeZone");
+            .expect("core class table should contain SensitiveParameterValue before DateTimeZone");
         let datetimezone = classes
             .get_mut(datetimezone_id)
             .expect("declared DateTimeZone class id should resolve");
@@ -31789,7 +32443,21 @@ impl PhpClassTable {
                 Visibility::Public,
             ))
             .expect("DateTimeZone core metadata should not duplicate methods");
-        for method in ["__construct", "getName", "getOffset", "getTransitions"] {
+        datetimezone
+            .add_method(PhpMethodMetadata::static_method(
+                "__set_state",
+                Visibility::Public,
+            ))
+            .expect("DateTimeZone core metadata should not duplicate methods");
+        for method in [
+            "__construct",
+            "__serialize",
+            "__unserialize",
+            "getName",
+            "getLocation",
+            "getOffset",
+            "getTransitions",
+        ] {
             datetimezone
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
                 .expect("DateTimeZone core metadata should not duplicate methods");
@@ -31845,32 +32513,54 @@ impl PhpClassTable {
         let reflection_class = classes
             .get_mut(reflection_class_id)
             .expect("declared ReflectionClass class id should resolve");
+        reflection_class
+            .add_property(PhpPropertyMetadata::instance("name", Visibility::Public))
+            .expect("ReflectionClass core metadata should not duplicate properties");
+        for constant in [
+            "IS_IMPLICIT_ABSTRACT",
+            "IS_EXPLICIT_ABSTRACT",
+            "IS_FINAL",
+            "IS_READONLY",
+        ] {
+            reflection_class
+                .add_constant(PhpClassConstantMetadata::new(constant, Visibility::Public))
+                .expect("ReflectionClass core metadata should not duplicate constants");
+        }
         for method in [
             "__construct",
+            "__toString",
             "getName",
             "getShortName",
             "getFileName",
             "getStartLine",
             "getEndLine",
             "getDocComment",
+            "getExtensionName",
+            "getExtension",
             "inNamespace",
             "getNamespaceName",
             "isInternal",
             "isUserDefined",
             "isInterface",
             "isTrait",
+            "isEnum",
             "isAbstract",
             "isFinal",
+            "isReadOnly",
+            "isCloneable",
             "getModifiers",
             "isInstantiable",
             "isInstance",
             "isSubclassOf",
+            "implementsInterface",
             "isIterable",
             "isIterateable",
             "getParentClass",
             "getInterfaceNames",
+            "getInterfaces",
             "getTraitNames",
             "getTraits",
+            "getConstructor",
             "hasConstant",
             "getConstant",
             "getConstants",
@@ -31880,6 +32570,13 @@ impl PhpClassTable {
             "hasProperty",
             "getProperty",
             "getProperties",
+            "getStaticProperties",
+            "getStaticPropertyValue",
+            "setStaticPropertyValue",
+            "getDefaultProperties",
+            "newInstance",
+            "newInstanceArgs",
+            "newInstanceWithoutConstructor",
             "getAttributes",
         ] {
             reflection_class
@@ -31903,8 +32600,12 @@ impl PhpClassTable {
         let reflection_function = classes
             .get_mut(reflection_function_id)
             .expect("declared ReflectionFunction class id should resolve");
+        reflection_function
+            .add_property(PhpPropertyMetadata::instance("name", Visibility::Public))
+            .expect("ReflectionFunction core metadata should not duplicate properties");
         for method in [
             "__construct",
+            "__toString",
             "getName",
             "getShortName",
             "getNamespaceName",
@@ -31913,8 +32614,10 @@ impl PhpClassTable {
             "isUserDefined",
             "isClosure",
             "isAnonymous",
+            "isStatic",
             "isDeprecated",
             "getExtensionName",
+            "getExtension",
             "getFileName",
             "getStartLine",
             "getEndLine",
@@ -31923,9 +32626,18 @@ impl PhpClassTable {
             "getParameters",
             "getNumberOfParameters",
             "getNumberOfRequiredParameters",
+            "isVariadic",
+            "getStaticVariables",
+            "getClosureUsedVariables",
+            "getClosure",
+            "getClosureThis",
+            "getClosureScopeClass",
+            "getClosureCalledClass",
             "hasReturnType",
             "getReturnType",
             "returnsReference",
+            "invoke",
+            "invokeArgs",
         ] {
             reflection_function
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
@@ -31937,6 +32649,12 @@ impl PhpClassTable {
         let reflection_method = classes
             .get_mut(reflection_method_id)
             .expect("declared ReflectionMethod class id should resolve");
+        reflection_method
+            .add_property(PhpPropertyMetadata::instance("name", Visibility::Public))
+            .expect("ReflectionMethod core metadata should not duplicate properties");
+        reflection_method
+            .add_property(PhpPropertyMetadata::instance("class", Visibility::Public))
+            .expect("ReflectionMethod core metadata should not duplicate properties");
         for constant in [
             "IS_PUBLIC",
             "IS_PROTECTED",
@@ -31951,6 +32669,7 @@ impl PhpClassTable {
         }
         for method in [
             "__construct",
+            "__toString",
             "getName",
             "getFileName",
             "getStartLine",
@@ -31961,6 +32680,7 @@ impl PhpClassTable {
             "getParameters",
             "getNumberOfParameters",
             "getNumberOfRequiredParameters",
+            "getStaticVariables",
             "hasReturnType",
             "getReturnType",
             "isPublic",
@@ -31976,6 +32696,12 @@ impl PhpClassTable {
             "isInternal",
             "isUserDefined",
             "returnsReference",
+            "setAccessible",
+            "getClosure",
+            "getPrototype",
+            "hasPrototype",
+            "invoke",
+            "invokeArgs",
         ] {
             reflection_method
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
@@ -32006,8 +32732,14 @@ impl PhpClassTable {
             "isOptional",
             "isDefaultValueAvailable",
             "getDefaultValue",
+            "isDefaultValueConstant",
+            "getDefaultValueConstantName",
             "isPassedByReference",
+            "canBePassedByValue",
             "isVariadic",
+            "getClass",
+            "isArray",
+            "isCallable",
             "hasType",
             "getType",
             "allowsNull",
@@ -32037,7 +32769,7 @@ impl PhpClassTable {
         let reflection_named_type = classes
             .get_mut(reflection_named_type_id)
             .expect("declared ReflectionNamedType class id should resolve");
-        for method in ["getName", "isBuiltin"] {
+        for method in ["__toString", "getName", "isBuiltin"] {
             reflection_named_type
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
                 .expect("ReflectionNamedType core metadata should not duplicate methods");
@@ -32083,7 +32815,18 @@ impl PhpClassTable {
                 .add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
                 .expect("ReflectionProperty core metadata should not duplicate properties");
         }
-        for constant in ["IS_PUBLIC", "IS_PROTECTED", "IS_PRIVATE", "IS_STATIC"] {
+        for constant in [
+            "IS_PUBLIC",
+            "IS_PROTECTED",
+            "IS_PRIVATE",
+            "IS_STATIC",
+            "IS_FINAL",
+            "IS_ABSTRACT",
+            "IS_READONLY",
+            "IS_VIRTUAL",
+            "IS_PROTECTED_SET",
+            "IS_PRIVATE_SET",
+        ] {
             reflection_property
                 .add_constant(PhpClassConstantMetadata::new(constant, Visibility::Public))
                 .expect("ReflectionProperty core metadata should not duplicate constants");
@@ -32106,6 +32849,11 @@ impl PhpClassTable {
             "hasType",
             "getType",
             "getAttributes",
+            "getValue",
+            "setValue",
+            "isInitialized",
+            "isReadable",
+            "isWritable",
         ] {
             reflection_property
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
@@ -32137,6 +32885,8 @@ impl PhpClassTable {
             "isPrivate",
             "isFinal",
             "isDeprecated",
+            "isEnumCase",
+            "getDocComment",
             "getValue",
             "getAttributes",
         ] {
@@ -32144,8 +32894,34 @@ impl PhpClassTable {
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
                 .expect("ReflectionClassConstant core metadata should not duplicate methods");
         }
+        let reflection_constant_id = classes.declare_class("ReflectionConstant").expect(
+            "core class table should contain ReflectionClassConstant before ReflectionConstant",
+        );
+        let reflection_constant = classes
+            .get_mut(reflection_constant_id)
+            .expect("declared ReflectionConstant class id should resolve");
+        reflection_constant
+            .add_property(PhpPropertyMetadata::instance("name", Visibility::Public))
+            .expect("ReflectionConstant core metadata should not duplicate properties");
+        for method in [
+            "__construct",
+            "getName",
+            "getValue",
+            "isDeprecated",
+            "getAttributes",
+            "getExtensionName",
+            "getExtension",
+            "getFileName",
+            "inNamespace",
+            "getNamespaceName",
+            "getShortName",
+        ] {
+            reflection_constant
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("ReflectionConstant core metadata should not duplicate methods");
+        }
         let reflection_attribute_id = classes.declare_class("ReflectionAttribute").expect(
-            "core class table should contain ReflectionClassConstant before ReflectionAttribute",
+            "core class table should contain ReflectionConstant before ReflectionAttribute",
         );
         let reflection_attribute = classes
             .get_mut(reflection_attribute_id)
@@ -32160,6 +32936,8 @@ impl PhpClassTable {
             ))
             .expect("ReflectionAttribute core metadata should not duplicate constants");
         for method in [
+            "__construct",
+            "__toString",
             "getName",
             "getTarget",
             "isRepeated",
@@ -32200,9 +32978,15 @@ impl PhpClassTable {
         classes
             .set_parent(division_by_zero_error_id, arithmetic_error_id)
             .expect("DivisionByZeroError should extend ArithmeticError");
+        let assertion_error_id = classes
+            .declare_class("AssertionError")
+            .expect("core class table should contain DivisionByZeroError before AssertionError");
+        classes
+            .set_parent(assertion_error_id, error_id)
+            .expect("AssertionError should extend Error");
         let runtime_exception_id = classes
             .declare_class("RuntimeException")
-            .expect("core class table should contain DivisionByZeroError before RuntimeException");
+            .expect("core class table should contain AssertionError before RuntimeException");
         let exception_id = classes
             .lookup_class_id("Exception")
             .expect("core Exception class id should resolve for RuntimeException");
@@ -32235,11 +33019,20 @@ impl PhpClassTable {
         let directory = classes
             .get_mut(directory_id)
             .expect("declared Directory class id should resolve");
-        for property in ["path", "handle"] {
-            directory
-                .add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
-                .expect("Directory core metadata should not duplicate properties");
-        }
+        directory
+            .add_property(
+                PhpPropertyMetadata::instance("path", Visibility::Public)
+                    .with_type_decl(Some("string".to_string()))
+                    .readonly(),
+            )
+            .expect("Directory core metadata should not duplicate path property");
+        directory
+            .add_property(
+                PhpPropertyMetadata::instance("handle", Visibility::Public)
+                    .with_type_decl(Some("mixed".to_string()))
+                    .readonly(),
+            )
+            .expect("Directory core metadata should not duplicate handle property");
         for method in ["read", "rewind", "close"] {
             directory
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
@@ -32323,6 +33116,7 @@ impl PhpClassTable {
             "getArrayCopy",
             "getFlags",
             "getIterator",
+            "getIteratorClass",
             "key",
             "ksort",
             "natcasesort",
@@ -32334,6 +33128,9 @@ impl PhpClassTable {
             "offsetUnset",
             "rewind",
             "setFlags",
+            "setIteratorClass",
+            "uasort",
+            "uksort",
             "valid",
         ] {
             array_object
@@ -32375,6 +33172,7 @@ impl PhpClassTable {
             "current",
             "getArrayCopy",
             "getFlags",
+            "getIteratorClass",
             "key",
             "ksort",
             "natcasesort",
@@ -32387,6 +33185,9 @@ impl PhpClassTable {
             "rewind",
             "seek",
             "setFlags",
+            "setIteratorClass",
+            "uasort",
+            "uksort",
             "valid",
         ] {
             array_iterator
@@ -32439,6 +33240,7 @@ impl PhpClassTable {
             "offsetSet",
             "offsetUnset",
             "pop",
+            "prev",
             "push",
             "rewind",
             "setIteratorMode",
@@ -32489,6 +33291,8 @@ impl PhpClassTable {
             .expect("declared SplObjectStorage class id should resolve");
         for method in [
             "__construct",
+            "__serialize",
+            "__unserialize",
             "attach",
             "detach",
             "contains",
@@ -32508,15 +33312,380 @@ impl PhpClassTable {
             "addAll",
             "removeAll",
             "removeAllExcept",
+            "serialize",
+            "unserialize",
             "seek",
         ] {
             spl_object_storage
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
                 .expect("SplObjectStorage core metadata should not duplicate methods");
         }
+        let spl_file_info_id = classes
+            .declare_class("SplFileInfo")
+            .expect("core class table should contain SplObjectStorage before SplFileInfo");
+        let spl_file_info = classes
+            .get_mut(spl_file_info_id)
+            .expect("declared SplFileInfo class id should resolve");
+        for method in [
+            "__construct",
+            "__debugInfo",
+            "__toString",
+            "getBasename",
+            "getExtension",
+            "getFileInfo",
+            "getFilename",
+            "getGroup",
+            "getInode",
+            "getLinkTarget",
+            "getOwner",
+            "getPathInfo",
+            "getPerms",
+            "getSize",
+            "isDir",
+            "isFile",
+            "isLink",
+            "openFile",
+            "setFileClass",
+            "setInfoClass",
+        ] {
+            spl_file_info
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("SplFileInfo core metadata should not duplicate methods");
+        }
+        let directory_iterator_id = classes
+            .declare_class("DirectoryIterator")
+            .expect("core class table should contain SplFileInfo before DirectoryIterator");
+        classes
+            .set_parent(directory_iterator_id, spl_file_info_id)
+            .expect("DirectoryIterator should extend SplFileInfo");
+        classes
+            .set_interfaces(directory_iterator_id, vec!["Iterator".to_string()])
+            .expect("DirectoryIterator should implement Iterator");
+        let directory_iterator = classes
+            .get_mut(directory_iterator_id)
+            .expect("declared DirectoryIterator class id should resolve");
+        for method in [
+            "__construct",
+            "current",
+            "getBasename",
+            "getExtension",
+            "getFilename",
+            "getGroup",
+            "getInode",
+            "getOwner",
+            "isDot",
+            "isFile",
+            "key",
+            "next",
+            "rewind",
+            "valid",
+        ] {
+            directory_iterator
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("DirectoryIterator core metadata should not duplicate methods");
+        }
+        let filesystem_iterator_id = classes
+            .declare_class("FilesystemIterator")
+            .expect("core class table should contain DirectoryIterator before FilesystemIterator");
+        classes
+            .set_parent(filesystem_iterator_id, directory_iterator_id)
+            .expect("FilesystemIterator should extend DirectoryIterator");
+        classes
+            .set_interfaces(filesystem_iterator_id, vec!["Iterator".to_string()])
+            .expect("FilesystemIterator should implement Iterator");
+        let filesystem_iterator = classes
+            .get_mut(filesystem_iterator_id)
+            .expect("declared FilesystemIterator class id should resolve");
+        for constant in [
+            "CURRENT_AS_PATHNAME",
+            "CURRENT_AS_FILEINFO",
+            "CURRENT_AS_SELF",
+            "CURRENT_MODE_MASK",
+            "KEY_AS_PATHNAME",
+            "KEY_AS_FILENAME",
+            "KEY_MODE_MASK",
+            "SKIP_DOTS",
+            "UNIX_PATHS",
+            "FOLLOW_SYMLINKS",
+            "OTHER_MODE_MASK",
+        ] {
+            filesystem_iterator
+                .add_constant(PhpClassConstantMetadata::new(constant, Visibility::Public))
+                .expect("FilesystemIterator core metadata should not duplicate constants");
+        }
+        for method in ["__construct", "getFlags", "setFlags"] {
+            filesystem_iterator
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("FilesystemIterator core metadata should not duplicate methods");
+        }
+        let recursive_directory_iterator_id = classes
+            .declare_class("RecursiveDirectoryIterator")
+            .expect(
+            "core class table should contain FilesystemIterator before RecursiveDirectoryIterator",
+        );
+        classes
+            .set_parent(recursive_directory_iterator_id, filesystem_iterator_id)
+            .expect("RecursiveDirectoryIterator should extend FilesystemIterator");
+        classes
+            .set_interfaces(
+                recursive_directory_iterator_id,
+                vec!["Iterator".to_string()],
+            )
+            .expect("RecursiveDirectoryIterator should implement Iterator");
+        let recursive_directory_iterator = classes
+            .get_mut(recursive_directory_iterator_id)
+            .expect("declared RecursiveDirectoryIterator class id should resolve");
+        for method in ["getSubPath", "getSubPathname", "hasChildren"] {
+            recursive_directory_iterator
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("RecursiveDirectoryIterator core metadata should not duplicate methods");
+        }
+        let spl_file_object_id = classes.declare_class("SplFileObject").expect(
+            "core class table should contain RecursiveDirectoryIterator before SplFileObject",
+        );
+        classes
+            .set_parent(spl_file_object_id, spl_file_info_id)
+            .expect("SplFileObject should extend SplFileInfo");
+        classes
+            .set_interfaces(spl_file_object_id, vec!["Iterator".to_string()])
+            .expect("SplFileObject should implement Iterator");
+        let spl_file_object = classes
+            .get_mut(spl_file_object_id)
+            .expect("declared SplFileObject class id should resolve");
+        for constant in ["DROP_NEW_LINE", "READ_AHEAD", "SKIP_EMPTY", "READ_CSV"] {
+            spl_file_object
+                .add_constant(PhpClassConstantMetadata::new(constant, Visibility::Public))
+                .expect("SplFileObject core metadata should not duplicate constants");
+        }
+        for method in [
+            "__construct",
+            "__debugInfo",
+            "__toString",
+            "current",
+            "eof",
+            "fgetc",
+            "fgets",
+            "fgetcsv",
+            "flock",
+            "fpassthru",
+            "fread",
+            "fstat",
+            "fflush",
+            "fputcsv",
+            "fputs",
+            "fwrite",
+            "ftell",
+            "getCsvControl",
+            "getCurrentLine",
+            "getFlags",
+            "getMaxLineLen",
+            "key",
+            "next",
+            "rewind",
+            "seek",
+            "setCsvControl",
+            "setFlags",
+            "setMaxLineLen",
+            "valid",
+        ] {
+            spl_file_object
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("SplFileObject core metadata should not duplicate methods");
+        }
+        let spl_temp_file_object_id = classes
+            .declare_class("SplTempFileObject")
+            .expect("core class table should contain SplFileObject before SplTempFileObject");
+        classes
+            .set_parent(spl_temp_file_object_id, spl_file_object_id)
+            .expect("SplTempFileObject should extend SplFileObject");
+        let spl_temp_file_object = classes
+            .get_mut(spl_temp_file_object_id)
+            .expect("declared SplTempFileObject class id should resolve");
+        spl_temp_file_object
+            .add_method(PhpMethodMetadata::instance(
+                "__construct",
+                Visibility::Public,
+            ))
+            .expect("SplTempFileObject core metadata should not duplicate methods");
+        let empty_iterator_id = classes
+            .declare_class("EmptyIterator")
+            .expect("core class table should contain SplTempFileObject before EmptyIterator");
+        classes
+            .set_interfaces(empty_iterator_id, vec!["Iterator".to_string()])
+            .expect("EmptyIterator should implement Iterator");
+        let empty_iterator = classes
+            .get_mut(empty_iterator_id)
+            .expect("declared EmptyIterator class id should resolve");
+        for method in ["current", "key", "next", "rewind", "valid"] {
+            empty_iterator
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("EmptyIterator core metadata should not duplicate methods");
+        }
+        let iterator_iterator_id = classes
+            .declare_class("IteratorIterator")
+            .expect("core class table should contain EmptyIterator before IteratorIterator");
+        classes
+            .set_interfaces(iterator_iterator_id, vec!["Iterator".to_string()])
+            .expect("IteratorIterator should implement Iterator");
+        let iterator_iterator = classes
+            .get_mut(iterator_iterator_id)
+            .expect("declared IteratorIterator class id should resolve");
+        for method in [
+            "__construct",
+            "current",
+            "getInnerIterator",
+            "key",
+            "next",
+            "rewind",
+            "valid",
+        ] {
+            iterator_iterator
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("IteratorIterator core metadata should not duplicate methods");
+        }
+        let recursive_iterator_iterator_id =
+            classes.declare_class("RecursiveIteratorIterator").expect(
+                "core class table should contain IteratorIterator before RecursiveIteratorIterator",
+            );
+        classes
+            .set_interfaces(recursive_iterator_iterator_id, vec!["Iterator".to_string()])
+            .expect("RecursiveIteratorIterator should implement Iterator");
+        let recursive_iterator_iterator = classes
+            .get_mut(recursive_iterator_iterator_id)
+            .expect("declared RecursiveIteratorIterator class id should resolve");
+        for method in [
+            "__construct",
+            "current",
+            "getSubPath",
+            "getSubPathname",
+            "key",
+            "next",
+            "rewind",
+            "valid",
+        ] {
+            recursive_iterator_iterator
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("RecursiveIteratorIterator core metadata should not duplicate methods");
+        }
+        let no_rewind_iterator_id = classes.declare_class("NoRewindIterator").expect(
+            "core class table should contain RecursiveIteratorIterator before NoRewindIterator",
+        );
+        classes
+            .set_interfaces(no_rewind_iterator_id, vec!["Iterator".to_string()])
+            .expect("NoRewindIterator should implement Iterator");
+        let no_rewind_iterator = classes
+            .get_mut(no_rewind_iterator_id)
+            .expect("declared NoRewindIterator class id should resolve");
+        for method in [
+            "__construct",
+            "current",
+            "getInnerIterator",
+            "key",
+            "next",
+            "rewind",
+            "valid",
+        ] {
+            no_rewind_iterator
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("NoRewindIterator core metadata should not duplicate methods");
+        }
+        let infinite_iterator_id = classes
+            .declare_class("InfiniteIterator")
+            .expect("core class table should contain NoRewindIterator before InfiniteIterator");
+        classes
+            .set_interfaces(infinite_iterator_id, vec!["Iterator".to_string()])
+            .expect("InfiniteIterator should implement Iterator");
+        let infinite_iterator = classes
+            .get_mut(infinite_iterator_id)
+            .expect("declared InfiniteIterator class id should resolve");
+        for method in [
+            "__construct",
+            "current",
+            "getInnerIterator",
+            "key",
+            "next",
+            "rewind",
+            "valid",
+        ] {
+            infinite_iterator
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("InfiniteIterator core metadata should not duplicate methods");
+        }
+        let limit_iterator_id = classes
+            .declare_class("LimitIterator")
+            .expect("core class table should contain InfiniteIterator before LimitIterator");
+        classes
+            .set_interfaces(limit_iterator_id, vec!["Iterator".to_string()])
+            .expect("LimitIterator should implement Iterator");
+        let limit_iterator = classes
+            .get_mut(limit_iterator_id)
+            .expect("declared LimitIterator class id should resolve");
+        for method in [
+            "__construct",
+            "current",
+            "getInnerIterator",
+            "key",
+            "next",
+            "rewind",
+            "valid",
+        ] {
+            limit_iterator
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("LimitIterator core metadata should not duplicate methods");
+        }
+        let regex_iterator_id = classes
+            .declare_class("RegexIterator")
+            .expect("core class table should contain LimitIterator before RegexIterator");
+        classes
+            .set_interfaces(regex_iterator_id, vec!["Iterator".to_string()])
+            .expect("RegexIterator should implement Iterator");
+        let regex_iterator = classes
+            .get_mut(regex_iterator_id)
+            .expect("declared RegexIterator class id should resolve");
+        regex_iterator
+            .add_property(PhpPropertyMetadata::instance(
+                "replacement",
+                Visibility::Public,
+            ))
+            .expect("RegexIterator core metadata should not duplicate properties");
+        for constant in [
+            "MATCH",
+            "match",
+            "GET_MATCH",
+            "ALL_MATCHES",
+            "SPLIT",
+            "REPLACE",
+            "USE_KEY",
+            "INVERT_MATCH",
+        ] {
+            regex_iterator
+                .add_constant(PhpClassConstantMetadata::new(constant, Visibility::Public))
+                .expect("RegexIterator core metadata should not duplicate constants");
+        }
+        for method in [
+            "__construct",
+            "accept",
+            "current",
+            "getFlags",
+            "getInnerIterator",
+            "getMode",
+            "getPregFlags",
+            "getRegex",
+            "key",
+            "next",
+            "rewind",
+            "setFlags",
+            "setMode",
+            "setPregFlags",
+            "valid",
+        ] {
+            regex_iterator
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("RegexIterator core metadata should not duplicate methods");
+        }
         let reflection_extension_id = classes
             .declare_class("ReflectionExtension")
-            .expect("core class table should contain SplObjectStorage before ReflectionExtension");
+            .expect("core class table should contain RegexIterator before ReflectionExtension");
         let reflection_extension = classes
             .get_mut(reflection_extension_id)
             .expect("declared ReflectionExtension class id should resolve");
@@ -32527,6 +33696,9 @@ impl PhpClassTable {
             "__construct",
             "getName",
             "getVersion",
+            "getFunctions",
+            "getConstants",
+            "getINIEntries",
             "getClassNames",
             "getClasses",
             "getDependencies",
@@ -32559,9 +33731,125 @@ impl PhpClassTable {
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
                 .expect("ReflectionZendExtension core metadata should not duplicate methods");
         }
+        let date_exception_id = classes
+            .lookup_class_id("DateException")
+            .expect("core DateException class id should resolve for malformed date exceptions");
+        let date_malformed_string_exception_id = classes
+            .declare_class("DateMalformedStringException")
+            .expect(
+                "core class table should contain ReflectionZendExtension before DateMalformedStringException",
+            );
+        classes
+            .set_parent(date_malformed_string_exception_id, date_exception_id)
+            .expect("DateMalformedStringException should extend DateException");
+        let date_malformed_interval_exception_id = classes
+            .declare_class("DateMalformedIntervalStringException")
+            .expect(
+                "core class table should contain DateMalformedStringException before DateMalformedIntervalStringException",
+            );
+        classes
+            .set_parent(date_malformed_interval_exception_id, date_exception_id)
+            .expect("DateMalformedIntervalStringException should extend DateException");
+        let date_malformed_period_exception_id = classes
+            .declare_class("DateMalformedPeriodStringException")
+            .expect(
+                "core class table should contain DateMalformedIntervalStringException before DateMalformedPeriodStringException",
+            );
+        classes
+            .set_parent(date_malformed_period_exception_id, date_exception_id)
+            .expect("DateMalformedPeriodStringException should extend DateException");
+        let date_interval_id = classes
+            .declare_class("DateInterval")
+            .expect(
+                "core class table should contain DateMalformedPeriodStringException before DateInterval",
+            );
+        let date_interval = classes
+            .get_mut(date_interval_id)
+            .expect("declared DateInterval class id should resolve");
+        for property in [
+            "y",
+            "m",
+            "d",
+            "h",
+            "i",
+            "s",
+            "f",
+            "invert",
+            "days",
+            "from_string",
+            "date_string",
+        ] {
+            date_interval
+                .add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
+                .expect("DateInterval core metadata should not duplicate properties");
+        }
+        for method in ["__construct", "format"] {
+            date_interval
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("DateInterval core metadata should not duplicate methods");
+        }
+        date_interval
+            .add_method(PhpMethodMetadata::static_method(
+                "createFromDateString",
+                Visibility::Public,
+            ))
+            .expect("DateInterval core metadata should not duplicate static methods");
+        date_interval
+            .add_method(PhpMethodMetadata::static_method(
+                "__set_state",
+                Visibility::Public,
+            ))
+            .expect("DateInterval core metadata should not duplicate static methods");
+        let date_period_id = classes
+            .declare_class("DatePeriod")
+            .expect("core class table should contain DateInterval before DatePeriod");
+        let date_period = classes
+            .get_mut(date_period_id)
+            .expect("declared DatePeriod class id should resolve");
+        for property in [
+            "start",
+            "current",
+            "end",
+            "interval",
+            "recurrences",
+            "include_start_date",
+            "include_end_date",
+        ] {
+            date_period
+                .add_property(
+                    PhpPropertyMetadata::instance(property, Visibility::Public).readonly(),
+                )
+                .expect("DatePeriod core metadata should not duplicate properties");
+        }
+        for constant in ["EXCLUDE_START_DATE", "INCLUDE_END_DATE"] {
+            date_period
+                .add_constant(PhpClassConstantMetadata::new(constant, Visibility::Public))
+                .expect("DatePeriod core metadata should not duplicate constants");
+        }
+        for method in [
+            "__construct",
+            "__serialize",
+            "__unserialize",
+            "getStartDate",
+            "getEndDate",
+            "getDateInterval",
+            "getRecurrences",
+        ] {
+            date_period
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("DatePeriod core metadata should not duplicate methods");
+        }
+        for method in ["__set_state", "createFromISO8601String"] {
+            date_period
+                .add_method(PhpMethodMetadata::static_method(method, Visibility::Public))
+                .expect("DatePeriod core metadata should not duplicate static methods");
+        }
         let datetime_id = classes
             .declare_class("DateTime")
-            .expect("core class table should contain ReflectionZendExtension before DateTime");
+            .expect("core class table should contain DatePeriod before DateTime");
+        classes
+            .set_interfaces(datetime_id, vec!["DateTimeInterface".to_string()])
+            .expect("DateTime should implement DateTimeInterface");
         let datetime = classes
             .get_mut(datetime_id)
             .expect("declared DateTime class id should resolve");
@@ -32570,11 +33858,515 @@ impl PhpClassTable {
                 .add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
                 .expect("DateTime core metadata should not duplicate properties");
         }
-        for method in ["__construct", "format"] {
+        for constant in [
+            "ATOM",
+            "COOKIE",
+            "ISO8601",
+            "ISO8601_EXPANDED",
+            "RFC822",
+            "RFC850",
+            "RFC1036",
+            "RFC1123",
+            "RFC7231",
+            "RFC2822",
+            "RFC3339",
+            "RFC3339_EXTENDED",
+            "RSS",
+            "W3C",
+        ] {
+            datetime
+                .add_constant(PhpClassConstantMetadata::new(constant, Visibility::Public))
+                .expect("DateTime core metadata should not duplicate constants");
+        }
+        for method in [
+            "__construct",
+            "__serialize",
+            "__unserialize",
+            "format",
+            "getTimestamp",
+            "setTimestamp",
+            "getMicrosecond",
+            "setMicrosecond",
+            "modify",
+            "getOffset",
+            "getTimezone",
+            "setTimezone",
+            "setDate",
+            "setISODate",
+            "setTime",
+            "add",
+            "sub",
+            "diff",
+        ] {
             datetime
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
                 .expect("DateTime core metadata should not duplicate methods");
         }
+        for method in [
+            "__set_state",
+            "createFromFormat",
+            "createFromImmutable",
+            "createFromInterface",
+        ] {
+            datetime
+                .add_method(PhpMethodMetadata::static_method(method, Visibility::Public))
+                .expect("DateTime core metadata should not duplicate static methods");
+        }
+        let datetime_immutable_id = classes
+            .declare_class("DateTimeImmutable")
+            .expect("core class table should contain DateTime before DateTimeImmutable");
+        classes
+            .set_interfaces(datetime_immutable_id, vec!["DateTimeInterface".to_string()])
+            .expect("DateTimeImmutable should implement DateTimeInterface");
+        let datetime_immutable = classes
+            .get_mut(datetime_immutable_id)
+            .expect("declared DateTimeImmutable class id should resolve");
+        for property in ["date", "timezone_type", "timezone"] {
+            datetime_immutable
+                .add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
+                .expect("DateTimeImmutable core metadata should not duplicate properties");
+        }
+        for constant in [
+            "ATOM",
+            "COOKIE",
+            "ISO8601",
+            "ISO8601_EXPANDED",
+            "RFC822",
+            "RFC850",
+            "RFC1036",
+            "RFC1123",
+            "RFC7231",
+            "RFC2822",
+            "RFC3339",
+            "RFC3339_EXTENDED",
+            "RSS",
+            "W3C",
+        ] {
+            datetime_immutable
+                .add_constant(PhpClassConstantMetadata::new(constant, Visibility::Public))
+                .expect("DateTimeImmutable core metadata should not duplicate constants");
+        }
+        for method in [
+            "__construct",
+            "format",
+            "getTimestamp",
+            "setTimestamp",
+            "getMicrosecond",
+            "setMicrosecond",
+            "modify",
+            "getOffset",
+            "getTimezone",
+            "setTimezone",
+            "setDate",
+            "setISODate",
+            "setTime",
+            "add",
+            "sub",
+            "diff",
+        ] {
+            datetime_immutable
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("DateTimeImmutable core metadata should not duplicate methods");
+        }
+        for method in [
+            "__set_state",
+            "createFromFormat",
+            "createFromMutable",
+            "createFromInterface",
+        ] {
+            datetime_immutable
+                .add_method(PhpMethodMetadata::static_method(method, Visibility::Public))
+                .expect("DateTimeImmutable core metadata should not duplicate static methods");
+        }
+        let dom_exception_id = classes
+            .declare_class("DOMException")
+            .expect("core class table should contain DateTimeImmutable before DOMException");
+        let exception_id = classes
+            .lookup_class_id("Exception")
+            .expect("core Exception class id should resolve for DOMException");
+        classes
+            .set_parent(dom_exception_id, exception_id)
+            .expect("DOMException should extend Exception");
+        let dom_node_id = classes
+            .declare_class("DOMNode")
+            .expect("core class table should contain DOMException before DOMNode");
+        let dom_node = classes
+            .get_mut(dom_node_id)
+            .expect("declared DOMNode class id should resolve");
+        for property in [
+            "nodeName",
+            "nodeValue",
+            "parentNode",
+            "ownerDocument",
+            "firstElementChild",
+        ] {
+            dom_node
+                .add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
+                .expect("DOMNode core metadata should not duplicate properties");
+        }
+        dom_node
+            .add_method(PhpMethodMetadata::instance(
+                "appendChild",
+                Visibility::Public,
+            ))
+            .expect("DOMNode core metadata should not duplicate methods");
+        let dom_attr_id = classes
+            .declare_class("DOMAttr")
+            .expect("core class table should contain DOMNode before DOMAttr");
+        classes
+            .set_parent(dom_attr_id, dom_node_id)
+            .expect("DOMAttr should extend DOMNode");
+        let dom_attr = classes
+            .get_mut(dom_attr_id)
+            .expect("declared DOMAttr class id should resolve");
+        for property in [
+            "name",
+            "value",
+            "ownerElement",
+            "namespaceURI",
+            "prefix",
+            "localName",
+        ] {
+            dom_attr
+                .add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
+                .expect("DOMAttr core metadata should not duplicate properties");
+        }
+        dom_attr
+            .add_method(PhpMethodMetadata::instance(
+                "__construct",
+                Visibility::Public,
+            ))
+            .expect("DOMAttr core metadata should not duplicate methods");
+        let dom_element_id = classes
+            .declare_class("DOMElement")
+            .expect("core class table should contain DOMAttr before DOMElement");
+        classes
+            .set_parent(dom_element_id, dom_node_id)
+            .expect("DOMElement should extend DOMNode");
+        let dom_element = classes
+            .get_mut(dom_element_id)
+            .expect("declared DOMElement class id should resolve");
+        for property in ["tagName", "__attributes", "__children"] {
+            dom_element
+                .add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
+                .expect("DOMElement core metadata should not duplicate properties");
+        }
+        for method in [
+            "__construct",
+            "appendChild",
+            "setAttribute",
+            "getAttribute",
+            "hasAttribute",
+            "getAttributeNode",
+            "getAttributeNames",
+            "hasAttributes",
+            "toggleAttribute",
+        ] {
+            dom_element
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("DOMElement core metadata should not duplicate methods");
+        }
+        let dom_document_id = classes
+            .declare_class("DOMDocument")
+            .expect("core class table should contain DOMElement before DOMDocument");
+        classes
+            .set_parent(dom_document_id, dom_node_id)
+            .expect("DOMDocument should extend DOMNode");
+        let dom_document = classes
+            .get_mut(dom_document_id)
+            .expect("declared DOMDocument class id should resolve");
+        for property in ["documentElement", "__children"] {
+            dom_document
+                .add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
+                .expect("DOMDocument core metadata should not duplicate properties");
+        }
+        for method in [
+            "__construct",
+            "appendChild",
+            "removeChild",
+            "createAttribute",
+            "createElement",
+            "importNode",
+            "saveXML",
+        ] {
+            dom_document
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("DOMDocument core metadata should not duplicate methods");
+        }
+        let dom_document_type_id = classes
+            .declare_class("DOMDocumentType")
+            .expect("core class table should contain DOMDocument before DOMDocumentType");
+        classes
+            .set_parent(dom_document_type_id, dom_node_id)
+            .expect("DOMDocumentType should extend DOMNode");
+        let dom_document_type = classes
+            .get_mut(dom_document_type_id)
+            .expect("declared DOMDocumentType class id should resolve");
+        for property in [
+            "name",
+            "entities",
+            "notations",
+            "publicId",
+            "systemId",
+            "internalSubset",
+        ] {
+            dom_document_type
+                .add_property(PhpPropertyMetadata::instance(property, Visibility::Public))
+                .expect("DOMDocumentType core metadata should not duplicate properties");
+        }
+        let xml_reader_id = classes
+            .declare_class("XMLReader")
+            .expect("core class table should contain DOMDocumentType before XMLReader");
+        let xml_reader = classes
+            .get_mut(xml_reader_id)
+            .expect("declared XMLReader class id should resolve");
+        for property in [
+            "attributeCount",
+            "baseURI",
+            "depth",
+            "hasAttributes",
+            "hasValue",
+            "isDefault",
+            "isEmptyElement",
+            "localName",
+            "name",
+            "namespaceURI",
+            "nodeType",
+            "prefix",
+            "value",
+            "xmlLang",
+        ] {
+            xml_reader
+                .add_property(
+                    PhpPropertyMetadata::instance(property, Visibility::Public).readonly(),
+                )
+                .expect("XMLReader core metadata should not duplicate properties");
+        }
+        for method in [
+            "__construct",
+            "close",
+            "expand",
+            "getAttribute",
+            "getAttributeNo",
+            "getAttributeNs",
+            "getParserProperty",
+            "isValid",
+            "lookupNamespace",
+            "moveToAttribute",
+            "moveToAttributeNo",
+            "moveToAttributeNs",
+            "moveToElement",
+            "moveToFirstAttribute",
+            "moveToNextAttribute",
+            "next",
+            "read",
+            "readInnerXml",
+            "readOuterXml",
+            "readString",
+            "setParserProperty",
+            "setRelaxNGSchema",
+            "setSchema",
+        ] {
+            xml_reader
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("XMLReader core metadata should not duplicate methods");
+        }
+        for method in ["fromStream", "fromString", "fromUri", "open", "XML"] {
+            xml_reader
+                .add_method(PhpMethodMetadata::static_method(method, Visibility::Public))
+                .expect("XMLReader core metadata should not duplicate static methods");
+        }
+        for constant in [
+            "NONE",
+            "ELEMENT",
+            "ATTRIBUTE",
+            "TEXT",
+            "CDATA",
+            "ENTITY_REF",
+            "ENTITY",
+            "PI",
+            "COMMENT",
+            "DOC",
+            "DOC_TYPE",
+            "DOC_FRAGMENT",
+            "NOTATION",
+            "WHITESPACE",
+            "SIGNIFICANT_WHITESPACE",
+            "END_ELEMENT",
+            "END_ENTITY",
+            "XML_DECLARATION",
+            "LOADDTD",
+            "DEFAULTATTRS",
+            "VALIDATE",
+            "SUBST_ENTITIES",
+        ] {
+            xml_reader
+                .add_constant(PhpClassConstantMetadata::new(constant, Visibility::Public))
+                .expect("XMLReader core metadata should not duplicate constants");
+        }
+        let error_exception_id = classes
+            .declare_class("ErrorException")
+            .expect("core class table should contain XMLReader before ErrorException");
+        let exception_id = classes
+            .lookup_class_id("Exception")
+            .expect("core Exception class id should resolve for ErrorException");
+        classes
+            .set_parent(error_exception_id, exception_id)
+            .expect("ErrorException should extend Exception");
+        {
+            let error_exception = classes
+                .get_mut(error_exception_id)
+                .expect("core ErrorException class id should resolve");
+            error_exception
+                .add_property(PhpPropertyMetadata::instance(
+                    "severity",
+                    Visibility::Protected,
+                ))
+                .expect("ErrorException core metadata should not duplicate severity");
+            error_exception
+                .add_method(PhpMethodMetadata::instance(
+                    "getSeverity",
+                    Visibility::Public,
+                ))
+                .expect("ErrorException core metadata should not duplicate methods");
+        }
+        let reflection_id = classes
+            .declare_class("Reflection")
+            .expect("core class table should contain ErrorException before Reflection");
+        classes
+            .get_mut(reflection_id)
+            .expect("declared Reflection class id should resolve")
+            .add_method(PhpMethodMetadata::static_method(
+                "getModifierNames",
+                Visibility::Public,
+            ))
+            .expect("Reflection core metadata should not duplicate static methods");
+        let deprecated_id = classes
+            .declare_class("Deprecated")
+            .expect("core class table should contain Reflection before Deprecated");
+        let deprecated = classes
+            .get_mut(deprecated_id)
+            .expect("declared Deprecated class id should resolve");
+        for property in ["message", "since"] {
+            deprecated
+                .add_property(
+                    PhpPropertyMetadata::instance(property, Visibility::Public).readonly(),
+                )
+                .expect("Deprecated core metadata should not duplicate properties");
+        }
+        deprecated
+            .add_method(PhpMethodMetadata::instance(
+                "__construct",
+                Visibility::Public,
+            ))
+            .expect("Deprecated core metadata should not duplicate methods");
+        let no_discard_id = classes
+            .declare_class("NoDiscard")
+            .expect("core class table should contain Deprecated before NoDiscard");
+        let no_discard = classes
+            .get_mut(no_discard_id)
+            .expect("declared NoDiscard class id should resolve");
+        no_discard
+            .add_property(PhpPropertyMetadata::instance("message", Visibility::Public))
+            .expect("NoDiscard core metadata should not duplicate properties");
+        no_discard
+            .add_method(PhpMethodMetadata::instance(
+                "__construct",
+                Visibility::Public,
+            ))
+            .expect("NoDiscard core metadata should not duplicate methods");
+        let random_interval_boundary_id = classes
+            .declare_class("Random\\IntervalBoundary")
+            .expect("core class table should contain NoDiscard before Random\\IntervalBoundary");
+        classes
+            .get_mut(random_interval_boundary_id)
+            .expect("declared Random\\IntervalBoundary class id should resolve")
+            .add_property(PhpPropertyMetadata::instance("name", Visibility::Public))
+            .expect("Random\\IntervalBoundary core metadata should not duplicate properties");
+        let closure_id = classes
+            .declare_class("Closure")
+            .expect("core class table should contain Random\\IntervalBoundary before Closure");
+        classes
+            .get_mut(closure_id)
+            .expect("declared Closure class id should resolve")
+            .add_method(PhpMethodMetadata::instance("__invoke", Visibility::Public))
+            .expect("Closure core metadata should not duplicate methods");
+        let json_exception_id = classes
+            .declare_class("JsonException")
+            .expect("core class table should contain Closure before JsonException");
+        let exception_id = classes
+            .lookup_class_id("Exception")
+            .expect("core Exception class id should resolve for JsonException");
+        classes
+            .set_parent(json_exception_id, exception_id)
+            .expect("JsonException should extend Exception");
+        let reflection_enum_id = classes
+            .declare_class("ReflectionEnum")
+            .expect("core class table should contain JsonException before ReflectionEnum");
+        classes
+            .set_parent(reflection_enum_id, reflection_class_id)
+            .expect("ReflectionEnum should extend ReflectionClass");
+        let reflection_enum = classes
+            .get_mut(reflection_enum_id)
+            .expect("declared ReflectionEnum class id should resolve");
+        for method in [
+            "__construct",
+            "__toString",
+            "getName",
+            "isBacked",
+            "getBackingType",
+            "hasCase",
+            "getCase",
+            "getCases",
+        ] {
+            reflection_enum
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("ReflectionEnum core metadata should not duplicate methods");
+        }
+        let reflection_enum_unit_case_id = classes
+            .declare_class("ReflectionEnumUnitCase")
+            .expect("core class table should contain ReflectionEnum before ReflectionEnumUnitCase");
+        classes
+            .set_parent(reflection_enum_unit_case_id, reflection_class_constant_id)
+            .expect("ReflectionEnumUnitCase should extend ReflectionClassConstant");
+        let reflection_enum_unit_case = classes
+            .get_mut(reflection_enum_unit_case_id)
+            .expect("declared ReflectionEnumUnitCase class id should resolve");
+        for method in [
+            "__construct",
+            "getName",
+            "getDeclaringClass",
+            "getModifiers",
+            "isPublic",
+            "isProtected",
+            "isPrivate",
+            "isFinal",
+            "isDeprecated",
+            "getDocComment",
+            "getEnum",
+            "getValue",
+            "getAttributes",
+        ] {
+            reflection_enum_unit_case
+                .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
+                .expect("ReflectionEnumUnitCase core metadata should not duplicate methods");
+        }
+        let reflection_enum_backed_case_id = classes
+            .declare_class("ReflectionEnumBackedCase")
+            .expect(
+                "core class table should contain ReflectionEnumUnitCase before ReflectionEnumBackedCase",
+            );
+        classes
+            .set_parent(reflection_enum_backed_case_id, reflection_enum_unit_case_id)
+            .expect("ReflectionEnumBackedCase should extend ReflectionEnumUnitCase");
+        classes
+            .get_mut(reflection_enum_backed_case_id)
+            .expect("declared ReflectionEnumBackedCase class id should resolve")
+            .add_method(PhpMethodMetadata::instance(
+                "getBackingValue",
+                Visibility::Public,
+            ))
+            .expect("ReflectionEnumBackedCase core metadata should not duplicate methods");
         classes
     }
 
@@ -32587,6 +34379,7 @@ impl PhpClassTable {
 
         let id = ClassId(self.classes.len());
         self.lookup.insert(lookup_name, id);
+        self.declared_names.push(name.clone());
         self.classes.push(PhpClassMetadata::new(id, name));
         Ok(id)
     }
@@ -32630,10 +34423,30 @@ impl PhpClassTable {
         source_name: &str,
         alias_name: impl Into<String>,
     ) -> RuntimeResult<bool> {
+        let alias_name = alias_name.into();
+        if !self.insert_class_alias_lookup(source_name, &alias_name)? {
+            return Ok(false);
+        }
+        self.record_class_alias_declaration(alias_name);
+        Ok(true)
+    }
+
+    pub fn declare_class_alias_lookup_only(
+        &mut self,
+        source_name: &str,
+        alias_name: &str,
+    ) -> RuntimeResult<bool> {
+        self.insert_class_alias_lookup(source_name, alias_name)
+    }
+
+    fn insert_class_alias_lookup(
+        &mut self,
+        source_name: &str,
+        alias_name: &str,
+    ) -> RuntimeResult<bool> {
         let Some(source_id) = self.lookup_class_id(source_name) else {
             return Ok(false);
         };
-        let alias_name = alias_name.into();
         let lookup_name = normalize_class_lookup_name(&alias_name);
         if self.lookup.contains_key(&lookup_name) {
             return Ok(false);
@@ -32643,8 +34456,25 @@ impl PhpClassTable {
         Ok(true)
     }
 
+    pub fn record_class_alias_declaration(&mut self, alias_name: impl Into<String>) {
+        let alias_name = alias_name.into();
+        let lookup_name = normalize_class_lookup_name(&alias_name);
+        if self
+            .declared_names
+            .iter()
+            .any(|name| normalize_class_lookup_name(name) == lookup_name)
+        {
+            return;
+        }
+        self.declared_names.push(alias_name);
+    }
+
     pub fn classes(&self) -> &[PhpClassMetadata] {
         &self.classes
+    }
+
+    pub fn declared_class_names(&self) -> &[String] {
+        &self.declared_names
     }
 
     pub fn remove_last_declared_class(&mut self, id: ClassId) {
@@ -32652,9 +34482,17 @@ impl PhpClassTable {
             return;
         }
 
-        if let Some(class) = self.classes.pop() {
-            self.lookup
-                .remove(&normalize_class_lookup_name(class.name()));
+        if self.classes.pop().is_some() {
+            let removed_lookup_names = self
+                .lookup
+                .iter()
+                .filter_map(|(name, class_id)| (*class_id == id).then(|| name.clone()))
+                .collect::<HashSet<_>>();
+            for lookup_name in &removed_lookup_names {
+                self.lookup.remove(lookup_name);
+            }
+            self.declared_names
+                .retain(|name| !removed_lookup_names.contains(&normalize_class_lookup_name(name)));
         }
     }
 
@@ -32741,6 +34579,7 @@ pub struct PhpClassMetadata {
     id: ClassId,
     name: String,
     parent_id: Option<ClassId>,
+    allows_dynamic_properties: bool,
     properties: Vec<PhpPropertyMetadata>,
     property_lookup: HashMap<String, usize>,
     interfaces: Vec<String>,
@@ -32757,6 +34596,7 @@ impl PhpClassMetadata {
             id,
             name,
             parent_id: None,
+            allows_dynamic_properties: false,
             properties: Vec::new(),
             property_lookup: HashMap::new(),
             interfaces: Vec::new(),
@@ -32778,6 +34618,14 @@ impl PhpClassMetadata {
 
     pub fn parent_id(&self) -> Option<ClassId> {
         self.parent_id
+    }
+
+    pub fn allows_dynamic_properties(&self) -> bool {
+        self.allows_dynamic_properties
+    }
+
+    pub fn set_allows_dynamic_properties(&mut self, value: bool) {
+        self.allows_dynamic_properties = value;
     }
 
     pub fn properties(&self) -> &[PhpPropertyMetadata] {
@@ -32914,6 +34762,7 @@ impl fmt::Display for ClassMemberKind {
 pub struct PhpClassConstantMetadata {
     name: String,
     visibility: Visibility,
+    is_final: bool,
 }
 
 impl PhpClassConstantMetadata {
@@ -32921,47 +34770,12 @@ impl PhpClassConstantMetadata {
         Self {
             name: name.into(),
             visibility,
+            is_final: false,
         }
     }
 
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    pub fn visibility(&self) -> Visibility {
-        self.visibility
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PhpPropertyMetadata {
-    name: String,
-    visibility: Visibility,
-    is_static: bool,
-    type_decl: Option<String>,
-}
-
-impl PhpPropertyMetadata {
-    pub fn instance(name: impl Into<String>, visibility: Visibility) -> Self {
-        Self {
-            name: name.into(),
-            visibility,
-            is_static: false,
-            type_decl: None,
-        }
-    }
-
-    pub fn static_property(name: impl Into<String>, visibility: Visibility) -> Self {
-        Self {
-            name: name.into(),
-            visibility,
-            is_static: true,
-            type_decl: None,
-        }
-    }
-
-    pub fn with_type_decl(mut self, type_decl: Option<String>) -> Self {
-        self.type_decl = type_decl;
+    pub fn with_final(mut self, is_final: bool) -> Self {
+        self.is_final = is_final;
         self
     }
 
@@ -32973,12 +34787,93 @@ impl PhpPropertyMetadata {
         self.visibility
     }
 
+    pub fn is_final(&self) -> bool {
+        self.is_final
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PhpPropertyMetadata {
+    name: String,
+    visibility: Visibility,
+    set_visibility: Option<Visibility>,
+    is_static: bool,
+    type_decl: Option<String>,
+    is_readonly: bool,
+    is_final: bool,
+}
+
+impl PhpPropertyMetadata {
+    pub fn instance(name: impl Into<String>, visibility: Visibility) -> Self {
+        Self {
+            name: name.into(),
+            visibility,
+            set_visibility: None,
+            is_static: false,
+            type_decl: None,
+            is_readonly: false,
+            is_final: false,
+        }
+    }
+
+    pub fn static_property(name: impl Into<String>, visibility: Visibility) -> Self {
+        Self {
+            name: name.into(),
+            visibility,
+            set_visibility: None,
+            is_static: true,
+            type_decl: None,
+            is_readonly: false,
+            is_final: false,
+        }
+    }
+
+    pub fn with_set_visibility(mut self, set_visibility: Option<Visibility>) -> Self {
+        self.set_visibility = set_visibility;
+        self
+    }
+
+    pub fn with_type_decl(mut self, type_decl: Option<String>) -> Self {
+        self.type_decl = type_decl;
+        self
+    }
+
+    pub fn readonly(mut self) -> Self {
+        self.is_readonly = true;
+        self
+    }
+
+    pub fn with_final(mut self, is_final: bool) -> Self {
+        self.is_final = is_final;
+        self
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn visibility(&self) -> Visibility {
+        self.visibility
+    }
+
+    pub fn set_visibility(&self) -> Option<Visibility> {
+        self.set_visibility
+    }
+
     pub fn is_static(&self) -> bool {
         self.is_static
     }
 
     pub fn type_decl(&self) -> Option<&str> {
         self.type_decl.as_deref()
+    }
+
+    pub fn is_readonly(&self) -> bool {
+        self.is_readonly
+    }
+
+    pub fn is_final(&self) -> bool {
+        self.is_final
     }
 }
 
@@ -33434,7 +35329,7 @@ impl PhpStaticPropertyCell {
         if self.initialized {
             Ok(self.value_cloned())
         } else {
-            Err(RuntimeError::uninitialized_typed_property(
+            Err(RuntimeError::uninitialized_typed_static_property(
                 self.declaring_class_name.clone(),
                 self.name.clone(),
             ))
@@ -33521,7 +35416,7 @@ impl PhpStaticPropertyCell {
 
     fn reference_cell(&mut self) -> RuntimeResult<PhpReferenceCell> {
         if !self.initialized {
-            return Err(RuntimeError::uninitialized_typed_property(
+            return Err(RuntimeError::uninitialized_typed_static_property(
                 self.declaring_class_name.clone(),
                 self.name.clone(),
             ));
@@ -33551,7 +35446,7 @@ impl PhpStaticPropertyCell {
 
     fn existing_reference_cell(&self) -> RuntimeResult<Option<PhpReferenceCell>> {
         if !self.initialized {
-            return Err(RuntimeError::uninitialized_typed_property(
+            return Err(RuntimeError::uninitialized_typed_static_property(
                 self.declaring_class_name.clone(),
                 self.name.clone(),
             ));
@@ -33774,6 +35669,7 @@ where
         value,
         class_name,
         property_name,
+        false,
         object_type_resolver,
     )
 }
@@ -34358,10 +36254,15 @@ impl NativeClassConstantTable {
         class_id: ClassId,
         constant_name: &str,
     ) -> Option<(ClassId, String, &'a PhpClassConstantMetadata)> {
+        let origin_class_id = class_id;
         let mut current = Some(class_id);
         while let Some(current_id) = current {
             let class = self.classes.get(current_id)?;
             if let Some(metadata) = class.constant(constant_name) {
+                if current_id != origin_class_id && metadata.visibility() == Visibility::Private {
+                    current = class.parent_id();
+                    continue;
+                }
                 return Some((current_id, class.name().to_string(), metadata));
             }
             current = class.parent_id();
@@ -34389,14 +36290,13 @@ fn ensure_class_constant_visible(
         {
             Ok(())
         }
-        Visibility::Private => Err(RuntimeError::unsupported_call(
-            format!("{declaring_class_name}::{constant_name}"),
-            "private class constant is not visible from the current class context",
-        )),
-        Visibility::Protected => Err(RuntimeError::unsupported_call(
-            format!("{declaring_class_name}::{constant_name}"),
-            "protected class constant is not visible from the current class context",
-        )),
+        Visibility::Private | Visibility::Protected => {
+            Err(RuntimeError::class_constant_visibility(
+                declaring_class_name,
+                constant_name,
+                visibility,
+            ))
+        }
     }
 }
 
@@ -35973,6 +37873,7 @@ pub struct PhpObject {
     id: i64,
     class_id: ClassId,
     class_name: String,
+    allows_dynamic_properties: bool,
     ancestor_class_names: Vec<String>,
     interface_names: Vec<String>,
     properties: Rc<RefCell<Vec<ObjectProperty>>>,
@@ -36070,7 +37971,9 @@ impl PhpObject {
                 initializer.declaring_class_name.clone(),
                 initializer.property.name(),
                 initializer.property.visibility(),
+                initializer.property.set_visibility(),
                 initializer.property.type_decl().map(str::to_string),
+                initializer.property.is_readonly(),
             );
         }
 
@@ -36085,7 +37988,9 @@ impl PhpObject {
                 class.name().to_string(),
                 property.name(),
                 property.visibility(),
+                property.set_visibility(),
                 property.type_decl().map(str::to_string),
+                property.is_readonly(),
             );
         }
 
@@ -36093,6 +37998,7 @@ impl PhpObject {
             id,
             class_id: class.id(),
             class_name: class.name().to_string(),
+            allows_dynamic_properties: class.allows_dynamic_properties(),
             ancestor_class_names,
             interface_names,
             properties: Rc::new(RefCell::new(properties)),
@@ -36105,15 +38011,19 @@ impl PhpObject {
         declaring_class_name: String,
         name: &str,
         visibility: Visibility,
+        set_visibility: Option<Visibility>,
         type_decl: Option<String>,
+        is_readonly: bool,
     ) {
         if visibility != Visibility::Private {
             if let Some(property) = properties.iter_mut().find(|property| {
                 property.name == name && property.visibility != Visibility::Private
             }) {
                 property.visibility = visibility;
+                property.set_visibility = set_visibility;
                 property.type_decl = type_decl;
-                property.initialized = property.type_decl.is_none();
+                property.is_readonly = is_readonly;
+                property.initialized = property.type_decl.is_none() && !property.is_readonly;
                 return;
             }
         }
@@ -36123,9 +38033,12 @@ impl PhpObject {
             declaring_class_name,
             name: name.to_string(),
             visibility,
+            set_visibility,
             type_decl: type_decl.clone(),
+            is_readonly,
+            readonly_clone_resettable: false,
             storage: ObjectPropertyStorage::Value(PhpValueCell::new(Value::Null)),
-            initialized: type_decl.is_none(),
+            initialized: type_decl.is_none() && !is_readonly,
             unset: false,
         });
     }
@@ -36153,24 +38066,68 @@ impl PhpObject {
     pub fn initialized_mangled_properties_array(&self) -> PhpArray {
         let mut array = PhpArray::new();
         for property in self.properties() {
-            if property.is_initialized() {
-                array.insert(
-                    ArrayKey::String(property.mangled_name()),
-                    property.value_cloned(),
-                );
+            if property.is_initialized() && !property.is_unset() {
+                let key = ArrayKey::String(property.mangled_name());
+                if let Some(reference) = property
+                    .existing_reference_cell()
+                    .expect("initialized property reference snapshot should not fail")
+                {
+                    array.insert_reference(key, reference);
+                } else {
+                    array.insert(key, property.value_cloned());
+                }
             }
         }
         array
     }
 
+    pub fn initialized_visible_properties(
+        &self,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+    ) -> Vec<ObjectProperty> {
+        let properties = self.properties.borrow();
+        properties
+            .iter()
+            .filter(|property| {
+                property.is_initialized()
+                    && !property.is_unset()
+                    && property.is_visible_for_object_enumeration(
+                        &properties,
+                        current_class_id,
+                        protected_class_ids,
+                    )
+            })
+            .cloned()
+            .collect()
+    }
+
     pub fn shallow_clone_with_id(&self, id: i64) -> Self {
+        let properties = self
+            .properties
+            .borrow()
+            .iter()
+            .cloned()
+            .map(|mut property| {
+                property.mark_readonly_clone_resettable();
+                property
+            })
+            .collect();
+
         Self {
             id,
             class_id: self.class_id,
             class_name: self.class_name.clone(),
+            allows_dynamic_properties: self.allows_dynamic_properties,
             ancestor_class_names: self.ancestor_class_names.clone(),
             interface_names: self.interface_names.clone(),
-            properties: Rc::new(RefCell::new(self.properties.borrow().clone())),
+            properties: Rc::new(RefCell::new(properties)),
+        }
+    }
+
+    pub fn clear_readonly_clone_reset_allowance(&self) {
+        for property in self.properties.borrow_mut().iter_mut() {
+            property.clear_readonly_clone_reset_allowance();
         }
     }
 
@@ -36241,12 +38198,66 @@ impl PhpObject {
             Comparison::Ne => self
                 .php_equality_checked_with_context(other, context)
                 .map(|equal| !equal),
-            Comparison::Lt | Comparison::Le | Comparison::Gt | Comparison::Ge => {
-                Err(RuntimeError::unsupported_comparison(
-                    "object ordering comparisons are not implemented",
-                ))
+            Comparison::Lt | Comparison::Le | Comparison::Gt | Comparison::Ge => self
+                .php_ordering_checked_with_context(other, context)
+                .map(|ordering| comparison_matches_ordering(ordering, op)),
+        }
+    }
+
+    fn php_ordering_checked_with_context(
+        &self,
+        other: &Self,
+        context: &mut NativeValueComparisonContext,
+    ) -> RuntimeResult<Ordering> {
+        if self.id == other.id {
+            return Ok(Ordering::Equal);
+        }
+        if !self.class_name.eq_ignore_ascii_case(&other.class_name) {
+            return Ok(self.class_name.cmp(&other.class_name));
+        }
+
+        let Some(pair) = context.enter_object_pair(self.id, other.id)? else {
+            return Ok(Ordering::Equal);
+        };
+
+        let left = self.comparison_properties();
+        let right = other.comparison_properties();
+        let result = (|| {
+            if left.len() != right.len() {
+                return Ok(left.len().cmp(&right.len()));
+            }
+
+            for (left, right) in left.iter().zip(right.iter()) {
+                let name_ordering = left.name.cmp(&right.name);
+                if name_ordering != Ordering::Equal {
+                    return Ok(name_ordering);
+                }
+                match (&left.value, &right.value) {
+                    (Some(left), Some(right)) => {
+                        let ordering = left.php_ordering_checked_with_context(right, context)?;
+                        if ordering != Ordering::Equal {
+                            return Ok(ordering);
+                        }
+                    }
+                    (Some(_), None) => return Ok(Ordering::Greater),
+                    (None, Some(_)) => return Ok(Ordering::Less),
+                    (None, None) => {}
+                }
+            }
+
+            Ok(Ordering::Equal)
+        })();
+        context.leave_object_pair(pair);
+        result
+    }
+
+    fn array_sort_string_bytes(&self, callable: &str) -> RuntimeResult<Vec<u8>> {
+        for property in self.comparison_properties() {
+            if let Some(value) = property.value {
+                return array_sort_string_comparison_value(callable, &value);
             }
         }
+        Ok(self.class_name.as_bytes().to_vec())
     }
 
     fn comparison_properties(&self) -> Vec<ObjectComparisonProperty> {
@@ -36305,6 +38316,39 @@ impl PhpObject {
             self.context_property(&properties, name, current_class_id, protected_class_ids)?;
 
         Ok(property.visibility)
+    }
+
+    pub fn ensure_property_writable_from_context(
+        &self,
+        name: &str,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+    ) -> RuntimeResult<()> {
+        self.ensure_property_writable_from_context_with_scope(
+            name,
+            current_class_id,
+            protected_class_ids,
+            None,
+        )
+    }
+
+    pub fn ensure_property_writable_from_context_with_scope(
+        &self,
+        name: &str,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+        scope_name: Option<&str>,
+    ) -> RuntimeResult<()> {
+        let properties = self.properties.borrow();
+        let property =
+            self.context_property(&properties, name, current_class_id, protected_class_ids)?;
+        property.ensure_set_visible_in_context(
+            current_class_id,
+            protected_class_ids,
+            PropertySetOperation::IndirectModify,
+            scope_name,
+        )?;
+        property.ensure_writable_for_indirect_mutation()
     }
 
     pub fn is_public_property_set(&self, name: &str) -> RuntimeResult<bool> {
@@ -36375,6 +38419,69 @@ impl PhpObject {
         Ok(property.unset)
     }
 
+    pub fn is_unset_untyped_declared_property_from_context(
+        &self,
+        name: &str,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+    ) -> RuntimeResult<bool> {
+        let properties = self.properties.borrow();
+        let Some(property) = self.context_property_or_none(
+            &properties,
+            name,
+            current_class_id,
+            protected_class_ids,
+        )?
+        else {
+            return Ok(false);
+        };
+
+        Ok(property.unset && property.type_decl.is_none())
+    }
+
+    pub fn coerce_unset_typed_property_read_value_from_context_with_object_type_resolver<F>(
+        &self,
+        name: &str,
+        value: Value,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+        strict_scalars: bool,
+        object_type_resolver: F,
+    ) -> RuntimeResult<Value>
+    where
+        F: Fn(&PhpObject, &str) -> bool,
+    {
+        let properties = self.properties.borrow();
+        let Some(property) = self.context_property_or_none(
+            &properties,
+            name,
+            current_class_id,
+            protected_class_ids,
+        )?
+        else {
+            return Ok(value);
+        };
+        let Some(type_decl) = property.type_decl.as_deref() else {
+            return Ok(value);
+        };
+
+        let actual = php_type_error_actual_name(&value);
+        coerce_property_value_with_object_type_resolver(
+            type_decl,
+            value,
+            &property.declaring_class_name,
+            &property.name,
+            strict_scalars,
+            object_type_resolver,
+        )
+        .map_err(|_| {
+            RuntimeError::invalid_property_access(format!(
+                "Cannot assign {actual} to property {}::${} of type {}",
+                property.declaring_class_name, property.name, type_decl
+            ))
+        })
+    }
+
     pub fn has_uninitialized_declared_property_from_context(
         &self,
         name: &str,
@@ -36424,7 +38531,9 @@ impl PhpObject {
             .borrow()
             .iter()
             .find(|property| property.name == name && property.visibility == Visibility::Public)
-            .and_then(|property| property.initialized.then(|| property.value_cloned()))
+            .and_then(|property| {
+                (property.initialized && !property.unset).then(|| property.value_cloned())
+            })
     }
 
     pub fn is_public_property_empty(&self, name: &str) -> RuntimeResult<bool> {
@@ -36468,6 +38577,7 @@ impl PhpObject {
         let mut properties = self.properties.borrow_mut();
         let property = self.public_property_mut_or_error(&mut properties, name)?;
 
+        property.ensure_writable()?;
         let value = coerce_typed_property_value(property, value)?;
         property.set_value(value);
         property.initialized = true;
@@ -36482,6 +38592,7 @@ impl PhpObject {
         let mut properties = self.properties.borrow_mut();
         let property = self.public_property_mut_or_error(&mut properties, name)?;
 
+        property.ensure_writable()?;
         let value = coerce_typed_property_value(property, reference.value_cloned())?;
         reference.set_value(value);
         property.set_reference_cell(reference);
@@ -36497,13 +38608,11 @@ impl PhpObject {
         if let Some(index) = properties.iter().rposition(|property| {
             property.name == name && property.visibility == Visibility::Public
         }) {
+            properties[index].ensure_writable()?;
             return properties[index].reference_cell();
         }
 
-        if properties
-            .iter()
-            .any(|property| property.name == name && property.visibility != Visibility::Public)
-        {
+        if self.has_non_public_property_blocking_dynamic_public_shadow(&properties, name) {
             return Err(RuntimeError::unsupported_property_access(format!(
                 "non-public property {}::${} requires same-class method context in the current subset",
                 self.class_name, name
@@ -36511,6 +38620,12 @@ impl PhpObject {
         }
 
         if !self.allows_dynamic_public_properties() {
+            if self.forbids_dynamic_public_properties_as_error() {
+                return Err(RuntimeError::unsupported_property_access(format!(
+                    "Cannot create dynamic property {}::${}",
+                    self.class_name, name
+                )));
+            }
             return Err(RuntimeError::undefined_property(
                 self.class_name.clone(),
                 name,
@@ -36523,7 +38638,10 @@ impl PhpObject {
             declaring_class_name: self.class_name.clone(),
             name: name.to_string(),
             visibility: Visibility::Public,
+            set_visibility: None,
             type_decl: None,
+            is_readonly: false,
+            readonly_clone_resettable: false,
             storage: ObjectPropertyStorage::Reference(reference.clone()),
             initialized: true,
             unset: false,
@@ -36531,21 +38649,24 @@ impl PhpObject {
         Ok(reference)
     }
 
-    pub fn write_dynamic_public_property(&self, name: &str, value: Value) -> RuntimeResult<()> {
+    pub fn bind_dynamic_public_property_reference_cell_to(
+        &self,
+        name: &str,
+        reference: PhpReferenceCell,
+    ) -> RuntimeResult<()> {
         let mut properties = self.properties.borrow_mut();
         if let Some(index) = properties.iter().rposition(|property| {
             property.name == name && property.visibility == Visibility::Public
         }) {
-            let value = coerce_typed_property_value(&properties[index], value)?;
-            properties[index].set_value(value);
+            properties[index].ensure_writable()?;
+            let value = coerce_typed_property_value(&properties[index], reference.value_cloned())?;
+            reference.set_value(value);
+            properties[index].set_reference_cell(reference);
             properties[index].initialized = true;
             return Ok(());
         }
 
-        if properties
-            .iter()
-            .any(|property| property.name == name && property.visibility != Visibility::Public)
-        {
+        if self.has_non_public_property_blocking_dynamic_public_shadow(&properties, name) {
             return Err(RuntimeError::unsupported_property_access(format!(
                 "non-public property {}::${} requires same-class method context in the current subset",
                 self.class_name, name
@@ -36553,6 +38674,12 @@ impl PhpObject {
         }
 
         if !self.allows_dynamic_public_properties() {
+            if self.forbids_dynamic_public_properties_as_error() {
+                return Err(RuntimeError::unsupported_property_access(format!(
+                    "Cannot create dynamic property {}::${}",
+                    self.class_name, name
+                )));
+            }
             return Err(RuntimeError::undefined_property(
                 self.class_name.clone(),
                 name,
@@ -36564,7 +38691,58 @@ impl PhpObject {
             declaring_class_name: self.class_name.clone(),
             name: name.to_string(),
             visibility: Visibility::Public,
+            set_visibility: None,
             type_decl: None,
+            is_readonly: false,
+            readonly_clone_resettable: false,
+            storage: ObjectPropertyStorage::Reference(reference),
+            initialized: true,
+            unset: false,
+        });
+        Ok(())
+    }
+
+    pub fn write_dynamic_public_property(&self, name: &str, value: Value) -> RuntimeResult<()> {
+        let mut properties = self.properties.borrow_mut();
+        if let Some(index) = properties.iter().rposition(|property| {
+            property.name == name && property.visibility == Visibility::Public
+        }) {
+            properties[index].ensure_writable()?;
+            let value = coerce_typed_property_value(&properties[index], value)?;
+            properties[index].set_value(value);
+            properties[index].initialized = true;
+            return Ok(());
+        }
+
+        if self.has_non_public_property_blocking_dynamic_public_shadow(&properties, name) {
+            return Err(RuntimeError::unsupported_property_access(format!(
+                "non-public property {}::${} requires same-class method context in the current subset",
+                self.class_name, name
+            )));
+        }
+
+        if !self.allows_dynamic_public_properties() {
+            if self.forbids_dynamic_public_properties_as_error() {
+                return Err(RuntimeError::unsupported_property_access(format!(
+                    "Cannot create dynamic property {}::${}",
+                    self.class_name, name
+                )));
+            }
+            return Err(RuntimeError::undefined_property(
+                self.class_name.clone(),
+                name,
+            ));
+        }
+
+        properties.push(ObjectProperty {
+            declaring_class_id: self.class_id,
+            declaring_class_name: self.class_name.clone(),
+            name: name.to_string(),
+            visibility: Visibility::Public,
+            set_visibility: None,
+            type_decl: None,
+            is_readonly: false,
+            readonly_clone_resettable: false,
             storage: ObjectPropertyStorage::Value(PhpValueCell::new(value)),
             initialized: true,
             unset: false,
@@ -36572,9 +38750,141 @@ impl PhpObject {
         Ok(())
     }
 
-    fn allows_dynamic_public_properties(&self) -> bool {
-        self.class_name.eq_ignore_ascii_case("stdClass")
+    pub fn write_forced_public_property(&self, name: &str, value: Value) {
+        let mut properties = self.properties.borrow_mut();
+        if let Some(index) = properties.iter().rposition(|property| {
+            property.name == name && property.visibility == Visibility::Public
+        }) {
+            properties[index].set_value(value);
+            properties[index].initialized = true;
+            return;
+        }
+
+        properties.push(ObjectProperty {
+            declaring_class_id: self.class_id,
+            declaring_class_name: self.class_name.clone(),
+            name: name.to_string(),
+            visibility: Visibility::Public,
+            set_visibility: None,
+            type_decl: None,
+            is_readonly: false,
+            readonly_clone_resettable: false,
+            storage: ObjectPropertyStorage::Value(PhpValueCell::new(value)),
+            initialized: true,
+            unset: false,
+        });
+    }
+
+    pub fn unset_forced_public_property(&self, name: &str) {
+        let mut properties = self.properties.borrow_mut();
+        if let Some(index) = properties.iter().rposition(|property| {
+            property.name == name && property.visibility == Visibility::Public
+        }) {
+            properties[index].unset_value();
+        }
+    }
+
+    pub fn write_serialized_property(&self, mangled_name: &str, value: Value) -> RuntimeResult<()> {
+        let mut properties = self.properties.borrow_mut();
+        let (visibility, declaring_class_name, name) =
+            if let Some(rest) = mangled_name.strip_prefix("\0*\0") {
+                (Visibility::Protected, None, rest)
+            } else if let Some(rest) = mangled_name.strip_prefix('\0') {
+                let Some((declaring_class_name, name)) = rest.split_once('\0') else {
+                    return Err(RuntimeError::unsupported_property_access(format!(
+                        "invalid serialized property name for {}",
+                        self.class_name
+                    )));
+                };
+                (Visibility::Private, Some(declaring_class_name), name)
+            } else {
+                (Visibility::Public, None, mangled_name)
+            };
+
+        if let Some(index) = properties.iter().rposition(|property| {
+            property.name == name
+                && property.visibility == visibility
+                && declaring_class_name
+                    .map(|class_name| property.declaring_class_name == class_name)
+                    .unwrap_or(true)
+        }) {
+            properties[index].ensure_writable()?;
+            let value = coerce_typed_property_value(&properties[index], value)?;
+            properties[index].set_value(value);
+            properties[index].initialized = true;
+            properties[index].unset = false;
+            return Ok(());
+        }
+
+        if visibility != Visibility::Public {
+            return Err(RuntimeError::unsupported_property_access(format!(
+                "serialized non-public property {}::${} is not declared in the current subset",
+                declaring_class_name.unwrap_or(&self.class_name),
+                name
+            )));
+        }
+
+        drop(properties);
+        self.write_dynamic_public_property(name, value)
+    }
+
+    pub fn allows_dynamic_public_properties(&self) -> bool {
+        self.allows_dynamic_properties
+            || self.class_name.eq_ignore_ascii_case("stdClass")
             || self.class_name.eq_ignore_ascii_case("wpdb")
+            || self.is_instance_of_class_name("DateTime")
+            || self.is_instance_of_class_name("DateTimeImmutable")
+            || self.is_instance_of_class_name("DateTimeZone")
+            || self.is_instance_of_class_name("ArrayObject")
+            || self.is_instance_of_class_name("ArrayIterator")
+    }
+
+    pub fn has_declared_dynamic_properties_allowance(&self) -> bool {
+        self.allows_dynamic_properties
+    }
+
+    fn forbids_dynamic_public_properties_as_error(&self) -> bool {
+        self.class_name.eq_ignore_ascii_case("BcMath\\Number")
+            || self.class_name.eq_ignore_ascii_case("GMP")
+            || self
+                .class_name
+                .eq_ignore_ascii_case("SensitiveParameterValue")
+    }
+
+    pub fn replace_public_properties_from_array(&self, array: &PhpArray) -> RuntimeResult<()> {
+        let mut properties = self.properties.borrow_mut();
+        let original = properties.clone();
+        properties.retain(|property| property.visibility != Visibility::Public);
+
+        for entry in array.entries() {
+            let name = match &entry.key {
+                ArrayKey::Int(value) => value.to_string(),
+                ArrayKey::String(value) => value.clone(),
+            };
+            let mut property = original
+                .iter()
+                .rev()
+                .find(|property| property.name == name && property.visibility == Visibility::Public)
+                .cloned()
+                .unwrap_or_else(|| ObjectProperty {
+                    declaring_class_id: self.class_id,
+                    declaring_class_name: self.class_name.clone(),
+                    name: name.clone(),
+                    visibility: Visibility::Public,
+                    set_visibility: None,
+                    type_decl: None,
+                    is_readonly: false,
+                    readonly_clone_resettable: false,
+                    storage: ObjectPropertyStorage::Value(PhpValueCell::new(Value::Null)),
+                    initialized: true,
+                    unset: false,
+                });
+            property.set_value(entry.value_cloned());
+            property.initialized = true;
+            properties.push(property);
+        }
+
+        Ok(())
     }
 
     pub fn write_property_from_context(
@@ -36583,6 +38893,23 @@ impl PhpObject {
         value: Value,
         current_class_id: Option<ClassId>,
         protected_class_ids: &[ClassId],
+    ) -> RuntimeResult<()> {
+        self.write_property_from_context_with_scope(
+            name,
+            value,
+            current_class_id,
+            protected_class_ids,
+            None,
+        )
+    }
+
+    pub fn write_property_from_context_with_scope(
+        &self,
+        name: &str,
+        value: Value,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+        scope_name: Option<&str>,
     ) -> RuntimeResult<()> {
         let mut properties = self.properties.borrow_mut();
         let Some(property) = self.context_property_mut_or_none(
@@ -36596,6 +38923,13 @@ impl PhpObject {
             return self.write_dynamic_public_property(name, value);
         };
 
+        property.ensure_set_visible_in_context(
+            current_class_id,
+            protected_class_ids,
+            PropertySetOperation::Modify,
+            scope_name,
+        )?;
+        property.ensure_writable()?;
         let value = coerce_typed_property_value(property, value)?;
         property.set_value(value);
         property.initialized = true;
@@ -36608,6 +38942,21 @@ impl PhpObject {
         current_class_id: Option<ClassId>,
         protected_class_ids: &[ClassId],
     ) -> RuntimeResult<PhpReferenceCell> {
+        self.bind_property_reference_cell_from_context_with_scope(
+            name,
+            current_class_id,
+            protected_class_ids,
+            None,
+        )
+    }
+
+    pub fn bind_property_reference_cell_from_context_with_scope(
+        &self,
+        name: &str,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+        scope_name: Option<&str>,
+    ) -> RuntimeResult<PhpReferenceCell> {
         let mut properties = self.properties.borrow_mut();
         let property = self.context_property_mut(
             &mut properties,
@@ -36616,6 +38965,13 @@ impl PhpObject {
             protected_class_ids,
         )?;
 
+        property.ensure_set_visible_in_context(
+            current_class_id,
+            protected_class_ids,
+            PropertySetOperation::IndirectModify,
+            scope_name,
+        )?;
+        property.ensure_writable()?;
         property.reference_cell()
     }
 
@@ -36643,6 +38999,23 @@ impl PhpObject {
         current_class_id: Option<ClassId>,
         protected_class_ids: &[ClassId],
     ) -> RuntimeResult<()> {
+        self.bind_property_reference_cell_to_context_with_scope(
+            name,
+            reference,
+            current_class_id,
+            protected_class_ids,
+            None,
+        )
+    }
+
+    pub fn bind_property_reference_cell_to_context_with_scope(
+        &self,
+        name: &str,
+        reference: PhpReferenceCell,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+        scope_name: Option<&str>,
+    ) -> RuntimeResult<()> {
         let mut properties = self.properties.borrow_mut();
         let property = self.context_property_mut(
             &mut properties,
@@ -36651,6 +39024,13 @@ impl PhpObject {
             protected_class_ids,
         )?;
 
+        property.ensure_set_visible_in_context(
+            current_class_id,
+            protected_class_ids,
+            PropertySetOperation::IndirectModify,
+            scope_name,
+        )?;
+        property.ensure_writable()?;
         let value = coerce_typed_property_value(property, reference.value_cloned())?;
         reference.set_value(value);
         property.set_reference_cell(reference);
@@ -36669,12 +39049,38 @@ impl PhpObject {
     where
         F: Fn(&PhpObject, &str) -> bool,
     {
-        self.write_property_from_context_with_object_type_resolver_returning_value(
+        self.write_property_from_context_with_object_type_resolver_returning_value_strict_with_scope(
             name,
             value,
             current_class_id,
             protected_class_ids,
+            false,
             object_type_resolver,
+            None,
+        )
+        .map(|_| ())
+    }
+
+    pub fn write_property_from_context_with_object_type_resolver_with_scope<F>(
+        &self,
+        name: &str,
+        value: Value,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+        object_type_resolver: F,
+        scope_name: Option<&str>,
+    ) -> RuntimeResult<()>
+    where
+        F: Fn(&PhpObject, &str) -> bool,
+    {
+        self.write_property_from_context_with_object_type_resolver_returning_value_strict_with_scope(
+            name,
+            value,
+            current_class_id,
+            protected_class_ids,
+            false,
+            object_type_resolver,
+            scope_name,
         )
         .map(|_| ())
     }
@@ -36686,6 +39092,55 @@ impl PhpObject {
         current_class_id: Option<ClassId>,
         protected_class_ids: &[ClassId],
         object_type_resolver: F,
+    ) -> RuntimeResult<Value>
+    where
+        F: Fn(&PhpObject, &str) -> bool,
+    {
+        self.write_property_from_context_with_object_type_resolver_returning_value_strict_with_scope(
+            name,
+            value,
+            current_class_id,
+            protected_class_ids,
+            false,
+            object_type_resolver,
+            None,
+        )
+    }
+
+    pub fn write_property_from_context_with_object_type_resolver_returning_value_strict<F>(
+        &self,
+        name: &str,
+        value: Value,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+        strict_scalars: bool,
+        object_type_resolver: F,
+    ) -> RuntimeResult<Value>
+    where
+        F: Fn(&PhpObject, &str) -> bool,
+    {
+        self.write_property_from_context_with_object_type_resolver_returning_value_strict_with_scope(
+            name,
+            value,
+            current_class_id,
+            protected_class_ids,
+            strict_scalars,
+            object_type_resolver,
+            None,
+        )
+    }
+
+    pub fn write_property_from_context_with_object_type_resolver_returning_value_strict_with_scope<
+        F,
+    >(
+        &self,
+        name: &str,
+        value: Value,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+        strict_scalars: bool,
+        object_type_resolver: F,
+        scope_name: Option<&str>,
     ) -> RuntimeResult<Value>
     where
         F: Fn(&PhpObject, &str) -> bool,
@@ -36703,9 +39158,17 @@ impl PhpObject {
             return Ok(value);
         };
 
+        property.ensure_set_visible_in_context(
+            current_class_id,
+            protected_class_ids,
+            PropertySetOperation::Modify,
+            scope_name,
+        )?;
+        property.ensure_writable()?;
         let value = coerce_typed_property_value_with_object_type_resolver(
             property,
             value,
+            strict_scalars,
             &object_type_resolver,
         )?;
         property.set_value(value.clone());
@@ -36719,6 +39182,21 @@ impl PhpObject {
         current_class_id: Option<ClassId>,
         protected_class_ids: &[ClassId],
     ) -> RuntimeResult<bool> {
+        self.unset_property_from_context_with_scope(
+            name,
+            current_class_id,
+            protected_class_ids,
+            None,
+        )
+    }
+
+    pub fn unset_property_from_context_with_scope(
+        &self,
+        name: &str,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+        scope_name: Option<&str>,
+    ) -> RuntimeResult<bool> {
         let mut properties = self.properties.borrow_mut();
         let Some(property) = self.context_property_mut_or_none(
             &mut properties,
@@ -36730,6 +39208,13 @@ impl PhpObject {
             return Ok(false);
         };
 
+        property.ensure_set_visible_in_context(
+            current_class_id,
+            protected_class_ids,
+            PropertySetOperation::Unset,
+            scope_name,
+        )?;
+        property.ensure_unsettable()?;
         property.unset_value();
         Ok(true)
     }
@@ -36791,11 +39276,17 @@ impl PhpObject {
         current_class_id: Option<ClassId>,
         protected_class_ids: &[ClassId],
     ) -> RuntimeResult<Option<&'a ObjectProperty>> {
-        if current_class_id.is_some() {
+        if let Some(current_class_id) = current_class_id {
+            if let Some(index) =
+                Self::current_private_property_index(properties, name, current_class_id)
+            {
+                return Ok(Some(&properties[index]));
+            }
+
             if let Some(property) = properties.iter().rev().find(|property| {
                 property.name == name
                     && property.visibility != Visibility::Public
-                    && property.is_visible_in_context(current_class_id, protected_class_ids)
+                    && property.is_visible_in_context(Some(current_class_id), protected_class_ids)
             }) {
                 return Ok(Some(property));
             }
@@ -36811,11 +39302,17 @@ impl PhpObject {
         current_class_id: Option<ClassId>,
         protected_class_ids: &[ClassId],
     ) -> RuntimeResult<&'a mut ObjectProperty> {
-        if current_class_id.is_some() {
+        if let Some(current_class_id) = current_class_id {
+            if let Some(index) =
+                Self::current_private_property_index(properties, name, current_class_id)
+            {
+                return Ok(&mut properties[index]);
+            }
+
             if let Some(index) = properties.iter().rposition(|property| {
                 property.name == name
                     && property.visibility != Visibility::Public
-                    && property.is_visible_in_context(current_class_id, protected_class_ids)
+                    && property.is_visible_in_context(Some(current_class_id), protected_class_ids)
             }) {
                 return Ok(&mut properties[index]);
             }
@@ -36831,11 +39328,17 @@ impl PhpObject {
         current_class_id: Option<ClassId>,
         protected_class_ids: &[ClassId],
     ) -> RuntimeResult<Option<&'a mut ObjectProperty>> {
-        if current_class_id.is_some() {
+        if let Some(current_class_id) = current_class_id {
+            if let Some(index) =
+                Self::current_private_property_index(properties, name, current_class_id)
+            {
+                return Ok(Some(&mut properties[index]));
+            }
+
             if let Some(index) = properties.iter().rposition(|property| {
                 property.name == name
                     && property.visibility != Visibility::Public
-                    && property.is_visible_in_context(current_class_id, protected_class_ids)
+                    && property.is_visible_in_context(Some(current_class_id), protected_class_ids)
             }) {
                 return Ok(Some(&mut properties[index]));
             }
@@ -36847,10 +39350,7 @@ impl PhpObject {
             return Ok(Some(&mut properties[index]));
         }
 
-        if properties
-            .iter()
-            .any(|property| property.name == name && property.visibility != Visibility::Public)
-        {
+        if self.has_non_public_property_blocking_dynamic_public_shadow(properties, name) {
             return Err(RuntimeError::unsupported_property_access(format!(
                 "non-public property {}::${} requires same-class method context in the current subset",
                 self.class_name, name
@@ -36860,15 +39360,24 @@ impl PhpObject {
         Ok(None)
     }
 
+    fn current_private_property_index(
+        properties: &[ObjectProperty],
+        name: &str,
+        current_class_id: ClassId,
+    ) -> Option<usize> {
+        properties.iter().rposition(|property| {
+            property.name == name
+                && property.visibility == Visibility::Private
+                && property.declaring_class_id == current_class_id
+        })
+    }
+
     fn unsupported_non_public_property<'a>(
         &self,
         properties: &'a [ObjectProperty],
         name: &str,
     ) -> RuntimeResult<Option<&'a ObjectProperty>> {
-        if properties
-            .iter()
-            .any(|property| property.name == name && property.visibility != Visibility::Public)
-        {
+        if self.has_non_public_property_blocking_dynamic_public_shadow(properties, name) {
             return Err(RuntimeError::unsupported_property_access(format!(
                 "non-public property {}::${} requires same-class method context in the current subset",
                 self.class_name, name
@@ -36883,10 +39392,7 @@ impl PhpObject {
         properties: &'a mut [ObjectProperty],
         name: &str,
     ) -> RuntimeResult<&'a mut ObjectProperty> {
-        if properties
-            .iter()
-            .any(|property| property.name == name && property.visibility != Visibility::Public)
-        {
+        if self.has_non_public_property_blocking_dynamic_public_shadow(properties, name) {
             return Err(RuntimeError::unsupported_property_access(format!(
                 "non-public property {}::${} requires same-class method context in the current subset",
                 self.class_name, name
@@ -36898,6 +39404,22 @@ impl PhpObject {
             name,
         ))
     }
+
+    fn has_non_public_property_blocking_dynamic_public_shadow(
+        &self,
+        properties: &[ObjectProperty],
+        name: &str,
+    ) -> bool {
+        properties.iter().any(|property| {
+            property.name == name
+                && property.visibility != Visibility::Public
+                && self.non_public_property_blocks_dynamic_public_shadow(property)
+        })
+    }
+
+    fn non_public_property_blocks_dynamic_public_shadow(&self, property: &ObjectProperty) -> bool {
+        property.visibility != Visibility::Private || property.declaring_class_id == self.class_id
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -36906,7 +39428,10 @@ pub struct ObjectProperty {
     declaring_class_name: String,
     name: String,
     visibility: Visibility,
+    set_visibility: Option<Visibility>,
     type_decl: Option<String>,
+    is_readonly: bool,
+    readonly_clone_resettable: bool,
     storage: ObjectPropertyStorage,
     initialized: bool,
     unset: bool,
@@ -36918,6 +39443,13 @@ enum ObjectPropertyStorage {
     Reference(PhpReferenceCell),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PropertySetOperation {
+    Modify,
+    IndirectModify,
+    Unset,
+}
+
 impl ObjectProperty {
     pub fn name(&self) -> &str {
         &self.name
@@ -36927,12 +39459,20 @@ impl ObjectProperty {
         self.visibility
     }
 
+    pub fn set_visibility(&self) -> Option<Visibility> {
+        self.set_visibility
+    }
+
     pub fn declaring_class_id(&self) -> ClassId {
         self.declaring_class_id
     }
 
     pub fn declaring_class_name(&self) -> &str {
         &self.declaring_class_name
+    }
+
+    pub fn type_decl(&self) -> Option<&str> {
+        self.type_decl.as_deref()
     }
 
     pub fn value(&self) -> &Value {
@@ -36984,12 +39524,126 @@ impl ObjectProperty {
         self.initialized
     }
 
+    pub fn is_unset(&self) -> bool {
+        self.unset
+    }
+
+    fn effective_set_visibility(&self) -> Option<Visibility> {
+        self.set_visibility.or_else(|| {
+            (self.is_readonly && self.visibility == Visibility::Public)
+                .then_some(Visibility::Protected)
+        })
+    }
+
+    fn is_set_visible_in_context(
+        &self,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+    ) -> bool {
+        match self.effective_set_visibility() {
+            Some(Visibility::Public) | None => true,
+            Some(Visibility::Private) => current_class_id == Some(self.declaring_class_id),
+            Some(Visibility::Protected) => protected_class_ids.contains(&self.declaring_class_id),
+        }
+    }
+
+    fn ensure_set_visible_in_context(
+        &self,
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+        operation: PropertySetOperation,
+        scope_name: Option<&str>,
+    ) -> RuntimeResult<()> {
+        if self.is_set_visible_in_context(current_class_id, protected_class_ids) {
+            return Ok(());
+        }
+
+        let Some(set_visibility) = self.effective_set_visibility() else {
+            return Ok(());
+        };
+        let operation = match operation {
+            PropertySetOperation::Modify => "modify",
+            PropertySetOperation::IndirectModify => "indirectly modify",
+            PropertySetOperation::Unset => "unset",
+        };
+        let readonly = if self.is_readonly && set_visibility == Visibility::Protected {
+            " readonly"
+        } else {
+            ""
+        };
+        let visibility = match set_visibility {
+            Visibility::Public => "public",
+            Visibility::Protected => "protected",
+            Visibility::Private => "private",
+        };
+        let scope = scope_name
+            .map(|name| format!("scope {name}"))
+            .unwrap_or_else(|| "global scope".to_string());
+
+        Err(RuntimeError::property_set_visibility(format!(
+            "Cannot {operation} {visibility}(set){readonly} property {}::${} from {scope}",
+            self.declaring_class_name, self.name
+        )))
+    }
+
+    fn ensure_writable(&self) -> RuntimeResult<()> {
+        if self.is_readonly && self.initialized && !self.unset && !self.readonly_clone_resettable {
+            return Err(RuntimeError::unsupported_property_access(format!(
+                "Cannot modify readonly property {}::${}",
+                self.declaring_class_name, self.name
+            )));
+        }
+        Ok(())
+    }
+
+    fn ensure_writable_for_indirect_mutation(&self) -> RuntimeResult<()> {
+        if self.is_readonly && self.initialized && !self.unset {
+            return Err(RuntimeError::unsupported_property_access(format!(
+                "Cannot modify readonly property {}::${}",
+                self.declaring_class_name, self.name
+            )));
+        }
+        Ok(())
+    }
+
+    fn ensure_unsettable(&self) -> RuntimeResult<()> {
+        if self.is_readonly && !self.readonly_clone_resettable {
+            return Err(RuntimeError::unsupported_property_access(format!(
+                "Cannot unset readonly property {}::${}",
+                self.declaring_class_name, self.name
+            )));
+        }
+        Ok(())
+    }
+
+    fn mark_readonly_clone_resettable(&mut self) {
+        self.readonly_clone_resettable = self.is_readonly && self.initialized && !self.unset;
+    }
+
+    fn clear_readonly_clone_reset_allowance(&mut self) {
+        self.readonly_clone_resettable = false;
+    }
+
     pub fn mangled_name(&self) -> String {
         match self.visibility {
             Visibility::Public => self.name.clone(),
             Visibility::Protected => format!("\0*\0{}", self.name),
             Visibility::Private => format!("\0{}\0{}", self.declaring_class_name, self.name),
         }
+    }
+
+    pub fn object_iteration_name(&self) -> String {
+        if self.visibility != Visibility::Public {
+            return self.name.clone();
+        }
+
+        if let Some(rest) = self.name.strip_prefix('\0') {
+            if let Some((_, suffix)) = rest.split_once('\0') {
+                return suffix.to_string();
+            }
+        }
+
+        self.name.clone()
     }
 
     fn is_visible_in_context(
@@ -37004,7 +39658,57 @@ impl ObjectProperty {
         }
     }
 
+    fn is_visible_for_object_enumeration(
+        &self,
+        properties: &[ObjectProperty],
+        current_class_id: Option<ClassId>,
+        protected_class_ids: &[ClassId],
+    ) -> bool {
+        if self.visibility != Visibility::Public {
+            if !(current_class_id.is_some()
+                && self.is_visible_in_context(current_class_id, protected_class_ids))
+            {
+                return false;
+            }
+
+            if self.visibility == Visibility::Protected {
+                if let Some(current_class_id) = current_class_id {
+                    if properties.iter().any(|property| {
+                        property.name == self.name
+                            && property.visibility == Visibility::Private
+                            && property.declaring_class_id == current_class_id
+                            && property.initialized
+                            && !property.unset
+                    }) {
+                        return false;
+                    }
+                }
+            }
+
+            return true;
+        }
+
+        !properties.iter().any(|property| {
+            property.name == self.name
+                && property.visibility != Visibility::Public
+                && current_class_id.is_some()
+                && property.is_visible_in_context(current_class_id, protected_class_ids)
+        })
+    }
+
     fn initialized_value_cloned(&self) -> RuntimeResult<Value> {
+        if self.unset {
+            if self.type_decl.is_some() {
+                return Err(RuntimeError::uninitialized_typed_property(
+                    self.declaring_class_name.clone(),
+                    self.name.clone(),
+                ));
+            }
+            return Err(RuntimeError::undefined_property(
+                self.declaring_class_name.clone(),
+                self.name.clone(),
+            ));
+        }
         if self.initialized {
             Ok(self.value_cloned())
         } else {
@@ -37020,6 +39724,7 @@ impl ObjectProperty {
             ObjectPropertyStorage::Value(cell) => cell.set_value(value),
             ObjectPropertyStorage::Reference(reference) => reference.set_value(value),
         }
+        self.clear_readonly_clone_reset_allowance();
         self.unset = false;
     }
 
@@ -37030,6 +39735,7 @@ impl ObjectProperty {
             &self.name,
         );
         self.storage = ObjectPropertyStorage::Reference(reference);
+        self.clear_readonly_clone_reset_allowance();
         self.unset = false;
     }
 
@@ -37076,7 +39782,7 @@ impl ObjectProperty {
         }
     }
 
-    fn existing_reference_cell(&self) -> RuntimeResult<Option<PhpReferenceCell>> {
+    pub fn existing_reference_cell(&self) -> RuntimeResult<Option<PhpReferenceCell>> {
         if !self.initialized {
             return Err(RuntimeError::uninitialized_typed_property(
                 self.declaring_class_name.clone(),
@@ -37136,6 +39842,231 @@ impl NativeValueComparisonContext {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct RuntimeGmpDecimal {
+    negative: bool,
+    digits: Vec<u8>,
+}
+
+fn php_gmp_value_ordering(left: &Value, right: &Value) -> RuntimeResult<Option<Ordering>> {
+    if !value_is_gmp_object(left) && !value_is_gmp_object(right) {
+        return Ok(None);
+    }
+
+    let left = runtime_gmp_decimal_from_value(left)?;
+    let right = runtime_gmp_decimal_from_value(right)?;
+    Ok(Some(runtime_gmp_decimal_compare(&left, &right)))
+}
+
+fn value_is_gmp_object(value: &Value) -> bool {
+    matches!(value, Value::Object(object) if object.class_name().eq_ignore_ascii_case("GMP"))
+}
+
+fn runtime_gmp_decimal_from_value(value: &Value) -> RuntimeResult<RuntimeGmpDecimal> {
+    match value {
+        Value::Object(object) if object.class_name().eq_ignore_ascii_case("GMP") => {
+            runtime_gmp_decimal_from_object(object)
+        }
+        Value::Int(value) => runtime_gmp_decimal_from_integer_string(&value.to_string()),
+        Value::String(value) => runtime_gmp_decimal_from_integer_string(value),
+        Value::BinaryString(value) => {
+            let value =
+                std::str::from_utf8(value).map_err(|_| runtime_gmp_integer_string_error())?;
+            runtime_gmp_decimal_from_integer_string(value)
+        }
+        Value::Null => Ok(RuntimeGmpDecimal {
+            negative: false,
+            digits: vec![0],
+        }),
+        _ => Err(runtime_gmp_type_error(value)),
+    }
+}
+
+fn runtime_gmp_decimal_from_object(object: &PhpObject) -> RuntimeResult<RuntimeGmpDecimal> {
+    let Value::String(value) = object.read_public_property("num")? else {
+        return Err(runtime_gmp_integer_string_error());
+    };
+    runtime_gmp_decimal_from_integer_string(&value)
+}
+
+fn runtime_gmp_decimal_from_integer_string(value: &str) -> RuntimeResult<RuntimeGmpDecimal> {
+    let value = value.trim_matches(runtime_gmp_integer_whitespace);
+    if value.is_empty() {
+        return Err(runtime_gmp_integer_string_error());
+    }
+
+    let (negative, rest) = match value.as_bytes()[0] {
+        b'-' => (true, &value[1..]),
+        b'+' => return Err(runtime_gmp_integer_string_error()),
+        _ => (false, value),
+    };
+    if rest.is_empty() {
+        return Err(runtime_gmp_integer_string_error());
+    }
+
+    let (base, digits) = runtime_gmp_integer_digits_for_base(rest);
+    if digits.is_empty() {
+        return Err(runtime_gmp_integer_string_error());
+    }
+
+    let mut decimal_digits = vec![0];
+    for byte in digits.bytes() {
+        let Some(digit) = runtime_gmp_digit_value(byte, base) else {
+            return Err(runtime_gmp_integer_string_error());
+        };
+        decimal_digits = runtime_decimal_add_small_abs(
+            &runtime_decimal_mul_small_abs(&decimal_digits, u16::from(base)),
+            u16::from(digit),
+        );
+    }
+
+    runtime_normalize_decimal_digits(&mut decimal_digits);
+    let negative = negative && !runtime_digits_are_zero(&decimal_digits);
+    Ok(RuntimeGmpDecimal {
+        negative,
+        digits: decimal_digits,
+    })
+}
+
+fn runtime_gmp_integer_digits_for_base(value: &str) -> (u8, &str) {
+    if let Some(rest) = value
+        .strip_prefix("0x")
+        .or_else(|| value.strip_prefix("0X"))
+    {
+        return (16, rest);
+    }
+    if let Some(rest) = value
+        .strip_prefix("0b")
+        .or_else(|| value.strip_prefix("0B"))
+    {
+        return (2, rest);
+    }
+    if let Some(rest) = value
+        .strip_prefix("0o")
+        .or_else(|| value.strip_prefix("0O"))
+    {
+        return (8, rest);
+    }
+    if value.len() > 1 && value.starts_with('0') {
+        return (8, value);
+    }
+    (10, value)
+}
+
+fn runtime_gmp_digit_value(byte: u8, base: u8) -> Option<u8> {
+    let value = match byte {
+        b'0'..=b'9' => byte - b'0',
+        b'a'..=b'z' => 10 + byte - b'a',
+        b'A'..=b'Z' if base <= 36 => 10 + byte - b'A',
+        b'A'..=b'Z' => 36 + byte - b'A',
+        _ => return None,
+    };
+    (value < base).then_some(value)
+}
+
+fn runtime_gmp_integer_whitespace(ch: char) -> bool {
+    matches!(ch, ' ' | '\t' | '\n' | '\r' | '\u{0b}' | '\u{0c}')
+}
+
+fn runtime_gmp_decimal_compare(left: &RuntimeGmpDecimal, right: &RuntimeGmpDecimal) -> Ordering {
+    match (left.negative, right.negative) {
+        (true, false) => Ordering::Less,
+        (false, true) => Ordering::Greater,
+        (true, true) => runtime_decimal_cmp_abs(&right.digits, &left.digits),
+        (false, false) => runtime_decimal_cmp_abs(&left.digits, &right.digits),
+    }
+}
+
+fn runtime_decimal_cmp_abs(left: &[u8], right: &[u8]) -> Ordering {
+    let mut left = left.to_vec();
+    let mut right = right.to_vec();
+    runtime_normalize_decimal_digits(&mut left);
+    runtime_normalize_decimal_digits(&mut right);
+    left.len()
+        .cmp(&right.len())
+        .then_with(|| left.as_slice().cmp(right.as_slice()))
+}
+
+fn runtime_decimal_mul_small_abs(digits: &[u8], factor: u16) -> Vec<u8> {
+    if factor == 0 || runtime_digits_are_zero(digits) {
+        return vec![0];
+    }
+
+    let mut result = Vec::with_capacity(digits.len() + 3);
+    let mut carry = 0u16;
+    for digit in digits.iter().rev() {
+        let product = u16::from(*digit) * factor + carry;
+        result.push((product % 10) as u8);
+        carry = product / 10;
+    }
+    while carry > 0 {
+        result.push((carry % 10) as u8);
+        carry /= 10;
+    }
+    result.reverse();
+    runtime_normalize_decimal_digits(&mut result);
+    result
+}
+
+fn runtime_decimal_add_small_abs(digits: &[u8], addend: u16) -> Vec<u8> {
+    let mut result = digits.to_vec();
+    let mut carry = addend;
+    let mut index = result.len();
+    while carry > 0 {
+        if index == 0 {
+            result.insert(0, (carry % 10) as u8);
+            carry /= 10;
+            continue;
+        }
+        index -= 1;
+        let sum = u16::from(result[index]) + (carry % 10);
+        result[index] = (sum % 10) as u8;
+        carry = carry / 10 + sum / 10;
+    }
+    runtime_normalize_decimal_digits(&mut result);
+    result
+}
+
+fn runtime_normalize_decimal_digits(digits: &mut Vec<u8>) {
+    if let Some(first_non_zero) = digits.iter().position(|digit| *digit != 0) {
+        if first_non_zero > 0 {
+            digits.drain(..first_non_zero);
+        }
+    } else {
+        digits.clear();
+        digits.push(0);
+    }
+}
+
+fn runtime_digits_are_zero(digits: &[u8]) -> bool {
+    digits.iter().all(|digit| *digit == 0)
+}
+
+fn runtime_gmp_integer_string_error() -> RuntimeError {
+    RuntimeError::unsupported_call("GMP operator", "Number is not an integer string")
+}
+
+fn runtime_gmp_type_error(value: &Value) -> RuntimeError {
+    RuntimeError::unsupported_call(
+        "GMP operator",
+        format!(
+            "Number must be of type GMP|string|int, {} given",
+            php_runtime_type_error_given(value)
+        ),
+    )
+}
+
+fn php_runtime_type_error_given(value: &Value) -> String {
+    match value {
+        Value::Null => "null".to_string(),
+        Value::Bool(true) => "true".to_string(),
+        Value::Bool(false) => "false".to_string(),
+        Value::Object(object) => object.class_name().to_string(),
+        Value::Closure(_) => "Closure".to_string(),
+        other => other.type_name().to_string(),
+    }
+}
+
 fn coerce_typed_property_value(property: &ObjectProperty, value: Value) -> RuntimeResult<Value> {
     let Some(type_decl) = property.type_decl.as_deref() else {
         return Ok(value);
@@ -37151,6 +40082,7 @@ fn coerce_typed_property_value(property: &ObjectProperty, value: Value) -> Runti
 fn coerce_typed_property_value_with_object_type_resolver<F>(
     property: &ObjectProperty,
     value: Value,
+    strict_scalars: bool,
     object_type_resolver: &F,
 ) -> RuntimeResult<Value>
 where
@@ -37164,6 +40096,7 @@ where
         value,
         &property.declaring_class_name,
         &property.name,
+        strict_scalars,
         object_type_resolver,
     )
 }
@@ -37179,6 +40112,7 @@ pub fn coerce_property_value(
         value,
         class_name,
         property_name,
+        false,
         |object, type_name| object.is_instance_of_class_name(type_name),
     )
 }
@@ -37188,6 +40122,7 @@ pub fn coerce_property_value_with_object_type_resolver<F>(
     value: Value,
     class_name: &str,
     property_name: &str,
+    strict_scalars: bool,
     object_type_resolver: F,
 ) -> RuntimeResult<Value>
 where
@@ -37198,6 +40133,7 @@ where
         value,
         class_name,
         property_name,
+        strict_scalars,
         &object_type_resolver,
     )
 }
@@ -37207,15 +40143,36 @@ fn coerce_property_value_with_object_type_resolver_dyn(
     value: Value,
     class_name: &str,
     property_name: &str,
+    strict_scalars: bool,
     object_type_resolver: &dyn Fn(&PhpObject, &str) -> bool,
 ) -> RuntimeResult<Value> {
-    if type_decl.contains('|') {
-        for part in type_decl.split('|') {
+    let type_decl = strip_wrapping_type_decl_parens(type_decl.trim());
+    let union_parts = split_type_decl_top_level(type_decl, '|');
+    if union_parts.len() > 1 {
+        let union_accepts_string = type_decl_contains_name(type_decl, "string");
+        for part in &union_parts {
             if let Ok(value) = coerce_property_value_with_object_type_resolver_dyn(
                 part.trim(),
                 value.clone(),
                 class_name,
                 property_name,
+                true,
+                object_type_resolver,
+            ) {
+                return Ok(value);
+            }
+        }
+
+        for part in &union_parts {
+            if union_accepts_string && weak_union_part_should_defer_to_string(part, &value) {
+                continue;
+            }
+            if let Ok(value) = coerce_property_value_with_object_type_resolver_dyn(
+                part.trim(),
+                value.clone(),
+                class_name,
+                property_name,
+                strict_scalars,
                 object_type_resolver,
             ) {
                 return Ok(value);
@@ -37225,21 +40182,28 @@ fn coerce_property_value_with_object_type_resolver_dyn(
             class_name,
             property_name,
             type_decl,
-            value.type_name(),
+            &php_type_error_actual_name(&value),
         ));
     }
 
-    if type_decl.contains('&') {
-        for part in type_decl.split('&') {
+    let intersection_parts = split_type_decl_top_level(type_decl, '&');
+    if intersection_parts.len() > 1 {
+        for part in &intersection_parts {
             coerce_property_value_with_object_type_resolver_dyn(
                 part.trim(),
                 value.clone(),
                 class_name,
                 property_name,
+                strict_scalars,
                 object_type_resolver,
             )
             .map_err(|_| {
-                typed_property_type_error(class_name, property_name, type_decl, value.type_name())
+                typed_property_type_error(
+                    class_name,
+                    property_name,
+                    type_decl,
+                    &php_type_error_actual_name(&value),
+                )
             })?;
         }
         return Ok(value);
@@ -37265,14 +40229,28 @@ fn coerce_property_value_with_object_type_resolver_dyn(
     }
 
     let coerced = match normalized.as_str() {
+        "int" if strict_scalars => match &value {
+            Value::Int(_) => Some(value.clone()),
+            _ => None,
+        },
         "int" => match &value {
             Value::Int(_) => Some(value.clone()),
             Value::Bool(value) => Some(Value::Int(if *value { 1 } else { 0 })),
-            Value::Float(value) => Some(Value::Int(*value as i64)),
-            Value::String(value) => parse_numeric_string(value).map(|number| match number {
-                Number::Int(value) => Value::Int(value),
-                Number::Float(value) => Value::Int(value as i64),
+            Value::Float(value) if !php_float_to_int_is_not_representable(*value) => {
+                Some(Value::Int(*value as i64))
+            }
+            Value::String(value) => parse_numeric_string(value).and_then(|number| match number {
+                Number::Int(value) => Some(Value::Int(value)),
+                Number::Float(value) if !php_float_to_int_is_not_representable(value) => {
+                    Some(Value::Int(value as i64))
+                }
+                Number::Float(_) => None,
             }),
+            _ => None,
+        },
+        "float" if strict_scalars => match &value {
+            Value::Int(value) => Some(Value::Float(*value as f64)),
+            Value::Float(_) => Some(value.clone()),
             _ => None,
         },
         "float" => match &value {
@@ -37285,11 +40263,19 @@ fn coerce_property_value_with_object_type_resolver_dyn(
             }),
             _ => None,
         },
+        "bool" if strict_scalars => match &value {
+            Value::Bool(_) => Some(value.clone()),
+            _ => None,
+        },
         "bool" => match &value {
             Value::Bool(_) => Some(value.clone()),
             Value::Int(value) => Some(Value::Bool(*value != 0)),
             Value::Float(value) => Some(Value::Bool(*value != 0.0)),
             Value::String(value) => Some(Value::Bool(!value.is_empty() && value != "0")),
+            _ => None,
+        },
+        "string" if strict_scalars => match &value {
+            Value::String(_) | Value::BinaryString(_) => Some(value.clone()),
             _ => None,
         },
         "string" => match &value {
@@ -37306,8 +40292,10 @@ fn coerce_property_value_with_object_type_resolver_dyn(
         (_, "mixed") => true,
         (Value::Bool(true), "bool" | "true") => true,
         (Value::Bool(false), "bool" | "false") => true,
-        (Value::Array(_), "array") => true,
+        (Value::Array(_), "array" | "iterable") => true,
+        (Value::Closure(_), "object" | "closure") => true,
         (Value::Object(_), "object") => true,
+        (Value::Object(object), "iterable") => object_type_resolver(object, "iterable"),
         (Value::Object(object), type_name) => object_type_resolver(object, type_name),
         _ => false,
     };
@@ -37317,11 +40305,108 @@ fn coerce_property_value_with_object_type_resolver_dyn(
             class_name,
             property_name,
             type_decl,
-            value.type_name(),
+            &php_type_error_actual_name(&value),
         ));
     }
 
     Ok(value)
+}
+
+fn php_type_error_actual_name(value: &Value) -> String {
+    match value {
+        Value::Bool(true) => "true".to_string(),
+        Value::Bool(false) => "false".to_string(),
+        Value::Object(object) => object.class_name().to_string(),
+        other => other.type_name().to_string(),
+    }
+}
+
+fn weak_union_part_should_defer_to_string(part: &str, value: &Value) -> bool {
+    type_decl_part_matches(part, "int")
+        && matches!(value, Value::Float(value) if php_float_to_int_is_not_representable(*value))
+}
+
+fn type_decl_contains_name(type_decl: &str, needle: &str) -> bool {
+    let type_decl = strip_wrapping_type_decl_parens(type_decl.trim());
+    let union_parts = split_type_decl_top_level(type_decl, '|');
+    if union_parts.len() > 1 {
+        return union_parts
+            .iter()
+            .any(|part| type_decl_contains_name(part, needle));
+    }
+    let intersection_parts = split_type_decl_top_level(type_decl, '&');
+    if intersection_parts.len() > 1 {
+        return intersection_parts
+            .iter()
+            .any(|part| type_decl_contains_name(part, needle));
+    }
+    type_decl_part_matches(type_decl, needle)
+}
+
+fn type_decl_part_matches(part: &str, needle: &str) -> bool {
+    let name = strip_wrapping_type_decl_parens(part.trim());
+    let name = name.strip_prefix('?').unwrap_or(name);
+    let name = name.strip_prefix('\\').unwrap_or(name);
+    name.eq_ignore_ascii_case(needle)
+}
+
+fn split_type_decl_top_level(text: &str, separator: char) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut depth = 0usize;
+    let mut start = 0usize;
+    for (index, ch) in text.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => depth = depth.saturating_sub(1),
+            ch if ch == separator && depth == 0 => {
+                parts.push(&text[start..index]);
+                start = index + ch.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    parts.push(&text[start..]);
+    parts
+}
+
+fn strip_wrapping_type_decl_parens(text: &str) -> &str {
+    let mut current = text.trim();
+    loop {
+        let Some(inner) = current
+            .strip_prefix('(')
+            .and_then(|value| value.strip_suffix(')'))
+        else {
+            return current;
+        };
+        if type_decl_outer_parens_wrap_all(current) {
+            current = inner.trim();
+        } else {
+            return current;
+        }
+    }
+}
+
+fn type_decl_outer_parens_wrap_all(text: &str) -> bool {
+    let mut depth = 0usize;
+    for (index, ch) in text.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 && index < text.len() - 1 {
+                    return false;
+                }
+            }
+            _ => {}
+        }
+    }
+    depth == 0
+}
+
+fn php_float_to_int_is_not_representable(value: f64) -> bool {
+    !value.is_finite()
+        || value.trunc() < i64::MIN as f64
+        || value.trunc() >= 9_223_372_036_854_775_808.0
 }
 
 fn typed_property_type_error(
@@ -38080,6 +41165,10 @@ impl Value {
         self.php_cmp_checked_with_context(other, op, &mut NativeValueComparisonContext::default())
     }
 
+    pub fn php_ordering_checked(&self, other: &Value) -> RuntimeResult<Ordering> {
+        self.php_ordering_checked_with_context(other, &mut NativeValueComparisonContext::default())
+    }
+
     pub fn php_compare_checked(&self, other: &Value, op: PhpComparisonOp) -> RuntimeResult<bool> {
         evaluate_php_comparison(self, other, op)?.into_runtime_result()
     }
@@ -38090,23 +41179,22 @@ impl Value {
         op: Comparison,
         context: &mut NativeValueComparisonContext,
     ) -> RuntimeResult<bool> {
+        if let Some(ordering) = php_gmp_value_ordering(self, other)? {
+            return Ok(comparison_matches_ordering(ordering, op));
+        }
+
         match (self, other) {
             (Value::Array(left), Value::Array(right)) => match op {
                 Comparison::Eq => left.php_equality_checked_with_context(right, context),
                 Comparison::Ne => left
                     .php_equality_checked_with_context(right, context)
                     .map(|equal| !equal),
-                Comparison::Lt | Comparison::Le | Comparison::Gt | Comparison::Ge => {
-                    Err(RuntimeError::unsupported_comparison(
-                        "array ordering comparisons are not implemented",
-                    ))
-                }
+                Comparison::Lt | Comparison::Le | Comparison::Gt | Comparison::Ge => left
+                    .php_ordering_checked_with_context(right, context)
+                    .map(|ordering| comparison_matches_ordering(ordering, op)),
             },
-            (Value::Array(_), _) | (_, Value::Array(_)) => {
-                Err(RuntimeError::unsupported_comparison(
-                    "array comparisons with non-array values are not implemented",
-                ))
-            }
+            (Value::Array(left), right) => php_array_non_array_comparison(left, true, right, op),
+            (left, Value::Array(right)) => php_array_non_array_comparison(right, false, left, op),
             (Value::Object(left), Value::Object(right)) => {
                 left.php_cmp_checked_with_context(right, op, context)
             }
@@ -38158,6 +41246,47 @@ impl Value {
                 RuntimeError::unsupported_comparison("resource comparisons are not implemented"),
             ),
             _ => Ok(self.php_cmp(other, op)),
+        }
+    }
+
+    fn php_ordering_checked_with_context(
+        &self,
+        other: &Value,
+        context: &mut NativeValueComparisonContext,
+    ) -> RuntimeResult<Ordering> {
+        if let Some(ordering) = php_gmp_value_ordering(self, other)? {
+            return Ok(ordering);
+        }
+
+        match (self, other) {
+            (Value::Array(left), Value::Array(right)) => {
+                left.php_ordering_checked_with_context(right, context)
+            }
+            (Value::Array(left), right) => php_array_non_array_ordering(left, true, right),
+            (left, Value::Array(right)) => php_array_non_array_ordering(right, false, left),
+            (Value::Object(left), Value::Object(right)) => {
+                left.php_ordering_checked_with_context(right, context)
+            }
+            (Value::Closure(left), Value::Closure(right)) => Ok(left.id().cmp(&right.id())),
+            (Value::Object(_) | Value::Closure(_), Value::Object(_) | Value::Closure(_)) => {
+                Err(RuntimeError::unsupported_comparison(
+                    "mixed object ordering comparisons are not implemented",
+                ))
+            }
+            (Value::Object(_) | Value::Closure(_), _)
+            | (_, Value::Object(_) | Value::Closure(_)) => {
+                Err(RuntimeError::unsupported_comparison(
+                    "object comparisons with non-object values are not implemented",
+                ))
+            }
+            (Value::Resource(_), _) | (_, Value::Resource(_)) => {
+                Err(RuntimeError::unsupported_comparison(
+                    "resource ordering comparisons are not implemented",
+                ))
+            }
+            _ => self.php_ordering(other).ok_or_else(|| {
+                RuntimeError::unsupported_comparison("ordering comparison is not implemented")
+            }),
         }
     }
 
@@ -38298,10 +41427,10 @@ impl Value {
             Value::Bool(false) => Ok(0),
             Value::Bool(true) => Ok(1),
             Value::Int(value) => Ok(*value),
-            Value::Float(value) => Ok(*value as i64),
+            Value::Float(value) => Ok(php_float_to_operator_int(*value)),
             Value::String(value) => match parse_numeric_string(value) {
                 Some(Number::Int(value)) => Ok(value),
-                Some(Number::Float(value)) => Ok(value as i64),
+                Some(Number::Float(value)) => Ok(php_float_to_operator_int(value)),
                 None => Err(RuntimeError::invalid_arithmetic(
                     operation,
                     "string is not numeric",
@@ -38309,7 +41438,7 @@ impl Value {
             },
             Value::BinaryString(value) => match parse_numeric_string_bytes(value) {
                 Some(Number::Int(value)) => Ok(value),
-                Some(Number::Float(value)) => Ok(value as i64),
+                Some(Number::Float(value)) => Ok(php_float_to_operator_int(value)),
                 None => Err(RuntimeError::invalid_arithmetic(
                     operation,
                     "string is not numeric",
@@ -39841,6 +42970,7 @@ fn native_core_interface_canonical_name_bytes(name: &[u8]) -> Option<Vec<u8>> {
         b"Stringable",
         b"SplObserver",
         b"SplSubject",
+        b"DateTimeInterface",
     ];
 
     let lookup_key = native_class_metadata_lookup_key(name);
@@ -40967,6 +44097,7 @@ fn native_user_class_has_member_bytes(
     class_name: &[u8],
     member: &[u8],
     operation: NativeClassMetadataOperation,
+    include_private_ancestor_methods: bool,
 ) -> bool {
     let classes = PhpClassTable::with_core_classes();
     let mut current = native_class_canonical_name_bytes(&classes, class_name);
@@ -41003,10 +44134,12 @@ fn native_user_class_has_member_bytes(
             return false;
         };
         let found = match operation {
-            NativeClassMetadataOperation::MethodExists => class
-                .methods
-                .iter()
-                .any(|method| method.lookup_key == member_key),
+            NativeClassMetadataOperation::MethodExists => class.methods.iter().any(|method| {
+                method.lookup_key == member_key
+                    && (include_private_ancestor_methods
+                        || is_root_class
+                        || method.visibility != Visibility::Private)
+            }),
             NativeClassMetadataOperation::PropertyExists => {
                 class.properties.iter().any(|property| {
                     property.name.as_slice() == member
@@ -41066,11 +44199,8 @@ unsafe fn native_value_class_metadata_exists(
             Ok(native_user_interface_canonical_name_bytes(&interface_name).is_some())
         }
         tag if tag == NativeClassMetadataOperation::MethodExists as u8 => {
-            let class_name = unsafe {
-                native_value_metadata_object_or_class_name_bytes_argument(
-                    subject,
-                    "method_exists()",
-                )
+            let subject = unsafe {
+                native_value_metadata_object_or_class_name_subject(subject, "method_exists()")
             }?;
             let method_name = unsafe {
                 native_value_metadata_php_string_bytes_argument(
@@ -41080,13 +44210,14 @@ unsafe fn native_value_class_metadata_exists(
                 )
             }?;
             Ok(classes
-                .lookup_class_bytes(&class_name)
+                .lookup_class_bytes(&subject.class_name)
                 .and_then(|class| class.method_bytes(&method_name))
                 .is_some()
                 || native_user_class_has_member_bytes(
-                    &class_name,
+                    &subject.class_name,
                     &method_name,
                     NativeClassMetadataOperation::MethodExists,
+                    subject.from_object,
                 ))
         }
         tag if tag == NativeClassMetadataOperation::PropertyExists as u8 => {
@@ -41111,12 +44242,18 @@ unsafe fn native_value_class_metadata_exists(
                     &class_name,
                     &property_name,
                     NativeClassMetadataOperation::PropertyExists,
+                    false,
                 ))
         }
         _ => Err(RuntimeError::invalid_string_conversion(
             "native class metadata exists failed: unsupported operation tag",
         )),
     }
+}
+
+struct NativeObjectOrClassNameSubject {
+    class_name: Vec<u8>,
+    from_object: bool,
 }
 
 unsafe fn native_value_metadata_php_string_bytes_argument(
@@ -41145,6 +44282,13 @@ unsafe fn native_value_metadata_object_or_class_name_bytes_argument(
     handle: NativeValueHandle,
     callable: &'static str,
 ) -> RuntimeResult<Vec<u8>> {
+    Ok(unsafe { native_value_metadata_object_or_class_name_subject(handle, callable) }?.class_name)
+}
+
+unsafe fn native_value_metadata_object_or_class_name_subject(
+    handle: NativeValueHandle,
+    callable: &'static str,
+) -> RuntimeResult<NativeObjectOrClassNameSubject> {
     let Some(value) = (unsafe { handle.as_ref() }) else {
         return Err(RuntimeError::unsupported_call(
             callable,
@@ -41153,9 +44297,18 @@ unsafe fn native_value_metadata_object_or_class_name_bytes_argument(
     };
 
     match value {
-        Value::Object(object) => Ok(object.class_name().as_bytes().to_vec()),
-        Value::String(value) => Ok(value.as_bytes().to_vec()),
-        Value::BinaryString(value) => Ok(value.clone()),
+        Value::Object(object) => Ok(NativeObjectOrClassNameSubject {
+            class_name: object.class_name().as_bytes().to_vec(),
+            from_object: true,
+        }),
+        Value::String(value) => Ok(NativeObjectOrClassNameSubject {
+            class_name: value.as_bytes().to_vec(),
+            from_object: false,
+        }),
+        Value::BinaryString(value) => Ok(NativeObjectOrClassNameSubject {
+            class_name: value.clone(),
+            from_object: false,
+        }),
         value => Err(RuntimeError::unsupported_call(
             callable,
             format!(
@@ -43464,7 +46617,7 @@ impl Number {
     fn as_int(&self) -> i64 {
         match self {
             Number::Int(value) => *value,
-            Number::Float(value) => *value as i64,
+            Number::Float(value) => php_float_to_operator_int(*value),
         }
     }
 
@@ -43474,6 +46627,22 @@ impl Number {
             Number::Float(value) => format_php_float(value),
         }
     }
+}
+
+fn php_float_to_operator_int(value: f64) -> i64 {
+    if !value.is_finite() {
+        return 0;
+    }
+
+    let truncated = value.trunc();
+    const PHP_INT_64_MAX_EXCLUSIVE_AS_F64: f64 = 9_223_372_036_854_775_808.0;
+    if truncated >= i64::MIN as f64 && truncated < PHP_INT_64_MAX_EXCLUSIVE_AS_F64 {
+        return truncated as i64;
+    }
+
+    const PHP_UINT_64_MODULUS_AS_F64: f64 = 18_446_744_073_709_551_616.0;
+    let modulo = truncated.rem_euclid(PHP_UINT_64_MODULUS_AS_F64);
+    (modulo as u64) as i64
 }
 
 impl<'a> PhpPrimitiveValue<'a> {
@@ -43852,7 +47021,10 @@ fn php_arithmetic_modulo_result(left: Number, right: Number) -> RuntimeResult<Va
 
 fn php_arithmetic_negate_result(number: Number) -> Value {
     match number {
-        Number::Int(value) => Value::Int(value.wrapping_neg()),
+        Number::Int(value) => value
+            .checked_neg()
+            .map(Value::Int)
+            .unwrap_or_else(|| Value::Float(-(value as f64))),
         Number::Float(value) => Value::Float(-value),
     }
 }
@@ -43861,6 +47033,56 @@ fn compare_numbers(left: Number, right: Number) -> Option<Ordering> {
     match (left, right) {
         (Number::Int(left), Number::Int(right)) => Some(left.cmp(&right)),
         (left, right) => left.as_float().partial_cmp(&right.as_float()),
+    }
+}
+
+fn php_array_non_array_comparison(
+    array: &PhpArray,
+    array_is_left: bool,
+    other: &Value,
+    op: Comparison,
+) -> RuntimeResult<bool> {
+    let ordering = php_array_non_array_ordering(array, array_is_left, other)?;
+    Ok(comparison_matches_ordering(ordering, op))
+}
+
+fn php_array_non_array_ordering(
+    array: &PhpArray,
+    array_is_left: bool,
+    other: &Value,
+) -> RuntimeResult<Ordering> {
+    let ordering = match other {
+        Value::Null | Value::Bool(_) => {
+            let array_truthy = !array.is_empty();
+            let other_truthy = other.is_truthy();
+            if array_is_left {
+                array_truthy.cmp(&other_truthy)
+            } else {
+                other_truthy.cmp(&array_truthy)
+            }
+        }
+        Value::Object(_) | Value::Closure(_) => {
+            return Err(RuntimeError::unsupported_comparison(
+                "array comparisons with object values are not implemented",
+            ));
+        }
+        Value::Resource(_) => {
+            return Err(RuntimeError::unsupported_comparison(
+                "array comparisons with resource values are not implemented",
+            ));
+        }
+        _ if array_is_left => Ordering::Greater,
+        _ => Ordering::Less,
+    };
+    Ok(ordering)
+}
+
+fn comparison_matches_ordering(ordering: Ordering, op: Comparison) -> bool {
+    match (ordering, op) {
+        (Ordering::Less, Comparison::Lt | Comparison::Le | Comparison::Ne) => true,
+        (Ordering::Equal, Comparison::Eq | Comparison::Le | Comparison::Ge) => true,
+        (Ordering::Greater, Comparison::Gt | Comparison::Ge | Comparison::Ne) => true,
+        _ => false,
     }
 }
 
@@ -44060,11 +47282,56 @@ fn format_php_float(value: f64) -> String {
         };
     }
 
-    let formatted = format!("{}", value);
-    if formatted == "-0" {
-        "0".to_string()
-    } else {
-        formatted
+    format_php_finite_float_default_precision(value, true)
+}
+
+fn format_php_float_for_string_key(value: f64) -> String {
+    if value.is_nan() || value.is_infinite() {
+        return format_php_float(value);
+    }
+    format_php_finite_float_default_precision(value, true)
+}
+
+fn format_php_finite_float_default_precision(value: f64, preserve_negative_zero: bool) -> String {
+    if value == 0.0 {
+        return if preserve_negative_zero && value.is_sign_negative() {
+            "-0".to_string()
+        } else {
+            "0".to_string()
+        };
+    }
+
+    const PHP_DEFAULT_PRECISION: i32 = 14;
+    let exponent = value.abs().log10().floor() as i32;
+    if !(-4..PHP_DEFAULT_PRECISION).contains(&exponent) {
+        let mut formatted = format!("{:.13E}", value);
+        let Some((mantissa, exponent)) = formatted.split_once('E') else {
+            trim_float_decimal_suffix(&mut formatted);
+            return formatted;
+        };
+        let mut mantissa = mantissa.to_string();
+        trim_float_decimal_suffix(&mut mantissa);
+        if !mantissa.contains('.') {
+            mantissa.push_str(".0");
+        }
+        let exponent = exponent.parse::<i32>().unwrap_or(0);
+        return format!("{mantissa}E{exponent:+}");
+    }
+
+    let decimals = (PHP_DEFAULT_PRECISION - 1 - exponent).max(0) as usize;
+    let mut formatted = format!("{:.*}", decimals, value);
+    trim_float_decimal_suffix(&mut formatted);
+    formatted
+}
+
+fn trim_float_decimal_suffix(value: &mut String) {
+    if value.contains('.') {
+        while value.ends_with('0') {
+            value.pop();
+        }
+        if value.ends_with('.') {
+            value.pop();
+        }
     }
 }
 
@@ -44238,6 +47505,79 @@ mod tests {
 
     fn native_string_for_test(value: &str) -> NativeStringHandle {
         unsafe { phpc_native_string_from_bytes(value.as_ptr(), value.len()) }
+    }
+
+    #[test]
+    fn native_strnatcmp_left_aligned_digit_runs_match_php() {
+        assert_eq!(php_strnatcmp_bytes(b" 00", b" 0", false), 1);
+        assert_eq!(php_strnatcmp_bytes(b" 0", b" 00", false), -1);
+        assert_eq!(php_strnatcmp_bytes(b"a0002", b"a002", false), -1);
+        assert_eq!(php_strnatcmp_bytes(b"a2", b"a02", false), 1);
+        assert_eq!(php_strnatcmp_bytes(b"0002", b"002", false), 0);
+        assert_eq!(php_strnatcmp_bytes(b"A001", b"a01", true), -1);
+    }
+
+    #[test]
+    fn unset_typed_property_magic_get_return_coercion_obeys_strict_flag() {
+        let mut class = PhpClassMetadata::new(ClassId(811), "SideEffectBox".to_string());
+        class
+            .add_property(
+                PhpPropertyMetadata::instance("id", Visibility::Public)
+                    .with_type_decl(Some("int".to_string())),
+            )
+            .unwrap();
+
+        let object = PhpObject::from_class(&class);
+        object.unset_property_from_context("id", None, &[]).unwrap();
+        object
+            .write_property_from_context("id", Value::Int(7), None, &[])
+            .unwrap();
+
+        let error = object
+            .coerce_unset_typed_property_read_value_from_context_with_object_type_resolver(
+                "id",
+                Value::String("bad".to_string()),
+                None,
+                &[],
+                false,
+                |object, type_name| object.is_instance_of_class_name(type_name),
+            )
+            .unwrap_err();
+        assert_eq!(
+            error.message(),
+            "invalid property access: Cannot assign string to property SideEffectBox::$id of type int"
+        );
+        assert_eq!(
+            object.read_property_from_context("id", None, &[]).unwrap(),
+            Value::Int(7)
+        );
+
+        let weak = object
+            .coerce_unset_typed_property_read_value_from_context_with_object_type_resolver(
+                "id",
+                Value::String("42".to_string()),
+                None,
+                &[],
+                false,
+                |object, type_name| object.is_instance_of_class_name(type_name),
+            )
+            .unwrap();
+        assert_eq!(weak, Value::Int(42));
+
+        let strict = object
+            .coerce_unset_typed_property_read_value_from_context_with_object_type_resolver(
+                "id",
+                Value::String("42".to_string()),
+                None,
+                &[],
+                true,
+                |object, type_name| object.is_instance_of_class_name(type_name),
+            )
+            .unwrap_err();
+        assert_eq!(
+            strict.message(),
+            "invalid property access: Cannot assign string to property SideEffectBox::$id of type int"
+        );
     }
 
     unsafe fn int_from_frame_for_test(frame: NativeCallFrameHandle, index: usize) -> i64 {
@@ -47263,11 +50603,32 @@ mod tests {
     }
 
     fn reset_call_arguments_free_count_for_test() {
-        NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST.store(0, AtomicOrdering::SeqCst);
+        NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST.with(|count| count.set(0));
     }
 
     fn call_arguments_free_count_for_test() -> i64 {
-        NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST.load(AtomicOrdering::SeqCst)
+        NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST.with(Cell::get)
+    }
+
+    #[test]
+    fn call_arguments_free_count_is_thread_local_for_parallel_tests() {
+        reset_call_arguments_free_count_for_test();
+        unsafe { phpc_native_call_arguments_free(NativeCallArgumentsHandle::null()) };
+        assert_eq!(call_arguments_free_count_for_test(), 0);
+
+        unsafe { phpc_native_call_arguments_free(call_arguments_from_ints_for_test(&[1])) };
+        assert_eq!(call_arguments_free_count_for_test(), 1);
+
+        std::thread::spawn(|| {
+            reset_call_arguments_free_count_for_test();
+            unsafe { phpc_native_call_arguments_free(call_arguments_from_ints_for_test(&[2])) };
+            unsafe { phpc_native_call_arguments_free(call_arguments_from_ints_for_test(&[3])) };
+            assert_eq!(call_arguments_free_count_for_test(), 2);
+        })
+        .join()
+        .expect("thread-local free-count check should not panic");
+
+        assert_eq!(call_arguments_free_count_for_test(), 1);
     }
 
     #[test]
@@ -50643,6 +54004,11 @@ mod tests {
                 ],
                 Value::String(" unchanged ".to_string()),
             ),
+            (
+                "trim",
+                vec![Value::BinaryString(b"\x0cABC\x0c".to_vec())],
+                Value::String("ABC".to_string()),
+            ),
         ];
 
         for (name, args, expected) in cases {
@@ -51421,7 +54787,7 @@ mod tests {
             "array print_r",
             array,
             NativeValueFormatterTag::PrintR,
-            b"Array\n(\n    [name] => Ada\n    [2] => 1\n    [nested] => Array\n    (\n        [child] => ok\n    )\n)\n",
+            b"Array\n(\n    [name] => Ada\n    [2] => 1\n    [nested] => Array\n        (\n            [child] => ok\n        )\n\n)\n",
         );
 
         let mut diagnostic = NativeDiagnosticHandle::null();
@@ -53739,9 +57105,9 @@ mod tests {
             )
         };
         assert!(private_read.is_null());
-        assert!(
-            native_diagnostic_message_for_test(diagnostic).contains("non-public property"),
-            "diagnostic should preserve inherited non-public property visibility"
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "undefined property ChildBox::$secret"
         );
         unsafe { phpc_native_diagnostic_free(diagnostic) };
 
@@ -54908,7 +58274,7 @@ mod tests {
     }
 
     #[test]
-    fn native_user_class_property_exists_filters_private_ancestor_properties_only() {
+    fn native_user_class_metadata_exists_filters_private_ancestor_members_for_class_strings() {
         native_user_classes_reset_for_test();
         assert!(native_declare_user_class_bytes_result(b"VisibilityBase"));
         assert!(native_declare_user_class_method_bytes_result(
@@ -55010,7 +58376,7 @@ mod tests {
         });
         assert!(diagnostic.is_null());
 
-        assert!(unsafe {
+        assert!(!unsafe {
             phpc_native_value_class_metadata_exists_with_diagnostic(
                 child,
                 base_private_method,
@@ -58791,6 +62157,7 @@ mod tests {
         assert_eq!(Value::Bool(true).echo_string(), "1");
         assert_eq!(Value::Int(42).echo_string(), "42");
         assert_eq!(Value::Float(1.5).echo_string(), "1.5");
+        assert_eq!(Value::Float(-0.0).echo_string(), "-0");
         assert_eq!(Value::String("x".to_string()).echo_string(), "x");
     }
 
@@ -58946,6 +62313,12 @@ mod tests {
             Value::String(String::new())
         );
         assert_eq!(
+            coerce_property_value("int", Value::Float(f64::NAN), "Packet", "count")
+                .unwrap_err()
+                .message(),
+            "invalid property access: typed property Packet::$count expects int, got float"
+        );
+        assert_eq!(
             coerce_property_value("string", Value::Null, "Packet", "payload")
                 .unwrap_err()
                 .message(),
@@ -58984,6 +62357,36 @@ mod tests {
         assert_eq!(unique.get("true"), Some(&Value::Bool(true)));
         assert_eq!(unique.get("one"), None);
         assert_eq!(unique.get("keep"), Some(&Value::String("keep".to_string())));
+    }
+
+    #[test]
+    fn union_type_coercion_prefers_exact_scalar_matches_before_weak_coercion() {
+        assert_eq!(
+            coerce_property_value("int|float", Value::Float(2.0), "Packet", "amount").unwrap(),
+            Value::Float(2.0)
+        );
+        assert_eq!(
+            coerce_property_value(
+                "float|string",
+                Value::String("5".to_string()),
+                "Packet",
+                "amount",
+            )
+            .unwrap(),
+            Value::String("5".to_string())
+        );
+        assert_eq!(
+            coerce_property_value("float|string", Value::Int(3), "Packet", "amount").unwrap(),
+            Value::Float(3.0)
+        );
+        assert_eq!(
+            coerce_property_value("false|int", Value::Bool(false), "Packet", "flag").unwrap(),
+            Value::Bool(false)
+        );
+        assert_eq!(
+            coerce_property_value("true|int", Value::Bool(true), "Packet", "flag").unwrap(),
+            Value::Bool(true)
+        );
     }
 
     #[test]
@@ -65554,7 +68957,7 @@ mod tests {
     }
 
     #[test]
-    fn native_string_value_conversion_rejects_missing_or_non_utf8_handles() {
+    fn native_string_value_conversion_rejects_missing_and_preserves_binary_handles() {
         let null_value = unsafe { phpc_native_value_from_string(NativeStringHandle::null()) };
         assert!(null_value.is_null());
         let null_echo = unsafe { phpc_native_value_echo_bytes(null_value) };
@@ -65777,7 +69180,7 @@ mod tests {
     }
 
     #[test]
-    fn native_string_value_conversion_reports_diagnostics_for_failures() {
+    fn native_string_value_conversion_reports_diagnostics_for_failures_and_preserves_bytes() {
         let mut diagnostic = NativeDiagnosticHandle::null();
         let null_value = unsafe {
             phpc_native_value_from_string_with_diagnostic(
@@ -65822,28 +69225,21 @@ mod tests {
         let mut diagnostic = NativeDiagnosticHandle::null();
         let invalid_value =
             unsafe { phpc_native_value_from_string_with_diagnostic(string, &mut diagnostic) };
-        assert!(invalid_value.is_null());
-        assert!(!diagnostic.is_null());
-        assert_eq!(unsafe { phpc_native_diagnostic_count(diagnostic) }, 1);
+        assert!(!invalid_value.is_null());
+        assert!(diagnostic.is_null());
+        assert!(matches!(
+            unsafe { invalid_value.as_ref() },
+            Some(Value::BinaryString(bytes)) if bytes.as_slice() == invalid_bytes.as_slice()
+        ));
         assert_eq!(
-            unsafe { phpc_native_diagnostic_severity_at(diagnostic, 0) },
-            NativeDiagnosticSeverity::Error.tag()
+            native_value_php_string_bytes_for_test(invalid_value),
+            invalid_bytes.to_vec()
         );
-        assert!(unsafe {
-            phpc_native_diagnostic_contains_severity(
-                diagnostic,
-                NativeDiagnosticSeverity::Error.tag(),
-            )
-        });
-        let message = unsafe { phpc_native_diagnostic_message_clone_bytes(diagnostic) };
-        let message_bytes = unsafe { std::slice::from_raw_parts(message.ptr(), message.len()) };
-        assert_eq!(
-            message_bytes,
-            b"native value conversion failed: string bytes are not valid UTF-8"
-        );
+        let cloned = unsafe { phpc_native_value_string_clone_bytes(invalid_value) };
+        let cloned_bytes = unsafe { std::slice::from_raw_parts(cloned.ptr(), cloned.len()) };
+        assert_eq!(cloned_bytes, invalid_bytes);
 
-        unsafe { phpc_native_byte_buffer_free(message) };
-        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_byte_buffer_free(cloned) };
         unsafe { phpc_native_value_free(invalid_value) };
         unsafe { phpc_native_string_free(string) };
     }
@@ -65909,16 +69305,16 @@ mod tests {
                 &mut diagnostic,
             )
         };
-        assert!(invalid_value.is_null());
-        assert!(!diagnostic.is_null());
-        let message = unsafe { phpc_native_diagnostic_message_clone_bytes(diagnostic) };
-        let message_bytes = unsafe { std::slice::from_raw_parts(message.ptr(), message.len()) };
+        assert!(!invalid_value.is_null());
+        assert!(diagnostic.is_null());
+        assert!(matches!(
+            unsafe { invalid_value.as_ref() },
+            Some(Value::BinaryString(bytes)) if bytes.as_slice() == invalid.as_slice()
+        ));
         assert_eq!(
-            message_bytes,
-            b"native value conversion failed: string bytes are not valid UTF-8"
+            native_value_php_string_bytes_for_test(invalid_value),
+            invalid.to_vec()
         );
-        unsafe { phpc_native_byte_buffer_free(message) };
-        unsafe { phpc_native_diagnostic_free(diagnostic) };
         unsafe { phpc_native_value_free(invalid_value) };
     }
 
@@ -65946,6 +69342,13 @@ mod tests {
                 phpc_native_null(),
                 true,
             ),
+            (
+                "binary byte-string strict non-identity materialization",
+                &[0xff, b'p'][..],
+                NativeComparisonOp::StrictNe,
+                phpc_native_int(1),
+                true,
+            ),
         ] {
             let mut diagnostic = NativeDiagnosticHandle::null();
             let left = unsafe {
@@ -65970,29 +69373,37 @@ mod tests {
             unsafe { phpc_native_value_free(left) };
         }
 
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let missing = unsafe {
+            phpc_native_value_from_string_bytes_with_diagnostic(ptr::null(), 4, &mut diagnostic)
+        };
+        assert!(missing.is_null());
+        assert_eq!(
+            unsafe { phpc_native_value_materialization_failure_exit_code(missing, diagnostic) },
+            1,
+            "null pointer with nonzero length"
+        );
+        unsafe { phpc_native_value_free(missing) };
+
         let invalid_bytes = [0xff, b'p'];
-        for (label, bytes, len) in [
-            ("null pointer with nonzero length", ptr::null(), 4),
-            (
-                "invalid UTF-8 bytes",
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let invalid = unsafe {
+            phpc_native_value_from_string_bytes_with_diagnostic(
                 invalid_bytes.as_ptr(),
                 invalid_bytes.len(),
-            ),
-        ] {
-            let mut diagnostic = NativeDiagnosticHandle::null();
-            let value = unsafe {
-                phpc_native_value_from_string_bytes_with_diagnostic(bytes, len, &mut diagnostic)
-            };
-
-            assert!(value.is_null(), "{label}");
-            assert_eq!(
-                unsafe { phpc_native_value_materialization_failure_exit_code(value, diagnostic) },
-                1,
-                "{label}"
-            );
-
-            unsafe { phpc_native_value_free(value) };
-        }
+                &mut diagnostic,
+            )
+        };
+        assert!(matches!(
+            unsafe { invalid.as_ref() },
+            Some(Value::BinaryString(bytes)) if bytes.as_slice() == invalid_bytes.as_slice()
+        ));
+        assert_eq!(
+            unsafe { phpc_native_value_materialization_failure_exit_code(invalid, diagnostic) },
+            0,
+            "invalid UTF-8 bytes materialize as PHP byte strings"
+        );
+        unsafe { phpc_native_value_free(invalid) };
     }
 
     #[test]
@@ -66130,12 +69541,11 @@ mod tests {
             "string bytes pointer is null",
         );
 
-        let invalid_bytes = [0xff, b'p'];
         let mut failed_right_diagnostic = NativeDiagnosticHandle::null();
         let failed_right = unsafe {
             phpc_native_value_from_string_bytes_with_diagnostic(
-                invalid_bytes.as_ptr(),
-                invalid_bytes.len(),
+                ptr::null(),
+                2,
                 &mut failed_right_diagnostic,
             )
         };
@@ -66157,6 +69567,36 @@ mod tests {
         assert!(
             !phpc_native_comparison_branch_decision_is_true(failed_right_decision),
             "right materialization blocker should not produce a truthy decision"
+        );
+
+        let invalid_bytes = [0xff, b'p'];
+        let mut binary_right_diagnostic = NativeDiagnosticHandle::null();
+        let binary_right = unsafe {
+            phpc_native_value_from_string_bytes_with_diagnostic(
+                invalid_bytes.as_ptr(),
+                invalid_bytes.len(),
+                &mut binary_right_diagnostic,
+            )
+        };
+        assert!(binary_right_diagnostic.is_null());
+        let binary_right_decision = unsafe {
+            phpc_native_value_compare_operation_decision_with_materialization_and_free(
+                phpc_native_value_from_scalar(phpc_native_int(1)),
+                NativeDiagnosticHandle::null(),
+                phpc_native_comparison_operation_from_opcode(
+                    NativeComparisonOp::StrictNe.abi_opcode(),
+                ),
+                binary_right,
+                binary_right_diagnostic,
+            )
+        };
+        assert_eq!(
+            phpc_native_comparison_branch_decision_exit_code(binary_right_decision),
+            0
+        );
+        assert!(
+            phpc_native_comparison_branch_decision_is_true(binary_right_decision),
+            "binary string materialization should produce a truthy strict non-identity decision"
         );
     }
 
@@ -66658,6 +70098,19 @@ mod tests {
             empty_equality_expected,
         );
 
+        let binary_handle = unsafe { phpc_native_string_from_bytes([0xff].as_ptr(), 1) };
+        assert_native_comparison_ok(
+            "binary string-handle materialization preserves bytes",
+            unsafe {
+                phpc_native_comparison_operand_compare_and_free(
+                    phpc_native_comparison_operand_from_string_and_free(binary_handle),
+                    NativeComparisonOp::StrictEq.abi_opcode(),
+                    phpc_native_comparison_operand_from_scalar(phpc_native_int(1)),
+                )
+            },
+            false,
+        );
+
         for (label, op) in [
             (
                 "null string-handle materialization through loose equality",
@@ -66689,11 +70142,30 @@ mod tests {
             );
         }
 
+        let binary_bytes = [0xff];
+        let binary_operand = owned_string_operand(&binary_bytes);
+        assert!(!phpc_native_comparison_operand_value(binary_operand).is_null());
+        assert!(phpc_native_comparison_operand_diagnostic(binary_operand).is_null());
+        assert_native_comparison_ok(
+            "string-handle binary bytes materialize as PHP strings",
+            unsafe {
+                phpc_native_comparison_operand_compare_and_free(
+                    binary_operand,
+                    NativeComparisonOp::StrictEq.abi_opcode(),
+                    NativeComparisonOperand::from_parts(
+                        NativeValueHandle::from_value(Value::BinaryString(binary_bytes.to_vec())),
+                        NativeDiagnosticHandle::null(),
+                    ),
+                )
+            },
+            true,
+        );
+
         let invalid_bytes = [0xff];
         let invalid_handle =
             unsafe { phpc_native_string_from_bytes(invalid_bytes.as_ptr(), invalid_bytes.len()) };
-        assert_native_comparison_blocked(
-            "invalid string-handle materialization diagnostic",
+        assert_native_comparison_ok(
+            "invalid string-handle bytes materialize as PHP byte strings",
             unsafe {
                 phpc_native_comparison_operand_compare_and_free(
                     phpc_native_comparison_operand_from_string_and_free(invalid_handle),
@@ -66701,7 +70173,7 @@ mod tests {
                     phpc_native_comparison_operand_from_scalar(phpc_native_int(1)),
                 )
             },
-            "string bytes are not valid UTF-8",
+            false,
         );
     }
 
@@ -67727,6 +71199,22 @@ mod tests {
         assert_eq!(case_compare, 0);
         assert!(diagnostic.is_null());
 
+        let delta_left = NativeValueHandle::from_value(Value::String("aef".to_string()));
+        let delta_right = NativeValueHandle::from_value(Value::String("dfsgbdf".to_string()));
+        let case_compare_delta = unsafe {
+            phpc_native_value_string_int_operation_with_diagnostic(
+                delta_left,
+                delta_right,
+                0,
+                0,
+                0,
+                NativeStringIntOperation::CaseCompare as u8,
+                &mut diagnostic,
+            )
+        };
+        assert_eq!(case_compare_delta, -3);
+        assert!(diagnostic.is_null());
+
         let byte_compare = unsafe {
             phpc_native_value_string_int_operation_with_diagnostic(
                 payload,
@@ -67876,6 +71364,8 @@ mod tests {
         unsafe { phpc_native_value_free(scalar_needle) };
         unsafe { phpc_native_value_free(scalar) };
         unsafe { phpc_native_value_free(needle) };
+        unsafe { phpc_native_value_free(delta_right) };
+        unsafe { phpc_native_value_free(delta_left) };
         unsafe { phpc_native_value_free(repeated) };
         unsafe { phpc_native_value_free(folded) };
         unsafe { phpc_native_value_free(payload) };
@@ -68804,11 +72294,11 @@ mod tests {
             Value::String("B".to_string()),
             "invalid string conversion: native string offset operation failed: array subjects are not supported; only null, bool, int, float, and string subjects are implemented",
         );
-        assert_diagnostic(
+        assert_written_warning(
             Value::String("abc".to_string()),
             Value::Int(1),
             Value::String(String::from_utf8(vec![0xc3, 0xa9]).unwrap()),
-            "unsupported call native string offset write: byte strings with invalid UTF-8 require the binary string value boundary",
+            b"a\xc3c",
         );
 
         let subject = NativeValueHandle::from_value(Value::String("ab".to_string()));
@@ -71240,7 +74730,7 @@ mod tests {
         natural_bad
             .append(Value::String("img2".to_string()))
             .unwrap();
-        natural_bad.append(Value::Array(PhpArray::new())).unwrap();
+        natural_bad.append(Value::Resource(7)).unwrap();
         natural_bad
             .append(Value::String("img10".to_string()))
             .unwrap();
@@ -71258,7 +74748,7 @@ mod tests {
         assert_eq!(natural_bad_result.tag, NATIVE_ARRAY_LVALUE_UNSUPPORTED);
         assert_eq!(
             native_diagnostic_message_for_test(natural_bad_result.diagnostic),
-            "unsupported call natsort(): values must be scalar in the current subset, got array"
+            "unsupported call natsort(): values must be scalar, array, or stringable object in the current subset, got resource"
         );
         unsafe { phpc_native_array_lvalue_result_free(natural_bad_result) };
 
@@ -75654,12 +79144,16 @@ mod tests {
     }
 
     #[test]
-    fn array_append_uses_next_non_negative_integer_key() {
+    fn array_append_uses_next_integer_key_after_negative_indices() {
         let mut array = PhpArray::new();
 
         array.insert(-2, Value::String("negative".to_string()));
         assert_eq!(
             array.append(Value::String("first".to_string())).unwrap(),
+            ArrayKey::Int(-1)
+        );
+        assert_eq!(
+            array.append(Value::String("zero".to_string())).unwrap(),
             ArrayKey::Int(0)
         );
         array.insert(5, Value::String("five".to_string()));
@@ -75677,6 +79171,7 @@ mod tests {
             keys,
             vec![
                 ArrayKey::Int(-2),
+                ArrayKey::Int(-1),
                 ArrayKey::Int(0),
                 ArrayKey::Int(5),
                 ArrayKey::Int(6),
@@ -75801,6 +79296,132 @@ mod tests {
 
         array.append(Value::String("tail".to_string())).unwrap();
         assert_eq!(array.entries()[5].key, ArrayKey::Int(4));
+    }
+
+    #[test]
+    fn array_unshift_preserves_reference_backed_existing_slots() {
+        let reference = PhpReferenceCell::new(Value::String("ref".to_string()));
+        let mut array = PhpArray::new();
+        array.insert(2, Value::String("two".to_string()));
+        array.insert("name", Value::String("Ada".to_string()));
+        array.insert_reference("ref", reference.clone());
+
+        let len = array
+            .unshift_values(&[Value::String("head".to_string())])
+            .unwrap();
+
+        assert_eq!(len, 4);
+        assert_eq!(array.get_cloned(0), Some(Value::String("head".to_string())));
+        assert_eq!(array.get_cloned(1), Some(Value::String("two".to_string())));
+        let copied_reference = array
+            .get_slot("ref")
+            .and_then(ArraySlot::reference_cell)
+            .expect("array_unshift should preserve existing reference-backed slots");
+        assert!(copied_reference.shares_reference_with(&reference));
+
+        reference.set_value(Value::String("changed".to_string()));
+        assert_eq!(
+            array.get_cloned("ref"),
+            Some(Value::String("changed".to_string()))
+        );
+    }
+
+    #[test]
+    fn array_splice_mutates_array_and_returns_removed_values_with_php_key_modes() {
+        let mut array = PhpArray::new();
+        array.insert("a", Value::Int(1));
+        array.insert(2, Value::Int(2));
+        array.insert("b", Value::Int(3));
+        array.insert(4, Value::Int(4));
+        array.insert(5, Value::Int(5));
+
+        let replacement = [Value::Int(9), Value::Int(8)];
+        let removed = array.splice_values(1, Some(2), &replacement).unwrap();
+
+        assert_eq!(
+            removed
+                .entries()
+                .iter()
+                .map(|entry| entry.key.clone())
+                .collect::<Vec<_>>(),
+            vec![ArrayKey::Int(0), ArrayKey::String("b".to_string())]
+        );
+        assert_eq!(
+            array_key_values(&removed),
+            vec![Value::Int(2), Value::Int(3)]
+        );
+        assert_eq!(
+            array
+                .entries()
+                .iter()
+                .map(|entry| entry.key.clone())
+                .collect::<Vec<_>>(),
+            vec![
+                ArrayKey::String("a".to_string()),
+                ArrayKey::Int(0),
+                ArrayKey::Int(1),
+                ArrayKey::Int(2),
+                ArrayKey::Int(3)
+            ]
+        );
+        assert_eq!(
+            array_key_values(&array),
+            vec![
+                Value::Int(1),
+                Value::Int(9),
+                Value::Int(8),
+                Value::Int(4),
+                Value::Int(5)
+            ]
+        );
+        assert_eq!(array.append(Value::Int(6)).unwrap(), ArrayKey::Int(4));
+    }
+
+    #[test]
+    fn array_splice_supports_negative_offset_negative_length_and_preserves_references() {
+        let reference = PhpReferenceCell::new(Value::String("ref".to_string()));
+        let mut array = PhpArray::new();
+        array.append(Value::String("a".to_string())).unwrap();
+        array.append(Value::String("b".to_string())).unwrap();
+        array.append_reference(reference.clone()).unwrap();
+        array.append(Value::String("d".to_string())).unwrap();
+
+        let removed = array.splice_values(-2, Some(-1), &[]).unwrap();
+        let copied_reference = removed
+            .get_slot(0)
+            .and_then(ArraySlot::reference_cell)
+            .expect("array_splice should preserve reference-backed removed slots");
+        assert!(copied_reference.shares_reference_with(&reference));
+
+        reference.set_value(Value::String("changed".to_string()));
+        assert_eq!(
+            removed.get_cloned(0),
+            Some(Value::String("changed".to_string()))
+        );
+        let entries = array.entries();
+        assert_eq!(entries.len(), 3);
+        assert_eq!(entries[0].value(), &Value::String("a".to_string()));
+        assert_eq!(entries[1].value(), &Value::String("b".to_string()));
+        assert_eq!(entries[2].value(), &Value::String("d".to_string()));
+    }
+
+    #[test]
+    fn array_splice_replacement_slots_preserve_reference_cells() {
+        let reference = PhpReferenceCell::new(Value::Int(3));
+        let mut array = PhpArray::new();
+        array.append(Value::Int(1)).unwrap();
+        array.append(Value::Int(2)).unwrap();
+
+        array
+            .splice_slots(
+                1,
+                Some(1),
+                &[ArraySlot::from_reference_cell(reference.clone())],
+            )
+            .unwrap();
+        reference.set_value(Value::Int(30));
+
+        assert_eq!(array.get_cloned(1), Some(Value::Int(30)));
     }
 
     #[test]
@@ -75943,6 +79564,16 @@ mod tests {
         assert_eq!(array.pop_value(), Value::String("new".to_string()));
         assert_eq!(array.pop_value(), Value::String("two".to_string()));
         assert_eq!(array.pop_value(), Value::Null);
+
+        let mut negative = PhpArray::new();
+        negative.insert(-2, Value::String("negative".to_string()));
+        assert_eq!(negative.pop_value(), Value::String("negative".to_string()));
+        assert_eq!(
+            negative
+                .append(Value::String("reused".to_string()))
+                .unwrap(),
+            ArrayKey::Int(-2)
+        );
     }
 
     #[test]
@@ -76128,6 +79759,44 @@ mod tests {
             .unwrap()
             .entries()
             .is_empty());
+    }
+
+    #[test]
+    fn array_query_helpers_read_reference_backed_value_slots() {
+        let int_reference = PhpReferenceCell::new(Value::Int(1));
+        let string_reference = PhpReferenceCell::new(Value::String("needle".to_string()));
+        let array_reference = PhpReferenceCell::new(Value::Array(PhpArray::new()));
+        let mut array = PhpArray::new();
+        array.insert_reference("int", int_reference.clone());
+        array.insert_reference("string", string_reference.clone());
+        array.insert_reference("array", array_reference.clone());
+
+        int_reference.set_value(Value::Int(7));
+        assert_eq!(
+            array_key_values(&array.keys_matching_strict_scalar(&Value::Int(7)).unwrap()),
+            vec![Value::String("int".to_string())]
+        );
+        assert!(array
+            .contains_value_strict_scalar(&Value::String("needle".to_string()))
+            .unwrap());
+        assert_eq!(
+            array
+                .search_value_strict_scalar(&Value::String("needle".to_string()))
+                .unwrap(),
+            Some(ArrayKey::String("string".to_string()))
+        );
+
+        let mut nested = PhpArray::new();
+        nested.insert("value", Value::Int(1));
+        array_reference.set_value(Value::Array(nested.clone()));
+        assert_eq!(
+            array_key_values(
+                &array
+                    .keys_matching_strict_scalar(&Value::Array(nested))
+                    .unwrap()
+            ),
+            vec![Value::String("array".to_string())]
+        );
     }
 
     #[test]
@@ -76544,6 +80213,78 @@ mod tests {
             .chunked_preserving_keys(2)
             .entries()
             .is_empty());
+    }
+
+    #[test]
+    fn array_chunk_preserves_reference_backed_value_slots() {
+        let first = PhpReferenceCell::new(Value::String("one".to_string()));
+        let second = PhpReferenceCell::new(Value::String("two".to_string()));
+        let third = PhpReferenceCell::new(Value::String("three".to_string()));
+
+        let mut array = PhpArray::new();
+        array.insert_reference(3, first.clone());
+        array.insert("name", Value::String("plain".to_string()));
+        array.insert_reference(2, second.clone());
+        array.insert_reference(1, third.clone());
+
+        let chunks = array.chunked_reindexed(2);
+        let Value::Array(first_chunk) = chunks.get(0).expect("first chunk exists") else {
+            panic!("first chunk should be an array");
+        };
+        assert_eq!(
+            first_chunk.entries()[0].slot().reference_cell_id(),
+            Some(first.id())
+        );
+        assert_eq!(first_chunk.entries()[1].slot().reference_cell_id(), None);
+
+        let Value::Array(second_chunk) = chunks.get(1).expect("second chunk exists") else {
+            panic!("second chunk should be an array");
+        };
+        assert_eq!(second_chunk.entries()[0].key, ArrayKey::Int(0));
+        assert_eq!(
+            second_chunk.entries()[0].slot().reference_cell_id(),
+            Some(second.id())
+        );
+        assert_eq!(second_chunk.entries()[1].key, ArrayKey::Int(1));
+        assert_eq!(
+            second_chunk.entries()[1].slot().reference_cell_id(),
+            Some(third.id())
+        );
+
+        second.set_value(Value::String("changed".to_string()));
+        let Value::Array(second_chunk) = chunks.get(1).expect("second chunk still exists") else {
+            panic!("second chunk should be an array");
+        };
+        assert_eq!(
+            second_chunk.entries()[0].value_cloned(),
+            Value::String("changed".to_string())
+        );
+
+        let preserved = array.chunked_preserving_keys(2);
+        let Value::Array(preserved_second) = preserved.get(1).expect("preserved chunk exists")
+        else {
+            panic!("preserved chunk should be an array");
+        };
+        assert_eq!(preserved_second.entries()[0].key, ArrayKey::Int(2));
+        assert_eq!(
+            preserved_second.entries()[0].slot().reference_cell_id(),
+            Some(second.id())
+        );
+        assert_eq!(preserved_second.entries()[1].key, ArrayKey::Int(1));
+        assert_eq!(
+            preserved_second.entries()[1].slot().reference_cell_id(),
+            Some(third.id())
+        );
+
+        third.set_value(Value::String("later".to_string()));
+        let Value::Array(preserved_second) = preserved.get(1).expect("preserved chunk remains")
+        else {
+            panic!("preserved chunk should be an array");
+        };
+        assert_eq!(
+            preserved_second.entries()[1].value_cloned(),
+            Value::String("later".to_string())
+        );
     }
 
     #[test]
@@ -76972,6 +80713,29 @@ mod tests {
     }
 
     #[test]
+    fn array_flip_skip_helper_counts_and_omits_unsupported_values() {
+        let mut array = PhpArray::new();
+        array.insert("name-key", Value::String("name".to_string()));
+        array.insert("skip-bool", Value::Bool(true));
+        array.insert("int-key", Value::Int(7));
+        array.insert("skip-null", Value::Null);
+
+        let (mut flipped, skipped) = array.flipped_skipping_unsupported_values();
+        let entries = flipped.entries();
+
+        assert_eq!(skipped, 2);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].key, ArrayKey::String("name".to_string()));
+        assert_eq!(entries[0].value(), &Value::String("name-key".to_string()));
+        assert_eq!(entries[1].key, ArrayKey::Int(7));
+        assert_eq!(entries[1].value(), &Value::String("int-key".to_string()));
+        assert_eq!(
+            flipped.append(Value::String("after".to_string())).unwrap(),
+            ArrayKey::Int(8)
+        );
+    }
+
+    #[test]
     fn array_change_key_case_changes_string_keys_and_preserves_integer_keys() {
         let mut array = PhpArray::new();
         array.insert("Name", Value::String("Ada".to_string()));
@@ -77054,6 +80818,42 @@ mod tests {
         assert_eq!(entries[1].value(), &Value::String("NoId".to_string()));
         assert_eq!(entries[2].key, ArrayKey::String("code".to_string()));
         assert_eq!(entries[2].value(), &Value::Null);
+    }
+
+    #[test]
+    fn array_column_reads_reference_backed_row_slots() {
+        let mut first = PhpArray::new();
+        first.insert("id", Value::Int(10));
+        first.insert("name", Value::String("Ada".to_string()));
+
+        let mut second = PhpArray::new();
+        second.insert("id", Value::String("code".to_string()));
+        second.insert("name", Value::String("Grace".to_string()));
+
+        let mut rows = PhpArray::new();
+        rows.append_reference(PhpReferenceCell::new(Value::Array(first)))
+            .unwrap();
+        rows.append_reference(PhpReferenceCell::new(Value::Array(second)))
+            .unwrap();
+
+        let result = rows
+            .column_values(
+                Some(ArrayColumnKey::String("name".to_string())),
+                Some(ArrayColumnKey::String("id".to_string())),
+            )
+            .unwrap();
+        let entries = result.entries();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].key, ArrayKey::Int(10));
+        assert_eq!(entries[0].value(), &Value::String("Ada".to_string()));
+        assert_eq!(entries[1].key, ArrayKey::String("code".to_string()));
+        assert_eq!(entries[1].value(), &Value::String("Grace".to_string()));
+
+        let whole = rows
+            .column_values(None, Some(ArrayColumnKey::String("id".to_string())))
+            .unwrap();
+        assert_eq!(whole.entries()[0].key, ArrayKey::Int(10));
+        assert_eq!(whole.entries()[1].key, ArrayKey::String("code".to_string()));
     }
 
     #[test]
@@ -77192,6 +80992,34 @@ mod tests {
     }
 
     #[test]
+    fn array_fill_keys_stringifies_float_key_values() {
+        let mut keys = PhpArray::new();
+        keys.append(Value::Float(-0.0)).unwrap();
+        keys.append(Value::Float(0.0)).unwrap();
+        keys.append(Value::Float(1.0)).unwrap();
+        keys.append(Value::Float(1.5)).unwrap();
+        keys.append(Value::Float(-3.25)).unwrap();
+        keys.append(Value::Float(f64::INFINITY)).unwrap();
+        keys.append(Value::Float(f64::NEG_INFINITY)).unwrap();
+        keys.append(Value::Float(f64::NAN)).unwrap();
+
+        let filled = keys
+            .filled_keys(Value::String("filled".to_string()))
+            .unwrap();
+        let entries = filled.entries();
+
+        assert_eq!(entries.len(), 8);
+        assert_eq!(entries[0].key, ArrayKey::String("-0".to_string()));
+        assert_eq!(entries[1].key, ArrayKey::Int(0));
+        assert_eq!(entries[2].key, ArrayKey::Int(1));
+        assert_eq!(entries[3].key, ArrayKey::String("1.5".to_string()));
+        assert_eq!(entries[4].key, ArrayKey::String("-3.25".to_string()));
+        assert_eq!(entries[5].key, ArrayKey::String("INF".to_string()));
+        assert_eq!(entries[6].key, ArrayKey::String("-INF".to_string()));
+        assert_eq!(entries[7].key, ArrayKey::String("NAN".to_string()));
+    }
+
+    #[test]
     fn array_fill_keys_rejects_unsupported_key_value_types() {
         let mut keys = PhpArray::new();
         keys.insert("ok", Value::String("name".to_string()));
@@ -77205,23 +81033,13 @@ mod tests {
             &RuntimeErrorKind::UnsupportedCall {
                 callable: "array_fill_keys()".to_string(),
                 reason:
-                    "key values must be null, bool, int, string, or integral finite float in the current subset, got array"
+                    "key values must be null, bool, int, float, or string in the current subset, got array"
                     .to_string(),
             }
         );
         assert_eq!(
             error.message(),
-            "unsupported call array_fill_keys(): key values must be null, bool, int, string, or integral finite float in the current subset, got array"
-        );
-
-        let mut keys = PhpArray::new();
-        keys.append(Value::Float(1.5)).unwrap();
-        let error = keys
-            .filled_keys(Value::String("filled".to_string()))
-            .unwrap_err();
-        assert_eq!(
-            error.message(),
-            "unsupported call array_fill_keys(): lossy or non-finite float key values are not supported; only null, bool, int, string, and integral finite float key values are implemented"
+            "unsupported call array_fill_keys(): key values must be null, bool, int, float, or string in the current subset, got array"
         );
     }
 
@@ -77290,31 +81108,125 @@ mod tests {
     }
 
     #[test]
-    fn array_combine_accepts_integral_finite_float_key_values() {
+    fn array_combine_accepts_php_string_key_value_coercions() {
         let mut keys = PhpArray::new();
+        keys.append(Value::Float(-0.0)).unwrap();
+        keys.append(Value::Float(0.0)).unwrap();
         keys.append(Value::Float(1.0)).unwrap();
-        keys.append(Value::Float(2.0)).unwrap();
-        keys.append(Value::Float(-3.0)).unwrap();
+        keys.append(Value::Float(1.5)).unwrap();
+        keys.append(Value::Float(-3.25)).unwrap();
+        keys.append(Value::Float(f64::INFINITY)).unwrap();
+        keys.append(Value::Float(f64::NEG_INFINITY)).unwrap();
+        keys.append(Value::Float(f64::NAN)).unwrap();
+        keys.append(Value::Float(4.89999922839999)).unwrap();
+        keys.append(Value::Resource(7)).unwrap();
         keys.append(Value::String("04".to_string())).unwrap();
 
         let mut values = PhpArray::new();
+        values
+            .append(Value::String("negative zero".to_string()))
+            .unwrap();
+        values.append(Value::String("zero".to_string())).unwrap();
         values.append(Value::String("one".to_string())).unwrap();
-        values.append(Value::String("two".to_string())).unwrap();
-        values.append(Value::String("minus".to_string())).unwrap();
+        values
+            .append(Value::String("one point five".to_string()))
+            .unwrap();
+        values
+            .append(Value::String("negative fraction".to_string()))
+            .unwrap();
+        values
+            .append(Value::String("infinity".to_string()))
+            .unwrap();
+        values
+            .append(Value::String("negative infinity".to_string()))
+            .unwrap();
+        values
+            .append(Value::String("not a number".to_string()))
+            .unwrap();
+        values
+            .append(Value::String("php precision".to_string()))
+            .unwrap();
+        values
+            .append(Value::String("resource".to_string()))
+            .unwrap();
         values.append(Value::String("leading".to_string())).unwrap();
 
         let combined = keys.combined_with(&values).unwrap();
         let entries = combined.entries();
 
-        assert_eq!(entries.len(), 4);
-        assert_eq!(entries[0].key, ArrayKey::Int(1));
-        assert_eq!(entries[0].value(), &Value::String("one".to_string()));
-        assert_eq!(entries[1].key, ArrayKey::Int(2));
-        assert_eq!(entries[1].value(), &Value::String("two".to_string()));
-        assert_eq!(entries[2].key, ArrayKey::Int(-3));
-        assert_eq!(entries[2].value(), &Value::String("minus".to_string()));
-        assert_eq!(entries[3].key, ArrayKey::String("04".to_string()));
-        assert_eq!(entries[3].value(), &Value::String("leading".to_string()));
+        assert_eq!(entries.len(), 11);
+        assert_eq!(entries[0].key, ArrayKey::String("-0".to_string()));
+        assert_eq!(
+            entries[0].value(),
+            &Value::String("negative zero".to_string())
+        );
+        assert_eq!(entries[1].key, ArrayKey::Int(0));
+        assert_eq!(entries[1].value(), &Value::String("zero".to_string()));
+        assert_eq!(entries[2].key, ArrayKey::Int(1));
+        assert_eq!(entries[2].value(), &Value::String("one".to_string()));
+        assert_eq!(entries[3].key, ArrayKey::String("1.5".to_string()));
+        assert_eq!(
+            entries[3].value(),
+            &Value::String("one point five".to_string())
+        );
+        assert_eq!(entries[4].key, ArrayKey::String("-3.25".to_string()));
+        assert_eq!(
+            entries[4].value(),
+            &Value::String("negative fraction".to_string())
+        );
+        assert_eq!(entries[5].key, ArrayKey::String("INF".to_string()));
+        assert_eq!(entries[5].value(), &Value::String("infinity".to_string()));
+        assert_eq!(entries[6].key, ArrayKey::String("-INF".to_string()));
+        assert_eq!(
+            entries[6].value(),
+            &Value::String("negative infinity".to_string())
+        );
+        assert_eq!(entries[7].key, ArrayKey::String("NAN".to_string()));
+        assert_eq!(
+            entries[7].value(),
+            &Value::String("not a number".to_string())
+        );
+        assert_eq!(entries[8].key, ArrayKey::String("4.8999992284".to_string()));
+        assert_eq!(
+            entries[8].value(),
+            &Value::String("php precision".to_string())
+        );
+        assert_eq!(
+            entries[9].key,
+            ArrayKey::String("Resource id #7".to_string())
+        );
+        assert_eq!(entries[9].value(), &Value::String("resource".to_string()));
+        assert_eq!(entries[10].key, ArrayKey::String("04".to_string()));
+        assert_eq!(entries[10].value(), &Value::String("leading".to_string()));
+    }
+
+    #[test]
+    fn array_combine_preserves_distinct_binary_string_key_bytes() {
+        let first = Value::BinaryString(vec![0x8e]);
+        let second = Value::BinaryString(vec![0xf7]);
+        let first_key = ArrayKey::from_value(&first).unwrap();
+        let second_key = ArrayKey::from_value(&second).unwrap();
+
+        let mut keys = PhpArray::new();
+        keys.append(first).unwrap();
+        keys.append(second).unwrap();
+
+        let mut values = PhpArray::new();
+        values.append(Value::String("first".to_string())).unwrap();
+        values.append(Value::String("second".to_string())).unwrap();
+
+        let combined = keys.combined_with(&values).unwrap();
+
+        assert_eq!(combined.entries().len(), 2);
+        assert_ne!(first_key, second_key);
+        assert_eq!(
+            combined.get_cloned(first_key),
+            Some(Value::String("first".to_string()))
+        );
+        assert_eq!(
+            combined.get_cloned(second_key),
+            Some(Value::String("second".to_string()))
+        );
     }
 
     #[test]
@@ -77329,7 +81241,7 @@ mod tests {
         let error = keys.combined_with(&values).unwrap_err();
         assert_eq!(
             error.message(),
-            "unsupported call array_combine(): keys and values must have the same number of elements in the current subset, got 2 and 1"
+            "unsupported call array_combine(): Argument #1 ($keys) and argument #2 ($values) must have the same number of elements"
         );
 
         let mut bad_keys = PhpArray::new();
@@ -77346,24 +81258,13 @@ mod tests {
             &RuntimeErrorKind::UnsupportedCall {
                 callable: "array_combine()".to_string(),
                 reason:
-                    "key values must be null, bool, int, string, or integral finite float in the current subset, got array"
+                    "key values must be null, bool, int, float, string, binary string, resource, or object with __toString() in the current subset, got array"
                         .to_string(),
             }
         );
         assert_eq!(
             error.message(),
-            "unsupported call array_combine(): key values must be null, bool, int, string, or integral finite float in the current subset, got array"
-        );
-
-        let mut bad_keys = PhpArray::new();
-        bad_keys.append(Value::Float(1.5)).unwrap();
-        let mut values = PhpArray::new();
-        values.append(Value::String("lossy".to_string())).unwrap();
-
-        let error = bad_keys.combined_with(&values).unwrap_err();
-        assert_eq!(
-            error.message(),
-            "unsupported call array_combine(): lossy or non-finite float key values are not supported; only null, bool, int, string, and integral finite float key values are implemented"
+            "unsupported call array_combine(): key values must be null, bool, int, float, string, binary string, resource, or object with __toString() in the current subset, got array"
         );
     }
 
@@ -78787,18 +82688,20 @@ mod tests {
             ArrayKey::from_array_key_exists_value(&Value::Float(-2.0)).unwrap(),
             ArrayKey::Int(-2)
         );
-
-        let float_error = ArrayKey::from_array_key_exists_value(&Value::Float(1.5)).unwrap_err();
         assert_eq!(
-            float_error.message(),
-            "invalid array key: lossy or non-finite float keys are not supported for array_key_exists(); only null, bool, int, string, and integral finite float keys are implemented"
+            ArrayKey::from_array_key_exists_value(&Value::Float(1.5)).unwrap(),
+            ArrayKey::Int(1)
+        );
+        assert_eq!(
+            ArrayKey::from_array_key_exists_value(&Value::Resource(3)).unwrap(),
+            ArrayKey::Int(3)
         );
 
         let error =
             ArrayKey::from_array_key_exists_value(&Value::Array(PhpArray::new())).unwrap_err();
         assert_eq!(
             error.message(),
-            "invalid array key: array keys are not supported for array_key_exists(); only null, bool, int, string, and integral finite float keys are implemented"
+            "invalid array key: array keys are not supported for array_key_exists(); only null, bool, int, string, resource, and finite float keys are implemented"
         );
     }
 
@@ -78939,19 +82842,14 @@ mod tests {
         assert!(diagnostic.is_null());
 
         let fractional_key = NativeValueHandle::from_value(Value::Float(1.5));
-        assert!(!unsafe {
+        assert!(unsafe {
             phpc_native_value_array_key_exists_value_with_diagnostic(
                 fractional_key,
                 array_handle,
                 &mut diagnostic,
             )
         });
-        assert_eq!(
-            native_diagnostic_message_for_test(diagnostic),
-            "invalid array key: lossy or non-finite float keys are not supported for array_key_exists(); only null, bool, int, string, and integral finite float keys are implemented"
-        );
-        unsafe { phpc_native_diagnostic_free(diagnostic) };
-        diagnostic = NativeDiagnosticHandle::null();
+        assert!(diagnostic.is_null());
 
         let scalar_owner = NativeValueHandle::from_value(Value::Int(42));
         assert!(!unsafe {
@@ -79119,7 +83017,25 @@ mod tests {
         assert!(denied.is_null());
         assert_eq!(
             native_diagnostic_message_for_test(diagnostic),
-            "unsupported call BaseConst::SECRET: private class constant is not visible from the current class context"
+            "undefined constant ChildConst::SECRET"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        diagnostic = NativeDiagnosticHandle::null();
+
+        let denied = unsafe {
+            phpc_native_class_constant_read_class_with_diagnostic(
+                table,
+                base.as_ptr(),
+                base.len(),
+                secret.as_ptr(),
+                secret.len(),
+                &mut diagnostic,
+            )
+        };
+        assert!(denied.is_null());
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "Cannot access private constant BaseConst::SECRET"
         );
         unsafe { phpc_native_diagnostic_free(diagnostic) };
         unsafe { phpc_native_class_constant_table_free(table) };
@@ -79248,14 +83164,34 @@ mod tests {
             vec![
                 "Exception",
                 "Error",
+                "Uri\\InvalidUriException",
+                "Uri\\WhatWg\\InvalidUrlException",
+                "RequestParseBodyException",
                 "stdClass",
+                "__PHP_Incomplete_Class",
+                "PhpToken",
                 "mysqli",
                 "mysqli_result",
                 "mysqli_stmt",
+                "mysqli_driver",
                 "PDO",
                 "PDOStatement",
                 "RoundingMode",
+                "Uri\\UriComparisonMode",
+                "Uri\\Rfc3986\\UriHostType",
+                "Uri\\Rfc3986\\UriType",
+                "Uri\\Rfc3986\\Uri",
+                "Uri\\WhatWg\\UrlHostType",
+                "Uri\\WhatWg\\Url",
                 "BcMath\\Number",
+                "GMP",
+                "GdImage",
+                "DateError",
+                "DateObjectError",
+                "DateRangeError",
+                "DateException",
+                "HashContext",
+                "SensitiveParameterValue",
                 "DateTimeZone",
                 "ReflectionException",
                 "Attribute",
@@ -79270,24 +83206,65 @@ mod tests {
                 "ReflectionIntersectionType",
                 "ReflectionProperty",
                 "ReflectionClassConstant",
+                "ReflectionConstant",
                 "ReflectionAttribute",
                 "TypeError",
                 "ArgumentCountError",
                 "ValueError",
                 "ArithmeticError",
                 "DivisionByZeroError",
+                "AssertionError",
                 "RuntimeException",
                 "OutOfRangeException",
+                "UnexpectedValueException",
                 "OutOfBoundsException",
                 "Directory",
                 "SplFixedArray",
+                "ArrayObject",
+                "ArrayIterator",
                 "SplDoublyLinkedList",
                 "SplQueue",
                 "SplStack",
                 "SplObjectStorage",
+                "SplFileInfo",
+                "DirectoryIterator",
+                "FilesystemIterator",
+                "RecursiveDirectoryIterator",
+                "SplFileObject",
+                "SplTempFileObject",
+                "EmptyIterator",
+                "IteratorIterator",
+                "RecursiveIteratorIterator",
+                "NoRewindIterator",
+                "InfiniteIterator",
+                "LimitIterator",
+                "RegexIterator",
                 "ReflectionExtension",
                 "ReflectionZendExtension",
+                "DateMalformedStringException",
+                "DateMalformedIntervalStringException",
+                "DateMalformedPeriodStringException",
+                "DateInterval",
+                "DatePeriod",
                 "DateTime",
+                "DateTimeImmutable",
+                "DOMException",
+                "DOMNode",
+                "DOMAttr",
+                "DOMElement",
+                "DOMDocument",
+                "DOMDocumentType",
+                "XMLReader",
+                "ErrorException",
+                "Reflection",
+                "Deprecated",
+                "NoDiscard",
+                "Random\\IntervalBoundary",
+                "Closure",
+                "JsonException",
+                "ReflectionEnum",
+                "ReflectionEnumUnitCase",
+                "ReflectionEnumBackedCase",
             ]
         );
         let mut normalized_class_names = class_names
@@ -79308,9 +83285,24 @@ mod tests {
                 .iter()
                 .map(PhpPropertyMetadata::name)
                 .collect::<Vec<_>>(),
-            vec!["message", "code", "previous"]
+            vec!["message", "string", "code", "file", "line", "trace", "previous"]
         );
-        assert!(exception.method("getMessage").is_some());
+        assert_eq!(
+            exception
+                .methods()
+                .iter()
+                .map(PhpMethodMetadata::name)
+                .collect::<Vec<_>>(),
+            vec![
+                "getMessage",
+                "getCode",
+                "getFile",
+                "getLine",
+                "getPrevious",
+                "getTrace",
+                "getTraceAsString"
+            ]
+        );
 
         let error = classes.lookup_class("error").unwrap();
         assert_eq!(error.name(), "Error");
@@ -79322,20 +83314,49 @@ mod tests {
                 .iter()
                 .map(PhpPropertyMetadata::name)
                 .collect::<Vec<_>>(),
-            vec!["message"]
+            vec!["message", "code", "file", "line", "previous"]
         );
-        assert!(error.methods().is_empty());
+        assert_eq!(
+            error
+                .methods()
+                .iter()
+                .map(PhpMethodMetadata::name)
+                .collect::<Vec<_>>(),
+            vec![
+                "getMessage",
+                "getCode",
+                "getFile",
+                "getLine",
+                "getPrevious",
+                "getTrace",
+                "getTraceAsString"
+            ]
+        );
+
+        let request_parse_body_exception =
+            classes.lookup_class("requestparsebodyexception").unwrap();
+        assert_eq!(
+            request_parse_body_exception.name(),
+            "RequestParseBodyException"
+        );
+        assert_eq!(request_parse_body_exception.id().index(), 4);
+        assert_eq!(
+            request_parse_body_exception.parent_id(),
+            Some(exception.id())
+        );
+        assert!(request_parse_body_exception.properties().is_empty());
+        assert!(request_parse_body_exception.methods().is_empty());
 
         let stdclass = classes.lookup_class("stdclass").unwrap();
         assert_eq!(stdclass.name(), "stdClass");
-        assert_eq!(stdclass.id().index(), 2);
+        assert_eq!(stdclass.id().index(), 5);
         assert!(stdclass.parent_id().is_none());
         assert!(stdclass.properties().is_empty());
         assert!(stdclass.methods().is_empty());
 
         let mysqli = classes.lookup_class("mysqli").unwrap();
         assert_eq!(mysqli.name(), "mysqli");
-        assert_eq!(mysqli.id().index(), 3);
+        assert_eq!(mysqli.id().index(), 8);
         assert!(mysqli.parent_id().is_none());
         assert_eq!(
             mysqli
@@ -79345,25 +83366,32 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["connect_errno", "connect_error"]
         );
-        assert!(mysqli.methods().is_empty());
+        assert_eq!(
+            mysqli
+                .methods()
+                .iter()
+                .map(PhpMethodMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["__construct", "close"]
+        );
 
         let mysqli_result = classes.lookup_class("mysqli_result").unwrap();
         assert_eq!(mysqli_result.name(), "mysqli_result");
-        assert_eq!(mysqli_result.id().index(), 4);
+        assert_eq!(mysqli_result.id().index(), 9);
         assert!(mysqli_result.parent_id().is_none());
         assert!(mysqli_result.properties().is_empty());
         assert!(mysqli_result.methods().is_empty());
 
         let mysqli_stmt = classes.lookup_class("mysqli_stmt").unwrap();
         assert_eq!(mysqli_stmt.name(), "mysqli_stmt");
-        assert_eq!(mysqli_stmt.id().index(), 5);
+        assert_eq!(mysqli_stmt.id().index(), 10);
         assert!(mysqli_stmt.parent_id().is_none());
         assert!(mysqli_stmt.properties().is_empty());
         assert!(mysqli_stmt.methods().is_empty());
 
         let pdo = classes.lookup_class("pdo").unwrap();
         assert_eq!(pdo.name(), "PDO");
-        assert_eq!(pdo.id().index(), 6);
+        assert_eq!(pdo.id().index(), 12);
         assert!(pdo.parent_id().is_none());
         assert!(pdo.properties().is_empty());
         assert_eq!(
@@ -79387,14 +83415,14 @@ mod tests {
 
         let pdo_statement = classes.lookup_class("pdostatement").unwrap();
         assert_eq!(pdo_statement.name(), "PDOStatement");
-        assert_eq!(pdo_statement.id().index(), 7);
+        assert_eq!(pdo_statement.id().index(), 13);
         assert!(pdo_statement.parent_id().is_none());
         assert!(pdo_statement.properties().is_empty());
         assert!(pdo_statement.methods().is_empty());
 
         let rounding_mode = classes.lookup_class("roundingmode").unwrap();
         assert_eq!(rounding_mode.name(), "RoundingMode");
-        assert_eq!(rounding_mode.id().index(), 8);
+        assert_eq!(rounding_mode.id().index(), 14);
         assert!(rounding_mode.parent_id().is_none());
         assert_eq!(
             rounding_mode
@@ -79408,7 +83436,7 @@ mod tests {
 
         let bcmath_number = classes.lookup_class("bcmath\\number").unwrap();
         assert_eq!(bcmath_number.name(), "BcMath\\Number");
-        assert_eq!(bcmath_number.id().index(), 9);
+        assert_eq!(bcmath_number.id().index(), 21);
         assert!(bcmath_number.parent_id().is_none());
         assert_eq!(
             bcmath_number
@@ -79443,9 +83471,54 @@ mod tests {
             ]
         );
 
+        let gmp = classes.lookup_class("gmp").unwrap();
+        assert_eq!(gmp.name(), "GMP");
+        assert_eq!(gmp.id().index(), 22);
+        assert!(gmp.parent_id().is_none());
+        assert_eq!(
+            gmp.properties()
+                .iter()
+                .map(PhpPropertyMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["num"]
+        );
+        assert_eq!(
+            gmp.methods()
+                .iter()
+                .map(PhpMethodMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["__construct", "__toString"]
+        );
+
+        let gd_image = classes.lookup_class("gdimage").unwrap();
+        assert_eq!(gd_image.name(), "GdImage");
+        assert_eq!(gd_image.id().index(), 23);
+        assert!(gd_image.parent_id().is_none());
+        assert!(gd_image.properties().is_empty());
+        assert!(gd_image.method("__construct").is_some());
+
+        let date_error = classes.lookup_class("dateerror").unwrap();
+        assert_eq!(date_error.name(), "DateError");
+        assert_eq!(date_error.id().index(), 24);
+        assert_eq!(date_error.parent_id(), Some(error.id()));
+
+        let date_object_error = classes.lookup_class("dateobjecterror").unwrap();
+        assert_eq!(date_object_error.name(), "DateObjectError");
+        assert_eq!(date_object_error.id().index(), 25);
+        assert_eq!(date_object_error.parent_id(), Some(date_error.id()));
+
+        let date_range_error = classes.lookup_class("daterangeerror").unwrap();
+        assert_eq!(date_range_error.name(), "DateRangeError");
+        assert_eq!(date_range_error.id().index(), 26);
+        assert_eq!(date_range_error.parent_id(), Some(date_error.id()));
+
+        let date_exception = classes.lookup_class("dateexception").unwrap();
+        assert_eq!(date_exception.name(), "DateException");
+        assert_eq!(date_exception.parent_id(), Some(exception.id()));
+
         let datetimezone = classes.lookup_class("datetimezone").unwrap();
         assert_eq!(datetimezone.name(), "DateTimeZone");
-        assert_eq!(datetimezone.id().index(), 10);
+        assert_eq!(datetimezone.id().index(), 30);
         assert!(datetimezone.parent_id().is_none());
         assert_eq!(
             datetimezone
@@ -79461,6 +83534,60 @@ mod tests {
         assert!(datetimezone.method("listAbbreviations").is_some());
         assert!(datetimezone.method("getName").is_some());
 
+        let date_malformed_interval_exception = classes
+            .lookup_class("datemalformedintervalstringexception")
+            .unwrap();
+        assert_eq!(
+            date_malformed_interval_exception.name(),
+            "DateMalformedIntervalStringException"
+        );
+        assert_eq!(
+            date_malformed_interval_exception.parent_id(),
+            Some(date_exception.id())
+        );
+
+        let date_malformed_string_exception = classes
+            .lookup_class("datemalformedstringexception")
+            .unwrap();
+        assert_eq!(
+            date_malformed_string_exception.name(),
+            "DateMalformedStringException"
+        );
+        assert_eq!(
+            date_malformed_string_exception.parent_id(),
+            Some(date_exception.id())
+        );
+
+        let date_interval = classes.lookup_class("dateinterval").unwrap();
+        assert_eq!(date_interval.name(), "DateInterval");
+        assert!(date_interval.parent_id().is_none());
+        assert_eq!(
+            date_interval
+                .properties()
+                .iter()
+                .map(PhpPropertyMetadata::name)
+                .collect::<Vec<_>>(),
+            vec![
+                "y",
+                "m",
+                "d",
+                "h",
+                "i",
+                "s",
+                "f",
+                "invert",
+                "days",
+                "from_string",
+                "date_string"
+            ]
+        );
+        assert!(date_interval.method("__construct").is_some());
+        assert!(date_interval.method("format").is_some());
+        assert!(date_interval
+            .method("createFromDateString")
+            .expect("DateInterval::createFromDateString should be registered")
+            .is_static());
+
         let datetime = classes.lookup_class("datetime").unwrap();
         assert_eq!(datetime.name(), "DateTime");
         assert!(datetime.parent_id().is_none());
@@ -79474,17 +83601,56 @@ mod tests {
         );
         assert!(datetime.method("__construct").is_some());
         assert!(datetime.method("format").is_some());
+        assert!(datetime.method("getMicrosecond").is_some());
+        assert!(datetime.method("setMicrosecond").is_some());
+        assert!(datetime.method("add").is_some());
+        assert!(datetime.method("sub").is_some());
+        assert!(datetime
+            .method("createFromFormat")
+            .expect("DateTime::createFromFormat should be registered")
+            .is_static());
+
+        let datetime_immutable = classes.lookup_class("datetimeimmutable").unwrap();
+        assert_eq!(datetime_immutable.name(), "DateTimeImmutable");
+        assert!(datetime_immutable.parent_id().is_none());
+        assert_eq!(
+            datetime_immutable
+                .properties()
+                .iter()
+                .map(PhpPropertyMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["date", "timezone_type", "timezone"]
+        );
+        assert!(datetime_immutable.constant("ATOM").is_some());
+        assert!(datetime_immutable.method("__construct").is_some());
+        assert!(datetime_immutable.method("format").is_some());
+        assert!(datetime_immutable.method("getMicrosecond").is_some());
+        assert!(datetime_immutable.method("setMicrosecond").is_some());
+        assert!(datetime_immutable.method("add").is_some());
+        assert!(datetime_immutable.method("sub").is_some());
+        assert!(datetime_immutable
+            .method("createFromFormat")
+            .expect("DateTimeImmutable::createFromFormat should be registered")
+            .is_static());
+        assert!(datetime_immutable
+            .method("createFromMutable")
+            .expect("DateTimeImmutable::createFromMutable should be registered")
+            .is_static());
+        assert!(datetime_immutable
+            .method("createFromInterface")
+            .expect("DateTimeImmutable::createFromInterface should be registered")
+            .is_static());
 
         let reflection_exception = classes.lookup_class("reflectionexception").unwrap();
         assert_eq!(reflection_exception.name(), "ReflectionException");
-        assert_eq!(reflection_exception.id().index(), 11);
+        assert_eq!(reflection_exception.id().index(), 31);
         assert_eq!(reflection_exception.parent_id(), Some(exception.id()));
         assert!(reflection_exception.properties().is_empty());
         assert!(reflection_exception.methods().is_empty());
 
         let attribute = classes.lookup_class("attribute").unwrap();
         assert_eq!(attribute.name(), "Attribute");
-        assert_eq!(attribute.id().index(), 12);
+        assert_eq!(attribute.id().index(), 32);
         assert!(attribute.parent_id().is_none());
         assert_eq!(
             attribute
@@ -79499,16 +83665,27 @@ mod tests {
 
         let reflection_class = classes.lookup_class("reflectionclass").unwrap();
         assert_eq!(reflection_class.name(), "ReflectionClass");
-        assert_eq!(reflection_class.id().index(), 13);
+        assert_eq!(reflection_class.id().index(), 33);
         assert!(reflection_class.parent_id().is_none());
-        assert!(reflection_class.properties().is_empty());
+        assert_eq!(
+            reflection_class
+                .properties()
+                .iter()
+                .map(PhpPropertyMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["name"]
+        );
         assert!(reflection_class.method("getName").is_some());
+        assert!(reflection_class.method("getInterfaces").is_some());
         assert!(reflection_class.method("hasMethod").is_some());
+        assert!(reflection_class.method("isCloneable").is_some());
+        assert!(reflection_class.method("isReadOnly").is_some());
+        assert!(reflection_class.constant("IS_READONLY").is_some());
         assert!(reflection_class.method("getAttributes").is_some());
 
         let reflection_object = classes.lookup_class("reflectionobject").unwrap();
         assert_eq!(reflection_object.name(), "ReflectionObject");
-        assert_eq!(reflection_object.id().index(), 14);
+        assert_eq!(reflection_object.id().index(), 34);
         assert_eq!(reflection_object.parent_id(), Some(reflection_class.id()));
         assert_eq!(
             reflection_object
@@ -79521,41 +83698,63 @@ mod tests {
 
         let reflection_function = classes.lookup_class("reflectionfunction").unwrap();
         assert_eq!(reflection_function.name(), "ReflectionFunction");
-        assert_eq!(reflection_function.id().index(), 15);
+        assert_eq!(reflection_function.id().index(), 35);
         assert!(reflection_function.parent_id().is_none());
-        assert!(reflection_function.properties().is_empty());
+        assert_eq!(
+            reflection_function
+                .properties()
+                .iter()
+                .map(PhpPropertyMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["name"]
+        );
         assert!(reflection_function.method("getParameters").is_some());
         assert!(reflection_function.method("returnsReference").is_some());
         assert!(reflection_function.method("getAttributes").is_some());
 
         let reflection_method = classes.lookup_class("reflectionmethod").unwrap();
         assert_eq!(reflection_method.name(), "ReflectionMethod");
-        assert_eq!(reflection_method.id().index(), 16);
+        assert_eq!(reflection_method.id().index(), 36);
         assert!(reflection_method.parent_id().is_none());
-        assert!(reflection_method.properties().is_empty());
+        assert_eq!(
+            reflection_method
+                .properties()
+                .iter()
+                .map(PhpPropertyMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["name", "class"]
+        );
         assert!(reflection_method.constant("IS_PUBLIC").is_some());
         assert!(reflection_method.method("getModifiers").is_some());
         assert!(reflection_method.method("getAttributes").is_some());
 
         let reflection_parameter = classes.lookup_class("reflectionparameter").unwrap();
         assert_eq!(reflection_parameter.name(), "ReflectionParameter");
-        assert_eq!(reflection_parameter.id().index(), 17);
+        assert_eq!(reflection_parameter.id().index(), 37);
         assert!(reflection_parameter.parent_id().is_none());
-        assert!(reflection_parameter.properties().is_empty());
+        assert_eq!(
+            reflection_parameter
+                .properties()
+                .iter()
+                .map(PhpPropertyMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["name"]
+        );
         assert!(reflection_parameter.method("getDefaultValue").is_some());
+        assert!(reflection_parameter.method("isCallable").is_some());
         assert!(reflection_parameter.method("getType").is_some());
         assert!(reflection_parameter.method("getAttributes").is_some());
 
         let reflection_type = classes.lookup_class("reflectiontype").unwrap();
         assert_eq!(reflection_type.name(), "ReflectionType");
-        assert_eq!(reflection_type.id().index(), 18);
+        assert_eq!(reflection_type.id().index(), 38);
         assert!(reflection_type.parent_id().is_none());
         assert!(reflection_type.properties().is_empty());
         assert!(reflection_type.method("allowsNull").is_some());
 
         let reflection_named_type = classes.lookup_class("reflectionnamedtype").unwrap();
         assert_eq!(reflection_named_type.name(), "ReflectionNamedType");
-        assert_eq!(reflection_named_type.id().index(), 19);
+        assert_eq!(reflection_named_type.id().index(), 39);
         assert_eq!(
             reflection_named_type.parent_id(),
             Some(reflection_type.id())
@@ -79566,7 +83765,7 @@ mod tests {
 
         let reflection_union_type = classes.lookup_class("reflectionuniontype").unwrap();
         assert_eq!(reflection_union_type.name(), "ReflectionUnionType");
-        assert_eq!(reflection_union_type.id().index(), 20);
+        assert_eq!(reflection_union_type.id().index(), 40);
         assert_eq!(
             reflection_union_type.parent_id(),
             Some(reflection_type.id())
@@ -79580,7 +83779,7 @@ mod tests {
             reflection_intersection_type.name(),
             "ReflectionIntersectionType"
         );
-        assert_eq!(reflection_intersection_type.id().index(), 21);
+        assert_eq!(reflection_intersection_type.id().index(), 41);
         assert_eq!(
             reflection_intersection_type.parent_id(),
             Some(reflection_type.id())
@@ -79590,25 +83789,59 @@ mod tests {
 
         let reflection_property = classes.lookup_class("reflectionproperty").unwrap();
         assert_eq!(reflection_property.name(), "ReflectionProperty");
-        assert_eq!(reflection_property.id().index(), 22);
+        assert_eq!(reflection_property.id().index(), 42);
         assert!(reflection_property.parent_id().is_none());
-        assert!(reflection_property.properties().is_empty());
+        assert_eq!(
+            reflection_property
+                .properties()
+                .iter()
+                .map(PhpPropertyMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["name", "class"]
+        );
         assert!(reflection_property.constant("IS_PUBLIC").is_some());
+        assert!(reflection_property.constant("IS_READONLY").is_some());
+        assert!(reflection_property.constant("IS_VIRTUAL").is_some());
+        assert!(reflection_property.constant("IS_PROTECTED_SET").is_some());
+        assert!(reflection_property.constant("IS_PRIVATE_SET").is_some());
         assert!(reflection_property.method("getDefaultValue").is_some());
         assert!(reflection_property.method("getAttributes").is_some());
 
         let reflection_class_constant = classes.lookup_class("reflectionclassconstant").unwrap();
         assert_eq!(reflection_class_constant.name(), "ReflectionClassConstant");
-        assert_eq!(reflection_class_constant.id().index(), 23);
+        assert_eq!(reflection_class_constant.id().index(), 43);
         assert!(reflection_class_constant.parent_id().is_none());
-        assert!(reflection_class_constant.properties().is_empty());
+        assert_eq!(
+            reflection_class_constant
+                .properties()
+                .iter()
+                .map(PhpPropertyMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["name", "class"]
+        );
         assert!(reflection_class_constant.constant("IS_PUBLIC").is_some());
         assert!(reflection_class_constant.method("getValue").is_some());
         assert!(reflection_class_constant.method("getAttributes").is_some());
 
+        let reflection_constant = classes.lookup_class("reflectionconstant").unwrap();
+        assert_eq!(reflection_constant.name(), "ReflectionConstant");
+        assert_eq!(reflection_constant.id().index(), 44);
+        assert!(reflection_constant.parent_id().is_none());
+        assert_eq!(
+            reflection_constant
+                .properties()
+                .iter()
+                .map(PhpPropertyMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["name"]
+        );
+        assert!(reflection_constant.method("getValue").is_some());
+        assert!(reflection_constant.method("getAttributes").is_some());
+        assert!(reflection_constant.method("getExtensionName").is_some());
+
         let reflection_attribute = classes.lookup_class("reflectionattribute").unwrap();
         assert_eq!(reflection_attribute.name(), "ReflectionAttribute");
-        assert_eq!(reflection_attribute.id().index(), 24);
+        assert_eq!(reflection_attribute.id().index(), 45);
         assert!(reflection_attribute.parent_id().is_none());
         assert_eq!(
             reflection_attribute
@@ -79619,44 +83852,142 @@ mod tests {
             vec!["name"]
         );
         assert!(reflection_attribute.constant("IS_INSTANCEOF").is_some());
+        assert!(reflection_attribute.method("__construct").is_some());
+        assert!(reflection_attribute.method("__toString").is_some());
         assert!(reflection_attribute.method("getArguments").is_some());
 
         let type_error = classes.lookup_class("typeerror").unwrap();
         assert_eq!(type_error.name(), "TypeError");
-        assert_eq!(type_error.id().index(), 25);
+        assert_eq!(type_error.id().index(), 46);
         assert_eq!(type_error.parent_id(), Some(error.id()));
         assert!(type_error.properties().is_empty());
 
         let argument_count_error = classes.lookup_class("argumentcounterror").unwrap();
         assert_eq!(argument_count_error.name(), "ArgumentCountError");
-        assert_eq!(argument_count_error.id().index(), 26);
+        assert_eq!(argument_count_error.id().index(), 47);
         assert_eq!(argument_count_error.parent_id(), Some(type_error.id()));
         assert!(argument_count_error.properties().is_empty());
 
         let value_error = classes.lookup_class("valueerror").unwrap();
         assert_eq!(value_error.name(), "ValueError");
-        assert_eq!(value_error.id().index(), 27);
+        assert_eq!(value_error.id().index(), 48);
         assert_eq!(value_error.parent_id(), Some(error.id()));
 
         let arithmetic_error = classes.lookup_class("arithmeticerror").unwrap();
         assert_eq!(arithmetic_error.name(), "ArithmeticError");
-        assert_eq!(arithmetic_error.id().index(), 28);
+        assert_eq!(arithmetic_error.id().index(), 49);
         assert_eq!(arithmetic_error.parent_id(), Some(error.id()));
 
         let division_by_zero_error = classes.lookup_class("divisionbyzeroerror").unwrap();
         assert_eq!(division_by_zero_error.name(), "DivisionByZeroError");
-        assert_eq!(division_by_zero_error.id().index(), 29);
+        assert_eq!(division_by_zero_error.id().index(), 50);
         assert_eq!(
             division_by_zero_error.parent_id(),
             Some(arithmetic_error.id())
         );
 
+        let assertion_error = classes.lookup_class("assertionerror").unwrap();
+        assert_eq!(assertion_error.name(), "AssertionError");
+        assert_eq!(assertion_error.id().index(), 51);
+        assert_eq!(assertion_error.parent_id(), Some(error.id()));
+
         let runtime_exception = classes.lookup_class("runtimeexception").unwrap();
         assert_eq!(runtime_exception.name(), "RuntimeException");
-        assert_eq!(runtime_exception.id().index(), 30);
+        assert_eq!(runtime_exception.id().index(), 52);
         assert_eq!(runtime_exception.parent_id(), Some(exception.id()));
         assert!(runtime_exception.properties().is_empty());
         assert!(runtime_exception.methods().is_empty());
+
+        let array_object = classes.lookup_class("arrayobject").unwrap();
+        assert_eq!(array_object.name(), "ArrayObject");
+        assert_eq!(array_object.id().index(), 58);
+        assert!(array_object.parent_id().is_none());
+        assert_eq!(
+            array_object
+                .properties()
+                .iter()
+                .map(PhpPropertyMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["storage"]
+        );
+        assert_eq!(
+            array_object
+                .constants()
+                .iter()
+                .map(PhpClassConstantMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["STD_PROP_LIST", "ARRAY_AS_PROPS"]
+        );
+        assert!(array_object.method("getIterator").is_some());
+        assert!(array_object.method("offsetGet").is_some());
+
+        let array_iterator = classes.lookup_class("arrayiterator").unwrap();
+        assert_eq!(array_iterator.name(), "ArrayIterator");
+        assert_eq!(array_iterator.id().index(), 59);
+        assert!(array_iterator.parent_id().is_none());
+        assert_eq!(
+            array_iterator
+                .properties()
+                .iter()
+                .map(PhpPropertyMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["storage"]
+        );
+        assert_eq!(
+            array_iterator
+                .constants()
+                .iter()
+                .map(PhpClassConstantMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["STD_PROP_LIST", "ARRAY_AS_PROPS"]
+        );
+        assert!(array_iterator.method("current").is_some());
+        assert!(array_iterator.method("offsetSet").is_some());
+
+        let reflection = classes.lookup_class("reflection").unwrap();
+        assert_eq!(reflection.name(), "Reflection");
+        assert!(reflection.parent_id().is_none());
+        assert!(reflection.properties().is_empty());
+        assert!(reflection
+            .method("getModifierNames")
+            .expect("Reflection::getModifierNames should be registered")
+            .is_static());
+
+        let deprecated = classes.lookup_class("deprecated").unwrap();
+        assert_eq!(deprecated.name(), "Deprecated");
+        assert!(deprecated.parent_id().is_none());
+        assert_eq!(
+            deprecated
+                .properties()
+                .iter()
+                .map(PhpPropertyMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["message", "since"]
+        );
+        assert!(deprecated.method("__construct").is_some());
+
+        let random_interval_boundary = classes.lookup_class("random\\intervalboundary").unwrap();
+        assert_eq!(random_interval_boundary.name(), "Random\\IntervalBoundary");
+        assert!(random_interval_boundary.parent_id().is_none());
+        assert_eq!(
+            random_interval_boundary
+                .properties()
+                .iter()
+                .map(PhpPropertyMetadata::name)
+                .collect::<Vec<_>>(),
+            vec!["name"]
+        );
+
+        let closure = classes.lookup_class("closure").unwrap();
+        assert_eq!(closure.name(), "Closure");
+        assert!(closure.parent_id().is_none());
+        assert!(closure.properties().is_empty());
+        assert!(closure.method("__invoke").is_some());
+
+        let json_exception = classes.lookup_class("jsonexception").unwrap();
+        assert_eq!(json_exception.name(), "JsonException");
+        assert_eq!(json_exception.parent_id(), Some(exception.id()));
+        assert!(json_exception.properties().is_empty());
     }
 
     #[test]
@@ -79824,7 +84155,7 @@ mod tests {
             .unwrap_err();
         assert_eq!(
             uninitialized.kind(),
-            &RuntimeErrorKind::UninitializedTypedProperty {
+            &RuntimeErrorKind::UninitializedTypedStaticProperty {
                 class_name: "Counter".to_string(),
                 property_name: "typed".to_string(),
             }
@@ -79918,7 +84249,7 @@ mod tests {
                 )
                 .unwrap_err()
                 .message(),
-            "typed property Counter::$typed must not be accessed before initialization"
+            "typed static property Counter::$typed must not be accessed before initialization"
         );
         assert_eq!(
             first
@@ -80140,7 +84471,7 @@ mod tests {
             .unwrap_or_default();
         assert_eq!(
             unset_diagnostic_message,
-            "typed property Counter::$count must not be accessed before initialization"
+            "typed static property Counter::$count must not be accessed before initialization"
         );
         unsafe { phpc_native_diagnostic_free(diagnostic) };
         diagnostic = NativeDiagnosticHandle::null();
@@ -80312,7 +84643,9 @@ mod tests {
             .map(|diagnostic| diagnostic.message.clone())
             .unwrap_or_default();
         assert!(
-            message.contains("typed property StaticRefCounter::$count expects int"),
+            message.contains(
+                "Cannot assign array to reference held by property StaticRefCounter::$count of type int"
+            ),
             "{message}"
         );
         unsafe { phpc_native_diagnostic_free(diagnostic) };
@@ -80460,7 +84793,9 @@ mod tests {
             .map(|diagnostic| diagnostic.message.clone())
             .unwrap_or_default();
         assert!(
-            message.contains("typed property StaticBindRefCounter::$count expects int"),
+            message.contains(
+                "Cannot assign array to reference held by property StaticBindRefCounter::$count of type int"
+            ),
             "{message}"
         );
 
@@ -80595,7 +84930,9 @@ mod tests {
             .map(|diagnostic| diagnostic.message.clone())
             .unwrap_or_default();
         assert!(
-            message.contains("typed property StaticOffsetRefCounter::$typed expects ?string"),
+            message.contains(
+                "Cannot assign array to reference held by property StaticOffsetRefCounter::$typed of type ?string"
+            ),
             "{message}"
         );
 
@@ -81080,7 +85417,7 @@ mod tests {
             .unwrap_err();
         assert_eq!(
             type_error.message(),
-            "invalid property access: typed property Counter::$count expects int, got array"
+            "invalid property access: Cannot assign array to reference held by property Counter::$count of type int"
         );
     }
 
@@ -81203,6 +85540,66 @@ mod tests {
         assert_eq!(properties[0].mangled_name(), "id");
         assert_eq!(properties[1].mangled_name(), "\0*\0payload");
         assert_eq!(properties[2].mangled_name(), "\0Packet\0secret");
+    }
+
+    #[test]
+    fn context_property_access_prefers_current_private_over_visible_child_protected() {
+        let base_id = ClassId(901);
+        let derived_id = ClassId(902);
+        let base_id_property = PhpPropertyMetadata::instance("id", Visibility::Private);
+        let inherited = [PhpObjectPropertyInitializer::new(
+            base_id,
+            "Base",
+            base_id_property,
+        )];
+        let mut derived = PhpClassMetadata::new(derived_id, "Derived".to_string());
+        derived
+            .add_property(PhpPropertyMetadata::instance("id", Visibility::Protected))
+            .unwrap();
+
+        let object = PhpObject::from_class_with_inherited_metadata_with_id(
+            &derived,
+            &inherited,
+            vec!["Base".to_string()],
+            1,
+        );
+
+        object
+            .write_property_from_context(
+                "id",
+                Value::Int(64),
+                Some(base_id),
+                &[base_id, derived_id],
+            )
+            .unwrap();
+        object
+            .write_property_from_context(
+                "id",
+                Value::Int(44),
+                Some(derived_id),
+                &[derived_id, base_id],
+            )
+            .unwrap();
+
+        let properties = object.properties();
+        assert_eq!(properties[0].mangled_name(), "\0Base\0id");
+        assert_eq!(properties[0].value_cloned(), Value::Int(64));
+        assert_eq!(properties[1].mangled_name(), "\0*\0id");
+        assert_eq!(properties[1].value_cloned(), Value::Int(44));
+
+        let base_visible =
+            object.initialized_visible_properties(Some(base_id), &[base_id, derived_id]);
+        assert_eq!(base_visible.len(), 1);
+        assert_eq!(base_visible[0].declaring_class_id(), base_id);
+        assert_eq!(base_visible[0].visibility(), Visibility::Private);
+        assert_eq!(base_visible[0].value_cloned(), Value::Int(64));
+
+        let derived_visible =
+            object.initialized_visible_properties(Some(derived_id), &[derived_id, base_id]);
+        assert_eq!(derived_visible.len(), 1);
+        assert_eq!(derived_visible[0].declaring_class_id(), derived_id);
+        assert_eq!(derived_visible[0].visibility(), Visibility::Protected);
+        assert_eq!(derived_visible[0].value_cloned(), Value::Int(44));
     }
 
     #[test]

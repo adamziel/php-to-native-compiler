@@ -67,6 +67,39 @@ class Box {
 }
 
 #[test]
+fn namespace_relative_builtin_parameter_type_must_be_unqualified() {
+    let stderr = fatal_for(
+        r#"<?php
+function foo(namespace\int $value) {}
+foo(10);
+"#,
+        "tests/type_declarations/namespace_relative_scalar_typehint.php",
+    );
+
+    assert_eq!(
+        stderr,
+        "Fatal error: Type declaration 'int' must be unqualified in tests/type_declarations/namespace_relative_scalar_typehint.php on line 2"
+    );
+}
+
+#[test]
+fn namespaced_namespace_relative_builtin_parameter_type_must_be_unqualified() {
+    let stderr = fatal_for(
+        r#"<?php
+namespace App\Demo;
+function foo(namespace\string $value) {}
+foo("ok");
+"#,
+        "tests/type_declarations/namespaced_namespace_relative_scalar_typehint.php",
+    );
+
+    assert_eq!(
+        stderr,
+        "Fatal error: Type declaration 'string' must be unqualified in tests/type_declarations/namespaced_namespace_relative_scalar_typehint.php on line 3"
+    );
+}
+
+#[test]
 fn self_return_type_requires_class_scope_for_named_function() {
     let stderr = fatal_for(
         r#"<?php

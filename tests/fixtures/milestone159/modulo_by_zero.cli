@@ -1,6 +1,8 @@
-exit: 1
+exit: 255
 stdout:
---- stdout end ---
+Fatal error: Uncaught DivisionByZeroError: Modulo by zero in tests/fixtures/milestone159/modulo_by_zero.php:2
+Stack trace:
+#0 {main}
+  thrown in tests/fixtures/milestone159/modulo_by_zero.php on line 2--- stdout end ---
 stderr:
-runtime error at tests/fixtures/milestone159/modulo_by_zero.php:2:6: invalid arithmetic for %: modulo by zero
 --- stderr end ---

@@ -1,1 +1,1 @@
-project-specific diagnostic for unsupported non-bool in_array strict flag
+project-specific diagnostic for unsupported non-coercible in_array strict flag

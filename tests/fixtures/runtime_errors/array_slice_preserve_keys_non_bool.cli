@@ -1,6 +1,5 @@
-exit: 1
+exit: 0
 stdout:
---- stdout end ---
+Array--- stdout end ---
 stderr:
-runtime error at tests/fixtures/runtime_errors/array_slice_preserve_keys_non_bool.php:3:6: unsupported call array_slice(): preserve_keys argument must be bool in the current subset, got int
 --- stderr end ---

@@ -1,7 +1,10 @@
-$ phpc run tests/fixtures/milestone1682/arrayaccess_exact_append_offsetset_empty_key_reference_slot_cow.php
+exit: 0
 stdout:
-via-empty-key|via-empty-key|1|plain
---- stdout end ---
+Deprecated: Using null as an array offset is deprecated, use an empty string instead in tests/fixtures/milestone1682/arrayaccess_exact_append_offsetset_empty_key_reference_slot_cow.php on line 17
+
+Deprecated: Using null as an array offset is deprecated, use an empty string instead in tests/fixtures/milestone1682/arrayaccess_exact_append_offsetset_empty_key_reference_slot_cow.php on line 12
+
+Deprecated: Using null as an array offset is deprecated, use an empty string instead in tests/fixtures/milestone1682/arrayaccess_exact_append_offsetset_empty_key_reference_slot_cow.php on line 12
+via-empty-key|via-empty-key|1|plain--- stdout end ---
 stderr:
 --- stderr end ---
-exit: 0

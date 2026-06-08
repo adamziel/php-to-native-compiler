@@ -1,0 +1,2 @@
+Deprecated: Increment on non-numeric string is deprecated, use str_increment() instead in tests/fixtures/runtime_errors/unsupported_string_increment.php on line 3
+

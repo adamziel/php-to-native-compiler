@@ -47,6 +47,44 @@ unlink($target);
 }
 
 #[test]
+fn local_stream_writes_clear_stat_cache_for_linked_path_aliases() {
+    let fixture = TempFsFixture::new("link-stat-cache");
+    let root = php_string(&fixture.root);
+    let source = format!(
+        r#"<?php
+$root = {root};
+$target = $root . "/target.txt";
+$soft = $root . "/soft-link.txt";
+$hard = $root . "/hard-link.txt";
+$fp = fopen($target, "w");
+fwrite($fp, "abcd");
+fclose($fp);
+symlink($target, $soft);
+link($target, $hard);
+echo filesize($target), ":", filesize($soft), ":", filesize($hard), "\n";
+$fp = fopen($soft, "a");
+fwrite($fp, "ef");
+fclose($fp);
+echo filesize($target), ":", filesize($soft), ":", filesize($hard), "\n";
+$fp = fopen($hard, "w");
+fwrite($fp, "z");
+fclose($fp);
+echo filesize($target), ":", filesize($soft), ":", filesize($hard), "\n";
+unlink($soft);
+unlink($hard);
+unlink($target);
+"#,
+        root = root
+    );
+
+    let execution = run_source(&source).unwrap();
+
+    assert_eq!(execution.stdout, "4:4:4\n6:6:6\n1:1:1\n");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn filesystem_link_failures_emit_inline_warnings_and_prerequisites() {
     let fixture = TempFsFixture::new("warnings");
     let root = php_string(&fixture.root);
@@ -132,6 +170,56 @@ var_dump(sleep(0));
     );
     assert!(
         execution.stdout.ends_with("int(0)\n"),
+        "{}",
+        execution.stdout
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn linkinfo_reports_permission_denied_for_unsearchable_parent() {
+    let fixture = TempFsFixture::new("permission-denied");
+    let root = php_string(&fixture.root);
+    let source = format!(
+        r#"<?php
+$root = {root};
+$dir = $root . "/blocked";
+$target = $dir . "/target.txt";
+$link = $dir . "/link.txt";
+mkdir($dir);
+var_dump(chmod($dir, 0000));
+var_dump(symlink($target, $link));
+var_dump(linkinfo($link));
+var_dump(link($target, $link));
+var_dump(is_link($link));
+chmod($dir, 0777);
+rmdir($dir);
+"#,
+        root = root
+    );
+
+    let execution = run_source(&source).unwrap();
+
+    assert!(
+        execution
+            .stdout
+            .contains("Warning: symlink(): Permission denied"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution
+            .stdout
+            .contains("Warning: linkinfo(): Permission denied"),
+        "{}",
+        execution.stdout
+    );
+    assert!(execution.stdout.contains("int(-1)"), "{}", execution.stdout);
+    assert!(
+        execution
+            .stdout
+            .contains("Warning: link(): Permission denied"),
         "{}",
         execution.stdout
     );

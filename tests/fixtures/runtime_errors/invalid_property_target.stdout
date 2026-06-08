@@ -1,0 +1,2 @@
+Warning: Attempt to read property "name" on int in tests/fixtures/runtime_errors/invalid_property_target.php on line 3
+

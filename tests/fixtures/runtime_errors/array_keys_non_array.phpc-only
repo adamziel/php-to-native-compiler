@@ -1,1 +1,1 @@
-Project-specific stable runtime diagnostic; system PHP throws a native TypeError.
+System PHP-compatible TypeError for non-array array_keys() operands.

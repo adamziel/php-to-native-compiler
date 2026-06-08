@@ -1,6 +1,9 @@
-exit: 1
+exit: 255
 stdout:
---- stdout end ---
+Fatal error: Uncaught TypeError: array_unique(): Argument #1 ($array) must be of type array, int given, called in tests/fixtures/runtime_errors/array_unique_non_array.php:2
+Stack trace:
+#0 tests/fixtures/runtime_errors/array_unique_non_array.php(2): array_unique()
+#1 {main}
+  thrown in tests/fixtures/runtime_errors/array_unique_non_array.php on line 2--- stdout end ---
 stderr:
-runtime error at tests/fixtures/runtime_errors/array_unique_non_array.php:2:6: unsupported call array_unique(): argument must be array, got int
 --- stderr end ---

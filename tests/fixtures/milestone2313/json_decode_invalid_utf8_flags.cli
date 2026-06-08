@@ -1,0 +1,25 @@
+exit: 0
+stdout:
+NULL
+int(5)
+string(56) "Malformed UTF-8 characters, possibly incorrectly encoded"
+string(2) "ab"
+int(0)
+string(8) "No error"
+61efbfbd62
+int(0)
+string(8) "No error"
+61efbfbdefbfbdefbfbd41
+array(2) {
+  [0]=>
+  string(0) ""
+  [1]=>
+  string(1) "a"
+}
+efbfbdefbfbd|61
+61efbfbd62
+NULL
+5|Malformed UTF-8 characters, possibly incorrectly encoded
+--- stdout end ---
+stderr:
+--- stderr end ---

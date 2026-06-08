@@ -172,6 +172,32 @@ class Test {
 }
 
 #[test]
+fn union_property_defaults_preserve_matching_scalar_type() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+class Test {
+    public int|float $a = 1;
+    public int|float $b = 2.0;
+    public float|string $c = 3;
+    public float|string $d = 4.0;
+    public float|string $e = "5";
+}
+
+var_dump(new Test);
+"#,
+        "Zend/tests/type_declarations/union_types/legal_default_values.php",
+    )
+    .unwrap();
+
+    assert_eq!(execution.stderr, "");
+    assert_eq!(
+        execution.stdout,
+        "object(Test)#1 (5) {\n  [\"a\"]=>\n  int(1)\n  [\"b\"]=>\n  float(2)\n  [\"c\"]=>\n  float(3)\n  [\"d\"]=>\n  float(4)\n  [\"e\"]=>\n  string(1) \"5\"\n}\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn bool_default_must_match_literal_property_type() {
     let stderr = fatal_for(
         r#"<?php
@@ -185,6 +211,49 @@ class Test {
     assert_eq!(
         stderr,
         "Fatal error: Cannot use bool as default value for property Test::$flag of type true in typed-property-bool-literal.php on line 3"
+    );
+}
+
+#[test]
+fn literal_bool_union_property_defaults_match_only_literal_arm() {
+    let accepted = run_source_with_source_file(
+        r#"<?php
+class Test {
+    public false|int $f = false;
+    public true|int $t = true;
+}
+var_dump(new Test);
+"#,
+        "literal-bool-union-property-default.php",
+    )
+    .unwrap();
+    assert_eq!(accepted.stderr, "");
+    assert_eq!(
+        accepted.stdout,
+        "object(Test)#1 (2) {\n  [\"f\"]=>\n  bool(false)\n  [\"t\"]=>\n  bool(true)\n}\n"
+    );
+    assert_eq!(accepted.exit_code, 0);
+
+    let rejected_false = fatal_for(
+        r#"<?php
+class Test { public false|int $f = true; }
+"#,
+        "literal-false-union-property-opposite-default.php",
+    );
+    assert_eq!(
+        rejected_false,
+        "Fatal error: Cannot use bool as default value for property Test::$f of type false|int in literal-false-union-property-opposite-default.php on line 2"
+    );
+
+    let rejected_true = fatal_for(
+        r#"<?php
+class Test { public true|int $t = false; }
+"#,
+        "literal-true-union-property-opposite-default.php",
+    );
+    assert_eq!(
+        rejected_true,
+        "Fatal error: Cannot use bool as default value for property Test::$t of type true|int in literal-true-union-property-opposite-default.php on line 2"
     );
 }
 
