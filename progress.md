@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T12:11:10+00:00
+Last generated: 2026-06-08T12:26:11+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -221,8 +221,12 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-183 | Coordinator | success | coordinator-183 |  |
 | coordinator-184 | Coordinator | crash | coordinator-184 |  |
 | coordinator-185 | Coordinator | success | coordinator-185 |  |
-| coordinator-186 | Coordinator | running | coordinator-186 |  |
+| coordinator-186 | Coordinator | success | coordinator-186 |  |
+| coordinator-187 | Coordinator | success | coordinator-187 |  |
+| coordinator-188 | Coordinator | success | coordinator-188 |  |
+| coordinator-189 | Coordinator | success | coordinator-189 |  |
 | coordinator-19 | Coordinator | stopped | coordinator-19 |  |
+| coordinator-190 | Coordinator | running | coordinator-190 |  |
 | coordinator-2 | Coordinator | crash | coordinator-2 |  |
 | coordinator-20 | Coordinator | crash | coordinator-20 |  |
 | coordinator-21 | Coordinator | crash | coordinator-21 |  |
@@ -697,7 +701,8 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | integrator-23 | Integrator | crash | integrator-23 |  |
 | integrator-24 | Integrator | crash | integrator-24 |  |
 | integrator-25 | Integrator | crash | integrator-25 |  |
-| integrator-26 | Integrator | running | integrator-26 |  |
+| integrator-26 | Integrator | crash | integrator-26 |  |
+| integrator-27 | Integrator | running | integrator-27 |  |
 | integrator-3 | Integrator | stopped | integrator-3 |  |
 | integrator-4 | Integrator | crash | integrator-4 |  |
 | integrator-5 | Integrator | success | integrator-5 |  |
@@ -709,7 +714,8 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 2076 | Reconcile stale integration queue state after accepted row136/tail reports | Integrator | integration-support | development | assigned |  | 0.0 |
+| 2077 | Integrate ready card2074 codegen assertion cluster | Integrator | integration-support | development | assigned |  | 0.0 |
+| 2076 | Reconcile stale integration queue state after accepted row136/tail reports | Integrator | integration-support | planned | queued |  | 0.0 |
 | 2075 | Fix global test suite failures | Developer | implementation | development | assigned |  | 0.0 |
 | 2074 | card2027 codegen assertion cluster | Developer | implementation | development | assigned |  | 0.0 |
 | 2073 | card2027 runtime native lookup/invoke cluster | Developer | implementation | development | assigned |  | 0.0 |
@@ -718,27 +724,26 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | 2070 | Inventory remaining cargo test failures for card2027 parallel split | Developer | implementation | done | stale | ready_fast_path | 0.0 |
 | 2069 | Integrate ready row136 native scalar cast resolver | Integrator | integration-support | planned | queued |  | 0.0 |
 | 2068 | Resolve current-base native scalar cast integration conflict for row136 | Conflict Resolver | integration-support | integration | ready_for_integration | ready_fast_path | 0.0 |
-| 2067 | Resolve current-base similar_text integration conflict for row140 | Conflict Resolver | integration-support | done | stale |  | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=1, passed=418, skipped=0)
+failed — tools/run-tests.sh (error=0, failed=4, passed=415, skipped=0)
 
 ## Resource samples
-Latest: CPU 27.36%, RAM 21.22%, disk free 21.09 GB.
+Latest: CPU 57.03%, RAM 18.58%, disk free 0.68 GB.
 
 ## Recent events
-- 2026-06-08T12:10:26+00:00 **agent_started**: Started coordinator-186 for Maintain Coordinator capacity
-- 2026-06-08T12:10:35+00:00 **terminal_agent_windows_closed**: Closed 688 terminal agent tmux windows
-- 2026-06-08T12:10:35+00:00 **terminal_agent_windows_closed**: Closed 688 terminal agent tmux windows
-- 2026-06-08T12:10:39+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-08T12:10:43+00:00 **terminal_agent_windows_closed**: Closed 688 terminal agent tmux windows
-- 2026-06-08T12:10:49+00:00 **terminal_agent_windows_closed**: Closed 688 terminal agent tmux windows
-- 2026-06-08T12:10:51+00:00 **terminal_agent_windows_closed**: Closed 688 terminal agent tmux windows
-- 2026-06-08T12:11:00+00:00 **terminal_agent_windows_closed**: Closed 688 terminal agent tmux windows
-- 2026-06-08T12:11:02+00:00 **terminal_agent_windows_closed**: Closed 688 terminal agent tmux windows
-- 2026-06-08T12:11:08+00:00 **coordinator_session_start**: Coordinator session started; reading required repository docs and preparing to inspect harness worklanes/agents/reports.
-- 2026-06-08T12:11:09+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-08T12:11:09+00:00 **terminal_agent_windows_closed**: Closed 688 terminal agent tmux windows
+- 2026-06-08T12:25:29+00:00 **terminal_agent_windows_closed**: Closed 692 terminal agent tmux windows
+- 2026-06-08T12:25:30+00:00 **terminal_agent_windows_closed**: Closed 692 terminal agent tmux windows
+- 2026-06-08T12:25:38+00:00 **agent_report**: coordinator-189 reported completed_capacity_preserved_resource_gated
+- 2026-06-08T12:25:39+00:00 **terminal_agent_windows_closed**: Closed 692 terminal agent tmux windows
+- 2026-06-08T12:25:42+00:00 **coordinator_complete**: Coordinator-189 completed capacity pass and filed report 663; no new workers spawned; active ownership preserved for developer-368/card2075 and integrator-27/card2077.
+- 2026-06-08T12:25:44+00:00 **terminal_agent_windows_closed**: Closed 692 terminal agent tmux windows
+- 2026-06-08T12:25:48+00:00 **terminal_agent_windows_closed**: Closed 692 terminal agent tmux windows
+- 2026-06-08T12:25:48+00:00 **agent_started**: Started coordinator-190 for Maintain Coordinator capacity
+- 2026-06-08T12:25:55+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-08T12:25:58+00:00 **terminal_agent_windows_closed**: Closed 693 terminal agent tmux windows
+- 2026-06-08T12:25:58+00:00 **terminal_agent_windows_closed**: Closed 693 terminal agent tmux windows
+- 2026-06-08T12:26:07+00:00 **terminal_agent_windows_closed**: Closed 693 terminal agent tmux windows
 
 ## Next steps
-Move next worklane forward: Reconcile stale integration queue state after accepted row136/tail reports
+Move next worklane forward: Integrate ready card2074 codegen assertion cluster
