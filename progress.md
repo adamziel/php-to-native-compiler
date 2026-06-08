@@ -1,12 +1,12 @@
 # Harness Status
 
-Last generated: 2026-06-08T11:41:10+00:00
+Last generated: 2026-06-08T11:49:06+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
 
 ## Metric
-blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
+accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
 
 ## Agents
 | name | role | current_status | tmux_window | worktree |
@@ -212,8 +212,11 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-175 | Coordinator | success | coordinator-175 |  |
 | coordinator-176 | Coordinator | success | coordinator-176 |  |
 | coordinator-177 | Coordinator | crash | coordinator-177 |  |
-| coordinator-178 | Coordinator | running | coordinator-178 |  |
+| coordinator-178 | Coordinator | success | coordinator-178 |  |
+| coordinator-179 | Coordinator | success | coordinator-179 |  |
 | coordinator-18 | Coordinator | success | coordinator-18 |  |
+| coordinator-180 | Coordinator | success | coordinator-180 |  |
+| coordinator-181 | Coordinator | running | coordinator-181 |  |
 | coordinator-19 | Coordinator | stopped | coordinator-19 |  |
 | coordinator-2 | Coordinator | crash | coordinator-2 |  |
 | coordinator-20 | Coordinator | crash | coordinator-20 |  |
@@ -707,24 +710,24 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | 2060 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=1, passed=418, skipped=0)
+failed — tools/run-tests.sh (error=0, failed=3, passed=416, skipped=0)
 
 ## Resource samples
-Latest: CPU 22.15%, RAM 18.22%, disk free 76.05 GB.
+Latest: CPU 21.64%, RAM 18.36%, disk free 76.03 GB.
 
 ## Recent events
-- 2026-06-08T11:40:33+00:00 **terminal_agent_windows_closed**: Closed 678 terminal agent tmux windows
-- 2026-06-08T11:40:33+00:00 **worklane_assigned**: Assigned worklane#2054 to coordinator-178
-- 2026-06-08T11:40:33+00:00 **coordinator_prompt**: CPU and RAM are underused, but integration is backed up. Add integration or conflict-resolution support instead of more feature Developers.
-- 2026-06-08T11:40:35+00:00 **terminal_agent_windows_closed**: Closed 678 terminal agent tmux windows
-- 2026-06-08T11:40:41+00:00 **terminal_agent_windows_closed**: Closed 678 terminal agent tmux windows
-- 2026-06-08T11:40:42+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-08T11:40:48+00:00 **terminal_agent_windows_closed**: Closed 678 terminal agent tmux windows
-- 2026-06-08T11:40:50+00:00 **terminal_agent_windows_closed**: Closed 678 terminal agent tmux windows
-- 2026-06-08T11:40:59+00:00 **terminal_agent_windows_closed**: Closed 678 terminal agent tmux windows
-- 2026-06-08T11:41:02+00:00 **terminal_agent_windows_closed**: Closed 678 terminal agent tmux windows
-- 2026-06-08T11:41:03+00:00 **coordinator_session_start**: Coordinator session started; repo docs read and harness state refresh beginning.
-- 2026-06-08T11:41:07+00:00 **terminal_agent_windows_closed**: Closed 678 terminal agent tmux windows
+- 2026-06-08T11:48:32+00:00 **test_gate_quarantined_known_red**: 1 known failures are quarantined; metric acceptance remains blocked, but unrelated work may continue.
+- 2026-06-08T11:48:37+00:00 **test_gate_quarantined_known_red**: 6 known failures are quarantined; metric acceptance remains blocked, but unrelated work may continue.
+- 2026-06-08T11:48:39+00:00 **terminal_agent_windows_closed**: Closed 681 terminal agent tmux windows
+- 2026-06-08T11:48:40+00:00 **terminal_agent_windows_closed**: Closed 681 terminal agent tmux windows
+- 2026-06-08T11:48:42+00:00 **test_gate_quarantined_known_red**: 8 known failures are quarantined; metric acceptance remains blocked, but unrelated work may continue.
+- 2026-06-08T11:48:42+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-08T11:48:48+00:00 **terminal_agent_windows_closed**: Closed 681 terminal agent tmux windows
+- 2026-06-08T11:48:54+00:00 **terminal_agent_windows_closed**: Closed 681 terminal agent tmux windows
+- 2026-06-08T11:48:57+00:00 **terminal_agent_windows_closed**: Closed 681 terminal agent tmux windows
+- 2026-06-08T11:48:58+00:00 **supervision_redirect**: Interrupting developer-362 before native_arithmetic_boundary snapshot refresh. Reason: tests changed from explicit codegen rejection/folding expectations to runtime value-operation routing, which is a support-surface change; require focused proof that generated runtime diagnostics/executables are correct before refreshing many fixtures or weakening assertions.
+- 2026-06-08T11:49:05+00:00 **poke**: Queued message for developer-362
+- 2026-06-08T11:49:05+00:00 **poke_delivered**: Delivered poke to 1 agents
 
 ## Next steps
 Move next worklane forward: Integrate ready row136 native scalar cast resolver
