@@ -9269,22 +9269,23 @@
   expression whose possible string values have different byte lengths now emit
   a selected `usize` byte-length value and pass that selected length with the
   selected pointer to the same runtime-helper path. This does not yet cover
-  arbitrary dynamic string-pointer expression output, broader binary string
-  operations beyond the current byte-backed string value surfaces, diagnostic
-  handles for failed stdout writes, linked native execution, production array
-  lowering beyond the empty array handle ABI probe, object/resource/reference
-  storage beyond null-only opaque ABI handle shapes, or the C fallback assembly
+  arbitrary dynamic string-pointer expression output, broader binary PHP string
+  operations beyond the current byte-backed value boundary, diagnostic handles
+  for failed stdout writes, linked native execution, production array lowering
+  beyond the empty array handle ABI probe, object/resource/reference storage
+  beyond null-only opaque ABI handle shapes, or the C fallback assembly
   helper-call path.
   The compiler-side native runtime helper probe now renders `usize`-shaped
   helper signatures from an explicit pointer-width target, with committed
   32-bit and current host-width coverage. The probe includes scalar echo
-  helpers, owned byte-buffer helpers, an opaque copied PHP string-handle
-  helper surface, and a bounded string-handle-to-runtime-value bridge plus the
-  value stdout helper for valid UTF-8 and byte-backed PHP strings. Null string
-  handles return null value handles. The probe also declares the first nullable
-  array-handle storage slice with null handles, allocated empty handles, length
-  reads, and handle free. Object, resource, and reference handle shapes remain
-  null-only
+  helpers, owned byte-buffer helpers, an opaque copied PHP string-handle helper
+  surface, a bounded string-handle-to-runtime-value bridge, and the value stdout
+  helper. Valid UTF-8 and non-UTF-8 payloads materialize through PHP string
+  value handles, with non-UTF-8 payloads using byte-backed PHP string values.
+  Null string handles return null value handles. The probe also declares the
+  first nullable array-handle storage slice with null handles, allocated empty
+  handles, length reads, and handle free. Object, resource, and reference handle
+  shapes remain null-only
   with exported null constructors and predicates. This is still a bounded ABI
   slice: linked native execution, broad production string helper lowering,
   string interning, production array lowering beyond empty-handle probes,
@@ -12529,9 +12530,10 @@
   equality for representable literals and does not claim broader `NAN`/`INF`
   precision edge-case coverage.
 - Native runtime ABI gaps: the ABI exposes scalar echo helpers, runtime-owned
-  byte buffers, opaque copied string handles, valid-UTF-8 and byte-backed
-  string-to-value handles, stdout echo helpers for those value handles, and a
-  bounded diagnostic-handle path for null string-handle failures from
+  byte buffers, opaque copied string handles, string-to-value handles that
+  preserve arbitrary byte payloads as byte-backed PHP strings, stdout echo
+  helpers for those value handles, and a bounded diagnostic-handle path for
+  null string-handle or malformed raw byte-input failures from
   `phpc_native_value_from_string_with_diagnostic`. The
   deterministic native runtime probe now includes one branch on a nullable
   value-handle return and clones/reports/frees the diagnostic message on the
