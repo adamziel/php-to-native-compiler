@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T04:33:49+00:00
+Last generated: 2026-06-08T04:48:49+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -47,6 +47,8 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | auditor-14 | Auditor | crash | auditor-14 |  |
 | auditor-15 | Auditor | crash | auditor-15 |  |
 | auditor-16 | Auditor | crash | auditor-16 |  |
+| auditor-17 | Auditor | crash | auditor-17 |  |
+| auditor-18 | Auditor | running | auditor-18 |  |
 | auditor-2 | Auditor | crash | auditor-2 |  |
 | auditor-3 | Auditor | stopped | auditor-3 |  |
 | auditor-4 | Auditor | stopped | auditor-4 |  |
@@ -447,6 +449,9 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1989 | Investigate scheduler alert | Auditor | integration-support | development | assigned |  | 0.0 |
+| 1988 | Repair false-live architect-28 blocking architecture work | Coordinator | control-plane | planned | queued |  | 0.0 |
+| 1987 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
 | 1986 | Recover stale architect-25 and reconcile card 1902 | Coordinator | control-plane | planned | queued |  | 0.0 |
 | 1985 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
 | 1984 | Resolve integration failure for card #1975: Fix global test suite failures | Conflict Resolver | integration-support | done | integrated | ready_fast_path | 0.0 |
@@ -454,29 +459,26 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | 1982 | Provide next concrete Developer card after developer-262 capacity check | Developer | implementation | planned | queued |  | 0.0 |
 | 1981 | Reconcile stale architect-18 assignment blocking Architect queue | Coordinator | control-plane | planned | queued |  | 0.0 |
 | 1980 | Repair test-loop duplicate Architect request flood | Developer | implementation | planned | queued |  | 0.0 |
-| 1979 | Investigate scheduler alert | Auditor | integration-support | done | done |  | 0.0 |
-| 1978 | Resolve integration failure for card #1974: Resolve integration failure for card #1962: Resolve integration failure for card #1960: Resolve integration failure for card #1905: Milestone 625 compiler-output CLI contract slice | Conflict Resolver | integration-support | done | integrated | ready_fast_path | 0.0 |
-| 1977 | Maintain Developer capacity after card 1974 | Developer | implementation | planned | queued |  | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=6, passed=413, skipped=0)
+failed — tools/run-tests.sh (error=0, failed=4, passed=415, skipped=0)
 
 ## Resource samples
-Latest: CPU 14.34%, RAM 17.25%, disk free 36.86 GB.
+Latest: CPU 20.1%, RAM 16.79%, disk free 36.83 GB.
 
 ## Recent events
-- 2026-06-08T04:33:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-42 tmux window
-- 2026-06-08T04:33:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-62 tmux window
-- 2026-06-08T04:33:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-43 tmux window
-- 2026-06-08T04:33:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-63 tmux window
-- 2026-06-08T04:33:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-44 tmux window
-- 2026-06-08T04:33:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-64 tmux window
-- 2026-06-08T04:33:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-45 tmux window
-- 2026-06-08T04:33:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-65 tmux window
-- 2026-06-08T04:33:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-46 tmux window
-- 2026-06-08T04:33:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-66 tmux window
-- 2026-06-08T04:33:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-47 tmux window
-- 2026-06-08T04:33:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-48 tmux window
+- 2026-06-08T04:48:49+00:00 **terminal_agent_window_closed**: Closed terminal architect-18 tmux window
+- 2026-06-08T04:48:49+00:00 **terminal_agent_window_closed**: Closed terminal architect-19 tmux window
+- 2026-06-08T04:48:49+00:00 **terminal_agent_window_closed**: Closed terminal architect-2 tmux window
+- 2026-06-08T04:48:49+00:00 **terminal_agent_window_closed**: Closed terminal architect-20 tmux window
+- 2026-06-08T04:48:49+00:00 **terminal_agent_window_closed**: Closed terminal architect-21 tmux window
+- 2026-06-08T04:48:49+00:00 **terminal_agent_window_closed**: Closed terminal architect-22 tmux window
+- 2026-06-08T04:48:49+00:00 **test_gate_quarantined_known_red**: 4 known failures are quarantined; metric acceptance remains blocked, but unrelated work may continue.
+- 2026-06-08T04:48:49+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: tests::native_constructor_allocation_invoke_reference_carrier_owns_receiver_cell
+- 2026-06-08T04:48:49+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: tests::native_magic_method_lookup_rejects_malformed_signature_metadata_before_fallback
+- 2026-06-08T04:48:49+00:00 **terminal_agent_window_closed**: Closed terminal architect-23 tmux window
+- 2026-06-08T04:48:49+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: tests::native_constructor_allocation_invoke_carrier_owns_receiver_arguments_and_diagnostics
+- 2026-06-08T04:48:49+00:00 **terminal_agent_window_closed**: Closed terminal architect-24 tmux window
 
 ## Next steps
-Move next worklane forward: Recover stale architect-25 and reconcile card 1902
+Move next worklane forward: Investigate scheduler alert
