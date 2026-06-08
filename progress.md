@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T19:18:25+00:00
+Last generated: 2026-06-08T19:20:40+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -333,7 +333,8 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-27 | Coordinator | crash | coordinator-27 |  |
 | coordinator-270 | Coordinator | crash | coordinator-270 |  |
 | coordinator-271 | Coordinator | success | coordinator-271 |  |
-| coordinator-272 | Coordinator | running | coordinator-272 |  |
+| coordinator-272 | Coordinator | success | coordinator-272 |  |
+| coordinator-273 | Coordinator | running | coordinator-273 |  |
 | coordinator-28 | Coordinator | crash | coordinator-28 |  |
 | coordinator-29 | Coordinator | crash | coordinator-29 |  |
 | coordinator-3 | Coordinator | crash | coordinator-3 |  |
@@ -776,6 +777,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-423 | Developer | crash | developer-423 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-423 |
 | developer-424 | Developer | running | developer-424 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-424 |
 | developer-425 | Developer | running | developer-425 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-425 |
+| developer-426 | Developer | running | developer-426 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-426 |
 | developer-43 | Developer | stopped | developer-43 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-43 |
 | developer-44 | Developer | stopped | developer-44 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-44 |
 | developer-45 | Developer | stopped | developer-45 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-45 |
@@ -886,6 +888,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2147 | Fix intl/openssl SKIPIF constants for PHPT rows without touching native-helper gate | Developer | implementation | development | assigned |  | 0.0 |
 | 2146 | Focused standard string/path PHPT selector toward 10000 | Developer | implementation | planned | queued |  | 0.0 |
 | 2145 | Focused standard array PHPT selector toward 10000 | Developer | implementation | planned | queued |  | 0.0 |
 | 2144 | Drain ready PHPT/source integration backlog under known-red quarantine | Integrator | integration-support | development | assigned |  | 0.0 |
@@ -895,33 +898,26 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | 2140 | Recover idle coordinator-270 and force current-base metric path | Coordinator | control-plane | planned | queued |  | 0.0 |
 | 2139 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
 | 2138 | Resolve developer-419 stale support lane | Coordinator | control-plane | planned | queued |  | 0.0 |
-| 2137 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
 
 ## Tests
 failed — tools/run-tests.sh (error=0, failed=3, passed=416, skipped=0)
 
 ## Resource samples
-Latest: CPU 16.0%, RAM 20.12%, disk free 8.07 GB.
+Latest: CPU 90.38%, RAM 20.32%, disk free 0.39 GB.
 
 ## Recent events
-- 2026-06-08T19:17:51+00:00 **poke**: Queued message for coordinator-272
-- 2026-06-08T19:17:51+00:00 **poke_delivered**: Delivered poke to 1 agents
-- 2026-06-08T19:17:52+00:00 **status_publish_failed**: Committed status files but failed to push: To https://github.com/adamziel/php-to-native-compiler.git
- ! [rejected]          HEAD -> master (non-fast-forward)
-error: failed to push some refs to 'https://github.com/adamziel/php-to-native-compiler.git'
-hint: Updates were rejected because the tip of your current branch is behind
-hint: its remote counterpart. If you want to integrate the remote changes,
-hint: use 'git pull' before pushing again.
-hint: See the 'Note about fast-forwards' in 'git push --help' for details.
-- 2026-06-08T19:17:58+00:00 **terminal_agent_windows_closed**: Closed 867 terminal agent tmux windows
-- 2026-06-08T19:17:58+00:00 **terminal_agent_windows_closed**: Closed 867 terminal agent tmux windows
-- 2026-06-08T19:18:09+00:00 **terminal_agent_windows_closed**: Closed 867 terminal agent tmux windows
-- 2026-06-08T19:18:09+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-08T19:18:14+00:00 **terminal_agent_windows_closed**: Closed 867 terminal agent tmux windows
-- 2026-06-08T19:18:19+00:00 **terminal_agent_windows_closed**: Closed 867 terminal agent tmux windows
-- 2026-06-08T19:18:20+00:00 **integrator_card_started**: Started card 2144 ready/stale integration backlog triage after reading required startup context; no source edits or broad gates planned.
-- 2026-06-08T19:18:25+00:00 **poke**: Queued message for developer-425
-- 2026-06-08T19:18:25+00:00 **poke_delivered**: Delivered poke to 1 agents
+- 2026-06-08T19:20:31+00:00 **test_gate_hard_blocker**: New failures appeared beyond the known-red quarantine: abs_rejects_forms_outside_current_subset
+- 2026-06-08T19:20:33+00:00 **terminal_agent_windows_closed**: Closed 867 terminal agent tmux windows
+- 2026-06-08T19:20:33+00:00 **janitor**: Cleaned 0 tmp entries and 1 old prompt files
+- 2026-06-08T19:20:33+00:00 **resource_warning**: CPU or RAM stayed around 95%+; ran Janitor
+- 2026-06-08T19:20:33+00:00 **card_stage**: card#2054 development -> planned
+- 2026-06-08T19:20:33+00:00 **card_repair**: Requeued 1 cards owned by terminal workers
+- 2026-06-08T19:20:33+00:00 **agent_started**: Started coordinator-273 for Maintain Coordinator capacity
+- 2026-06-08T19:20:36+00:00 **test_gate_quarantined_known_red**: 3 known failures are quarantined; metric acceptance remains blocked, but unrelated work may continue.
+- 2026-06-08T19:20:37+00:00 **disk_cleanup_started**: Cleaning generated target directories for ended/crashed worktrees to unblock exact tools/run-tests.sh ENOSPC failure.
+- 2026-06-08T19:20:39+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-08T19:20:40+00:00 **poke**: Queued message for developer-425
+- 2026-06-08T19:20:40+00:00 **poke_delivered**: Delivered poke to 1 agents
 
 ## Next steps
-Move next worklane forward: Focused standard string/path PHPT selector toward 10000
+Move next worklane forward: Fix intl/openssl SKIPIF constants for PHPT rows without touching native-helper gate
