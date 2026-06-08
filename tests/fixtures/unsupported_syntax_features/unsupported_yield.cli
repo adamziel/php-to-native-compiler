@@ -2,5 +2,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-parse error at tests/fixtures/unsupported_syntax_features/unsupported_yield.php:2:1: unsupported yield from expression: generator delegation requires Traversable iteration, yielded key/value forwarding, send/throw propagation, generator return values, references/copy-on-write, and native lowering
+parse error at tests/fixtures/unsupported_syntax_features/unsupported_yield.php:2:1: unsupported yield expression: generators and generator object execution are not implemented
 --- stderr end ---

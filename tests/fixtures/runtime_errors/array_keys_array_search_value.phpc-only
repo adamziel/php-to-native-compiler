@@ -1,1 +1,1 @@
-project-specific diagnostic for unsupported array_keys search-value filtering with arrays
+project-specific baseline for implemented array_keys array search filtering without PHP's array-to-string warning

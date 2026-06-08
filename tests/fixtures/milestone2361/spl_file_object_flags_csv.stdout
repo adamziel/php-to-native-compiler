@@ -1,0 +1,28 @@
+int(1)
+'green apples'|10
+array(3) {
+  [0]=>
+  string(1) ","
+  [1]=>
+  string(1) """
+  [2]=>
+  string(1) "\"
+}
+int(8)
+array(3) {
+  [0]=>
+  string(1) "|"
+  [1]=>
+  string(1) "'"
+  [2]=>
+  string(0) ""
+}
+green apples=10
+yellow bananas=20
+array(2) {
+  [0]=>
+  string(12) "green apples"
+  [1]=>
+  string(2) "10"
+}
+SplFileObject::setCsvControl(): Argument #1 ($separator) must be a single character

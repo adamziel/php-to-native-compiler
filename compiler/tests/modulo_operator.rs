@@ -44,23 +44,24 @@ var_dump($value);
 
 #[test]
 fn modulo_by_zero_has_stable_runtime_error() {
-    let error = run_source("<?php\necho 5 % 0;\n").unwrap_err();
+    let execution = run_source("<?php\necho 5 % 0;\n").unwrap();
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
-    assert_eq!(error.message, "invalid arithmetic for %: modulo by zero");
+    assert!(execution
+        .stdout
+        .starts_with("Fatal error: Uncaught DivisionByZeroError: Modulo by zero"));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 255);
 }
 
 #[test]
 fn modulo_non_numeric_string_has_stable_runtime_error() {
-    let error = run_source("<?php\necho \"abc\" % 2;\n").unwrap_err();
+    let execution = run_source("<?php\necho \"abc\" % 2;\n").unwrap();
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
-    assert_eq!(
-        error.message,
-        "invalid arithmetic for %: string is not numeric"
-    );
+    assert!(execution
+        .stdout
+        .starts_with("Fatal error: Uncaught TypeError: Unsupported operand types: string % int"));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 255);
 }
 
 #[test]

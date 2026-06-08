@@ -1,9 +1,6 @@
-Array
-(
-    [NAME] => lower
-    [3] => three
-    [MIXED] => mixed
-)
+ValueError: array_change_key_case(): Argument #2 ($case) must be either CASE_LOWER or CASE_UPPER
+ValueError: array_change_key_case(): Argument #2 ($case) must be either CASE_LOWER or CASE_UPPER
+ValueError: array_change_key_case(): Argument #2 ($case) must be either CASE_LOWER or CASE_UPPER
 Array
 (
     [NAME] => lower
@@ -11,4 +8,3 @@ Array
     [MIXED] => mixed
 )
 lower|mixed|three
-lower|mixed

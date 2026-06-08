@@ -1,6 +1,9 @@
-exit: 1
+exit: 255
 stdout:
---- stdout end ---
+Fatal error: Uncaught TypeError: in_array(): Argument #3 ($strict) must be of type bool, array given, called in tests/fixtures/runtime_errors/in_array_strict_flag_non_bool.php:3
+Stack trace:
+#0 tests/fixtures/runtime_errors/in_array_strict_flag_non_bool.php(3): in_array()
+#1 {main}
+  thrown in tests/fixtures/runtime_errors/in_array_strict_flag_non_bool.php on line 3--- stdout end ---
 stderr:
-runtime error at tests/fixtures/runtime_errors/in_array_strict_flag_non_bool.php:3:6: unsupported call in_array(): strict mode argument must be bool in the current subset, got string
 --- stderr end ---

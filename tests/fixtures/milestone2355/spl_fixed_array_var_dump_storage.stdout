@@ -1,0 +1,16 @@
+object(SplFixedArray)#1 (4) {
+  [0]=>
+  NULL
+  [1]=>
+  string(3) "one"
+  [2]=>
+  NULL
+  [3]=>
+  bool(false)
+}
+object(SplFixedArray)#2 (2) {
+  [0]=>
+  string(4) "slot"
+  [1]=>
+  NULL
+}

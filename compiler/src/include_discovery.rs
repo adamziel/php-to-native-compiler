@@ -99,7 +99,10 @@ pub fn compilation_unit_with_literal_include_metadata(
     discovery.visiting.remove(&root_file);
 
     Ok(CompilationUnit {
-        program: Program { statements },
+        program: Program {
+            statements,
+            strict_types: program.strict_types,
+        },
         include_metadata: IncludeGraphMetadata {
             root_file,
             included_files: discovery.included_files,

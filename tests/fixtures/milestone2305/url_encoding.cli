@@ -1,0 +1,11 @@
+exit: 0
+stdout:
+a+b%7E%2B
+a%20b~%2B
+a b+~
+a+b+~
+%zz%
+ff20
+00202b--- stdout end ---
+stderr:
+--- stderr end ---

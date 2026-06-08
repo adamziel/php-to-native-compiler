@@ -12,11 +12,11 @@ Array
     [4] => ArrayAccess
     [5] => Countable
     [6] => Stringable
-    [7] => App\Contracts\Hookable
-    [8] => App\Contracts\Logger
+    [7] => SplObserver
+    [8] => SplSubject
+    [9] => App\Contracts\Hookable
+    [10] => App\Contracts\Logger
 )
-
-
 --- stdout end ---
 stderr:
 --- stderr end ---

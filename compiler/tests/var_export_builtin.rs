@@ -32,3 +32,26 @@ var_export(new Box());
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
 }
+
+#[test]
+fn var_export_reads_reference_backed_array_slots() {
+    let execution = run_source(
+        r#"<?php
+$items = array("alpha\n", array("nested" => "beta\n"));
+foreach ($items as &$item) {
+    if (is_string($item)) {
+        $item = substr($item, 0, -1);
+    }
+}
+var_export($items);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "array (\n  0 => 'alpha',\n  1 => \n  array (\n    'nested' => 'beta\n',\n  ),\n)"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}

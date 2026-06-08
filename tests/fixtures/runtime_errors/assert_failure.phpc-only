@@ -1,1 +1,1 @@
-phpc intentionally keeps failing assert() as a runtime boundary until PHP assertion policy and diagnostics are implemented.
+phpc run supports default AssertionError throwing for failing assert(); custom Throwable description objects still require general object throw propagation from expression builtins.

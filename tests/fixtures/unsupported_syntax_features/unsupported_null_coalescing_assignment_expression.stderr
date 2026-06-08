@@ -1,2 +1,2 @@
-parse error at 3:32: unsupported null coalescing assignment: only direct variable, direct array-offset, and direct object-property targets are implemented
+runtime error at 3:7: unsupported call ??=: nested array targets are not implemented
 

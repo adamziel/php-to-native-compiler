@@ -1,2 +1,2 @@
 <?php
-var_dump(interface_exists(42));
+var_dump(interface_exists([]));

@@ -1,6 +1,9 @@
-exit: 1
+exit: 255
 stdout:
---- stdout end ---
+Fatal error: Uncaught TypeError: get_class_vars(): Argument #1 ($class) must be a valid class name, 42 given, called in tests/fixtures/runtime_errors/get_class_vars_invalid_target.php:2
+Stack trace:
+#0 tests/fixtures/runtime_errors/get_class_vars_invalid_target.php(2): get_class_vars()
+#1 {main}
+  thrown in tests/fixtures/runtime_errors/get_class_vars_invalid_target.php on line 2--- stdout end ---
 stderr:
-runtime error at tests/fixtures/runtime_errors/get_class_vars_invalid_target.php:2:10: unsupported call get_class_vars(): class name argument must be string, got int
 --- stderr end ---
