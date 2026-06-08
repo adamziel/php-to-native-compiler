@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T18:55:18+00:00
+Last generated: 2026-06-08T19:10:18+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -93,7 +93,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | architect-81 | Architect | stopped | architect-81 |  |
 | architect-82 | Architect | crash | architect-82 |  |
 | architect-83 | Architect | crash | architect-83 |  |
-| architect-84 | Architect | running | architect-84 |  |
+| architect-84 | Architect | crash | architect-84 |  |
 | architect-9 | Architect | crash | architect-9 |  |
 | auditor-1 | Auditor | stopped | auditor-1 |  |
 | auditor-10 | Auditor | crash | auditor-10 |  |
@@ -114,7 +114,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | auditor-24 | Auditor | success | auditor-24 |  |
 | auditor-25 | Auditor | success | auditor-25 |  |
 | auditor-26 | Auditor | success | auditor-26 |  |
-| auditor-27 | Auditor | running | auditor-27 |  |
+| auditor-27 | Auditor | crash | auditor-27 |  |
 | auditor-3 | Auditor | stopped | auditor-3 |  |
 | auditor-4 | Auditor | stopped | auditor-4 |  |
 | auditor-5 | Auditor | crash | auditor-5 |  |
@@ -331,7 +331,8 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-268 | Coordinator | success | coordinator-268 |  |
 | coordinator-269 | Coordinator | success | coordinator-269 |  |
 | coordinator-27 | Coordinator | crash | coordinator-27 |  |
-| coordinator-270 | Coordinator | running | coordinator-270 |  |
+| coordinator-270 | Coordinator | crash | coordinator-270 |  |
+| coordinator-271 | Coordinator | running | coordinator-271 |  |
 | coordinator-28 | Coordinator | crash | coordinator-28 |  |
 | coordinator-29 | Coordinator | crash | coordinator-29 |  |
 | coordinator-3 | Coordinator | crash | coordinator-3 |  |
@@ -770,8 +771,10 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-42 | Developer | crash | developer-42 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-42 |
 | developer-420 | Developer | crash | developer-420 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-420 |
 | developer-421 | Developer | stopped | developer-421 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-421 |
-| developer-422 | Developer | running | developer-422 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-422 |
-| developer-423 | Developer | running | developer-423 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-423 |
+| developer-422 | Developer | crash | developer-422 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-422 |
+| developer-423 | Developer | crash | developer-423 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-423 |
+| developer-424 | Developer | running | developer-424 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-424 |
+| developer-425 | Developer | running | developer-425 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-425 |
 | developer-43 | Developer | stopped | developer-43 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-43 |
 | developer-44 | Developer | stopped | developer-44 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-44 |
 | developer-45 | Developer | stopped | developer-45 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-45 |
@@ -881,10 +884,10 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 2142 | Investigate order-dependent php_runtime native invoke gate failures | Architect | advisory | development | assigned |  | 0.0 |
+| 2142 | Investigate order-dependent php_runtime native invoke gate failures | Architect | advisory | planned | queued |  | 0.0 |
 | 2141 | Assign next sanctioned Developer card after worklane2117 support report | Developer | implementation | done | stale |  | 0.0 |
 | 2140 | Recover idle coordinator-270 and force current-base metric path | Coordinator | control-plane | planned | queued |  | 0.0 |
-| 2139 | Investigate scheduler alert | Auditor | integration-support | development | assigned |  | 0.0 |
+| 2139 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
 | 2138 | Resolve developer-419 stale support lane | Coordinator | control-plane | planned | queued |  | 0.0 |
 | 2137 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
 | 2136 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
@@ -893,24 +896,24 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | 2133 | Assign next sanctioned Developer card after worklane 2130 report | Developer | implementation | done | stale |  | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=5, passed=414, skipped=0)
+failed — tools/run-tests.sh (error=0, failed=2, passed=417, skipped=0)
 
 ## Resource samples
-Latest: CPU 12.92%, RAM 21.07%, disk free 10.28 GB.
+Latest: CPU 15.82%, RAM 19.37%, disk free 8.12 GB.
 
 ## Recent events
-- 2026-06-08T18:54:21+00:00 **terminal_agent_windows_closed**: Closed 861 terminal agent tmux windows
-- 2026-06-08T18:54:23+00:00 **agent_report**: auditor-27 reported audit_complete_action_taken
-- 2026-06-08T18:54:33+00:00 **terminal_agent_windows_closed**: Closed 861 terminal agent tmux windows
-- 2026-06-08T18:54:33+00:00 **terminal_agent_windows_closed**: Closed 861 terminal agent tmux windows
-- 2026-06-08T18:54:38+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-08T18:54:44+00:00 **terminal_agent_windows_closed**: Closed 861 terminal agent tmux windows
-- 2026-06-08T18:54:48+00:00 **terminal_agent_windows_closed**: Closed 861 terminal agent tmux windows
-- 2026-06-08T18:54:56+00:00 **terminal_agent_windows_closed**: Closed 861 terminal agent tmux windows
-- 2026-06-08T18:54:59+00:00 **tests_started**: After fixes, php_runtime unit suite passes; running exact tools/run-tests.sh acceptance gate.
-- 2026-06-08T18:55:06+00:00 **terminal_agent_windows_closed**: Closed 861 terminal agent tmux windows
-- 2026-06-08T18:55:08+00:00 **terminal_agent_windows_closed**: Closed 861 terminal agent tmux windows
-- 2026-06-08T18:55:08+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-08T19:09:38+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-08T19:09:39+00:00 **terminal_agent_windows_closed**: Closed 866 terminal agent tmux windows
+- 2026-06-08T19:09:39+00:00 **terminal_agent_windows_closed**: Closed 866 terminal agent tmux windows
+- 2026-06-08T19:09:49+00:00 **terminal_agent_windows_closed**: Closed 866 terminal agent tmux windows
+- 2026-06-08T19:09:54+00:00 **terminal_agent_windows_closed**: Closed 866 terminal agent tmux windows
+- 2026-06-08T19:09:59+00:00 **terminal_agent_windows_closed**: Closed 866 terminal agent tmux windows
+- 2026-06-08T19:10:09+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-08T19:10:10+00:00 **terminal_agent_windows_closed**: Closed 866 terminal agent tmux windows
+- 2026-06-08T19:10:11+00:00 **terminal_agent_windows_closed**: Closed 866 terminal agent tmux windows
+- 2026-06-08T19:10:12+00:00 **developer_session_start**: Developer-424 loaded AGENTS.md and core docs; DEVELOPMENT.md missing in worktree root, inspecting repository and harness state.
+- 2026-06-08T19:10:12+00:00 **coordinator_session_start**: Coordinator session started; required repo docs and supervised-team workflow loaded; inspecting harness state.
+- 2026-06-08T19:10:14+00:00 **developer_start**: developer-425 started in dedicated worktree and began loading required docs plus harness assignment state.
 
 ## Next steps
 Move next worklane forward: Investigate order-dependent php_runtime native invoke gate failures
