@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T00:03:49+00:00
+Last generated: 2026-06-08T00:18:55+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -12,7 +12,8 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | name | role | current_status | tmux_window | worktree |
 | --- | --- | --- | --- | --- |
 | architect-1 | Architect | crash | architect-1 |  |
-| architect-10 | Architect | running | architect-10 |  |
+| architect-10 | Architect | crash | architect-10 |  |
+| architect-11 | Architect | running | architect-11 |  |
 | architect-2 | Architect | crash | architect-2 |  |
 | architect-3 | Architect | crash | architect-3 |  |
 | architect-4 | Architect | crash | architect-4 |  |
@@ -85,8 +86,9 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-46 | Coordinator | crash | coordinator-46 |  |
 | coordinator-47 | Coordinator | crash | coordinator-47 |  |
 | coordinator-48 | Coordinator | success | coordinator-48 |  |
-| coordinator-49 | Coordinator | running | coordinator-49 |  |
+| coordinator-49 | Coordinator | crash | coordinator-49 |  |
 | coordinator-5 | Coordinator | stopped | coordinator-5 |  |
+| coordinator-50 | Coordinator | running | coordinator-50 |  |
 | coordinator-6 | Coordinator | crash | coordinator-6 |  |
 | coordinator-7 | Coordinator | crash | coordinator-7 |  |
 | coordinator-8 | Coordinator | crash | coordinator-8 |  |
@@ -163,19 +165,29 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-161 | Developer | stopped | developer-161 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-161 |
 | developer-162 | Developer | stopped | developer-162 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-162 |
 | developer-163 | Developer | stopped | developer-163 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-163 |
-| developer-164 | Developer | running | developer-164 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-164 |
+| developer-164 | Developer | crash | developer-164 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-164 |
 | developer-165 | Developer | stopped | developer-165 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-165 |
-| developer-166 | Developer | running | developer-166 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-166 |
+| developer-166 | Developer | crash | developer-166 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-166 |
 | developer-167 | Developer | stopped | developer-167 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-167 |
-| developer-168 | Developer | running | developer-168 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-168 |
+| developer-168 | Developer | crash | developer-168 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-168 |
 | developer-169 | Developer | stopped | developer-169 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-169 |
 | developer-17 | Developer | stopped | developer-17 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-17 |
-| developer-170 | Developer | running | developer-170 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-170 |
+| developer-170 | Developer | crash | developer-170 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-170 |
 | developer-171 | Developer | stopped | developer-171 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-171 |
 | developer-172 | Developer | stopped | developer-172 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-172 |
-| developer-173 | Developer | running | developer-173 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-173 |
-| developer-174 | Developer | running | developer-174 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-174 |
+| developer-173 | Developer | crash | developer-173 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-173 |
+| developer-174 | Developer | crash | developer-174 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-174 |
+| developer-175 | Developer | running | developer-175 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-175 |
+| developer-176 | Developer | stopped | developer-176 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-176 |
+| developer-177 | Developer | running | developer-177 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-177 |
+| developer-178 | Developer | stopped | developer-178 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-178 |
+| developer-179 | Developer | running | developer-179 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-179 |
 | developer-18 | Developer | stopped | developer-18 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-18 |
+| developer-180 | Developer | stopped | developer-180 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-180 |
+| developer-181 | Developer | running | developer-181 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-181 |
+| developer-182 | Developer | stopped | developer-182 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-182 |
+| developer-183 | Developer | running | developer-183 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-183 |
+| developer-184 | Developer | running | developer-184 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-184 |
 | developer-19 | Developer | stopped | developer-19 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-19 |
 | developer-2 | Developer | stopped | developer-2 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-2 |
 | developer-20 | Developer | stopped | developer-20 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-20 |
@@ -280,36 +292,36 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1924 | Resolve integration failure for card #1913: Resolve integration failure for card #1808: Fix global test suite failures | Conflict Resolver | integration-support | planned | queued |  | 0.0 |
+| 1923 | Resolve integration failure for card #1918: Resolve integration failure for card #1808: Fix global test suite failures | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
+| 1922 | Resolve integration failure for card #1920: Resolve integration failure for card #1808: Fix global test suite failures | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
 | 1921 | Provide next sanctioned Developer card after developer-174 completed lane 1808 | Developer | implementation | planned | queued |  | 0.0 |
-| 1920 | Resolve integration failure for card #1808: Fix global test suite failures | Conflict Resolver | integration-support | planned | queued |  | 0.0 |
+| 1920 | Resolve integration failure for card #1808: Fix global test suite failures | Conflict Resolver | integration-support | integration | integration_failed | ready_fast_path | 0.0 |
 | 1919 | Find systemic cause for repeated failure: tests::native_constructor_allocation_invoke_reference_carrier_owns_receiver_cell | Architect | advisory | planned | queued |  | 0.0 |
-| 1918 | Resolve integration failure for card #1808: Fix global test suite failures | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
+| 1918 | Resolve integration failure for card #1808: Fix global test suite failures | Conflict Resolver | integration-support | integration | integration_failed | ready_fast_path | 0.0 |
 | 1917 | Resolve integration failure for card #1907: Resolve integration failure for card #1808: Fix global test suite failures | Conflict Resolver | integration-support | done | integrated | ready_fast_path | 0.0 |
-| 1916 | Rebuild 1808 gate fix on origin/master thread-local probe | Conflict Resolver | integration-support | planned | queued |  | 0.0 |
+| 1916 | Rebuild 1808 gate fix on origin/master thread-local probe | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
 | 1915 | Find systemic cause for repeated failure: codegen::tests::c_assembly_non_local_assignment_families_share_assignment_owner_boundary | Architect | advisory | planned | queued |  | 0.0 |
-| 1914 | Find systemic cause for repeated failure: codegen::tests::generated_c_string_comparison_safety_uses_shared_pair_classifier | Architect | advisory | planned | queued |  | 0.0 |
-| 1913 | Resolve integration failure for card #1808: Fix global test suite failures | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
-| 1912 | Find systemic cause for repeated failure: tests::native_magic_method_lookup_rejects_malformed_signature_metadata_before_fallback | Architect | advisory | planned | queued |  | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=3, passed=416, skipped=0)
+failed — tools/run-tests.sh (error=0, failed=4, passed=415, skipped=0)
 
 ## Resource samples
-Latest: CPU 11.88%, RAM 56.69%, disk free 161.88 GB.
+Latest: CPU 48.31%, RAM 57.97%, disk free 124.92 GB.
 
 ## Recent events
-- 2026-06-08T00:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-2 tmux window
-- 2026-06-08T00:03:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-41 tmux window
-- 2026-06-08T00:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-20 tmux window
-- 2026-06-08T00:03:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-42 tmux window
-- 2026-06-08T00:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-21 tmux window
-- 2026-06-08T00:03:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-43 tmux window
-- 2026-06-08T00:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-22 tmux window
-- 2026-06-08T00:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-23 tmux window
-- 2026-06-08T00:03:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-44 tmux window
-- 2026-06-08T00:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-24 tmux window
-- 2026-06-08T00:03:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-45 tmux window
-- 2026-06-08T00:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-25 tmux window
+- 2026-06-08T00:18:54+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: tests::native_constructor_allocation_invoke_reference_carrier_owns_receiver_cell
+- 2026-06-08T00:18:54+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: tests::native_magic_method_lookup_rejects_malformed_signature_metadata_before_fallback
+- 2026-06-08T00:18:54+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: tests::native_constructor_allocation_invoke_carrier_owns_receiver_arguments_and_diagnostics
+- 2026-06-08T00:18:54+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: tests::native_lookup_plus_invoke_helpers_free_arguments_once_across_target_families
+- 2026-06-08T00:18:54+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: tests::native_method_lookup_plus_invoke_dispatches_missing_and_inaccessible_methods_to_magic_call
+- 2026-06-08T00:18:54+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: tests::native_static_method_lookup_plus_invoke_dispatches_missing_and_inaccessible_methods_to_magic_call_static
+- 2026-06-08T00:18:54+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: tests::native_method_lookup_plus_invoke_uses_access_context_for_private_diagnostics
+- 2026-06-08T00:18:54+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: tests::native_closure_invoke_helpers_bridge_call_arguments_to_call_results
+- 2026-06-08T00:18:54+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: tests::native_constructor_allocation_invoke_carrier_cleans_up_failure_paths
+- 2026-06-08T00:18:54+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: codegen::tests::generated_c_string_comparison_safety_uses_shared_pair_classifier
+- 2026-06-08T00:18:54+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: codegen::tests::c_assembly_non_local_assignment_families_share_assignment_owner_boundary
+- 2026-06-08T00:18:45+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-8 tmux window
 
 ## Next steps
-Move next worklane forward: Provide next sanctioned Developer card after developer-174 completed lane 1808
+Move next worklane forward: Resolve integration failure for card #1913: Resolve integration failure for card #1808: Fix global test suite failures
