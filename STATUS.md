@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T16:09:51+00:00
+Last generated: 2026-06-08T16:24:51+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -295,8 +295,13 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-243 | Coordinator | success | coordinator-243 |  |
 | coordinator-244 | Coordinator | success | coordinator-244 |  |
 | coordinator-245 | Coordinator | crash | coordinator-245 |  |
-| coordinator-246 | Coordinator | running | coordinator-246 |  |
+| coordinator-246 | Coordinator | success | coordinator-246 |  |
+| coordinator-247 | Coordinator | success | coordinator-247 |  |
+| coordinator-248 | Coordinator | success | coordinator-248 |  |
+| coordinator-249 | Coordinator | success | coordinator-249 |  |
 | coordinator-25 | Coordinator | crash | coordinator-25 |  |
+| coordinator-250 | Coordinator | success | coordinator-250 |  |
+| coordinator-251 | Coordinator | running | coordinator-251 |  |
 | coordinator-26 | Coordinator | crash | coordinator-26 |  |
 | coordinator-27 | Coordinator | crash | coordinator-27 |  |
 | coordinator-28 | Coordinator | crash | coordinator-28 |  |
@@ -827,6 +832,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2118 | Assign next concrete Developer card after card2075 support report | Developer | implementation | done | stale |  | 0.0 |
 | 2117 | Read-only support for card2075 native helper global gate | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
 | 2116 | Replace crashed integrator-38 stale integration cleanup | Integrator | integration-support | planned | queued |  | 0.0 |
 | 2115 | Reconcile stale queued integration rows after fa6fcacd | Integrator | integration-support | planned | queued |  | 0.0 |
@@ -836,27 +842,26 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | 2111 | Resolve integration failure for card #2106: Resolve integration failure for card #2100: Fix second distinct non-native-helper failure target under known-red quarantine | Conflict Resolver | integration-support | done | integrated | ready_fast_path | 0.0 |
 | 2110 | Resolve integration failure for card #2105: Resolve integration failure for card #2099: Fix next non-native-helper PHPT/focused failure under known-red quarantine | Conflict Resolver | integration-support | done | integrated | ready_fast_path | 0.0 |
 | 2109 | Integrate card112 deferred source-lane report artifact | Integrator | integration-support | planned | queued |  | 0.0 |
-| 2108 | Assign next concrete Developer card after card 112 report | Developer | implementation | done | stale |  | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=4, passed=415, skipped=0)
+failed — tools/run-tests.sh (error=0, failed=3, passed=416, skipped=0)
 
 ## Resource samples
-Latest: CPU 15.28%, RAM 20.04%, disk free 8.81 GB.
+Latest: CPU 32.67%, RAM 20.58%, disk free 148.02 GB.
 
 ## Recent events
-- 2026-06-08T16:09:02+00:00 **terminal_agent_windows_closed**: Closed 809 terminal agent tmux windows
-- 2026-06-08T16:09:07+00:00 **terminal_agent_windows_closed**: Closed 809 terminal agent tmux windows
-- 2026-06-08T16:09:17+00:00 **terminal_agent_windows_closed**: Closed 809 terminal agent tmux windows
-- 2026-06-08T16:09:17+00:00 **terminal_agent_windows_closed**: Closed 809 terminal agent tmux windows
-- 2026-06-08T16:09:28+00:00 **terminal_agent_windows_closed**: Closed 809 terminal agent tmux windows
-- 2026-06-08T16:09:29+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-08T16:09:32+00:00 **terminal_agent_windows_closed**: Closed 809 terminal agent tmux windows
-- 2026-06-08T16:09:33+00:00 **coordination_routing**: Coordinator-246 preserved active card2075/card2117 ownership and requested no new spawn; stale/no-branch integration cleanup remains scheduler/Python retirement work from accepted reports.
-- 2026-06-08T16:09:37+00:00 **terminal_agent_windows_closed**: Closed 809 terminal agent tmux windows
-- 2026-06-08T16:09:45+00:00 **agent_report**: coordinator-246 reported coordination_complete_capacity_preserved_no_spawn
-- 2026-06-08T16:09:48+00:00 **terminal_agent_windows_closed**: Closed 809 terminal agent tmux windows
-- 2026-06-08T16:09:49+00:00 **terminal_agent_windows_closed**: Closed 809 terminal agent tmux windows
+- 2026-06-08T16:24:17+00:00 **terminal_agent_windows_closed**: Closed 813 terminal agent tmux windows
+- 2026-06-08T16:24:22+00:00 **terminal_agent_windows_closed**: Closed 813 terminal agent tmux windows
+- 2026-06-08T16:24:29+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-08T16:24:33+00:00 **agent_report**: coordinator-250 reported coordination_complete_active_owner_preserved_no_spawn
+- 2026-06-08T16:24:33+00:00 **terminal_agent_windows_closed**: Closed 813 terminal agent tmux windows
+- 2026-06-08T16:24:34+00:00 **terminal_agent_windows_closed**: Closed 813 terminal agent tmux windows
+- 2026-06-08T16:24:41+00:00 **coordinator_pass_complete**: Coordinator-250 filed report 754 and completed without spawning; developer-405/card2075 remains active owner for exact gate now failing two codegen tests.
+- 2026-06-08T16:24:45+00:00 **terminal_agent_windows_closed**: Closed 813 terminal agent tmux windows
+- 2026-06-08T16:24:45+00:00 **card_stage**: card#2054 development -> planned
+- 2026-06-08T16:24:45+00:00 **card_repair**: Requeued 1 cards owned by terminal workers
+- 2026-06-08T16:24:45+00:00 **agent_started**: Started coordinator-251 for Maintain Coordinator capacity
+- 2026-06-08T16:24:49+00:00 **terminal_agent_windows_closed**: Closed 813 terminal agent tmux windows
 
 ## Next steps
 Move next worklane forward: Read-only support for card2075 native helper global gate
