@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T13:56:11+00:00
+Last generated: 2026-06-08T14:30:18+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -662,6 +662,8 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-380 | Developer | stopped | developer-380 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-380 |
 | developer-381 | Developer | running | developer-381 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-381 |
 | developer-382 | Developer | running | developer-382 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-382 |
+| developer-383 | Developer | running | developer-383 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-383 |
+| developer-384 | Developer | running | developer-384 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-384 |
 | developer-39 | Developer | stopped | developer-39 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-39 |
 | developer-4 | Developer | stopped | developer-4 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-4 |
 | developer-40 | Developer | crash | developer-40 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-40 |
@@ -756,6 +758,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | integrator-31 | Integrator | crash | integrator-31 |  |
 | integrator-32 | Integrator | crash | integrator-32 |  |
 | integrator-33 | Integrator | running | integrator-33 |  |
+| integrator-34 | Integrator | running | integrator-34 |  |
 | integrator-4 | Integrator | crash | integrator-4 |  |
 | integrator-5 | Integrator | success | integrator-5 |  |
 | integrator-6 | Integrator | success | integrator-6 |  |
@@ -766,6 +769,9 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2096 | Integrate lane110 open bug crosswalk report | Integrator | integration-support | development | assigned |  | 0.0 |
+| 2095 | Resolve integration failure for card #110: Open bug report to active lane crosswalk | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
+| 2094 | Assign next Developer card after developer-382 card110 report | Developer | implementation | development | assigned |  | 0.0 |
 | 2093 | Dispose stale report-only rows 68 87 89 replacement | Integrator | integration-support | development | assigned |  | 0.0 |
 | 2092 | Dispose stale report-only rows 68 87 89 | Integrator | integration-support | planned | queued |  | 0.0 |
 | 2091 | Integrate lane107 artifact/source map report | Integrator | integration-support | planned | queued |  | 0.0 |
@@ -773,29 +779,26 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | 2089 | Assign next sanctioned Developer card after lane 107 artifact/source map | Developer | implementation | done | stale |  | 0.0 |
 | 2088 | Reconcile stale integration backlog after accepted disposition reports | Integrator | integration-support | planned | queued |  | 0.0 |
 | 2087 | Find systemic cause for repeated failure: abs_rejects_forms_outside_current_subset | Architect | advisory | planned | queued |  | 0.0 |
-| 2086 | Assign next concrete Developer card after worklane 2081 | Developer | implementation | done | stale |  | 0.0 |
-| 2085 | Consume card2084 lane105 report-only cleanup | Integrator | integration-support | planned | queued |  | 0.0 |
-| 2084 | Integrate ready card105 lane2081 report-only cleanup | Integrator | integration-support | planned | queued |  | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=3, passed=416, skipped=0)
+failed — tools/run-tests.sh (error=0, failed=4, passed=415, skipped=0)
 
 ## Resource samples
-Latest: CPU 20.83%, RAM 18.8%, disk free 115.33 GB.
+Latest: CPU 28.06%, RAM 18.76%, disk free 95.75 GB.
 
 ## Recent events
-- 2026-06-08T13:55:24+00:00 **terminal_agent_windows_closed**: Closed 747 terminal agent tmux windows
-- 2026-06-08T13:55:26+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-08T13:55:32+00:00 **terminal_agent_windows_closed**: Closed 747 terminal agent tmux windows
-- 2026-06-08T13:55:39+00:00 **terminal_agent_windows_closed**: Closed 747 terminal agent tmux windows
-- 2026-06-08T13:55:41+00:00 **terminal_agent_windows_closed**: Closed 747 terminal agent tmux windows
-- 2026-06-08T13:55:50+00:00 **terminal_agent_windows_closed**: Closed 747 terminal agent tmux windows
-- 2026-06-08T13:55:53+00:00 **terminal_agent_windows_closed**: Closed 747 terminal agent tmux windows
-- 2026-06-08T13:55:56+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-08T13:55:57+00:00 **coordinator_started**: Coordinator session started; reading repo instructions and harness state before assigning or spawning work.
-- 2026-06-08T13:56:00+00:00 **terminal_agent_windows_closed**: Closed 747 terminal agent tmux windows
-- 2026-06-08T13:56:07+00:00 **terminal_agent_windows_closed**: Closed 747 terminal agent tmux windows
-- 2026-06-08T13:56:09+00:00 **terminal_agent_windows_closed**: Closed 747 terminal agent tmux windows
+- 2026-06-08T13:57:37+00:00 **spawn_request**: coordinator-218 requested Integrator: Integrate lane110 open bug crosswalk report
+- 2026-06-08T13:57:37+00:00 **integration_support_requested**: Lane110 became branch-backed ready_for_integration after developer-382 report705; requested one scoped Integrator for report-only artifact integration.
+- 2026-06-08T13:57:38+00:00 **terminal_agent_windows_closed**: Closed 747 terminal agent tmux windows
+- 2026-06-08T13:57:38+00:00 **worklane_assigned**: Assigned worklane#2096 to integrator-34
+- 2026-06-08T13:57:38+00:00 **agent_started**: Started integrator-34 for Integrate lane110 open bug crosswalk report
+- 2026-06-08T13:57:47+00:00 **terminal_agent_windows_closed**: Closed 747 terminal agent tmux windows
+- 2026-06-08T13:57:48+00:00 **terminal_agent_windows_closed**: Closed 747 terminal agent tmux windows
+- 2026-06-08T13:57:56+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-08T13:57:56+00:00 **terminal_agent_windows_closed**: Closed 747 terminal agent tmux windows
+- 2026-06-08T13:57:59+00:00 **developer_start**: Developer session started; loading repository docs before taking work.
+- 2026-06-08T14:30:18+00:00 **tool_timeout**: code_search refresh timed out while locating static-property assertion text; falling back to local rg in runtime/src/lib.rs.
+- 2026-06-08T14:30:18+00:00 **test_pass**: Focused runtime package suite passed after patch: CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -q -p php_runtime -> 419 passed.
 
 ## Next steps
-Move next worklane forward: Dispose stale report-only rows 68 87 89 replacement
+Move next worklane forward: Integrate lane110 open bug crosswalk report
