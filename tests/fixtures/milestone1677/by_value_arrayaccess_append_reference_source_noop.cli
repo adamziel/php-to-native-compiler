@@ -1,14 +1,19 @@
-$ phpc run tests/fixtures/milestone1677/by_value_arrayaccess_append_reference_source_noop.php
+exit: 0
 stdout:
+Deprecated: Using null as an array offset is deprecated, use an empty string instead in tests/fixtures/milestone1677/by_value_arrayaccess_append_reference_source_noop.php on line 15
 notice:Indirect modification of overloaded element of Milestone1677_Bag has no effect
 changed|empty
+
+Deprecated: Using null as an array offset is deprecated, use an empty string instead in tests/fixtures/milestone1677/by_value_arrayaccess_append_reference_source_noop.php on line 15
 notice:Indirect modification of overloaded element of Milestone1677_Bag has no effect
 held-changed|empty
+
+Deprecated: Using null as an array offset is deprecated, use an empty string instead in tests/fixtures/milestone1677/by_value_arrayaccess_append_reference_source_noop.php on line 15
 notice:Indirect modification of overloaded element of Milestone1677_Bag has no effect
 dynamic-changed|empty
+
+Deprecated: Using null as an array offset is deprecated, use an empty string instead in tests/fixtures/milestone1677/by_value_arrayaccess_append_reference_source_noop.php on line 15
 notice:Indirect modification of overloaded element of Milestone1677_Bag has no effect
-detached-changed|old|empty
---- stdout end ---
+detached-changed|old|empty--- stdout end ---
 stderr:
 --- stderr end ---
-exit: 0

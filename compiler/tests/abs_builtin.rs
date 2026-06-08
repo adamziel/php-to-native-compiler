@@ -4,24 +4,25 @@ use php_compiler::run_source;
 
 const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
 
-fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
-    let error = run_source(source).unwrap_err();
-    assert_eq!(error.phase, Phase::Runtime);
-    error
-}
-
 #[test]
 fn abs_executes_current_int_and_finite_float_subset() {
     let execution = run_source(
         r#"<?php
 echo abs(-42), "|";
 echo abs(7), "|";
-echo abs(-2.5);
+echo abs(-2.5), "|";
+echo abs("-42"), "|";
+echo abs("-2.5"), "|";
+echo abs(true), "|";
+var_dump(abs(PHP_INT_MIN));
 "#,
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "42|7|2.5");
+    assert_eq!(
+        execution.stdout,
+        "42|7|2.5|42|2.5|1|float(9.223372036854776E+18)\n"
+    );
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -44,41 +45,62 @@ echo "|", $call(-9);
 
 #[test]
 fn abs_rejects_forms_outside_current_subset() {
-    let missing = runtime_error(
+    let missing = run_source(
         r#"<?php
 echo abs();
 "#,
-    );
-    assert_eq!(missing.line, 2);
-    assert_eq!(missing.column, 6);
+    )
+    .unwrap();
+    assert_eq!(missing.exit_code, 255);
+    assert!(missing
+        .stdout
+        .contains("Too few arguments to function abs(), 0 passed"));
+
+    let string = run_source(
+        r#"<?php
+try {
+    echo abs("not numeric");
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
     assert_eq!(
-        missing.message,
-        "arity mismatch for abs(): expected 1 argument(s), got 0"
+        string.stdout,
+        "abs(): Argument #1 ($num) must be of type int|float, string given"
     );
 
-    let string = runtime_error(
+    let array = run_source(
         r#"<?php
-echo abs("-42");
+try {
+    echo abs([-1]);
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
 "#,
-    );
-    assert_eq!(string.line, 2);
-    assert_eq!(string.column, 6);
+    )
+    .unwrap();
     assert_eq!(
-        string.message,
-        "unsupported call abs(): argument must be int or finite float in the current subset, got string"
+        array.stdout,
+        "abs(): Argument #1 ($num) must be of type int|float, array given"
     );
+}
 
-    let array = runtime_error(
+#[test]
+fn abs_null_emits_deprecation_and_returns_zero() {
+    let execution = run_source(
         r#"<?php
-echo abs([-1]);
+var_dump(abs(null));
 "#,
-    );
-    assert_eq!(array.line, 2);
-    assert_eq!(array.column, 6);
-    assert_eq!(
-        array.message,
-        "unsupported call abs(): argument must be int or finite float in the current subset, got array"
-    );
+    )
+    .unwrap();
+
+    assert!(execution.stdout.starts_with(
+        "Deprecated: abs(): Passing null to parameter #1 ($num) of type int|float is deprecated"
+    ));
+    assert!(execution.stdout.ends_with("int(0)\n"));
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

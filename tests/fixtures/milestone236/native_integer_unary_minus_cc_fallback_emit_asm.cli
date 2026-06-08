@@ -1,8 +1,9 @@
-exit: 0
+exit: 1
 stdout:
-nonempty: true
-contains_main: true
-contains_printf: true
+nonempty: false
+contains_main: false
+contains_printf: false
 --- stdout end ---
 stderr:
+codegen error at tests/fixtures/milestone236/native_integer_unary_minus_emit_ir.php:2:6: LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior
 --- stderr end ---

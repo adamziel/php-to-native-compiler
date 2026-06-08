@@ -1,6 +1,6 @@
 # Focused Replay: Standard Filesystem/HTTP Rows
 
-Agent: developer-409
+Agent: developer-102
 
 Lane: 81, replacement owner for the focused standard filesystem/http replay
 report originally named for developer-108.
@@ -10,10 +10,13 @@ Scope: read-only M0 replay/classification report for selected
 blocked candidate gate
 `phpt-full-current-score-20260604T221205Z-php-src-f97ff59-public-56fe9377-source-56fe9377`.
 No compiler/runtime source files were edited, no full PHPT gate was run, and no
-eval or variable-variable row was selected.
+eval or variable-variable row was selected. The only tracked project change for
+this lane is this report artifact.
 
-`DEVELOPMENT.md` was requested by the harness prompt but is absent under both
-this worktree and `/home/claude/php-to-native-compiler`.
+Required startup documents were read from the assigned worktree where present.
+`DEVELOPMENT.md` is absent from this worktree root, but present at the
+repository root `/home/claude/php-to-native-compiler/DEVELOPMENT.md` and was
+read there.
 
 ## Evidence Roots
 
@@ -28,7 +31,7 @@ Blocked candidate:
 - `/home/claude/supervised-php-compiler/state/logs/phpt-full-current-score-20260604T221205Z-php-src-f97ff59-public-56fe9377-source-56fe9377`
 - Public/source head: `56fe9377fb46be00db5fdd30c966fdba406dc581`
 - Public score artifact: `7197/20294`
-- PASS-regression summary: `1166` latest-public PASS regressions.
+- PASS-regression summary: `1166` latest-public PASS regressions
 
 Shared PHPT checkout and wrapper:
 
@@ -42,9 +45,9 @@ Prior shard report:
 ## Shard Cross-Check
 
 This lane owns 200 latest-public PASS regressions in the selected standard
-filesystem/http prefixes. The candidate has only two row-level failures for
-this lane; the other 198 owned rows are absent from candidate normalized status
-and aggregate results.
+filesystem/http prefixes. The 221205Z candidate artifact has only two explicit
+row-level failures for this lane; the other 198 owned rows are absent from
+candidate normalized status and aggregate results.
 
 ```text
 owned 200
@@ -52,43 +55,10 @@ by_prefix {'dir': 14, 'directory': 6, 'file': 160, 'http': 7, 'network': 3, 'str
 by_candidate_status {'FAILED': 2, 'MISSING': 198}
 ```
 
-Command:
-
-```sh
-python3 - <<'PY'
-from pathlib import Path
-from collections import Counter
-CAND=Path('/home/claude/supervised-php-compiler/state/logs/phpt-full-current-score-20260604T221205Z-php-src-f97ff59-public-56fe9377-source-56fe9377')
-prefixes=[
-('file','php-src/ext/standard/tests/file/'),
-('dir','php-src/ext/standard/tests/dir/'),
-('directory','php-src/ext/standard/tests/directory/'),
-('streams','php-src/ext/standard/tests/streams/'),
-('http','php-src/ext/standard/tests/http/'),
-('network','php-src/ext/standard/tests/network/'),
-]
-rows=[r for r in (CAND/'regressions-from-latest-published-passes.txt').read_text().splitlines() if any(r.startswith(p) for _,p in prefixes)]
-status={}
-for line in (CAND/'current-status.normalized.tsv').read_text(errors='replace').splitlines():
-    if '\t' in line:
-        s,p=line.split('\t',1); status[p]=s
-by_prefix=Counter()
-by_status=Counter()
-for r in rows:
-    label=next(label for label,p in prefixes if r.startswith(p))
-    by_prefix[label]+=1
-    by_status[status.get(r,'MISSING')]+=1
-print('owned', len(rows))
-print('by_prefix', dict(sorted(by_prefix.items())))
-print('by_candidate_status', dict(sorted(by_status.items())))
-PY
-```
-
 ## Representative Rows
 
 Rows were selected from the prior shard report to cover the two concrete
-candidate failures and one representative missing row from each larger
-subtree. These rows avoid eval and variable-variable syntax.
+candidate failures and one representative missing row from each larger subtree.
 
 | Row | PHPT title | Bucket |
 | --- | --- | --- |
@@ -101,107 +71,48 @@ subtree. These rows avoid eval and variable-variable syntax.
 | `php-src/ext/standard/tests/http/http_build_query/http_build_query_variation1.phpt` | `Test http_build_query() function: usage variations - first arguments as object` | HTTP helper/object encoding |
 | `php-src/ext/standard/tests/network/getprotobynumber_basic.phpt` | `getprotobynumber function basic test` | network helper; has SKIPIF in source |
 
-## Artifact Status Join
+## Historical Binary Rebuild
 
-All eight selected rows are in the candidate regression list and were accepted
-baseline PASS rows. The candidate has explicit `FAILED` rows only for the two
-`DirectoryClass_readonly_*` cases. The other six selected rows are missing
-from both `current-status.normalized.tsv` and `all-results.txt`.
+The historical `/tmp/phpt-full-current-score-*` run roots and `cargo-target`
+binaries were absent, so I rebuilt exact release `phpc` binaries from detached
+temporary worktrees under `/tmp/phpc-card81-dev102.G8YybJ`.
 
-```text
-row	title	in_reg	baseline_pass	candidate_pass	accepted_status	accepted_results	candidate_status	candidate_results	skipif
-php-src/ext/standard/tests/directory/DirectoryClass_readonly_handle.phpt	Changing Directory::$handle property	True	True	False	PASSED	PASSED	FAILED	FAILED	False
-php-src/ext/standard/tests/directory/DirectoryClass_readonly_path.phpt	Changing Directory::$handle property	True	True	False	PASSED	PASSED	FAILED	FAILED	False
-php-src/ext/standard/tests/file/005_error.phpt	Test fileatime(), filemtime(), filectime() & touch() functions : error conditions	True	True	False	PASSED	PASSED	MISSING	MISSING	False
-php-src/ext/standard/tests/file/file_exists_variation1.phpt	Test file_exists() function : usage variations	True	True	False	PASSED	PASSED	MISSING	MISSING	False
-php-src/ext/standard/tests/dir/bug71542.phpt	Bug #71542 (disk_total_space does not work with relative paths)	True	True	False	PASSED	PASSED	MISSING	MISSING	False
-php-src/ext/standard/tests/streams/stream_context_set_option_basic.phpt	stream_context_set_option() function - basic test for stream_context_set_option()	True	True	False	PASSED	PASSED	MISSING	MISSING	False
-php-src/ext/standard/tests/http/http_build_query/http_build_query_variation1.phpt	Test http_build_query() function: usage variations - first arguments as object	True	True	False	PASSED	PASSED	MISSING	MISSING	False
-php-src/ext/standard/tests/network/getprotobynumber_basic.phpt	getprotobynumber function basic test	True	True	False	PASSED	PASSED	MISSING	MISSING	True
-```
-
-Command:
+Commands:
 
 ```sh
-python3 - <<'PY'
-from pathlib import Path
-import re
-ACC=Path('/home/claude/supervised-php-compiler/state/logs/phpt-full-current-score-20260604T135138Z-php-src-f97ff59-public-0b917f67-source-0b917f67')
-CAND=Path('/home/claude/supervised-php-compiler/state/logs/phpt-full-current-score-20260604T221205Z-php-src-f97ff59-public-56fe9377-source-56fe9377')
-PHP=Path('/home/claude/php-src-phpt')
-rows=[
-'php-src/ext/standard/tests/directory/DirectoryClass_readonly_handle.phpt',
-'php-src/ext/standard/tests/directory/DirectoryClass_readonly_path.phpt',
-'php-src/ext/standard/tests/file/005_error.phpt',
-'php-src/ext/standard/tests/file/file_exists_variation1.phpt',
-'php-src/ext/standard/tests/dir/bug71542.phpt',
-'php-src/ext/standard/tests/streams/stream_context_set_option_basic.phpt',
-'php-src/ext/standard/tests/http/http_build_query/http_build_query_variation1.phpt',
-'php-src/ext/standard/tests/network/getprotobynumber_basic.phpt',
-]
-def load_status(p):
-    d={}
-    for line in p.read_text(errors='replace').splitlines():
-        if '\t' not in line: continue
-        s,path=line.split('\t',1)
-        d.setdefault(path,[]).append(s)
-    return d
-def norm(p):
-    marker='/php-src/'
-    if marker in p:
-        return 'php-src/'+p.split(marker,1)[1]
-    return p
-def load_results(p):
-    d={}
-    for line in p.read_text(errors='replace').splitlines():
-        if '\t' not in line: continue
-        s,path=line.split('\t',1)
-        d.setdefault(norm(path),[]).append(s)
-    return d
-def title(row):
-    text=(PHP/row.removeprefix('php-src/')).read_text(errors='replace')
-    m=re.search(r'--TEST--\n(.*?)(?=\n--[A-Z]+--|\Z)', text, re.S)
-    return ' '.join(m.group(1).strip().split()) if m else ''
-def has_skipif(row):
-    return '--SKIPIF--' in (PHP/row.removeprefix('php-src/')).read_text(errors='replace')
-acc_s=load_status(ACC/'current-status.normalized.tsv')
-cand_s=load_status(CAND/'current-status.normalized.tsv')
-acc_r=load_results(ACC/'all-results.txt')
-cand_r=load_results(CAND/'all-results.txt')
-reg=set((CAND/'regressions-from-latest-published-passes.txt').read_text().splitlines())
-base_pass=set((CAND/'baseline-passes.normalized.txt').read_text().splitlines())
-cand_pass=set((CAND/'current-passes.normalized.txt').read_text().splitlines())
-print('row\ttitle\tin_reg\tbaseline_pass\tcandidate_pass\taccepted_status\taccepted_results\tcandidate_status\tcandidate_results\tskipif')
-for r in rows:
-    fmt=lambda v: ','.join(v) if v else 'MISSING'
-    print('\t'.join([r,title(r),str(r in reg),str(r in base_pass),str(r in cand_pass),fmt(acc_s.get(r,[])),fmt(acc_r.get(r,[])),fmt(cand_s.get(r,[])),fmt(cand_r.get(r,[])),str(has_skipif(r))]))
-PY
+git worktree add --detach /tmp/phpc-card81-dev102.G8YybJ/accepted-src 0b917f67a37d9ca9779d77f87173b628431c2425
+git worktree add --detach /tmp/phpc-card81-dev102.G8YybJ/candidate-src 56fe9377fb46be00db5fdd30c966fdba406dc581
+
+CARGO_TARGET_DIR=/tmp/phpc-card81-dev102.G8YybJ/accepted-target \
+CARGO_BUILD_JOBS=1 \
+CARGO_INCREMENTAL=0 \
+cargo build --release -p phpc
+
+CARGO_TARGET_DIR=/tmp/phpc-card81-dev102.G8YybJ/candidate-target \
+CARGO_BUILD_JOBS=1 \
+CARGO_INCREMENTAL=0 \
+cargo build --release -p phpc
 ```
 
-## Replay Preflight
+Build results:
 
-Focused `run-tests.php` execution replay was not run because the historical
-accepted and candidate `PHPC_BIN` binaries referenced by the cookbook are no
-longer present. The wrapper, php-src checkout, and both source commits are
-present, so replay can be run later after the binaries are restored or rebuilt
-under an explicitly assigned replay lane.
+- Accepted `0b917f67`: passed, release build completed in `4m 25s`.
+- Candidate `56fe9377`: passed, release build completed in `4m 34s`.
+- Cargo emitted a non-fatal registry cache write warning for `gost94`, then
+  continued.
 
-Preflight:
+Binary/result hashes:
 
 ```text
-missing /tmp/phpt-full-current-score-20260604T135138Z-php-src-f97ff59-public-0b917f67-source-0b917f67/cargo-target/release/phpc
-missing /tmp/phpt-full-current-score-20260604T221205Z-php-src-f97ff59-public-56fe9377-source-56fe9377/cargo-target/release/phpc
-present /home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper
-present /home/claude/php-src-phpt/run-tests.php
-accepted-present 0b917f67a37d9ca9779d77f87173b628431c2425
-candidate-present 56fe9377fb46be00db5fdd30c966fdba406dc581
+421d406e12ca29f68e27ed8c694503b1b0ebfa082e912e8784df85a9eeb453ae  /tmp/phpc-card81-dev102.G8YybJ/accepted-target/release/phpc
+564c6a14ee64c345e75d68de746ef6c64640d6c6307822d5e9b0a94a4a5bf7a4  /tmp/phpc-card81-dev102.G8YybJ/candidate-target/release/phpc
+87203eb38188c7f800b9ef3c1d4c35ff5d877a56e06f015854b2e5407e79f4c1  /tmp/phpc-card81-dev102.G8YybJ/accepted/results.txt
+108540da5b8192c80c3bd5e180318b2a6cbaf6a30b0456754f3404d0286ee6f5  /tmp/phpc-card81-dev102.G8YybJ/candidate/results.txt
 ```
 
-Running these rows with the wrong or current `PHPC_BIN` would not measure the
-accepted-vs-candidate behavior under review. Rebuilding historical release
-binaries was not done in this report-only lane.
+## Focused Replay Commands
 
-Prepared row list for a later restored-binary focused replay:
+Row file:
 
 ```text
 /home/claude/php-src-phpt/ext/standard/tests/directory/DirectoryClass_readonly_handle.phpt
@@ -214,53 +125,153 @@ Prepared row list for a later restored-binary focused replay:
 /home/claude/php-src-phpt/ext/standard/tests/network/getprotobynumber_basic.phpt
 ```
 
+Accepted replay command:
+
+```sh
+PHPC_BIN=/tmp/phpc-card81-dev102.G8YybJ/accepted-target/release/phpc \
+TEST_PHP_EXECUTABLE=/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper \
+TEST_PHP_ARGS= \
+TMPDIR=/tmp/phpc-card81-dev102.G8YybJ/accepted/tmp \
+TEMP=/tmp/phpc-card81-dev102.G8YybJ/accepted/tmp \
+TMP=/tmp/phpc-card81-dev102.G8YybJ/accepted/tmp \
+PHPC_PHPT_TIMEOUT_SECONDS=55 \
+PHPC_PHPT_KILL_AFTER_SECONDS=5 \
+PHPT_SYSTEM_PHP=php \
+TEST_PHP_SRCDIR=/home/claude/php-src-phpt \
+NO_INTERACTION=1 \
+php run-tests.php -q -n \
+  -p /home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper \
+  -r /tmp/phpc-card81-dev102.G8YybJ/standard-filesystem-http.tests \
+  -W /tmp/phpc-card81-dev102.G8YybJ/accepted/results.txt \
+  -s /tmp/phpc-card81-dev102.G8YybJ/accepted/run-tests.log \
+  --no-color \
+  --set-timeout 65 \
+  --temp-source /home/claude/php-src-phpt \
+  --temp-target /tmp/phpc-card81-dev102.G8YybJ/accepted/phpt-tmp
+```
+
+Candidate replay command was identical except:
+
+```text
+PHPC_BIN=/tmp/phpc-card81-dev102.G8YybJ/candidate-target/release/phpc
+TMPDIR=/tmp/phpc-card81-dev102.G8YybJ/candidate/tmp
+TEMP=/tmp/phpc-card81-dev102.G8YybJ/candidate/tmp
+TMP=/tmp/phpc-card81-dev102.G8YybJ/candidate/tmp
+-W /tmp/phpc-card81-dev102.G8YybJ/candidate/results.txt
+-s /tmp/phpc-card81-dev102.G8YybJ/candidate/run-tests.log
+--temp-target /tmp/phpc-card81-dev102.G8YybJ/candidate/phpt-tmp
+```
+
+Both replay commands printed post-report shell noise from the pinned php-src
+checkout: `autoconf: command not found` and missing
+`/home/claude/php-src-phpt/libtool`. The result files were still written and
+the PHPT summaries completed.
+
+## Replay Results
+
+Accepted `0b917f67` replay:
+
+```text
+Number of tests :     8                 8
+Tests skipped   :     0 (  0.0%) --------
+Tests warned    :     0 (  0.0%) (  0.0%)
+Tests failed    :     0 (  0.0%) (  0.0%)
+Tests passed    :     8 (100.0%) (100.0%)
+```
+
+Accepted `results.txt`:
+
+```text
+PASSED  /home/claude/php-src-phpt/ext/standard/tests/dir/bug71542.phpt
+PASSED  /home/claude/php-src-phpt/ext/standard/tests/directory/DirectoryClass_readonly_handle.phpt
+PASSED  /home/claude/php-src-phpt/ext/standard/tests/directory/DirectoryClass_readonly_path.phpt
+PASSED  /home/claude/php-src-phpt/ext/standard/tests/file/005_error.phpt
+PASSED  /home/claude/php-src-phpt/ext/standard/tests/file/file_exists_variation1.phpt
+PASSED  /home/claude/php-src-phpt/ext/standard/tests/http/http_build_query/http_build_query_variation1.phpt
+PASSED  /home/claude/php-src-phpt/ext/standard/tests/network/getprotobynumber_basic.phpt
+PASSED  /home/claude/php-src-phpt/ext/standard/tests/streams/stream_context_set_option_basic.phpt
+```
+
+Candidate `56fe9377` replay:
+
+```text
+Number of tests :     8                 8
+Tests skipped   :     0 (  0.0%) --------
+Tests warned    :     0 (  0.0%) (  0.0%)
+Tests failed    :     2 ( 25.0%) ( 25.0%)
+Tests passed    :     6 ( 75.0%) ( 75.0%)
+```
+
+Candidate `results.txt`:
+
+```text
+PASSED  /home/claude/php-src-phpt/ext/standard/tests/dir/bug71542.phpt
+FAILED  /home/claude/php-src-phpt/ext/standard/tests/directory/DirectoryClass_readonly_handle.phpt
+FAILED  /home/claude/php-src-phpt/ext/standard/tests/directory/DirectoryClass_readonly_path.phpt
+PASSED  /home/claude/php-src-phpt/ext/standard/tests/file/005_error.phpt
+PASSED  /home/claude/php-src-phpt/ext/standard/tests/file/file_exists_variation1.phpt
+PASSED  /home/claude/php-src-phpt/ext/standard/tests/http/http_build_query/http_build_query_variation1.phpt
+PASSED  /home/claude/php-src-phpt/ext/standard/tests/network/getprotobynumber_basic.phpt
+PASSED  /home/claude/php-src-phpt/ext/standard/tests/streams/stream_context_set_option_basic.phpt
+```
+
 ## Candidate Failure Evidence
 
-The two direct candidate failures are not broad filesystem I/O regressions.
-They are internal `Directory` object readonly-property diagnostic drift:
+The two candidate failures are not broad filesystem I/O regressions. They are
+internal `Directory` object readonly-property diagnostic drift:
 
 - `DirectoryClass_readonly_handle.phpt`
-  - Candidate status: `current-status.normalized.tsv:5775`
-  - Candidate result: `all-results.txt:18180`, `shard-06/results.txt:2908`
-  - Candidate stdout: `shard-06/stdout.log:3267`, `shard-06/stdout.log:5937`
-  - Candidate diff: `shard-06/run-tests.log` around line `52534`
-  - Observed candidate message adds `protected(set)` and `from global scope`
-    to both readonly modify and unset diagnostics, while the expected output
-    uses the shorter `Cannot modify readonly property Directory::$handle` and
-    `Cannot unset readonly property Directory::$handle` forms.
+  - Candidate replay result: `FAILED`
+  - Candidate log: `/tmp/phpc-card81-dev102.G8YybJ/candidate/run-tests.log`
+  - Observed candidate diagnostics add `protected(set)` and
+    `from global scope` to both readonly modify and unset diagnostics.
 
 - `DirectoryClass_readonly_path.phpt`
-  - Candidate status: `current-status.normalized.tsv:5776`
-  - Candidate result: `all-results.txt:2908`, `shard-01/results.txt:2908`
-  - Candidate stdout: `shard-01/stdout.log:3244`, `shard-01/stdout.log:5874`
-  - Candidate diff: `shard-01/run-tests.log` around line `56454`
-  - Observed candidate message adds `protected(set)` and `from global scope`
-    to both readonly modify and unset diagnostics, while the expected output
-    uses the shorter `Cannot modify readonly property Directory::$path` and
-    `Cannot unset readonly property Directory::$path` forms.
+  - Candidate replay result: `FAILED`
+  - Candidate log: `/tmp/phpc-card81-dev102.G8YybJ/candidate/run-tests.log`
+  - Observed candidate diagnostics add `protected(set)` and
+    `from global scope` to both readonly modify and unset diagnostics.
+
+Relevant replay diff lines:
+
+```text
+Directory::$handle:
+001- Error: Cannot modify readonly property Directory::$handle
+001+ Error: Cannot modify protected(set) readonly property Directory::$handle from global scope
+003- Error: Cannot unset readonly property Directory::$handle
+003+ Error: Cannot unset protected(set) readonly property Directory::$handle from global scope
+
+Directory::$path:
+001- Error: Cannot modify readonly property Directory::$path
+001+ Error: Cannot modify protected(set) readonly property Directory::$path from global scope
+003- Error: Cannot unset readonly property Directory::$path
+003+ Error: Cannot unset protected(set) readonly property Directory::$path from global scope
+```
 
 ## Classification
 
-| Row | Accepted evidence | Candidate evidence | Classification |
-| --- | --- | --- | --- |
-| `DirectoryClass_readonly_handle.phpt` | `PASSED` | `FAILED` with row-level diff | semantic/direct failure: internal readonly-property diagnostic parity |
-| `DirectoryClass_readonly_path.phpt` | `PASSED` | `FAILED` with row-level diff | semantic/direct failure: internal readonly-property diagnostic parity |
-| `005_error.phpt` | `PASSED` | missing from candidate status/results | absent/control-plane; semantic unknown |
-| `file_exists_variation1.phpt` | `PASSED` | missing from candidate status/results | absent/control-plane; semantic unknown |
-| `bug71542.phpt` | `PASSED` | missing from candidate status/results | absent/control-plane; semantic unknown |
-| `stream_context_set_option_basic.phpt` | `PASSED` | missing from candidate status/results | absent/control-plane; semantic unknown |
-| `http_build_query_variation1.phpt` | `PASSED` | missing from candidate status/results | absent/control-plane; semantic unknown |
-| `getprotobynumber_basic.phpt` | `PASSED` | missing from candidate status/results | absent/control-plane; semantic unknown; has SKIPIF source |
+| Row | Accepted replay | Candidate replay | 221205Z candidate artifact | Classification |
+| --- | --- | --- | --- | --- |
+| `DirectoryClass_readonly_handle.phpt` | `PASSED` | `FAILED` | explicit `FAILED` | semantic/direct failure: internal readonly-property diagnostic parity |
+| `DirectoryClass_readonly_path.phpt` | `PASSED` | `FAILED` | explicit `FAILED` | semantic/direct failure: internal readonly-property diagnostic parity |
+| `005_error.phpt` | `PASSED` | `PASSED` | missing from candidate status/results | control-plane absent in 221205Z, semantic pass on focused replay |
+| `file_exists_variation1.phpt` | `PASSED` | `PASSED` | missing from candidate status/results | control-plane absent in 221205Z, semantic pass on focused replay |
+| `bug71542.phpt` | `PASSED` | `PASSED` | missing from candidate status/results | control-plane absent in 221205Z, semantic pass on focused replay |
+| `stream_context_set_option_basic.phpt` | `PASSED` | `PASSED` | missing from candidate status/results | control-plane absent in 221205Z, semantic pass on focused replay |
+| `http_build_query_variation1.phpt` | `PASSED` | `PASSED` | missing from candidate status/results | control-plane absent in 221205Z, semantic pass on focused replay |
+| `getprotobynumber_basic.phpt` | `PASSED` | `PASSED` | missing from candidate status/results; has SKIPIF source | control-plane absent in 221205Z, semantic pass on focused replay |
 
 ## Conclusion
 
-This focused lane does not justify a broad filesystem, stream, HTTP, or network
-implementation lane. The representative sample confirms the prior shard report:
-198 of 200 owned standard filesystem/http PASS regressions are absent
-candidate rows, not proven semantic regressions.
+This focused replay does not justify a broad filesystem, stream, HTTP, or
+network implementation lane. The six representative rows that were missing
+from the 221205Z candidate manifest pass against the rebuilt candidate binary,
+so they are control-plane/result-manifest gaps in that gate, not current
+semantic evidence.
 
-The only concrete repair candidate in this lane is the pair of
-`DirectoryClass_readonly_*` failures, which belong to an internal object
-readonly-property diagnostic parity lane. The larger file/dir/stream/http/
-network rows should stay blocked on PHPT harness completeness and focused
-restored-binary replay before any runtime implementation work is assigned.
+The only concrete repair candidate in this lane remains the pair of
+`DirectoryClass_readonly_*` failures, which belong to an internal `Directory`
+readonly-property diagnostic parity lane. Broader standard file/dir/stream/http
+and network rows should remain blocked on PHPT harness/result completeness or
+larger focused replay evidence before any runtime implementation work is
+assigned.

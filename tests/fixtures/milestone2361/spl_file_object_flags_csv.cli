@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone2361/spl_file_object_flags_csv.php

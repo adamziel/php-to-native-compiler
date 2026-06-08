@@ -67,17 +67,27 @@ fn array_change_key_case_rejects_non_int_case_flag() {
 }
 
 #[test]
-fn array_change_key_case_treats_nonzero_int_case_flags_as_uppercase() {
+fn array_change_key_case_invalid_integer_case_flags_are_catchable_value_errors() {
     let source = r#"<?php
 $items = ["Name" => "Ada", "name" => "lower", "MiXeD" => "mixed"];
-$positive = array_change_key_case($items, 2);
-$negative = array_change_key_case($items, -1);
-echo $positive["NAME"], "|", $positive["MIXED"], "\n";
-echo $negative["NAME"], "|", $negative["MIXED"];
+foreach ([-10, 2] as $case) {
+    try {
+        array_change_key_case($items, $case);
+    } catch (ValueError $e) {
+        echo $e::class, ":", $e->getMessage(), "\n";
+    }
+}
+$upper = array_change_key_case($items, 1);
+echo $upper["NAME"], "|", $upper["MIXED"];
 "#;
 
     let execution = run_source(source).unwrap();
-    assert_eq!(execution.stdout, "lower|mixed\nlower|mixed");
+    assert_eq!(
+        execution.stdout,
+        "ValueError:array_change_key_case(): Argument #2 ($case) must be either CASE_LOWER or CASE_UPPER\n\
+ValueError:array_change_key_case(): Argument #2 ($case) must be either CASE_LOWER or CASE_UPPER\n\
+lower|mixed"
+    );
     assert_eq!(execution.exit_code, 0);
 }
 

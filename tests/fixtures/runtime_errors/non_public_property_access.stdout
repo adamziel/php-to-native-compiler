@@ -1,0 +1,4 @@
+Fatal error: Uncaught Error: Cannot access private property Box::$secret in tests/fixtures/runtime_errors/non_public_property_access.php:6
+Stack trace:
+#0 {main}
+  thrown in tests/fixtures/runtime_errors/non_public_property_access.php on line 6

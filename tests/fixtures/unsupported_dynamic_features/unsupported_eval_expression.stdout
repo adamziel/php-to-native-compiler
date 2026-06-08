@@ -1,0 +1,4 @@
+Fatal error: Uncaught Error: Call to undefined function eval() in tests/fixtures/unsupported_dynamic_features/unsupported_eval_expression.php:2
+Stack trace:
+#0 {main}
+  thrown in tests/fixtures/unsupported_dynamic_features/unsupported_eval_expression.php on line 2

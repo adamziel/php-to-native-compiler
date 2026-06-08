@@ -1,0 +1,13 @@
+exit: 0
+stdout:
+?|no-path|null||null
+#|no-path|null|null|
+?q|no-path|null|q|null
+#f|no-path|null|null|f
+?#|no-path|null||
+?#f|no-path|null||f
+?q#f|no-path|null|q|f
+<empty>|path||null|null
+--- stdout end ---
+stderr:
+--- stderr end ---

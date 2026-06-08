@@ -23,6 +23,29 @@ echo $items[4];
 }
 
 #[test]
+fn array_unshift_preserves_reference_backed_existing_slots() {
+    let execution = run_source(
+        r#"<?php
+$value = "ref";
+$items = ["first" => "plain"];
+$items["ref"] =& $value;
+$items[] = "tail";
+
+$count = array_unshift($items, "head");
+$value = "changed";
+echo $count, "|", $items[0], "|", $items["first"], "|", $items["ref"], "|", $items[1], "\n";
+
+$items["ref"] = "through-item";
+echo $value;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "4|head|plain|changed|tail\nthrough-item");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_unshift_is_available_through_string_valued_direct_calls() {
     let execution = run_source(
         r#"<?php
@@ -51,7 +74,7 @@ fn array_unshift_rejects_forms_outside_current_subset() {
     assert_eq!(non_variable.column, 1);
     assert_eq!(
         non_variable.message,
-        "unsupported call array_unshift(): first argument must be a direct variable array in the current subset"
+        "unsupported call array_unshift(): first argument must be a direct variable array path in the current subset"
     );
 
     let non_array = run_source("<?php\n$value = 1;\narray_unshift($value, 'head');\n").unwrap_err();
@@ -60,7 +83,7 @@ fn array_unshift_rejects_forms_outside_current_subset() {
     assert_eq!(non_array.column, 1);
     assert_eq!(
         non_array.message,
-        "unsupported call array_unshift(): first argument must be array, got int"
+        "unsupported call array_unshift(): argument must be array, got int"
     );
 
     let value_call = run_source(
@@ -96,6 +119,56 @@ echo count($items);
     .unwrap();
 
     assert_eq!(execution.stdout, "5|tail|end|two|name,0,1,2|4|4");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn array_push_shift_unshift_accept_direct_nested_array_paths_and_empty_spread() {
+    let execution = run_source(
+        r#"<?php
+$items = array("outer" => array("a", "b"));
+$empty = array();
+echo array_push($items["outer"], ...$empty), "|";
+echo array_push($items["outer"], array("nested")), "|";
+echo array_shift($items["outer"]), "|";
+echo array_unshift($items["outer"], ...$empty), "|";
+echo array_unshift($items["outer"], "front"), "|";
+var_dump($items);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "2|3|a|2|3|array(1) {\n  [\"outer\"]=>\n  array(3) {\n    [0]=>\n    string(5) \"front\"\n    [1]=>\n    string(1) \"b\"\n    [2]=>\n    array(1) {\n      [0]=>\n      string(6) \"nested\"\n    }\n  }\n}\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn array_shift_by_value_expression_emits_notice_and_returns_copy() {
+    let execution = run_source(
+        r#"<?php
+$stack = array(array(array("zero", "one"), "tail"), "after");
+var_dump(array_shift(array_shift(array_shift($stack))));
+echo "|", count($stack);
+"#,
+    )
+    .unwrap();
+
+    assert!(
+        execution
+            .stdout
+            .contains("Notice: Only variables should be passed by reference"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution.stdout.contains("string(4) \"zero\""),
+        "{}",
+        execution.stdout
+    );
+    assert!(execution.stdout.ends_with("|1"), "{}", execution.stdout);
     assert_eq!(execution.exit_code, 0);
 }
 

@@ -1,2 +1,1 @@
-runtime error at 5:13: unsupported call mutate(): reference parameter invocation is only implemented for direct variable, direct array-offset, direct public object-property array-offset, and bounded magic __get reference arguments in the current subset
 

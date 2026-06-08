@@ -1,6 +1,8 @@
-exit: 1
+exit: 255
 stdout:
---- stdout end ---
+Fatal error: Uncaught ValueError: array_filter(): Argument #3 ($mode) must be one of ARRAY_FILTER_USE_VALUE, ARRAY_FILTER_USE_KEY, or ARRAY_FILTER_USE_BOTH in tests/fixtures/runtime_errors/array_filter_mode_unsupported.php:3
+Stack trace:
+#0 {main}
+  thrown in tests/fixtures/runtime_errors/array_filter_mode_unsupported.php on line 3--- stdout end ---
 stderr:
-runtime error at tests/fixtures/runtime_errors/array_filter_mode_unsupported.php:3:6: unsupported call array_filter(): mode flag must be integer 0, 1, or 2 in the current subset, got 3
 --- stderr end ---

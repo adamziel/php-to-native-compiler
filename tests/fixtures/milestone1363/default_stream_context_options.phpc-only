@@ -1,0 +1,1 @@
+phpc-only: bounded stream_context_set_option() two-argument deprecation output differs from the current system PHP comparison baseline.

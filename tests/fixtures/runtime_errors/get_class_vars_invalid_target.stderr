@@ -1,2 +1,0 @@
-runtime error at 2:10: unsupported call get_class_vars(): class name argument must be string, got int
-

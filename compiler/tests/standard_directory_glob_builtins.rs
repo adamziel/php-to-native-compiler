@@ -192,6 +192,62 @@ try {{
     assert_eq!(execution.exit_code, 0);
 }
 
+#[test]
+fn glob_php_variations_and_directory_fstat_match_file_subset() {
+    let fixture = TempFsFixture::new("glob-php-variations");
+    let root = php_string(&fixture.root);
+    let glob_dir = fixture.root.join("glob_variation");
+    fs::create_dir(&glob_dir).expect("glob fixture directory is created");
+    fs::create_dir(glob_dir.join("wonder")).expect("nested glob directory is created");
+    fs::write(glob_dir.join("wonder12345"), "digits").expect("wonder12345 is written");
+    fs::write(glob_dir.join("wonder;123456"), "punct").expect("wonder punctuation file is written");
+
+    let source = format!(
+        r#"<?php
+$root = {root};
+$handle = opendir($root);
+var_dump(fstat($handle));
+closedir($handle);
+$brace = glob($root . "/glob_variation/*{{5}}", GLOB_BRACE);
+var_dump($brace);
+try {{
+    glob($root . "/glob_variation/WONDER5\0");
+}} catch (ValueError $e) {{
+    echo $e->getMessage(), "\n";
+}}
+var_dump(glob(true, GLOB_NOCHECK));
+"#,
+        root = root
+    );
+
+    let execution = run_source(&source).unwrap();
+
+    assert!(
+        execution.stdout.starts_with("bool(false)\n"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution.stdout.contains("/glob_variation/wonder12345"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution
+            .stdout
+            .contains("glob(): Argument #1 ($pattern) must not contain any null bytes"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution.stdout.contains("string(1) \"1\""),
+        "{}",
+        execution.stdout
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
 struct TempFsFixture {
     root: PathBuf,
 }
