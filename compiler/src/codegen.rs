@@ -185,7 +185,7 @@ const LLVM_REFERENCE_ASSIGNMENT_REJECTION: &str = "LLVM reference-assignment low
 const ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION: &str = "assembly reference-assignment lowering rejects direct variable, array-offset, object-property, function-call, method-call, static-call, magic __get, and ArrayAccess reference sources or targets until native reference containers, alias-aware symbol tables, copy-on-write, object/property alias roots, and exact native error behavior exist; phpc run handles current bounded reference-assignment behavior";
 const LLVM_REFERENCE_WRITE_THROUGH_REJECTION: &str = "LLVM reference write-through lowering rejects direct root-variable assignment after reference binding until statement assignment and assignment-expression write-through share an alias-aware reference slot boundary with copy-on-write, cleanup ownership, and exact native error behavior; phpc run handles current reference write-through behavior";
 const LLVM_NATIVE_ARRAY_NON_LOCAL_ASSIGNMENT_REJECTION: &str = "LLVM native array non-local assignment lowering rejects object, dynamic-object, non-direct object, and static property assignment targets until non-local owner cells, magic property writes, typed/static property state, assignment-expression results, references/copy-on-write, and exact diagnostics share one assignment owner contract; local variables and native array offset assignments use their shared native lvalue assignment contracts";
-const ASSEMBLY_NATIVE_ARRAY_NON_LOCAL_ASSIGNMENT_REJECTION: &str = "assembly native array non-local assignment lowering rejects object, dynamic-object, non-direct object, and static property assignment targets until non-local owner cells, magic property writes, typed/static property state, assignment-expression results, references/copy-on-write, and exact diagnostics share one assignment owner contract; local variables and native array offset assignments use their shared native lvalue assignment contracts";
+const ASSEMBLY_NATIVE_ARRAY_NON_LOCAL_ASSIGNMENT_REJECTION: &str = "assembly native array non-local assignment lowering rejects unresolved non-direct object-property and unsupported static property assignment targets until remaining non-local owner cells, typed/static property state, references/copy-on-write, and exact diagnostics share one assignment owner contract; direct named/dynamic object-property writes, lowerable static-property writes, local variables, and native array offset assignments use their shared native lvalue assignment contracts";
 const LLVM_NATIVE_ARRAY_NON_LOCAL_UNSET_REJECTION: &str = "LLVM native array non-local unset lowering rejects object, dynamic-object, non-direct object, and static property unsets until non-local owner cells, magic __unset dispatch, typed/static property state, references/copy-on-write, and exact diagnostics share one unset owner contract; local variables and native array offset unsets use their shared native lvalue unset contracts";
 const ASSEMBLY_NATIVE_ARRAY_NON_LOCAL_UNSET_REJECTION: &str = "assembly native array non-local unset lowering rejects object, dynamic-object, non-direct object, and static property unsets until non-local owner cells, magic __unset dispatch, typed/static property state, references/copy-on-write, and exact diagnostics share one unset owner contract; local variables and native array offset unsets use their shared native lvalue unset contracts";
 const ASSEMBLY_GLOBALS_ROOT_APPEND_REJECTION: &str = "Cannot append to $GLOBALS";
@@ -72173,9 +72173,16 @@ echo " 10" < "zeta";
         let c_source = emit_c_source_for_assembly(&binary_program)
             .expect("known binary string comparison pairs should lower through C fallback");
 
+        let comparison_call_count = c_source
+            .matches(" = phpc_native_value_compare_result(")
+            .count();
         assert!(
-            c_source.contains("strcmp("),
-            "numeric-vs-nonnumeric, leading-numeric, and sign/dot-prefixed nonnumeric pairs should lower through generated-C binary string comparison:\n{c_source}"
+            comparison_call_count >= 3,
+            "numeric-vs-nonnumeric, leading-numeric, and sign/dot-prefixed nonnumeric pairs should lower through the generated-C native value comparison ABI; found {comparison_call_count} calls:\n{c_source}"
+        );
+        assert!(
+            !c_source.contains("strcmp("),
+            "generated-C string comparisons should use the PHP-shaped runtime comparison ABI instead of raw C byte ordering:\n{c_source}"
         );
 
         for source in [
@@ -72185,10 +72192,13 @@ echo " 10" < "zeta";
             "<?php\necho \".5\" < \"5.\";\n",
         ] {
             let program = crate::parse(source).expect("parse numeric string comparison source");
-            let error = emit_c_source_for_assembly(&program).unwrap_err();
+            let c_source = emit_c_source_for_assembly(&program)
+                .expect("numeric string comparisons should lower through the runtime ABI");
 
-            assert_eq!(error.phase, Phase::Codegen);
-            assert_eq!(error.message, assembly_comparison_rejection());
+            assert!(
+                c_source.contains(" = phpc_native_value_compare_result("),
+                "numeric string comparisons should use the runtime comparison ABI:\n{c_source}"
+            );
         }
     }
 
@@ -75706,8 +75716,22 @@ echo $call("Ada");
 
     #[test]
     fn c_assembly_non_local_assignment_families_share_assignment_owner_boundary() {
+        let program = crate::parse("<?php\n$box->$name = 1;\n").unwrap();
+        let c_source = emit_c_source_for_assembly(&program)
+            .expect("direct dynamic object-property assignment should lower through generated C");
+
+        assert!(
+            c_source.contains(
+                "phpc_native_object_property_mutation_operation_with_magic_reference_slots_with_diagnostic"
+            ),
+            "direct dynamic object-property assignment should use the shared object-property mutation ABI:\n{c_source}"
+        );
+        assert!(
+            c_source.contains("PHPC_NATIVE_OBJECT_PROPERTY_MUTATION_WRITE"),
+            "direct dynamic object-property assignment should request the write operation:\n{c_source}"
+        );
+
         for source in [
-            "<?php\n$box->$name = 1;\n",
             "<?php\n$box->child->name = 1;\n",
             "<?php\nRoot::$name = 1;\n",
             "<?php\nself::$name = 1;\n",
