@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T18:03:06+00:00
+Last generated: 2026-06-08T18:10:19+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -110,6 +110,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | auditor-21 | Auditor | success | auditor-21 |  |
 | auditor-22 | Auditor | success | auditor-22 |  |
 | auditor-23 | Auditor | crash | auditor-23 |  |
+| auditor-24 | Auditor | running | auditor-24 |  |
 | auditor-3 | Auditor | stopped | auditor-3 |  |
 | auditor-4 | Auditor | stopped | auditor-4 |  |
 | auditor-5 | Auditor | crash | auditor-5 |  |
@@ -127,7 +128,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | conflict-resolver-16 | Conflict Resolver | crash | conflict-resolver-16 |  |
 | conflict-resolver-17 | Conflict Resolver | crash | conflict-resolver-17 |  |
 | conflict-resolver-18 | Conflict Resolver | crash | conflict-resolver-18 |  |
-| conflict-resolver-19 | Conflict Resolver | running | conflict-resolver-19 |  |
+| conflict-resolver-19 | Conflict Resolver | crash | conflict-resolver-19 |  |
 | conflict-resolver-2 | Conflict Resolver | crash | conflict-resolver-2 |  |
 | conflict-resolver-3 | Conflict Resolver | crash | conflict-resolver-3 |  |
 | conflict-resolver-4 | Conflict Resolver | crash | conflict-resolver-4 |  |
@@ -764,6 +765,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-419 | Developer | running | developer-419 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-419 |
 | developer-42 | Developer | crash | developer-42 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-42 |
 | developer-420 | Developer | running | developer-420 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-420 |
+| developer-421 | Developer | stopped | developer-421 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-421 |
 | developer-43 | Developer | stopped | developer-43 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-43 |
 | developer-44 | Developer | stopped | developer-44 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-44 |
 | developer-45 | Developer | stopped | developer-45 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-45 |
@@ -873,7 +875,9 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 2135 | Read-only current-base reconciliation for card2131 red gate | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
+| 2137 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
+| 2136 | Investigate scheduler alert | Auditor | integration-support | development | assigned |  | 0.0 |
+| 2135 | Read-only current-base reconciliation for card2131 red gate | Conflict Resolver | integration-support | done | integrated | ready_fast_path | 0.0 |
 | 2134 | Assign next sanctioned Developer card after card2075 read-only support | Developer | implementation | done | stale |  | 0.0 |
 | 2133 | Assign next sanctioned Developer card after worklane 2130 report | Developer | implementation | done | stale |  | 0.0 |
 | 2132 | Assign next sanctioned Developer card after worklane2117 report | Developer | implementation | done | stale |  | 0.0 |
@@ -881,28 +885,26 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | 2130 | Read-only verify card2075 runtime free-count dirty diff | Conflict Resolver | integration-support | done | integrated | ready_fast_path | 0.0 |
 | 2129 | Assign next sanctioned Developer card after card2075 read-only support | Developer | implementation | done | stale |  | 0.0 |
 | 2128 | Dispose requeued already-integrated cleanup rows 2125 and 2126 | Integrator | integration-support | planned | queued |  | 0.0 |
-| 2127 | Fix current abs() fatal-path test contract hard blocker | Developer | implementation | done | integrated | ready_fast_path | 0.0 |
-| 2126 | Integrate card2123 duplicate-report resolver branch | Integrator | integration-support | planned | queued |  | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=4, passed=415, skipped=0)
+failed — tools/run-tests.sh (error=0, failed=5, passed=414, skipped=0)
 
 ## Resource samples
-Latest: CPU 14.73%, RAM 20.09%, disk free 29.78 GB.
+Latest: CPU 14.47%, RAM 20.03%, disk free 29.76 GB.
 
 ## Recent events
-- 2026-06-08T17:51:26+00:00 **terminal_agent_windows_closed**: Closed 853 terminal agent tmux windows
-- 2026-06-08T17:51:39+00:00 **terminal_agent_windows_closed**: Closed 853 terminal agent tmux windows
-- 2026-06-08T17:51:39+00:00 **terminal_agent_windows_closed**: Closed 853 terminal agent tmux windows
-- 2026-06-08T17:51:39+00:00 **test_gate_quarantined_known_red**: 8 known failures are quarantined; metric acceptance remains blocked, but unrelated work may continue.
-- 2026-06-08T17:51:44+00:00 **test_gate_quarantined_known_red**: 9 known failures are quarantined; metric acceptance remains blocked, but unrelated work may continue.
-- 2026-06-08T17:51:48+00:00 **coordination_decision**: Preserve developer-418/card2131 as sole source owner while exact tools/run-tests.sh remains red at local/status commit 448aa633; let conflict-resolver-19 finish read-only reconciliation; no duplicate Developer or branchless Integrator spawn.
-- 2026-06-08T17:51:49+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-08T17:51:50+00:00 **terminal_agent_windows_closed**: Closed 853 terminal agent tmux windows
-- 2026-06-08T17:51:53+00:00 **test_result**: Focused builtin_exception_class test passed after updating constructor/fatal execution assertions.
-- 2026-06-08T17:51:55+00:00 **terminal_agent_windows_closed**: Closed 853 terminal agent tmux windows
-- 2026-06-08T17:52:01+00:00 **terminal_agent_windows_closed**: Closed 853 terminal agent tmux windows
-- 2026-06-08T17:52:04+00:00 **agent_report**: coordinator-270 reported coordination_complete_no_spawn_active_owner_preserved
+- 2026-06-08T18:09:36+00:00 **worklane_assigned**: Assigned worklane#2136 to auditor-24
+- 2026-06-08T18:09:36+00:00 **agent_started**: Started auditor-24 for Investigate scheduler alert
+- 2026-06-08T18:09:38+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-08T18:09:46+00:00 **terminal_agent_windows_closed**: Closed 855 terminal agent tmux windows
+- 2026-06-08T18:09:46+00:00 **worklane_created**: Investigate scheduler alert
+- 2026-06-08T18:09:46+00:00 **auditor_prompt_deferred**: 1 agents appear idle for more than 30 minutes: developer-420. Diagnose and force progress toward the metric.
+- 2026-06-08T18:09:48+00:00 **terminal_agent_windows_closed**: Closed 855 terminal agent tmux windows
+- 2026-06-08T18:09:56+00:00 **terminal_agent_windows_closed**: Closed 855 terminal agent tmux windows
+- 2026-06-08T18:10:04+00:00 **terminal_agent_windows_closed**: Closed 855 terminal agent tmux windows
+- 2026-06-08T18:10:07+00:00 **terminal_agent_windows_closed**: Closed 855 terminal agent tmux windows
+- 2026-06-08T18:10:08+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-08T18:10:15+00:00 **audit_started**: Auditor started card 2136 scheduler-alert investigation for idle developer-419.
 
 ## Next steps
-Move next worklane forward: Read-only current-base reconciliation for card2131 red gate
+Move next worklane forward: Investigate scheduler alert
