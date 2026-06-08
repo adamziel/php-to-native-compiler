@@ -1,0 +1,5 @@
+Fatal error: Uncaught TypeError: array_merge(): Argument #3 must be of type array, int given in tests/fixtures/runtime_errors/array_merge_third_non_array.php:4
+Stack trace:
+#0 tests/fixtures/runtime_errors/array_merge_third_non_array.php(4): array_merge(Array, Array, 42)
+#1 {main}
+  thrown in tests/fixtures/runtime_errors/array_merge_third_non_array.php on line 4

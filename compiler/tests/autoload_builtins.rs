@@ -256,7 +256,13 @@ echo class_alias("Wp_Original", "Wp_Alias") ? "duplicate-ok" : "duplicate-false"
             .unwrap();
     assert_eq!(
         execution.stdout,
-        "pre-missing\nalias-ok\nalias-exists\nWp_Original:aliased\nis-a-alias\nduplicate-false"
+        format!(
+            "pre-missing\nalias-ok\nalias-exists\nWp_Original:aliased\nis-a-alias\n\n\
+Warning: Cannot redeclare class Wp_Alias (previously declared in {}:2) in {} on line 11\n\
+duplicate-false",
+            include_path.display(),
+            fixture_dir.join("main.php").display()
+        )
     );
     assert_eq!(execution.exit_code, 0);
 
@@ -320,7 +326,7 @@ echo in_array("LoadedAlias", get_declared_interfaces(), true) ? "alias-declared"
             .unwrap();
     assert_eq!(
         execution.stdout,
-        "pre-missing\nload:LoadedContract\nalias-ok\nalias-interface\nalias-not-class\ninstanceof-source\ninstanceof-alias\nis-a-alias\nsubclass-alias\nalias-hidden"
+        "pre-missing\nload:LoadedContract\nalias-ok\nalias-interface\nalias-not-class\ninstanceof-source\ninstanceof-alias\nis-a-alias\nsubclass-alias\nalias-declared"
     );
     assert_eq!(execution.exit_code, 0);
 

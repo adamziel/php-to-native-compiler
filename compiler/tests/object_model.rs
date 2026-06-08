@@ -5,6 +5,133 @@ use php_runtime::Visibility;
 const LLVM_CLASS_NAME_CONSTANT_REJECTION: &str = "LLVM class-name constant lowering rejects ClassName::class, self::class, parent::class, and static::class until native class-name resolution, active class/parent and late-static-binding context, namespace/import canonicalization, autoload-free class lookup interaction, references/copy-on-write, and exact native class-name constant diagnostics exist; phpc run handles current bounded class-name constant behavior";
 const LLVM_STATIC_MEMBER_REJECTION: &str = "LLVM static-member lowering rejects class constants, static property reads/writes, and dynamic static-property receivers until native class constant tables, static property storage, class context and late-static-binding resolution, visibility checks, autoload/class lookup, references/copy-on-write, and exact native static-member errors exist; phpc run handles current bounded static-member behavior";
 const LLVM_NATIVE_ARRAY_NON_LOCAL_ASSIGNMENT_REJECTION: &str = "LLVM native array non-local assignment lowering rejects object, dynamic-object, non-direct object, and static property assignment targets until non-local owner cells, magic property writes, typed/static property state, assignment-expression results, references/copy-on-write, and exact diagnostics share one assignment owner contract; local variables and native array offset assignments use their shared native lvalue assignment contracts";
+const CORE_CLASS_NAMES: &[&str] = &[
+    "Exception",
+    "Error",
+    "Uri\\InvalidUriException",
+    "Uri\\WhatWg\\InvalidUrlException",
+    "RequestParseBodyException",
+    "stdClass",
+    "__PHP_Incomplete_Class",
+    "PhpToken",
+    "mysqli",
+    "mysqli_result",
+    "mysqli_stmt",
+    "mysqli_driver",
+    "PDO",
+    "PDOStatement",
+    "RoundingMode",
+    "Uri\\UriComparisonMode",
+    "Uri\\Rfc3986\\UriHostType",
+    "Uri\\Rfc3986\\UriType",
+    "Uri\\Rfc3986\\Uri",
+    "Uri\\WhatWg\\UrlHostType",
+    "Uri\\WhatWg\\Url",
+    "BcMath\\Number",
+    "GMP",
+    "GdImage",
+    "DateError",
+    "DateObjectError",
+    "DateRangeError",
+    "DateException",
+    "HashContext",
+    "SensitiveParameterValue",
+    "DateTimeZone",
+    "ReflectionException",
+    "Attribute",
+    "ReflectionClass",
+    "ReflectionObject",
+    "ReflectionFunction",
+    "ReflectionMethod",
+    "ReflectionParameter",
+    "ReflectionType",
+    "ReflectionNamedType",
+    "ReflectionUnionType",
+    "ReflectionIntersectionType",
+    "ReflectionProperty",
+    "ReflectionClassConstant",
+    "ReflectionConstant",
+    "ReflectionAttribute",
+    "TypeError",
+    "ArgumentCountError",
+    "ValueError",
+    "ArithmeticError",
+    "DivisionByZeroError",
+    "AssertionError",
+    "RuntimeException",
+    "OutOfRangeException",
+    "UnexpectedValueException",
+    "OutOfBoundsException",
+    "Directory",
+    "SplFixedArray",
+    "ArrayObject",
+    "ArrayIterator",
+    "SplDoublyLinkedList",
+    "SplQueue",
+    "SplStack",
+    "SplObjectStorage",
+    "SplFileInfo",
+    "DirectoryIterator",
+    "FilesystemIterator",
+    "RecursiveDirectoryIterator",
+    "SplFileObject",
+    "SplTempFileObject",
+    "EmptyIterator",
+    "IteratorIterator",
+    "RecursiveIteratorIterator",
+    "NoRewindIterator",
+    "InfiniteIterator",
+    "LimitIterator",
+    "RegexIterator",
+    "ReflectionExtension",
+    "ReflectionZendExtension",
+    "DateMalformedStringException",
+    "DateMalformedIntervalStringException",
+    "DateMalformedPeriodStringException",
+    "DateInterval",
+    "DatePeriod",
+    "DateTime",
+    "DateTimeImmutable",
+    "DOMException",
+    "DOMNode",
+    "DOMAttr",
+    "DOMElement",
+    "DOMDocument",
+    "DOMDocumentType",
+    "XMLReader",
+    "ErrorException",
+    "Reflection",
+    "Deprecated",
+    "NoDiscard",
+    "Random\\IntervalBoundary",
+    "Closure",
+    "JsonException",
+    "ReflectionEnum",
+    "ReflectionEnumUnitCase",
+    "ReflectionEnumBackedCase",
+    "Generator",
+];
+const CORE_INTERFACE_NAMES: &[&str] = &[
+    "Traversable",
+    "IteratorAggregate",
+    "Iterator",
+    "Serializable",
+    "ArrayAccess",
+    "Countable",
+    "Stringable",
+    "SplObserver",
+    "SplSubject",
+    "DateTimeInterface",
+];
+
+fn expected_print_r_array(values: &[&str]) -> String {
+    let mut output = String::from("Array\n(\n");
+    for (index, value) in values.iter().enumerate() {
+        output.push_str(&format!("    [{index}] => {value}\n"));
+    }
+    output.push_str(")\n");
+    output
+}
 
 fn parse_error(source: &str) -> Diagnostic {
     let error = run_source(source).unwrap_err();
@@ -13,9 +140,53 @@ fn parse_error(source: &str) -> Diagnostic {
 }
 
 fn runtime_error(source: &str) -> Diagnostic {
-    let error = run_source(source).unwrap_err();
-    assert_eq!(error.phase, Phase::Runtime);
-    error
+    match run_source(source) {
+        Err(error) => {
+            assert_eq!(error.phase, Phase::Runtime);
+            error
+        }
+        Ok(execution) => {
+            assert_eq!(execution.exit_code, 255);
+            if let Some((message, line)) = php_fatal_stdout_message(&execution.stdout) {
+                assert_eq!(execution.stderr, "");
+                Diagnostic::new(Phase::Runtime, line, 1, message)
+            } else if let Some((message, line)) = php_simple_fatal_stdout_message(&execution.stdout)
+            {
+                assert_eq!(execution.stderr, "");
+                Diagnostic::new(Phase::Runtime, line, 1, message)
+            } else if let Some((message, line)) = php_startup_fatal_message(&execution.stderr) {
+                assert_eq!(execution.stdout, "");
+                Diagnostic::new(Phase::Runtime, line, 1, message)
+            } else {
+                panic!("expected runtime error or PHP fatal execution, got {execution:?}");
+            }
+        }
+    }
+}
+
+fn php_fatal_stdout_message(stdout: &str) -> Option<(String, usize)> {
+    let rest = stdout.strip_prefix("Fatal error: Uncaught ")?;
+    let (_, after_kind) = rest.split_once(": ")?;
+    let (message, after_message) = after_kind.split_once(" in Command line code:")?;
+    let (line_text, _) = after_message.split_once('\n')?;
+    let line = line_text.parse().ok()?;
+    Some((message.to_string(), line))
+}
+
+fn php_simple_fatal_stdout_message(stdout: &str) -> Option<(String, usize)> {
+    let rest = stdout
+        .strip_prefix("Fatal error: ")
+        .or_else(|| stdout.rsplit_once("\nFatal error: ").map(|(_, rest)| rest))?;
+    let (message, line_text) = rest.rsplit_once(" in Command line code on line ")?;
+    let line = line_text.trim_end().parse().ok()?;
+    Some((message.to_string(), line))
+}
+
+fn php_startup_fatal_message(stderr: &str) -> Option<(String, usize)> {
+    let rest = stderr.strip_prefix("Fatal error: ")?;
+    let (message, line_text) = rest.rsplit_once(" in Command line code on line ")?;
+    let line = line_text.parse().ok()?;
+    Some((message.to_string(), line))
 }
 
 fn assert_php_startup_fatal(source: &str, source_file: &str, line: usize, message: &str) {
@@ -53,57 +224,9 @@ echo "ready\n";
         .iter()
         .map(|class| class.name())
         .collect::<Vec<_>>();
-    assert_eq!(
-        class_names,
-        vec![
-            "Exception",
-            "Error",
-            "stdClass",
-            "mysqli",
-            "mysqli_result",
-            "mysqli_stmt",
-            "PDO",
-            "PDOStatement",
-            "RoundingMode",
-            "BcMath\\Number",
-            "DateTimeZone",
-            "ReflectionException",
-            "Attribute",
-            "ReflectionClass",
-            "ReflectionObject",
-            "ReflectionFunction",
-            "ReflectionMethod",
-            "ReflectionParameter",
-            "ReflectionType",
-            "ReflectionNamedType",
-            "ReflectionUnionType",
-            "ReflectionIntersectionType",
-            "ReflectionProperty",
-            "ReflectionClassConstant",
-            "ReflectionAttribute",
-            "TypeError",
-            "ArgumentCountError",
-            "ValueError",
-            "ArithmeticError",
-            "DivisionByZeroError",
-            "RuntimeException",
-            "OutOfRangeException",
-            "OutOfBoundsException",
-            "Directory",
-            "SplFixedArray",
-            "ArrayObject",
-            "ArrayIterator",
-            "SplDoublyLinkedList",
-            "SplQueue",
-            "SplStack",
-            "SplObjectStorage",
-            "ReflectionExtension",
-            "ReflectionZendExtension",
-            "DateTime",
-            "Generator",
-            "Box",
-        ]
-    );
+    let mut expected_class_names = CORE_CLASS_NAMES.to_vec();
+    expected_class_names.push("Box");
+    assert_eq!(class_names, expected_class_names);
     let mut normalized_class_names = class_names
         .iter()
         .map(|name| name.to_ascii_lowercase())
@@ -113,11 +236,14 @@ echo "ready\n";
     assert_eq!(normalized_class_names.len(), class_names.len());
 
     let exception = classes.lookup_class("Exception").unwrap();
-    for property in ["message", "code", "previous"] {
+    for property in ["message", "code"] {
         let metadata = exception.property(property).unwrap();
         assert_eq!(metadata.visibility(), Visibility::Protected);
         assert!(!metadata.is_static());
     }
+    let previous = exception.property("previous").unwrap();
+    assert_eq!(previous.visibility(), Visibility::Private);
+    assert!(!previous.is_static());
     let error = classes.lookup_class("Error").unwrap();
     let message = error.property("message").unwrap();
     assert_eq!(message.visibility(), Visibility::Public);
@@ -133,11 +259,18 @@ echo "ready\n";
         division_by_zero_error.parent_id(),
         Some(arithmetic_error.id())
     );
+    let assertion_error = classes.lookup_class("AssertionError").unwrap();
+    assert_eq!(assertion_error.parent_id(), Some(error.id()));
     let runtime_exception = classes.lookup_class("RuntimeException").unwrap();
     assert_eq!(runtime_exception.parent_id(), Some(exception.id()));
     let out_of_range_exception = classes.lookup_class("OutOfRangeException").unwrap();
     assert_eq!(
         out_of_range_exception.parent_id(),
+        Some(runtime_exception.id())
+    );
+    let unexpected_value_exception = classes.lookup_class("UnexpectedValueException").unwrap();
+    assert_eq!(
+        unexpected_value_exception.parent_id(),
         Some(runtime_exception.id())
     );
     let out_of_bounds_exception = classes.lookup_class("OutOfBoundsException").unwrap();
@@ -186,6 +319,59 @@ echo "ready\n";
         classes.lookup_class("SplStack").unwrap().parent_id(),
         Some(spl_doubly_linked_list.id())
     );
+    let spl_file_info = classes.lookup_class("SplFileInfo").unwrap();
+    let spl_file_object = classes.lookup_class("SplFileObject").unwrap();
+    assert_eq!(spl_file_object.parent_id(), Some(spl_file_info.id()));
+    assert!(spl_file_object.constant("READ_CSV").is_some());
+    assert!(spl_file_object.method("__toString").is_some());
+    assert!(spl_file_object.method("flock").is_some());
+    assert!(spl_file_object.method("fstat").is_some());
+    assert!(spl_file_object.method("setCsvControl").is_some());
+    let spl_temp_file_object = classes.lookup_class("SplTempFileObject").unwrap();
+    assert_eq!(spl_temp_file_object.parent_id(), Some(spl_file_object.id()));
+    assert!(spl_temp_file_object.method("__construct").is_some());
+    assert!(spl_file_info.method("__debugInfo").is_some());
+    assert!(spl_file_info.method("__toString").is_some());
+    assert!(spl_file_info.method("getBasename").is_some());
+    assert!(spl_file_info.method("getExtension").is_some());
+    assert!(spl_file_info.method("getFileInfo").is_some());
+    assert!(spl_file_info.method("getFilename").is_some());
+    assert!(spl_file_info.method("getLinkTarget").is_some());
+    assert!(spl_file_info.method("getOwner").is_some());
+    assert!(spl_file_info.method("getPathInfo").is_some());
+    assert!(spl_file_info.method("getPerms").is_some());
+    assert!(spl_file_info.method("getSize").is_some());
+    assert!(spl_file_info.method("isFile").is_some());
+    assert!(spl_file_info.method("openFile").is_some());
+    assert!(spl_file_info.method("setFileClass").is_some());
+    assert!(spl_file_info.method("setInfoClass").is_some());
+    let directory_iterator = classes.lookup_class("DirectoryIterator").unwrap();
+    assert_eq!(directory_iterator.parent_id(), Some(spl_file_info.id()));
+    assert!(classes.implements_interface(directory_iterator.id(), "Iterator"));
+    assert!(directory_iterator.method("getBasename").is_some());
+    assert!(directory_iterator.method("isFile").is_some());
+    let filesystem_iterator = classes.lookup_class("FilesystemIterator").unwrap();
+    assert_eq!(
+        filesystem_iterator.parent_id(),
+        Some(directory_iterator.id())
+    );
+    assert!(filesystem_iterator.constant("SKIP_DOTS").is_some());
+    assert!(filesystem_iterator.method("setFlags").is_some());
+    let recursive_directory_iterator = classes.lookup_class("RecursiveDirectoryIterator").unwrap();
+    assert_eq!(
+        recursive_directory_iterator.parent_id(),
+        Some(filesystem_iterator.id())
+    );
+    assert!(recursive_directory_iterator.method("hasChildren").is_some());
+    let recursive_iterator_iterator = classes.lookup_class("RecursiveIteratorIterator").unwrap();
+    assert!(classes.implements_interface(recursive_iterator_iterator.id(), "Iterator"));
+    assert!(recursive_iterator_iterator
+        .method("getSubPathname")
+        .is_some());
+    let regex_iterator = classes.lookup_class("RegexIterator").unwrap();
+    assert!(classes.implements_interface(regex_iterator.id(), "Iterator"));
+    assert!(regex_iterator.constant("GET_MATCH").is_some());
+    assert!(regex_iterator.method("setPregFlags").is_some());
 
     let class = classes.lookup_class("box").unwrap();
     assert_eq!(class.name(), "Box");
@@ -207,6 +393,289 @@ echo "ready\n";
     let make = class.method("make").unwrap();
     assert_eq!(make.visibility(), Visibility::Public);
     assert!(make.is_static());
+}
+
+#[test]
+fn property_hook_invalid_declarations_emit_php_fatals() {
+    let cases = [
+        (
+            "<?php\nclass Test {\n    public $prop {}\n}\n",
+            "Property hook list must not be empty",
+        ),
+        (
+            "<?php\nclass Test {\n    public $prop { get {} get {} }\n}\n",
+            "Cannot redeclare property hook \"get\"",
+        ),
+        (
+            "<?php\nclass Test {\n    public static $prop { get; set; }\n}\n",
+            "Cannot declare hooks for static property",
+        ),
+        (
+            "<?php\nclass Test {\n    public readonly int $prop { get; set; }\n}\n",
+            "Hooked properties cannot be readonly",
+        ),
+        (
+            "<?php\nclass Test {\n    public $prop { static get {} }\n}\n",
+            "Cannot use the static modifier on a property hook",
+        ),
+        (
+            "<?php\nclass Test {\n    private $prop { public get; }\n}\n",
+            "Cannot use the public modifier on a property hook",
+        ),
+        (
+            "<?php\nclass Test {\n    private $prop { final get; }\n}\n",
+            "Property hook cannot be both final and private",
+        ),
+        (
+            "<?php\nclass Test {\n    public abstract $prop { final get; }\n}\n",
+            "Property hook cannot be both abstract and final",
+        ),
+        (
+            "<?php\nclass Test {\n    public abstract $prop { get {} }\n}\n",
+            "Abstract property Test::$prop must specify at least one abstract hook",
+        ),
+        (
+            "<?php\nclass Test {\n    public $prop { get() {} }\n}\n",
+            "get hook of property Test::$prop must not have a parameter list",
+        ),
+        (
+            "<?php\nclass Test {\n    public $prop { foobar {} }\n}\n",
+            "Unknown hook \"foobar\" for property Test::$prop, expected \"get\" or \"set\"",
+        ),
+        (
+            "<?php\ninterface I {\n    final public $prop { get; set; }\n}\n",
+            "Property in interface cannot be final",
+        ),
+        (
+            "<?php\ninterface I {\n    public abstract $prop { get; }\n}\n",
+            "Property in interface cannot be explicitly abstract. All interface members are implicitly abstract",
+        ),
+        (
+            "<?php\ninterface I {\n    protected $prop { get; set; }\n}\n",
+            "Property in interface cannot be protected or private",
+        ),
+        (
+            "<?php\ninterface I {\n    public $prop { final get; }\n}\n",
+            "Property hook cannot be both abstract and final",
+        ),
+    ];
+
+    for (source, message) in cases {
+        let error = parse_error(source);
+        assert_eq!(error.line, 3);
+        assert_eq!(error.message, format!("php fatal: {message}"));
+    }
+}
+
+#[test]
+fn property_hook_declarations_are_metadata_and_store_backing_properties() {
+    let execution = run_source(
+        r#"<?php
+abstract class Base {
+    public abstract $prop {
+        get;
+        set {}
+    }
+}
+
+class Child extends Base {
+    public $prop = 42 {
+        get {}
+    }
+}
+
+$child = new Child();
+echo $child->prop;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "42");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn abstract_property_hook_requirements_are_enforced() {
+    let missing_parent_hook = runtime_error(
+        r#"<?php
+abstract class Base {
+    public abstract $prop {
+        get;
+        set {}
+    }
+}
+
+class Child extends Base {}
+"#,
+    );
+    assert_eq!(
+        missing_parent_hook.message,
+        "Class Child contains 1 abstract method and must therefore be declared abstract or implement the remaining method (Base::$prop::get)"
+    );
+
+    let missing_own_hooks = runtime_error(
+        r#"<?php
+class Broken {
+    abstract public $prop { get; set; }
+}
+"#,
+    );
+    assert_eq!(
+        missing_own_hooks.message,
+        "Class Broken contains 2 abstract methods and must therefore be declared abstract or implement the remaining methods (Broken::$prop::get, Broken::$prop::set)"
+    );
+}
+
+#[test]
+fn interface_property_hook_requirements_are_enforced() {
+    let missing = runtime_error(
+        r#"<?php
+interface Contract {
+    public $prop { get; set; }
+}
+
+class Missing implements Contract {}
+"#,
+    );
+    assert_eq!(
+        missing.message,
+        "Class Missing contains 2 abstract methods and must therefore be declared abstract or implement the remaining methods (Contract::$prop::get, Contract::$prop::set)"
+    );
+
+    let readonly_set = runtime_error(
+        r#"<?php
+interface Contract {
+    public int $prop { get; set; }
+}
+
+class ReadonlySet implements Contract {
+    public function __construct(public readonly int $prop) {}
+}
+"#,
+    );
+    assert_eq!(
+        readonly_set.message,
+        "Set access level of ReadonlySet::$prop must be omitted (as in class Contract)"
+    );
+
+    let by_value_get = runtime_error(
+        r#"<?php
+interface Contract {
+    public $prop { &get; }
+}
+
+class ByValue implements Contract {
+    public $prop {
+        get => $this->prop;
+    }
+}
+"#,
+    );
+    assert_eq!(
+        by_value_get.message,
+        "Declaration of ByValue::$prop::get() must be compatible with &Contract::$prop::get()"
+    );
+}
+
+#[test]
+fn property_hook_set_parameter_metadata_is_validated() {
+    assert_php_startup_fatal(
+        r#"<?php
+class Test {
+    public string|array $prop {
+        set(string $prop) {}
+    }
+}
+"#,
+        "hook_set_param_variance.php",
+        4,
+        "Type of parameter $prop of hook Test::$prop::set must be compatible with property type",
+    );
+
+    assert_php_startup_fatal(
+        r#"<?php
+class Test {
+    public string $prop {
+        set($prop) {}
+    }
+}
+"#,
+        "hook_set_param_untyped.php",
+        4,
+        "Type of parameter $prop of hook Test::$prop::set must be compatible with property type",
+    );
+
+    let valid = run_source(
+        r#"<?php
+interface X {}
+interface Y extends X {}
+class Test {
+    public Y $prop {
+        set(X $prop) {}
+    }
+}
+echo "ok";
+"#,
+    )
+    .unwrap();
+    assert_eq!(valid.stdout, "ok");
+}
+
+#[test]
+fn final_property_metadata_blocks_inherited_redeclarations() {
+    assert_php_startup_fatal(
+        r#"<?php
+class A {
+    public final $prop;
+}
+class B extends A {
+    public $prop { get {} set {} }
+}
+"#,
+        "final_property_override.php",
+        5,
+        "Cannot override final property A::$prop",
+    );
+
+    assert_php_startup_fatal(
+        r#"<?php
+class A {
+    public function __construct(
+        final $prop
+    ) {}
+}
+class B extends A {
+    public $prop;
+}
+"#,
+        "final_promoted_property_override.php",
+        7,
+        "Cannot override final property A::$prop",
+    );
+
+    let valid = run_source(
+        r#"<?php
+class A {
+    public function __construct(
+        final $prop
+    ) {
+        echo __METHOD__ . "(): $prop\n";
+    }
+}
+class B extends A {
+    public function __construct($prop) {
+        echo __METHOD__ . "(): $prop\n";
+        parent::__construct($prop);
+    }
+}
+new B("test");
+"#,
+    )
+    .unwrap();
+    assert_eq!(
+        valid.stdout,
+        "B::__construct(): test\nA::__construct(): test\n"
+    );
 }
 
 #[test]
@@ -352,8 +821,8 @@ $box = new $class();
 "#,
     );
     assert_eq!(missing.line, 3);
-    assert_eq!(missing.column, 8);
-    assert_eq!(missing.message, "undefined class Missing");
+    assert_eq!(missing.column, 1);
+    assert_eq!(missing.message, "Class \"Missing\" not found");
 }
 
 #[test]
@@ -437,7 +906,7 @@ print_r($bag->items);
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "loaded\ncharge\nfallback\nroot-append\nArray\n(\n    [translation.mo] => Array\n    (\n        [en_US] => Array\n        (\n            [default] => loaded\n            [0] => fallback\n        )\n        [fr_FR] => Array\n        (\n            [default] => charge\n        )\n    )\n    [0] => root-append\n)\n"
+        "loaded\ncharge\nfallback\nroot-append\nArray\n(\n    [translation.mo] => Array\n        (\n            [en_US] => Array\n                (\n                    [default] => loaded\n                    [0] => fallback\n                )\n\n            [fr_FR] => Array\n                (\n                    [default] => charge\n                )\n\n        )\n\n    [0] => root-append\n)\n"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -485,7 +954,7 @@ print_r($bag->items);
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "fallback\ncharge\nArray\n(\n    [translation.mo] => Array\n    (\n        [en_US] => Array\n        (\n            [fallback] => fallback\n        )\n        [fr_FR] => Array\n        (\n            [default] => charge\n        )\n    )\n)\n"
+        "fallback\ncharge\nArray\n(\n    [translation.mo] => Array\n        (\n            [en_US] => Array\n                (\n                    [fallback] => fallback\n                )\n\n            [fr_FR] => Array\n                (\n                    [default] => charge\n                )\n\n        )\n\n)\n"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -1444,6 +1913,151 @@ echo $bag->title;
 }
 
 #[test]
+fn magic_get_set_run_for_direct_property_compound_assignment() {
+    let source = r#"<?php
+class Container {
+    private $_p = array();
+
+    public function __get($property) {
+        echo "get:$property\n";
+        return $this->_p[$property];
+    }
+
+    public function __set($property, $value) {
+        echo "set:$property=$value\n";
+        $this->_p[$property] = $value;
+    }
+}
+
+$container = new Container();
+$container->a = 1;
+var_dump($container->a += 1);
+var_dump($container->a += max(0, 1));
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "set:a=1\n",
+            "get:a\n",
+            "set:a=2\n",
+            "int(2)\n",
+            "get:a\n",
+            "set:a=3\n",
+            "int(3)\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn magic_get_set_run_for_direct_property_increment_decrement() {
+    let source = r#"<?php
+class Overloaded {
+    private $values = array("a" => 0, "b" => 5);
+
+    public function __get($property) {
+        echo "get:$property(" . $this->values[$property] . ")\n";
+        return $this->values[$property];
+    }
+
+    public function __set($property, $value) {
+        echo "set:$property=$value\n";
+        $this->values[$property] = $value;
+    }
+}
+
+$box = new Overloaded();
+var_dump($box->a++);
+var_dump(++$box->a);
+var_dump($box->b--);
+var_dump(--$box->b);
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "get:a(0)\n",
+            "set:a=1\n",
+            "int(0)\n",
+            "get:a(1)\n",
+            "set:a=2\n",
+            "int(2)\n",
+            "get:b(5)\n",
+            "set:b=4\n",
+            "int(5)\n",
+            "get:b(4)\n",
+            "set:b=3\n",
+            "int(3)\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reference_returning_magic_get_increment_writes_missing_dynamic_property_without_set() {
+    let source = r#"<?php
+#[AllowDynamicProperties]
+class Box {
+    private $slot = 0;
+
+    public function &__get($property) {
+        return $this->slot;
+    }
+}
+
+$box = new Box();
+echo $box->f++;
+echo $box->f++;
+echo $box->f++;
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.stdout, "012");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn magic_get_does_not_reenter_same_active_object_property() {
+    let source = r#"<?php
+$bar = new Bar();
+$foo = new Foo();
+
+class Bar {
+    public function __get($property) {
+        global $foo;
+        return $foo->foo;
+    }
+}
+
+#[AllowDynamicProperties]
+class Foo {
+    public function __get($property) {
+        global $bar;
+        return $bar->bar;
+    }
+}
+
+$foo->blah += 1;
++$foo->blah;
+echo "ok";
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert!(
+        execution
+            .stdout
+            .contains("Warning: Undefined property: Bar::$bar"),
+        "{}",
+        execution.stdout
+    );
+    assert!(execution.stdout.ends_with("ok"), "{}", execution.stdout);
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn magic_unset_runs_for_missing_direct_property_unset() {
     let source = r#"<?php
 class Bag {
@@ -1552,6 +2166,198 @@ echo $object::route("object", 4);
 }
 
 #[test]
+fn static_syntax_missing_methods_prefer_current_this_magic_call() {
+    let source = r#"<?php
+class Router {
+    public function __call($method, $args) {
+        echo "call:$method:" . count($args) . "\n";
+    }
+
+    public static function __callStatic($method, $args) {
+        echo "static:$method:" . count($args) . "\n";
+    }
+
+    public function run() {
+        self::one(1);
+        Router::two(1, 2);
+        $this::three();
+        call_user_func(array("Router", "four"), 4);
+        call_user_func("Router::five");
+    }
+}
+
+$router = new Router();
+$router->run();
+Router::six(6);
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "call:one:1\n",
+            "call:two:2\n",
+            "call:three:0\n",
+            "call:four:1\n",
+            "call:five:0\n",
+            "static:six:1\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn dynamic_class_method_callables_do_not_use_current_this_magic_call() {
+    let source = r#"<?php
+class Foo {
+    public function __call($name, $args) {
+        echo "magic:$name\n";
+    }
+
+    public function run() {
+        foreach (array(array("Foo", "bar"), "Foo::bar") as $callback) {
+            try {
+                $callback();
+            } catch (Error $e) {
+                echo $e->getMessage(), "\n";
+            }
+        }
+    }
+}
+
+$foo = new Foo();
+$foo->run();
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "Non-static method Foo::bar() cannot be called statically\nNon-static method Foo::bar() cannot be called statically\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn dynamic_class_method_callables_prefer_callstatic_when_available() {
+    let source = r#"<?php
+class Foo {
+    public function __call($method, $args) {
+        return "call:" . $method;
+    }
+
+    public static function __callStatic($method, $args) {
+        return static::class . "::" . $method;
+    }
+}
+
+class Bar extends Foo {}
+
+$array = array("Foo", "anythingStatic");
+echo $array(), "\n";
+
+$string = "Foo::anythingStatic";
+echo $string(), "\n";
+
+$fcc = Foo::anythingStatic(...);
+echo $fcc(), "\n";
+
+$child = Bar::anythingStatic(...);
+echo $child(), "\n";
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "Foo::anythingStatic\nFoo::anythingStatic\nFoo::anythingStatic\nBar::anythingStatic\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn inaccessible_static_syntax_methods_fall_back_to_call_static() {
+    let source = r#"<?php
+class Hidden {
+    private static function hiddenStatic() {}
+    protected function hiddenInstance() {}
+
+    public static function __callStatic($method, $args) {
+        echo "static:$method:" . count($args) . "\n";
+    }
+}
+
+$object = new Hidden();
+$object::hiddenStatic(1);
+$object::hiddenInstance(1, 2);
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "static:hiddenStatic:1\nstatic:hiddenInstance:2\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn call_user_func_array_object_callback_uses_magic_call() {
+    let source = r#"<?php
+class Router {
+    public function __call($method, $args) {
+        echo "call:$method:" . count($args) . "\n";
+    }
+}
+
+$router = new Router();
+call_user_func_array(array($router, "route"), array(1, 2));
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.stdout, "call:route:2\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn dynamic_static_magic_method_names_truncate_at_nul() {
+    let source = r#"<?php
+class Router {
+    public static function __callStatic($method, $args) {
+        var_dump($method);
+    }
+}
+
+$class = "Router";
+$method = "\0suffix";
+$class::$method();
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.stdout, "string(0) \"\"\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn static_constructor_call_bypasses_call_static() {
+    let execution = run_source(
+        r#"<?php
+class Router {
+    public static function __callStatic($method, $args) {
+        echo "unreached";
+    }
+}
+
+Router::__construct();
+"#,
+    )
+    .unwrap();
+
+    assert!(execution
+        .stdout
+        .contains("Fatal error: Uncaught Error: Cannot call constructor"));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 255);
+}
+
+#[test]
 fn invalid_magic_call_signature_emits_php_startup_fatal() {
     let execution = run_source_with_source_file(
         r#"<?php
@@ -1613,6 +2419,391 @@ echo "reached";
         "Warning: The magic method MagicBox::__unset() must have public visibility in Zend/tests/magic_methods/magic_methods_002.php on line 3"
     );
     assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn magic_method_return_type_contracts_emit_php_startup_fatals() {
+    let cases = [
+        (
+            r#"<?php
+class Box {
+    function __construct(): Box {}
+}
+"#,
+            "Zend/tests/return_types/014.php",
+            "Fatal error: Method Box::__construct() cannot declare a return type in Zend/tests/return_types/014.php on line 3",
+        ),
+        (
+            r#"<?php
+class Box {
+    function __destruct(): Box {}
+}
+"#,
+            "Zend/tests/return_types/018.php",
+            "Fatal error: Method Box::__destruct() cannot declare a return type in Zend/tests/return_types/018.php on line 3",
+        ),
+        (
+            r#"<?php
+class Box {
+    function __clone(): Box {}
+}
+"#,
+            "Zend/tests/return_types/019.php",
+            "Fatal error: Box::__clone(): Return type must be void when declared in Zend/tests/return_types/019.php on line 3",
+        ),
+        (
+            r#"<?php
+class Box {
+    function __isset($name): \stdClass|bool {}
+}
+"#,
+            "Zend/tests/return_types/034.php",
+            "Fatal error: Box::__isset(): Return type must be bool when declared in Zend/tests/return_types/034.php on line 3",
+        ),
+        (
+            r#"<?php
+class Box {
+    public function __debugInfo(): bool {}
+}
+"#,
+            "Zend/tests/return_types/037.php",
+            "Fatal error: Box::__debugInfo(): Return type must be ?array when declared in Zend/tests/return_types/037.php on line 3",
+        ),
+        (
+            r#"<?php
+class Box {
+    public static function __set_state($properties): bool {}
+}
+"#,
+            "Zend/tests/return_types/044.php",
+            "Fatal error: Box::__set_state(): Return type must be object when declared in Zend/tests/return_types/044.php on line 3",
+        ),
+    ];
+
+    for (source, file, expected_stderr) in cases {
+        let execution = run_source_with_source_file(source, file).unwrap();
+        assert_eq!(execution.stdout, "", "{file}");
+        assert_eq!(execution.stderr, expected_stderr, "{file}");
+        assert_eq!(execution.exit_code, 255, "{file}");
+    }
+}
+
+#[test]
+fn magic_method_signature_contracts_emit_php_startup_fatals() {
+    let cases = [
+        (
+            r#"<?php
+class Box {
+    protected static function __toString($left, $right) {}
+}
+"#,
+            "Zend/tests/magic_methods/magic_methods_010.php",
+            3,
+            "Method Box::__toString() cannot take arguments",
+        ),
+        (
+            r#"<?php
+class Box {
+    public function __clone($value) {}
+}
+"#,
+            "Zend/tests/errmsg/errmsg_015.php",
+            3,
+            "Method Box::__clone() cannot take arguments",
+        ),
+        (
+            r#"<?php
+class Box {
+    public function __destruct($value) {}
+}
+"#,
+            "Zend/tests/errmsg/errmsg_019.php",
+            3,
+            "Method Box::__destruct() cannot take arguments",
+        ),
+        (
+            r#"<?php
+class Box {
+    public static function __construct() {}
+}
+"#,
+            "Zend/tests/errmsg/errmsg_032.php",
+            3,
+            "Method Box::__construct() cannot be static",
+        ),
+        (
+            r#"<?php
+class Box {
+    public static function __clone() {}
+}
+"#,
+            "Zend/tests/errmsg/errmsg_034.php",
+            3,
+            "Method Box::__clone() cannot be static",
+        ),
+        (
+            r#"<?php
+class Box {
+    public static function __invoke() {}
+}
+"#,
+            "Zend/tests/magic_methods/bug70215.php",
+            3,
+            "Method Box::__invoke() cannot be static",
+        ),
+        (
+            r#"<?php
+class Box {
+    public function __serialize($value) {}
+}
+"#,
+            "Zend/tests/magic_methods/magic_methods_serialize.php",
+            3,
+            "Method Box::__serialize() cannot take arguments",
+        ),
+        (
+            r#"<?php
+class Box {
+    public function __sleep($value) {}
+}
+"#,
+            "Zend/tests/magic_methods/magic_methods_sleep.php",
+            3,
+            "Method Box::__sleep() cannot take arguments",
+        ),
+        (
+            r#"<?php
+class Box {
+    public function __wakeup($value) {}
+}
+"#,
+            "Zend/tests/magic_methods/magic_methods_wakeup.php",
+            3,
+            "Method Box::__wakeup() cannot take arguments",
+        ),
+        (
+            r#"<?php
+class Box {
+    public function __unserialize($data, $extra) {}
+}
+"#,
+            "Zend/tests/magic_methods/magic_methods_unserialize.php",
+            3,
+            "Method Box::__unserialize() must take exactly 1 argument",
+        ),
+        (
+            r#"<?php
+class Box {
+    public function __unserialize(string $data) {}
+}
+"#,
+            "Zend/tests/magic_methods/magic_methods_019.php",
+            3,
+            "Box::__unserialize(): Parameter #1 ($data) must be of type array when declared",
+        ),
+        (
+            r#"<?php
+class Box {
+    public static function __set_state(int $properties) {}
+}
+"#,
+            "Zend/tests/magic_methods/magic_methods_020.php",
+            3,
+            "Box::__set_state(): Parameter #1 ($properties) must be of type array when declared",
+        ),
+        (
+            r#"<?php
+class Box {
+    public function __set_state(array $properties) {}
+}
+"#,
+            "Zend/tests/magic_methods/magic_methods_set_state.php",
+            3,
+            "Method Box::__set_state() must be static",
+        ),
+    ];
+
+    for (source, file, line, message) in cases {
+        assert_php_startup_fatal(source, file, line, message);
+    }
+}
+
+#[test]
+fn magic_method_visibility_warning_is_preserved_before_registration_fatal() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+abstract class Base {
+    abstract function __set($name, $value);
+}
+class Child extends Base {
+    private function __set($name, $value) {}
+}
+"#,
+        "Zend/tests/magic_methods/magic_methods_008.php",
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "");
+    assert_eq!(
+        execution.stderr,
+        "Warning: The magic method Child::__set() must have public visibility in Zend/tests/magic_methods/magic_methods_008.php on line 6\n\nFatal error: Access level to Child::__set() must be public (as in class Base) in Zend/tests/magic_methods/magic_methods_008.php on line 6"
+    );
+    assert_eq!(execution.exit_code, 255);
+}
+
+#[test]
+fn magic_method_return_type_contracts_accept_supported_declarations() {
+    let execution = run_source(
+        r#"<?php
+class Box {
+    public function __construct() {}
+    public function __clone(): void {}
+    public function __set(string $name, mixed $value): void {}
+    public function __isset(string $name): bool { return false; }
+    public function __unset(string $name): void {}
+    public function __toString(): string { return "box"; }
+    public function __debugInfo(): array|null { return array("ok" => 1); }
+    public function __serialize(): array { return []; }
+    public function __unserialize(array $data): void {}
+    public function __sleep(): array { return []; }
+    public function __wakeup(): void {}
+    public static function __set_state(array $properties): object { return new Box(); }
+}
+
+echo new Box(), "|";
+echo get_class(Box::__set_state([]));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.stdout, "box|Box");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn set_state_return_type_accepts_object_covariance() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+class Foo {
+    public static function __set_state(array $data): self {}
+}
+
+class Foo2 {
+    public static function __set_state(array $data): static {}
+}
+
+class Foo3 {
+    public static function __set_state(array $data): Foo3|Foo2 {}
+}
+
+class Bad {
+    public static function __set_state(array $data): Bad|bool {}
+}
+
+echo "unreached";
+"#,
+        "Zend/tests/magic_methods/magic_methods_021.php",
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "");
+    assert_eq!(
+        execution.stderr,
+        "Fatal error: Bad::__set_state(): Return type must be object when declared in Zend/tests/magic_methods/magic_methods_021.php on line 15"
+    );
+    assert_eq!(execution.exit_code, 255);
+}
+
+#[test]
+fn var_dump_uses_debug_info_array_properties() {
+    let execution = run_source(
+        r#"<?php
+class Foo {
+    public function __debugInfo() {
+        return array("a" => 1, "\0*\0b" => 2, "\0Foo\0c" => 3);
+    }
+}
+
+var_dump(new Foo());
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "object(Foo)#1 (3) {\n",
+            "  [\"a\"]=>\n",
+            "  int(1)\n",
+            "  [\"b\":protected]=>\n",
+            "  int(2)\n",
+            "  [\"c\":\"Foo\":private]=>\n",
+            "  int(3)\n",
+            "}\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn var_dump_debug_info_null_return_deprecates_and_dumps_empty_object() {
+    let execution = run_source(
+        r#"<?php
+set_error_handler(function($errno, $message) {
+    echo "deprecated:", $message, "\n";
+    return true;
+}, E_DEPRECATED);
+
+class Bar {
+    public function __debugInfo() {
+        return null;
+    }
+}
+
+var_dump(new Bar());
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "deprecated:Returning null from Bar::__debugInfo() is deprecated, return an empty array instead\n",
+            "object(Bar)#2 (0) {\n",
+            "}\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn var_dump_debug_info_non_array_return_emits_php_fatal() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+class C {
+    public $val;
+    public function __debugInfo() {
+        return $this->val;
+    }
+    public function __construct($val) {
+        $this->val = $val;
+    }
+}
+
+$c = new C("foo");
+var_dump($c);
+echo "unreached";
+"#,
+        "Zend/tests/debug_info/debug_info-error-str.php",
+    )
+    .unwrap();
+
+    assert!(execution
+        .stdout
+        .starts_with("Fatal error: __debuginfo() must return an array in Zend/tests/debug_info/debug_info-error-str.php on line "));
+    assert!(!execution.stdout.contains("unreached"));
+    assert_eq!(execution.exit_code, 255);
 }
 
 #[test]
@@ -2131,11 +3322,8 @@ echo empty($box->secret);
 
     assert_eq!(error.phase, Phase::Runtime);
     assert_eq!(error.line, 7);
-    assert_eq!(error.column, 12);
-    assert_eq!(
-        error.message,
-        "unsupported object property access: non-public property Box::$secret requires same-class method context in the current subset"
-    );
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, "Cannot access private property Box::$secret");
 }
 
 #[test]
@@ -2180,8 +3368,11 @@ echo $exception instanceof Exception ? "exception" : "missing";
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "leaf|7|Exception\nexception");
-    assert_eq!(execution.exit_code, 0);
+    assert_eq!(
+        execution.stdout,
+        "Fatal error: Uncaught Error: Call to undefined method Error::describe() in Command line code:9\nStack trace:\n#0 {main}\n  thrown in Command line code on line 9"
+    );
+    assert_eq!(execution.exit_code, 255);
 }
 
 #[test]
@@ -2199,8 +3390,11 @@ echo $exception->describe();
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "|0|null");
-    assert_eq!(execution.exit_code, 0);
+    assert_eq!(
+        execution.stdout,
+        "Fatal error: Uncaught Error: Call to undefined method Error::describe() in Command line code:8\nStack trace:\n#0 {main}\n  thrown in Command line code on line 8"
+    );
+    assert_eq!(execution.exit_code, 255);
 }
 
 #[test]
@@ -2225,14 +3419,22 @@ echo $call($profile), "\n";
 
 #[test]
 fn get_class_requires_object_argument() {
-    let error = runtime_error("<?php\necho get_class(42);\n");
+    let execution = run_source(
+        r#"<?php
+try {
+    get_class(42);
+} catch (TypeError $e) {
+    echo get_class($e), ":", $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
     assert_eq!(
-        error.message,
-        "unsupported call get_class(): argument must be object, got int"
+        execution.stdout,
+        "TypeError:get_class(): Argument #1 ($object) must be of type object, int given"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -2455,13 +3657,15 @@ echo is_a($child, "Stringable") ? "child:is-a\n" : "child:no\n";
 echo is_subclass_of("ChildLabel", "Stringable") ? "child:subclass\n" : "child:no-subclass\n";
 echo is_a($explicit, "Stringable") ? "explicit:is-a\n" : "explicit:no\n";
 echo is_a($plain, "Stringable") ? "plain:is-a\n" : "plain:no\n";
+$implements = class_implements($child);
+echo isset($implements["Stringable"]) ? "implements:stringable\n" : "implements:missing\n";
 echo in_array("Stringable", get_declared_interfaces(), true) ? "declared\n" : "not-declared\n";
 "#;
 
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "interface\ninstanceof\nchild:is-a\nchild:subclass\nexplicit:is-a\nplain:no\ndeclared\n"
+        "interface\ninstanceof\nchild:is-a\nchild:subclass\nexplicit:is-a\nplain:no\nimplements:stringable\ndeclared\n"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -2556,7 +3760,7 @@ class Service implements Logger {}
     assert_eq!(missing_method_error.column, 1);
     assert_eq!(
         missing_method_error.message,
-        "unsupported class inheritance for Service: concrete class Service must implement interface method Logger::log()"
+        "Class Service contains 1 abstract method and must therefore be declared abstract or implement the remaining method (Logger::log)"
     );
 
     let non_public_method_error = runtime_error(
@@ -2574,7 +3778,58 @@ class Service implements Logger {
     assert_eq!(non_public_method_error.column, 1);
     assert_eq!(
         non_public_method_error.message,
-        "unsupported class inheritance for Service: concrete class Service must implement interface method Logger::log()"
+        "Access level to Service::log() must be public (as in class Logger)"
+    );
+}
+
+#[test]
+fn invalid_class_interface_relationships_report_php_startup_fatals() {
+    assert_php_startup_fatal(
+        r#"<?php
+interface Contract {
+    public function run();
+}
+
+class Service extends Contract {
+    public function run() {}
+}
+"#,
+        "extends-interface.php",
+        6,
+        "Class Service cannot extend interface Contract",
+    );
+
+    assert_php_startup_fatal(
+        r#"<?php
+class Base {}
+
+class Service implements Base {}
+"#,
+        "implements-class.php",
+        4,
+        "Service cannot implement Base - it is not an interface",
+    );
+
+    assert_php_startup_fatal(
+        r#"<?php
+class Base {}
+
+interface Contract extends Base {}
+"#,
+        "interface-extends-class.php",
+        4,
+        "Contract cannot implement Base - it is not an interface",
+    );
+
+    assert_php_startup_fatal(
+        r#"<?php
+trait Role {}
+
+class Service implements Role {}
+"#,
+        "implements-trait.php",
+        4,
+        "Service cannot implement Role - it is not an interface",
     );
 }
 
@@ -2783,7 +4038,7 @@ echo "Done";
         "Service::$value has #[\\Override] attribute, but no matching parent property exists",
     );
 
-    let runtime_error = runtime_error(
+    let promoted_property = run_source(
         r#"<?php
 class Service {
     public function __construct(
@@ -2792,11 +4047,173 @@ class Service {
 }
 new Service("value");
 "#,
+    )
+    .unwrap();
+    assert_eq!(promoted_property.stdout, "");
+    assert_eq!(promoted_property.stderr, "");
+    assert_eq!(promoted_property.exit_code, 0);
+}
+
+#[test]
+fn asymmetric_property_visibility_inheritance_and_promoted_diagnostics() {
+    let valid = run_source(
+        r#"<?php
+class PrivateValue {
+    private private(set) string $value;
+}
+class ProtectedValue {
+    protected protected(set) string $value;
+}
+echo "Done";
+"#,
+    )
+    .unwrap();
+    assert_eq!(valid.stdout, "Done");
+    assert_eq!(valid.exit_code, 0);
+
+    assert_php_startup_fatal(
+        r#"<?php
+class Value {
+    public function __construct(
+        public private(set) $id,
+    ) {}
+}
+"#,
+        "asym_ctor_missing_declared_type.php",
+        4,
+        "Property with asymmetric visibility Value::$id must have type",
     );
+
+    assert_php_startup_fatal(
+        r#"<?php
+class Value {
+    public function __construct(
+        private protected(set) string $id,
+    ) {}
+}
+"#,
+        "asym_ctor_invalid_set_scope.php",
+        4,
+        "Visibility of property Value::$id must not be weaker than set visibility",
+    );
+
+    assert_php_startup_fatal(
+        r#"<?php
+class A {
+    public private(set) string $foo;
+}
+class B extends A {
+    public string $foo;
+}
+        "#,
+        "asym_inherited_final_set_visibility.php",
+        5,
+        "Cannot override final property A::$foo",
+    );
+
+    assert_php_startup_fatal(
+        r#"<?php
+class A {
+    public protected(set) string $foo;
+}
+class B extends A {
+    public private(set) string $foo;
+}
+        "#,
+        "asym_inherited_set_scope_tightening.php",
+        5,
+        "Set access level of B::$foo must be protected(set) (as in class A) or weaker",
+    );
+
+    assert_php_startup_fatal(
+        r#"<?php
+class A {
+    public string $foo;
+}
+class B extends A {
+    public protected(set) string $foo;
+}
+        "#,
+        "asym_inherited_public_parent_set_scope.php",
+        5,
+        "Set access level of B::$foo must be omitted (as in class A)",
+    );
+}
+
+#[test]
+fn asymmetric_property_visibility_runtime_set_access_is_enforced() {
+    let output = run_source(
+        r#"<?php
+class Base {
+    public private(set) int $prop = 1;
+    public private(set) array $items = [];
+
+    public function ok() {
+        $this->prop = 2;
+        $this->items[] = 3;
+        unset($this->prop);
+        echo "ok\n";
+    }
+}
+
+class Child extends Base {
+    public function bad() {
+        try {
+            $this->prop = 3;
+        } catch (Error $e) {
+            echo $e->getMessage(), "\n";
+        }
+    }
+}
+
+class ReadonlyValue {
+    public readonly int $value;
+}
+
+$base = new Base();
+try {
+    $base->prop = 2;
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $base->items[] = 1;
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $ref =& $base->prop;
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    unset($base->prop);
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+$base->ok();
+(new Child())->bad();
+try {
+    (new ReadonlyValue())->value = 1;
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
     assert_eq!(
-        runtime_error.message,
-        "unsupported object instantiation for Service: constructor property promotion initialization is not implemented"
+        output.stdout,
+        "Cannot modify private(set) property Base::$prop from global scope\n\
+Cannot indirectly modify private(set) property Base::$items from global scope\n\
+Cannot indirectly modify private(set) property Base::$prop from global scope\n\
+Cannot unset private(set) property Base::$prop from global scope\n\
+ok\n\
+Cannot modify private(set) property Base::$prop from scope Child\n\
+Cannot modify protected(set) readonly property ReadonlyValue::$value from global scope\n"
     );
+    assert_eq!(output.stderr, "");
+    assert_eq!(output.exit_code, 0);
 }
 
 #[test]
@@ -3084,6 +4501,28 @@ echo $service->log("ok", "custom");
     assert_eq!(execution.stdout, "log:ok:default\nlog:ok:custom");
     assert_eq!(execution.exit_code, 0);
 
+    let variadic_drop_execution = run_source(
+        r#"<?php
+interface DB {
+    public function query($query, ...$params);
+}
+
+class MySQL implements DB {
+    public function query(...$params) {
+        return count($params);
+    }
+}
+
+$db = new MySQL();
+echo $db->query("SELECT 1"), "\n";
+echo $db->query("SELECT ?", "value");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(variadic_drop_execution.stdout, "1\n2");
+    assert_eq!(variadic_drop_execution.exit_code, 0);
+
     let extra_required_error = runtime_error(
         r#"<?php
 interface Logger {
@@ -3099,7 +4538,7 @@ class Service implements Logger {
     assert_eq!(extra_required_error.column, 1);
     assert_eq!(
         extra_required_error.message,
-        "unsupported class inheritance for Service: method Service::log() cannot require more parameters than interface method Logger::log()"
+        "Declaration of Service::log($message, $context) must be compatible with Logger::log($message)"
     );
 
     let optional_interface_error = runtime_error(
@@ -3117,7 +4556,7 @@ class Service implements Logger {
     assert_eq!(optional_interface_error.column, 1);
     assert_eq!(
         optional_interface_error.message,
-        "unsupported class inheritance for Service: method Service::log() cannot require more parameters than interface method Logger::log()"
+        "Declaration of Service::log($message) must be compatible with Logger::log($message = 'default')"
     );
 
     let inherited_error = runtime_error(
@@ -3137,7 +4576,125 @@ class Child extends Base {}
     assert_eq!(inherited_error.column, 1);
     assert_eq!(
         inherited_error.message,
-        "unsupported class inheritance for Child: method Base::log() cannot require more parameters than interface method Logger::log()"
+        "Declaration of Base::log($message, $context) must be compatible with Logger::log($message)"
+    );
+}
+
+#[test]
+fn variadic_signature_compatibility_checks_reference_mode_nullable_and_unions() {
+    let optional_variadic_execution = run_source(
+        r#"<?php
+interface DB {
+    public function query($query, string ...$params);
+}
+
+class MySQL implements DB {
+    public function query($query, ?string $extraParam = null, string ...$params) { }
+}
+
+echo "done";
+"#,
+    )
+    .unwrap();
+    assert_eq!(optional_variadic_execution.stdout, "done");
+    assert_eq!(optional_variadic_execution.exit_code, 0);
+
+    let inherited_union_variadic_execution = run_source(
+        r#"<?php
+class A {
+    public function test(int $a, string $b) {}
+}
+
+class B extends A {
+    public function test(int|string ...$args) {}
+}
+
+echo "done";
+"#,
+    )
+    .unwrap();
+    assert_eq!(inherited_union_variadic_execution.stdout, "done");
+    assert_eq!(inherited_union_variadic_execution.exit_code, 0);
+
+    let optional_mismatch = runtime_error(
+        r#"<?php
+interface DB {
+    public function query($query, string ...$params);
+}
+
+class MySQL implements DB {
+    public function query($query, ?int $extraParam = null, string ...$params) { }
+}
+"#,
+    );
+    assert_eq!(
+        optional_mismatch.message,
+        "Declaration of MySQL::query($query, ?int $extraParam = null, string ...$params) must be compatible with DB::query($query, string ...$params)"
+    );
+
+    let interface_reference_mismatch = runtime_error(
+        r#"<?php
+interface DB {
+    public function query($query, &...$params);
+}
+
+class MySQL implements DB {
+    public function query($query, ...$params) { }
+}
+"#,
+    );
+    assert_eq!(
+        interface_reference_mismatch.message,
+        "Declaration of MySQL::query($query, ...$params) must be compatible with DB::query($query, &...$params)"
+    );
+
+    let inherited_reference_mismatch = runtime_error(
+        r#"<?php
+class A {
+    public function test(&$a, &$b) {}
+}
+
+class B extends A {
+    public function test(...$args) {}
+}
+"#,
+    );
+    assert_eq!(
+        inherited_reference_mismatch.message,
+        "Declaration of B::test(...$args) must be compatible with A::test(&$a, &$b)"
+    );
+}
+
+#[test]
+fn method_signature_compatibility_reports_php_startup_fatals() {
+    assert_php_startup_fatal(
+        r#"<?php
+interface Factory {
+    public function __construct($name);
+}
+
+class Service implements Factory {
+    public function __construct() {}
+}
+"#,
+        "tests/classes/interface_constructor_compatibility.php",
+        6,
+        "Declaration of Service::__construct() must be compatible with Factory::__construct($name)",
+    );
+
+    assert_php_startup_fatal(
+        r#"<?php
+class Base {
+    public function foo($arg = 1) {}
+}
+
+class Child extends Base {
+    public function foo() {}
+}
+"#,
+        "tests/classes/inherited_optional_parameter_compatibility.php",
+        7,
+        "Declaration of Child::foo() must be compatible with Base::foo($arg = 1)",
     );
 }
 
@@ -3180,7 +4737,7 @@ class Service implements Logger {
     assert_eq!(added_type_error.column, 1);
     assert_eq!(
         added_type_error.message,
-        "unsupported class inheritance for Service: method Service::log() cannot add parameter type string for parameter $message when interface method Logger::log() has no parameter type"
+        "Declaration of Service::log(string $message) must be compatible with Logger::log($message)"
     );
 
     let changed_type_error = runtime_error(
@@ -3198,7 +4755,7 @@ class Service implements Logger {
     assert_eq!(changed_type_error.column, 1);
     assert_eq!(
         changed_type_error.message,
-        "unsupported class inheritance for Service: method Service::log() parameter $message type int is incompatible with interface method Logger::log() parameter type string"
+        "Declaration of Service::log(int $message) must be compatible with Logger::log(string $message)"
     );
 
     let inherited_changed_type_error = runtime_error(
@@ -3218,7 +4775,7 @@ class Child extends Base {}
     assert_eq!(inherited_changed_type_error.column, 1);
     assert_eq!(
         inherited_changed_type_error.message,
-        "unsupported class inheritance for Child: method Base::log() parameter $message type int is incompatible with interface method Logger::log() parameter type string"
+        "Declaration of Base::log(int $message) must be compatible with Logger::log(string $message)"
     );
 }
 
@@ -3269,7 +4826,7 @@ class Service implements Provider {
     assert_eq!(omitted_return_type_error.column, 1);
     assert_eq!(
         omitted_return_type_error.message,
-        "unsupported class inheritance for Service: method Service::label() must declare return type string to match interface method Provider::label()"
+        "Declaration of Service::label() must be compatible with Provider::label(): string"
     );
 
     let changed_return_type_error = runtime_error(
@@ -3287,7 +4844,7 @@ class Service implements Provider {
     assert_eq!(changed_return_type_error.column, 1);
     assert_eq!(
         changed_return_type_error.message,
-        "unsupported class inheritance for Service: method Service::label() return type int is incompatible with interface method Provider::label() return type string"
+        "Declaration of Service::label(): int must be compatible with Provider::label(): string"
     );
 
     let inherited_changed_return_type_error = runtime_error(
@@ -3307,7 +4864,7 @@ class Child extends Base {}
     assert_eq!(inherited_changed_return_type_error.column, 1);
     assert_eq!(
         inherited_changed_return_type_error.message,
-        "unsupported class inheritance for Child: method Base::label() return type int is incompatible with interface method Provider::label() return type string"
+        "Declaration of Base::label(): int must be compatible with Provider::label(): string"
     );
 }
 
@@ -3350,7 +4907,7 @@ class Child extends Base {}
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "unsupported class inheritance for Child: concrete class Child must implement interface method Logger::log()"
+        "Class Child contains 1 abstract method and must therefore be declared abstract or implement the remaining method (Logger::log)"
     );
 }
 
@@ -3419,7 +4976,7 @@ class Plugin implements PluginContract {
     assert_eq!(missing_parent_method.column, 1);
     assert_eq!(
         missing_parent_method.message,
-        "unsupported class inheritance for Plugin: concrete class Plugin must implement interface method Hookable::register_hooks()"
+        "Class Plugin contains 1 abstract method and must therefore be declared abstract or implement the remaining method (Hookable::register_hooks)"
     );
 
     let missing_parent_interface = runtime_error(
@@ -3579,7 +5136,7 @@ class Plugin implements PluginContract {
     assert_eq!(missing_parent_method.column, 1);
     assert_eq!(
         missing_parent_method.message,
-        "unsupported class inheritance for Plugin: concrete class Plugin must implement interface method Labelable::label()"
+        "Class Plugin contains 1 abstract method and must therefore be declared abstract or implement the remaining method (Labelable::label)"
     );
 }
 
@@ -3774,7 +5331,7 @@ interface Logger {
     assert_eq!(non_public.column, 15);
     assert_eq!(
         non_public.message,
-        "unsupported interface constant declaration: only public interface constants are implemented"
+        "php fatal: Access type for interface constant Logger::NAME must be public"
     );
 
     let duplicate = runtime_error(
@@ -3806,7 +5363,7 @@ echo Plugin::NAME;
     );
     assert_eq!(
         ambiguous.message,
-        "unsupported call Plugin::NAME: interface constant resolution is ambiguous between Primary::NAME, Secondary::NAME"
+        "Class Plugin inherits both Primary::NAME and Secondary::NAME, which is ambiguous"
     );
 
     let ambiguous_defined = runtime_error(
@@ -3823,7 +5380,87 @@ var_dump(defined("Plugin::NAME"));
     );
     assert_eq!(
         ambiguous_defined.message,
-        "unsupported call Plugin::NAME: interface constant resolution is ambiguous between Primary::NAME, Secondary::NAME"
+        "Class Plugin inherits both Primary::NAME and Secondary::NAME, which is ambiguous"
+    );
+}
+
+#[test]
+fn invalid_class_like_declarations_emit_php_shaped_parse_fatals() {
+    let duplicate_readonly = parse_error(
+        r#"<?php
+readonly readonly class Box {}
+"#,
+    );
+    assert_eq!(duplicate_readonly.line, 2);
+    assert_eq!(
+        duplicate_readonly.message,
+        "php fatal: Multiple readonly modifiers are not allowed"
+    );
+
+    let readonly_interface = parse_error(
+        r#"<?php
+readonly interface Contract {}
+"#,
+    );
+    assert_eq!(readonly_interface.line, 2);
+    assert_eq!(
+        readonly_interface.cli_display(),
+        "Parse error: syntax error, unexpected token \"interface\", expecting \"abstract\" or \"final\" or \"readonly\" or \"class\" in Command line code on line 2"
+    );
+
+    let interface_property = parse_error(
+        r#"<?php
+interface Contract {
+    public $member;
+}
+"#,
+    );
+    assert_eq!(interface_property.line, 3);
+    assert_eq!(
+        interface_property.message,
+        "php fatal: Interfaces may only include hooked properties"
+    );
+
+    let interface_method_body = parse_error(
+        r#"<?php
+interface Contract {
+    function run() {}
+}
+"#,
+    );
+    assert_eq!(interface_method_body.line, 3);
+    assert_eq!(
+        interface_method_body.message,
+        "php fatal: Interface function Contract::run() cannot contain body"
+    );
+
+    let private_interface_method = parse_error(
+        r#"<?php
+interface Contract {
+    private function run();
+}
+"#,
+    );
+    assert_eq!(private_interface_method.line, 3);
+    assert_eq!(
+        private_interface_method.message,
+        "php fatal: Access type for interface method Contract::run() must be public"
+    );
+
+    let static_insteadof = parse_error(
+        r#"<?php
+trait T { public function run() {} }
+class C {
+    use T {
+        T::run insteadof static;
+    }
+}
+"#,
+    );
+    assert_eq!(static_insteadof.line, 5);
+    assert_eq!(
+        static_insteadof.message,
+        "php fatal: Cannot use \"static\" as trait name, as it is reserved"
     );
 }
 
@@ -3831,7 +5468,7 @@ var_dump(defined("Plugin::NAME"));
 fn core_interface_catalog_reports_bounded_internal_interfaces() {
     let execution = run_source(
         r#"<?php
-foreach (array("Traversable", "IteratorAggregate", "Iterator", "Serializable", "ArrayAccess", "Countable", "Stringable") as $name) {
+foreach (array("Traversable", "IteratorAggregate", "Iterator", "Serializable", "ArrayAccess", "Countable", "Stringable", "DateTimeInterface") as $name) {
     echo interface_exists($name) ? $name . ":yes\n" : $name . ":no\n";
 }
 
@@ -3842,20 +5479,24 @@ echo interface_exists("DefinitelyMissingInterface") ? "missing:yes" : "missing:n
 
     assert_eq!(
         execution.stdout,
-        "Traversable:yes\nIteratorAggregate:yes\nIterator:yes\nSerializable:yes\nArrayAccess:yes\nCountable:yes\nStringable:yes\nmissing:no"
+        "Traversable:yes\nIteratorAggregate:yes\nIterator:yes\nSerializable:yes\nArrayAccess:yes\nCountable:yes\nStringable:yes\nDateTimeInterface:yes\nmissing:no"
     );
     assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
 fn interface_exists_requires_string_name_and_bool_autoload_arguments() {
-    let name_error = runtime_error("<?php\nvar_dump(interface_exists(42));\n");
+    let scalar_name = run_source("<?php\nvar_dump(interface_exists(42));\n").unwrap();
+    assert_eq!(scalar_name.stdout, "bool(false)\n");
+    assert_eq!(scalar_name.exit_code, 0);
+
+    let name_error = runtime_error("<?php\nvar_dump(interface_exists([]));\n");
 
     assert_eq!(name_error.line, 2);
     assert_eq!(name_error.column, 10);
     assert_eq!(
         name_error.message,
-        "unsupported call interface_exists(): interface name argument must be string, got int"
+        "unsupported call interface_exists(): class-like name argument must be string-compatible scalar in the current subset, got array"
     );
 
     let autoload_error = runtime_error("<?php\nvar_dump(interface_exists(\"Box\", []));\n");
@@ -4034,8 +5675,262 @@ echo $child->hookKey(), "\n";
 }
 
 #[test]
+fn class_trait_use_composes_visible_and_final_trait_constants() {
+    let execution = run_source(
+        r#"<?php
+trait Foo {
+    public const PUBLIC = "public";
+    protected const PROTECTED = "protected";
+    private const PRIVATE = "private";
+    public final const FINALIZED = "finalized";
+
+    public function f1(): void {
+        echo self::PUBLIC, " via self\n";
+        echo static::PUBLIC, " via static\n";
+        echo $this::PUBLIC, " via this\n";
+        echo self::FINALIZED, " via final\n";
+    }
+}
+
+class Base {
+    use Foo;
+
+    public function f2(): void {
+        echo self::PRIVATE, " via self\n";
+        echo static::PRIVATE, " via static\n";
+    }
+}
+
+class Derived extends Base {
+    public function f3(): void {
+        echo self::PROTECTED, " via self\n";
+        echo static::PROTECTED, " via static\n";
+        echo parent::PROTECTED, " via parent\n";
+    }
+}
+
+echo Base::PUBLIC, " via class name\n";
+echo (new Base)::PUBLIC, " via object\n";
+(new Base)->f1();
+(new Base)->f2();
+echo Derived::PUBLIC, " via derived class name\n";
+echo (new Derived)::PUBLIC, " via derived class object\n";
+(new Derived)->f3();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "public via class name\n",
+            "public via object\n",
+            "public via self\n",
+            "public via static\n",
+            "public via this\n",
+            "finalized via final\n",
+            "private via self\n",
+            "private via static\n",
+            "public via derived class name\n",
+            "public via derived class object\n",
+            "protected via self\n",
+            "protected via static\n",
+            "protected via parent\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+
+    let classes = class_metadata_source(
+        r#"<?php
+trait Foo {
+    public const PUBLIC = "public";
+    protected const PROTECTED = "protected";
+    private const PRIVATE = "private";
+    public final const FINALIZED = "finalized";
+}
+
+class Base {
+    use Foo;
+}
+"#,
+    )
+    .unwrap();
+    let class = classes.lookup_class("Base").unwrap();
+    assert_eq!(
+        class.constant("public").unwrap().visibility(),
+        Visibility::Public
+    );
+    assert_eq!(
+        class.constant("protected").unwrap().visibility(),
+        Visibility::Protected
+    );
+    assert_eq!(
+        class.constant("private").unwrap().visibility(),
+        Visibility::Private
+    );
+    assert!(class.constant("FINALIZED").unwrap().is_final());
+}
+
+#[test]
+fn class_trait_use_validates_trait_constant_composition_at_runtime() {
+    let compatible = run_source(
+        r#"<?php
+define("RUNTIME_CONSTANT", 2);
+
+trait TestTrait1 {
+    public const A = 42;
+}
+
+trait TestTrait2 {
+    public const A = 42;
+}
+
+trait TestTrait3 {
+    use TestTrait2;
+    public const A = 42;
+}
+
+trait RuntimeExprTrait {
+    public const Constant = 40 + RUNTIME_CONSTANT;
+}
+
+class ComposingClass1 {
+    use TestTrait1;
+    use TestTrait2;
+}
+
+class ComposingClass2 {
+    use TestTrait1;
+    use TestTrait3;
+}
+
+class ComposingClass3 {
+    use RuntimeExprTrait;
+    public const Constant = 42;
+}
+
+echo ComposingClass1::A, "\n";
+echo ComposingClass2::A, "\n";
+echo ComposingClass3::Constant, "\n";
+"#,
+    )
+    .unwrap();
+    assert_eq!(compatible.stdout, "42\n42\n42\n");
+    assert_eq!(compatible.stderr, "");
+    assert_eq!(compatible.exit_code, 0);
+
+    let class_conflict = run_source(
+        r#"<?php
+trait TestTrait {
+  public const Constant = 42;
+}
+
+echo "PRE-CLASS-GUARD\n";
+
+class ComposingClass {
+    use TestTrait;
+    private const Constant = 42;
+}
+
+echo "POST-CLASS-GUARD\n";
+"#,
+    )
+    .unwrap();
+    assert!(class_conflict.stdout.starts_with(concat!(
+        "PRE-CLASS-GUARD\n",
+        "\n",
+        "Fatal error: ComposingClass and TestTrait define the same constant (Constant) in the composition of ComposingClass. However, the definition differs and is considered incompatible. Class was composed in Command line code on line ",
+    )));
+    assert_eq!(class_conflict.stderr, "");
+    assert_eq!(class_conflict.exit_code, 255);
+
+    let trait_conflict = run_source(
+        r#"<?php
+trait Trait1 {
+    public const Constant = 42;
+}
+
+trait Trait2 {
+    use Trait1;
+    private const Constant = 42;
+}
+"#,
+    )
+    .unwrap();
+    assert!(trait_conflict.stdout.starts_with(
+        "Fatal error: Trait2 and Trait1 define the same constant (Constant) in the composition of Trait2. However, the definition differs and is considered incompatible. Class was composed in Command line code on line "
+    ));
+    assert_eq!(trait_conflict.stderr, "");
+    assert_eq!(trait_conflict.exit_code, 255);
+
+    let final_parent_conflict = run_source(
+        r#"<?php
+trait TestTrait1 {
+    public final const Constant = 123;
+}
+
+class BaseClass1 {
+    public final const Constant = 123;
+}
+
+class DerivedClass1 extends BaseClass1 {
+    use TestTrait1;
+}
+"#,
+    )
+    .unwrap();
+    assert!(final_parent_conflict.stdout.starts_with(
+        "Fatal error: DerivedClass1::Constant cannot override final constant BaseClass1::Constant in Command line code on line "
+    ));
+    assert_eq!(final_parent_conflict.stderr, "");
+    assert_eq!(final_parent_conflict.exit_code, 255);
+}
+
+#[test]
+fn trait_constants_cannot_be_accessed_directly() {
+    let caught = run_source(
+        r#"<?php
+trait Foo {
+    const A = 42;
+}
+
+try {
+    echo Foo::A;
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+    assert_eq!(
+        caught.stdout,
+        "Cannot access trait constant Foo::A directly\n"
+    );
+    assert_eq!(caught.stderr, "");
+    assert_eq!(caught.exit_code, 0);
+
+    let execution = run_source(
+        r#"<?php
+trait TestTrait {
+  public const Constant = 42;
+}
+
+var_dump(\constant("TestTrait::Constant"));
+"#,
+    )
+    .unwrap();
+    assert!(execution.stdout.starts_with(
+        "Fatal error: Uncaught Error: Cannot access trait constant TestTrait::Constant directly in Command line code:"
+    ));
+    assert!(execution.stdout.contains("constant('TestTrait::Cons...')"));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 255);
+}
+
+#[test]
 fn class_trait_use_rejects_conflicting_trait_constants() {
-    let error = runtime_error(
+    let trait_conflict = run_source(
         r#"<?php
 trait PrimaryConfig {
     public const OPTION = "primary";
@@ -4049,15 +5944,15 @@ class Plugin {
     use PrimaryConfig, FallbackConfig;
 }
 "#,
-    );
+    )
+    .unwrap();
+    assert!(trait_conflict.stdout.starts_with(
+        "Fatal error: PrimaryConfig and FallbackConfig define the same constant (OPTION) in the composition of Plugin. However, the definition differs and is considered incompatible. Class was composed in Command line code on line "
+    ));
+    assert_eq!(trait_conflict.stderr, "");
+    assert_eq!(trait_conflict.exit_code, 255);
 
-    assert_eq!(error.phase, Phase::Runtime);
-    assert_eq!(
-        error.message,
-        "class Plugin already defines constant OPTION"
-    );
-
-    let class_override = runtime_error(
+    let class_override = run_source(
         r#"<?php
 trait PrimaryConfig {
     public const OPTION = "primary";
@@ -4068,12 +5963,13 @@ class Plugin {
     public const OPTION = "class";
 }
 "#,
-    );
-
-    assert_eq!(
-        class_override.message,
-        "class Plugin already defines constant OPTION"
-    );
+    )
+    .unwrap();
+    assert!(class_override.stdout.starts_with(
+        "Fatal error: Plugin and PrimaryConfig define the same constant (OPTION) in the composition of Plugin. However, the definition differs and is considered incompatible. Class was composed in Command line code on line "
+    ));
+    assert_eq!(class_override.stderr, "");
+    assert_eq!(class_override.exit_code, 255);
 }
 
 #[test]
@@ -4295,10 +6191,10 @@ class Plugin {
     );
 
     assert_eq!(error.line, 9);
-    assert_eq!(error.column, 12);
+    assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "unsupported trait use: trait method FallbackLabel::label conflicts with PrimaryLabel::label; add an insteadof adaptation or class override"
+        "Trait method FallbackLabel::label has not been applied as Plugin::label, because of collision with PrimaryLabel::label"
     );
 }
 
@@ -4421,6 +6317,169 @@ print_r($methods);
     assert_eq!(class.methods().len(), 2);
     assert!(class.method("label").is_some());
     assert!(class.method("boot").is_some());
+}
+
+#[test]
+fn abstract_trait_method_requirements_are_validated_against_class_and_trait_implementations() {
+    let concrete_trait_implementation = run_source(
+        r#"<?php
+trait RequiresValue {
+    abstract public function value($input);
+}
+
+trait ProvidesValue {
+    public function value($input) {
+        return "value:" . $input;
+    }
+}
+
+class Box {
+    use RequiresValue, ProvidesValue;
+}
+
+echo (new Box())->value("ok");
+"#,
+    )
+    .unwrap();
+    assert_eq!(concrete_trait_implementation.stdout, "value:ok");
+    assert_eq!(concrete_trait_implementation.exit_code, 0);
+
+    let private_self_requirement = run_source(
+        r#"<?php
+trait RequiresFactory {
+    abstract private function make(self $input): self;
+}
+
+class Box {
+    use RequiresFactory;
+
+    private function make(self $input): self {
+        return $this;
+    }
+
+    public function ok() {
+        return "private-ok";
+    }
+}
+
+echo (new Box())->ok();
+"#,
+    )
+    .unwrap();
+    assert_eq!(private_self_requirement.stdout, "private-ok");
+    assert_eq!(private_self_requirement.exit_code, 0);
+
+    let relaxed_visibility_requirement = run_source(
+        r#"<?php
+trait RequiresHidden {
+    abstract public function hidden();
+}
+
+class Box {
+    use RequiresHidden;
+
+    private function hidden() {
+        return "hidden-ok";
+    }
+
+    public function callHidden() {
+        return $this->hidden();
+    }
+}
+
+echo (new Box())->callHidden();
+"#,
+    )
+    .unwrap();
+    assert_eq!(relaxed_visibility_requirement.stdout, "hidden-ok");
+    assert_eq!(relaxed_visibility_requirement.exit_code, 0);
+
+    let signature_error = runtime_error(
+        r#"<?php
+trait RequiresValue {
+    abstract public function value(int $input);
+}
+
+class Box {
+    use RequiresValue;
+
+    public function value(array $input) {}
+}
+"#,
+    );
+    assert_eq!(
+        signature_error.message,
+        "Declaration of Box::value(array $input) must be compatible with RequiresValue::value(int $input)"
+    );
+}
+
+#[test]
+fn missing_public_abstract_trait_requirements_do_not_abort_class_declaration() {
+    let declaration_only = run_source(
+        r#"<?php
+trait RequiresStuff {
+    abstract public function doStuff();
+}
+
+class Box {
+    use RequiresStuff;
+}
+
+echo "declared";
+"#,
+    )
+    .unwrap();
+    assert_eq!(declaration_only.stdout, "declared");
+    assert_eq!(declaration_only.exit_code, 0);
+
+    let alias_declaration_only = run_source(
+        r#"<?php
+trait RequiresStuff {
+    abstract public function doStuff();
+}
+
+class Box {
+    use RequiresStuff {
+        RequiresStuff::doStuff as doOtherStuff;
+    }
+
+    public function doStuff() {}
+}
+
+echo "alias-declared";
+"#,
+    )
+    .unwrap();
+    assert_eq!(alias_declaration_only.stdout, "alias-declared");
+    assert_eq!(alias_declaration_only.exit_code, 0);
+}
+
+#[test]
+fn abstract_trait_requirements_do_not_preempt_direct_abstract_method_startup_fatal() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+trait TraitWithAbstract {
+    abstract public function foo();
+}
+
+class TraitWorks {
+    use TraitWithAbstract;
+}
+
+class NotAbstract {
+    abstract public function bar();
+}
+"#,
+        "abstract-implicit.php",
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "");
+    assert_eq!(execution.exit_code, 255);
+    assert_eq!(
+        execution.stderr,
+        "Fatal error: Class NotAbstract declares abstract method bar() and must therefore be declared abstract in abstract-implicit.php on line 10"
+    );
 }
 
 #[test]
@@ -4619,12 +6678,10 @@ class Plugin {
     );
 
     assert_eq!(error.line, 6);
-    assert_eq!(error.column, 9);
-    assert!(
-        error
-            .message
-            .contains("unqualified trait alias label is ambiguous"),
-        "{error:?}"
+    assert_eq!(error.column, 1);
+    assert_eq!(
+        error.message,
+        "An alias was defined for method label(), which exists in both FirstLabel and SecondLabel. Use FirstLabel::label or SecondLabel::label to resolve the ambiguity"
     );
 }
 
@@ -4696,10 +6753,13 @@ print_r($methods);
 "#;
 
     let execution = run_source(source).unwrap();
-    assert_eq!(
-        execution.stdout,
-        "primary:Plugin\nprimary:Plugin\nhooks:Plugin\nalias-method\nArray\n(\n    [0] => label_alias\n    [1] => label\n    [2] => hooks\n)\n"
-    );
+    assert!(execution
+        .stdout
+        .starts_with("primary:Plugin\nprimary:Plugin\nhooks:Plugin\nalias-method\nArray\n(\n"));
+    assert!(execution.stdout.contains("=> label_alias\n"));
+    assert!(execution.stdout.contains("=> label\n"));
+    assert!(execution.stdout.contains("=> hooks\n"));
+    assert!(execution.stdout.ends_with(")\n"));
     assert_eq!(execution.exit_code, 0);
 
     let classes = class_metadata_source(source).unwrap();
@@ -4767,11 +6827,11 @@ class Plugin {
 "#,
     );
 
-    assert_eq!(error.line, 7);
-    assert_eq!(error.column, 12);
+    assert_eq!(error.line, 10);
+    assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "unsupported trait use: trait property FallbackOptions::$options conflicts with another composed trait property; incompatible trait property definitions are not implemented"
+        "PrimaryOptions and FallbackOptions define the same property ($options) in the composition of Plugin. However, the definition differs and is considered incompatible. Class was composed"
     );
 }
 
@@ -4792,11 +6852,34 @@ class Plugin {
     );
 
     assert_eq!(error.line, 8);
-    assert_eq!(error.column, 9);
+    assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "unsupported trait use: trait alias HasHooks::missing targets a missing method"
+        "An alias (register_hooks) was defined for method missing(), but this method does not exist"
     );
+}
+
+#[test]
+fn class_trait_composition_property_fatal_runs_at_class_declaration() {
+    let execution = run_source(
+        r#"<?php
+trait FirstProperty { public $same; }
+trait SecondProperty { private $same; }
+echo "PRE\n";
+class UsesProperties {
+    use FirstProperty, SecondProperty;
+}
+echo "POST\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "PRE\n\nFatal error: FirstProperty and SecondProperty define the same property ($same) in the composition of UsesProperties. However, the definition differs and is considered incompatible. Class was composed in Command line code on line 5"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 255);
 }
 
 #[test]
@@ -4816,13 +6899,17 @@ class Widget {
 
 #[test]
 fn trait_exists_requires_string_name_and_bool_autoload_arguments() {
-    let name_error = runtime_error("<?php\nvar_dump(trait_exists(42));\n");
+    let scalar_name = run_source("<?php\nvar_dump(trait_exists(42));\n").unwrap();
+    assert_eq!(scalar_name.stdout, "bool(false)\n");
+    assert_eq!(scalar_name.exit_code, 0);
+
+    let name_error = runtime_error("<?php\nvar_dump(trait_exists([]));\n");
 
     assert_eq!(name_error.line, 2);
     assert_eq!(name_error.column, 10);
     assert_eq!(
         name_error.message,
-        "unsupported call trait_exists(): trait name argument must be string, got int"
+        "unsupported call trait_exists(): class-like name argument must be string-compatible scalar in the current subset, got array"
     );
 
     let autoload_error = runtime_error("<?php\nvar_dump(trait_exists(\"Box\", []));\n");
@@ -4875,13 +6962,17 @@ if ($call("APP\\STATUS", true)) {
 
 #[test]
 fn enum_exists_requires_string_name_and_bool_autoload_arguments() {
-    let name_error = runtime_error("<?php\nvar_dump(enum_exists(42));\n");
+    let scalar_name = run_source("<?php\nvar_dump(enum_exists(42));\n").unwrap();
+    assert_eq!(scalar_name.stdout, "bool(false)\n");
+    assert_eq!(scalar_name.exit_code, 0);
+
+    let name_error = runtime_error("<?php\nvar_dump(enum_exists([]));\n");
 
     assert_eq!(name_error.line, 2);
     assert_eq!(name_error.column, 10);
     assert_eq!(
         name_error.message,
-        "unsupported call enum_exists(): enum name argument must be string, got int"
+        "unsupported call enum_exists(): class-like name argument must be string-compatible scalar in the current subset, got array"
     );
 
     let autoload_error = runtime_error("<?php\nvar_dump(enum_exists(\"Box\", []));\n");
@@ -4892,6 +6983,166 @@ fn enum_exists_requires_string_name_and_bool_autoload_arguments() {
         autoload_error.message,
         "unsupported call enum_exists(): autoload argument must be bool-like scalar in the current subset, got array"
     );
+}
+
+#[test]
+fn enum_forbidden_members_report_php_startup_fatals() {
+    let cases = [
+        (
+            "<?php\nenum Foo {\n    public function __get(string $name) {}\n}\n",
+            3,
+            "Enum Foo cannot include magic method __get",
+        ),
+        (
+            "<?php\nenum Foo {\n    public static function __set_state(array $properties): object {}\n}\n",
+            3,
+            "Enum Foo cannot include magic method __set_state",
+        ),
+        (
+            "<?php\nenum Foo {\n    public function __serialize(): array {}\n}\n",
+            3,
+            "Enum Foo cannot include magic method __serialize",
+        ),
+        (
+            "<?php\nenum Foo {\n    public function __construct() {}\n}\n",
+            3,
+            "Enum Foo cannot include magic method __construct",
+        ),
+        (
+            "<?php\nenum Foo {\n    public $bar;\n}\n",
+            3,
+            "Enum Foo cannot include properties",
+        ),
+        (
+            "<?php\nenum Foo {\n    public static $bar;\n}\n",
+            3,
+            "Enum Foo cannot include properties",
+        ),
+        (
+            "<?php\nenum Example {\n    abstract public function foo();\n}\n",
+            3,
+            "Enum method Example::foo() must not be abstract",
+        ),
+    ];
+
+    for (source, line, message) in cases {
+        assert_php_startup_fatal(source, "Command line code", line, message);
+    }
+}
+
+#[test]
+fn enum_generated_methods_and_backing_errors_use_php_surfaces() {
+    let execution = run_source(
+        r#"<?php
+enum Suit: string {
+    case Hearts = "H";
+    case Spades = "S";
+}
+
+enum Foo: int {
+    case One = 1;
+}
+
+foreach (Suit::cases() as $case) {
+    echo $case->name, "=", $case->value, "\n";
+}
+echo Suit::from("H")->name, "\n";
+var_dump(Suit::tryFrom("X"));
+echo Foo::from("1")->name, "\n";
+
+try {
+    Suit::from(42);
+} catch (ValueError $e) {
+    echo "value|", $e->getMessage(), "\n";
+}
+
+try {
+    Foo::from("H");
+} catch (TypeError $e) {
+    echo "type|", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "Hearts=H\n",
+            "Spades=S\n",
+            "Hearts\n",
+            "NULL\n",
+            "One\n",
+            "value|\"42\" is not a valid backing value for enum Suit\n",
+            "type|Foo::from(): Argument #1 ($value) must be of type int, string given\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn enum_case_properties_report_readonly_and_dynamic_errors() {
+    let execution = run_source(
+        r#"<?php
+enum Foo {
+    case Bar;
+}
+
+enum IntFoo: int {
+    case Bar = 0;
+}
+
+$foo = Foo::Bar;
+$int = IntFoo::Bar;
+
+foreach ([
+    function () use ($foo) { $foo->name = "Baz"; },
+    function () use ($foo) { $foo->value = 0; },
+    function () use ($int) { $int->name = "Baz"; },
+    function () use ($int) { $int->value = 1; },
+    function () use ($int) { unset($int->value); },
+] as $case) {
+    try {
+        $case();
+    } catch (Error $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "Cannot modify readonly property Foo::$name\n",
+            "Cannot create dynamic property Foo::$value\n",
+            "Cannot modify readonly property IntFoo::$name\n",
+            "Cannot modify readonly property IntFoo::$value\n",
+            "Cannot unset readonly property IntFoo::$value\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reflection_enum_get_method_resolves_generated_backed_methods() {
+    let execution = run_source(
+        r#"<?php
+enum Suit: string {
+    case Hearts = "H";
+}
+
+echo (new ReflectionEnum(Suit::class))->getMethod("tryFrom")->getName(), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "tryFrom\n");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -4960,19 +7211,19 @@ fn property_exists_requires_object_or_string_and_string_property_arguments() {
     let target_error = runtime_error("<?php\nvar_dump(property_exists(42, \"name\"));\n");
 
     assert_eq!(target_error.line, 2);
-    assert_eq!(target_error.column, 10);
+    assert_eq!(target_error.column, 1);
     assert_eq!(
         target_error.message,
-        "unsupported call property_exists(): object_or_class argument must be object or string, got int"
+        "property_exists(): Argument #1 ($object_or_class) must be of type object|string, int given, called"
     );
 
     let property_error = runtime_error("<?php\nvar_dump(property_exists(\"Box\", 42));\n");
 
     assert_eq!(property_error.line, 2);
-    assert_eq!(property_error.column, 10);
+    assert_eq!(property_error.column, 1);
     assert_eq!(
         property_error.message,
-        "unsupported call property_exists(): property argument must be string in the current subset, got int"
+        "property_exists(): Argument #2 ($property) must be of type string, int given, called"
     );
 }
 
@@ -5023,20 +7274,48 @@ fn method_exists_requires_object_or_string_and_string_method_arguments() {
     let target_error = runtime_error("<?php\nvar_dump(method_exists(42, \"open\"));\n");
 
     assert_eq!(target_error.line, 2);
-    assert_eq!(target_error.column, 10);
+    assert_eq!(target_error.column, 1);
     assert_eq!(
         target_error.message,
-        "unsupported call method_exists(): object_or_class argument must be object or string, got int"
+        "method_exists(): Argument #1 ($object_or_class) must be of type object|string, int given, called"
     );
 
     let method_error = runtime_error("<?php\nvar_dump(method_exists(\"Box\", 42));\n");
 
     assert_eq!(method_error.line, 2);
-    assert_eq!(method_error.column, 10);
+    assert_eq!(method_error.column, 1);
     assert_eq!(
         method_error.message,
-        "unsupported call method_exists(): method argument must be string in the current subset, got int"
+        "method_exists(): Argument #2 ($method) must be of type string, int given, called"
     );
+}
+
+#[test]
+fn property_and_method_exists_autoload_missing_class_strings() {
+    let source = r#"<?php
+spl_autoload_register(function ($name) {
+    echo "autoload:$name\n";
+    if ($name === "AutoMeta") {
+        class AutoMeta {
+            public static $bob;
+            public function run() {}
+        }
+    }
+});
+
+var_dump(property_exists("AutoMeta", "bob"));
+var_dump(method_exists("AutoMeta", "run"));
+var_dump(property_exists("", "bob"));
+var_dump(method_exists("", "run"));
+var_dump(method_exists("MissingMeta", "run"));
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "autoload:AutoMeta\nbool(true)\nbool(true)\nbool(false)\nbool(false)\nautoload:MissingMeta\nbool(false)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -5109,24 +7388,309 @@ echo $dynamic[0], "|", $dynamic[1];
 }
 
 #[test]
-fn get_class_methods_requires_object_or_declared_class_string_argument() {
-    let target_error = runtime_error("<?php\nvar_dump(get_class_methods(42));\n");
+fn get_class_methods_lists_methods_visible_from_current_scope_and_interfaces() {
+    let source = r#"<?php
+class C {
+    private function privC() {}
+    protected function protC() {}
+    public function pubC() {}
 
-    assert_eq!(target_error.line, 2);
-    assert_eq!(target_error.column, 10);
+    public static function testFromC() {
+        echo "C:C=", implode(",", get_class_methods("C")), "\n";
+        echo "C:D=", implode(",", get_class_methods("D")), "\n";
+        echo "C:X=", implode(",", get_class_methods("X")), "\n";
+    }
+}
+
+class D extends C {
+    private function privD() {}
+    protected function protD() {}
+    public function pubD() {}
+
+    public static function testFromD() {
+        echo "D:C=", implode(",", get_class_methods("C")), "\n";
+        echo "D:D=", implode(",", get_class_methods("D")), "\n";
+        echo "D:X=", implode(",", get_class_methods("X")), "\n";
+    }
+}
+
+class X {
+    private function privX() {}
+    protected function protX() {}
+    public function pubX() {}
+
+    public static function testFromX() {
+        echo "X:C=", implode(",", get_class_methods("C")), "\n";
+        echo "X:D=", implode(",", get_class_methods("D")), "\n";
+        echo "X:X=", implode(",", get_class_methods("X")), "\n";
+    }
+}
+
+interface I {
+    public function pubI();
+}
+
+class IC implements I {
+    public function pubI() {}
+    private function privIC() {}
+    protected function protIC() {}
+    public function pubIC() {}
+
+    public static function testFromIC() {
+        echo "IC:I=", implode(",", get_class_methods("I")), "\n";
+        echo "IC:IC=", implode(",", get_class_methods("IC")), "\n";
+    }
+}
+
+echo "global:D=", implode(",", get_class_methods("D")), "\n";
+C::testFromC();
+D::testFromD();
+X::testFromX();
+echo "global:I=", implode(",", get_class_methods("I")), "\n";
+echo "global:IC=", implode(",", get_class_methods("IC")), "\n";
+IC::testFromIC();
+"#;
+
+    let execution = run_source(source).unwrap();
     assert_eq!(
-        target_error.message,
-        "unsupported call get_class_methods(): object_or_class argument must be object or declared class string, got int"
+        execution.stdout,
+        "global:D=pubD,testFromD,pubC,testFromC\n\
+C:C=privC,protC,pubC,testFromC\n\
+C:D=protD,pubD,testFromD,privC,protC,pubC,testFromC\n\
+C:X=pubX,testFromX\n\
+D:C=protC,pubC,testFromC\n\
+D:D=privD,protD,pubD,testFromD,protC,pubC,testFromC\n\
+D:X=pubX,testFromX\n\
+X:C=pubC,testFromC\n\
+X:D=pubD,testFromD,pubC,testFromC\n\
+X:X=privX,protX,pubX,testFromX\n\
+global:I=pubI\n\
+global:IC=pubI,pubIC,testFromIC\n\
+IC:I=pubI\n\
+IC:IC=pubI,privIC,protIC,pubIC,testFromIC\n"
     );
+    assert_eq!(execution.exit_code, 0);
+}
 
-    let missing_class_error = runtime_error("<?php\nvar_dump(get_class_methods(\"Missing\"));\n");
+#[test]
+fn method_visibility_handles_protected_prototypes_scope_callables_and_magic_call() {
+    let execution = run_source(
+        r#"<?php
+class A {
+    static protected function ma() {
+        return 'A::ma()';
+    }
 
-    assert_eq!(missing_class_error.line, 2);
-    assert_eq!(missing_class_error.column, 10);
+    static private function mp() {
+        return 'A::mp()';
+    }
+}
+
+class B1 extends A {
+    static protected function ma() {
+        return 'B1::ma()';
+    }
+
+    static protected function mp() {
+        return 'B1::mp()';
+    }
+
+    static protected function mb() {
+        return 'B1::mb()';
+    }
+}
+
+class B2 extends A {
+    static public function test() {
+        echo A::ma() . "\n";
+        try {
+            echo A::mp() . "\n";
+        } catch (Throwable $e) {
+            echo $e->getMessage() . "\n";
+        }
+        echo B1::ma() . "\n";
+        try {
+            echo B1::mp() . "\n";
+        } catch (Throwable $e) {
+            echo $e->getMessage() . "\n";
+        }
+        try {
+            echo B1::mb() . "\n";
+        } catch (Throwable $e) {
+            echo $e->getMessage() . "\n";
+        }
+        echo "scope-callable:";
+        foreach (array('A::ma', 'A::mp', 'B1::ma', 'B1::mp', 'B1::mb') as $name) {
+            echo is_callable($name) ? "1" : "0";
+        }
+        echo "\n";
+    }
+}
+
+echo "global-callable:";
+foreach (array('B2::ma', 'B2::mp', 'B2::mb', 'B2::test') as $name) {
+    echo is_callable($name) ? "1" : "0";
+}
+echo "\n";
+B2::test();
+
+class C {
+    public static function test() {
+        D::prot();
+        echo implode(",", get_class_methods("D")), "\n";
+    }
+}
+class D extends C {
+    protected static function prot() {
+        echo "D::prot()\n";
+    }
+}
+D::test();
+
+class MagicA {
+    private function func1() {
+        return "in func1";
+    }
+    protected function func2() {
+        return "in func2";
+    }
+    public function __call($func, array $args = array()) {
+        return call_user_func_array(array($this, $func), $args);
+    }
+}
+$a = new MagicA();
+echo $a->func1(), "\n";
+echo $a->func2(), "\n";
+
+class ProtoA {
+    protected function test() {}
+}
+class ProtoB extends ProtoA {
+    public function test2($x) {
+        $x->test();
+    }
+}
+class ProtoC extends ProtoA {
+    protected function test() {}
+}
+class ProtoD extends ProtoC {
+    protected function test() {
+        echo "grandparent\n";
+    }
+}
+(new ProtoB)->test2(new ProtoD);
+"#,
+    )
+    .unwrap();
+
     assert_eq!(
-        missing_class_error.message,
-        "unsupported call get_class_methods(): string argument must name a declared class in the current subset"
+        execution.stdout,
+        "global-callable:0001\n\
+A::ma()\n\
+Call to private method A::mp() from scope B2\n\
+B1::ma()\n\
+Call to protected method B1::mp() from scope B2\n\
+Call to protected method B1::mb() from scope B2\n\
+scope-callable:10100\n\
+D::prot()\n\
+prot,test\n\
+in func1\n\
+in func2\n\
+grandparent\n"
     );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn call_user_func_object_callbacks_use_call_for_non_visible_methods() {
+    let execution = run_source(
+        r#"<?php
+class C {
+    protected function prot() {}
+    private function priv() {}
+    public function __call($name, $args) {
+        echo "In __call() for method $name()\n";
+    }
+}
+
+$c = new C;
+call_user_func(array($c, 'none'));
+call_user_func(array($c, 'prot'));
+call_user_func(array($c, 'priv'));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "In __call() for method none()\n\
+In __call() for method prot()\n\
+In __call() for method priv()\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn constructor_dispatch_records_uncaught_stack_frame() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+class d {
+    private function test2() {
+        echo "unreachable\n";
+    }
+}
+
+abstract class a extends d {
+    public function test() {
+        $this->test2();
+    }
+}
+
+class c extends a {
+    public function __construct() {
+        $this->test();
+    }
+}
+
+new c;
+"#,
+        "constructor-trace.php",
+    )
+    .unwrap();
+
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 255);
+    assert!(execution
+        .stdout
+        .contains("Fatal error: Uncaught Error: Call to private method d::test2() from scope a"));
+    assert!(execution
+        .stdout
+        .contains("): a->test()\n#1 constructor-trace.php("));
+    assert!(execution.stdout.contains("): c->__construct()\n#2 {main}"));
+}
+
+#[test]
+fn get_class_methods_requires_object_or_valid_class_name_argument() {
+    let execution = run_source(
+        r#"<?php
+foreach (array(42, "Missing") as $value) {
+    try {
+        get_class_methods($value);
+    } catch (TypeError $e) {
+        echo get_class($e), ":", $e->getMessage(), "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "TypeError:get_class_methods(): Argument #1 ($object_or_class) must be an object or a valid class name, int given\n\
+TypeError:get_class_methods(): Argument #1 ($object_or_class) must be an object or a valid class name, string given\n"
+    );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -5158,30 +7722,77 @@ echo count($dynamic), "|", array_key_exists("secret", $dynamic);
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "Array\n(\n    [name] => \n    [shared] => \n    [baseName] => \n    [baseShared] => \n)\n4|1|1\n4|"
+        "Array\n(\n    [name] => \n    [baseName] => \n    [shared] => \n    [baseShared] => \n)\n4|1|1\n4|"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn get_class_vars_uses_calling_scope_visibility_and_static_defaults() {
+    let source = r#"<?php
+class Ancestor {
+    public static function inspect() {
+        print_r(get_class_vars("Tester"));
+        echo Tester::$prot, "\n";
+    }
+}
+
+class Tester extends Ancestor {
+    public $pub = "public var";
+    protected $protInst = "protected var";
+    private $priv = "private var";
+
+    static public $pubs = "public static var";
+    static protected $prot = "protected static var";
+    static private $privs = "private static var";
+
+    public static function inspectSelf() {
+        print_r(get_class_vars("Tester"));
+    }
+}
+
+class Child extends Tester {
+    public static function inspectChild() {
+        print_r(get_class_vars("Tester"));
+    }
+}
+
+print_r(get_class_vars("Tester"));
+Tester::inspectSelf();
+Ancestor::inspect();
+Child::inspectChild();
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "Array\n(\n    [pub] => public var\n    [pubs] => public static var\n)\n\
+Array\n(\n    [pub] => public var\n    [protInst] => protected var\n    [priv] => private var\n    [pubs] => public static var\n    [prot] => protected static var\n    [privs] => private static var\n)\n\
+Array\n(\n    [pub] => public var\n    [protInst] => protected var\n    [pubs] => public static var\n    [prot] => protected static var\n)\n\
+protected static var\n\
+Array\n(\n    [pub] => public var\n    [protInst] => protected var\n    [pubs] => public static var\n    [prot] => protected static var\n)\n"
     );
     assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
 fn get_class_vars_requires_declared_class_string_argument() {
-    let target_error = runtime_error("<?php\nvar_dump(get_class_vars(42));\n");
+    let source = r#"<?php
+foreach ([42, "Missing"] as $class) {
+    try {
+        var_dump(get_class_vars($class));
+    } catch (TypeError $e) {
+        echo get_class($e), ":", $e->getMessage(), "\n";
+    }
+}
+"#;
 
-    assert_eq!(target_error.line, 2);
-    assert_eq!(target_error.column, 10);
+    let execution = run_source(source).unwrap();
     assert_eq!(
-        target_error.message,
-        "unsupported call get_class_vars(): class name argument must be string, got int"
+        execution.stdout,
+        "TypeError:get_class_vars(): Argument #1 ($class) must be a valid class name, 42 given\nTypeError:get_class_vars(): Argument #1 ($class) must be a valid class name, Missing given\n"
     );
-
-    let missing_class_error = runtime_error("<?php\nvar_dump(get_class_vars(\"Missing\"));\n");
-
-    assert_eq!(missing_class_error.line, 2);
-    assert_eq!(missing_class_error.column, 10);
-    assert_eq!(
-        missing_class_error.message,
-        "unsupported call get_class_vars(): string argument must name a declared class in the current subset"
-    );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -5217,6 +7828,153 @@ echo count($dynamic), "|", $dynamic["baseName"], "|", $dynamic["name"];
     assert_eq!(
         execution.stdout,
         "Array\n(\n    [baseName] => Root\n    [name] => Ada\n    [count] => 3\n)\n3|Root|Ada|3|\n3|Root|Ada"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn get_object_vars_uses_current_method_visibility_context() {
+    let source = r#"<?php
+class ParentBox {
+    private $name = "parent-name";
+    public $shared = "shared";
+
+    public function parentVars() {
+        $vars = get_object_vars($this);
+        echo "parent:";
+        foreach ($vars as $key => $value) {
+            echo $key, "=", $value, ";";
+        }
+        echo "\n";
+    }
+}
+
+class ChildBox extends ParentBox {
+    public $name = "child-name";
+    private $token = "child-token";
+
+    public function childVars() {
+        $vars = get_object_vars($this);
+        echo "child:";
+        foreach ($vars as $key => $value) {
+            echo $key, "=", $value, ";";
+        }
+        echo "\n";
+    }
+}
+
+$box = new ChildBox();
+$box->parentVars();
+$box->childVars();
+$vars = get_object_vars($box);
+echo "external:";
+foreach ($vars as $key => $value) {
+    echo $key, "=", $value, ";";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "parent:name=parent-name;shared=shared;\nchild:shared=shared;name=child-name;token=child-token;\nexternal:shared=shared;name=child-name;"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn get_object_vars_preserves_references_and_related_protected_visibility() {
+    let source = r#"<?php
+class A {
+    private $hiddenPriv = "A::hiddenPriv";
+
+    public static function inspect($b) {
+        foreach (get_object_vars($b) as $key => $value) {
+            echo $key, "=", $value, ";";
+        }
+        echo "\n";
+    }
+}
+
+class B extends A {
+    protected $prot = "B::prot";
+    public $pub = "B::pub";
+}
+
+$b = new B();
+A::inspect($b);
+
+$obj = new stdClass();
+$a = "original";
+$obj->ref = &$a;
+$obj->val = $a;
+$vars = get_object_vars($obj);
+$vars["ref"] = "changed.ref";
+$vars["val"] = "changed.val";
+echo $a, "|", $obj->ref, "|", $obj->val, "|", $vars["val"];
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "hiddenPriv=A::hiddenPriv;prot=B::prot;pub=B::pub;\nchanged.ref|changed.ref|original|changed.val"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn allow_dynamic_properties_child_can_shadow_inherited_private_property() {
+    let source = r#"<?php
+class ParentSlot {
+    private $prop = "parent";
+
+    public function parentDump() {
+        echo "parent-foreach:";
+        foreach ($this as $key => $value) {
+            echo $key, "=", $value, ";";
+        }
+        echo "\n";
+
+        echo "parent-vars:";
+        foreach (get_object_vars($this) as $key => $value) {
+            echo $key, "=", $value, ";";
+        }
+        echo "\n";
+    }
+}
+
+#[AllowDynamicProperties]
+class ChildSlot extends ParentSlot {
+    public function childDump() {
+        echo "child-foreach:";
+        foreach ($this as $key => $value) {
+            echo $key, "=", $value, ";";
+        }
+        echo "\n";
+
+        echo "child-vars:";
+        foreach (get_object_vars($this) as $key => $value) {
+            echo $key, "=", $value, ";";
+        }
+        echo "\n";
+    }
+}
+
+$box = new ChildSlot();
+$box->prop = "dynamic";
+$box->parentDump();
+$box->childDump();
+
+echo "external:";
+foreach (get_object_vars($box) as $key => $value) {
+    echo $key, "=", $value, ";";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "parent-foreach:prop=parent;\nparent-vars:prop=parent;\nchild-foreach:prop=dynamic;\nchild-vars:prop=dynamic;\nexternal:prop=dynamic;"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -5403,14 +8161,10 @@ if ($call($child, "BOX")) {
 
 #[test]
 fn is_subclass_of_requires_supported_argument_types() {
-    let source_error = runtime_error("<?php\nvar_dump(is_subclass_of(42, \"Box\"));\n");
-
-    assert_eq!(source_error.line, 2);
-    assert_eq!(source_error.column, 10);
-    assert_eq!(
-        source_error.message,
-        "unsupported call is_subclass_of(): object_or_class argument must be object or string, got int"
-    );
+    let source_execution = run_source("<?php\nvar_dump(is_subclass_of(42, \"Box\"));\n").unwrap();
+    assert_eq!(source_execution.stdout, "bool(false)\n");
+    assert_eq!(source_execution.stderr, "");
+    assert_eq!(source_execution.exit_code, 0);
 
     let class_error = runtime_error(
         "<?php\nclass Box {}\n$box = new Box();\nvar_dump(is_subclass_of($box, 42));\n",
@@ -5470,23 +8224,30 @@ if ($call($child) === "Box") {
 
 #[test]
 fn get_parent_class_requires_object_or_string_argument() {
-    let target_error = runtime_error("<?php\nvar_dump(get_parent_class(42));\n");
+    let execution = run_source(
+        r#"<?php
+spl_autoload_register(function ($class) {
+    echo "autoload:$class\n";
+});
 
-    assert_eq!(target_error.line, 2);
-    assert_eq!(target_error.column, 10);
+foreach (array(42, "Missing") as $value) {
+    try {
+        get_parent_class($value);
+    } catch (TypeError $e) {
+        echo get_class($e), ":", $e->getMessage(), "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+
     assert_eq!(
-        target_error.message,
-        "unsupported call get_parent_class(): object_or_class argument must be object or string, got int"
+        execution.stdout,
+        "TypeError:get_parent_class(): Argument #1 ($object_or_class) must be an object or a valid class name, int given\n\
+autoload:Missing\n\
+TypeError:get_parent_class(): Argument #1 ($object_or_class) must be an object or a valid class name, string given\n"
     );
-
-    let missing_class_error = runtime_error("<?php\nvar_dump(get_parent_class(\"Missing\"));\n");
-
-    assert_eq!(missing_class_error.line, 2);
-    assert_eq!(missing_class_error.column, 10);
-    assert_eq!(
-        missing_class_error.message,
-        "unsupported call get_parent_class(): string argument must name a declared class in the current subset"
-    );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -5505,11 +8266,94 @@ echo $dynamic[0], "|", $dynamic[1], "|", $dynamic[2];
 "#;
 
     let execution = run_source(source).unwrap();
-    assert_eq!(
-        execution.stdout,
-        "Array\n(\n    [0] => Exception\n    [1] => stdClass\n    [2] => mysqli\n    [3] => mysqli_result\n    [4] => mysqli_stmt\n    [5] => PDO\n    [6] => PDOStatement\n    [7] => ReflectionException\n    [8] => ReflectionClass\n    [9] => ReflectionObject\n    [10] => ReflectionFunction\n    [11] => ReflectionMethod\n    [12] => ReflectionParameter\n    [13] => ReflectionType\n    [14] => ReflectionNamedType\n    [15] => ReflectionUnionType\n    [16] => ReflectionIntersectionType\n    [17] => ReflectionProperty\n    [18] => Box\n    [19] => Profile\n)\n20|Exception|stdClass|mysqli\nException|stdClass|mysqli"
-    );
+    let mut declared = CORE_CLASS_NAMES.to_vec();
+    declared.extend(["Box", "Profile"]);
+    let mut expected = expected_print_r_array(&declared);
+    expected.push_str(&format!(
+        "{}|Exception|Error|Uri\\InvalidUriException\n",
+        declared.len()
+    ));
+    expected.push_str("Exception|Error|Uri\\InvalidUriException");
+    assert_eq!(execution.stdout, expected);
     assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn class_alias_records_declared_name_order_and_warnings() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+class a {}
+class_alias("a", "b");
+$declared = get_declared_classes();
+echo end($declared), "|", prev($declared), "\n";
+class_alias("a", "b");
+class_alias("missing", "missingAlias");
+"#,
+        "Zend/tests/class_alias/class_alias_metadata.php".to_string(),
+    )
+    .unwrap();
+
+    assert!(execution.stdout.starts_with("b|a\n"));
+    assert!(execution.stdout.contains(
+        "Warning: Cannot redeclare class b (previously declared in Zend/tests/class_alias/class_alias_metadata.php:2)"
+    ));
+    assert!(execution
+        .stdout
+        .contains("Warning: Class \"missing\" not found"));
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn class_alias_predeclaration_supports_later_declarations_and_type_compatibility() {
+    let execution = run_source(
+        r#"<?php
+class foo {
+    static public function msg() {
+        echo "hello\n";
+    }
+}
+
+class_alias("foo", "baz");
+
+class bar extends baz {
+    public function __construct() {
+        foo::msg();
+    }
+}
+
+new bar;
+
+class A {
+    function check(A $param) {}
+}
+
+class_alias("A", "AliasA");
+
+eval('class B extends A { function check(AliasA $param) {} }');
+echo "DONE";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "hello\nDONE");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn interface_alias_duplicate_parent_reports_previous_interface() {
+    let error = runtime_error(
+        r#"<?php
+interface a {}
+class_alias("a", "b");
+interface c extends a, b {}
+"#,
+    );
+
+    assert_eq!(error.line, 4);
+    assert_eq!(
+        error.message,
+        "Interface c cannot implement previously implemented interface a"
+    );
 }
 
 #[test]
@@ -5526,10 +8370,11 @@ echo count($declared), "\n";
 "#;
 
     let execution = run_source(source).unwrap();
-    assert_eq!(
-        execution.stdout,
-        "Array\n(\n    [0] => Exception\n    [1] => stdClass\n    [2] => mysqli\n    [3] => mysqli_result\n    [4] => mysqli_stmt\n    [5] => PDO\n    [6] => PDOStatement\n    [7] => ReflectionException\n    [8] => ReflectionClass\n    [9] => ReflectionObject\n    [10] => ReflectionFunction\n    [11] => ReflectionMethod\n    [12] => ReflectionParameter\n    [13] => ReflectionType\n    [14] => ReflectionNamedType\n    [15] => ReflectionUnionType\n    [16] => ReflectionIntersectionType\n    [17] => ReflectionProperty\n    [18] => App\\Mode\n    [19] => App\\Status\n)\n20\n"
-    );
+    let mut declared = CORE_CLASS_NAMES.to_vec();
+    declared.extend(["App\\Mode", "App\\Status", "App\\Mode", "App\\Status"]);
+    let mut expected = expected_print_r_array(&declared);
+    expected.push_str(&format!("{}\n", declared.len()));
+    assert_eq!(execution.stdout, expected);
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -5550,7 +8395,13 @@ echo array_search("ReflectionException", $classes, true);
 
     assert_eq!(
         execution.stdout,
-        "exists\nextends\nException\nReflectionException|Exception|1\n7"
+        format!(
+            "exists\nextends\nException\nReflectionException|Exception|1\n{}",
+            CORE_CLASS_NAMES
+                .iter()
+                .position(|name| *name == "ReflectionException")
+                .unwrap()
+        )
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -5611,10 +8462,11 @@ echo count($dynamic);
 "#;
 
     let execution = run_source(source).unwrap();
-    assert_eq!(
-        execution.stdout,
-        "Array\n(\n    [0] => Traversable\n    [1] => IteratorAggregate\n    [2] => Iterator\n    [3] => Serializable\n    [4] => ArrayAccess\n    [5] => Countable\n    [6] => Stringable\n    [7] => App\\Logger\n    [8] => App\\Hookable\n)\n9\n9"
-    );
+    let mut declared = CORE_INTERFACE_NAMES.to_vec();
+    declared.extend(["App\\Logger", "App\\Hookable"]);
+    let mut expected = expected_print_r_array(&declared);
+    expected.push_str(&format!("{0}\n{0}", declared.len()));
+    assert_eq!(execution.stdout, expected);
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -5654,21 +8506,29 @@ echo class_implements("Missing", false) ? "missing-true" : "missing-false";
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "Array\n(\n    [ParentHook] => ParentHook\n    [ChildHook] => ChildHook\n    [RootHook] => RootHook\n)\nArray\n(\n    [ParentHook] => ParentHook\n    [ChildHook] => ChildHook\n    [RootHook] => RootHook\n)\n3\nroot\nmissing-false"
+        "Array\n(\n    [ParentHook] => ParentHook\n    [ChildHook] => ChildHook\n    [RootHook] => RootHook\n)\nArray\n(\n    [ParentHook] => ParentHook\n    [ChildHook] => ChildHook\n    [RootHook] => RootHook\n)\n3\nroot\n\nWarning: class_implements(): Class Missing does not exist in Command line code on line 17\nmissing-false"
     );
     assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
 fn class_implements_requires_object_or_string_and_bool_autoload_arguments() {
-    let name_error = runtime_error("<?php\nvar_dump(class_implements(42));\n");
+    let execution = run_source(
+        r#"<?php
+try {
+    class_implements(42);
+} catch (TypeError $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
 
-    assert_eq!(name_error.line, 2);
-    assert_eq!(name_error.column, 10);
     assert_eq!(
-        name_error.message,
-        "unsupported call class_implements(): object_or_class argument must be object or string, got int"
+        execution.stdout,
+        "TypeError:class_implements(): Argument #1 ($object_or_class) must be of type object|string, int given\n"
     );
+    assert_eq!(execution.exit_code, 0);
 
     let autoload_error = runtime_error("<?php\nvar_dump(class_implements(\"Box\", []));\n");
 
@@ -5760,14 +8620,22 @@ echo "trait-empty|", count($trait->getTraitNames()), "|", count($trait->getTrait
 
 #[test]
 fn class_uses_requires_object_or_string_and_bool_autoload_arguments() {
-    let name_error = runtime_error("<?php\nvar_dump(class_uses(42));\n");
+    let execution = run_source(
+        r#"<?php
+try {
+    class_uses(42);
+} catch (TypeError $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
 
-    assert_eq!(name_error.line, 2);
-    assert_eq!(name_error.column, 10);
     assert_eq!(
-        name_error.message,
-        "unsupported call class_uses(): object_or_class argument must be object or string, got int"
+        execution.stdout,
+        "TypeError:class_uses(): Argument #1 ($object_or_class) must be of type object|string, int given\n"
     );
+    assert_eq!(execution.exit_code, 0);
 
     let autoload_error = runtime_error("<?php\nvar_dump(class_uses(\"Box\", []));\n");
 
@@ -5835,14 +8703,22 @@ echo class_parents("App\\Missing", false) ? "missing-true" : "missing-false";
 
 #[test]
 fn class_parents_requires_object_or_string_and_bool_autoload_arguments() {
-    let name_error = runtime_error("<?php\nvar_dump(class_parents(42));\n");
+    let execution = run_source(
+        r#"<?php
+try {
+    class_parents(42);
+} catch (TypeError $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
 
-    assert_eq!(name_error.line, 2);
-    assert_eq!(name_error.column, 10);
     assert_eq!(
-        name_error.message,
-        "unsupported call class_parents(): object_or_class argument must be object or string, got int"
+        execution.stdout,
+        "TypeError:class_parents(): Argument #1 ($object_or_class) must be of type object|string, int given\n"
     );
+    assert_eq!(execution.exit_code, 0);
 
     let autoload_error = runtime_error("<?php\nvar_dump(class_parents(\"Box\", []));\n");
 
@@ -5852,6 +8728,58 @@ fn class_parents_requires_object_or_string_and_bool_autoload_arguments() {
         autoload_error.message,
         "unsupported call class_parents(): autoload argument must be bool-like scalar in the current subset, got array"
     );
+}
+
+#[test]
+fn class_list_helpers_warn_and_return_false_for_missing_string_classes() {
+    let source = r#"<?php
+function capture_warning($errno, $message) {
+    echo "warning:", $message, "\n";
+}
+
+spl_autoload_register(function ($class) {
+    echo "autoload:", $class, "\n";
+});
+
+foreach (array("class_implements", "class_uses", "class_parents") as $function) {
+    echo "--", $function, "--\n";
+    set_error_handler("capture_warning");
+    var_dump($function("Missing" . $function));
+    var_dump($function("", true));
+    var_dump($function("StillMissing" . $function, false));
+    restore_error_handler();
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "--class_implements--\n\
+autoload:Missingclass_implements\n\
+warning:class_implements(): Class Missingclass_implements does not exist and could not be loaded\n\
+bool(false)\n\
+warning:class_implements(): Class  does not exist and could not be loaded\n\
+bool(false)\n\
+warning:class_implements(): Class StillMissingclass_implements does not exist\n\
+bool(false)\n\
+--class_uses--\n\
+autoload:Missingclass_uses\n\
+warning:class_uses(): Class Missingclass_uses does not exist and could not be loaded\n\
+bool(false)\n\
+warning:class_uses(): Class  does not exist and could not be loaded\n\
+bool(false)\n\
+warning:class_uses(): Class StillMissingclass_uses does not exist\n\
+bool(false)\n\
+--class_parents--\n\
+autoload:Missingclass_parents\n\
+warning:class_parents(): Class Missingclass_parents does not exist and could not be loaded\n\
+bool(false)\n\
+warning:class_parents(): Class  does not exist and could not be loaded\n\
+bool(false)\n\
+warning:class_parents(): Class StillMissingclass_parents does not exist\n\
+bool(false)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -6019,6 +8947,40 @@ echo $trait->hasMethod("helper") ? "trait-helper" : "missing-helper";
     assert_eq!(
         execution.stdout,
         "Plugin\nPlugin\ninstantiable\nboot-method\nhelper-method\nArray\n(\n    [0] => HookContract\n    [1] => RootContract\n)\nBasePlugin\ninterface\nroot-method\nArray\n(\n    [0] => RootContract\n)\ntrait\ntrait-helper"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reflection_class_get_interfaces_returns_named_reflection_objects() {
+    let execution = run_source(
+        r#"<?php
+interface RootContract {}
+interface LeafContract extends RootContract {}
+class BasePlugin {}
+class Plugin extends BasePlugin implements LeafContract {}
+
+function line($label, $interfaces) {
+    ksort($interfaces);
+    foreach ($interfaces as $key => $interface) {
+        echo $label, "|", $key, "|", get_class($interface), "|", $interface->name, "|", $interface->getName(), "\n";
+    }
+}
+
+$class = new ReflectionClass(Plugin::class);
+line("class", $class->getInterfaces());
+$parent = $class->getParentClass();
+echo "parent|", $parent->name, "|", $parent->getName(), "\n";
+
+$interface = new ReflectionClass(LeafContract::class);
+line("interface", $interface->getInterfaces());
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "class|LeafContract|ReflectionClass|LeafContract|LeafContract\nclass|RootContract|ReflectionClass|RootContract|RootContract\nparent|BasePlugin|BasePlugin\ninterface|RootContract|ReflectionClass|RootContract|RootContract\n"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -6427,6 +9389,61 @@ try {
 }
 
 #[test]
+fn reflection_function_and_method_report_static_variables() {
+    let execution = run_source(
+        r#"<?php
+function user_statics() {
+    static $c;
+    static $a = 1, $b = "hello";
+}
+
+class Plugin {
+    public function boot() {
+        static $seen = 2;
+        static $empty;
+    }
+
+    public static function ping() {
+        echo "method-closure-static\n";
+    }
+
+    public function label($value = "bound") {
+        echo "method-closure-", $value, "\n";
+    }
+}
+
+function dump_array($label, $values) {
+    echo $label, "\n";
+    foreach ($values as $key => $value) {
+        echo $key, "=", ($value === null ? "NULL" : $value), "\n";
+    }
+}
+
+function callback_line($value) {
+    echo "function-closure-", $value, "\n";
+}
+
+dump_array("function", (new ReflectionFunction("user_statics"))->getStaticVariables());
+dump_array("method", (new ReflectionMethod(Plugin::class, "boot"))->getStaticVariables());
+echo "extract|", (new ReflectionFunction("extract"))->isInternal() ? "internal" : "user", "|", (new ReflectionFunction("extract"))->getStartLine() === false ? "no-line" : "line", "\n";
+$functionClosure = (new ReflectionFunction("callback_line"))->getClosure();
+$functionClosure("ok");
+$staticClosure = (new ReflectionMethod(Plugin::class, "ping"))->getClosure();
+$staticClosure();
+$methodClosure = (new ReflectionMethod(Plugin::class, "label"))->getClosure(new Plugin());
+$methodClosure();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "function\nc=NULL\na=1\nb=hello\nmethod\nseen=2\nempty=NULL\nextract|internal|no-line\nfunction-closure-ok\nmethod-closure-static\nmethod-closure-bound\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reflection_parameter_reports_bounded_method_parameter_metadata() {
     let execution = run_source(
         r#"<?php
@@ -6525,6 +9542,343 @@ line("direct", new ReflectionParameter(array(new Plugin(), "boot"), "count"), ""
 }
 
 #[test]
+fn reflection_parameter_is_callable_reports_deprecated_callable_metadata() {
+    let execution = run_source(
+        r#"<?php
+set_error_handler(function ($errno, $message) {
+    echo "deprecated:$message\n";
+    return true;
+});
+
+function reflects_callable(callable $cb, ?callable $maybe = null, string $name = "") {}
+
+function yn($value) {
+    return $value ? "1" : "0";
+}
+
+$params = (new ReflectionFunction("reflects_callable"))->getParameters();
+foreach ($params as $param) {
+    $isCallable = yn($param->isCallable());
+    echo $param->getName(), "|", $isCallable, "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "deprecated:Method ReflectionParameter::isCallable() is deprecated since 8.0, use ReflectionParameter::getType() instead\ncb|1\n\
+deprecated:Method ReflectionParameter::isCallable() is deprecated since 8.0, use ReflectionParameter::getType() instead\nmaybe|1\n\
+deprecated:Method ReflectionParameter::isCallable() is deprecated since 8.0, use ReflectionParameter::getType() instead\nname|0\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reflection_named_type_and_function_objects_stringify() {
+    let execution = run_source(
+        r#"<?php
+class Test {}
+function typed(?Traversable $iterator): ?string {}
+function object_type(?Test $test): ?Test {}
+function described($test, $test2 = null) {}
+
+function type_line($label, $type) {
+    echo $label, "|", $type->getName(), "|", (string) $type, "\n";
+}
+
+$function = new ReflectionFunction("typed");
+type_line("param-internal", $function->getParameters()[0]->getType());
+type_line("return-internal", $function->getReturnType());
+
+$function = new ReflectionFunction("object_type");
+type_line("param-user", $function->getParameters()[0]->getType());
+type_line("return-user", $function->getReturnType());
+
+echo "function-start\n", (new ReflectionFunction("described")), "\nfunction-end";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "param-internal|Traversable|?Traversable\nreturn-internal|string|?string\nparam-user|Test|?Test\nreturn-user|Test|?Test\nfunction-start\nFunction [ <user> function described ] {\n\n  - Parameters [2] {\n    Parameter #0 [ <required> $test ]\n    Parameter #1 [ <optional> $test2 = NULL ]\n  }\n}\n\nfunction-end"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reflection_parameter_reports_default_constant_and_pass_by_value_metadata() {
+    let execution = run_source(
+        r#"<?php
+define("APP_CONST", "app");
+
+class OtherDefaults {
+    const VALUE = "other";
+}
+
+class Defaults {
+    const VALUE = "self";
+    public function method($plain = 1, $global = APP_CONST, $self = self::VALUE, $other = OtherDefaults::VALUE) {}
+}
+
+function user_params(&$array1, $array2) {}
+
+function yn($value) {
+    return $value ? "1" : "0";
+}
+
+function constant_line($parameter) {
+    echo $parameter->getName(), "|", yn($parameter->isDefaultValueConstant());
+    if ($parameter->isDefaultValueConstant()) {
+        echo "|", $parameter->getDefaultValueConstantName();
+    }
+    echo "\n";
+}
+
+foreach ((new ReflectionMethod(Defaults::class, "method"))->getParameters() as $parameter) {
+    constant_line($parameter);
+}
+
+foreach ((new ReflectionFunction("user_params"))->getParameters() as $parameter) {
+    echo "user|", $parameter->getName(), "|", yn($parameter->isPassedByReference()), "|", yn($parameter->canBePassedByValue()), "\n";
+}
+foreach ((new ReflectionFunction("array_multisort"))->getParameters() as $parameter) {
+    echo "multi|", $parameter->getName(), "|", yn($parameter->isPassedByReference()), "|", yn($parameter->canBePassedByValue()), "\n";
+}
+foreach ((new ReflectionFunction("sort"))->getParameters() as $parameter) {
+    echo "sort|", $parameter->getName(), "|", yn($parameter->isPassedByReference()), "|", yn($parameter->canBePassedByValue()), "\n";
+}
+
+try {
+    (new ReflectionFunction("user_params"))->getParameters()[0]->getDefaultValueConstantName();
+} catch (ReflectionException $e) {
+    echo "missing|", $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "plain|0\nglobal|1|APP_CONST\nself|1|self::VALUE\nother|1|OtherDefaults::VALUE\nuser|array1|1|0\nuser|array2|0|1\nmulti|array|1|1\nmulti|rest|1|1\nsort|array|1|0\nsort|flags|0|1\nmissing|Internal error: Failed to retrieve the default value"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reflection_parameter_constructor_reinitializes_and_reports_catchable_errors() {
+    let execution = run_source(
+        r#"<?php
+class EmptyClass {}
+
+$closure = function (int $x): void {};
+$parameter = new ReflectionParameter($closure, "x");
+echo "first|", $parameter->name, "|", $parameter->getType()->getName(), "\n";
+$parameter->__construct("ord", "character");
+echo "second|", $parameter->name, "|", $parameter->getType()->getName(), "\n";
+
+try {
+    new ReflectionParameter(array("MissingClass", "missing"), 0);
+} catch (ReflectionException $e) {
+    echo "missing-class|", $e->getMessage(), "\n";
+}
+
+try {
+    new ReflectionParameter(array("EmptyClass", "missing"), 0);
+} catch (ReflectionException $e) {
+    echo "missing-method|", $e->getMessage(), "\n";
+}
+
+try {
+    new ReflectionParameter(array(new EmptyClass, "missing"), 0);
+} catch (ReflectionException $e) {
+    echo "missing-object-method|", $e->getMessage(), "\n";
+}
+
+try {
+    new ReflectionParameter(array("EmptyClass", "missing"));
+} catch (TypeError $e) {
+    echo "arity|", $e->getMessage(), "\n";
+}
+
+try {
+    new ReflectionParameter(0, 0);
+} catch (ReflectionException $e) {
+    echo "bad-function|", $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "first|x|int\nsecond|character|string\nmissing-class|Class \"MissingClass\" does not exist\nmissing-method|Method EmptyClass::missing() does not exist\nmissing-object-method|Method EmptyClass::missing() does not exist\narity|ReflectionParameter::__construct() expects exactly 2 arguments, 1 given\nbad-function|ReflectionParameter::__construct(): Argument #1 ($function) must be a string, an array(class, method), or a callable object, int given"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reflection_constructors_report_php_shaped_catchable_diagnostics() {
+    let execution = run_source(
+        r#"<?php
+class TestClass {
+    public function method($x) {}
+}
+
+try {
+    new ReflectionClass();
+} catch (TypeError $e) {
+    echo "class-arity|", $e->getMessage(), "\n";
+}
+
+set_error_handler(function ($errno, $message) {
+    echo "deprecated|", $message, "\n";
+    return true;
+}, E_DEPRECATED);
+try {
+    new ReflectionClass(null);
+} catch (ReflectionException $e) {
+    echo "class-null|", $e->getMessage(), "\n";
+}
+restore_error_handler();
+
+try {
+    new ReflectionClass(true);
+} catch (ReflectionException $e) {
+    echo "class-bool|", $e->getMessage(), "\n";
+}
+
+try {
+    new ReflectionClass([]);
+} catch (TypeError $e) {
+    echo "class-array|", $e->getMessage(), "\n";
+}
+
+try {
+    new ReflectionFunction([]);
+} catch (TypeError $e) {
+    echo "function-array|", $e->getMessage(), "\n";
+}
+
+try {
+    new ReflectionFunction("missing_function");
+} catch (ReflectionException $e) {
+    echo "function-missing|", $e->getMessage(), "\n";
+}
+
+try {
+    new ReflectionProperty();
+} catch (TypeError $e) {
+    echo "property-arity|", $e->getMessage(), "\n";
+}
+
+try {
+    new ReflectionProperty("MissingClass", "prop");
+} catch (ReflectionException $e) {
+    echo "property-class|", $e->getMessage(), "\n";
+}
+
+try {
+    new ReflectionProperty(5, "prop");
+} catch (ReflectionException $e) {
+    echo "property-scalar|", $e->getMessage(), "\n";
+}
+
+try {
+    new ReflectionParameter(array(TestClass::class, "method"), "missing");
+} catch (ReflectionException $e) {
+    echo "parameter-name|", $e->getMessage(), "\n";
+}
+
+try {
+    new ReflectionParameter(array(TestClass::class, "method"), -1);
+} catch (ValueError $e) {
+    echo "parameter-index|", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "class-arity|ReflectionClass::__construct() expects exactly 1 argument, 0 given\n\
+deprecated|ReflectionClass::__construct(): Passing null to parameter #1 ($objectOrClass) of type object|string is deprecated\n\
+class-null|Class \"\" does not exist\n\
+class-bool|Class \"1\" does not exist\n\
+class-array|ReflectionClass::__construct(): Argument #1 ($objectOrClass) must be of type object|string, array given\n\
+function-array|ReflectionFunction::__construct(): Argument #1 ($function) must be of type Closure|string, array given\n\
+function-missing|Function missing_function() does not exist\n\
+property-arity|ReflectionProperty::__construct() expects exactly 2 arguments, 0 given\n\
+property-class|Class \"MissingClass\" does not exist\n\
+property-scalar|Class \"5\" does not exist\n\
+parameter-name|The parameter specified by its name could not be found\n\
+parameter-index|ReflectionParameter::__construct(): Argument #2 ($param) must be greater than or equal to 0\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reflection_class_new_instance_invokes_public_user_constructors_by_value() {
+    let execution = run_source(
+        r#"<?php
+class NoCtor {}
+class WithCtor {
+    public function __construct($a = null) {
+        echo "ctor|", $a, "|", count(func_get_args()), "\n";
+    }
+}
+class NeedsRef {
+    public function __construct(&$x) {
+        $x = "changed";
+    }
+}
+class Base {}
+class Child extends Base {}
+class ReflectionClassEx extends ReflectionClass {
+    public $extra = "ok";
+}
+
+$no = new ReflectionClass(NoCtor::class);
+echo "no|", get_class($no->newInstance()), "\n";
+try {
+    $no->newInstance("x");
+} catch (ReflectionException $e) {
+    echo "no-args|", $e->getMessage(), "\n";
+}
+
+$with = new ReflectionClass(WithCtor::class);
+echo "with|", get_class($with->newInstance("a", "b")), "\n";
+
+$x = "original";
+(new ReflectionClass(NeedsRef::class))->newInstance($x);
+echo "ref|", $x, "\n";
+
+$child = (new ReflectionClass(Child::class))->newInstanceArgs(array());
+echo "child|", (new ReflectionClass(Base::class))->isInstance($child) ? "1" : "0", "\n";
+
+$rx = new ReflectionClassEx("ReflectionClassEx");
+echo "sub|", $rx->name, "|", $rx->extra, "\n";
+"#,
+    )
+    .unwrap();
+
+    assert!(execution.stdout.contains("no|NoCtor\n"));
+    assert!(execution.stdout.contains(
+        "no-args|Class NoCtor does not have a constructor, so you cannot pass any constructor arguments\n"
+    ));
+    assert!(execution.stdout.contains("with|ctor|a|2\nWithCtor\n"));
+    assert!(execution.stdout.contains(
+        "Warning: NeedsRef::__construct(): Argument #1 ($x) must be passed by reference, value given"
+    ));
+    assert!(execution.stdout.contains("ref|original\n"));
+    assert!(execution.stdout.contains("child|1\n"));
+    assert!(execution.stdout.contains("sub|ReflectionClassEx|ok\n"));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reflection_method_and_parameter_report_bounded_compound_type_metadata() {
     let execution = run_source(
         r#"<?php
@@ -6576,6 +9930,66 @@ line("raw-return", (new ReflectionMethod(Plugin::class, "raw"))->getReturnType()
     assert_eq!(
         execution.stdout,
         "method|1|2\nreturn-union|ReflectionUnionType|1|1|HookContract:0:0,OtherHook:0:0,null:1:1\nparam-union|ReflectionUnionType|1|1|HookContract:0:0,OtherHook:0:0,null:1:1\nparam-intersection|ReflectionIntersectionType|1|0|HookContract:0:0,TaggedContract:0:0\nreturn-intersection|ReflectionIntersectionType|1|0|HookContract:0:0,TaggedContract:0:0\nraw|0|raw-return|null"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reflection_compound_types_stringify_and_expose_bounded_dnf_metadata() {
+    let execution = run_source(
+        r#"<?php
+interface X {}
+interface Y {}
+interface Z {}
+class Both implements X, Y {}
+
+function dnf_return(): (X&Y)|(Z&Traversable)|Countable {}
+function iterable_union(): X|iterable|bool {}
+function nullable_false(): null|false {}
+
+class Holder {
+    public (X&Y)|Countable $prop;
+}
+
+function yn($value) {
+    return $value ? "1" : "0";
+}
+
+function dump_type($label, $type) {
+    echo $label, "|", get_class($type), "|", (string) $type, "|", yn($type->allowsNull()), "\n";
+    foreach ($type->getTypes() as $part) {
+        echo "part|", get_class($part), "|", (string) $part, "|", yn($part->allowsNull()), "\n";
+    }
+}
+
+dump_type("dnf-return", (new ReflectionFunction("dnf_return"))->getReturnType());
+dump_type("dnf-property", (new ReflectionProperty(Holder::class, "prop"))->getType());
+$holder = new Holder();
+$holder->prop = new Both();
+echo "dnf-property-assign|", get_class($holder->prop), "\n";
+dump_type("iterable-return", (new ReflectionFunction("iterable_union"))->getReturnType());
+$nullable = (new ReflectionFunction("nullable_false"))->getReturnType();
+echo "nullable-false|", get_class($nullable), "|", (string) $nullable, "|", $nullable->getName(), "|", yn($nullable->allowsNull());
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "dnf-return|ReflectionUnionType|(X&Y)|(Z&Traversable)|Countable|0\n\
+part|ReflectionIntersectionType|X&Y|0\n\
+part|ReflectionIntersectionType|Z&Traversable|0\n\
+part|ReflectionNamedType|Countable|0\n\
+dnf-property|ReflectionUnionType|(X&Y)|Countable|0\n\
+part|ReflectionIntersectionType|X&Y|0\n\
+part|ReflectionNamedType|Countable|0\n\
+dnf-property-assign|Both\n\
+iterable-return|ReflectionUnionType|X|Traversable|array|bool|0\n\
+part|ReflectionNamedType|X|0\n\
+part|ReflectionNamedType|Traversable|0\n\
+part|ReflectionNamedType|array|0\n\
+part|ReflectionNamedType|bool|0\n\
+nullable-false|ReflectionNamedType|?false|false|1"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -6664,6 +10078,51 @@ echo "dump|", yn($dump->isDeprecated()), "|", $dump->getExtensionName();
 }
 
 #[test]
+fn reflection_class_reports_bounded_extension_owner_metadata() {
+    let execution = run_source(
+        r#"<?php
+class MyClass
+{
+    public $varX;
+    public $varY;
+}
+
+$dom = new ReflectionClass('domDocument');
+$user = new ReflectionClass('MyClass');
+$std = new ReflectionClass('stdClass');
+
+echo method_exists('ReflectionClass', 'getExtensionName') ? "method-name" : "missing-name";
+echo "|";
+echo method_exists('ReflectionClass', 'getExtension') ? "method-object" : "missing-object";
+echo "\n";
+var_dump($dom->getExtensionName());
+$extension = $dom->getExtension();
+echo get_class($extension), "|", $extension->getName(), "\n";
+var_dump($user->getExtensionName());
+var_dump($user->getExtension());
+var_dump($std->getExtensionName());
+var_dump($std->getExtension());
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "method-name|method-object\n",
+            "string(3) \"dom\"\n",
+            "ReflectionExtension|dom\n",
+            "bool(false)\n",
+            "NULL\n",
+            "bool(false)\n",
+            "NULL\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reflection_get_attributes_reports_declared_targets_and_instances() {
     let execution = run_source(
         r#"<?php
@@ -6724,7 +10183,7 @@ fn reflection_attribute_filters_repeats_named_args_and_core_attribute_metadata()
 #[Attribute]
 class BaseAttr {}
 
-#[Attribute]
+#[Attribute(Attribute::TARGET_ALL | Attribute::IS_REPEATABLE)]
 class ChildAttr extends BaseAttr {
     public $value;
     public $named;
@@ -6759,6 +10218,495 @@ echo "core|", count($core), "|", $core[0]->getName(), "|", $core[0]->getTarget()
         "filtered|2|2|2|1|one|named-one|named-one\ncore|1|Attribute|1|1\n"
     );
     assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reflection_attribute_new_instance_validation_core_deprecated_and_to_string() {
+    let execution = run_source(
+        r#"<?php
+#[Attribute("foo")]
+class BadFlagsType {}
+#[BadFlagsType]
+class UsesBadFlagsType {}
+try {
+    (new ReflectionClass(UsesBadFlagsType::class))->getAttributes()[0]->newInstance();
+} catch (Error $e) {
+    echo "type|", $e->getMessage(), "\n";
+}
+
+#[Attribute(-1)]
+class BadFlagsValue {}
+#[BadFlagsValue]
+class UsesBadFlagsValue {}
+try {
+    (new ReflectionClass(UsesBadFlagsValue::class))->getAttributes()[0]->newInstance();
+} catch (Error $e) {
+    echo "value|", $e->getMessage(), "\n";
+}
+
+#[Attribute(MissingFlags::VALUE)]
+class BadFlagsConstant {}
+#[BadFlagsConstant]
+class UsesBadFlagsConstant {}
+try {
+    (new ReflectionClass(UsesBadFlagsConstant::class))->getAttributes()[0]->newInstance();
+} catch (Error $e) {
+    echo "constant|", $e->getMessage(), "\n";
+}
+
+#[Deprecated("use newer()", since: "1.0")]
+function old_api() {}
+$deprecated = (new ReflectionFunction("old_api"))->getAttributes()[0]->newInstance();
+echo "deprecated|", $deprecated->message, "|", $deprecated->since, "\n";
+
+#[Foo, Bar(a: "foo", b: 1234), Baz("foo", 1234), X(NO_ERROR), Y(new stdClass)]
+function reflected_attrs() {}
+foreach ((new ReflectionFunction("reflected_attrs"))->getAttributes() as $attribute) {
+    echo $attribute;
+}
+
+#[Attribute]
+class ConstructAttr {}
+class ConstructSubject {
+    #[ConstructAttr]
+    public function run() {}
+}
+$attribute = (new ReflectionMethod(ConstructSubject::class, "run"))->getAttributes()[0];
+$method = new ReflectionMethod($attribute, "__construct");
+try {
+    $method->invoke($attribute, 0);
+} catch (ReflectionException $e) {
+    echo "ctor|", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "type|Attribute::__construct(): Argument #1 ($flags) must be of type int, string given\n",
+            "value|Invalid attribute flags specified\n",
+            "constant|Class \"MissingFlags\" not found\n",
+            "deprecated|use newer()|1.0\n",
+            "Attribute [ Foo ]\n",
+            "Attribute [ Bar ] {\n",
+            "  - Arguments [2] {\n",
+            "    Argument #0 [ a = 'foo' ]\n",
+            "    Argument #1 [ b = 1234 ]\n",
+            "  }\n",
+            "}\n",
+            "Attribute [ Baz ] {\n",
+            "  - Arguments [2] {\n",
+            "    Argument #0 [ 'foo' ]\n",
+            "    Argument #1 [ 1234 ]\n",
+            "  }\n",
+            "}\n",
+            "Attribute [ X ] {\n",
+            "  - Arguments [1] {\n",
+            "    Argument #0 [ NO_ERROR ]\n",
+            "  }\n",
+            "}\n",
+            "Attribute [ Y ] {\n",
+            "  - Arguments [1] {\n",
+            "    Argument #0 [ new \\stdClass() ]\n",
+            "  }\n",
+            "}\n",
+            "ctor|Cannot directly instantiate ReflectionAttribute\n"
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn core_attribute_message_type_errors_use_constructor_trace_args() {
+    let deprecated = run_source_with_source_file(
+        r#"<?php
+declare(strict_types = 1);
+
+#[Deprecated(1234)]
+function deprecated_bad() {}
+
+deprecated_bad();
+"#,
+        "/tmp/core_attribute_deprecated_type.php",
+    )
+    .unwrap();
+
+    assert!(deprecated.stdout.contains(
+        "Fatal error: Uncaught TypeError: Deprecated::__construct(): Argument #1 ($message) must be of type ?string, int given in /tmp/core_attribute_deprecated_type.php:"
+    ));
+    assert!(deprecated.stdout.contains("Deprecated->__construct(1234)"));
+    assert!(!deprecated.stdout.contains(", called in "));
+    assert_eq!(deprecated.stderr, "");
+    assert_eq!(deprecated.exit_code, 255);
+
+    let nodiscard = run_source_with_source_file(
+        r#"<?php
+#[NoDiscard([])]
+function nodiscard_bad(): int {
+    return 0;
+}
+
+nodiscard_bad();
+"#,
+        "/tmp/core_attribute_nodiscard_type.php",
+    )
+    .unwrap();
+
+    assert!(nodiscard.stdout.contains(
+        "Fatal error: Uncaught TypeError: NoDiscard::__construct(): Argument #1 ($message) must be of type ?string, array given in /tmp/core_attribute_nodiscard_type.php:"
+    ));
+    assert!(nodiscard.stdout.contains("NoDiscard->__construct(Array)"));
+    assert!(!nodiscard.stdout.contains(", called in "));
+    assert_eq!(nodiscard.stderr, "");
+    assert_eq!(nodiscard.exit_code, 255);
+
+    let enum_case = run_source_with_source_file(
+        r#"<?php
+#[Deprecated(\Random\IntervalBoundary::ClosedOpen)]
+function enum_message_bad() {}
+
+enum_message_bad();
+"#,
+        "/tmp/core_attribute_enum_type.php",
+    )
+    .unwrap();
+
+    assert!(enum_case.stdout.contains(
+        "Fatal error: Uncaught TypeError: Deprecated::__construct(): Argument #1 ($message) must be of type ?string, Random\\IntervalBoundary given in /tmp/core_attribute_enum_type.php:"
+    ));
+    assert!(enum_case
+        .stdout
+        .contains("Deprecated->__construct(Random\\IntervalBoundary::ClosedOpen)"));
+    assert_eq!(enum_case.stderr, "");
+    assert_eq!(enum_case.exit_code, 255);
+}
+
+#[test]
+fn nodiscard_unused_return_warnings_cover_callables_and_native_method() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+set_error_handler(function ($errno, $errstr) {
+    echo "handled|$errno|$errstr\n";
+});
+
+#[NoDiscard("must use")]
+function f(...$args): int {
+    return 1;
+}
+
+class C {
+    #[NoDiscard]
+    public function m(): int {
+        return 2;
+    }
+
+    #[NoDiscard]
+    public static function s(): int {
+        return 3;
+    }
+}
+
+$closure = #[NoDiscard] function (): int {
+    return 4;
+};
+
+f(1, named: 2);
+call_user_func("f");
+$ff = f(...);
+$ff();
+
+$c = new C();
+$c->m();
+C::s();
+call_user_func([$c, "m"]);
+$closure();
+
+$date = new DateTimeImmutable("now");
+$date->setTimestamp(0);
+"#,
+        "/tmp/nodiscard_unused_callables.php",
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout.matches("handled|512|").count(), 8);
+    assert!(execution
+        .stdout
+        .contains("handled|512|The return value of function f()"));
+    assert!(execution.stdout.contains(", must use"));
+    assert!(execution
+        .stdout
+        .contains("handled|512|The return value of method C::m()"));
+    assert!(execution
+        .stdout
+        .contains("handled|512|The return value of method C::s()"));
+    assert!(execution.stdout.contains(
+        "handled|512|The return value of function {closure:/tmp/nodiscard_unused_callables.php:"
+    ));
+    assert!(execution.stdout.contains(
+        "handled|512|The return value of method DateTimeImmutable::setTimestamp() should either be used or intentionally ignored by casting it as (void), as DateTimeImmutable::setTimestamp() does not modify the object itself"
+    ));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn nodiscard_core_class_readonly_and_startup_diagnostics() {
+    let readonly = run_source_with_source_file(
+        r#"<?php
+$d = new NoDiscard("foo");
+$d->message = "bar";
+"#,
+        "/tmp/nodiscard_readonly.php",
+    )
+    .unwrap();
+
+    assert!(readonly.stdout.contains(
+        "Fatal error: Uncaught Error: Cannot modify readonly property NoDiscard::$message in /tmp/nodiscard_readonly.php:"
+    ));
+    assert_eq!(readonly.stderr, "");
+    assert_eq!(readonly.exit_code, 255);
+
+    let constructor = run_source_with_source_file(
+        r#"<?php
+$d = new NoDiscard("foo");
+$d->__construct("bar");
+"#,
+        "/tmp/nodiscard_readonly_constructor.php",
+    )
+    .unwrap();
+
+    assert!(constructor.stdout.contains(
+        "Fatal error: Uncaught Error: Cannot modify readonly property NoDiscard::$message in /tmp/nodiscard_readonly_constructor.php:"
+    ));
+    assert!(constructor.stdout.contains("NoDiscard->__construct('bar')"));
+    assert_eq!(constructor.stderr, "");
+    assert_eq!(constructor.exit_code, 255);
+
+    assert_php_startup_fatal(
+        r#"<?php
+#[NoDiscard]
+function test(): void {
+}
+"#,
+        "Command line code",
+        3,
+        "A void function does not return a value, but #[\\NoDiscard] requires a return value",
+    );
+    assert_php_startup_fatal(
+        r#"<?php
+class C {
+    #[NoDiscard]
+    public function __clone() {}
+}
+"#,
+        "Command line code",
+        4,
+        "Method C::__clone cannot be #[\\NoDiscard]",
+    );
+}
+
+#[test]
+fn deprecated_core_attribute_readonly_targets_and_trait_use_diagnostics() {
+    let readonly = run_source_with_source_file(
+        r#"<?php
+$d = new Deprecated("foo", "1.0");
+$d->since = "2.0";
+"#,
+        "/tmp/deprecated_readonly_since.php",
+    )
+    .unwrap();
+
+    assert!(readonly.stdout.contains(
+        "Fatal error: Uncaught Error: Cannot modify readonly property Deprecated::$since in /tmp/deprecated_readonly_since.php:"
+    ));
+    assert_eq!(readonly.stderr, "");
+    assert_eq!(readonly.exit_code, 255);
+
+    let constructor = run_source_with_source_file(
+        r#"<?php
+$d = new Deprecated("foo");
+$d->__construct("bar");
+"#,
+        "/tmp/deprecated_readonly_constructor.php",
+    )
+    .unwrap();
+
+    assert!(constructor.stdout.contains(
+        "Fatal error: Uncaught Error: Cannot modify readonly property Deprecated::$message in /tmp/deprecated_readonly_constructor.php:"
+    ));
+    assert!(constructor
+        .stdout
+        .contains("Deprecated->__construct('bar')"));
+    assert_eq!(constructor.stderr, "");
+    assert_eq!(constructor.exit_code, 255);
+
+    for (kind, source) in [
+        (
+            "class",
+            r#"<?php
+#[Deprecated]
+class Demo {}
+"#,
+        ),
+        (
+            "interface",
+            r#"<?php
+#[Deprecated]
+interface Demo {}
+"#,
+        ),
+        (
+            "enum",
+            r#"<?php
+#[Deprecated]
+enum Demo {}
+"#,
+        ),
+    ] {
+        assert_php_startup_fatal(
+            source,
+            "Command line code",
+            3,
+            &format!("Cannot apply #[\\Deprecated] to {kind} Demo"),
+        );
+    }
+
+    let trait_use = run_source_with_source_file(
+        r#"<?php
+#[Deprecated("replace it", since: "2.7")]
+trait DemoTrait {}
+
+class DemoClass {
+    use DemoTrait;
+}
+"#,
+        "/tmp/deprecated_trait_use.php",
+    )
+    .unwrap();
+
+    assert_eq!(
+        trait_use.stdout,
+        "Deprecated: Trait DemoTrait used by DemoClass is deprecated since 2.7, replace it in /tmp/deprecated_trait_use.php on line 6\n"
+    );
+    assert_eq!(trait_use.stderr, "");
+    assert_eq!(trait_use.exit_code, 0);
+
+    let throwing_handler = run_source_with_source_file(
+        r#"<?php
+function my_error_handler(int $errno, string $errstr, ?string $errfile = null, ?int $errline = null) {
+    throw new ErrorException($errstr, 0, $errno, $errfile, $errline);
+}
+
+set_error_handler("my_error_handler");
+
+#[Deprecated]
+trait DemoTrait {}
+
+class DemoClass {
+    use DemoTrait;
+}
+"#,
+        "/tmp/deprecated_trait_error_handler.php",
+    )
+    .unwrap();
+
+    assert!(throwing_handler.stdout.contains(
+        "Fatal error: Uncaught ErrorException: Trait DemoTrait used by DemoClass is deprecated in /tmp/deprecated_trait_error_handler.php:3"
+    ));
+    assert!(throwing_handler
+        .stdout
+        .contains("my_error_handler(16384, 'Trait DemoTrait...', '/tmp/deprecated...', 12)"));
+    assert_eq!(throwing_handler.stderr, "");
+    assert_eq!(throwing_handler.exit_code, 255);
+}
+
+#[test]
+fn builtin_attribute_target_startup_diagnostics_match_php_subset() {
+    assert_php_startup_fatal(
+        r#"<?php
+#[Attribute]
+function a1() {}
+"#,
+        "Command line code",
+        3,
+        "Attribute \"Attribute\" cannot target function (allowed targets: class)",
+    );
+    assert_php_startup_fatal(
+        r#"<?php
+#[Attribute]
+#[Attribute]
+class Demo {}
+"#,
+        "Command line code",
+        4,
+        "Attribute \"Attribute\" must not be repeated",
+    );
+    assert_php_startup_fatal(
+        r#"<?php
+#[Attribute]
+abstract class Demo {}
+"#,
+        "Command line code",
+        3,
+        "Cannot apply #[\\Attribute] to abstract class Demo",
+    );
+    assert_php_startup_fatal(
+        r#"<?php
+#[Attribute]
+interface Demo {}
+"#,
+        "Command line code",
+        3,
+        "Cannot apply #[\\Attribute] to interface Demo",
+    );
+    assert_php_startup_fatal(
+        r#"<?php
+#[Attribute]
+trait Demo {}
+"#,
+        "Command line code",
+        3,
+        "Cannot apply #[\\Attribute] to trait Demo",
+    );
+    assert_php_startup_fatal(
+        r#"<?php
+#[Attribute]
+enum Demo {}
+"#,
+        "Command line code",
+        3,
+        "Cannot apply #[\\Attribute] to enum Demo",
+    );
+    assert_php_startup_fatal(
+        r#"<?php
+#[AllowDynamicProperties]
+interface Test {}
+"#,
+        "Command line code",
+        3,
+        "Cannot apply #[\\AllowDynamicProperties] to interface Test",
+    );
+    assert_php_startup_fatal(
+        r#"<?php
+#[AllowDynamicProperties]
+trait Test {}
+"#,
+        "Command line code",
+        3,
+        "Cannot apply #[\\AllowDynamicProperties] to trait Test",
+    );
+    assert_php_startup_fatal(
+        r#"<?php
+#[AllowDynamicProperties]
+enum Test {}
+"#,
+        "Command line code",
+        3,
+        "Cannot apply #[\\AllowDynamicProperties] to enum Test",
+    );
 }
 
 #[test]
@@ -6963,7 +10911,7 @@ echo "arrow|", $arrowReflection->getName(), "|", $arrowReflection->getNumberOfPa
 
     assert_eq!(
         execution.stdout,
-        "fn|{closure}|ReflectionFunction|2/1|0|1|string\nsource|tests/fixtures/milestone1587/closure_reflection_metadata.php|2|2|1\nparam0|hook|0|0||string|{closure}\nparam1|priority|1|1|10||{closure}\narrow|{closure}|1/1|int|13|13"
+        "fn|{closure:tests/fixtures/milestone1587/closure_reflection_metadata.php:2}|ReflectionFunction|2/1|0|1|string\nsource|tests/fixtures/milestone1587/closure_reflection_metadata.php|2|2|1\nparam0|hook|0|0||string|{closure:tests/fixtures/milestone1587/closure_reflection_metadata.php:2}\nparam1|priority|1|1|10||{closure:tests/fixtures/milestone1587/closure_reflection_metadata.php:2}\narrow|{closure:tests/fixtures/milestone1587/closure_reflection_metadata.php:13}|1/1|int|13|13"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -7083,7 +11031,7 @@ echo $method->invokeArgs(new Plugin(), array("save_post", 20));
 
 #[test]
 fn reflection_method_rejects_abstract_method_invocation() {
-    let interface_error = runtime_error(
+    let execution = run_source(
         r#"<?php
 interface HookContract {
     public function register($hook);
@@ -7096,34 +11044,37 @@ class HookPlugin implements HookContract {
 }
 
 $method = new ReflectionMethod(HookContract::class, "register");
-echo $method->invoke(new HookPlugin(), "init");
-"#,
-    );
-    assert_eq!(
-        interface_error.message,
-        "unsupported call ReflectionMethod::invoke: trying to invoke abstract method HookContract::register(); PHP raises ReflectionException, exact ReflectionException objects are not implemented"
-    );
+try {
+    echo $method->invoke(new HookPlugin(), "init");
+} catch (ReflectionException $exception) {
+    echo get_class($exception), "|", $exception->getMessage(), "\n";
+}
 
-    let abstract_class_error = runtime_error(
-        r#"<?php
 abstract class BaseHook {
     abstract public function register($hook);
 }
 
-class HookPlugin extends BaseHook {
+class AbstractHookPlugin extends BaseHook {
     public function register($hook) {
         return "plugin:" . $hook;
     }
 }
 
 $method = new ReflectionMethod(BaseHook::class, "register");
-echo $method->invokeArgs(new HookPlugin(), array("save_post"));
+try {
+    echo $method->invokeArgs(new AbstractHookPlugin(), array("save_post"));
+} catch (ReflectionException $exception) {
+    echo get_class($exception), "|", $exception->getMessage(), "\n";
+}
 "#,
-    );
+    )
+    .unwrap();
+
     assert_eq!(
-        abstract_class_error.message,
-        "unsupported call ReflectionMethod::invoke: trying to invoke abstract method BaseHook::register(); PHP raises ReflectionException, exact ReflectionException objects are not implemented"
+        execution.stdout,
+        "ReflectionException|Trying to invoke abstract method HookContract::register()\nReflectionException|Trying to invoke abstract method BaseHook::register()\n"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -7395,6 +11346,252 @@ line("CURRENT");
 }
 
 #[test]
+fn reflection_constant_exposes_global_constant_metadata() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+define("RT_CONST", 42);
+const CT_CONST = 43;
+
+function file_or_false($value) {
+    return $value === false ? "false" : $value;
+}
+
+function extension_or_false($value) {
+    return $value === false ? "false" : $value;
+}
+
+function line($label, $constant) {
+    echo $label, "|", $constant->name, "|", $constant->getName(), "|", $constant->getValue(), "|", count($constant->getAttributes()), "|", ($constant->isDeprecated() ? "1" : "0"), "|", file_or_false($constant->getFileName()), "|", extension_or_false($constant->getExtensionName()), "\n";
+}
+
+line("runtime", new ReflectionConstant("RT_CONST"));
+line("compile", new ReflectionConstant("CT_CONST"));
+
+$php = new ReflectionConstant("PHP_VERSION");
+echo "php|", $php->getExtensionName(), "|", file_or_false($php->getFileName()), "\n";
+
+$json = new ReflectionConstant("JSON_ERROR_NONE");
+$extension = $json->getExtension();
+echo "json|", $json->getExtensionName(), "|", get_class($extension), "|", $extension->name, "\n";
+
+try {
+    new ReflectionConstant("NO_SUCH_CONST");
+} catch (ReflectionException $e) {
+    echo "missing|", $e->getMessage(), "\n";
+}
+
+$reinit = new ReflectionConstant("RT_CONST");
+$reinit->__construct("CT_CONST");
+echo "reinit|", $reinit->name, "|", $reinit->getValue(), "\n";
+"#,
+        "/tmp/reflection_constant_meta.php",
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "runtime|RT_CONST|RT_CONST|42|0|0|/tmp/reflection_constant_meta.php|false\n",
+            "compile|CT_CONST|CT_CONST|43|0|0|/tmp/reflection_constant_meta.php|false\n",
+            "php|Core|false\n",
+            "json|json|ReflectionExtension|json\n",
+            "missing|Constant \"NO_SUCH_CONST\" does not exist\n",
+            "reinit|CT_CONST|43\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reflection_constant_reports_global_constant_attributes() {
+    let execution = run_source(
+        r#"<?php
+#[Attribute]
+class ConstantAttr {
+    public $first;
+    public $second;
+
+    public function __construct($first = "", $second = "") {
+        $this->first = $first;
+        $this->second = $second;
+    }
+}
+
+#[ConstantAttr(second: "bar", first: "foo")]
+const EXAMPLE = "ignored";
+
+#[Foo, Bar]
+const GROUPED = 1;
+
+$attrs = (new ReflectionConstant("EXAMPLE"))->getAttributes();
+$args = $attrs[0]->getArguments();
+$instance = $attrs[0]->newInstance();
+echo count($attrs), "|", $attrs[0]->getName(), "|", $attrs[0]->getTarget(), "|", $args["second"], "|", $args["first"], "|", $instance->first, "|", $instance->second, "\n";
+echo count((new ReflectionConstant("GROUPED"))->getAttributes()), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "1|ConstantAttr|64|bar|foo|foo|bar\n2\n");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+
+    assert_php_startup_fatal(
+        r#"<?php
+#[Foo]
+const First = 1,
+    Second = 2;
+"#,
+        "Command line code",
+        3,
+        "Cannot apply attributes to multiple constants at once",
+    );
+    assert_php_startup_fatal(
+        r#"<?php
+#[Attribute]
+const EXAMPLE = "Foo";
+"#,
+        "Command line code",
+        3,
+        "Attribute \"Attribute\" cannot target constant (allowed targets: class)",
+    );
+    assert_php_startup_fatal(
+        r#"<?php
+#[Deprecated]
+#[Deprecated]
+const MY_CONST = true;
+"#,
+        "Command line code",
+        4,
+        "Attribute \"Deprecated\" must not be repeated",
+    );
+
+    let repeated = run_source(
+        r#"<?php
+#[Attribute]
+class MyAttribute {}
+
+#[MyAttribute]
+#[MyAttribute]
+const MY_CONST = true;
+
+$attributes = (new ReflectionConstant("MY_CONST"))->getAttributes();
+$attributes[0]->newInstance();
+"#,
+    )
+    .unwrap();
+    assert!(repeated
+        .stdout
+        .contains("#0 Command line code(10): ReflectionAttribute->newInstance()"));
+    assert_eq!(repeated.exit_code, 255);
+}
+
+#[test]
+fn deprecated_attribute_warns_for_constants_class_constants_and_enum_cases() {
+    let execution = run_source(
+        r#"<?php
+set_error_handler(function ($errno, $message) {
+    echo $errno, "|", $message, "\n";
+});
+
+#[Deprecated(TEST)]
+const TEST = "from itself";
+
+#[Deprecated]
+const TEST2 = "from another";
+
+#[Deprecated(TEST2)]
+const TEST3 = 1;
+
+class Packet {
+    #[Deprecated(self::LEGACY)]
+    public const LEGACY = "legacy self";
+
+    #[Deprecated]
+    public const OTHER = "other";
+
+    #[Deprecated(self::OTHER)]
+    public const THIRD = 3;
+}
+
+enum Mode {
+    #[Deprecated("use Mode::NewCase instead")]
+    case OldCase;
+}
+
+TEST;
+TEST3;
+Packet::LEGACY;
+Packet::THIRD;
+Mode::OldCase;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "16384|Constant TEST is deprecated, from itself\n",
+            "16384|Constant TEST2 is deprecated\n",
+            "16384|Constant TEST3 is deprecated, from another\n",
+            "16384|Constant Packet::LEGACY is deprecated, legacy self\n",
+            "16384|Constant Packet::OTHER is deprecated\n",
+            "16384|Constant Packet::THIRD is deprecated, other\n",
+            "16384|Enum case Mode::OldCase is deprecated, use Mode::NewCase instead\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reflection_class_to_string_renders_bounded_userland_metadata() {
+    let execution = run_source(
+        r#"<?php
+class Base {
+    protected static $cache = 1;
+    private function hidden() {}
+    public function inherited($arg = null) {}
+}
+
+trait Marker {}
+
+class Packet extends Base {
+    const NAME = "core";
+    const FLAGS = array("a");
+    public ?int $id = 42;
+    public string $typed;
+    private static $secret = null;
+    public function run() {}
+}
+
+echo new ReflectionClass(Packet::class);
+echo new ReflectionClass(Marker::class);
+"#,
+    )
+    .unwrap();
+
+    assert!(execution
+        .stdout
+        .contains("Class [ <user> class Packet extends Base ] {"));
+    assert!(execution.stdout.contains(
+        "  - Constants [2] {\n    Constant [ public string NAME ] { core }\n    Constant [ public array FLAGS ] { Array }\n  }"
+    ));
+    assert!(execution.stdout.contains(
+        "  - Static properties [2] {\n    Property [ private static $secret = NULL ]\n    Property [ protected static $cache = 1 ]\n  }"
+    ));
+    assert!(execution.stdout.contains(
+        "  - Properties [2] {\n    Property [ public ?int $id = 42 ]\n    Property [ public string $typed ]\n  }"
+    ));
+    assert!(execution
+        .stdout
+        .contains("Method [ <user, inherits Base> public method inherited ]"));
+    assert!(execution.stdout.contains("Trait [ <user> trait Marker ] {"));
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reflection_property_reports_bounded_typed_property_metadata() {
     let execution = run_source(
         r#"<?php
@@ -7505,6 +11702,79 @@ echo "plain|", $plain->getName(), "|", yn($plain->getDocComment() === false);
 }
 
 #[test]
+fn reflection_doc_comments_follow_php_token_and_property_list_rules() {
+    let execution = run_source(
+        r#"<?php
+/**
+ * class doc
+ */
+class Marked {}
+
+class Blocky {} {}
+
+/***
+ * not a doc comment
+ */
+function no_function_doc() {}
+
+/**
+ * function doc
+ */
+function yes_function_doc() {}
+
+class X {
+    /**
+     * doc x
+     */
+    public $x = "x",
+        $y = "y",
+        /** doc z */
+        $z = "z";
+
+    /*** not a method doc */
+    function noMethodDoc() {}
+
+    /** method doc */
+    function yesMethodDoc() {}
+}
+
+class Child extends X {
+    /** child x */
+    public $x = "child-x";
+}
+
+function doc($value) {
+    return $value === false ? "false" : str_replace("\n", "\\n", $value);
+}
+
+$marked = new ReflectionClass(Marked::class);
+$blocky = new ReflectionClass(Blocky::class);
+echo "class|", doc($marked->getDocComment()), "\n";
+echo "block|", doc($blocky->getDocComment()), "\n";
+
+$noFunction = new ReflectionFunction("no_function_doc");
+$yesFunction = new ReflectionFunction("yes_function_doc");
+echo "function|", doc($noFunction->getDocComment()), "|", doc($yesFunction->getDocComment()), "\n";
+
+$noMethod = new ReflectionMethod(X::class, "noMethodDoc");
+$yesMethod = new ReflectionMethod(X::class, "yesMethodDoc");
+echo "method|", doc($noMethod->getDocComment()), "|", doc($yesMethod->getDocComment()), "\n";
+
+foreach ((new ReflectionClass(Child::class))->getProperties() as $property) {
+    echo "prop|", $property->getName(), "|", $property->getDeclaringClass()->getName(), "|", doc($property->getDocComment()), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "class|/**\\n * class doc\\n */\nblock|false\nfunction|false|/**\\n * function doc\\n */\nmethod|false|/** method doc */\nprop|x|Child|/** child x */\nprop|y|X|false\nprop|z|X|/** doc z */\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reflection_property_get_value_and_set_value_mutate_public_declared_properties() {
     let execution = run_source(
         r#"<?php
@@ -7557,6 +11827,104 @@ echo "static|set2|", $static->getValue($plugin), "|", Base::$counter;
     assert_eq!(
         execution.stdout,
         "name|get|hook|hook\nname|set|save|save\nname|coerce|string:123\nbase|Base|inherited|inherited\nlog|array:2|2\nstatic|get|1|1\nstatic|set1|41|41\nstatic|set2|42|42"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reflection_property_value_and_initialization_errors_match_php_surfaces() {
+    let execution = run_source(
+        r#"<?php
+#[AllowDynamicProperties]
+class A {
+    public static ?string $ssv = null;
+    public static ?string $ss;
+    public static $s;
+    public ?int $iv = null;
+    public ?int $i;
+    public $n;
+    protected $prot = 4;
+    private int $p;
+}
+class B extends A {
+    public $child;
+}
+#[AllowDynamicProperties]
+class Other {}
+
+function line($label, $value) {
+    echo $label, "|";
+    var_dump($value);
+}
+
+$a = new A();
+$prot = new ReflectionProperty(A::class, "prot");
+line("prot-get", $prot->getValue($a));
+$prot->setValue($a, "8");
+line("prot-set", $prot->getValue($a));
+
+$public = new ReflectionProperty(A::class, "n");
+$other = new Other();
+line("dynamic-set", $public->setValue($other, "NewValue"));
+line("dynamic-read", $other->n);
+
+try {
+    $public->getValue($other);
+} catch (ReflectionException $e) {
+    echo "invalid-get|", $e->getMessage(), "\n";
+}
+try {
+    $public->getValue();
+} catch (TypeError $e) {
+    echo "missing-get|", $e->getMessage(), "\n";
+}
+try {
+    (new ReflectionProperty(B::class, "child"))->isReadable(null, new A());
+} catch (ReflectionException $e) {
+    echo "readable-invalid|", $e->getMessage(), "\n";
+}
+try {
+    (new ReflectionProperty(B::class, "child"))->isWritable(null, new Other());
+} catch (ReflectionException $e) {
+    echo "writable-invalid|", $e->getMessage(), "\n";
+}
+
+line("ssv", (new ReflectionProperty(A::class, "ssv"))->isInitialized());
+line("ss", (new ReflectionProperty(A::class, "ss"))->isInitialized());
+line("s", (new ReflectionProperty(A::class, "s"))->isInitialized());
+line("iv", (new ReflectionProperty($a, "iv"))->isInitialized($a));
+line("i", (new ReflectionProperty($a, "i"))->isInitialized($a));
+line("n", (new ReflectionProperty($a, "n"))->isInitialized($a));
+unset($a->iv);
+unset($a->i);
+unset($a->n);
+line("iv-unset", (new ReflectionProperty($a, "iv"))->isInitialized($a));
+line("i-unset", (new ReflectionProperty($a, "i"))->isInitialized($a));
+line("n-unset", (new ReflectionProperty($a, "n"))->isInitialized($a));
+$a->d = null;
+$dyn = new ReflectionProperty($a, "d");
+line("dyn", $dyn->isInitialized($a));
+unset($a->d);
+line("dyn-unset", $dyn->isInitialized($a));
+line("private", (new ReflectionProperty(A::class, "p"))->isInitialized($a));
+line("inherited-object", (new ReflectionProperty(B::class, "i"))->isInitialized($a));
+try {
+    (new ReflectionProperty(B::class, "i"))->isInitialized(new stdClass());
+} catch (ReflectionException $e) {
+    echo "init-invalid|", $e->getMessage(), "\n";
+}
+try {
+    (new ReflectionProperty(B::class, "i"))->isInitialized();
+} catch (TypeError $e) {
+    echo "init-missing|", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "prot-get|int(4)\nprot-set|string(1) \"8\"\ndynamic-set|NULL\ndynamic-read|string(8) \"NewValue\"\ninvalid-get|Given object is not an instance of the class this property was declared in\nmissing-get|ReflectionProperty::getValue(): Argument #1 ($object) must be provided for instance properties\nreadable-invalid|Given object is not an instance of the class this property was declared in\nwritable-invalid|Given object is not an instance of the class this property was declared in\nssv|bool(true)\nss|bool(false)\ns|bool(true)\niv|bool(true)\ni|bool(false)\nn|bool(true)\niv-unset|bool(false)\ni-unset|bool(false)\nn-unset|bool(false)\ndyn|bool(true)\ndyn-unset|bool(false)\nprivate|bool(false)\ninherited-object|bool(false)\ninit-invalid|Given object is not an instance of the class this property was declared in\ninit-missing|ReflectionProperty::isInitialized(): Argument #1 ($object) must be provided for instance properties\n"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -7621,10 +11989,10 @@ echo $box->id;
 "#,
     );
     assert_eq!(read_error.line, 4);
-    assert_eq!(read_error.column, 6);
+    assert_eq!(read_error.column, 1);
     assert_eq!(
         read_error.message,
-        "typed property Box::$id must not be accessed before initialization"
+        "Typed property Box::$id must not be accessed before initialization"
     );
 
     let static_read_error = runtime_error(
@@ -7634,10 +12002,10 @@ echo Box::$id;
 "#,
     );
     assert_eq!(static_read_error.line, 3);
-    assert_eq!(static_read_error.column, 9);
+    assert_eq!(static_read_error.column, 1);
     assert_eq!(
         static_read_error.message,
-        "typed property Box::$id must not be accessed before initialization"
+        "Typed property Box::$id must not be accessed before initialization"
     );
 
     let write_error = runtime_error(
@@ -7651,7 +12019,7 @@ $box->id = "nope";
     assert_eq!(write_error.column, 1);
     assert_eq!(
         write_error.message,
-        "invalid property access: typed property Box::$id expects int, got string"
+        "Cannot assign string to property Box::$id of type int"
     );
 
     let static_write_error = runtime_error(
@@ -7661,10 +12029,10 @@ Box::$ready = array();
 "#,
     );
     assert_eq!(static_write_error.line, 3);
-    assert_eq!(static_write_error.column, 4);
+    assert_eq!(static_write_error.column, 1);
     assert_eq!(
         static_write_error.message,
-        "invalid property access: typed property Box::$ready expects bool, got array"
+        "Cannot assign array to property Box::$ready of type bool"
     );
 }
 
@@ -7704,7 +12072,7 @@ $alias = "bad";
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "invalid property access: typed property Box::$id expects int, got string"
+        "Cannot assign string to reference held by property Box::$id of type int"
     );
 }
 
@@ -7748,7 +12116,7 @@ $target["copy"] = "bad";
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "invalid property access: typed property Box::$id expects int, got string"
+        "Cannot assign string to reference held by property Box::$id of type int"
     );
 }
 
@@ -7794,7 +12162,7 @@ $slot = "bad";
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "invalid property access: typed property Box::$id expects int, got string"
+        "Cannot assign string to reference held by property Box::$id of type int"
     );
 }
 
@@ -7837,7 +12205,7 @@ $holder->bag["outer"]["copy"] = array("bad");
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "invalid property access: typed property Box::$id expects int, got array"
+        "Cannot assign array to reference held by property Box::$id of type int"
     );
 }
 
@@ -7907,7 +12275,7 @@ $bag["outer"]["copy"] = array("bad");
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "invalid property access: typed property Box::$id expects int, got array"
+        "Cannot assign array to reference held by property Box::$id of type int"
     );
 }
 
@@ -8060,7 +12428,7 @@ $bag["outer"]["copy"] = array("bad");
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "invalid property access: typed property Box::$id expects int, got array"
+        "Cannot assign array to reference held by property Box::$id of type int"
     );
 
     let magic_error = runtime_error(
@@ -8111,7 +12479,7 @@ $magic->missing["copy"] = array("bad");
     assert_eq!(magic_error.column, 1);
     assert_eq!(
         magic_error.message,
-        "invalid property access: typed property Box::$id expects int, got array"
+        "Cannot assign array to reference held by property Box::$id of type int"
     );
 }
 
@@ -8211,7 +12579,7 @@ $bag["outer"]["copy"] = array("bad");
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "invalid property access: typed property Box::$id expects int, got array"
+        "Cannot assign array to reference held by property Box::$id of type int"
     );
 }
 
@@ -8317,7 +12685,7 @@ $keyed->items["outer"]["leaf"]["copy"] = array("bad");
     );
     assert_eq!(
         error.message,
-        "invalid property access: typed property Box::$id expects int, got array"
+        "Cannot assign array to reference held by property Box::$id of type int"
     );
 }
 
@@ -8426,7 +12794,7 @@ $keyed->items["outer"]["leaf"]["copy"] = array("bad");
     );
     assert_eq!(
         error.message,
-        "invalid property access: typed property Box::$id expects int, got array"
+        "Cannot assign array to reference held by property Box::$id of type int"
     );
 }
 
@@ -8552,7 +12920,7 @@ $keyed->items["outer"]["leaf"]["copy"] = array("bad");
     );
     assert_eq!(
         error.message,
-        "invalid property access: typed property Box::$id expects int, got array"
+        "Cannot assign array to reference held by property Box::$id of type int"
     );
 }
 
@@ -8935,7 +13303,7 @@ $alias = $other;
     assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "invalid property access: typed property Registry::$instance expects HookLateAlias, got object"
+        "Cannot assign OtherHook to reference held by property Registry::$instance of type HookLateAlias"
     );
 }
 
@@ -9006,7 +13374,7 @@ $registry->instance = new OtherHook();
     assert_eq!(write_error.column, 1);
     assert_eq!(
         write_error.message,
-        "invalid property access: typed property Registry::$instance expects Hook, got object"
+        "Cannot assign OtherHook to property Registry::$instance of type Hook"
     );
 
     let static_write_error = runtime_error(
@@ -9018,10 +13386,10 @@ Registry::$shared = new OtherHook();
 "#,
     );
     assert_eq!(static_write_error.line, 5);
-    assert_eq!(static_write_error.column, 9);
+    assert_eq!(static_write_error.column, 1);
     assert_eq!(
         static_write_error.message,
-        "invalid property access: typed property Registry::$shared expects Hook, got object"
+        "Cannot assign OtherHook to property Registry::$shared of type Hook"
     );
 }
 
@@ -9064,7 +13432,7 @@ $registry->instance = new OtherHook();
     assert_eq!(write_error.column, 1);
     assert_eq!(
         write_error.message,
-        "invalid property access: typed property Registry::$instance expects HookContract, got object"
+        "Cannot assign OtherHook to property Registry::$instance of type HookContract"
     );
 
     let static_write_error = runtime_error(
@@ -9076,10 +13444,10 @@ Registry::$shared = new OtherHook();
 "#,
     );
     assert_eq!(static_write_error.line, 5);
-    assert_eq!(static_write_error.column, 9);
+    assert_eq!(static_write_error.column, 1);
     assert_eq!(
         static_write_error.message,
-        "invalid property access: typed property Registry::$shared expects HookContract, got object"
+        "Cannot assign OtherHook to property Registry::$shared of type HookContract"
     );
 }
 
@@ -9133,7 +13501,7 @@ $registry->instance = new OtherHook();
     assert_eq!(write_error.column, 1);
     assert_eq!(
         write_error.message,
-        "invalid property access: typed property Registry::$instance expects HookAlias, got object"
+        "Cannot assign OtherHook to property Registry::$instance of type HookAlias"
     );
 
     let static_write_error = runtime_error(
@@ -9146,10 +13514,10 @@ Registry::$shared = new OtherHook();
 "#,
     );
     assert_eq!(static_write_error.line, 6);
-    assert_eq!(static_write_error.column, 9);
+    assert_eq!(static_write_error.column, 1);
     assert_eq!(
         static_write_error.message,
-        "invalid property access: typed property Registry::$shared expects HookContractAlias, got object"
+        "Cannot assign OtherHook to property Registry::$shared of type HookContractAlias"
     );
 }
 
@@ -9206,7 +13574,7 @@ $registry->instance = $other;
     assert_eq!(write_error.column, 1);
     assert_eq!(
         write_error.message,
-        "invalid property access: typed property Registry::$instance expects HookLateAlias, got object"
+        "Cannot assign OtherHook to property Registry::$instance of type HookLateAlias"
     );
 }
 
@@ -9274,7 +13642,7 @@ $registry->union = new Bad();
     assert_eq!(union_error.column, 1);
     assert_eq!(
         union_error.message,
-        "invalid property access: typed property Registry::$union expects HookContract|OtherHook, got object"
+        "Cannot assign Bad to property Registry::$union of type HookContract|OtherHook"
     );
 
     let intersection_error = runtime_error(
@@ -9291,8 +13659,48 @@ $registry->intersection = new Hook();
     assert_eq!(intersection_error.column, 1);
     assert_eq!(
         intersection_error.message,
-        "invalid property access: typed property Registry::$intersection expects HookContract&TaggedContract, got object"
+        "Cannot assign Hook to property Registry::$intersection of type HookContract&TaggedContract"
     );
+}
+
+#[test]
+fn intersection_type_diagnostics_use_php_actual_names_and_implicit_nullable_defaults() {
+    let source_file = "Zend/tests/type_declarations/intersection_types/diagnostics.php";
+    let execution = run_source_with_source_file(
+        r#"<?php
+interface X {}
+interface Y {}
+interface Z {}
+class A implements X {}
+class B implements X, Y {}
+class C implements X, Y, Z {}
+class Box { public X&Y $both; public X&Z $xz; }
+function accepts(X&Y $value = null) { var_dump($value); }
+accepts(null);
+try { accepts(new A()); } catch (TypeError $e) { echo $e->getMessage(), "\n"; }
+$box = new Box();
+try { $box->both = new A(); } catch (TypeError $e) { echo $e->getMessage(), "\n"; }
+$ref = new C();
+$box->both =& $ref;
+$box->xz =& $ref;
+try { $ref = new B(); } catch (TypeError $e) { echo $e->getMessage(), "\n"; }
+"#,
+        source_file,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "Deprecated: accepts(): Implicitly marking parameter $value as nullable is deprecated, the explicit nullable type must be used instead in Zend/tests/type_declarations/intersection_types/diagnostics.php on line 9\n",
+            "NULL\n",
+            "accepts(): Argument #1 ($value) must be of type (X&Y)|null, A given, called in Zend/tests/type_declarations/intersection_types/diagnostics.php on line 11\n",
+            "Cannot assign A to property Box::$both of type X&Y\n",
+            "Cannot assign B to reference held by property Box::$xz of type X&Z\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -9344,10 +13752,10 @@ echo $box->id;
 "#,
     );
     assert_eq!(read_error.line, 6);
-    assert_eq!(read_error.column, 6);
+    assert_eq!(read_error.column, 1);
     assert_eq!(
         read_error.message,
-        "typed property Box::$id must not be accessed before initialization"
+        "Typed property Box::$id must not be accessed before initialization"
     );
 }
 
@@ -9453,7 +13861,7 @@ echo Child::forwardParent();
     let static_class_error = runtime_error("<?php\nstatic::class;\n");
     assert_eq!(
         static_class_error.message,
-        "unsupported call static::class: static::class requires method or static class context"
+        "Cannot use \"static\" in the global scope"
     );
 }
 
@@ -9642,7 +14050,7 @@ $class = "Missing";
 $class::make();
 "#,
     );
-    assert_eq!(undefined_class.message, "undefined class Missing");
+    assert_eq!(undefined_class.message, "Class \"Missing\" not found");
 
     let missing_method = runtime_error(
         r#"<?php
@@ -9651,7 +14059,10 @@ $class = "Box";
 $class::make();
 "#,
     );
-    assert_eq!(missing_method.message, "undefined function Box::make()");
+    assert_eq!(
+        missing_method.message,
+        "Call to undefined method Box::make()"
+    );
 
     let non_static_method = runtime_error(
         r#"<?php
@@ -9664,7 +14075,7 @@ $box::make();
     );
     assert_eq!(
         non_static_method.message,
-        "unsupported call Box::make(): non-static method dispatch through dynamic static receivers is not implemented"
+        "Non-static method Box::make() cannot be called statically"
     );
 
     let private_method = runtime_error(
@@ -9678,7 +14089,7 @@ $box::make();
     );
     assert_eq!(
         private_method.message,
-        "unsupported call Box::make(): private method dispatch requires same-class method context"
+        "Call to private method Box::make() from global scope"
     );
 }
 
@@ -9821,7 +14232,7 @@ class Child extends Base {}
 Child::missing();
 "#,
     );
-    assert_eq!(missing.message, "undefined constant Child::MISSING");
+    assert_eq!(missing.message, "Undefined constant Child::MISSING");
 
     let private_visibility = runtime_error(
         r#"<?php
@@ -9839,7 +14250,7 @@ Child::reveal();
     );
     assert_eq!(
         private_visibility.message,
-        "unsupported call Child::SECRET: private class constant is not visible from the current class context"
+        "Cannot access private constant Child::SECRET"
     );
 }
 
@@ -9879,10 +14290,10 @@ fn spl_object_id_requires_one_object_argument() {
     let arity_error = runtime_error("<?php\nvar_dump(spl_object_id());\n");
 
     assert_eq!(arity_error.line, 2);
-    assert_eq!(arity_error.column, 10);
+    assert_eq!(arity_error.column, 1);
     assert_eq!(
         arity_error.message,
-        "arity mismatch for spl_object_id(): expected 1 argument(s), got 0"
+        "Too few arguments to function spl_object_id(), 0 passed in Command line code on line 2 and exactly 1 expected"
     );
 
     let type_error = runtime_error("<?php\nvar_dump(spl_object_id(42));\n");
@@ -10103,10 +14514,10 @@ fn clone_expression_rejects_non_objects_and_dispatches_declared_clone_methods() 
     let type_error = runtime_error("<?php\n$copy = clone 42;\n");
 
     assert_eq!(type_error.line, 2);
-    assert_eq!(type_error.column, 9);
+    assert_eq!(type_error.column, 1);
     assert_eq!(
         type_error.message,
-        "unsupported call clone: clone operand must be object in the current subset, got int"
+        "clone operand must be object in the current subset, got int"
     );
 
     let clone_execution = run_source(
@@ -10133,14 +14544,126 @@ echo $box->label, "|", $copy->label;
 }
 
 #[test]
+fn readonly_properties_can_be_reset_once_during_clone() {
+    let source = r#"<?php
+class Foo {
+    public function __construct(public readonly int $bar) {}
+
+    public function __clone() {
+        $this->bar++;
+    }
+}
+
+$foo = new Foo(1);
+$first = clone $foo;
+$second = clone $foo;
+$third = clone $second;
+
+echo $first->bar, "|", $second->bar, "|", $third->bar, "\n";
+
+try {
+    $third->bar = 4;
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "2|2|3\nCannot modify readonly property Foo::$bar\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn readonly_clone_reset_survives_type_error_and_rejects_second_write() {
+    let source = r#"<?php
+class TypeErrorThenReset {
+    public function __construct(public readonly int $bar) {}
+
+    public function __clone() {
+        try {
+            $this->bar = "foo";
+        } catch (Error $e) {
+            echo $e->getMessage(), "\n";
+        }
+
+        $this->bar = 2;
+    }
+}
+
+class SetTwice {
+    public function __construct(public readonly int $bar) {}
+
+    public function __clone() {
+        try {
+            $this->bar = 2;
+            echo $this->bar, "\n";
+            $this->bar = 3;
+        } catch (Error $e) {
+            echo $e->getMessage(), "\n";
+        }
+    }
+}
+
+$first = clone new TypeErrorThenReset(1);
+echo $first->bar, "\n";
+$second = clone new SetTwice(1);
+echo $second->bar, "\n";
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "Cannot assign string to property TypeErrorThenReset::$bar of type int\n\
+2\n\
+2\n\
+Cannot modify readonly property SetTwice::$bar\n\
+2\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn readonly_clone_reset_does_not_allow_indirect_array_mutation() {
+    let source = r#"<?php
+class Bag {
+    public readonly array $prop;
+
+    public function __construct() {
+        $this->prop = [];
+    }
+
+    public function __clone() {
+        $this->prop[] = 1;
+    }
+}
+
+try {
+    clone new Bag();
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "Cannot modify readonly property Bag::$prop\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn spl_object_hash_requires_one_object_argument() {
     let arity_error = runtime_error("<?php\nvar_dump(spl_object_hash());\n");
 
     assert_eq!(arity_error.line, 2);
-    assert_eq!(arity_error.column, 10);
+    assert_eq!(arity_error.column, 1);
     assert_eq!(
         arity_error.message,
-        "arity mismatch for spl_object_hash(): expected 1 argument(s), got 0"
+        "Too few arguments to function spl_object_hash(), 0 passed in Command line code on line 2 and exactly 1 expected"
     );
 
     let type_error = runtime_error("<?php\nvar_dump(spl_object_hash(42));\n");
@@ -10780,18 +15303,18 @@ echo $child->inheritedNames();
 
     let self_error = runtime_error("<?php\nself::class;\n");
     assert_eq!(self_error.line, 2);
-    assert_eq!(self_error.column, 5);
+    assert_eq!(self_error.column, 1);
     assert_eq!(
         self_error.message,
-        "unsupported call self::class: self::class requires instance method context"
+        "Cannot use \"self\" in the global scope"
     );
 
     let parent_error = runtime_error("<?php\nparent::class;\n");
     assert_eq!(parent_error.line, 2);
-    assert_eq!(parent_error.column, 7);
+    assert_eq!(parent_error.column, 1);
     assert_eq!(
         parent_error.message,
-        "unsupported call parent::class: parent::class requires instance method context"
+        "Cannot use \"parent\" in the global scope"
     );
 
     let parent_error = runtime_error(
@@ -10807,8 +15330,39 @@ echo $root->name();
     );
     assert_eq!(
         parent_error.message,
-        "unsupported call parent::class: parent::class requires a parent class"
+        "Cannot use \"parent\" when current class scope has no parent"
     );
+}
+
+#[test]
+fn closure_class_name_scope_survives_static_creation_and_bind_to() {
+    let execution = run_source(
+        r#"<?php
+class A {
+    public static function make() {
+        return function () {
+            echo self::class, ":", static::class, "\n";
+        };
+    }
+}
+class B extends A {}
+
+$f = B::make();
+$f();
+$g = $f->bindTo(null, A::class);
+$g();
+
+$unscoped = function () {
+    echo self::class, ":", static::class, "\n";
+};
+$bound = $unscoped->bindTo(null, A::class);
+$bound();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "A:B\nA:A\nA:A\n");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -10964,7 +15518,7 @@ echo Root::NAME;
     );
     assert_eq!(
         visibility_error.message,
-        "unsupported call Root::NAME: protected class constant is not visible from the current class context"
+        "Cannot access protected constant Root::NAME"
     );
 
     let private_error = runtime_error(
@@ -10977,11 +15531,11 @@ echo Root::NAME;
     );
     assert_eq!(
         private_error.message,
-        "unsupported call Root::NAME: private class constant is not visible from the current class context"
+        "Cannot access private constant Root::NAME"
     );
 
     let undefined_class = runtime_error("<?php\necho Missing::VALUE;\n");
-    assert_eq!(undefined_class.message, "undefined class Missing");
+    assert_eq!(undefined_class.message, "Class \"Missing\" not found");
 
     let undefined_constant = runtime_error(
         r#"<?php
@@ -10991,8 +15545,542 @@ echo Root::MISSING;
     );
     assert_eq!(
         undefined_constant.message,
-        "undefined constant Root::MISSING"
+        "Undefined constant Root::MISSING"
     );
+}
+
+#[test]
+fn class_constant_visibility_errors_are_catchable_php_errors() {
+    let execution = run_source(
+        r#"<?php
+class A {
+    protected const PROTECTED_NAME = "protected";
+    private const SECRET = "secret";
+
+    public static function dumpVisible() {
+        var_dump(self::PROTECTED_NAME);
+        var_dump(self::SECRET);
+    }
+}
+
+A::dumpVisible();
+try {
+    constant("A::PROTECTED_NAME");
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    echo A::SECRET;
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "string(9) \"protected\"\n",
+            "string(6) \"secret\"\n",
+            "Cannot access protected constant A::PROTECTED_NAME\n",
+            "Cannot access private constant A::SECRET\n"
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn typed_class_constants_report_bounded_startup_diagnostics() {
+    let cases = [
+        (
+            r#"<?php
+class A {
+    public const string CONST1 = 1;
+}
+"#,
+            "Cannot use int as value for class constant A::CONST1 of type string",
+            3,
+        ),
+        (
+            r#"<?php
+class Test {
+    public const int X = 1, Y = "foo";
+}
+"#,
+            "Cannot use string as value for class constant Test::Y of type int",
+            3,
+        ),
+        (
+            r#"<?php
+class A {
+    public const callable CONST1 = 1;
+}
+"#,
+            "Class constant A::CONST1 cannot have type callable",
+            3,
+        ),
+        (
+            r#"<?php
+class A {
+    public const void CONST1 = 1;
+}
+"#,
+            "Class constant A::CONST1 cannot have type void",
+            3,
+        ),
+        (
+            r#"<?php
+class A {
+    public const never CONST1 = 1;
+}
+"#,
+            "Class constant A::CONST1 cannot have type never",
+            3,
+        ),
+    ];
+
+    for (source, message, line) in cases {
+        let error = runtime_error(source);
+        assert_eq!(error.message, message);
+        assert_eq!(error.line, line);
+    }
+}
+
+#[test]
+fn typed_class_constants_report_bounded_inheritance_type_diagnostics() {
+    let cases = [
+        (
+            r#"<?php
+class A {
+    public const int CONST1 = 1;
+}
+class B extends A {
+    public const string CONST1 = "a";
+}
+"#,
+            "Type of B::CONST1 must be compatible with A::CONST1 of type int",
+        ),
+        (
+            r#"<?php
+class A {
+    public const int CONST1 = 1;
+}
+class B extends A {
+    public const CONST1 = 0;
+}
+"#,
+            "Type of B::CONST1 must be compatible with A::CONST1 of type int",
+        ),
+    ];
+
+    for (source, message) in cases {
+        let error = runtime_error(source);
+        assert_eq!(error.message, message);
+    }
+
+    let execution = run_source(
+        r#"<?php
+class A {
+    public const iterable CONST1 = [];
+}
+class B extends A {
+    public const array CONST1 = [];
+}
+var_dump(B::CONST1);
+"#,
+    )
+    .unwrap();
+    assert_eq!(execution.stdout, "array(0) {\n}\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn typed_class_constants_report_bounded_runtime_type_errors() {
+    let execution = run_source(
+        r#"<?php
+class S {
+    public function __toString() {
+        echo "Side effect!\n";
+        return "S";
+    }
+}
+class A {
+    public const int FROM_STRING = C;
+    public const string FROM_OBJECT = O;
+    public const string FROM_STRINGABLE = S;
+}
+define("C", "c");
+define("O", new stdClass);
+define("S", new S);
+try {
+    var_dump(A::FROM_STRING);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    var_dump(A::FROM_OBJECT);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    var_dump(A::FROM_STRINGABLE);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "Cannot assign string to class constant A::FROM_STRING of type int\n",
+            "Cannot assign stdClass to class constant A::FROM_OBJECT of type string\n",
+            "Cannot assign S to class constant A::FROM_STRINGABLE of type string\n"
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn typed_class_constants_accept_object_valued_global_const_expressions() {
+    let execution = run_source(
+        r#"<?php
+class B implements Stringable {
+    public function __toString() {
+        return "";
+    }
+}
+class A {
+    public const object CONST1 = C;
+}
+const C = new B();
+var_dump(A::CONST1);
+"#,
+    )
+    .unwrap();
+    assert!(execution.stdout.starts_with("object(B)#"));
+    assert!(execution.stdout.ends_with(" (0) {\n}\n"));
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn typed_trait_and_interface_class_constants_keep_type_metadata() {
+    let trait_error = runtime_error(
+        r#"<?php
+trait T {
+    public const ?array CONST1 = [];
+}
+class C {
+    use T;
+    public const CONST1 = [];
+}
+"#,
+    );
+    assert_eq!(
+        trait_error.message,
+        "C and T define the same constant (CONST1) in the composition of C. However, the definition differs and is considered incompatible. Class was composed"
+    );
+
+    let interface_error = runtime_error(
+        r#"<?php
+interface A {
+    public const string CONST1 = "A";
+}
+class B implements A {
+    public const CONST1 = "B";
+}
+"#,
+    );
+    assert_eq!(
+        interface_error.message,
+        "Type of B::CONST1 must be compatible with A::CONST1 of type string"
+    );
+}
+
+#[test]
+fn enum_class_constants_are_reachable_after_case_lookup() {
+    let execution = run_source(
+        r#"<?php
+enum E {
+    public const E CONST1 = E::Foo;
+    public const self CONST2 = E::Foo;
+    public const static CONST3 = E::Foo;
+    case Foo;
+}
+class A {
+    public const E CONST1 = E::CONST1;
+    public const E CONST2 = E::CONST2;
+    public const E CONST3 = E::CONST3;
+}
+var_dump(A::CONST1);
+var_dump(A::CONST2);
+var_dump(A::CONST3);
+"#,
+    )
+    .unwrap();
+    assert_eq!(
+        execution.stdout,
+        "enum(E::Foo)\nenum(E::Foo)\nenum(E::Foo)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let type_error = run_source(
+        r#"<?php
+enum E1 {
+    const static C = E2::Foo;
+}
+enum E2 {
+    case Foo;
+}
+try {
+    var_dump(E1::C);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+    assert_eq!(
+        type_error.stdout,
+        "Cannot assign E2 to class constant E1::C of type static\n"
+    );
+    assert_eq!(type_error.exit_code, 0);
+}
+
+#[test]
+fn typed_class_constants_validate_on_object_instantiation() {
+    let execution = run_source(
+        r#"<?php
+class A {
+    public const self CONST1 = C;
+}
+try {
+    define("C", new A());
+} catch (Error $exception) {
+    echo $exception->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+    assert_eq!(execution.stdout, "Undefined constant \"C\"\n");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn private_parent_class_constants_are_not_inherited() {
+    let execution = run_source(
+        r#"<?php
+class A {
+    public const X = 1;
+    protected const Y = 2;
+    private const Z = 3;
+}
+class B extends A {
+    static public function checkConstants() {
+        var_dump(self::X);
+        var_dump(self::Y);
+        var_dump(self::Z);
+    }
+}
+
+B::checkConstants();
+"#,
+    )
+    .unwrap();
+
+    assert!(execution.stdout.starts_with(concat!(
+        "int(1)\n",
+        "int(2)\n",
+        "\n",
+        "Fatal error: Uncaught Error: Undefined constant B::Z in Command line code:11\n",
+        "Stack trace:\n",
+        "#0 Command line code(15): B::checkConstants()\n",
+        "#1 {main}\n",
+        "  thrown in Command line code on line 11"
+    )));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 255);
+}
+
+#[test]
+fn class_constant_invalid_modifiers_and_visibility_reductions_are_startup_fatals() {
+    assert_php_startup_fatal(
+        "<?php\nclass A {\n    static const X = 1;\n}\n",
+        "constant-static.php",
+        3,
+        "Cannot use the static modifier on a class constant",
+    );
+    assert_php_startup_fatal(
+        "<?php\nclass A {\n    abstract const X = 1;\n}\n",
+        "constant-abstract.php",
+        3,
+        "Cannot use the abstract modifier on a class constant",
+    );
+    assert_php_startup_fatal(
+        "<?php\n\nclass A {\n    public const publicConst = 0;\n}\n\nclass B extends A {\n    protected const publicConst = 1;\n}\n",
+        "constant-public-reduced.php",
+        7,
+        "Access level to B::publicConst must be public (as in class A)",
+    );
+    assert_php_startup_fatal(
+        "<?php\n\nclass A {\n    protected const protectedConst = 0;\n}\n\nclass B extends A {\n    private const protectedConst = 1;\n}\n",
+        "constant-protected-reduced.php",
+        7,
+        "Access level to B::protectedConst must be protected (as in class A) or weaker",
+    );
+}
+
+#[test]
+fn final_class_and_interface_constants_report_php_startup_diagnostics() {
+    let execution = run_source(
+        r#"<?php
+class Foo {
+    final const A = "foo";
+    final public const B = "bar";
+}
+
+$constant = new ReflectionClassConstant(Foo::class, "A");
+echo Foo::A, "|", Foo::B, "|", ($constant->isFinal() ? "final" : "open"), "|", $constant->getModifiers(), "\n";
+"#,
+    )
+    .unwrap();
+    assert_eq!(execution.stdout, "foo|bar|final|33\n");
+    assert_eq!(execution.exit_code, 0);
+
+    let cases = [
+        (
+            r#"<?php
+class Foo {
+    final const A = "foo";
+}
+class Bar extends Foo {
+    const A = "bar";
+}
+"#,
+            "Bar::A cannot override final constant Foo::A",
+        ),
+        (
+            r#"<?php
+class Foo {
+    private final const A = "foo";
+}
+"#,
+            "Private constant Foo::A cannot be final as it is not visible to other classes",
+        ),
+        (
+            r#"<?php
+interface I {
+    final public const X = 1;
+}
+class C implements I {
+    const X = 2;
+}
+"#,
+            "C::X cannot override final constant I::X",
+        ),
+        (
+            r#"<?php
+interface I {
+    final public const X = 1;
+}
+class C implements I {
+    private const X = 2;
+}
+"#,
+            "C::X cannot override final constant I::X",
+        ),
+        (
+            r#"<?php
+interface I1 {
+    const C = 1;
+}
+interface I2 {
+    const C = 1;
+}
+class C implements I1, I2 {
+}
+"#,
+            "Class C inherits both I1::C and I2::C, which is ambiguous",
+        ),
+        (
+            r#"<?php
+class C {
+    const C = 1;
+}
+interface I {
+    const C = 1;
+}
+class C2 extends C implements I {
+}
+"#,
+            "Class C2 inherits both C::C and I::C, which is ambiguous",
+        ),
+        (
+            r#"<?php
+interface I1 {
+    const C = 1;
+}
+interface I2 {
+    const C = 2;
+}
+interface I3 extends I1, I2 {
+}
+"#,
+            "Interface I3 inherits both I1::C and I2::C, which is ambiguous",
+        ),
+        (
+            r#"<?php
+interface I {
+    public const FOO = "foo";
+}
+class C implements I {
+    private const FOO = "foo";
+}
+"#,
+            "Access level to C::FOO must be public (as in interface I)",
+        ),
+    ];
+
+    for (source, message) in cases {
+        let error = runtime_error(source);
+        assert_eq!(error.message, message);
+    }
+
+    let common_ancestor = run_source(
+        r#"<?php
+interface EntityInterface {
+    final public const TEST = "this";
+}
+interface KeyInterface extends EntityInterface {
+}
+interface StringableInterface extends EntityInterface {
+}
+class SomeTestClass implements KeyInterface, StringableInterface {
+}
+"#,
+    )
+    .unwrap();
+    assert_eq!(common_ancestor.stdout, "");
+    assert_eq!(common_ancestor.exit_code, 0);
+
+    let parent_override = run_source(
+        r#"<?php
+interface Named {
+    const NAME = "interface";
+}
+class BaseName implements Named {
+    const NAME = "class";
+}
+class ChildName extends BaseName {
+}
+echo ChildName::NAME;
+"#,
+    )
+    .unwrap();
+    assert_eq!(parent_override.stdout, "class");
+    assert_eq!(parent_override.exit_code, 0);
 }
 
 #[test]
@@ -11043,6 +16131,33 @@ foreach ($class->getConstants(4) as $name => $value) {
 }
 
 #[test]
+fn reflection_class_constant_lookup_accepts_scalar_names() {
+    let execution = run_source(
+        r#"<?php
+class Packet {
+    public const VALUE = 1;
+}
+
+function yn($value) {
+    return $value ? "1" : "0";
+}
+
+$class = new ReflectionClass(Packet::class);
+echo "has|", yn($class->hasConstant(1)), yn($class->hasConstant(1.5)), yn($class->hasConstant(true)), "\n";
+var_dump($class->getConstant(1));
+"#,
+    )
+    .unwrap();
+
+    assert!(execution.stdout.starts_with("has|000\n"));
+    assert!(execution.stdout.contains(
+        "Deprecated: ReflectionClass::getConstant() for a non-existent constant is deprecated"
+    ));
+    assert!(execution.stdout.ends_with("bool(false)\n"));
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reflection_class_reports_bounded_shape_relationship_metadata() {
     let execution = run_source(
         r#"<?php
@@ -11078,6 +16193,134 @@ echo "iterable|", yn($plugin->isIterable()), yn($plugin->isIterateable()), yn($p
     assert_eq!(
         execution.stdout,
         "names|1|App\\Meta|Plugin\nmods|64|10|32|01\norigin|10|01\nsubclass|110\ninstance|100\niterable|110"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reflection_class_reports_static_and_default_property_metadata() {
+    let execution = run_source(
+        r#"<?php
+class Base {
+    private $hidden = "secret";
+    private static $secret = "hidden";
+    public static $shared = "base";
+    protected static $cache = "warm";
+    protected $base = 2;
+    public $nullSlot;
+}
+
+class Plugin extends Base {
+    public static $active = true;
+    public static $shared = "plugin";
+    private $own = 1;
+    public $name = "hook";
+    protected $items = array("a" => 1);
+}
+
+class A {
+    public static $x = "default";
+    public $y = "iy";
+}
+
+function label($value) {
+    if (is_array($value)) {
+        return "array:" . count($value);
+    }
+    if (is_bool($value)) {
+        return "bool:" . ($value ? "1" : "0");
+    }
+    if ($value === null) {
+        return "null";
+    }
+    return (string) $value;
+}
+
+$class = new ReflectionClass(Plugin::class);
+foreach ($class->getDefaultProperties() as $name => $value) {
+    echo "default|", $name, "|", label($value), "\n";
+}
+foreach ($class->getStaticProperties() as $name => $value) {
+    echo "static|", $name, "|", label($value), "\n";
+}
+echo "get|", label($class->getStaticPropertyValue("cache")), "|", label($class->getStaticPropertyValue("shared")), "|", label($class->getStaticPropertyValue("secret", "fallback")), "\n";
+$class->setStaticPropertyValue("cache", "hot");
+echo "set|", label($class->getStaticPropertyValue("cache")), "|", label(Base::$shared), "|", label(Plugin::$shared), "\n";
+A::$x = "changed";
+$aClass = new ReflectionClass(A::class);
+echo "mutation|", label($aClass->getDefaultProperties()["x"]), "|", label($aClass->getStaticProperties()["x"]);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "default|active|bool:1\ndefault|shared|plugin\ndefault|cache|warm\ndefault|own|1\ndefault|name|hook\ndefault|items|array:1\ndefault|base|2\ndefault|nullSlot|null\nstatic|active|bool:1\nstatic|shared|plugin\nstatic|cache|warm\nget|warm|plugin|fallback\nset|hot|base|plugin\nmutation|default|changed"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn reflection_static_property_access_reports_php_errors_and_reuses_reference_cells() {
+    let execution = run_source(
+        r#"<?php
+class Test {
+    public static $x;
+    public static int $y = 2;
+    public static $z;
+}
+
+$rc = new ReflectionClass(Test::class);
+
+try {
+    $rc->getStaticPropertyValue("x", "default", "extra");
+} catch (TypeError $e) {
+    echo "get-arity|", $e->getMessage(), "\n";
+}
+
+try {
+    $rc->setStaticPropertyValue();
+} catch (TypeError $e) {
+    echo "set-arity|", $e->getMessage(), "\n";
+}
+
+try {
+    $rc->setStaticPropertyValue(array(1), "x");
+} catch (TypeError $e) {
+    echo "set-name|", $e->getMessage(), "\n";
+}
+
+try {
+    $rc->setStaticPropertyValue("missing", "x");
+} catch (ReflectionException $e) {
+    echo "missing|", $e->getMessage(), "\n";
+}
+
+Test::$x =& Test::$y;
+try {
+    $rc->setStaticPropertyValue("x", "foo");
+} catch (TypeError $e) {
+    echo "class-ref|", $e->getMessage(), "\n";
+}
+
+$rc->setStaticPropertyValue("x", "21");
+echo "class-value|", Test::$y, "\n";
+
+$rp = new ReflectionProperty(Test::class, "z");
+Test::$z =& Test::$y;
+try {
+    $rp->setValue(null, "bar");
+} catch (TypeError $e) {
+    echo "prop-ref|", $e->getMessage(), "\n";
+}
+echo "prop-value|", $rp->getValue();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "get-arity|ReflectionClass::getStaticPropertyValue() expects at most 2 arguments, 3 given\nset-arity|ReflectionClass::setStaticPropertyValue() expects exactly 2 arguments, 0 given\nset-name|ReflectionClass::setStaticPropertyValue(): Argument #1 ($name) must be of type string, array given\nmissing|Class Test does not have a property named missing\nclass-ref|Cannot assign string to reference held by property Test::$y of type int\nclass-value|21\nprop-ref|Cannot assign string to reference held by property Test::$y of type int\nprop-value|21"
     );
     assert_eq!(execution.exit_code, 0);
 }
@@ -11191,7 +16434,7 @@ echo Root::$name;
     );
 
     let undefined_class = runtime_error("<?php\necho Missing::$value;\n");
-    assert_eq!(undefined_class.message, "undefined class Missing");
+    assert_eq!(undefined_class.message, "Class \"Missing\" not found");
 
     let undefined_property = runtime_error(
         r#"<?php
@@ -11201,8 +16444,227 @@ echo Root::$missing;
     );
     assert_eq!(
         undefined_property.message,
-        "undefined property Root::$missing"
+        "Access to undeclared static property Root::$missing"
     );
+}
+
+#[test]
+fn static_property_array_assignment_targets_execute_current_subset() {
+    let execution = run_source(
+        r#"<?php
+class Bag {
+    public static $items = array();
+}
+
+Bag::$items[] = 1;
+Bag::$items["name"] = "Ada";
+echo count(Bag::$items), ":", Bag::$items[0], ":", Bag::$items["name"];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "2:1:Ada");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn private_parent_instance_read_ignores_child_static_property_shadow() {
+    let execution = run_source(
+        r#"<?php
+class A {
+    private $p = "A::p";
+
+    function showA() {
+        echo $this->p, "\n";
+    }
+}
+
+class BPrivate extends A {
+    private static $p = "BPrivate::p (static)";
+
+    static function showB() {
+        echo self::$p, "\n";
+    }
+}
+
+class BProtected extends A {
+    protected static $p = "BProtected::p (static)";
+
+    static function showB() {
+        echo self::$p, "\n";
+    }
+}
+
+class BPublic extends A {
+    public static $p = "BPublic::p (static)";
+
+    static function showB() {
+        echo self::$p, "\n";
+    }
+}
+
+$a = new A;
+$a->showA();
+$private = new BPrivate;
+$private->showA();
+BPrivate::showB();
+$protected = new BProtected;
+$protected->showA();
+BProtected::showB();
+$public = new BPublic;
+$public->showA();
+BPublic::showB();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.exit_code, 0);
+    assert_eq!(
+        execution.stdout,
+        "A::p\nA::p\nBPrivate::p (static)\nA::p\nBProtected::p (static)\nA::p\nBPublic::p (static)\n"
+    );
+}
+
+#[test]
+fn static_properties_accessed_as_instance_properties_match_php_notices_and_errors() {
+    let execution = run_source(
+        r#"<?php
+#[AllowDynamicProperties]
+class C {
+    public static $x = 'C::$x';
+    protected static $y = 'C::$y';
+}
+$c = new C;
+var_dump(isset($c->x));
+unset($c->x);
+echo $c->x;
+$c->x = 1;
+$ref = 'ref';
+$c->x =& $ref;
+var_dump($c->x, C::$x);
+var_dump(isset($c->y));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.exit_code, 0);
+    assert_eq!(
+        execution
+            .stdout
+            .matches("Notice: Accessing static property C::$x as non static")
+            .count(),
+        5
+    );
+    assert!(execution
+        .stdout
+        .contains("Warning: Undefined property: C::$x"));
+    assert!(execution.stdout.contains("string(3) \"ref\""));
+    assert!(execution.stdout.contains("string(5) \"C::$x\""));
+    assert!(execution.stdout.ends_with("bool(false)\n"));
+
+    let protected_reference = run_source(
+        r#"<?php
+class C {
+    protected static $y = 'C::$y';
+}
+$c = new C;
+try {
+    $c->y =& $ref;
+} catch (Error $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(protected_reference.exit_code, 0);
+    assert_eq!(
+        protected_reference.stdout,
+        "Cannot access protected property C::$y"
+    );
+
+    let magic_precedence = run_source(
+        r#"<?php
+class MagicStatic {
+    public static $x = 'static-x';
+    protected static $y = 'static-y';
+
+    public function __get($name) {
+        echo "__get:$name\n";
+        return "magic-$name";
+    }
+
+    public function __set($name, $value) {
+        echo "__set:$name:$value\n";
+    }
+
+    public function __unset($name) {
+        echo "__unset:$name\n";
+    }
+
+    public function __isset($name) {
+        echo "__isset:$name\n";
+        return true;
+    }
+}
+
+$m = new MagicStatic;
+echo $m->x, "\n";
+echo $m->y, "\n";
+$m->x = 'write-x';
+$m->y = 'write-y';
+unset($m->x);
+unset($m->y);
+var_dump(isset($m->x), isset($m->y));
+echo MagicStatic::$x;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(magic_precedence.exit_code, 0);
+    assert_eq!(
+        magic_precedence.stdout,
+        "__get:x\nmagic-x\n__get:y\nmagic-y\n__set:x:write-x\n__set:y:write-y\n__unset:x\n__unset:y\n__isset:x\n__isset:y\nbool(true)\nbool(true)\nstatic-x"
+    );
+    assert!(!magic_precedence
+        .stdout
+        .contains("Accessing static property"));
+}
+
+#[test]
+fn late_static_property_access_allows_protected_family_visibility() {
+    let execution = run_source(
+        r#"<?php
+class Root {
+    private static $value = "A";
+
+    public static function testStatic() {
+        echo static::$value, "\n";
+    }
+
+    public function testInstance() {
+        echo static::$value, "\n";
+    }
+}
+
+class Branch extends Root {
+    protected static $value = "B";
+}
+
+class Leaf extends Branch {
+    public static $value = "C";
+}
+
+Root::testStatic();
+Branch::testStatic();
+(new Branch())->testInstance();
+Leaf::testStatic();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "A\nB\nB\nC\n");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -11599,7 +17061,7 @@ $child->clear();
     );
 
     let undefined_class = runtime_error("<?php\nunset(Missing::$value);\n");
-    assert_eq!(undefined_class.message, "undefined class Missing");
+    assert_eq!(undefined_class.message, "Class \"Missing\" not found");
 }
 
 #[test]
@@ -11625,8 +17087,8 @@ $box = new Missing();
     );
 
     assert_eq!(error.line, 2);
-    assert_eq!(error.column, 8);
-    assert_eq!(error.message, "undefined class Missing");
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, "Class \"Missing\" not found");
 }
 
 #[test]
@@ -11790,7 +17252,7 @@ echo "body\n";
 fn destructor_global_hash_table_retention_loop_finishes() {
     let execution = run_source(
         r#"<?php
-define('OBJECT_COUNT', 512);
+define('OBJECT_COUNT', 10000);
 
 $containers = array();
 
@@ -11818,7 +17280,7 @@ echo count($containers), "\n";
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "512\n");
+    assert_eq!(execution.stdout, "10000\n");
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -11993,35 +17455,22 @@ echo "|after-unset";
 }
 
 #[test]
-fn destructor_declarations_validate_public_non_static_parameterless_shape() {
-    let private_destructor = runtime_error(
+fn destructor_declarations_validate_non_static_parameterless_shape() {
+    let non_public_destructors = run_source(
         r#"<?php
 class PrivateDestructor {
     private function __destruct() {}
 }
-echo "unreachable";
-"#,
-    );
-    assert_eq!(private_destructor.line, 3);
-    assert_eq!(private_destructor.column, 13);
-    assert_eq!(
-        private_destructor.message,
-        "unsupported class inheritance for PrivateDestructor: destructor PrivateDestructor::__destruct() must be public in the current subset"
-    );
 
-    let protected_destructor = runtime_error(
-        r#"<?php
 class ProtectedDestructor {
     protected function __destruct() {}
 }
+echo "registered";
 "#,
-    );
-    assert_eq!(protected_destructor.line, 3);
-    assert_eq!(protected_destructor.column, 15);
-    assert_eq!(
-        protected_destructor.message,
-        "unsupported class inheritance for ProtectedDestructor: destructor ProtectedDestructor::__destruct() must be public in the current subset"
-    );
+    )
+    .unwrap();
+    assert_eq!(non_public_destructors.stdout, "registered");
+    assert_eq!(non_public_destructors.exit_code, 0);
 
     let static_destructor = runtime_error(
         r#"<?php
@@ -12031,10 +17480,10 @@ class StaticDestructor {
 "#,
     );
     assert_eq!(static_destructor.line, 3);
-    assert_eq!(static_destructor.column, 19);
+    assert_eq!(static_destructor.column, 1);
     assert_eq!(
         static_destructor.message,
-        "unsupported class inheritance for StaticDestructor: destructor StaticDestructor::__destruct() must be non-static in the current subset"
+        "Method StaticDestructor::__destruct() cannot be static"
     );
 
     let parameter_destructor = runtime_error(
@@ -12045,10 +17494,10 @@ class ParameterDestructor {
 "#,
     );
     assert_eq!(parameter_destructor.line, 3);
-    assert_eq!(parameter_destructor.column, 12);
+    assert_eq!(parameter_destructor.column, 1);
     assert_eq!(
         parameter_destructor.message,
-        "unsupported class inheritance for ParameterDestructor: destructor ParameterDestructor::__destruct() cannot declare parameters in the current subset"
+        "Method ParameterDestructor::__destruct() cannot take arguments"
     );
 }
 
@@ -12154,7 +17603,7 @@ $child->call();
     assert_eq!(private_parent_method.column, 15);
     assert_eq!(
         private_parent_method.message,
-        "unsupported call Base::hide(): private method dispatch requires same-class method context"
+        "Call to private method Base::hide() from scope Child"
     );
 
     let non_static_parent_method_without_this = runtime_error(
@@ -12278,7 +17727,7 @@ $child->call();
     assert_eq!(private_parent_method.column, 13);
     assert_eq!(
         private_parent_method.message,
-        "unsupported call Base::hide(): private method dispatch requires same-class method context"
+        "Call to private method Base::hide() from scope Child"
     );
 
     let non_static_self_method_without_this = runtime_error(
@@ -12396,10 +17845,10 @@ Box::make();
 "#,
     );
     assert_eq!(non_static_method.line, 5);
-    assert_eq!(non_static_method.column, 4);
+    assert_eq!(non_static_method.column, 1);
     assert_eq!(
         non_static_method.message,
-        "unsupported call Box::make(): non-static method dispatch through named static receivers is not implemented"
+        "Non-static method Box::make() cannot be called statically"
     );
 
     let private_method = runtime_error(
@@ -12412,7 +17861,7 @@ Box::make();
     );
     assert_eq!(
         private_method.message,
-        "unsupported call Box::make(): private method dispatch requires same-class method context"
+        "Call to private method Box::make() from global scope"
     );
 
     let protected_method = runtime_error(
@@ -12425,7 +17874,7 @@ Box::make();
     );
     assert_eq!(
         protected_method.message,
-        "unsupported call Box::make(): protected method dispatch requires same-class or child method context"
+        "Call to protected method Box::make() from global scope"
     );
 
     let missing_method = runtime_error(
@@ -12434,10 +17883,13 @@ class Box {}
 Box::missing();
 "#,
     );
-    assert_eq!(missing_method.message, "undefined function Box::missing()");
+    assert_eq!(
+        missing_method.message,
+        "Call to undefined method Box::missing()"
+    );
 
     let missing_class = runtime_error("<?php\nMissing::make();\n");
-    assert_eq!(missing_class.message, "undefined class Missing");
+    assert_eq!(missing_class.message, "Class \"Missing\" not found");
 }
 
 #[test]
@@ -12774,11 +18226,11 @@ class Child extends Base {
 }
 "#,
     );
-    assert_eq!(visibility_error.line, 7);
-    assert_eq!(visibility_error.column, 15);
+    assert_eq!(visibility_error.line, 6);
+    assert_eq!(visibility_error.column, 1);
     assert_eq!(
         visibility_error.message,
-        "unsupported class inheritance for Child: property Child::$name cannot reduce visibility of inherited public property Base::$name"
+        "Access level to Child::$name must be public (as in class Base)"
     );
 
     let static_error = runtime_error(
@@ -12792,11 +18244,11 @@ class Child extends Base {
 }
 "#,
     );
-    assert_eq!(static_error.line, 7);
-    assert_eq!(static_error.column, 12);
+    assert_eq!(static_error.line, 6);
+    assert_eq!(static_error.column, 1);
     assert_eq!(
         static_error.message,
-        "unsupported class inheritance for Child: cannot redeclare static property Base::$name as non static Child::$name"
+        "Cannot redeclare static Base::$name as non static Child::$name"
     );
 
     let static_error = runtime_error(
@@ -12810,10 +18262,11 @@ class Child extends Base {
 }
 "#,
     );
-    assert_eq!(static_error.line, 7);
+    assert_eq!(static_error.line, 6);
+    assert_eq!(static_error.column, 1);
     assert_eq!(
         static_error.message,
-        "unsupported class inheritance for Child: cannot redeclare non static property Base::$name as static Child::$name"
+        "Cannot redeclare non static Base::$name as static Child::$name"
     );
 }
 
@@ -12856,6 +18309,161 @@ echo $default->label();
 
     assert_eq!(execution.stdout, "base:12\nbase:5");
     assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn constructor_visibility_errors_are_php_shaped() {
+    let protected = run_source_with_source_file(
+        r#"<?php
+class Secret {
+    protected function __construct() {}
+}
+
+new Secret();
+"#,
+        "/tmp/protected_ctor.php",
+    )
+    .unwrap();
+    assert!(protected.stdout.contains(
+        "Fatal error: Uncaught Error: Call to protected Secret::__construct() from global scope in /tmp/protected_ctor.php:"
+    ));
+    assert!(protected
+        .stdout
+        .contains("\nStack trace:\n#0 {main}\n  thrown in /tmp/protected_ctor.php on line "));
+    assert_eq!(protected.stderr, "");
+    assert_eq!(protected.exit_code, 255);
+
+    let private_parent = run_source_with_source_file(
+        r#"<?php
+class TestPriv {
+    private function __construct() {
+        echo __METHOD__ . "()\n";
+    }
+
+    static function f() {
+        new TestPriv();
+    }
+}
+
+TestPriv::f();
+
+class DerivedPriv extends TestPriv {
+    function __construct() {
+        echo __METHOD__ . "()\n";
+        parent::__construct();
+    }
+
+    static function f() {
+        new DerivedPriv();
+    }
+}
+
+DerivedPriv::f();
+"#,
+        "/tmp/ctor_visibility.php",
+    )
+    .unwrap();
+    assert!(private_parent.stdout.starts_with(
+        "TestPriv::__construct()\nDerivedPriv::__construct()\n\nFatal error: Uncaught Error: Cannot call private TestPriv::__construct() in /tmp/ctor_visibility.php:"
+    ));
+    assert!(private_parent
+        .stdout
+        .contains(": DerivedPriv->__construct()"));
+    assert!(private_parent.stdout.contains(": DerivedPriv::f()"));
+    assert_eq!(private_parent.stderr, "");
+    assert_eq!(private_parent.exit_code, 255);
+}
+
+#[test]
+fn non_public_destructors_fatal_on_release_and_warn_at_shutdown() {
+    let explicit_release = run_source_with_source_file(
+        r#"<?php
+class Base {
+    private function __destruct() {
+        echo "base\n";
+    }
+}
+
+class Derived extends Base {}
+
+$obj = new Derived();
+unset($obj);
+"#,
+        "/tmp/private_destructor_release.php",
+    )
+    .unwrap();
+    assert!(explicit_release.stdout.contains(
+        "Fatal error: Uncaught Error: Call to private Derived::__destruct() from global scope in /tmp/private_destructor_release.php:"
+    ));
+    assert!(!explicit_release.stdout.contains("base\n"));
+    assert_eq!(explicit_release.stderr, "");
+    assert_eq!(explicit_release.exit_code, 255);
+
+    let assignment_release = run_source_with_source_file(
+        r#"<?php
+class AssignedDrop {
+    protected function __destruct() {
+        echo "should-not-run\n";
+    }
+}
+
+$obj = new AssignedDrop();
+$obj = null;
+echo "after\n";
+"#,
+        "/tmp/protected_destructor_assignment.php",
+    )
+    .unwrap();
+    assert!(assignment_release.stdout.contains(
+        "Fatal error: Uncaught Error: Call to protected AssignedDrop::__destruct() from global scope in /tmp/protected_destructor_assignment.php:"
+    ));
+    assert!(!assignment_release.stdout.contains("after\n"));
+    assert_eq!(assignment_release.stderr, "");
+    assert_eq!(assignment_release.exit_code, 255);
+
+    let shutdown = run_source_with_source_file(
+        r#"<?php
+class Box {
+    protected function __destruct() {
+        echo "should-not-run\n";
+    }
+}
+
+$box = new Box();
+echo "done\n";
+"#,
+        "/tmp/protected_destructor_shutdown.php",
+    )
+    .unwrap();
+    assert_eq!(
+        shutdown.stdout,
+        "done\n\nWarning: Call to protected Box::__destruct() from global scope during shutdown ignored in Unknown on line 0\n"
+    );
+    assert_eq!(shutdown.stderr, "");
+    assert_eq!(shutdown.exit_code, 0);
+
+    let public_child = run_source(
+        r#"<?php
+class Base {
+    private function __destruct() {
+        echo "base\n";
+    }
+}
+
+class Derived extends Base {
+    public function __destruct() {
+        echo "derived";
+    }
+}
+
+$obj = new Derived();
+echo "done\n";
+"#,
+    )
+    .unwrap();
+    assert_eq!(public_child.stdout, "done\nderived");
+    assert_eq!(public_child.stderr, "");
+    assert_eq!(public_child.exit_code, 0);
 }
 
 #[test]
@@ -12913,7 +18521,7 @@ class Box {
     assert_eq!(own_abstract_error.column, 1);
     assert_eq!(
         own_abstract_error.message,
-        "unsupported class inheritance for Box: concrete class Box must implement abstract method Box::id()"
+        "Class Box declares abstract method id() and must therefore be declared abstract"
     );
 }
 
@@ -12968,7 +18576,7 @@ echo $child->label();
     assert_eq!(execution.stdout, "child");
     assert_eq!(execution.exit_code, 0);
 
-    let public_error = runtime_error(
+    assert_php_startup_fatal(
         r#"<?php
 class Base {
     public function label() {
@@ -12982,15 +18590,12 @@ class Child extends Base {
     }
 }
 "#,
-    );
-    assert_eq!(public_error.line, 9);
-    assert_eq!(public_error.column, 15);
-    assert_eq!(
-        public_error.message,
-        "unsupported class inheritance for Child: method Child::label() cannot reduce visibility of inherited public method Base::label()"
+        "method-public-reduced.php",
+        9,
+        "Access level to Child::label() must be public (as in class Base)",
     );
 
-    let protected_error = runtime_error(
+    assert_php_startup_fatal(
         r#"<?php
 class Base {
     protected function compute() {
@@ -13004,12 +18609,9 @@ class Child extends Base {
     }
 }
 "#,
-    );
-    assert_eq!(protected_error.line, 9);
-    assert_eq!(protected_error.column, 13);
-    assert_eq!(
-        protected_error.message,
-        "unsupported class inheritance for Child: method Child::compute() cannot reduce visibility of inherited protected method Base::compute()"
+        "method-protected-reduced.php",
+        9,
+        "Access level to Child::compute() must be protected (as in class Base) or weaker",
     );
 }
 
@@ -13079,10 +18681,10 @@ class Child extends Base {
 "#,
     );
     assert_eq!(static_child_error.line, 9);
-    assert_eq!(static_child_error.column, 19);
+    assert_eq!(static_child_error.column, 1);
     assert_eq!(
         static_child_error.message,
-        "unsupported class inheritance for Child: cannot redeclare non static method Base::label() as static Child::label()"
+        "Cannot make non static method Base::label() static in class Child"
     );
 
     let instance_child_error = runtime_error(
@@ -13101,10 +18703,10 @@ class Child extends Base {
 "#,
     );
     assert_eq!(instance_child_error.line, 9);
-    assert_eq!(instance_child_error.column, 12);
+    assert_eq!(instance_child_error.column, 1);
     assert_eq!(
         instance_child_error.message,
-        "unsupported class inheritance for Child: cannot redeclare static method Base::compute() as non static Child::compute()"
+        "Cannot make static method Base::compute() non static in class Child"
     );
 }
 
@@ -13159,6 +18761,30 @@ echo $child->label("two", "?");
     assert_eq!(execution.stdout, "child:one!\nchild:two?");
     assert_eq!(execution.exit_code, 0);
 
+    let variadic_drop_execution = run_source(
+        r#"<?php
+class Base {
+    public function query($query, ...$params) {
+        return "base";
+    }
+}
+
+class Child extends Base {
+    public function query(...$params) {
+        return count($params);
+    }
+}
+
+$child = new Child();
+echo $child->query("SELECT 1"), "\n";
+echo $child->query("SELECT ?", "value");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(variadic_drop_execution.stdout, "1\n2");
+    assert_eq!(variadic_drop_execution.exit_code, 0);
+
     let error = runtime_error(
         r#"<?php
 class Base {
@@ -13175,10 +18801,10 @@ class Child extends Base {
 "#,
     );
     assert_eq!(error.line, 9);
-    assert_eq!(error.column, 12);
+    assert_eq!(error.column, 1);
     assert_eq!(
         error.message,
-        "unsupported class inheritance for Child: method Child::label() cannot require more parameters than inherited method Base::label()"
+        "Declaration of Child::label($prefix, $value) must be compatible with Base::label($value)"
     );
 
     let optional_parent_error = runtime_error(
@@ -13197,10 +18823,32 @@ class Child extends Base {
 "#,
     );
     assert_eq!(optional_parent_error.line, 9);
-    assert_eq!(optional_parent_error.column, 12);
+    assert_eq!(optional_parent_error.column, 1);
     assert_eq!(
         optional_parent_error.message,
-        "unsupported class inheritance for Child: method Child::compute() cannot require more parameters than inherited method Base::compute()"
+        "Declaration of Child::compute($value) must be compatible with Base::compute($value = 'base')"
+    );
+
+    let dropped_optional_parent_error = runtime_error(
+        r#"<?php
+class Base {
+    public function compute($value = 1) {
+        return $value;
+    }
+}
+
+class Child extends Base {
+    public function compute() {
+        return "child";
+    }
+}
+"#,
+    );
+    assert_eq!(dropped_optional_parent_error.line, 9);
+    assert_eq!(dropped_optional_parent_error.column, 1);
+    assert_eq!(
+        dropped_optional_parent_error.message,
+        "Declaration of Child::compute() must be compatible with Base::compute($value = 1)"
     );
 }
 
@@ -13271,10 +18919,10 @@ class Child extends Base {
 "#,
     );
     assert_eq!(added_type_error.line, 9);
-    assert_eq!(added_type_error.column, 12);
+    assert_eq!(added_type_error.column, 1);
     assert_eq!(
         added_type_error.message,
-        "unsupported class inheritance for Child: method Child::label() cannot add parameter type string for parameter $value when inherited method Base::label() has no parameter type"
+        "Declaration of Child::label(string $value) must be compatible with Base::label($value)"
     );
 
     let changed_type_error = runtime_error(
@@ -13293,10 +18941,63 @@ class Child extends Base {
 "#,
     );
     assert_eq!(changed_type_error.line, 9);
-    assert_eq!(changed_type_error.column, 12);
+    assert_eq!(changed_type_error.column, 1);
     assert_eq!(
         changed_type_error.message,
-        "unsupported class inheritance for Child: method Child::label() parameter $value type int is incompatible with inherited method Base::label() parameter type string"
+        "Declaration of Child::label(int $value) must be compatible with Base::label(string $value)"
+    );
+}
+
+#[test]
+fn inherited_method_unresolved_class_builtin_mismatches_are_immediate_incompatibilities() {
+    let child_class_should_be_array = runtime_error(
+        r#"<?php
+class C {
+    public function f(array $a) {}
+}
+
+class D extends C {
+    public function f(SomeClass $a) {}
+}
+"#,
+    );
+    assert_eq!(
+        child_class_should_be_array.message,
+        "Declaration of D::f(SomeClass $a) must be compatible with C::f(array $a)"
+    );
+
+    let child_array_should_be_class = runtime_error(
+        r#"<?php
+class C {
+    public function f(SomeClass $a) {}
+}
+
+class D extends C {
+    public function f(array $a) {}
+}
+"#,
+    );
+    assert_eq!(
+        child_array_should_be_class.message,
+        "Declaration of D::f(array $a) must be compatible with C::f(SomeClass $a)"
+    );
+
+    let unresolved_class_relationship = runtime_error(
+        r#"<?php
+class Known {}
+
+class C {
+    public function f(Known $a) {}
+}
+
+class D extends C {
+    public function f(Missing $a) {}
+}
+"#,
+    );
+    assert_eq!(
+        unresolved_class_relationship.message,
+        "Could not check compatibility between D::f(Missing $a) and C::f(Known $a), because class Missing is not available"
     );
 }
 
@@ -13341,10 +19042,10 @@ class Child extends Base {
 "#,
     );
     assert_eq!(omitted_return_type_error.line, 9);
-    assert_eq!(omitted_return_type_error.column, 12);
+    assert_eq!(omitted_return_type_error.column, 1);
     assert_eq!(
         omitted_return_type_error.message,
-        "unsupported class inheritance for Child: method Child::id() must declare return type string to match inherited method Base::id()"
+        "Declaration of Child::id() must be compatible with Base::id(): string"
     );
 
     let changed_return_type_error = runtime_error(
@@ -13363,10 +19064,10 @@ class Child extends Base {
 "#,
     );
     assert_eq!(changed_return_type_error.line, 9);
-    assert_eq!(changed_return_type_error.column, 12);
+    assert_eq!(changed_return_type_error.column, 1);
     assert_eq!(
         changed_return_type_error.message,
-        "unsupported class inheritance for Child: method Child::id() return type int is incompatible with inherited method Base::id() return type string"
+        "Declaration of Child::id(): int must be compatible with Base::id(): string"
     );
 }
 
@@ -13451,10 +19152,10 @@ class PluginResolver extends BaseResolver {
 "#,
     );
     assert_eq!(invalid_parameter_error.line, 11);
-    assert_eq!(invalid_parameter_error.column, 12);
+    assert_eq!(invalid_parameter_error.column, 1);
     assert_eq!(
         invalid_parameter_error.message,
-        "unsupported class inheritance for PluginResolver: method PluginResolver::resolve() parameter $target type OtherTarget is incompatible with inherited method BaseResolver::resolve() parameter type ChildTarget"
+        "Declaration of PluginResolver::resolve(OtherTarget $target) must be compatible with BaseResolver::resolve(ChildTarget $target)"
     );
 
     let invalid_return_error = runtime_error(
@@ -13476,7 +19177,346 @@ class PluginResolver implements Resolver {
     assert_eq!(invalid_return_error.column, 1);
     assert_eq!(
         invalid_return_error.message,
-        "unsupported class inheritance for PluginResolver: method PluginResolver::resolve() return type OtherTarget is incompatible with interface method Resolver::resolve() return type BaseTarget"
+        "Declaration of PluginResolver::resolve(): OtherTarget must be compatible with Resolver::resolve(): BaseTarget"
+    );
+}
+
+#[test]
+fn autoloaded_inherited_signature_dependencies_link_pending_parent_classes() {
+    let execution = run_source(
+        r#"<?php
+spl_autoload_register(function($class) {
+    if ($class === 'A') {
+        class A {
+            public function method() : B {}
+        }
+        var_dump(new A);
+    } else if ($class == 'B') {
+        class B extends A {
+            public function method() : C {}
+        }
+        var_dump(new B);
+    } else {
+        class C extends B {
+        }
+        var_dump(new C);
+    }
+});
+
+var_dump(new C);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "object(A)#2 (0) {\n}\nobject(B)#2 (0) {\n}\nobject(C)#2 (0) {\n}\nobject(C)#2 (0) {\n}\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn relative_self_parent_static_method_variance_uses_declaring_context() {
+    let execution = run_source(
+        r#"<?php
+class P2 {}
+class A2 extends P2 {
+    public function method(parent $x) {}
+}
+class B2 extends A2 {
+    public function method(P2 $x) {}
+}
+
+class P3 {}
+class A3 extends P3 {
+    public function method($x): parent {}
+}
+class B3 extends A3 {
+    public function method($x): parent {}
+}
+
+class X {}
+class Y {}
+class A {
+    public function test1(): self {}
+    public function test2(): B {}
+    public function test3(): object {}
+    public function test4(): X|Y|self {}
+    public function test5(): ?static {}
+}
+class B extends A {
+    public function test1(): static {}
+    public function test2(): static {}
+    public function test3(): static {}
+    public function test4(): X|Y|static {}
+    public function test5(): static {}
+}
+
+interface I1 {
+    public function method1(I1 $o): object;
+}
+interface I2 extends I1 {
+    public function method1(object $o): I1;
+}
+final class C1 implements I2 {
+    public function method1($o = null): self {
+        return $this;
+    }
+}
+
+$o = new C1();
+echo get_class($o->method1()), "\n";
+echo "done";
+"#,
+    )
+    .unwrap();
+    assert_eq!(execution.stdout, "C1\ndone");
+    assert_eq!(execution.exit_code, 0);
+
+    let parent_parameter_error = runtime_error(
+        r#"<?php
+class P4 {}
+class A4 extends P4 {
+    public function method(parent $x) {}
+}
+class B4 extends A4 {
+    public function method(parent $x) {}
+}
+"#,
+    );
+    assert_eq!(
+        parent_parameter_error.message,
+        "Declaration of B4::method(A4 $x) must be compatible with A4::method(P4 $x)"
+    );
+
+    let static_return_error = runtime_error(
+        r#"<?php
+class StaticBase {
+    public function test(): static {}
+}
+class StaticChild extends StaticBase {
+    public function test(): self {}
+}
+"#,
+    );
+    assert_eq!(
+        static_return_error.message,
+        "Declaration of StaticChild::test(): StaticChild must be compatible with StaticBase::test(): static"
+    );
+}
+
+#[test]
+fn intersection_variance_accepts_equivalent_and_reduced_bounds() {
+    let execution = run_source(
+        r#"<?php
+interface X {}
+interface Y {}
+interface Z {}
+
+class TestOne implements X, Y {}
+class TestTwo implements X, Y {}
+class Both implements X, Y, Z {}
+
+interface ParentContract {
+    public function foo(TestOne|TestTwo $param): X&Y;
+}
+
+interface ChildContract extends ParentContract {
+    public function foo(X&Y $param): TestOne|TestTwo;
+}
+
+interface GrandchildContract extends ChildContract {
+    public function foo(X $param): TestTwo;
+}
+
+class BaseCovariant {
+    public function make(): X {
+        return new Both();
+    }
+}
+
+class ChildCovariant extends BaseCovariant {
+    public function make(): X&Y {
+        return new Both();
+    }
+}
+
+class GrandchildCovariant extends ChildCovariant {
+    public function make(): X&Y&Z {
+        return new Both();
+    }
+}
+
+class AType {}
+class BType extends AType {}
+class ParentProperties {
+    public X&Y $same;
+    public AType&BType $reduced;
+}
+class ChildProperties extends ParentProperties {
+    public Y&X $same;
+    public BType $reduced;
+}
+
+class IterableBase {
+    public function values(): iterable {}
+}
+class IterableChild extends IterableBase {
+    public function values(): X&Traversable {}
+}
+
+echo interface_exists("GrandchildContract") ? "interface\n" : "missing\n";
+echo get_class((new GrandchildCovariant())->make()), "\n";
+echo class_exists("ChildProperties") ? "properties\n" : "missing\n";
+echo method_exists(new IterableChild(), "values") ? "iterable" : "missing";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "interface\nBoth\nproperties\niterable");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn dnf_signature_variance_and_type_errors_use_php_canonical_type_text() {
+    let diagnostics = run_source(
+        r#"<?php
+interface X {}
+interface Y {}
+class Both implements X, Y {}
+class Other {}
+function accepts_null(null|(X&Y) $value) {}
+function accepts_int(int|(X&Y) $value) {}
+class Box {
+    public null|(X&Y) $nullable;
+    public int|(X&Y) $numbered;
+}
+$box = new Box();
+try { accepts_null(new Other()); } catch (TypeError $e) { echo $e->getMessage(), "\n"; }
+try { accepts_int(new Other()); } catch (TypeError $e) { echo $e->getMessage(), "\n"; }
+try { $box->nullable = new Other(); } catch (TypeError $e) { echo $e->getMessage(), "\n"; }
+try { $box->numbered = new Other(); } catch (TypeError $e) { echo $e->getMessage(), "\n"; }
+"#,
+    )
+    .unwrap();
+    assert!(diagnostics
+        .stdout
+        .contains("accepts_null(): Argument #1 ($value) must be of type (X&Y)|null, Other given"));
+    assert!(diagnostics
+        .stdout
+        .contains("accepts_int(): Argument #1 ($value) must be of type (X&Y)|int, Other given"));
+    assert!(diagnostics
+        .stdout
+        .contains("Cannot assign Other to property Box::$nullable of type (X&Y)|null"));
+    assert!(diagnostics
+        .stdout
+        .contains("Cannot assign Other to property Box::$numbered of type (X&Y)|int"));
+
+    let valid_variance = run_source(
+        r#"<?php
+interface X {}
+interface Y {}
+interface Z {}
+interface IA {}
+interface IB {}
+class TestOne implements X, Y {}
+class TestTwo implements X, Y {}
+class Both implements X, Y, Z {}
+class A {}
+class B extends A {}
+abstract class MyIterator implements Traversable {}
+
+interface ParentContract {
+    public function foo(TestOne|TestTwo $param): (X&Y)|Z;
+}
+interface ChildContract extends ParentContract {
+    public function foo((X&Y)|Z $param): TestOne|TestTwo;
+}
+class ParentProperties {
+    public X|(IA&IB) $same;
+    public (A&B)|Z $reduced;
+}
+class ChildProperties extends ParentProperties {
+    public (IB&IA)|X $same;
+    public B|Z $reduced;
+}
+class IterableBase {
+    public function values(): iterable|string {}
+}
+class IterableChild extends IterableBase {
+    public function values(): (X&MyIterator)|string {}
+}
+echo interface_exists("ChildContract") ? "interface\n" : "missing\n";
+echo class_exists("ChildProperties") ? "properties\n" : "missing\n";
+echo method_exists(new IterableChild(), "values") ? "iterable" : "missing";
+"#,
+    )
+    .unwrap();
+    assert_eq!(valid_variance.stdout, "interface\nproperties\niterable");
+    assert_eq!(valid_variance.exit_code, 0);
+
+    assert_php_startup_fatal(
+        r#"<?php
+class Test { function method(): object {} }
+class Test2 extends Test { function method(): X&Y {} }
+"#,
+        "Zend/tests/type_declarations/intersection_types/variance/invalid4.php",
+        3,
+        "Could not check compatibility between Test2::method(): X&Y and Test::method(): object, because class X is not available",
+    );
+
+    assert_php_startup_fatal(
+        r#"<?php
+class Test { function method(): iterable|int {} }
+class Test2 extends Test { function method(): int|(X&MyIterator) {} }
+"#,
+        "Zend/tests/type_declarations/dnf_types/variance/valid9.php",
+        3,
+        "Could not check compatibility between Test2::method(): (X&MyIterator)|int and Test::method(): Traversable|array|int, because class X is not available",
+    );
+}
+
+#[test]
+fn mixed_return_variance_rejects_void_override() {
+    let accepted_value_types = run_source(
+        r#"<?php
+class Foo {
+    public function method(): mixed {}
+}
+
+class BoolChild extends Foo {
+    public function method(): bool {}
+}
+
+class NullableChild extends Foo {
+    public function method(): ?int {}
+}
+
+class ObjectChild extends Foo {
+    public function method(): stdClass {}
+}
+
+echo "ok";
+"#,
+    )
+    .unwrap();
+    assert_eq!(accepted_value_types.stdout, "ok");
+    assert_eq!(accepted_value_types.exit_code, 0);
+
+    assert_php_startup_fatal(
+        r#"<?php
+class Foo {
+    public function method(): mixed {}
+}
+
+class Bar extends Foo {
+    public function method(): void {}
+}
+"#,
+        "Zend/tests/type_declarations/mixed/inheritance/mixed_return_inheritance_error1.php",
+        7,
+        "Declaration of Bar::method(): void must be compatible with Foo::method(): mixed",
     );
 }
 
@@ -13631,11 +19671,8 @@ class Child extends Base {
     );
 
     assert_eq!(error.line, 9);
-    assert_eq!(error.column, 12);
-    assert_eq!(
-        error.message,
-        "unsupported class inheritance for Child: cannot override final method Base::seal()"
-    );
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, "Cannot override final method Base::seal()");
 }
 
 #[test]
@@ -13701,10 +19738,7 @@ class Child extends Base {}
 
     assert_eq!(error.line, 3);
     assert_eq!(error.column, 1);
-    assert_eq!(
-        error.message,
-        "unsupported class inheritance for Child: cannot extend final class Base"
-    );
+    assert_eq!(error.message, "Class Child cannot extend final class Base");
 }
 
 #[test]
@@ -13733,41 +19767,118 @@ if (true) {
     );
 
     assert_eq!(error.line, 4);
-    assert_eq!(error.column, 5);
-    assert_eq!(
-        error.message,
-        "unsupported class inheritance for Child: cannot extend final class Base"
-    );
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, "Class Child cannot extend final class Base");
 }
 
 #[test]
-fn abstract_class_instantiation_reports_stable_runtime_boundary() {
-    let error = runtime_error(
+fn abstract_and_interface_instantiation_report_php_error_fatals() {
+    let abstract_execution = run_source_with_source_file(
         r#"<?php
 abstract class Base {}
 new Base();
 "#,
+        "abstract-instantiation.php",
+    )
+    .unwrap();
+
+    assert_eq!(abstract_execution.stderr, "");
+    assert_eq!(abstract_execution.exit_code, 255);
+    assert_eq!(
+        abstract_execution.stdout,
+        "Fatal error: Uncaught Error: Cannot instantiate abstract class Base in abstract-instantiation.php:3\nStack trace:\n#0 {main}\n  thrown in abstract-instantiation.php on line 3"
     );
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 1);
+    let interface_execution = run_source_with_source_file(
+        r#"<?php
+interface Contract {}
+new Contract();
+"#,
+        "interface-instantiation.php",
+    )
+    .unwrap();
+
+    assert_eq!(interface_execution.stderr, "");
+    assert_eq!(interface_execution.exit_code, 255);
     assert_eq!(
-        error.message,
-        "unsupported object instantiation for Base: abstract classes are not instantiable in the current subset"
+        interface_execution.stdout,
+        "Fatal error: Uncaught Error: Cannot instantiate interface Contract in interface-instantiation.php:3\nStack trace:\n#0 {main}\n  thrown in interface-instantiation.php on line 3"
+    );
+}
+
+#[test]
+fn concrete_class_declaring_abstract_method_reports_php_startup_fatal() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+class Fail {
+    abstract function show();
+}
+"#,
+        "abstract-method-own.php",
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "");
+    assert_eq!(execution.exit_code, 255);
+    assert_eq!(
+        execution.stderr,
+        "Fatal error: Class Fail declares abstract method show() and must therefore be declared abstract in abstract-method-own.php on line 2"
     );
 }
 
 #[test]
 fn unsupported_object_execution_syntax_is_rejected_with_stable_parse_errors() {
-    let cases = [
-        (
-            r#"<?php
+    let object_static_constant = runtime_error(
+        r#"<?php
 $box::NAME;
 "#,
-            2,
-            5,
-            "unsupported object static class constant access: object receiver class constants are not implemented",
-        ),
+    );
+    assert_eq!(object_static_constant.line, 2);
+    assert_eq!(object_static_constant.column, 1);
+    assert_eq!(
+        object_static_constant.message,
+        "unsupported call ::NAME: dynamic class constant receiver must be object or class string, got null"
+    );
+
+    for supported in [
+        r#"<?php
+class Box {
+    public $name, $email;
+}
+"#,
+        r#"<?php
+class Box {
+    public const VERSION = 1, NAME = "box";
+}
+"#,
+        r#"<?php
+class Box {
+    public (Countable&Iterator)|ArrayAccess $id;
+}
+"#,
+    ] {
+        let execution = run_source(supported).unwrap();
+        assert_eq!(execution.stdout, "");
+        assert_eq!(execution.stderr, "");
+        assert_eq!(execution.exit_code, 0);
+    }
+
+    let readonly_startup = run_source(
+        r#"<?php
+class Value {
+    public readonly $id;
+}
+"#,
+    )
+    .unwrap();
+    assert_eq!(readonly_startup.stdout, "");
+    assert_eq!(readonly_startup.exit_code, 255);
+    assert_eq!(
+        readonly_startup.stderr,
+        "Fatal error: Readonly property Value::$id must have type in Command line code on line 3"
+    );
+
+    let cases = [
         (
             r#"<?php
 $box = new class {};
@@ -13779,22 +19890,22 @@ $box = new class {};
         (
             r#"<?php
 trait Logs {
-    protected static function write($message) {}
+    final public function write($message) {}
 }
 "#,
             3,
-            22,
-            "unsupported trait method declaration: only simple public instance and public static trait methods are implemented; abstract, final, non-public methods, __TRAIT__ context, references/copy-on-write, and native lowering remain unsupported",
+            18,
+            "unsupported trait method declaration: final trait methods, __TRAIT__ context, references/copy-on-write, and native lowering remain unsupported",
         ),
         (
             r#"<?php
 trait Logs {
-    protected const CHANNEL = "debug";
+    abstract const CHANNEL = "debug";
 }
 "#,
             3,
-            15,
-            "unsupported trait constant declaration: only public trait constants are implemented",
+            5,
+            "unsupported trait constant declaration: abstract trait constants are not implemented",
         ),
         (
             r#"<?php
@@ -13869,42 +19980,12 @@ if (true) {
         (
             r#"<?php
 class Box {
-    public (Countable&Iterator)|ArrayAccess $id;
-}
-"#,
-            3,
-            12,
-            "unsupported DNF type declaration: parenthesized union/intersection type declarations are not implemented",
-        ),
-        (
-            r#"<?php
-class Value {
-    public readonly $id;
-}
-"#,
-            3,
-            12,
-            "unsupported readonly property declaration: readonly property metadata, initialization rules, write-once enforcement, reflection, and native lowering are not implemented",
-        ),
-        (
-            r#"<?php
-class Box {
     public $name = make_name();
 }
 "#,
             3,
             20,
             "instance property default values only support constant expressions in the current subset",
-        ),
-        (
-            r#"<?php
-class Box {
-    public $name, $email;
-}
-"#,
-            3,
-            17,
-            "unsupported property declaration: multiple properties in one declaration are not implemented",
         ),
         (
             r#"<?php
@@ -13917,36 +19998,6 @@ class Box {
             4,
             9,
             "unsupported trait use adaptation: unqualified insteadof adaptations are not implemented",
-        ),
-        (
-            r#"<?php
-class Box {
-    private const string NAME = "box";
-}
-"#,
-            3,
-            19,
-            "unsupported class constant declaration: typed class constants are not implemented",
-        ),
-        (
-            r#"<?php
-class Box {
-    public static const VERSION = 1;
-}
-"#,
-            3,
-            19,
-            "unsupported class constant declaration: static class constants are not implemented",
-        ),
-        (
-            r#"<?php
-class Box {
-    public const VERSION = 1, NAME = "box";
-}
-"#,
-            3,
-            29,
-            "unsupported class constant declaration: multiple class constants in one declaration are not implemented",
         ),
     ];
 
@@ -14308,7 +20359,7 @@ $value->label();
     assert_eq!(non_object.column, 1);
     assert_eq!(
         non_object.message,
-        "unsupported call label(): receiver must be object, got int"
+        "Call to a member function label() on int"
     );
 
     let missing = runtime_error(
@@ -14320,7 +20371,7 @@ $box->missing();
     );
     assert_eq!(missing.line, 4);
     assert_eq!(missing.column, 1);
-    assert_eq!(missing.message, "undefined function Box::missing()");
+    assert_eq!(missing.message, "Call to undefined method Box::missing()");
 
     let private_method = runtime_error(
         r#"<?php
@@ -14335,7 +20386,7 @@ $box->secret();
     assert_eq!(private_method.column, 1);
     assert_eq!(
         private_method.message,
-        "unsupported call Box::secret(): private method dispatch requires same-class method context"
+        "Call to private method Box::secret() from global scope"
     );
 
     let protected_method = runtime_error(
@@ -14353,7 +20404,7 @@ $box->seal();
     assert_eq!(protected_method.column, 1);
     assert_eq!(
         protected_method.message,
-        "unsupported call Box::seal(): protected method dispatch requires same-class or child method context"
+        "Call to protected method Box::seal() from global scope"
     );
 
     let parent_private_from_child = runtime_error(
@@ -14376,7 +20427,7 @@ $child->reveal();
     assert_eq!(parent_private_from_child.column, 16);
     assert_eq!(
         parent_private_from_child.message,
-        "unsupported call Base::secret(): private method dispatch requires same-class method context"
+        "Call to private method Base::secret() from scope Child"
     );
 
     let static_method = runtime_error(
@@ -14401,10 +20452,10 @@ echo $this;
 "#,
     );
     assert_eq!(top_level_this.line, 2);
-    assert_eq!(top_level_this.column, 6);
+    assert_eq!(top_level_this.column, 1);
     assert_eq!(
         top_level_this.message,
-        "unsupported call $this: object context is only available during instance method execution"
+        "Using $this when not in object context"
     );
 }
 
@@ -14491,6 +20542,173 @@ echo $store[$first], "\n";
 }
 
 #[test]
+fn spl_object_storage_get_hash_return_type_errors_are_php_shaped() {
+    let source = r#"<?php
+class BadHashStorage extends SplObjectStorage {
+    #[ReturnTypeWillChange]
+    public function getHash($object) {
+        return 2;
+    }
+}
+
+$store = new BadHashStorage();
+$object = new stdClass();
+try {
+    $store[$object] = "value";
+} catch (Throwable $e) {
+    echo $e::class, ": ", $e->getMessage();
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "TypeError: BadHashStorage::getHash(): Return value must be of type string, int returned"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn spl_object_storage_unset_array_syntax_preserves_iterator_key() {
+    let source = r#"<?php
+function named_object($name) {
+    $object = new stdClass();
+    $object->name = $name;
+    return $object;
+}
+
+$syntax = new SplObjectStorage();
+$a = named_object("a");
+$b = named_object("b");
+$c = named_object("c");
+$syntax[$a] = "a";
+$syntax[$b] = "b";
+$syntax[$c] = "c";
+$syntax->next();
+unset($syntax[$a]);
+echo "syntax:", $syntax->key(), ":", $syntax->current()->name, "\n";
+$syntax->next();
+echo "syntax:", $syntax->key(), ":", $syntax->current()->name, "\n";
+$syntax->next();
+echo "syntax:", $syntax->key(), ":", $syntax->valid() ? "valid" : "invalid", "\n";
+
+$method = new SplObjectStorage();
+$ma = named_object("a");
+$mb = named_object("b");
+$mc = named_object("c");
+$method[$ma] = "a";
+$method[$mb] = "b";
+$method[$mc] = "c";
+$method->next();
+$method->detach($ma);
+echo "method:", $method->key(), ":", $method->current()->name, "\n";
+$method->next();
+echo "method:", $method->key(), ":", $method->current()->name, "\n";
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "syntax:1:b\nsyntax:2:c\nsyntax:3:invalid\nmethod:0:b\nmethod:1:c\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn spl_object_storage_serializes_and_restores_entries_and_properties() {
+    let source = r#"<?php
+class SerializedStorage extends SplObjectStorage {
+    public $label = "bag";
+    protected $flag = "p";
+    private $secret = "s";
+
+    public function props(): string {
+        return $this->label . ":" . $this->flag . ":" . $this->secret;
+    }
+}
+
+$storage = new SerializedStorage();
+$object = new stdClass();
+$object->name = "a";
+$storage[$object] = "info";
+
+$copy = unserialize(serialize($storage));
+echo count($copy), "\n";
+echo $copy->props(), "\n";
+foreach ($copy as $stored) {
+    echo $stored->name, "=", $copy[$stored], "\n";
+}
+
+$direct = new SplObjectStorage();
+$info = 1;
+$stored = new stdClass();
+$direct->__unserialize([[$stored, &$info], []]);
+$info = 9;
+var_dump($direct[$stored]);
+
+try {
+    $bad = new SplObjectStorage();
+    $bad->unserialize("not-storage");
+} catch (UnexpectedValueException $e) {
+    echo $e::class, ":", $e->getMessage(), "\n";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "1\nbag:p:s\na=info\nint(1)\nUnexpectedValueException:Error at offset 0 of 11 bytes\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn iterator_helpers_materialize_arrays_and_bounded_iterators() {
+    let source = r#"<?php
+$array = array("a" => 1, "b" => 2, 5 => 3);
+print_r(iterator_to_array($array));
+print_r(iterator_to_array($array, false));
+echo "count-array=", iterator_count($array), "\n";
+
+$it = new ArrayIterator(array("x" => "ex", "y" => "why"));
+print_r(iterator_to_array($it));
+echo "after-arrayiterator=", $it->valid() ? "valid" : "invalid", "\n";
+
+$again = new ArrayIterator(array("x" => "ex", "y" => "why"));
+print_r(iterator_to_array($again, false));
+
+$ao = new ArrayObject(array("p" => 7, "q" => 8));
+print_r(iterator_to_array($ao, false));
+
+$counted = new ArrayIterator(array(10, 20));
+echo "count-iterator=", iterator_count($counted), "|", ($counted->valid() ? "valid" : "invalid"), "\n";
+
+try {
+    iterator_count("bad");
+} catch (Throwable $e) {
+    echo $e::class, ":", $e->getMessage(), "\n";
+}
+
+try {
+    iterator_to_array(array(1), array());
+} catch (Throwable $e) {
+    echo $e::class, ":", $e->getMessage();
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "Array\n(\n    [a] => 1\n    [b] => 2\n    [5] => 3\n)\nArray\n(\n    [0] => 1\n    [1] => 2\n    [2] => 3\n)\ncount-array=3\nArray\n(\n    [x] => ex\n    [y] => why\n)\nafter-arrayiterator=invalid\nArray\n(\n    [0] => ex\n    [1] => why\n)\nArray\n(\n    [0] => 7\n    [1] => 8\n)\ncount-iterator=2|invalid\nTypeError:iterator_count(): Argument #1 ($iterator) must be of type Traversable|array, string given\nTypeError:iterator_to_array(): Argument #2 ($preserve_keys) must be of type bool, array given"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn spl_fixed_array_offsets_iteration_resize_static_constructor_and_errors() {
     let source = r#"<?php
 class ChildFixedArray extends SplFixedArray {
@@ -14540,6 +20758,158 @@ try {
 }
 
 #[test]
+fn spl_fixed_array_var_dump_uses_runtime_storage_slots() {
+    let source = r#"<?php
+$from = SplFixedArray::fromArray(array(1 => "one", 3 => false));
+var_dump($from);
+
+class FixedDumpChild extends SplFixedArray {
+    public $label = "declared";
+}
+
+$child = new FixedDumpChild(2);
+$child[0] = "slot";
+var_dump($child);
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "object(SplFixedArray)#1 (4) {\n  [0]=>\n  NULL\n  [1]=>\n  string(3) \"one\"\n  [2]=>\n  NULL\n  [3]=>\n  bool(false)\n}\nobject(FixedDumpChild)#2 (3) {\n  [0]=>\n  string(4) \"slot\"\n  [1]=>\n  NULL\n  [\"label\"]=>\n  string(8) \"declared\"\n}\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn spl_fixed_array_offset_unset_finalizes_released_slot_before_var_dump() {
+    let source = r#"<?php
+class FixedArrayUnsetDrop {
+    function __destruct() {
+        global $arr;
+        $arr->setSize(0);
+    }
+}
+
+$arr = new SplFixedArray(2);
+$arr[0] = new FixedArrayUnsetDrop;
+unset($arr[0]);
+var_dump($arr);
+
+class FixedArraySharedDrop {
+    function __destruct() {
+        echo "shared destructed\n";
+    }
+}
+
+$shared = new FixedArraySharedDrop;
+$arr = new SplFixedArray(2);
+$arr[0] = $shared;
+$arr[1] = $shared;
+unset($arr[0]);
+echo "after shared unset\n";
+var_dump($arr);
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "object(SplFixedArray)#1 (0) {\n}\nafter shared unset\nobject(SplFixedArray)#4 (2) {\n  [0]=>\n  NULL\n  [1]=>\n  object(FixedArraySharedDrop)#3 (0) {\n  }\n}\nshared destructed\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn spl_fixed_array_print_r_null_size_exists_and_nested_iteration_edges() {
+    let source = r#"<?php
+$nullConstruct = new SplFixedArray(null);
+print_r($nullConstruct);
+
+$sizeNull = new SplFixedArray(2);
+$sizeNull->setSize(null);
+var_dump($sizeNull);
+
+$items = new SplFixedArray(2);
+$items[0] = "Value 1";
+$items[1] = "Value 2";
+$items->setSize(4);
+$items[2] = "Value 3";
+$items[3] = "Value 4";
+print_r($items);
+$items->setSize(3);
+print_r($items);
+
+class MyFixed extends SplFixedArray {
+    public function offsetGet($key): mixed {
+        return "prefix_" . parent::offsetGet($key);
+    }
+}
+$overridden = new MyFixed(1);
+var_dump(isset($overridden[0]));
+$overridden[0] = "abc";
+var_dump(isset($overridden[0]));
+var_dump($overridden[0]);
+
+try {
+    new SplFixedArray(new SplFixedArray(3));
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+
+echo "nested\n";
+$nested = SplFixedArray::fromArray([0, 1]);
+foreach ($nested as $value1) {
+    foreach ($nested as $value2) {
+        echo "$value1 $value2\n";
+    }
+}
+
+echo "shrink\n";
+$shrink = SplFixedArray::fromArray(["a", "b", "c"]);
+foreach ($shrink as $key => $value) {
+    echo "$key => $value\n";
+    if ($key == 0) {
+        $shrink->setSize(2);
+    }
+}
+
+$indirect = new SplFixedArray(1);
+$indirect[0][] = 3;
+var_dump($indirect);
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert!(execution.stdout.contains(
+        "Deprecated: SplFixedArray::__construct(): Passing null to parameter #1 ($size) of type int is deprecated"
+    ));
+    assert!(execution.stdout.contains(
+        "Deprecated: SplFixedArray::setSize(): Passing null to parameter #1 ($size) of type int is deprecated"
+    ));
+    assert!(execution.stdout.contains("SplFixedArray Object\n(\n)\n"));
+    assert!(execution
+        .stdout
+        .contains("object(SplFixedArray)#2 (0) {\n}\n"));
+    assert!(execution.stdout.contains(
+        "SplFixedArray Object\n(\n    [0] => Value 1\n    [1] => Value 2\n    [2] => Value 3\n    [3] => Value 4\n)\nSplFixedArray Object\n(\n    [0] => Value 1\n    [1] => Value 2\n    [2] => Value 3\n)\n"
+    ));
+    assert!(execution
+        .stdout
+        .contains("bool(false)\nbool(true)\nstring(10) \"prefix_abc\"\n"));
+    assert!(execution.stdout.contains(
+        "SplFixedArray::__construct(): Argument #1 ($size) must be of type int, SplFixedArray given\n"
+    ));
+    assert!(execution.stdout.contains("nested\n0 0\n0 1\n1 0\n1 1\n"));
+    assert!(execution.stdout.contains("shrink\n0 => a\n1 => b\n"));
+    assert!(execution.stdout.contains(
+        "Notice: Indirect modification of overloaded element of SplFixedArray has no effect"
+    ));
+    assert!(execution.stdout.contains("(1) {\n  [0]=>\n  NULL\n}\n"));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_object_array_iterator_offsets_iteration_clone_and_sort() {
     let source = r#"<?php
 $ao = new ArrayObject(array('b' => 2, 'a' => 1));
@@ -14573,6 +20943,509 @@ foreach ($it as $key => $value) {
         execution.stdout,
         "bool(true)\n4|1\nb:2\na:1\n0:3\n1|copy\n0=3\na=1\nb=2\nx:ex\ny:why\n"
     );
+}
+
+#[test]
+fn array_object_object_backed_storage_snapshots_and_reuses_handles() {
+    let source = r#"<?php
+#[AllowDynamicProperties]
+class C {
+    public $p = "p";
+}
+
+class MyArrayObject extends ArrayObject {
+    public $prop = "MyArrayObject::prop.orig";
+}
+
+var_dump(new ArrayObject());
+$holder = new C();
+var_dump(new ArrayObject($holder));
+
+$base = new ArrayObject(array(1, 2), ArrayObject::STD_PROP_LIST);
+$base->prop = "base";
+$storageView = new ArrayObject($base, 0);
+$storageView->prop = "storage-view";
+foreach ((array) $storageView as $key => $value) {
+    echo "storage:$key=$value\n";
+}
+$propView = new ArrayObject($base);
+$propView->prop = "prop-view";
+foreach ((array) $propView as $key => $value) {
+    echo "props:$key=$value\n";
+}
+
+$object = new C();
+$wrapped = new ArrayObject($object);
+$object->before = "before";
+$clone = clone $wrapped;
+$object->after = "after";
+$wrapped["wrapped"] = "wrapped";
+$clone["clone"] = "clone";
+var_dump($object, $wrapped, $clone);
+
+$swap = new ArrayObject();
+$swap->exchangeArray(new C());
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert!(execution.stdout.contains("object(ArrayObject)#1 (1)"));
+    assert!(execution.stdout.contains(
+        "object(ArrayObject)#2 (1) {\n  [\"storage\":\"ArrayObject\":private]=>\n  object(C)#1 (1)"
+    ));
+    assert!(execution.stdout.contains("storage:0=1\nstorage:1=2\n"));
+    assert!(execution.stdout.contains("props:prop=prop-view\n"));
+    assert!(execution.stdout.contains(
+        "Deprecated: ArrayObject::exchangeArray(): Using an object as a backing array for ArrayObject is deprecated"
+    ));
+    assert!(execution.stdout.contains(
+        "object(ArrayObject)#7 (1) {\n  [\"storage\":\"ArrayObject\":private]=>\n  array(3) {"
+    ));
+    assert!(execution
+        .stdout
+        .contains("[\"before\"]=>\n    string(6) \"before\""));
+    assert!(execution
+        .stdout
+        .contains("[\"clone\"]=>\n    string(5) \"clone\""));
+    assert!(!execution
+        .stdout
+        .contains("[\"after\"]=>\n    string(5) \"after\"\n    [\"clone\"]=>"));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+
+    let object_backed_handle_source = r#"<?php
+class C {
+    public $p = "p";
+}
+class MyArrayObject extends ArrayObject {
+    public $prop = "MyArrayObject::prop.orig";
+}
+$c = new C();
+$ao = new ArrayObject($c);
+foreach ($ao as $key => $value) {}
+$c = new C();
+$ao = new MyArrayObject($c);
+var_dump($ao, $c);
+"#;
+    let handle_execution = run_source(object_backed_handle_source).unwrap();
+    assert!(handle_execution
+        .stdout
+        .contains("object(MyArrayObject)#3 (2)"));
+    assert!(handle_execution.stdout.contains("object(C)#4 (1)"));
+    assert_eq!(handle_execution.stderr, "");
+    assert_eq!(handle_execution.exit_code, 0);
+
+    let overwrite_handle_source = r#"<?php
+class DumpArrayObject extends ArrayObject {
+    private $priv1 = "secret1";
+    public $pub1 = "public1";
+}
+$slot = new ArrayObject(array(1, 2, 3));
+var_dump($slot);
+$slot = new ArrayObject(array(1, 2, 3), ArrayObject::STD_PROP_LIST);
+var_dump($slot);
+$slot = new DumpArrayObject(array(1, 2, 3));
+var_dump($slot);
+$slot = new DumpArrayObject(array(1, 2, 3), ArrayObject::STD_PROP_LIST);
+var_dump($slot);
+"#;
+    let overwrite_execution = run_source(overwrite_handle_source).unwrap();
+    assert!(overwrite_execution
+        .stdout
+        .contains("object(DumpArrayObject)#1 (3)"));
+    assert!(overwrite_execution
+        .stdout
+        .contains("object(DumpArrayObject)#2 (3)"));
+    assert_eq!(overwrite_execution.stderr, "");
+    assert_eq!(overwrite_execution.exit_code, 0);
+}
+
+#[test]
+fn array_object_introspection_hides_core_storage_and_preserves_object_backing_keys() {
+    let source = r#"<?php
+#[AllowDynamicProperties]
+class AO extends ArrayObject {
+    private $priv = 1;
+}
+
+$ao = new AO(array("x" => "y"));
+$ao->dyn = 2;
+foreach (get_mangled_object_vars($ao) as $key => $value) {
+    echo str_replace("\0", "%0", $key), "=", $value, ";";
+}
+echo "\n";
+foreach ((array) $ao as $key => $value) {
+    echo $key, "=", $value, ";";
+}
+echo "\n";
+
+class Test {
+    public $prop;
+}
+
+$obj = new Test();
+$storage = new ArrayObject($obj);
+$storage["\0A\0b"] = 42;
+$storage["\0*\0b"] = 24;
+$storage[12] = 6;
+foreach (get_object_vars($obj) as $key => $value) {
+    echo str_replace("\0", "%0", $key), "=", $value, ";";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert!(execution.stdout.starts_with("%0AO%0priv=1;dyn=2;\nx=y;\n"));
+    assert!(execution.stdout.contains(
+        "Deprecated: ArrayObject::__construct(): Using an object as a backing array for ArrayObject is deprecated"
+    ));
+    assert!(execution
+        .stdout
+        .ends_with("prop=;%0A%0b=42;%0*%0b=24;12=6;"));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn array_object_dynamic_property_creation_emits_deprecation_without_array_as_props() {
+    let source = r#"<?php
+$ao = new ArrayObject(array("a" => "storage"));
+$ao->a = "dynamic";
+$ao->a = "updated";
+$name = "dyn";
+$ao->{$name} = "dynamic";
+$ao->{$name} = "updated";
+var_dump($ao->a, $ao->dyn, $ao["a"]);
+
+#[AllowDynamicProperties]
+class AllowedArrayObject extends ArrayObject {}
+
+$allowed = new AllowedArrayObject(array());
+$allowed->quiet = true;
+var_dump($allowed->quiet);
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert!(execution
+        .stdout
+        .contains("Deprecated: Creation of dynamic property ArrayObject::$a is deprecated"));
+    assert!(execution
+        .stdout
+        .contains("Deprecated: Creation of dynamic property ArrayObject::$dyn is deprecated"));
+    assert!(execution.stdout.ends_with(
+        "string(7) \"updated\"\nstring(7) \"updated\"\nstring(7) \"storage\"\nbool(true)\n"
+    ));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn array_object_user_sort_methods_use_comparators_and_guard_reentrant_mutation() {
+    let source = r#"<?php
+function desc_cmp($left, $right) {
+    if ($left == $right) {
+        return 0;
+    }
+    return $left < $right ? 1 : -1;
+}
+
+$values = new ArrayObject(array(2, 3, 1));
+var_dump($values->uasort("desc_cmp"));
+foreach ($values as $key => $value) {
+    echo "v:$key=$value;";
+}
+echo "\n";
+
+$keys = new ArrayObject(array(3 => 0, 2 => 1, 5 => 2, 6 => 3, 1 => 4));
+var_dump($keys->uksort("desc_cmp"));
+foreach ($keys as $key => $value) {
+    echo "k:$key=$value;";
+}
+echo "\n";
+
+try {
+    $values->uasort();
+} catch (ArgumentCountError $e) {
+    echo $e->getMessage(), "\n";
+}
+
+try {
+    $keys->uksort("desc_cmp", "extra");
+} catch (ArgumentCountError $e) {
+    echo $e->getMessage(), "\n";
+}
+
+$guarded = new ArrayObject(array(1, 2, 3));
+$i = 0;
+$guarded->uasort(function ($left, $right) use ($guarded, &$i) {
+    if ($i++ == 0) {
+        try {
+            $guarded->exchangeArray(array(4, 5, 6));
+        } catch (Error $e) {
+            echo $e->getMessage(), "\n";
+        }
+        echo "guard:", count($guarded), ":", $guarded[0], "\n";
+    }
+    return $left <=> $right;
+});
+
+ini_set("disable_functions", "asort, ksort, natsort, natcasesort, uasort, uksort");
+$disabled = new ArrayObject(array("hello", "world"));
+try {
+    $disabled->asort();
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $disabled->ksort();
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $disabled->natsort();
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $disabled->natcasesort();
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $values->uasort("desc_cmp");
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $keys->uksort("desc_cmp");
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "bool(true)\nv:1=3;v:0=2;v:2=1;\nbool(true)\nk:6=3;k:5=2;k:3=0;k:2=1;k:1=4;\nArrayObject::uasort() expects exactly 1 argument, 0 given\nArrayObject::uksort() expects exactly 1 argument, 2 given\nModification of ArrayObject during sorting is prohibited\nguard:3:1\nCannot call method asort when function asort is disabled\nCannot call method ksort when function ksort is disabled\nCannot call method natsort when function natsort is disabled\nCannot call method natcasesort when function natcasesort is disabled\nCannot call method uasort when function uasort is disabled\nCannot call method uksort when function uksort is disabled\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn array_object_disabled_sort_fatal_records_internal_method_frame() {
+    let execution = run_source(
+        r#"<?php
+ini_set("disable_functions", "asort");
+$ao = new ArrayObject(array(2, 1));
+$ao->asort();
+"#,
+    )
+    .unwrap();
+
+    assert!(execution.stdout.contains(
+        "Fatal error: Uncaught Error: Cannot call method asort when function asort is disabled in Command line code:4"
+    ));
+    assert!(execution
+        .stdout
+        .contains("#0 Command line code(4): ArrayObject->asort()"));
+    assert!(execution.stdout.contains("#1 {main}"));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 255);
+}
+
+#[test]
+fn array_iterator_seek_out_of_range_errors_are_catchable() {
+    let source = r#"<?php
+$it = new ArrayIterator(array(0, 1, 2));
+$it->seek(1);
+echo $it->key(), ":", $it->current(), "\n";
+
+try {
+    $it->seek(-1);
+} catch (OutOfBoundsException $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+
+try {
+    $it->seek(3);
+} catch (Exception $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+
+$it->seek(2);
+echo $it->key(), ":", $it->current(), "\n";
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "1:1\nOutOfBoundsException:Seek position -1 is out of range\nOutOfBoundsException:Seek position 3 is out of range\n2:2\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn array_object_nested_storage_mutations_reach_inner_array_object() {
+    let source = r#"<?php
+$base = new ArrayObject(array(1 => "one", 2 => "two", 3 => "three"));
+$base[] = "four";
+$copy = new ArrayObject($base);
+$copy[] = "five";
+$copy[6] = "six";
+unset($copy[2]);
+
+foreach ($base as $key => $value) {
+    echo $key, "=", $value, "\n";
+}
+print_r($copy->getArrayCopy());
+
+$it = new ArrayIterator(new stdClass());
+try {
+    $it->append("bad");
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert!(execution.stdout.contains(
+        "Deprecated: ArrayObject::__construct(): Using an object as a backing array for ArrayObject is deprecated"
+    ));
+    assert!(execution.stdout.contains(
+        "Deprecated: ArrayIterator::__construct(): Using an object as a backing array for ArrayIterator is deprecated"
+    ));
+    assert!(execution.stdout.contains(
+        "1=one\n3=three\n4=four\n5=five\n6=six\nArray\n(\n    [1] => one\n    [3] => three\n    [4] => four\n    [5] => five\n    [6] => six\n)\n"
+    ));
+    assert!(execution.stdout.ends_with(
+        "Cannot append properties to objects, use ArrayIterator::offsetSet() instead\n"
+    ));
+}
+
+#[test]
+fn array_object_array_as_props_and_iterator_class_metadata() {
+    let source = r#"<?php
+class ChildArrayObject extends ArrayObject {
+    public $p = "object";
+    private $x = "secret";
+
+    static function inside($value) {
+        return $value->x;
+    }
+}
+
+class ChildArrayIterator extends ArrayIterator {
+    function rewind(): void {
+        parent::rewind();
+    }
+
+    function valid(): bool {
+        return parent::valid();
+    }
+
+    function current(): mixed {
+        return parent::current();
+    }
+
+    function key(): string|int|null {
+        return parent::key();
+    }
+
+    function next(): void {
+        parent::next();
+    }
+}
+
+$ao = new ChildArrayObject(array("p" => "array", "x" => "public"));
+$ao->setFlags(ArrayObject::ARRAY_AS_PROPS);
+echo $ao->p, "\n";
+unset($ao->p);
+echo $ao->p, "\n";
+$ao->p = "changed";
+echo $ao["p"], "\n";
+echo ChildArrayObject::inside($ao), "\n";
+echo $ao->x, "\n";
+
+$iterable = new ArrayObject(array("a" => 1), 0, "ChildArrayIterator");
+echo $iterable->getIteratorClass(), "\n";
+echo get_class($iterable->getIterator()), "\n";
+foreach ($iterable as $key => $value) {
+    echo $key, "=", $value, "\n";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "object\narray\nchanged\nsecret\npublic\nChildArrayIterator\nChildArrayIterator\na=1\n"
+    );
+}
+
+#[test]
+fn array_object_foreach_retires_unrooted_iterator_class_temporaries() {
+    let source = r#"<?php
+class ReusedHandleIterator extends ArrayIterator {
+    function rewind(): void {
+        parent::rewind();
+    }
+    function valid(): bool {
+        return parent::valid();
+    }
+    function current(): mixed {
+        return parent::current();
+    }
+    function key(): string|int|null {
+        return parent::key();
+    }
+    function next(): void {
+        parent::next();
+    }
+}
+
+class CapturingIterator extends ReusedHandleIterator {
+    function rewind(): void {
+        $GLOBALS["captured_iterator"] = $this;
+        parent::rewind();
+    }
+}
+
+$ao = new ArrayObject(array("a" => 1, "b" => 2), 0, "ReusedHandleIterator");
+$first = $ao->getIterator();
+echo spl_object_id($first), "\n";
+foreach ($ao as $key => $value) {}
+$second = $ao->getIterator();
+echo spl_object_id($second), "\n";
+
+$capturing = new ArrayObject(array("x" => 1), 0, "CapturingIterator");
+foreach ($capturing as $value) {}
+$after_capture = $capturing->getIterator();
+echo spl_object_id($captured_iterator), "|", spl_object_id($after_capture), "\n";
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.stdout, "2\n3\n5|6\n");
+}
+
+#[test]
+fn array_object_var_dumped_iterator_temporaries_keep_php_handle_progression() {
+    let source = r#"<?php
+class DumpedHandleIterator extends ArrayIterator {}
+
+$ao = new ArrayObject(array("a" => 1), 0, "DumpedHandleIterator");
+var_dump($ao->getIterator());
+foreach ($ao as $value) {}
+var_dump($ao->getIterator());
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert!(execution
+        .stdout
+        .contains("object(DumpedHandleIterator)#2 (1)"));
+    assert!(execution
+        .stdout
+        .contains("object(DumpedHandleIterator)#3 (1)"));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -14656,6 +21529,903 @@ try {
         execution.stdout,
         "1\n2\n3\n***\n3\n2\n1\nIterators' LIFO/FIFO modes for SplStack/SplQueue objects are frozen\nIterators' LIFO/FIFO modes for SplStack/SplQueue objects are frozen\n"
     );
+}
+
+#[test]
+fn spl_doubly_linked_list_prev_moves_against_active_direction() {
+    let source = r#"<?php
+$list = new SplDoublyLinkedList();
+$list->push(1);
+$list->push(2);
+$list->push(3);
+$list->push(4);
+
+$list->rewind();
+$list->prev();
+var_dump($list->current());
+$list->rewind();
+var_dump($list->current());
+$list->next();
+var_dump($list->current());
+$list->next();
+$list->next();
+var_dump($list->current());
+$list->prev();
+var_dump($list->current());
+
+$list->setIteratorMode(SplDoublyLinkedList::IT_MODE_LIFO);
+$list->rewind();
+var_dump($list->current());
+$list->next();
+var_dump($list->current());
+$list->prev();
+var_dump($list->current());
+
+$empty = new SplDoublyLinkedList();
+$empty->rewind();
+$empty->prev();
+var_dump($empty->current());
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "NULL\nint(1)\nint(2)\nint(4)\nint(3)\nint(4)\nint(3)\nint(4)\nNULL\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn spl_doubly_linked_list_count_arrayaccess_and_delete_iteration() {
+    let source = r#"<?php
+class CountedList extends SplDoublyLinkedList {
+    public function count(): int {
+        return -parent::count();
+    }
+}
+
+$list = new SplDoublyLinkedList();
+$list->push(null);
+$list->push(null);
+echo count($list), "|", $list->count(), "\n";
+var_dump($list->pop());
+var_dump($list->pop());
+
+$list[] = "append";
+$list[0] = "first";
+echo count($list), "|", $list[0], "\n";
+
+$list->push("second");
+$list->push("third");
+$list->setIteratorMode(SplDoublyLinkedList::IT_MODE_FIFO | SplDoublyLinkedList::IT_MODE_DELETE);
+foreach ($list as $key => $value) {
+    echo "$key=$value;";
+}
+echo "\n", count($list), "\n";
+
+$lifo = new SplDoublyLinkedList();
+$lifo->push("a");
+$lifo->push("b");
+$lifo->push("c");
+$lifo->setIteratorMode(SplDoublyLinkedList::IT_MODE_LIFO | SplDoublyLinkedList::IT_MODE_DELETE);
+foreach ($lifo as $key => $value) {
+    echo "$key=$value;";
+}
+echo "\n", count($lifo), "\n";
+
+$counted = new CountedList();
+$counted[] = "one";
+$counted[] = "two";
+echo count($counted), "\n";
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "2|2\nNULL\nNULL\n1|first\n0=first;0=second;0=third;\n0\n2=c;1=b;0=a;\n0\n-2\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn spl_file_info_metadata_methods_use_local_stat_helpers() {
+    use std::fs;
+
+    let fixture_dir =
+        std::env::temp_dir().join(format!("phpc-spl-file-info-{}", std::process::id()));
+    fs::create_dir_all(&fixture_dir).unwrap();
+    let fixture = fixture_dir.join("metadata.txt");
+    fs::write(&fixture, "metadata").unwrap();
+    let fixture_path = fixture.display().to_string().replace('\\', "\\\\");
+    let missing = fixture_dir.join("missing.txt");
+    let missing_path = missing.display().to_string().replace('\\', "\\\\");
+
+    let source = format!(
+        r#"<?php
+$file = "{fixture_path}";
+$info = new SplFileInfo($file);
+echo $info->getGroup() == filegroup($file) ? "group\n" : "bad-group\n";
+echo $info->getInode() == fileinode($file) ? "inode\n" : "bad-inode\n";
+echo $info->getOwner() == fileowner($file) ? "owner\n" : "bad-owner\n";
+echo $info->getPerms() == fileperms($file) ? "perms\n" : "bad-perms\n";
+try {{
+    (new SplFileInfo("{missing_path}"))->getOwner();
+}} catch (RuntimeException $e) {{
+    echo $e->getMessage(), "\n";
+}}
+"#
+    );
+
+    let execution = run_source(&source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        format!(
+            "group\ninode\nowner\nperms\nSplFileInfo::getOwner(): stat failed for {}\n",
+            missing.display()
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn spl_file_info_path_and_class_selection_methods() {
+    use std::fs;
+
+    let fixture_dir =
+        std::env::temp_dir().join(format!("phpc-spl-file-info-classes-{}", std::process::id()));
+    fs::create_dir_all(&fixture_dir).unwrap();
+    let fixture = fixture_dir.join("sample.ext");
+    fs::write(&fixture, "sample\n").unwrap();
+    let fixture_path = fixture.display().to_string().replace('\\', "\\\\");
+
+    let source = format!(
+        r#"<?php
+class MyFileObject extends SplFileObject {{}}
+class MyInfoObject extends SplFileInfo {{}}
+
+$info = new SplFileInfo("{fixture_path}");
+echo $info->getExtension(), "\n";
+$info->setFileClass("MyFileObject");
+echo get_class($info->openFile()), "\n";
+$info->setFileClass("SplFileObject");
+echo get_class($info->openFile()), "\n";
+
+$info->setInfoClass("MyInfoObject");
+echo get_class($info->getFileInfo()), "\n";
+echo get_class($info->getPathInfo()), "\n";
+$info->setInfoClass("SplFileInfo");
+echo get_class($info->getFileInfo()), "\n";
+echo get_class($info->getPathInfo()), "\n";
+
+try {{
+    $info->setFileClass("stdClass");
+}} catch (TypeError $e) {{
+    echo $e->getMessage(), "\n";
+}}
+
+try {{
+    $info->setInfoClass("stdClass");
+}} catch (TypeError $e) {{
+    echo $e->getMessage(), "\n";
+}}
+"#
+    );
+
+    let execution = run_source(&source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "ext\nMyFileObject\nSplFileObject\nMyInfoObject\nMyInfoObject\nSplFileInfo\nSplFileInfo\nSplFileInfo::setFileClass(): Argument #1 ($class) must be a class name derived from SplFileObject, stdClass given\nSplFileInfo::setInfoClass(): Argument #1 ($class) must be a class name derived from SplFileInfo, stdClass given\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn spl_file_info_path_names_and_debug_info_are_php_shaped() {
+    let source = r#"<?php
+echo (new SplFileInfo('/path/to/a.txt'))->getFilename(), "\n";
+echo (new SplFileInfo('path/to/bbb.txt'))->getBasename('b.txt'), "\n";
+echo (new SplFileInfo('path/to/ccc.txt'))->getBasename('to/ccc.txt'), "\n";
+echo (new SplFileInfo('e.txt'))->getBasename('e.txt'), "\n";
+var_dump(new SplFileInfo('path/to/b'));
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert!(execution.stdout.starts_with("a.txt\nbb\nccc.txt\ne.txt\n"));
+    assert!(
+        execution
+            .stdout
+            .contains("[\"pathName\":\"SplFileInfo\":private]=>\n  string(9) \"path/to/b\""),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution
+            .stdout
+            .contains("[\"fileName\":\"SplFileInfo\":private]=>\n  string(1) \"b\""),
+        "{}",
+        execution.stdout
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn spl_file_info_var_dump_temporaries_reuse_php_handles() {
+    let source = r#"<?php
+var_dump(new SplFileInfo("first.txt"));
+var_dump(new SplFileInfo("second.txt"));
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution
+            .stdout
+            .matches("object(SplFileInfo)#1 (2)")
+            .count(),
+        2
+    );
+    assert!(!execution.stdout.contains("object(SplFileInfo)#2"));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn ordinary_var_dump_temporaries_reuse_php_handles_without_releasing_roots() {
+    let source = r#"<?php
+class Dumped {}
+var_dump(new Dumped);
+var_dump(new Dumped);
+$kept = new Dumped;
+var_dump($kept);
+var_dump(new Dumped);
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "object(Dumped)#1 (0) {\n}\nobject(Dumped)#1 (0) {\n}\nobject(Dumped)#1 (0) {\n}\nobject(Dumped)#2 (0) {\n}\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn directory_iterator_iterates_local_entries_and_metadata_methods() {
+    use std::fs;
+
+    let fixture_dir =
+        std::env::temp_dir().join(format!("phpc-directory-iterator-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&fixture_dir);
+    fs::create_dir_all(&fixture_dir).unwrap();
+    let fixture = fixture_dir.join("sample.txt");
+    fs::write(&fixture, "sample").unwrap();
+    let dir_path = fixture_dir.display().to_string().replace('\\', "\\\\");
+
+    let source = format!(
+        r#"<?php
+$dir = "{dir_path}";
+$it = new DirectoryIterator($dir);
+echo $it->getGroup() == filegroup($dir) ? "group\n" : "bad-group\n";
+echo $it->getInode() == fileinode($dir) ? "inode\n" : "bad-inode\n";
+echo get_class($it->current()), "|", $it->key(), "|", $it->getFilename(), "\n";
+while (!$it->isFile()) {{
+    $it->next();
+}}
+echo $it->getBasename(".txt"), "|", $it->getExtension(), "\n";
+class MyDirectoryIterator extends DirectoryIterator {{
+    public function __construct() {{}}
+}}
+try {{
+    (new MyDirectoryIterator())->key();
+}} catch (Error $e) {{
+    echo $e->getMessage(), "\n";
+}}
+try {{
+    new DirectoryIterator("");
+}} catch (ValueError $e) {{
+    echo $e->getMessage(), "\n";
+}}
+"#
+    );
+
+    let execution = run_source(&source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "group\ninode\nDirectoryIterator|0|.\nsample|txt\nObject not initialized\nDirectoryIterator::__construct(): Argument #1 ($directory) must not be empty\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+
+    fs::remove_dir_all(&fixture_dir).unwrap();
+}
+
+#[test]
+fn filesystem_iterator_flags_and_recursive_subpaths_are_php_shaped() {
+    use std::fs;
+
+    let fixture_dir =
+        std::env::temp_dir().join(format!("phpc-filesystem-iterator-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&fixture_dir);
+    fs::create_dir_all(fixture_dir.join("child")).unwrap();
+    fs::write(fixture_dir.join("root.txt"), "root").unwrap();
+    fs::write(fixture_dir.join("child").join("nested.txt"), "nested").unwrap();
+    let dir_path = fixture_dir.display().to_string().replace('\\', "\\\\");
+
+    let source = format!(
+        r#"<?php
+$it = new FilesystemIterator("{dir_path}");
+printf("%04X\n", $it->getFlags());
+$items = [];
+foreach ($it as $key => $file) {{
+    $items[] = $file->getFilename() . "=" . basename($key);
+}}
+sort($items);
+echo implode(",", $items), "\n";
+
+$it = new FilesystemIterator("{dir_path}", 0);
+$items = [];
+foreach ($it as $file) {{
+    $items[] = $file->getFilename();
+}}
+sort($items);
+echo implode(",", $items), "\n";
+
+$it->setFlags(-1);
+printf("%04X\n", $it->getFlags());
+
+$rdi = new RecursiveDirectoryIterator("{dir_path}", FilesystemIterator::SKIP_DOTS | FilesystemIterator::KEY_AS_FILENAME);
+var_dump($rdi->key());
+var_dump($rdi->hasChildren());
+
+$rii = new RecursiveIteratorIterator($rdi);
+$paths = [];
+while ($rii->valid()) {{
+    $paths[] = $rii->getSubPathname();
+    $rii->next();
+}}
+sort($paths);
+echo implode("|", $paths), "\n";
+"#
+    );
+
+    let execution = run_source(&source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "1000\nchild=child,root.txt=root.txt\n.,..,child,root.txt\n7FF0\nstring(5) \"child\"\nbool(true)\nchild/.|child/..|child/nested.txt|root.txt\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+
+    fs::remove_dir_all(&fixture_dir).unwrap();
+}
+
+#[test]
+fn spl_file_object_inherits_file_info_metadata_methods() {
+    use std::fs;
+
+    let fixture_dir =
+        std::env::temp_dir().join(format!("phpc-spl-file-object-info-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&fixture_dir);
+    fs::create_dir_all(&fixture_dir).unwrap();
+    let fixture = fixture_dir.join("object.txt");
+    fs::write(&fixture, "abcdef").unwrap();
+    let fixture_path = fixture.display().to_string().replace('\\', "\\\\");
+
+    let source = format!(
+        r#"<?php
+$file = new SplFileObject("{fixture_path}");
+var_dump($file->isFile());
+var_dump($file->isDir());
+var_dump($file->isLink());
+echo $file->getBasename(".txt"), "\n";
+echo $file->getSize(), "\n";
+echo get_class($file->getFileInfo()), "\n";
+echo count($file->fstat()), "\n";
+"#
+    );
+
+    let execution = run_source(&source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "bool(true)\nbool(false)\nbool(false)\nobject\n6\nSplFileInfo\n26\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+
+    fs::remove_dir_all(&fixture_dir).unwrap();
+}
+
+#[test]
+fn spl_file_object_local_file_line_cursor_methods() {
+    use std::fs;
+
+    let fixture_dir =
+        std::env::temp_dir().join(format!("phpc-spl-file-object-{}", std::process::id()));
+    fs::create_dir_all(&fixture_dir).unwrap();
+    let fixture = fixture_dir.join("cursor.php");
+    fs::write(&fixture, "<?php\n//line 2\n//line 3\n//line 4\n?>\n").unwrap();
+
+    let source = r#"<?php
+$file = new SplFileObject(__FILE__);
+echo $file->current();
+$file->seek(2);
+echo $file->key(), ":", $file->current();
+echo $file->current();
+$file->next();
+echo $file->key(), ":", $file->current();
+$file->seek(20);
+var_dump($file->valid());
+$file->rewind();
+var_dump($file->valid());
+foreach ($file as $key => $line) {
+    if ($key > 1) {
+        break;
+    }
+    echo $key, "=", $line;
+}
+try {
+    $file->seek(-1);
+} catch (ValueError $e) {
+    echo "caught:", $e->getMessage(), "\n";
+}
+"#;
+
+    let execution = run_source_with_source_file(source, fixture.display().to_string()).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "<?php\n2://line 3\n//line 3\n3://line 4\nbool(false)\nbool(true)\n0=<?php\n1=//line 2\ncaught:SplFileObject::seek(): Argument #1 ($line) must be greater than or equal to 0\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn spl_file_object_flags_and_csv_controls_use_local_line_state() {
+    use std::fs;
+
+    let fixture_dir =
+        std::env::temp_dir().join(format!("phpc-spl-file-object-csv-{}", std::process::id()));
+    fs::create_dir_all(&fixture_dir).unwrap();
+    let fixture = fixture_dir.join("records.csv");
+    fs::write(&fixture, "'green apples'|10\n'yellow bananas'|20\n").unwrap();
+    let fixture_path = fixture.display().to_string().replace('\\', "\\\\");
+
+    let source = format!(
+        r#"<?php
+$file = new SplFileObject("{fixture_path}");
+$file->setFlags(SplFileObject::DROP_NEW_LINE);
+var_dump($file->getFlags());
+echo $file->current(), "|";
+var_dump($file->getCsvControl());
+$file->setFlags(SplFileObject::READ_CSV);
+$file->setCsvControl("|", "'", "");
+var_dump($file->getFlags());
+var_dump($file->getCsvControl());
+foreach ($file as $row) {{
+    echo $row[0], "=", $row[1], "\n";
+}}
+$file->rewind();
+var_dump($file->fgetcsv());
+try {{
+    $file->setCsvControl("||");
+}} catch (ValueError $e) {{
+    echo $e->getMessage(), "\n";
+}}
+"#
+    );
+
+    let execution = run_source(&source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        r#"int(1)
+'green apples'|10|array(3) {
+  [0]=>
+  string(1) ","
+  [1]=>
+  string(1) """
+  [2]=>
+  string(1) "\"
+}
+int(8)
+array(3) {
+  [0]=>
+  string(1) "|"
+  [1]=>
+  string(1) "'"
+  [2]=>
+  string(0) ""
+}
+green apples=10
+yellow bananas=20
+array(2) {
+  [0]=>
+  string(12) "green apples"
+  [1]=>
+  string(2) "10"
+}
+SplFileObject::setCsvControl(): Argument #1 ($separator) must be a single character
+"#
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn spl_file_object_csv_escape_diagnostics_and_reflection_metadata() {
+    use std::fs;
+
+    let fixture_dir = std::env::temp_dir().join(format!(
+        "phpc-spl-file-object-csv-params-{}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&fixture_dir).unwrap();
+    let input = fixture_dir.join("records.csv");
+    let output = fixture_dir.join("write.csv");
+    fs::write(&input, "first,second\n").unwrap();
+    let input_path = input.display().to_string().replace('\\', "\\\\");
+    let output_path = output.display().to_string().replace('\\', "\\\\");
+
+    let source = format!(
+        r#"<?php
+$reader = new SplFileObject("{input_path}");
+var_dump($reader->fgetcsv());
+$control = new SplFileObject("{input_path}");
+$control->setCsvControl();
+$writer = new SplFileObject("{output_path}", "w");
+try {{
+    $writer->fputcsv(array("water", "fruit"), ",,", "\"");
+}} catch (ValueError $e) {{
+    echo $e->getMessage(), "\n";
+}}
+try {{
+    $writer->fputcsv(array("water", "fruit"), ",", "\"\"");
+}} catch (ValueError $e) {{
+    echo $e->getMessage(), "\n";
+}}
+
+$method = new ReflectionMethod("SplFileObject", "setCsvControl");
+foreach ($method->getParameters() as $param) {{
+    echo $param->getName(), "|";
+}}
+echo "\n";
+$method = new ReflectionMethod("SplFileObject", "fputcsv");
+foreach ($method->getParameters() as $param) {{
+    echo $param->getName(), "|";
+}}
+echo "\n";
+"#
+    );
+
+    let execution = run_source(&source).unwrap();
+    assert!(execution.stdout.contains(
+        "Deprecated: SplFileObject::fgetcsv(): the $escape parameter must be provided, as its default value will change, either explicitly or via SplFileObject::setCsvControl() in Command line code on line 3"
+    ));
+    assert!(execution.stdout.contains(
+        "Deprecated: SplFileObject::setCsvControl(): the $escape parameter must be provided as its default value will change in Command line code on line 5"
+    ));
+    assert!(execution.stdout.contains(
+        "SplFileObject::fputcsv(): Argument #2 ($separator) must be a single character\n"
+    ));
+    assert!(execution.stdout.contains(
+        "SplFileObject::fputcsv(): Argument #3 ($enclosure) must be a single character\n"
+    ));
+    assert!(execution
+        .stdout
+        .contains("separator|enclosure|escape|\nfields|separator|enclosure|escape|eol|\n"));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn spl_empty_infinite_and_limit_iterators_wrap_bounded_iterators() {
+    let source = r#"<?php
+class EmptyIteratorEx extends EmptyIterator {
+    function rewind(): void {
+        echo __METHOD__ . "\n";
+        parent::rewind();
+    }
+    function valid(): false {
+        echo __METHOD__ . "\n";
+        return parent::valid();
+    }
+}
+
+class ArrayIteratorEx extends ArrayIterator {
+    function rewind(): void {
+        echo __METHOD__ . "\n";
+        parent::rewind();
+    }
+    function valid(): bool {
+        echo __METHOD__ . "\n";
+        return parent::valid();
+    }
+    function current(): mixed {
+        echo __METHOD__ . "\n";
+        return parent::current();
+    }
+    function key(): string|int|null {
+        echo __METHOD__ . "\n";
+        return parent::key();
+    }
+    function next(): void {
+        echo __METHOD__ . "\n";
+        parent::next();
+    }
+}
+
+echo "empty\n";
+foreach (new EmptyIteratorEx() as $value) {
+    echo "unreachable";
+}
+
+echo "infinite\n";
+$it = new InfiniteIterator(new ArrayIteratorEx(range(0, 2)));
+$pos = 0;
+foreach ($it as $value) {
+    echo "value=$value\n";
+    if ($pos++ > 5) {
+        break;
+    }
+}
+
+echo "limit-empty\n";
+foreach (new LimitIterator(new EmptyIterator(), 0, 3) as $key => $value) {
+    echo "$key=>$value\n";
+}
+
+echo "limit-infinite\n";
+$it = new ArrayIterator(array(0 => "A", 1 => "B", 2 => "C", 3 => "D"));
+$it = new LimitIterator(new InfiniteIterator($it), 2, 5);
+foreach ($it as $key => $value) {
+    echo "$key=>$value\n";
+}
+
+echo "nested\n";
+$it = new ArrayIterator(array(0 => "A", 1 => "B", 2 => "C", 3 => "D"));
+$it = new LimitIterator(new InfiniteIterator(new LimitIterator($it, 1, 2)), 2, 5);
+foreach ($it as $key => $value) {
+    echo "$key=>$value\n";
+}
+
+try {
+    new LimitIterator(new ArrayIterator(array(1)), -1);
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+
+try {
+    foreach (new LimitIterator(new ArrayIterator(array("x")), 3) as $value) {
+        echo $value;
+    }
+} catch (OutOfBoundsException $e) {
+    echo $e->getMessage(), "\n";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "empty\nEmptyIteratorEx::rewind\nEmptyIteratorEx::valid\ninfinite\nArrayIteratorEx::rewind\nArrayIteratorEx::valid\nArrayIteratorEx::current\nArrayIteratorEx::key\nvalue=0\nArrayIteratorEx::next\nArrayIteratorEx::valid\nArrayIteratorEx::current\nArrayIteratorEx::key\nvalue=1\nArrayIteratorEx::next\nArrayIteratorEx::valid\nArrayIteratorEx::current\nArrayIteratorEx::key\nvalue=2\nArrayIteratorEx::next\nArrayIteratorEx::valid\nArrayIteratorEx::rewind\nArrayIteratorEx::valid\nArrayIteratorEx::current\nArrayIteratorEx::key\nvalue=0\nArrayIteratorEx::next\nArrayIteratorEx::valid\nArrayIteratorEx::current\nArrayIteratorEx::key\nvalue=1\nArrayIteratorEx::next\nArrayIteratorEx::valid\nArrayIteratorEx::current\nArrayIteratorEx::key\nvalue=2\nArrayIteratorEx::next\nArrayIteratorEx::valid\nArrayIteratorEx::rewind\nArrayIteratorEx::valid\nArrayIteratorEx::current\nArrayIteratorEx::key\nvalue=0\nlimit-empty\nlimit-infinite\n2=>C\n3=>D\n0=>A\n1=>B\n2=>C\nnested\n1=>B\n2=>C\n1=>B\n2=>C\n1=>B\nLimitIterator::__construct(): Argument #2 ($offset) must be greater than or equal to 0\nSeek position 3 is out of range\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn spl_iterator_iterator_and_no_rewind_iterator_forward_bounded_iterators() {
+    let source = r#"<?php
+class ArrayIteratorEx extends ArrayIterator {
+    function rewind(): void {
+        echo __METHOD__ . "\n";
+        parent::rewind();
+    }
+    function valid(): bool {
+        echo __METHOD__ . "\n";
+        return parent::valid();
+    }
+    function current(): mixed {
+        echo __METHOD__ . "\n";
+        return parent::current();
+    }
+    function key(): string|int|null {
+        echo __METHOD__ . "\n";
+        return parent::key();
+    }
+    function next(): void {
+        echo __METHOD__ . "\n";
+        parent::next();
+    }
+}
+
+class ArrayObjectEx extends ArrayObject {
+    function getIterator(): Iterator {
+        echo __METHOD__ . "\n";
+        return parent::getIterator();
+    }
+}
+
+class NoRewindIteratorEx extends NoRewindIterator {
+    function rewind(): void {
+        echo __METHOD__ . "\n";
+        parent::rewind();
+    }
+}
+
+echo "forward-array\n";
+foreach (new IteratorIterator(new ArrayIteratorEx(range(0, 1))) as $value) {
+    echo "v=$value\n";
+}
+
+echo "forward-aggregate\n";
+foreach (new IteratorIterator(new ArrayObjectEx(array("a", "b"))) as $value) {
+    echo "v=$value\n";
+}
+
+echo "no-rewind\n";
+$it = new NoRewindIteratorEx(new ArrayIteratorEx(array(0 => "A", 1 => "B", 2 => "C")));
+echo $it->key(), "=>", $it->current(), "\n";
+$it->next();
+foreach ($it as $key => $value) {
+    echo "$key=>$value\n";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "forward-array\nArrayIteratorEx::rewind\nArrayIteratorEx::valid\nArrayIteratorEx::current\nv=0\nArrayIteratorEx::next\nArrayIteratorEx::valid\nArrayIteratorEx::current\nv=1\nArrayIteratorEx::next\nArrayIteratorEx::valid\nforward-aggregate\nArrayObjectEx::getIterator\nv=a\nv=b\nno-rewind\nArrayIteratorEx::key\n0=>ArrayIteratorEx::current\nA\nArrayIteratorEx::next\nNoRewindIteratorEx::rewind\nArrayIteratorEx::valid\nArrayIteratorEx::current\nArrayIteratorEx::key\n1=>B\nArrayIteratorEx::next\nArrayIteratorEx::valid\nArrayIteratorEx::current\nArrayIteratorEx::key\n2=>C\nArrayIteratorEx::next\nArrayIteratorEx::valid\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn spl_file_object_byte_reads_passthru_and_max_line_length() {
+    use std::fs;
+
+    let fixture_dir =
+        std::env::temp_dir().join(format!("phpc-spl-file-object-read-{}", std::process::id()));
+    fs::create_dir_all(&fixture_dir).unwrap();
+    let fixture = fixture_dir.join("read.txt");
+    fs::write(&fixture, "0\n1\n2").unwrap();
+    let fixture_path = fixture.display().to_string().replace('\\', "\\\\");
+
+    let source = format!(
+        r#"<?php
+$file = new SplFileObject("{fixture_path}");
+var_dump($file->key());
+var_dump($file->fgetc());
+var_dump($file->key(), $file->eof());
+var_dump($file->fgetc());
+var_dump($file->key(), $file->eof());
+var_dump($file->fread(1));
+var_dump($file->key());
+var_dump($file->fread(99));
+var_dump($file->key(), $file->eof());
+var_dump($file->fgetc());
+
+$again = new SplFileObject("{fixture_path}");
+var_dump($again->fpassthru());
+var_dump($again->eof(), $again->key());
+
+$limited = new SplFileObject("{fixture_path}");
+$limited->setMaxLineLen(1);
+var_dump($limited->getMaxLineLen());
+var_dump($limited->getCurrentLine());
+try {{
+    $limited->setMaxLineLen(-1);
+}} catch (ValueError $e) {{
+    echo $e->getMessage(), "\n";
+}}
+"#
+    );
+
+    let execution = run_source(&source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "int(0)\nstring(1) \"0\"\nint(0)\nbool(false)\nstring(1) \"\n\"\nint(1)\nbool(false)\nstring(1) \"1\"\nint(1)\nstring(2) \"\n2\"\nint(2)\nbool(true)\nbool(false)\n0\n1\n2int(5)\nbool(true)\nint(2)\nint(1)\nstring(1) \"0\"\nSplFileObject::setMaxLineLen(): Argument #1 ($maxLength) must be greater than or equal to 0\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn spl_file_object_writable_modes_fwrite_and_fputcsv_use_local_stream_state() {
+    use std::fs;
+
+    let fixture_dir =
+        std::env::temp_dir().join(format!("phpc-spl-file-object-write-{}", std::process::id()));
+    fs::create_dir_all(&fixture_dir).unwrap();
+    let fixture = fixture_dir.join("write.csv");
+    let fixture_path = fixture.display().to_string().replace('\\', "\\\\");
+
+    let source = format!(
+        r#"<?php
+$file = "{fixture_path}";
+$object = new SplFileObject($file, "w+");
+$object->setCsvControl("|", "'", "");
+var_dump($object->fputcsv(array("a|b", "c")));
+var_dump($object->ftell(), $object->eof());
+var_dump($object->fwrite("tail", 2));
+var_dump($object->fflush());
+var_dump(file_get_contents($file));
+"#
+    );
+
+    let execution = run_source(&source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "int(8)\nint(8)\nbool(false)\nint(2)\nbool(true)\nstring(10) \"'a|b'|c\nta\"\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn spl_temp_file_object_uses_memory_stream_defaults_and_debug_info() {
+    let source = r#"<?php
+$default = new SplTempFileObject();
+var_dump($default);
+$fixed = new SplTempFileObject(1024);
+var_dump($fixed);
+$memory = new SplTempFileObject(-1);
+var_dump($memory);
+try {
+    new SplTempFileObject("invalid");
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert!(execution.stdout.contains("object(SplTempFileObject)#1 (5)"));
+    assert!(execution.stdout.contains("string(10) \"php://temp\""));
+    assert!(execution
+        .stdout
+        .contains("string(25) \"php://temp/maxmemory:1024\""));
+    assert!(execution.stdout.contains("string(12) \"php://memory\""));
+    assert!(execution
+        .stdout
+        .contains("[\"openMode\":\"SplFileObject\":private]=>\n  string(2) \"wb\""));
+    assert!(execution.stdout.contains(
+        "SplTempFileObject::__construct(): Argument #1 ($maxMemory) must be of type int, string given\n"
+    ));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn spl_file_object_memory_stream_csv_and_string_semantics() {
+    let source = r#"<?php
+$file = new SplTempFileObject();
+$file->setCsvControl(escape: "");
+$file->fputcsv(["foo", "bar", "baz"]);
+$file->rewind();
+$file->setFlags(SplFileObject::READ_CSV);
+echo $file, "\n";
+var_dump($file->current());
+
+$multi = new SplTempFileObject();
+$multi->fwrite("\"left\nright\"\n");
+$multi->rewind();
+print_r($multi->fgetcsv(",", "\"", ""));
+
+$readonly = new SplFileObject("php://memory", "r");
+$readonly->setCsvControl(escape: "");
+var_dump($readonly->fputcsv(["nope"]));
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "foo,bar,baz\n\narray(3) {\n  [0]=>\n  string(3) \"foo\"\n  [1]=>\n  string(3) \"bar\"\n  [2]=>\n  string(3) \"baz\"\n}\nArray\n(\n    [0] => left\nright\n)\nbool(false)\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

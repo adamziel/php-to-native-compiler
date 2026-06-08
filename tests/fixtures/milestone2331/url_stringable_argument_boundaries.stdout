@@ -1,0 +1,10 @@
+string(12) "example.test"
+http%3A%2F%2Fexample.test%2Fa+b%3Fx%3D1%2B2
+http%3A%2F%2Fexample.test%2Fa%20b%3Fx%3D1%2B2
+A++
+pre_0=1
+a=1|b=2
+parse-object-caught
+urlencode-array-caught
+prefix-array-caught
+separator-array-caught

@@ -4,12 +4,6 @@ use php_compiler::run_source;
 
 const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
 
-fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
-    let error = run_source(source).unwrap_err();
-    assert_eq!(error.phase, Phase::Runtime);
-    error
-}
-
 #[test]
 fn preg_replace_executes_current_wordpress_database_version_cleanup() {
     let execution = run_source(
@@ -173,42 +167,27 @@ echo is_callable($call) ? "callable" : "missing";
 }
 
 #[test]
-fn preg_replace_rejects_forms_outside_current_subset() {
-    let unsupported_pattern = runtime_error(
+fn preg_replace_executes_general_regex_forms() {
+    let execution = run_source(
         r#"<?php
-preg_replace('/[^a-z].*/', '', 'abc123');
+echo preg_replace('/[^a-z].*/', '', 'abc123');
+echo "|";
+echo preg_replace('/[^0-9.].*/', 'x', '8.0.35-MySQL');
+echo "|";
+$count = 0;
+echo preg_replace('/[a-z]/', '*', 'ab12cd', 3, $count);
+echo ":$count";
+echo "|";
+print_r(preg_replace(array('/\da(.)/ui', '@(.)@'), '$1', array('x','a2aA')));
 "#,
-    );
-    assert_eq!(unsupported_pattern.line, 2);
-    assert_eq!(unsupported_pattern.column, 1);
-    assert_eq!(
-        unsupported_pattern.message,
-        "unsupported call preg_replace(): only the WordPress database-version cleanup pattern /[^0-9.].*/, path-tail pattern #/[^/]*$#i, redirect sanitizer cleanup pattern |[^a-z0-9-~+_.?#=&;,/:%!*\\[\\]()@]|i, mail host cleanup pattern #^www\\.#, KSES null cleanup patterns /[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F]/ and /\\\\+0+/, and wpdb prepare placeholder escape pattern are implemented in the current subset"
-    );
+    )
+    .unwrap();
 
-    let unsupported_replacement = runtime_error(
-        r#"<?php
-preg_replace('/[^0-9.].*/', 'x', '8.0.35-MySQL');
-"#,
-    );
-    assert_eq!(unsupported_replacement.line, 2);
-    assert_eq!(unsupported_replacement.column, 1);
     assert_eq!(
-        unsupported_replacement.message,
-        "unsupported call preg_replace(): only an empty replacement string is implemented in the current subset"
+        execution.stdout,
+        "abc|8.0.35x|**12*d:3|Array\n(\n    [0] => x\n    [1] => aA\n)\n"
     );
-
-    let unsupported_limit = runtime_error(
-        r#"<?php
-preg_replace('/[^0-9.].*/', '', '8.0.35-MySQL', 1);
-"#,
-    );
-    assert_eq!(unsupported_limit.line, 2);
-    assert_eq!(unsupported_limit.column, 1);
-    assert_eq!(
-        unsupported_limit.message,
-        "unsupported call preg_replace(): limit and count output arguments are not implemented; pass exactly three arguments in the current subset"
-    );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

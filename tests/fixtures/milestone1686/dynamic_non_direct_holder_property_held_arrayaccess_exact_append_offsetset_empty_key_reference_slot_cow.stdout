@@ -1,1 +1,6 @@
+Deprecated: Using null as an array offset is deprecated, use an empty string instead in tests/fixtures/milestone1686/dynamic_non_direct_holder_property_held_arrayaccess_exact_append_offsetset_empty_key_reference_slot_cow.php on line 17
+
+Deprecated: Using null as an array offset is deprecated, use an empty string instead in tests/fixtures/milestone1686/dynamic_non_direct_holder_property_held_arrayaccess_exact_append_offsetset_empty_key_reference_slot_cow.php on line 12
+
+Deprecated: Using null as an array offset is deprecated, use an empty string instead in tests/fixtures/milestone1686/dynamic_non_direct_holder_property_held_arrayaccess_exact_append_offsetset_empty_key_reference_slot_cow.php on line 12
 via-dynamic-non-direct-empty-key|via-dynamic-non-direct-empty-label|via-dynamic-non-direct-empty-key|via-dynamic-non-direct-empty-label|1|plain|plain

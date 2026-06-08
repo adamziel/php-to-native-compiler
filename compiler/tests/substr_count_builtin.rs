@@ -23,11 +23,19 @@ echo "|";
 echo substr_count("abc", "needle", 3);
 echo "|";
 echo substr_count(12121, 21);
+echo "|";
+echo substr_count("this is a string", "t", "5", "10");
+echo "|";
+$bytes = chr(128) . chr(129) . chr(128) . chr(0) . chr(255) . chr(254) . chr(255);
+echo substr_count($bytes, chr(128)) . ":" . substr_count($bytes, chr(255)) . ":" . substr_count($bytes, chr(0));
+echo "|";
+$long = str_repeat("abcacbabca", 100);
+echo substr_count($long, "bca", -200, -50);
 "#,
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "1|3|2|1|1|2|1|0|2");
+    assert_eq!(execution.stdout, "1|3|2|1|1|2|1|0|2|1|2:2:1|30");
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -50,50 +58,165 @@ echo $call("a:b:c", ":");
 }
 
 #[test]
+fn substr_count_uses_php_string_argument_boundary_for_haystack_and_needle() {
+    let execution = run_source(
+        r#"<?php
+class Haystack {
+    public function __toString() {
+        return "aaaa";
+    }
+}
+class Needle {
+    public function __toString() {
+        return "aa";
+    }
+}
+
+$call = "substr_count";
+echo substr_count(new Haystack(), new Needle()), "|";
+echo $call(new Haystack(), new Needle(), false, "4"), "\n";
+
+set_error_handler(function($_, $message) {
+    echo "deprecated:", $message, "\n";
+});
+echo substr_count(null, "x"), "\n";
+try {
+    substr_count("abc", null);
+} catch (ValueError $e) {
+    echo "null-needle:", $e->getMessage(), "\n";
+}
+
+foreach ([[[], "a"], ["abc", new stdClass()]] as $case) {
+    try {
+        substr_count($case[0], $case[1]);
+    } catch (TypeError $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "2|2\n",
+            "deprecated:substr_count(): Passing null to parameter #1 ($haystack) of type string is deprecated\n",
+            "0\n",
+            "deprecated:substr_count(): Passing null to parameter #2 ($needle) of type string is deprecated\n",
+            "null-needle:substr_count(): Argument #2 ($needle) must not be empty\n",
+            "substr_count(): Argument #1 ($haystack) must be of type string, array given\n",
+            "substr_count(): Argument #2 ($needle) must be of type string, stdClass given\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn substr_count_rejects_forms_outside_current_subset() {
-    let empty_needle = run_source("<?php\nsubstr_count('abc', '');\n").unwrap_err();
-    assert_eq!(empty_needle.phase, Phase::Runtime);
-    assert_eq!(empty_needle.line, 2);
-    assert_eq!(empty_needle.column, 1);
+    let empty_needle = run_source(
+        r#"<?php
+try {
+    substr_count('abc', '');
+} catch (ValueError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
     assert_eq!(
-        empty_needle.message,
-        "unsupported call substr_count(): empty needles are not supported in the current subset"
+        empty_needle.stdout,
+        "substr_count(): Argument #2 ($needle) must not be empty"
     );
 
-    let array_haystack = run_source("<?php\nsubstr_count(['abc'], 'a');\n").unwrap_err();
-    assert_eq!(array_haystack.phase, Phase::Runtime);
-    assert_eq!(array_haystack.line, 2);
-    assert_eq!(array_haystack.column, 1);
+    let array_haystack = run_source(
+        r#"<?php
+try {
+    substr_count(['abc'], 'a');
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
     assert_eq!(
-        array_haystack.message,
-        "unsupported call substr_count(): haystack argument arrays are not implemented in the current subset"
+        array_haystack.stdout,
+        "substr_count(): Argument #1 ($haystack) must be of type string, array given"
     );
 
-    let bad_offset = run_source("<?php\nsubstr_count('abc', 'a', '1');\n").unwrap_err();
-    assert_eq!(bad_offset.phase, Phase::Runtime);
-    assert_eq!(bad_offset.line, 2);
-    assert_eq!(bad_offset.column, 1);
+    let array_needle = run_source(
+        r#"<?php
+try {
+    substr_count('abc', ['a']);
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
     assert_eq!(
-        bad_offset.message,
-        "unsupported call substr_count(): offset argument must be int in the current subset, got string"
+        array_needle.stdout,
+        "substr_count(): Argument #2 ($needle) must be of type string, array given"
     );
 
-    let bad_length = run_source("<?php\nsubstr_count('abc', 'a', 0, '2');\n").unwrap_err();
-    assert_eq!(bad_length.phase, Phase::Runtime);
-    assert_eq!(bad_length.line, 2);
-    assert_eq!(bad_length.column, 1);
+    let bad_offset = run_source(
+        r#"<?php
+try {
+    substr_count('abc', 'a', 'bad');
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
     assert_eq!(
-        bad_length.message,
-        "unsupported call substr_count(): length argument must be int in the current subset, got string"
+        bad_offset.stdout,
+        "substr_count(): Argument #3 ($offset) must be of type int, string given"
     );
 
-    let out_of_bounds = run_source("<?php\nsubstr_count('abc', 'a', 1, 5);\n").unwrap_err();
-    assert_eq!(out_of_bounds.phase, Phase::Runtime);
-    assert_eq!(out_of_bounds.line, 2);
-    assert_eq!(out_of_bounds.column, 1);
+    let bad_length = run_source(
+        r#"<?php
+try {
+    substr_count('abc', 'a', 0, 'bad');
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
     assert_eq!(
-        out_of_bounds.message,
-        "unsupported call substr_count(): length must keep the searched slice within the haystack bounds in the current subset"
+        bad_length.stdout,
+        "substr_count(): Argument #4 ($length) must be of type int, string given"
+    );
+
+    let out_of_bounds = run_source(
+        r#"<?php
+try {
+    substr_count('abc', 'a', 1, 5);
+} catch (ValueError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
+    assert_eq!(
+        out_of_bounds.stdout,
+        "substr_count(): Argument #4 ($length) must be contained in argument #1 ($haystack)"
+    );
+
+    let offset_out_of_bounds = run_source(
+        r#"<?php
+try {
+    substr_count('abc', 'a', -20);
+} catch (ValueError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
+    assert_eq!(
+        offset_out_of_bounds.stdout,
+        "substr_count(): Argument #3 ($offset) must be contained in argument #1 ($haystack)"
     );
 
     let too_few = run_source("<?php\nsubstr_count('abc');\n").unwrap_err();

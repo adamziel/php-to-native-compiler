@@ -5911,10 +5911,14 @@ handled.
 
 ## Milestone 625: Independent Lane Candidates
 
-- [ ] Compiler-output lane: choose the next deterministic CLI artifact or
+- [x] Compiler-output lane: choose the next deterministic CLI artifact or
   backend contract coverage target from existing native output behavior, add
   focused snapshot coverage, and leave production lowering behavior unchanged
-  unless the gap is itself in CLI/output handling.
+  unless the gap is itself in CLI/output handling. Selected candidate: add
+  deterministic selected-`llc` `--emit-asm` success-with-stderr precedence
+  coverage while `cc` is also available, proving valid selected-backend output
+  succeeds, backend stderr is suppressed in the normalized CLI summary, and
+  `cc` fallback is not attempted after successful selected-backend output.
 
 ## Milestone 626: Independent Lane Candidates
 

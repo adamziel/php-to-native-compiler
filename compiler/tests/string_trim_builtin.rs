@@ -10,12 +10,12 @@ fn trim_executes_current_default_mask_subset() {
         "<?php\n\
 echo trim(\" \\t128M\\n\"), \"|\";\n\
 echo trim(\"\\tabc\\n\"), \"|\";\n\
-echo trim(null), \"|\";\n\
-echo trim(42);\n",
+echo trim(42), \"|\";\n\
+echo trim(\"\\fABC\\f\");\n",
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "128M|abc||42");
+    assert_eq!(execution.stdout, "128M|abc|42|ABC");
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -25,11 +25,33 @@ fn trim_executes_custom_mask_ranges_and_empty_masks() {
         "<?php\n\
 echo trim(\"9.alpha0\", \"0..9.\"), \"|\";\n\
 echo trim(\"AZpayloadaz\", \"A..Zaz\"), \"|\";\n\
+echo trim(\"ABC\", \"A...Z\"), \"|\";\n\
 echo trim(\" unchanged \", \"\");\n",
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "alpha|payload| unchanged ");
+    assert_eq!(execution.stdout, "alpha|payload|| unchanged ");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn trim_family_covers_public_phpt_mask_edges() {
+    let execution = run_source(
+        r#"<?php
+var_dump("ABC" === trim(" \0\t\nABC \0\t\n"));
+var_dump(" \0\t\nABC \0\t\n" === trim(" \0\t\nABC \0\t\n", ""));
+var_dump("ABC" === trim("ABC\x50\xC1\x60\x90", "\x50..\xC1"));
+var_dump("ABC" === trim("\fABC\f"));
+var_dump("ABC" === ltrim("\fABC"));
+var_dump("ABC" === rtrim("ABC\f"));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "bool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\n"
+    );
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -51,6 +73,68 @@ echo $call(\" ABC \");\n",
 }
 
 #[test]
+fn trim_family_uses_php_string_argument_boundary() {
+    let execution = run_source(
+        r#"<?php
+class Subject {
+    public function __toString() {
+        return " value ";
+    }
+}
+class Mask {
+    public function __toString() {
+        return "X";
+    }
+}
+class SlashMask {
+    public function __toString() {
+        return "/";
+    }
+}
+
+echo "[" . trim(new Subject) . "]|";
+$call = "ltrim";
+echo "[" . $call(new Subject) . "]|";
+echo rtrim("valueXX", new Mask), "|";
+$call = "chop";
+echo $call("value//", new SlashMask), "|";
+try {
+    trim([]);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "|";
+}
+try {
+    ltrim("value", []);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "|";
+}
+try {
+    rtrim(new stdClass);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "|";
+}
+try {
+    chop("value", new stdClass);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "|";
+}
+set_error_handler(function($_, $message) {
+    echo "deprecated:", $message, "|";
+});
+echo trim(null), "|";
+echo ltrim(" value ", null);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "[value]|[value ]|value|value|trim(): Argument #1 ($string) must be of type string, array given|ltrim(): Argument #2 ($characters) must be of type string, array given|rtrim(): Argument #1 ($string) must be of type string, stdClass given|chop(): Argument #2 ($characters) must be of type string, stdClass given|deprecated:trim(): Passing null to parameter #1 ($string) of type string is deprecated||deprecated:ltrim(): Passing null to parameter #2 ($characters) of type string is deprecated| value "
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn ltrim_executes_current_default_and_slash_mask_subset() {
     let execution = run_source(
         "<?php\n\
@@ -58,16 +142,12 @@ echo ltrim(\" \\t128M\\n\"), \"|\";\n\
 echo ltrim(\"///wp-content\", \"/\"), \"|\";\n\
 echo ltrim(\"\\r\\n\\t (SELECT\", \"\\r\\n\\t (\"), \"|\";\n\
 echo ltrim(\"AZpayload\", \"A..Z\"), \"|\";\n\
-echo ltrim(null), \"|\";\n\
 $call = \"ltrim\";\n\
 echo $call(\"//plugins\", \"/\");\n",
     )
     .unwrap();
 
-    assert_eq!(
-        execution.stdout,
-        "128M\n|wp-content|SELECT|payload||plugins"
-    );
+    assert_eq!(execution.stdout, "128M\n|wp-content|SELECT|payload|plugins");
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -79,7 +159,6 @@ echo rtrim(\" \\t128M\\n\"), \"|\";\n\
 echo rtrim(\"localhost/\", \"/\"), \"|\";\n\
 echo rtrim(\"/wp-admin///\", \"/\"), \"|\";\n\
 echo rtrim(\"PAYLOADaz\", \"a..z\"), \"|\";\n\
-echo rtrim(null), \"|\";\n\
 $call = \"rtrim\";\n\
 echo $call(\"example.test///\", \"/\");\n",
     )
@@ -87,29 +166,72 @@ echo $call(\"example.test///\", \"/\");\n",
 
     assert_eq!(
         execution.stdout,
-        " \t128M|localhost|/wp-admin|PAYLOAD||example.test"
+        " \t128M|localhost|/wp-admin|PAYLOAD|example.test"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn rtrim_coerces_public_phpt_object_and_charlist_values() {
+    let execution = run_source(
+        r#"<?php
+class string1 {
+    public function __toString() {
+        return "Object";
+    }
+}
+
+echo "[" . rtrim("rtrim test        ", true) . "]|";
+echo rtrim(new string1, "tc"), "|";
+echo bin2hex(rtrim("234\x0005678\x0000efgh\xijkl\x0n1", "\x0n1"));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "[rtrim test        ]|Obje|323334003035363738003030656667685c78696a6b6c"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn chop_alias_executes_rtrim_semantics_and_metadata() {
+    let execution = run_source(
+        "<?php\n\
+echo function_exists(\"chop\") ? \"yes\" : \"no\";\n\
+echo \"|\";\n\
+echo is_callable(\"chop\") ? \"callable\" : \"missing\";\n\
+echo \"|\";\n\
+echo chop(\"hello world\\t\\n\\r\\0\\x0B  \"), \"|\";\n\
+echo chop(\"hello123\", \"0..9\"), \"|\";\n\
+$call = \"chop\";\n\
+echo $call(\"example.test///\", \"/\");\n",
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "yes|callable|hello world|hello|example.test"
     );
     assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
 fn trim_rejects_forms_outside_supported_mask_semantics() {
-    let array_arg = run_source("<?php\ntrim(['ABC']);\n").unwrap_err();
-    assert_eq!(array_arg.phase, Phase::Runtime);
-    assert_eq!(array_arg.line, 2);
-    assert_eq!(array_arg.column, 1);
+    let array_arg = run_source(
+        r#"<?php
+try {
+    trim(['ABC']);
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
     assert_eq!(
-        array_arg.message,
-        "unsupported call trim(): arrays are not supported"
-    );
-
-    let ambiguous = run_source("<?php\ntrim('ABC', 'A...Z');\n").unwrap_err();
-    assert_eq!(ambiguous.phase, Phase::Runtime);
-    assert_eq!(ambiguous.line, 2);
-    assert_eq!(ambiguous.column, 1);
-    assert_eq!(
-        ambiguous.message,
-        "unsupported call trim(): character mask ranges are not fully implemented: ambiguous dot-runs are blocked until full PHP charlist parsing is implemented"
+        array_arg.stdout,
+        "trim(): Argument #1 ($string) must be of type string, array given"
     );
 
     let too_few = run_source("<?php\ntrim();\n").unwrap_err();
@@ -124,31 +246,34 @@ fn trim_rejects_forms_outside_supported_mask_semantics() {
 
 #[test]
 fn ltrim_rejects_forms_outside_supported_mask_semantics() {
-    let array_arg = run_source("<?php\nltrim(['ABC']);\n").unwrap_err();
-    assert_eq!(array_arg.phase, Phase::Runtime);
-    assert_eq!(array_arg.line, 2);
-    assert_eq!(array_arg.column, 1);
+    let array_arg = run_source(
+        r#"<?php
+try {
+    ltrim(['ABC']);
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
     assert_eq!(
-        array_arg.message,
-        "unsupported call ltrim(): arrays are not supported"
+        array_arg.stdout,
+        "ltrim(): Argument #1 ($string) must be of type string, array given"
     );
 
-    let mask_array = run_source("<?php\nltrim('ABC', ['A']);\n").unwrap_err();
-    assert_eq!(mask_array.phase, Phase::Runtime);
-    assert_eq!(mask_array.line, 2);
-    assert_eq!(mask_array.column, 1);
+    let mask_array = run_source(
+        r#"<?php
+try {
+    ltrim('ABC', ['A']);
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
     assert_eq!(
-        mask_array.message,
-        "unsupported call ltrim(): character mask arrays are not supported"
-    );
-
-    let range_mask = run_source("<?php\nltrim('ABC', '..Z');\n").unwrap_err();
-    assert_eq!(range_mask.phase, Phase::Runtime);
-    assert_eq!(range_mask.line, 2);
-    assert_eq!(range_mask.column, 1);
-    assert_eq!(
-        range_mask.message,
-        "unsupported call ltrim(): character mask ranges are not fully implemented: no character to the left of '..'"
+        mask_array.stdout,
+        "ltrim(): Argument #2 ($characters) must be of type string, array given"
     );
 
     let too_few = run_source("<?php\nltrim();\n").unwrap_err();
@@ -163,31 +288,34 @@ fn ltrim_rejects_forms_outside_supported_mask_semantics() {
 
 #[test]
 fn rtrim_rejects_forms_outside_supported_mask_semantics() {
-    let array_arg = run_source("<?php\nrtrim(['ABC']);\n").unwrap_err();
-    assert_eq!(array_arg.phase, Phase::Runtime);
-    assert_eq!(array_arg.line, 2);
-    assert_eq!(array_arg.column, 1);
+    let array_arg = run_source(
+        r#"<?php
+try {
+    rtrim(['ABC']);
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
     assert_eq!(
-        array_arg.message,
-        "unsupported call rtrim(): arrays are not supported"
+        array_arg.stdout,
+        "rtrim(): Argument #1 ($string) must be of type string, array given"
     );
 
-    let mask_array = run_source("<?php\nrtrim('ABC', ['C']);\n").unwrap_err();
-    assert_eq!(mask_array.phase, Phase::Runtime);
-    assert_eq!(mask_array.line, 2);
-    assert_eq!(mask_array.column, 1);
+    let mask_array = run_source(
+        r#"<?php
+try {
+    rtrim('ABC', ['C']);
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
     assert_eq!(
-        mask_array.message,
-        "unsupported call rtrim(): character mask arrays are not supported"
-    );
-
-    let range_mask = run_source("<?php\nrtrim('ABC', 'Z..A');\n").unwrap_err();
-    assert_eq!(range_mask.phase, Phase::Runtime);
-    assert_eq!(range_mask.line, 2);
-    assert_eq!(range_mask.column, 1);
-    assert_eq!(
-        range_mask.message,
-        "unsupported call rtrim(): character mask ranges are not fully implemented: '..'-ranges must be incrementing"
+        mask_array.stdout,
+        "rtrim(): Argument #2 ($characters) must be of type string, array given"
     );
 
     let too_few = run_source("<?php\nrtrim();\n").unwrap_err();
@@ -198,6 +326,35 @@ fn rtrim_rejects_forms_outside_supported_mask_semantics() {
         too_few.message,
         "arity mismatch for rtrim(): expected 1 to 2 argument(s), got 0"
     );
+}
+
+#[test]
+fn trim_family_invalid_ranges_warn_and_return_original() {
+    let execution = run_source(
+        "<?php\n\
+$hello = \"  Hello World\\n\";\n\
+echo ltrim($hello, \"..a\") === $hello ? \"left-left\\n\" : \"bad\\n\";\n\
+echo rtrim($hello, \"a..\") === $hello ? \"right-right\\n\" : \"bad\\n\";\n\
+echo trim($hello, \"z..a\") === $hello ? \"descending\\n\" : \"bad\\n\";\n\
+echo trim($hello, \"a..b..c\") === $hello ? \"generic\\n\" : \"bad\\n\";\n",
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "Warning: ltrim(): Invalid '..'-range, no character to the left of '..' in Command line code on line 3\n",
+            "left-left\n",
+            "\nWarning: rtrim(): Invalid '..'-range, no character to the right of '..' in Command line code on line 4\n",
+            "right-right\n",
+            "\nWarning: trim(): Invalid '..'-range, '..'-range needs to be incrementing in Command line code on line 5\n",
+            "descending\n",
+            "\nWarning: trim(): Invalid '..'-range in Command line code on line 6\n",
+            "generic\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -254,6 +411,26 @@ echo is_callable(\"rtrim\") ? \"1\" : \"0\";\n",
     assert!(!ir.contains("is_callable"), "{ir}");
 
     let error = emit_ir_source("<?php\nrtrim('/wp/', '/');\n").unwrap_err();
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+}
+
+#[test]
+fn emit_ir_folds_chop_metadata_but_rejects_direct_calls() {
+    let ir = emit_ir_source(
+        "<?php\n\
+echo function_exists(\"chop\") ? \"1\" : \"0\";\n\
+echo is_callable(\"chop\") ? \"1\" : \"0\";\n",
+    )
+    .unwrap();
+
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 2, "{ir}");
+    assert!(!ir.contains("function_exists"), "{ir}");
+    assert!(!ir.contains("is_callable"), "{ir}");
+
+    let error = emit_ir_source("<?php\nchop('/wp/', '/');\n").unwrap_err();
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 1);

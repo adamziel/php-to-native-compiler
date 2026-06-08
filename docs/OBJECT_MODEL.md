@@ -80,8 +80,11 @@ metadata chain plus recorded interface metadata. `get_parent_class($object_or_cl
 validates current object/declared-string inputs and returns the immediate
 parent class name when one is recorded, otherwise false.
 `get_class_vars($class_name)` accepts declared string class names and returns
-public declared and inherited properties with supported constant-expression
-default values or `null` for properties without defaults.
+public declared and inherited properties with instance properties before static
+properties, walking the current class toward parents within each group, with
+supported constant-expression default values or `null` for properties without
+defaults. Invalid or unresolved class names raise a catchable PHP-shaped
+`TypeError`.
 `class_exists()` and `interface_exists()` check current class/interface
 metadata and, when their autoload flag is truthy, invoke currently registered
 string user-function autoload callbacks on misses before rechecking metadata.
@@ -105,7 +108,18 @@ used traits through `hasMethod()`, `getMethod()`, and `getMethods()`. A declared
 extend one or more user interfaces declared before or after the child
 interface; concrete implementors of the child interface must expose the child
 and all parent public method names with matching static/non-static shape, and
-relationship checks also recognize the parent interfaces. Public interface
+missing required declared-interface methods, non-public implementations,
+class-extends-interface declarations, class-implements-class/trait
+declarations, and interface-extends-class/trait declarations surface bounded
+PHP-shaped startup fatals. Relationship checks also recognize the parent
+interfaces. Public class and interface property hook declarations are recorded
+as declaration metadata for the current abstract/interface implementation
+checks. Hook bodies are not executed: backed hooked properties keep ordinary
+property-slot storage/default behavior, plain properties satisfy `get` and
+non-readonly `set` requirements, concrete matching hooked declarations satisfy
+their corresponding requirement, and missing hooks report PHP-shaped
+abstract-method startup fatals such as `I::$prop::get`.
+Public interface
 constants declared as `const NAME = ...` or `public const NAME = ...` resolve
 through `InterfaceName::CONST`, inherited parent interfaces, implementing
 classes, `self::CONST`/`static::CONST` in implementing class methods, and
@@ -131,11 +145,21 @@ a same-block explicit-public alias, such as
 `TraitA::method insteadof TraitB; TraitA::method as public alias;`; the
 original method and alias are both ordinary public methods for dispatch,
 `method_exists()`, `get_class_methods()`, and current interface method-presence
-checks. Public constants declared by already-declared traits as
-`const NAME = ...` or `public const NAME = ...` are composed into consuming
-classes as ordinary public class constants and can be resolved through the
-current `ClassName::CONST`, `self::CONST`, `parent::CONST`, and late-bound
-`static::CONST` class-constant paths.
+checks. Class declaration execution emits PHP-shaped fatal output for missing
+alias targets, missing `insteadof` winners, ambiguous unqualified aliases,
+same-name trait method collisions including concrete non-public trait methods,
+alias-created method collisions, and incompatible trait/class or trait/trait
+properties while preserving prior statement output. Public constants declared
+by already-declared traits as
+`const NAME = ...` or `public const NAME = ...`, including the current typed
+trait-constant metadata subset, are composed into consuming classes as
+ordinary public class constants and can be resolved through the current
+`ClassName::CONST`, `self::CONST`, `parent::CONST`, and late-bound
+`static::CONST` class-constant paths. Public interface constants can also
+carry bounded type metadata; implementing class constants must keep a
+compatible type, and enum constants are resolved after enum case lookup so
+typed enum constants using `self` or `static` validate against enum case
+objects.
 `get_object_vars($object)` accepts current object values and returns public
 exact and inherited instance property names with their current slot values.
 `get_mangled_object_vars($object)` accepts current object values and returns
@@ -283,8 +307,10 @@ The model follows the PHP lookup rules needed by the first object slice:
   method names in child-to-parent declaration order for current object values
   or declared string class names;
 - `get_class_vars($class_name)` returns public declared and inherited property
-  names in child-to-parent declaration order with `null` values for declared
-  string class names;
+  names with instance properties before static properties, walking the current
+  class toward parents within each group, with `null` values for declared
+  string class names and catchable PHP-shaped `TypeError`s for invalid or
+  unresolved class names;
 - `get_object_vars($object)` returns public exact and inherited instance
   property names in parent-to-child slot order with their current slot values
   for current object values;
@@ -489,26 +515,31 @@ return enforcement, and native reflection invocation remain unsupported.
 ## Unsupported Edge Cases
 
 The implemented class-declaration parser intentionally excludes nested and
-conditional class declarations, typed/non-public/abstract/final or
-multi-constant interface declarations, cyclic parent-interface inheritance
+conditional class declarations, static/abstract or multi-constant interface
+declarations, cyclic parent-interface inheritance
 beyond stable rejection,
-full interface signature enforcement,
-trait properties, non-public/typed/abstract/final/static trait constants,
+full interface signature fatal text beyond the bounded metadata and
+not-an-interface target checks,
+trait property adaptations, abstract/static trait constants,
 multi-constant trait declarations, trait constant adaptations, conflicting
-trait/class constants, abstract/final or non-public trait methods,
-conflicting trait use beyond the bounded `insteadof` shape,
+trait/class constants, abstract/final trait methods, non-public trait method
+execution parity beyond metadata/conflict diagnostics,
+conflicting trait use beyond the bounded `insteadof` and PHP-shaped diagnostic shape,
 trait alias/adaptation edge cases beyond the current simple public, qualified
 public-alias, same-block winner public-alias, protected/private alias, and
 single-trait visibility-only slices,
 unqualified visibility-only adaptations across multiple used traits,
 unqualified `insteadof`, `__TRAIT__`, nested/conditional trait
 registration, backed enum
-declarations, enum case objects, enum methods/constants/properties, enum interface implementation,
+declarations, broader enum methods/properties/constants, enum interface implementation,
 abstract-method enforcement, method visibility compatibility enforcement,
 readonly class and property semantics, constructor promotion, typed properties,
-instance property default values, multiple properties in one declaration, typed
-or multi-declarator class constants, typed static properties, late static
-binding, magic methods beyond the current direct missing-property
+instance property default values, multiple properties in one declaration,
+class-like constant expressions beyond the bounded scalar/array/object/enum
+runtime lane, typed static properties, late static
+binding, executable property hook bodies, virtual hooked properties,
+reference-return hook dispatch, hook reflection metadata, magic methods beyond
+the current direct missing-property
 `__get`/`__isset`/`__set` slice, namespaces,
 autoloading beyond string user-function callbacks for `class_exists()`,
 `interface_exists()`, `trait_exists()`, missing `new` class instantiation, and
@@ -557,7 +588,8 @@ destruction, clone semantics, destructors,
 context-sensitive method listing, `get_class_vars` property defaults beyond
 the current constant-expression subset,
 inheritance/trait/interface properties, context-sensitive visibility, object
-inputs, `get_object_vars` dynamic properties, non-public visibility context,
+inputs, exact invalid class-name conversion warnings for arrays/objects/
+resources, `get_object_vars` dynamic properties, non-public visibility context,
 references/copy-on-write, exact native ordering,
 `get_mangled_object_vars` protected/private property-name mangling, dynamic
 properties, non-public visibility context, references/copy-on-write, exact

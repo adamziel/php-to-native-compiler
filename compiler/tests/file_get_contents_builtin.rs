@@ -71,6 +71,30 @@ echo $call($path) === $contents ? "repeat" : "different";
 }
 
 #[test]
+fn file_get_contents_preserves_local_binary_bytes_and_byte_offsets() {
+    let path = std::env::temp_dir().join(format!(
+        "{}-{}-phpc-file-get-contents-binary.bin",
+        std::process::id(),
+        line!()
+    ));
+    fs::write(&path, [0x61, 0xbd, 0x63]).expect("temporary binary file can be seeded");
+    let source = format!(
+        r#"<?php
+$path = "{}";
+echo bin2hex(file_get_contents($path));
+echo "|";
+echo bin2hex(file_get_contents($path, false, null, 1, 1));
+"#,
+        path.display()
+    );
+    let execution = run_source(&source).unwrap();
+
+    assert_eq!(execution.stdout, "61bd63|bd");
+    assert_eq!(execution.exit_code, 0);
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn file_get_contents_supports_bounded_use_include_path_lookup() {
     let execution = run_source_with_source_file(
         r#"<?php
@@ -179,7 +203,7 @@ echo $blocked === false ? "|blocked" : "|read";
 
     assert_eq!(
         execution.stdout,
-        "allowed-payload|warning:2:basedir|blocked"
+        "allowed-payload|warning:2:basedir|warning:2:other|blocked"
     );
     assert_eq!(execution.stderr, "");
     assert_eq!(execution.exit_code, 0);
@@ -249,6 +273,40 @@ echo $value === false ? "false" : "value";
         "PHP Warning:  file_get_contents(): Failed to seek to position -1 in the stream in tests/fixtures/milestone1418/file_get_contents_warning_false.php on line 2"
     );
     assert_eq!(bad_offset.exit_code, 0);
+}
+
+#[test]
+fn file_get_contents_directory_read_emits_notice_and_returns_false() {
+    let directory = std::env::temp_dir().join(format!(
+        "{}-{}-phpc-file-get-contents-directory",
+        std::process::id(),
+        line!()
+    ));
+    fs::create_dir_all(&directory).expect("temporary directory can be created");
+    let source = format!(
+        r#"<?php
+$value = file_get_contents("{}");
+echo $value === false ? "false" : "value";
+"#,
+        directory.display()
+    );
+    let execution = run_source(&source).unwrap();
+
+    assert!(
+        execution.stdout.contains(
+            "Notice: file_get_contents(): Read of 8192 bytes failed with errno=21 Is a directory"
+        ),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution.stdout.ends_with("\nfalse"),
+        "{}",
+        execution.stdout
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+    let _ = fs::remove_dir_all(directory);
 }
 
 #[test]
