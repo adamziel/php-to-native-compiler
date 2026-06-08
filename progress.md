@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T05:03:49+00:00
+Last generated: 2026-06-08T05:21:46+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -360,6 +360,10 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-270 | Developer | running | developer-270 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-270 |
 | developer-271 | Developer | running | developer-271 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-271 |
 | developer-272 | Developer | running | developer-272 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-272 |
+| developer-273 | Developer | running | developer-273 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-273 |
+| developer-274 | Developer | stopped | developer-274 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-274 |
+| developer-275 | Developer | running | developer-275 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-275 |
+| developer-276 | Developer | stopped | developer-276 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-276 |
 | developer-28 | Developer | stopped | developer-28 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-28 |
 | developer-29 | Developer | crash | developer-29 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-29 |
 | developer-3 | Developer | stopped | developer-3 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-3 |
@@ -456,36 +460,36 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1994 | Resolve integration failure for card #1992: Resolve integration failure for card #1990: Resolve integration failure for card #1975: Fix global test suite failures | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
+| 1993 | Provide next sanctioned Developer card after developer-273 completed worklane 1992 | Developer | implementation | planned | queued |  | 0.0 |
+| 1992 | Resolve integration failure for card #1990: Resolve integration failure for card #1975: Fix global test suite failures | Conflict Resolver | integration-support | integration | integration_failed | ready_fast_path | 0.0 |
 | 1991 | Provide next concrete Developer card after developer-270 capacity placeholder lane 1939 | Developer | implementation | planned | queued |  | 0.0 |
-| 1990 | Resolve integration failure for card #1975: Fix global test suite failures | Conflict Resolver | integration-support | integration | ready_for_integration | ready_fast_path | 0.0 |
+| 1990 | Resolve integration failure for card #1975: Fix global test suite failures | Conflict Resolver | integration-support | integration | integration_failed | ready_fast_path | 0.0 |
 | 1989 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
 | 1988 | Repair false-live architect-28 blocking architecture work | Coordinator | control-plane | planned | queued |  | 0.0 |
 | 1987 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
 | 1986 | Recover stale architect-25 and reconcile card 1902 | Coordinator | control-plane | planned | queued |  | 0.0 |
 | 1985 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
-| 1984 | Resolve integration failure for card #1975: Fix global test suite failures | Conflict Resolver | integration-support | done | integrated | ready_fast_path | 0.0 |
-| 1983 | Provide next sanctioned Developer lane after developer-261 worklane 1975 | Developer | implementation | planned | queued |  | 0.0 |
-| 1982 | Provide next concrete Developer card after developer-262 capacity check | Developer | implementation | planned | queued |  | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=3, passed=416, skipped=0)
+failed — tools/run-tests.sh (error=0, failed=4, passed=415, skipped=0)
 
 ## Resource samples
-Latest: CPU 10.79%, RAM 16.94%, disk free 36.44 GB.
+Latest: CPU 14.39%, RAM 20.89%, disk free 36.19 GB.
 
 ## Recent events
-- 2026-06-08T05:03:49+00:00 **terminal_agent_window_closed**: Closed terminal auditor-7 tmux window
-- 2026-06-08T05:03:49+00:00 **terminal_agent_window_closed**: Closed terminal auditor-8 tmux window
-- 2026-06-08T05:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-220 tmux window
-- 2026-06-08T05:03:49+00:00 **terminal_agent_window_closed**: Closed terminal auditor-9 tmux window
-- 2026-06-08T05:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-221 tmux window
-- 2026-06-08T05:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-222 tmux window
-- 2026-06-08T05:03:49+00:00 **terminal_agent_window_closed**: Closed terminal conflict-resolver-1 tmux window
-- 2026-06-08T05:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-223 tmux window
-- 2026-06-08T05:03:49+00:00 **terminal_agent_window_closed**: Closed terminal conflict-resolver-10 tmux window
-- 2026-06-08T05:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-224 tmux window
-- 2026-06-08T05:03:49+00:00 **terminal_agent_window_closed**: Closed terminal conflict-resolver-11 tmux window
-- 2026-06-08T05:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-225 tmux window
+- 2026-06-08T05:13:14+00:00 **terminal_agent_window_closed**: Closed terminal integrator-1 tmux window
+- 2026-06-08T05:13:14+00:00 **terminal_agent_window_closed**: Closed terminal integrator-10 tmux window
+- 2026-06-08T05:13:14+00:00 **terminal_agent_window_closed**: Closed terminal integrator-11 tmux window
+- 2026-06-08T05:13:14+00:00 **terminal_agent_window_closed**: Closed terminal integrator-12 tmux window
+- 2026-06-08T05:13:14+00:00 **terminal_agent_window_closed**: Closed terminal integrator-13 tmux window
+- 2026-06-08T05:13:14+00:00 **terminal_agent_window_closed**: Closed terminal integrator-2 tmux window
+- 2026-06-08T05:13:14+00:00 **terminal_agent_window_closed**: Closed terminal integrator-3 tmux window
+- 2026-06-08T05:13:14+00:00 **terminal_agent_window_closed**: Closed terminal integrator-4 tmux window
+- 2026-06-08T05:13:14+00:00 **terminal_agent_window_closed**: Closed terminal integrator-5 tmux window
+- 2026-06-08T05:13:14+00:00 **terminal_agent_window_closed**: Closed terminal integrator-6 tmux window
+- 2026-06-08T05:21:46+00:00 **terminal_agent_window_closed**: Closed terminal architect-1 tmux window
+- 2026-06-08T05:21:46+00:00 **terminal_agent_window_closed**: Closed terminal architect-10 tmux window
 
 ## Next steps
-Move next worklane forward: Provide next concrete Developer card after developer-270 capacity placeholder lane 1939
+Move next worklane forward: Resolve integration failure for card #1992: Resolve integration failure for card #1990: Resolve integration failure for card #1975: Fix global test suite failures
