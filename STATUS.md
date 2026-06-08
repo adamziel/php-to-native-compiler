@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T08:35:06+00:00
+Last generated: 2026-06-08T08:40:38+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -80,7 +80,9 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | architect-7 | Architect | crash | architect-7 |  |
 | architect-70 | Architect | stopped | architect-70 |  |
 | architect-71 | Architect | crash | architect-71 |  |
-| architect-72 | Architect | running | architect-72 |  |
+| architect-72 | Architect | crash | architect-72 |  |
+| architect-73 | Architect | crash | architect-73 |  |
+| architect-74 | Architect | running | architect-74 |  |
 | architect-8 | Architect | crash | architect-8 |  |
 | architect-9 | Architect | crash | architect-9 |  |
 | auditor-1 | Auditor | stopped | auditor-1 |  |
@@ -143,7 +145,8 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-123 | Coordinator | success | coordinator-123 |  |
 | coordinator-124 | Coordinator | success | coordinator-124 |  |
 | coordinator-125 | Coordinator | stopped | coordinator-125 |  |
-| coordinator-126 | Coordinator | running | coordinator-126 |  |
+| coordinator-126 | Coordinator | success | coordinator-126 |  |
+| coordinator-127 | Coordinator | running | coordinator-127 |  |
 | coordinator-13 | Coordinator | stopped | coordinator-13 |  |
 | coordinator-14 | Coordinator | success | coordinator-14 |  |
 | coordinator-15 | Coordinator | stopped | coordinator-15 |  |
@@ -487,7 +490,9 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-32 | Developer | crash | developer-32 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-32 |
 | developer-320 | Developer | stopped | developer-320 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-320 |
 | developer-321 | Developer | stopped | developer-321 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-321 |
-| developer-322 | Developer | running | developer-322 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-322 |
+| developer-322 | Developer | stopped | developer-322 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-322 |
+| developer-323 | Developer | crash | developer-323 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-323 |
+| developer-324 | Developer | running | developer-324 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-324 |
 | developer-33 | Developer | crash | developer-33 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-33 |
 | developer-34 | Developer | crash | developer-34 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-34 |
 | developer-35 | Developer | crash | developer-35 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-35 |
@@ -579,6 +584,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2027 | Fix global test suite failures | Developer | implementation | development | assigned |  | 0.0 |
 | 2026 | Provide next sanctioned Developer card after developer-319 worklane 2025 | Developer | implementation | planned | queued |  | 0.0 |
 | 2025 | Resolve integration failure for card #2019: Fix global test suite failures | Conflict Resolver | integration-support | done | integrated |  | 0.0 |
 | 2024 | Integrate ready card 2023 runtime stabilization branch | Integrator | integration-support | planned | queued |  | 0.0 |
@@ -586,29 +592,28 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | 2022 | Provide next sanctioned Developer card after developer-312 completed capacity handoff card 1973 | Developer | implementation | planned | queued |  | 0.0 |
 | 2021 | Assign concrete Developer worklane after developer-313 capacity placeholder 1966 | Developer | implementation | planned | queued |  | 0.0 |
 | 2020 | Provide next sanctioned Developer card after developer-312 capacity placeholder lane 1963 | Developer | implementation | planned | queued |  | 0.0 |
-| 2019 | Fix global test suite failures | Developer | implementation | development | assigned | ready_fast_path | 0.0 |
+| 2019 | Fix global test suite failures | Developer | implementation | done | integrated | ready_fast_path | 0.0 |
 | 2018 | Fix current-origin array_find_family arity boundary | Developer | implementation | planned | queued |  | 0.0 |
-| 2017 | Fix current global-suite native lookup-plus-invoke failures | Developer | implementation | planned | queued |  | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=3, passed=416, skipped=0)
+failed — tools/run-tests.sh (error=0, failed=5, passed=414, skipped=0)
 
 ## Resource samples
-Latest: CPU 18.18%, RAM 16.93%, disk free 96.6 GB.
+Latest: CPU 19.19%, RAM 17.97%, disk free 96.12 GB.
 
 ## Recent events
-- 2026-06-08T08:35:05+00:00 **terminal_agent_window_closed**: Closed terminal developer-310 tmux window
-- 2026-06-08T08:35:05+00:00 **terminal_agent_window_closed**: Closed terminal developer-269 tmux window
-- 2026-06-08T08:35:05+00:00 **terminal_agent_window_closed**: Closed terminal developer-311 tmux window
-- 2026-06-08T08:35:05+00:00 **terminal_agent_window_closed**: Closed terminal developer-27 tmux window
-- 2026-06-08T08:35:05+00:00 **terminal_agent_window_closed**: Closed terminal developer-312 tmux window
-- 2026-06-08T08:35:05+00:00 **terminal_agent_window_closed**: Closed terminal developer-270 tmux window
-- 2026-06-08T08:35:05+00:00 **terminal_agent_window_closed**: Closed terminal developer-313 tmux window
-- 2026-06-08T08:35:05+00:00 **terminal_agent_window_closed**: Closed terminal developer-271 tmux window
-- 2026-06-08T08:35:05+00:00 **poke**: Queued message for coordinator-126
-- 2026-06-08T08:35:05+00:00 **terminal_agent_window_closed**: Closed terminal developer-314 tmux window
-- 2026-06-08T08:35:05+00:00 **poke_delivered**: Delivered poke to 1 agents
-- 2026-06-08T08:35:05+00:00 **terminal_agent_window_closed**: Closed terminal developer-315 tmux window
+- 2026-06-08T08:40:38+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: tests::native_constructor_allocation_invoke_carrier_cleans_up_failure_paths
+- 2026-06-08T08:40:38+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: codegen::tests::generated_c_string_comparison_safety_uses_shared_pair_classifier
+- 2026-06-08T08:40:38+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: codegen::tests::c_assembly_non_local_assignment_families_share_assignment_owner_boundary
+- 2026-06-08T08:40:37+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-100 tmux window
+- 2026-06-08T08:40:38+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-101 tmux window
+- 2026-06-08T08:40:38+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-102 tmux window
+- 2026-06-08T08:40:38+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-103 tmux window
+- 2026-06-08T08:40:38+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-104 tmux window
+- 2026-06-08T08:40:38+00:00 **poke**: Queued message for coordinator-127
+- 2026-06-08T08:40:38+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-105 tmux window
+- 2026-06-08T08:40:38+00:00 **poke_delivered**: Delivered poke to 1 agents
+- 2026-06-08T08:40:38+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-106 tmux window
 
 ## Next steps
-Move next worklane forward: Provide next sanctioned Developer card after developer-319 worklane 2025
+Move next worklane forward: Fix global test suite failures
