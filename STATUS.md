@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T10:44:39+00:00
+Last generated: 2026-06-08T10:47:59+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -185,7 +185,8 @@ accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
 | coordinator-153 | Coordinator | success | coordinator-153 |  |
 | coordinator-154 | Coordinator | success | coordinator-154 |  |
 | coordinator-155 | Coordinator | success | coordinator-155 |  |
-| coordinator-156 | Coordinator | running | coordinator-156 |  |
+| coordinator-156 | Coordinator | success | coordinator-156 |  |
+| coordinator-157 | Coordinator | running | coordinator-157 |  |
 | coordinator-16 | Coordinator | crash | coordinator-16 |  |
 | coordinator-17 | Coordinator | success | coordinator-17 |  |
 | coordinator-18 | Coordinator | success | coordinator-18 |  |
@@ -652,7 +653,8 @@ accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
 | integrator-19 | Integrator | crash | integrator-19 |  |
 | integrator-2 | Integrator | stopped | integrator-2 |  |
 | integrator-20 | Integrator | crash | integrator-20 |  |
-| integrator-21 | Integrator | running | integrator-21 |  |
+| integrator-21 | Integrator | crash | integrator-21 |  |
+| integrator-22 | Integrator | running | integrator-22 |  |
 | integrator-3 | Integrator | stopped | integrator-3 |  |
 | integrator-4 | Integrator | crash | integrator-4 |  |
 | integrator-5 | Integrator | success | integrator-5 |  |
@@ -664,8 +666,9 @@ accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2063 | Integrate clean lane 1823 from work/developer-124 | Integrator | integration-support | development | assigned |  | 0.0 |
 | 2062 | Assign next sanctioned Developer card after lane 95 guardrail report | Developer | implementation | done | stale |  | 0.0 |
-| 2061 | Drain live integration_failed endpoints and retire superseded rows | Integrator | integration-support | development | assigned |  | 0.0 |
+| 2061 | Drain live integration_failed endpoints and retire superseded rows | Integrator | integration-support | planned | queued |  | 0.0 |
 | 2060 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
 | 2059 | Resume integration backlog disposition after integrator-19 crash | Integrator | integration-support | planned | queued |  | 0.0 |
 | 2058 | Assign next Developer card after developer-357 lane 93 verification | Developer | implementation | done | integrated | ready_fast_path | 0.0 |
@@ -673,27 +676,26 @@ accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
 | 2056 | Assign concrete Developer card after developer-352 capacity handoff 2043 | Developer | implementation | done | stale |  | 0.0 |
 | 2055 | Assign concrete sanctioned Developer card after placeholder lane 2048 | Developer | implementation | done | stale |  | 0.0 |
 | 2054 | Respond to scheduler alert | Coordinator | control-plane | planned | queued |  | 0.0 |
-| 2053 | Drain current integration backlog after card2051 resolver handoff | Integrator | integration-support | planned | queued |  | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=2, passed=417, skipped=0)
+failed — tools/run-tests.sh (error=0, failed=4, passed=415, skipped=0)
 
 ## Resource samples
-Latest: CPU 21.75%, RAM 18.28%, disk free 110.48 GB.
+Latest: CPU 41.22%, RAM 19.06%, disk free 109.6 GB.
 
 ## Recent events
-- 2026-06-08T10:44:09+00:00 **terminal_agent_windows_closed**: Closed 646 terminal agent tmux windows
-- 2026-06-08T10:44:10+00:00 **coordinator_start**: Coordinator starting; reading required project documents and inspecting harness state.
-- 2026-06-08T10:44:11+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-08T10:44:14+00:00 **terminal_agent_windows_closed**: Closed 646 terminal agent tmux windows
-- 2026-06-08T10:44:18+00:00 **terminal_agent_windows_closed**: Closed 646 terminal agent tmux windows
-- 2026-06-08T10:44:22+00:00 **integration_disposition**: Completed deterministic triage for card 2061: lane 1769 superseded, lane 1823 cleanly mergeable with focused tests passing, stale rows classified from prior integrator reports without replay.
-- 2026-06-08T10:44:25+00:00 **terminal_agent_windows_closed**: Closed 646 terminal agent tmux windows
-- 2026-06-08T10:44:27+00:00 **terminal_agent_windows_closed**: Closed 646 terminal agent tmux windows
-- 2026-06-08T10:44:34+00:00 **agent_report**: integrator-21 reported superseded
-- 2026-06-08T10:44:34+00:00 **terminal_agent_windows_closed**: Closed 646 terminal agent tmux windows
-- 2026-06-08T10:44:39+00:00 **poke**: Queued message for developer-360
-- 2026-06-08T10:44:39+00:00 **poke_delivered**: Delivered poke to 1 agents
+- 2026-06-08T10:47:39+00:00 **terminal_agent_windows_closed**: Closed 648 terminal agent tmux windows
+- 2026-06-08T10:47:40+00:00 **terminal_agent_windows_closed**: Closed 648 terminal agent tmux windows
+- 2026-06-08T10:47:41+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-08T10:47:42+00:00 **test_gate_hard_blocker**: New failures appeared beyond the known-red quarantine: codegen::tests::c_assembly_non_local_assignment_families_share_assignment_owner_boundary, codegen::tests::generated_c_string_comparison_safety_uses_shared_pair_classifier
+- 2026-06-08T10:47:47+00:00 **test_gate_quarantined_known_red**: 3 known failures are quarantined; metric acceptance remains blocked, but unrelated work may continue.
+- 2026-06-08T10:47:48+00:00 **terminal_agent_windows_closed**: Closed 648 terminal agent tmux windows
+- 2026-06-08T10:47:52+00:00 **terminal_agent_windows_closed**: Closed 648 terminal agent tmux windows
+- 2026-06-08T10:47:52+00:00 **test_gate_quarantined_known_red**: 6 known failures are quarantined; metric acceptance remains blocked, but unrelated work may continue.
+- 2026-06-08T10:47:56+00:00 **terminal_agent_windows_closed**: Closed 648 terminal agent tmux windows
+- 2026-06-08T10:47:57+00:00 **test_gate_quarantined_known_red**: 7 known failures are quarantined; metric acceptance remains blocked, but unrelated work may continue.
+- 2026-06-08T10:47:59+00:00 **poke**: Queued message for developer-360
+- 2026-06-08T10:47:59+00:00 **poke_delivered**: Delivered poke to 1 agents
 
 ## Next steps
-Move next worklane forward: Drain live integration_failed endpoints and retire superseded rows
+Move next worklane forward: Integrate clean lane 1823 from work/developer-124
