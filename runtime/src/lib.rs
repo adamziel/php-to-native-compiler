@@ -83900,6 +83900,33 @@ mod tests {
         assert!(runtime_exception.properties().is_empty());
         assert!(runtime_exception.methods().is_empty());
 
+        let out_of_range_exception = classes.lookup_class("outofrangeexception").unwrap();
+        assert_eq!(out_of_range_exception.name(), "OutOfRangeException");
+        assert_eq!(out_of_range_exception.id().index(), 53);
+        assert_eq!(
+            out_of_range_exception.parent_id(),
+            Some(runtime_exception.id())
+        );
+
+        let unexpected_value_exception = classes.lookup_class("unexpectedvalueexception").unwrap();
+        assert_eq!(
+            unexpected_value_exception.name(),
+            "UnexpectedValueException"
+        );
+        assert_eq!(unexpected_value_exception.id().index(), 54);
+        assert_eq!(
+            unexpected_value_exception.parent_id(),
+            Some(runtime_exception.id())
+        );
+
+        let out_of_bounds_exception = classes.lookup_class("outofboundsexception").unwrap();
+        assert_eq!(out_of_bounds_exception.name(), "OutOfBoundsException");
+        assert_eq!(out_of_bounds_exception.id().index(), 55);
+        assert_eq!(
+            out_of_bounds_exception.parent_id(),
+            Some(runtime_exception.id())
+        );
+
         let array_object = classes.lookup_class("arrayobject").unwrap();
         assert_eq!(array_object.name(), "ArrayObject");
         assert_eq!(array_object.id().index(), 58);

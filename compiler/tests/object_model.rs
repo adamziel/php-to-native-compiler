@@ -29,6 +29,7 @@ const CORE_CLASS_NAMES: &[&str] = &[
     "Uri\\WhatWg\\Url",
     "BcMath\\Number",
     "GMP",
+    "GdImage",
     "DateError",
     "DateObjectError",
     "DateRangeError",
@@ -104,6 +105,10 @@ const CORE_CLASS_NAMES: &[&str] = &[
     "NoDiscard",
     "Random\\IntervalBoundary",
     "Closure",
+    "JsonException",
+    "ReflectionEnum",
+    "ReflectionEnumUnitCase",
+    "ReflectionEnumBackedCase",
     "Generator",
 ];
 const CORE_INTERFACE_NAMES: &[&str] = &[
@@ -231,11 +236,14 @@ echo "ready\n";
     assert_eq!(normalized_class_names.len(), class_names.len());
 
     let exception = classes.lookup_class("Exception").unwrap();
-    for property in ["message", "code", "previous"] {
+    for property in ["message", "code"] {
         let metadata = exception.property(property).unwrap();
         assert_eq!(metadata.visibility(), Visibility::Protected);
         assert!(!metadata.is_static());
     }
+    let previous = exception.property("previous").unwrap();
+    assert_eq!(previous.visibility(), Visibility::Private);
+    assert!(!previous.is_static());
     let error = classes.lookup_class("Error").unwrap();
     let message = error.property("message").unwrap();
     assert_eq!(message.visibility(), Visibility::Public);
@@ -258,6 +266,11 @@ echo "ready\n";
     let out_of_range_exception = classes.lookup_class("OutOfRangeException").unwrap();
     assert_eq!(
         out_of_range_exception.parent_id(),
+        Some(runtime_exception.id())
+    );
+    let unexpected_value_exception = classes.lookup_class("UnexpectedValueException").unwrap();
+    assert_eq!(
+        unexpected_value_exception.parent_id(),
         Some(runtime_exception.id())
     );
     let out_of_bounds_exception = classes.lookup_class("OutOfBoundsException").unwrap();
