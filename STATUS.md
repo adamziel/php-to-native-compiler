@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T07:18:50+00:00
+Last generated: 2026-06-08T07:33:49+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -59,6 +59,9 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | architect-50 | Architect | crash | architect-50 |  |
 | architect-51 | Architect | crash | architect-51 |  |
 | architect-52 | Architect | crash | architect-52 |  |
+| architect-53 | Architect | crash | architect-53 |  |
+| architect-54 | Architect | crash | architect-54 |  |
+| architect-55 | Architect | running | architect-55 |  |
 | architect-6 | Architect | crash | architect-6 |  |
 | architect-7 | Architect | crash | architect-7 |  |
 | architect-8 | Architect | crash | architect-8 |  |
@@ -110,7 +113,9 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-111 | Coordinator | crash | coordinator-111 |  |
 | coordinator-112 | Coordinator | success | coordinator-112 |  |
 | coordinator-113 | Coordinator | success | coordinator-113 |  |
-| coordinator-114 | Coordinator | running | coordinator-114 |  |
+| coordinator-114 | Coordinator | success | coordinator-114 |  |
+| coordinator-115 | Coordinator | crash | coordinator-115 |  |
+| coordinator-116 | Coordinator | running | coordinator-116 |  |
 | coordinator-12 | Coordinator | stopped | coordinator-12 |  |
 | coordinator-13 | Coordinator | stopped | coordinator-13 |  |
 | coordinator-14 | Coordinator | success | coordinator-14 |  |
@@ -439,7 +444,8 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-305 | Developer | stopped | developer-305 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-305 |
 | developer-306 | Developer | crash | developer-306 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-306 |
 | developer-307 | Developer | stopped | developer-307 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-307 |
-| developer-308 | Developer | running | developer-308 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-308 |
+| developer-308 | Developer | crash | developer-308 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-308 |
+| developer-309 | Developer | running | developer-309 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-309 |
 | developer-31 | Developer | crash | developer-31 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-31 |
 | developer-32 | Developer | crash | developer-32 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-32 |
 | developer-33 | Developer | crash | developer-33 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-33 |
@@ -545,24 +551,24 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | 2010 | Resolve integration failure for card #1946: Implement Manhole-priority known-failure no-regression gate for worklane 1883 | Conflict Resolver | integration-support | done | integrated | ready_fast_path | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=4, passed=415, skipped=0)
+failed — tools/run-tests.sh (error=0, failed=3, passed=416, skipped=0)
 
 ## Resource samples
-Latest: CPU 12.09%, RAM 18.37%, disk free 149.47 GB.
+Latest: CPU 13.08%, RAM 17.88%, disk free 135.2 GB.
 
 ## Recent events
-- 2026-06-08T07:18:49+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: tests::native_method_lookup_plus_invoke_dispatches_missing_and_inaccessible_methods_to_magic_call
-- 2026-06-08T07:18:49+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: tests::native_static_method_lookup_plus_invoke_dispatches_missing_and_inaccessible_methods_to_magic_call_static
-- 2026-06-08T07:18:49+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: tests::native_method_lookup_plus_invoke_uses_access_context_for_private_diagnostics
-- 2026-06-08T07:18:49+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: tests::native_closure_invoke_helpers_bridge_call_arguments_to_call_results
-- 2026-06-08T07:18:49+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: tests::native_constructor_allocation_invoke_carrier_cleans_up_failure_paths
-- 2026-06-08T07:18:49+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: codegen::tests::generated_c_string_comparison_safety_uses_shared_pair_classifier
-- 2026-06-08T07:18:49+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: codegen::tests::c_assembly_non_local_assignment_families_share_assignment_owner_boundary
-- 2026-06-08T07:18:48+00:00 **terminal_agent_window_closed**: Closed terminal developer-235 tmux window
-- 2026-06-08T07:18:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-236 tmux window
-- 2026-06-08T07:18:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-237 tmux window
-- 2026-06-08T07:18:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-238 tmux window
-- 2026-06-08T07:18:50+00:00 **terminal_agent_window_closed**: Closed terminal developer-239 tmux window
+- 2026-06-08T07:33:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-97 tmux window
+- 2026-06-08T07:33:49+00:00 **terminal_agent_window_closed**: Closed terminal architect-17 tmux window
+- 2026-06-08T07:33:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-98 tmux window
+- 2026-06-08T07:33:49+00:00 **terminal_agent_window_closed**: Closed terminal architect-18 tmux window
+- 2026-06-08T07:33:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-99 tmux window
+- 2026-06-08T07:33:49+00:00 **terminal_agent_window_closed**: Closed terminal architect-19 tmux window
+- 2026-06-08T07:33:49+00:00 **terminal_agent_window_closed**: Closed terminal integrator-1 tmux window
+- 2026-06-08T07:33:49+00:00 **terminal_agent_window_closed**: Closed terminal architect-2 tmux window
+- 2026-06-08T07:33:49+00:00 **terminal_agent_window_closed**: Closed terminal integrator-10 tmux window
+- 2026-06-08T07:33:49+00:00 **terminal_agent_window_closed**: Closed terminal architect-20 tmux window
+- 2026-06-08T07:33:49+00:00 **terminal_agent_window_closed**: Closed terminal integrator-11 tmux window
+- 2026-06-08T07:33:49+00:00 **terminal_agent_window_closed**: Closed terminal integrator-12 tmux window
 
 ## Next steps
 Move next worklane forward: Fix global test suite failures
