@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T06:48:49+00:00
+Last generated: 2026-06-08T07:03:49+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -46,7 +46,10 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | architect-39 | Architect | crash | architect-39 |  |
 | architect-4 | Architect | crash | architect-4 |  |
 | architect-40 | Architect | crash | architect-40 |  |
-| architect-41 | Architect | running | architect-41 |  |
+| architect-41 | Architect | crash | architect-41 |  |
+| architect-42 | Architect | crash | architect-42 |  |
+| architect-43 | Architect | crash | architect-43 |  |
+| architect-44 | Architect | running | architect-44 |  |
 | architect-5 | Architect | crash | architect-5 |  |
 | architect-6 | Architect | crash | architect-6 |  |
 | architect-7 | Architect | crash | architect-7 |  |
@@ -89,7 +92,11 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-102 | Coordinator | success | coordinator-102 |  |
 | coordinator-103 | Coordinator | success | coordinator-103 |  |
 | coordinator-104 | Coordinator | crash | coordinator-104 |  |
-| coordinator-105 | Coordinator | running | coordinator-105 |  |
+| coordinator-105 | Coordinator | success | coordinator-105 |  |
+| coordinator-106 | Coordinator | crash | coordinator-106 |  |
+| coordinator-107 | Coordinator | crash | coordinator-107 |  |
+| coordinator-108 | Coordinator | crash | coordinator-108 |  |
+| coordinator-109 | Coordinator | running | coordinator-109 |  |
 | coordinator-11 | Coordinator | stopped | coordinator-11 |  |
 | coordinator-12 | Coordinator | stopped | coordinator-12 |  |
 | coordinator-13 | Coordinator | stopped | coordinator-13 |  |
@@ -417,6 +424,8 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-303 | Developer | stopped | developer-303 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-303 |
 | developer-304 | Developer | running | developer-304 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-304 |
 | developer-305 | Developer | stopped | developer-305 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-305 |
+| developer-306 | Developer | running | developer-306 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-306 |
+| developer-307 | Developer | stopped | developer-307 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-307 |
 | developer-31 | Developer | crash | developer-31 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-31 |
 | developer-32 | Developer | crash | developer-32 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-32 |
 | developer-33 | Developer | crash | developer-33 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-33 |
@@ -510,36 +519,36 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2019 | Fix global test suite failures | Developer | implementation | development | assigned |  | 0.0 |
 | 2018 | Fix current-origin array_find_family arity boundary | Developer | implementation | planned | queued |  | 0.0 |
 | 2017 | Fix current global-suite native lookup-plus-invoke failures | Developer | implementation | planned | queued |  | 0.0 |
 | 2016 | Resolve active compiler-output integration chain without generated artifact churn | Conflict Resolver | integration-support | done | integrated | ready_fast_path | 0.0 |
 | 2015 | Reconcile current integration backlog after stale runtime/gate chains | Integrator | integration-support | planned | queued |  | 0.0 |
-| 2014 | Fix global test suite failures | Developer | implementation | development | assigned |  | 0.0 |
+| 2014 | Fix global test suite failures | Developer | implementation | done | integrated | ready_fast_path | 0.0 |
 | 2013 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
 | 2012 | Provide next sanctioned Developer card after developer-288 completed worklane 2008 | Developer | implementation | planned | queued |  | 0.0 |
 | 2011 | Resolve integration failure for card #2008: Resolve integration failure for card #2004: Resolve integration failure for card #2001: Resolve integration failure for card #1996: Resolve integration failure for card #1994: Resolve integration failure for card #1992: Resolve integration failure for card #1990: Resolve integration failure for card #1975: Fix global test suite failures | Conflict Resolver | integration-support | done | stale |  | 0.0 |
 | 2010 | Resolve integration failure for card #1946: Implement Manhole-priority known-failure no-regression gate for worklane 1883 | Conflict Resolver | integration-support | done | integrated | ready_fast_path | 0.0 |
-| 2009 | Provide next sanctioned Developer card after developer-284 completed worklane 1946 | Developer | implementation | planned | queued |  | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=2, passed=417, skipped=0)
+failed — tools/run-tests.sh (error=0, failed=5, passed=414, skipped=0)
 
 ## Resource samples
-Latest: CPU 19.01%, RAM 17.65%, disk free 152.65 GB.
+Latest: CPU 15.63%, RAM 17.89%, disk free 152.4 GB.
 
 ## Recent events
-- 2026-06-08T06:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-55 tmux window
-- 2026-06-08T06:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-143 tmux window
-- 2026-06-08T06:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-56 tmux window
-- 2026-06-08T06:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-144 tmux window
-- 2026-06-08T06:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-57 tmux window
-- 2026-06-08T06:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-145 tmux window
-- 2026-06-08T06:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-58 tmux window
-- 2026-06-08T06:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-146 tmux window
-- 2026-06-08T06:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-59 tmux window
-- 2026-06-08T06:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-147 tmux window
-- 2026-06-08T06:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-6 tmux window
-- 2026-06-08T06:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-60 tmux window
+- 2026-06-08T07:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-36 tmux window
+- 2026-06-08T07:03:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-82 tmux window
+- 2026-06-08T07:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-37 tmux window
+- 2026-06-08T07:03:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-83 tmux window
+- 2026-06-08T07:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-38 tmux window
+- 2026-06-08T07:03:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-84 tmux window
+- 2026-06-08T07:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-39 tmux window
+- 2026-06-08T07:03:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-85 tmux window
+- 2026-06-08T07:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-4 tmux window
+- 2026-06-08T07:03:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-86 tmux window
+- 2026-06-08T07:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-40 tmux window
+- 2026-06-08T07:03:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-87 tmux window
 
 ## Next steps
-Move next worklane forward: Fix current-origin array_find_family arity boundary
+Move next worklane forward: Fix global test suite failures
