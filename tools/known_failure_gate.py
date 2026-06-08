@@ -154,7 +154,9 @@ def classify(run_status: str, failures: list[str]) -> dict[str, object]:
     }
 
 
-def write_metadata(conn: sqlite3.Connection, run: sqlite3.Row, result: dict[str, object]) -> None:
+def write_metadata(
+    conn: sqlite3.Connection, run: sqlite3.Row, result: dict[str, object]
+) -> None:
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS metadata (

@@ -6,7 +6,7 @@ Last generated: 2026-06-07T18:05:18+00:00
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
 
 ## Metric
-blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
+accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
 
 ## Agents
 | name | role | current_status | tmux_window | worktree |

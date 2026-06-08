@@ -98,7 +98,10 @@ recorded. The checker is exact-set based: a one-failure run, a five-failure
 run, or any changed failure name is `failed_new_regressions`, not a broader
 quarantine. `accepted_public_phpt_passes` and
 `pinned_public_runnable_denominator` are valid only when
-`metadata.test_gate_metric_eligible` is `1`.
+`metadata.test_gate_metric_eligible` is `1`. Status/progress snapshots should
+present only `accepted_public_phpt_passes / pinned_public_runnable_denominator`
+as the project score; blocked or candidate pass counts are failed-run evidence,
+not accepted progress.
 
 ## Focused Lane Tests
 

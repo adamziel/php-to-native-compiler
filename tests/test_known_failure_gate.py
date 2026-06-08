@@ -46,8 +46,10 @@ class KnownFailureGateTest(unittest.TestCase):
             );
             CREATE TABLE metric_samples (
                 id INTEGER PRIMARY KEY,
-                name TEXT NOT NULL,
-                value REAL NOT NULL
+                metric_name TEXT NOT NULL,
+                value REAL NOT NULL,
+                target REAL NOT NULL,
+                percent_ready REAL NOT NULL
             );
             """
         )
@@ -58,7 +60,7 @@ class KnownFailureGateTest(unittest.TestCase):
             "INSERT INTO test_runs(id, command, status) VALUES (?, ?, ?)",
             (run_id, "tools/run-tests.sh", status),
         )
-        for index, nodeid in enumerate(failures, start=1):
+        for nodeid in failures:
             self.conn.execute(
                 """
                 INSERT INTO test_results(run_id, nodeid, file, status, message)
@@ -68,7 +70,7 @@ class KnownFailureGateTest(unittest.TestCase):
             )
         self.conn.commit()
 
-    def run_gate(self, run_id):
+    def run_gate(self, run_id, *extra_args):
         completed = subprocess.run(
             [
                 sys.executable,
@@ -77,6 +79,7 @@ class KnownFailureGateTest(unittest.TestCase):
                 str(self.db_path),
                 "--run-id",
                 str(run_id),
+                *extra_args,
             ],
             cwd=ROOT,
             text=True,
@@ -142,6 +145,18 @@ class KnownFailureGateTest(unittest.TestCase):
         self.assertEqual(payload["mode"], known_failure_gate.MODE_FAILED)
         self.assertIn("New or different failures", payload["reason"])
         self.assertEqual(payload["unexpected_failures"], ["tests::new_unexpected_failure"])
+
+    def test_no_write_metadata_leaves_existing_database_state_untouched(self):
+        self.insert_run(5, "failed", known_failure_gate.KNOWN_FAILURE_BASELINE)
+
+        completed, payload = self.run_gate(5, "--no-write-metadata")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(payload["mode"], known_failure_gate.MODE_QUARANTINED)
+        row = self.conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'metadata'"
+        ).fetchone()
+        self.assertIsNone(row)
 
 
 if __name__ == "__main__":
