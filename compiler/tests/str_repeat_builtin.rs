@@ -22,6 +22,42 @@ echo strlen(str_repeat("é", 2));
 }
 
 #[test]
+fn str_repeat_accepts_stringable_objects_and_reports_type_errors() {
+    let execution = run_source(
+        r#"<?php
+class Label {
+    public function __toString(): string {
+        return "xy";
+    }
+}
+
+$call = "str_repeat";
+echo str_repeat(new Label(), 2), "|";
+echo $call(new Label(), "3"), "|";
+
+try {
+    str_repeat([], 2);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "|";
+}
+
+try {
+    str_repeat("x", "abc");
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "xyxy|xyxyxy|str_repeat(): Argument #1 ($string) must be of type string, array given|str_repeat(): Argument #2 ($times) must be of type int, string given"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn str_repeat_is_available_through_builtin_callability() {
     let execution = run_source(
         r#"<?php
@@ -76,14 +112,65 @@ fn byte_string_helpers_support_binary_chr_and_bin2hex_inputs() {
 echo bin2hex(chr(0)), "|";
 echo bin2hex(chr(128)), "|";
 echo bin2hex(chr(255)), "|";
-echo bin2hex(chr(256)), "|";
+echo bin2hex(chr(1)), "|";
 $binary = chr(0) . chr(255);
 echo bin2hex(str_repeat($binary, 2));
 "#,
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "00|80|ff|00|00ff00ff");
+    assert_eq!(execution.stdout, "00|80|ff|01|00ff00ff");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn chr_out_of_range_values_emit_php_deprecation_and_wrap_modulo_256() {
+    let execution = run_source(
+        r#"<?php
+var_dump("\xFF" == chr(-1));
+var_dump("\0" == chr(256));
+"#,
+    )
+    .unwrap();
+
+    let message = "Deprecated: chr(): Providing a value not in-between 0 and 255 is deprecated, this is because a byte value must be in the [0, 255] interval. The value used will be constrained using % 256";
+    assert_eq!(
+        execution.stdout.matches(message).count(),
+        2,
+        "{:?}",
+        execution.stdout
+    );
+    assert_eq!(
+        execution.stdout.matches("bool(true)").count(),
+        2,
+        "{:?}",
+        execution.stdout
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn chr_argument_count_errors_are_catchable_with_internal_message() {
+    let execution = run_source(
+        r#"<?php
+try {
+    var_dump(chr());
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    var_dump(chr(72, 10));
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "chr() expects exactly 1 argument, 0 given\nchr() expects exactly 1 argument, 2 given\n"
+    );
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -105,23 +192,52 @@ try {
     );
     assert_eq!(negative.exit_code, 0);
 
-    let non_int_times = run_source("<?php\nstr_repeat('x', 'abc');\n").unwrap_err();
-    assert_eq!(non_int_times.phase, Phase::Runtime);
-    assert_eq!(non_int_times.line, 2);
-    assert_eq!(non_int_times.column, 1);
+    let non_int_times = run_source(
+        r#"<?php
+try {
+    str_repeat('x', 'abc');
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
     assert_eq!(
-        non_int_times.message,
-        "unsupported call str_repeat(): times argument must be int-compatible in the current subset, got string"
+        non_int_times.stdout,
+        "str_repeat(): Argument #2 ($times) must be of type int, string given"
     );
 
-    let array_string = run_source("<?php\nstr_repeat([], 2);\n").unwrap_err();
-    assert_eq!(array_string.phase, Phase::Runtime);
-    assert_eq!(array_string.line, 2);
-    assert_eq!(array_string.column, 1);
+    let array_string = run_source(
+        r#"<?php
+try {
+    str_repeat([], 2);
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
     assert_eq!(
-        array_string.message,
-        "unsupported call str_repeat(): string argument arrays are not supported"
+        array_string.stdout,
+        "str_repeat(): Argument #1 ($string) must be of type string, array given"
     );
+}
+
+#[test]
+fn str_repeat_respects_runtime_memory_limit_setting() {
+    let execution = run_source(
+        r#"<?php
+ini_set("memory_limit", "1K");
+str_repeat("x", 2048);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Fatal error: Allowed memory size of 1024 bytes exhausted (tried to allocate 2048 bytes) in Command line code on line 3"
+    );
+    assert_eq!(execution.exit_code, 255);
 }
 
 #[test]

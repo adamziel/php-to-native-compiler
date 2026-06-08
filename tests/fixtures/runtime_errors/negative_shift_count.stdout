@@ -1,0 +1,4 @@
+Fatal error: Uncaught ArithmeticError: Bit shift by negative number in tests/fixtures/runtime_errors/negative_shift_count.php:2
+Stack trace:
+#0 {main}
+  thrown in tests/fixtures/runtime_errors/negative_shift_count.php on line 2

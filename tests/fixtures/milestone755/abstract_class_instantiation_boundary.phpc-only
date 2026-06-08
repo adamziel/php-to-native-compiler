@@ -1,1 +1,1 @@
-phpc reports a stable runtime boundary for abstract class instantiation; full PHP abstract-class enforcement and Error objects are not implemented.
+phpc reports a PHP-shaped Error fatal for abstract class instantiation; inherited abstract-method implementation diagnostics remain a bounded registration-time surface.

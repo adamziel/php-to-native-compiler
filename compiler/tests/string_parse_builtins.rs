@@ -80,6 +80,76 @@ try {
 }
 
 #[test]
+fn str_getcsv_accepts_direct_named_escape_and_fills_defaults() {
+    let execution = run_source(
+        r#"<?php
+var_dump(str_getcsv('"f", "o", ""', escape: ''));
+var_dump(str_getcsv('foo||bar', '|', escape: ''));
+var_dump(str_getcsv('.foo..bar.', '.', '.', '.'));
+var_dump(str_getcsv('', escape: ''));
+echo str_pad("x", length: 3, pad_type: STR_PAD_LEFT), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  string(1) \"f\"\n",
+            "  [1]=>\n",
+            "  string(1) \"o\"\n",
+            "  [2]=>\n",
+            "  string(0) \"\"\n",
+            "}\n",
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  string(3) \"foo\"\n",
+            "  [1]=>\n",
+            "  string(0) \"\"\n",
+            "  [2]=>\n",
+            "  string(3) \"bar\"\n",
+            "}\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  string(7) \"foo.bar\"\n",
+            "}\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  NULL\n",
+            "}\n",
+            "  x\n",
+        )
+    );
+}
+
+#[test]
+fn str_getcsv_preserves_nul_escape_eof_edge() {
+    let execution = run_source(
+        r#"<?php
+var_export(str_getcsv("y", ",", "y", "\000"));
+echo "\n";
+var_export(str_getcsv("\0yy", "y", "y", "\0"));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "array (\n",
+            "  0 => '' . \"\\0\" . '',\n",
+            ")\n",
+            "array (\n",
+            "  0 => '' . \"\\0\" . '',\n",
+            "  1 => '' . \"\\0\" . '',\n",
+            ")",
+        )
+    );
+}
+
+#[test]
 fn strpbrk_returns_suffix_from_first_matching_byte() {
     let execution = run_source(
         r#"<?php
@@ -102,4 +172,48 @@ try {
             "strpbrk(): Argument #2 ($characters) must be a non-empty string\n",
         )
     );
+}
+
+#[test]
+fn strpbrk_accepts_stringable_objects_and_reports_type_errors() {
+    let execution = run_source(
+        r#"<?php
+class HaystackValue {
+    public function __toString() {
+        return "abc123";
+    }
+}
+class CharacterValue {
+    public function __toString() {
+        return "23";
+    }
+}
+
+var_dump(strpbrk(new HaystackValue(), "23"));
+var_dump(strpbrk("abc123", new CharacterValue()));
+$call = "strpbrk";
+var_dump($call(new HaystackValue(), new CharacterValue()));
+foreach ([fn() => strpbrk([], "a"), fn() => strpbrk("abc", [])] as $case) {
+    try {
+        $case();
+    } catch (TypeError $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "string(2) \"23\"\n",
+            "string(2) \"23\"\n",
+            "string(2) \"23\"\n",
+            "strpbrk(): Argument #1 ($string) must be of type string, array given\n",
+            "strpbrk(): Argument #2 ($characters) must be of type string, array given\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
 }

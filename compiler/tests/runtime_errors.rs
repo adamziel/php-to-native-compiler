@@ -9,6 +9,12 @@ fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
     error
 }
 
+fn execution(source: &str) -> php_compiler::interpreter::Execution {
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.stderr, "");
+    execution
+}
+
 fn with_large_stack<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
     thread::Builder::new()
         .stack_size(8 * 1024 * 1024)
@@ -19,38 +25,130 @@ fn with_large_stack<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -
 }
 
 #[test]
-fn undefined_variable_has_stable_runtime_error() {
-    let error = runtime_error("<?php\necho $missing;\n");
+fn undefined_variable_read_emits_php_warning() {
+    let execution = execution("<?php\necho $missing;\n");
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
-    assert_eq!(error.message, "undefined variable '$missing'");
+    assert_eq!(
+        execution.stdout,
+        "Warning: Undefined variable $missing in Command line code on line 2\n"
+    );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
-fn user_function_arity_mismatch_has_stable_runtime_error() {
-    let error = runtime_error(
-        "<?php\nfunction identity($value) {\n    return $value;\n}\necho identity();\n",
+fn user_function_arity_mismatch_reports_php_fatal() {
+    let execution =
+        execution("<?php\nfunction identity($value) {\n    return $value;\n}\necho identity();\n");
+
+    assert!(execution.stdout.starts_with(
+        "Fatal error: Uncaught ArgumentCountError: Too few arguments to function identity(), 0 passed"
+    ));
+    assert!(execution.stdout.contains("exactly 1 expected"));
+    assert_eq!(execution.exit_code, 255);
+}
+
+#[test]
+fn incorrect_function_argument_counts_are_catchable_argument_count_errors() {
+    let execution = execution(
+        r#"<?php
+try {
+    substr("foo");
+} catch (ArgumentCountError $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+
+try {
+    function needs_two($one, $two) {}
+    needs_two(1);
+} catch (Error $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+
+try {
+    array_diff();
+} catch (ArgumentCountError $e) {
+    echo get_class($e), ":", $e->getMessage(), "\n";
+}
+"#,
     );
 
-    assert_eq!(error.line, 5);
-    assert_eq!(error.column, 6);
     assert_eq!(
-        error.message,
-        "arity mismatch for identity(): expected 1 argument(s), got 0"
+        execution.stdout,
+        "ArgumentCountError:substr() expects at least 2 arguments, 1 given\nArgumentCountError:Too few arguments to function needs_two(), 1 passed in Command line code on line 10 and exactly 2 expected\nArgumentCountError:array_diff() expects at least 1 argument, 0 given\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn malformed_function_argument_lists_report_php_parse_errors() {
+    let identifier = run_source("<?php\nfunction foo($arg1 string) {}\n").unwrap_err();
+    assert_eq!(identifier.phase, Phase::Parse);
+    assert_eq!(
+        identifier.cli_display(),
+        "Parse error: syntax error, unexpected identifier \"string\", expecting \")\" in Command line code on line 2"
+    );
+
+    let slash = run_source("<?php\nfunction foo($arg1/) {}\n").unwrap_err();
+    assert_eq!(slash.phase, Phase::Parse);
+    assert_eq!(
+        slash.cli_display(),
+        "Parse error: syntax error, unexpected token \"/\", expecting \")\" in Command line code on line 2"
+    );
+
+    let leading = run_source("<?php\nfoo(,$foo);\n").unwrap_err();
+    assert_eq!(leading.phase, Phase::Parse);
+    assert_eq!(
+        leading.cli_display(),
+        "Parse error: syntax error, unexpected token \",\" in Command line code on line 2"
+    );
+
+    let doubled = run_source("<?php\nfoo($foo,,$bar);\n").unwrap_err();
+    assert_eq!(doubled.phase, Phase::Parse);
+    assert_eq!(
+        doubled.cli_display(),
+        "Parse error: syntax error, unexpected token \",\", expecting \")\" in Command line code on line 2"
     );
 }
 
 #[test]
-fn unsupported_builtin_call_has_stable_runtime_error() {
-    let error = runtime_error("<?php\necho count(1);\n");
+fn trailing_commas_in_call_unset_and_isset_arguments_are_accepted() {
+    let execution = execution(
+        r#"<?php
+function collect(...$args) {
+    var_dump($args);
+}
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
-    assert_eq!(
-        error.message,
-        "unsupported call count(): only arrays and Countable objects are supported"
+class InvokableCollector {
+    public function __invoke(...$args) {
+        var_dump($args);
+    }
+}
+
+$left = 1;
+$right = 2;
+$collector = new InvokableCollector();
+collect($left, $right,);
+$collector("call", "object",);
+unset($left, $right,);
+var_dump(isset($left, $right,));
+"#,
     );
+
+    assert_eq!(
+        execution.stdout,
+        "array(2) {\n  [0]=>\n  int(1)\n  [1]=>\n  int(2)\n}\narray(2) {\n  [0]=>\n  string(4) \"call\"\n  [1]=>\n  string(6) \"object\"\n}\nbool(false)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn unsupported_builtin_call_reports_php_fatal() {
+    let execution = execution("<?php\necho count(1);\n");
+
+    assert!(execution.stdout.starts_with(
+        "Fatal error: Uncaught TypeError: count(): Argument #1 ($value) must be of type Countable|array, int given"
+    ));
+    assert_eq!(execution.exit_code, 255);
 }
 
 #[test]
@@ -78,12 +176,14 @@ fn boolean_array_keys_are_normalized_in_long_arrays() {
 }
 
 #[test]
-fn undefined_array_key_has_stable_runtime_error() {
-    let error = runtime_error("<?php\n$items = [];\necho $items[0];\n");
+fn undefined_array_key_read_emits_php_warning() {
+    let execution = execution("<?php\n$items = [];\necho $items[0];\n");
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
-    assert_eq!(error.message, "undefined array key 0");
+    assert_eq!(
+        execution.stdout,
+        "Warning: Undefined array key 0 in Command line code on line 3\n"
+    );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -96,12 +196,13 @@ fn duplicate_class_has_stable_runtime_error() {
 }
 
 #[test]
-fn undefined_class_has_stable_runtime_error() {
-    let error = runtime_error("<?php\n$box = new Missing();\n");
+fn undefined_class_reports_php_fatal() {
+    let execution = execution("<?php\n$box = new Missing();\n");
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 8);
-    assert_eq!(error.message, "undefined class Missing");
+    assert!(execution
+        .stdout
+        .starts_with("Fatal error: Uncaught Error: Class \"Missing\" not found"));
+    assert_eq!(execution.exit_code, 255);
 }
 
 #[test]
@@ -123,8 +224,8 @@ echo $box;
 }
 
 #[test]
-fn object_comparison_has_stable_runtime_error() {
-    let error = runtime_error(
+fn object_comparison_uses_current_php_truthy_result() {
+    let execution = execution(
         r#"<?php
 class Box {}
 $left = new Box();
@@ -133,17 +234,13 @@ echo $left == $right;
 "#,
     );
 
-    assert_eq!(error.line, 5);
-    assert_eq!(error.column, 6);
-    assert_eq!(
-        error.message,
-        "unsupported comparison: object comparisons are not implemented"
-    );
+    assert_eq!(execution.stdout, "1");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
-fn undefined_object_property_has_stable_runtime_error() {
-    let error = runtime_error(
+fn undefined_object_property_read_emits_php_warning() {
+    let execution = execution(
         r#"<?php
 class Box {}
 $box = new Box();
@@ -151,31 +248,32 @@ echo $box->missing;
 "#,
     );
 
-    assert_eq!(error.line, 4);
-    assert_eq!(error.column, 6);
-    assert_eq!(error.message, "undefined property Box::$missing");
+    assert_eq!(
+        execution.stdout,
+        "Warning: Undefined property: Box::$missing in Command line code on line 4\n"
+    );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
-fn invalid_property_target_has_stable_runtime_error() {
-    let error = runtime_error(
+fn invalid_property_target_read_emits_php_warning() {
+    let execution = execution(
         r#"<?php
 $value = 1;
 echo $value->name;
 "#,
     );
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
     assert_eq!(
-        error.message,
-        "invalid property access: cannot read property $name from int"
+        execution.stdout,
+        "Warning: Attempt to read property \"name\" on int in Command line code on line 3\n"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
-fn non_public_property_access_has_stable_runtime_error() {
-    let error = runtime_error(
+fn non_public_property_access_reports_php_fatal() {
+    let execution = execution(
         r#"<?php
 class Box {
     private $secret;
@@ -185,12 +283,10 @@ echo $box->secret;
 "#,
     );
 
-    assert_eq!(error.line, 6);
-    assert_eq!(error.column, 6);
-    assert_eq!(
-        error.message,
-        "unsupported object property access: non-public property Box::$secret requires same-class method context in the current subset"
-    );
+    assert!(execution
+        .stdout
+        .starts_with("Fatal error: Uncaught Error: Cannot access private property Box::$secret"));
+    assert_eq!(execution.exit_code, 255);
 }
 
 #[test]
@@ -261,23 +357,99 @@ fn foreach_non_array_iterable_has_stable_runtime_error() {
 }
 
 #[test]
-fn invalid_arithmetic_has_stable_runtime_error() {
-    let error = runtime_error("<?php\necho 1 / 0;\n");
+fn foreach_null_and_undefined_iterables_warn_and_continue() {
+    let execution = run_source(
+        "<?php\nfunction test() {\n    foreach (null as $value) { echo \"bad\"; }\n}\ntest();\nforeach ($missing as $value);\necho \"Done\\n\";\n",
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
-    assert_eq!(error.message, "invalid arithmetic for /: division by zero");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+    assert!(execution.stdout.contains(
+        "Warning: foreach() argument must be of type array|object, null given in Command line code on line 3"
+    ));
+    assert!(execution
+        .stdout
+        .contains("Warning: Undefined variable $missing in Command line code on line 6"));
+    assert!(execution.stdout.ends_with("Done\n"));
 }
 
 #[test]
-fn non_numeric_string_arithmetic_has_stable_runtime_error() {
-    let error = runtime_error("<?php\necho \"abc\" + 1;\n");
+fn division_by_zero_reports_php_fatal() {
+    let execution = execution("<?php\necho 1 / 0;\n");
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
+    assert!(execution
+        .stdout
+        .starts_with("Fatal error: Uncaught DivisionByZeroError: Division by zero"));
+    assert_eq!(execution.exit_code, 255);
+}
+
+#[test]
+fn non_numeric_string_arithmetic_is_catchable_type_error() {
+    let execution = run_source(
+        "<?php\ntry { echo \"abc\" + 1; } catch (TypeError $e) { echo $e->getMessage(); }\n",
+    )
+    .unwrap();
+    assert_eq!(execution.stdout, "Unsupported operand types: string + int");
+
+    let execution =
+        run_source("<?php\nfunction add_bad($value) { echo $value + 1; }\nadd_bad(\"abc\");\n")
+            .unwrap();
+    assert_eq!(execution.exit_code, 255);
+    assert!(
+        execution
+            .stdout
+            .contains("Fatal error: Uncaught TypeError: Unsupported operand types: string + int"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution
+            .stdout
+            .contains("Stack trace:\n#0 Command line code(3): add_bad('abc')"),
+        "{}",
+        execution.stdout
+    );
+}
+
+#[test]
+fn numeric_string_operator_recovery_and_arithmetic_errors_are_catchable() {
+    let execution = run_source(
+        r#"<?php
+error_reporting(E_ERROR);
+var_dump("2abc" * "3");
+var_dump("2abc" << "3.4a");
+try { var_dump("abc" << "1"); } catch (TypeError $e) { echo "type:", $e->getMessage(), "\n"; }
+try { var_dump(1 / 0); } catch (DivisionByZeroError $e) { echo "div:", $e->getMessage(), "\n"; }
+try { var_dump(1 % 0); } catch (DivisionByZeroError $e) { echo "mod:", $e->getMessage(), "\n"; }
+try { var_dump(1 << -1); } catch (ArithmeticError $e) { echo "shift:", $e->getMessage(), "\n"; }
+try { var_dump(-"abc"); } catch (TypeError $e) { echo "unary:", $e->getMessage(), "\n"; }
+"#,
+    )
+    .unwrap();
+
     assert_eq!(
-        error.message,
-        "invalid arithmetic for +: string is not numeric"
+        execution.stdout,
+        "int(6)\nint(16)\ntype:Unsupported operand types: string << string\ndiv:Division by zero\nmod:Modulo by zero\nshift:Bit shift by negative number\nunary:Unsupported operand types: string * int\n"
+    );
+}
+
+#[test]
+fn large_float_echo_and_operator_int_coercion_match_php_64bit_edges() {
+    let execution = run_source(
+        r#"<?php
+$overflow = 9223372036854775807 + 1;
+echo $overflow, "\n";
+var_dump($overflow & -1);
+var_dump($overflow | 7);
+var_dump($overflow % 7);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "9.2233720368548E+18\nint(-9223372036854775808)\nint(-9223372036854775801)\nint(-1)\n"
     );
 }
 
@@ -302,8 +474,8 @@ fn complex_isset_operands_remain_explicitly_unsupported() {
 }
 
 #[test]
-fn isset_non_public_property_access_remains_explicitly_unsupported() {
-    let error = runtime_error(
+fn isset_non_public_property_access_returns_false_without_read_error() {
+    let execution = execution(
         r#"<?php
 class Box {
     private $secret;
@@ -313,12 +485,8 @@ echo isset($box->secret);
 "#,
     );
 
-    assert_eq!(error.line, 6);
-    assert_eq!(error.column, 12);
-    assert_eq!(
-        error.message,
-        "unsupported object property access: non-public property Box::$secret requires same-class method context in the current subset"
-    );
+    assert_eq!(execution.stdout, "");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

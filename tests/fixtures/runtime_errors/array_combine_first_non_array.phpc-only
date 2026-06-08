@@ -1,1 +1,1 @@
-Project-specific stable runtime diagnostic; system PHP throws a native TypeError object.
+Runtime path emits a bounded uncaught PHP-shaped TypeError for non-array array_combine() keys operands.

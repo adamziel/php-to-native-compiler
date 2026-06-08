@@ -1,0 +1,6 @@
+dynamic-count: array_count_values(): Argument #1 ($array) must be of type array, int given
+dynamic-sum: array_sum(): Argument #1 ($array) must be of type array, string given
+dynamic-product: array_product(): Argument #1 ($array) must be of type array, true given
+direct-count: array_count_values(): Argument #1 ($array) must be of type array, null given
+direct-sum: array_sum(): Argument #1 ($array) must be of type array, false given
+direct-product: array_product(): Argument #1 ($array) must be of type array, stdClass given

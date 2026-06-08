@@ -37,7 +37,19 @@ echo filesize(__DIR__ . "/missing-file.php") === false ? "missing-false" : "miss
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "int|positive|dir-false|missing-false");
+    assert!(
+        execution.stdout.starts_with("int|positive|dir-size|"),
+        "{}",
+        execution.stdout
+    );
+    assert!(
+        execution
+            .stdout
+            .contains("Warning: filesize(): stat failed for "),
+        "{}",
+        execution.stdout
+    );
+    assert!(execution.stdout.ends_with("missing-false"));
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -62,29 +74,32 @@ echo $call(__FILE__) === filesize(__FILE__) ? "repeat" : "different";
 
 #[test]
 fn filesize_rejects_forms_outside_current_subset() {
-    let arity = runtime_error(
+    let arity = run_source_with_source_file(
         r#"<?php
 echo filesize();
 "#,
-    );
-    assert_eq!(arity.line, 2);
-    assert_eq!(arity.column, 6);
-    assert_eq!(
-        arity.message,
-        "arity mismatch for filesize(): expected 1 argument(s), got 0"
-    );
+        fixture_source_file(),
+    )
+    .unwrap();
+    assert_eq!(arity.stderr, "");
+    assert_eq!(arity.exit_code, 255);
+    assert!(arity
+        .stdout
+        .contains("Too few arguments to function filesize()"));
+    assert!(arity.stdout.contains("exactly 1 expected"));
 
-    let type_error = runtime_error(
+    let type_warning = run_source_with_source_file(
         r#"<?php
 echo filesize(42);
 "#,
-    );
-    assert_eq!(type_error.line, 2);
-    assert_eq!(type_error.column, 6);
-    assert_eq!(
-        type_error.message,
-        "unsupported call filesize(): path argument must be string in the current subset, got int"
-    );
+        fixture_source_file(),
+    )
+    .unwrap();
+    assert_eq!(type_warning.stderr, "");
+    assert_eq!(type_warning.exit_code, 0);
+    assert!(type_warning
+        .stdout
+        .contains("Warning: filesize(): stat failed for 42"));
 
     let stream = runtime_error(
         r#"<?php

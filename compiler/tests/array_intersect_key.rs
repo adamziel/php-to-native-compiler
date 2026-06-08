@@ -1,12 +1,6 @@
 use php_compiler::error::Phase;
 use php_compiler::{emit_ir_source, run_source};
 
-fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
-    let error = run_source(source).unwrap_err();
-    assert_eq!(error.phase, Phase::Runtime);
-    error
-}
-
 #[test]
 fn array_intersect_key_preserves_first_array_entries_with_matching_keys() {
     let source = r#"<?php
@@ -82,40 +76,41 @@ echo count($none);
 
 #[test]
 fn array_intersect_key_requires_array_first_argument() {
-    let error = runtime_error("<?php\n$right = [];\necho array_intersect_key(42, $right);\n");
-
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
+    let execution = run_source(
+        "<?php\n$right = [];\ntry { array_intersect_key(42, $right); } catch (TypeError $e) { echo $e->getMessage(); }\n",
+    )
+    .unwrap();
     assert_eq!(
-        error.message,
-        "unsupported call array_intersect_key(): first argument must be array, got int"
+        execution.stdout,
+        "array_intersect_key(): Argument #1 ($array) must be of type array, int given"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
 fn array_intersect_key_requires_array_second_argument() {
-    let error = runtime_error("<?php\n$left = [];\necho array_intersect_key($left, 42);\n");
-
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
+    let execution = run_source(
+        "<?php\n$left = [];\ntry { array_intersect_key($left, 42); } catch (TypeError $e) { echo $e->getMessage(); }\n",
+    )
+    .unwrap();
     assert_eq!(
-        error.message,
-        "unsupported call array_intersect_key(): second argument must be array, got int"
+        execution.stdout,
+        "array_intersect_key(): Argument #2 must be of type array, int given"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
 fn array_intersect_key_requires_array_variadic_arguments() {
-    let error = runtime_error(
-        "<?php\n$left = [];\n$right = [];\necho array_intersect_key($left, $right, 42);\n",
-    );
-
-    assert_eq!(error.line, 4);
-    assert_eq!(error.column, 6);
+    let execution = run_source(
+        "<?php\n$left = [];\n$right = [];\ntry { array_intersect_key($left, $right, 42); } catch (TypeError $e) { echo $e->getMessage(); }\n",
+    )
+    .unwrap();
     assert_eq!(
-        error.message,
-        "unsupported call array_intersect_key(): third argument must be array, got int"
+        execution.stdout,
+        "array_intersect_key(): Argument #3 must be of type array, int given"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

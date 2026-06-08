@@ -1,1 +1,9 @@
-run stream_context_params.php
+exit: 255
+stdout:
+resource|first:POST:X-WP: seed:POST:verify:ignored|
+Fatal error: Uncaught TypeError: stream_context_set_params(): Argument #1 ($context) must be an array with valid callbacks as values, function "second" not found or invalid function name in tests/fixtures/milestone1403/stream_context_params.php:32
+Stack trace:
+#0 {main}
+  thrown in tests/fixtures/milestone1403/stream_context_params.php on line 32--- stdout end ---
+stderr:
+--- stderr end ---

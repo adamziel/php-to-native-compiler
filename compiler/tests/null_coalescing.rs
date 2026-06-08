@@ -390,7 +390,7 @@ fn null_coalescing_assignment_rejects_non_array_offset_targets() {
 
 #[test]
 fn null_coalescing_rejects_external_non_public_object_properties() {
-    let error = runtime_error(
+    let execution = run_source(
         r#"<?php
 class Box {
     private $secret;
@@ -398,19 +398,19 @@ class Box {
 $box = new Box();
 echo $box->secret ?? "fallback";
 "#,
-    );
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 6);
-    assert_eq!(error.column, 6);
+    assert_eq!(execution.exit_code, 255);
     assert_eq!(
-        error.message,
-        "unsupported object property access: non-public property Box::$secret requires same-class method context in the current subset"
+        execution.stdout,
+        "Fatal error: Uncaught Error: Cannot access private property Box::$secret in Command line code:6\nStack trace:\n#0 {main}\n  thrown in Command line code on line 6"
     );
 }
 
 #[test]
 fn null_coalescing_assignment_rejects_external_non_public_object_properties() {
-    let error = runtime_error(
+    let execution = run_source(
         r#"<?php
 class Box {
     private $secret;
@@ -418,13 +418,13 @@ class Box {
 $box = new Box();
 $box->secret ??= "fallback";
 "#,
-    );
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 6);
-    assert_eq!(error.column, 1);
+    assert_eq!(execution.exit_code, 255);
     assert_eq!(
-        error.message,
-        "unsupported object property access: non-public property Box::$secret requires same-class method context in the current subset"
+        execution.stdout,
+        "Fatal error: Uncaught Error: Cannot access private property Box::$secret in Command line code:6\nStack trace:\n#0 {main}\n  thrown in Command line code on line 6"
     );
 }
 

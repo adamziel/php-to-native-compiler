@@ -1,2 +1,1 @@
-parse error at 3:12: unsupported readonly property declaration: readonly property metadata, initialization rules, write-once enforcement, reflection, and native lowering are not implemented
-
+Fatal error: Readonly property Value::$id must have type in tests/fixtures/unsupported_object_features/unsupported_readonly_member_modifier.php on line 3

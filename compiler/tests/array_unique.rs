@@ -144,42 +144,76 @@ echo $again["first"], "|", defined("SORT_NUMERIC"), "|", SORT_NUMERIC;
 
 #[test]
 fn array_unique_requires_array_argument() {
-    let error = runtime_error("<?php\necho array_unique(42);\n");
+    let execution = run_source(
+        r#"<?php
+try {
+    array_unique(42);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+$call = "array_unique";
+try {
+    $call(false, SORT_STRING);
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
     assert_eq!(
-        error.message,
-        "unsupported call array_unique(): argument must be array, got int"
+        execution.stdout,
+        "array_unique(): Argument #1 ($array) must be of type array, int given\narray_unique(): Argument #1 ($array) must be of type array, false given"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
-fn array_unique_rejects_non_scalar_value_comparisons() {
-    let array_error = runtime_error("<?php\n$items = [[]];\necho array_unique($items);\n");
+fn array_unique_string_mode_converts_arrays_objects_resources_and_preserves_reference_slots() {
+    let source = r#"<?php
+class Box {
+    public function __toString() {
+        return "box";
+    }
+}
 
-    assert_eq!(array_error.line, 3);
-    assert_eq!(array_error.column, 6);
+$value = "hello";
+$ref =& $value;
+$items = [
+    "first-array" => [1, 2],
+    "second-array" => [3, 4],
+    "first-object" => new Box(),
+    "second-object" => new Box(),
+    "first-resource" => STDERR,
+    "second-resource" => STDERR,
+    "ref" => &$ref,
+    "dup" => "hello",
+];
+
+var_dump(array_unique($items, SORT_STRING));
+"#;
+
+    let execution = run_source(source).unwrap();
+
     assert_eq!(
-        array_error.message,
-        "unsupported call array_unique(): values must be scalar in the current subset, got array"
+        execution
+            .stdout
+            .matches("Warning: Array to string conversion")
+            .count(),
+        2
     );
-
-    let object_error = runtime_error(
-        r#"<?php
-class Box {}
-$box = new Box();
-$items = [$box];
-echo array_unique($items);
-"#,
-    );
-
-    assert_eq!(object_error.line, 5);
-    assert_eq!(object_error.column, 6);
-    assert_eq!(
-        object_error.message,
-        "unsupported call array_unique(): values must be scalar in the current subset, got object"
-    );
+    assert!(execution.stdout.contains("array(4)"));
+    assert!(execution.stdout.contains("[\"first-array\"]=>"));
+    assert!(execution.stdout.contains("[\"first-object\"]=>"));
+    assert!(execution.stdout.contains("[\"first-resource\"]=>"));
+    assert!(execution
+        .stdout
+        .contains("[\"ref\"]=>\n  &string(5) \"hello\""));
+    assert!(!execution.stdout.contains("[\"second-array\"]=>"));
+    assert!(!execution.stdout.contains("[\"second-object\"]=>"));
+    assert!(!execution.stdout.contains("[\"second-resource\"]=>"));
+    assert!(!execution.stdout.contains("[\"dup\"]=>"));
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

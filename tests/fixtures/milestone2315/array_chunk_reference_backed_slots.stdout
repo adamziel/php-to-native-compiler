@@ -1,0 +1,64 @@
+array(2) {
+  [0]=>
+  array(2) {
+    [0]=>
+    &string(3) "one"
+    [1]=>
+    string(5) "plain"
+  }
+  [1]=>
+  array(2) {
+    [0]=>
+    &string(3) "two"
+    [1]=>
+    &string(5) "three"
+  }
+}
+array(2) {
+  [0]=>
+  array(2) {
+    [0]=>
+    &string(3) "one"
+    [1]=>
+    string(5) "plain"
+  }
+  [1]=>
+  array(2) {
+    [0]=>
+    &string(7) "changed"
+    [1]=>
+    &string(5) "three"
+  }
+}
+array(2) {
+  [0]=>
+  array(2) {
+    [3]=>
+    &string(3) "one"
+    ["name"]=>
+    string(5) "plain"
+  }
+  [1]=>
+  array(2) {
+    [2]=>
+    &string(7) "changed"
+    [1]=>
+    &string(5) "three"
+  }
+}
+array(2) {
+  [0]=>
+  array(2) {
+    [3]=>
+    &string(3) "one"
+    ["name"]=>
+    string(5) "plain"
+  }
+  [1]=>
+  array(2) {
+    [2]=>
+    &string(7) "changed"
+    [1]=>
+    &string(5) "later"
+  }
+}

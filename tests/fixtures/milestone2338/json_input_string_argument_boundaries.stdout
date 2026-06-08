@@ -1,0 +1,21 @@
+array(1) {
+  ["ok"]=>
+  bool(true)
+}
+bool(true)
+array(2) {
+  [0]=>
+  int(1)
+  [1]=>
+  int(2)
+}
+
+Deprecated: json_decode(): Passing null to parameter #1 ($json) of type string is deprecated in tests/fixtures/milestone2338/json_input_string_argument_boundaries.php on line 15
+NULL
+
+Deprecated: json_validate(): Passing null to parameter #1 ($json) of type string is deprecated in tests/fixtures/milestone2338/json_input_string_argument_boundaries.php on line 16
+bool(false)
+json_decode(): Argument #1 ($json) must be of type string, array given
+json_validate(): Argument #1 ($json) must be of type string, stdClass given
+61efbfbd62
+valid

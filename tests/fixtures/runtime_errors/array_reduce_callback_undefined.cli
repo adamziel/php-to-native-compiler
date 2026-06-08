@@ -1,6 +1,8 @@
-exit: 1
+exit: 255
 stdout:
---- stdout end ---
+Fatal error: Uncaught Error: Call to undefined function missing_reduce() in tests/fixtures/runtime_errors/array_reduce_callback_undefined.php:3
+Stack trace:
+#0 {main}
+  thrown in tests/fixtures/runtime_errors/array_reduce_callback_undefined.php on line 3--- stdout end ---
 stderr:
-runtime error at tests/fixtures/runtime_errors/array_reduce_callback_undefined.php:3:6: undefined function missing_reduce()
 --- stderr end ---

@@ -75,6 +75,54 @@ echo $again[6], "|", $again["name"];
 }
 
 #[test]
+fn array_reverse_coerces_scalar_preserve_keys_and_reports_bool_type_errors() {
+    let source = r#"<?php
+$items = [];
+$items["name"] = "Ada";
+$items[5] = "five";
+$items["2"] = "two";
+$items["02"] = "zero two";
+$items[-1] = "negative";
+$items[] = "next";
+
+$truthy_int = array_reverse($items, 1);
+echo $truthy_int[6], "|", $truthy_int[-1], "|", $truthy_int["name"], "\n";
+
+$falsey_int = array_reverse($items, 0);
+echo $falsey_int[0], "|", $falsey_int[1], "|", $falsey_int["name"], "\n";
+
+$truthy_string = array_reverse($items, "1");
+echo $truthy_string[6], "|", $truthy_string[-1], "|", $truthy_string["name"], "\n";
+
+$falsey_string = array_reverse($items, "0");
+echo $falsey_string[0], "|", $falsey_string[1], "|", $falsey_string["name"], "\n";
+
+$falsey_null = array_reverse($items, null);
+echo $falsey_null[0], "|", $falsey_null[1], "|", $falsey_null["name"], "\n";
+
+$truthy_float = array_reverse($items, 2.5);
+echo $truthy_float[6], "|", $truthy_float[-1], "|", $truthy_float["name"], "\n";
+
+$call = "array_reverse";
+$dynamic = $call($items, "yes");
+echo $dynamic[6], "|", $dynamic[-1], "|", $dynamic["name"], "\n";
+
+try {
+    array_reverse($items, []);
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "next|negative|Ada\nnext|negative|Ada\nnext|negative|Ada\nnext|negative|Ada\nnext|negative|Ada\nnext|negative|Ada\nnext|negative|Ada\narray_reverse(): Argument #2 ($preserve_keys) must be of type bool, array given"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_reverse_requires_array_argument() {
     let error = runtime_error("<?php\necho array_reverse(42);\n");
 
@@ -87,15 +135,23 @@ fn array_reverse_requires_array_argument() {
 }
 
 #[test]
-fn array_reverse_requires_bool_preserve_keys_argument() {
-    let error = runtime_error("<?php\n$items = [1];\necho array_reverse($items, 1);\n");
+fn array_reverse_reports_bool_type_error_for_invalid_preserve_keys_argument() {
+    let source = r#"<?php
+$items = [1];
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
+try {
+    array_reverse($items, []);
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#;
+
+    let execution = run_source(source).unwrap();
     assert_eq!(
-        error.message,
-        "unsupported call array_reverse(): preserve_keys argument must be bool in the current subset, got int"
+        execution.stdout,
+        "array_reverse(): Argument #2 ($preserve_keys) must be of type bool, array given"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
