@@ -1,12 +1,12 @@
 # Harness Status
 
-Last generated: 2026-06-08T10:59:22+00:00
+Last generated: 2026-06-08T11:11:11+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
 
 ## Metric
-accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
+blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 
 ## Agents
 | name | role | current_status | tmux_window | worktree |
@@ -114,6 +114,8 @@ accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
 | conflict-resolver-10 | Conflict Resolver | crash | conflict-resolver-10 |  |
 | conflict-resolver-11 | Conflict Resolver | crash | conflict-resolver-11 |  |
 | conflict-resolver-12 | Conflict Resolver | crash | conflict-resolver-12 |  |
+| conflict-resolver-13 | Conflict Resolver | crash | conflict-resolver-13 |  |
+| conflict-resolver-14 | Conflict Resolver | running | conflict-resolver-14 |  |
 | conflict-resolver-2 | Conflict Resolver | crash | conflict-resolver-2 |  |
 | conflict-resolver-3 | Conflict Resolver | crash | conflict-resolver-3 |  |
 | conflict-resolver-4 | Conflict Resolver | crash | conflict-resolver-4 |  |
@@ -191,7 +193,11 @@ accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
 | coordinator-159 | Coordinator | success | coordinator-159 |  |
 | coordinator-16 | Coordinator | crash | coordinator-16 |  |
 | coordinator-160 | Coordinator | crash | coordinator-160 |  |
-| coordinator-161 | Coordinator | running | coordinator-161 |  |
+| coordinator-161 | Coordinator | success | coordinator-161 |  |
+| coordinator-162 | Coordinator | success | coordinator-162 |  |
+| coordinator-163 | Coordinator | success | coordinator-163 |  |
+| coordinator-164 | Coordinator | success | coordinator-164 |  |
+| coordinator-165 | Coordinator | running | coordinator-165 |  |
 | coordinator-17 | Coordinator | success | coordinator-17 |  |
 | coordinator-18 | Coordinator | success | coordinator-18 |  |
 | coordinator-19 | Coordinator | stopped | coordinator-19 |  |
@@ -576,7 +582,7 @@ accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
 | developer-360 | Developer | crash | developer-360 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-360 |
 | developer-361 | Developer | crash | developer-361 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-361 |
 | developer-362 | Developer | running | developer-362 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-362 |
-| developer-363 | Developer | running | developer-363 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-363 |
+| developer-363 | Developer | stopped | developer-363 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-363 |
 | developer-37 | Developer | stopped | developer-37 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-37 |
 | developer-38 | Developer | stopped | developer-38 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-38 |
 | developer-39 | Developer | stopped | developer-39 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-39 |
@@ -662,7 +668,7 @@ accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
 | integrator-21 | Integrator | crash | integrator-21 |  |
 | integrator-22 | Integrator | success | integrator-22 |  |
 | integrator-23 | Integrator | crash | integrator-23 |  |
-| integrator-24 | Integrator | running | integrator-24 |  |
+| integrator-24 | Integrator | crash | integrator-24 |  |
 | integrator-3 | Integrator | stopped | integrator-3 |  |
 | integrator-4 | Integrator | crash | integrator-4 |  |
 | integrator-5 | Integrator | success | integrator-5 |  |
@@ -674,7 +680,9 @@ accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 2065 | Resume card2064 integration tail disposition after integrator-23 crash | Integrator | integration-support | development | assigned |  | 0.0 |
+| 2067 | Resolve current-base similar_text integration conflict for row140 | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
+| 2066 | Resolve current-base str_replace replacement-array integration conflict for row1595 | Conflict Resolver | integration-support | done | stale |  | 0.0 |
+| 2065 | Resume card2064 integration tail disposition after integrator-23 crash | Integrator | integration-support | done | done |  | 0.0 |
 | 2064 | Classify remaining integration_failed tail after lane1823 | Integrator | integration-support | planned | queued |  | 0.0 |
 | 2063 | Integrate clean lane 1823 from work/developer-124 | Integrator | integration-support | planned | queued |  | 0.0 |
 | 2062 | Assign next sanctioned Developer card after lane 95 guardrail report | Developer | implementation | done | stale |  | 0.0 |
@@ -682,28 +690,26 @@ accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
 | 2060 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
 | 2059 | Resume integration backlog disposition after integrator-19 crash | Integrator | integration-support | planned | queued |  | 0.0 |
 | 2058 | Assign next Developer card after developer-357 lane 93 verification | Developer | implementation | done | integrated | ready_fast_path | 0.0 |
-| 2057 | Assign next sanctioned Developer card after developer-353 capacity handoff 2045 | Developer | implementation | done | stale |  | 0.0 |
-| 2056 | Assign concrete Developer card after developer-352 capacity handoff 2043 | Developer | implementation | done | stale |  | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=2, passed=417, skipped=0)
+failed — tools/run-tests.sh (error=0, failed=3, passed=416, skipped=0)
 
 ## Resource samples
-Latest: CPU 44.81%, RAM 18.72%, disk free 108.7 GB.
+Latest: CPU 23.36%, RAM 17.72%, disk free 77.58 GB.
 
 ## Recent events
-- 2026-06-08T10:58:58+00:00 **terminal_agent_windows_closed**: Closed 655 terminal agent tmux windows
-- 2026-06-08T10:59:02+00:00 **test_gate_quarantined_known_red**: 7 known failures are quarantined; metric acceptance remains blocked, but unrelated work may continue.
-- 2026-06-08T10:59:03+00:00 **focused_tests_passed**: Focused runtime filters for lane 2027 pass locally; proceeding to exact acceptance command tools/run-tests.sh.
-- 2026-06-08T10:59:06+00:00 **terminal_agent_windows_closed**: Closed 655 terminal agent tmux windows
-- 2026-06-08T10:59:07+00:00 **test_gate_quarantined_known_red**: 8 known failures are quarantined; metric acceptance remains blocked, but unrelated work may continue.
-- 2026-06-08T10:59:11+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-08T10:59:12+00:00 **terminal_agent_windows_closed**: Closed 655 terminal agent tmux windows
-- 2026-06-08T10:59:12+00:00 **test_gate_quarantined_known_red**: 9 known failures are quarantined; metric acceptance remains blocked, but unrelated work may continue.
-- 2026-06-08T10:59:15+00:00 **terminal_agent_windows_closed**: Closed 655 terminal agent tmux windows
-- 2026-06-08T10:59:19+00:00 **supervisor_brief_updated**: Updated .harness/supervisor-brief.md with Coordinator-161 addendum: developer-362 owns card2027 handoff, developer-363 owns card100, replacement Integrator request 72183 queued for card2064, lane1823/card2063 stale after report622 integration.
-- 2026-06-08T10:59:22+00:00 **poke**: Queued message for developer-362
-- 2026-06-08T10:59:22+00:00 **poke_delivered**: Delivered poke to 1 agents
+- 2026-06-08T11:10:38+00:00 **card_repair**: Requeued 1 cards owned by terminal workers
+- 2026-06-08T11:10:38+00:00 **agent_started**: Started coordinator-165 for Maintain Coordinator capacity
+- 2026-06-08T11:10:41+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-08T11:10:47+00:00 **terminal_agent_windows_closed**: Closed 662 terminal agent tmux windows
+- 2026-06-08T11:10:49+00:00 **supervision_checkpoint**: cargo test -q advanced past exception_boundaries and now fails file_exists_builtin zero-argument stale TypeError expectation; developer-362 is patching that one assertion.
+- 2026-06-08T11:10:49+00:00 **terminal_agent_windows_closed**: Closed 662 terminal agent tmux windows
+- 2026-06-08T11:10:51+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-08T11:10:56+00:00 **focused_test_passed**: Focused file_exists_builtin target passed after updating zero-arg file_exists fatal TypeError expectation.
+- 2026-06-08T11:10:56+00:00 **terminal_agent_windows_closed**: Closed 662 terminal agent tmux windows
+- 2026-06-08T11:11:00+00:00 **worklane_deduplicated**: Updated existing failing-test card#2027 from run 40411
+- 2026-06-08T11:11:04+00:00 **terminal_agent_windows_closed**: Closed 662 terminal agent tmux windows
+- 2026-06-08T11:11:04+00:00 **terminal_agent_windows_closed**: Closed 662 terminal agent tmux windows
 
 ## Next steps
-Move next worklane forward: Resume card2064 integration tail disposition after integrator-23 crash
+Move next worklane forward: Resolve current-base similar_text integration conflict for row140
