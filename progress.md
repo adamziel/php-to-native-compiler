@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T17:40:18+00:00
+Last generated: 2026-06-08T18:03:06+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -127,6 +127,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | conflict-resolver-16 | Conflict Resolver | crash | conflict-resolver-16 |  |
 | conflict-resolver-17 | Conflict Resolver | crash | conflict-resolver-17 |  |
 | conflict-resolver-18 | Conflict Resolver | crash | conflict-resolver-18 |  |
+| conflict-resolver-19 | Conflict Resolver | running | conflict-resolver-19 |  |
 | conflict-resolver-2 | Conflict Resolver | crash | conflict-resolver-2 |  |
 | conflict-resolver-3 | Conflict Resolver | crash | conflict-resolver-3 |  |
 | conflict-resolver-4 | Conflict Resolver | crash | conflict-resolver-4 |  |
@@ -321,8 +322,11 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-264 | Coordinator | crash | coordinator-264 |  |
 | coordinator-265 | Coordinator | crash | coordinator-265 |  |
 | coordinator-266 | Coordinator | success | coordinator-266 |  |
-| coordinator-267 | Coordinator | running | coordinator-267 |  |
+| coordinator-267 | Coordinator | success | coordinator-267 |  |
+| coordinator-268 | Coordinator | success | coordinator-268 |  |
+| coordinator-269 | Coordinator | success | coordinator-269 |  |
 | coordinator-27 | Coordinator | crash | coordinator-27 |  |
+| coordinator-270 | Coordinator | running | coordinator-270 |  |
 | coordinator-28 | Coordinator | crash | coordinator-28 |  |
 | coordinator-29 | Coordinator | crash | coordinator-29 |  |
 | coordinator-3 | Coordinator | crash | coordinator-3 |  |
@@ -869,6 +873,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2135 | Read-only current-base reconciliation for card2131 red gate | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
 | 2134 | Assign next sanctioned Developer card after card2075 read-only support | Developer | implementation | done | stale |  | 0.0 |
 | 2133 | Assign next sanctioned Developer card after worklane 2130 report | Developer | implementation | done | stale |  | 0.0 |
 | 2132 | Assign next sanctioned Developer card after worklane2117 report | Developer | implementation | done | stale |  | 0.0 |
@@ -878,27 +883,26 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | 2128 | Dispose requeued already-integrated cleanup rows 2125 and 2126 | Integrator | integration-support | planned | queued |  | 0.0 |
 | 2127 | Fix current abs() fatal-path test contract hard blocker | Developer | implementation | done | integrated | ready_fast_path | 0.0 |
 | 2126 | Integrate card2123 duplicate-report resolver branch | Integrator | integration-support | planned | queued |  | 0.0 |
-| 2125 | Dispose stale already-integrated integration rows 2068 and 2077 | Integrator | integration-support | planned | queued |  | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=3, passed=417, skipped=0)
+failed — tools/run-tests.sh (error=0, failed=4, passed=415, skipped=0)
 
 ## Resource samples
-Latest: CPU 18.41%, RAM 20.3%, disk free 48.96 GB.
+Latest: CPU 14.73%, RAM 20.09%, disk free 29.78 GB.
 
 ## Recent events
-- 2026-06-08T17:39:47+00:00 **terminal_agent_windows_closed**: Closed 849 terminal agent tmux windows
-- 2026-06-08T17:39:51+00:00 **card_stage**: card#2130 integration -> done
-- 2026-06-08T17:39:51+00:00 **integration_pushed**: Integrated worklane#2130 and pushed origin/master
-- 2026-06-08T17:39:51+00:00 **coordinator_report_filed**: Coordinator-266 filed agent_report 781 for worklane/card 2054 and ended successfully.
-- 2026-06-08T17:39:51+00:00 **terminal_agent_windows_closed**: Closed 849 terminal agent tmux windows
-- 2026-06-08T17:39:52+00:00 **card_stage**: card#2054 development -> planned
-- 2026-06-08T17:39:52+00:00 **card_repair**: Requeued 1 cards owned by terminal workers
-- 2026-06-08T17:39:52+00:00 **agent_started**: Started coordinator-267 for Maintain Coordinator capacity
-- 2026-06-08T17:40:01+00:00 **terminal_agent_windows_closed**: Closed 850 terminal agent tmux windows
-- 2026-06-08T17:40:02+00:00 **terminal_agent_windows_closed**: Closed 850 terminal agent tmux windows
-- 2026-06-08T17:40:12+00:00 **terminal_agent_windows_closed**: Closed 850 terminal agent tmux windows
-- 2026-06-08T17:40:17+00:00 **terminal_agent_windows_closed**: Closed 850 terminal agent tmux windows
+- 2026-06-08T17:51:26+00:00 **terminal_agent_windows_closed**: Closed 853 terminal agent tmux windows
+- 2026-06-08T17:51:39+00:00 **terminal_agent_windows_closed**: Closed 853 terminal agent tmux windows
+- 2026-06-08T17:51:39+00:00 **terminal_agent_windows_closed**: Closed 853 terminal agent tmux windows
+- 2026-06-08T17:51:39+00:00 **test_gate_quarantined_known_red**: 8 known failures are quarantined; metric acceptance remains blocked, but unrelated work may continue.
+- 2026-06-08T17:51:44+00:00 **test_gate_quarantined_known_red**: 9 known failures are quarantined; metric acceptance remains blocked, but unrelated work may continue.
+- 2026-06-08T17:51:48+00:00 **coordination_decision**: Preserve developer-418/card2131 as sole source owner while exact tools/run-tests.sh remains red at local/status commit 448aa633; let conflict-resolver-19 finish read-only reconciliation; no duplicate Developer or branchless Integrator spawn.
+- 2026-06-08T17:51:49+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-08T17:51:50+00:00 **terminal_agent_windows_closed**: Closed 853 terminal agent tmux windows
+- 2026-06-08T17:51:53+00:00 **test_result**: Focused builtin_exception_class test passed after updating constructor/fatal execution assertions.
+- 2026-06-08T17:51:55+00:00 **terminal_agent_windows_closed**: Closed 853 terminal agent tmux windows
+- 2026-06-08T17:52:01+00:00 **terminal_agent_windows_closed**: Closed 853 terminal agent tmux windows
+- 2026-06-08T17:52:04+00:00 **agent_report**: coordinator-270 reported coordination_complete_no_spawn_active_owner_preserved
 
 ## Next steps
-Move next worklane forward: Fix global test suite failures
+Move next worklane forward: Read-only current-base reconciliation for card2131 red gate
