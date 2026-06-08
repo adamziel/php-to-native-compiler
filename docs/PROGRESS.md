@@ -20,6 +20,30 @@ Implemented:
   No PHP support-matrix behavior changed, and unsupported runtime/native
   edges remain as previously documented.
 
+- Added a harness/control-plane known-failure gate script for full-suite
+  `test_runs` rows. `tools/known_failure_gate.py` classifies rows as
+  `full_green`, `quarantined_known_red_no_regressions`, or
+  `failed_new_regressions`, writes deterministic `metadata.test_gate_*` keys,
+  and keeps `test_gate_metric_eligible=0` for exact known-red quarantine so
+  public PHPT metric sampling remains blocked until `tools/run-tests.sh` is
+  fully green. The pinned baseline is owned by card 1808 and contains only
+  `tests::native_closure_invoke_helpers_bridge_call_arguments_to_call_results`
+  and
+  `tests::native_magic_method_lookup_rejects_malformed_signature_metadata_before_fallback`;
+  it must be removed or updated only after card 1808 is reviewed/integrated or
+  another scheduler-approved baseline is recorded.
+- Re-queried the current harness SQLite test history before pinning the
+  baseline. Recent `tools/run-tests.sh` rows do not consistently match the
+  authorized two-test baseline: the latest audited row at the time of this
+  lane had five cargo failures, and adjacent rows varied between one, two,
+  three, and five failures. Those shapes are intentionally rejected as
+  `failed_new_regressions` unless the observed failure set exactly equals the
+  card 1808 baseline.
+- Added focused Python unittest coverage for green, exact known-red,
+  missing-known-failure, and extra/different-failure cases. This is an
+  operational gate only; it does not change compiler/runtime support and does
+  not claim progress on the blocked `php_runtime` failures.
+
 ## 2026-06-07
 
 Implemented:
