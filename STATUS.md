@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T11:58:10+00:00
+Last generated: 2026-06-08T12:00:56+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -603,6 +603,9 @@ accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
 | developer-361 | Developer | crash | developer-361 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-361 |
 | developer-362 | Developer | running | developer-362 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-362 |
 | developer-363 | Developer | stopped | developer-363 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-363 |
+| developer-364 | Developer | running | developer-364 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-364 |
+| developer-365 | Developer | running | developer-365 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-365 |
+| developer-366 | Developer | running | developer-366 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-366 |
 | developer-37 | Developer | stopped | developer-37 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-37 |
 | developer-38 | Developer | stopped | developer-38 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-38 |
 | developer-39 | Developer | stopped | developer-39 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-39 |
@@ -701,36 +704,36 @@ accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2074 | card2027 codegen assertion cluster | Developer | implementation | development | assigned |  | 0.0 |
+| 2073 | card2027 runtime native lookup/invoke cluster | Developer | implementation | development | assigned |  | 0.0 |
+| 2072 | card2027 inventory: no-fail-fast failing target map | Developer | implementation | planned | queued |  | 0.0 |
+| 2071 | Split card2027 stabilization into parallel lanes | Coordinator | control-plane | development | assigned |  | 0.0 |
+| 2070 | Inventory remaining cargo test failures for card2027 parallel split | Developer | implementation | development | assigned |  | 0.0 |
 | 2069 | Integrate ready row136 native scalar cast resolver | Integrator | integration-support | planned | queued |  | 0.0 |
 | 2068 | Resolve current-base native scalar cast integration conflict for row136 | Conflict Resolver | integration-support | integration | ready_for_integration | ready_fast_path | 0.0 |
 | 2067 | Resolve current-base similar_text integration conflict for row140 | Conflict Resolver | integration-support | done | stale |  | 0.0 |
 | 2066 | Resolve current-base str_replace replacement-array integration conflict for row1595 | Conflict Resolver | integration-support | done | stale |  | 0.0 |
 | 2065 | Resume card2064 integration tail disposition after integrator-23 crash | Integrator | integration-support | done | done |  | 0.0 |
-| 2064 | Classify remaining integration_failed tail after lane1823 | Integrator | integration-support | planned | queued |  | 0.0 |
-| 2063 | Integrate clean lane 1823 from work/developer-124 | Integrator | integration-support | planned | queued |  | 0.0 |
-| 2062 | Assign next sanctioned Developer card after lane 95 guardrail report | Developer | implementation | done | stale |  | 0.0 |
-| 2061 | Drain live integration_failed endpoints and retire superseded rows | Integrator | integration-support | planned | queued |  | 0.0 |
-| 2060 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=3, passed=416, skipped=0)
+failed — tools/run-tests.sh (error=0, failed=2, passed=601, skipped=0)
 
 ## Resource samples
-Latest: CPU 12.97%, RAM 18.33%, disk free 76.89 GB.
+Latest: CPU 35.17%, RAM 26.09%, disk free 75.94 GB.
 
 ## Recent events
-- 2026-06-08T11:57:31+00:00 **terminal_agent_windows_closed**: Closed 684 terminal agent tmux windows
-- 2026-06-08T11:57:37+00:00 **terminal_agent_windows_closed**: Closed 684 terminal agent tmux windows
-- 2026-06-08T11:57:42+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-08T11:57:44+00:00 **terminal_agent_windows_closed**: Closed 684 terminal agent tmux windows
-- 2026-06-08T11:57:45+00:00 **terminal_agent_windows_closed**: Closed 684 terminal agent tmux windows
-- 2026-06-08T11:57:51+00:00 **team_scaling_request**: User asked whether multiple developers can fix tests because one lane will take too long. Manhole using supervised-team workflow: scale only into independent test-target lanes/worktrees; keep developer-362 on native_arithmetic_boundary until stable; use no-fail-fast inventory to split remaining failures.
-- 2026-06-08T11:57:53+00:00 **terminal_agent_windows_closed**: Closed 684 terminal agent tmux windows
-- 2026-06-08T11:57:58+00:00 **terminal_agent_windows_closed**: Closed 684 terminal agent tmux windows
-- 2026-06-08T11:57:58+00:00 **terminal_agent_windows_closed**: Closed 684 terminal agent tmux windows
-- 2026-06-08T11:58:02+00:00 **terminal_agent_windows_closed**: Closed 684 terminal agent tmux windows
-- 2026-06-08T11:58:10+00:00 **poke**: Queued message for coordinator-184
-- 2026-06-08T11:58:10+00:00 **poke_delivered**: Delivered poke to 1 agents
+- 2026-06-08T12:00:33+00:00 **terminal_agent_windows_closed**: Closed 684 terminal agent tmux windows
+- 2026-06-08T12:00:35+00:00 **terminal_agent_windows_closed**: Closed 684 terminal agent tmux windows
+- 2026-06-08T12:00:42+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-08T12:00:44+00:00 **supervisor_redirect**: Redirected developer-362 after native_arithmetic_boundary remained failing: require exact remaining failing test names/counts before further edits, then one root cause at a time; no broad snapshot/assertion churn.
+- 2026-06-08T12:00:44+00:00 **terminal_agent_windows_closed**: Closed 684 terminal agent tmux windows
+- 2026-06-08T12:00:44+00:00 **coordinator_prompt_deferred**: CPU and RAM are underused, but integration is backed up. Add integration or conflict-resolution support instead of more feature Developers.
+- 2026-06-08T12:00:45+00:00 **card_start**: Started card 2027 runtime native lookup/invoke cluster in developer-365 worktree; required docs read except DEVELOPMENT.md was not present in worktree and is being checked at repository root.
+- 2026-06-08T12:00:47+00:00 **development_start**: developer-366 started card2027 codegen assertion cluster in assigned worktree.
+- 2026-06-08T12:00:53+00:00 **test_gate_hard_blocker**: New failures appeared beyond the known-red quarantine: codegen::tests::c_assembly_non_local_assignment_families_share_assignment_owner_boundary, codegen::tests::generated_c_string_comparison_safety_uses_shared_pair_classifier
+- 2026-06-08T12:00:53+00:00 **terminal_agent_windows_closed**: Closed 684 terminal agent tmux windows
+- 2026-06-08T12:00:56+00:00 **poke**: Queued message for developer-362
+- 2026-06-08T12:00:56+00:00 **poke_delivered**: Delivered poke to 1 agents
 
 ## Next steps
-Move next worklane forward: Integrate ready row136 native scalar cast resolver
+Move next worklane forward: card2027 codegen assertion cluster
