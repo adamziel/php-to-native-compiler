@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T13:11:10+00:00
+Last generated: 2026-06-08T13:26:11+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -89,6 +89,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | architect-78 | Architect | crash | architect-78 |  |
 | architect-79 | Architect | crash | architect-79 |  |
 | architect-8 | Architect | crash | architect-8 |  |
+| architect-80 | Architect | running | architect-80 |  |
 | architect-9 | Architect | crash | architect-9 |  |
 | auditor-1 | Auditor | stopped | auditor-1 |  |
 | auditor-10 | Auditor | crash | auditor-10 |  |
@@ -244,7 +245,12 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-200 | Coordinator | success | coordinator-200 |  |
 | coordinator-201 | Coordinator | crash | coordinator-201 |  |
 | coordinator-202 | Coordinator | success | coordinator-202 |  |
-| coordinator-203 | Coordinator | running | coordinator-203 |  |
+| coordinator-203 | Coordinator | success | coordinator-203 |  |
+| coordinator-204 | Coordinator | success | coordinator-204 |  |
+| coordinator-205 | Coordinator | success | coordinator-205 |  |
+| coordinator-206 | Coordinator | success | coordinator-206 |  |
+| coordinator-207 | Coordinator | success | coordinator-207 |  |
+| coordinator-208 | Coordinator | running | coordinator-208 |  |
 | coordinator-21 | Coordinator | crash | coordinator-21 |  |
 | coordinator-22 | Coordinator | crash | coordinator-22 |  |
 | coordinator-23 | Coordinator | stopped | coordinator-23 |  |
@@ -639,7 +645,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-374 | Developer | crash | developer-374 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-374 |
 | developer-375 | Developer | running | developer-375 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-375 |
 | developer-376 | Developer | running | developer-376 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-376 |
-| developer-377 | Developer | running | developer-377 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-377 |
+| developer-377 | Developer | stopped | developer-377 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-377 |
 | developer-38 | Developer | stopped | developer-38 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-38 |
 | developer-39 | Developer | stopped | developer-39 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-39 |
 | developer-4 | Developer | stopped | developer-4 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-4 |
@@ -741,36 +747,36 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2087 | Find systemic cause for repeated failure: abs_rejects_forms_outside_current_subset | Architect | advisory | development | assigned |  | 0.0 |
+| 2086 | Assign next concrete Developer card after worklane 2081 | Developer | implementation | done | stale |  | 0.0 |
 | 2085 | Consume card2084 lane105 report-only cleanup | Integrator | integration-support | planned | queued |  | 0.0 |
 | 2084 | Integrate ready card105 lane2081 report-only cleanup | Integrator | integration-support | planned | queued |  | 0.0 |
 | 2083 | Assign next concrete Developer card after worklane 2081 | Developer | implementation | done | stale |  | 0.0 |
 | 2082 | Resolve integration failure for card #2073: card2027 runtime native lookup/invoke cluster | Conflict Resolver | integration-support | done | stale |  | 0.0 |
-| 2081 | Resolve integration failure for card #105: Lane100 proof evaluator and before/after candidate counts | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
+| 2081 | Resolve integration failure for card #105: Lane100 proof evaluator and before/after candidate counts | Conflict Resolver | integration-support | done | integrated | ready_fast_path | 0.0 |
 | 2080 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
 | 2079 | Classify latest native invoke integration_failed chain 2042 | Conflict Resolver | integration-support | done | stale |  | 0.0 |
 | 2078 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
-| 2077 | Integrate ready card2074 codegen assertion cluster | Integrator | integration-support | planned | queued |  | 0.0 |
-| 2076 | Reconcile stale integration queue state after accepted row136/tail reports | Integrator | integration-support | planned | queued |  | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=3, passed=416, skipped=0)
+failed — tools/run-tests.sh (error=0, failed=4, passed=415, skipped=0)
 
 ## Resource samples
-Latest: CPU 17.44%, RAM 18.71%, disk free 153.88 GB.
+Latest: CPU 12.76%, RAM 17.89%, disk free 136.28 GB.
 
 ## Recent events
-- 2026-06-08T13:10:25+00:00 **agent_started**: Started coordinator-203 for Maintain Coordinator capacity
-- 2026-06-08T13:10:26+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-08T13:10:34+00:00 **terminal_agent_windows_closed**: Closed 722 terminal agent tmux windows
-- 2026-06-08T13:10:36+00:00 **conflict_resolution_decision**: Lane 2081 will reuse the proven clean resolution tree from local work/developer-374: origin/master plus .harness/reports/lane100-proof-evaluator-dev371.md only.
-- 2026-06-08T13:10:39+00:00 **terminal_agent_windows_closed**: Closed 722 terminal agent tmux windows
-- 2026-06-08T13:10:42+00:00 **terminal_agent_windows_closed**: Closed 722 terminal agent tmux windows
-- 2026-06-08T13:10:52+00:00 **terminal_agent_windows_closed**: Closed 722 terminal agent tmux windows
-- 2026-06-08T13:10:53+00:00 **terminal_agent_windows_closed**: Closed 722 terminal agent tmux windows
-- 2026-06-08T13:10:56+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-08T13:11:01+00:00 **terminal_agent_windows_closed**: Closed 722 terminal agent tmux windows
-- 2026-06-08T13:11:07+00:00 **terminal_agent_windows_closed**: Closed 722 terminal agent tmux windows
-- 2026-06-08T13:11:10+00:00 **terminal_agent_windows_closed**: Closed 722 terminal agent tmux windows
+- 2026-06-08T13:25:33+00:00 **test_progress**: Acceptance reached compiler/tests/builtin_exception_class.rs; stale constructor-argument unsupported assertion and uncaught throw diagnostic expectation no longer match current execution behavior.
+- 2026-06-08T13:25:34+00:00 **terminal_agent_windows_closed**: Closed 728 terminal agent tmux windows
+- 2026-06-08T13:25:34+00:00 **worklane_assigned**: Assigned worklane#2054 to coordinator-208
+- 2026-06-08T13:25:34+00:00 **coordinator_prompt**: CPU and RAM are underused, but integration is backed up. Add integration or conflict-resolution support instead of more feature Developers.
+- 2026-06-08T13:25:43+00:00 **terminal_agent_windows_closed**: Closed 728 terminal agent tmux windows
+- 2026-06-08T13:25:45+00:00 **terminal_agent_windows_closed**: Closed 728 terminal agent tmux windows
+- 2026-06-08T13:25:52+00:00 **terminal_agent_windows_closed**: Closed 728 terminal agent tmux windows
+- 2026-06-08T13:25:56+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-08T13:25:59+00:00 **terminal_agent_windows_closed**: Closed 728 terminal agent tmux windows
+- 2026-06-08T13:26:01+00:00 **terminal_agent_windows_closed**: Closed 728 terminal agent tmux windows
+- 2026-06-08T13:26:04+00:00 **test_progress**: Focused phpc builtin_exception_class integration test passes after updating constructor message and uncaught fatal assertions.
+- 2026-06-08T13:26:10+00:00 **terminal_agent_windows_closed**: Closed 728 terminal agent tmux windows
 
 ## Next steps
-Move next worklane forward: Consume card2084 lane105 report-only cleanup
+Move next worklane forward: Find systemic cause for repeated failure: abs_rejects_forms_outside_current_subset
