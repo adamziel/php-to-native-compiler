@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T14:54:50+00:00
+Last generated: 2026-06-08T15:17:28+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -269,7 +269,12 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-220 | Coordinator | success | coordinator-220 |  |
 | coordinator-221 | Coordinator | success | coordinator-221 |  |
 | coordinator-222 | Coordinator | success | coordinator-222 |  |
-| coordinator-223 | Coordinator | running | coordinator-223 |  |
+| coordinator-223 | Coordinator | success | coordinator-223 |  |
+| coordinator-224 | Coordinator | success | coordinator-224 |  |
+| coordinator-225 | Coordinator | crash | coordinator-225 |  |
+| coordinator-226 | Coordinator | success | coordinator-226 |  |
+| coordinator-227 | Coordinator | success | coordinator-227 |  |
+| coordinator-228 | Coordinator | running | coordinator-228 |  |
 | coordinator-23 | Coordinator | stopped | coordinator-23 |  |
 | coordinator-24 | Coordinator | crash | coordinator-24 |  |
 | coordinator-25 | Coordinator | crash | coordinator-25 |  |
@@ -673,14 +678,19 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-384 | Developer | stopped | developer-384 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-384 |
 | developer-385 | Developer | stopped | developer-385 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-385 |
 | developer-386 | Developer | stopped | developer-386 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-386 |
-| developer-387 | Developer | running | developer-387 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-387 |
-| developer-388 | Developer | running | developer-388 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-388 |
+| developer-387 | Developer | crash | developer-387 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-387 |
+| developer-388 | Developer | crash | developer-388 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-388 |
 | developer-389 | Developer | stopped | developer-389 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-389 |
 | developer-39 | Developer | stopped | developer-39 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-39 |
-| developer-390 | Developer | running | developer-390 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-390 |
-| developer-391 | Developer | running | developer-391 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-391 |
+| developer-390 | Developer | crash | developer-390 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-390 |
+| developer-391 | Developer | crash | developer-391 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-391 |
 | developer-392 | Developer | stopped | developer-392 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-392 |
 | developer-393 | Developer | stopped | developer-393 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-393 |
+| developer-394 | Developer | stopped | developer-394 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-394 |
+| developer-395 | Developer | running | developer-395 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-395 |
+| developer-396 | Developer | running | developer-396 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-396 |
+| developer-397 | Developer | running | developer-397 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-397 |
+| developer-398 | Developer | running | developer-398 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-398 |
 | developer-4 | Developer | stopped | developer-4 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-4 |
 | developer-40 | Developer | crash | developer-40 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-40 |
 | developer-41 | Developer | crash | developer-41 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-41 |
@@ -776,6 +786,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | integrator-33 | Integrator | stopped | integrator-33 |  |
 | integrator-34 | Integrator | stopped | integrator-34 |  |
 | integrator-35 | Integrator | success | integrator-35 |  |
+| integrator-36 | Integrator | running | integrator-36 |  |
 | integrator-4 | Integrator | crash | integrator-4 |  |
 | integrator-5 | Integrator | success | integrator-5 |  |
 | integrator-6 | Integrator | success | integrator-6 |  |
@@ -786,36 +797,36 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2110 | Resolve integration failure for card #2105: Resolve integration failure for card #2099: Fix next non-native-helper PHPT/focused failure under known-red quarantine | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
+| 2109 | Integrate card112 deferred source-lane report artifact | Integrator | integration-support | development | assigned |  | 0.0 |
+| 2108 | Assign next concrete Developer card after card 112 report | Developer | implementation | done | stale |  | 0.0 |
 | 2107 | Assign next Developer card after worklane 2100 ready | Developer | implementation | done | stale | ready_fast_path | 0.0 |
 | 2106 | Resolve integration failure for card #2100: Fix second distinct non-native-helper failure target under known-red quarantine | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
-| 2105 | Resolve integration failure for card #2099: Fix next non-native-helper PHPT/focused failure under known-red quarantine | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
+| 2105 | Resolve integration failure for card #2099: Fix next non-native-helper PHPT/focused failure under known-red quarantine | Conflict Resolver | integration-support | integration | integration_failed | ready_fast_path | 0.0 |
 | 2104 | Assign next sanctioned Developer card after developer-390 card2099 | Developer | implementation | done | stale |  | 0.0 |
 | 2103 | Resolve integration failure for card #111: COW/runtime source-lane prerequisite audit only | Conflict Resolver | integration-support | done | integrated | ready_fast_path | 0.0 |
 | 2102 | Assign next concrete Developer card after card 2095 repair | Developer | implementation | done | stale |  | 0.0 |
 | 2101 | Reconcile stale integration/control-plane rows after DB-lock restart | Integrator | integration-support | planned | queued |  | 0.0 |
-| 2100 | Fix second distinct non-native-helper failure target under known-red quarantine | Developer | implementation | integration | integration_failed | ready_fast_path | 0.0 |
-| 2099 | Fix next non-native-helper PHPT/focused failure under known-red quarantine | Developer | implementation | integration | integration_failed | ready_fast_path | 0.0 |
-| 2098 | Investigate harness scheduler DB-lock and stale active rows | Architect | advisory | planned | queued |  | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=3, passed=416, skipped=0)
+failed — tools/run-tests.sh (error=0, failed=4, passed=415, skipped=0)
 
 ## Resource samples
-Latest: CPU 17.8%, RAM 19.87%, disk free 70.95 GB.
+Latest: CPU 23.9%, RAM 20.94%, disk free 68.93 GB.
 
 ## Recent events
-- 2026-06-08T14:54:15+00:00 **test_passed**: Focused phpc array_filter test passed after updating unknown callback fatal expectation.
-- 2026-06-08T14:54:17+00:00 **terminal_agent_windows_closed**: Closed 766 terminal agent tmux windows
-- 2026-06-08T14:54:17+00:00 **terminal_agent_windows_closed**: Closed 766 terminal agent tmux windows
-- 2026-06-08T14:54:19+00:00 **coordination_decision**: Coordinator-223 preserved active owners and avoided duplicate spawns after inspecting docs, harness state, reports, integration attempts, test runs, resources, and Manhole directives.
-- 2026-06-08T14:54:19+00:00 **test_started**: Rerunning exact global gate after array_filter expectation fix.
-- 2026-06-08T14:54:21+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-08T14:54:27+00:00 **terminal_agent_windows_closed**: Closed 766 terminal agent tmux windows
-- 2026-06-08T14:54:32+00:00 **terminal_agent_windows_closed**: Closed 766 terminal agent tmux windows
-- 2026-06-08T14:54:36+00:00 **test_failed**: Exact tools/run-tests.sh failed at compiler/tests/array_unset.rs::unset_array_offsets_preserves_detached_typed_reference_cells; stale test expected runtime Diagnostic while implementation returns PHP fatal Execution exit 255.
-- 2026-06-08T14:54:36+00:00 **terminal_agent_windows_closed**: Closed 766 terminal agent tmux windows
-- 2026-06-08T14:54:46+00:00 **terminal_agent_windows_closed**: Closed 766 terminal agent tmux windows
-- 2026-06-08T14:54:46+00:00 **terminal_agent_windows_closed**: Closed 766 terminal agent tmux windows
+- 2026-06-08T15:07:18+00:00 **card_stage**: card#2105 review -> integration
+- 2026-06-08T15:07:18+00:00 **review**: Accepted 1 review cards
+- 2026-06-08T15:07:19+00:00 **uncarded_agent_stopped**: Stopped developer-394 because it had 0 development cards
+- 2026-06-08T15:07:21+00:00 **coordinator_start**: Coordinator session started; reading AGENTS.md, progress, architecture, support, README, and loop memory before inspecting worklanes.
+- 2026-06-08T15:07:21+00:00 **worklane_status**: worklane#2105 -> integration_failed
+- 2026-06-08T15:07:21+00:00 **worklane_created**: Resolve integration failure for card #2105: Resolve integration failure for card #2099: Fix next non-native-helper PHPT/focused failure under known-red quarantine
+- 2026-06-08T15:07:28+00:00 **terminal_agent_windows_closed**: Closed 776 terminal agent tmux windows
+- 2026-06-08T15:07:29+00:00 **worklane_assigned**: Assigned worklane#2110 to developer-398
+- 2026-06-08T15:07:29+00:00 **agent_started**: Started developer-398 for Maintain Developer capacity
+- 2026-06-08T15:07:32+00:00 **terminal_agent_windows_closed**: Closed 776 terminal agent tmux windows
+- 2026-06-08T15:07:38+00:00 **terminal_agent_windows_closed**: Closed 776 terminal agent tmux windows
+- 2026-06-08T15:17:27+00:00 **tool_timeout**: MCP code_search timed out during refresh while locating remaining runtime comparison test; switched to local rg.
 
 ## Next steps
-Move next worklane forward: Resolve integration failure for card #2100: Fix second distinct non-native-helper failure target under known-red quarantine
+Move next worklane forward: Resolve integration failure for card #2105: Resolve integration failure for card #2099: Fix next non-native-helper PHPT/focused failure under known-red quarantine
