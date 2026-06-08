@@ -1,12 +1,12 @@
 # Harness Status
 
-Last generated: 2026-06-08T11:26:10+00:00
+Last generated: 2026-06-08T11:27:19+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
 
 ## Metric
-blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
+accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
 
 ## Agents
 | name | role | current_status | tmux_window | worktree |
@@ -204,7 +204,8 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-168 | Coordinator | success | coordinator-168 |  |
 | coordinator-169 | Coordinator | success | coordinator-169 |  |
 | coordinator-17 | Coordinator | success | coordinator-17 |  |
-| coordinator-170 | Coordinator | running | coordinator-170 |  |
+| coordinator-170 | Coordinator | success | coordinator-170 |  |
+| coordinator-171 | Coordinator | running | coordinator-171 |  |
 | coordinator-18 | Coordinator | success | coordinator-18 |  |
 | coordinator-19 | Coordinator | stopped | coordinator-19 |  |
 | coordinator-2 | Coordinator | crash | coordinator-2 |  |
@@ -701,21 +702,21 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 failed — tools/run-tests.sh (error=0, failed=2, passed=417, skipped=0)
 
 ## Resource samples
-Latest: CPU 30.06%, RAM 20.96%, disk free 76.12 GB.
+Latest: CPU 20.4%, RAM 18.21%, disk free 76.11 GB.
 
 ## Recent events
-- 2026-06-08T11:25:28+00:00 **terminal_agent_windows_closed**: Closed 668 terminal agent tmux windows
-- 2026-06-08T11:25:29+00:00 **test_pass**: Focused ini_builtins target passes after updating stale ini_set too-few-args assertion.
-- 2026-06-08T11:25:34+00:00 **terminal_agent_windows_closed**: Closed 668 terminal agent tmux windows
-- 2026-06-08T11:25:37+00:00 **terminal_agent_windows_closed**: Closed 668 terminal agent tmux windows
-- 2026-06-08T11:25:42+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-08T11:25:46+00:00 **terminal_agent_windows_closed**: Closed 668 terminal agent tmux windows
-- 2026-06-08T11:25:48+00:00 **terminal_agent_windows_closed**: Closed 668 terminal agent tmux windows
-- 2026-06-08T11:25:54+00:00 **coordinator_decision**: Coordinator-170 preserving existing active owners; no spawn requested.
-- 2026-06-08T11:25:55+00:00 **terminal_agent_windows_closed**: Closed 668 terminal agent tmux windows
-- 2026-06-08T11:26:01+00:00 **terminal_agent_windows_closed**: Closed 668 terminal agent tmux windows
-- 2026-06-08T11:26:04+00:00 **terminal_agent_windows_closed**: Closed 668 terminal agent tmux windows
-- 2026-06-08T11:26:06+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-08T11:26:53+00:00 **terminal_agent_windows_closed**: Closed 669 terminal agent tmux windows
+- 2026-06-08T11:26:54+00:00 **terminal_agent_windows_closed**: Closed 669 terminal agent tmux windows
+- 2026-06-08T11:26:56+00:00 **test_pass**: Focused is_file_builtin target passes after updating stale zero-arg is_file assertion.
+- 2026-06-08T11:27:00+00:00 **resolver_patch_ready**: Replayed row136 native scalar/null LLVM cast folding on current origin/master in branch work/conflict-resolver-15-card2068; focused tests passed.
+- 2026-06-08T11:27:02+00:00 **terminal_agent_windows_closed**: Closed 669 terminal agent tmux windows
+- 2026-06-08T11:27:03+00:00 **supervision_redirect**: Poked developer-362 after is_file_builtin focused pass because no full cargo process was active; directive: record pass and immediately rerun cargo test -q, staying in narrow first-failure loop.
+- 2026-06-08T11:27:07+00:00 **terminal_agent_windows_closed**: Closed 669 terminal agent tmux windows
+- 2026-06-08T11:27:10+00:00 **terminal_agent_windows_closed**: Closed 669 terminal agent tmux windows
+- 2026-06-08T11:27:12+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-08T11:27:18+00:00 **terminal_agent_windows_closed**: Closed 669 terminal agent tmux windows
+- 2026-06-08T11:27:19+00:00 **poke**: Queued message for developer-362
+- 2026-06-08T11:27:19+00:00 **poke_delivered**: Delivered poke to 1 agents
 
 ## Next steps
 Move next worklane forward: Resolve current-base native scalar cast integration conflict for row136
