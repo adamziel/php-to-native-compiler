@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T15:24:51+00:00
+Last generated: 2026-06-08T15:39:51+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -278,7 +278,12 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-229 | Coordinator | success | coordinator-229 |  |
 | coordinator-23 | Coordinator | stopped | coordinator-23 |  |
 | coordinator-230 | Coordinator | crash | coordinator-230 |  |
-| coordinator-231 | Coordinator | running | coordinator-231 |  |
+| coordinator-231 | Coordinator | success | coordinator-231 |  |
+| coordinator-232 | Coordinator | success | coordinator-232 |  |
+| coordinator-233 | Coordinator | success | coordinator-233 |  |
+| coordinator-234 | Coordinator | success | coordinator-234 |  |
+| coordinator-235 | Coordinator | success | coordinator-235 |  |
+| coordinator-236 | Coordinator | running | coordinator-236 |  |
 | coordinator-24 | Coordinator | crash | coordinator-24 |  |
 | coordinator-25 | Coordinator | crash | coordinator-25 |  |
 | coordinator-26 | Coordinator | crash | coordinator-26 |  |
@@ -699,6 +704,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-40 | Developer | crash | developer-40 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-40 |
 | developer-400 | Developer | running | developer-400 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-400 |
 | developer-401 | Developer | running | developer-401 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-401 |
+| developer-402 | Developer | stopped | developer-402 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-402 |
 | developer-41 | Developer | crash | developer-41 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-41 |
 | developer-42 | Developer | crash | developer-42 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-42 |
 | developer-43 | Developer | stopped | developer-43 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-43 |
@@ -804,36 +810,36 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2114 | Assign next Developer card after worklane 2111 ready | Developer | implementation | done | stale | ready_fast_path | 0.0 |
 | 2113 | Integrate card2110 abs resolver no-op branch | Integrator | integration-support | planned | queued |  | 0.0 |
 | 2112 | Assign next Developer card after worklane 2106 ready | Developer | implementation | done | stale | ready_fast_path | 0.0 |
-| 2111 | Resolve integration failure for card #2106: Resolve integration failure for card #2100: Fix second distinct non-native-helper failure target under known-red quarantine | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
+| 2111 | Resolve integration failure for card #2106: Resolve integration failure for card #2100: Fix second distinct non-native-helper failure target under known-red quarantine | Conflict Resolver | integration-support | done | integrated | ready_fast_path | 0.0 |
 | 2110 | Resolve integration failure for card #2105: Resolve integration failure for card #2099: Fix next non-native-helper PHPT/focused failure under known-red quarantine | Conflict Resolver | integration-support | done | integrated | ready_fast_path | 0.0 |
 | 2109 | Integrate card112 deferred source-lane report artifact | Integrator | integration-support | planned | queued |  | 0.0 |
 | 2108 | Assign next concrete Developer card after card 112 report | Developer | implementation | done | stale |  | 0.0 |
 | 2107 | Assign next Developer card after worklane 2100 ready | Developer | implementation | done | stale | ready_fast_path | 0.0 |
 | 2106 | Resolve integration failure for card #2100: Fix second distinct non-native-helper failure target under known-red quarantine | Conflict Resolver | integration-support | integration | integration_failed | ready_fast_path | 0.0 |
 | 2105 | Resolve integration failure for card #2099: Fix next non-native-helper PHPT/focused failure under known-red quarantine | Conflict Resolver | integration-support | integration | integration_failed | ready_fast_path | 0.0 |
-| 2104 | Assign next sanctioned Developer card after developer-390 card2099 | Developer | implementation | done | stale |  | 0.0 |
 
 ## Tests
 failed — tools/run-tests.sh (error=0, failed=4, passed=415, skipped=0)
 
 ## Resource samples
-Latest: CPU 18.13%, RAM 19.81%, disk free 47.0 GB.
+Latest: CPU 14.79%, RAM 21.8%, disk free 28.58 GB.
 
 ## Recent events
-- 2026-06-08T15:24:42+00:00 **agent_missing**: developer-395 tmux pane no longer exists
-- 2026-06-08T15:24:42+00:00 **agent_missing**: developer-396 tmux pane no longer exists
-- 2026-06-08T15:24:42+00:00 **agent_missing**: developer-397 tmux pane no longer exists
-- 2026-06-08T15:24:42+00:00 **agent_missing**: integrator-36 tmux pane no longer exists
-- 2026-06-08T15:24:42+00:00 **agent_missing**: integrator-37 tmux pane no longer exists
-- 2026-06-08T15:24:42+00:00 **terminal_agent_windows_closed**: Closed 264 terminal agent tmux windows
-- 2026-06-08T15:24:45+00:00 **terminal_agent_windows_closed**: Closed 117 terminal agent tmux windows
-- 2026-06-08T15:24:45+00:00 **agent_started**: Started coordinator-231 for Maintain Coordinator capacity
-- 2026-06-08T15:24:45+00:00 **worklane_assigned**: Assigned worklane#2111 to developer-400
-- 2026-06-08T15:24:45+00:00 **agent_started**: Started developer-400 for Maintain Developer capacity
-- 2026-06-08T15:24:46+00:00 **worklane_assigned**: Assigned worklane#2075 to developer-401
-- 2026-06-08T15:24:46+00:00 **agent_started**: Started developer-401 for Maintain Developer capacity
+- 2026-06-08T15:38:59+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-08T15:39:03+00:00 **terminal_agent_windows_closed**: Closed 792 terminal agent tmux windows
+- 2026-06-08T15:39:06+00:00 **terminal_agent_windows_closed**: Closed 792 terminal agent tmux windows
+- 2026-06-08T15:39:08+00:00 **coordinator_routing_decision**: Coordinator-236 preserved developer-401/card2075 as the sole live exact tools/run-tests.sh gate owner, declined duplicate Developer/Architect/Integrator spawns, and appended supervisor brief addendum.
+- 2026-06-08T15:39:16+00:00 **terminal_agent_windows_closed**: Closed 792 terminal agent tmux windows
+- 2026-06-08T15:39:18+00:00 **terminal_agent_windows_closed**: Closed 792 terminal agent tmux windows
+- 2026-06-08T15:39:26+00:00 **terminal_agent_windows_closed**: Closed 792 terminal agent tmux windows
+- 2026-06-08T15:39:29+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-08T15:39:33+00:00 **terminal_agent_windows_closed**: Closed 792 terminal agent tmux windows
+- 2026-06-08T15:39:36+00:00 **terminal_agent_windows_closed**: Closed 792 terminal agent tmux windows
+- 2026-06-08T15:39:47+00:00 **terminal_agent_windows_closed**: Closed 792 terminal agent tmux windows
+- 2026-06-08T15:39:47+00:00 **terminal_agent_windows_closed**: Closed 792 terminal agent tmux windows
 
 ## Next steps
 Move next worklane forward: Integrate card2110 abs resolver no-op branch
