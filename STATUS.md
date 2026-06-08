@@ -1,12 +1,12 @@
 # Harness Status
 
-Last generated: 2026-06-08T11:27:19+00:00
+Last generated: 2026-06-08T11:41:10+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
 
 ## Metric
-accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
+blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 
 ## Agents
 | name | role | current_status | tmux_window | worktree |
@@ -116,7 +116,7 @@ accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
 | conflict-resolver-12 | Conflict Resolver | crash | conflict-resolver-12 |  |
 | conflict-resolver-13 | Conflict Resolver | crash | conflict-resolver-13 |  |
 | conflict-resolver-14 | Conflict Resolver | crash | conflict-resolver-14 |  |
-| conflict-resolver-15 | Conflict Resolver | running | conflict-resolver-15 |  |
+| conflict-resolver-15 | Conflict Resolver | crash | conflict-resolver-15 |  |
 | conflict-resolver-2 | Conflict Resolver | crash | conflict-resolver-2 |  |
 | conflict-resolver-3 | Conflict Resolver | crash | conflict-resolver-3 |  |
 | conflict-resolver-4 | Conflict Resolver | crash | conflict-resolver-4 |  |
@@ -205,7 +205,14 @@ accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
 | coordinator-169 | Coordinator | success | coordinator-169 |  |
 | coordinator-17 | Coordinator | success | coordinator-17 |  |
 | coordinator-170 | Coordinator | success | coordinator-170 |  |
-| coordinator-171 | Coordinator | running | coordinator-171 |  |
+| coordinator-171 | Coordinator | success | coordinator-171 |  |
+| coordinator-172 | Coordinator | success | coordinator-172 |  |
+| coordinator-173 | Coordinator | success | coordinator-173 |  |
+| coordinator-174 | Coordinator | success | coordinator-174 |  |
+| coordinator-175 | Coordinator | success | coordinator-175 |  |
+| coordinator-176 | Coordinator | success | coordinator-176 |  |
+| coordinator-177 | Coordinator | crash | coordinator-177 |  |
+| coordinator-178 | Coordinator | running | coordinator-178 |  |
 | coordinator-18 | Coordinator | success | coordinator-18 |  |
 | coordinator-19 | Coordinator | stopped | coordinator-19 |  |
 | coordinator-2 | Coordinator | crash | coordinator-2 |  |
@@ -676,6 +683,7 @@ accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
 | integrator-22 | Integrator | success | integrator-22 |  |
 | integrator-23 | Integrator | crash | integrator-23 |  |
 | integrator-24 | Integrator | crash | integrator-24 |  |
+| integrator-25 | Integrator | crash | integrator-25 |  |
 | integrator-3 | Integrator | stopped | integrator-3 |  |
 | integrator-4 | Integrator | crash | integrator-4 |  |
 | integrator-5 | Integrator | success | integrator-5 |  |
@@ -687,7 +695,8 @@ accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 2068 | Resolve current-base native scalar cast integration conflict for row136 | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
+| 2069 | Integrate ready row136 native scalar cast resolver | Integrator | integration-support | planned | queued |  | 0.0 |
+| 2068 | Resolve current-base native scalar cast integration conflict for row136 | Conflict Resolver | integration-support | integration | ready_for_integration | ready_fast_path | 0.0 |
 | 2067 | Resolve current-base similar_text integration conflict for row140 | Conflict Resolver | integration-support | done | stale |  | 0.0 |
 | 2066 | Resolve current-base str_replace replacement-array integration conflict for row1595 | Conflict Resolver | integration-support | done | stale |  | 0.0 |
 | 2065 | Resume card2064 integration tail disposition after integrator-23 crash | Integrator | integration-support | done | done |  | 0.0 |
@@ -696,27 +705,26 @@ accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
 | 2062 | Assign next sanctioned Developer card after lane 95 guardrail report | Developer | implementation | done | stale |  | 0.0 |
 | 2061 | Drain live integration_failed endpoints and retire superseded rows | Integrator | integration-support | planned | queued |  | 0.0 |
 | 2060 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
-| 2059 | Resume integration backlog disposition after integrator-19 crash | Integrator | integration-support | planned | queued |  | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=2, passed=417, skipped=0)
+failed — tools/run-tests.sh (error=0, failed=1, passed=418, skipped=0)
 
 ## Resource samples
-Latest: CPU 20.4%, RAM 18.21%, disk free 76.11 GB.
+Latest: CPU 22.15%, RAM 18.22%, disk free 76.05 GB.
 
 ## Recent events
-- 2026-06-08T11:26:53+00:00 **terminal_agent_windows_closed**: Closed 669 terminal agent tmux windows
-- 2026-06-08T11:26:54+00:00 **terminal_agent_windows_closed**: Closed 669 terminal agent tmux windows
-- 2026-06-08T11:26:56+00:00 **test_pass**: Focused is_file_builtin target passes after updating stale zero-arg is_file assertion.
-- 2026-06-08T11:27:00+00:00 **resolver_patch_ready**: Replayed row136 native scalar/null LLVM cast folding on current origin/master in branch work/conflict-resolver-15-card2068; focused tests passed.
-- 2026-06-08T11:27:02+00:00 **terminal_agent_windows_closed**: Closed 669 terminal agent tmux windows
-- 2026-06-08T11:27:03+00:00 **supervision_redirect**: Poked developer-362 after is_file_builtin focused pass because no full cargo process was active; directive: record pass and immediately rerun cargo test -q, staying in narrow first-failure loop.
-- 2026-06-08T11:27:07+00:00 **terminal_agent_windows_closed**: Closed 669 terminal agent tmux windows
-- 2026-06-08T11:27:10+00:00 **terminal_agent_windows_closed**: Closed 669 terminal agent tmux windows
-- 2026-06-08T11:27:12+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-08T11:27:18+00:00 **terminal_agent_windows_closed**: Closed 669 terminal agent tmux windows
-- 2026-06-08T11:27:19+00:00 **poke**: Queued message for developer-362
-- 2026-06-08T11:27:19+00:00 **poke_delivered**: Delivered poke to 1 agents
+- 2026-06-08T11:40:33+00:00 **terminal_agent_windows_closed**: Closed 678 terminal agent tmux windows
+- 2026-06-08T11:40:33+00:00 **worklane_assigned**: Assigned worklane#2054 to coordinator-178
+- 2026-06-08T11:40:33+00:00 **coordinator_prompt**: CPU and RAM are underused, but integration is backed up. Add integration or conflict-resolution support instead of more feature Developers.
+- 2026-06-08T11:40:35+00:00 **terminal_agent_windows_closed**: Closed 678 terminal agent tmux windows
+- 2026-06-08T11:40:41+00:00 **terminal_agent_windows_closed**: Closed 678 terminal agent tmux windows
+- 2026-06-08T11:40:42+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-08T11:40:48+00:00 **terminal_agent_windows_closed**: Closed 678 terminal agent tmux windows
+- 2026-06-08T11:40:50+00:00 **terminal_agent_windows_closed**: Closed 678 terminal agent tmux windows
+- 2026-06-08T11:40:59+00:00 **terminal_agent_windows_closed**: Closed 678 terminal agent tmux windows
+- 2026-06-08T11:41:02+00:00 **terminal_agent_windows_closed**: Closed 678 terminal agent tmux windows
+- 2026-06-08T11:41:03+00:00 **coordinator_session_start**: Coordinator session started; repo docs read and harness state refresh beginning.
+- 2026-06-08T11:41:07+00:00 **terminal_agent_windows_closed**: Closed 678 terminal agent tmux windows
 
 ## Next steps
-Move next worklane forward: Resolve current-base native scalar cast integration conflict for row136
+Move next worklane forward: Integrate ready row136 native scalar cast resolver
