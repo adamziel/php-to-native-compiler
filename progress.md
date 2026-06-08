@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-07T23:48:49+00:00
+Last generated: 2026-06-08T00:03:49+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -12,11 +12,15 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | name | role | current_status | tmux_window | worktree |
 | --- | --- | --- | --- | --- |
 | architect-1 | Architect | crash | architect-1 |  |
+| architect-10 | Architect | running | architect-10 |  |
 | architect-2 | Architect | crash | architect-2 |  |
 | architect-3 | Architect | crash | architect-3 |  |
 | architect-4 | Architect | crash | architect-4 |  |
 | architect-5 | Architect | crash | architect-5 |  |
-| architect-6 | Architect | running | architect-6 |  |
+| architect-6 | Architect | crash | architect-6 |  |
+| architect-7 | Architect | crash | architect-7 |  |
+| architect-8 | Architect | crash | architect-8 |  |
+| architect-9 | Architect | crash | architect-9 |  |
 | auditor-1 | Auditor | stopped | auditor-1 |  |
 | auditor-10 | Auditor | crash | auditor-10 |  |
 | auditor-11 | Auditor | crash | auditor-11 |  |
@@ -79,7 +83,9 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-44 | Coordinator | success | coordinator-44 |  |
 | coordinator-45 | Coordinator | crash | coordinator-45 |  |
 | coordinator-46 | Coordinator | crash | coordinator-46 |  |
-| coordinator-47 | Coordinator | running | coordinator-47 |  |
+| coordinator-47 | Coordinator | crash | coordinator-47 |  |
+| coordinator-48 | Coordinator | success | coordinator-48 |  |
+| coordinator-49 | Coordinator | running | coordinator-49 |  |
 | coordinator-5 | Coordinator | stopped | coordinator-5 |  |
 | coordinator-6 | Coordinator | crash | coordinator-6 |  |
 | coordinator-7 | Coordinator | crash | coordinator-7 |  |
@@ -160,11 +166,15 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-164 | Developer | running | developer-164 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-164 |
 | developer-165 | Developer | stopped | developer-165 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-165 |
 | developer-166 | Developer | running | developer-166 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-166 |
-| developer-167 | Developer | running | developer-167 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-167 |
+| developer-167 | Developer | stopped | developer-167 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-167 |
 | developer-168 | Developer | running | developer-168 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-168 |
-| developer-169 | Developer | running | developer-169 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-169 |
+| developer-169 | Developer | stopped | developer-169 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-169 |
 | developer-17 | Developer | stopped | developer-17 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-17 |
 | developer-170 | Developer | running | developer-170 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-170 |
+| developer-171 | Developer | stopped | developer-171 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-171 |
+| developer-172 | Developer | stopped | developer-172 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-172 |
+| developer-173 | Developer | running | developer-173 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-173 |
+| developer-174 | Developer | running | developer-174 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-174 |
 | developer-18 | Developer | stopped | developer-18 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-18 |
 | developer-19 | Developer | stopped | developer-19 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-19 |
 | developer-2 | Developer | stopped | developer-2 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-2 |
@@ -270,36 +280,36 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1909 | Resolve integration failure for card #1864: Resolve integration failure for card #1849: Resolve integration failure for card #1834: Resolve integration failure for card #1828: Resolve integration failure for card #137: Self-selected bounded str_ireplace compatibility slice | Conflict Resolver | integration-support | planned | queued |  | 0.0 |
-| 1908 | Find systemic cause for repeated failure: tests::native_lookup_plus_invoke_helpers_free_arguments_once_across_target_families | Architect | advisory | planned | queued |  | 0.0 |
-| 1907 | Resolve integration failure for card #1808: Fix global test suite failures | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
-| 1906 | Provide next sanctioned Developer card after developer-164 completed lane 1864 | Developer | implementation | planned | queued |  | 0.0 |
-| 1905 | Milestone 625 compiler-output CLI contract slice | Developer | implementation | planned | queued |  | 0.0 |
-| 1904 | Find systemic cause for repeated failure: tests::native_constructor_allocation_invoke_carrier_cleans_up_failure_paths | Architect | advisory | planned | queued |  | 0.0 |
-| 1903 | Integrate ready current-base str_ireplace resolver 1886 | Integrator | integration-support | planned | queued |  | 0.0 |
-| 1902 | Find systemic cause for repeated failure: tests::native_constructor_allocation_invoke_carrier_cleans_up_failure_paths | Architect | advisory | done | done |  | 0.0 |
-| 1901 | Find systemic cause for repeated failure: tests::native_constructor_allocation_invoke_reference_carrier_owns_receiver_cell | Architect | advisory | planned | queued |  | 0.0 |
-| 1900 | Find systemic cause for repeated failure: tests::native_closure_invoke_helpers_bridge_call_arguments_to_call_results | Architect | advisory | planned | queued |  | 0.0 |
+| 1921 | Provide next sanctioned Developer card after developer-174 completed lane 1808 | Developer | implementation | planned | queued |  | 0.0 |
+| 1920 | Resolve integration failure for card #1808: Fix global test suite failures | Conflict Resolver | integration-support | planned | queued |  | 0.0 |
+| 1919 | Find systemic cause for repeated failure: tests::native_constructor_allocation_invoke_reference_carrier_owns_receiver_cell | Architect | advisory | planned | queued |  | 0.0 |
+| 1918 | Resolve integration failure for card #1808: Fix global test suite failures | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
+| 1917 | Resolve integration failure for card #1907: Resolve integration failure for card #1808: Fix global test suite failures | Conflict Resolver | integration-support | done | integrated | ready_fast_path | 0.0 |
+| 1916 | Rebuild 1808 gate fix on origin/master thread-local probe | Conflict Resolver | integration-support | planned | queued |  | 0.0 |
+| 1915 | Find systemic cause for repeated failure: codegen::tests::c_assembly_non_local_assignment_families_share_assignment_owner_boundary | Architect | advisory | planned | queued |  | 0.0 |
+| 1914 | Find systemic cause for repeated failure: codegen::tests::generated_c_string_comparison_safety_uses_shared_pair_classifier | Architect | advisory | planned | queued |  | 0.0 |
+| 1913 | Resolve integration failure for card #1808: Fix global test suite failures | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
+| 1912 | Find systemic cause for repeated failure: tests::native_magic_method_lookup_rejects_malformed_signature_metadata_before_fallback | Architect | advisory | planned | queued |  | 0.0 |
 
 ## Tests
 failed — tools/run-tests.sh (error=0, failed=3, passed=416, skipped=0)
 
 ## Resource samples
-Latest: CPU 23.23%, RAM 57.02%, disk free 160.72 GB.
+Latest: CPU 11.88%, RAM 56.69%, disk free 161.88 GB.
 
 ## Recent events
-- 2026-06-07T23:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-39 tmux window
-- 2026-06-07T23:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-4 tmux window
-- 2026-06-07T23:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-40 tmux window
-- 2026-06-07T23:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-41 tmux window
-- 2026-06-07T23:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-42 tmux window
-- 2026-06-07T23:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-43 tmux window
-- 2026-06-07T23:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-44 tmux window
-- 2026-06-07T23:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-45 tmux window
-- 2026-06-07T23:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-46 tmux window
-- 2026-06-07T23:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-47 tmux window
-- 2026-06-07T23:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-48 tmux window
-- 2026-06-07T23:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-49 tmux window
+- 2026-06-08T00:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-2 tmux window
+- 2026-06-08T00:03:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-41 tmux window
+- 2026-06-08T00:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-20 tmux window
+- 2026-06-08T00:03:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-42 tmux window
+- 2026-06-08T00:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-21 tmux window
+- 2026-06-08T00:03:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-43 tmux window
+- 2026-06-08T00:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-22 tmux window
+- 2026-06-08T00:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-23 tmux window
+- 2026-06-08T00:03:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-44 tmux window
+- 2026-06-08T00:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-24 tmux window
+- 2026-06-08T00:03:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-45 tmux window
+- 2026-06-08T00:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-25 tmux window
 
 ## Next steps
-Move next worklane forward: Resolve integration failure for card #1864: Resolve integration failure for card #1849: Resolve integration failure for card #1834: Resolve integration failure for card #1828: Resolve integration failure for card #137: Self-selected bounded str_ireplace compatibility slice
+Move next worklane forward: Provide next sanctioned Developer card after developer-174 completed lane 1808
