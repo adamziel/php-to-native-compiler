@@ -122,6 +122,16 @@ This lane is report-only. No compiler/runtime tests or PHPT gates were run.
 Verification for this artifact should be limited to whitespace/path checks and
 review of the recorded SQLite evidence.
 
+Branch handoff note:
+
+- Local commit `540714eb` was created on `work/developer-389`.
+- Pushing to `origin/work/developer-389` was rejected because that remote
+  branch is an older unrelated source branch at `6db16b03`
+  (`runtime: add bounded str_ireplace builtin`) and is not a safe
+  fast-forward target for this report-only lane.
+- The report commit was pushed to `origin/work/developer-389-lane111-refresh`
+  for review without rewriting the old remote branch.
+
 Commands and queries used included:
 
 - Required reading: `AGENTS.md`, `docs/PROGRESS.md`,
