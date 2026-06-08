@@ -1,12 +1,12 @@
 # Harness Status
 
-Last generated: 2026-06-08T11:11:11+00:00
+Last generated: 2026-06-08T11:15:33+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
 
 ## Metric
-blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
+accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
 
 ## Agents
 | name | role | current_status | tmux_window | worktree |
@@ -115,7 +115,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | conflict-resolver-11 | Conflict Resolver | crash | conflict-resolver-11 |  |
 | conflict-resolver-12 | Conflict Resolver | crash | conflict-resolver-12 |  |
 | conflict-resolver-13 | Conflict Resolver | crash | conflict-resolver-13 |  |
-| conflict-resolver-14 | Conflict Resolver | running | conflict-resolver-14 |  |
+| conflict-resolver-14 | Conflict Resolver | crash | conflict-resolver-14 |  |
 | conflict-resolver-2 | Conflict Resolver | crash | conflict-resolver-2 |  |
 | conflict-resolver-3 | Conflict Resolver | crash | conflict-resolver-3 |  |
 | conflict-resolver-4 | Conflict Resolver | crash | conflict-resolver-4 |  |
@@ -197,7 +197,8 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-162 | Coordinator | success | coordinator-162 |  |
 | coordinator-163 | Coordinator | success | coordinator-163 |  |
 | coordinator-164 | Coordinator | success | coordinator-164 |  |
-| coordinator-165 | Coordinator | running | coordinator-165 |  |
+| coordinator-165 | Coordinator | success | coordinator-165 |  |
+| coordinator-166 | Coordinator | running | coordinator-166 |  |
 | coordinator-17 | Coordinator | success | coordinator-17 |  |
 | coordinator-18 | Coordinator | success | coordinator-18 |  |
 | coordinator-19 | Coordinator | stopped | coordinator-19 |  |
@@ -680,7 +681,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 2067 | Resolve current-base similar_text integration conflict for row140 | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
+| 2067 | Resolve current-base similar_text integration conflict for row140 | Conflict Resolver | integration-support | done | stale |  | 0.0 |
 | 2066 | Resolve current-base str_replace replacement-array integration conflict for row1595 | Conflict Resolver | integration-support | done | stale |  | 0.0 |
 | 2065 | Resume card2064 integration tail disposition after integrator-23 crash | Integrator | integration-support | done | done |  | 0.0 |
 | 2064 | Classify remaining integration_failed tail after lane1823 | Integrator | integration-support | planned | queued |  | 0.0 |
@@ -692,24 +693,24 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | 2058 | Assign next Developer card after developer-357 lane 93 verification | Developer | implementation | done | integrated | ready_fast_path | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=3, passed=416, skipped=0)
+failed — tools/run-tests.sh (error=0, failed=5, passed=414, skipped=0)
 
 ## Resource samples
-Latest: CPU 23.36%, RAM 17.72%, disk free 77.58 GB.
+Latest: CPU 14.77%, RAM 17.29%, disk free 77.25 GB.
 
 ## Recent events
-- 2026-06-08T11:10:38+00:00 **card_repair**: Requeued 1 cards owned by terminal workers
-- 2026-06-08T11:10:38+00:00 **agent_started**: Started coordinator-165 for Maintain Coordinator capacity
-- 2026-06-08T11:10:41+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-08T11:10:47+00:00 **terminal_agent_windows_closed**: Closed 662 terminal agent tmux windows
-- 2026-06-08T11:10:49+00:00 **supervision_checkpoint**: cargo test -q advanced past exception_boundaries and now fails file_exists_builtin zero-argument stale TypeError expectation; developer-362 is patching that one assertion.
-- 2026-06-08T11:10:49+00:00 **terminal_agent_windows_closed**: Closed 662 terminal agent tmux windows
-- 2026-06-08T11:10:51+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
-- 2026-06-08T11:10:56+00:00 **focused_test_passed**: Focused file_exists_builtin target passed after updating zero-arg file_exists fatal TypeError expectation.
-- 2026-06-08T11:10:56+00:00 **terminal_agent_windows_closed**: Closed 662 terminal agent tmux windows
-- 2026-06-08T11:11:00+00:00 **worklane_deduplicated**: Updated existing failing-test card#2027 from run 40411
-- 2026-06-08T11:11:04+00:00 **terminal_agent_windows_closed**: Closed 662 terminal agent tmux windows
-- 2026-06-08T11:11:04+00:00 **terminal_agent_windows_closed**: Closed 662 terminal agent tmux windows
+- 2026-06-08T11:14:54+00:00 **terminal_agent_windows_closed**: Closed 663 terminal agent tmux windows
+- 2026-06-08T11:14:58+00:00 **terminal_agent_windows_closed**: Closed 663 terminal agent tmux windows
+- 2026-06-08T11:15:07+00:00 **terminal_agent_windows_closed**: Closed 664 terminal agent tmux windows
+- 2026-06-08T11:15:07+00:00 **worklane_assigned**: Assigned worklane#2054 to coordinator-166
+- 2026-06-08T11:15:07+00:00 **coordinator_prompt**: CPU and RAM are underused, but integration is backed up. Add integration or conflict-resolution support instead of more feature Developers.
+- 2026-06-08T11:15:08+00:00 **terminal_agent_windows_closed**: Closed 664 terminal agent tmux windows
+- 2026-06-08T11:15:12+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-08T11:15:16+00:00 **terminal_agent_windows_closed**: Closed 664 terminal agent tmux windows
+- 2026-06-08T11:15:21+00:00 **terminal_agent_windows_closed**: Closed 664 terminal agent tmux windows
+- 2026-06-08T11:15:25+00:00 **terminal_agent_windows_closed**: Closed 664 terminal agent tmux windows
+- 2026-06-08T11:15:33+00:00 **poke**: Queued message for developer-362
+- 2026-06-08T11:15:33+00:00 **poke_delivered**: Delivered poke to 1 agents
 
 ## Next steps
-Move next worklane forward: Resolve current-base similar_text integration conflict for row140
+Move next worklane forward: Classify remaining integration_failed tail after lane1823
