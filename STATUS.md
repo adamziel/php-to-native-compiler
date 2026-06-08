@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T02:48:49+00:00
+Last generated: 2026-06-08T03:03:49+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -124,7 +124,12 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-70 | Coordinator | crash | coordinator-70 |  |
 | coordinator-71 | Coordinator | crash | coordinator-71 |  |
 | coordinator-72 | Coordinator | success | coordinator-72 |  |
-| coordinator-73 | Coordinator | running | coordinator-73 |  |
+| coordinator-73 | Coordinator | success | coordinator-73 |  |
+| coordinator-74 | Coordinator | success | coordinator-74 |  |
+| coordinator-75 | Coordinator | success | coordinator-75 |  |
+| coordinator-76 | Coordinator | success | coordinator-76 |  |
+| coordinator-77 | Coordinator | success | coordinator-77 |  |
+| coordinator-78 | Coordinator | running | coordinator-78 |  |
 | coordinator-8 | Coordinator | crash | coordinator-8 |  |
 | coordinator-9 | Coordinator | success | coordinator-9 |  |
 | developer-1 | Developer | stopped | developer-1 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-1 |
@@ -300,6 +305,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-252 | Developer | running | developer-252 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-252 |
 | developer-253 | Developer | stopped | developer-253 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-253 |
 | developer-254 | Developer | running | developer-254 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-254 |
+| developer-255 | Developer | stopped | developer-255 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-255 |
 | developer-26 | Developer | stopped | developer-26 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-26 |
 | developer-27 | Developer | stopped | developer-27 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-27 |
 | developer-28 | Developer | stopped | developer-28 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-28 |
@@ -397,36 +403,36 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1974 | Resolve integration failure for card #1962: Resolve integration failure for card #1960: Resolve integration failure for card #1905: Milestone 625 compiler-output CLI contract slice | Conflict Resolver | integration-support | planned | queued |  | 0.0 |
+| 1976 | Fix card 1975 current-base native invoke parallel test failures | Developer | implementation | planned | queued |  | 0.0 |
+| 1975 | Fix global test suite failures | Developer | implementation | development | assigned |  | 0.0 |
+| 1974 | Resolve integration failure for card #1962: Resolve integration failure for card #1960: Resolve integration failure for card #1905: Milestone 625 compiler-output CLI contract slice | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
 | 1973 | Provide next sanctioned Developer card after developer-251 completed lane 1962 | Developer | implementation | planned | queued |  | 0.0 |
 | 1972 | Provide next concrete Developer card after developer-252 capacity placeholder lane 1921 | Developer | implementation | planned | queued |  | 0.0 |
-| 1971 | Resolve integration failure for card #1968: Resolve integration failure for card #1808: Fix global test suite failures | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
+| 1971 | Resolve integration failure for card #1968: Resolve integration failure for card #1808: Fix global test suite failures | Conflict Resolver | integration-support | done | stale |  | 0.0 |
 | 1970 | Resolve integration failure for card #1887: Implement known-failure no-regression gate for current php_runtime blocker | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
 | 1969 | Resolve integration failure for card #1808: Fix global test suite failures | Conflict Resolver | integration-support | done | stale |  | 0.0 |
-| 1968 | Resolve integration failure for card #1808: Fix global test suite failures | Conflict Resolver | integration-support | integration | integration_failed | ready_fast_path | 0.0 |
+| 1968 | Resolve integration failure for card #1808: Fix global test suite failures | Conflict Resolver | integration-support | done | stale | ready_fast_path | 0.0 |
 | 1967 | Recover idle coordinator and metric routing | Coordinator | control-plane | planned | queued |  | 0.0 |
-| 1966 | Assign concrete Developer worklane after capacity placeholder 1906 | Developer | implementation | planned | queued |  | 0.0 |
-| 1965 | Resolve integration failure for card #1808: Fix global test suite failures | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=3, passed=416, skipped=0)
+failed — tools/run-tests.sh (error=0, failed=5, passed=414, skipped=0)
 
 ## Resource samples
-Latest: CPU 25.37%, RAM 60.86%, disk free 122.04 GB.
+Latest: CPU 10.65%, RAM 56.29%, disk free 57.37 GB.
 
 ## Recent events
-- 2026-06-08T02:48:49+00:00 **terminal_agent_window_closed**: Closed terminal architect-16 tmux window
-- 2026-06-08T02:48:49+00:00 **spawn_deferred**: Deferred Architect work because architect-18 already has a card
-- 2026-06-08T02:48:49+00:00 **terminal_agent_window_closed**: Closed terminal architect-17 tmux window
-- 2026-06-08T02:48:49+00:00 **spawn_deferred**: Deferred Architect work because architect-18 already has a card
-- 2026-06-08T02:48:49+00:00 **spawn_deferred**: Deferred Architect work because architect-18 already has a card
-- 2026-06-08T02:48:49+00:00 **terminal_agent_window_closed**: Closed terminal architect-2 tmux window
-- 2026-06-08T02:48:49+00:00 **spawn_deferred**: Deferred Architect work because architect-18 already has a card
-- 2026-06-08T02:48:49+00:00 **terminal_agent_window_closed**: Closed terminal architect-3 tmux window
-- 2026-06-08T02:48:49+00:00 **spawn_deferred**: Deferred Architect work because architect-18 already has a card
-- 2026-06-08T02:48:49+00:00 **card_stage**: card#1808 review -> integration
-- 2026-06-08T02:48:49+00:00 **review**: Accepted 1 review cards
-- 2026-06-08T02:48:49+00:00 **terminal_agent_window_closed**: Closed terminal architect-4 tmux window
+- 2026-06-08T03:03:49+00:00 **terminal_agent_window_closed**: Closed terminal architect-2 tmux window
+- 2026-06-08T03:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-211 tmux window
+- 2026-06-08T03:03:49+00:00 **terminal_agent_window_closed**: Closed terminal architect-3 tmux window
+- 2026-06-08T03:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-212 tmux window
+- 2026-06-08T03:03:49+00:00 **terminal_agent_window_closed**: Closed terminal architect-4 tmux window
+- 2026-06-08T03:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-213 tmux window
+- 2026-06-08T03:03:49+00:00 **terminal_agent_window_closed**: Closed terminal architect-5 tmux window
+- 2026-06-08T03:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-214 tmux window
+- 2026-06-08T03:03:49+00:00 **terminal_agent_window_closed**: Closed terminal architect-6 tmux window
+- 2026-06-08T03:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-215 tmux window
+- 2026-06-08T03:03:49+00:00 **terminal_agent_window_closed**: Closed terminal architect-7 tmux window
+- 2026-06-08T03:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-216 tmux window
 
 ## Next steps
-Move next worklane forward: Resolve integration failure for card #1962: Resolve integration failure for card #1960: Resolve integration failure for card #1905: Milestone 625 compiler-output CLI contract slice
+Move next worklane forward: Fix card 1975 current-base native invoke parallel test failures
