@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T00:33:49+00:00
+Last generated: 2026-06-08T00:48:49+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -36,6 +36,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | auditor-8 | Auditor | stopped | auditor-8 |  |
 | auditor-9 | Auditor | stopped | auditor-9 |  |
 | conflict-resolver-1 | Conflict Resolver | crash | conflict-resolver-1 |  |
+| conflict-resolver-10 | Conflict Resolver | running | conflict-resolver-10 |  |
 | conflict-resolver-2 | Conflict Resolver | crash | conflict-resolver-2 |  |
 | conflict-resolver-3 | Conflict Resolver | crash | conflict-resolver-3 |  |
 | conflict-resolver-4 | Conflict Resolver | crash | conflict-resolver-4 |  |
@@ -203,8 +204,9 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-192 | Developer | running | developer-192 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-192 |
 | developer-193 | Developer | running | developer-193 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-193 |
 | developer-194 | Developer | stopped | developer-194 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-194 |
-| developer-195 | Developer | running | developer-195 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-195 |
+| developer-195 | Developer | stopped | developer-195 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-195 |
 | developer-196 | Developer | running | developer-196 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-196 |
+| developer-197 | Developer | running | developer-197 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-197 |
 | developer-2 | Developer | stopped | developer-2 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-2 |
 | developer-20 | Developer | stopped | developer-20 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-20 |
 | developer-21 | Developer | stopped | developer-21 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-21 |
@@ -308,36 +310,36 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1934 | Resolve current-base card 1933 preflight conflict for native gate | Conflict Resolver | integration-support | planned | queued |  | 0.0 |
-| 1933 | Resolve integration failure for card #1922: Resolve integration failure for card #1920: Resolve integration failure for card #1808: Fix global test suite failures | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
+| 1937 | Resolve integration failure for card #1909: Resolve integration failure for card #1864: Resolve integration failure for card #1849: Resolve integration failure for card #1834: Resolve integration failure for card #1828: Resolve integration failure for card #137: Self-selected bounded str_ireplace compatibility slice | Conflict Resolver | integration-support | planned | queued |  | 0.0 |
+| 1936 | Resolve integration failure for card #1808: Fix global test suite failures | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
+| 1935 | Resolve integration failure for card #1933: Resolve integration failure for card #1922: Resolve integration failure for card #1920: Resolve integration failure for card #1808: Fix global test suite failures | Conflict Resolver | integration-support | done | integrated | ready_fast_path | 0.0 |
+| 1934 | Resolve current-base card 1933 preflight conflict for native gate | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
+| 1933 | Resolve integration failure for card #1922: Resolve integration failure for card #1920: Resolve integration failure for card #1808: Fix global test suite failures | Conflict Resolver | integration-support | integration | integration_failed | ready_fast_path | 0.0 |
 | 1932 | Resolve integration failure for card #1927: Resolve integration failure for card #1808: Fix global test suite failures | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
 | 1931 | Drain current native-gate integration backpressure | Integrator | integration-support | planned | queued |  | 0.0 |
 | 1930 | Assign fresh concrete Developer card after developer-193 capacity lane 1859 | Developer | implementation | planned | queued |  | 0.0 |
 | 1929 | Execute queued card 1925: fix milestone2333 CLI snapshot mismatch | Developer | implementation | planned | queued |  | 0.0 |
 | 1928 | Provide next concrete sanctioned Developer card after developer-185 capacity placeholder 1854 | Developer | implementation | planned | queued |  | 0.0 |
-| 1927 | Resolve integration failure for card #1808: Fix global test suite failures | Conflict Resolver | integration-support | integration | integration_failed | ready_fast_path | 0.0 |
-| 1926 | Provide next concrete Developer card after developer-179 current-base resolver | Developer | implementation | planned | queued |  | 0.0 |
-| 1925 | Fix current-base CLI snapshot mismatch in milestone2333 disk-space fixture | Developer | implementation | planned | queued |  | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=4, passed=415, skipped=0)
+failed — tools/run-tests.sh (error=0, failed=2, passed=417, skipped=0)
 
 ## Resource samples
-Latest: CPU 17.83%, RAM 58.37%, disk free 63.15 GB.
+Latest: CPU 10.72%, RAM 56.76%, disk free 95.56 GB.
 
 ## Recent events
-- 2026-06-08T00:33:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-150 tmux window
-- 2026-06-08T00:33:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-151 tmux window
-- 2026-06-08T00:33:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-152 tmux window
-- 2026-06-08T00:33:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-153 tmux window
-- 2026-06-08T00:33:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-154 tmux window
-- 2026-06-08T00:33:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-155 tmux window
-- 2026-06-08T00:33:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-156 tmux window
-- 2026-06-08T00:33:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-157 tmux window
-- 2026-06-08T00:33:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-158 tmux window
-- 2026-06-08T00:33:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-159 tmux window
-- 2026-06-08T00:33:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-16 tmux window
-- 2026-06-08T00:33:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-160 tmux window
+- 2026-06-08T00:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-136 tmux window
+- 2026-06-08T00:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-89 tmux window
+- 2026-06-08T00:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-137 tmux window
+- 2026-06-08T00:48:49+00:00 **card_stage**: card#1916 development -> review
+- 2026-06-08T00:48:49+00:00 **agent_report**: conflict-resolver-10 reported ready_for_integration
+- 2026-06-08T00:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-9 tmux window
+- 2026-06-08T00:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-138 tmux window
+- 2026-06-08T00:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-139 tmux window
+- 2026-06-08T00:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-14 tmux window
+- 2026-06-08T00:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-90 tmux window
+- 2026-06-08T00:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-140 tmux window
+- 2026-06-08T00:48:49+00:00 **resolver_completed**: Completed card 1916 resolver as no-op current origin branch; runtime checks green, full suite red only on unrelated CLI snapshot mismatch.
 
 ## Next steps
-Move next worklane forward: Resolve current-base card 1933 preflight conflict for native gate
+Move next worklane forward: Resolve integration failure for card #1909: Resolve integration failure for card #1864: Resolve integration failure for card #1849: Resolve integration failure for card #1834: Resolve integration failure for card #1828: Resolve integration failure for card #137: Self-selected bounded str_ireplace compatibility slice
