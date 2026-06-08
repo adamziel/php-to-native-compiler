@@ -12,7 +12,10 @@ use std::sync::atomic::{AtomicI64, Ordering as AtomicOrdering};
 pub type RuntimeResult<T> = Result<T, RuntimeError>;
 
 #[cfg(test)]
-static NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST: AtomicI64 = AtomicI64::new(0);
+thread_local! {
+    static NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST: std::cell::Cell<i64> =
+        const { std::cell::Cell::new(0) };
+}
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -12438,7 +12441,7 @@ pub unsafe extern "C" fn phpc_native_call_arguments_mark_finalized_variadic(
 #[no_mangle]
 pub unsafe extern "C" fn phpc_native_call_arguments_free(handle: NativeCallArgumentsHandle) {
     #[cfg(test)]
-    NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST.fetch_add(1, AtomicOrdering::SeqCst);
+    NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST.with(|count| count.set(count.get() + 1));
 
     if handle.ptr.is_null() {
         return;
@@ -47263,11 +47266,11 @@ mod tests {
     }
 
     fn reset_call_arguments_free_count_for_test() {
-        NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST.store(0, AtomicOrdering::SeqCst);
+        NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST.with(|count| count.set(0));
     }
 
     fn call_arguments_free_count_for_test() -> i64 {
-        NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST.load(AtomicOrdering::SeqCst)
+        NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST.with(|count| count.get())
     }
 
     #[test]
