@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T09:05:25+00:00
+Last generated: 2026-06-08T09:20:26+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -112,6 +112,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | conflict-resolver-1 | Conflict Resolver | crash | conflict-resolver-1 |  |
 | conflict-resolver-10 | Conflict Resolver | crash | conflict-resolver-10 |  |
 | conflict-resolver-11 | Conflict Resolver | crash | conflict-resolver-11 |  |
+| conflict-resolver-12 | Conflict Resolver | crash | conflict-resolver-12 |  |
 | conflict-resolver-2 | Conflict Resolver | crash | conflict-resolver-2 |  |
 | conflict-resolver-3 | Conflict Resolver | crash | conflict-resolver-3 |  |
 | conflict-resolver-4 | Conflict Resolver | crash | conflict-resolver-4 |  |
@@ -159,6 +160,11 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-131 | Coordinator | success | coordinator-131 |  |
 | coordinator-132 | Coordinator | success | coordinator-132 |  |
 | coordinator-133 | Coordinator | crash | coordinator-133 |  |
+| coordinator-134 | Coordinator | success | coordinator-134 |  |
+| coordinator-135 | Coordinator | success | coordinator-135 |  |
+| coordinator-136 | Coordinator | success | coordinator-136 |  |
+| coordinator-137 | Coordinator | success | coordinator-137 |  |
+| coordinator-138 | Coordinator | running | coordinator-138 |  |
 | coordinator-14 | Coordinator | success | coordinator-14 |  |
 | coordinator-15 | Coordinator | stopped | coordinator-15 |  |
 | coordinator-16 | Coordinator | crash | coordinator-16 |  |
@@ -518,7 +524,13 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-335 | Developer | crash | developer-335 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-335 |
 | developer-336 | Developer | crash | developer-336 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-336 |
 | developer-337 | Developer | crash | developer-337 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-337 |
+| developer-338 | Developer | running | developer-338 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-338 |
+| developer-339 | Developer | running | developer-339 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-339 |
 | developer-34 | Developer | crash | developer-34 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-34 |
+| developer-340 | Developer | running | developer-340 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-340 |
+| developer-341 | Developer | running | developer-341 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-341 |
+| developer-342 | Developer | running | developer-342 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-342 |
+| developer-343 | Developer | running | developer-343 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-343 |
 | developer-35 | Developer | crash | developer-35 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-35 |
 | developer-36 | Developer | crash | developer-36 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-36 |
 | developer-37 | Developer | stopped | developer-37 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-37 |
@@ -597,6 +609,8 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | integrator-13 | Integrator | crash | integrator-13 |  |
 | integrator-14 | Integrator | success | integrator-14 |  |
 | integrator-15 | Integrator | stopped | integrator-15 |  |
+| integrator-16 | Integrator | crash | integrator-16 |  |
+| integrator-17 | Integrator | crash | integrator-17 |  |
 | integrator-2 | Integrator | stopped | integrator-2 |  |
 | integrator-3 | Integrator | stopped | integrator-3 |  |
 | integrator-4 | Integrator | crash | integrator-4 |  |
@@ -609,36 +623,36 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 2036 | Provide next sanctioned Developer card after developer-332 card 2032 conflict fix | Developer | implementation | planned | queued |  | 0.0 |
+| 2044 | Process integrator-16 handoff: close stale ready row and clean integration candidate | Integrator | integration-support | done | done |  | 0.0 |
+| 2043 | Provide next sanctioned Developer card after developer-343 completed worklane 2017 | Developer | implementation | planned | queued |  | 0.0 |
+| 2042 | Resolve integration failure for card #2037: Resolve integration failure for card #2032: Resolve integration failure for card #1976: Fix card 1975 current-base native invoke parallel test failures | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
+| 2041 | Provide next sanctioned Developer card after developer-339 card 2037 conflict fix | Developer | implementation | development | assigned |  | 0.0 |
+| 2040 | Resolve highest-priority unowned str_ireplace integration chain | Conflict Resolver | integration-support | done | stale |  | 0.0 |
+| 2039 | Drain ready integration backlog under known-red quarantine | Integrator | integration-support | done | done |  | 0.0 |
+| 2038 | Provide next concrete Developer card after developer-342 capacity handoff | Developer | implementation | development | assigned |  | 0.0 |
+| 2037 | Resolve integration failure for card #2032: Resolve integration failure for card #1976: Fix card 1975 current-base native invoke parallel test failures | Conflict Resolver | integration-support | integration | integration_failed | ready_fast_path | 0.0 |
+| 2036 | Provide next sanctioned Developer card after developer-332 card 2032 conflict fix | Developer | implementation | done | stale | ready_fast_path | 0.0 |
 | 2035 | Assign concrete Developer card after developer-337 capacity placeholder 2009 | Developer | implementation | planned | queued |  | 0.0 |
-| 2034 | Provide concrete sanctioned Developer card after developer-335 capacity lane 1995 | Developer | implementation | planned | queued |  | 0.0 |
-| 2033 | Provide next sanctioned Developer implementation card after developer-336 capacity handoff lane 2005 | Developer | implementation | planned | queued |  | 0.0 |
-| 2032 | Resolve integration failure for card #1976: Fix card 1975 current-base native invoke parallel test failures | Conflict Resolver | integration-support | integration | ready_for_integration | ready_fast_path | 0.0 |
-| 2031 | Assign concrete Developer card after developer-330 capacity placeholder 1993 | Developer | implementation | planned | queued |  | 0.0 |
-| 2030 | Provide next sanctioned Developer card after report-only card 1977 | Developer | implementation | planned | queued |  | 0.0 |
-| 2029 | Provide next sanctioned Developer card after developer-329 capacity handoff lane 1983 | Developer | implementation | planned | queued |  | 0.0 |
-| 2028 | Reconcile current integration backlog under known-red quarantine | Integrator | integration-support | planned | queued |  | 0.0 |
-| 2027 | Fix global test suite failures | Developer | implementation | planned | queued |  | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=4, passed=415, skipped=0)
+failed — tools/run-tests.sh (error=0, failed=5, passed=414, skipped=0)
 
 ## Resource samples
-Latest: CPU 13.58%, RAM 20.44%, disk free 75.26 GB.
+Latest: CPU 21.6%, RAM 21.86%, disk free 53.14 GB.
 
 ## Recent events
-- 2026-06-08T09:05:22+00:00 **terminal_agent_window_closed**: Closed terminal integrator-14 tmux window
-- 2026-06-08T09:05:22+00:00 **terminal_agent_window_closed**: Closed terminal integrator-15 tmux window
-- 2026-06-08T09:05:22+00:00 **terminal_agent_window_closed**: Closed terminal integrator-2 tmux window
-- 2026-06-08T09:05:22+00:00 **terminal_agent_window_closed**: Closed terminal integrator-3 tmux window
-- 2026-06-08T09:05:22+00:00 **terminal_agent_window_closed**: Closed terminal integrator-4 tmux window
-- 2026-06-08T09:05:22+00:00 **terminal_agent_window_closed**: Closed terminal integrator-5 tmux window
-- 2026-06-08T09:05:22+00:00 **terminal_agent_window_closed**: Closed terminal integrator-6 tmux window
-- 2026-06-08T09:05:22+00:00 **terminal_agent_window_closed**: Closed terminal integrator-7 tmux window
-- 2026-06-08T09:05:22+00:00 **terminal_agent_window_closed**: Closed terminal integrator-8 tmux window
-- 2026-06-08T09:05:22+00:00 **terminal_agent_window_closed**: Closed terminal integrator-9 tmux window
-- 2026-06-08T09:05:25+00:00 **mcp**: Harness MCP tools exposed to Codex workers
-- 2026-06-08T09:05:25+00:00 **tmux**: Interactive support windows ready
+- 2026-06-08T09:20:26+00:00 **terminal_agent_window_closed**: Closed terminal architect-25 tmux window
+- 2026-06-08T09:20:26+00:00 **terminal_agent_window_closed**: Closed terminal architect-26 tmux window
+- 2026-06-08T09:20:26+00:00 **terminal_agent_window_closed**: Closed terminal architect-27 tmux window
+- 2026-06-08T09:20:26+00:00 **terminal_agent_window_closed**: Closed terminal architect-28 tmux window
+- 2026-06-08T09:20:26+00:00 **terminal_agent_window_closed**: Closed terminal architect-29 tmux window
+- 2026-06-08T09:20:26+00:00 **terminal_agent_window_closed**: Closed terminal architect-3 tmux window
+- 2026-06-08T09:20:26+00:00 **terminal_agent_window_closed**: Closed terminal architect-30 tmux window
+- 2026-06-08T09:20:26+00:00 **terminal_agent_window_closed**: Closed terminal architect-31 tmux window
+- 2026-06-08T09:20:26+00:00 **terminal_agent_window_closed**: Closed terminal architect-32 tmux window
+- 2026-06-08T09:20:26+00:00 **terminal_agent_window_closed**: Closed terminal architect-33 tmux window
+- 2026-06-08T09:20:26+00:00 **terminal_agent_window_closed**: Closed terminal architect-34 tmux window
+- 2026-06-08T09:20:26+00:00 **terminal_agent_window_closed**: Closed terminal architect-35 tmux window
 
 ## Next steps
-Move next worklane forward: Provide next sanctioned Developer card after developer-332 card 2032 conflict fix
+Move next worklane forward: Provide next sanctioned Developer card after developer-343 completed worklane 2017
