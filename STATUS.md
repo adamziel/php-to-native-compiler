@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T10:47:59+00:00
+Last generated: 2026-06-08T10:50:55+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -186,7 +186,8 @@ accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
 | coordinator-154 | Coordinator | success | coordinator-154 |  |
 | coordinator-155 | Coordinator | success | coordinator-155 |  |
 | coordinator-156 | Coordinator | success | coordinator-156 |  |
-| coordinator-157 | Coordinator | running | coordinator-157 |  |
+| coordinator-157 | Coordinator | success | coordinator-157 |  |
+| coordinator-158 | Coordinator | running | coordinator-158 |  |
 | coordinator-16 | Coordinator | crash | coordinator-16 |  |
 | coordinator-17 | Coordinator | success | coordinator-17 |  |
 | coordinator-18 | Coordinator | success | coordinator-18 |  |
@@ -681,21 +682,21 @@ accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
 failed — tools/run-tests.sh (error=0, failed=4, passed=415, skipped=0)
 
 ## Resource samples
-Latest: CPU 41.22%, RAM 19.06%, disk free 109.6 GB.
+Latest: CPU 55.05%, RAM 22.71%, disk free 109.14 GB.
 
 ## Recent events
-- 2026-06-08T10:47:39+00:00 **terminal_agent_windows_closed**: Closed 648 terminal agent tmux windows
-- 2026-06-08T10:47:40+00:00 **terminal_agent_windows_closed**: Closed 648 terminal agent tmux windows
-- 2026-06-08T10:47:41+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-08T10:47:42+00:00 **test_gate_hard_blocker**: New failures appeared beyond the known-red quarantine: codegen::tests::c_assembly_non_local_assignment_families_share_assignment_owner_boundary, codegen::tests::generated_c_string_comparison_safety_uses_shared_pair_classifier
-- 2026-06-08T10:47:47+00:00 **test_gate_quarantined_known_red**: 3 known failures are quarantined; metric acceptance remains blocked, but unrelated work may continue.
-- 2026-06-08T10:47:48+00:00 **terminal_agent_windows_closed**: Closed 648 terminal agent tmux windows
-- 2026-06-08T10:47:52+00:00 **terminal_agent_windows_closed**: Closed 648 terminal agent tmux windows
-- 2026-06-08T10:47:52+00:00 **test_gate_quarantined_known_red**: 6 known failures are quarantined; metric acceptance remains blocked, but unrelated work may continue.
-- 2026-06-08T10:47:56+00:00 **terminal_agent_windows_closed**: Closed 648 terminal agent tmux windows
-- 2026-06-08T10:47:57+00:00 **test_gate_quarantined_known_red**: 7 known failures are quarantined; metric acceptance remains blocked, but unrelated work may continue.
-- 2026-06-08T10:47:59+00:00 **poke**: Queued message for developer-360
-- 2026-06-08T10:47:59+00:00 **poke_delivered**: Delivered poke to 1 agents
+- 2026-06-08T10:50:33+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-08T10:50:37+00:00 **test_gate_quarantined_known_red**: 7 known failures are quarantined; metric acceptance remains blocked, but unrelated work may continue.
+- 2026-06-08T10:50:38+00:00 **terminal_agent_windows_closed**: Closed 649 terminal agent tmux windows
+- 2026-06-08T10:50:39+00:00 **terminal_agent_windows_closed**: Closed 649 terminal agent tmux windows
+- 2026-06-08T10:50:41+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-08T10:50:43+00:00 **worklane_deduplicated**: Updated existing failing-test card#2027 from run 40174
+- 2026-06-08T10:50:47+00:00 **terminal_agent_windows_closed**: Closed 649 terminal agent tmux windows
+- 2026-06-08T10:50:47+00:00 **test_gate_quarantined_known_red**: 8 known failures are quarantined; metric acceptance remains blocked, but unrelated work may continue.
+- 2026-06-08T10:50:50+00:00 **terminal_agent_windows_closed**: Closed 649 terminal agent tmux windows
+- 2026-06-08T10:50:55+00:00 **terminal_agent_windows_closed**: Closed 649 terminal agent tmux windows
+- 2026-06-08T10:50:55+00:00 **poke**: Queued message for developer-360
+- 2026-06-08T10:50:55+00:00 **poke_delivered**: Delivered poke to 1 agents
 
 ## Next steps
 Move next worklane forward: Integrate clean lane 1823 from work/developer-124
