@@ -47,14 +47,6 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-6 | Coordinator | crash | coordinator-6 |  |
 | coordinator-7 | Coordinator | crash | coordinator-7 |  |
 | coordinator-8 | Coordinator | crash | coordinator-8 |  |
-| coordinator-80 | Coordinator | crash | coordinator-80 |  |
-| coordinator-81 | Coordinator | crash | coordinator-81 |  |
-| coordinator-82 | Coordinator | crash | coordinator-82 |  |
-| coordinator-83 | Coordinator | success | coordinator-83 |  |
-| coordinator-84 | Coordinator | success | coordinator-84 |  |
-| coordinator-85 | Coordinator | crash | coordinator-85 |  |
-| coordinator-86 | Coordinator | success | coordinator-86 |  |
-| coordinator-87 | Coordinator | running | coordinator-87 |  |
 | coordinator-9 | Coordinator | success | coordinator-9 |  |
 | developer-1 | Developer | stopped | developer-1 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-1 |
 | developer-10 | Developer | stopped | developer-10 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-10 |
@@ -81,10 +73,6 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-24 | Developer | stopped | developer-24 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-24 |
 | developer-25 | Developer | stopped | developer-25 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-25 |
 | developer-26 | Developer | stopped | developer-26 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-26 |
-| developer-260 | Developer | stopped | developer-260 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-260 |
-| developer-261 | Developer | running | developer-261 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-261 |
-| developer-262 | Developer | running | developer-262 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-262 |
-| developer-263 | Developer | stopped | developer-263 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-263 |
 | developer-27 | Developer | stopped | developer-27 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-27 |
 | developer-28 | Developer | stopped | developer-28 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-28 |
 | developer-29 | Developer | crash | developer-29 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-29 |
