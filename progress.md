@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T06:03:51+00:00
+Last generated: 2026-06-08T06:18:49+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -41,7 +41,8 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | architect-34 | Architect | crash | architect-34 |  |
 | architect-35 | Architect | crash | architect-35 |  |
 | architect-36 | Architect | crash | architect-36 |  |
-| architect-37 | Architect | running | architect-37 |  |
+| architect-37 | Architect | crash | architect-37 |  |
+| architect-38 | Architect | running | architect-38 |  |
 | architect-4 | Architect | crash | architect-4 |  |
 | architect-5 | Architect | crash | architect-5 |  |
 | architect-6 | Architect | crash | architect-6 |  |
@@ -80,7 +81,10 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | conflict-resolver-9 | Conflict Resolver | stopped | conflict-resolver-9 |  |
 | coordinator-1 | Coordinator | stopped | coordinator-1 |  |
 | coordinator-10 | Coordinator | success | coordinator-10 |  |
-| coordinator-100 | Coordinator | running | coordinator-100 |  |
+| coordinator-100 | Coordinator | success | coordinator-100 |  |
+| coordinator-101 | Coordinator | success | coordinator-101 |  |
+| coordinator-102 | Coordinator | success | coordinator-102 |  |
+| coordinator-103 | Coordinator | running | coordinator-103 |  |
 | coordinator-11 | Coordinator | stopped | coordinator-11 |  |
 | coordinator-12 | Coordinator | stopped | coordinator-12 |  |
 | coordinator-13 | Coordinator | stopped | coordinator-13 |  |
@@ -392,15 +396,18 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-29 | Developer | crash | developer-29 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-29 |
 | developer-290 | Developer | stopped | developer-290 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-290 |
 | developer-291 | Developer | crash | developer-291 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-291 |
-| developer-292 | Developer | running | developer-292 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-292 |
+| developer-292 | Developer | stopped | developer-292 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-292 |
 | developer-293 | Developer | stopped | developer-293 | /home/claude/php-to-native-compiler |
 | developer-294 | Developer | stopped | developer-294 | /home/claude/php-to-native-compiler |
 | developer-295 | Developer | stopped | developer-295 | /home/claude/php-to-native-compiler |
 | developer-296 | Developer | stopped | developer-296 | /home/claude/php-to-native-compiler |
 | developer-297 | Developer | running | developer-297 | /home/claude/php-to-native-compiler |
 | developer-298 | Developer | stopped | developer-298 | /home/claude/php-to-native-compiler |
+| developer-299 | Developer | running | developer-299 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-299 |
 | developer-3 | Developer | stopped | developer-3 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-3 |
 | developer-30 | Developer | stopped | developer-30 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-30 |
+| developer-300 | Developer | running | developer-300 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-300 |
+| developer-301 | Developer | stopped | developer-301 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-301 |
 | developer-31 | Developer | crash | developer-31 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-31 |
 | developer-32 | Developer | crash | developer-32 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-32 |
 | developer-33 | Developer | crash | developer-33 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-33 |
@@ -481,6 +488,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | integrator-11 | Integrator | crash | integrator-11 |  |
 | integrator-12 | Integrator | crash | integrator-12 |  |
 | integrator-13 | Integrator | crash | integrator-13 |  |
+| integrator-14 | Integrator | success | integrator-14 |  |
 | integrator-2 | Integrator | stopped | integrator-2 |  |
 | integrator-3 | Integrator | stopped | integrator-3 |  |
 | integrator-4 | Integrator | crash | integrator-4 |  |
@@ -493,36 +501,36 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2016 | Resolve active compiler-output integration chain without generated artifact churn | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
+| 2015 | Reconcile current integration backlog after stale runtime/gate chains | Integrator | integration-support | planned | queued |  | 0.0 |
+| 2014 | Fix global test suite failures | Developer | implementation | development | assigned |  | 0.0 |
 | 2013 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
 | 2012 | Provide next sanctioned Developer card after developer-288 completed worklane 2008 | Developer | implementation | planned | queued |  | 0.0 |
-| 2011 | Resolve integration failure for card #2008: Resolve integration failure for card #2004: Resolve integration failure for card #2001: Resolve integration failure for card #1996: Resolve integration failure for card #1994: Resolve integration failure for card #1992: Resolve integration failure for card #1990: Resolve integration failure for card #1975: Fix global test suite failures | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
+| 2011 | Resolve integration failure for card #2008: Resolve integration failure for card #2004: Resolve integration failure for card #2001: Resolve integration failure for card #1996: Resolve integration failure for card #1994: Resolve integration failure for card #1992: Resolve integration failure for card #1990: Resolve integration failure for card #1975: Fix global test suite failures | Conflict Resolver | integration-support | done | stale |  | 0.0 |
 | 2010 | Resolve integration failure for card #1946: Implement Manhole-priority known-failure no-regression gate for worklane 1883 | Conflict Resolver | integration-support | done | integrated | ready_fast_path | 0.0 |
 | 2009 | Provide next sanctioned Developer card after developer-284 completed worklane 1946 | Developer | implementation | planned | queued |  | 0.0 |
-| 2008 | Resolve integration failure for card #2004: Resolve integration failure for card #2001: Resolve integration failure for card #1996: Resolve integration failure for card #1994: Resolve integration failure for card #1992: Resolve integration failure for card #1990: Resolve integration failure for card #1975: Fix global test suite failures | Conflict Resolver | integration-support | integration | integration_failed | ready_fast_path | 0.0 |
+| 2008 | Resolve integration failure for card #2004: Resolve integration failure for card #2001: Resolve integration failure for card #1996: Resolve integration failure for card #1994: Resolve integration failure for card #1992: Resolve integration failure for card #1990: Resolve integration failure for card #1975: Fix global test suite failures | Conflict Resolver | integration-support | done | stale | ready_fast_path | 0.0 |
 | 2007 | Integrate ready runtime stabilization card 2004 | Integrator | integration-support | planned | queued |  | 0.0 |
-| 2006 | Run canonical card 1980 control-plane repair for duplicate Architect request flood | Developer | implementation | planned | queued |  | 0.0 |
-| 2005 | Provide next sanctioned Developer card after developer-285 worklane 1955 | Developer | implementation | planned | queued |  | 0.0 |
-| 2004 | Resolve integration failure for card #2001: Resolve integration failure for card #1996: Resolve integration failure for card #1994: Resolve integration failure for card #1992: Resolve integration failure for card #1990: Resolve integration failure for card #1975: Fix global test suite failures | Conflict Resolver | integration-support | integration | integration_failed | ready_fast_path | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=6, passed=413, skipped=0)
+failed — tools/run-tests.sh (error=0, failed=2, passed=417, skipped=0)
 
 ## Resource samples
-Latest: CPU 43.15%, RAM 26.24%, disk free 120.23 GB.
+Latest: CPU 17.39%, RAM 18.12%, disk free 173.74 GB.
 
 ## Recent events
-- 2026-06-08T06:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-159 tmux window
-- 2026-06-08T06:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-16 tmux window
-- 2026-06-08T06:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-160 tmux window
-- 2026-06-08T06:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-161 tmux window
-- 2026-06-08T06:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-162 tmux window
-- 2026-06-08T06:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-289 tmux window
-- 2026-06-08T06:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-163 tmux window
-- 2026-06-08T06:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-29 tmux window
-- 2026-06-08T06:03:50+00:00 **terminal_agent_window_closed**: Closed terminal developer-164 tmux window
-- 2026-06-08T06:03:50+00:00 **terminal_agent_window_closed**: Closed terminal developer-165 tmux window
-- 2026-06-08T06:03:50+00:00 **terminal_agent_window_closed**: Closed terminal developer-166 tmux window
-- 2026-06-08T06:03:50+00:00 **terminal_agent_window_closed**: Closed terminal developer-290 tmux window
+- 2026-06-08T06:18:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-13 tmux window
+- 2026-06-08T06:18:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-44 tmux window
+- 2026-06-08T06:18:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-130 tmux window
+- 2026-06-08T06:18:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-131 tmux window
+- 2026-06-08T06:18:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-45 tmux window
+- 2026-06-08T06:18:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-132 tmux window
+- 2026-06-08T06:18:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-46 tmux window
+- 2026-06-08T06:18:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-133 tmux window
+- 2026-06-08T06:18:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-47 tmux window
+- 2026-06-08T06:18:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-134 tmux window
+- 2026-06-08T06:18:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-48 tmux window
+- 2026-06-08T06:18:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-135 tmux window
 
 ## Next steps
-Move next worklane forward: Investigate scheduler alert
+Move next worklane forward: Resolve active compiler-output integration chain without generated artifact churn
