@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T16:54:51+00:00
+Last generated: 2026-06-08T17:09:53+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -126,6 +126,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | conflict-resolver-15 | Conflict Resolver | crash | conflict-resolver-15 |  |
 | conflict-resolver-16 | Conflict Resolver | crash | conflict-resolver-16 |  |
 | conflict-resolver-17 | Conflict Resolver | crash | conflict-resolver-17 |  |
+| conflict-resolver-18 | Conflict Resolver | crash | conflict-resolver-18 |  |
 | conflict-resolver-2 | Conflict Resolver | crash | conflict-resolver-2 |  |
 | conflict-resolver-3 | Conflict Resolver | crash | conflict-resolver-3 |  |
 | conflict-resolver-4 | Conflict Resolver | crash | conflict-resolver-4 |  |
@@ -314,7 +315,10 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-259 | Coordinator | crash | coordinator-259 |  |
 | coordinator-26 | Coordinator | crash | coordinator-26 |  |
 | coordinator-260 | Coordinator | success | coordinator-260 |  |
-| coordinator-261 | Coordinator | running | coordinator-261 |  |
+| coordinator-261 | Coordinator | success | coordinator-261 |  |
+| coordinator-262 | Coordinator | success | coordinator-262 |  |
+| coordinator-263 | Coordinator | success | coordinator-263 |  |
+| coordinator-264 | Coordinator | running | coordinator-264 |  |
 | coordinator-27 | Coordinator | crash | coordinator-27 |  |
 | coordinator-28 | Coordinator | crash | coordinator-28 |  |
 | coordinator-29 | Coordinator | crash | coordinator-29 |  |
@@ -745,6 +749,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-411 | Developer | stopped | developer-411 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-411 |
 | developer-412 | Developer | running | developer-412 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-412 |
 | developer-413 | Developer | running | developer-413 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-413 |
+| developer-414 | Developer | running | developer-414 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-414 |
 | developer-42 | Developer | crash | developer-42 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-42 |
 | developer-43 | Developer | stopped | developer-43 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-43 |
 | developer-44 | Developer | stopped | developer-44 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-44 |
@@ -855,6 +860,9 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2131 | Fix global test suite failures | Developer | implementation | development | assigned |  | 0.0 |
+| 2130 | Read-only verify card2075 runtime free-count dirty diff | Conflict Resolver | integration-support | development | assigned |  | 0.0 |
+| 2129 | Assign next sanctioned Developer card after card2075 read-only support | Developer | implementation | done | stale |  | 0.0 |
 | 2128 | Dispose requeued already-integrated cleanup rows 2125 and 2126 | Integrator | integration-support | planned | queued |  | 0.0 |
 | 2127 | Fix current abs() fatal-path test contract hard blocker | Developer | implementation | done | integrated | ready_fast_path | 0.0 |
 | 2126 | Integrate card2123 duplicate-report resolver branch | Integrator | integration-support | planned | queued |  | 0.0 |
@@ -862,29 +870,26 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | 2124 | Resume queued card2119 abs hard-blocker analysis | Architect | advisory | planned | queued |  | 0.0 |
 | 2123 | Resolve integration failure for card #2120: Assign next narrow Developer card after card2075 conflict support | Conflict Resolver | integration-support | done | integrated | ready_fast_path | 0.0 |
 | 2122 | Assign next sanctioned Developer card after card2120 reserve report | Developer | implementation | done | stale |  | 0.0 |
-| 2121 | Integrate branch-backed repair rows 2105 and 2106 | Integrator | integration-support | planned | queued |  | 0.0 |
-| 2120 | Assign next narrow Developer card after card2075 conflict support | Developer | implementation | integration | integration_failed | ready_fast_path | 0.0 |
-| 2119 | Replace crashed abs failure architect with read-only analysis | Architect | advisory | planned | queued |  | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=0, passed=419, skipped=0)
+failed — tools/run-tests.sh (error=0, failed=1, passed=418, skipped=0)
 
 ## Resource samples
-Latest: CPU 20.58%, RAM 19.59%, disk free 119.29 GB.
+Latest: CPU 24.36%, RAM 24.81%, disk free 69.49 GB.
 
 ## Recent events
-- 2026-06-08T16:54:15+00:00 **coordinator_start**: Coordinator session started; loading repo guidance and harness state.
-- 2026-06-08T16:54:19+00:00 **terminal_agent_windows_closed**: Closed 837 terminal agent tmux windows
-- 2026-06-08T16:54:25+00:00 **terminal_agent_windows_closed**: Closed 837 terminal agent tmux windows
-- 2026-06-08T16:54:25+00:00 **worklane_assigned**: Assigned worklane#2054 to coordinator-261
-- 2026-06-08T16:54:25+00:00 **coordinator_prompt**: CPU and RAM are underused, but integration is backed up. Add integration or conflict-resolution support instead of more feature Developers.
-- 2026-06-08T16:54:29+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-08T16:54:34+00:00 **analysis_checkpoint**: Card2117 read-only support: latest tools/run-tests.sh rows through run43868 execute status-only commit 0f90bf4e, diverged from origin/master ba554e7a; checked-out runtime still uses global Atomic native call-argument free counter while origin/master has thread-local Cell repair from 07e5cebd.
-- 2026-06-08T16:54:35+00:00 **terminal_agent_windows_closed**: Closed 837 terminal agent tmux windows
-- 2026-06-08T16:54:35+00:00 **terminal_agent_windows_closed**: Closed 837 terminal agent tmux windows
-- 2026-06-08T16:54:45+00:00 **terminal_agent_windows_closed**: Closed 837 terminal agent tmux windows
-- 2026-06-08T16:54:48+00:00 **test_gate_hard_blocker**: Global tests failed before producing parsed failure rows.
-- 2026-06-08T16:54:49+00:00 **terminal_agent_windows_closed**: Closed 837 terminal agent tmux windows
+- 2026-06-08T17:09:01+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-08T17:09:05+00:00 **terminal_agent_windows_closed**: Closed 841 terminal agent tmux windows
+- 2026-06-08T17:09:06+00:00 **terminal_agent_windows_closed**: Closed 841 terminal agent tmux windows
+- 2026-06-08T17:09:16+00:00 **terminal_agent_windows_closed**: Closed 841 terminal agent tmux windows
+- 2026-06-08T17:09:20+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-08T17:09:20+00:00 **test_progress**: Focused runtime filters and full php_runtime crate now pass after thread-local test counter and stale runtime ABI expectation fixes. Starting exact tools/run-tests.sh acceptance gate.
+- 2026-06-08T17:09:22+00:00 **terminal_agent_windows_closed**: Closed 841 terminal agent tmux windows
+- 2026-06-08T17:09:27+00:00 **terminal_agent_windows_closed**: Closed 841 terminal agent tmux windows
+- 2026-06-08T17:09:31+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-08T17:09:37+00:00 **terminal_agent_windows_closed**: Closed 841 terminal agent tmux windows
+- 2026-06-08T17:09:38+00:00 **terminal_agent_windows_closed**: Closed 841 terminal agent tmux windows
+- 2026-06-08T17:09:51+00:00 **terminal_agent_windows_closed**: Closed 841 terminal agent tmux windows
 
 ## Next steps
-Move next worklane forward: Dispose requeued already-integrated cleanup rows 2125 and 2126
+Move next worklane forward: Fix global test suite failures
