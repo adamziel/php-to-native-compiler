@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T10:57:23+00:00
+Last generated: 2026-06-08T10:59:22+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -662,6 +662,7 @@ accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
 | integrator-21 | Integrator | crash | integrator-21 |  |
 | integrator-22 | Integrator | success | integrator-22 |  |
 | integrator-23 | Integrator | crash | integrator-23 |  |
+| integrator-24 | Integrator | running | integrator-24 |  |
 | integrator-3 | Integrator | stopped | integrator-3 |  |
 | integrator-4 | Integrator | crash | integrator-4 |  |
 | integrator-5 | Integrator | success | integrator-5 |  |
@@ -673,6 +674,7 @@ accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2065 | Resume card2064 integration tail disposition after integrator-23 crash | Integrator | integration-support | development | assigned |  | 0.0 |
 | 2064 | Classify remaining integration_failed tail after lane1823 | Integrator | integration-support | planned | queued |  | 0.0 |
 | 2063 | Integrate clean lane 1823 from work/developer-124 | Integrator | integration-support | planned | queued |  | 0.0 |
 | 2062 | Assign next sanctioned Developer card after lane 95 guardrail report | Developer | implementation | done | stale |  | 0.0 |
@@ -682,27 +684,26 @@ accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
 | 2058 | Assign next Developer card after developer-357 lane 93 verification | Developer | implementation | done | integrated | ready_fast_path | 0.0 |
 | 2057 | Assign next sanctioned Developer card after developer-353 capacity handoff 2045 | Developer | implementation | done | stale |  | 0.0 |
 | 2056 | Assign concrete Developer card after developer-352 capacity handoff 2043 | Developer | implementation | done | stale |  | 0.0 |
-| 2055 | Assign concrete sanctioned Developer card after placeholder lane 2048 | Developer | implementation | done | stale |  | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=3, passed=416, skipped=0)
+failed — tools/run-tests.sh (error=0, failed=2, passed=417, skipped=0)
 
 ## Resource samples
-Latest: CPU 26.06%, RAM 18.16%, disk free 108.77 GB.
+Latest: CPU 44.81%, RAM 18.72%, disk free 108.7 GB.
 
 ## Recent events
-- 2026-06-08T10:56:52+00:00 **test_gate_quarantined_known_red**: 5 known failures are quarantined; metric acceptance remains blocked, but unrelated work may continue.
-- 2026-06-08T10:56:53+00:00 **terminal_agent_windows_closed**: Closed 655 terminal agent tmux windows
-- 2026-06-08T10:56:59+00:00 **terminal_agent_windows_closed**: Closed 655 terminal agent tmux windows
-- 2026-06-08T10:57:07+00:00 **terminal_agent_windows_closed**: Closed 655 terminal agent tmux windows
-- 2026-06-08T10:57:07+00:00 **test_gate_quarantined_known_red**: 8 known failures are quarantined; metric acceptance remains blocked, but unrelated work may continue.
-- 2026-06-08T10:57:08+00:00 **terminal_agent_windows_closed**: Closed 655 terminal agent tmux windows
-- 2026-06-08T10:57:11+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-08T10:57:16+00:00 **terminal_agent_windows_closed**: Closed 655 terminal agent tmux windows
-- 2026-06-08T10:57:20+00:00 **coordinator_start**: Coordinator session started; loading required project docs and harness state before routing work.
-- 2026-06-08T10:57:20+00:00 **terminal_agent_windows_closed**: Closed 655 terminal agent tmux windows
-- 2026-06-08T10:57:23+00:00 **poke**: Queued message for developer-362
-- 2026-06-08T10:57:23+00:00 **poke_delivered**: Delivered poke to 1 agents
+- 2026-06-08T10:58:58+00:00 **terminal_agent_windows_closed**: Closed 655 terminal agent tmux windows
+- 2026-06-08T10:59:02+00:00 **test_gate_quarantined_known_red**: 7 known failures are quarantined; metric acceptance remains blocked, but unrelated work may continue.
+- 2026-06-08T10:59:03+00:00 **focused_tests_passed**: Focused runtime filters for lane 2027 pass locally; proceeding to exact acceptance command tools/run-tests.sh.
+- 2026-06-08T10:59:06+00:00 **terminal_agent_windows_closed**: Closed 655 terminal agent tmux windows
+- 2026-06-08T10:59:07+00:00 **test_gate_quarantined_known_red**: 8 known failures are quarantined; metric acceptance remains blocked, but unrelated work may continue.
+- 2026-06-08T10:59:11+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-08T10:59:12+00:00 **terminal_agent_windows_closed**: Closed 655 terminal agent tmux windows
+- 2026-06-08T10:59:12+00:00 **test_gate_quarantined_known_red**: 9 known failures are quarantined; metric acceptance remains blocked, but unrelated work may continue.
+- 2026-06-08T10:59:15+00:00 **terminal_agent_windows_closed**: Closed 655 terminal agent tmux windows
+- 2026-06-08T10:59:19+00:00 **supervisor_brief_updated**: Updated .harness/supervisor-brief.md with Coordinator-161 addendum: developer-362 owns card2027 handoff, developer-363 owns card100, replacement Integrator request 72183 queued for card2064, lane1823/card2063 stale after report622 integration.
+- 2026-06-08T10:59:22+00:00 **poke**: Queued message for developer-362
+- 2026-06-08T10:59:22+00:00 **poke_delivered**: Delivered poke to 1 agents
 
 ## Next steps
-Move next worklane forward: Classify remaining integration_failed tail after lane1823
+Move next worklane forward: Resume card2064 integration tail disposition after integrator-23 crash
