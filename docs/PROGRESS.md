@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added a bounded LLVM `--emit-ir` scalar/null cast folding slice. Cast
+  expressions now lower when the result is statically known for `(string)` over
+  null/bool/int/string plus known finite floats, `(int)` over
+  null/bool/int/exact numeric strings plus nonnumeric string-to-zero and
+  selected bool expressions, `(bool)` over statically known truthiness plus
+  direct integer tests, and `(float)` over
+  null/bool/int/float/exact numeric strings plus nonnumeric string-to-zero. The
+  fold preserves the dedicated cast diagnostic for arrays, objects, void casts,
+  references/native handles, leading-numeric string casts, cast builtins,
+  ambiguous dynamic string/float cases, runtime string allocation,
+  warning/recovery behavior, copy-on-write, and exact diagnostic parity.
+  Focused proof covers direct `emit_ir_source()` lowering, the
+  `phpc compile --emit-ir` CLI snapshot, the retained Milestone 1138 cast
+  rejection snapshot, and scalar-cast runtime regressions.
+
 - Fixed the current-base `array_find()` family top-level too-few-argument
   fatal classification. `phpc run` now reports PHP-shaped `TypeError` fatals
   for `array_find([1])`, `array_find_key([1])`, `array_any([1])`, and

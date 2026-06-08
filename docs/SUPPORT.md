@@ -12815,10 +12815,17 @@
   syntax, `while`, `for`, `do ... while`, `switch`, `goto` labels, `break`,
   and `continue`; generated code currently rejects those forms before lowering
   conditions, bodies, cases, jumps, or loop-control flow
-- native lowering for cast expressions; generated code currently rejects casts
-  with a dedicated diagnostic before implying PHP scalar conversion, array
-  materialization, warning/recovery behavior, object/resource handling,
-  references/copy-on-write, or exact native error behavior
+- native lowering for cast expressions is limited to a bounded `--emit-ir`
+  static scalar/null subset: `(string)` over null/bool/int/string and known
+  finite floats, `(int)` over null/bool/int/exact numeric strings plus
+  nonnumeric string-to-zero and selected bool expressions, `(bool)` over
+  statically known truthiness plus direct integer tests, and `(float)` over
+  null/bool/int/float/exact numeric strings plus nonnumeric string-to-zero.
+  Native array/object casts, void casts, references/native handles,
+  leading-numeric string casts, cast builtins, ambiguous dynamic string/float
+  cases, runtime string allocation, warning/recovery behavior,
+  copy-on-write, and exact native error behavior remain rejected with a
+  dedicated diagnostic
 - PHP 8 nullsafe object access `?->` currently fails with a stable parse
   diagnostic before null-aware object-property or method-call chaining exists.
   Short-circuit evaluation, mixed `->`/`?->` chain ordering, call argument

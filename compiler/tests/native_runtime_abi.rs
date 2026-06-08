@@ -1812,7 +1812,7 @@ fn generated_ir_blocks_scalar_cast_builtins_at_shared_value_cast_boundary() {
         let error = emit_ir_source(source).unwrap_err();
         assert!(
             error.message.contains(
-                "LLVM cast lowering rejects (string), (int)/(integer), (bool)/(boolean), (float)/(double), (array), and (object) casts plus strval(), boolval(), floatval(), and doubleval()"
+                "LLVM cast lowering rejects (string), (int)/(integer), (bool)/(boolean), (float)/(double), (array), (object), and (void) casts plus strval(), boolval(), floatval(), and doubleval()"
             ),
             "{source}: {}",
             error.message

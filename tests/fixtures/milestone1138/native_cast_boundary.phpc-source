@@ -1,3 +1,3 @@
 <?php
 $value = "15";
-echo (int) $value;
+echo (array) $value;

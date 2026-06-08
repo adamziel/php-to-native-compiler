@@ -228,7 +228,8 @@ until a native runtime ABI exists.
 `phpc compile <input.php> --emit-ir` emits LLVM IR text for a smaller
 straight-line subset. It currently supports scalar literals, direct scalar
 variable assignment/readback, scalar `echo`/`print`, selected scalar operators,
-selected folds, and a documented set of native builtin folds.
+selected folds, bounded static scalar/null casts, and a documented set of
+native builtin folds.
 Native metadata/type-introspection builtin families share a backend-neutral
 preflight for class/interface/trait/enum existence, property/method existence,
 and relationship metadata calls, so call-result argument dependencies and arity
@@ -238,12 +239,14 @@ Anything outside that lowerable subset is rejected before misleading IR is
 emitted. Arrays, objects, class-name constants, `instanceof` relationship
 checks, ArrayAccess object-offset dispatch, clone expressions, include/require
 expression return semantics, functions, general control flow,
-try/catch/finally exception control, references, copy-on-write, and broad PHP
-coercions remain interpreter-only or unsupported for native lowering. Request
-superglobals remain rejected in native lowering even though the native runtime
-ABI now pins a null-only request-state handle shape. Try blocks are rejected
-through a dedicated native diagnostic until catch matching, catch variable
-binding, finally execution, and stack unwinding have native semantics.
+try/catch/finally exception control, references, copy-on-write, array/object
+casts, void casts, leading-numeric string casts, cast builtins, ambiguous
+dynamic casts, warning/recovery-sensitive coercions, and broad PHP coercions remain
+interpreter-only or unsupported for native lowering. Request superglobals
+remain rejected in native lowering even though the native runtime ABI now pins
+a null-only request-state handle shape. Try blocks are rejected through a
+dedicated native diagnostic until catch matching, catch variable binding,
+finally execution, and stack unwinding have native semantics.
 The compile mode flag is validated before the input file is read, so invalid
 modes such as `--emit-object` report a stable CLI usage error instead of an
 unrelated file, parse, or codegen diagnostic.

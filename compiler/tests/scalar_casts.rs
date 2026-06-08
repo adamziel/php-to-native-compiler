@@ -594,28 +594,48 @@ fn emit_ir_rejects_void_cast_statement_until_native_cast_lowering_exists() {
 }
 
 #[test]
-fn emit_ir_rejects_string_cast_until_native_cast_lowering_exists() {
-    let error = emit_ir_source("<?php\necho (string) 42;\n").unwrap_err();
+fn emit_ir_lowers_current_static_scalar_cast_subset() {
+    let ir = emit_ir_source(
+        r#"<?php
+$payload = "15";
+echo (string) null, (string) false, (string) true, (string) 42, (string) "ok", "\n";
+echo (string) 2.5, "\n";
+echo (int) null, "|", (int) false, "|", (int) true, "|", (int) $payload, "|", (int) "2.9", "|", (int) "word", "\n";
+echo (bool) null ? "T" : "F";
+echo (bool) "0" ? "T" : "F";
+echo (bool) "value" ? "T" : "F";
+echo "\n";
+echo (float) null, "|", (float) false, "|", (float) true, "|", (float) 42, "|", (float) "2.5", "|", (float) "word";
+"#,
+    )
+    .unwrap();
+
+    assert!(ir.contains("c\"1\\00\""), "{ir}");
+    assert!(ir.contains("c\"42\\00\""), "{ir}");
+    assert!(ir.contains("c\"ok\\00\""), "{ir}");
+    assert!(ir.contains("c\"2.5\\00\""), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 15)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 2)"), "{ir}");
+    assert!(ir.contains("@phpc_native_int(i64 0)"), "{ir}");
+    assert!(ir.contains("sitofp i64 42 to double"), "{ir}");
+    assert!(ir.contains("@phpc_native_float(double 2.5)"), "{ir}");
+    assert!(ir.contains("@phpc_native_float(double 0.0)"), "{ir}");
+    assert!(!ir.contains("LLVM cast lowering rejects"), "{ir}");
+}
+
+#[test]
+fn emit_ir_rejects_remaining_cast_edges_until_native_cast_lowering_exists() {
+    let error = emit_ir_source("<?php\necho (string) [];\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.message, LLVM_CAST_REJECTION);
 
-    let error = emit_ir_source("<?php\necho (int) 42;\n").unwrap_err();
+    let error = emit_ir_source("<?php\necho (int) \"42tail\";\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.message, LLVM_CAST_REJECTION);
 
-    let error = emit_ir_source("<?php\necho (bool) 42;\n").unwrap_err();
-
-    assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.message, LLVM_CAST_REJECTION);
-
-    let error = emit_ir_source("<?php\necho (float) 42;\n").unwrap_err();
-
-    assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.message, LLVM_CAST_REJECTION);
-
-    let error = emit_ir_source("<?php\necho (double) \"2.25\";\n").unwrap_err();
+    let error = emit_ir_source("<?php\necho (float) \"42tail\";\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.message, LLVM_CAST_REJECTION);
@@ -624,11 +644,16 @@ fn emit_ir_rejects_string_cast_until_native_cast_lowering_exists() {
 
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.message, LLVM_CAST_REJECTION);
+
+    let error = emit_ir_source("<?php\necho strval(\"value\");\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, LLVM_CAST_REJECTION);
 }
 
 #[test]
-fn emit_asm_rejects_float_cast_until_native_cast_lowering_exists() {
-    let error = emit_asm_source("<?php\necho (float) 42;\n").unwrap_err();
+fn emit_asm_rejects_array_cast_until_llvm_native_cast_lowering_exists() {
+    let error = emit_asm_source("<?php\necho (array) 42;\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.message, LLVM_CAST_REJECTION);

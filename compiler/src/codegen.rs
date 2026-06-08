@@ -32,8 +32,9 @@ use php_runtime::{
     NativeIntConversionOperation, NativeOutputBufferOperation, NativeStringArrayOperation,
     NativeStringDistanceOperation, NativeStringIntOperation, NativeStringOffsetOperation,
     NativeStringPredicate, NativeStringResultOperation, NativeStringSearchOperation,
-    PhpPrimitiveArithmeticError, PhpPrimitiveArithmeticOperation, PhpPrimitiveArithmeticValue,
-    PhpPrimitiveValue, PHPC_NATIVE_DIAGNOSTIC_OPERAND_ARGUMENT_EVALUATION_CLEANUP,
+    PhpNumericStringClassification, PhpPrimitiveArithmeticError, PhpPrimitiveArithmeticOperation,
+    PhpPrimitiveArithmeticValue, PhpPrimitiveValue,
+    PHPC_NATIVE_DIAGNOSTIC_OPERAND_ARGUMENT_EVALUATION_CLEANUP,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_ASSIGNMENT_TARGET_KEY_EVALUATION,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_ASSIGNMENT_TARGET_PROPERTY_EVALUATION,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_ASSIGNMENT_TARGET_RECEIVER_EVALUATION,
@@ -12152,11 +12153,18 @@ impl LlvmGenerator {
                 }
                 Err(self.unsupported(*span, LLVM_REQUIRE_EXPRESSION_REJECTION))
             }
-            Expr::Cast { span, .. } => {
+            Expr::Cast {
+                kind,
+                expr: target,
+                span,
+            } => {
                 if let Some(operation) = native_value_operand_call_result_operation(expr) {
                     return Err(self.unsupported_call_operation(operation));
                 }
-                Err(self.unsupported(*span, LLVM_CAST_REJECTION))
+                let value = self
+                    .emit_expr(target)
+                    .map_err(|_| self.unsupported(*span, LLVM_CAST_REJECTION))?;
+                self.emit_static_scalar_cast(*kind, value, *span)
             }
             Expr::Assign { target, expr, span } => {
                 if let Some(operation) = native_assignment_target_call_operation(target) {
@@ -15864,6 +15872,172 @@ impl LlvmGenerator {
         let mut values = if_true.values().to_vec();
         values.extend(if_false.values());
         KnownBool::from_values(values)
+    }
+
+    fn emit_static_scalar_cast(
+        &mut self,
+        kind: CastKind,
+        value: IrValue,
+        span: Span,
+    ) -> CompileResult<IrValue> {
+        match kind {
+            CastKind::String => self
+                .static_string_cast(&value)
+                .map(IrValue::String)
+                .ok_or_else(|| self.unsupported(span, LLVM_CAST_REJECTION)),
+            CastKind::Int => self.static_int_cast(value, span),
+            CastKind::Bool => self.static_bool_cast(value, span),
+            CastKind::Float => self.static_float_cast(value, span),
+            CastKind::Array | CastKind::Object | CastKind::Void => {
+                Err(self.unsupported(span, LLVM_CAST_REJECTION))
+            }
+        }
+    }
+
+    fn static_string_cast(&self, value: &IrValue) -> Option<String> {
+        match value {
+            IrValue::Null => Some(String::new()),
+            IrValue::Bool(false) => Some(String::new()),
+            IrValue::Bool(true) => Some("1".to_string()),
+            IrValue::BoolExpr(value) => {
+                let values = self.known_bool_values(value)?;
+                single_static_cast_value(values.values().iter().map(|value| {
+                    if *value {
+                        "1".to_string()
+                    } else {
+                        String::new()
+                    }
+                }))
+            }
+            IrValue::Int(value) => {
+                let values = self.known_integer_values(value)?;
+                single_static_cast_value(values.values().iter().map(|value| value.to_string()))
+            }
+            IrValue::Float(value) => {
+                let values = self.known_float_values(value)?;
+                let mut results = Vec::new();
+                for value in values.values() {
+                    if !value.is_finite() {
+                        return None;
+                    }
+                    results.push(php_float_string_for_static_cast(*value));
+                }
+                single_static_cast_value(results)
+            }
+            IrValue::String(value) => Some(value.clone()),
+            IrValue::StringPtr(value) => {
+                let values = self.known_string_values(value)?;
+                single_static_cast_value(values.values().iter().cloned())
+            }
+            IrValue::NativeValue(_) | IrValue::NativeReference(_) => None,
+        }
+    }
+
+    fn static_int_cast(&mut self, value: IrValue, span: Span) -> CompileResult<IrValue> {
+        match value {
+            IrValue::Null => Ok(IrValue::Int("0".to_string())),
+            IrValue::Bool(false) => Ok(IrValue::Int("0".to_string())),
+            IrValue::Bool(true) => Ok(IrValue::Int("1".to_string())),
+            IrValue::BoolExpr(value) => {
+                if let Some(values) = self.known_bool_values(&value) {
+                    if let Some(result) =
+                        single_static_cast_value(values.values().iter().map(|value| {
+                            if *value {
+                                1
+                            } else {
+                                0
+                            }
+                        }))
+                    {
+                        return Ok(IrValue::Int(result.to_string()));
+                    }
+                }
+                let result = self.next_temp();
+                self.body.push(format!("{result} = zext i1 {value} to i64"));
+                Ok(IrValue::Int(result))
+            }
+            value @ IrValue::Int(_) => Ok(value),
+            IrValue::Float(value) => {
+                let values = self.known_float_values(&value);
+                static_known_float_to_int(&values)
+                    .map(|value| IrValue::Int(value.to_string()))
+                    .ok_or_else(|| self.unsupported(span, LLVM_CAST_REJECTION))
+            }
+            IrValue::String(_) | IrValue::StringPtr(_) => {
+                let values = self.known_string_values_for_value(&value);
+                static_known_string_to_int(&values)
+                    .map(|value| IrValue::Int(value.to_string()))
+                    .ok_or_else(|| self.unsupported(span, LLVM_CAST_REJECTION))
+            }
+            IrValue::NativeValue(_) | IrValue::NativeReference(_) => {
+                Err(self.unsupported(span, LLVM_CAST_REJECTION))
+            }
+        }
+    }
+
+    fn static_bool_cast(&mut self, value: IrValue, span: Span) -> CompileResult<IrValue> {
+        if let Some(truthy) = self.known_truthiness_for_value(&value) {
+            return Ok(IrValue::Bool(truthy));
+        }
+
+        match value {
+            value @ (IrValue::Bool(_) | IrValue::BoolExpr(_)) => Ok(value),
+            IrValue::Int(value) => {
+                let result = self.next_temp();
+                self.body.push(format!("{result} = icmp ne i64 {value}, 0"));
+                Ok(IrValue::BoolExpr(result))
+            }
+            IrValue::NativeValue(_)
+            | IrValue::NativeReference(_)
+            | IrValue::Float(_)
+            | IrValue::StringPtr(_)
+            | IrValue::String(_)
+            | IrValue::Null => Err(self.unsupported(span, LLVM_CAST_REJECTION)),
+        }
+    }
+
+    fn static_float_cast(&mut self, value: IrValue, span: Span) -> CompileResult<IrValue> {
+        match value {
+            IrValue::Null => Ok(IrValue::Float("0.0".to_string())),
+            IrValue::Bool(false) => Ok(IrValue::Float("0.0".to_string())),
+            IrValue::Bool(true) => Ok(IrValue::Float("1.0".to_string())),
+            IrValue::BoolExpr(value) => {
+                if let Some(values) = self.known_bool_values(&value) {
+                    if let Some(result) =
+                        single_static_cast_value(values.values().iter().map(|value| {
+                            if *value {
+                                1.0
+                            } else {
+                                0.0
+                            }
+                        }))
+                    {
+                        return Ok(IrValue::Float(format_float_literal(result)));
+                    }
+                }
+                let result = self.next_temp();
+                self.body.push(format!(
+                    "{result} = select i1 {value}, double 1.0, double 0.0"
+                ));
+                Ok(IrValue::Float(result))
+            }
+            IrValue::Int(value) => {
+                let result = self.next_temp();
+                self.body
+                    .push(format!("{result} = sitofp i64 {value} to double"));
+                Ok(IrValue::Float(result))
+            }
+            value @ IrValue::Float(_) => Ok(value),
+            IrValue::String(_) | IrValue::StringPtr(_) => {
+                let values = self.known_string_values_for_value(&value);
+                static_known_string_to_float(&values)
+                    .map(|value| IrValue::Float(format_float_literal(value)))
+                    .ok_or_else(|| self.unsupported(span, LLVM_CAST_REJECTION))
+            }
+            IrValue::NativeValue(_) | IrValue::NativeReference(_) => {
+                Err(self.unsupported(span, LLVM_CAST_REJECTION))
+            }
+        }
     }
 
     fn emit_unary(&mut self, op: UnaryOp, value: IrValue, span: Span) -> CompileResult<IrValue> {
@@ -66331,6 +66505,85 @@ fn known_string_truthiness(values: &KnownString) -> Option<bool> {
             .iter()
             .map(|value| is_php_truthy_string(value)),
     )
+}
+
+fn single_static_cast_value<T: PartialEq>(values: impl IntoIterator<Item = T>) -> Option<T> {
+    let mut values = values.into_iter();
+    let first = values.next()?;
+    values.all(|value| value == first).then_some(first)
+}
+
+fn php_float_string_for_static_cast(value: f64) -> String {
+    if value.is_nan() {
+        return "NAN".to_string();
+    }
+    if value.is_infinite() {
+        return if value.is_sign_positive() {
+            "INF".to_string()
+        } else {
+            "-INF".to_string()
+        };
+    }
+
+    let formatted = format!("{}", value);
+    if formatted == "-0" {
+        "0".to_string()
+    } else {
+        formatted
+    }
+}
+
+fn static_known_float_to_int(values: &Option<KnownFloat>) -> Option<i64> {
+    let values = values.as_ref()?;
+    let mut results = Vec::new();
+    for value in values.values() {
+        results.push(static_float_to_int_value(*value)?);
+    }
+    single_static_cast_value(results)
+}
+
+fn static_float_to_int_value(value: f64) -> Option<i64> {
+    if !value.is_finite() || value < i64::MIN as f64 || value >= 9_223_372_036_854_775_808.0 {
+        return None;
+    }
+    Some(value.trunc() as i64)
+}
+
+fn static_known_string_to_int(values: &Option<KnownString>) -> Option<i64> {
+    let values = values.as_ref()?;
+    let mut results = Vec::new();
+    for value in values.values() {
+        results.push(static_string_to_int_value(value)?);
+    }
+    single_static_cast_value(results)
+}
+
+fn static_string_to_int_value(value: &str) -> Option<i64> {
+    match classify_php_numeric_string(value) {
+        PhpNumericStringClassification::Integer(value) => Some(value),
+        PhpNumericStringClassification::Float(value) => static_float_to_int_value(value),
+        PhpNumericStringClassification::NonNumeric => Some(0),
+        PhpNumericStringClassification::LeadingNumeric => None,
+    }
+}
+
+fn static_known_string_to_float(values: &Option<KnownString>) -> Option<f64> {
+    let values = values.as_ref()?;
+    let mut results = Vec::new();
+    for value in values.values() {
+        results.push(static_string_to_float_value(value)?);
+    }
+    single_static_cast_value(results)
+}
+
+fn static_string_to_float_value(value: &str) -> Option<f64> {
+    match classify_php_numeric_string(value) {
+        PhpNumericStringClassification::Integer(value) => Some(value as f64),
+        PhpNumericStringClassification::Float(value) if value.is_finite() => Some(value),
+        PhpNumericStringClassification::Float(_) => None,
+        PhpNumericStringClassification::NonNumeric => Some(0.0),
+        PhpNumericStringClassification::LeadingNumeric => None,
+    }
 }
 
 fn known_truthiness_for_backend_primitive_source(source: &BackendPrimitiveSource) -> Option<bool> {

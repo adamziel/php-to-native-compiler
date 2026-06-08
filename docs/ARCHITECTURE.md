@@ -1308,13 +1308,21 @@ bytes to the host stdout handle. This keeps reached formatter cases such as
 test convenience API.
 
 Cast expressions are represented as `Expr::Cast` with a small `CastKind`
-covering `(string)`, `(int)/(integer)`, `(bool)/(boolean)`, and
-`(float)/(double)`, and `(array)`. The interpreter owns PHP-shaped conversion
-for the current scalar/null/array subset and keeps warning-producing or
-object/resource-heavy cast behavior as runtime or parse boundaries. Native
-lowering rejects all cast expressions with a dedicated diagnostic until
-generated code has scalar conversion, array materialization, warning/recovery,
-object/resource handling, and exact diagnostic behavior.
+covering `(string)`, `(int)/(integer)`, `(bool)/(boolean)`,
+`(float)/(double)`, `(array)`, `(object)`, and statement-form `(void)`. The
+interpreter owns PHP-shaped conversion for the current scalar/null/array/object
+subset and keeps warning-producing or resource-heavy cast behavior as runtime
+or parse boundaries. LLVM `--emit-ir` folds a bounded straight-line scalar/null
+cast subset when the result is statically known: `(string)` over
+null/bool/int/string and known finite floats, `(int)` over
+null/bool/int/exact numeric strings and selected bool expressions, `(bool)`
+over statically known truthiness plus direct integer tests, and `(float)` over
+null/bool/int/float/exact numeric strings. Nonnumeric strings fold to zero for
+numeric casts.
+Arrays, objects, void casts, references/native handles, leading-numeric string
+casts, cast builtins, ambiguous dynamic string/float cases, runtime string
+allocation, warning/recovery behavior, copy-on-write, and exact diagnostic
+parity remain blocked by the dedicated native cast diagnostic.
 Direct-variable `settype()` has a separate bounded NAN warning/recovery hook:
 for original `NAN` values converted to non-int targets in the current
 `bool`/`string`/`array`/`object`/`null` slice, it emits the PHP warning through
