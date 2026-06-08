@@ -2,5 +2,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-runtime error at tests/fixtures/runtime_errors/enum_exists_invalid_name.php:2:10: unsupported call enum_exists(): enum name argument must be string, got int
+runtime error at tests/fixtures/runtime_errors/enum_exists_invalid_name.php:2:10: unsupported call enum_exists(): class-like name argument must be string-compatible scalar in the current subset, got array
 --- stderr end ---

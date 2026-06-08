@@ -104,6 +104,34 @@ echo $items["name"], "|", $items[5], "|", $items[2], "|", $items["02"], "|", $it
 }
 
 #[test]
+fn array_chunk_preserves_reference_backed_value_slots() {
+    let source = r#"<?php
+$first = "one";
+$second = "two";
+$third = "three";
+$items = [3 => &$first, "name" => "plain", 2 => &$second, 1 => &$third];
+
+$chunks = array_chunk($items, 2);
+var_dump($chunks);
+$second = "changed";
+var_dump($chunks);
+
+$preserved = array_chunk($items, 2, true);
+var_dump($preserved);
+$third = "later";
+var_dump($preserved);
+"#;
+
+    let execution = run_source(source).unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "array(2) {\n  [0]=>\n  array(2) {\n    [0]=>\n    &string(3) \"one\"\n    [1]=>\n    string(5) \"plain\"\n  }\n  [1]=>\n  array(2) {\n    [0]=>\n    &string(3) \"two\"\n    [1]=>\n    &string(5) \"three\"\n  }\n}\narray(2) {\n  [0]=>\n  array(2) {\n    [0]=>\n    &string(3) \"one\"\n    [1]=>\n    string(5) \"plain\"\n  }\n  [1]=>\n  array(2) {\n    [0]=>\n    &string(7) \"changed\"\n    [1]=>\n    &string(5) \"three\"\n  }\n}\narray(2) {\n  [0]=>\n  array(2) {\n    [3]=>\n    &string(3) \"one\"\n    [\"name\"]=>\n    string(5) \"plain\"\n  }\n  [1]=>\n  array(2) {\n    [2]=>\n    &string(7) \"changed\"\n    [1]=>\n    &string(5) \"three\"\n  }\n}\narray(2) {\n  [0]=>\n  array(2) {\n    [3]=>\n    &string(3) \"one\"\n    [\"name\"]=>\n    string(5) \"plain\"\n  }\n  [1]=>\n  array(2) {\n    [2]=>\n    &string(7) \"changed\"\n    [1]=>\n    &string(5) \"later\"\n  }\n}\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_chunk_requires_array_first_argument() {
     let error = runtime_error("<?php\necho array_chunk(42, 2);\n");
 
@@ -128,27 +156,96 @@ fn array_chunk_requires_int_length_argument() {
 }
 
 #[test]
-fn array_chunk_requires_positive_length_argument() {
-    let error = runtime_error("<?php\n$items = [1];\necho array_chunk($items, 0);\n");
+fn array_chunk_non_positive_lengths_are_catchable_value_errors() {
+    let execution = run_source(
+        r#"<?php
+$items = [1, 2, 3];
+foreach ([0, -1] as $length) {
+    try {
+        var_dump(array_chunk($items, $length));
+    } catch (ValueError $e) {
+        echo get_class($e), ":", $e->getMessage(), "\n";
+    }
+    try {
+        var_dump(array_chunk($items, $length, true));
+    } catch (ValueError $e) {
+        echo get_class($e), ":", $e->getMessage(), "\n";
+    }
+    try {
+        var_dump(array_chunk($items, $length, false));
+    } catch (ValueError $e) {
+        echo get_class($e), ":", $e->getMessage(), "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
     assert_eq!(
-        error.message,
-        "unsupported call array_chunk(): length argument must be greater than 0 in the current subset, got 0"
+        execution.stdout,
+        "ValueError:array_chunk(): Argument #2 ($length) must be greater than 0\n\
+ValueError:array_chunk(): Argument #2 ($length) must be greater than 0\n\
+ValueError:array_chunk(): Argument #2 ($length) must be greater than 0\n\
+ValueError:array_chunk(): Argument #2 ($length) must be greater than 0\n\
+ValueError:array_chunk(): Argument #2 ($length) must be greater than 0\n\
+ValueError:array_chunk(): Argument #2 ($length) must be greater than 0\n"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
-fn array_chunk_requires_bool_preserve_key_argument() {
-    let error = runtime_error("<?php\n$items = [1];\necho array_chunk($items, 1, 1);\n");
+fn array_chunk_coerces_scalar_preserve_keys_and_reports_bool_type_errors() {
+    let source = r#"<?php
+$items = [];
+$items["name"] = "Ada";
+$items[5] = "five";
+$items["2"] = "two";
+$items["02"] = "zero two";
+$items[-1] = "negative";
+$items[] = "next";
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
+$truthy_int = array_chunk($items, 2, 1);
+echo $truthy_int[0]["name"], "|", $truthy_int[0][5], "\n";
+
+$falsey_int = array_chunk($items, 2, 0);
+echo $falsey_int[0][0], "|", $falsey_int[0][1], "\n";
+
+$truthy_string = array_chunk($items, 2, "yes");
+echo $truthy_string[2][-1], "|", $truthy_string[2][6], "\n";
+
+$falsey_string = array_chunk($items, 2, "0");
+echo $falsey_string[2][0], "|", $falsey_string[2][1], "\n";
+
+$falsey_null = array_chunk($items, 2, null);
+echo $falsey_null[0][0], "|", $falsey_null[0][1], "\n";
+
+$truthy_float = array_chunk($items, 2, 0.25);
+echo $truthy_float[1][2], "|", $truthy_float[1]["02"], "\n";
+
+$call = "array_chunk";
+$dynamic = $call($items, 2, "1");
+echo $dynamic[0]["name"], "|", $dynamic[0][5], "\n";
+
+try {
+    array_chunk($items, 0, []);
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#;
+
+    let execution = run_source(source).unwrap();
     assert_eq!(
-        error.message,
-        "unsupported call array_chunk(): preserve_keys argument must be bool in the current subset, got int"
+        execution.stdout,
+        "Ada|five\n\
+Ada|five\n\
+negative|next\n\
+negative|next\n\
+Ada|five\n\
+two|zero two\n\
+Ada|five\n\
+array_chunk(): Argument #3 ($preserve_keys) must be of type bool, array given"
     );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

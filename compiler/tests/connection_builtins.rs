@@ -56,6 +56,25 @@ echo $call(true);
 }
 
 #[test]
+fn connection_state_reports_normal_cli_connection() {
+    let execution = run_source(
+        r#"<?php
+echo CONNECTION_NORMAL, "|", CONNECTION_ABORTED, "|", CONNECTION_TIMEOUT, "\n";
+var_dump(connection_status() === CONNECTION_NORMAL);
+var_dump(connection_aborted());
+foreach (["connection_status", "connection_aborted"] as $call) {
+    echo function_exists($call) ? "1" : "0";
+    echo is_callable($call) ? "1" : "0";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "0|1|2\nbool(true)\nint(0)\n1111");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn ignore_user_abort_rejects_forms_outside_current_subset() {
     let unsupported = runtime_error(
         r#"<?php
@@ -88,15 +107,23 @@ fn emit_ir_folds_ignore_user_abort_metadata_but_rejects_direct_calls() {
         r#"<?php
 echo function_exists("ignore_user_abort") ? "1" : "0";
 echo is_callable("ignore_user_abort") ? "1" : "0";
+echo function_exists("connection_status") ? "1" : "0";
+echo is_callable("connection_aborted") ? "1" : "0";
 "#,
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 2, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 4, "{ir}");
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
 
     let error = emit_ir_source("<?php\nignore_user_abort(true);\n").unwrap_err();
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+    let error = emit_ir_source("<?php\nconnection_status();\n").unwrap_err();
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.line, 2);
     assert_eq!(error.column, 1);

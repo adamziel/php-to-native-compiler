@@ -1,6 +1,6 @@
-exit: 1
+exit: 0
 stdout:
---- stdout end ---
+Warning: array_count_values(): Can only count string and integer values, entry skipped in tests/fixtures/runtime_errors/array_count_values_unsupported_value.php on line 3
+Array--- stdout end ---
 stderr:
-runtime error at tests/fixtures/runtime_errors/array_count_values_unsupported_value.php:3:6: unsupported call array_count_values(): values must be int or string in the current subset, got bool
 --- stderr end ---

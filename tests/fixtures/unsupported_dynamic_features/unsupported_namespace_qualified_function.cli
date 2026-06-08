@@ -1,6 +1,8 @@
-exit: 1
+exit: 255
 stdout:
---- stdout end ---
+Fatal error: Uncaught Error: Call to undefined function App\make() in tests/fixtures/unsupported_dynamic_features/unsupported_namespace_qualified_function.php:2
+Stack trace:
+#0 {main}
+  thrown in tests/fixtures/unsupported_dynamic_features/unsupported_namespace_qualified_function.php on line 2--- stdout end ---
 stderr:
-parse error at tests/fixtures/unsupported_dynamic_features/unsupported_namespace_qualified_function.php:2:1: unsupported namespace-qualified function name: namespace-aware function resolution is not implemented
 --- stderr end ---

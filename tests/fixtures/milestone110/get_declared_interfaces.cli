@@ -9,8 +9,10 @@ Array
     [4] => ArrayAccess
     [5] => Countable
     [6] => Stringable
+    [7] => SplObserver
+    [8] => SplSubject
 )
-7
-7--- stdout end ---
+9
+9--- stdout end ---
 stderr:
 --- stderr end ---

@@ -1,6 +1,9 @@
-exit: 1
+exit: 255
 stdout:
---- stdout end ---
+before
+Fatal error: Uncaught Exception in tests/fixtures/milestone697/throw_reached.php:3
+Stack trace:
+#0 {main}
+  thrown in tests/fixtures/milestone697/throw_reached.php on line 3--- stdout end ---
 stderr:
-runtime error at tests/fixtures/milestone697/throw_reached.php:3:1: unsupported call throw: uncaught Exception propagation beyond catch/finally is not implemented
 --- stderr end ---

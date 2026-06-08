@@ -1,0 +1,5 @@
+before
+Fatal error: Uncaught Exception in tests/fixtures/milestone697/throw_reached.php:3
+Stack trace:
+#0 {main}
+  thrown in tests/fixtures/milestone697/throw_reached.php on line 3

@@ -68,27 +68,24 @@ broken();
 }
 
 #[test]
-fn broader_class_constant_defaults_remain_explicitly_unsupported() {
-    let error = run_source(
+fn class_constant_defaults_use_declared_class_constants() {
+    let execution = run_source(
         r#"<?php
 class Defaults {
     const SIZE = 32;
 }
 
 function broken($value = Defaults::SIZE) {
-    echo $value;
+    echo $value, "\n";
 }
+broken();
+broken(64);
 "#,
     )
-    .unwrap_err();
+    .unwrap();
 
-    assert_eq!(error.phase, Phase::Parse);
-    assert_eq!(error.line, 6);
-    assert_eq!(error.column, 34);
-    assert_eq!(
-        error.message,
-        "default parameter values only support constant expressions in the current subset"
-    );
+    assert_eq!(execution.stdout, "32\n64\n");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
