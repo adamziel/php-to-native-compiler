@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T06:33:49+00:00
+Last generated: 2026-06-08T06:48:49+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -45,7 +45,8 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | architect-38 | Architect | crash | architect-38 |  |
 | architect-39 | Architect | crash | architect-39 |  |
 | architect-4 | Architect | crash | architect-4 |  |
-| architect-40 | Architect | running | architect-40 |  |
+| architect-40 | Architect | crash | architect-40 |  |
+| architect-41 | Architect | running | architect-41 |  |
 | architect-5 | Architect | crash | architect-5 |  |
 | architect-6 | Architect | crash | architect-6 |  |
 | architect-7 | Architect | crash | architect-7 |  |
@@ -87,7 +88,8 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-101 | Coordinator | success | coordinator-101 |  |
 | coordinator-102 | Coordinator | success | coordinator-102 |  |
 | coordinator-103 | Coordinator | success | coordinator-103 |  |
-| coordinator-104 | Coordinator | running | coordinator-104 |  |
+| coordinator-104 | Coordinator | crash | coordinator-104 |  |
+| coordinator-105 | Coordinator | running | coordinator-105 |  |
 | coordinator-11 | Coordinator | stopped | coordinator-11 |  |
 | coordinator-12 | Coordinator | stopped | coordinator-12 |  |
 | coordinator-13 | Coordinator | stopped | coordinator-13 |  |
@@ -411,8 +413,10 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-30 | Developer | stopped | developer-30 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-30 |
 | developer-300 | Developer | crash | developer-300 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-300 |
 | developer-301 | Developer | stopped | developer-301 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-301 |
-| developer-302 | Developer | running | developer-302 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-302 |
+| developer-302 | Developer | crash | developer-302 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-302 |
 | developer-303 | Developer | stopped | developer-303 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-303 |
+| developer-304 | Developer | running | developer-304 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-304 |
+| developer-305 | Developer | stopped | developer-305 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-305 |
 | developer-31 | Developer | crash | developer-31 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-31 |
 | developer-32 | Developer | crash | developer-32 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-32 |
 | developer-33 | Developer | crash | developer-33 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-33 |
@@ -521,21 +525,21 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 failed — tools/run-tests.sh (error=0, failed=2, passed=417, skipped=0)
 
 ## Resource samples
-Latest: CPU 9.0%, RAM 17.59%, disk free 173.52 GB.
+Latest: CPU 19.01%, RAM 17.65%, disk free 152.65 GB.
 
 ## Recent events
-- 2026-06-08T06:33:49+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: tests::native_constructor_allocation_invoke_carrier_cleans_up_failure_paths
-- 2026-06-08T06:33:49+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: codegen::tests::generated_c_string_comparison_safety_uses_shared_pair_classifier
-- 2026-06-08T06:33:49+00:00 **spawn_request**: test-loop requested Architect: Find systemic cause for repeated failure: codegen::tests::c_assembly_non_local_assignment_families_share_assignment_owner_boundary
-- 2026-06-08T06:33:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-211 tmux window
-- 2026-06-08T06:33:49+00:00 **terminal_agent_window_closed**: Closed terminal auditor-5 tmux window
-- 2026-06-08T06:33:49+00:00 **terminal_agent_window_closed**: Closed terminal auditor-6 tmux window
-- 2026-06-08T06:33:49+00:00 **terminal_agent_window_closed**: Closed terminal auditor-7 tmux window
-- 2026-06-08T06:33:49+00:00 **terminal_agent_window_closed**: Closed terminal auditor-8 tmux window
-- 2026-06-08T06:33:49+00:00 **terminal_agent_window_closed**: Closed terminal auditor-9 tmux window
-- 2026-06-08T06:33:49+00:00 **terminal_agent_window_closed**: Closed terminal conflict-resolver-1 tmux window
-- 2026-06-08T06:33:49+00:00 **terminal_agent_window_closed**: Closed terminal conflict-resolver-10 tmux window
-- 2026-06-08T06:33:49+00:00 **terminal_agent_window_closed**: Closed terminal conflict-resolver-11 tmux window
+- 2026-06-08T06:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-55 tmux window
+- 2026-06-08T06:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-143 tmux window
+- 2026-06-08T06:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-56 tmux window
+- 2026-06-08T06:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-144 tmux window
+- 2026-06-08T06:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-57 tmux window
+- 2026-06-08T06:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-145 tmux window
+- 2026-06-08T06:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-58 tmux window
+- 2026-06-08T06:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-146 tmux window
+- 2026-06-08T06:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-59 tmux window
+- 2026-06-08T06:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-147 tmux window
+- 2026-06-08T06:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-6 tmux window
+- 2026-06-08T06:48:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-60 tmux window
 
 ## Next steps
 Move next worklane forward: Fix current-origin array_find_family arity boundary
