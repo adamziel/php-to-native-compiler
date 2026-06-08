@@ -1,2 +1,2 @@
-lex error at 7:6: unsupported string interpolation: only simple $name, {$name}, array offsets, and object properties in double-quoted strings are implemented; ${...}, dynamic properties, static properties, arbitrary expressions, and complex interpolation are not implemented
+lex error at 7:6: unsupported string interpolation: only simple $name, {$name}, ${name}, array offsets, and object properties in double-quoted strings are implemented; variable variables, dynamic properties, static properties, arbitrary expressions, and complex interpolation are not implemented
 

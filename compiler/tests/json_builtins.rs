@@ -1,0 +1,666 @@
+use php_compiler::run_source;
+
+#[test]
+fn json_decode_scalars_arrays_and_objects() {
+    let execution = run_source(
+        r#"<?php
+var_dump(json_decode('0'));
+var_dump(json_decode('true'));
+var_dump(json_decode('"abc"'));
+var_dump(json_decode('[1,2,3]'));
+var_dump(json_decode('{"name":"Ada","count":2}'));
+var_dump(json_decode('{"name":"Ada","count":2}', true));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "int(0)\n",
+            "bool(true)\n",
+            "string(3) \"abc\"\n",
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  int(1)\n",
+            "  [1]=>\n",
+            "  int(2)\n",
+            "  [2]=>\n",
+            "  int(3)\n",
+            "}\n",
+            "object(stdClass)#1 (2) {\n",
+            "  [\"name\"]=>\n",
+            "  string(3) \"Ada\"\n",
+            "  [\"count\"]=>\n",
+            "  int(2)\n",
+            "}\n",
+            "array(2) {\n",
+            "  [\"name\"]=>\n",
+            "  string(3) \"Ada\"\n",
+            "  [\"count\"]=>\n",
+            "  int(2)\n",
+            "}\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn json_error_state_tracks_decode_and_encode_failures() {
+    let execution = run_source(
+        r#"<?php
+var_dump(json_decode('[1}'));
+var_dump(json_last_error());
+var_dump(json_last_error_msg());
+json_decode('[1]');
+var_dump(json_last_error(), json_last_error_msg());
+$fp = fopen(__FILE__, "r");
+var_dump(json_encode($fp));
+var_dump(json_last_error(), json_last_error_msg());
+"#,
+    )
+    .unwrap();
+
+    assert!(execution.stdout.contains("NULL\nint(2)\n"));
+    assert!(execution.stdout.contains("State mismatch"));
+    assert!(execution.stdout.contains("int(0)\nstring(8) \"No error\""));
+    assert!(execution.stdout.contains("bool(false)\nint(8)\n"));
+    assert!(execution.stdout.contains("Type is not supported"));
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn json_encode_partial_output_replaces_nonfinite_floats_with_zero() {
+    let execution = run_source(
+        r#"<?php
+var_dump(json_encode(INF));
+var_dump(json_last_error(), json_last_error_msg());
+var_dump(json_encode(INF, JSON_PARTIAL_OUTPUT_ON_ERROR));
+var_dump(json_encode(-INF, JSON_PARTIAL_OUTPUT_ON_ERROR));
+var_dump(json_encode(NAN, JSON_PARTIAL_OUTPUT_ON_ERROR));
+var_dump(json_last_error(), json_last_error_msg());
+var_dump(json_encode([INF, -INF, NAN], JSON_PARTIAL_OUTPUT_ON_ERROR));
+$obj = new stdClass;
+$obj->x = INF;
+var_dump(json_encode($obj, JSON_PARTIAL_OUTPUT_ON_ERROR));
+var_dump(json_last_error(), json_last_error_msg());
+echo json_encode(["x" => INF], JSON_PARTIAL_OUTPUT_ON_ERROR | JSON_PRETTY_PRINT), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "bool(false)\n",
+            "int(7)\n",
+            "string(34) \"Inf and NaN cannot be JSON encoded\"\n",
+            "string(1) \"0\"\n",
+            "string(1) \"0\"\n",
+            "string(1) \"0\"\n",
+            "int(7)\n",
+            "string(34) \"Inf and NaN cannot be JSON encoded\"\n",
+            "string(7) \"[0,0,0]\"\n",
+            r#"string(7) "{"x":0}""#,
+            "\n",
+            "int(7)\n",
+            "string(34) \"Inf and NaN cannot be JSON encoded\"\n",
+            "{\n",
+            "    \"x\": 0\n",
+            "}\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn json_encode_flags_cover_core_string_and_shape_options() {
+    let execution = run_source(
+        r#"<?php
+echo json_encode(["<foo>", "'bar'", '"baz"', "&blong&"], JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_HEX_AMP), "\n";
+echo json_encode(["руссиш", "1.25", "abc"], JSON_NUMERIC_CHECK), "\n";
+echo json_encode([["x"]], JSON_FORCE_OBJECT), "\n";
+echo json_encode([12.0, 0.0], JSON_PRESERVE_ZERO_FRACTION), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "[\"\\u003Cfoo\\u003E\",\"\\u0027bar\\u0027\",\"\\u0022baz\\u0022\",\"\\u0026blong\\u0026\"]\n[\"\\u0440\\u0443\\u0441\\u0441\\u0438\\u0448\",1.25,\"abc\"]\n{\"0\":{\"0\":\"x\"}}\n[12.0,0.0]\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn json_serializable_self_return_uses_public_properties_and_reentrant_guard() {
+    let execution = run_source(
+        r#"<?php
+class SelfReturning implements JsonSerializable {
+    public $a = 1;
+    private $hidden = "no";
+
+    public function jsonSerialize(): mixed {
+        var_dump(json_encode($this));
+        return $this;
+    }
+}
+
+class PlainSelfReturning implements JsonSerializable {
+    public $prop = "value";
+
+    public function jsonSerialize(): mixed {
+        return $this;
+    }
+}
+
+class SelfArrayReturning implements JsonSerializable {
+    public function jsonSerialize(): mixed {
+        return [$this];
+    }
+}
+
+var_dump(json_encode(new SelfReturning()));
+var_dump(json_encode(new PlainSelfReturning()));
+var_dump(json_encode(new SelfArrayReturning(), JSON_PARTIAL_OUTPUT_ON_ERROR));
+var_dump(json_last_error(), json_last_error_msg());
+var_dump(new PlainSelfReturning());
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "bool(false)\n",
+            r#"string(7) "{"a":1}""#,
+            "\n",
+            r#"string(16) "{"prop":"value"}""#,
+            "\n",
+            "string(6) \"[null]\"\n",
+            "int(6)\n",
+            "string(18) \"Recursion detected\"\n",
+            "object(PlainSelfReturning)#1 (1) {\n",
+            "  [\"prop\"]=>\n",
+            "  string(5) \"value\"\n",
+            "}\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn json_decode_bigint_and_object_as_array_flags() {
+    let execution = run_source(
+        r#"<?php
+$json = '{"largenum":123456789012345678901234567890}';
+var_dump(json_decode($json, true, 512, JSON_BIGINT_AS_STRING));
+var_dump(json_decode('{"foo":"bar"}', null, 512, JSON_OBJECT_AS_ARRAY));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "array(1) {\n",
+            "  [\"largenum\"]=>\n",
+            "  string(30) \"123456789012345678901234567890\"\n",
+            "}\n",
+            "array(1) {\n",
+            "  [\"foo\"]=>\n",
+            "  string(3) \"bar\"\n",
+            "}\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn json_decode_depth_and_error_locations_match_core_rows() {
+    let execution = run_source(
+        r#"<?php
+var_dump(json_decode("[[1]]", false, 2));
+var_dump(json_last_error(), json_last_error_msg());
+var_dump(json_decode("[1}"));
+var_dump(json_last_error(), json_last_error_msg());
+var_dump(json_decode('["' . chr(0) . 'abcd"]'));
+var_dump(json_last_error(), json_last_error_msg());
+var_dump(json_decode("[1"));
+var_dump(json_last_error(), json_last_error_msg());
+try {
+    json_decode('"abc"', true, -1);
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "NULL\n",
+            "int(1)\n",
+            "string(46) \"Maximum stack depth exceeded near location 1:2\"\n",
+            "NULL\n",
+            "int(2)\n",
+            "string(60) \"State mismatch (invalid or malformed JSON) near location 1:3\"\n",
+            "NULL\n",
+            "int(3)\n",
+            "string(71) \"Control character error, possibly incorrectly encoded near location 1:2\"\n",
+            "NULL\n",
+            "int(4)\n",
+            "string(30) \"Syntax error near location 1:3\"\n",
+            "json_decode(): Argument #3 ($depth) must be greater than 0\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn json_decode_invalid_utf8_flags_repair_binary_string_tokens() {
+    let execution = run_source(
+        r#"<?php
+$one = "\"a\xb0b\"";
+var_dump(json_decode($one));
+var_dump(json_last_error(), json_last_error_msg());
+var_dump(json_decode($one, true, 512, JSON_INVALID_UTF8_IGNORE));
+var_dump(json_last_error(), json_last_error_msg());
+echo bin2hex(json_decode($one, true, 512, JSON_INVALID_UTF8_SUBSTITUTE)), "\n";
+var_dump(json_last_error(), json_last_error_msg());
+
+$overlong = "\"\x61\xf0\x80\x80\x41\"";
+echo bin2hex(json_decode($overlong, true, 512, JSON_INVALID_UTF8_SUBSTITUTE)), "\n";
+
+$array = json_decode("[\"\xc1\xc1\",\"a\"]", true, 512, JSON_INVALID_UTF8_IGNORE);
+var_dump($array);
+$substituted = json_decode("[\"\xc1\xc1\",\"a\"]", true, 512, JSON_INVALID_UTF8_SUBSTITUTE);
+echo bin2hex($substituted[0]), "|", bin2hex($substituted[1]), "\n";
+echo bin2hex(json_decode($one, true, 512, JSON_INVALID_UTF8_IGNORE | JSON_INVALID_UTF8_SUBSTITUTE)), "\n";
+
+$outside = "[" . "\xb0" . "]";
+var_dump(json_decode($outside, true, 512, JSON_INVALID_UTF8_IGNORE));
+echo json_last_error(), "|", json_last_error_msg();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "NULL\n",
+            "int(5)\n",
+            "string(56) \"Malformed UTF-8 characters, possibly incorrectly encoded\"\n",
+            "string(2) \"ab\"\n",
+            "int(0)\n",
+            "string(8) \"No error\"\n",
+            "61efbfbd62\n",
+            "int(0)\n",
+            "string(8) \"No error\"\n",
+            "61efbfbdefbfbdefbfbd41\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  string(0) \"\"\n",
+            "  [1]=>\n",
+            "  string(1) \"a\"\n",
+            "}\n",
+            "efbfbdefbfbd|61\n",
+            "61efbfbd62\n",
+            "NULL\n",
+            "5|Malformed UTF-8 characters, possibly incorrectly encoded",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn json_decode_and_validate_use_php_string_argument_boundary() {
+    let execution = run_source(
+        r#"<?php
+class JsonText {
+    public function __toString() { return '{"ok":true}'; }
+}
+class JsonListText {
+    public function __toString() { return '[1,2]'; }
+}
+
+var_dump(json_decode(new JsonText(), true));
+var_dump(json_validate(new JsonText()));
+$call = "json_decode";
+var_dump($call(new JsonListText(), true));
+var_dump(json_decode(null));
+var_dump(json_validate(null));
+try { json_decode([]); } catch (Throwable $e) { echo $e->getMessage(), "\n"; }
+try { json_validate(new stdClass()); } catch (Throwable $e) { echo $e->getMessage(), "\n"; }
+$bad = "\"a\xb0b\"";
+echo bin2hex(json_decode($bad, true, 512, JSON_INVALID_UTF8_SUBSTITUTE)), "\n";
+var_dump(json_validate($bad, 512, JSON_INVALID_UTF8_IGNORE));
+"#,
+    )
+    .unwrap();
+
+    assert!(execution.stdout.contains(
+        "array(1) {\n  [\"ok\"]=>\n  bool(true)\n}\nbool(true)\narray(2) {\n  [0]=>\n  int(1)\n  [1]=>\n  int(2)\n}\n"
+    ));
+    assert!(execution.stdout.contains(
+        "Deprecated: json_decode(): Passing null to parameter #1 ($json) of type string is deprecated"
+    ));
+    assert!(execution.stdout.contains(
+        "Deprecated: json_validate(): Passing null to parameter #1 ($json) of type string is deprecated"
+    ));
+    assert!(execution
+        .stdout
+        .contains("json_decode(): Argument #1 ($json) must be of type string, array given\n"));
+    assert!(execution
+        .stdout
+        .contains("json_validate(): Argument #1 ($json) must be of type string, stdClass given\n"));
+    assert!(execution.stdout.contains("61efbfbd62\nbool(true)\n"));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn json_encode_invalid_utf8_flags_repair_binary_strings() {
+    let execution = run_source(
+        r#"<?php
+$one = "\x61\xb0\x62";
+var_dump(json_encode($one));
+var_dump(json_last_error(), json_last_error_msg());
+var_dump(json_encode($one, JSON_INVALID_UTF8_IGNORE));
+var_dump(json_last_error(), json_last_error_msg());
+var_dump(json_encode($one, JSON_INVALID_UTF8_SUBSTITUTE));
+var_dump(json_last_error(), json_last_error_msg());
+echo bin2hex(json_encode($one, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE)), "\n";
+
+$overlong = "\x61\xf0\x80\x80\x41";
+var_dump(json_encode($overlong, JSON_INVALID_UTF8_IGNORE));
+var_dump(json_encode($overlong, JSON_INVALID_UTF8_SUBSTITUTE));
+echo bin2hex(json_encode($overlong, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE)), "\n";
+
+$array = array($one, "ok");
+echo json_encode($array, JSON_INVALID_UTF8_IGNORE), "\n";
+echo json_encode($array, JSON_INVALID_UTF8_SUBSTITUTE), "\n";
+echo json_encode($one, JSON_INVALID_UTF8_IGNORE | JSON_INVALID_UTF8_SUBSTITUTE), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "bool(false)\n",
+            "int(5)\n",
+            "string(56) \"Malformed UTF-8 characters, possibly incorrectly encoded\"\n",
+            "string(4) \"\"ab\"\"\n",
+            "int(0)\n",
+            "string(8) \"No error\"\n",
+            "string(10) \"\"a\\ufffdb\"\"\n",
+            "int(0)\n",
+            "string(8) \"No error\"\n",
+            "2261efbfbd6222\n",
+            "string(4) \"\"aA\"\"\n",
+            "string(10) \"\"a\\ufffdA\"\"\n",
+            "2261efbfbd4122\n",
+            "[\"ab\",\"ok\"]\n",
+            "[\"a\\ufffdb\",\"ok\"]\n",
+            "\"ab\"\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn json_validate_tracks_state_depth_flags_and_utf8() {
+    let execution = run_source(
+        "<?php\n\
+var_dump(json_validate('{\"ok\":true}'));\n\
+var_dump(json_last_error(), json_last_error_msg());\n\
+var_dump(json_validate('-'));\n\
+var_dump(json_last_error(), json_last_error_msg());\n\
+var_dump(json_validate('', -1));\n\
+var_dump(json_last_error(), json_last_error_msg());\n\
+try { json_validate('-', 0); } catch (Error $e) { echo $e->getCode(), '|', $e->getMessage(), \"\\n\"; }\n\
+var_dump(json_last_error(), json_last_error_msg());\n\
+try { json_validate('-', 512, JSON_BIGINT_AS_STRING); } catch (Error $e) { echo $e->getCode(), '|', $e->getMessage(), \"\\n\"; }\n\
+$bad = \"\\\"a\\xb0b\\\"\";\n\
+var_dump(json_validate($bad));\n\
+var_dump(json_last_error(), json_last_error_msg());\n\
+var_dump(json_validate($bad, 512, JSON_INVALID_UTF8_IGNORE));\n\
+var_dump(json_last_error(), json_last_error_msg());\n",
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "bool(true)\n",
+            "int(0)\n",
+            "string(8) \"No error\"\n",
+            "bool(false)\n",
+            "int(4)\n",
+            "string(30) \"Syntax error near location 1:1\"\n",
+            "bool(false)\n",
+            "int(4)\n",
+            "string(12) \"Syntax error\"\n",
+            "0|json_validate(): Argument #2 ($depth) must be greater than 0\n",
+            "int(4)\n",
+            "string(12) \"Syntax error\"\n",
+            "0|json_validate(): Argument #3 ($flags) must be a valid flag (allowed flags: JSON_INVALID_UTF8_IGNORE)\n",
+            "bool(false)\n",
+            "int(5)\n",
+            "string(74) \"Malformed UTF-8 characters, possibly incorrectly encoded near location 1:1\"\n",
+            "bool(true)\n",
+            "int(0)\n",
+            "string(8) \"No error\"\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn json_validate_reports_multiline_and_token_start_error_locations() {
+    let execution = run_source(
+        r#"<?php
+json_validate("{
+    \"name\": \"value
+}");
+echo json_last_error(), "|", json_last_error_msg(), "\n";
+json_validate('{"val": tru}');
+echo json_last_error(), "|", json_last_error_msg(), "\n";
+json_validate('{"key": "\q"}');
+echo json_last_error(), "|", json_last_error_msg(), "\n";
+json_validate('["val"}');
+echo json_last_error(), "|", json_last_error_msg(), "\n";
+json_validate('[[[[[[10]]]]]]', 5);
+echo json_last_error(), "|", json_last_error_msg(), "\n";
+json_validate('{"\u30D7\u30EC\u30B9": "value}');
+echo json_last_error(), "|", json_last_error_msg(), "\n";
+json_validate("  \t  \n  ");
+echo json_last_error(), "|", json_last_error_msg(), "\n";
+json_validate('{"num": 1e}');
+echo json_last_error(), "|", json_last_error_msg(), "\n";
+json_validate('{"num": --1}');
+echo json_last_error(), "|", json_last_error_msg(), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "3|Control character error, possibly incorrectly encoded near location 2:13\n",
+            "4|Syntax error near location 1:9\n",
+            "4|Syntax error near location 1:9\n",
+            "2|State mismatch (invalid or malformed JSON) near location 1:7\n",
+            "1|Maximum stack depth exceeded near location 1:5\n",
+            "3|Control character error, possibly incorrectly encoded near location 1:9\n",
+            "4|Syntax error near location 2:3\n",
+            "4|Syntax error near location 1:10\n",
+            "4|Syntax error near location 1:9\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn json_error_diagnostics_are_catchable_for_phpt_rows() {
+    let execution = run_source(
+        r#"<?php
+try {
+    json_decode('"abc"', true, -1);
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+var_dump(json_last_error());
+try {
+    json_last_error(true);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "json_decode(): Argument #3 ($depth) must be greater than 0\n\
+int(0)\n\
+json_last_error() expects exactly 0 arguments, 1 given\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn json_throw_on_error_uses_json_exception_and_preserves_error_state() {
+    let execution = run_source(
+        r#"<?php
+json_encode("\x80");
+echo json_last_error(), "|", json_last_error_msg(), "\n";
+try {
+    json_decode("{", false, 512, JSON_THROW_ON_ERROR);
+} catch (JsonException $e) {
+    echo get_class($e), "|", $e->getCode(), "|", $e->getMessage(), "\n";
+}
+echo json_last_error(), "|", json_last_error_msg(), "\n";
+try {
+    json_encode(NAN, JSON_THROW_ON_ERROR);
+} catch (JsonException $e) {
+    echo get_class($e), "|", $e->getCode(), "|", $e->getMessage(), "\n";
+}
+echo json_last_error(), "|", json_last_error_msg(), "\n";
+var_dump(json_encode("\x80", JSON_PARTIAL_OUTPUT_ON_ERROR | JSON_THROW_ON_ERROR));
+echo json_last_error(), "|", json_last_error_msg(), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "5|Malformed UTF-8 characters, possibly incorrectly encoded\n",
+            "JsonException|4|Syntax error near location 1:2\n",
+            "5|Malformed UTF-8 characters, possibly incorrectly encoded\n",
+            "JsonException|7|Inf and NaN cannot be JSON encoded\n",
+            "5|Malformed UTF-8 characters, possibly incorrectly encoded\n",
+            "string(4) \"null\"\n",
+            "5|Malformed UTF-8 characters, possibly incorrectly encoded\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn json_encode_line_terminator_and_invalid_key_flags_match_core_rows() {
+    let execution = run_source(
+        r#"<?php
+$u2027 = json_decode('"\u2027"');
+$u2028 = json_decode('"\u2028"');
+$u2029 = json_decode('"\u2029"');
+echo json_encode($u2027), "\n";
+echo json_encode($u2028), "\n";
+echo json_encode($u2029), "\n";
+echo json_encode($u2028, JSON_UNESCAPED_UNICODE), "\n";
+echo json_encode($u2028, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_LINE_TERMINATORS), "\n";
+$array = array("\x80" => 1);
+var_dump(json_encode($array));
+echo json_last_error(), "|", json_last_error_msg(), "\n";
+var_dump(json_encode($array, JSON_PARTIAL_OUTPUT_ON_ERROR));
+echo json_last_error(), "|", json_last_error_msg(), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "\"\\u2027\"\n",
+            "\"\\u2028\"\n",
+            "\"\\u2029\"\n",
+            "\"\\u2028\"\n",
+            "\"\u{2028}\"\n",
+            "bool(false)\n",
+            "5|Malformed UTF-8 characters, possibly incorrectly encoded\n",
+            "string(6) \"{\"\":1}\"\n",
+            "5|Malformed UTF-8 characters, possibly incorrectly encoded\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn json_decode_rejects_nul_property_names_and_allows_overflow_floats() {
+    let execution = run_source(
+        r#"<?php
+var_dump(json_decode('{"key\u0000": "value"}'));
+echo json_last_error(), "|", json_last_error_msg(), "\n";
+var_dump(json_decode('[{"key1": 0, "\u1234": 1, "\u0000": 1}]'));
+echo json_last_error(), "|", json_last_error_msg(), "\n";
+try {
+    json_decode('{"key\u0000": "value"}', false, 512, JSON_THROW_ON_ERROR);
+} catch (JsonException $e) {
+    echo get_class($e), "|", $e->getCode(), "|", $e->getMessage(), "\n";
+}
+var_dump(json_decode('23456789012E666'));
+echo json_encode([1.23456789e-13, 1.23456789e+34]), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "NULL\n",
+            "9|The decoded property name is invalid near location 1:2\n",
+            "NULL\n",
+            "9|The decoded property name is invalid near location 1:27\n",
+            "JsonException|9|The decoded property name is invalid near location 1:2\n",
+            "float(INF)\n",
+            "[1.23456789e-13,1.23456789e+34]\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn json_serializable_thrown_exceptions_propagate() {
+    let execution = run_source(
+        r#"<?php
+class ThrowsFromJson implements JsonSerializable {
+    public function jsonSerialize(): mixed {
+        throw new Exception("json fail", 99);
+    }
+}
+
+try {
+    json_encode(new ThrowsFromJson());
+} catch (Exception $e) {
+    echo get_class($e), "|", $e->getCode(), "|", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "Exception|99|json fail\n");
+    assert_eq!(execution.exit_code, 0);
+}

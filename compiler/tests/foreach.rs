@@ -58,6 +58,106 @@ echo "\nlast:", $key, "=", $item;
 }
 
 #[test]
+fn foreach_writes_complex_key_and_value_targets() {
+    let source = r#"<?php
+class C {
+    public $d;
+}
+
+$c = new C();
+$arr = array(1 => "a", 2 => "b", 3 => "c");
+foreach ($arr as $x => $c->d) {
+    echo $x, " => ", $c->d, "\n";
+}
+foreach ($arr as $c->d => $x) {
+    echo $c->d, " => ", $x, "\n";
+}
+
+class MagicBag {
+    private $arr = [];
+    function __set($key, $value) { $this->arr[$key] = $value; }
+    function __get($key) { return $this->arr[$key]; }
+}
+$bag = new MagicBag();
+foreach (array(1, 2) as $bag->k => $bag->v) {
+    var_dump($bag->k, $bag->v);
+}
+
+class Holder {
+    public $var = [];
+    function test() {
+        $cont = array("mykey" => "myvalue");
+        foreach ($cont as $this->var["key"] => $this->var["value"]) {
+            var_dump($this->var["key"], $this->var["value"]);
+        }
+    }
+}
+(new Holder())->test();
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "1 => a\n2 => b\n3 => c\n1 => a\n2 => b\n3 => c\nint(0)\nint(1)\nint(1)\nint(2)\nstring(5) \"mykey\"\nstring(7) \"myvalue\"\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn foreach_writes_array_offset_value_targets() {
+    let source = r#"<?php
+$a = array("a", "b", "c");
+$v = array();
+foreach ($a as $v[0]) {
+    var_dump($v);
+}
+var_dump($a);
+var_dump($v);
+
+$a = array("a", "b", "c");
+$v = array();
+foreach ($a as $k => $v[0]) {
+    var_dump($k, $v);
+}
+var_dump($a);
+var_dump($k, $v);
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert!(execution.stdout.contains("string(1) \"a\""));
+    assert!(execution.stdout.contains("string(1) \"c\""));
+    assert!(execution.stdout.contains("int(2)"));
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn foreach_target_fatals_for_this_and_reference_keys() {
+    let this_value = run_source("<?php\n$a = [1];\nforeach ($a as $this) {}\n").unwrap();
+    assert_eq!(
+        this_value.stdout,
+        "Fatal error: Cannot re-assign $this in Command line code on line 3"
+    );
+    assert_eq!(this_value.exit_code, 255);
+
+    let this_list = run_source("<?php\n$a = [[1]];\nforeach ($a as list($this)) {}\n").unwrap();
+    assert_eq!(
+        this_list.stdout,
+        "Fatal error: Cannot re-assign $this in Command line code on line 3"
+    );
+    assert_eq!(this_list.exit_code, 255);
+
+    let reference_key =
+        run_source("<?php\n$a = array('a', 'b');\nforeach ($a as &$k => $v) {}\n").unwrap();
+    assert_eq!(
+        reference_key.stdout,
+        "Fatal error: Key element cannot be a reference in Command line code on line 3"
+    );
+    assert_eq!(reference_key.exit_code, 255);
+}
+
+#[test]
 fn foreach_consumes_innermost_break_and_continue() {
     let source = r#"<?php
 $items = [1, 2, 3, 4, 5];
@@ -1433,6 +1533,169 @@ echo "|", $iterator->pos;
 }
 
 #[test]
+fn foreach_accepts_traversable_returned_iterators_with_property_array_cursors() {
+    let execution = run_source(
+        r#"<?php
+class CursorIterator implements Iterator {
+    private $array;
+    private $key;
+    private $current;
+
+    public function __construct() {
+        $this->array = array("foo", "bar", "baz");
+    }
+
+    public function rewind(): void {
+        reset($this->array);
+        $this->next();
+    }
+
+    public function valid(): bool {
+        return $this->key !== null;
+    }
+
+    public function key(): mixed {
+        return $this->key;
+    }
+
+    public function current(): mixed {
+        return $this->current;
+    }
+
+    public function next(): void {
+        $this->key = key($this->array);
+        $this->current = current($this->array);
+        next($this->array);
+    }
+}
+
+class CursorAggregate implements IteratorAggregate {
+    public function getIterator(): Traversable {
+        return new CursorIterator();
+    }
+}
+
+foreach (new CursorAggregate() as $key => $value) {
+    echo $key, ":", $value, "\n";
+}
+echo "===direct===\n";
+$iterator = new CursorIterator();
+foreach ($iterator as $key => $value) {
+    echo $key, ":", $value, "\n";
+}
+echo "===again===\n";
+foreach ($iterator as $key => $value) {
+    echo $key, ":", $value, "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "0:foo\n1:bar\n2:baz\n===direct===\n0:foo\n1:bar\n2:baz\n===again===\n0:foo\n1:bar\n2:baz\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn foreach_value_only_user_iterator_does_not_probe_key() {
+    let execution = run_source(
+        r#"<?php
+class C {}
+
+class D extends C implements Iterator {
+    private $counter = 2;
+
+    public function valid(): bool {
+        echo __METHOD__ . "($this->counter)\n";
+        return $this->counter;
+    }
+
+    public function next(): void {
+        $this->counter--;
+        echo __METHOD__ . "($this->counter)\n";
+    }
+
+    public function rewind(): void {
+        echo __METHOD__ . "($this->counter)\n";
+    }
+
+    public function current(): mixed {
+        echo __METHOD__ . "($this->counter)\n";
+        return null;
+    }
+
+    public function key(): mixed {
+        echo __METHOD__ . "($this->counter)\n";
+        return "";
+    }
+}
+
+foreach (new D as $x) {}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "D::rewind(2)\nD::valid(2)\nD::current(2)\nD::next(1)\nD::valid(1)\nD::current(1)\nD::next(0)\nD::valid(0)\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn foreach_by_value_uses_visible_object_properties_in_current_context() {
+    let execution = run_source(
+        r#"<?php
+class BaseBag {
+    private $hidden = "base-hidden";
+    public $shared = "shared";
+
+    public function fromBase() {
+        foreach ($this as $key => $value) {
+            echo "base:", $key, "=", $value, ";";
+        }
+    }
+}
+
+class ChildBag extends BaseBag {
+    public $hidden = "public-hidden";
+    private $child = "child";
+
+    public function fromChild() {
+        foreach ($this as $key => $value) {
+            echo "child:", $key, "=", $value, ";";
+            if ($key === "shared") {
+                $this->child = "mutated-child";
+            }
+        }
+    }
+}
+
+$bag = new ChildBag();
+$bag->fromBase();
+echo "\n";
+$bag->fromChild();
+echo "\n";
+
+$mangled = (object) array("\0A\0b" => 42, "\0*\0c" => 24);
+foreach ($mangled as $key => $value) {
+    echo $key, "=", $value, ";";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "base:hidden=base-hidden;base:shared=shared;\nchild:shared=shared;child:hidden=public-hidden;child:child=mutated-child;\nb=42;c=24;"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn foreach_by_value_iterator_current_public_property_bucket_preserves_reference_slots() {
     let execution = run_source(
         r#"<?php
@@ -1604,6 +1867,119 @@ foreach ($iterator as $key => &$value) {
         error.message,
         "invalid foreach: An iterator cannot be used with foreach by reference"
     );
+}
+
+#[test]
+fn foreach_by_reference_preserves_cursor_through_shift_and_unshift_reindexing() {
+    let execution = run_source(
+        r#"<?php
+$a = [1, 2, 3, 4];
+foreach ($a as &$v) {
+    echo $v, "\n";
+    array_shift($a);
+}
+var_dump($a);
+unset($v);
+
+echo "--\n";
+$a = [1, 2, 3];
+foreach ($a as &$v) {
+    echo $v, "\n";
+    if ($v == 2) {
+        array_unshift($a, 0, 0, 0, 0, 0, 0, 0, 0);
+    }
+}
+var_dump(count($a));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "1\n2\n3\n4\narray(0) {\n}\n--\n1\n2\n3\nint(11)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn foreach_by_reference_rebinds_moved_slot_after_unshift() {
+    let execution = run_source(
+        r#"<?php
+$a = ["v0", "v1"];
+foreach ($a as $k => &$v) {
+    echo $k, ":", $v, "\n";
+    array_unshift($a, "new.$k");
+}
+var_dump($a);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "0:v0\n",
+            "2:v1\n",
+            "array(4) {\n",
+            "  [0]=>\n",
+            "  string(5) \"new.2\"\n",
+            "  [1]=>\n",
+            "  string(5) \"new.0\"\n",
+            "  [2]=>\n",
+            "  string(2) \"v0\"\n",
+            "  [3]=>\n",
+            "  &string(2) \"v1\"\n",
+            "}\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn foreach_by_reference_preserves_cursor_through_array_splice() {
+    let execution = run_source(
+        r#"<?php
+$done = 0;
+$a = [0, 1, 2, 3, 4];
+foreach ($a as &$v) {
+    echo $v, "\n";
+    if (!$done && $v == 3) {
+        $done = 1;
+        array_splice($a, 1, 2);
+    }
+}
+echo "\n";
+
+$done = 0;
+$a = [0, 1, 2, 3, 4];
+foreach ($a as &$v) {
+    echo $v, "\n";
+    if (!$done && $v == 2) {
+        $done = 1;
+        array_splice($a, 1, 3);
+    }
+}
+echo "\n";
+
+$replacement = ["x", "y", "z"];
+$done = 0;
+$a = [0, 1, 2, 3, 4];
+foreach ($a as &$v) {
+    echo $v, "\n";
+    if (!$done && $v == 2) {
+        $done = 1;
+        array_splice($a, 1, 3, $replacement);
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "0\n1\n2\n3\n4\n\n0\n1\n2\n4\n\n0\n1\n2\n4\n"
+    );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

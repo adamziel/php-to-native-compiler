@@ -2,5 +2,5 @@ exit: 1
 stdout:
 --- stdout end ---
 stderr:
-codegen error at tests/fixtures/milestone1096/native_reference_assignment_boundary.php:3:1: LLVM reference-assignment lowering rejects direct variable, array-offset, object-property, function-call, method-call, static-call, magic __get, and ArrayAccess reference sources or targets until native reference containers, alias-aware symbol tables, copy-on-write, object/property alias roots, and exact native error behavior exist; phpc run handles current bounded reference-assignment behavior
+codegen error at tests/fixtures/milestone1096/native_reference_assignment_boundary.php:4:10: LLVM reference write-through lowering rejects direct root-variable assignment after reference binding until statement assignment and assignment-expression write-through share an alias-aware reference slot boundary with copy-on-write, cleanup ownership, and exact native error behavior; phpc run handles current reference write-through behavior
 --- stderr end ---

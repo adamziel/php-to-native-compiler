@@ -1,0 +1,15 @@
+3
+3
+3
+3
+3
+reduce_first_ref(): Argument #1 ($carry) must be passed by reference, value given
+reduce_first_ref(): Argument #1 ($carry) must be passed by reference, value given
+reduce_second_ref(): Argument #2 ($value) must be passed by reference, value given
+reduce_second_ref(): Argument #2 ($value) must be passed by reference, value given
+{closure}(): Argument #1 ($carry) must be passed by reference, value given
+{closure}(): Argument #1 ($carry) must be passed by reference, value given
+Reducer::stat(): Argument #1 ($carry) must be passed by reference, value given
+Reducer::stat(): Argument #1 ($carry) must be passed by reference, value given
+Reducer::inst(): Argument #2 ($value) must be passed by reference, value given
+Reducer::inst(): Argument #2 ($value) must be passed by reference, value given

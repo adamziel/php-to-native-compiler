@@ -1,6 +1,6 @@
-exit: 1
+exit: 0
 stdout:
+Deprecated: Increment on non-numeric string is deprecated, use str_increment() instead in tests/fixtures/runtime_errors/object_property_unsupported_string_increment.php on line 8
 --- stdout end ---
 stderr:
-runtime error at tests/fixtures/runtime_errors/object_property_unsupported_string_increment.php:8:1: unsupported call increment/decrement: only int and float variables, array/object offsets, object properties, or static properties are implemented, got string
 --- stderr end ---

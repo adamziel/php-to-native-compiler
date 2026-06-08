@@ -1,0 +1,13 @@
+1:[1]
+3:[0][1][2]
+1:[2]
+3:[0][1][2]
+int(1)
+int(0)
+int(2)
+int(0)
+bool(false)
+bool(true)
+int(1)
+bool(false)
+1:[1]

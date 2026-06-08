@@ -1,6 +1,8 @@
-exit: 1
+exit: 255
 stdout:
---- stdout end ---
+Fatal error: Uncaught Error: Cannot access private property Box::$secret in tests/fixtures/runtime_errors/non_public_property_access.php:6
+Stack trace:
+#0 {main}
+  thrown in tests/fixtures/runtime_errors/non_public_property_access.php on line 6--- stdout end ---
 stderr:
-runtime error at tests/fixtures/runtime_errors/non_public_property_access.php:6:6: unsupported object property access: non-public property Box::$secret requires same-class method context in the current subset
 --- stderr end ---

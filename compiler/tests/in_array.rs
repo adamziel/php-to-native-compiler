@@ -1,12 +1,6 @@
 use php_compiler::error::Phase;
 use php_compiler::{emit_ir_source, run_source};
 
-fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
-    let error = run_source(source).unwrap_err();
-    assert_eq!(error.phase, Phase::Runtime);
-    error
-}
-
 #[test]
 fn in_array_uses_loose_scalar_comparison_in_insertion_order() {
     let source = r#"<?php
@@ -172,15 +166,46 @@ if (!in_array($other, $items, true)) {
 }
 
 #[test]
-fn in_array_rejects_non_bool_strict_mode_argument() {
-    let error = runtime_error("<?php\n$items = [1];\necho in_array(1, $items, \"yes\");\n");
+fn in_array_coerces_scalar_strict_mode_argument() {
+    let source = r#"<?php
+$items = [0, false, true, "x"];
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
+foreach ([true, 1, 2, "yes"] as $strict) {
+    var_dump(in_array("0", $items, $strict));
+}
+foreach ([false, 0, "", "0"] as $loose) {
+    var_dump(in_array("0", $items, $loose));
+}
+
+$call = "in_array";
+var_dump($call("0", $items, "1"));
+"#;
+
+    let execution = run_source(source).unwrap();
     assert_eq!(
-        error.message,
-        "unsupported call in_array(): strict mode argument must be bool in the current subset, got string"
+        execution.stdout,
+        "bool(false)\nbool(false)\nbool(false)\nbool(false)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(false)\n"
     );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn in_array_rejects_non_coercible_strict_mode_argument() {
+    let source = r#"<?php
+$items = [1];
+try {
+    var_dump(in_array(1, $items, []));
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "in_array(): Argument #3 ($strict) must be of type bool, array given"
+    );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

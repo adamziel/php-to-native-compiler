@@ -1,12 +1,6 @@
 use php_compiler::error::Phase;
 use php_compiler::{emit_ir_source, run_source};
 
-fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
-    let error = run_source(source).unwrap_err();
-    assert_eq!(error.phase, Phase::Runtime);
-    error
-}
-
 #[test]
 fn array_search_returns_first_loose_scalar_match_key() {
     let source = r#"<?php
@@ -122,15 +116,46 @@ var_dump(array_search($other, $items, true));
 }
 
 #[test]
-fn array_search_rejects_non_bool_strict_mode_argument() {
-    let error = runtime_error("<?php\n$items = [1];\necho array_search(1, $items, \"yes\");\n");
+fn array_search_coerces_scalar_strict_mode_argument() {
+    let source = r#"<?php
+$items = [0, "0", false, true, "x"];
 
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 6);
+foreach ([true, 1, 2, "yes"] as $strict) {
+    var_dump(array_search("0", $items, $strict));
+}
+foreach ([false, 0, "", "0"] as $loose) {
+    var_dump(array_search("0", $items, $loose));
+}
+
+$call = "array_search";
+var_dump($call(false, $items, "1"));
+"#;
+
+    let execution = run_source(source).unwrap();
     assert_eq!(
-        error.message,
-        "unsupported call array_search(): strict mode argument must be bool in the current subset, got string"
+        execution.stdout,
+        "int(1)\nint(1)\nint(1)\nint(1)\nint(0)\nint(0)\nint(0)\nint(0)\nint(2)\n"
     );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn array_search_rejects_non_coercible_strict_mode_argument() {
+    let source = r#"<?php
+$items = [1];
+try {
+    var_dump(array_search(1, $items, []));
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "array_search(): Argument #3 ($strict) must be of type bool, array given"
+    );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

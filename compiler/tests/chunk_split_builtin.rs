@@ -60,6 +60,43 @@ echo bin2hex(chunk_split("éé", 2, "-"));
 }
 
 #[test]
+fn chunk_split_uses_php_string_argument_boundary() {
+    let execution = run_source(
+        r#"<?php
+class Text { public function __toString() { return "abc"; } }
+class Separator { public function __toString() { return "|"; } }
+$call = "chunk_split";
+echo $call(new Text, 1, new Separator), "\n";
+echo chunk_split(null, 2, "-"), "\n";
+try {
+    chunk_split([], 2);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    chunk_split("abc", 2, new stdClass);
+} catch (TypeError $e) {
+    echo $e->getMessage();
+}
+"#,
+    )
+    .unwrap();
+
+    assert!(execution.stdout.contains("a|b|c|\n"));
+    assert!(execution.stdout.contains(
+        "Deprecated: chunk_split(): Passing null to parameter #1 ($string) of type string is deprecated"
+    ));
+    assert!(execution.stdout.contains("-\n"));
+    assert!(execution
+        .stdout
+        .contains("chunk_split(): Argument #1 ($string) must be of type string, array given"));
+    assert!(execution.stdout.contains(
+        "chunk_split(): Argument #3 ($separator) must be of type string, stdClass given"
+    ));
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn chunk_split_metadata_is_available_for_capability_checks() {
     let execution = run_source(
         r#"<?php

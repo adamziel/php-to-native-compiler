@@ -87,6 +87,114 @@ var_dump(base64_decode("aGVsbG8gd29ybGQh*", true));
 }
 
 #[test]
+fn base64_decode_strict_flag_uses_php_bool_boundary() {
+    let execution = run_source(
+        r#"<?php
+$call = "base64_decode";
+var_dump(base64_decode("aGVsbG8*", "0"));
+var_dump(base64_decode("aGVsbG8*", "1"));
+var_dump($call("aGVsbG8*", 0));
+var_dump($call("aGVsbG8*", 1));
+foreach ([[], new stdClass, fopen("php://memory", "r")] as $value) {
+    try {
+        var_dump(base64_decode("aGVsbG8*", $value));
+    } catch (TypeError $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "string(5) \"hello\"\n",
+            "bool(false)\n",
+            "string(5) \"hello\"\n",
+            "bool(false)\n",
+            "base64_decode(): Argument #2 ($strict) must be of type bool, array given\n",
+            "base64_decode(): Argument #2 ($strict) must be of type bool, stdClass given\n",
+            "base64_decode(): Argument #2 ($strict) must be of type bool, resource given\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn base64_helpers_use_php_string_argument_boundary() {
+    let execution = run_source(
+        r#"<?php
+class PlainText {
+    public function __toString() { return "Hi"; }
+}
+class EncodedText {
+    public function __toString() { return "SGk="; }
+}
+
+set_error_handler(function ($errno, $errstr) {
+    echo "deprecated:", $errstr, "\n";
+});
+
+$encode = "base64_encode";
+$decode = "base64_decode";
+
+echo base64_encode(new PlainText), "\n";
+echo $encode(null) === "" ? "empty\n" : "bad\n";
+echo $decode(new EncodedText), "\n";
+
+foreach ([fn() => base64_encode([]), fn() => $decode(new stdClass)] as $call) {
+    try {
+        var_dump($call());
+    } catch (TypeError $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "SGk=\n",
+            "deprecated:base64_encode(): Passing null to parameter #1 ($string) of type string is deprecated\n",
+            "empty\n",
+            "Hi\n",
+            "base64_encode(): Argument #1 ($string) must be of type string, array given\n",
+            "base64_decode(): Argument #1 ($string) must be of type string, stdClass given\n",
+        )
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn base64_encode_round_trips_binary_strings_and_exposes_metadata() {
+    let execution = run_source(
+        r#"<?php
+$payload = "Hello World" . chr(0) . chr(255);
+$encoded = base64_encode($payload);
+echo $encoded, "\n";
+echo base64_decode($encoded) === $payload ? "roundtrip" : "bad", "\n";
+echo base64_encode("f"), "|", base64_encode("fo"), "|", base64_encode("foo"), "\n";
+echo function_exists("base64_encode") ? "fn" : "missing";
+echo is_callable("base64_encode") ? ":callable:" : ":missing:";
+$reflection = new ReflectionFunction("base64_encode");
+echo $reflection->getNumberOfRequiredParameters(), "/", $reflection->getNumberOfParameters(), "\n";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "SGVsbG8gV29ybGQA/w==\nroundtrip\nZg==|Zm8=|Zm9v\nfn:callable:1/1\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn ctype_non_string_non_int_arguments_emit_deprecation_and_return_false() {
     let execution = run_source(
         r#"<?php

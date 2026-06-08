@@ -1,6 +1,8 @@
-exit: 1
+exit: 255
 stdout:
---- stdout end ---
+Fatal error: Uncaught Error: Class "Missing" not found in tests/fixtures/runtime_errors/undefined_class.php:2
+Stack trace:
+#0 {main}
+  thrown in tests/fixtures/runtime_errors/undefined_class.php on line 2--- stdout end ---
 stderr:
-runtime error at tests/fixtures/runtime_errors/undefined_class.php:2:8: undefined class Missing
 --- stderr end ---

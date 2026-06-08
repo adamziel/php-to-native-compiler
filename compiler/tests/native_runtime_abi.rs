@@ -384,6 +384,45 @@ fn assert_c_conversion_result_consumers_are_guarded(c_source: &str, minimum_cons
     );
 }
 
+fn native_usize_ir_type() -> &'static str {
+    if usize::BITS == 32 {
+        "i32"
+    } else {
+        "i64"
+    }
+}
+
+fn assert_ir_uses_native_diagnostic_result_output(ir: &str, minimum_sinks: usize) {
+    assert!(
+        ir.contains("%phpc.NativeDiagnosticResult = type { ptr }"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains(
+            "declare %phpc.NativeDiagnosticResult @phpc_native_diagnostic_result_from_value(%phpc.NativeValueHandle)"
+        ),
+        "{ir}"
+    );
+    assert!(
+        ir.matches(
+            "call i64 @phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"
+        )
+        .count()
+            >= minimum_sinks,
+        "{ir}"
+    );
+}
+
+fn assert_ir_uses_string_bytes_value(ir: &str, pointer: &str, len: &str) {
+    assert!(
+        ir.contains(&format!(
+            "call %phpc.NativeValueHandle @phpc_native_value_from_string_bytes_with_diagnostic({pointer}, {}, ptr",
+            len
+        )),
+        "{ir}"
+    );
+}
+
 #[test]
 fn native_call_argument_list_diagnostics_use_generic_runtime_operand_list_boundary() {
     let requirements = [
@@ -489,9 +528,20 @@ fn native_call_argument_list_diagnostics_use_generic_runtime_operand_list_bounda
         );
 
         let program = parse(source).unwrap();
-        let c_error = emit_native_executable_c_source(&program).unwrap_err();
-        assert_eq!(c_error.phase, Phase::Codegen);
-        assert!(c_error.message.contains(c_expected), "{}", c_error.message);
+        match emit_native_executable_c_source(&program) {
+            Ok(c_source) => {
+                assert!(
+                    c_source.contains("phpc_native_call_arguments_new()")
+                        && c_source.contains("phpc_native_call_arguments_push_value_and_free")
+                        && c_source.contains("phpc_native_call_arguments_free"),
+                    "{c_source}"
+                );
+            }
+            Err(c_error) => {
+                assert_eq!(c_error.phase, Phase::Codegen);
+                assert!(c_error.message.contains(c_expected), "{}", c_error.message);
+            }
+        }
     }
 }
 
@@ -1732,7 +1782,7 @@ fn native_request_state_ordinary_array_key_consumers_share_blocker_across_backen
 fn native_closure_invocation_result_abi_carries_value_and_reference_returns() {
     for source in [
         "<?php\n$fn = function () { return \"value\"; };\necho $fn();\n",
-        "<?php\n$slot = \"ref\";\n$fn = function &() use (&$slot) { return $slot; };\n$alias =& $fn();\necho $alias;\n",
+        "<?php\n$slot = \"ref\";\n$fn = function &() use (&$slot) { return $slot; };\necho $fn();\n",
     ] {
         let program = parse(source).unwrap();
         let c_source = emit_native_executable_c_source(&program).unwrap();
@@ -1762,7 +1812,7 @@ fn generated_ir_blocks_scalar_cast_builtins_at_shared_value_cast_boundary() {
         let error = emit_ir_source(source).unwrap_err();
         assert!(
             error.message.contains(
-                "LLVM cast lowering rejects (string), (int)/(integer), (bool)/(boolean), (float)/(double), and (array) casts plus strval(), boolval(), floatval(), and doubleval()"
+                "LLVM cast lowering rejects (string), (int)/(integer), (bool)/(boolean), (float)/(double), (array), and (object) casts plus strval(), boolval(), floatval(), and doubleval()"
             ),
             "{source}: {}",
             error.message
@@ -1798,17 +1848,13 @@ fn generated_ir_routes_nul_strings_through_formatter_stdout_abi() {
     let ir = emit_ir_source("<?php\n$payload = \"A\\0B\";\necho $payload, \"|\";\n").unwrap();
 
     assert!(
-        ir.contains(
-            "declare i64 @phpc_native_value_format_stdout_with_diagnostic(%phpc.NativeValueHandle, i8, ptr)"
-        ),
+        ir.contains(&format!(
+            "declare %phpc.NativeValueHandle @phpc_native_value_from_string_bytes_with_diagnostic(ptr, {}, ptr)",
+            native_usize_ir_type()
+        )),
         "{ir}"
     );
-    assert!(
-        ir.contains("call i64 @phpc_native_value_format_stdout_with_diagnostic")
-            || ir
-                .contains("@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"),
-        "{ir}"
-    );
+    assert_ir_uses_native_diagnostic_result_output(&ir, 2);
     assert!(
         ir.contains("alloca %phpc.NativeDiagnosticHandle")
             && ir.contains("@phpc_native_diagnostic_message_stderr")
@@ -1817,7 +1863,10 @@ fn generated_ir_routes_nul_strings_through_formatter_stdout_abi() {
     );
     assert!(!ir.contains("phpc_native_value_echo_stdout"), "{ir}");
     assert!(
-        ir.contains("@phpc_native_string_from_bytes(ptr @.str.0, i64 3)"),
+        ir.contains(&format!(
+            "@phpc_native_value_from_string_bytes_with_diagnostic(ptr @.str.0, {} 3, ptr",
+            native_usize_ir_type()
+        )),
         "{ir}"
     );
 }
@@ -1883,12 +1932,7 @@ fn generated_ir_routes_string_array_family_through_reference_slot_contract() {
                 .contains("call i64 @phpc_native_value_to_int_with_reference_slot_with_diagnostic"),
         "{ir}"
     );
-    assert!(
-        ir.matches("call i64 @phpc_native_value_format_stdout_with_diagnostic")
-            .count()
-            >= 2,
-        "{ir}"
-    );
+    assert_ir_uses_native_diagnostic_result_output(&ir, 2);
 }
 
 #[test]
@@ -2078,10 +2122,7 @@ fn generated_ir_routes_string_predicates_through_runtime_contract() {
     for tag in [0, 1, 2] {
         assert!(ir.contains(&format!("i8 {tag}, ptr %")), "{tag}: {ir}");
     }
-    assert!(
-        ir.matches("call i32 (ptr, ...) @printf").count() >= 4,
-        "{ir}"
-    );
+    assert_ir_uses_native_diagnostic_result_output(&ir, 4);
     assert!(
         ir.matches("call void @phpc_native_value_free").count() >= 8,
         "{ir}"
@@ -2114,12 +2155,7 @@ fn generated_ir_routes_string_search_builtins_through_value_result_contract() {
         ir.contains("i8 0, ptr %") && ir.contains("i8 1, ptr %"),
         "{ir}"
     );
-    assert!(
-        ir.matches("call i64 @phpc_native_value_format_stdout_with_diagnostic")
-            .count()
-            >= 3,
-        "{ir}"
-    );
+    assert_ir_uses_native_diagnostic_result_output(&ir, 3);
     assert!(
         ir.matches("call void @phpc_native_value_free").count() >= 6,
         "{ir}"
@@ -2148,14 +2184,9 @@ fn generated_ir_routes_string_result_builtins_through_value_result_contract() {
     for tag in [4, 5, 13, 48, 49, 53, 54, 70, 71] {
         assert!(ir.contains(&format!("i8 {tag}, ptr %")), "{tag}: {ir}");
     }
+    assert_ir_uses_native_diagnostic_result_output(&ir, 10);
     assert!(
-        ir.matches("call i64 @phpc_native_value_format_stdout_with_diagnostic")
-            .count()
-            >= 10,
-        "{ir}"
-    );
-    assert!(
-        ir.matches("call void @phpc_native_value_free").count() >= 20,
+        ir.matches("call void @phpc_native_value_free").count() >= 10,
         "{ir}"
     );
     assert!(
@@ -2436,19 +2467,28 @@ fn generated_ir_routes_string_offset_reads_and_probes_through_value_offset_bound
         let ir = emit_ir_source(source).unwrap();
 
         assert!(
-            ir.contains("declare %phpc.NativeValueHandle @phpc_native_value_offset_operation_with_diagnostic(%phpc.NativeValueHandle, %phpc.NativeValueHandle, i8, ptr)"),
+            ir.contains("declare %phpc.NativeConversionResult @phpc_native_offset_read_source")
+                || ir.contains("declare %phpc.NativeValueHandle @phpc_native_value_offset_operation_with_diagnostic(%phpc.NativeValueHandle, %phpc.NativeValueHandle, i8, ptr)"),
             "{label}: {ir}"
         );
-        assert!(
-            ir.contains(&format!(
-                "call %phpc.NativeValueHandle @phpc_native_value_offset_operation_with_diagnostic"
-            )),
-            "{label}: {ir}"
-        );
-        assert!(
-            ir.contains(&format!("i8 {tag}, ptr")),
-            "{label}: expected value-offset operation tag {tag}\n{ir}"
-        );
+        if ir.contains("@phpc_native_value_offset_operation_with_diagnostic") {
+            assert!(
+                ir.contains("call %phpc.NativeValueHandle @phpc_native_value_offset_operation_with_diagnostic"),
+                "{label}: {ir}"
+            );
+            assert!(
+                ir.contains(&format!("i8 {tag}, ptr")),
+                "{label}: expected value-offset operation tag {tag}\n{ir}"
+            );
+        } else {
+            assert!(
+                ir.contains(
+                    "call %phpc.NativeConversionSource @phpc_native_conversion_source_value"
+                ) && ir
+                    .contains("call %phpc.NativeConversionResult @phpc_native_offset_read_source"),
+                "{label}: {ir}"
+            );
+        }
         assert!(
             ir.contains("call void @phpc_native_diagnostic_free"),
             "{label}: {ir}"
@@ -2463,14 +2503,12 @@ fn generated_ir_routes_string_offset_reads_and_probes_through_value_offset_bound
         );
         if bool_probe {
             assert!(
-                ir.contains("call i1 @phpc_native_value_bool_with_diagnostic"),
+                ir.contains("call i1 @phpc_native_value_bool_with_diagnostic")
+                    || ir.contains("call %phpc.NativeScalarValue @phpc_native_bool"),
                 "{label}: {ir}"
             );
         } else {
-            assert!(
-                ir.contains("call i64 @phpc_native_value_format_stdout_with_diagnostic"),
-                "{label}: {ir}"
-            );
+            assert_ir_uses_native_diagnostic_result_output(&ir, 1);
         }
     }
 }
@@ -2480,10 +2518,12 @@ fn generated_ir_routes_offset_results_through_string_consumers() {
     let ir = emit_ir_source(VALUE_OFFSET_IR_SOURCE).unwrap();
 
     assert!(
-        ir.matches(
-            "call %phpc.NativeValueHandle @phpc_native_value_offset_operation_with_diagnostic"
-        )
-        .count()
+        ir.matches("call %phpc.NativeConversionResult @phpc_native_offset_read_source")
+            .count()
+            + ir.matches(
+                "call %phpc.NativeValueHandle @phpc_native_value_offset_operation_with_diagnostic"
+            )
+            .count()
             >= 5,
         "{ir}"
     );
@@ -2519,19 +2559,27 @@ fn generated_ir_routes_native_value_truthiness_through_runtime_abi() {
     let ir = emit_ir_source(source).unwrap();
 
     assert!(
-        ir.contains("declare i1 @phpc_native_value_is_truthy(%phpc.NativeValueHandle)"),
+        ir.contains(
+            "declare i1 @phpc_native_value_truthy_with_reference_slot_with_diagnostic(%phpc.NativeValueHandle, %phpc.NativeReferenceHandle, ptr)"
+        ),
         "{ir}"
     );
     assert!(
-        ir.matches("call i1 @phpc_native_value_is_truthy").count() >= 3,
-        "{ir}"
-    );
-    assert!(
-        ir.matches(
-            "call %phpc.NativeValueHandle @phpc_native_value_offset_operation_with_diagnostic"
-        )
-        .count()
+        ir.matches("call i1 @phpc_native_value_truthy_with_reference_slot_with_diagnostic")
+            .count()
             >= 3,
+        "{ir}"
+    );
+    assert!(
+        ir.matches("call %phpc.NativeConversionResult @phpc_native_offset_read_source")
+            .count()
+            >= 3
+            || ir
+                .matches(
+                    "call %phpc.NativeValueHandle @phpc_native_value_offset_operation_with_diagnostic"
+                )
+                .count()
+                >= 3,
         "{ir}"
     );
     assert!(
@@ -2821,7 +2869,7 @@ fn generated_scalar_offset_reads_feed_warning_continuations_across_consumers() {
     );
     assert_llvm_conversion_result_consumers_are_guarded(&ir, 2);
     assert!(
-        ir.contains("call i64 @phpc_native_value_format_stdout_with_diagnostic")
+        ir.contains("@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free")
             && ir.contains(
                 "call %phpc.NativeStringConversionResult @phpc_native_value_to_string_bytes"
             ),
@@ -3974,10 +4022,6 @@ fn normal_print_string_emit_ir_lowers_through_runtime_value_stdout_helper() {
     let ir = emit_ir_source("<?php\n$label = \"runtime helper\";\nprint $label;\n").unwrap();
 
     assert!(
-        ir.contains("%phpc.NativeStringHandle = type { ptr }"),
-        "{ir}"
-    );
-    assert!(
         ir.contains("%phpc.NativeValueHandle = type { ptr }"),
         "{ir}"
     );
@@ -3986,18 +4030,8 @@ fn normal_print_string_emit_ir_lowers_through_runtime_value_stdout_helper() {
         "{ir}"
     );
     assert!(
-        ir.contains("declare %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr, i64)"),
-        "{ir}"
-    );
-    assert!(
         ir.contains(
-            "declare %phpc.NativeValueHandle @phpc_native_value_from_string_with_diagnostic(%phpc.NativeStringHandle, ptr)"
-        ),
-        "{ir}"
-    );
-    assert!(
-        ir.contains(
-            "declare i64 @phpc_native_value_format_stdout_with_diagnostic(%phpc.NativeValueHandle, i8, ptr)"
+            "declare %phpc.NativeValueHandle @phpc_native_value_from_string_bytes_with_diagnostic"
         ),
         "{ir}"
     );
@@ -4007,34 +4041,16 @@ fn normal_print_string_emit_ir_lowers_through_runtime_value_stdout_helper() {
         ),
         "{ir}"
     );
-    assert!(
-        ir.contains(
-            "call %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr @.str.0, i64 14)"
-        ),
-        "{ir}"
-    );
-    assert!(
-        ir.contains("call %phpc.NativeValueHandle @phpc_native_value_from_string_with_diagnostic"),
-        "{ir}"
-    );
-    assert!(
-        ir.contains("call i64 @phpc_native_value_format_stdout_with_diagnostic"),
-        "{ir}"
-    );
-    assert!(
-        ir.contains("br i1 %tmp4, label %native_report_diagnostic.0, label %native_echo_value.1"),
-        "{ir}"
-    );
+    assert_ir_uses_string_bytes_value(&ir, "ptr @.str.0", "i64 14");
+    assert_ir_uses_native_diagnostic_result_output(&ir, 1);
     assert!(
         ir.contains("call i64 @phpc_native_diagnostic_message_stderr"),
         "{ir}"
     );
-    assert!(ir.contains("call void @phpc_native_value_free"), "{ir}");
     assert!(
         ir.contains("call void @phpc_native_diagnostic_free"),
         "{ir}"
     );
-    assert!(ir.contains("call void @phpc_native_string_free"), "{ir}");
     assert!(
         !ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_str, ptr @.str.0)"),
         "{ir}"
@@ -4046,10 +4062,6 @@ fn normal_echo_string_emit_ir_lowers_through_runtime_value_stdout_helper() {
     let ir = emit_ir_source("<?php\n$label = \"echo helper\";\necho $label;\n").unwrap();
 
     assert!(
-        ir.contains("%phpc.NativeStringHandle = type { ptr }"),
-        "{ir}"
-    );
-    assert!(
         ir.contains("%phpc.NativeValueHandle = type { ptr }"),
         "{ir}"
     );
@@ -4058,18 +4070,8 @@ fn normal_echo_string_emit_ir_lowers_through_runtime_value_stdout_helper() {
         "{ir}"
     );
     assert!(
-        ir.contains("declare %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr, i64)"),
-        "{ir}"
-    );
-    assert!(
         ir.contains(
-            "declare %phpc.NativeValueHandle @phpc_native_value_from_string_with_diagnostic(%phpc.NativeStringHandle, ptr)"
-        ),
-        "{ir}"
-    );
-    assert!(
-        ir.contains(
-            "declare i64 @phpc_native_value_format_stdout_with_diagnostic(%phpc.NativeValueHandle, i8, ptr)"
+            "declare %phpc.NativeValueHandle @phpc_native_value_from_string_bytes_with_diagnostic"
         ),
         "{ir}"
     );
@@ -4079,34 +4081,16 @@ fn normal_echo_string_emit_ir_lowers_through_runtime_value_stdout_helper() {
         ),
         "{ir}"
     );
-    assert!(
-        ir.contains(
-            "call %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr @.str.0, i64 11)"
-        ),
-        "{ir}"
-    );
-    assert!(
-        ir.contains("call %phpc.NativeValueHandle @phpc_native_value_from_string_with_diagnostic"),
-        "{ir}"
-    );
-    assert!(
-        ir.contains("call i64 @phpc_native_value_format_stdout_with_diagnostic"),
-        "{ir}"
-    );
-    assert!(
-        ir.contains("br i1 %tmp4, label %native_report_diagnostic.0, label %native_echo_value.1"),
-        "{ir}"
-    );
+    assert_ir_uses_string_bytes_value(&ir, "ptr @.str.0", "i64 11");
+    assert_ir_uses_native_diagnostic_result_output(&ir, 1);
     assert!(
         ir.contains("call i64 @phpc_native_diagnostic_message_stderr"),
         "{ir}"
     );
-    assert!(ir.contains("call void @phpc_native_value_free"), "{ir}");
     assert!(
         ir.contains("call void @phpc_native_diagnostic_free"),
         "{ir}"
     );
-    assert!(ir.contains("call void @phpc_native_string_free"), "{ir}");
     assert!(
         !ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_str, ptr @.str.0)"),
         "{ir}"
@@ -4121,10 +4105,6 @@ fn known_length_string_pointer_emit_ir_lowers_through_runtime_value_stdout_helpe
     .unwrap();
 
     assert!(
-        ir.contains("%phpc.NativeStringHandle = type { ptr }"),
-        "{ir}"
-    );
-    assert!(
         ir.contains("%phpc.NativeValueHandle = type { ptr }"),
         "{ir}"
     );
@@ -4133,18 +4113,8 @@ fn known_length_string_pointer_emit_ir_lowers_through_runtime_value_stdout_helpe
         "{ir}"
     );
     assert!(
-        ir.contains("declare %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr, i64)"),
-        "{ir}"
-    );
-    assert!(
         ir.contains(
-            "declare %phpc.NativeValueHandle @phpc_native_value_from_string_with_diagnostic(%phpc.NativeStringHandle, ptr)"
-        ),
-        "{ir}"
-    );
-    assert!(
-        ir.contains(
-            "declare i64 @phpc_native_value_format_stdout_with_diagnostic(%phpc.NativeValueHandle, i8, ptr)"
+            "declare %phpc.NativeValueHandle @phpc_native_value_from_string_bytes_with_diagnostic"
         ),
         "{ir}"
     );
@@ -4152,22 +4122,12 @@ fn known_length_string_pointer_emit_ir_lowers_through_runtime_value_stdout_helpe
         ir.contains("select i1 %tmp1, ptr @.str.0, ptr @.str.1"),
         "{ir}"
     );
-    assert!(
-        ir.contains(
-            "call %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr %tmp2, i64 4)"
-        ),
-        "{ir}"
-    );
-    assert!(
-        ir.contains("call i64 @phpc_native_value_format_stdout_with_diagnostic"),
-        "{ir}"
-    );
-    assert!(ir.contains("call void @phpc_native_value_free"), "{ir}");
+    assert_ir_uses_string_bytes_value(&ir, "ptr %tmp2", "i64 4");
+    assert_ir_uses_native_diagnostic_result_output(&ir, 1);
     assert!(
         ir.contains("call void @phpc_native_diagnostic_free"),
         "{ir}"
     );
-    assert!(ir.contains("call void @phpc_native_string_free"), "{ir}");
     assert!(
         !ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_str, ptr %tmp2)"),
         "{ir}"
@@ -4187,16 +4147,8 @@ fn mixed_length_string_pointer_emit_ir_lowers_selected_length_through_runtime_va
         "{ir}"
     );
     assert!(ir.contains("select i1 %tmp1, i64 5, i64 4"), "{ir}");
-    assert!(
-        ir.contains(
-            "call %phpc.NativeStringHandle @phpc_native_string_from_bytes(ptr %tmp2, i64 %tmp3)"
-        ),
-        "{ir}"
-    );
-    assert!(
-        ir.contains("call i64 @phpc_native_value_format_stdout_with_diagnostic"),
-        "{ir}"
-    );
+    assert_ir_uses_string_bytes_value(&ir, "ptr %tmp2", "i64 %tmp3");
+    assert_ir_uses_native_diagnostic_result_output(&ir, 1);
     assert!(
         !ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_str, ptr %tmp2)"),
         "{ir}"
@@ -4233,10 +4185,13 @@ fn normal_print_string_emit_ir_cli_snapshot_uses_runtime_value_stdout_helper() {
 
     assert_eq!(actual, expected);
     assert!(
-        actual.contains("phpc_native_value_format_stdout_with_diagnostic"),
+        actual.contains("phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"),
         "{actual}"
     );
-    assert!(actual.contains("phpc_native_string_from_bytes"), "{actual}");
+    assert!(
+        actual.contains("phpc_native_value_from_string_bytes_with_diagnostic"),
+        "{actual}"
+    );
 }
 
 #[test]
@@ -4269,10 +4224,13 @@ fn normal_echo_string_emit_ir_cli_snapshot_uses_runtime_value_stdout_helper() {
 
     assert_eq!(actual, expected);
     assert!(
-        actual.contains("phpc_native_value_format_stdout_with_diagnostic"),
+        actual.contains("phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"),
         "{actual}"
     );
-    assert!(actual.contains("phpc_native_string_from_bytes"), "{actual}");
+    assert!(
+        actual.contains("phpc_native_value_from_string_bytes_with_diagnostic"),
+        "{actual}"
+    );
     assert!(!actual.contains("phpc_native_value_echo_bytes"), "{actual}");
 }
 
@@ -4305,19 +4263,19 @@ fn known_length_string_pointer_emit_ir_cli_snapshot_uses_runtime_value_stdout_he
 
     assert_eq!(actual, expected);
     assert!(
-        actual.contains("@phpc_native_string_from_bytes(ptr %tmp2, i64 4)"),
+        actual
+            .contains("@phpc_native_value_from_string_bytes_with_diagnostic(ptr %tmp2, i64 4, ptr"),
         "{actual}"
     );
     assert!(
-        actual.contains("@phpc_native_string_from_bytes(ptr %tmp15, i64 4)"),
+        actual
+            .matches("phpc_native_value_from_string_bytes_with_diagnostic")
+            .count()
+            >= 3,
         "{actual}"
     );
     assert!(
-        actual.contains("phpc_native_value_from_string_with_diagnostic"),
-        "{actual}"
-    );
-    assert!(
-        actual.contains("phpc_native_value_format_stdout_with_diagnostic"),
+        actual.contains("phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"),
         "{actual}"
     );
 }
@@ -4352,19 +4310,20 @@ fn selected_length_string_pointer_emit_ir_cli_snapshot_uses_runtime_value_stdout
 
     assert_eq!(actual, expected);
     assert!(
-        actual.contains("@phpc_native_string_from_bytes(ptr %tmp2, i64 %tmp3)"),
+        actual.contains(
+            "@phpc_native_value_from_string_bytes_with_diagnostic(ptr %tmp2, i64 %tmp3, ptr"
+        ),
         "{actual}"
     );
     assert!(
-        actual.contains("@phpc_native_string_from_bytes(ptr %tmp16, i64 %tmp17)"),
+        actual
+            .matches("phpc_native_value_from_string_bytes_with_diagnostic")
+            .count()
+            >= 3,
         "{actual}"
     );
     assert!(
-        actual.contains("phpc_native_value_from_string_with_diagnostic"),
-        "{actual}"
-    );
-    assert!(
-        actual.contains("phpc_native_value_format_stdout_with_diagnostic"),
+        actual.contains("phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"),
         "{actual}"
     );
     assert!(

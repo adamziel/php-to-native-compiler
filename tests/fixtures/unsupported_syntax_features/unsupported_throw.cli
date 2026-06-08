@@ -1,6 +1,8 @@
-exit: 1
+exit: 255
 stdout:
---- stdout end ---
+Fatal error: Uncaught Exception in tests/fixtures/unsupported_syntax_features/unsupported_throw.php:2
+Stack trace:
+#0 {main}
+  thrown in tests/fixtures/unsupported_syntax_features/unsupported_throw.php on line 2--- stdout end ---
 stderr:
-runtime error at tests/fixtures/unsupported_syntax_features/unsupported_throw.php:2:1: unsupported call throw: uncaught Exception propagation beyond catch/finally is not implemented
 --- stderr end ---

@@ -18,6 +18,8 @@ const LLVM_METHOD_CALL_REJECTION: &str = "LLVM method-call lowering rejects inst
 const LLVM_CLONE_REJECTION: &str = "LLVM clone lowering rejects clone expressions, including direct-variable clone assignments that mirror public and context-aware non-public property reference slots, until native object handles, property slot cloning, __clone dispatch, reference-slot metadata, references/copy-on-write, and exact native error behavior exist; phpc run handles current bounded clone behavior";
 const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
 const LLVM_ARRAY_ACCESS_REJECTION: &str = "LLVM ArrayAccess lowering rejects object offset reads/writes/isset/empty/unset/compound paths until native ArrayAccess dispatch for offsetGet(), offsetSet(), offsetExists(), and offsetUnset(), object handles, references/copy-on-write, and exact PHP diagnostics exist; phpc run handles current bounded ArrayAccess behavior";
+const LLVM_NONLOCAL_ASSIGNMENT_REJECTION: &str = "LLVM native array non-local assignment lowering rejects object, dynamic-object, non-direct object, and static property assignment targets until non-local owner cells, magic property writes, typed/static property state, assignment-expression results, references/copy-on-write, and exact diagnostics share one assignment owner contract; local variables and native array offset assignments use their shared native lvalue assignment contracts";
+const LLVM_VARIABLE_READ_REJECTION: &str = "LLVM variable-read lowering rejects reads that are not statically assigned earlier in the same straight-line native subset until native symbol-table storage, undefined-variable diagnostics, references/copy-on-write, and exact native error behavior exist; phpc run handles current variable-read behavior";
 
 #[test]
 fn phpc_run_still_handles_current_object_class_subset() {
@@ -140,16 +142,22 @@ fn emit_ir_lowers_inherited_class_declarations_to_native_metadata_registry() {
 
 #[test]
 fn emit_ir_rejects_static_members_with_specific_boundary() {
-    for source in [
-        "<?php\necho Box::NAME;\n",
-        "<?php\necho Box::$name;\n",
-        "<?php\nBox::$name = \"Ada\";\n",
-        "<?php\n$receiver::$name = \"Ada\";\n",
+    for (source, expected) in [
+        ("<?php\necho Box::NAME;\n", LLVM_STATIC_MEMBER_REJECTION),
+        ("<?php\necho Box::$name;\n", LLVM_STATIC_MEMBER_REJECTION),
+        (
+            "<?php\nBox::$name = \"Ada\";\n",
+            LLVM_NONLOCAL_ASSIGNMENT_REJECTION,
+        ),
+        (
+            "<?php\n$receiver::$name = \"Ada\";\n",
+            LLVM_NONLOCAL_ASSIGNMENT_REJECTION,
+        ),
     ] {
         let error = emit_ir_source(source).unwrap_err();
 
         assert_eq!(error.phase, Phase::Codegen);
-        assert_eq!(error.message, LLVM_STATIC_MEMBER_REJECTION);
+        assert_eq!(error.message, expected);
     }
 }
 
@@ -203,27 +211,36 @@ fn emit_ir_rejects_clone_expressions_with_specific_boundary() {
 
 #[test]
 fn emit_ir_rejects_public_property_reads_and_writes_with_specific_boundary() {
-    for source in [
-        "<?php\necho $box->name;\n",
-        "<?php\n$box->name = \"Ada\";\n",
+    for (source, expected) in [
+        ("<?php\necho $box->name;\n", LLVM_OBJECT_PROPERTY_REJECTION),
+        (
+            "<?php\n$box->name = \"Ada\";\n",
+            LLVM_NONLOCAL_ASSIGNMENT_REJECTION,
+        ),
     ] {
         let error = emit_ir_source(source).unwrap_err();
 
         assert_eq!(error.phase, Phase::Codegen);
-        assert_eq!(error.message, LLVM_OBJECT_PROPERTY_REJECTION);
+        assert_eq!(error.message, expected);
     }
 }
 
 #[test]
 fn emit_ir_rejects_dynamic_property_reads_and_writes_with_specific_boundary() {
-    for source in [
-        "<?php\n$name = \"name\";\necho $box->$name;\n",
-        "<?php\n$name = \"name\";\n$box->$name = \"Ada\";\n",
+    for (source, expected) in [
+        (
+            "<?php\n$name = \"name\";\necho $box->$name;\n",
+            LLVM_OBJECT_PROPERTY_REJECTION,
+        ),
+        (
+            "<?php\n$name = \"name\";\n$box->$name = \"Ada\";\n",
+            LLVM_NONLOCAL_ASSIGNMENT_REJECTION,
+        ),
     ] {
         let error = emit_ir_source(source).unwrap_err();
 
         assert_eq!(error.phase, Phase::Codegen);
-        assert_eq!(error.message, LLVM_OBJECT_PROPERTY_REJECTION);
+        assert_eq!(error.message, expected);
     }
 }
 
@@ -252,10 +269,7 @@ fn emit_ir_keeps_direct_array_offsets_on_array_boundary() {
     let error = emit_ir_source("<?php\necho $items[\"name\"];\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(
-        error.message,
-        "LLVM array lowering rejects arrays, array literals, array indexing, array assignment, foreach array iteration, array offset unset, and array builtin function calls until native array storage layout, key normalization, copy-on-write, references, callbacks, and exact native error behavior exist; phpc run handles current array behavior"
-    );
+    assert_eq!(error.message, LLVM_VARIABLE_READ_REJECTION);
 }
 
 #[test]
@@ -650,16 +664,22 @@ fn native_object_instantiation_emit_asm_cli_snapshot_matches_committed_output() 
 
 #[test]
 fn emit_asm_rejects_static_members_before_backend_execution() {
-    for source in [
-        "<?php\necho Box::NAME;\n",
-        "<?php\necho Box::$name;\n",
-        "<?php\nBox::$name = \"Ada\";\n",
-        "<?php\n$receiver::$name = \"Ada\";\n",
+    for (source, expected) in [
+        ("<?php\necho Box::NAME;\n", LLVM_STATIC_MEMBER_REJECTION),
+        ("<?php\necho Box::$name;\n", LLVM_STATIC_MEMBER_REJECTION),
+        (
+            "<?php\nBox::$name = \"Ada\";\n",
+            LLVM_NONLOCAL_ASSIGNMENT_REJECTION,
+        ),
+        (
+            "<?php\n$receiver::$name = \"Ada\";\n",
+            LLVM_NONLOCAL_ASSIGNMENT_REJECTION,
+        ),
     ] {
         let error = emit_asm_source(source).unwrap_err();
 
         assert_eq!(error.phase, Phase::Codegen);
-        assert_eq!(error.message, LLVM_STATIC_MEMBER_REJECTION);
+        assert_eq!(error.message, expected);
     }
 }
 
@@ -733,16 +753,25 @@ fn emit_asm_rejects_object_metadata_before_backend_execution() {
 
 #[test]
 fn emit_asm_rejects_property_reads_and_writes_before_backend_execution() {
-    for source in [
-        "<?php\necho $box->name;\n",
-        "<?php\n$box->name = \"Ada\";\n",
-        "<?php\n$name = \"name\";\necho $box->$name;\n",
-        "<?php\n$name = \"name\";\n$box->$name = \"Ada\";\n",
+    for (source, expected) in [
+        ("<?php\necho $box->name;\n", LLVM_OBJECT_PROPERTY_REJECTION),
+        (
+            "<?php\n$box->name = \"Ada\";\n",
+            LLVM_NONLOCAL_ASSIGNMENT_REJECTION,
+        ),
+        (
+            "<?php\n$name = \"name\";\necho $box->$name;\n",
+            LLVM_OBJECT_PROPERTY_REJECTION,
+        ),
+        (
+            "<?php\n$name = \"name\";\n$box->$name = \"Ada\";\n",
+            LLVM_NONLOCAL_ASSIGNMENT_REJECTION,
+        ),
     ] {
         let error = emit_asm_source(source).unwrap_err();
 
         assert_eq!(error.phase, Phase::Codegen);
-        assert_eq!(error.message, LLVM_OBJECT_PROPERTY_REJECTION);
+        assert_eq!(error.message, expected);
     }
 }
 
