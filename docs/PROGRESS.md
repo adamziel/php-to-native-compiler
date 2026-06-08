@@ -48608,6 +48608,29 @@ Next:
 
 Next:
 
+- Added Milestone 625, compiler-output selected-`llc` `--emit-asm`
+  success-with-stderr precedence coverage. The deterministic fake `llc` exits
+  successfully, writes stderr diagnostics, and emits valid non-empty assembly
+  while `cc` is available and `clang` is unavailable; the CLI snapshot pins
+  the stable success summary, proves successful backend stderr is not
+  surfaced in the normalized CLI summary, and proves `cc` fallback is not
+  attempted after successful selected `llc` output.
+- Added the Milestone 625 fixture with committed `phpc run` expected output
+  and a successful selected-`llc` `--emit-asm` CLI summary snapshot. This does
+  not add native lowering, linked native execution, runtime-backed output
+  conversion, backend stderr surfacing on successful selected-backend output,
+  or `cc -S` fallback recovery after selected `llc` succeeds.
+- Focused checks passed:
+  `CARGO_TARGET_DIR=/home/claude/php-to-native-compiler/.harness/worktrees/developer-234/target/phpc-target-output-625 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo test -p phpc --test native_assembly_cli native_scalar_echo_emit_asm_stderr_selected_llc_does_not_cc_fallback_cli_summary_matches_committed_output -- --test-threads=1`;
+  `CARGO_TARGET_DIR=/home/claude/php-to-native-compiler/.harness/worktrees/developer-234/target/phpc-target-output-625 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test tests/fixtures/milestone625`;
+  and
+  `CARGO_TARGET_DIR=/home/claude/php-to-native-compiler/.harness/worktrees/developer-234/target/phpc-target-output-625 CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 cargo run -p phpc -- test --compare-php tests/fixtures/milestone625`.
+- Full `tools/run-tests.sh` is deferred under the focused compiler-output lane
+  policy; run it at the next checkpoint or serialized integration batch.
+- No checkpoint was created for this lane slice.
+
+Next:
+
 - Reconciled the project goal around full PHP and WordPress compatibility
   without weakening the evidence policy. `GOAL.MD` now names full PHP and
   WordPress compatibility as the long-term north star, records what the project
