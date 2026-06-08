@@ -1,3 +1,5 @@
+#[cfg(test)]
+use std::cell::Cell;
 use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
@@ -13,7 +15,7 @@ pub type RuntimeResult<T> = Result<T, RuntimeError>;
 
 #[cfg(test)]
 thread_local! {
-    static NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST: RefCell<i64> = const { RefCell::new(0) };
+    static NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST: Cell<i64> = const { Cell::new(0) };
 }
 
 #[repr(u8)]
@@ -12476,9 +12478,7 @@ pub unsafe extern "C" fn phpc_native_call_arguments_free(handle: NativeCallArgum
     }
 
     #[cfg(test)]
-    NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST.with(|count| {
-        *count.borrow_mut() += 1;
-    });
+    NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST.with(|count| count.set(count.get() + 1));
 
     let arguments = unsafe { Box::from_raw(handle.ptr) };
     for slot in arguments.slots {
@@ -50603,13 +50603,11 @@ mod tests {
     }
 
     fn reset_call_arguments_free_count_for_test() {
-        NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST.with(|count| {
-            *count.borrow_mut() = 0;
-        });
+        NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST.with(|count| count.set(0));
     }
 
     fn call_arguments_free_count_for_test() -> i64 {
-        NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST.with(|count| *count.borrow())
+        NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST.with(Cell::get)
     }
 
     #[test]
