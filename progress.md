@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T04:03:49+00:00
+Last generated: 2026-06-08T04:18:49+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -29,7 +29,9 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | architect-23 | Architect | crash | architect-23 |  |
 | architect-24 | Architect | crash | architect-24 |  |
 | architect-25 | Architect | crash | architect-25 |  |
-| architect-26 | Architect | running | architect-26 |  |
+| architect-26 | Architect | crash | architect-26 |  |
+| architect-27 | Architect | crash | architect-27 |  |
+| architect-28 | Architect | running | architect-28 |  |
 | architect-3 | Architect | crash | architect-3 |  |
 | architect-4 | Architect | crash | architect-4 |  |
 | architect-5 | Architect | crash | architect-5 |  |
@@ -155,7 +157,11 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-9 | Coordinator | success | coordinator-9 |  |
 | coordinator-90 | Coordinator | success | coordinator-90 |  |
 | coordinator-91 | Coordinator | success | coordinator-91 |  |
-| coordinator-92 | Coordinator | running | coordinator-92 |  |
+| coordinator-92 | Coordinator | success | coordinator-92 |  |
+| coordinator-93 | Coordinator | crash | coordinator-93 |  |
+| coordinator-94 | Coordinator | crash | coordinator-94 |  |
+| coordinator-95 | Coordinator | crash | coordinator-95 |  |
+| coordinator-96 | Coordinator | running | coordinator-96 |  |
 | developer-1 | Developer | stopped | developer-1 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-1 |
 | developer-10 | Developer | stopped | developer-10 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-10 |
 | developer-100 | Developer | crash | developer-100 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-100 |
@@ -342,7 +348,8 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-264 | Developer | crash | developer-264 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-264 |
 | developer-265 | Developer | stopped | developer-265 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-265 |
 | developer-266 | Developer | stopped | developer-266 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-266 |
-| developer-267 | Developer | running | developer-267 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-267 |
+| developer-267 | Developer | crash | developer-267 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-267 |
+| developer-268 | Developer | running | developer-268 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-268 |
 | developer-27 | Developer | stopped | developer-27 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-27 |
 | developer-28 | Developer | stopped | developer-28 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-28 |
 | developer-29 | Developer | crash | developer-29 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-29 |
@@ -451,24 +458,24 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | 1977 | Maintain Developer capacity after card 1974 | Developer | implementation | planned | queued |  | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=4, passed=415, skipped=0)
+failed — tools/run-tests.sh (error=0, failed=6, passed=413, skipped=0)
 
 ## Resource samples
-Latest: CPU 11.27%, RAM 55.09%, disk free 54.08 GB.
+Latest: CPU 17.82%, RAM 16.69%, disk free 36.89 GB.
 
 ## Recent events
-- 2026-06-08T04:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-215 tmux window
-- 2026-06-08T04:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-216 tmux window
-- 2026-06-08T04:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-217 tmux window
-- 2026-06-08T04:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-218 tmux window
-- 2026-06-08T04:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-219 tmux window
-- 2026-06-08T04:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-22 tmux window
-- 2026-06-08T04:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-220 tmux window
-- 2026-06-08T04:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-221 tmux window
-- 2026-06-08T04:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-222 tmux window
-- 2026-06-08T04:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-223 tmux window
-- 2026-06-08T04:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-224 tmux window
-- 2026-06-08T04:03:49+00:00 **terminal_agent_window_closed**: Closed terminal developer-225 tmux window
+- 2026-06-08T04:18:49+00:00 **terminal_agent_window_closed**: Closed terminal integrator-6 tmux window
+- 2026-06-08T04:18:49+00:00 **terminal_agent_window_closed**: Closed terminal integrator-7 tmux window
+- 2026-06-08T04:18:49+00:00 **terminal_agent_window_closed**: Closed terminal integrator-8 tmux window
+- 2026-06-08T04:18:49+00:00 **terminal_agent_window_closed**: Closed terminal integrator-9 tmux window
+- 2026-06-08T04:18:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-26 tmux window
+- 2026-06-08T04:18:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-27 tmux window
+- 2026-06-08T04:18:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-28 tmux window
+- 2026-06-08T04:18:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-29 tmux window
+- 2026-06-08T04:18:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-3 tmux window
+- 2026-06-08T04:18:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-30 tmux window
+- 2026-06-08T04:18:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-31 tmux window
+- 2026-06-08T04:18:49+00:00 **terminal_agent_window_closed**: Closed terminal coordinator-32 tmux window
 
 ## Next steps
 Move next worklane forward: Recover stale architect-25 and reconcile card 1902
