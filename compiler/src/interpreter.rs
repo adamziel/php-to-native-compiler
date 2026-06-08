@@ -139158,6 +139158,10 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
         return Some(("TypeError", message));
     }
 
+    if let Some(message) = array_find_family_too_few_arguments_message(error) {
+        return Some(("TypeError", message));
+    }
+
     if let Some(message) = array_user_compare_callback_argument_count_error_message(error) {
         return Some(("ArgumentCountError", message));
     }
@@ -140369,6 +140373,37 @@ fn array_walk_argument_count_error_message(error: &Diagnostic) -> Option<String>
     } else {
         None
     }
+}
+
+fn array_find_family_too_few_arguments_message(error: &Diagnostic) -> Option<String> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+
+    let rest = error.message.strip_prefix("arity mismatch for ")?;
+    let (callable, expectation) = rest.split_once(": expected ")?;
+    if !matches!(
+        callable,
+        "array_find()" | "array_find_key()" | "array_any()" | "array_all()"
+    ) {
+        return None;
+    }
+    let (expected, actual) = expectation.split_once(" argument(s), got ")?;
+    let expected = expected.parse::<usize>().ok()?;
+    let actual = actual.parse::<usize>().ok()?;
+    if actual >= expected {
+        return None;
+    }
+
+    let source = error
+        .file
+        .as_ref()
+        .map(|file| file.display().to_string())
+        .unwrap_or_else(|| "Command line code".to_string());
+    Some(format!(
+        "Too few arguments to function {callable}, {actual} passed in {source} on line {} and exactly {expected} expected",
+        error.line
+    ))
 }
 
 fn sprintf_argument_count_error_message(error: &Diagnostic) -> Option<String> {
