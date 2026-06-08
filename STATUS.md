@@ -1,12 +1,12 @@
 # Harness Status
 
-Last generated: 2026-06-08T10:53:47+00:00
+Last generated: 2026-06-08T10:56:10+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
 
 ## Metric
-accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
+blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 
 ## Agents
 | name | role | current_status | tmux_window | worktree |
@@ -188,8 +188,9 @@ accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
 | coordinator-156 | Coordinator | success | coordinator-156 |  |
 | coordinator-157 | Coordinator | success | coordinator-157 |  |
 | coordinator-158 | Coordinator | success | coordinator-158 |  |
-| coordinator-159 | Coordinator | running | coordinator-159 |  |
+| coordinator-159 | Coordinator | success | coordinator-159 |  |
 | coordinator-16 | Coordinator | crash | coordinator-16 |  |
+| coordinator-160 | Coordinator | running | coordinator-160 |  |
 | coordinator-17 | Coordinator | success | coordinator-17 |  |
 | coordinator-18 | Coordinator | success | coordinator-18 |  |
 | coordinator-19 | Coordinator | stopped | coordinator-19 |  |
@@ -680,24 +681,24 @@ accepted_public_phpt_passes: 7873.0 / 20294.0 (38.8%)
 | 2054 | Respond to scheduler alert | Coordinator | control-plane | planned | queued |  | 0.0 |
 
 ## Tests
-failed — tools/run-tests.sh (error=0, failed=4, passed=415, skipped=0)
+failed — tools/run-tests.sh (error=0, failed=1, passed=418, skipped=0)
 
 ## Resource samples
-Latest: CPU 20.52%, RAM 17.96%, disk free 108.92 GB.
+Latest: CPU 16.47%, RAM 17.9%, disk free 108.92 GB.
 
 ## Recent events
-- 2026-06-08T10:53:21+00:00 **terminal_agent_windows_closed**: Closed 650 terminal agent tmux windows
-- 2026-06-08T10:53:27+00:00 **terminal_agent_windows_closed**: Closed 650 terminal agent tmux windows
-- 2026-06-08T10:53:29+00:00 **terminal_agent_windows_closed**: Closed 650 terminal agent tmux windows
-- 2026-06-08T10:53:37+00:00 **terminal_agent_windows_closed**: Closed 650 terminal agent tmux windows
-- 2026-06-08T10:53:37+00:00 **card_stage**: card#2063 development -> planned
-- 2026-06-08T10:53:37+00:00 **card_repair**: Requeued 1 cards owned by terminal workers
-- 2026-06-08T10:53:39+00:00 **terminal_agent_windows_closed**: Closed 651 terminal agent tmux windows
-- 2026-06-08T10:53:40+00:00 **coordinator_decision**: Coordinator-159 preserved existing capacity: integrator-22 completed lane1823 integration as e3f38372, developer-360 remains sole card2027 global-gate owner; no new spawns requested.
-- 2026-06-08T10:53:41+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-08T10:53:45+00:00 **terminal_agent_windows_closed**: Closed 651 terminal agent tmux windows
-- 2026-06-08T10:53:46+00:00 **poke**: Queued message for developer-360
-- 2026-06-08T10:53:46+00:00 **poke_delivered**: Delivered poke to 1 agents
+- 2026-06-08T10:55:24+00:00 **terminal_agent_windows_closed**: Closed 652 terminal agent tmux windows
+- 2026-06-08T10:55:31+00:00 **terminal_agent_windows_closed**: Closed 652 terminal agent tmux windows
+- 2026-06-08T10:55:36+00:00 **terminal_agent_windows_closed**: Closed 652 terminal agent tmux windows
+- 2026-06-08T10:55:38+00:00 **tests_failed**: Full test suite failed; Coordinator should prioritize stabilization lanes
+- 2026-06-08T10:55:39+00:00 **terminal_agent_windows_closed**: Closed 652 terminal agent tmux windows
+- 2026-06-08T10:55:41+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-08T10:55:47+00:00 **terminal_agent_windows_closed**: Closed 652 terminal agent tmux windows
+- 2026-06-08T10:55:48+00:00 **worklane_deduplicated**: Updated existing failing-test card#2027 from run 40235
+- 2026-06-08T10:55:49+00:00 **terminal_agent_windows_closed**: Closed 652 terminal agent tmux windows
+- 2026-06-08T10:55:55+00:00 **terminal_agent_windows_closed**: Closed 652 terminal agent tmux windows
+- 2026-06-08T10:56:02+00:00 **terminal_agent_windows_closed**: Closed 652 terminal agent tmux windows
+- 2026-06-08T10:56:03+00:00 **terminal_agent_windows_closed**: Closed 652 terminal agent tmux windows
 
 ## Next steps
 Move next worklane forward: Integrate clean lane 1823 from work/developer-124
