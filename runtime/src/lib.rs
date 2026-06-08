@@ -12471,14 +12471,15 @@ pub unsafe extern "C" fn phpc_native_call_arguments_mark_finalized_variadic(
 /// runtime ABI and not yet freed.
 #[no_mangle]
 pub unsafe extern "C" fn phpc_native_call_arguments_free(handle: NativeCallArgumentsHandle) {
+    if handle.ptr.is_null() {
+        return;
+    }
+
     #[cfg(test)]
     NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST.with(|count| {
         *count.borrow_mut() += 1;
     });
 
-    if handle.ptr.is_null() {
-        return;
-    }
     let arguments = unsafe { Box::from_raw(handle.ptr) };
     for slot in arguments.slots {
         unsafe { slot.free() };
@@ -50614,6 +50615,9 @@ mod tests {
     #[test]
     fn call_arguments_free_count_is_thread_local_for_parallel_tests() {
         reset_call_arguments_free_count_for_test();
+        unsafe { phpc_native_call_arguments_free(NativeCallArgumentsHandle::null()) };
+        assert_eq!(call_arguments_free_count_for_test(), 0);
+
         unsafe { phpc_native_call_arguments_free(call_arguments_from_ints_for_test(&[1])) };
         assert_eq!(call_arguments_free_count_for_test(), 1);
 
@@ -69341,7 +69345,7 @@ mod tests {
                 true,
             ),
             (
-                "binary byte-string strict non-identity",
+                "binary byte-string strict non-identity materialization",
                 &[0xff, b'p'][..],
                 NativeComparisonOp::StrictNe,
                 phpc_native_int(1),
@@ -70094,6 +70098,19 @@ mod tests {
                 )
             },
             empty_equality_expected,
+        );
+
+        let binary_handle = unsafe { phpc_native_string_from_bytes([0xff].as_ptr(), 1) };
+        assert_native_comparison_ok(
+            "binary string-handle materialization preserves bytes",
+            unsafe {
+                phpc_native_comparison_operand_compare_and_free(
+                    phpc_native_comparison_operand_from_string_and_free(binary_handle),
+                    NativeComparisonOp::StrictEq.abi_opcode(),
+                    phpc_native_comparison_operand_from_scalar(phpc_native_int(1)),
+                )
+            },
+            false,
         );
 
         for (label, op) in [

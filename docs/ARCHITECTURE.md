@@ -2106,13 +2106,14 @@ The first native-runtime ABI prerequisite lives in
 `docs/NATIVE_RUNTIME_ABI.md`. It exposes a C-compatible scalar handoff type for
 `null`, booleans, integers, and floats, plus exported constructor symbols in
 `php_runtime`. It also has probe-only owned byte-buffer helpers, an opaque
-copied PHP string-handle helper surface, and a bounded valid-UTF-8
-string-handle-to-runtime-value bridge. It also exposes a bounded diagnostic
-handle path for native string-to-value conversion failures when a null string
-handle or non-UTF-8 byte payload is supplied. Null-only opaque array, object,
-resource, and reference handle shapes pin pointer-sized future ABI slots without
-claiming storage or semantics for those PHP value kinds. This is intentionally
-only an ABI seed for future generated-code runtime helper calls. The
+copied PHP string-handle helper surface, and a bounded
+string-handle-to-runtime-value bridge that preserves arbitrary byte payloads as
+byte-backed PHP strings. It also exposes a bounded diagnostic handle path for
+native string-to-value conversion failures when a null string handle or
+malformed raw byte input is supplied. Null-only opaque array, object, resource,
+and reference handle shapes pin pointer-sized future ABI slots without claiming
+storage or semantics for those PHP value kinds. This is intentionally only an
+ABI seed for future generated-code runtime helper calls. The
 compiler-side helper probe renders `usize`-shaped helper signatures from an
 explicit pointer-width target so the ABI sketch can distinguish 32-bit and
 64-bit targets and now includes a deterministic branch on a nullable
