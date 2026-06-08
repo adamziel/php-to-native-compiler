@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T15:39:51+00:00
+Last generated: 2026-06-08T15:54:51+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -283,8 +283,14 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-233 | Coordinator | success | coordinator-233 |  |
 | coordinator-234 | Coordinator | success | coordinator-234 |  |
 | coordinator-235 | Coordinator | success | coordinator-235 |  |
-| coordinator-236 | Coordinator | running | coordinator-236 |  |
+| coordinator-236 | Coordinator | success | coordinator-236 |  |
+| coordinator-237 | Coordinator | success | coordinator-237 |  |
+| coordinator-238 | Coordinator | crash | coordinator-238 |  |
+| coordinator-239 | Coordinator | success | coordinator-239 |  |
 | coordinator-24 | Coordinator | crash | coordinator-24 |  |
+| coordinator-240 | Coordinator | success | coordinator-240 |  |
+| coordinator-241 | Coordinator | success | coordinator-241 |  |
+| coordinator-242 | Coordinator | running | coordinator-242 |  |
 | coordinator-25 | Coordinator | crash | coordinator-25 |  |
 | coordinator-26 | Coordinator | crash | coordinator-26 |  |
 | coordinator-27 | Coordinator | crash | coordinator-27 |  |
@@ -702,9 +708,10 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | developer-399 | Developer | stopped | developer-399 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-399 |
 | developer-4 | Developer | stopped | developer-4 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-4 |
 | developer-40 | Developer | crash | developer-40 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-40 |
-| developer-400 | Developer | running | developer-400 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-400 |
-| developer-401 | Developer | running | developer-401 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-401 |
+| developer-400 | Developer | crash | developer-400 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-400 |
+| developer-401 | Developer | crash | developer-401 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-401 |
 | developer-402 | Developer | stopped | developer-402 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-402 |
+| developer-403 | Developer | running | developer-403 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-403 |
 | developer-41 | Developer | crash | developer-41 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-41 |
 | developer-42 | Developer | crash | developer-42 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-42 |
 | developer-43 | Developer | stopped | developer-43 | /home/claude/php-to-native-compiler/.harness/worktrees/developer-43 |
@@ -800,6 +807,8 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | integrator-35 | Integrator | success | integrator-35 |  |
 | integrator-36 | Integrator | crash | integrator-36 |  |
 | integrator-37 | Integrator | crash | integrator-37 |  |
+| integrator-38 | Integrator | crash | integrator-38 |  |
+| integrator-39 | Integrator | crash | integrator-39 |  |
 | integrator-4 | Integrator | crash | integrator-4 |  |
 | integrator-5 | Integrator | success | integrator-5 |  |
 | integrator-6 | Integrator | success | integrator-6 |  |
@@ -810,6 +819,8 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2116 | Replace crashed integrator-38 stale integration cleanup | Integrator | integration-support | planned | queued |  | 0.0 |
+| 2115 | Reconcile stale queued integration rows after fa6fcacd | Integrator | integration-support | planned | queued |  | 0.0 |
 | 2114 | Assign next Developer card after worklane 2111 ready | Developer | implementation | done | stale | ready_fast_path | 0.0 |
 | 2113 | Integrate card2110 abs resolver no-op branch | Integrator | integration-support | planned | queued |  | 0.0 |
 | 2112 | Assign next Developer card after worklane 2106 ready | Developer | implementation | done | stale | ready_fast_path | 0.0 |
@@ -818,28 +829,26 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | 2109 | Integrate card112 deferred source-lane report artifact | Integrator | integration-support | planned | queued |  | 0.0 |
 | 2108 | Assign next concrete Developer card after card 112 report | Developer | implementation | done | stale |  | 0.0 |
 | 2107 | Assign next Developer card after worklane 2100 ready | Developer | implementation | done | stale | ready_fast_path | 0.0 |
-| 2106 | Resolve integration failure for card #2100: Fix second distinct non-native-helper failure target under known-red quarantine | Conflict Resolver | integration-support | integration | integration_failed | ready_fast_path | 0.0 |
-| 2105 | Resolve integration failure for card #2099: Fix next non-native-helper PHPT/focused failure under known-red quarantine | Conflict Resolver | integration-support | integration | integration_failed | ready_fast_path | 0.0 |
 
 ## Tests
 failed — tools/run-tests.sh (error=0, failed=4, passed=415, skipped=0)
 
 ## Resource samples
-Latest: CPU 14.79%, RAM 21.8%, disk free 28.58 GB.
+Latest: CPU 77.85%, RAM 22.1%, disk free 9.02 GB.
 
 ## Recent events
-- 2026-06-08T15:38:59+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-08T15:39:03+00:00 **terminal_agent_windows_closed**: Closed 792 terminal agent tmux windows
-- 2026-06-08T15:39:06+00:00 **terminal_agent_windows_closed**: Closed 792 terminal agent tmux windows
-- 2026-06-08T15:39:08+00:00 **coordinator_routing_decision**: Coordinator-236 preserved developer-401/card2075 as the sole live exact tools/run-tests.sh gate owner, declined duplicate Developer/Architect/Integrator spawns, and appended supervisor brief addendum.
-- 2026-06-08T15:39:16+00:00 **terminal_agent_windows_closed**: Closed 792 terminal agent tmux windows
-- 2026-06-08T15:39:18+00:00 **terminal_agent_windows_closed**: Closed 792 terminal agent tmux windows
-- 2026-06-08T15:39:26+00:00 **terminal_agent_windows_closed**: Closed 792 terminal agent tmux windows
-- 2026-06-08T15:39:29+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-08T15:39:33+00:00 **terminal_agent_windows_closed**: Closed 792 terminal agent tmux windows
-- 2026-06-08T15:39:36+00:00 **terminal_agent_windows_closed**: Closed 792 terminal agent tmux windows
-- 2026-06-08T15:39:47+00:00 **terminal_agent_windows_closed**: Closed 792 terminal agent tmux windows
-- 2026-06-08T15:39:47+00:00 **terminal_agent_windows_closed**: Closed 792 terminal agent tmux windows
+- 2026-06-08T15:53:49+00:00 **terminal_agent_windows_closed**: Closed 802 terminal agent tmux windows
+- 2026-06-08T15:53:51+00:00 **terminal_agent_windows_closed**: Closed 802 terminal agent tmux windows
+- 2026-06-08T15:53:59+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-08T15:54:06+00:00 **terminal_agent_windows_closed**: Closed 802 terminal agent tmux windows
+- 2026-06-08T15:54:07+00:00 **terminal_agent_windows_closed**: Closed 802 terminal agent tmux windows
+- 2026-06-08T15:54:19+00:00 **terminal_agent_windows_closed**: Closed 802 terminal agent tmux windows
+- 2026-06-08T15:54:25+00:00 **terminal_agent_windows_closed**: Closed 802 terminal agent tmux windows
+- 2026-06-08T15:54:29+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-08T15:54:29+00:00 **terminal_agent_windows_closed**: Closed 802 terminal agent tmux windows
+- 2026-06-08T15:54:39+00:00 **terminal_agent_windows_closed**: Closed 802 terminal agent tmux windows
+- 2026-06-08T15:54:39+00:00 **terminal_agent_windows_closed**: Closed 802 terminal agent tmux windows
+- 2026-06-08T15:54:49+00:00 **terminal_agent_windows_closed**: Closed 802 terminal agent tmux windows
 
 ## Next steps
-Move next worklane forward: Integrate card2110 abs resolver no-op branch
+Move next worklane forward: Replace crashed integrator-38 stale integration cleanup
