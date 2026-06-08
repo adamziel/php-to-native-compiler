@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-08T19:22:05+00:00
+Last generated: 2026-06-08T19:25:18+00:00
 
 ## Goal
 lThis project is a real PHP-to-native compiler effort in stable Rust. The target is full PHP compatibility as measured by the passed php tests "eval" and "variable variable" support is not required by nice to have. It can be the very last thing to try
@@ -334,7 +334,8 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | coordinator-270 | Coordinator | crash | coordinator-270 |  |
 | coordinator-271 | Coordinator | success | coordinator-271 |  |
 | coordinator-272 | Coordinator | success | coordinator-272 |  |
-| coordinator-273 | Coordinator | running | coordinator-273 |  |
+| coordinator-273 | Coordinator | success | coordinator-273 |  |
+| coordinator-274 | Coordinator | running | coordinator-274 |  |
 | coordinator-28 | Coordinator | crash | coordinator-28 |  |
 | coordinator-29 | Coordinator | crash | coordinator-29 |  |
 | coordinator-3 | Coordinator | crash | coordinator-3 |  |
@@ -878,7 +879,7 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 | integrator-41 | Integrator | crash | integrator-41 |  |
 | integrator-42 | Integrator | crash | integrator-42 |  |
 | integrator-43 | Integrator | success | integrator-43 |  |
-| integrator-44 | Integrator | running | integrator-44 |  |
+| integrator-44 | Integrator | crash | integrator-44 |  |
 | integrator-5 | Integrator | success | integrator-5 |  |
 | integrator-6 | Integrator | success | integrator-6 |  |
 | integrator-7 | Integrator | stopped | integrator-7 |  |
@@ -888,36 +889,36 @@ blocked_221205_candidate_phpt_passes: 7197.0 / 20294.0 (35.5%)
 ## Work lanes
 | id | title | role_type | card_type | stage | status | integration_queue | expected_metric_impact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2148 | Consume queued card2145 standard array PHPT selector | Developer | implementation | planned | queued |  | 0.0 |
 | 2147 | Fix intl/openssl SKIPIF constants for PHPT rows without touching native-helper gate | Developer | implementation | development | assigned |  | 0.0 |
 | 2146 | Focused standard string/path PHPT selector toward 10000 | Developer | implementation | planned | queued |  | 0.0 |
 | 2145 | Focused standard array PHPT selector toward 10000 | Developer | implementation | planned | queued |  | 0.0 |
-| 2144 | Drain ready PHPT/source integration backlog under known-red quarantine | Integrator | integration-support | development | assigned |  | 0.0 |
+| 2144 | Drain ready PHPT/source integration backlog under known-red quarantine | Integrator | integration-support | planned | queued |  | 0.0 |
 | 2143 | Assign next sanctioned Developer card after worklane2117 report | Developer | implementation | done | stale |  | 0.0 |
 | 2142 | Investigate order-dependent php_runtime native invoke gate failures | Architect | advisory | planned | queued |  | 0.0 |
 | 2141 | Assign next sanctioned Developer card after worklane2117 support report | Developer | implementation | done | stale |  | 0.0 |
 | 2140 | Recover idle coordinator-270 and force current-base metric path | Coordinator | control-plane | planned | queued |  | 0.0 |
 | 2139 | Investigate scheduler alert | Auditor | integration-support | planned | queued |  | 0.0 |
-| 2138 | Resolve developer-419 stale support lane | Coordinator | control-plane | planned | queued |  | 0.0 |
 
 ## Tests
 failed — tools/run-tests.sh (error=0, failed=4, passed=415, skipped=0)
 
 ## Resource samples
-Latest: CPU 100.0%, RAM 22.9%, disk free 148.3 GB.
+Latest: CPU 21.94%, RAM 20.15%, disk free 147.42 GB.
 
 ## Recent events
-- 2026-06-08T19:21:29+00:00 **terminal_agent_windows_closed**: Closed 868 terminal agent tmux windows
-- 2026-06-08T19:21:31+00:00 **test_gate_quarantined_known_red**: 8 known failures are quarantined; metric acceptance remains blocked, but unrelated work may continue.
-- 2026-06-08T19:21:39+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
-- 2026-06-08T19:21:43+00:00 **terminal_agent_windows_closed**: Closed 868 terminal agent tmux windows
-- 2026-06-08T19:21:49+00:00 **terminal_agent_windows_closed**: Closed 868 terminal agent tmux windows
-- 2026-06-08T19:21:54+00:00 **agent_report**: integrator-44 reported superseded
-- 2026-06-08T19:21:55+00:00 **agent_report**: integrator-44 reported superseded
-- 2026-06-08T19:21:55+00:00 **agent_report**: integrator-44 reported superseded
-- 2026-06-08T19:21:59+00:00 **terminal_agent_windows_closed**: Closed 868 terminal agent tmux windows
-- 2026-06-08T19:21:59+00:00 **developer_capacity_stale_evidence**: Read-only tmux inspection of developer-425 pane %1357 shows the agent is idle at the Codex prompt after accepted report793 and after receiving card113/manhole follow-up text; no visible active command or response. Recommend scheduler/coordinator recycle or disposition card113 to free Developer capacity for queued PHPT progress cards2145/2146.
-- 2026-06-08T19:22:05+00:00 **poke**: Queued message for coordinator-273
-- 2026-06-08T19:22:05+00:00 **poke_delivered**: Delivered poke to 1 agents
+- 2026-06-08T19:24:38+00:00 **test**: Focused array_filter test passed after updating unknown callback fatal-output assertion.
+- 2026-06-08T19:24:38+00:00 **test_failure_triage**: Full native_global_constant_boundary integration test has 19 pass / 3 fail. Failures are existing CLI snapshot mismatches for milestone566/569/573 generated IR ABI, not the new INTL_ICU_VERSION/ZEND_THREAD_SAFE runtime/folding assertions. Will run narrower relevant filters and avoid broad snapshot churn unless required.
+- 2026-06-08T19:24:39+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-08T19:24:45+00:00 **terminal_agent_windows_closed**: Closed 870 terminal agent tmux windows
+- 2026-06-08T19:24:47+00:00 **terminal_agent_windows_closed**: Closed 870 terminal agent tmux windows
+- 2026-06-08T19:24:58+00:00 **terminal_agent_windows_closed**: Closed 870 terminal agent tmux windows
+- 2026-06-08T19:25:00+00:00 **terminal_agent_windows_closed**: Closed 870 terminal agent tmux windows
+- 2026-06-08T19:25:07+00:00 **test_failure_triage**: ini_builtins full test has 5 pass / 1 fail. Failure is stale assertion for ini_set('memory_limit') too-few-argument behavior: current interpreter returns Execution with PHP-style fatal TypeError exit 255, not unwrap_err. Will update that assertion narrowly so requested full file passes.
+- 2026-06-08T19:25:09+00:00 **integration_idle**: No needs_verification or ready_for_integration lanes with branches
+- 2026-06-08T19:25:09+00:00 **terminal_agent_windows_closed**: Closed 870 terminal agent tmux windows
+- 2026-06-08T19:25:12+00:00 **test**: Focused array_unset test passed after updating typed-reference fatal-output assertion.
+- 2026-06-08T19:25:16+00:00 **terminal_agent_windows_closed**: Closed 870 terminal agent tmux windows
 
 ## Next steps
-Move next worklane forward: Fix intl/openssl SKIPIF constants for PHPT rows without touching native-helper gate
+Move next worklane forward: Consume queued card2145 standard array PHPT selector
