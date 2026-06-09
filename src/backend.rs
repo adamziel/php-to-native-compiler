@@ -1995,6 +1995,49 @@ static PtnValue ptn_internal_strcmp(PtnRuntime *runtime, size_t argc, const PtnV
     return ptn_int(0);
 }
 
+static int ptn_is_path_separator(char byte) {
+    return byte == '/' || byte == '\\';
+}
+
+static char *ptn_dirname_string(const char *path) {
+    size_t len = strlen(path);
+    if (len == 0) {
+        return ptn_duplicate_string(".");
+    }
+    while (len > 1 && ptn_is_path_separator(path[len - 1])) {
+        len--;
+    }
+
+    size_t end = len;
+    while (end > 0 && !ptn_is_path_separator(path[end - 1])) {
+        end--;
+    }
+    if (end == 0) {
+        return ptn_duplicate_string(".");
+    }
+    while (end > 1 && ptn_is_path_separator(path[end - 1])) {
+        end--;
+    }
+
+    char *dirname = malloc(end + 1);
+    if (dirname == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    memcpy(dirname, path, end);
+    dirname[end] = '\0';
+    return dirname;
+}
+
+static PtnValue ptn_internal_dirname(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    char *path = ptn_value_to_string(args[0]);
+    char *dirname = ptn_dirname_string(path);
+    free(path);
+    return ptn_owned_string(dirname);
+}
+
 static PtnValue ptn_internal_gettype(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)argc;
@@ -2456,6 +2499,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "strlen", 1, 1, ptn_internal_strlen },
         { "str_rot13", 1, 1, ptn_internal_str_rot13 },
         { "strcmp", 2, 2, ptn_internal_strcmp },
+        { "dirname", 1, 1, ptn_internal_dirname },
         { "bin2hex", 1, 1, ptn_internal_bin2hex },
         { "hex2bin", 1, 1, ptn_internal_hex2bin },
         { "soundex", 1, 1, ptn_internal_soundex },

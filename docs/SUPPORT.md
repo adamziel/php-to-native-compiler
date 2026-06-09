@@ -66,17 +66,18 @@ supports in generated native binaries.
   converted to integers through the current bitwise integer-conversion path.
 - Simple statement-form internal calls such as `var_dump(expr, ...)`,
   `strlen(expr);`, `str_rot13(expr);`, `strcmp(expr, expr);`,
-  `bin2hex(expr);`, `hex2bin(expr);`, `soundex(expr);`, `ceil(expr);`,
-  `floor(expr);`, `sqrt(expr);`,
+  `bin2hex(expr);`, `hex2bin(expr);`, `dirname(expr);`, `soundex(expr);`,
+  `ceil(expr);`, `floor(expr);`, `sqrt(expr);`,
   `bindec(expr);`, `hexdec(expr);`, `octdec(expr);`, `pi();`,
   `getrandmax();`, `getmypid();`, `chr(expr);`, `ord(expr);`,
   `is_finite(expr);`, `is_infinite(expr);`, `is_nan(expr);`, and
   `error_reporting(expr);`.
 - Expression-form internal calls for the currently registered scalar functions,
   including `strlen(expr)`, `str_rot13(expr)`, `strcmp(expr, expr)`,
-  `bin2hex(expr)`, `hex2bin(expr)`, `soundex(expr)`, `ceil(expr)`,
-  `floor(expr)`, `sqrt(expr)`, `bindec(expr)`, `hexdec(expr)`, `octdec(expr)`,
-  `pi()`, `getrandmax()`, `getmypid()`, `chr(expr)`, `ord(expr)`,
+  `bin2hex(expr)`, `hex2bin(expr)`, `dirname(expr)`, `soundex(expr)`,
+  `ceil(expr)`, `floor(expr)`, `sqrt(expr)`, `bindec(expr)`, `hexdec(expr)`,
+  `octdec(expr)`, `pi()`, `getrandmax()`, `getmypid()`, `chr(expr)`,
+  `ord(expr)`,
   `is_finite(expr)`, `is_infinite(expr)`, `is_nan(expr)`,
   `error_reporting(expr)`, `gettype(expr)`, and scalar `is_*` type
   predicates in echo operands, assignments, binary operands, and branch/loop
@@ -98,6 +99,8 @@ supports in generated native binaries.
 - `hex2bin()` over current boxed scalar values after scalar string conversion,
   decoding hexadecimal byte pairs and returning `false` with a warning boundary
   for odd-length or non-hexadecimal input.
+- `dirname()` over current boxed scalar values after scalar string conversion,
+  returning the parent directory for the current C-string-backed path.
 - `soundex()` over current boxed scalar values after scalar string conversion,
   returning a PHP-style four-character ASCII soundex key.
 - `ceil()` and `floor()` over current boxed scalar values after scalar numeric
@@ -210,6 +213,8 @@ supports in generated native binaries.
   and `octdec()` on very large or unsupported values.
 - Exact `hex2bin()` warning text/file-name parity and unsupported
   array/object/resource/reference diagnostics.
+- Exact `dirname()` edge parity for unusual paths, embedded NULs, and
+  unsupported array/object/resource/reference operands.
 - Exact `soundex()` locale/non-ASCII behavior and unsupported
   array/object/resource/reference operand diagnostics.
 - Exact non-finite formatting outside current scalar `var_dump()` output and

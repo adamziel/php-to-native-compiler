@@ -988,3 +988,19 @@ Still unsupported after this `soundex()` slice: PHP-exact behavior for
 unsupported array/object/resource/reference operands, locale/non-ASCII
 collation differences beyond the current ASCII scan, exact diagnostics for
 unsupported value domains, and embedded-NUL string storage parity.
+
+Added scalar `dirname()`:
+
+- Registered `dirname()` through the generated C internal-function registry, so
+  normal calls and `function_exists()` share the same case-insensitive lookup
+  table.
+- `dirname()` returns the parent directory from the current boxed scalar
+  string-conversion path, recognizing both `/` and `\` separators.
+- Native tests prove the public `dir-constant-normal.phpt` source shape and
+  registry exposure.
+- Focused public PHPT telemetry through `phpc` passes
+  `Zend/tests/constants/dir-constant-normal.phpt`.
+
+Still unsupported after this `dirname()` slice: PHP-exact path edge behavior for
+unusual roots/trailing separators, embedded NUL path strings, and unsupported
+array/object/resource/reference operands.

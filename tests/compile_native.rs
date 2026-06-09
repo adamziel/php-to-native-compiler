@@ -1168,6 +1168,34 @@ fn compile_hex2bin_invalid_input_to_native_binary() {
 }
 
 #[test]
+fn compile_dir_constant_normal_phpt_shape_to_native_binary() {
+    let root = temp_dir("ptn-native-dir-constant-normal-phpt-shape");
+    let source_dir = root.join("tests").join("constants");
+    fs::create_dir_all(&source_dir).unwrap();
+    let input = source_dir.join("dir-constant-normal.php");
+    let output = root.join("dir-constant-normal-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+echo __DIR__ . \"\\n\";\n\
+echo dirname(__FILE__) . \"\\n\";\n\
+var_dump(function_exists(\"dirname\"), function_exists(\"DIRNAME\"));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let expected_dir = source_dir.to_string_lossy();
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!("{expected_dir}\n{expected_dir}\nbool(true)\nbool(true)\n")
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_soundex_basic_phpt_shape_to_native_binary() {
     let root = temp_dir("ptn-native-soundex-basic-phpt-shape");
     fs::create_dir_all(&root).unwrap();

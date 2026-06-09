@@ -87,12 +87,13 @@ Current runtime/compiler slices:
   path; `bin2hex` returns lowercase hexadecimal bytes for that same string
   conversion; `hex2bin` decodes hexadecimal byte pairs from the current scalar
   string conversion and returns `false` with a warning boundary for invalid
-  input; `soundex` returns a four-character ASCII soundex key from the current
-  scalar string conversion; `ceil` and `floor` return boxed floats after the
-  current scalar numeric-conversion path; `sqrt` returns a boxed float after
-  that same numeric conversion path; `pi` returns the boxed `M_PI` math
-  constant; `getrandmax` returns the modeled maximum random integer; `getmypid`
-  returns the generated native process id;
+  input; `dirname` returns the parent directory from that same scalar
+  string-conversion path; `soundex` returns a four-character ASCII soundex key
+  from the current scalar string conversion; `ceil` and `floor` return boxed
+  floats after the current scalar numeric-conversion path; `sqrt` returns a
+  boxed float after that same numeric conversion path; `pi` returns the boxed
+  `M_PI` math constant; `getrandmax` returns the modeled maximum random
+  integer; `getmypid` returns the generated native process id;
   `bindec`, `hexdec`, and `octdec` parse scalar string-conversion results
   through shared base-conversion helpers with prefix handling and line-aware
   deprecation diagnostics; `chr` constructs one-byte strings from scalar
