@@ -69,6 +69,10 @@ supports in generated native binaries.
 - Short array literals `[...]` with optional scalar keys, automatic integer
   keys, integer-string key canonicalization, insertion order, and duplicate-key
   replacement in the current literal-array value subset.
+- Array read expressions such as `$array[$key]`, including nested reads and
+  reads from literal or grouped array expressions. Reads use the current
+  ordered-array key canonicalization path; undefined keys and non-array
+  containers emit a warning boundary and yield `null`.
 - Boxed scalar and literal-array comparison operators `==`, `!=`, `===`, `!==`,
   `<`, `<=`, `>`, `>=`, and `<=>`. Strict array identity compares type, key
   order, key type, and value. Numeric comparisons involving `NAN` are treated
@@ -241,7 +245,7 @@ supports in generated native binaries.
   `PATH_SEPARATOR`, `PHP_INT_MIN`, `PHP_INT_MAX`, `PHP_INT_SIZE`, `INF`,
   `NAN`, `M_PI`, and modeled PHP math `M_*` constants in `defined()`.
 - Type predicate coverage for arrays, objects, resources, and references.
-- Array element access/mutation, append/unset/iteration, long-form
+- Array element mutation, append/unset/iteration, long-form
   `array(...)`, recursive arrays, objects, resources, references, copy-on-write,
   and `var_dump()` reference identity output.
 - Embedded NUL strings in runtime string values, `var_dump()` string

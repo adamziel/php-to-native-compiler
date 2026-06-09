@@ -87,6 +87,11 @@ pub enum ValueExpr {
         line: usize,
     },
     Array(Vec<ArrayElement>),
+    ArrayAccess {
+        array: Box<ValueExpr>,
+        index: Box<ValueExpr>,
+        line: usize,
+    },
     InternalCall {
         name: String,
         arguments: Vec<ValueExpr>,
@@ -368,6 +373,11 @@ fn lower_expr(expr: &Expr) -> ValueExpr {
         Expr::Array { elements, .. } => {
             ValueExpr::Array(elements.iter().map(lower_array_element).collect())
         }
+        Expr::ArrayAccess { array, index, span } => ValueExpr::ArrayAccess {
+            array: Box::new(lower_expr(array)),
+            index: Box::new(lower_expr(index)),
+            line: span.line,
+        },
         Expr::Call {
             name,
             arguments,

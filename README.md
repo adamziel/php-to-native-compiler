@@ -138,6 +138,10 @@ Supported today:
 - Short array literals `[...]` with optional scalar keys, automatic integer
   keys, integer-string key canonicalization, insertion order, and duplicate-key
   replacement in the current literal-array value subset.
+- Array read expressions such as `$array[$key]`, including nested reads and
+  reads from literal or grouped array expressions. Reads use the current
+  ordered-array key canonicalization path and return `null` with a warning
+  boundary for undefined keys or non-array containers.
 - Boxed scalar and literal-array comparison and boolean expressions: `==`,
   `!=`, `===`, `!==`, `<`, `<=`, `>`, `>=`, `<=>`, `&&`, and `||`. Strict
   identity compares type, key order, key type, and value; numeric scalar
@@ -180,7 +184,7 @@ Supported today:
 
 Unsupported today:
 
-- Long-form `array(...)`, array element access/mutation, append/unset,
+- Long-form `array(...)`, array element mutation, append/unset,
   iteration, recursive arrays, arrays with references/copy-on-write, objects,
   functions, classes, includes, references, resources, exceptions,
   array/object/reference compound-assignment lvalues,

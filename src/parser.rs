@@ -577,11 +577,26 @@ impl Parser {
                         span,
                     })
                 } else {
-                    self.parse_primary_expr()
+                    self.parse_postfix_expr()
                 }
             }
-            _ => self.parse_primary_expr(),
+            _ => self.parse_postfix_expr(),
         }
+    }
+
+    fn parse_postfix_expr(&mut self) -> Result<Expr> {
+        let mut expr = self.parse_primary_expr()?;
+        while matches!(self.peek().kind, TokenKind::LeftBracket) {
+            self.advance();
+            let index = self.parse_expr()?;
+            let right_span = self.expect_right_bracket()?;
+            expr = Expr::ArrayAccess {
+                span: combine_spans(expr.span(), right_span),
+                array: Box::new(expr),
+                index: Box::new(index),
+            };
+        }
+        Ok(expr)
     }
 
     fn parse_primary_expr(&mut self) -> Result<Expr> {
@@ -1143,7 +1158,10 @@ fn is_supported_global_const_expr(expr: &Expr) -> bool {
         Expr::Binary { left, right, .. } => {
             is_supported_global_const_expr(left) && is_supported_global_const_expr(right)
         }
-        Expr::InterpolatedString(_, _) | Expr::Variable(_, _) | Expr::Call { .. } => false,
+        Expr::InterpolatedString(_, _)
+        | Expr::Variable(_, _)
+        | Expr::Call { .. }
+        | Expr::ArrayAccess { .. } => false,
     }
 }
 

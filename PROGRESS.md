@@ -1178,6 +1178,29 @@ Still unsupported after this `fdiv()` slice: exact unsupported operand
 diagnostics for arrays, objects, resources, and references, strict type
 handling, and broader math-function coverage.
 
+Added expression-form array reads:
+
+- The parser/AST/IR now support array read expressions such as `$array[$key]`,
+  nested reads, and reads from literal or grouped array expressions.
+- Generated C materializes the container expression and index expression
+  left-to-right before calling a shared runtime lookup helper.
+- The runtime lookup reuses the ordered-array key canonicalization path used by
+  array literals and comparisons, including integer-string keys, boolean keys,
+  float truncation through the current array-key path, and `null` as the empty
+  string key with a deprecation boundary.
+- Missing keys and non-array containers yield `null` after a generic warning
+  boundary.
+- Native tests prove successful reads, nested reads, grouped/literal reads,
+  key canonicalization, missing-key diagnostics, and non-array diagnostics.
+- Focused public PHPT telemetry through `phpc` passes
+  `Zend/tests/numeric_strings/array_offset.phpt`.
+
+Still unsupported after this array-read slice: array writes/mutation,
+append/unset/iteration, `isset()`/`empty()` offset semantics, long-form
+`array(...)`, string offsets, recursive arrays, references, copy-on-write,
+objects/resources as containers or keys, exact warning file-name/error-handler
+parity, and broader array diagnostics.
+
 Added source-spanned parse diagnostics for unterminated block comments:
 
 - The lexer now reports EOF inside `/* ...` as a parse-error diagnostic using

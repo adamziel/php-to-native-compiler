@@ -670,6 +670,42 @@ fn parser_accepts_array_literals_and_spaceship_expressions() {
 }
 
 #[test]
+fn parser_accepts_array_read_expressions() {
+    let program = parser::parse(
+        "<?php echo $items[\"7\"], ([1, 2])[0], $matrix[0][\"name\"], [\"x\" => 4][\"x\"];",
+    )
+    .unwrap();
+    let Statement::Echo { expressions, .. } = &program.statements[0] else {
+        panic!("expected echo statement");
+    };
+    assert_eq!(expressions.len(), 4);
+    assert!(matches!(
+        &expressions[0],
+        Expr::ArrayAccess {
+            array,
+            index,
+            ..
+        } if matches!(array.as_ref(), Expr::Variable(name, _) if name == "items")
+            && matches!(index.as_ref(), Expr::String(value, _) if value == "7")
+    ));
+    assert!(matches!(
+        &expressions[1],
+        Expr::ArrayAccess { array, .. }
+            if matches!(array.as_ref(), Expr::Grouped { .. })
+    ));
+    assert!(matches!(
+        &expressions[2],
+        Expr::ArrayAccess { array, .. }
+            if matches!(array.as_ref(), Expr::ArrayAccess { .. })
+    ));
+    assert!(matches!(
+        &expressions[3],
+        Expr::ArrayAccess { array, .. }
+            if matches!(array.as_ref(), Expr::Array { .. })
+    ));
+}
+
+#[test]
 fn parser_accepts_bitwise_scalar_expressions() {
     let program = parser::parse("<?php echo \"a\" & \"b\" ^ \"d\" | \"c\" && 1 == 1;").unwrap();
     let Statement::Echo { expressions, .. } = &program.statements[0] else {
@@ -2611,6 +2647,67 @@ var_dump(is_scalar([]));",
 }
 
 #[test]
+fn compile_array_read_expressions_to_native_binary() {
+    let root = temp_dir("ptn-native-array-read-expressions");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-read-expressions.php");
+    let output = root.join("array-read-expressions-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$items = [10, 20, \"7\" => \"seven\", \"\" => \"empty\", true => \"bool-key\"];\n\
+$key = \"7\";\n\
+var_dump($items[0]);\n\
+var_dump($items[\"0\"]);\n\
+var_dump([10, 20][1.0]);\n\
+var_dump($items[$key]);\n\
+var_dump($items[null]);\n\
+var_dump($items[true]);\n\
+var_dump(([\"nested\" => [2 => \"ok\"]])[\"nested\"][2]);\n\
+echo [1, 2, 3][1], \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(10)\nint(10)\nint(20)\nstring(5) \"seven\"\n\nDeprecated: Using null as an array offset is deprecated, use an empty string instead in ptn on line 8\nstring(5) \"empty\"\nstring(8) \"bool-key\"\nstring(2) \"ok\"\n2\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_array_read_diagnostics_to_native_binary() {
+    let root = temp_dir("ptn-native-array-read-diagnostics");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-read-diagnostics.php");
+    let output = root.join("array-read-diagnostics-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$items = [];\n\
+var_dump($items[\"7.5\"]);\n\
+var_dump($items[0]);\n\
+$value = 1;\n\
+var_dump($value[0]);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "\nWarning: Undefined array key \"7.5\" in ptn on line 3\nNULL\n\nWarning: Undefined array key 0 in ptn on line 4\nNULL\n\nWarning: Trying to access array offset on value of type int in ptn on line 6\nNULL\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_strict_identity_comparisons_to_native_binary() {
     let root = temp_dir("ptn-native-strict-identity");
     fs::create_dir_all(&root).unwrap();
@@ -3781,7 +3878,8 @@ fn unsupported_internal_functions_fail_in_generated_runtime() {
 #[test]
 fn support_docs_name_var_dump_unsupported_edges() {
     let support = fs::read_to_string("docs/SUPPORT.md").unwrap();
-    assert!(support.contains("Array element access/mutation"));
+    assert!(support.contains("Array read expressions"));
+    assert!(support.contains("Array element mutation"));
     assert!(support.contains("recursive arrays, objects, resources, references"));
     assert!(support.contains("Embedded NUL strings"));
     assert!(support.contains("Full PHP float precision and formatting edge cases"));

@@ -138,6 +138,11 @@ pub enum Expr {
         elements: Vec<ArrayElement>,
         span: SourceSpan,
     },
+    ArrayAccess {
+        array: Box<Expr>,
+        index: Box<Expr>,
+        span: SourceSpan,
+    },
     Unary {
         op: UnaryOp,
         expr: Box<Expr>,
@@ -233,6 +238,7 @@ impl Expr {
             | Expr::MagicConstant(_, span) => *span,
             Expr::Call { span, .. } => *span,
             Expr::Array { span, .. } => *span,
+            Expr::ArrayAccess { span, .. } => *span,
             Expr::Unary { span, .. } | Expr::Cast { span, .. } => *span,
             Expr::Binary { span, .. } | Expr::Grouped { span, .. } => *span,
         }

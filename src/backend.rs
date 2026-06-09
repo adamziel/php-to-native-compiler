@@ -426,6 +426,21 @@ impl ValueEmitter {
             ValueExpr::Bool(false) => "ptn_bool(0)".to_string(),
             ValueExpr::Null => "ptn_null()".to_string(),
             ValueExpr::Array(elements) => self.emit_array(out, elements),
+            ValueExpr::ArrayAccess { array, index, line } => {
+                let array_temp = self.emit_materialized_value(out, array);
+                let index_temp = self.emit_materialized_value(out, index);
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_array_read(&runtime, ");
+                out.push_str(&array_temp);
+                out.push_str(", ");
+                out.push_str(&index_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                result_temp
+            }
             ValueExpr::Load(name) => format!(
                 "ptn_runtime_read_variable(&runtime, \"{}\")",
                 c_string(name)
@@ -661,6 +676,7 @@ impl ValueEmitter {
                 | ValueExpr::Unary { .. }
                 | ValueExpr::Cast { .. }
                 | ValueExpr::Array(_)
+                | ValueExpr::ArrayAccess { .. }
         ) {
             return self.emit_value(out, value);
         }
@@ -1491,6 +1507,109 @@ static PTN_UNUSED PtnArrayEntry *ptn_array_entry_for_key(PtnArray *array, PtnArr
         }
     }
     return NULL;
+}
+
+static PTN_UNUSED const char *ptn_offset_container_type_name(PtnValue value) {
+    switch (value.type) {
+        case PTN_NULL:
+            return "null";
+        case PTN_BOOL:
+            return "bool";
+        case PTN_INT:
+            return "int";
+        case PTN_FLOAT:
+            return "float";
+        case PTN_STRING:
+            return "string";
+        case PTN_ARRAY:
+            return "array";
+    }
+    return "unknown";
+}
+
+static PTN_UNUSED void ptn_emit_array_runtime_diagnostic(const char *kind, const char *message, size_t line) {
+    fputc('\n', stdout);
+    fputs(kind, stdout);
+    fputs(": ", stdout);
+    fputs(message, stdout);
+    fputs(" in ptn on line ", stdout);
+    fprintf(stdout, "%zu", line);
+    fputc('\n', stdout);
+}
+
+static PTN_UNUSED char *ptn_array_key_diagnostic_name(PtnArrayKey key) {
+    char buffer[64];
+    if (key.type == PTN_ARRAY_KEY_INT) {
+        int written = snprintf(buffer, sizeof(buffer), "%lld", (long long)key.as.integer);
+        if (written < 0 || (size_t)written >= sizeof(buffer)) {
+            ptn_abort_out_of_memory();
+        }
+        return ptn_duplicate_string(buffer);
+    }
+
+    size_t key_len = strlen(key.as.string);
+    if (key_len > SIZE_MAX - 3) {
+        ptn_abort_out_of_memory();
+    }
+    char *display = malloc(key_len + 3);
+    if (display == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    display[0] = '"';
+    memcpy(display + 1, key.as.string, key_len);
+    display[key_len + 1] = '"';
+    display[key_len + 2] = '\0';
+    return display;
+}
+
+static PTN_UNUSED void ptn_emit_undefined_array_key_warning(PtnArrayKey key, size_t line) {
+    const char *prefix = "Undefined array key ";
+    char *display = ptn_array_key_diagnostic_name(key);
+    size_t prefix_len = strlen(prefix);
+    size_t display_len = strlen(display);
+    if (prefix_len > SIZE_MAX - display_len - 1) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc(prefix_len + display_len + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    memcpy(message, prefix, prefix_len);
+    memcpy(message + prefix_len, display, display_len + 1);
+    ptn_emit_array_runtime_diagnostic("Warning", message, line);
+    free(message);
+    free(display);
+}
+
+static PTN_UNUSED PtnValue ptn_array_read(PtnRuntime *runtime, PtnValue container, PtnValue key_value, size_t line) {
+    (void)runtime;
+    if (container.type != PTN_ARRAY) {
+        const char *prefix = "Trying to access array offset on value of type ";
+        const char *type_name = ptn_offset_container_type_name(container);
+        char message[128];
+        int written = snprintf(message, sizeof(message), "%s%s", prefix, type_name);
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_array_runtime_diagnostic("Warning", message, line);
+        return ptn_null();
+    }
+
+    if (key_value.type == PTN_NULL) {
+        ptn_emit_array_runtime_diagnostic(
+            "Deprecated",
+            "Using null as an array offset is deprecated, use an empty string instead",
+            line
+        );
+    }
+
+    PtnArrayKey key = ptn_array_key_from_value(key_value);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(container.as.array, key);
+    if (entry == NULL) {
+        ptn_emit_undefined_array_key_warning(key, line);
+        return ptn_null();
+    }
+    return entry->value;
 }
 
 static PTN_UNUSED int ptn_compare_arrays_equal(PtnArray *left, PtnArray *right) {
