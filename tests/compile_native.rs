@@ -4606,6 +4606,63 @@ var_dump(function_exists(\"COUNT\"), function_exists(\"abs\"));",
 }
 
 #[test]
+fn compile_count_type_errors_are_catchable_to_native_binary() {
+    let root = temp_dir("ptn-native-count-type-errors-catchable");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("count-type-errors-catchable.php");
+    let output = root.join("count-type-errors-catchable-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$values = [[], [1, 2], null, false, true, 42, 1.25, \"abc\"];\n\
+foreach ($values as $value) {\n\
+    try {\n\
+        var_dump(count($value));\n\
+    } catch (\\TypeError $e) {\n\
+        echo $e->getMessage(), \"\\n\";\n\
+    }\n\
+}\n\
+echo \"after\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(0)\nint(2)\ncount(): Argument #1 ($value) must be of type Countable|array, null given\ncount(): Argument #1 ($value) must be of type Countable|array, false given\ncount(): Argument #1 ($value) must be of type Countable|array, true given\ncount(): Argument #1 ($value) must be of type Countable|array, int given\ncount(): Argument #1 ($value) must be of type Countable|array, float given\ncount(): Argument #1 ($value) must be of type Countable|array, string given\nafter\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_uncaught_count_type_error_fatals() {
+    let root = temp_dir("ptn-native-uncaught-count-type-error");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("uncaught-count-type-error.php");
+    let output = root.join("uncaught-count-type-error-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+count(false);\n\
+echo \"unreached\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        "Fatal error: count(): Argument #1 ($value) must be of type Countable|array, false given\n"
+    );
+}
+
+#[test]
 fn compile_foreach_value_loop_to_native_binary() {
     let root = temp_dir("ptn-native-foreach-values");
     fs::create_dir_all(&root).unwrap();
@@ -4911,7 +4968,7 @@ var_dump(empty($missing));",
         .find("\nint main(void)")
         .expect("generated C should contain main");
     let main_body = &c_source[main_start..];
-    assert!(main_body.contains("ptn_count_value("));
+    assert!(main_body.contains("ptn_count_value(&runtime"));
     assert!(main_body.contains("ptn_array_key_exists_value(&runtime"));
     assert!(main_body.contains("ptn_offset_is_set(&runtime"));
     assert!(main_body.contains("ptn_offset_is_empty(&runtime"));
@@ -4947,9 +5004,9 @@ if (!array_key_exists(\"absent\", $items)) echo \"absent\\n\";",
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
-    assert!(c_source.contains("static PTN_UNUSED PtnValue ptn_count_value"));
+    assert!(c_source.contains("static PTN_UNUSED PtnValue ptn_count_value(PtnRuntime *runtime"));
     assert!(c_source.contains("static PTN_UNUSED PtnValue ptn_array_key_exists_value"));
-    assert!(c_source.contains("ptn_count_value("));
+    assert!(c_source.contains("ptn_count_value(&runtime"));
     assert!(c_source.contains("ptn_array_key_exists_value(&runtime"));
     assert!(!c_source.contains("ptn_call_internal"));
     assert!(!c_source.contains("ptn_internal_count"));
