@@ -547,6 +547,14 @@ fn parser_rejects_void_cast_expression_context_with_parse_error_kind() {
 }
 
 #[test]
+fn parser_rejects_unterminated_block_comment_with_parse_error_kind() {
+    let error = parser::parse("<?php\n/* Foo\nBar").unwrap_err();
+    assert_eq!(error.message, "Unterminated comment starting line 2");
+    assert_eq!(error.kind, DiagnosticKind::ParseError);
+    assert_eq!(error.span.unwrap().line, 2);
+}
+
+#[test]
 fn parser_preserves_parenthesized_expression_grouping() {
     let program = parser::parse("<?php echo (1), ($name), (1 + 2), ((\"a\" . \"b\"));").unwrap();
     let Statement::Echo { expressions, .. } = &program.statements[0] else {
@@ -1081,6 +1089,26 @@ fn phpc_renders_void_cast_expression_context_as_php_parse_error() {
         String::from_utf8(execution.stderr).unwrap(),
         format!(
             "Parse error: syntax error, unexpected token \"(void)\" in {} on line 3\n",
+            input.display()
+        )
+    );
+}
+
+#[test]
+fn phpc_renders_unterminated_block_comment_as_php_parse_error() {
+    let root = temp_dir("ptn-phpc-unterminated-block-comment-parse-error");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("unterminated-comment.php");
+    fs::write(&input, "<?php\n/* Foo\nBar").unwrap();
+
+    let execution = Command::new(phpc_bin()).arg(&input).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "Parse error: Unterminated comment starting line 2 in {} on line 2\n",
             input.display()
         )
     );

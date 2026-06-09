@@ -1177,3 +1177,19 @@ Added scalar `fdiv()`:
 Still unsupported after this `fdiv()` slice: exact unsupported operand
 diagnostics for arrays, objects, resources, and references, strict type
 handling, and broader math-function coverage.
+
+Added source-spanned parse diagnostics for unterminated block comments:
+
+- The lexer now reports EOF inside `/* ...` as a parse-error diagnostic using
+  PHP's `Unterminated comment starting line N` wording at the opening comment
+  span.
+- The diagnostic stays in lexing and does not reach parsing, IR lowering, or C
+  generation.
+- Native/CLI tests prove the diagnostic kind, source span, and `phpc`
+  parse-error rendering path.
+- Focused public PHPT telemetry through `phpc` passes
+  `Zend/tests/unterminated_comment.phpt`.
+
+Still unsupported after this diagnostic slice: broader parse-error wording
+parity, stack traces, error-handler routing, PHP-exact warning/notice
+formatting, and unsupported PHP token recovery.

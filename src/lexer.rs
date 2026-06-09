@@ -264,7 +264,10 @@ impl<'a> Lexer<'a> {
             }
             self.bump_char();
         }
-        Err(Diagnostic::new("unterminated comment", Some(start)))
+        Err(Diagnostic::parse_error(
+            format!("Unterminated comment starting line {}", start.line),
+            Some(start),
+        ))
     }
 
     fn skip_line(&mut self) {

@@ -54,6 +54,8 @@ supports in generated native binaries.
   fatal error through `phpc`.
 - Expression-context `(void)` cast syntax is rejected with a source-spanned
   PHP-style parse error through `phpc`.
+- Unterminated block comments are rejected with a source-spanned PHP-style
+  parse error through `phpc`.
 - Global-scope magic constants `__LINE__`, `__FILE__`, `__DIR__`,
   `__FUNCTION__`, `__METHOD__`, `__CLASS__`, `__TRAIT__`, and
   `__NAMESPACE__`. Scope-dependent names currently resolve to empty strings in
@@ -183,8 +185,8 @@ supports in generated native binaries.
 - Source-spanned compile diagnostics emitted through `phpc` use PHP-style fatal
   or parse-error boundaries with the source file and line. This currently
   covers duplicate `default:` clauses in `switch`, duplicate labels, undefined
-  `goto` labels, removed `(real)` and `(unset)` cast syntax, and
-  expression-context `(void)` cast syntax.
+  `goto` labels, removed `(real)` and `(unset)` cast syntax,
+  expression-context `(void)` cast syntax, and unterminated block comments.
 - Statement-form direct variable increment/decrement: `$name++;`, `++$name;`,
   `$name--;`, and `--$name;`.
 

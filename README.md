@@ -118,6 +118,8 @@ Supported today:
   fatal error through the `phpc` runner.
 - Expression-context `(void)` cast syntax is rejected with a source-spanned
   PHP-style parse error through the `phpc` runner.
+- Unterminated block comments are rejected with a source-spanned PHP-style
+  parse error through the `phpc` runner.
 - Global-scope magic constants `__LINE__`, `__FILE__`, `__DIR__`,
   `__FUNCTION__`, `__METHOD__`, `__CLASS__`, `__TRAIT__`, and
   `__NAMESPACE__`. Scope-dependent names currently resolve to empty strings in
