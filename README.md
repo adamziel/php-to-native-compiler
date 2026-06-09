@@ -46,6 +46,22 @@ cargo run -- compile examples/hello.php -o /tmp/ptn-hello
 /tmp/ptn-hello
 ```
 
+## Differential Native Output Telemetry
+
+PTN does not yet provide a PHP-compatible `phpc` runner for direct PHPT
+execution. For the currently supported subset, compare native output against the
+system PHP CLI with:
+
+```sh
+tools/diff-native-output.sh --snippet '<?php echo "Hello ", 42, "\n";'
+tools/diff-native-output.sh examples/hello.php
+```
+
+The command compiles the input through `ptn compile`, runs the produced native
+binary, runs the same input with `php`, and compares stdout, stderr, and exit
+status. It is telemetry for supported snippets only; it is not a PHPT pass-count
+claim.
+
 ## Production Workflow
 
 A task is ready only when it is integrated into the branch that will be pushed.

@@ -44,3 +44,12 @@ Integrated the next production slice:
 Still unsupported: arrays, references, copy-on-write, globals/superglobals,
 compound assignment, variable variables, undefined-variable warning parity,
 functions, classes, resources, exceptions, and dynamic fallback.
+
+Added a non-harness differential telemetry path:
+
+- `tools/diff-native-output.sh` compiles a file, snippet, or stdin through
+  `ptn compile`, runs the native binary, runs the same input with system `php`,
+  and compares stdout, stderr, and exit status.
+- This does not claim PHPT compatibility. Direct PHPT execution remains blocked
+  until PTN grows a PHP-compatible runner interface instead of only
+  `ptn compile`.
