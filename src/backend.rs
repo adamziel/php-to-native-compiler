@@ -2947,6 +2947,71 @@ static PtnValue ptn_internal_chunk_split(PtnRuntime *runtime, size_t argc, const
     return ptn_owned_string(output);
 }
 
+static char *ptn_strip_tags_string(const char *input) {
+    size_t len = strlen(input);
+    char *output = malloc(len + 1);
+    if (output == NULL) {
+        ptn_abort_out_of_memory();
+    }
+
+    size_t input_offset = 0;
+    size_t output_offset = 0;
+    while (input_offset < len) {
+        if (input[input_offset] == '<') {
+            if (input_offset + 1 < len && input[input_offset + 1] == '?') {
+                size_t tag_end = input_offset + 2;
+                while (tag_end + 1 < len && !(input[tag_end] == '?' && input[tag_end + 1] == '>')) {
+                    tag_end++;
+                }
+                if (tag_end + 1 < len) {
+                    input_offset = tag_end + 2;
+                    continue;
+                }
+            } else if (input_offset + 1 < len && input[input_offset + 1] == '%') {
+                size_t tag_end = input_offset + 2;
+                while (tag_end + 1 < len && !(input[tag_end] == '%' && input[tag_end + 1] == '>')) {
+                    tag_end++;
+                }
+                if (tag_end + 1 < len) {
+                    input_offset = tag_end + 2;
+                    continue;
+                }
+            } else if (input_offset + 3 < len && strncmp(input + input_offset, "<!--", 4) == 0) {
+                size_t tag_end = input_offset + 4;
+                while (tag_end + 2 < len && strncmp(input + tag_end, "-->", 3) != 0) {
+                    tag_end++;
+                }
+                if (tag_end + 2 < len) {
+                    input_offset = tag_end + 3;
+                    continue;
+                }
+            } else {
+                size_t tag_end = input_offset + 1;
+                while (tag_end < len && input[tag_end] != '>') {
+                    tag_end++;
+                }
+                if (tag_end < len) {
+                    input_offset = tag_end + 1;
+                    continue;
+                }
+            }
+        }
+        output[output_offset++] = input[input_offset++];
+    }
+    output[output_offset] = '\0';
+    return output;
+}
+
+static PtnValue ptn_internal_strip_tags(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    char *input = ptn_value_to_string(args[0]);
+    char *output = ptn_strip_tags_string(input);
+    free(input);
+    return ptn_owned_string(output);
+}
+
 static uint32_t ptn_rotate_left32(uint32_t value, uint32_t amount) {
     return (value << amount) | (value >> (32 - amount));
 }
@@ -3864,6 +3929,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "str_contains", 2, 2, ptn_internal_str_contains },
         { "quotemeta", 1, 1, ptn_internal_quotemeta },
         { "chunk_split", 1, 3, ptn_internal_chunk_split },
+        { "strip_tags", 1, 1, ptn_internal_strip_tags },
         { "md5", 1, 2, ptn_internal_md5 },
         { "sha1", 1, 2, ptn_internal_sha1 },
         { "substr", 2, 3, ptn_internal_substr },

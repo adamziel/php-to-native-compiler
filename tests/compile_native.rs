@@ -2048,6 +2048,57 @@ fn compile_chunk_split_registry_and_scalar_conversion_to_native_binary() {
 }
 
 #[test]
+fn compile_strip_tags_bug70720_phpt_shape_to_native_binary() {
+    let root = temp_dir("ptn-native-strip-tags-bug70720-phpt-shape");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("strip-tags-bug70720.php");
+    let output = root.join("strip-tags-bug70720-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(strip_tags('<?php $dom->test(); ?> this is a test'));\n\
+var_dump(strip_tags('<?php $xml->test(); ?> this is a test'));\n\
+var_dump(strip_tags('<?xml $xml->test(); ?> this is a test'));\n\
+var_dump(strip_tags(\"<span class=sf-dump-> this is a test</span>\"));\n\
+?>",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(15) \" this is a test\"\nstring(15) \" this is a test\"\nstring(15) \" this is a test\"\nstring(15) \" this is a test\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_strip_tags_registry_and_scalar_conversion_to_native_binary() {
+    let root = temp_dir("ptn-native-strip-tags-registry-and-scalar-conversion");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("strip-tags-registry.php");
+    let output = root.join("strip-tags-registry-bin");
+    fs::write(
+        &input,
+        "<?php var_dump(strip_tags(12345), strip_tags(true), strip_tags(\"<b>x</b><i>y</i>\"), strip_tags(\"a < b\"), strip_tags(\"a<!-- c -->b\"), strip_tags(\"<% echo hi %> ok\"), function_exists(\"strip_tags\"), function_exists(\"STRIP_TAGS\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(5) \"12345\"\nstring(1) \"1\"\nstring(2) \"xy\"\nstring(5) \"a < b\"\nstring(2) \"ab\"\nstring(3) \" ok\"\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_md5_phpt_shape_to_native_binary() {
     let root = temp_dir("ptn-native-md5-phpt-shape");
     fs::create_dir_all(&root).unwrap();

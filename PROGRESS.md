@@ -1613,3 +1613,23 @@ Still unsupported after this `array_key_exists()` slice: exact TypeError
 parity for unsupported key/container types, object property checks, resources,
 references, error-handler routing, and broader array/object/reference
 semantics.
+
+Added scalar `strip_tags()`:
+
+- Registered one-argument `strip_tags()` in the generated C internal-function
+  registry, so normal calls and `function_exists()` share the same
+  case-insensitive lookup table.
+- `strip_tags()` converts its input through the current boxed scalar
+  string-conversion path and removes complete `<...>`, `<?...?>`, `<%...%>`,
+  and HTML comment tag regions through the current C-string-backed value
+  representation.
+- Native tests prove the public `bug70720.phpt` source shape, scalar
+  conversion, incomplete-tag preservation, adjacent tag stripping, and registry
+  exposure.
+- Focused public PHPT telemetry through `phpc` passes
+  `ext/standard/tests/strings/bug70720.phpt`.
+
+Still unsupported after this `strip_tags()` slice: allowed-tags argument
+support, embedded-NUL input parity, exact malformed/incomplete tag behavior,
+unsupported array/object/resource/reference operand diagnostics, and full
+binary-string runtime parity.

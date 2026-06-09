@@ -109,7 +109,7 @@ supports in generated native binaries.
 - Simple statement-form internal calls such as `var_dump(expr, ...)`,
   `strlen(expr);`, `str_rot13(expr);`, `strcmp(expr, expr);`,
   `str_contains(expr, expr);`, `quotemeta(expr);`,
-  `chunk_split(expr[, expr[, expr]]);`, `md5(expr[, raw_output]);`,
+  `chunk_split(expr[, expr[, expr]]);`, `strip_tags(expr);`, `md5(expr[, raw_output]);`,
   `sha1(expr[, raw_output]);`, `substr(expr, expr[, expr]);`, `bin2hex(expr);`,
   `hex2bin(expr);`, `dirname(expr);`, `soundex(expr);`,
   `ceil(expr);`, `floor(expr);`, `sqrt(expr);`, `fdiv(expr, expr);`,
@@ -121,7 +121,7 @@ supports in generated native binaries.
 - Expression-form internal calls for the currently registered functions,
   including `strlen(expr)`, `str_rot13(expr)`, `strcmp(expr, expr)`,
   `str_contains(expr, expr)`, `quotemeta(expr)`,
-  `chunk_split(expr[, expr[, expr]])`, `md5(expr[, raw_output])`,
+  `chunk_split(expr[, expr[, expr]])`, `strip_tags(expr)`, `md5(expr[, raw_output])`,
   `sha1(expr[, raw_output])`, `substr(expr, expr[, expr])`, `bin2hex(expr)`,
   `hex2bin(expr)`, `dirname(expr)`, `soundex(expr)`, `ceil(expr)`,
   `floor(expr)`,
@@ -157,6 +157,9 @@ supports in generated native binaries.
   conversion, using a chunk length converted through the current scalar integer
   conversion path and an ending converted through the current scalar string
   conversion path. The defaults are length `76` and ending `"\r\n"`.
+- `strip_tags()` over current boxed scalar values after scalar string
+  conversion, removing complete `<...>`, `<?...?>`, `<%...%>`, and HTML
+  comment tag regions through the current C-string-backed value path.
 - `md5()` and `sha1()` over current boxed scalar values after scalar string
   conversion, returning lowercase hexadecimal digest output, or raw digest
   bytes when the optional `raw_output` argument is truthy and the current
@@ -324,7 +327,8 @@ supports in generated native binaries.
   TypeError/exception parity for unsupported string offset key types.
 - Embedded NUL strings in runtime string values, `var_dump()` string
   length/output, `strlen()`, `str_rot13()`, `strcmp()`, `bin2hex()`, `chr()`,
-  `hex2bin()`, `str_contains()`, `quotemeta()`, `chunk_split()`, `md5()`,
+  `hex2bin()`, `str_contains()`, `quotemeta()`, `chunk_split()`,
+  `strip_tags()`, `md5()`,
   `sha1()`, `substr()`, `soundex()`, `ord()`, or bitwise string results.
 - Exact `strcmp()` binary-string behavior for embedded NUL bytes and
   unsupported array/object/resource/reference operands.
@@ -334,6 +338,9 @@ supports in generated native binaries.
   array/object/resource/reference operand diagnostics.
 - Exact `chunk_split()` embedded-NUL behavior, non-positive length exception
   parity, and unsupported array/object/resource/reference operand diagnostics.
+- Exact `strip_tags()` binary-string behavior, allowed-tags argument support,
+  malformed/incomplete tag parity, and unsupported
+  array/object/resource/reference operand diagnostics.
 - `md5()`/`sha1()` raw binary output containing NUL bytes, embedded-NUL input
   parity, and unsupported array/object/resource/reference operand diagnostics.
 - Exact `substr()` binary-string behavior for embedded NUL bytes and
