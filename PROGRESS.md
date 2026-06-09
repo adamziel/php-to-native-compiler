@@ -1,5 +1,12 @@
 # Progress
 
+## Progress Bar
+
+`[#########.] 111/121 PHPT rows passing`
+- Latest: Runtime emission split integrated; PHPT snapshot 111/121.
+- Tests ported/passing: 111/121
+- Commit: 670aef40b
+
 ## 2026-06-08
 
 Restarted the project from scratch under `~/ptn-from-scratch`, guided by
