@@ -645,7 +645,7 @@ static void ptn_emit_undefined_variable_warning(
     fputc('\n', stream);
 }
 
-static void ptn_emit_undefined_function_error(PtnDiagnosticSink *diagnostics, const char *name) {
+static PTN_UNUSED void ptn_emit_undefined_function_error(PtnDiagnosticSink *diagnostics, const char *name) {
     FILE *stream = diagnostics->stream == NULL ? stderr : diagnostics->stream;
     fputs("Fatal error: Call to undefined function ", stream);
     fputs(name, stream);
@@ -659,7 +659,7 @@ static void ptn_emit_undefined_constant_error(PtnDiagnosticSink *diagnostics, co
     fputs("\"\n", stream);
 }
 
-static void ptn_emit_argument_count_error(
+static PTN_UNUSED void ptn_emit_argument_count_error(
     PtnDiagnosticSink *diagnostics,
     const char *name,
     size_t min_args,
@@ -679,7 +679,7 @@ static void ptn_emit_argument_count_error(
     fputs(" given\n", stream);
 }
 
-static void ptn_emit_too_many_arguments_error(
+static PTN_UNUSED void ptn_emit_too_many_arguments_error(
     PtnDiagnosticSink *diagnostics,
     const char *name,
     size_t max_args,
@@ -718,7 +718,7 @@ static void ptn_emit_deprecation(PtnDiagnosticSink *diagnostics, const char *mes
     fputc('\n', stdout);
 }
 
-static void ptn_emit_warning(PtnDiagnosticSink *diagnostics, const char *message, size_t line) {
+static PTN_UNUSED void ptn_emit_warning(PtnDiagnosticSink *diagnostics, const char *message, size_t line) {
     (void)diagnostics;
     fputs("Warning: ", stdout);
     fputs(message, stdout);
@@ -2436,11 +2436,11 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
     return 0;
 }
 
-static int ptn_same_double(double left, double right) {
+static PTN_UNUSED int ptn_same_double(double left, double right) {
     return memcmp(&left, &right, sizeof(double)) == 0;
 }
 
-static void ptn_normalize_var_dump_exponent(char *buffer) {
+static PTN_UNUSED void ptn_normalize_var_dump_exponent(char *buffer) {
     for (char *cursor = buffer; *cursor != '\0'; cursor++) {
         if (*cursor == 'e' || *cursor == 'E') {
             *cursor = 'E';
@@ -2456,7 +2456,7 @@ static void ptn_normalize_var_dump_exponent(char *buffer) {
     }
 }
 
-static void ptn_format_var_dump_float(double value, char *buffer, size_t buffer_size) {
+static PTN_UNUSED void ptn_format_var_dump_float(double value, char *buffer, size_t buffer_size) {
     if (isnan(value)) {
         snprintf(buffer, buffer_size, "NAN");
         return;
@@ -2544,6 +2544,7 @@ static PTN_UNUSED void ptn_echo(PtnValue value) {
     }
 }
 
+/* PTN_INTERNAL_FUNCTIONS_START */
 static void ptn_var_dump_indent(size_t indent) {
     for (size_t i = 0; i < indent; i++) {
         fputs("  ", stdout);
@@ -4041,4 +4042,8 @@ static PTN_UNUSED PtnValue ptn_call_internal(PtnRuntime *runtime, const char *na
     exit(255);
     return ptn_null();
 }
+/* PTN_INTERNAL_FUNCTIONS_END */
 "#;
+
+pub(super) const INTERNAL_FUNCTIONS_START: &str = "/* PTN_INTERNAL_FUNCTIONS_START */";
+pub(super) const INTERNAL_FUNCTIONS_END: &str = "/* PTN_INTERNAL_FUNCTIONS_END */";

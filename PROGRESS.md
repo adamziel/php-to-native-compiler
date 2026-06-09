@@ -2109,3 +2109,24 @@ variadics, named arguments, by-reference parameters, closures, methods,
 conditional declarations, namespace/function imports, `global`, full
 argument-introspection semantics, exact diagnostic wording, and
 scope-aware magic constants inside functions remain unsupported.
+
+Reduced generated C size for programs that do not perform function calls:
+
+- The backend now walks the lowered IR to determine whether any top-level or
+  user-function body needs function-call dispatch.
+- Generated C keeps the boxed runtime core in every file, but omits the
+  internal-function dispatch and implementation block when no calls can reach
+  it. Programs with direct calls still emit the existing internal-function
+  runtime and registry.
+- Generated user-function definitions and optional shared diagnostics/helpers
+  remain marked as intentionally unused where a source program declares code
+  that is not called.
+- Native proof on `<?php echo "Hello ", 42, "\n";` kept output `Hello 42`.
+  Generated C decreased from 120,303 bytes / 3,828 lines on `origin/master` to
+  71,922 bytes / 2,326 lines after this change. Repeated standalone `cc`
+  rebuild timings on the generated C were 148/141/136/129/139 ms before and
+  131/133/122/132/136 ms after in this workspace.
+
+No new PHP surface is claimed by this performance slice. Function calls keep
+the existing conservative dispatch path and unsupported internal functions
+continue to report through the generated runtime error boundary.

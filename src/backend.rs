@@ -14,15 +14,18 @@ mod runtime;
 
 pub fn emit_c(module: &Module) -> String {
     let mut out = String::new();
-    out.push_str(runtime::RUNTIME_C);
-    emit_user_function_prototypes(&mut out, &module.functions);
+    let needs_function_dispatch = module_uses_function_dispatch(module);
+    emit_runtime(&mut out, needs_function_dispatch);
+    emit_user_function_prototypes(&mut out, &module.functions, needs_function_dispatch);
     emit_user_functions(
         &mut out,
         &module.functions,
         &module.source_file,
         &module.source_dir,
     );
-    emit_user_function_dispatch(&mut out, &module.functions);
+    if needs_function_dispatch {
+        emit_user_function_dispatch(&mut out, &module.functions);
+    }
     out.push_str("\nint main(void) {\n");
     out.push_str("    PtnRuntime runtime;\n");
     out.push_str("    ptn_runtime_init(&runtime);\n");
@@ -51,12 +54,36 @@ pub fn emit_c(module: &Module) -> String {
     out
 }
 
-fn emit_user_function_prototypes(out: &mut String, functions: &[FunctionDecl]) {
-    out.push_str(
-        "\nstatic PTN_UNUSED PtnValue ptn_call_function(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line);\n",
-    );
+fn emit_runtime(out: &mut String, include_internal_functions: bool) {
+    let start = runtime::RUNTIME_C
+        .find(runtime::INTERNAL_FUNCTIONS_START)
+        .expect("runtime internal-function start marker should exist");
+    let after_start = start + runtime::INTERNAL_FUNCTIONS_START.len();
+    let relative_end = runtime::RUNTIME_C[after_start..]
+        .find(runtime::INTERNAL_FUNCTIONS_END)
+        .expect("runtime internal-function end marker should exist");
+    let end = after_start + relative_end;
+    let after_end = end + runtime::INTERNAL_FUNCTIONS_END.len();
+
+    out.push_str(&runtime::RUNTIME_C[..start]);
+    if include_internal_functions {
+        out.push_str(&runtime::RUNTIME_C[after_start..end]);
+    }
+    out.push_str(&runtime::RUNTIME_C[after_end..]);
+}
+
+fn emit_user_function_prototypes(
+    out: &mut String,
+    functions: &[FunctionDecl],
+    needs_function_dispatch: bool,
+) {
+    if needs_function_dispatch {
+        out.push_str(
+            "\nstatic PTN_UNUSED PtnValue ptn_call_function(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line);\n",
+        );
+    }
     for (index, _) in functions.iter().enumerate() {
-        out.push_str("static PtnValue ");
+        out.push_str("static PTN_UNUSED PtnValue ");
         out.push_str(&user_function_c_name(index));
         out.push_str(
             "(PtnRuntime *caller_runtime, size_t argc, const PtnValue *args, size_t line);\n",
@@ -72,7 +99,7 @@ fn emit_user_functions(
 ) {
     for (index, function) in functions.iter().enumerate() {
         let c_name = user_function_c_name(index);
-        out.push_str("\nstatic PtnValue ");
+        out.push_str("\nstatic PTN_UNUSED PtnValue ");
         out.push_str(&c_name);
         out.push_str(
             "(PtnRuntime *caller_runtime, size_t argc, const PtnValue *args, size_t line) {\n",
@@ -658,6 +685,103 @@ fn collect_control_warnings(instructions: &[Instruction]) -> Vec<ControlWarning>
     let mut warnings = Vec::new();
     collect_control_warnings_in(instructions, &mut Vec::new(), &mut warnings);
     warnings
+}
+
+fn module_uses_function_dispatch(module: &Module) -> bool {
+    instructions_use_function_dispatch(&module.instructions)
+        || module
+            .functions
+            .iter()
+            .any(|function| instructions_use_function_dispatch(&function.body))
+}
+
+fn instructions_use_function_dispatch(instructions: &[Instruction]) -> bool {
+    instructions.iter().any(instruction_uses_function_dispatch)
+}
+
+fn instruction_uses_function_dispatch(instruction: &Instruction) -> bool {
+    match instruction {
+        Instruction::Store { value, .. }
+        | Instruction::DefineConstant { value, .. }
+        | Instruction::Expression(value)
+        | Instruction::Echo(value) => value_uses_function_dispatch(value),
+        Instruction::Increment { .. } => false,
+        Instruction::InternalCall { .. } => true,
+        Instruction::Return { value, .. } => {
+            value.as_ref().is_some_and(value_uses_function_dispatch)
+        }
+        Instruction::Branch {
+            condition,
+            then_body,
+            else_body,
+        } => {
+            value_uses_function_dispatch(condition)
+                || instructions_use_function_dispatch(then_body)
+                || instructions_use_function_dispatch(else_body)
+        }
+        Instruction::While { condition, body } | Instruction::DoWhile { body, condition } => {
+            value_uses_function_dispatch(condition) || instructions_use_function_dispatch(body)
+        }
+        Instruction::For {
+            initializers,
+            condition,
+            updates,
+            body,
+        } => {
+            instructions_use_function_dispatch(initializers)
+                || condition.as_ref().is_some_and(value_uses_function_dispatch)
+                || instructions_use_function_dispatch(updates)
+                || instructions_use_function_dispatch(body)
+        }
+        Instruction::Foreach { iterable, body, .. } => {
+            value_uses_function_dispatch(iterable) || instructions_use_function_dispatch(body)
+        }
+        Instruction::Switch { expression, cases } => {
+            value_uses_function_dispatch(expression)
+                || cases.iter().any(|case| {
+                    case.condition
+                        .as_ref()
+                        .is_some_and(value_uses_function_dispatch)
+                        || instructions_use_function_dispatch(&case.body)
+                })
+        }
+        Instruction::Break { .. }
+        | Instruction::Continue { .. }
+        | Instruction::Label { .. }
+        | Instruction::Goto { .. } => false,
+    }
+}
+
+fn value_uses_function_dispatch(value: &ValueExpr) -> bool {
+    match value {
+        ValueExpr::String(_)
+        | ValueExpr::Int(_)
+        | ValueExpr::Float(_)
+        | ValueExpr::Bool(_)
+        | ValueExpr::Null
+        | ValueExpr::Load { .. }
+        | ValueExpr::Constant(_)
+        | ValueExpr::MagicConstant { .. } => false,
+        ValueExpr::Array(elements) => elements.iter().any(|element| {
+            element
+                .key
+                .as_ref()
+                .is_some_and(value_uses_function_dispatch)
+                || value_uses_function_dispatch(&element.value)
+        }),
+        ValueExpr::ArrayAccess { array, index, .. } => {
+            value_uses_function_dispatch(array) || value_uses_function_dispatch(index)
+        }
+        ValueExpr::Isset { targets } => targets.iter().any(value_uses_function_dispatch),
+        ValueExpr::Empty { target } => value_uses_function_dispatch(target),
+        ValueExpr::InternalCall { .. } => true,
+        ValueExpr::Unary { expr, .. } | ValueExpr::Cast { expr, .. } => {
+            value_uses_function_dispatch(expr)
+        }
+        ValueExpr::Binary { left, right, .. } => {
+            value_uses_function_dispatch(left) || value_uses_function_dispatch(right)
+        }
+    }
 }
 
 fn collect_control_warnings_in(

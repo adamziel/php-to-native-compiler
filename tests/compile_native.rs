@@ -1883,10 +1883,12 @@ fn compile_scalar_echo_keeps_direct_output_path_to_native_binary() {
         .expect("generated runtime should contain ptn_echo");
     let echo_tail = &c_source[echo_start..];
     let echo_end = echo_tail
-        .find("\nstatic void ptn_var_dump_indent")
-        .expect("ptn_echo should be followed by var_dump helper");
+        .find("\nint main(void)")
+        .expect("echo-only generated runtime should omit internal-call helpers");
     let echo_body = &echo_tail[..echo_end];
     assert!(!echo_body.contains("ptn_value_to_string"));
+    assert!(!c_source.contains("ptn_internal_var_dump"));
+    assert!(!c_source.contains("ptn_call_internal"));
     assert!(echo_body.contains("case PTN_NULL:"));
     assert!(echo_body.contains("case PTN_BOOL:"));
     assert!(echo_body.contains("case PTN_INT:"));
