@@ -4411,6 +4411,44 @@ var_dump(function_exists(\"array_key_exists\"), function_exists(\"ARRAY_KEY_EXIS
 }
 
 #[test]
+fn compile_large_ordered_array_lookup_to_native_binary() {
+    let root = temp_dir("ptn-native-large-array-lookup");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("large-array-lookup.php");
+    let output = root.join("large-array-lookup-bin");
+    let mut source = String::from("<?php\n$items = [\n");
+    for index in 0..64 {
+        source.push_str(&format!("\"k{index}\" => {index},\n"));
+    }
+    source.push_str("\"k10\" => 1000,\n");
+    source.push_str("\"20\" => 2000,\n");
+    source.push_str("65,\n");
+    source.push_str("];\n");
+    source.push_str("var_dump($items[\"k10\"]);\n");
+    source.push_str("var_dump($items[20]);\n");
+    source.push_str("var_dump($items[\"20\"]);\n");
+    source.push_str("var_dump(count($items));\n");
+    source.push_str("var_dump(array_key_exists(\"20\", $items));\n");
+    source.push_str("var_dump(array_key_exists(\"missing\", $items));\n");
+    source.push_str("var_dump(isset($items[\"k0\"]));\n");
+    source.push_str("var_dump(empty($items[\"missing\"]));\n");
+    source.push_str(
+        "foreach ($items as $key => $value) { if ($key === \"k10\" || $key === 20 || $key === 21) echo $key, \"=\", $value, \"\\n\"; }\n",
+    );
+    fs::write(&input, source).unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(1000)\nint(2000)\nint(2000)\nint(66)\nbool(true)\nbool(false)\nbool(true)\nbool(true)\nk10=1000\n20=2000\n21=65\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_string_offset_reads_to_native_binary() {
     let root = temp_dir("ptn-native-string-offset-reads");
     fs::create_dir_all(&root).unwrap();

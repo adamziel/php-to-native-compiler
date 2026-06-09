@@ -1457,6 +1457,7 @@ const RUNTIME_C: &str = r#"#include <ctype.h>
 
 #define PTN_PHP_VERSION "8.4.0"
 #define PTN_PHP_SAPI_NAME "cli"
+#define PTN_ARRAY_INDEX_MIN_ENTRIES 16
 
 typedef struct PtnArray PtnArray;
 
@@ -1504,6 +1505,12 @@ typedef struct {
 } PtnArrayEntry;
 
 typedef struct {
+    int occupied;
+    uint64_t hash;
+    size_t entry_index;
+} PtnArrayIndexSlot;
+
+typedef struct {
     PtnArray *array;
     size_t index;
     int valid;
@@ -1513,6 +1520,8 @@ struct PtnArray {
     size_t len;
     size_t capacity;
     PtnArrayEntry *entries;
+    PtnArrayIndexSlot *index_slots;
+    size_t index_capacity;
     int64_t next_auto_key;
 };
 
@@ -1735,6 +1744,77 @@ static PTN_UNUSED int ptn_array_keys_equal(PtnArrayKey left, PtnArrayKey right) 
     return strcmp(left.as.string, right.as.string) == 0;
 }
 
+static PTN_UNUSED uint64_t ptn_hash_mix_uint64(uint64_t value) {
+    value ^= value >> 30;
+    value *= 0xbf58476d1ce4e5b9ULL;
+    value ^= value >> 27;
+    value *= 0x94d049bb133111ebULL;
+    value ^= value >> 31;
+    return value;
+}
+
+static PTN_UNUSED uint64_t ptn_array_key_hash(PtnArrayKey key) {
+    if (key.type == PTN_ARRAY_KEY_INT) {
+        return ptn_hash_mix_uint64((uint64_t)key.as.integer ^ 0x9e3779b97f4a7c15ULL);
+    }
+
+    uint64_t hash = 1469598103934665603ULL ^ 0x517cc1b727220a95ULL;
+    for (const unsigned char *cursor = (const unsigned char *)key.as.string; *cursor != '\0'; cursor++) {
+        hash ^= (uint64_t)*cursor;
+        hash *= 1099511628211ULL;
+    }
+    return ptn_hash_mix_uint64(hash);
+}
+
+static PTN_UNUSED void ptn_array_index_init(PtnArray *array, size_t expected_entries) {
+    array->index_slots = NULL;
+    array->index_capacity = 0;
+
+    if (expected_entries < PTN_ARRAY_INDEX_MIN_ENTRIES) {
+        return;
+    }
+    if (expected_entries > SIZE_MAX / 2) {
+        ptn_abort_out_of_memory();
+    }
+
+    size_t wanted = expected_entries * 2;
+    size_t capacity = PTN_ARRAY_INDEX_MIN_ENTRIES;
+    while (capacity < wanted) {
+        if (capacity > SIZE_MAX / 2) {
+            ptn_abort_out_of_memory();
+        }
+        capacity *= 2;
+    }
+
+    array->index_slots = calloc(capacity, sizeof(PtnArrayIndexSlot));
+    if (array->index_slots == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    array->index_capacity = capacity;
+}
+
+static PTN_UNUSED size_t ptn_array_linear_find_key(PtnArray *array, PtnArrayKey key) {
+    for (size_t i = 0; i < array->len; i++) {
+        if (ptn_array_keys_equal(array->entries[i].key, key)) {
+            return i;
+        }
+    }
+    return array->len;
+}
+
+static PTN_UNUSED size_t ptn_array_index_slot_for_key(PtnArray *array, PtnArrayKey key, uint64_t hash) {
+    size_t mask = array->index_capacity - 1;
+    size_t slot_index = (size_t)hash & mask;
+    for (;;) {
+        PtnArrayIndexSlot *slot = &array->index_slots[slot_index];
+        if (!slot->occupied ||
+            (slot->hash == hash && ptn_array_keys_equal(array->entries[slot->entry_index].key, key))) {
+            return slot_index;
+        }
+        slot_index = (slot_index + 1) & mask;
+    }
+}
+
 static PTN_UNUSED void ptn_array_update_next_auto_key(PtnArray *array, PtnArrayKey key) {
     if (key.type == PTN_ARRAY_KEY_INT &&
         key.as.integer >= array->next_auto_key &&
@@ -1744,12 +1824,27 @@ static PTN_UNUSED void ptn_array_update_next_auto_key(PtnArray *array, PtnArrayK
 }
 
 static PTN_UNUSED size_t ptn_array_find_key(PtnArray *array, PtnArrayKey key) {
-    for (size_t i = 0; i < array->len; i++) {
-        if (ptn_array_keys_equal(array->entries[i].key, key)) {
-            return i;
-        }
+    if (array->index_capacity != 0) {
+        uint64_t hash = ptn_array_key_hash(key);
+        size_t slot_index = ptn_array_index_slot_for_key(array, key, hash);
+        PtnArrayIndexSlot *slot = &array->index_slots[slot_index];
+        return slot->occupied ? slot->entry_index : array->len;
     }
-    return array->len;
+    return ptn_array_linear_find_key(array, key);
+}
+
+static PTN_UNUSED void ptn_array_index_insert(PtnArray *array, PtnArrayKey key, size_t entry_index) {
+    if (array->index_capacity == 0) {
+        return;
+    }
+    uint64_t hash = ptn_array_key_hash(key);
+    size_t slot_index = ptn_array_index_slot_for_key(array, key, hash);
+    PtnArrayIndexSlot *slot = &array->index_slots[slot_index];
+    if (!slot->occupied) {
+        slot->occupied = 1;
+        slot->hash = hash;
+        slot->entry_index = entry_index;
+    }
 }
 
 static PTN_UNUSED void ptn_array_set_entry(PtnArray *array, PtnArrayKey key, PtnValue value) {
@@ -1763,9 +1858,11 @@ static PTN_UNUSED void ptn_array_set_entry(PtnArray *array, PtnArrayKey key, Ptn
     if (array->len == array->capacity) {
         ptn_abort_out_of_memory();
     }
-    array->entries[array->len].key = key;
-    array->entries[array->len].value = value;
+    size_t entry_index = array->len;
+    array->entries[entry_index].key = key;
+    array->entries[entry_index].value = value;
     array->len++;
+    ptn_array_index_insert(array, key, entry_index);
 }
 
 static PTN_UNUSED PtnValue ptn_array_from_literal_entries(size_t entry_count, const PtnArrayLiteralEntry *entries) {
@@ -1776,6 +1873,8 @@ static PTN_UNUSED PtnValue ptn_array_from_literal_entries(size_t entry_count, co
     array->len = 0;
     array->capacity = entry_count;
     array->entries = NULL;
+    array->index_slots = NULL;
+    array->index_capacity = 0;
     array->next_auto_key = 0;
     if (entry_count != 0) {
         array->entries = malloc(entry_count * sizeof(PtnArrayEntry));
@@ -1783,6 +1882,7 @@ static PTN_UNUSED PtnValue ptn_array_from_literal_entries(size_t entry_count, co
             ptn_abort_out_of_memory();
         }
     }
+    ptn_array_index_init(array, entry_count);
 
     for (size_t i = 0; i < entry_count; i++) {
         PtnArrayKey key = entries[i].has_key
@@ -2255,12 +2355,8 @@ static PTN_UNUSED int ptn_compare_identical(PtnValue left, PtnValue right);
 static PTN_UNUSED int ptn_compare_order(PtnValue left, PtnValue right);
 
 static PTN_UNUSED PtnArrayEntry *ptn_array_entry_for_key(PtnArray *array, PtnArrayKey key) {
-    for (size_t i = 0; i < array->len; i++) {
-        if (ptn_array_keys_equal(array->entries[i].key, key)) {
-            return &array->entries[i];
-        }
-    }
-    return NULL;
+    size_t index = ptn_array_find_key(array, key);
+    return index < array->len ? &array->entries[index] : NULL;
 }
 
 static PTN_UNUSED const char *ptn_offset_container_type_name(PtnValue value) {

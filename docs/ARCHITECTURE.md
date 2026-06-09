@@ -131,7 +131,10 @@ Current runtime/compiler slices:
   string keys. The generated runtime canonicalizes integer-string keys, assigns
   automatic integer keys, replaces duplicate keys in insertion order, and uses
   the same boxed comparison helpers for scalar and literal-array equality,
-  identity, ordered comparison, and `<=>`.
+  identity, ordered comparison, and `<=>`. Larger generated arrays keep the
+  ordered entry vector as the source of iteration order while adding a
+  hash-assisted key index for duplicate replacement, reads, quiet offset
+  lookups, `array_key_exists()`, and array comparison lookups.
 - Braced `if`, `elseif`, and `else` statements lower to structured IR branch
   instructions. Conditions remain boxed value expressions, and the C backend
   emits native branches that call the shared scalar truthiness helper.

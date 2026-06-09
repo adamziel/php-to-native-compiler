@@ -1870,3 +1870,34 @@ mutation during iteration, copy-on-write/reference identity and exact mutation
 visibility, object `Traversable`, destructuring targets, exact non-array
 diagnostic parity, recursive arrays, references, and broader array/object
 semantics.
+
+Added hash-assisted lookup for larger ordered arrays:
+
+- Generated C `PtnArray` values now keep insertion order in the existing entry
+  vector while optionally allocating an open-addressed key index for arrays
+  with at least 16 literal entries.
+- The index preserves current PHP-shaped key behavior: integer/string key
+  canonicalization, duplicate-key replacement without moving the original
+  entry, automatic integer key progression, and foreach iteration over entry
+  order.
+- Existing array lookup users now share the same indexed path when available:
+  literal duplicate replacement, array reads, quiet offset lookup for
+  `isset()`/`empty()`, `array_key_exists()`, and array equality/order
+  comparison lookups.
+- Native tests prove a larger array with duplicate string-key replacement,
+  integer-string key canonicalization, `count()`, `array_key_exists()`,
+  `isset()`, `empty()`, and `foreach` insertion order.
+- Native benchmark proof on a 1,024-entry ordered array with 1.2M repeated
+  reads kept output `570000000` and improved from 1677/1466/1494 ms before the
+  index to 95/115/107 ms after the index in this workspace.
+- Focused public PHPT telemetry through `phpc` on
+  `tests/basic/array_key_exists_null_deprecation.phpt`,
+  `tests/basic/array_null_offset_deprecation.phpt`, and
+  `tests/lang/array_shortcut_001.phpt` reported 1 pass and 2 failures. This
+  slice does not claim the failing rows because they remain broader unsupported
+  array-surface coverage, not hash-index behavior.
+
+No new PHP surface is claimed by this performance slice. User-level array
+element mutation, append/unset, `array_merge()`, mutation-visible iteration,
+copy-on-write/reference identity, recursive arrays, and broader array/object
+semantics remain unsupported.
