@@ -1,17 +1,19 @@
 # PTN Progress
 
-Last refresh: 2026-06-09T16:33Z
-Commit: `69d7e10`
+Last refresh: 2026-06-09T16:41Z
+Commit: `ea176b8`
 
 ## Test Dashboard
 
-| Format / source | Ported or tracked | Passing | Needs work |
+| Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | --- |
-| Rust/unit | tracked | last known green | keep green |
-| Native compiled PHP snippets | tracked | last known green | expand smoke matrix |
-| PHPT bounded sample | 59 | 54 | 5 failing/unsupported |
-| PHPT Zend | tracked in manifest | numeric string offset passes | broaden syntax/errors |
-| PHPT ext/standard | tracked in manifest | partial | array basics cluster |
+| Source unit tests | 3 | 3 | 0 |
+| Native compiled PHP snippets | 268 | 268 | 0 |
+| PHPT parsed bounded log | 171 | 121 | 50 |
+| PHPT Zend rows | 76 | 60 | 16 |
+| PHPT ext/standard rows | 77 | 44 | 33 |
+| PHPT tests/basic+func+lang | 18 | 17 | 1 |
+| COW-focused tests | 0 | 0 | 1 full suite needed |
 
 ## Already Ported
 
@@ -22,13 +24,13 @@ user functions, `print_r`, selected binary-string handling, and catchable
 
 ## Still Needed
 
-References, copy-on-write, classes/objects, namespaces, includes, resources,
-full exceptions/finally/throw, broad standard library coverage, richer
-diagnostics, and larger PHPT manifests.
+Copy-on-write for arrays, strings, variables, function calls, foreach, nested
+containers, and references. All non-COW work is paused unless it is required to
+prove COW.
 
 ## Next Focus
 
-1. Keep compact progress patrol alive.
-2. Finish native smoke matrix.
-3. Reduce ext/standard array PHPT failures to generic gaps.
-4. Keep runtime/string/function lanes small and mergeable.
+1. Build a dedicated COW correctness suite.
+2. Implement shared payload refcounts and detach-on-write.
+3. Prove arrays, strings, nested values, foreach, and function boundaries.
+4. Keep this dashboard numeric and under 500 words.

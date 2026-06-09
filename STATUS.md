@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-09T16:33Z
-Commit: `69d7e10`
+Last refresh: 2026-06-09T16:41Z
+Commit: `ea176b8`
 
 ## Operating Goal
 
@@ -10,22 +10,26 @@ keeping generated binaries independent of the PHP interpreter.
 
 ## Current Signal
 
-Last known compact PHPT sample: 54 / 59 selected rows passing. The progress
-patrol must replace this with fresh bounded telemetry every cycle.
+Current mandate: solve copy-on-write first. Other work is allowed only when it
+directly unblocks COW correctness or evidence.
+
+Latest measured local tests: source unit 3/3 passing; native integration
+268/268 passing. Latest parsed bounded PHPT log records 121/171 passing rows.
 
 ## Active Buckets
 
-| Bucket | State |
+| Bucket | Count |
 | --- | --- |
-| Rust/unit tests | Keep green before merge |
-| Native compiled snippets | Main proof path for new semantics |
-| PHPT Zend rows | Good signal for language/runtime semantics |
-| PHPT ext/standard rows | Current failures concentrate around array basics |
-| Docs/status | Keep under 500 words per visible file |
+| Source unit tests | 3/3 passing |
+| Native compiled snippets | 268/268 passing |
+| PHPT Zend rows | 60/76 passing |
+| PHPT ext/standard rows | 44/77 passing |
+| PHPT tests/basic+func+lang | 17/18 passing |
+| COW-focused tests | 0 dedicated rows yet |
 
 ## Rules
 
 - Update `PROGRESS.md` and mirrors every 10 minutes.
 - Report counts, not essays.
-- Track ported, passing, failing, and still-needed work by bucket.
+- Use only numeric counts in dashboard cells.
 - Never claim broad PHP compatibility from row-specific patches.
