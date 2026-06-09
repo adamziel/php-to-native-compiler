@@ -437,11 +437,12 @@ To produce a repeatable execution-speed baseline for generated native binaries:
 tools/bench-native-execution.sh --runs 5
 ```
 
-The benchmark builds `target/debug/ptn`, compiles three generated-native
-microbenchmarks, rebuilds each retained generated C file with the same `cc`
-flags as the backend, and then times native execution separately. The three
-benchmarks cover scalar arithmetic/control flow, string concatenation with
-internal functions, and ordered arrays with key/value `foreach`.
+The benchmark builds `target/debug/ptn`, compiles representative
+generated-native microbenchmarks, rebuilds each retained generated C file with
+the same `cc` flags as the backend, and then times native execution
+separately. The benchmarks cover scalar arithmetic/control flow, string
+concatenation with internal functions, ordered arrays with key/value
+`foreach`, user-function calls, and scalar comparison loops.
 
 The report includes the commit, host/resource notes, command lines, Rust
 compiler build time, integrated `ptn compile` time, standalone generated-C

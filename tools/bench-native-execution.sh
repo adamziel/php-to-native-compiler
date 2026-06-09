@@ -6,7 +6,7 @@ usage() {
 usage:
   tools/bench-native-execution.sh [--runs N] [--keep-temp]
 
-Builds the PTN compiler, compiles three representative PHP microbenchmarks to
+Builds the PTN compiler, compiles representative PHP microbenchmarks to
 native binaries, rebuilds the retained generated C, and times native execution
 separately from those build steps.
 
@@ -192,6 +192,45 @@ while ($i < 5000) {
 echo $sum, "\n";
 PHP
 
+cat >"$tmp/comparison_loop.php" <<'PHP'
+<?php
+$i = 0;
+$hits = 0;
+$word = "alpha";
+$other = "beta";
+$numeric = "042";
+$numericFloat = "42.0";
+$float = 2.5;
+while ($i < 180000) {
+    if ($i == $i) {
+        $hits += 1;
+    }
+    if ($i < 200000) {
+        $hits += 2;
+    }
+    if ($float >= 2.0) {
+        $hits += 3;
+    }
+    if ($word !== $other) {
+        $hits += 4;
+    }
+    if ($word < $other) {
+        $hits += 5;
+    }
+    if ($numeric == $numericFloat) {
+        $hits += 6;
+    }
+    if (null == "") {
+        $hits += 7;
+    }
+    if (false == "0") {
+        $hits += 8;
+    }
+    $i++;
+}
+echo $hits, "\n";
+PHP
+
 cc_bin="${CC:-cc}"
 ptn_bin="$root/target/debug/ptn"
 commit="$(git rev-parse HEAD)"
@@ -310,3 +349,4 @@ run_benchmark "string_work" "string concatenation plus strlen/str_rot13/md5/subs
 run_benchmark "array_foreach" "ordered array literal and key/value foreach" "$tmp/array_foreach.php"
 run_benchmark "user_function_step" "non-recursive user function calls with global constant reads" "$tmp/user_function_step.php"
 run_benchmark "user_function_recursive" "recursive user function calls with local frames" "$tmp/user_function_recursive.php"
+run_benchmark "comparison_loop" "scalar loose, ordered, and strict comparison loops" "$tmp/comparison_loop.php"

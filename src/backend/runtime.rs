@@ -1122,7 +1122,25 @@ static PTN_UNUSED int ptn_is_number_type(PtnValue value) {
     return value.type == PTN_INT || value.type == PTN_FLOAT;
 }
 
+static PTN_UNUSED int ptn_string_may_be_numeric(const char *string) {
+    const char *start = string;
+    while (isspace((unsigned char)*start)) {
+        start++;
+    }
+    if (*start == '\0') {
+        return 0;
+    }
+    if (isdigit((unsigned char)*start) || *start == '+' || *start == '-' || *start == '.') {
+        return 1;
+    }
+    return *start == 'i' || *start == 'I' || *start == 'n' || *start == 'N';
+}
+
 static PTN_UNUSED int ptn_is_numeric_string(const char *string, double *number) {
+    if (!ptn_string_may_be_numeric(string)) {
+        return 0;
+    }
+
     const char *start = string;
     while (isspace((unsigned char)*start)) {
         start++;
@@ -1214,8 +1232,43 @@ static PTN_UNUSED int ptn_compare_number_and_string(PtnValue number, const char 
     return number_is_left ? compared : -compared;
 }
 
+static PTN_UNUSED int ptn_compare_number_types(PtnValue left, PtnValue right, int *compared) {
+    if (left.type == PTN_INT) {
+        if (right.type == PTN_INT) {
+            *compared = ptn_compare_integers(left.as.integer, right.as.integer);
+            return 1;
+        }
+        if (right.type == PTN_FLOAT) {
+            *compared = ptn_compare_numbers((double)left.as.integer, right.as.floating);
+            return 1;
+        }
+        return 0;
+    }
+    if (left.type == PTN_FLOAT) {
+        if (right.type == PTN_INT) {
+            *compared = ptn_compare_numbers(left.as.floating, (double)right.as.integer);
+            return 1;
+        }
+        if (right.type == PTN_FLOAT) {
+            *compared = ptn_compare_numbers(left.as.floating, right.as.floating);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static PTN_UNUSED int ptn_compare_strings_loose(const char *left, const char *right) {
+    double left_number = 0.0;
+    double right_number = 0.0;
+    if (ptn_is_numeric_string(left, &left_number) && ptn_is_numeric_string(right, &right_number)) {
+        return ptn_compare_numbers(left_number, right_number);
+    }
+    return ptn_compare_strings(left, right);
+}
+
 static PTN_UNUSED int ptn_compare_equal(PtnValue left, PtnValue right);
 static PTN_UNUSED int ptn_compare_identical(PtnValue left, PtnValue right);
+static PTN_UNUSED int ptn_compare_not_identical(PtnValue left, PtnValue right);
 static PTN_UNUSED int ptn_compare_order(PtnValue left, PtnValue right);
 
 static PTN_UNUSED PtnArrayEntry *ptn_array_entry_for_key(PtnArray *array, PtnArrayKey key) {
@@ -1741,6 +1794,23 @@ static PTN_UNUSED int ptn_compare_arrays_order(PtnArray *left, PtnArray *right) 
 }
 
 static PTN_UNUSED int ptn_compare_equal(PtnValue left, PtnValue right) {
+    if (left.type == right.type) {
+        switch (left.type) {
+            case PTN_NULL:
+                return 1;
+            case PTN_BOOL:
+                return left.as.boolean == right.as.boolean;
+            case PTN_INT:
+                return left.as.integer == right.as.integer;
+            case PTN_FLOAT:
+                return ptn_compare_numbers(left.as.floating, right.as.floating) == PTN_COMPARE_EQUAL;
+            case PTN_STRING:
+                return ptn_compare_strings_loose(left.as.string, right.as.string) == PTN_COMPARE_EQUAL;
+            case PTN_ARRAY:
+                return ptn_compare_arrays_equal(left.as.array, right.as.array);
+        }
+    }
+
     if (left.type == PTN_BOOL || right.type == PTN_BOOL) {
         return ptn_is_truthy(left) == ptn_is_truthy(right);
     }
@@ -1772,22 +1842,16 @@ static PTN_UNUSED int ptn_compare_equal(PtnValue left, PtnValue right) {
         return 0;
     }
 
+    int compared = 0;
+    if (ptn_compare_number_types(left, right, &compared)) {
+        return compared == PTN_COMPARE_EQUAL;
+    }
+
     double left_number = 0.0;
     double right_number = 0.0;
-    if (left.type == PTN_INT && right.type == PTN_INT) {
-        return left.as.integer == right.as.integer;
-    }
-    if (ptn_is_number_type(left) && ptn_is_number_type(right)) {
-        left_number = left.type == PTN_INT ? (double)left.as.integer : left.as.floating;
-        right_number = right.type == PTN_INT ? (double)right.as.integer : right.as.floating;
-        return ptn_compare_numbers(left_number, right_number) == PTN_COMPARE_EQUAL;
-    }
     if (ptn_comparison_numeric_value(left, &left_number) &&
         ptn_comparison_numeric_value(right, &right_number)) {
         return ptn_compare_numbers(left_number, right_number) == PTN_COMPARE_EQUAL;
-    }
-    if (left.type == PTN_STRING && right.type == PTN_STRING) {
-        return strcmp(left.as.string, right.as.string) == 0;
     }
     return 0;
 }
@@ -1806,11 +1870,44 @@ static PTN_UNUSED int ptn_compare_identical(PtnValue left, PtnValue right) {
         case PTN_FLOAT:
             return left.as.floating == right.as.floating;
         case PTN_STRING:
+            if (left.as.string == right.as.string) {
+                return 1;
+            }
             return strcmp(left.as.string, right.as.string) == 0;
         case PTN_ARRAY:
+            if (left.as.array == right.as.array) {
+                return 1;
+            }
             return ptn_compare_arrays_identical(left.as.array, right.as.array);
     }
     return 0;
+}
+
+static PTN_UNUSED int ptn_compare_not_identical(PtnValue left, PtnValue right) {
+    if (left.type != right.type) {
+        return 1;
+    }
+    switch (left.type) {
+        case PTN_NULL:
+            return 0;
+        case PTN_BOOL:
+            return left.as.boolean != right.as.boolean;
+        case PTN_INT:
+            return left.as.integer != right.as.integer;
+        case PTN_FLOAT:
+            return left.as.floating != right.as.floating;
+        case PTN_STRING:
+            if (left.as.string == right.as.string) {
+                return 0;
+            }
+            return strcmp(left.as.string, right.as.string) != 0;
+        case PTN_ARRAY:
+            if (left.as.array == right.as.array) {
+                return 0;
+            }
+            return !ptn_compare_arrays_identical(left.as.array, right.as.array);
+    }
+    return 1;
 }
 
 static PTN_UNUSED int ptn_value_is_nan(PtnValue value) {
@@ -1818,6 +1915,23 @@ static PTN_UNUSED int ptn_value_is_nan(PtnValue value) {
 }
 
 static PTN_UNUSED int ptn_compare_order(PtnValue left, PtnValue right) {
+    if (left.type == right.type) {
+        switch (left.type) {
+            case PTN_NULL:
+                return PTN_COMPARE_EQUAL;
+            case PTN_BOOL:
+                return ptn_compare_integers(left.as.boolean, right.as.boolean);
+            case PTN_INT:
+                return ptn_compare_integers(left.as.integer, right.as.integer);
+            case PTN_FLOAT:
+                return ptn_compare_numbers(left.as.floating, right.as.floating);
+            case PTN_STRING:
+                return ptn_compare_strings_loose(left.as.string, right.as.string);
+            case PTN_ARRAY:
+                return ptn_compare_arrays_order(left.as.array, right.as.array);
+        }
+    }
+
     if (left.type == PTN_BOOL || right.type == PTN_BOOL) {
         return ptn_compare_numbers((double)ptn_is_truthy(left), (double)ptn_is_truthy(right));
     }
@@ -1862,22 +1976,16 @@ static PTN_UNUSED int ptn_compare_order(PtnValue left, PtnValue right) {
         return left.type == PTN_ARRAY ? PTN_COMPARE_GREATER : PTN_COMPARE_LESS;
     }
 
+    int compared = 0;
+    if (ptn_compare_number_types(left, right, &compared)) {
+        return compared;
+    }
+
     double left_number = 0.0;
     double right_number = 0.0;
-    if (left.type == PTN_INT && right.type == PTN_INT) {
-        return ptn_compare_integers(left.as.integer, right.as.integer);
-    }
-    if (ptn_is_number_type(left) && ptn_is_number_type(right)) {
-        left_number = left.type == PTN_INT ? (double)left.as.integer : left.as.floating;
-        right_number = right.type == PTN_INT ? (double)right.as.integer : right.as.floating;
-        return ptn_compare_numbers(left_number, right_number);
-    }
     if (ptn_comparison_numeric_value(left, &left_number) &&
         ptn_comparison_numeric_value(right, &right_number)) {
         return ptn_compare_numbers(left_number, right_number);
-    }
-    if (left.type == PTN_STRING && right.type == PTN_STRING) {
-        return ptn_compare_strings(left.as.string, right.as.string);
     }
     if (ptn_is_number_type(left) && right.type == PTN_STRING) {
         if (ptn_value_is_nan(left)) {

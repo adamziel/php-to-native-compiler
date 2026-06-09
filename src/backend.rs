@@ -1361,7 +1361,7 @@ impl ValueEmitter {
             BinaryOp::NotEqual => format!("!ptn_compare_equal({left_temp}, {right_temp})"),
             BinaryOp::Identical => format!("ptn_compare_identical({left_temp}, {right_temp})"),
             BinaryOp::NotIdentical => {
-                format!("!ptn_compare_identical({left_temp}, {right_temp})")
+                format!("ptn_compare_not_identical({left_temp}, {right_temp})")
             }
             BinaryOp::Less => format!("ptn_compare_less({left_temp}, {right_temp})"),
             BinaryOp::LessEqual => format!("ptn_compare_less_equal({left_temp}, {right_temp})"),
@@ -1393,7 +1393,7 @@ impl ValueEmitter {
             BinaryOp::NotEqual => format!("!ptn_compare_equal({left_temp}, {right_temp})"),
             BinaryOp::Identical => format!("ptn_compare_identical({left_temp}, {right_temp})"),
             BinaryOp::NotIdentical => {
-                format!("!ptn_compare_identical({left_temp}, {right_temp})")
+                format!("ptn_compare_not_identical({left_temp}, {right_temp})")
             }
             BinaryOp::Less => format!("ptn_compare_less({left_temp}, {right_temp})"),
             BinaryOp::LessEqual => format!("ptn_compare_less_equal({left_temp}, {right_temp})"),
