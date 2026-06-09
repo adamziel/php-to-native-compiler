@@ -1,42 +1,3 @@
-            if (value.as.string.refcount != NULL) {
-                if (*value.as.string.refcount == SIZE_MAX) {
-                    ptn_abort_out_of_memory();
-                }
-                (*value.as.string.refcount)++;
-                value.owned = 1;
-            } else {
-                value.owned = 0;
-            }
-            return value;
-        case PTN_ARRAY:
-            ptn_array_retain(value.as.array);
-            return ptn_array(value.as.array);
-        case PTN_EXCEPTION: {
-            PtnException *exception = malloc(sizeof(PtnException));
-            if (exception == NULL) {
-                ptn_abort_out_of_memory();
-            }
-            exception->class_name = value.as.exception->class_name;
-            exception->message = ptn_duplicate_string(value.as.exception->message);
-            return ptn_exception_value(exception);
-        }
-        case PTN_NULL:
-        case PTN_BOOL:
-        case PTN_INT:
-        case PTN_FLOAT:
-            return value;
-    }
-    return value;
-}
-
-static PTN_UNUSED PtnValue ptn_value_clone(PtnValue value) {
-    return ptn_value_share(value);
-}
-
-static PTN_UNUSED PtnArray *ptn_value_detach_array(PtnValue *value) {
-    return ptn_array_detach_value(value);
-}
-
 static PTN_UNUSED void ptn_exception_free(PtnException *exception) {
     if (exception == NULL) {
         return;
@@ -99,14 +60,7 @@ static PTN_UNUSED void ptn_value_drop(PtnValue *value) {
     }
     switch (value->type) {
         case PTN_STRING:
-            if (value->as.string.refcount != NULL) {
-                if (*value->as.string.refcount > 1) {
-                    (*value->as.string.refcount)--;
-                    break;
-                }
-                free(value->as.string.refcount);
-            }
-            free(value->as.string.owned);
+            ptn_string_payload_release(value->as.string.payload);
             break;
         case PTN_ARRAY:
             if (value->as.array != NULL) {
@@ -134,6 +88,23 @@ static PTN_UNUSED void ptn_value_drop(PtnValue *value) {
 
 static PTN_UNUSED void ptn_value_destroy(PtnValue *value) {
     ptn_value_drop(value);
+}
+
+static PTN_UNUSED void ptn_value_detach_for_write(PtnValue *value) {
+    if (value == NULL || value->type != PTN_STRING) {
+        return;
+    }
+    PtnStringPayload *payload = value->as.string.payload;
+    if (value->owned && payload != NULL && payload->refcount == 1) {
+        return;
+    }
+
+    int release_old_payload = value->owned && payload != NULL;
+    PtnValue detached = ptn_value_deep_clone(*value);
+    if (release_old_payload) {
+        ptn_string_payload_release(payload);
+    }
+    *value = detached;
 }
 
 static PTN_UNUSED PtnValue ptn_value_borrow(PtnValue value) {

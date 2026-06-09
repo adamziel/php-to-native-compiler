@@ -5990,7 +5990,8 @@ note(10, $cat === \"left\" && $cat_copy === \"left-right\");",
     assert!(c_source.contains("ptn_runtime_array_path_unset"));
     assert!(c_source.contains("ptn_array_detach_value(value);"));
     assert!(c_source.contains("ptn_array_detach_value(entry_value);"));
-    assert!(c_source.contains("ptn_string_detach_value_for_write"));
+    assert!(c_source.contains("ptn_value_detach_for_write"));
+    assert!(c_source.contains("ptn_string_value_resize"));
 }
 
 #[test]
@@ -6338,6 +6339,120 @@ var_dump($str);",
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "\nWarning: Only the first byte will be assigned to the string offset in ptn on line 3\nstring(4) \"aXcd\"\nstring(4) \"aXcQ\"\nstring(7) \"aXcQ  Z\"\n\nWarning: String offset cast occurred in ptn on line 9\nstring(7) \"aTcQ  Z\"\n\nWarning: String offset cast occurred in ptn on line 11\nstring(7) \"NTcQ  Z\"\n\nWarning: Illegal string offset \"2str\" in ptn on line 13\nstring(7) \"NTRQ  Z\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_string_assignment_alias_detaches_on_offset_write_to_native_binary() {
+    let root = temp_dir("ptn-native-string-assignment-cow");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("string-assignment-cow.php");
+    let output = root.join("string-assignment-cow-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$left = \"abcd\";\n\
+$right = $left;\n\
+$left[1] = \"X\";\n\
+var_dump($left);\n\
+var_dump($right);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(4) \"aXcd\"\nstring(4) \"abcd\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_string_parameter_alias_detaches_on_offset_write_to_native_binary() {
+    let root = temp_dir("ptn-native-string-parameter-cow");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("string-parameter-cow.php");
+    let output = root.join("string-parameter-cow-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function mutate($value) {\n\
+    $value[0] = \"Z\";\n\
+    var_dump($value);\n\
+}\n\
+$source = \"abcd\";\n\
+mutate($source);\n\
+var_dump($source);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(4) \"Zbcd\"\nstring(4) \"abcd\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_string_concat_assignment_aliases_keep_original_payload_to_native_binary() {
+    let root = temp_dir("ptn-native-string-concat-assign-cow");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("string-concat-assign-cow.php");
+    let output = root.join("string-concat-assign-cow-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$text = \"base\";\n\
+$alias = $text;\n\
+$text .= \"-tail\";\n\
+var_dump($text);\n\
+var_dump($alias);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(9) \"base-tail\"\nstring(4) \"base\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_binary_nul_string_alias_detaches_and_preserves_length_to_native_binary() {
+    let root = temp_dir("ptn-native-string-binary-nul-cow");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("string-binary-nul-cow.php");
+    let output = root.join("string-binary-nul-cow-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$source = \"A\" . chr(0) . \"C\";\n\
+$alias = $source;\n\
+$source[1] = \"B\";\n\
+echo strlen($source), \":\", bin2hex($source), \"\\n\";\n\
+echo strlen($alias), \":\", bin2hex($alias), \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "3:414243\n3:410043\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

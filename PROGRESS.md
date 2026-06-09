@@ -1,20 +1,20 @@
 # PTN Progress
 
-Last refresh: 2026-06-09T18:18Z
-Measured base: `ptn-cqu.47.13` rebased after `ptn-cqu.47.7`
+Last refresh: 2026-06-09T18:24Z
+Measured base: `ptn-cqu.47.3` rebased after `ptn-cqu.47.13`
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 4 | 4 | 0 |
-| Native compiled PHP snippets | 304 | 304 | 0 |
+| Native compiled PHP snippets | 307 | 307 | 0 |
 | PHPT parsed bounded log | 171 | 121 | 50 |
 | PHPT Zend rows | 76 | 60 | 16 |
 | PHPT ext/standard rows | 77 | 44 | 33 |
 | PHPT tests/basic+func+lang | 18 | 17 | 1 |
 | COW contract spec tests | 5 | 5 | 0 |
-| COW-focused native tests | 7 | 7 | 0 |
+| COW-focused native tests | 10 | 10 | 0 |
 | Focused COW reducer snippets | 16 | 16 | 0 |
 | COW oracle suite | 12 | 10 | 2 |
 | COW/reference-focused native tests | 10 | 10 | 0 |
@@ -47,20 +47,22 @@ by-reference user parameters, by-value parameter/reference split behavior,
 by-value function-boundary COW across arguments, locals, returns, recursion,
 and extra arguments, top-level user functions with scoped magic constants and
 `func_*` introspection, `print_r`, selected binary-string handling, string
-offset read diagnostics, direct-variable string offset writes, catchable
-`count()` non-array diagnostics, expression-form `??` reads, nested array path
-detach for assignment, compound assignment, append, and unset, focused native
-COW reducers, COW oracle coverage, and five explicit unsupported diagnostics
-for non-variable mutating internals.
+offset read diagnostics, direct-variable string offset writes, refcounted
+string payloads with assignment/function sharing and detach-on-write offset
+mutation, catchable `count()` non-array diagnostics, expression-form `??`
+reads, nested array path detach for assignment, compound assignment, append,
+and unset, focused native COW reducers, COW oracle coverage, and five explicit
+unsupported diagnostics for non-variable mutating internals.
 
 ## Still Needed
 
-Broader COW for strings, references, by-reference foreach, and dynamic edges
-such as by-reference returns, nested reference lvalues, recursive reference
-diagnostics, and dynamic calls. Assignment-form `??=` remains unsupported.
+Broader COW for references, by-reference foreach, broader PHPT COW rows, and
+dynamic edges such as by-reference returns, nested reference lvalues, recursive
+reference diagnostics, and dynamic calls. Assignment-form `??=` remains
+unsupported.
 
 ## Next Focus
 
-1. Prove strings and references.
+1. Prove references and remaining function boundaries.
 2. Carry COW through by-reference and dynamic call paths.
 3. Keep dashboard cells numeric and every status file under 500 words.

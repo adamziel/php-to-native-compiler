@@ -551,51 +551,6 @@ static PTN_UNUSED unsigned char ptn_string_offset_assignment_byte(
     return byte;
 }
 
-static PTN_UNUSED char *ptn_string_detach_value_for_write(PtnValue *value, size_t new_len) {
-    if (value == NULL || value->type != PTN_STRING) {
-        return NULL;
-    }
-
-    PtnString string = value->as.string;
-    if (
-        value->owned &&
-        string.owned != NULL &&
-        string.refcount != NULL &&
-        *string.refcount == 1
-    ) {
-        char *buffer = realloc(string.owned, new_len + 1);
-        if (buffer == NULL) {
-            ptn_abort_out_of_memory();
-        }
-        if (new_len > string.len) {
-            memset(buffer + string.len, ' ', new_len - string.len);
-        }
-        buffer[new_len] = '\0';
-        value->as.string.data = (const unsigned char *)buffer;
-        value->as.string.owned = buffer;
-        value->as.string.len = new_len;
-        return buffer;
-    }
-
-    char *buffer = malloc(new_len + 1);
-    if (buffer == NULL) {
-        ptn_abort_out_of_memory();
-    }
-    size_t copy_len = string.len < new_len ? string.len : new_len;
-    if (copy_len != 0) {
-        memcpy(buffer, string.data, copy_len);
-    }
-    if (new_len > copy_len) {
-        memset(buffer + copy_len, ' ', new_len - copy_len);
-    }
-    buffer[new_len] = '\0';
-
-    PtnValue detached = ptn_owned_string_len(buffer, new_len);
-    ptn_value_destroy(value);
-    *value = detached;
-    return value->as.string.owned;
-}
-
 static PTN_UNUSED void ptn_runtime_string_offset_set(
     PtnRuntime *runtime,
     PtnValue *target,
@@ -619,11 +574,12 @@ static PTN_UNUSED void ptn_runtime_string_offset_set(
     }
 
     unsigned char byte = ptn_string_offset_assignment_byte(runtime, value, line);
-    char *buffer = ptn_string_detach_value_for_write(target, new_len);
-    if (buffer == NULL) {
-        return;
+    ptn_value_detach_for_write(target);
+    if (target->as.string.len != new_len) {
+        ptn_string_value_resize(target, new_len);
     }
-    buffer[index] = (char)byte;
+    target->as.string.payload->data[index] = byte;
+    ptn_string_value_refresh(target);
 }
 
 static PTN_UNUSED PtnLookupResult ptn_offset_lookup(PtnRuntime *runtime, PtnValue container, PtnValue key_value, size_t line, int quiet) {

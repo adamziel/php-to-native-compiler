@@ -50,10 +50,15 @@ typedef enum {
 } PtnArrayKeyType;
 
 typedef struct {
+    size_t refcount;
+    size_t len;
+    unsigned char *data;
+} PtnStringPayload;
+
+typedef struct {
     const unsigned char *data;
     size_t len;
-    char *owned;
-    size_t *refcount;
+    PtnStringPayload *payload;
 } PtnString;
 
 typedef struct {
@@ -259,15 +264,77 @@ static PTN_UNUSED PtnValue ptn_float(double floating) {
     return value;
 }
 
-static void ptn_abort_out_of_memory(void);
-
-static PTN_UNUSED size_t *ptn_refcount_new(void) {
-    size_t *refcount = malloc(sizeof(size_t));
-    if (refcount == NULL) {
+static PTN_UNUSED PtnStringPayload *ptn_string_payload_from_owned(char *string, size_t len) {
+    PtnStringPayload *payload = malloc(sizeof(PtnStringPayload));
+    if (payload == NULL) {
+        free(string);
         ptn_abort_out_of_memory();
     }
-    *refcount = 1;
-    return refcount;
+    payload->refcount = 1;
+    payload->len = len;
+    payload->data = (unsigned char *)string;
+    payload->data[len] = '\0';
+    return payload;
+}
+
+static PTN_UNUSED void ptn_string_payload_retain(PtnStringPayload *payload) {
+    if (payload == NULL) {
+        return;
+    }
+    if (payload->refcount == SIZE_MAX) {
+        ptn_abort_out_of_memory();
+    }
+    payload->refcount++;
+}
+
+static PTN_UNUSED void ptn_string_payload_release(PtnStringPayload *payload) {
+    if (payload == NULL) {
+        return;
+    }
+    if (payload->refcount == 0) {
+        return;
+    }
+    payload->refcount--;
+    if (payload->refcount != 0) {
+        return;
+    }
+    free(payload->data);
+    free(payload);
+}
+
+static PTN_UNUSED void ptn_string_value_refresh(PtnValue *value) {
+    if (value == NULL || value->type != PTN_STRING || value->as.string.payload == NULL) {
+        return;
+    }
+    value->as.string.data = value->as.string.payload->data;
+    value->as.string.len = value->as.string.payload->len;
+}
+
+static PTN_UNUSED void ptn_string_value_resize(PtnValue *value, size_t new_len) {
+    if (value == NULL ||
+        value->type != PTN_STRING ||
+        !value->owned ||
+        value->as.string.payload == NULL ||
+        value->as.string.payload->refcount != 1) {
+        ptn_abort_out_of_memory();
+    }
+    if (new_len == SIZE_MAX) {
+        ptn_abort_out_of_memory();
+    }
+
+    PtnStringPayload *payload = value->as.string.payload;
+    size_t old_len = payload->len;
+    unsigned char *data = realloc(payload->data, new_len + 1);
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    if (new_len > old_len) {
+        memset(data + old_len, ' ', new_len - old_len);
+    }
+    data[new_len] = '\0';
+    payload->data = data;
+    payload->len = new_len;
+    ptn_string_value_refresh(value);
 }
 
 static PTN_UNUSED PtnValue ptn_string_literal(const char *string, size_t len) {
@@ -276,8 +343,7 @@ static PTN_UNUSED PtnValue ptn_string_literal(const char *string, size_t len) {
     value.owned = 0;
     value.as.string.data = (const unsigned char *)string;
     value.as.string.len = len;
-    value.as.string.owned = NULL;
-    value.as.string.refcount = NULL;
+    value.as.string.payload = NULL;
     return value;
 }
 
@@ -286,19 +352,13 @@ static PTN_UNUSED PtnValue ptn_string(const char *string) {
 }
 
 static PTN_UNUSED PtnValue ptn_owned_string_len(char *string, size_t len) {
-    size_t *refcount = malloc(sizeof(size_t));
-    if (refcount == NULL) {
-        free(string);
-        ptn_abort_out_of_memory();
-    }
-    *refcount = 1;
+    PtnStringPayload *payload = ptn_string_payload_from_owned(string, len);
     PtnValue value;
     value.type = PTN_STRING;
     value.owned = 1;
-    value.as.string.data = (const unsigned char *)string;
+    value.as.string.data = payload->data;
     value.as.string.len = len;
-    value.as.string.owned = string;
-    value.as.string.refcount = refcount;
+    value.as.string.payload = payload;
     return value;
 }
 
