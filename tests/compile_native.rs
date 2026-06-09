@@ -921,6 +921,52 @@ fn compile_chr_basic_phpt_shape_to_native_binary() {
 }
 
 #[test]
+fn compile_ord_internal_function_to_native_binary() {
+    let root = temp_dir("ptn-native-ord-function");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("ord-function.php");
+    let output = root.join("ord-function-bin");
+    fs::write(
+        &input,
+        "<?php echo ord(\"a\"), \" \", ord(\"9\"), \" \", ord(chr(255)), \" \", ord(true), \"\\n\"; var_dump(function_exists(\"ord\"), function_exists(\"ORD\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "97 57 255 49\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_ord_not_one_byte_phpt_shape_to_native_binary() {
+    let root = temp_dir("ptn-native-ord-not-one-byte-phpt-shape");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("ord-not-one-byte.php");
+    let output = root.join("ord-not-one-byte-bin");
+    fs::write(
+        &input,
+        "<?php\n\nvar_dump(ord(\"\"));\nvar_dump(ord(\"Hello\"));\n\n?>",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Deprecated: ord(): Providing an empty string is deprecated in ptn on line 3\nint(0)\n\nDeprecated: ord(): Providing a string that is not one byte long is deprecated. Use ord($str[0]) instead in ptn on line 4\nint(72)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_symbol_existence_internal_functions_to_native_binary() {
     let root = temp_dir("ptn-native-symbol-existence-functions");
     fs::create_dir_all(&root).unwrap();

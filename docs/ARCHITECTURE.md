@@ -61,17 +61,19 @@ Current runtime/compiler slices:
   helper that compares boxed type and value without numeric-string or boolean
   coercion.
 - Simple calls lower to IR internal-call value expressions carrying a
-  normalized function name and lowered arguments. The generated C backend
-  materializes arguments left-to-right and dispatches through a small internal
-  function registry. Statement-form calls discard the returned boxed value.
-  `var_dump` formats boxed scalar runtime values and returns `null`; `strlen`
-  returns the byte length of the current boxed scalar string conversion;
-  `bin2hex` returns lowercase hexadecimal bytes for that same string
-  conversion; `gettype` and scalar `is_*` predicates query the current boxed
-  scalar/null value domain; `function_exists` shares the registry lookup path;
-  and `defined` checks the current constant-registry boundary. Fixed-arity
-  internal functions record min/max arity metadata while `var_dump` remains
-  variadic.
+  normalized function name, lowered arguments, and the source line for current
+  internal diagnostic boundaries. The generated C backend materializes
+  arguments left-to-right and dispatches through a small internal function
+  registry. Statement-form calls discard the returned boxed value. `var_dump`
+  formats boxed scalar runtime values and returns `null`; `strlen` returns the
+  byte length of the current boxed scalar string conversion; `bin2hex` returns
+  lowercase hexadecimal bytes for that same string conversion; `chr` constructs
+  one-byte strings from scalar integer conversion; `ord` observes the first
+  byte of scalar string conversion; `gettype` and scalar `is_*` predicates
+  query the current boxed scalar/null value domain; `function_exists` shares the
+  registry lookup path; and `defined` checks the current constant-registry
+  boundary. Fixed-arity internal functions record min/max arity metadata while
+  `var_dump` remains variadic.
 - Braced `if`, `elseif`, and `else` statements lower to structured IR branch
   instructions. Conditions remain boxed value expressions, and the C backend
   emits native branches that call the shared scalar truthiness helper.

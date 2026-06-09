@@ -72,8 +72,12 @@ fn emit_instruction(
             out.push_str(&result_temp);
             out.push_str(");\n");
         }
-        Instruction::InternalCall { name, arguments } => {
-            let result_temp = values.emit_internal_call(out, name, arguments);
+        Instruction::InternalCall {
+            name,
+            arguments,
+            line,
+        } => {
+            let result_temp = values.emit_internal_call(out, name, arguments, *line);
             out.push_str("    (void)");
             out.push_str(&result_temp);
             out.push_str(";\n");
@@ -337,9 +341,11 @@ impl ValueEmitter {
                 "ptn_runtime_read_variable(&runtime, \"{}\")",
                 c_string(name)
             ),
-            ValueExpr::InternalCall { name, arguments } => {
-                self.emit_internal_call(out, name, arguments)
-            }
+            ValueExpr::InternalCall {
+                name,
+                arguments,
+                line,
+            } => self.emit_internal_call(out, name, arguments, *line),
         }
     }
 
@@ -510,6 +516,7 @@ impl ValueEmitter {
         out: &mut String,
         name: &str,
         arguments: &[ValueExpr],
+        line: usize,
     ) -> String {
         let result_temp = self.next_temp();
         if arguments.is_empty() {
@@ -517,7 +524,9 @@ impl ValueEmitter {
             out.push_str(&result_temp);
             out.push_str(" = ptn_call_internal(&runtime, \"");
             out.push_str(&c_string(name));
-            out.push_str("\", 0, NULL);\n");
+            out.push_str("\", 0, NULL, ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
             return result_temp;
         }
 
@@ -540,6 +549,8 @@ impl ValueEmitter {
         out.push_str(&arguments.len().to_string());
         out.push_str(", ");
         out.push_str(&args_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
         out.push_str(");\n");
         result_temp
     }
@@ -632,6 +643,7 @@ typedef struct {
 
 typedef struct {
     FILE *stream;
+    int emitted_deprecation;
 } PtnDiagnosticSink;
 
 typedef struct {
@@ -639,7 +651,7 @@ typedef struct {
     PtnDiagnosticSink diagnostics;
 } PtnRuntime;
 
-typedef PtnValue (*PtnInternalFunctionHandler)(PtnRuntime *runtime, size_t argc, const PtnValue *args);
+typedef PtnValue (*PtnInternalFunctionHandler)(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 
 typedef struct {
     const char *name;
@@ -759,6 +771,7 @@ static int ptn_symbols_get(PtnSymbolTable *symbols, const char *name, PtnValue *
 
 static void ptn_diagnostics_init(PtnDiagnosticSink *diagnostics, FILE *stream) {
     diagnostics->stream = stream;
+    diagnostics->emitted_deprecation = 0;
 }
 
 static void ptn_emit_undefined_variable_warning(PtnDiagnosticSink *diagnostics, const char *name) {
@@ -813,6 +826,18 @@ static void ptn_emit_too_many_arguments_error(
     fputs(", ", stream);
     fprintf(stream, "%zu", argc);
     fputs(" given\n", stream);
+}
+
+static void ptn_emit_deprecation(PtnDiagnosticSink *diagnostics, const char *message, size_t line) {
+    if (diagnostics->emitted_deprecation) {
+        fputc('\n', stdout);
+    }
+    diagnostics->emitted_deprecation = 1;
+    fputs("Deprecated: ", stdout);
+    fputs(message, stdout);
+    fputs(" in ptn on line ", stdout);
+    fprintf(stdout, "%zu", line);
+    fputc('\n', stdout);
 }
 
 static void ptn_runtime_init(PtnRuntime *runtime) {
@@ -1521,68 +1546,78 @@ static void ptn_var_dump_value(PtnValue value) {
     }
 }
 
-static PtnValue ptn_internal_var_dump(PtnRuntime *runtime, size_t argc, const PtnValue *args) {
+static PtnValue ptn_internal_var_dump(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
+    (void)line;
     for (size_t i = 0; i < argc; i++) {
         ptn_var_dump_value(args[i]);
     }
     return ptn_null();
 }
 
-static PtnValue ptn_internal_strlen(PtnRuntime *runtime, size_t argc, const PtnValue *args) {
+static PtnValue ptn_internal_strlen(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)argc;
+    (void)line;
     char *string = ptn_value_to_string(args[0]);
     size_t len = strlen(string);
     free(string);
     return ptn_int((int64_t)len);
 }
 
-static PtnValue ptn_internal_gettype(PtnRuntime *runtime, size_t argc, const PtnValue *args) {
+static PtnValue ptn_internal_gettype(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)argc;
+    (void)line;
     return ptn_gettype_value(args[0]);
 }
 
-static PtnValue ptn_internal_is_null(PtnRuntime *runtime, size_t argc, const PtnValue *args) {
+static PtnValue ptn_internal_is_null(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)argc;
+    (void)line;
     return ptn_is_type(args[0], PTN_NULL);
 }
 
-static PtnValue ptn_internal_is_bool(PtnRuntime *runtime, size_t argc, const PtnValue *args) {
+static PtnValue ptn_internal_is_bool(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)argc;
+    (void)line;
     return ptn_is_type(args[0], PTN_BOOL);
 }
 
-static PtnValue ptn_internal_is_int(PtnRuntime *runtime, size_t argc, const PtnValue *args) {
+static PtnValue ptn_internal_is_int(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)argc;
+    (void)line;
     return ptn_is_type(args[0], PTN_INT);
 }
 
-static PtnValue ptn_internal_is_float(PtnRuntime *runtime, size_t argc, const PtnValue *args) {
+static PtnValue ptn_internal_is_float(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)argc;
+    (void)line;
     return ptn_is_type(args[0], PTN_FLOAT);
 }
 
-static PtnValue ptn_internal_is_string(PtnRuntime *runtime, size_t argc, const PtnValue *args) {
+static PtnValue ptn_internal_is_string(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)argc;
+    (void)line;
     return ptn_is_type(args[0], PTN_STRING);
 }
 
-static PtnValue ptn_internal_is_scalar(PtnRuntime *runtime, size_t argc, const PtnValue *args) {
+static PtnValue ptn_internal_is_scalar(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)argc;
+    (void)line;
     return ptn_is_scalar(args[0]);
 }
 
-static PtnValue ptn_internal_bin2hex(PtnRuntime *runtime, size_t argc, const PtnValue *args) {
+static PtnValue ptn_internal_bin2hex(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)argc;
+    (void)line;
     static const char hex_digits[] = "0123456789abcdef";
     char *string = ptn_value_to_string(args[0]);
     size_t len = strlen(string);
@@ -1603,9 +1638,10 @@ static PtnValue ptn_internal_bin2hex(PtnRuntime *runtime, size_t argc, const Ptn
     return ptn_owned_string(hex);
 }
 
-static PtnValue ptn_internal_chr(PtnRuntime *runtime, size_t argc, const PtnValue *args) {
+static PtnValue ptn_internal_chr(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)argc;
+    (void)line;
     int64_t integer = ptn_value_to_integer(args[0]);
     int64_t normalized = integer % 256;
     if (normalized < 0) {
@@ -1620,8 +1656,33 @@ static PtnValue ptn_internal_chr(PtnRuntime *runtime, size_t argc, const PtnValu
     return ptn_owned_string(string);
 }
 
-static PtnValue ptn_internal_defined(PtnRuntime *runtime, size_t argc, const PtnValue *args);
-static PtnValue ptn_internal_function_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args);
+static PtnValue ptn_internal_ord(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    char *string = ptn_value_to_string(args[0]);
+    size_t len = strlen(string);
+    int64_t byte = 0;
+    if (len == 0) {
+        ptn_emit_deprecation(
+            &runtime->diagnostics,
+            "ord(): Providing an empty string is deprecated",
+            line
+        );
+    } else {
+        byte = (int64_t)(unsigned char)string[0];
+        if (len != 1) {
+            ptn_emit_deprecation(
+                &runtime->diagnostics,
+                "ord(): Providing a string that is not one byte long is deprecated. Use ord($str[0]) instead",
+                line
+            );
+        }
+    }
+    free(string);
+    return ptn_int(byte);
+}
+
+static PtnValue ptn_internal_defined(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_function_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 
 static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
     static const PtnInternalFunction functions[] = {
@@ -1629,6 +1690,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "strlen", 1, 1, ptn_internal_strlen },
         { "bin2hex", 1, 1, ptn_internal_bin2hex },
         { "chr", 1, 1, ptn_internal_chr },
+        { "ord", 1, 1, ptn_internal_ord },
         { "gettype", 1, 1, ptn_internal_gettype },
         { "is_null", 1, 1, ptn_internal_is_null },
         { "is_bool", 1, 1, ptn_internal_is_bool },
@@ -1658,25 +1720,27 @@ static const PtnInternalFunction *ptn_find_internal_function(const char *name) {
     return NULL;
 }
 
-static PtnValue ptn_internal_defined(PtnRuntime *runtime, size_t argc, const PtnValue *args) {
+static PtnValue ptn_internal_defined(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)argc;
+    (void)line;
     char *name = ptn_value_to_string(args[0]);
     int exists = ptn_constant_is_defined(name);
     free(name);
     return ptn_bool(exists);
 }
 
-static PtnValue ptn_internal_function_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args) {
+static PtnValue ptn_internal_function_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)argc;
+    (void)line;
     char *name = ptn_value_to_string(args[0]);
     int exists = ptn_find_internal_function(name) != NULL;
     free(name);
     return ptn_bool(exists);
 }
 
-static PTN_UNUSED PtnValue ptn_call_internal(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args) {
+static PTN_UNUSED PtnValue ptn_call_internal(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line) {
     const PtnInternalFunction *function = ptn_find_internal_function(name);
     if (function != NULL) {
         if (argc < function->min_args) {
@@ -1687,7 +1751,7 @@ static PTN_UNUSED PtnValue ptn_call_internal(PtnRuntime *runtime, const char *na
             ptn_emit_too_many_arguments_error(&runtime->diagnostics, name, function->max_args, argc);
             exit(255);
         }
-        return function->handler(runtime, argc, args);
+        return function->handler(runtime, argc, args, line);
     }
 
     ptn_emit_undefined_function_error(&runtime->diagnostics, name);

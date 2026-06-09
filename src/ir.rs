@@ -22,6 +22,7 @@ pub enum Instruction {
     InternalCall {
         name: String,
         arguments: Vec<ValueExpr>,
+        line: usize,
     },
     Branch {
         condition: ValueExpr,
@@ -66,6 +67,7 @@ pub enum ValueExpr {
     InternalCall {
         name: String,
         arguments: Vec<ValueExpr>,
+        line: usize,
     },
     Unary {
         op: UnaryOp,
@@ -152,11 +154,14 @@ fn lower_statements(statements: &[Statement]) -> Vec<Instruction> {
                 });
             }
             Statement::Call {
-                name, arguments, ..
+                name,
+                arguments,
+                span,
             } => {
                 instructions.push(Instruction::InternalCall {
                     name: name.clone(),
                     arguments: arguments.iter().map(lower_expr).collect(),
+                    line: span.line,
                 });
             }
             Statement::Echo { expressions, .. } => {
@@ -273,10 +278,13 @@ fn lower_expr(expr: &Expr) -> ValueExpr {
         Expr::Null(_) => ValueExpr::Null,
         Expr::Variable(name, _) => ValueExpr::Load(name.clone()),
         Expr::Call {
-            name, arguments, ..
+            name,
+            arguments,
+            span,
         } => ValueExpr::InternalCall {
             name: name.clone(),
             arguments: arguments.iter().map(lower_expr).collect(),
+            line: span.line,
         },
         Expr::Unary { op, expr, .. } => ValueExpr::Unary {
             op: lower_unary_op(*op),

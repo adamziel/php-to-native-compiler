@@ -542,3 +542,25 @@ Still unsupported after this for-loop slice: unbraced and alternate syntax,
 expressions in conditions, non-direct-variable clause lvalues, increment/
 decrement expression result values, references, copy-on-write, and
 exception/finally loop edges.
+
+Added a scalar byte-observation internal-function slice:
+
+- Registered `ord()` through the existing generated C internal-function
+  registry, so normal calls and `function_exists()` share the same
+  case-insensitive lookup table.
+- Internal-call IR and generated C dispatch now preserve the source line for
+  the call expression, allowing internal diagnostics to report a line boundary
+  generically instead of using a fixed placeholder.
+- `ord()` converts the current boxed scalar argument through the shared scalar
+  string-conversion path and returns the first byte as an integer.
+- Empty strings and multi-byte strings emit PHP-like deprecation diagnostics
+  before returning `0` or the first byte, respectively.
+- Native tests prove ordinary byte output, scalar boolean conversion,
+  `chr()`/`ord()` interaction for high bytes, `function_exists("ord")`, and the
+  public `ord_not_1_byte.phpt` source shape.
+- Focused public PHPT telemetry through `phpc` passes
+  `ext/standard/tests/strings/ord_not_1_byte.phpt`.
+
+Still unsupported after this `ord()` slice: embedded NUL bytes in runtime
+strings, strict-types/internal argument `TypeError` parity, arrays, objects,
+resources, references, and copy-on-write behavior.
