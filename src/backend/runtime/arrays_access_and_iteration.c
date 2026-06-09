@@ -599,6 +599,14 @@ static PTN_UNUSED void ptn_runtime_array_warn_missing_base_for_assign_op(
     }
 }
 
+static PTN_UNUSED PtnArray *ptn_runtime_array_detach_variable(PtnRuntime *runtime, const char *name) {
+    size_t index = ptn_symbols_find(&runtime->symbols, name);
+    if (index >= runtime->symbols.len || runtime->symbols.items[index].value.type != PTN_ARRAY) {
+        return NULL;
+    }
+    return ptn_array_detach_value(&runtime->symbols.items[index].value);
+}
+
 static PTN_UNUSED PtnValue ptn_runtime_array_read_for_assign_op(
     PtnRuntime *runtime,
     const char *name,
@@ -657,7 +665,11 @@ static PTN_UNUSED void ptn_runtime_array_set_impl(
 
     if (ptn_symbols_get(&runtime->symbols, name, &container)) {
         if (container.type == PTN_ARRAY) {
-            ptn_array_set_entry(container.as.array, key, ptn_value_clone(value));
+            PtnArray *array = ptn_runtime_array_detach_variable(runtime, name);
+            if (array == NULL) {
+                array = container.as.array;
+            }
+            ptn_array_set_entry(array, key, ptn_value_clone(value));
             return;
         }
         if (container.type != PTN_NULL) {
@@ -706,8 +718,12 @@ static PTN_UNUSED void ptn_runtime_array_append(
             return;
         }
         if (container.type == PTN_ARRAY) {
-            PtnArrayKey key = ptn_array_int_key(container.as.array->next_auto_key);
-            ptn_array_set_entry(container.as.array, key, ptn_value_clone(value));
+            PtnArray *array = ptn_runtime_array_detach_variable(runtime, name);
+            if (array == NULL) {
+                array = container.as.array;
+            }
+            PtnArrayKey key = ptn_array_int_key(array->next_auto_key);
+            ptn_array_set_entry(array, key, ptn_value_clone(value));
             return;
         }
         if (container.type != PTN_NULL) {
@@ -743,7 +759,11 @@ static PTN_UNUSED void ptn_runtime_array_unset(
     }
 
     PtnArrayKey key = ptn_array_key_from_value(key_value);
-    (void)ptn_array_unset_entry(container.as.array, key);
+    PtnArray *array = ptn_runtime_array_detach_variable(runtime, name);
+    if (array == NULL) {
+        array = container.as.array;
+    }
+    (void)ptn_array_unset_entry(array, key);
 }
 
 static PTN_UNUSED PtnValue ptn_array_current_value(PtnArray *array) {

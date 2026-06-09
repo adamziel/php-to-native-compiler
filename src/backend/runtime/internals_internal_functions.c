@@ -271,6 +271,118 @@ static PtnArray *ptn_internal_expect_array_arg(
     return NULL;
 }
 
+static PtnArray *ptn_internal_expect_mutable_array_variable_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    const char *variable_name,
+    PtnValue value
+) {
+    PtnArray *array = ptn_internal_expect_array_arg(
+        runtime,
+        function_name,
+        position,
+        argument_name,
+        value
+    );
+    size_t index = ptn_symbols_find(&runtime->symbols, variable_name);
+    if (index >= runtime->symbols.len || runtime->symbols.items[index].value.type != PTN_ARRAY) {
+        return array;
+    }
+    return ptn_array_detach_value(&runtime->symbols.items[index].value);
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_array_pop_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
+    PtnArray *array = ptn_internal_expect_mutable_array_variable_arg(
+        runtime,
+        "array_pop",
+        1,
+        "array",
+        name,
+        value
+    );
+    return ptn_array_pop_value(array);
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_array_push_variable(
+    PtnRuntime *runtime,
+    const char *name,
+    PtnValue value,
+    size_t value_count,
+    const PtnValue *values
+) {
+    PtnArray *array = ptn_internal_expect_mutable_array_variable_arg(
+        runtime,
+        "array_push",
+        1,
+        "array",
+        name,
+        value
+    );
+    return ptn_int(ptn_array_push_values(array, value_count, values));
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_array_shift_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
+    PtnArray *array = ptn_internal_expect_mutable_array_variable_arg(
+        runtime,
+        "array_shift",
+        1,
+        "array",
+        name,
+        value
+    );
+    return ptn_array_shift_value(array);
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_array_next_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
+    PtnArray *array = ptn_internal_expect_mutable_array_variable_arg(
+        runtime,
+        "next",
+        1,
+        "array",
+        name,
+        value
+    );
+    return ptn_array_next_value(array);
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_array_end_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
+    PtnArray *array = ptn_internal_expect_mutable_array_variable_arg(
+        runtime,
+        "end",
+        1,
+        "array",
+        name,
+        value
+    );
+    return ptn_array_end_value(array);
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_array_prev_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
+    PtnArray *array = ptn_internal_expect_mutable_array_variable_arg(
+        runtime,
+        "prev",
+        1,
+        "array",
+        name,
+        value
+    );
+    return ptn_array_prev_value(array);
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_array_reset_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
+    PtnArray *array = ptn_internal_expect_mutable_array_variable_arg(
+        runtime,
+        "reset",
+        1,
+        "array",
+        name,
+        value
+    );
+    return ptn_array_reset_value(array);
+}
+
 static PtnValue ptn_internal_array_pop(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     (void)line;

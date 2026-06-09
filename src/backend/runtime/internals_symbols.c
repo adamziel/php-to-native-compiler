@@ -3,7 +3,8 @@
                 value.as.string.len
             );
         case PTN_ARRAY:
-            return ptn_array(ptn_array_clone(value.as.array));
+            ptn_array_retain(value.as.array);
+            return ptn_array(value.as.array);
         case PTN_EXCEPTION: {
             PtnException *exception = malloc(sizeof(PtnException));
             if (exception == NULL) {
@@ -32,6 +33,10 @@ static PTN_UNUSED void ptn_exception_free(PtnException *exception) {
 
 static PTN_UNUSED void ptn_array_free(PtnArray *array) {
     if (array == NULL) {
+        return;
+    }
+    if (array->refcount > 1) {
+        array->refcount--;
         return;
     }
     for (size_t i = 0; i < array->len; i++) {

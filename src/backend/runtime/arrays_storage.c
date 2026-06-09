@@ -308,6 +308,7 @@ static PTN_UNUSED PtnValue ptn_array_from_literal_entries(size_t entry_count, co
     if (array == NULL) {
         ptn_abort_out_of_memory();
     }
+    array->refcount = 1;
     array->len = 0;
     array->capacity = entry_count;
     array->entries = NULL;
@@ -344,6 +345,7 @@ static PTN_UNUSED PtnArray *ptn_array_clone(PtnArray *source) {
     if (array == NULL) {
         ptn_abort_out_of_memory();
     }
+    array->refcount = 1;
     array->len = 0;
     array->capacity = source->len;
     array->entries = NULL;
@@ -365,6 +367,31 @@ static PTN_UNUSED PtnArray *ptn_array_clone(PtnArray *source) {
     }
     array->next_auto_key = source->next_auto_key;
     return array;
+}
+
+static PTN_UNUSED void ptn_array_retain(PtnArray *array) {
+    if (array == NULL) {
+        return;
+    }
+    if (array->refcount == SIZE_MAX) {
+        ptn_abort_out_of_memory();
+    }
+    array->refcount++;
+}
+
+static PTN_UNUSED PtnArray *ptn_array_detach_value(PtnValue *value) {
+    if (value == NULL || !value->owned || value->type != PTN_ARRAY || value->as.array == NULL) {
+        return NULL;
+    }
+    PtnArray *array = value->as.array;
+    if (array->refcount <= 1) {
+        return array;
+    }
+
+    PtnArray *detached = ptn_array_clone(array);
+    ptn_value_destroy(value);
+    *value = ptn_array(detached);
+    return detached;
 }
 
 static PTN_UNUSED PtnValue ptn_value_clone(PtnValue value) {
