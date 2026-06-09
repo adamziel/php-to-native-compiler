@@ -32,10 +32,10 @@ Supported today:
   `is_nan(expr)`,
   `defined(expr)`, and `function_exists(expr)`, lowered through IR
   internal-call nodes and generated C runtime dispatch.
-- `var_dump()` output for the current boxed scalar `PtnValue` types: `null`,
-  booleans, integers, floats, and strings. Finite floats use the shortest
-  decimal spelling that round-trips to the same native double; `INF`, `-INF`,
-  and `NAN` keep PHP-like special spellings.
+- `var_dump()` output for the current boxed `PtnValue` types: `null`,
+  booleans, integers, floats, strings, and ordered literal arrays. Finite
+  floats use the shortest decimal spelling that round-trips to the same native
+  double; `INF`, `-INF`, and `NAN` keep PHP-like special spellings.
 - `strlen()` as an expression returning the byte length of the current boxed
   scalar string-conversion result.
 - `str_rot13()` as an expression returning ASCII ROT13 over the current boxed
@@ -111,12 +111,15 @@ Supported today:
   `__FUNCTION__`, `__METHOD__`, `__CLASS__`, `__TRAIT__`, and
   `__NAMESPACE__`. Scope-dependent names currently resolve to empty strings in
   global scope.
-- Boxed scalar comparison and boolean expressions: `==`, `!=`, `===`, `!==`,
-  `<`, `<=`, `>`, `>=`, `&&`, and `||`. Strict identity compares scalar type
-  and value without coercion; numeric scalar comparisons involving `NAN`
-  evaluate as unordered so equality and ordered comparisons return false;
-  boolean operators short-circuit over boxed PHP truthiness for the currently
-  supported scalar value types.
+- Short array literals `[...]` with optional scalar keys, automatic integer
+  keys, integer-string key canonicalization, insertion order, and duplicate-key
+  replacement in the current literal-array value subset.
+- Boxed scalar and literal-array comparison and boolean expressions: `==`,
+  `!=`, `===`, `!==`, `<`, `<=`, `>`, `>=`, `<=>`, `&&`, and `||`. Strict
+  identity compares type, key order, key type, and value; numeric scalar
+  comparisons involving `NAN` evaluate as unordered so equality and ordered
+  comparisons return false. Boolean operators short-circuit over boxed PHP
+  truthiness for the currently supported value types.
 - Boxed scalar bitwise `&`, `^`, `|`, and unary `~` expressions.
   String/string binary operands and string unary `~` operands use PHP bytewise
   string results for non-NUL strings; other supported scalar operands are
@@ -147,15 +150,16 @@ Supported today:
 
 Unsupported today:
 
-- Arrays, objects, functions, classes, includes, references, copy-on-write,
-  resources, exceptions, array/object/reference compound-assignment lvalues,
+- Long-form `array(...)`, array element access/mutation, append/unset,
+  iteration, recursive arrays, arrays with references/copy-on-write, objects,
+  functions, classes, includes, references, resources, exceptions,
+  array/object/reference compound-assignment lvalues,
   compound operators other than `+=`, `-=`, `*=`, `/=`, `%=`, `**=`, `.=`, `&=`,
   `|=`, `^=`, `<<=`, and `>>=` (`??=`), `print` as an expression returning
   `1` even when spelled `print(...)`, increment/decrement operators, full
   PHP numeric-string and non-numeric string arithmetic diagnostics, exact
   division/modulo-by-zero exception behavior, exact numeric literal
   overflow/range parity, complete comparison parity for unsupported types,
-  spaceship comparison operator,
   keyword boolean operators, chained comparison parse errors, unbraced
   loop/switch bodies and alternate control-flow syntax, `foreach`,
   explicit-level `break` such as `break 2`, `continue`, invalid-goto
@@ -170,8 +174,7 @@ Unsupported today:
   user constants and built-in constants other than the currently modeled
   `E_ERROR`, `PHP_EOL`, `DIRECTORY_SEPARATOR`, `PATH_SEPARATOR`,
   `PHP_INT_MIN`, `PHP_INT_MAX`, `PHP_INT_SIZE`, `INF`, `NAN`, `M_PI`, and the
-  modeled PHP math `M_*` constants, arrays, objects, resources, recursion,
-  references,
+  modeled PHP math `M_*` constants, objects, resources, recursion, references,
   embedded NUL string handling, complex/braced interpolation, interpolation of
   arrays/objects/offsets/properties/variable variables, exact `strcmp()`
   binary-string parity, exact `hex2bin()` embedded-NUL output parity and

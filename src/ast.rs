@@ -122,6 +122,10 @@ pub enum Expr {
         arguments: Vec<Expr>,
         span: SourceSpan,
     },
+    Array {
+        elements: Vec<ArrayElement>,
+        span: SourceSpan,
+    },
     Unary {
         op: UnaryOp,
         expr: Box<Expr>,
@@ -145,6 +149,12 @@ pub enum Expr {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct ArrayElement {
+    pub key: Option<Expr>,
+    pub value: Expr,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum StringPart {
     Literal(String),
     Variable(String),
@@ -163,6 +173,7 @@ pub enum BinaryOp {
     ShiftRight,
     Equal,
     NotEqual,
+    Spaceship,
     Identical,
     NotIdentical,
     BitwiseAnd,
@@ -209,6 +220,7 @@ impl Expr {
             | Expr::Constant(_, span)
             | Expr::MagicConstant(_, span) => *span,
             Expr::Call { span, .. } => *span,
+            Expr::Array { span, .. } => *span,
             Expr::Unary { span, .. } | Expr::Cast { span, .. } => *span,
             Expr::Binary { span, .. } | Expr::Grouped { span, .. } => *span,
         }

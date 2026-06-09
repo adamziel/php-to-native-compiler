@@ -115,6 +115,11 @@ Current runtime/compiler slices:
   source line and compile-file path metadata. The backend emits `__LINE__`,
   `__FILE__`, and `__DIR__` directly and resolves scope-dependent names to the
   global-scope empty string until functions/classes/namespaces exist.
+- Short array literals lower to ordered boxed array values with integer or
+  string keys. The generated runtime canonicalizes integer-string keys, assigns
+  automatic integer keys, replaces duplicate keys in insertion order, and uses
+  the same boxed comparison helpers for scalar and literal-array equality,
+  identity, ordered comparison, and `<=>`.
 - Braced `if`, `elseif`, and `else` statements lower to structured IR branch
   instructions. Conditions remain boxed value expressions, and the C backend
   emits native branches that call the shared scalar truthiness helper.
@@ -139,7 +144,8 @@ Current runtime/compiler slices:
 
 Near-term architecture targets:
 
-- PHP ordered arrays.
+- Broader PHP array behavior: long-form `array(...)`, element access/mutation,
+  append/unset/iteration, recursive arrays, references, and copy-on-write.
 - References and copy-on-write.
 - Function and class metadata.
 - Broader diagnostics and exception channels.
@@ -153,9 +159,9 @@ Near-term architecture targets:
 - Array, object, and reference lvalues for compound assignment, plus
   unsupported compound operators beyond `+=`, `-=`, `*=`, `**=`, `/=`, `%=`,
   `.=`, `&=`, `|=`, `^=`, `<<=`, and `>>=`: `??=`.
-- Complete comparison parity for arrays, objects, references, chained
-  comparison parse errors, spaceship operator, keyword boolean operators, and
-  unsupported scalar edge cases.
+- Complete comparison parity for objects, references, recursive arrays, chained
+  comparison parse errors, keyword boolean operators, and unsupported scalar
+  edge cases.
 - A broader internal-function module system with shared argument parsing,
   metadata, unsupported array/object/resource/reference diagnostics, and
   PHP-exact `var_dump` precision/formatting beyond the current scalar

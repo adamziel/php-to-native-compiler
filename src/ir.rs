@@ -1,5 +1,6 @@
 use crate::ast::{
-    AssignmentOp, BinaryOp as AstBinaryOp, CastKind as AstCastKind, Expr, IncDecOp as AstIncDecOp,
+    ArrayElement as AstArrayElement, AssignmentOp, BinaryOp as AstBinaryOp,
+    CastKind as AstCastKind, Expr, IncDecOp as AstIncDecOp,
     MagicConstantKind as AstMagicConstantKind, Program, Statement, StringPart as AstStringPart,
     UnaryOp as AstUnaryOp,
 };
@@ -78,6 +79,7 @@ pub enum ValueExpr {
         kind: MagicConstantKind,
         line: usize,
     },
+    Array(Vec<ArrayElement>),
     InternalCall {
         name: String,
         arguments: Vec<ValueExpr>,
@@ -99,6 +101,12 @@ pub enum ValueExpr {
     },
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct ArrayElement {
+    pub key: Option<ValueExpr>,
+    pub value: ValueExpr,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinaryOp {
     Add,
@@ -112,6 +120,7 @@ pub enum BinaryOp {
     ShiftRight,
     Equal,
     NotEqual,
+    Spaceship,
     Identical,
     NotIdentical,
     Less,
@@ -338,6 +347,9 @@ fn lower_expr(expr: &Expr) -> ValueExpr {
             kind: lower_magic_constant_kind(*kind),
             line: span.line,
         },
+        Expr::Array { elements, .. } => {
+            ValueExpr::Array(elements.iter().map(lower_array_element).collect())
+        }
         Expr::Call {
             name,
             arguments,
@@ -364,6 +376,13 @@ fn lower_expr(expr: &Expr) -> ValueExpr {
             right: Box::new(lower_expr(right)),
         },
         Expr::Grouped { expr, .. } => lower_expr(expr),
+    }
+}
+
+fn lower_array_element(element: &AstArrayElement) -> ArrayElement {
+    ArrayElement {
+        key: element.key.as_ref().map(lower_expr),
+        value: lower_expr(&element.value),
     }
 }
 
@@ -447,6 +466,7 @@ fn lower_binary_op(op: AstBinaryOp) -> BinaryOp {
         AstBinaryOp::ShiftRight => BinaryOp::ShiftRight,
         AstBinaryOp::Equal => BinaryOp::Equal,
         AstBinaryOp::NotEqual => BinaryOp::NotEqual,
+        AstBinaryOp::Spaceship => BinaryOp::Spaceship,
         AstBinaryOp::Identical => BinaryOp::Identical,
         AstBinaryOp::NotIdentical => BinaryOp::NotIdentical,
         AstBinaryOp::Less => BinaryOp::Less,

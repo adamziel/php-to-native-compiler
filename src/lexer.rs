@@ -28,10 +28,12 @@ pub enum TokenKind {
     Null,
     Variable(String),
     Equal,
+    DoubleArrow,
     EqualEqual,
     EqualEqualEqual,
     NotEqual,
     NotEqualEqual,
+    Spaceship,
     Less,
     LessEqual,
     ShiftLeft,
@@ -72,6 +74,8 @@ pub enum TokenKind {
     Semicolon,
     LeftParen,
     RightParen,
+    LeftBracket,
+    RightBracket,
     LeftBrace,
     RightBrace,
     IntType,
@@ -158,15 +162,19 @@ impl<'a> Lexer<'a> {
                 ':' => self.push_fixed(TokenKind::Colon, 1),
                 '{' => self.push_fixed(TokenKind::LeftBrace, 1),
                 '}' => self.push_fixed(TokenKind::RightBrace, 1),
+                '[' => self.push_fixed(TokenKind::LeftBracket, 1),
+                ']' => self.push_fixed(TokenKind::RightBracket, 1),
                 '=' if self.rest().starts_with("===") => {
                     self.push_fixed(TokenKind::EqualEqualEqual, 3)
                 }
                 '=' if self.rest().starts_with("==") => self.push_fixed(TokenKind::EqualEqual, 2),
+                '=' if self.rest().starts_with("=>") => self.push_fixed(TokenKind::DoubleArrow, 2),
                 '=' => self.push_fixed(TokenKind::Equal, 1),
                 '!' if self.rest().starts_with("!==") => {
                     self.push_fixed(TokenKind::NotEqualEqual, 3)
                 }
                 '!' if self.rest().starts_with("!=") => self.push_fixed(TokenKind::NotEqual, 2),
+                '<' if self.rest().starts_with("<=>") => self.push_fixed(TokenKind::Spaceship, 3),
                 '<' if self.rest().starts_with("<<=") => {
                     self.push_fixed(TokenKind::ShiftLeftEqual, 3)
                 }

@@ -54,10 +54,14 @@ supports in generated native binaries.
   `__FUNCTION__`, `__METHOD__`, `__CLASS__`, `__TRAIT__`, and
   `__NAMESPACE__`. Scope-dependent names currently resolve to empty strings in
   global scope.
-- Boxed scalar comparison operators `==`, `!=`, `===`, `!==`, `<`, `<=`, `>`,
-  and `>=`. Strict scalar identity compares type and value without coercion.
-  Numeric comparisons involving `NAN` are treated as unordered, so equality and
-  ordered comparisons return false while `!=`/`!==` return true.
+- Short array literals `[...]` with optional scalar keys, automatic integer
+  keys, integer-string key canonicalization, insertion order, and duplicate-key
+  replacement in the current literal-array value subset.
+- Boxed scalar and literal-array comparison operators `==`, `!=`, `===`, `!==`,
+  `<`, `<=`, `>`, `>=`, and `<=>`. Strict array identity compares type, key
+  order, key type, and value. Numeric comparisons involving `NAN` are treated
+  as unordered, so equality and ordered scalar comparisons return false while
+  `!=`/`!==` return true.
 - Boxed scalar boolean operators `&&` and `||`, with short-circuit evaluation
   over PHP truthiness for the currently supported scalar values.
 - Boxed scalar bitwise `&`, `^`, and `|` operators. When both operands are strings,
@@ -86,10 +90,11 @@ supports in generated native binaries.
   conditions.
 - Internal-call arguments are materialized left-to-right before generated C
   runtime dispatch.
-- `var_dump()` output for current boxed scalar values: `NULL`, `bool(...)`,
-  `int(...)`, `float(...)`, and `string(length) "value"`. Finite floats use
-  the shortest decimal spelling that round-trips to the same native double;
-  `INF`, `-INF`, and `NAN` keep PHP-like special spellings.
+- `var_dump()` output for current boxed values: `NULL`, `bool(...)`,
+  `int(...)`, `float(...)`, `string(length) "value"`, and ordered literal
+  arrays. Finite floats use the shortest decimal spelling that round-trips to
+  the same native double; `INF`, `-INF`, and `NAN` keep PHP-like special
+  spellings.
 - `strlen()` over current boxed scalar values after scalar string conversion.
 - `str_rot13()` over current boxed scalar values after scalar string conversion,
   returning ASCII ROT13 output while leaving non-letters unchanged.
@@ -180,9 +185,8 @@ supports in generated native binaries.
   `--$value`.
 - `print` as an expression returning `1`, including contexts such as assignment,
   echo operands, binary operands, and the parenthesized spelling `print(...)`.
-- Comparison operator `<=>`, keyword boolean operators `and`/`or`, PHP-exact
-  chained comparison parse errors, and complete comparison parity for
-  unsupported value types.
+- Keyword boolean operators `and`/`or`, PHP-exact chained comparison parse
+  errors, and complete comparison parity for unsupported value types.
 - Unbraced loop/switch bodies, alternate control-flow syntax, `foreach`,
   `break` with an explicit level such as `break 2`, `continue`,
   branch-condition assignments, for-loop comma expressions and
@@ -205,8 +209,9 @@ supports in generated native binaries.
   `PATH_SEPARATOR`, `PHP_INT_MIN`, `PHP_INT_MAX`, `PHP_INT_SIZE`, `INF`,
   `NAN`, `M_PI`, and modeled PHP math `M_*` constants in `defined()`.
 - Type predicate coverage for arrays, objects, resources, and references.
-- Arrays, objects, resources, recursive structures, references, and
-  `var_dump()` reference identity output.
+- Array element access/mutation, append/unset/iteration, long-form
+  `array(...)`, recursive arrays, objects, resources, references, copy-on-write,
+  and `var_dump()` reference identity output.
 - Embedded NUL strings in runtime string values, `var_dump()` string
   length/output, `strlen()`, `str_rot13()`, `strcmp()`, `bin2hex()`, `chr()`,
   `hex2bin()`, `soundex()`, `ord()`, or bitwise string results.

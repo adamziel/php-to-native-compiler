@@ -5,7 +5,8 @@ use std::process::Command;
 
 use crate::diagnostic::{Diagnostic, Result};
 use crate::ir::{
-    BinaryOp, CastKind, IncDecOp, Instruction, MagicConstantKind, Module, UnaryOp, ValueExpr,
+    ArrayElement as IrArrayElement, BinaryOp, CastKind, IncDecOp, Instruction, MagicConstantKind,
+    Module, UnaryOp, ValueExpr,
 };
 
 pub fn emit_c(module: &Module) -> String {
@@ -387,6 +388,7 @@ impl ValueEmitter {
             ValueExpr::Bool(true) => "ptn_bool(1)".to_string(),
             ValueExpr::Bool(false) => "ptn_bool(0)".to_string(),
             ValueExpr::Null => "ptn_null()".to_string(),
+            ValueExpr::Array(elements) => self.emit_array(out, elements),
             ValueExpr::Load(name) => format!(
                 "ptn_runtime_read_variable(&runtime, \"{}\")",
                 c_string(name)
@@ -444,6 +446,7 @@ impl ValueEmitter {
             | BinaryOp::LessEqual
             | BinaryOp::Greater
             | BinaryOp::GreaterEqual => self.emit_comparison(out, op, left, right),
+            BinaryOp::Spaceship => self.emit_spaceship(out, left, right),
             BinaryOp::And | BinaryOp::Or => self.emit_short_circuit(out, op, left, right),
         }
     }
@@ -484,6 +487,20 @@ impl ValueEmitter {
         result_temp
     }
 
+    fn emit_spaceship(&mut self, out: &mut String, left: &ValueExpr, right: &ValueExpr) -> String {
+        let left_temp = self.emit_materialized_value(out, left);
+        let right_temp = self.emit_materialized_value(out, right);
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_int(ptn_compare_spaceship(");
+        out.push_str(&left_temp);
+        out.push_str(", ");
+        out.push_str(&right_temp);
+        out.push_str("));\n");
+        result_temp
+    }
+
     fn emit_comparison(
         &mut self,
         out: &mut String,
@@ -513,6 +530,42 @@ impl ValueEmitter {
         out.push_str(&result_temp);
         out.push_str(" = ptn_bool(");
         out.push_str(&comparison);
+        out.push_str(");\n");
+        result_temp
+    }
+
+    fn emit_array(&mut self, out: &mut String, elements: &[IrArrayElement]) -> String {
+        let result_temp = self.next_temp();
+        if elements.is_empty() {
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_array_from_literal_entries(0, NULL);\n");
+            return result_temp;
+        }
+
+        let mut entries = Vec::with_capacity(elements.len());
+        for element in elements {
+            let (has_key, key_temp) = if let Some(key) = &element.key {
+                ("1", self.emit_materialized_value(out, key))
+            } else {
+                ("0", "ptn_null()".to_string())
+            };
+            let value_temp = self.emit_materialized_value(out, &element.value);
+            entries.push(format!("{{ {has_key}, {key_temp}, {value_temp} }}"));
+        }
+
+        let entries_temp = self.next_temp();
+        out.push_str("    PtnArrayLiteralEntry ");
+        out.push_str(&entries_temp);
+        out.push_str("[] = { ");
+        out.push_str(&entries.join(", "));
+        out.push_str(" };\n");
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_array_from_literal_entries(");
+        out.push_str(&elements.len().to_string());
+        out.push_str(", ");
+        out.push_str(&entries_temp);
         out.push_str(");\n");
         result_temp
     }
@@ -570,6 +623,7 @@ impl ValueEmitter {
                 | ValueExpr::InternalCall { .. }
                 | ValueExpr::Unary { .. }
                 | ValueExpr::Cast { .. }
+                | ValueExpr::Array(_)
         ) {
             return self.emit_value(out, value);
         }
@@ -692,13 +746,29 @@ const RUNTIME_C: &str = r#"#include <ctype.h>
 #define PTN_UNUSED
 #endif
 
+typedef struct PtnArray PtnArray;
+
 typedef enum {
     PTN_NULL,
     PTN_BOOL,
     PTN_INT,
     PTN_FLOAT,
-    PTN_STRING
+    PTN_STRING,
+    PTN_ARRAY
 } PtnType;
+
+typedef enum {
+    PTN_ARRAY_KEY_INT,
+    PTN_ARRAY_KEY_STRING
+} PtnArrayKeyType;
+
+typedef struct {
+    PtnArrayKeyType type;
+    union {
+        int64_t integer;
+        const char *string;
+    } as;
+} PtnArrayKey;
 
 typedef struct {
     PtnType type;
@@ -707,8 +777,27 @@ typedef struct {
         int64_t integer;
         double floating;
         const char *string;
+        PtnArray *array;
     } as;
 } PtnValue;
+
+typedef struct {
+    PtnArrayKey key;
+    PtnValue value;
+} PtnArrayEntry;
+
+struct PtnArray {
+    size_t len;
+    size_t capacity;
+    PtnArrayEntry *entries;
+    int64_t next_auto_key;
+};
+
+typedef struct {
+    int has_key;
+    PtnValue key;
+    PtnValue value;
+} PtnArrayLiteralEntry;
 
 typedef enum {
     PTN_NUMBER_INT,
@@ -794,6 +883,13 @@ static PTN_UNUSED PtnValue ptn_owned_string(char *string) {
     return value;
 }
 
+static PTN_UNUSED PtnValue ptn_array(PtnArray *array) {
+    PtnValue value;
+    value.type = PTN_ARRAY;
+    value.as.array = array;
+    return value;
+}
+
 static void ptn_abort_out_of_memory(void) {
     fputs("Fatal error: out of memory\n", stderr);
     exit(1);
@@ -807,6 +903,149 @@ static PTN_UNUSED char *ptn_duplicate_string(const char *string) {
     }
     memcpy(copy, string, len + 1);
     return copy;
+}
+
+static PTN_UNUSED PtnArrayKey ptn_array_int_key(int64_t integer) {
+    PtnArrayKey key;
+    key.type = PTN_ARRAY_KEY_INT;
+    key.as.integer = integer;
+    return key;
+}
+
+static PTN_UNUSED PtnArrayKey ptn_array_string_key(const char *string) {
+    PtnArrayKey key;
+    key.type = PTN_ARRAY_KEY_STRING;
+    key.as.string = ptn_duplicate_string(string);
+    return key;
+}
+
+static PTN_UNUSED int ptn_string_is_integer_array_key(const char *string, int64_t *integer) {
+    if (*string == '\0' || *string == '+') {
+        return 0;
+    }
+    if (strcmp(string, "-0") == 0) {
+        return 0;
+    }
+
+    const char *digits = string;
+    if (*digits == '-') {
+        digits++;
+    }
+    if (*digits == '\0') {
+        return 0;
+    }
+    if (*digits == '0' && digits[1] != '\0') {
+        return 0;
+    }
+    for (const char *cursor = digits; *cursor != '\0'; cursor++) {
+        if (!isdigit((unsigned char)*cursor)) {
+            return 0;
+        }
+    }
+
+    char *end = NULL;
+    errno = 0;
+    long long parsed = strtoll(string, &end, 10);
+    if (errno == ERANGE || end == string || *end != '\0') {
+        return 0;
+    }
+    *integer = (int64_t)parsed;
+    return 1;
+}
+
+static PTN_UNUSED void ptn_abort_illegal_array_key(void) {
+    fputs("Fatal error: Illegal offset type\n", stderr);
+    exit(255);
+}
+
+static PTN_UNUSED PtnArrayKey ptn_array_key_from_value(PtnValue value) {
+    switch (value.type) {
+        case PTN_NULL:
+            return ptn_array_string_key("");
+        case PTN_BOOL:
+            return ptn_array_int_key(value.as.boolean ? 1 : 0);
+        case PTN_INT:
+            return ptn_array_int_key(value.as.integer);
+        case PTN_FLOAT:
+            return ptn_array_int_key((int64_t)value.as.floating);
+        case PTN_STRING: {
+            int64_t integer = 0;
+            if (ptn_string_is_integer_array_key(value.as.string, &integer)) {
+                return ptn_array_int_key(integer);
+            }
+            return ptn_array_string_key(value.as.string);
+        }
+        case PTN_ARRAY:
+            ptn_abort_illegal_array_key();
+    }
+    return ptn_array_string_key("");
+}
+
+static PTN_UNUSED int ptn_array_keys_equal(PtnArrayKey left, PtnArrayKey right) {
+    if (left.type != right.type) {
+        return 0;
+    }
+    if (left.type == PTN_ARRAY_KEY_INT) {
+        return left.as.integer == right.as.integer;
+    }
+    return strcmp(left.as.string, right.as.string) == 0;
+}
+
+static PTN_UNUSED void ptn_array_update_next_auto_key(PtnArray *array, PtnArrayKey key) {
+    if (key.type == PTN_ARRAY_KEY_INT &&
+        key.as.integer >= array->next_auto_key &&
+        key.as.integer < INT64_MAX) {
+        array->next_auto_key = key.as.integer + 1;
+    }
+}
+
+static PTN_UNUSED size_t ptn_array_find_key(PtnArray *array, PtnArrayKey key) {
+    for (size_t i = 0; i < array->len; i++) {
+        if (ptn_array_keys_equal(array->entries[i].key, key)) {
+            return i;
+        }
+    }
+    return array->len;
+}
+
+static PTN_UNUSED void ptn_array_set_entry(PtnArray *array, PtnArrayKey key, PtnValue value) {
+    size_t index = ptn_array_find_key(array, key);
+    ptn_array_update_next_auto_key(array, key);
+    if (index < array->len) {
+        array->entries[index].value = value;
+        return;
+    }
+    if (array->len == array->capacity) {
+        ptn_abort_out_of_memory();
+    }
+    array->entries[array->len].key = key;
+    array->entries[array->len].value = value;
+    array->len++;
+}
+
+static PTN_UNUSED PtnValue ptn_array_from_literal_entries(size_t entry_count, const PtnArrayLiteralEntry *entries) {
+    PtnArray *array = malloc(sizeof(PtnArray));
+    if (array == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    array->len = 0;
+    array->capacity = entry_count;
+    array->entries = NULL;
+    array->next_auto_key = 0;
+    if (entry_count != 0) {
+        array->entries = malloc(entry_count * sizeof(PtnArrayEntry));
+        if (array->entries == NULL) {
+            ptn_abort_out_of_memory();
+        }
+    }
+
+    for (size_t i = 0; i < entry_count; i++) {
+        PtnArrayKey key = entries[i].has_key
+            ? ptn_array_key_from_value(entries[i].key)
+            : ptn_array_int_key(array->next_auto_key);
+        ptn_array_set_entry(array, key, entries[i].value);
+    }
+    return ptn_array(array);
 }
 
 static void ptn_symbols_init(PtnSymbolTable *symbols) {
@@ -1033,6 +1272,8 @@ static PTN_UNUSED PtnNumber ptn_to_number(PtnValue value) {
             return ptn_number_float(value.as.floating);
         case PTN_STRING:
             return ptn_string_to_number(value.as.string);
+        case PTN_ARRAY:
+            return ptn_number_int(value.as.array->len == 0 ? 0 : 1);
     }
     return ptn_number_int(0);
 }
@@ -1068,6 +1309,8 @@ static PTN_UNUSED int ptn_is_truthy(PtnValue value) {
             return value.as.floating != 0.0;
         case PTN_STRING:
             return value.as.string[0] != '\0' && strcmp(value.as.string, "0") != 0;
+        case PTN_ARRAY:
+            return value.as.array->len != 0;
     }
     return 0;
 }
@@ -1143,6 +1386,7 @@ static PTN_UNUSED int ptn_comparison_numeric_value(PtnValue value, double *numbe
             return ptn_is_numeric_string(value.as.string, number);
         case PTN_NULL:
         case PTN_BOOL:
+        case PTN_ARRAY:
             return 0;
     }
     return 0;
@@ -1188,6 +1432,65 @@ static PTN_UNUSED int ptn_compare_number_and_string(PtnValue number, const char 
     return number_is_left ? compared : -compared;
 }
 
+static PTN_UNUSED int ptn_compare_equal(PtnValue left, PtnValue right);
+static PTN_UNUSED int ptn_compare_identical(PtnValue left, PtnValue right);
+static PTN_UNUSED int ptn_compare_order(PtnValue left, PtnValue right);
+
+static PTN_UNUSED PtnArrayEntry *ptn_array_entry_for_key(PtnArray *array, PtnArrayKey key) {
+    for (size_t i = 0; i < array->len; i++) {
+        if (ptn_array_keys_equal(array->entries[i].key, key)) {
+            return &array->entries[i];
+        }
+    }
+    return NULL;
+}
+
+static PTN_UNUSED int ptn_compare_arrays_equal(PtnArray *left, PtnArray *right) {
+    if (left->len != right->len) {
+        return 0;
+    }
+    for (size_t i = 0; i < left->len; i++) {
+        PtnArrayEntry *right_entry = ptn_array_entry_for_key(right, left->entries[i].key);
+        if (right_entry == NULL || !ptn_compare_equal(left->entries[i].value, right_entry->value)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static PTN_UNUSED int ptn_compare_arrays_identical(PtnArray *left, PtnArray *right) {
+    if (left->len != right->len) {
+        return 0;
+    }
+    for (size_t i = 0; i < left->len; i++) {
+        if (!ptn_array_keys_equal(left->entries[i].key, right->entries[i].key) ||
+            !ptn_compare_identical(left->entries[i].value, right->entries[i].value)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static PTN_UNUSED int ptn_compare_arrays_order(PtnArray *left, PtnArray *right) {
+    if (left->len < right->len) {
+        return PTN_COMPARE_LESS;
+    }
+    if (left->len > right->len) {
+        return PTN_COMPARE_GREATER;
+    }
+    for (size_t i = 0; i < left->len; i++) {
+        PtnArrayEntry *right_entry = ptn_array_entry_for_key(right, left->entries[i].key);
+        if (right_entry == NULL) {
+            return PTN_COMPARE_UNORDERED;
+        }
+        int compared = ptn_compare_order(left->entries[i].value, right_entry->value);
+        if (compared != PTN_COMPARE_EQUAL) {
+            return compared;
+        }
+    }
+    return PTN_COMPARE_EQUAL;
+}
+
 static PTN_UNUSED int ptn_compare_equal(PtnValue left, PtnValue right) {
     if (left.type == PTN_BOOL || right.type == PTN_BOOL) {
         return ptn_is_truthy(left) == ptn_is_truthy(right);
@@ -1208,7 +1511,16 @@ static PTN_UNUSED int ptn_compare_equal(PtnValue left, PtnValue right) {
                 return other.as.floating == 0.0;
             case PTN_STRING:
                 return other.as.string[0] == '\0';
+            case PTN_ARRAY:
+                return other.as.array->len == 0;
         }
+    }
+
+    if (left.type == PTN_ARRAY || right.type == PTN_ARRAY) {
+        if (left.type == PTN_ARRAY && right.type == PTN_ARRAY) {
+            return ptn_compare_arrays_equal(left.as.array, right.as.array);
+        }
+        return 0;
     }
 
     double left_number = 0.0;
@@ -1238,6 +1550,8 @@ static PTN_UNUSED int ptn_compare_identical(PtnValue left, PtnValue right) {
             return left.as.floating == right.as.floating;
         case PTN_STRING:
             return strcmp(left.as.string, right.as.string) == 0;
+        case PTN_ARRAY:
+            return ptn_compare_arrays_identical(left.as.array, right.as.array);
     }
     return 0;
 }
@@ -1264,6 +1578,9 @@ static PTN_UNUSED int ptn_compare_order(PtnValue left, PtnValue right) {
         if (right.type == PTN_STRING) {
             return ptn_compare_strings("", right.as.string);
         }
+        if (right.type == PTN_ARRAY) {
+            return ptn_compare_numbers(0.0, (double)ptn_is_truthy(right));
+        }
     }
     if (right.type == PTN_NULL) {
         if (ptn_value_is_nan(left)) {
@@ -1276,6 +1593,16 @@ static PTN_UNUSED int ptn_compare_order(PtnValue left, PtnValue right) {
         if (left.type == PTN_STRING) {
             return ptn_compare_strings(left.as.string, "");
         }
+        if (left.type == PTN_ARRAY) {
+            return ptn_compare_numbers((double)ptn_is_truthy(left), 0.0);
+        }
+    }
+
+    if (left.type == PTN_ARRAY || right.type == PTN_ARRAY) {
+        if (left.type == PTN_ARRAY && right.type == PTN_ARRAY) {
+            return ptn_compare_arrays_order(left.as.array, right.as.array);
+        }
+        return left.type == PTN_ARRAY ? PTN_COMPARE_GREATER : PTN_COMPARE_LESS;
     }
 
     double left_number = 0.0;
@@ -1318,6 +1645,17 @@ static PTN_UNUSED int ptn_compare_greater(PtnValue left, PtnValue right) {
 static PTN_UNUSED int ptn_compare_greater_equal(PtnValue left, PtnValue right) {
     int compared = ptn_compare_order(left, right);
     return compared == PTN_COMPARE_GREATER || compared == PTN_COMPARE_EQUAL;
+}
+
+static PTN_UNUSED int ptn_compare_spaceship(PtnValue left, PtnValue right) {
+    int compared = ptn_compare_order(left, right);
+    if (compared == PTN_COMPARE_LESS) {
+        return -1;
+    }
+    if (compared == PTN_COMPARE_EQUAL) {
+        return 0;
+    }
+    return 1;
 }
 
 static PTN_UNUSED PtnValue ptn_add(PtnValue left, PtnValue right) {
@@ -1620,6 +1958,8 @@ static PTN_UNUSED char *ptn_value_to_string(PtnValue value) {
             break;
         case PTN_STRING:
             return ptn_duplicate_string(value.as.string);
+        case PTN_ARRAY:
+            return ptn_duplicate_string("Array");
     }
 
     if (written < 0 || (size_t)written >= sizeof(buffer)) {
@@ -1715,6 +2055,8 @@ static PTN_UNUSED PtnValue ptn_gettype_value(PtnValue value) {
             return ptn_string("double");
         case PTN_STRING:
             return ptn_string("string");
+        case PTN_ARRAY:
+            return ptn_string("array");
     }
     return ptn_string("unknown type");
 }
@@ -1922,32 +2264,68 @@ static PTN_UNUSED void ptn_echo(PtnValue value) {
         case PTN_STRING:
             fputs(value.as.string, stdout);
             break;
+        case PTN_ARRAY:
+            fputs("Array", stdout);
+            break;
     }
 }
 
-static void ptn_var_dump_value(PtnValue value) {
+static void ptn_var_dump_indent(size_t indent) {
+    for (size_t i = 0; i < indent; i++) {
+        fputs("  ", stdout);
+    }
+}
+
+static void ptn_var_dump_value_indented(PtnValue value, size_t indent) {
     switch (value.type) {
         case PTN_NULL:
+            ptn_var_dump_indent(indent);
             fputs("NULL\n", stdout);
             break;
         case PTN_BOOL:
+            ptn_var_dump_indent(indent);
             fputs(value.as.boolean ? "bool(true)\n" : "bool(false)\n", stdout);
             break;
         case PTN_INT:
+            ptn_var_dump_indent(indent);
             printf("int(%lld)\n", (long long)value.as.integer);
             break;
         case PTN_FLOAT: {
             char formatted[64];
             ptn_format_var_dump_float(value.as.floating, formatted, sizeof(formatted));
+            ptn_var_dump_indent(indent);
             printf("float(%s)\n", formatted);
             break;
         }
         case PTN_STRING:
+            ptn_var_dump_indent(indent);
             printf("string(%zu) \"", strlen(value.as.string));
             fputs(value.as.string, stdout);
             fputs("\"\n", stdout);
             break;
+        case PTN_ARRAY: {
+            PtnArray *array = value.as.array;
+            ptn_var_dump_indent(indent);
+            printf("array(%zu) {\n", array->len);
+            for (size_t i = 0; i < array->len; i++) {
+                ptn_var_dump_indent(indent + 1);
+                PtnArrayKey key = array->entries[i].key;
+                if (key.type == PTN_ARRAY_KEY_INT) {
+                    printf("[%lld]=>\n", (long long)key.as.integer);
+                } else {
+                    printf("[\"%s\"]=>\n", key.as.string);
+                }
+                ptn_var_dump_value_indented(array->entries[i].value, indent + 1);
+            }
+            ptn_var_dump_indent(indent);
+            fputs("}\n", stdout);
+            break;
+        }
     }
+}
+
+static void ptn_var_dump_value(PtnValue value) {
+    ptn_var_dump_value_indented(value, 0);
 }
 
 static PtnValue ptn_internal_var_dump(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {

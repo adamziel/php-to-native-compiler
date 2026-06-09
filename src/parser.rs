@@ -1,6 +1,6 @@
 use crate::ast::{
-    AssignmentOp, BinaryOp, CastKind, Expr, IncDecOp, MagicConstantKind, Program, Statement,
-    StringPart, SwitchCase, UnaryOp,
+    ArrayElement, AssignmentOp, BinaryOp, CastKind, Expr, IncDecOp, MagicConstantKind, Program,
+    Statement, StringPart, SwitchCase, UnaryOp,
 };
 use crate::diagnostic::{Diagnostic, Result, SourceSpan};
 use crate::lexer::{lex, StringPart as TokenStringPart, Token, TokenKind};
@@ -571,7 +571,44 @@ impl Parser {
                     span: combine_spans(token.span, right_span),
                 })
             }
+            TokenKind::LeftBracket => self.parse_array_literal(token.span),
             _ => Err(Diagnostic::new("expected expression", Some(token.span))),
+        }
+    }
+
+    fn parse_array_literal(&mut self, left_span: SourceSpan) -> Result<Expr> {
+        let mut elements = Vec::new();
+        while !matches!(self.peek().kind, TokenKind::RightBracket) {
+            elements.push(self.parse_array_element()?);
+            if !matches!(self.peek().kind, TokenKind::Comma) {
+                break;
+            }
+            self.advance();
+            if matches!(self.peek().kind, TokenKind::RightBracket) {
+                break;
+            }
+        }
+        let right_span = self.expect_right_bracket()?;
+        Ok(Expr::Array {
+            elements,
+            span: combine_spans(left_span, right_span),
+        })
+    }
+
+    fn parse_array_element(&mut self) -> Result<ArrayElement> {
+        let first = self.parse_expr()?;
+        if matches!(self.peek().kind, TokenKind::DoubleArrow) {
+            self.advance();
+            let value = self.parse_expr()?;
+            Ok(ArrayElement {
+                key: Some(first),
+                value,
+            })
+        } else {
+            Ok(ArrayElement {
+                key: None,
+                value: first,
+            })
         }
     }
 
@@ -648,6 +685,7 @@ impl Parser {
             TokenKind::NotEqualEqual => Some((BinaryOp::NotIdentical, 6, false)),
             TokenKind::EqualEqual => Some((BinaryOp::Equal, 6, false)),
             TokenKind::NotEqual => Some((BinaryOp::NotEqual, 6, false)),
+            TokenKind::Spaceship => Some((BinaryOp::Spaceship, 6, false)),
             TokenKind::Less => Some((BinaryOp::Less, 7, false)),
             TokenKind::LessEqual => Some((BinaryOp::LessEqual, 7, false)),
             TokenKind::Greater => Some((BinaryOp::Greater, 7, false)),
@@ -810,6 +848,15 @@ impl Parser {
                 "expected right parenthesis",
                 Some(token.span),
             ))
+        }
+    }
+
+    fn expect_right_bracket(&mut self) -> Result<SourceSpan> {
+        let token = self.advance();
+        if matches!(token.kind, TokenKind::RightBracket) {
+            Ok(token.span)
+        } else {
+            Err(Diagnostic::new("expected right bracket", Some(token.span)))
         }
     }
 

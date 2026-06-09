@@ -616,6 +616,36 @@ fn parser_accepts_strict_identity_expressions() {
 }
 
 #[test]
+fn parser_accepts_array_literals_and_spaceship_expressions() {
+    let program = parser::parse("<?php var_dump([1, \"2\" => 3, 4 => [5]] <=> []);").unwrap();
+    let Statement::Call {
+        name, arguments, ..
+    } = &program.statements[0]
+    else {
+        panic!("expected var_dump statement");
+    };
+    assert_eq!(name, "var_dump");
+
+    let Expr::Binary {
+        op: BinaryOp::Spaceship,
+        left,
+        right,
+        ..
+    } = &arguments[0]
+    else {
+        panic!("expected spaceship expression");
+    };
+    let Expr::Array { elements, .. } = left.as_ref() else {
+        panic!("expected left array literal");
+    };
+    assert_eq!(elements.len(), 3);
+    assert!(elements[0].key.is_none());
+    assert!(elements[1].key.is_some());
+    assert!(matches!(&elements[2].value, Expr::Array { .. }));
+    assert!(matches!(right.as_ref(), Expr::Array { elements, .. } if elements.is_empty()));
+}
+
+#[test]
 fn parser_accepts_bitwise_scalar_expressions() {
     let program = parser::parse("<?php echo \"a\" & \"b\" ^ \"d\" | \"c\" && 1 == 1;").unwrap();
     let Statement::Echo { expressions, .. } = &program.statements[0] else {
@@ -2016,6 +2046,43 @@ fn compile_boolean_short_circuit_ops_to_native_binary() {
 }
 
 #[test]
+fn compile_array_spaceship_and_identity_to_native_binary() {
+    let root = temp_dir("ptn-native-array-spaceship-identity");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-spaceship-identity.php");
+    let output = root.join("array-spaceship-identity-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump([1, 2, 3] <=> []);\n\
+var_dump([] <=> [1, 2, 3]);\n\
+var_dump([1] <=> [2, 3]);\n\
+var_dump([1, 2] <=> [1, 3]);\n\
+var_dump([1, 3] <=> [1, 2]);\n\
+var_dump([1] == [\"1\"]);\n\
+var_dump([1] === [\"1\"]);\n\
+var_dump([0 => 0] === [\"\" => 0]);\n\
+var_dump([0 => 0] === [0x100000000 => 0]);\n\
+var_dump([1 => \"a\", 0 => \"b\"] == [0 => \"b\", 1 => \"a\"]);\n\
+var_dump([1 => \"a\", 0 => \"b\"] === [0 => \"b\", 1 => \"a\"]);\n\
+var_dump([\"0\" => 7, \"\" => 8, 0 => 9]);\n\
+var_dump(gettype([]));\n\
+var_dump(is_scalar([]));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(1)\nint(-1)\nint(-1)\nint(-1)\nint(1)\nbool(true)\nbool(false)\nbool(false)\nbool(false)\nbool(true)\nbool(false)\narray(2) {\n  [0]=>\n  int(9)\n  [\"\"]=>\n  int(8)\n}\nstring(5) \"array\"\nbool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_strict_identity_comparisons_to_native_binary() {
     let root = temp_dir("ptn-native-strict-identity");
     fs::create_dir_all(&root).unwrap();
@@ -3014,15 +3081,12 @@ fn unsupported_constructs_fail_before_codegen() {
         .contains("unsupported PHP token '?'"));
 
     let unsupported_lvalue = parser::parse("<?php $items[0] += 1;").unwrap_err();
-    assert!(unsupported_lvalue
-        .message
-        .contains("unsupported PHP token '['"));
+    assert!(unsupported_lvalue.message.contains("expected assignment"));
 }
 
 #[test]
 fn var_dump_complex_edges_remain_unsupported_before_codegen() {
     for source in [
-        "<?php var_dump([]);",
         "<?php var_dump(new stdClass);",
         "<?php $array = []; $array[] = &$array; var_dump($array);",
         "<?php $value = 1; $ref =& $value; var_dump($ref);",
@@ -3056,7 +3120,8 @@ fn unsupported_internal_functions_fail_in_generated_runtime() {
 #[test]
 fn support_docs_name_var_dump_unsupported_edges() {
     let support = fs::read_to_string("docs/SUPPORT.md").unwrap();
-    assert!(support.contains("Arrays, objects, resources, recursive structures, references"));
+    assert!(support.contains("Array element access/mutation"));
+    assert!(support.contains("recursive arrays, objects, resources, references"));
     assert!(support.contains("Embedded NUL strings"));
     assert!(support.contains("Full PHP float precision and formatting edge cases"));
 }

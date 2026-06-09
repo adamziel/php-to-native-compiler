@@ -1041,3 +1041,25 @@ Added source-spanned parse diagnostics for removed `(real)` casts:
 Still unsupported after this parse-diagnostic slice: broader parse-error
 wording parity, `(unset)`, array/object casts, stack traces, error-handler
 routing, and PHP-exact warning/notice formatting.
+
+Added short literal arrays and array comparison/spaceship support:
+
+- The lexer/parser/AST/IR now support short array literals with optional
+  `key => value` entries.
+- The generated runtime represents ordered arrays with integer/string key
+  canonicalization, automatic integer keys, and duplicate-key replacement.
+- Loose equality, strict identity, ordered comparison, and `<=>` now cover the
+  current literal-array value subset alongside scalar comparisons.
+- `var_dump()`, `gettype()`, truthiness, and scalar conversion boundaries now
+  name array values instead of treating them as wholly unsupported.
+- Native tests prove nested literal parsing, array `<=>`, key identity, registry
+  interactions, and public bug source shapes.
+- Focused public PHPT telemetry through `phpc` passes
+  `Zend/tests/bug69891.phpt`, `Zend/tests/bug69892.phpt`, and
+  `Zend/tests/bug69893.phpt`.
+
+Still unsupported after this array comparison slice: long-form `array(...)`,
+array element access/mutation, append/unset/iteration, references,
+copy-on-write, recursive arrays, array unpacking, object/resource comparison
+parity, keyword boolean operators, chained comparison parse-error parity, and
+exact diagnostics.
