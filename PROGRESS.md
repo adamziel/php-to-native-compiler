@@ -2178,8 +2178,8 @@ Optimized generated scalar comparison fast paths:
 - `tools/bench-native-execution.sh` now includes a generated-native
   `comparison_loop` workload covering scalar loose, ordered, and strict
   comparison loops. In this workspace with 3 samples it kept output `6480000`
-  with best runtime `0.102401s` and samples
-  `0.102401,0.124192,0.119873`.
+  with best runtime `0.092258s` and samples
+  `0.092258,0.112714,0.162036`.
 
 No new PHP surface is claimed by this performance slice. Objects, resources,
 references, copy-on-write behavior, binary-safe string storage, and complete
