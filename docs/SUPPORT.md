@@ -25,7 +25,7 @@ supports in generated native binaries.
 - Binary operands are materialized left-to-right before the generated C backend
   calls runtime helpers.
 - Direct named-variable compound assignment for `+=`, `-=`, `*=`, `/=`, `%=`,
-  `.=`, `&=`, and `|=`. The compiler lowers these as `read $x`, the matching
+  `.=`, `&=`, `|=`, and `^=`. The compiler lowers these as `read $x`, the matching
   boxed binary helper, then `write $x`. The direct variable read happens before
   the right-hand expression, so existing undefined-variable diagnostics remain
   observable in source order.
@@ -42,20 +42,23 @@ supports in generated native binaries.
   and `>=`. Strict scalar identity compares type and value without coercion.
 - Boxed scalar boolean operators `&&` and `||`, with short-circuit evaluation
   over PHP truthiness for the currently supported scalar values.
-- Boxed scalar bitwise `&` and `|` operators. When both operands are strings,
+- Boxed scalar bitwise `&`, `^`, and `|` operators. When both operands are strings,
   the result is a bytewise string for non-NUL string data. Other supported
   scalar operands are converted to integers through the current scalar numeric
   conversion path.
-- Simple statement-form internal calls such as `var_dump(expr, ...)` and
-  `strlen(expr);`.
+- Simple statement-form internal calls such as `var_dump(expr, ...)`,
+  `strlen(expr);`, and `bin2hex(expr);`.
 - Expression-form internal calls for the currently registered scalar functions,
-  including `strlen(expr)`, `gettype(expr)`, and scalar `is_*` type predicates
-  in echo operands, assignments, binary operands, and branch/loop conditions.
+  including `strlen(expr)`, `bin2hex(expr)`, `gettype(expr)`, and scalar `is_*`
+  type predicates in echo operands, assignments, binary operands, and
+  branch/loop conditions.
 - Internal-call arguments are materialized left-to-right before generated C
   runtime dispatch.
 - `var_dump()` output for current boxed scalar values: `NULL`, `bool(...)`,
   `int(...)`, `float(...)`, and `string(length) "value"`.
 - `strlen()` over current boxed scalar values after scalar string conversion.
+- `bin2hex()` over current boxed scalar values after scalar string conversion,
+  returning lowercase hexadecimal byte output.
 - `gettype()` over current boxed scalar values, returning `NULL`, `boolean`,
   `integer`, `double`, or `string`.
 - Scalar type predicates over current boxed scalar values: `is_null()`,
@@ -109,14 +112,14 @@ supports in generated native binaries.
 - Arrays, objects, resources, recursive structures, references, and
   `var_dump()` reference identity output.
 - Embedded NUL strings in runtime string values, `var_dump()` string
-  length/output, or `strlen()`.
+  length/output, `strlen()`, `bin2hex()`, or bitwise string results.
 - Full PHP float precision and formatting edge cases for `var_dump()` or
   `strlen()` input conversion.
 - Complete PHP CLI and PHPT runner option parity for `phpc`.
 - Doc comment retention for reflection or metadata. Comments are skipped today.
-- Bitwise `^`, unary bitwise `~`, and bit shifts.
+- Unary bitwise `~` and bit shifts.
 - Compound assignment operators other than `+=`, `-=`, `*=`, `/=`, `%=`, `.=`,
-  `&=`, and `|=`: `**=`, `^=`, `<<=`, `>>=`, and `??=`.
+  `&=`, `|=`, and `^=`: `**=`, `<<=`, `>>=`, and `??=`.
 - Array, object, string-offset, property, static-property, variable-variable,
   reference, and other non-direct-variable compound-assignment lvalues.
 - Reference semantics for compound assignment, including reference identity,

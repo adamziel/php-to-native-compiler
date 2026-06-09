@@ -326,6 +326,7 @@ impl ValueEmitter {
             | BinaryOp::Modulo
             | BinaryOp::Concat
             | BinaryOp::BitwiseAnd
+            | BinaryOp::BitwiseXor
             | BinaryOp::BitwiseOr => self.emit_runtime_binary(out, op, left, right),
             BinaryOp::Equal
             | BinaryOp::NotEqual
@@ -360,6 +361,7 @@ impl ValueEmitter {
             BinaryOp::Modulo => "ptn_modulo",
             BinaryOp::Concat => "ptn_concat",
             BinaryOp::BitwiseAnd => "ptn_bitwise_and",
+            BinaryOp::BitwiseXor => "ptn_bitwise_xor",
             BinaryOp::BitwiseOr => "ptn_bitwise_or",
             _ => unreachable!(),
         });
@@ -1260,6 +1262,21 @@ static PTN_UNUSED PtnValue ptn_bitwise_string_or(const char *left, const char *r
     return ptn_owned_string(result);
 }
 
+static PTN_UNUSED PtnValue ptn_bitwise_string_xor(const char *left, const char *right) {
+    size_t left_len = strlen(left);
+    size_t right_len = strlen(right);
+    size_t result_len = left_len < right_len ? left_len : right_len;
+    char *result = malloc(result_len + 1);
+    if (result == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < result_len; i++) {
+        result[i] = (char)((unsigned char)left[i] ^ (unsigned char)right[i]);
+    }
+    result[result_len] = '\0';
+    return ptn_owned_string(result);
+}
+
 static PTN_UNUSED int64_t ptn_value_to_integer(PtnValue value) {
     return ptn_number_to_integer(ptn_to_number(value));
 }
@@ -1276,6 +1293,13 @@ static PTN_UNUSED PtnValue ptn_bitwise_or(PtnValue left, PtnValue right) {
         return ptn_bitwise_string_or(left.as.string, right.as.string);
     }
     return ptn_int(ptn_value_to_integer(left) | ptn_value_to_integer(right));
+}
+
+static PTN_UNUSED PtnValue ptn_bitwise_xor(PtnValue left, PtnValue right) {
+    if (left.type == PTN_STRING && right.type == PTN_STRING) {
+        return ptn_bitwise_string_xor(left.as.string, right.as.string);
+    }
+    return ptn_int(ptn_value_to_integer(left) ^ ptn_value_to_integer(right));
 }
 
 static PTN_UNUSED char *ptn_value_to_string(PtnValue value) {
@@ -1465,10 +1489,34 @@ static PtnValue ptn_internal_is_scalar(PtnRuntime *runtime, size_t argc, const P
     return ptn_is_scalar(args[0]);
 }
 
+static PtnValue ptn_internal_bin2hex(PtnRuntime *runtime, size_t argc, const PtnValue *args) {
+    (void)runtime;
+    (void)argc;
+    static const char hex_digits[] = "0123456789abcdef";
+    char *string = ptn_value_to_string(args[0]);
+    size_t len = strlen(string);
+    if (len > (SIZE_MAX - 1) / 2) {
+        ptn_abort_out_of_memory();
+    }
+    char *hex = malloc((len * 2) + 1);
+    if (hex == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < len; i++) {
+        unsigned char byte = (unsigned char)string[i];
+        hex[i * 2] = hex_digits[byte >> 4];
+        hex[(i * 2) + 1] = hex_digits[byte & 0x0f];
+    }
+    hex[len * 2] = '\0';
+    free(string);
+    return ptn_owned_string(hex);
+}
+
 static PTN_UNUSED PtnValue ptn_call_internal(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args) {
     static const PtnInternalFunction functions[] = {
         { "var_dump", 1, PTN_VARIADIC_ARGS, ptn_internal_var_dump },
         { "strlen", 1, 1, ptn_internal_strlen },
+        { "bin2hex", 1, 1, ptn_internal_bin2hex },
         { "gettype", 1, 1, ptn_internal_gettype },
         { "is_null", 1, 1, ptn_internal_is_null },
         { "is_bool", 1, 1, ptn_internal_is_bool },

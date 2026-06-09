@@ -434,3 +434,26 @@ Still unsupported after this switch slice: unbraced and alternate switch
 syntax, `break` with explicit levels such as `break 2`, `continue`, `for`,
 `foreach`, PHP-exact duplicate-default fatal formatting, arrays, objects,
 references, copy-on-write, and exception/finally control-flow edges.
+
+Added the remaining scalar bitwise XOR slice:
+
+- Lexer/parser/AST/IR support for binary `^` expressions between bitwise `&`
+  and `|` precedence, matching the current PHP-like scalar precedence model.
+- Parser/AST/IR support for direct named-variable `^=` compound assignment,
+  lowered through the same direct read, boxed binary helper, and direct write
+  path as the existing direct compound assignments.
+- Generated C runtime helper support for scalar XOR: string/string operands
+  produce bytewise string results for non-NUL string data, while other
+  currently supported scalar operands convert to integers through the existing
+  scalar bitwise path.
+- Registered scalar `bin2hex()` through the generated C internal-function
+  registry so bytewise string XOR can be observed in native output.
+- Native tests prove integer XOR, bytewise string XOR, `^=` assignment, and
+  `bin2hex()` over scalar values.
+- Focused public PHPT telemetry through `phpc` passes
+  `Zend/tests/xor_002.phpt` and `Zend/tests/xor_003.phpt`.
+
+Still unsupported after this XOR slice: unary bitwise `~`, bit shifts,
+compound `<<=` and `>>=`, exact float-to-int bitwise diagnostics and overflow
+parity, embedded NUL bytes in runtime strings and string bitwise results,
+arrays, objects, references, and copy-on-write behavior.

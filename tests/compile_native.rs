@@ -87,10 +87,10 @@ fn parser_accepts_print_as_statement() {
 #[test]
 fn parser_accepts_direct_variable_compound_assignments() {
     let program = parser::parse(
-        "<?php $value = 1; $value += 2; $value -= 3; $value *= 4; $value /= 5; $value %= 6; $value .= \"7\"; $value &= \"8\"; $value |= \"9\";",
+        "<?php $value = 1; $value += 2; $value -= 3; $value *= 4; $value /= 5; $value %= 6; $value .= \"7\"; $value &= \"8\"; $value |= \"9\"; $value ^= \"10\";",
     )
     .unwrap();
-    assert_eq!(program.statements.len(), 9);
+    assert_eq!(program.statements.len(), 10);
 
     let Statement::Assign { op, .. } = &program.statements[1] else {
         panic!("expected add assignment statement");
@@ -131,6 +131,11 @@ fn parser_accepts_direct_variable_compound_assignments() {
         panic!("expected bitwise or assignment statement");
     };
     assert_eq!(*op, AssignmentOp::BitwiseOrAssign);
+
+    let Statement::Assign { op, .. } = &program.statements[9] else {
+        panic!("expected bitwise xor assignment statement");
+    };
+    assert_eq!(*op, AssignmentOp::BitwiseXorAssign);
 }
 
 #[test]
@@ -435,7 +440,7 @@ fn parser_accepts_strict_identity_expressions() {
 
 #[test]
 fn parser_accepts_bitwise_scalar_expressions() {
-    let program = parser::parse("<?php echo \"a\" & \"b\" | \"c\" && 1 == 1;").unwrap();
+    let program = parser::parse("<?php echo \"a\" & \"b\" ^ \"d\" | \"c\" && 1 == 1;").unwrap();
     let Statement::Echo { expressions, .. } = &program.statements[0] else {
         panic!("expected echo statement");
     };
@@ -455,6 +460,14 @@ fn parser_accepts_bitwise_scalar_expressions() {
     } = left.as_ref()
     else {
         panic!("expected bitwise or below boolean and");
+    };
+    let Expr::Binary {
+        op: BinaryOp::BitwiseXor,
+        left,
+        ..
+    } = left.as_ref()
+    else {
+        panic!("expected bitwise xor below bitwise or");
     };
     assert!(matches!(
         left.as_ref(),
@@ -1432,7 +1445,7 @@ fn compile_bitwise_scalar_operations_to_native_binary() {
     let output = root.join("bitwise-scalars-bin");
     fs::write(
         &input,
-        "<?php echo 6 & 3, \" \", 4 | 1, \"\\n\"; var_dump(\"123\" & \"234\"); var_dump(\"323423\" | \"2323.555\"); var_dump(\"some\" | \"test\"); $s = \"test\"; $s &= \"some long\"; var_dump($s); $o = \"some\"; $o |= \"test\"; var_dump($o);",
+        "<?php echo 6 & 3, \" \", 4 | 1, \" \", 6 ^ 3, \"\\n\"; var_dump(\"123\" & \"234\"); var_dump(\"323423\" | \"2323.555\"); var_dump(\"some\" | \"test\"); var_dump(bin2hex(\"123\" ^ \"234\")); $s = \"test\"; $s &= \"some long\"; var_dump($s); $o = \"some\"; $o |= \"test\"; var_dump($o); $x = \"some\"; $x ^= \"test long\"; var_dump(bin2hex($x));",
     )
     .unwrap();
 
@@ -1442,7 +1455,7 @@ fn compile_bitwise_scalar_operations_to_native_binary() {
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "2 5\nstring(3) \"020\"\nstring(8) \"3337>755\"\nstring(4) \"wo\x7fu\"\nstring(4) \"pead\"\nstring(4) \"wo\x7fu\"\n"
+        "2 5 5\nstring(3) \"020\"\nstring(8) \"3337>755\"\nstring(4) \"wo\x7fu\"\nstring(6) \"030107\"\nstring(4) \"pead\"\nstring(4) \"wo\x7fu\"\nstring(8) \"070a1e11\"\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

@@ -28,15 +28,16 @@ Current runtime/compiler slices:
   calls.
 - Direct variable reads pass through a runtime helper that emits a generic
   undefined-variable warning before yielding `null`.
-- Scalar binary `+`, `-`, `*`, `/`, `%`, `.`, `&`, and `|` expressions lower
+- Scalar binary `+`, `-`, `*`, `/`, `%`, `.`, `&`, `^`, and `|` expressions lower
   to IR value-expression operation nodes. The C backend materializes operands
   into `PtnValue` temporaries in source order before calling boxed runtime
   helpers such as `ptn_add`, `ptn_subtract`, `ptn_multiply`, `ptn_divide`,
-  `ptn_modulo`, `ptn_concat`, `ptn_bitwise_and`, and `ptn_bitwise_or`.
+  `ptn_modulo`, `ptn_concat`, `ptn_bitwise_and`, `ptn_bitwise_xor`, and
+  `ptn_bitwise_or`.
   String/string bitwise operands use bytewise string helpers for non-NUL string
   data; other supported scalar operands convert through the current numeric
   path before integer bitwise operations.
-- Direct named-variable `+=`, `-=`, `*=`, `/=`, `%=`, `.=`, `&=`, and `|=`
+- Direct named-variable `+=`, `-=`, `*=`, `/=`, `%=`, `.=`, `&=`, `^=`, and `|=`
   lower in IR as a direct variable load, the same boxed binary helper used by
   the ordinary binary operator, and a direct variable store. This keeps
   left-to-right reads and undefined-variable diagnostics on the runtime read
@@ -64,9 +65,10 @@ Current runtime/compiler slices:
   function registry. Statement-form calls discard the returned boxed value.
   `var_dump` formats boxed scalar runtime values and returns `null`; `strlen`
   returns the byte length of the current boxed scalar string conversion;
-  `gettype` and scalar `is_*` predicates query the current boxed scalar/null
-  value domain through the same registry. Fixed-arity internal functions record
-  min/max arity metadata while `var_dump` remains variadic.
+  `bin2hex` returns lowercase hexadecimal bytes for that same string
+  conversion; `gettype` and scalar `is_*` predicates query the current boxed
+  scalar/null value domain through the same registry. Fixed-arity internal
+  functions record min/max arity metadata while `var_dump` remains variadic.
 - Braced `if`, `elseif`, and `else` statements lower to structured IR branch
   instructions. Conditions remain boxed value expressions, and the C backend
   emits native branches that call the shared scalar truthiness helper.
@@ -97,15 +99,16 @@ Near-term architecture targets:
   arithmetic helpers.
 - Array, object, and reference lvalues for compound assignment, plus
   unsupported compound operators beyond `+=`, `-=`, `*=`, `/=`, `%=`, `.=`,
-  `&=`, and `|=`: `**=`, `^=`, `<<=`, `>>=`, `??=`.
+  `&=`, `|=`, and `^=`: `**=`, `<<=`, `>>=`, `??=`.
 - Complete comparison parity for arrays, objects, references, chained
   comparison parse errors, spaceship operator, keyword boolean operators, and
   unsupported scalar edge cases.
 - A broader internal-function module system with shared argument parsing,
   metadata, unsupported array/object/resource/reference diagnostics, and
-  PHP-exact `var_dump` precision/formatting and `strlen` byte-string behavior.
+  PHP-exact `var_dump` precision/formatting plus `strlen`/`bin2hex`
+  byte-string behavior.
 - Broader control flow: unbraced and alternate syntax, `for`, `foreach`,
-  `switch`, `break`, `continue`, and exception/finally edges.
+  explicit-level `break`, `continue`, and exception/finally edges.
 - Full PHP increment/decrement semantics, including expression result values,
   strings, booleans, arrays/objects, references, and copy-on-write behavior.
 - Explicit fallback boundaries for `eval`, variable variables, and runtime

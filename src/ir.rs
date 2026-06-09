@@ -93,6 +93,7 @@ pub enum BinaryOp {
     Greater,
     GreaterEqual,
     BitwiseAnd,
+    BitwiseXor,
     BitwiseOr,
     And,
     Or,
@@ -228,6 +229,9 @@ fn lower_assignment_value(name: &str, op: AssignmentOp, value: &Expr) -> ValueEx
         AssignmentOp::BitwiseOrAssign => {
             lower_compound_assignment(name, BinaryOp::BitwiseOr, right)
         }
+        AssignmentOp::BitwiseXorAssign => {
+            lower_compound_assignment(name, BinaryOp::BitwiseXor, right)
+        }
     }
 }
 
@@ -313,6 +317,7 @@ fn lower_binary_op(op: AstBinaryOp) -> BinaryOp {
         AstBinaryOp::Greater => BinaryOp::Greater,
         AstBinaryOp::GreaterEqual => BinaryOp::GreaterEqual,
         AstBinaryOp::BitwiseAnd => BinaryOp::BitwiseAnd,
+        AstBinaryOp::BitwiseXor => BinaryOp::BitwiseXor,
         AstBinaryOp::BitwiseOr => BinaryOp::BitwiseOr,
         AstBinaryOp::And => BinaryOp::And,
         AstBinaryOp::Or => BinaryOp::Or,

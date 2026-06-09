@@ -23,12 +23,14 @@ Supported today:
 - Statement-form `print expr;` for the same scalar expression subset as
   `echo`; emitted native code uses the same boxed output conversion path.
 - Simple internal calls such as `var_dump(expr, ...)`, `strlen(expr)`,
-  `gettype(expr)`, and scalar `is_*` type predicates, lowered through IR
-  internal-call nodes and generated C runtime dispatch.
+  `bin2hex(expr)`, `gettype(expr)`, and scalar `is_*` type predicates, lowered
+  through IR internal-call nodes and generated C runtime dispatch.
 - `var_dump()` output for the current boxed scalar `PtnValue` types: `null`,
   booleans, integers, floats, and strings.
 - `strlen()` as an expression returning the byte length of the current boxed
   scalar string-conversion result.
+- `bin2hex()` as an expression returning lowercase hexadecimal bytes for the
+  current boxed scalar string-conversion result.
 - `gettype()` and scalar type predicates for the current boxed scalar
   `PtnValue` types: `is_null()`, `is_bool()`, `is_int()`/`is_integer()`/
   `is_long()`, `is_float()`/`is_double()`, `is_string()`, and `is_scalar()`.
@@ -43,7 +45,7 @@ Supported today:
   and `-`, and arithmetic as higher precedence than `.`, while the backend
   emits runtime calls over `PtnValue` operands.
 - Direct named-variable compound assignment for `+=`, `-=`, `*=`, `/=`, `%=`,
-  `.=`, `&=`, and `|=`. These lower as a variable read, the matching boxed
+  `.=`, `&=`, `|=`, and `^=`. These lower as a variable read, the matching boxed
   binary helper, then a variable write, preserving the existing
   undefined-variable diagnostic boundary.
 - Parenthesized expressions, unary `+`, unary `-`, unary `!`, and `(int)`,
@@ -54,9 +56,10 @@ Supported today:
   `<`, `<=`, `>`, `>=`, `&&`, and `||`. Strict identity compares scalar type
   and value without coercion; boolean operators short-circuit over boxed PHP
   truthiness for the currently supported scalar value types.
-- Boxed scalar bitwise `&` and `|` expressions. String/string operands use PHP
-  bytewise string results for non-NUL strings; other supported scalar operands
-  are converted to integers through the current boxed numeric conversion path.
+- Boxed scalar bitwise `&`, `^`, and `|` expressions. String/string operands
+  use PHP bytewise string results for non-NUL strings; other supported scalar
+  operands are converted to integers through the current boxed numeric
+  conversion path.
 - Braced `if`, `elseif`, and `else` statements. Branch conditions use boxed
   scalar truthiness and the currently supported expression subset, including
   grouped expressions and scalar comparisons.
@@ -76,12 +79,12 @@ Unsupported today:
 
 - Arrays, objects, functions, classes, includes, references, copy-on-write,
   resources, exceptions, array/object/reference compound-assignment lvalues,
-  compound operators other than `+=`, `-=`, `*=`, `/=`, `%=`, `.=`, `&=`, and
-  `|=` (`**=`, `^=`, `<<=`, `>>=`, `??=`), `print` as an expression returning
+  compound operators other than `+=`, `-=`, `*=`, `/=`, `%=`, `.=`, `&=`, `|=`,
+  and `^=` (`**=`, `<<=`, `>>=`, `??=`), `print` as an expression returning
   `1` even when spelled `print(...)`, increment/decrement operators, full
   PHP numeric-string and non-numeric string arithmetic diagnostics, exact
   division/modulo-by-zero exception behavior, complete comparison parity for
-  unsupported types, spaceship comparison operator, bitwise `^`, `~`, shifts,
+  unsupported types, spaceship comparison operator, bitwise `~`, shifts,
   keyword boolean operators, chained comparison parse errors, unbraced and alternate
   control-flow syntax, `for`, `foreach`, explicit-level `break`
   such as `break 2`, `continue`, full switch parity for unsupported value

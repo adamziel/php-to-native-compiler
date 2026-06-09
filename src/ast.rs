@@ -79,6 +79,7 @@ pub enum AssignmentOp {
     ConcatAssign,
     BitwiseAndAssign,
     BitwiseOrAssign,
+    BitwiseXorAssign,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -135,6 +136,7 @@ pub enum BinaryOp {
     Identical,
     NotIdentical,
     BitwiseAnd,
+    BitwiseXor,
     BitwiseOr,
     Less,
     LessEqual,
