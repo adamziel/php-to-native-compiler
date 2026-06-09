@@ -1909,6 +1909,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "array_pop"
             | "array_push"
             | "array_shift"
+            | "array_values"
             | "current"
             | "end"
             | "key"

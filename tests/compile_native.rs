@@ -687,6 +687,9 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
 
     let error = parser::parse("<?php function Print_R($value) { return $value; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function print_r()");
+
+    let error = parser::parse("<?php function array_values($array) { return null; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function array_values()");
 }
 
 #[test]
@@ -5113,6 +5116,35 @@ var_dump(function_exists(\"array_key_exists\"), function_exists(\"ARRAY_KEY_EXIS
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "bool(true)\nbool(false)\nDeprecated: Using null as the key parameter for array_key_exists() is deprecated, use an empty string instead in ptn on line 5\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_array_values_to_native_binary() {
+    let root = temp_dir("ptn-native-array-values");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-values.php");
+    let output = root.join("array-values-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$items = array('zero', 'one', 'two', 'three' => 3, 10 => 'ten');\n\
+$values = array_values($items);\n\
+var_dump($values);\n\
+var_dump($items);\n\
+var_dump(array_values([]));\n\
+var_dump(function_exists(\"array_values\"), function_exists(\"ARRAY_VALUES\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(5) {\n  [0]=>\n  string(4) \"zero\"\n  [1]=>\n  string(3) \"one\"\n  [2]=>\n  string(3) \"two\"\n  [3]=>\n  int(3)\n  [4]=>\n  string(3) \"ten\"\n}\narray(5) {\n  [0]=>\n  string(4) \"zero\"\n  [1]=>\n  string(3) \"one\"\n  [2]=>\n  string(3) \"two\"\n  [\"three\"]=>\n  int(3)\n  [10]=>\n  string(3) \"ten\"\n}\narray(0) {\n}\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
