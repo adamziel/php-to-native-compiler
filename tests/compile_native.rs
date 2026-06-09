@@ -1005,6 +1005,71 @@ fn compile_ord_not_one_byte_phpt_shape_to_native_binary() {
 }
 
 #[test]
+fn compile_base_conversion_internal_functions_to_native_binary() {
+    let root = temp_dir("ptn-native-base-conversion-functions");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("base-conversion-functions.php");
+    let output = root.join("base-conversion-functions-bin");
+    fs::write(
+        &input,
+        "<?php var_dump(bindec(\"101\"), bindec(\"0B101\"), hexdec(\"ff\"), hexdec(\"0X10\"), octdec(\"77\"), octdec(\"0O10\"), function_exists(\"hexdec\"), function_exists(\"HEXDEC\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(5)\nint(5)\nint(255)\nint(16)\nint(63)\nint(8)\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_base_conversion_invalid_character_diagnostic_to_native_binary() {
+    let root = temp_dir("ptn-native-base-conversion-invalid-character");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("base-conversion-invalid-character.php");
+    let output = root.join("base-conversion-invalid-character-bin");
+    fs::write(&input, "<?php\n\nvar_dump(hexdec(\"f?f\"));\n").unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Deprecated: Invalid characters passed for attempted conversion, these have been ignored in ptn on line 3\nint(255)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_base_conversion_variation2_phpt_shapes_to_native_binary() {
+    let root = temp_dir("ptn-native-base-conversion-variation2-phpt-shapes");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("base-conversion-variation2.php");
+    let output = root.join("base-conversion-variation2-bin");
+    fs::write(
+        &input,
+        "<?php\n\nvar_dump(bindec('0b'));\nvar_dump(bindec('0B'));\nvar_dump(bindec(''));\nvar_dump(hexdec('0x'));\nvar_dump(hexdec('0X'));\nvar_dump(hexdec(''));\nvar_dump(octdec('0o'));\nvar_dump(octdec('0O'));\nvar_dump(octdec('0'));\nvar_dump(octdec(''));\n\n?>",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(0)\nint(0)\nint(0)\nint(0)\nint(0)\nint(0)\nint(0)\nint(0)\nint(0)\nint(0)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_symbol_existence_internal_functions_to_native_binary() {
     let root = temp_dir("ptn-native-symbol-existence-functions");
     fs::create_dir_all(&root).unwrap();

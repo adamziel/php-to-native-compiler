@@ -592,3 +592,28 @@ PHP built-in and extension constants beyond `E_ERROR`, exact shift diagnostic
 formatting and exception behavior, bitwise integer overflow parity, embedded
 NUL bytes in runtime strings and string bitwise results, arrays, objects,
 references, and copy-on-write behavior.
+
+Added a scalar base-conversion internal-function slice:
+
+- Registered `bindec()`, `hexdec()`, and `octdec()` through the existing
+  generated C internal-function registry, so normal calls and
+  `function_exists()` share the same case-insensitive lookup table.
+- The three internals convert the current boxed scalar argument through the
+  shared scalar string-conversion path, trim surrounding ASCII whitespace,
+  accept their matching PHP base prefixes (`0b`, `0x`, `0o`), and parse valid
+  base digits into boxed integers until native integer range is exceeded, then
+  boxed floats.
+- Invalid base-conversion characters are ignored after emitting a generic
+  deprecation boundary through the existing line-aware internal diagnostic path.
+- Native tests prove ordinary conversion, case-insensitive registry exposure,
+  invalid-character diagnostics, and the public `variation2.phpt` prefix-only
+  source shapes.
+- Focused public PHPT telemetry through `phpc` passes
+  `ext/standard/tests/math/bindec_variation2.phpt`,
+  `ext/standard/tests/math/hexdec_variation2.phpt`, and
+  `ext/standard/tests/math/octdec_variation2.phpt`.
+
+Still unsupported after this base-conversion slice: arrays, objects, resources,
+references, copy-on-write behavior, exact unsupported-type diagnostics, embedded
+NUL strings, and complete PHP precision/range parity for very large
+base-conversion inputs.

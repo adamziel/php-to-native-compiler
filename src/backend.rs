@@ -1696,6 +1696,99 @@ static PtnValue ptn_internal_bin2hex(PtnRuntime *runtime, size_t argc, const Ptn
     return ptn_owned_string(hex);
 }
 
+static int ptn_digit_value_for_base(unsigned char byte, int base) {
+    int value = -1;
+    if (byte >= '0' && byte <= '9') {
+        value = (int)(byte - '0');
+    } else if (byte >= 'a' && byte <= 'f') {
+        value = 10 + (int)(byte - 'a');
+    } else if (byte >= 'A' && byte <= 'F') {
+        value = 10 + (int)(byte - 'A');
+    }
+    return value >= 0 && value < base ? value : -1;
+}
+
+static PtnValue ptn_base_string_to_number(
+    PtnRuntime *runtime,
+    const char *string,
+    int base,
+    char prefix,
+    size_t line
+) {
+    const char *start = string;
+    while (isspace((unsigned char)*start)) {
+        start++;
+    }
+
+    const char *end = string + strlen(string);
+    while (end > start && isspace((unsigned char)*(end - 1))) {
+        end--;
+    }
+
+    if ((end - start) >= 2 && start[0] == '0' && tolower((unsigned char)start[1]) == prefix) {
+        start += 2;
+    }
+
+    int saw_digit = 0;
+    int saw_invalid = 0;
+    int fits_integer = 1;
+    int64_t integer = 0;
+    double floating = 0.0;
+
+    for (const char *cursor = start; cursor < end; cursor++) {
+        int digit = ptn_digit_value_for_base((unsigned char)*cursor, base);
+        if (digit < 0) {
+            saw_invalid = 1;
+            continue;
+        }
+        saw_digit = 1;
+        floating = (floating * (double)base) + (double)digit;
+        if (fits_integer) {
+            if (integer > (INT64_MAX - digit) / base) {
+                fits_integer = 0;
+            } else {
+                integer = (integer * base) + digit;
+            }
+        }
+    }
+
+    if (saw_invalid) {
+        ptn_emit_deprecation(
+            &runtime->diagnostics,
+            "Invalid characters passed for attempted conversion, these have been ignored",
+            line
+        );
+    }
+    if (!saw_digit) {
+        return ptn_int(0);
+    }
+    return fits_integer ? ptn_int(integer) : ptn_float(floating);
+}
+
+static PtnValue ptn_internal_bindec(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    char *string = ptn_value_to_string(args[0]);
+    PtnValue value = ptn_base_string_to_number(runtime, string, 2, 'b', line);
+    free(string);
+    return value;
+}
+
+static PtnValue ptn_internal_hexdec(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    char *string = ptn_value_to_string(args[0]);
+    PtnValue value = ptn_base_string_to_number(runtime, string, 16, 'x', line);
+    free(string);
+    return value;
+}
+
+static PtnValue ptn_internal_octdec(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    char *string = ptn_value_to_string(args[0]);
+    PtnValue value = ptn_base_string_to_number(runtime, string, 8, 'o', line);
+    free(string);
+    return value;
+}
+
 static PtnValue ptn_internal_chr(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)argc;
@@ -1755,6 +1848,9 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "var_dump", 1, PTN_VARIADIC_ARGS, ptn_internal_var_dump },
         { "strlen", 1, 1, ptn_internal_strlen },
         { "bin2hex", 1, 1, ptn_internal_bin2hex },
+        { "bindec", 1, 1, ptn_internal_bindec },
+        { "hexdec", 1, 1, ptn_internal_hexdec },
+        { "octdec", 1, 1, ptn_internal_octdec },
         { "chr", 1, 1, ptn_internal_chr },
         { "ord", 1, 1, ptn_internal_ord },
         { "error_reporting", 0, 1, ptn_internal_error_reporting },

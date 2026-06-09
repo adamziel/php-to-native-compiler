@@ -68,11 +68,14 @@ Current runtime/compiler slices:
   registry. Statement-form calls discard the returned boxed value. `var_dump`
   formats boxed scalar runtime values and returns `null`; `strlen` returns the
   byte length of the current boxed scalar string conversion; `bin2hex` returns
-  lowercase hexadecimal bytes for that same string conversion; `chr` constructs
-  one-byte strings from scalar integer conversion; `ord` observes the first
-  byte of scalar string conversion; `error_reporting` currently accepts zero or
-  one argument and returns a placeholder reporting level; `gettype` and scalar
-  `is_*` predicates query the current boxed scalar/null value domain;
+  lowercase hexadecimal bytes for that same string conversion; `bindec`,
+  `hexdec`, and `octdec` parse scalar string-conversion results through shared
+  base-conversion helpers with prefix handling and line-aware deprecation
+  diagnostics; `chr` constructs one-byte strings from scalar integer
+  conversion; `ord` observes the first byte of scalar string conversion;
+  `error_reporting` currently accepts zero or one argument and returns a
+  placeholder reporting level; `gettype` and scalar `is_*` predicates query the
+  current boxed scalar/null value domain;
   `function_exists` shares the registry lookup path; and `defined` checks the
   current constant-registry boundary, which includes the modeled PHP `E_ERROR`
   constant. Fixed-arity internal functions record min/max arity metadata while
@@ -121,7 +124,7 @@ Near-term architecture targets:
 - A broader internal-function module system with shared argument parsing,
   metadata, unsupported array/object/resource/reference diagnostics, and
   PHP-exact `var_dump` precision/formatting plus `strlen`/`bin2hex`
-  byte-string behavior.
+  byte-string behavior plus base-conversion precision/range parity.
 - User-defined functions, classes/methods, constants beyond the currently
   modeled `E_ERROR`, namespaced symbols, autoloading, and disabled-functions
   behavior in symbol-existence predicates.
