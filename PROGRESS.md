@@ -2156,3 +2156,32 @@ No new PHP surface is claimed by this performance slice. Array mutation,
 append/unset, recursive arrays, references, copy-on-write, `Countable` objects,
 and exact unsupported operand diagnostics beyond the current modeled boundaries
 remain unsupported.
+
+Optimized generated scalar comparison fast paths:
+
+- Generated C comparison helpers now return directly for common same-type
+  scalar comparisons before falling back to the broader PHP loose-comparison
+  paths. Same-type `null`, booleans, integers, floats, strings, and arrays keep
+  their current PHP-shaped semantics, including unordered `NAN` comparisons,
+  numeric-string string/string comparison, and ordered-array comparison.
+- Integer/float mixed scalar comparisons now use a direct numeric helper
+  instead of routing through generic comparison conversion. Strings, `null`,
+  booleans, arrays, and unsupported boundaries still fall through to the
+  existing loose comparison behavior.
+- Strict non-identity now emits a dedicated `ptn_compare_not_identical()`
+  helper, and strict identity/non-identity string and array comparisons
+  short-circuit pointer-identical values before deep comparison.
+- Native tests prove the fast-path generated-C shape while preserving loose,
+  ordered, strict identity, numeric-string, `null`, and boolean comparison
+  edges. Focused comparison tests pass, and focused public PHPT telemetry
+  through `phpc` still passes `tests/lang/operators/nan-comparison-false.phpt`.
+- `tools/bench-native-execution.sh` now includes a generated-native
+  `comparison_loop` workload covering scalar loose, ordered, and strict
+  comparison loops. In this workspace with 3 samples it kept output `6480000`
+  with best runtime `0.102401s` and samples
+  `0.102401,0.124192,0.119873`.
+
+No new PHP surface is claimed by this performance slice. Objects, resources,
+references, copy-on-write behavior, binary-safe string storage, and complete
+comparison parity for unsupported value types remain outside the current boxed
+runtime boundary.

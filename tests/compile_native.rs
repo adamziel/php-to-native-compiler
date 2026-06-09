@@ -4723,6 +4723,45 @@ fn compile_strict_identity_comparisons_to_native_binary() {
 }
 
 #[test]
+fn compile_scalar_comparison_fast_paths_preserve_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-scalar-comparison-fast-paths");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("scalar-comparison-fast-paths.php");
+    let output = root.join("scalar-comparison-fast-paths-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$zero = 0;\n\
+$zeroFloat = 0.0;\n\
+$one = 1;\n\
+$twoFloat = 2.5;\n\
+$word = \"alpha\";\n\
+$same = \"alpha\";\n\
+$numeric = \"042\";\n\
+$numericFloat = \"42.0\";\n\
+echo $zero == $zeroFloat, \"|\", $one < $twoFloat, \"|\", $twoFloat > $one, \"|\", $word === $same, \"|\", $word !== \"beta\", \"|\";\n\
+echo $numeric == $numericFloat, \"|\", \"10\" < \"2\", \"|\", \"alpha\" < \"beta\", \"|\", null == \"\", \"|\", null == 0, \"|\", false == \"0\", \"|\", true == \"0\", \"\\n\";",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "1|1|1|1|1|1||1|1|1|1|\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("static PTN_UNUSED int ptn_compare_number_types"));
+    assert!(c_source.contains("static PTN_UNUSED int ptn_compare_strings_loose"));
+    assert!(c_source.contains("static PTN_UNUSED int ptn_compare_not_identical"));
+    assert!(c_source.contains(" = ptn_bool(ptn_compare_not_identical("));
+}
+
+#[test]
 fn compile_scalar_shift_strings_and_constants_to_native_binary() {
     let root = temp_dir("ptn-native-scalar-shifts");
     fs::create_dir_all(&root).unwrap();
