@@ -1,0 +1,50 @@
+# Focused PHPT copy-on-write manifest for the scratch compiler line.
+#
+# Paths are relative to PHP_SRC_PHPT, defaulting to /home/claude/php-src-phpt.
+# Bucket row counts are validated by tools/run-bounded-phpt.sh.
+#
+# Run:
+#   tools/run-bounded-phpt.sh tools/phpt-cow-manifest.txt
+
+# bucket: assignment-aliasing rows=4
+Zend/tests/assign_to_var_001.phpt
+Zend/tests/assign_to_var_002.phpt
+Zend/tests/assign_to_var_003.phpt
+Zend/tests/assign_to_var_004.phpt
+
+# bucket: string-offsets rows=4
+Zend/tests/str_offset_001.phpt
+Zend/tests/str_offset_002.phpt
+Zend/tests/str_offset_003.phpt
+Zend/tests/string_offset_optimization.phpt
+
+# bucket: array-writes-appends-unset rows=4
+Zend/tests/array_append_COW.phpt
+Zend/tests/assign_dim_op_same_var.phpt
+Zend/tests/unset/bug34518.phpt
+ext/standard/tests/array/array_unshift_basic1.phpt
+
+# bucket: nested-arrays rows=4
+Zend/tests/bug35163.phpt
+Zend/tests/bug38469.phpt
+ext/standard/tests/array/array_merge_recursive_basic1.phpt
+ext/standard/tests/array/array_merge_replace_recursive_refs.phpt
+
+# bucket: foreach-mutation rows=4
+Zend/tests/foreach/foreach_reference.phpt
+Zend/tests/foreach/foreach_by_ref_repacking_insert.phpt
+Zend/tests/foreach/foreach_temp_array_expr_with_refs.phpt
+ext/standard/tests/array/array_walk/bug69068_2.phpt
+
+# bucket: function-boundaries rows=4
+Zend/tests/return_types/return_reference_separation.phpt
+Zend/tests/assign_by_val_function_by_ref_return_value.phpt
+ext/standard/tests/array/array_reduce_accumulator_refcount.phpt
+ext/standard/tests/array/array_reduce_return_by_ref.phpt
+
+# bucket: reference-interaction rows=5
+Zend/tests/array_with_refs_identical.phpt
+Zend/tests/assign_dim_ref_free.phpt
+ext/standard/tests/array/array_sum_on_reference.phpt
+ext/standard/tests/strings/strtr_with_reference.phpt
+ext/standard/tests/general_functions/debug_zval_dump_refs.phpt

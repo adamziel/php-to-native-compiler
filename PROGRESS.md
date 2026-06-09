@@ -1,7 +1,7 @@
 # PTN Progress
 
-Last refresh: 2026-06-09T17:28Z
-Commit: pending `ptn-cqu.42` rebased after `ptn-cqu.47.4`
+Last refresh: 2026-06-09T17:30Z
+Commit: pending `ptn-cqu.47.9` rebased after `ptn-cqu.42`
 
 ## Test Dashboard
 
@@ -13,8 +13,15 @@ Commit: pending `ptn-cqu.42` rebased after `ptn-cqu.47.4`
 | PHPT Zend rows | 76 | 60 | 16 |
 | PHPT ext/standard rows | 77 | 44 | 33 |
 | PHPT tests/basic+func+lang | 18 | 17 | 1 |
-| COW contract spec tests | 5 | 5 | Runtime COW implementation still needed |
-| COW-focused tests | 2 | 2 | strings, nested write targets, references |
+| COW contract spec tests | 5 | 5 | 0 |
+| COW-focused native tests | 2 | 2 | 0 |
+| PHPT COW manifest | 29 | 2 | 27 failed, 0 skipped, 0 warned |
+
+## COW PHPT Buckets
+
+`tools/phpt-cow-manifest.txt` at 2026-06-09T17:30Z: assignment-aliasing
+0/4, string-offsets 2/4, array-writes-appends-unset 0/4, nested-arrays 0/4,
+foreach-mutation 0/4, function-boundaries 0/4, reference-interaction 0/5.
 
 ## Already Ported
 
