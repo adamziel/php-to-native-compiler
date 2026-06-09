@@ -2048,3 +2048,34 @@ Still unsupported after this optimization: embedded-NUL string parity, exact
 unsupported array/object/resource/reference diagnostics for these internals,
 and broader binary-string length tracking beyond the current C-string-backed
 value model.
+
+Optimized generated user-function call overhead:
+
+- Generated user-function frames now initialize local variable storage while
+  sharing the caller/global runtime constant table instead of copying constants
+  into a fresh table on every call.
+- Statically named calls to generated user functions now emit direct calls to
+  the generated C wrapper, including recursive and case-insensitive user calls;
+  the generic string dispatcher remains for internal functions, missing
+  functions, and registry checks.
+- Local variable isolation, global constant visibility, duplicate/undefined
+  constant behavior through the shared table, recursion, extra-argument
+  tolerance, and minimal `null` parameter/return type checks continue to use
+  the existing boxed runtime paths.
+- Native tests prove the direct generated call shape, constant visibility into
+  and out of user functions, recursive calls, local variable isolation, and
+  preserved null type diagnostics.
+- `tools/bench-native-execution.sh` now includes focused non-recursive and
+  recursive user-function workloads. In this workspace with 5 samples, the
+  non-recursive `user_function_step` benchmark kept output `14401920000` with
+  best runtime `0.023662s` and samples
+  `0.029788,0.038595,0.023662,0.029888,0.032643`; the recursive
+  `user_function_recursive` benchmark kept output `50000` with best runtime
+  `0.013810s` and samples
+  `0.016435,0.014753,0.013810,0.014355,0.025847`.
+
+No new broad function surface is claimed by this performance slice. Defaults,
+variadics, named arguments, by-reference parameters, closures, methods,
+conditional declarations, namespace/function imports, `global`, full
+argument-introspection semantics, exact diagnostic wording, and
+scope-aware magic constants inside functions remain unsupported.

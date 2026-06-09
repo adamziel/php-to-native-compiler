@@ -137,7 +137,8 @@ typedef struct {
 
 typedef struct {
     PtnSymbolTable symbols;
-    PtnSymbolTable constants;
+    PtnSymbolTable owned_constants;
+    PtnSymbolTable *constants;
     PtnDiagnosticSink diagnostics;
 } PtnRuntime;
 
@@ -752,12 +753,20 @@ static void ptn_emit_constant_already_defined_warning(
 
 static void ptn_runtime_init(PtnRuntime *runtime) {
     ptn_symbols_init(&runtime->symbols);
-    ptn_symbols_init(&runtime->constants);
+    ptn_symbols_init(&runtime->owned_constants);
+    runtime->constants = &runtime->owned_constants;
+    ptn_diagnostics_init(&runtime->diagnostics, stderr);
+}
+
+static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnRuntime *caller_runtime) {
+    ptn_symbols_init(&runtime->symbols);
+    ptn_symbols_init(&runtime->owned_constants);
+    runtime->constants = caller_runtime->constants;
     ptn_diagnostics_init(&runtime->diagnostics, stderr);
 }
 
 static void ptn_runtime_free(PtnRuntime *runtime) {
-    ptn_symbols_free(&runtime->constants);
+    ptn_symbols_free(&runtime->owned_constants);
     ptn_symbols_free(&runtime->symbols);
 }
 
@@ -788,14 +797,7 @@ static PTN_UNUSED PtnLookupResult ptn_runtime_read_variable_quiet(PtnRuntime *ru
 }
 
 static PTN_UNUSED void ptn_runtime_define_constant(PtnRuntime *runtime, const char *name, PtnValue value) {
-    ptn_symbols_set(&runtime->constants, name, value);
-}
-
-static PTN_UNUSED void ptn_runtime_import_constants(PtnRuntime *runtime, PtnRuntime *source) {
-    for (size_t i = 0; i < source->constants.len; i++) {
-        PtnSymbol *constant = &source->constants.items[i];
-        ptn_runtime_define_constant(runtime, constant->name, constant->value);
-    }
+    ptn_symbols_set(runtime->constants, name, value);
 }
 
 static PTN_UNUSED PtnNumber ptn_number_int(int64_t integer) {
@@ -2263,7 +2265,7 @@ static void ptn_format_var_dump_float(double value, char *buffer, size_t buffer_
 }
 
 static PTN_UNUSED int ptn_runtime_constant_value(PtnRuntime *runtime, const char *name, PtnValue *out) {
-    if (ptn_symbols_get(&runtime->constants, name, out)) {
+    if (ptn_symbols_get(runtime->constants, name, out)) {
         return 1;
     }
     return ptn_builtin_constant_value(name, out);

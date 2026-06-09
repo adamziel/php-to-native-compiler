@@ -34,7 +34,7 @@ pub fn emit_c(module: &Module) -> String {
             warning.line,
         );
     }
-    let mut values = ValueEmitter::new(&module.source_file, &module.source_dir);
+    let mut values = ValueEmitter::new(&module.source_file, &module.source_dir, &module.functions);
     let mut control_targets = Vec::new();
     for instruction in &module.instructions {
         emit_instruction(
@@ -94,8 +94,7 @@ fn emit_user_functions(
             out.push_str("    }\n");
         }
         out.push_str("    PtnRuntime runtime;\n");
-        out.push_str("    ptn_runtime_init(&runtime);\n");
-        out.push_str("    ptn_runtime_import_constants(&runtime, caller_runtime);\n");
+        out.push_str("    ptn_runtime_init_function_frame(&runtime, caller_runtime);\n");
         out.push_str("    PtnValue ptn_return_value = ptn_null();\n");
         for (parameter_index, parameter) in function.parameters.iter().enumerate() {
             if let Some(TypeHint::Null) = parameter.type_hint {
@@ -117,7 +116,7 @@ fn emit_user_functions(
             out.push_str(&parameter_index.to_string());
             out.push_str("]);\n");
         }
-        let mut values = ValueEmitter::new(source_file, source_dir);
+        let mut values = ValueEmitter::new(source_file, source_dir, functions);
         let mut break_targets = Vec::new();
         let return_label = values.next_label("ptn_function_return");
         for instruction in &function.body {
@@ -918,16 +917,28 @@ struct ValueEmitter {
     next_label: usize,
     source_file: String,
     source_dir: String,
+    user_function_names: Vec<String>,
 }
 
 impl ValueEmitter {
-    fn new(source_file: &str, source_dir: &str) -> Self {
+    fn new(source_file: &str, source_dir: &str, functions: &[FunctionDecl]) -> Self {
         Self {
             next_temp: 0,
             next_label: 0,
             source_file: source_file.to_string(),
             source_dir: source_dir.to_string(),
+            user_function_names: functions
+                .iter()
+                .map(|function| function.name.clone())
+                .collect(),
         }
+    }
+
+    fn direct_user_function_c_name(&self, name: &str) -> Option<String> {
+        self.user_function_names
+            .iter()
+            .position(|function_name| function_name.eq_ignore_ascii_case(name))
+            .map(user_function_c_name)
     }
 
     fn emit_value(&mut self, out: &mut String, value: &ValueExpr) -> String {
@@ -1529,12 +1540,19 @@ impl ValueEmitter {
         line: usize,
     ) -> String {
         let result_temp = self.next_temp();
+        let direct_user_c_name = self.direct_user_function_c_name(name);
         if arguments.is_empty() {
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
-            out.push_str(" = ptn_call_function(&runtime, \"");
-            out.push_str(&c_string(name));
-            out.push_str("\", 0, NULL, ");
+            out.push_str(" = ");
+            if let Some(c_name) = direct_user_c_name {
+                out.push_str(&c_name);
+                out.push_str("(&runtime, 0, NULL, ");
+            } else {
+                out.push_str("ptn_call_function(&runtime, \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", 0, NULL, ");
+            }
             out.push_str(&line.to_string());
             out.push_str(");\n");
             return result_temp;
@@ -1553,9 +1571,15 @@ impl ValueEmitter {
         out.push_str(" };\n");
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
-        out.push_str(" = ptn_call_function(&runtime, \"");
-        out.push_str(&c_string(name));
-        out.push_str("\", ");
+        out.push_str(" = ");
+        if let Some(c_name) = direct_user_c_name {
+            out.push_str(&c_name);
+            out.push_str("(&runtime, ");
+        } else {
+            out.push_str("ptn_call_function(&runtime, \"");
+            out.push_str(&c_string(name));
+            out.push_str("\", ");
+        }
         out.push_str(&arguments.len().to_string());
         out.push_str(", ");
         out.push_str(&args_temp);

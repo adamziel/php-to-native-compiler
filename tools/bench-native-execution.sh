@@ -160,6 +160,38 @@ while ($passes < 12000) {
 echo $total, "\n";
 PHP
 
+cat >"$tmp/user_function_step.php" <<'PHP'
+<?php
+const BASE = 17;
+function step($value) {
+    return $value * 2 + BASE;
+}
+$sum = 0;
+$i = 0;
+while ($i < 120000) {
+    $sum += step($i);
+    $i++;
+}
+echo $sum, "\n";
+PHP
+
+cat >"$tmp/user_function_recursive.php" <<'PHP'
+<?php
+function depth($value) {
+    if ($value <= 0) {
+        return 1;
+    }
+    return depth($value - 1) + 1;
+}
+$sum = 0;
+$i = 0;
+while ($i < 5000) {
+    $sum += depth(9);
+    $i++;
+}
+echo $sum, "\n";
+PHP
+
 cc_bin="${CC:-cc}"
 ptn_bin="$root/target/debug/ptn"
 commit="$(git rev-parse HEAD)"
@@ -276,3 +308,5 @@ run_benchmark() {
 run_benchmark "scalar_loop" "scalar arithmetic and braced control flow" "$tmp/scalar_loop.php"
 run_benchmark "string_work" "string concatenation plus strlen/str_rot13/md5/substr" "$tmp/string_work.php"
 run_benchmark "array_foreach" "ordered array literal and key/value foreach" "$tmp/array_foreach.php"
+run_benchmark "user_function_step" "non-recursive user function calls with global constant reads" "$tmp/user_function_step.php"
+run_benchmark "user_function_recursive" "recursive user function calls with local frames" "$tmp/user_function_recursive.php"
