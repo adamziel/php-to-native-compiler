@@ -16,6 +16,10 @@ pub enum Statement {
         expressions: Vec<Expr>,
         span: SourceSpan,
     },
+    Print {
+        expression: Expr,
+        span: SourceSpan,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]

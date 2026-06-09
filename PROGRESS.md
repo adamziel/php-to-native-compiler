@@ -82,3 +82,14 @@ Implemented the next boxed expression slice in the CAO worktree:
 Still unsupported for binary operations: full PHP numeric-string conversion
 warning parity, non-numeric string arithmetic diagnostics, complete overflow
 parity, arrays, objects, references, and copy-on-write behavior.
+
+Implemented statement-form `print` for the current supported expression subset:
+
+- Lexer/parser/AST support for `print expr;` as a statement.
+- IR lowering maps print statements to the same boxed output instruction used by
+  echo, so generated C calls the existing `ptn_echo` conversion/output helper.
+- Native tests prove print with literals, variables, and binary expressions.
+
+Still unsupported for print: expression contexts such as
+`$result = print "value";`, `echo print "value";`, return value `1` semantics,
+and parenthesized `print(...)` syntax.

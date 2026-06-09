@@ -52,6 +52,28 @@ fn parser_accepts_precedence_aware_binary_expressions() {
 }
 
 #[test]
+fn parser_accepts_print_as_statement() {
+    let program = parser::parse("<?php print \"hello\" . 2 + 3;").unwrap();
+    assert_eq!(program.statements.len(), 1);
+    let Statement::Print { expression, .. } = &program.statements[0] else {
+        panic!("expected print statement");
+    };
+    assert!(matches!(
+        expression,
+        Expr::Binary {
+            op: BinaryOp::Concat,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn parser_rejects_print_expression_contexts() {
+    let error = parser::parse("<?php $result = print \"hello\";").unwrap_err();
+    assert!(error.message.contains("expected expression"));
+}
+
+#[test]
 fn compile_echo_program_to_native_binary() {
     let root = temp_dir("ptn-native-echo");
     fs::create_dir_all(&root).unwrap();
@@ -66,6 +88,65 @@ fn compile_echo_program_to_native_binary() {
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "Hello 42\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_print_literals_to_native_binary() {
+    let root = temp_dir("ptn-native-print-literals");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("print-literals.php");
+    let output = root.join("print-literals-bin");
+    fs::write(&input, "<?php print \"Hello \"; print 42; print \"\\n\";").unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "Hello 42\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_print_variables_to_native_binary() {
+    let root = temp_dir("ptn-native-print-variables");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("print-variables.php");
+    let output = root.join("print-variables-bin");
+    fs::write(
+        &input,
+        "<?php $name = \"PTN\"; $count = 2; print $name; print \" \"; print $count; print \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "PTN 2\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_print_binary_expression_to_native_binary() {
+    let root = temp_dir("ptn-native-print-binary-expression");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("print-binary-expression.php");
+    let output = root.join("print-binary-expression-bin");
+    fs::write(
+        &input,
+        "<?php $name = \"Ada\"; print \"Hello \" . $name . \" \" . 2 + 3 . \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Hello Ada 5\n"
+    );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 

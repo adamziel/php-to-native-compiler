@@ -16,6 +16,8 @@ Supported today:
 
 - `<?php` open tag.
 - `echo` statements.
+- Statement-form `print expr;` for the same scalar expression subset as
+  `echo`; emitted native code uses the same boxed output conversion path.
 - String, integer, float, boolean, and null literals.
 - Direct variable assignment and reads for scalar values through the generated
   native runtime symbol table.
@@ -29,7 +31,8 @@ Supported today:
 Unsupported today:
 
 - Arrays, objects, functions, classes, includes, references, copy-on-write,
-  resources, exceptions, compound assignment, full PHP numeric-string and
+  resources, exceptions, compound assignment, `print` as an expression returning
+  `1`, parenthesized `print(...)` syntax, full PHP numeric-string and
   non-numeric string arithmetic diagnostics, overflow parity, PHP-exact warning
   text/file/line/error-handler behavior, variable variables, and dynamic
   fallback. These are architecture targets, not excuses for exact-shape hacks.

@@ -4,6 +4,7 @@ use crate::diagnostic::{Diagnostic, Result, SourceSpan};
 pub enum TokenKind {
     OpenTag,
     Echo,
+    Print,
     String(String),
     Int(i64),
     Float(f64),
@@ -199,6 +200,7 @@ impl<'a> Lexer<'a> {
         }
         let kind = match text.as_str() {
             "echo" => TokenKind::Echo,
+            "print" => TokenKind::Print,
             "true" => TokenKind::True,
             "false" => TokenKind::False,
             "null" => TokenKind::Null,

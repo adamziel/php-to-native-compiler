@@ -28,6 +28,9 @@ Current runtime/compiler slices:
   nodes. The C backend materializes operands into `PtnValue` temporaries in
   source order before calling boxed runtime helpers such as `ptn_add` and
   `ptn_concat`.
+- Statement-form `print expr;` lowers to the same boxed output IR instruction
+  used by echo, so generated native code routes print output through the
+  existing `ptn_echo` helper.
 
 Near-term architecture targets:
 

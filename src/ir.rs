@@ -47,6 +47,9 @@ pub fn lower(program: &Program) -> Module {
                     instructions.push(Instruction::Echo(lower_expr(expression)));
                 }
             }
+            Statement::Print { expression, .. } => {
+                instructions.push(Instruction::Echo(lower_expr(expression)));
+            }
         }
     }
     Module { instructions }

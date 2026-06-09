@@ -27,6 +27,7 @@ impl Parser {
     fn parse_statement(&mut self) -> Result<Statement> {
         match self.peek().kind {
             TokenKind::Echo => self.parse_echo(),
+            TokenKind::Print => self.parse_print(),
             TokenKind::Variable(_) => self.parse_assignment(),
             _ => Err(Diagnostic::new(
                 "expected statement",
@@ -59,6 +60,13 @@ impl Parser {
         }
         self.expect_semicolon()?;
         Ok(Statement::Echo { expressions, span })
+    }
+
+    fn parse_print(&mut self) -> Result<Statement> {
+        let span = self.expect_print()?;
+        let expression = self.parse_expr()?;
+        self.expect_semicolon()?;
+        Ok(Statement::Print { expression, span })
     }
 
     fn parse_expr(&mut self) -> Result<Expr> {
@@ -113,6 +121,15 @@ impl Parser {
             Ok(token.span)
         } else {
             Err(Diagnostic::new("expected echo", Some(token.span)))
+        }
+    }
+
+    fn expect_print(&mut self) -> Result<SourceSpan> {
+        let token = self.advance();
+        if matches!(token.kind, TokenKind::Print) {
+            Ok(token.span)
+        } else {
+            Err(Diagnostic::new("expected print", Some(token.span)))
         }
     }
 
