@@ -97,10 +97,10 @@ Current runtime/compiler slices:
   `is_infinite`, and `is_nan` query modeled non-finite float constants;
   `function_exists` shares the registry lookup path; and `defined` checks the
   current constant-registry boundary, which includes the modeled PHP `E_ERROR`,
-  `PHP_EOL`, `PHP_INT_MIN`, `PHP_INT_MAX`, `PHP_INT_SIZE`, `INF`, `NAN`,
-  `M_PI`, and modeled PHP math `M_*` constants from `constants_basic.phpt`.
-  Fixed-arity internal functions record min/max arity metadata while
-  `var_dump` remains variadic.
+  `PHP_EOL`, `DIRECTORY_SEPARATOR`, `PATH_SEPARATOR`, `PHP_INT_MIN`,
+  `PHP_INT_MAX`, `PHP_INT_SIZE`, `INF`, `NAN`, `M_PI`, and modeled PHP math
+  `M_*` constants from `constants_basic.phpt`. Fixed-arity internal functions
+  record min/max arity metadata while `var_dump` remains variadic.
 - Braced `if`, `elseif`, and `else` statements lower to structured IR branch
   instructions. Conditions remain boxed value expressions, and the C backend
   emits native branches that call the shared scalar truthiness helper.

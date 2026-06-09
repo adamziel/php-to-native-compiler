@@ -1614,6 +1614,22 @@ static PTN_UNUSED int ptn_constant_value(const char *name, PtnValue *out) {
         *out = ptn_string("\n");
         return 1;
     }
+    if (strcmp(name, "DIRECTORY_SEPARATOR") == 0) {
+#if defined(_WIN32)
+        *out = ptn_string("\\");
+#else
+        *out = ptn_string("/");
+#endif
+        return 1;
+    }
+    if (strcmp(name, "PATH_SEPARATOR") == 0) {
+#if defined(_WIN32)
+        *out = ptn_string(";");
+#else
+        *out = ptn_string(":");
+#endif
+        return 1;
+    }
     if (strcmp(name, "INF") == 0) {
         *out = ptn_float(INFINITY);
         return 1;

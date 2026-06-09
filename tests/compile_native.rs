@@ -1482,6 +1482,37 @@ fn compile_php_int_constants_to_native_binary() {
 }
 
 #[test]
+fn compile_directory_separator_constants_to_native_binary() {
+    let root = temp_dir("ptn-native-directory-separator-constants");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("directory-separator-constants.php");
+    let output = root.join("directory-separator-constants-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+echo DIRECTORY_SEPARATOR;\n\
+echo \"\\n\";\n\
+echo PATH_SEPARATOR;\n\
+echo \"\\n\";\n\
+echo \"done\\n\";\n\
+var_dump(defined(\"DIRECTORY_SEPARATOR\"), defined(\"PATH_SEPARATOR\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let directory_separator = if cfg!(windows) { "\\" } else { "/" };
+    let path_separator = if cfg!(windows) { ";" } else { ":" };
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!("{directory_separator}\n{path_separator}\ndone\nbool(true)\nbool(true)\n")
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_bug27443_defined_type_shape_to_native_binary() {
     let root = temp_dir("ptn-native-bug27443-defined");
     fs::create_dir_all(&root).unwrap();

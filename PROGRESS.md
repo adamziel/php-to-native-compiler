@@ -864,3 +864,16 @@ Still unsupported after this `getrandmax()`/`getmypid()` slice: random-number
 generation state, seeding, platform-specific RNG range variation, other random
 APIs, PHP-exact SAPI/process-control interactions, and unavailable-platform
 diagnostics.
+
+Added modeled directory/path separator constants:
+
+- The modeled constant registry now includes `DIRECTORY_SEPARATOR` and
+  `PATH_SEPARATOR` using target-platform C preprocessor values.
+- Bare constant reads and `defined()` share the same constant lookup boundary.
+- Native tests prove direct reads and registry visibility.
+- Focused public PHPT telemetry through `phpc` passes
+  `ext/standard/tests/directory/directory_constants.phpt`.
+
+Still unsupported after this directory-constant slice: other directory
+extension constants and PHP-exact constant availability differences across
+SAPIs or unusual target platforms.

@@ -113,12 +113,12 @@ supports in generated native binaries.
   `is_infinite()`, and `is_nan()`.
 - `function_exists()` over the currently registered internal-function names.
 - `defined()` over the current constant registry, including the currently
-  modeled PHP constants `E_ERROR`, `PHP_EOL`, `PHP_INT_MIN`, `PHP_INT_MAX`,
-  `PHP_INT_SIZE`, `INF`, `NAN`, `M_PI`, and the modeled PHP math constants
-  `M_E`, `M_LOG2E`, `M_LOG10E`, `M_LN2`, `M_LN10`, `M_PI_2`, `M_PI_4`,
-  `M_1_PI`, `M_2_PI`, `M_SQRTPI`, `M_2_SQRTPI`, `M_LNPI`, `M_EULER`,
-  `M_SQRT2`, `M_SQRT1_2`, and `M_SQRT3`. Other ordinary names report as
-  undefined.
+  modeled PHP constants `E_ERROR`, `PHP_EOL`, `DIRECTORY_SEPARATOR`,
+  `PATH_SEPARATOR`, `PHP_INT_MIN`, `PHP_INT_MAX`, `PHP_INT_SIZE`, `INF`,
+  `NAN`, `M_PI`, and the modeled PHP math constants `M_E`, `M_LOG2E`,
+  `M_LOG10E`, `M_LN2`, `M_LN10`, `M_PI_2`, `M_PI_4`, `M_1_PI`, `M_2_PI`,
+  `M_SQRTPI`, `M_2_SQRTPI`, `M_LNPI`, `M_EULER`, `M_SQRT2`, `M_SQRT1_2`,
+  and `M_SQRT3`. Other ordinary names report as undefined.
 - A minimal `phpc` runner for supported PHPT rows. It compiles scripts or `-r`
   snippets to temporary native binaries through the normal compiler pipeline.
 - Braced `if`, `elseif`, and `else` statements whose conditions and bodies use
@@ -175,9 +175,9 @@ supports in generated native binaries.
 - Internal functions outside the registered scalar subset.
 - User-defined functions in `function_exists()`.
 - User-defined constants and built-in PHP/extension constants other than the
-  currently modeled `E_ERROR`, `PHP_EOL`, `PHP_INT_MIN`, `PHP_INT_MAX`,
-  `PHP_INT_SIZE`, `INF`, `NAN`, `M_PI`, and modeled PHP math `M_*` constants
-  in `defined()`.
+  currently modeled `E_ERROR`, `PHP_EOL`, `DIRECTORY_SEPARATOR`,
+  `PATH_SEPARATOR`, `PHP_INT_MIN`, `PHP_INT_MAX`, `PHP_INT_SIZE`, `INF`,
+  `NAN`, `M_PI`, and modeled PHP math `M_*` constants in `defined()`.
 - Type predicate coverage for arrays, objects, resources, and references.
 - Arrays, objects, resources, recursive structures, references, and
   `var_dump()` reference identity output.
