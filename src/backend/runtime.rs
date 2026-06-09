@@ -48,6 +48,7 @@ typedef struct {
 
 typedef struct {
     PtnType type;
+    int owned;
     union {
         int boolean;
         int64_t integer;
@@ -164,12 +165,14 @@ typedef struct {
 static PTN_UNUSED PtnValue ptn_null(void) {
     PtnValue value;
     value.type = PTN_NULL;
+    value.owned = 0;
     return value;
 }
 
 static PTN_UNUSED PtnValue ptn_bool(int boolean) {
     PtnValue value;
     value.type = PTN_BOOL;
+    value.owned = 0;
     value.as.boolean = boolean ? 1 : 0;
     return value;
 }
@@ -177,6 +180,7 @@ static PTN_UNUSED PtnValue ptn_bool(int boolean) {
 static PTN_UNUSED PtnValue ptn_int(int64_t integer) {
     PtnValue value;
     value.type = PTN_INT;
+    value.owned = 0;
     value.as.integer = integer;
     return value;
 }
@@ -184,6 +188,7 @@ static PTN_UNUSED PtnValue ptn_int(int64_t integer) {
 static PTN_UNUSED PtnValue ptn_float(double floating) {
     PtnValue value;
     value.type = PTN_FLOAT;
+    value.owned = 0;
     value.as.floating = floating;
     return value;
 }
@@ -191,6 +196,7 @@ static PTN_UNUSED PtnValue ptn_float(double floating) {
 static PTN_UNUSED PtnValue ptn_string(const char *string) {
     PtnValue value;
     value.type = PTN_STRING;
+    value.owned = 0;
     value.as.string = string;
     return value;
 }
@@ -198,6 +204,7 @@ static PTN_UNUSED PtnValue ptn_string(const char *string) {
 static PTN_UNUSED PtnValue ptn_owned_string(char *string) {
     PtnValue value;
     value.type = PTN_STRING;
+    value.owned = 1;
     value.as.string = string;
     return value;
 }
@@ -205,6 +212,7 @@ static PTN_UNUSED PtnValue ptn_owned_string(char *string) {
 static PTN_UNUSED PtnValue ptn_array(PtnArray *array) {
     PtnValue value;
     value.type = PTN_ARRAY;
+    value.owned = 1;
     value.as.array = array;
     return value;
 }
@@ -237,6 +245,11 @@ static PTN_UNUSED char *ptn_duplicate_string(const char *string) {
     memcpy(copy, string, len + 1);
     return copy;
 }
+
+static PTN_UNUSED PtnValue ptn_value_borrow(PtnValue value);
+static PTN_UNUSED PtnValue ptn_value_clone(PtnValue value);
+static PTN_UNUSED void ptn_value_destroy(PtnValue *value);
+static PTN_UNUSED void ptn_array_free(PtnArray *array);
 
 static PTN_UNUSED PtnArrayKey ptn_array_int_key(int64_t integer) {
     PtnArrayKey key;
@@ -471,6 +484,7 @@ static PTN_UNUSED void ptn_array_set_entry(PtnArray *array, PtnArrayKey key, Ptn
     size_t index = ptn_array_find_key(array, key);
     ptn_array_update_next_auto_key(array, key);
     if (index < array->len) {
+        ptn_value_destroy(&array->entries[index].value);
         array->entries[index].value = value;
         ptn_array_key_free(key);
         return;
@@ -518,7 +532,7 @@ static PTN_UNUSED PtnValue ptn_array_from_literal_entries(size_t entry_count, co
         PtnArrayKey key = entries[i].has_key
             ? ptn_array_key_from_value(entries[i].key)
             : ptn_array_int_key(array->next_auto_key);
-        ptn_array_set_entry(array, key, entries[i].value);
+        ptn_array_set_entry(array, key, ptn_value_clone(entries[i].value));
     }
     return ptn_array(array);
 }
@@ -529,8 +543,6 @@ static PTN_UNUSED PtnArrayKey ptn_array_key_clone(PtnArrayKey key) {
     }
     return ptn_array_string_key(key.as.string);
 }
-
-static PTN_UNUSED PtnValue ptn_value_clone(PtnValue value);
 
 static PTN_UNUSED PtnArray *ptn_array_clone(PtnArray *source) {
     PtnArray *array = malloc(sizeof(PtnArray));
@@ -575,6 +587,44 @@ static PTN_UNUSED PtnValue ptn_value_clone(PtnValue value) {
     return value;
 }
 
+static PTN_UNUSED void ptn_array_free(PtnArray *array) {
+    if (array == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < array->len; i++) {
+        ptn_array_key_free(array->entries[i].key);
+        ptn_value_destroy(&array->entries[i].value);
+    }
+    free(array->index_slots);
+    free(array->entries);
+    free(array);
+}
+
+static PTN_UNUSED void ptn_value_destroy(PtnValue *value) {
+    if (value == NULL || !value->owned) {
+        return;
+    }
+    switch (value->type) {
+        case PTN_STRING:
+            free((char *)value->as.string);
+            break;
+        case PTN_ARRAY:
+            ptn_array_free(value->as.array);
+            break;
+        case PTN_NULL:
+        case PTN_BOOL:
+        case PTN_INT:
+        case PTN_FLOAT:
+            break;
+    }
+    *value = ptn_null();
+}
+
+static PTN_UNUSED PtnValue ptn_value_borrow(PtnValue value) {
+    value.owned = 0;
+    return value;
+}
+
 static void ptn_symbols_init(PtnSymbolTable *symbols) {
     symbols->items = NULL;
     symbols->len = 0;
@@ -586,6 +636,7 @@ static void ptn_symbols_init(PtnSymbolTable *symbols) {
 static void ptn_symbols_free(PtnSymbolTable *symbols) {
     for (size_t i = 0; i < symbols->len; i++) {
         free(symbols->items[i].name);
+        ptn_value_destroy(&symbols->items[i].value);
     }
     free(symbols->index_slots);
     free(symbols->items);
@@ -692,6 +743,7 @@ static PTN_UNUSED void ptn_symbols_set(PtnSymbolTable *symbols, const char *name
     ptn_symbols_ensure_index(symbols, symbols->len + 1);
     size_t index = ptn_symbols_find(symbols, name);
     if (index < symbols->len) {
+        ptn_value_destroy(&symbols->items[index].value);
         symbols->items[index].value = stored_value;
         return;
     }
@@ -714,7 +766,7 @@ static PTN_UNUSED void ptn_symbols_set(PtnSymbolTable *symbols, const char *name
 static int ptn_symbols_get(PtnSymbolTable *symbols, const char *name, PtnValue *out) {
     size_t index = ptn_symbols_find(symbols, name);
     if (index < symbols->len) {
-        *out = symbols->items[index].value;
+        *out = ptn_value_borrow(symbols->items[index].value);
         return 1;
     }
     return 0;
@@ -1344,7 +1396,7 @@ static PTN_UNUSED PtnValue ptn_array_iterator_current_key(PtnArrayIterator *iter
 }
 
 static PTN_UNUSED PtnValue ptn_array_iterator_current_value(PtnArrayIterator *iterator) {
-    return iterator->array->entries[iterator->index].value;
+    return ptn_value_borrow(iterator->array->entries[iterator->index].value);
 }
 
 static PTN_UNUSED void ptn_array_iterator_advance(PtnArrayIterator *iterator) {
@@ -1597,14 +1649,19 @@ static PTN_UNUSED PtnLookupResult ptn_offset_lookup(PtnRuntime *runtime, PtnValu
         ptn_array_key_free(key);
         return ptn_lookup_missing();
     }
-    PtnValue value = entry->value;
+    PtnValue value = ptn_value_borrow(entry->value);
     ptn_array_key_free(key);
     return ptn_lookup_found(value);
 }
 
 static PTN_UNUSED PtnValue ptn_array_read(PtnRuntime *runtime, PtnValue container, PtnValue key_value, size_t line) {
     PtnLookupResult result = ptn_offset_lookup(runtime, container, key_value, line, 0);
-    return result.exists ? result.value : ptn_null();
+    if (!result.exists) {
+        return ptn_null();
+    }
+    PtnValue value = ptn_value_clone(result.value);
+    ptn_value_destroy(&result.value);
+    return value;
 }
 
 static PTN_UNUSED int ptn_offset_is_set(PtnRuntime *runtime, PtnValue container, PtnValue key_value, size_t line) {
@@ -1668,14 +1725,14 @@ static PTN_UNUSED PtnValue ptn_array_key_value(PtnArrayKey key) {
     if (key.type == PTN_ARRAY_KEY_INT) {
         return ptn_int(key.as.integer);
     }
-    return ptn_string(key.as.string);
+    return ptn_owned_string(ptn_duplicate_string(key.as.string));
 }
 
 static PTN_UNUSED PtnValue ptn_array_current_value(PtnArray *array) {
     if (array->current_index >= array->len) {
         return ptn_bool(0);
     }
-    return array->entries[array->current_index].value;
+    return ptn_value_clone(array->entries[array->current_index].value);
 }
 
 static PTN_UNUSED PtnValue ptn_array_current_key_value(PtnArray *array) {

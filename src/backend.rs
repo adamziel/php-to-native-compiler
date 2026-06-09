@@ -238,15 +238,16 @@ fn emit_instruction(
 ) {
     match instruction {
         Instruction::Store { name, value } => {
-            let emitted_value = values.emit_value(out, value);
+            let emitted_value = values.emit_materialized_value(out, value);
             out.push_str("    ptn_runtime_write_variable(&runtime, \"");
             out.push_str(&c_string(name));
             out.push_str("\", ");
             out.push_str(&emitted_value);
             out.push_str(");\n");
+            emit_value_cleanup(out, "    ", &emitted_value);
         }
         Instruction::DefineConstant { name, value, line } => {
-            let emitted_value = values.emit_value(out, value);
+            let emitted_value = values.emit_materialized_value(out, value);
             out.push_str("    (void)ptn_runtime_define_constant_if_absent(&runtime, \"");
             out.push_str(&c_string(name));
             out.push_str("\", ");
@@ -254,18 +255,21 @@ fn emit_instruction(
             out.push_str(", ");
             out.push_str(&line.to_string());
             out.push_str(");\n");
+            emit_value_cleanup(out, "    ", &emitted_value);
         }
         Instruction::Expression(value) => {
             let emitted_value = values.emit_materialized_value(out, value);
             out.push_str("    (void)");
             out.push_str(&emitted_value);
             out.push_str(";\n");
+            emit_value_cleanup(out, "    ", &emitted_value);
         }
         Instruction::Echo(value) => {
-            let emitted_value = values.emit_value(out, value);
+            let emitted_value = values.emit_materialized_value(out, value);
             out.push_str("    ptn_echo(");
             out.push_str(&emitted_value);
             out.push_str(");\n");
+            emit_value_cleanup(out, "    ", &emitted_value);
         }
         Instruction::Increment { name, op, line } => {
             let current_temp = values.next_temp();
@@ -294,6 +298,8 @@ fn emit_instruction(
             out.push_str("\", ");
             out.push_str(&result_temp);
             out.push_str(");\n");
+            emit_value_cleanup(out, "    ", &current_temp);
+            emit_value_cleanup(out, "    ", &result_temp);
         }
         Instruction::InternalCall {
             name,
@@ -304,16 +310,19 @@ fn emit_instruction(
             out.push_str("    (void)");
             out.push_str(&result_temp);
             out.push_str(";\n");
+            emit_value_cleanup(out, "    ", &result_temp);
         }
         Instruction::Return { value, .. } => match return_target {
             Some(target) => {
-                let result_value = value
-                    .as_ref()
-                    .map(|value| values.emit_value(out, value))
-                    .unwrap_or_else(|| "ptn_null()".to_string());
-                out.push_str("    ptn_return_value = ");
-                out.push_str(&result_value);
-                out.push_str(";\n");
+                if let Some(value) = value {
+                    let result_value = values.emit_materialized_value(out, value);
+                    out.push_str("    ptn_return_value = ptn_value_clone(");
+                    out.push_str(&result_value);
+                    out.push_str(");\n");
+                    emit_value_cleanup(out, "    ", &result_value);
+                } else {
+                    out.push_str("    ptn_return_value = ptn_null();\n");
+                }
                 out.push_str("    goto ");
                 out.push_str(target);
                 out.push_str(";\n");
@@ -324,6 +333,7 @@ fn emit_instruction(
                     out.push_str("    (void)");
                     out.push_str(&return_temp);
                     out.push_str(";\n");
+                    emit_value_cleanup(out, "    ", &return_temp);
                 }
                 out.push_str("    ptn_runtime_free(&runtime);\n");
                 out.push_str("    return 0;\n");
@@ -541,6 +551,7 @@ fn emit_instruction(
                 out.push_str("\", ");
                 out.push_str(&key_temp);
                 out.push_str(");\n");
+                emit_value_cleanup(out, "        ", &key_temp);
             }
             let value_temp = values.next_temp();
             out.push_str("        PtnValue ");
@@ -553,6 +564,7 @@ fn emit_instruction(
             out.push_str("\", ");
             out.push_str(&value_temp);
             out.push_str(");\n");
+            emit_value_cleanup(out, "        ", &value_temp);
             control_targets.push(ControlTarget::loop_target(
                 end_label.clone(),
                 continue_label.clone(),
@@ -577,6 +589,7 @@ fn emit_instruction(
             out.push_str(&iterator_temp);
             out.push_str(");\n");
             out.push_str("    }\n");
+            emit_value_cleanup(out, "    ", &iterable_temp);
             out.push_str("    ");
             out.push_str(&end_label);
             out.push_str(":\n");
@@ -962,6 +975,13 @@ fn emit_label_reference(out: &mut String, label: &str) {
     out.push_str("; }\n");
 }
 
+fn emit_value_cleanup(out: &mut String, indent: &str, value: &str) {
+    out.push_str(indent);
+    out.push_str("ptn_value_destroy(&");
+    out.push_str(value);
+    out.push_str(");\n");
+}
+
 pub fn compile_c(c_source: &str, output: &Path) -> Result<()> {
     let c_path = output.with_extension("c");
     fs::write(&c_path, c_source).map_err(|error| {
@@ -1099,6 +1119,7 @@ impl ValueEmitter {
                     out.push_str(&line.to_string());
                 }
                 out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &expr_temp);
                 result_temp
             }
             ValueExpr::Cast { kind, expr, line } => {
@@ -1148,6 +1169,7 @@ impl ValueEmitter {
                         out.push_str(");\n");
                     }
                 }
+                emit_value_cleanup(out, "    ", &expr_temp);
                 result_temp
             }
             ValueExpr::String(value) => format!("ptn_string(\"{}\")", c_string(value)),
@@ -1170,6 +1192,8 @@ impl ValueEmitter {
                 out.push_str(", ");
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &array_temp);
+                emit_value_cleanup(out, "    ", &index_temp);
                 result_temp
             }
             ValueExpr::Isset { targets } => self.emit_isset(out, targets),
@@ -1325,6 +1349,8 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&right_temp);
         out.push_str(");\n");
+        emit_value_cleanup(out, "    ", &left_temp);
+        emit_value_cleanup(out, "    ", &right_temp);
         result_temp
     }
 
@@ -1378,6 +1404,9 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&strings_temp);
         out.push_str(");\n");
+        for (value_temp, _) in emitted_operands {
+            emit_value_cleanup(out, "    ", &value_temp);
+        }
         result_temp
     }
 
@@ -1392,6 +1421,8 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&right_temp);
         out.push_str("));\n");
+        emit_value_cleanup(out, "    ", &left_temp);
+        emit_value_cleanup(out, "    ", &right_temp);
         result_temp
     }
 
@@ -1437,7 +1468,7 @@ impl ValueEmitter {
     ) -> String {
         let left_temp = self.emit_materialized_value(out, left);
         let right_temp = self.emit_materialized_value(out, right);
-        match op {
+        let predicate = match op {
             BinaryOp::Equal => format!("ptn_compare_equal({left_temp}, {right_temp})"),
             BinaryOp::NotEqual => format!("!ptn_compare_equal({left_temp}, {right_temp})"),
             BinaryOp::Identical => format!("ptn_compare_identical({left_temp}, {right_temp})"),
@@ -1451,7 +1482,16 @@ impl ValueEmitter {
                 format!("ptn_compare_greater_equal({left_temp}, {right_temp})")
             }
             _ => unreachable!(),
-        }
+        };
+        let result_temp = self.next_temp();
+        out.push_str("    int ");
+        out.push_str(&result_temp);
+        out.push_str(" = ");
+        out.push_str(&predicate);
+        out.push_str(";\n");
+        emit_value_cleanup(out, "    ", &left_temp);
+        emit_value_cleanup(out, "    ", &right_temp);
+        result_temp
     }
 
     fn emit_isset(&mut self, out: &mut String, targets: &[ValueExpr]) -> String {
