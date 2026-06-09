@@ -166,7 +166,7 @@ pub struct ConstDeclaration {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ArrayDimTarget {
     pub array: String,
-    pub index: Option<Expr>,
+    pub dimensions: Vec<Option<Expr>>,
     pub span: SourceSpan,
 }
 

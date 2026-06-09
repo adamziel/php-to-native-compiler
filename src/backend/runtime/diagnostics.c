@@ -50,6 +50,11 @@ static int ptn_symbols_get(PtnSymbolTable *symbols, const char *name, PtnValue *
     return 0;
 }
 
+static PTN_UNUSED PtnValue *ptn_symbols_value_slot(PtnSymbolTable *symbols, const char *name) {
+    size_t index = ptn_symbols_find(symbols, name);
+    return index < symbols->len ? &symbols->items[index].value : NULL;
+}
+
 static PTN_UNUSED void ptn_symbols_unset(PtnSymbolTable *symbols, const char *name) {
     size_t index = ptn_symbols_find(symbols, name);
     if (index >= symbols->len) {

@@ -607,6 +607,236 @@ static PTN_UNUSED PtnArray *ptn_runtime_array_detach_variable(PtnRuntime *runtim
     return ptn_array_detach_value(&runtime->symbols.items[index].value);
 }
 
+static PTN_UNUSED void ptn_runtime_separate_array_variable(PtnRuntime *runtime, const char *name) {
+    (void)ptn_runtime_array_detach_variable(runtime, name);
+}
+
+static PTN_UNUSED PtnArray *ptn_value_replace_with_empty_array(PtnValue *value) {
+    ptn_value_destroy(value);
+    *value = ptn_array_from_literal_entries(0, NULL);
+    return value->as.array;
+}
+
+static PTN_UNUSED PtnArray *ptn_runtime_array_root_for_write(
+    PtnRuntime *runtime,
+    const char *name,
+    size_t line
+) {
+    PtnValue *slot = ptn_symbols_value_slot(&runtime->symbols, name);
+    if (slot != NULL) {
+        if (slot->type == PTN_ARRAY) {
+            return ptn_array_detach_value(slot);
+        }
+        if (slot->type == PTN_NULL) {
+            return ptn_value_replace_with_empty_array(slot);
+        }
+        ptn_emit_array_runtime_diagnostic("Warning", "Cannot use a scalar value as an array", line);
+        return NULL;
+    }
+
+    PtnValue array = ptn_array_from_literal_entries(0, NULL);
+    ptn_runtime_write_variable(runtime, name, array);
+    ptn_value_destroy(&array);
+    slot = ptn_symbols_value_slot(&runtime->symbols, name);
+    return slot != NULL && slot->type == PTN_ARRAY ? slot->as.array : NULL;
+}
+
+static PTN_UNUSED PtnArrayKey ptn_array_path_segment_key(
+    PtnArray *array,
+    const PtnArrayPathSegment *segment
+) {
+    if (segment->append) {
+        return ptn_array_int_key(array->next_auto_key);
+    }
+    return ptn_array_key_from_value(segment->value);
+}
+
+static PTN_UNUSED void ptn_array_path_emit_null_key_deprecation(
+    const PtnArrayPathSegment *segment,
+    size_t line,
+    int emit_null_key_deprecation
+) {
+    if (emit_null_key_deprecation && !segment->append && segment->value.type == PTN_NULL) {
+        ptn_emit_null_array_offset_deprecation(line);
+    }
+}
+
+static PTN_UNUSED PtnArray *ptn_array_descend_for_write(
+    PtnRuntime *runtime,
+    PtnArray *array,
+    const PtnArrayPathSegment *segment,
+    size_t line,
+    int emit_null_key_deprecation
+) {
+    ptn_array_path_emit_null_key_deprecation(segment, line, emit_null_key_deprecation);
+    PtnArrayKey key = ptn_array_path_segment_key(array, segment);
+    PtnArrayEntry *entry = segment->append ? NULL : ptn_array_entry_for_key(array, key);
+
+    if (entry == NULL) {
+        PtnValue child = ptn_array_from_literal_entries(0, NULL);
+        ptn_array_set_entry(array, key, child);
+        return array->entries[array->len - 1].value.as.array;
+    }
+
+    ptn_array_key_free(key);
+    if (entry->value.type == PTN_ARRAY) {
+        return ptn_array_detach_value(&entry->value);
+    }
+    if (entry->value.type == PTN_NULL) {
+        return ptn_value_replace_with_empty_array(&entry->value);
+    }
+
+    (void)runtime;
+    ptn_emit_array_runtime_diagnostic("Warning", "Cannot use a scalar value as an array", line);
+    return NULL;
+}
+
+static PTN_UNUSED void ptn_array_set_path_leaf(
+    PtnArray *array,
+    const PtnArrayPathSegment *segment,
+    PtnValue value,
+    size_t line,
+    int emit_null_key_deprecation
+) {
+    ptn_array_path_emit_null_key_deprecation(segment, line, emit_null_key_deprecation);
+    PtnArrayKey key = ptn_array_path_segment_key(array, segment);
+    ptn_array_set_entry(array, key, ptn_value_clone(value));
+}
+
+static PTN_UNUSED void ptn_runtime_array_path_set_impl(
+    PtnRuntime *runtime,
+    const char *name,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    PtnValue value,
+    size_t line,
+    int emit_null_key_deprecation
+) {
+    if (segment_count == 0) {
+        return;
+    }
+
+    PtnValue *slot = ptn_symbols_value_slot(&runtime->symbols, name);
+    if (slot != NULL && slot->type == PTN_STRING && segment_count == 1) {
+        if (segments[0].append) {
+            ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
+            return;
+        }
+        ptn_runtime_string_offset_set(runtime, name, ptn_value_borrow(*slot), segments[0].value, value, line);
+        return;
+    }
+
+    PtnArray *array = ptn_runtime_array_root_for_write(runtime, name, line);
+    if (array == NULL) {
+        return;
+    }
+
+    for (size_t i = 0; i + 1 < segment_count; i++) {
+        array = ptn_array_descend_for_write(
+            runtime,
+            array,
+            &segments[i],
+            line,
+            emit_null_key_deprecation
+        );
+        if (array == NULL) {
+            return;
+        }
+    }
+
+    ptn_array_set_path_leaf(
+        array,
+        &segments[segment_count - 1],
+        value,
+        line,
+        emit_null_key_deprecation
+    );
+}
+
+static PTN_UNUSED void ptn_runtime_array_path_set(
+    PtnRuntime *runtime,
+    const char *name,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    PtnValue value,
+    size_t line
+) {
+    ptn_runtime_array_path_set_impl(runtime, name, segments, segment_count, value, line, 1);
+}
+
+static PTN_UNUSED void ptn_runtime_array_path_set_from_assign_op(
+    PtnRuntime *runtime,
+    const char *name,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    PtnValue value,
+    size_t line
+) {
+    ptn_runtime_array_path_set_impl(runtime, name, segments, segment_count, value, line, 0);
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_array_path_read_for_assign_op(
+    PtnRuntime *runtime,
+    const char *name,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    size_t line
+) {
+    if (segment_count == 0) {
+        return ptn_null();
+    }
+
+    PtnValue *slot = ptn_symbols_value_slot(&runtime->symbols, name);
+    if (slot == NULL) {
+        if (!segments[0].append) {
+            ptn_emit_assign_op_missing_array_key(segments[0].value, line);
+        }
+        return ptn_null();
+    }
+    if (slot->type == PTN_STRING) {
+        if (segments[0].append) {
+            ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
+            return ptn_null();
+        }
+        ptn_throw_exception(runtime, "Error", "Cannot use assign-op operators with string offsets");
+        return ptn_null();
+    }
+
+    PtnValue container = ptn_value_borrow(*slot);
+    for (size_t i = 0; i < segment_count; i++) {
+        const PtnArrayPathSegment *segment = &segments[i];
+        if (segment->append) {
+            return ptn_null();
+        }
+        if (segment->value.type == PTN_NULL) {
+            ptn_emit_null_array_offset_deprecation(line);
+        }
+        PtnArrayKey key = ptn_array_key_from_value(segment->value);
+        if (container.type == PTN_ARRAY) {
+            PtnArrayEntry *entry = ptn_array_entry_for_key(container.as.array, key);
+            if (entry == NULL) {
+                ptn_emit_undefined_array_key_warning(key, line);
+                ptn_array_key_free(key);
+                return ptn_null();
+            }
+            ptn_array_key_free(key);
+            if (i + 1 == segment_count) {
+                return ptn_value_clone(entry->value);
+            }
+            container = ptn_value_borrow(entry->value);
+            continue;
+        }
+        if (container.type == PTN_NULL) {
+            ptn_emit_undefined_array_key_warning(key, line);
+            ptn_array_key_free(key);
+            return ptn_null();
+        }
+        ptn_array_key_free(key);
+        return ptn_null();
+    }
+    return ptn_null();
+}
+
 static PTN_UNUSED PtnValue ptn_runtime_array_read_for_assign_op(
     PtnRuntime *runtime,
     const char *name,
@@ -615,33 +845,11 @@ static PTN_UNUSED PtnValue ptn_runtime_array_read_for_assign_op(
     size_t line
 ) {
     (void)path;
-    PtnValue container;
-    if (!ptn_symbols_get(&runtime->symbols, name, &container)) {
-        if (key_value != NULL) {
-            ptn_emit_assign_op_missing_array_key(*key_value, line);
-        }
-        return ptn_null();
-    }
-
-    if (container.type == PTN_STRING) {
-        if (key_value == NULL) {
-            ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
-        }
-        ptn_throw_exception(runtime, "Error", "Cannot use assign-op operators with string offsets");
-        return ptn_null();
-    }
-
     if (key_value == NULL) {
         return ptn_null();
     }
-
-    if (container.type == PTN_ARRAY) {
-        return ptn_array_read(runtime, container, *key_value, line);
-    }
-    if (container.type == PTN_NULL) {
-        ptn_emit_assign_op_missing_array_key(*key_value, line);
-    }
-    return ptn_null();
+    PtnArrayPathSegment segment = { 0, *key_value };
+    return ptn_runtime_array_path_read_for_assign_op(runtime, name, &segment, 1, line);
 }
 
 static PTN_UNUSED void ptn_runtime_array_set_impl(
@@ -652,37 +860,8 @@ static PTN_UNUSED void ptn_runtime_array_set_impl(
     size_t line,
     int emit_null_key_deprecation
 ) {
-    PtnValue container;
-    if (ptn_symbols_get(&runtime->symbols, name, &container) && container.type == PTN_STRING) {
-        ptn_runtime_string_offset_set(runtime, name, container, key_value, value, line);
-        return;
-    }
-
-    if (emit_null_key_deprecation && key_value.type == PTN_NULL) {
-        ptn_emit_null_array_offset_deprecation(line);
-    }
-    PtnArrayKey key = ptn_array_key_from_value(key_value);
-
-    if (ptn_symbols_get(&runtime->symbols, name, &container)) {
-        if (container.type == PTN_ARRAY) {
-            PtnArray *array = ptn_runtime_array_detach_variable(runtime, name);
-            if (array == NULL) {
-                array = container.as.array;
-            }
-            ptn_array_set_entry(array, key, ptn_value_clone(value));
-            return;
-        }
-        if (container.type != PTN_NULL) {
-            ptn_array_key_free(key);
-            ptn_emit_array_runtime_diagnostic("Warning", "Cannot use a scalar value as an array", line);
-            return;
-        }
-    }
-
-    PtnValue array = ptn_array_from_literal_entries(0, NULL);
-    ptn_array_set_entry(array.as.array, key, ptn_value_clone(value));
-    ptn_runtime_write_variable(runtime, name, array);
-    ptn_value_destroy(&array);
+    PtnArrayPathSegment segment = { 0, key_value };
+    ptn_runtime_array_path_set_impl(runtime, name, &segment, 1, value, line, emit_null_key_deprecation);
 }
 
 static PTN_UNUSED void ptn_runtime_array_set(
@@ -711,33 +890,17 @@ static PTN_UNUSED void ptn_runtime_array_append(
     PtnValue value,
     size_t line
 ) {
-    PtnValue container;
-    if (ptn_symbols_get(&runtime->symbols, name, &container)) {
-        if (container.type == PTN_STRING) {
-            ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
-            return;
-        }
-        if (container.type == PTN_ARRAY) {
-            PtnArray *array = ptn_runtime_array_detach_variable(runtime, name);
-            if (array == NULL) {
-                array = container.as.array;
-            }
-            PtnArrayKey key = ptn_array_int_key(array->next_auto_key);
-            ptn_array_set_entry(array, key, ptn_value_clone(value));
-            return;
-        }
-        if (container.type != PTN_NULL) {
-            ptn_emit_array_runtime_diagnostic("Warning", "Cannot use a scalar value as an array", line);
-            return;
-        }
-    }
-
-    PtnValue array = ptn_array_from_literal_entries(0, NULL);
-    PtnArrayKey key = ptn_array_int_key(array.as.array->next_auto_key);
-    ptn_array_set_entry(array.as.array, key, ptn_value_clone(value));
-    ptn_runtime_write_variable(runtime, name, array);
-    ptn_value_destroy(&array);
+    PtnArrayPathSegment segment = { 1, ptn_null() };
+    ptn_runtime_array_path_set(runtime, name, &segment, 1, value, line);
 }
+
+static PTN_UNUSED void ptn_runtime_array_path_unset(
+    PtnRuntime *runtime,
+    const char *name,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    size_t line
+);
 
 static PTN_UNUSED void ptn_runtime_array_unset(
     PtnRuntime *runtime,
@@ -746,23 +909,54 @@ static PTN_UNUSED void ptn_runtime_array_unset(
     size_t line
 ) {
     (void)line;
-    PtnValue container;
-    if (!ptn_symbols_get(&runtime->symbols, name, &container)) {
-        return;
-    }
-    if (container.type == PTN_STRING) {
-        ptn_throw_exception(runtime, "Error", "Cannot unset string offsets");
-        return;
-    }
-    if (container.type != PTN_ARRAY) {
+    PtnArrayPathSegment segment = { 0, key_value };
+    ptn_runtime_array_path_unset(runtime, name, &segment, 1, line);
+}
+
+static PTN_UNUSED void ptn_runtime_array_path_unset(
+    PtnRuntime *runtime,
+    const char *name,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    size_t line
+) {
+    (void)line;
+    if (segment_count == 0) {
         return;
     }
 
-    PtnArrayKey key = ptn_array_key_from_value(key_value);
-    PtnArray *array = ptn_runtime_array_detach_variable(runtime, name);
-    if (array == NULL) {
-        array = container.as.array;
+    PtnValue *slot = ptn_symbols_value_slot(&runtime->symbols, name);
+    if (slot == NULL) {
+        return;
     }
+    if (slot->type == PTN_STRING) {
+        ptn_throw_exception(runtime, "Error", "Cannot unset string offsets");
+        return;
+    }
+    if (slot->type != PTN_ARRAY) {
+        return;
+    }
+
+    PtnArray *array = ptn_array_detach_value(slot);
+    for (size_t i = 0; i + 1 < segment_count; i++) {
+        const PtnArrayPathSegment *segment = &segments[i];
+        if (segment->append) {
+            return;
+        }
+        PtnArrayKey key = ptn_array_key_from_value(segment->value);
+        PtnArrayEntry *entry = ptn_array_entry_for_key(array, key);
+        ptn_array_key_free(key);
+        if (entry == NULL || entry->value.type != PTN_ARRAY) {
+            return;
+        }
+        array = ptn_array_detach_value(&entry->value);
+    }
+
+    const PtnArrayPathSegment *leaf = &segments[segment_count - 1];
+    if (leaf->append) {
+        return;
+    }
+    PtnArrayKey key = ptn_array_key_from_value(leaf->value);
     (void)ptn_array_unset_entry(array, key);
 }
 

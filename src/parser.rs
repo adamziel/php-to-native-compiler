@@ -244,22 +244,21 @@ impl Parser {
         array: String,
         variable_span: SourceSpan,
     ) -> Result<ArrayDimTarget> {
-        self.expect_left_bracket()?;
-        let index = if matches!(self.peek().kind, TokenKind::RightBracket) {
-            None
-        } else {
-            Some(self.parse_expr()?)
-        };
-        let right_span = self.expect_right_bracket()?;
-        if matches!(self.peek().kind, TokenKind::LeftBracket) {
-            return Err(Diagnostic::new(
-                "nested array-dimension assignment is unsupported",
-                Some(self.peek().span),
-            ));
+        let mut dimensions = Vec::new();
+        let mut right_span = variable_span;
+        while matches!(self.peek().kind, TokenKind::LeftBracket) {
+            self.expect_left_bracket()?;
+            let index = if matches!(self.peek().kind, TokenKind::RightBracket) {
+                None
+            } else {
+                Some(self.parse_expr()?)
+            };
+            right_span = self.expect_right_bracket()?;
+            dimensions.push(index);
         }
         Ok(ArrayDimTarget {
             array,
-            index,
+            dimensions,
             span: combine_spans(variable_span, right_span),
         })
     }
@@ -805,17 +804,9 @@ impl Parser {
         let target = self.parse_expr()?;
         match target {
             Expr::Variable(name, span) => Ok(UnsetTarget::Variable { name, span }),
-            Expr::ArrayAccess { array, index, span } => match *array {
-                Expr::Variable(name, variable_span) => Ok(UnsetTarget::ArrayDim(ArrayDimTarget {
-                    array: name,
-                    index: Some(*index),
-                    span: combine_spans(variable_span, span),
-                })),
-                _ => Err(Diagnostic::new(
-                    "unsupported unset target",
-                    Some(array.span()),
-                )),
-            },
+            Expr::ArrayAccess { .. } => {
+                array_dim_target_from_expr(target).map(UnsetTarget::ArrayDim)
+            }
             _ => Err(Diagnostic::new(
                 "unsupported unset target",
                 Some(target.span()),
@@ -2123,6 +2114,34 @@ fn target_control_path_is_reachable(target: &[usize], current: &[usize]) -> bool
             .iter()
             .zip(current)
             .all(|(target, current)| target == current)
+}
+
+fn array_dim_target_from_expr(expr: Expr) -> Result<ArrayDimTarget> {
+    let span = expr.span();
+    let mut dimensions = Vec::new();
+    let mut current = expr;
+    loop {
+        match current {
+            Expr::ArrayAccess { array, index, .. } => {
+                dimensions.push(Some(*index));
+                current = *array;
+            }
+            Expr::Variable(array, variable_span) => {
+                dimensions.reverse();
+                return Ok(ArrayDimTarget {
+                    array,
+                    dimensions,
+                    span: combine_spans(variable_span, span),
+                });
+            }
+            _ => {
+                return Err(Diagnostic::new(
+                    "unsupported unset target",
+                    Some(current.span()),
+                ));
+            }
+        }
+    }
 }
 
 fn combine_spans(left: SourceSpan, right: SourceSpan) -> SourceSpan {

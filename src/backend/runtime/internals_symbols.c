@@ -54,7 +54,16 @@ static PTN_UNUSED void ptn_value_destroy(PtnValue *value) {
     }
     switch (value->type) {
         case PTN_STRING:
-            free(value->as.string.owned);
+            if (value->as.string.owned != NULL && value->as.string.refcount != NULL) {
+                if (*value->as.string.refcount > 1) {
+                    (*value->as.string.refcount)--;
+                } else {
+                    free(value->as.string.owned);
+                    free(value->as.string.refcount);
+                }
+            } else {
+                free(value->as.string.owned);
+            }
             break;
         case PTN_ARRAY:
             ptn_array_free(value->as.array);

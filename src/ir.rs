@@ -42,7 +42,7 @@ pub enum Instruction {
     },
     StoreArrayDim {
         array: String,
-        index: Option<ValueExpr>,
+        dimensions: Vec<Option<ValueExpr>>,
         value: ValueExpr,
         compound_op: Option<BinaryOp>,
         line: usize,
@@ -57,7 +57,7 @@ pub enum Instruction {
     },
     UnsetArrayDim {
         array: String,
-        index: ValueExpr,
+        dimensions: Vec<ValueExpr>,
         line: usize,
     },
     DefineConstant {
@@ -488,7 +488,11 @@ fn lower_array_dim_store(
 ) -> Instruction {
     Instruction::StoreArrayDim {
         array: target.array.clone(),
-        index: target.index.as_ref().map(lower_expr),
+        dimensions: target
+            .dimensions
+            .iter()
+            .map(|dimension| dimension.as_ref().map(lower_expr))
+            .collect(),
         value: lower_expr(value),
         compound_op: assignment_op_binary_op(op),
         line: target.span.line,
@@ -500,12 +504,17 @@ fn lower_unset_target(target: &AstUnsetTarget) -> Instruction {
         AstUnsetTarget::Variable { name, .. } => Instruction::UnsetVariable { name: name.clone() },
         AstUnsetTarget::ArrayDim(target) => Instruction::UnsetArrayDim {
             array: target.array.clone(),
-            index: lower_expr(
-                target
-                    .index
-                    .as_ref()
-                    .expect("parser rejects append syntax in unset targets"),
-            ),
+            dimensions: target
+                .dimensions
+                .iter()
+                .map(|dimension| {
+                    lower_expr(
+                        dimension
+                            .as_ref()
+                            .expect("parser rejects append syntax in unset targets"),
+                    )
+                })
+                .collect(),
             line: target.span.line,
         },
     }

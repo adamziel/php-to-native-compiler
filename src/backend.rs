@@ -308,7 +308,7 @@ fn emit_instruction(
         }
         Instruction::StoreArrayDim {
             array,
-            index,
+            dimensions,
             value,
             compound_op,
             line,
@@ -322,26 +322,18 @@ fn emit_instruction(
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
             }
-            let index_temp = index
-                .as_ref()
-                .map(|index| values.emit_materialized_value(out, index));
+            let path = emit_array_path_segments(out, values, dimensions);
             let value_temp = values.emit_materialized_value(out, value);
             let stored_temp = if let Some(op) = compound_op {
                 let current_temp = values.next_temp();
                 out.push_str("    PtnValue ");
                 out.push_str(&current_temp);
-                out.push_str(" = ptn_runtime_array_read_for_assign_op(&runtime, \"");
+                out.push_str(" = ptn_runtime_array_path_read_for_assign_op(&runtime, \"");
                 out.push_str(&c_string(array));
-                out.push_str("\", \"");
-                out.push_str(&c_string(source_path));
                 out.push_str("\", ");
-                match &index_temp {
-                    Some(index_temp) => {
-                        out.push('&');
-                        out.push_str(index_temp);
-                    }
-                    None => out.push_str("NULL"),
-                }
+                out.push_str(&path.name);
+                out.push_str(", ");
+                out.push_str(&path.len.to_string());
                 out.push_str(", ");
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
@@ -371,40 +363,29 @@ fn emit_instruction(
             } else {
                 value_temp.clone()
             };
-            match &index_temp {
-                Some(index_temp) => {
-                    out.push_str("    ");
-                    out.push_str(if compound_op.is_some() {
-                        "ptn_runtime_array_set_from_assign_op"
-                    } else {
-                        "ptn_runtime_array_set"
-                    });
-                    out.push_str("(&runtime, \"");
-                    out.push_str(&c_string(array));
-                    out.push_str("\", ");
-                    out.push_str(index_temp);
-                    out.push_str(", ");
-                    out.push_str(&stored_temp);
-                    out.push_str(", ");
-                    out.push_str(&line.to_string());
-                    out.push_str(");\n");
-                }
-                None => {
-                    out.push_str("    ptn_runtime_array_append(&runtime, \"");
-                    out.push_str(&c_string(array));
-                    out.push_str("\", ");
-                    out.push_str(&stored_temp);
-                    out.push_str(", ");
-                    out.push_str(&line.to_string());
-                    out.push_str(");\n");
-                }
-            }
+            out.push_str("    ");
+            out.push_str(if compound_op.is_some() {
+                "ptn_runtime_array_path_set_from_assign_op"
+            } else {
+                "ptn_runtime_array_path_set"
+            });
+            out.push_str("(&runtime, \"");
+            out.push_str(&c_string(array));
+            out.push_str("\", ");
+            out.push_str(&path.name);
+            out.push_str(", ");
+            out.push_str(&path.len.to_string());
+            out.push_str(", ");
+            out.push_str(&stored_temp);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
             if compound_op.is_some() {
                 emit_value_cleanup(out, "    ", &stored_temp);
             }
             emit_value_cleanup(out, "    ", &value_temp);
-            if let Some(index_temp) = index_temp {
-                emit_value_cleanup(out, "    ", &index_temp);
+            for segment_temp in path.value_temps {
+                emit_value_cleanup(out, "    ", &segment_temp);
             }
         }
         Instruction::DefineConstant { name, value, line } => {
@@ -467,15 +448,24 @@ fn emit_instruction(
             out.push_str(&c_string(name));
             out.push_str("\");\n");
         }
-        Instruction::UnsetArrayDim { array, index, line } => {
-            let index_temp = values.emit_materialized_value(out, index);
-            out.push_str("    ptn_runtime_array_unset(&runtime, \"");
+        Instruction::UnsetArrayDim {
+            array,
+            dimensions,
+            line,
+        } => {
+            let path = emit_array_unset_path_segments(out, values, dimensions);
+            out.push_str("    ptn_runtime_array_path_unset(&runtime, \"");
             out.push_str(&c_string(array));
             out.push_str("\", ");
-            out.push_str(&index_temp);
+            out.push_str(&path.name);
+            out.push_str(", ");
+            out.push_str(&path.len.to_string());
             out.push_str(", ");
             out.push_str(&line.to_string());
             out.push_str(");\n");
+            for segment_temp in path.value_temps {
+                emit_value_cleanup(out, "    ", &segment_temp);
+            }
         }
         Instruction::InternalCall {
             name,
@@ -955,6 +945,69 @@ impl ControlTarget {
     }
 }
 
+struct EmittedArrayPath {
+    name: String,
+    len: usize,
+    value_temps: Vec<String>,
+}
+
+fn emit_array_path_segments(
+    out: &mut String,
+    values: &mut ValueEmitter,
+    dimensions: &[Option<ValueExpr>],
+) -> EmittedArrayPath {
+    let mut value_temps = Vec::new();
+    let mut initializers = Vec::new();
+    for dimension in dimensions {
+        if let Some(dimension) = dimension {
+            let temp = values.emit_materialized_value(out, dimension);
+            initializers.push(format!("{{ 0, {temp} }}"));
+            value_temps.push(temp);
+        } else {
+            initializers.push("{ 1, ptn_null() }".to_string());
+        }
+    }
+    emit_array_path(out, values, dimensions.len(), initializers, value_temps)
+}
+
+fn emit_array_unset_path_segments(
+    out: &mut String,
+    values: &mut ValueEmitter,
+    dimensions: &[ValueExpr],
+) -> EmittedArrayPath {
+    let mut value_temps = Vec::new();
+    let mut initializers = Vec::new();
+    for dimension in dimensions {
+        let temp = values.emit_materialized_value(out, dimension);
+        initializers.push(format!("{{ 0, {temp} }}"));
+        value_temps.push(temp);
+    }
+    emit_array_path(out, values, dimensions.len(), initializers, value_temps)
+}
+
+fn emit_array_path(
+    out: &mut String,
+    values: &mut ValueEmitter,
+    len: usize,
+    mut initializers: Vec<String>,
+    value_temps: Vec<String>,
+) -> EmittedArrayPath {
+    if initializers.is_empty() {
+        initializers.push("{ 1, ptn_null() }".to_string());
+    }
+    let name = values.next_temp();
+    out.push_str("    PtnArrayPathSegment ");
+    out.push_str(&name);
+    out.push_str("[] = { ");
+    out.push_str(&initializers.join(", "));
+    out.push_str(" };\n");
+    EmittedArrayPath {
+        name,
+        len,
+        value_temps,
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ControlTargetKind {
     Loop,
@@ -1011,16 +1064,22 @@ fn collect_instruction_runtime_requirements(
         | Instruction::Echo(value) => {
             collect_value_runtime_requirements(value, functions, requirements);
         }
-        Instruction::StoreArrayDim { index, value, .. } => {
-            if let Some(index) = index {
-                collect_value_runtime_requirements(index, functions, requirements);
+        Instruction::StoreArrayDim {
+            dimensions, value, ..
+        } => {
+            for dimension in dimensions {
+                if let Some(dimension) = dimension {
+                    collect_value_runtime_requirements(dimension, functions, requirements);
+                }
             }
             collect_value_runtime_requirements(value, functions, requirements);
         }
         Instruction::Increment { .. } => {}
         Instruction::UnsetVariable { .. } => {}
-        Instruction::UnsetArrayDim { index, .. } => {
-            collect_value_runtime_requirements(index, functions, requirements);
+        Instruction::UnsetArrayDim { dimensions, .. } => {
+            for dimension in dimensions {
+                collect_value_runtime_requirements(dimension, functions, requirements);
+            }
         }
         Instruction::InternalCall {
             name, arguments, ..
@@ -1401,6 +1460,13 @@ fn binary_runtime_function(op: BinaryOp) -> &'static str {
         | BinaryOp::Xor
         | BinaryOp::Or => unreachable!("not a direct binary runtime helper"),
     }
+}
+
+fn mutating_array_internal_name(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "array_pop" | "array_push" | "array_shift" | "end" | "next" | "prev" | "reset"
+    )
 }
 
 pub fn compile_c(c_source: &str, output: &Path) -> Result<()> {
@@ -2416,6 +2482,13 @@ impl ValueEmitter {
 
         let result_temp = self.next_temp();
         let direct_user_c_name = self.direct_user_function_c_name(name);
+        if mutating_array_internal_name(name) {
+            if let Some(ValueExpr::Load { name, .. }) = arguments.first() {
+                out.push_str("    ptn_runtime_separate_array_variable(&runtime, \"");
+                out.push_str(&c_string(name));
+                out.push_str("\");\n");
+            }
+        }
         if arguments.is_empty() {
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);

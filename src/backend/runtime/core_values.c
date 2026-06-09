@@ -51,6 +51,7 @@ typedef struct {
     const unsigned char *data;
     size_t len;
     char *owned;
+    size_t *refcount;
 } PtnString;
 
 typedef struct {
@@ -78,6 +79,11 @@ typedef struct {
     int exists;
     PtnValue value;
 } PtnLookupResult;
+
+typedef struct {
+    int append;
+    PtnValue value;
+} PtnArrayPathSegment;
 
 typedef struct {
     PtnArrayKey key;
@@ -200,6 +206,7 @@ typedef struct {
 } PtnRuntime;
 
 static PTN_UNUSED int ptn_is_truthy(PtnValue value);
+static void ptn_abort_out_of_memory(void);
 
 typedef PtnValue (*PtnInternalFunctionHandler)(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 
@@ -250,6 +257,7 @@ static PTN_UNUSED PtnValue ptn_string_literal(const char *string, size_t len) {
     value.as.string.data = (const unsigned char *)string;
     value.as.string.len = len;
     value.as.string.owned = NULL;
+    value.as.string.refcount = NULL;
     return value;
 }
 
@@ -258,12 +266,19 @@ static PTN_UNUSED PtnValue ptn_string(const char *string) {
 }
 
 static PTN_UNUSED PtnValue ptn_owned_string_len(char *string, size_t len) {
+    size_t *refcount = malloc(sizeof(size_t));
+    if (refcount == NULL) {
+        free(string);
+        ptn_abort_out_of_memory();
+    }
+    *refcount = 1;
     PtnValue value;
     value.type = PTN_STRING;
     value.owned = 1;
     value.as.string.data = (const unsigned char *)string;
     value.as.string.len = len;
     value.as.string.owned = string;
+    value.as.string.refcount = refcount;
     return value;
 }
 

@@ -1074,10 +1074,10 @@ fn parser_accepts_array_read_expressions() {
 #[test]
 fn parser_accepts_variable_root_array_assignment_and_unset() {
     let program = parser::parse(
-        "<?php $items[null] = \"value\"; $items[] += 2; unset($items[null], $items);",
+        "<?php $items[null] = \"value\"; $items[] += 2; $items[0][\"nested\"] = 3; unset($items[null], $items[0][\"nested\"], $items);",
     )
     .unwrap();
-    assert_eq!(program.statements.len(), 3);
+    assert_eq!(program.statements.len(), 4);
 
     let Statement::ArrayAssign {
         target, op, value, ..
@@ -1087,7 +1087,8 @@ fn parser_accepts_variable_root_array_assignment_and_unset() {
     };
     assert_eq!(target.array, "items");
     assert_eq!(*op, AssignmentOp::Assign);
-    assert!(matches!(target.index.as_ref(), Some(Expr::Null(_))));
+    assert_eq!(target.dimensions.len(), 1);
+    assert!(matches!(target.dimensions[0].as_ref(), Some(Expr::Null(_))));
     assert!(matches!(value, Expr::String(value, _) if value == "value"));
 
     let Statement::ArrayAssign { target, op, .. } = &program.statements[1] else {
@@ -1095,19 +1096,38 @@ fn parser_accepts_variable_root_array_assignment_and_unset() {
     };
     assert_eq!(target.array, "items");
     assert_eq!(*op, AssignmentOp::AddAssign);
-    assert!(target.index.is_none());
+    assert_eq!(target.dimensions, vec![None]);
 
-    let Statement::Unset { targets, .. } = &program.statements[2] else {
+    let Statement::ArrayAssign { target, op, .. } = &program.statements[2] else {
+        panic!("expected nested array assignment statement");
+    };
+    assert_eq!(target.array, "items");
+    assert_eq!(*op, AssignmentOp::Assign);
+    assert_eq!(target.dimensions.len(), 2);
+    assert!(matches!(
+        target.dimensions[0].as_ref(),
+        Some(Expr::Int(0, _))
+    ));
+    assert!(
+        matches!(target.dimensions[1].as_ref(), Some(Expr::String(value, _)) if value == "nested")
+    );
+
+    let Statement::Unset { targets, .. } = &program.statements[3] else {
         panic!("expected unset statement");
     };
-    assert_eq!(targets.len(), 2);
+    assert_eq!(targets.len(), 3);
     assert!(matches!(
         &targets[0],
         UnsetTarget::ArrayDim(target)
-            if target.array == "items" && matches!(target.index.as_ref(), Some(Expr::Null(_)))
+            if target.array == "items" && matches!(target.dimensions[0].as_ref(), Some(Expr::Null(_)))
     ));
     assert!(matches!(
         &targets[1],
+        UnsetTarget::ArrayDim(target)
+            if target.array == "items" && target.dimensions.len() == 2
+    ));
+    assert!(matches!(
+        &targets[2],
         UnsetTarget::Variable { name, .. } if name == "items"
     ));
 }
@@ -5044,6 +5064,42 @@ var_dump($items[10]);",
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "\nDeprecated: Using null as an array offset is deprecated, use an empty string instead in ptn on line 3\nbaz\n\nDeprecated: Using null as an array offset is deprecated, use an empty string instead in ptn on line 4\nnew_value\n\nDeprecated: Using null as an array offset is deprecated, use an empty string instead in ptn on line 6\nbool(true)\nbool(false)\nstring(5) \"seven\"\nbool(false)\nstring(8) \"appended\"\nint(2)\nstring(13) \"appended-tail\"\n\nWarning: Undefined array key 10 in ptn on line 20\nint(5)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_nested_array_cow_mutation_to_native_binary() {
+    let root = temp_dir("ptn-native-nested-array-cow-mutation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("nested-array-cow-mutation.php");
+    let output = root.join("nested-array-cow-mutation-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$base = [[1, 2], [\"s\" => \"abc\"], [\"drop\" => [10]]];\n\
+$alias = $base;\n\
+$alias[0][1] = 99;\n\
+$alias[0][] = 100;\n\
+$alias[1][\"s\"] .= \"-mut\";\n\
+unset($alias[2][\"drop\"]);\n\
+var_dump($base[0], $alias[0], $base[1][\"s\"], $alias[1][\"s\"], isset($base[2][\"drop\"]), isset($alias[2][\"drop\"]));\n\
+$cycle = [[\"x\" => [\"y\" => \"z\"]]];\n\
+$copy = $cycle;\n\
+$copy[0][\"x\"][\"y\"] = \"changed\";\n\
+unset($copy[0][\"x\"]);\n\
+$copy[0][\"x\"][] = \"new\";\n\
+var_dump($cycle, $copy);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(2) {\n  [0]=>\n  int(1)\n  [1]=>\n  int(2)\n}\narray(3) {\n  [0]=>\n  int(1)\n  [1]=>\n  int(99)\n  [2]=>\n  int(100)\n}\nstring(3) \"abc\"\nstring(7) \"abc-mut\"\nbool(true)\nbool(false)\narray(1) {\n  [0]=>\n  array(1) {\n    [\"x\"]=>\n    array(1) {\n      [\"y\"]=>\n      string(1) \"z\"\n    }\n  }\n}\narray(1) {\n  [0]=>\n  array(1) {\n    [\"x\"]=>\n    array(1) {\n      [0]=>\n      string(3) \"new\"\n    }\n  }\n}\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

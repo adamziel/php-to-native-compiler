@@ -397,3 +397,8 @@ static PTN_UNUSED PtnArray *ptn_array_detach_value(PtnValue *value) {
 static PTN_UNUSED PtnValue ptn_value_clone(PtnValue value) {
     switch (value.type) {
         case PTN_STRING:
+            if (value.as.string.owned != NULL && value.as.string.refcount != NULL) {
+                (*value.as.string.refcount)++;
+                value.owned = 1;
+                return value;
+            }
