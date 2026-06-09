@@ -13,7 +13,8 @@ supports in generated native binaries.
   one immediately following newline swallowed.
 - Global-scope `const NAME = expr;` declarations for the currently supported
   constant-expression subset. Declared constants are visible to bare constant
-  reads and `defined()`.
+  reads, `defined()`, and `constant()`. Duplicate declarations emit the modeled
+  warning boundary and preserve the original value.
 - `echo` statements.
 - Statement-form `print expr;` for the same scalar expression subset as echo.
 - String, integer, float, boolean, and null literals. Numeric literals accept
@@ -204,6 +205,9 @@ supports in generated native binaries.
   `M_LOG10E`, `M_LN2`, `M_LN10`, `M_PI_2`, `M_PI_4`, `M_1_PI`, `M_2_PI`,
   `M_SQRTPI`, `M_2_SQRTPI`, `M_LNPI`, `M_EULER`, `M_SQRT2`, `M_SQRT1_2`,
   and `M_SQRT3`. Other ordinary names report as undefined.
+- Duplicate global `const` declarations and `const` redeclarations after
+  `define()` emit the modeled duplicate-constant warning boundary and preserve
+  the original runtime constant value.
 - A minimal `phpc` runner for supported PHPT rows. It compiles scripts or `-r`
   snippets to temporary native binaries through the normal compiler pipeline.
 - Braced and single-statement `if`, `elseif`, and `else` statements whose
@@ -283,8 +287,7 @@ supports in generated native binaries.
   offsets, properties, variable variables, or other non-direct-variable forms.
 - Internal functions outside the registered scalar subset.
 - User-defined functions in `function_exists()`.
-- Namespace/class constants, global `const` duplicate diagnostics and ordering
-  parity with runtime `define()`, `define()`'s legacy case-insensitive flag, and
+- Namespace/class constants, `define()`'s legacy case-insensitive flag, and
   built-in PHP/extension constants other than the currently modeled `E_ERROR`,
   `PHP_EOL`, `DIRECTORY_SEPARATOR`, `PATH_SEPARATOR`, `PHP_INT_MIN`,
   `PHP_INT_MAX`, `PHP_INT_SIZE`, `INF`, `NAN`, `M_PI`, and modeled PHP math

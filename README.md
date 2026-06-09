@@ -21,7 +21,9 @@ Supported today:
   the first immediately following newline swallowed as PHP does.
 - Global-scope `const NAME = expr;` declarations for the currently supported
   constant-expression subset. Declared constants are visible to bare constant
-  reads, `defined()`, and `constant()`.
+  reads, `defined()`, and `constant()`. Duplicate declarations emit the same
+  modeled warning boundary as duplicate `define()` calls and preserve the
+  original value.
 - `echo` statements.
 - Statement-form `print expr;` for the same scalar expression subset as
   `echo`; emitted native code uses the same boxed output conversion path.
@@ -250,9 +252,8 @@ Unsupported today:
   complete overflow parity, exact scalar cast overflow behavior, PHP-exact
   warning text/file/line/error-handler behavior, inline HTML before `<?php` or
   between PHP blocks, internal functions outside the registered scalar subset,
-  namespace/class constants, global `const` duplicate diagnostics and ordering
-  parity with runtime `define()`, `define()`'s legacy case-insensitive flag,
-  and built-in constants other than the currently modeled `E_ERROR`, `PHP_EOL`,
+  namespace/class constants, `define()`'s legacy case-insensitive flag, and
+  built-in constants other than the currently modeled `E_ERROR`, `PHP_EOL`,
   `DIRECTORY_SEPARATOR`, `PATH_SEPARATOR`, `PHP_INT_MIN`, `PHP_INT_MAX`,
   `PHP_INT_SIZE`, `INF`, `NAN`, `M_PI`, and the modeled PHP math `M_*`
   constants, objects, resources, recursion, references,

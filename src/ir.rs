@@ -25,6 +25,7 @@ pub enum Instruction {
     DefineConstant {
         name: String,
         value: ValueExpr,
+        line: usize,
     },
     Echo(ValueExpr),
     InternalCall {
@@ -222,6 +223,7 @@ fn lower_statements(statements: &[Statement]) -> Vec<Instruction> {
                     instructions.push(Instruction::DefineConstant {
                         name: declaration.name.clone(),
                         value: lower_expr(&declaration.value),
+                        line: declaration.span.line,
                     });
                 }
             }

@@ -1345,10 +1345,9 @@ Added dynamic runtime constants through `define()` and `constant()`:
   `Zend/tests/constants/constants_001.phpt`.
 
 Still unsupported after this dynamic constant slice: namespace/class constants,
-global `const` duplicate diagnostics and ordering parity with runtime
-`define()`, `define()`'s legacy case-insensitive flag, exact unsupported
-argument type diagnostics, additional built-in/extension constants, exception
-behavior for `constant()` failures, and eval contexts.
+`define()`'s legacy case-insensitive flag, exact unsupported argument type
+diagnostics, additional built-in/extension constants, exception behavior for
+`constant()` failures, and eval contexts.
 
 Added source-spanned unexpected-token parse diagnostics for modeled parser
 delimiter sites:
@@ -1490,3 +1489,24 @@ Still unsupported after this goto-restriction slice: labels/goto inside
 unsupported functions, classes, `foreach`, and `try`/`finally` constructs,
 PHP-exact invalid-goto wording for broader unsupported constructs, and
 alternate control-flow syntax.
+
+Added duplicate handling for global `const` declarations:
+
+- IR constant-definition instructions now carry the source line of each
+  declared constant name.
+- Generated C uses the shared duplicate-aware runtime constant insertion helper
+  for global `const` declarations, matching the existing duplicate `define()`
+  boundary instead of overwriting previously defined constants.
+- Duplicate global `const` declarations and `const` redeclarations after
+  `define()` preserve the original runtime constant value and emit the modeled
+  PHP-like warning boundary.
+- Native tests prove a `define()` followed by `const` redeclaration and
+  duplicate names inside one comma-separated `const` declaration.
+- Focused public PHPT telemetry through `phpc` passes
+  `Zend/tests/constants/constants_008.phpt`.
+
+Still unsupported after this duplicate global-constant slice:
+namespace/class constants, namespaced constant declaration semantics,
+`define()`'s legacy case-insensitive flag, exact warning file-name/error-handler
+parity, additional built-in/extension constants, exception behavior for
+`constant()` failures, and eval contexts.

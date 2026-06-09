@@ -2924,6 +2924,53 @@ var_dump(constant(\"dup\"));\n",
 }
 
 #[test]
+fn compile_define_then_const_duplicate_preserves_original_constant() {
+    let root = temp_dir("ptn-native-define-then-const-duplicate");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("define-then-const-duplicate.php");
+    let output = root.join("define-then-const-duplicate-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+define(\"a\", 2);\n\
+const a = 1;\n\
+if (defined(\"a\")) {\n\
+    print a;\n\
+}\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Warning: Constant a already defined, this will be an error in PHP 9 in ptn on line 3\n2"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_duplicate_const_declarations_warn_and_keep_first_value() {
+    let root = temp_dir("ptn-native-duplicate-const-declarations");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("duplicate-const-declarations.php");
+    let output = root.join("duplicate-const-declarations-bin");
+    fs::write(&input, "<?php\nconst C = 1, C = 2;\nvar_dump(C);\n").unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Warning: Constant C already defined, this will be an error in PHP 9 in ptn on line 2\nint(1)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_scalar_comparisons_to_native_binary() {
     let root = temp_dir("ptn-native-comparisons");
     fs::create_dir_all(&root).unwrap();

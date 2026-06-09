@@ -47,12 +47,14 @@ fn emit_instruction(
             out.push_str(&emitted_value);
             out.push_str(");\n");
         }
-        Instruction::DefineConstant { name, value } => {
+        Instruction::DefineConstant { name, value, line } => {
             let emitted_value = values.emit_value(out, value);
-            out.push_str("    ptn_runtime_define_constant(&runtime, \"");
+            out.push_str("    (void)ptn_runtime_define_constant_if_absent(&runtime, \"");
             out.push_str(&c_string(name));
             out.push_str("\", ");
             out.push_str(&emitted_value);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
             out.push_str(");\n");
         }
         Instruction::Echo(value) => {
