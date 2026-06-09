@@ -2,9 +2,9 @@
 
 ## Progress Bar
 
-`[#########.] 111/121 PHPT rows passing`
-- Latest: Runtime emission split integrated; PHPT snapshot 111/121.
-- Tests ported/passing: 111/121
+`[#########.] 51/59 PHPT rows passing`
+- Latest: PHPT reporter snapshot: 51/59 selected rows passing.
+- Tests ported/passing: 51/59
 - Commit: 670aef40b
 
 ## 2026-06-08
