@@ -421,6 +421,24 @@ binary, runs the same input with `php`, and compares stdout, stderr, and exit
 status. It is telemetry for supported snippets only; it is not a PHPT pass-count
 claim.
 
+## Native Execution Benchmarks
+
+To produce a repeatable execution-speed baseline for generated native binaries:
+
+```sh
+tools/bench-native-execution.sh --runs 5
+```
+
+The benchmark builds `target/debug/ptn`, compiles three generated-native
+microbenchmarks, rebuilds each retained generated C file with the same `cc`
+flags as the backend, and then times native execution separately. The three
+benchmarks cover scalar arithmetic/control flow, string concatenation with
+internal functions, and ordered arrays with key/value `foreach`.
+
+The report includes the commit, host/resource notes, command lines, Rust
+compiler build time, integrated `ptn compile` time, standalone generated-C
+rebuild time, and repeated native runtime samples.
+
 ## Production Workflow
 
 A task is ready only when it is integrated into the branch that will be pushed.
