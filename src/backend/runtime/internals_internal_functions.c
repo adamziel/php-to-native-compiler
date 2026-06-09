@@ -561,8 +561,7 @@ static PtnValue ptn_internal_chunk_split(PtnRuntime *runtime, size_t argc, const
     return ptn_owned_string_len(output, output_len);
 }
 
-static char *ptn_strip_tags_string(const char *input) {
-    size_t len = strlen(input);
+static char *ptn_strip_tags_string(const char *input, size_t len) {
     char *output = malloc(len + 1);
     if (output == NULL) {
         ptn_abort_out_of_memory();
@@ -621,7 +620,7 @@ static PtnValue ptn_internal_strip_tags(PtnRuntime *runtime, size_t argc, const 
     (void)argc;
     (void)line;
     PtnStringOperand input = ptn_value_to_string_operand(args[0]);
-    char *output = ptn_strip_tags_string(input.data);
+    char *output = ptn_strip_tags_string(input.data, input.len);
     ptn_string_operand_free(input);
     return ptn_owned_string(output);
 }
@@ -968,8 +967,7 @@ static int ptn_is_path_separator(char byte) {
     return byte == '/' || byte == '\\';
 }
 
-static char *ptn_dirname_string(const char *path) {
-    size_t len = strlen(path);
+static char *ptn_dirname_string(const char *path, size_t len) {
     if (len == 0) {
         return ptn_duplicate_string(".");
     }
@@ -1002,7 +1000,7 @@ static PtnValue ptn_internal_dirname(PtnRuntime *runtime, size_t argc, const Ptn
     (void)argc;
     (void)line;
     PtnStringOperand path = ptn_value_to_string_operand(args[0]);
-    char *dirname = ptn_dirname_string(path.data);
+    char *dirname = ptn_dirname_string(path.data, path.len);
     ptn_string_operand_free(path);
     return ptn_owned_string(dirname);
 }
@@ -1283,10 +1281,10 @@ static PtnValue ptn_internal_soundex(PtnRuntime *runtime, size_t argc, const Ptn
     result[4] = '\0';
 
     size_t first = 0;
-    while (string.data[first] != '\0' && !ptn_ascii_is_letter((unsigned char)string.data[first])) {
+    while (first < string.len && !ptn_ascii_is_letter((unsigned char)string.data[first])) {
         first++;
     }
-    if (string.data[first] == '\0') {
+    if (first == string.len) {
         ptn_string_operand_free(string);
         return ptn_owned_string(result);
     }
@@ -1294,7 +1292,7 @@ static PtnValue ptn_internal_soundex(PtnRuntime *runtime, size_t argc, const Ptn
     result[0] = (char)ptn_ascii_upper((unsigned char)string.data[first]);
     char previous = ptn_soundex_code((unsigned char)string.data[first]);
     size_t output_len = 1;
-    for (size_t i = first + 1; string.data[i] != '\0' && output_len < 4; i++) {
+    for (size_t i = first + 1; i < string.len && output_len < 4; i++) {
         unsigned char byte = (unsigned char)string.data[i];
         char code = ptn_soundex_code(byte);
         if (code == '\0') {
@@ -1462,6 +1460,7 @@ static int ptn_digit_value_for_base(unsigned char byte, int base) {
 static PtnValue ptn_base_string_to_number(
     PtnRuntime *runtime,
     const char *string,
+    size_t string_len,
     int base,
     char prefix,
     size_t line
@@ -1471,7 +1470,7 @@ static PtnValue ptn_base_string_to_number(
         start++;
     }
 
-    const char *end = string + strlen(string);
+    const char *end = string + string_len;
     while (end > start && isspace((unsigned char)*(end - 1))) {
         end--;
     }
@@ -1519,7 +1518,7 @@ static PtnValue ptn_base_string_to_number(
 static PtnValue ptn_internal_bindec(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnStringOperand string = ptn_value_to_string_operand(args[0]);
-    PtnValue value = ptn_base_string_to_number(runtime, string.data, 2, 'b', line);
+    PtnValue value = ptn_base_string_to_number(runtime, string.data, string.len, 2, 'b', line);
     ptn_string_operand_free(string);
     return value;
 }
@@ -1527,7 +1526,7 @@ static PtnValue ptn_internal_bindec(PtnRuntime *runtime, size_t argc, const PtnV
 static PtnValue ptn_internal_hexdec(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnStringOperand string = ptn_value_to_string_operand(args[0]);
-    PtnValue value = ptn_base_string_to_number(runtime, string.data, 16, 'x', line);
+    PtnValue value = ptn_base_string_to_number(runtime, string.data, string.len, 16, 'x', line);
     ptn_string_operand_free(string);
     return value;
 }
@@ -1535,7 +1534,7 @@ static PtnValue ptn_internal_hexdec(PtnRuntime *runtime, size_t argc, const PtnV
 static PtnValue ptn_internal_octdec(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnStringOperand string = ptn_value_to_string_operand(args[0]);
-    PtnValue value = ptn_base_string_to_number(runtime, string.data, 8, 'o', line);
+    PtnValue value = ptn_base_string_to_number(runtime, string.data, string.len, 8, 'o', line);
     ptn_string_operand_free(string);
     return value;
 }
