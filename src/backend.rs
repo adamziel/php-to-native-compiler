@@ -14,16 +14,20 @@ mod runtime;
 
 pub fn emit_c(module: &Module) -> String {
     let mut out = String::new();
-    let needs_function_dispatch = module_uses_function_dispatch(module);
-    emit_runtime(&mut out, needs_function_dispatch);
-    emit_user_function_prototypes(&mut out, &module.functions, needs_function_dispatch);
+    let runtime_requirements = module_runtime_requirements(module);
+    emit_runtime(&mut out, &runtime_requirements);
+    emit_user_function_prototypes(
+        &mut out,
+        &module.functions,
+        runtime_requirements.internal_function_dispatch,
+    );
     emit_user_functions(
         &mut out,
         &module.functions,
         &module.source_file,
         &module.source_dir,
     );
-    if needs_function_dispatch {
+    if runtime_requirements.internal_function_dispatch {
         emit_user_function_dispatch(&mut out, &module.functions);
     }
     out.push_str("\nint main(void) {\n");
@@ -54,23 +58,63 @@ pub fn emit_c(module: &Module) -> String {
     out
 }
 
-fn emit_runtime(out: &mut String, include_internal_functions: bool) {
-    let runtime_c = runtime::runtime_c();
-    let start = runtime_c
-        .find(runtime::INTERNAL_FUNCTIONS_START)
-        .expect("runtime internal-function start marker should exist");
-    let after_start = start + runtime::INTERNAL_FUNCTIONS_START.len();
-    let relative_end = runtime_c[after_start..]
-        .find(runtime::INTERNAL_FUNCTIONS_END)
-        .expect("runtime internal-function end marker should exist");
-    let end = after_start + relative_end;
-    let after_end = end + runtime::INTERNAL_FUNCTIONS_END.len();
+#[derive(Default)]
+struct RuntimeRequirements {
+    internal_function_dispatch: bool,
+    direct_internal_helpers: bool,
+}
 
-    out.push_str(&runtime_c[..start]);
-    if include_internal_functions {
-        out.push_str(&runtime_c[after_start..end]);
+fn emit_runtime(out: &mut String, requirements: &RuntimeRequirements) {
+    let runtime_c = runtime::runtime_c();
+    let direct_helpers = runtime_chunk_range(
+        runtime_c,
+        runtime::DIRECT_INTERNAL_HELPERS_START,
+        runtime::DIRECT_INTERNAL_HELPERS_END,
+    );
+    let internal_functions = runtime_chunk_range(
+        runtime_c,
+        runtime::INTERNAL_FUNCTIONS_START,
+        runtime::INTERNAL_FUNCTIONS_END,
+    );
+    assert!(
+        direct_helpers.after_end <= internal_functions.start,
+        "runtime direct-helper chunk should precede internal-function chunk"
+    );
+
+    out.push_str(&runtime_c[..direct_helpers.start]);
+    if requirements.direct_internal_helpers || requirements.internal_function_dispatch {
+        out.push_str(&runtime_c[direct_helpers.after_start..direct_helpers.end]);
     }
-    out.push_str(&runtime_c[after_end..]);
+    out.push_str(&runtime_c[direct_helpers.after_end..internal_functions.start]);
+    if requirements.internal_function_dispatch {
+        out.push_str(&runtime_c[internal_functions.after_start..internal_functions.end]);
+    }
+    out.push_str(&runtime_c[internal_functions.after_end..]);
+}
+
+struct RuntimeChunkRange {
+    start: usize,
+    after_start: usize,
+    end: usize,
+    after_end: usize,
+}
+
+fn runtime_chunk_range(runtime_c: &str, start_marker: &str, end_marker: &str) -> RuntimeChunkRange {
+    let start = runtime_c
+        .find(start_marker)
+        .expect("runtime start marker should exist");
+    let after_start = start + start_marker.len();
+    let relative_end = runtime_c[after_start..]
+        .find(end_marker)
+        .expect("runtime end marker should exist");
+    let end = after_start + relative_end;
+    let after_end = end + end_marker.len();
+    RuntimeChunkRange {
+        start,
+        after_start,
+        end,
+        after_end,
+    }
 }
 
 fn emit_user_function_prototypes(
@@ -830,51 +874,82 @@ fn collect_control_warnings(instructions: &[Instruction]) -> Vec<ControlWarning>
     warnings
 }
 
-fn module_uses_function_dispatch(module: &Module) -> bool {
-    instructions_use_function_dispatch(&module.instructions)
-        || module
-            .functions
-            .iter()
-            .any(|function| instructions_use_function_dispatch(&function.body))
+fn module_runtime_requirements(module: &Module) -> RuntimeRequirements {
+    let mut requirements = RuntimeRequirements::default();
+    collect_instructions_runtime_requirements(
+        &module.instructions,
+        &module.functions,
+        &mut requirements,
+    );
+    for function in &module.functions {
+        collect_instructions_runtime_requirements(
+            &function.body,
+            &module.functions,
+            &mut requirements,
+        );
+    }
+    requirements
 }
 
-fn instructions_use_function_dispatch(instructions: &[Instruction]) -> bool {
-    instructions.iter().any(instruction_uses_function_dispatch)
+fn collect_instructions_runtime_requirements(
+    instructions: &[Instruction],
+    functions: &[FunctionDecl],
+    requirements: &mut RuntimeRequirements,
+) {
+    for instruction in instructions {
+        collect_instruction_runtime_requirements(instruction, functions, requirements);
+    }
 }
 
-fn instruction_uses_function_dispatch(instruction: &Instruction) -> bool {
+fn collect_instruction_runtime_requirements(
+    instruction: &Instruction,
+    functions: &[FunctionDecl],
+    requirements: &mut RuntimeRequirements,
+) {
     match instruction {
         Instruction::Store { value, .. }
         | Instruction::DefineConstant { value, .. }
         | Instruction::Expression(value)
-        | Instruction::Echo(value) => value_uses_function_dispatch(value),
-        Instruction::StoreArrayDim { index, value, .. } => {
-            value_uses_function_dispatch(index) || value_uses_function_dispatch(value)
+        | Instruction::Echo(value) => {
+            collect_value_runtime_requirements(value, functions, requirements);
         }
-        Instruction::Increment { .. } => false,
-        Instruction::UnsetVariable { .. } => false,
-        Instruction::UnsetArrayDim { index, .. } => value_uses_function_dispatch(index),
-        Instruction::InternalCall { .. } => true,
+        Instruction::StoreArrayDim { index, value, .. } => {
+            collect_value_runtime_requirements(index, functions, requirements);
+            collect_value_runtime_requirements(value, functions, requirements);
+        }
+        Instruction::Increment { .. } => {}
+        Instruction::UnsetVariable { .. } => {}
+        Instruction::UnsetArrayDim { index, .. } => {
+            collect_value_runtime_requirements(index, functions, requirements);
+        }
+        Instruction::InternalCall {
+            name, arguments, ..
+        } => {
+            collect_call_runtime_requirements(name, arguments, functions, requirements);
+        }
         Instruction::Return { value, .. } => {
-            value.as_ref().is_some_and(value_uses_function_dispatch)
+            if let Some(value) = value {
+                collect_value_runtime_requirements(value, functions, requirements);
+            }
         }
         Instruction::Try { body, catches } => {
-            instructions_use_function_dispatch(body)
-                || catches
-                    .iter()
-                    .any(|catch| instructions_use_function_dispatch(&catch.body))
+            collect_instructions_runtime_requirements(body, functions, requirements);
+            for catch in catches {
+                collect_instructions_runtime_requirements(&catch.body, functions, requirements);
+            }
         }
         Instruction::Branch {
             condition,
             then_body,
             else_body,
         } => {
-            value_uses_function_dispatch(condition)
-                || instructions_use_function_dispatch(then_body)
-                || instructions_use_function_dispatch(else_body)
+            collect_value_runtime_requirements(condition, functions, requirements);
+            collect_instructions_runtime_requirements(then_body, functions, requirements);
+            collect_instructions_runtime_requirements(else_body, functions, requirements);
         }
         Instruction::While { condition, body } | Instruction::DoWhile { body, condition } => {
-            value_uses_function_dispatch(condition) || instructions_use_function_dispatch(body)
+            collect_value_runtime_requirements(condition, functions, requirements);
+            collect_instructions_runtime_requirements(body, functions, requirements);
         }
         Instruction::For {
             initializers,
@@ -882,31 +957,38 @@ fn instruction_uses_function_dispatch(instruction: &Instruction) -> bool {
             updates,
             body,
         } => {
-            instructions_use_function_dispatch(initializers)
-                || condition.as_ref().is_some_and(value_uses_function_dispatch)
-                || instructions_use_function_dispatch(updates)
-                || instructions_use_function_dispatch(body)
+            collect_instructions_runtime_requirements(initializers, functions, requirements);
+            if let Some(condition) = condition {
+                collect_value_runtime_requirements(condition, functions, requirements);
+            }
+            collect_instructions_runtime_requirements(updates, functions, requirements);
+            collect_instructions_runtime_requirements(body, functions, requirements);
         }
         Instruction::Foreach { iterable, body, .. } => {
-            value_uses_function_dispatch(iterable) || instructions_use_function_dispatch(body)
+            collect_value_runtime_requirements(iterable, functions, requirements);
+            collect_instructions_runtime_requirements(body, functions, requirements);
         }
         Instruction::Switch { expression, cases } => {
-            value_uses_function_dispatch(expression)
-                || cases.iter().any(|case| {
-                    case.condition
-                        .as_ref()
-                        .is_some_and(value_uses_function_dispatch)
-                        || instructions_use_function_dispatch(&case.body)
-                })
+            collect_value_runtime_requirements(expression, functions, requirements);
+            for case in cases {
+                if let Some(condition) = &case.condition {
+                    collect_value_runtime_requirements(condition, functions, requirements);
+                }
+                collect_instructions_runtime_requirements(&case.body, functions, requirements);
+            }
         }
         Instruction::Break { .. }
         | Instruction::Continue { .. }
         | Instruction::Label { .. }
-        | Instruction::Goto { .. } => false,
+        | Instruction::Goto { .. } => {}
     }
 }
 
-fn value_uses_function_dispatch(value: &ValueExpr) -> bool {
+fn collect_value_runtime_requirements(
+    value: &ValueExpr,
+    functions: &[FunctionDecl],
+    requirements: &mut RuntimeRequirements,
+) {
     match value {
         ValueExpr::String(_)
         | ValueExpr::Int(_)
@@ -915,35 +997,80 @@ fn value_uses_function_dispatch(value: &ValueExpr) -> bool {
         | ValueExpr::Null
         | ValueExpr::Load { .. }
         | ValueExpr::Constant(_)
-        | ValueExpr::MagicConstant { .. } => false,
-        ValueExpr::Array(elements) => elements.iter().any(|element| {
-            element
-                .key
-                .as_ref()
-                .is_some_and(value_uses_function_dispatch)
-                || value_uses_function_dispatch(&element.value)
-        }),
-        ValueExpr::ArrayAccess { array, index, .. } => {
-            value_uses_function_dispatch(array) || value_uses_function_dispatch(index)
+        | ValueExpr::MagicConstant { .. } => {}
+        ValueExpr::Array(elements) => {
+            for element in elements {
+                if let Some(key) = &element.key {
+                    collect_value_runtime_requirements(key, functions, requirements);
+                }
+                collect_value_runtime_requirements(&element.value, functions, requirements);
+            }
         }
-        ValueExpr::Isset { targets } => targets.iter().any(value_uses_function_dispatch),
-        ValueExpr::Empty { target } => value_uses_function_dispatch(target),
-        ValueExpr::InternalCall { .. } => true,
+        ValueExpr::ArrayAccess { array, index, .. } => {
+            collect_value_runtime_requirements(array, functions, requirements);
+            collect_value_runtime_requirements(index, functions, requirements);
+        }
+        ValueExpr::Isset { targets } => {
+            for target in targets {
+                collect_value_runtime_requirements(target, functions, requirements);
+            }
+        }
+        ValueExpr::Empty { target } => {
+            collect_value_runtime_requirements(target, functions, requirements);
+        }
+        ValueExpr::InternalCall {
+            name, arguments, ..
+        } => {
+            collect_call_runtime_requirements(name, arguments, functions, requirements);
+        }
         ValueExpr::MethodCall {
             receiver,
             arguments,
             ..
         } => {
-            value_uses_function_dispatch(receiver)
-                || arguments.iter().any(value_uses_function_dispatch)
+            collect_value_runtime_requirements(receiver, functions, requirements);
+            for argument in arguments {
+                collect_value_runtime_requirements(argument, functions, requirements);
+            }
         }
         ValueExpr::Unary { expr, .. } | ValueExpr::Cast { expr, .. } => {
-            value_uses_function_dispatch(expr)
+            collect_value_runtime_requirements(expr, functions, requirements);
         }
         ValueExpr::Binary { left, right, .. } => {
-            value_uses_function_dispatch(left) || value_uses_function_dispatch(right)
+            collect_value_runtime_requirements(left, functions, requirements);
+            collect_value_runtime_requirements(right, functions, requirements);
         }
     }
+}
+
+fn collect_call_runtime_requirements(
+    name: &str,
+    arguments: &[ValueExpr],
+    functions: &[FunctionDecl],
+    requirements: &mut RuntimeRequirements,
+) {
+    for argument in arguments {
+        collect_value_runtime_requirements(argument, functions, requirements);
+    }
+    if is_generated_user_function_call(name, functions) {
+        return;
+    }
+    if is_direct_internal_helper_call(name, arguments.len()) {
+        requirements.direct_internal_helpers = true;
+        return;
+    }
+    requirements.internal_function_dispatch = true;
+}
+
+fn is_generated_user_function_call(name: &str, functions: &[FunctionDecl]) -> bool {
+    functions
+        .iter()
+        .any(|function| function.name.eq_ignore_ascii_case(name))
+}
+
+fn is_direct_internal_helper_call(name: &str, argument_count: usize) -> bool {
+    (name.eq_ignore_ascii_case("count") && argument_count == 1)
+        || (name.eq_ignore_ascii_case("array_key_exists") && argument_count == 2)
 }
 
 fn collect_control_warnings_in(
@@ -2069,7 +2196,7 @@ impl ValueEmitter {
         arguments: &[ValueExpr],
         line: usize,
     ) -> String {
-        if name == "count" && arguments.len() == 1 {
+        if name.eq_ignore_ascii_case("count") && arguments.len() == 1 {
             let argument_temp = self.emit_materialized_value(out, &arguments[0]);
             let result_temp = self.next_temp();
             out.push_str("    PtnValue ");
@@ -2081,7 +2208,7 @@ impl ValueEmitter {
             return result_temp;
         }
 
-        if name == "array_key_exists" && arguments.len() == 2 {
+        if name.eq_ignore_ascii_case("array_key_exists") && arguments.len() == 2 {
             let key_temp = self.emit_materialized_value(out, &arguments[0]);
             let array_temp = self.emit_materialized_value(out, &arguments[1]);
             let result_temp = self.next_temp();

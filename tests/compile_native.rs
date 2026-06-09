@@ -3354,6 +3354,8 @@ fn compile_user_function_calls_use_direct_generated_path_to_native_binary() {
     let main_body = &c_source[main_start..];
     assert!(main_body.contains("ptn_user_function_1(&runtime, 1,"));
     assert!(!main_body.contains("ptn_call_function(&runtime, \"apply\""));
+    assert!(!c_source.contains("ptn_call_internal"));
+    assert!(!c_source.contains("ptn_internal_var_dump"));
 }
 
 #[test]
@@ -4763,6 +4765,43 @@ var_dump(empty($missing));",
     assert!(main_body.contains("ptn_runtime_variable_is_empty(&runtime"));
     assert!(!main_body.contains("ptn_call_function(&runtime, \"count\""));
     assert!(!main_body.contains("ptn_call_function(&runtime, \"array_key_exists\""));
+}
+
+#[test]
+fn compile_direct_array_helpers_omit_internal_dispatch_block() {
+    let root = temp_dir("ptn-native-array-direct-helpers-omit-dispatch");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-direct-helpers-omit-dispatch.php");
+    let output = root.join("array-direct-helpers-omit-dispatch-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$items = [\"present\" => 1, \"missing\" => null];\n\
+echo COUNT($items), \"\\n\";\n\
+if (ARRAY_KEY_EXISTS(\"present\", $items)) echo \"present\\n\";\n\
+if (!array_key_exists(\"absent\", $items)) echo \"absent\\n\";",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "2\npresent\nabsent\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("static PTN_UNUSED PtnValue ptn_count_value"));
+    assert!(c_source.contains("static PTN_UNUSED PtnValue ptn_array_key_exists_value"));
+    assert!(c_source.contains("ptn_count_value("));
+    assert!(c_source.contains("ptn_array_key_exists_value(&runtime"));
+    assert!(!c_source.contains("ptn_call_internal"));
+    assert!(!c_source.contains("ptn_internal_count"));
+    assert!(!c_source.contains("ptn_internal_array_key_exists"));
+    assert!(!c_source.contains("ptn_internal_var_dump"));
 }
 
 #[test]

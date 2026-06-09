@@ -2271,3 +2271,32 @@ No new PHP surface is claimed by this performance slice. Binary-safe string
 storage, references/copy-on-write, array/object/resource concatenation parity
 beyond the current warning boundary, and exact string-conversion diagnostics
 remain outside the current boxed runtime boundary.
+
+Reduced generated C size for direct user-function and direct array-helper
+programs:
+
+- Runtime emission now has a separate optional direct-internal-helper chunk for
+  generated `count()` and `array_key_exists()` fast paths. Programs that only
+  use those exact-arity direct helpers no longer need the full internal
+  function dispatch registry and handler block.
+- The backend runtime-requirement walk now distinguishes direct generated
+  user-function calls from calls that require internal dispatch, while still
+  inspecting call arguments for nested runtime needs.
+- Exact-arity generated `count()` and `array_key_exists()` fast paths now
+  accept case-insensitive source spellings such as `COUNT()` and
+  `ARRAY_KEY_EXISTS()` through the same direct helper path.
+- Native tests prove direct user-function programs and direct array-helper
+  programs omit `ptn_call_internal` and the internal handler block while
+  preserving output.
+- Benchmark evidence from `tools/bench-native-execution.sh --runs 1` on this
+  worker: `user_function_step.c` decreased from 166,553 bytes to 109,607
+  bytes, and `user_function_recursive.c` decreased from 166,954 bytes to
+  110,006 bytes while preserving deterministic outputs. One-sample C rebuild
+  timings remain noisy at this scale, so generated C size is the stable
+  measured win for this slice.
+
+No new PHP surface is claimed by this performance slice. Broad internal
+function calls, `function_exists()`, unsupported functions, defaults,
+variadics, named arguments, dynamic calls, closures, methods, namespaces,
+references, and copy-on-write behavior remain outside this generated-C size
+reduction.

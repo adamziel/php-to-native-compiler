@@ -40,3 +40,5 @@ pub(super) fn runtime_c() -> &'static str {
 
 pub(super) const INTERNAL_FUNCTIONS_START: &str = "/* PTN_INTERNAL_FUNCTIONS_START */";
 pub(super) const INTERNAL_FUNCTIONS_END: &str = "/* PTN_INTERNAL_FUNCTIONS_END */";
+pub(super) const DIRECT_INTERNAL_HELPERS_START: &str = "/* PTN_DIRECT_INTERNAL_HELPERS_START */";
+pub(super) const DIRECT_INTERNAL_HELPERS_END: &str = "/* PTN_DIRECT_INTERNAL_HELPERS_END */";

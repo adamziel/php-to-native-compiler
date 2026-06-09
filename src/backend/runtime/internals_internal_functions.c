@@ -39,6 +39,37 @@ static PTN_UNUSED void ptn_echo(PtnValue value) {
     }
 }
 
+/* PTN_DIRECT_INTERNAL_HELPERS_START */
+static PTN_UNUSED PtnValue ptn_count_value(PtnValue value) {
+    if (value.type == PTN_ARRAY) {
+        return ptn_int((int64_t)value.as.array->len);
+    }
+    fputs("Fatal error: count(): Argument #1 ($value) must be of type Countable|array, ", stderr);
+    fputs(ptn_offset_container_type_name(value), stderr);
+    fputs(" given\n", stderr);
+    exit(255);
+    return ptn_null();
+}
+
+static PTN_UNUSED PtnValue ptn_array_key_exists_value(PtnRuntime *runtime, PtnValue key_value, PtnValue array_value, size_t line) {
+    if (array_value.type != PTN_ARRAY) {
+        fputs("Fatal error: array_key_exists(): Argument #2 ($array) must be of type array\n", stderr);
+        exit(255);
+    }
+    if (key_value.type == PTN_NULL) {
+        ptn_emit_deprecation(
+            &runtime->diagnostics,
+            "Using null as the key parameter for array_key_exists() is deprecated, use an empty string instead",
+            line
+        );
+    }
+    PtnArrayKey key = ptn_array_key_from_value(key_value);
+    int exists = ptn_array_entry_for_key(array_value.as.array, key) != NULL;
+    ptn_array_key_free(key);
+    return ptn_bool(exists);
+}
+/* PTN_DIRECT_INTERNAL_HELPERS_END */
+
 /* PTN_INTERNAL_FUNCTIONS_START */
 static void ptn_var_dump_indent(size_t indent) {
     for (size_t i = 0; i < indent; i++) {
@@ -1514,17 +1545,6 @@ static PtnValue ptn_internal_ord(PtnRuntime *runtime, size_t argc, const PtnValu
     return ptn_int(byte);
 }
 
-static PTN_UNUSED PtnValue ptn_count_value(PtnValue value) {
-    if (value.type == PTN_ARRAY) {
-        return ptn_int((int64_t)value.as.array->len);
-    }
-    fputs("Fatal error: count(): Argument #1 ($value) must be of type Countable|array, ", stderr);
-    fputs(ptn_offset_container_type_name(value), stderr);
-    fputs(" given\n", stderr);
-    exit(255);
-    return ptn_null();
-}
-
 static PtnValue ptn_internal_count(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)argc;
@@ -1671,24 +1691,6 @@ static PtnValue ptn_internal_function_exists(PtnRuntime *runtime, size_t argc, c
     char *name = ptn_value_to_string(args[0]);
     int exists = ptn_user_function_exists(name) || ptn_find_internal_function(name) != NULL;
     free(name);
-    return ptn_bool(exists);
-}
-
-static PTN_UNUSED PtnValue ptn_array_key_exists_value(PtnRuntime *runtime, PtnValue key_value, PtnValue array_value, size_t line) {
-    if (array_value.type != PTN_ARRAY) {
-        fputs("Fatal error: array_key_exists(): Argument #2 ($array) must be of type array\n", stderr);
-        exit(255);
-    }
-    if (key_value.type == PTN_NULL) {
-        ptn_emit_deprecation(
-            &runtime->diagnostics,
-            "Using null as the key parameter for array_key_exists() is deprecated, use an empty string instead",
-            line
-        );
-    }
-    PtnArrayKey key = ptn_array_key_from_value(key_value);
-    int exists = ptn_array_entry_for_key(array_value.as.array, key) != NULL;
-    ptn_array_key_free(key);
     return ptn_bool(exists);
 }
 
