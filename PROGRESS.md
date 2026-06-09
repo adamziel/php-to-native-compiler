@@ -1969,3 +1969,15 @@ C:
 
 No PHP behavior or generated C output is intended to change from this
 modularization.
+
+Made the generated C build profile explicit and configurable:
+
+- The system `cc` invocation uses `-O2` by default for generated native
+  binaries.
+- `PTN_CC_OPT_LEVEL=0` or `PTN_CC_OPT_LEVEL=debug` selects `-O0 -g` for
+  debug-friendly C/native inspection, while `1`, `2`, `3`, `s`, and `z` select
+  `-O1`, `-O2`, `-O3`, `-Os`, and `-Oz`.
+- Invalid optimization-profile values fail before launching `cc` with a clear
+  compiler diagnostic rather than silently changing build behavior.
+- Focused Rust tests cover profile selection without changing parser, IR, or
+  PHP runtime semantics.

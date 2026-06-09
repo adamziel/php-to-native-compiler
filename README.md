@@ -393,6 +393,11 @@ cargo run --bin ptn -- compile examples/hello.php -o /tmp/ptn-hello
 /tmp/ptn-hello
 ```
 
+Generated binaries are built through the system `cc` with `-O2` by default. To
+produce a debug-friendly native binary instead, set `PTN_CC_OPT_LEVEL=0` or
+`PTN_CC_OPT_LEVEL=debug`; accepted optimized levels are `1`, `2`, `3`, `s`, and
+`z`.
+
 ## PHPT Runner Telemetry
 
 PTN includes a minimal `phpc` runner for direct PHPT execution of the currently
