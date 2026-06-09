@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-09T22:39Z
-Measured base: `ptn-cqu.26` focused binary string slice
+Refresh: 2026-06-09T23:02Z
+Measured base: `9d5c6070073e` (`ptn-cqu.26`) on `origin/master`
 
 ## Test Dashboard
 
@@ -28,8 +28,14 @@ Measured base: `ptn-cqu.26` focused binary string slice
 
 ## COW PHPT Buckets
 
-`tools/phpt-cow-manifest.txt` at 2026-06-09T20:32Z: 29 rows, 9 passing,
-20 failing. Failing rows are bucketed in
+`tools/phpt-cow-manifest.txt` still has 29 rows. Before evidence
+2026-06-09T20:32Z: 9 passing, 20 failing. Refresh at 2026-06-09T23:02Z on
+`9d5c6070073e`: 9 passing, 20 failing. Bucket pass counts:
+assignment-aliasing 3/4, string-offsets 2/4, array-writes-appends-unset 3/4,
+nested-arrays 0/4, foreach-mutation 1/4, function-boundaries 0/4,
+reference-interaction 0/5. The full bounded runner still stops at
+`Zend/tests/bug38469.phpt`; the remaining rows were rerun bucket-wise and that
+row is counted failing. Blocker beads are linked in
 `docs/COW_PHPT_BLOCKERS_2026-06-09.md`. Native COW reducers are 28/28,
 by-reference foreach oracle is 11/11, mutating-internal matrix is 14/14 plus
 six unsupported target diagnostics, and the post-merge COW gate is 14/14.

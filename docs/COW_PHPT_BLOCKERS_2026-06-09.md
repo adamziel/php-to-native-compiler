@@ -2,15 +2,16 @@
 
 Evidence base:
 
-- Current branch on `ptn-cqu.47.21` rebased after `ptn-cqu.47.22`.
-- `tools/run-bounded-phpt.sh tools/phpt-cow-manifest.txt` still aborts in the
-  nested-array bucket because `Zend/tests/bug38469.phpt` exhausts
-  `run-tests.php` diff memory.
-- Row-level rerun excluding `bug38469`: 28 total, 9 pass, 19 fail. Counting
-  `bug38469` as a fail gives 29 total, 9 pass, 20 fail.
-- Fixed rows after the latest merges: `array_unshift_basic1` passes through a
-  generic mutating-internal implementation, and `foreach_reference` passes after
-  `array_reverse()` plus reindexing-internal reference unwraps.
+- Refreshed at 2026-06-09T23:02Z on `9d5c6070073e`
+  (`origin/master`, `ptn-cqu.26`).
+- No `tools/phpt-cow-manifest.txt` row changes were needed: 29 rows in seven
+  buckets.
+- Before evidence from 2026-06-09T20:32Z: 29 total, 9 pass, 20 fail.
+- After evidence from 2026-06-09T23:02Z: 29 total, 9 pass, 20 fail.
+- `tools/run-bounded-phpt.sh tools/phpt-cow-manifest.txt` still stops in the
+  nested-arrays bucket because `Zend/tests/bug38469.phpt` exhausts
+  `run-tests.php` diff memory. The other rows were rerun bucket-wise; counting
+  `bug38469` as failing gives the manifest total.
 
 ## Focused COW Counts
 
@@ -24,6 +25,21 @@ Evidence base:
 | function-boundaries | 4 | 0 | 4 |
 | reference-interaction | 5 | 0 | 5 |
 | **Total** | **29** | **9** | **20** |
+
+Before and after bucket counts are unchanged from the 2026-06-09T20:32Z
+measurement.
+
+## Linked Generic Blocker Beads
+
+| Generic blocker | Rows held | Bead |
+| --- | ---: | --- |
+| PHP-exact assignment/offset diagnostics | 1 | `ptn-4yt.5` |
+| String offset reference diagnostics and mutation COW | 2 | `ptn-4yt.6` |
+| Overlapping array-dim compound assignment snapshots | 1 | `ptn-4yt.1` |
+| Nested recursive reference lvalues, recursive array internals, and cycle-safe dumps | 4 | `ptn-4yt.2` |
+| By-reference foreach over unsupported source forms and callback mutation | 3 | `ptn-4yt.7`, `ptn-4yt.3` |
+| By-reference returns, call-result references, and callback return references | 4 | `ptn-4yt.8`, `ptn-4yt.3` |
+| Reference array literals, reference append lvalues, reference-aware internals, and reference inspection | 5 | `ptn-4yt.9`, `ptn-4yt.3` |
 
 ## Fixed Rows
 
@@ -50,25 +66,25 @@ temporary/read-slot reducers.
 
 ## Remaining Blocker Rows
 
-| Bucket | PHPT row | Current blocker | Map |
+| Bucket | PHPT row | Current generic blocker | Bead |
 | --- | --- | --- | --- |
-| assignment-aliasing | `Zend/tests/assign_to_var_003.phpt` | Value result is correct; float offset warning text differs. | unsupported: PHP-exact offset diagnostic wording |
-| string-offsets | `Zend/tests/str_offset_002.phpt` | `&$a[0]` is rejected while PHP raises `Error`. | unsupported: references to/from string offsets |
-| string-offsets | `Zend/tests/string_offset_optimization.phpt` | Same string-offset reference form inside a function. | unsupported: references to/from string offsets |
-| array-writes-appends-unset | `Zend/tests/assign_dim_op_same_var.phpt` | Compound array union assignment with overlapping LHS/RHS yields `int(1)`. | blocker: overlapping array-dim assign-op snapshot |
-| nested-arrays | `Zend/tests/bug35163.phpt` | Nested reference lvalue is rejected. | unsupported: nested reference lvalues |
-| nested-arrays | `Zend/tests/bug38469.phpt` | Recursive copied value exhausts PHPT diff memory. | blocker: recursive array dump/cycle handling |
-| nested-arrays | `ext/standard/tests/array/array_merge_recursive_basic1.phpt` | `array_merge_recursive()` is not registered. | unsupported: recursive array internal |
-| nested-arrays | `ext/standard/tests/array/array_merge_replace_recursive_refs.phpt` | Reference array literal blocks before recursive merge/replace semantics. | unsupported: reference array literals and recursive internals |
-| foreach-mutation | `Zend/tests/foreach/foreach_by_ref_repacking_insert.phpt` | Leading inline whitespace before `<?php` is rejected. | unsupported: mixed/inline open-tag handling |
-| foreach-mutation | `Zend/tests/foreach/foreach_temp_array_expr_with_refs.phpt` | Temporary array literal containing references is rejected. | unsupported: reference array literals |
-| foreach-mutation | `ext/standard/tests/array/array_walk/bug69068_2.phpt` | Closure with by-reference callback and global swap is unsupported. | unsupported: closures/use/globals callback mutation |
-| function-boundaries | `Zend/tests/return_types/return_reference_separation.phpt` | `int`/`string` hints and by-reference returns block parsing. | unsupported: typed by-reference returns |
-| function-boundaries | `Zend/tests/assign_by_val_function_by_ref_return_value.phpt` | Assignment by reference from a function result is rejected. | unsupported: by-reference assignment from call result |
-| function-boundaries | `ext/standard/tests/array/array_reduce_accumulator_refcount.phpt` | Closure plus `debug_zval_dump()` refcount surface is unsupported. | unsupported: closures and refcount inspection internal |
-| function-boundaries | `ext/standard/tests/array/array_reduce_return_by_ref.phpt` | `array_reduce()` callback returning by reference is unsupported. | unsupported: by-reference callback returns |
-| reference-interaction | `Zend/tests/array_with_refs_identical.phpt` | Array literal containing references blocks strict identity comparison. | unsupported: reference array literal identity |
-| reference-interaction | `Zend/tests/assign_dim_ref_free.phpt` | Chained append/reference assignment is rejected. | unsupported: reference append lvalue |
-| reference-interaction | `ext/standard/tests/array/array_sum_on_reference.phpt` | Reference array literal blocks before `array_sum()` runs. | unsupported: reference-aware numeric array internal |
-| reference-interaction | `ext/standard/tests/strings/strtr_with_reference.phpt` | Reference array literal blocks before `strtr()` runs. | unsupported: reference-aware string replacement internal |
-| reference-interaction | `ext/standard/tests/general_functions/debug_zval_dump_refs.phpt` | Reference array literal blocks refcount formatting coverage. | unsupported: reference inspection internal |
+| assignment-aliasing | `Zend/tests/assign_to_var_003.phpt` | Value result is correct; float offset warning text differs. | `ptn-4yt.5` |
+| string-offsets | `Zend/tests/str_offset_002.phpt` | `&$a[0]` is rejected while PHP raises `Error`. | `ptn-4yt.6` |
+| string-offsets | `Zend/tests/string_offset_optimization.phpt` | Same string-offset reference form inside a function. | `ptn-4yt.6` |
+| array-writes-appends-unset | `Zend/tests/assign_dim_op_same_var.phpt` | Compound array union assignment with overlapping LHS/RHS yields `int(1)`. | `ptn-4yt.1` |
+| nested-arrays | `Zend/tests/bug35163.phpt` | Nested reference lvalue is rejected. | `ptn-4yt.2` |
+| nested-arrays | `Zend/tests/bug38469.phpt` | Recursive copied value exhausts PHPT diff memory. | `ptn-4yt.2` |
+| nested-arrays | `ext/standard/tests/array/array_merge_recursive_basic1.phpt` | `array_merge_recursive()` is not registered. | `ptn-4yt.2` |
+| nested-arrays | `ext/standard/tests/array/array_merge_replace_recursive_refs.phpt` | Reference array literal blocks before recursive merge/replace semantics. | `ptn-4yt.2`, `ptn-4yt.9` |
+| foreach-mutation | `Zend/tests/foreach/foreach_by_ref_repacking_insert.phpt` | Leading inline whitespace before `<?php` is rejected. | `ptn-4yt.7` |
+| foreach-mutation | `Zend/tests/foreach/foreach_temp_array_expr_with_refs.phpt` | Temporary array literal containing references is rejected. | `ptn-4yt.7`, `ptn-4yt.3`, `ptn-4yt.9` |
+| foreach-mutation | `ext/standard/tests/array/array_walk/bug69068_2.phpt` | Closure with by-reference callback and global swap is unsupported. | `ptn-4yt.7`, `ptn-4yt.3` |
+| function-boundaries | `Zend/tests/return_types/return_reference_separation.phpt` | `int`/`string` hints and by-reference returns block parsing. | `ptn-4yt.8` |
+| function-boundaries | `Zend/tests/assign_by_val_function_by_ref_return_value.phpt` | Assignment by reference from a function result is rejected. | `ptn-4yt.8`, `ptn-4yt.3` |
+| function-boundaries | `ext/standard/tests/array/array_reduce_accumulator_refcount.phpt` | Closure plus `debug_zval_dump()` refcount surface is unsupported. | `ptn-4yt.8`, `ptn-4yt.3`, `ptn-4yt.9` |
+| function-boundaries | `ext/standard/tests/array/array_reduce_return_by_ref.phpt` | `array_reduce()` callback returning by reference is unsupported. | `ptn-4yt.8`, `ptn-4yt.3` |
+| reference-interaction | `Zend/tests/array_with_refs_identical.phpt` | Array literal containing references blocks strict identity comparison. | `ptn-4yt.9` |
+| reference-interaction | `Zend/tests/assign_dim_ref_free.phpt` | Chained append/reference assignment is rejected. | `ptn-4yt.9` |
+| reference-interaction | `ext/standard/tests/array/array_sum_on_reference.phpt` | Reference array literal blocks before `array_sum()` runs. | `ptn-4yt.9` |
+| reference-interaction | `ext/standard/tests/strings/strtr_with_reference.phpt` | Reference array literal blocks before `strtr()` runs. | `ptn-4yt.9` |
+| reference-interaction | `ext/standard/tests/general_functions/debug_zval_dump_refs.phpt` | Reference array literal blocks refcount formatting coverage. | `ptn-4yt.9` |
