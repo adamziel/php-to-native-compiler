@@ -5614,7 +5614,7 @@ var_dump($source[0][\"leaf\"][\"v\"], $copy[0][\"leaf\"][\"v\"], $read[\"v\"]);"
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
-    assert!(c_source.contains(" = ptn_value_clone("));
+    assert!(c_source.contains("ptn_value_snapshot_for_array_path_write"));
     assert!(c_source.contains("ptn_runtime_array_path_set(&runtime"));
 }
 
@@ -6417,6 +6417,85 @@ var_dump(function_exists(\"array_reverse\"), function_exists(\"ARRAY_REVERSE\"))
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_array_reverse"));
     assert!(c_source.contains("ptn_array_reindexing_internal_value"));
+}
+
+#[test]
+fn compile_array_merge_recursive_to_native_binary() {
+    let root = temp_dir("ptn-native-array-merge-recursive");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-merge-recursive.php");
+    let output = root.join("array-merge-recursive-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(array_merge_recursive());\n\
+$left = [1, [1, 2]];\n\
+$right = [3, [\"hello\", \"world\"]];\n\
+var_dump(array_merge_recursive($left, $right));\n\
+$assoc_left = [\"k\" => \"left\", \"both\" => [\"x\" => 1]];\n\
+$assoc_right = [\"k\" => \"right\", \"both\" => [\"y\" => 2]];\n\
+$assoc = array_merge_recursive($assoc_left, $assoc_right);\n\
+$assoc[\"both\"][\"x\"] = 9;\n\
+var_dump($assoc);\n\
+var_dump($assoc_left[\"both\"][\"x\"], $assoc_right[\"both\"][\"y\"], function_exists(\"array_merge_recursive\"));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(0) {\n",
+            "}\n",
+            "array(4) {\n",
+            "  [0]=>\n",
+            "  int(1)\n",
+            "  [1]=>\n",
+            "  array(2) {\n",
+            "    [0]=>\n",
+            "    int(1)\n",
+            "    [1]=>\n",
+            "    int(2)\n",
+            "  }\n",
+            "  [2]=>\n",
+            "  int(3)\n",
+            "  [3]=>\n",
+            "  array(2) {\n",
+            "    [0]=>\n",
+            "    string(5) \"hello\"\n",
+            "    [1]=>\n",
+            "    string(5) \"world\"\n",
+            "  }\n",
+            "}\n",
+            "array(2) {\n",
+            "  [\"k\"]=>\n",
+            "  array(2) {\n",
+            "    [0]=>\n",
+            "    string(4) \"left\"\n",
+            "    [1]=>\n",
+            "    string(5) \"right\"\n",
+            "  }\n",
+            "  [\"both\"]=>\n",
+            "  array(2) {\n",
+            "    [\"x\"]=>\n",
+            "    int(9)\n",
+            "    [\"y\"]=>\n",
+            "    int(2)\n",
+            "  }\n",
+            "}\n",
+            "int(1)\n",
+            "int(2)\n",
+            "bool(true)\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_array_merge_recursive"));
+    assert!(c_source.contains("ptn_array_merge_recursive_into"));
 }
 
 #[test]

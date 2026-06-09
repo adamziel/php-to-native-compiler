@@ -510,6 +510,14 @@ static PTN_UNUSED PtnValue ptn_value_clone(PtnValue value) {
     return ptn_value_share(value);
 }
 
+static PTN_UNUSED PtnValue ptn_value_snapshot_for_array_path_write(PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_ARRAY) {
+        return ptn_value_clone(value);
+    }
+    return value;
+}
+
 static PTN_UNUSED PtnArray *ptn_value_detach_array(PtnValue *value) {
     return ptn_array_detach_value(value);
 }

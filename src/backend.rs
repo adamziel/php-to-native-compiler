@@ -501,7 +501,7 @@ fn emit_instruction(
             }
             let path = emit_array_path_segments(out, values, dimensions);
             let value_temp = values.emit_materialized_value(out, value);
-            let (stored_temp, cleanup_stored_temp) = if let Some(op) = compound_op {
+            let stored_temp = if let Some(op) = compound_op {
                 let current_temp = values.next_temp();
                 out.push_str("    PtnValue ");
                 out.push_str(&current_temp);
@@ -536,15 +536,15 @@ fn emit_instruction(
                 }
                 out.push_str(";\n");
                 emit_value_cleanup(out, "    ", &current_temp);
-                (result_temp, true)
+                result_temp
             } else {
                 let snapshot_temp = values.next_temp();
                 out.push_str("    PtnValue ");
                 out.push_str(&snapshot_temp);
-                out.push_str(" = ptn_value_clone(");
+                out.push_str(" = ptn_value_snapshot_for_array_path_write(");
                 out.push_str(&value_temp);
                 out.push_str(");\n");
-                (snapshot_temp, true)
+                snapshot_temp
             };
             out.push_str("    ");
             out.push_str(if compound_op.is_some() {
@@ -563,9 +563,7 @@ fn emit_instruction(
             out.push_str(", ");
             out.push_str(&line.to_string());
             out.push_str(");\n");
-            if cleanup_stored_temp {
-                emit_value_cleanup(out, "    ", &stored_temp);
-            }
+            emit_value_cleanup(out, "    ", &stored_temp);
             emit_value_cleanup(out, "    ", &value_temp);
             for segment_temp in path.value_temps {
                 emit_value_cleanup(out, "    ", &segment_temp);

@@ -1,14 +1,15 @@
 # PTN Progress
 
-Refresh: 2026-06-10T00:05Z
-Measured branches: `ptn-4yt.9` then `ptn-4yt.3` rebased on `master`
+Refresh: 2026-06-10T00:12Z
+Measured branches: `ptn-4yt.9` then `ptn-4yt.3` rebased on `master`;
+`ptn-4yt.2` adds array-path RHS snapshots and `array_merge_recursive()`.
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 4 | 4 | 0 |
-| Native compiled PHP snippets | 318 | 318 | 0 |
+| Native compiled PHP snippets | 322 | 322 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 146 | 54 |
 | PHPT Zend rows | 76 | 63 | 13 |
@@ -50,10 +51,10 @@ binary strings, string offsets, corpus-style scalar offset diagnostics, array
 literal reference elements, array union `+`, scalar type hints, typed
 by-reference return separation, `count()`, `??`, COW gates/oracles, assignment
 expressions, expression-level `@` suppression, `file_put_contents()`,
-`sha1_file()`, `unlink()` byte-file slices, reference-aware
-`array_sum()`/`strtr()`, `debug_zval_dump()` reference inspection, and
-string-valued dynamic function calls with lvalue reference arguments through
-the fallback dispatcher.
+`sha1_file()`, `unlink()` byte-file slices, array-path RHS snapshots,
+reference-aware `array_sum()`/`strtr()`, `array_merge_recursive()`,
+`debug_zval_dump()` reference inspection, and string-valued dynamic calls with
+lvalue reference arguments through the fallback dispatcher.
 
 ## Still Needed
 
