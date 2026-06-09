@@ -117,6 +117,7 @@ static void ptn_diagnostics_init(PtnDiagnosticSink *diagnostics, FILE *stream) {
     diagnostics->stream = stream;
     diagnostics->emitted_deprecation = 0;
     diagnostics->emitted_warning = 0;
+    diagnostics->suppressed = 0;
 }
 
 static void ptn_emit_undefined_variable_warning(
@@ -125,6 +126,9 @@ static void ptn_emit_undefined_variable_warning(
     const char *path,
     size_t line
 ) {
+    if (diagnostics->suppressed > 0) {
+        return;
+    }
     FILE *stream = diagnostics->stream == NULL ? stderr : diagnostics->stream;
     if (diagnostics->emitted_warning) {
         fputc('\n', stream);
@@ -201,6 +205,9 @@ static PTN_UNUSED void ptn_emit_type_error(PtnDiagnosticSink *diagnostics, const
 }
 
 static void ptn_emit_deprecation(PtnDiagnosticSink *diagnostics, const char *message, size_t line) {
+    if (diagnostics->suppressed > 0) {
+        return;
+    }
     if (diagnostics->emitted_deprecation) {
         fputc('\n', stdout);
     }
@@ -213,7 +220,9 @@ static void ptn_emit_deprecation(PtnDiagnosticSink *diagnostics, const char *mes
 }
 
 static PTN_UNUSED void ptn_emit_warning(PtnDiagnosticSink *diagnostics, const char *message, size_t line) {
-    (void)diagnostics;
+    if (diagnostics->suppressed > 0) {
+        return;
+    }
     fputs("Warning: ", stdout);
     fputs(message, stdout);
     fputs(" in ptn on line ", stdout);
@@ -237,7 +246,9 @@ static void ptn_emit_constant_already_defined_warning(
     const char *name,
     size_t line
 ) {
-    (void)diagnostics;
+    if (diagnostics->suppressed > 0) {
+        return;
+    }
     fputs("Warning: Constant ", stdout);
     fputs(name, stdout);
     fputs(" already defined, this will be an error in PHP 9 in ptn on line ", stdout);

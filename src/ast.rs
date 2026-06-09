@@ -226,6 +226,11 @@ pub enum Expr {
     Bool(bool, SourceSpan),
     Null(SourceSpan),
     Variable(String, SourceSpan),
+    Assign {
+        name: String,
+        value: Box<Expr>,
+        span: SourceSpan,
+    },
     Constant(String, SourceSpan),
     MagicConstant(MagicConstantKind, SourceSpan),
     Call {
@@ -325,6 +330,7 @@ pub enum UnaryOp {
     Negate,
     Not,
     BitwiseNot,
+    ErrorSuppress,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -351,6 +357,7 @@ impl Expr {
             | Expr::Variable(_, span)
             | Expr::Constant(_, span)
             | Expr::MagicConstant(_, span) => *span,
+            Expr::Assign { span, .. } => *span,
             Expr::Call { span, .. } | Expr::MethodCall { span, .. } => *span,
             Expr::Array { span, .. } => *span,
             Expr::ArrayAccess { span, .. } => *span,

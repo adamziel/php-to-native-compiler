@@ -948,7 +948,30 @@ impl Parser {
     }
 
     fn parse_expr(&mut self) -> Result<Expr> {
-        self.parse_binary_expr(0)
+        self.parse_assignment_expr()
+    }
+
+    fn parse_assignment_expr(&mut self) -> Result<Expr> {
+        let left = self.parse_binary_expr(0)?;
+        if !matches!(self.peek().kind, TokenKind::Equal) {
+            return Ok(left);
+        }
+
+        let equals = self.advance().clone();
+        let value = self.parse_assignment_expr()?;
+        let left_span = left.span();
+        let Expr::Variable(name, _) = left else {
+            return Err(Diagnostic::new(
+                "assignment expression target must be a variable",
+                Some(equals.span),
+            ));
+        };
+        let span = combine_spans(left_span, value.span());
+        Ok(Expr::Assign {
+            name,
+            value: Box::new(value),
+            span,
+        })
     }
 
     fn parse_assignment_value_expr(&mut self) -> Result<Expr> {
@@ -1025,6 +1048,16 @@ impl Parser {
                 let span = combine_spans(token.span, expr.span());
                 Ok(Expr::Unary {
                     op: UnaryOp::BitwiseNot,
+                    expr: Box::new(expr),
+                    span,
+                })
+            }
+            TokenKind::At => {
+                let token = self.advance().clone();
+                let expr = self.parse_binary_expr(POWER_PRECEDENCE)?;
+                let span = combine_spans(token.span, expr.span());
+                Ok(Expr::Unary {
+                    op: UnaryOp::ErrorSuppress,
                     expr: Box::new(expr),
                     span,
                 })
@@ -1426,6 +1459,7 @@ impl Parser {
                 | TokenKind::Minus
                 | TokenKind::Bang
                 | TokenKind::Tilde
+                | TokenKind::At
                 | TokenKind::LeftParen
                 | TokenKind::LeftBracket
                 | TokenKind::Backslash
@@ -1856,6 +1890,7 @@ fn token_text(kind: &TokenKind) -> &'static str {
         TokenKind::Caret => "^",
         TokenKind::Tilde => "~",
         TokenKind::Bang => "!",
+        TokenKind::At => "@",
         TokenKind::Backslash => "\\",
         TokenKind::Dot => ".",
         TokenKind::Comma => ",",
@@ -1953,6 +1988,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "strip_tags"
             | "md5"
             | "sha1"
+            | "sha1_file"
             | "substr"
             | "dirname"
             | "bin2hex"
@@ -1964,6 +2000,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "abs"
             | "sqrt"
             | "fdiv"
+            | "file_put_contents"
             | "intdiv"
             | "pi"
             | "getrandmax"
@@ -2015,6 +2052,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "next"
             | "prev"
             | "reset"
+            | "unlink"
     )
 }
 
@@ -2308,6 +2346,7 @@ fn is_supported_global_const_expr(expr: &Expr) -> bool {
         }
         Expr::InterpolatedString(_, _)
         | Expr::Variable(_, _)
+        | Expr::Assign { .. }
         | Expr::Call { .. }
         | Expr::MethodCall { .. }
         | Expr::ArrayAccess { .. }

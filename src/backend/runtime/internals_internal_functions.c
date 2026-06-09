@@ -1154,6 +1154,205 @@ static PtnValue ptn_internal_sha1(PtnRuntime *runtime, size_t argc, const PtnVal
     return ptn_digest_value(digest, sizeof(digest), raw_output);
 }
 
+static char *ptn_path_operand_to_c_string(PtnStringOperand path) {
+    if (memchr(path.data, '\0', path.len) != NULL) {
+        return NULL;
+    }
+    return ptn_duplicate_string_len(path.data, path.len);
+}
+
+static void ptn_emit_file_warning(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *path,
+    const char *detail,
+    size_t line
+) {
+    int needed = snprintf(NULL, 0, "%s(%s): %s", function_name, path, detail);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(message, (size_t)needed + 1, "%s(%s): %s", function_name, path, detail);
+    if (written < 0 || written != needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    if (runtime->diagnostics.suppressed <= 0) {
+        fputc('\n', stdout);
+    }
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+    free(message);
+}
+
+static PtnValue ptn_internal_file_put_contents(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand path_operand = ptn_value_to_string_operand(args[0]);
+    char *path = ptn_path_operand_to_c_string(path_operand);
+    ptn_string_operand_free(path_operand);
+    if (path == NULL) {
+        ptn_emit_warning(&runtime->diagnostics, "file_put_contents(): Filename contains null byte", line);
+        return ptn_bool(0);
+    }
+
+    PtnStringOperand data = ptn_value_to_string_operand(args[1]);
+    FILE *stream = fopen(path, "wb");
+    if (stream == NULL) {
+        char detail[192];
+        int needed = snprintf(detail, sizeof(detail), "Failed to open stream: %s", strerror(errno));
+        if (needed < 0 || (size_t)needed >= sizeof(detail)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_file_warning(runtime, "file_put_contents", path, detail, line);
+        free(path);
+        ptn_string_operand_free(data);
+        return ptn_bool(0);
+    }
+
+    size_t written = fwrite(data.data, 1, data.len, stream);
+    int failed = written != data.len || fclose(stream) != 0;
+    if (failed) {
+        char detail[192];
+        int needed = snprintf(detail, sizeof(detail), "Failed to write %zu bytes: %s", data.len, strerror(errno));
+        if (needed < 0 || (size_t)needed >= sizeof(detail)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_file_warning(runtime, "file_put_contents", path, detail, line);
+        free(path);
+        ptn_string_operand_free(data);
+        return ptn_bool(0);
+    }
+
+    if (data.len > (size_t)INT64_MAX) {
+        ptn_abort_out_of_memory();
+    }
+    PtnValue result = ptn_int((int64_t)data.len);
+    free(path);
+    ptn_string_operand_free(data);
+    return result;
+}
+
+static int ptn_read_file_bytes(const char *path, unsigned char **data_out, size_t *len_out) {
+    FILE *stream = fopen(path, "rb");
+    if (stream == NULL) {
+        return 0;
+    }
+
+    unsigned char *data = NULL;
+    size_t len = 0;
+    size_t capacity = 0;
+    unsigned char chunk[4096];
+    for (;;) {
+        size_t read_len = fread(chunk, 1, sizeof(chunk), stream);
+        if (read_len != 0) {
+            if (read_len > SIZE_MAX - len) {
+                fclose(stream);
+                free(data);
+                ptn_abort_out_of_memory();
+            }
+            size_t required = len + read_len;
+            if (required > capacity) {
+                size_t new_capacity = capacity == 0 ? 4096 : capacity;
+                while (new_capacity < required) {
+                    if (new_capacity > SIZE_MAX / 2) {
+                        fclose(stream);
+                        free(data);
+                        ptn_abort_out_of_memory();
+                    }
+                    new_capacity *= 2;
+                }
+                unsigned char *new_data = realloc(data, new_capacity);
+                if (new_data == NULL) {
+                    fclose(stream);
+                    free(data);
+                    ptn_abort_out_of_memory();
+                }
+                data = new_data;
+                capacity = new_capacity;
+            }
+            memcpy(data + len, chunk, read_len);
+            len = required;
+        }
+        if (read_len < sizeof(chunk)) {
+            if (ferror(stream)) {
+                fclose(stream);
+                free(data);
+                return -1;
+            }
+            break;
+        }
+    }
+
+    if (fclose(stream) != 0) {
+        free(data);
+        return -1;
+    }
+    *data_out = data;
+    *len_out = len;
+    return 1;
+}
+
+static PtnValue ptn_internal_sha1_file(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand path_operand = ptn_value_to_string_operand(args[0]);
+    char *path = ptn_path_operand_to_c_string(path_operand);
+    ptn_string_operand_free(path_operand);
+    if (path == NULL) {
+        ptn_emit_warning(&runtime->diagnostics, "sha1_file(): Filename contains null byte", line);
+        return ptn_bool(0);
+    }
+
+    unsigned char *data = NULL;
+    size_t data_len = 0;
+    int read_result = ptn_read_file_bytes(path, &data, &data_len);
+    if (read_result <= 0) {
+        char detail[192];
+        int needed = snprintf(
+            detail,
+            sizeof(detail),
+            "%s: %s",
+            read_result == 0 ? "Failed to open stream" : "Failed to read stream",
+            strerror(errno)
+        );
+        if (needed < 0 || (size_t)needed >= sizeof(detail)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_file_warning(runtime, "sha1_file", path, detail, line);
+        free(path);
+        free(data);
+        return ptn_bool(0);
+    }
+
+    unsigned char digest[20];
+    ptn_sha1_digest_bytes(data, data_len, digest);
+    int raw_output = argc >= 2 && ptn_is_truthy(args[1]);
+    free(path);
+    free(data);
+    return ptn_digest_value(digest, sizeof(digest), raw_output);
+}
+
+static PtnValue ptn_internal_unlink(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand path_operand = ptn_value_to_string_operand(args[0]);
+    char *path = ptn_path_operand_to_c_string(path_operand);
+    ptn_string_operand_free(path_operand);
+    if (path == NULL) {
+        ptn_emit_warning(&runtime->diagnostics, "unlink(): Filename contains null byte", line);
+        return ptn_bool(0);
+    }
+
+    if (remove(path) == 0) {
+        free(path);
+        return ptn_bool(1);
+    }
+
+    ptn_emit_file_warning(runtime, "unlink", path, strerror(errno), line);
+    free(path);
+    return ptn_bool(0);
+}
+
 static size_t ptn_substr_clamped_positive(int64_t value, size_t limit) {
     if (value <= 0) {
         return 0;
@@ -2000,6 +2199,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "end", 1, 1, ptn_internal_end },
         { "error_reporting", 0, 1, ptn_internal_error_reporting },
         { "fdiv", 2, 2, ptn_internal_fdiv },
+        { "file_put_contents", 2, 2, ptn_internal_file_put_contents },
         { "floor", 1, 1, ptn_internal_floor },
         { "func_get_arg", 1, 1, ptn_internal_func_get_arg },
         { "func_get_args", 0, 0, ptn_internal_func_get_args },
@@ -2039,6 +2239,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "quotemeta", 1, 1, ptn_internal_quotemeta },
         { "reset", 1, 1, ptn_internal_reset },
         { "sha1", 1, 2, ptn_internal_sha1 },
+        { "sha1_file", 1, 2, ptn_internal_sha1_file },
         { "soundex", 1, 1, ptn_internal_soundex },
         { "sqrt", 1, 1, ptn_internal_sqrt },
         { "str_contains", 2, 2, ptn_internal_str_contains },
@@ -2049,6 +2250,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "strip_tags", 1, 1, ptn_internal_strip_tags },
         { "strlen", 1, 1, ptn_internal_strlen },
         { "substr", 2, 3, ptn_internal_substr },
+        { "unlink", 1, 1, ptn_internal_unlink },
         { "var_dump", 1, PTN_VARIADIC_ARGS, ptn_internal_var_dump },
     };
     *count = sizeof(functions) / sizeof(functions[0]);

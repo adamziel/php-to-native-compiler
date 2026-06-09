@@ -208,6 +208,7 @@ typedef struct {
     FILE *stream;
     int emitted_deprecation;
     int emitted_warning;
+    int suppressed;
 } PtnDiagnosticSink;
 
 typedef struct {

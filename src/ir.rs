@@ -160,6 +160,10 @@ pub enum ValueExpr {
         name: String,
         line: usize,
     },
+    Assign {
+        name: String,
+        value: Box<ValueExpr>,
+    },
     Constant(String),
     MagicConstant {
         kind: MagicConstantKind,
@@ -260,6 +264,7 @@ pub enum UnaryOp {
     Negate,
     Not,
     BitwiseNot,
+    ErrorSuppress,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -670,6 +675,10 @@ fn lower_expr(expr: &Expr) -> ValueExpr {
             name: name.clone(),
             line: span.line,
         },
+        Expr::Assign { name, value, .. } => ValueExpr::Assign {
+            name: name.clone(),
+            value: Box::new(lower_expr(value)),
+        },
         Expr::Constant(name, _) => ValueExpr::Constant(name.clone()),
         Expr::MagicConstant(kind, span) => ValueExpr::MagicConstant {
             kind: lower_magic_constant_kind(*kind),
@@ -776,6 +785,7 @@ fn lower_unary_op(op: AstUnaryOp) -> UnaryOp {
         AstUnaryOp::Negate => UnaryOp::Negate,
         AstUnaryOp::Not => UnaryOp::Not,
         AstUnaryOp::BitwiseNot => UnaryOp::BitwiseNot,
+        AstUnaryOp::ErrorSuppress => UnaryOp::ErrorSuppress,
     }
 }
 

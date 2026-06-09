@@ -2524,6 +2524,45 @@ echo bin2hex(sha1($s, true)), \"\\n\";\n",
 }
 
 #[test]
+fn compile_sha1_file_binary_safe_and_error_suppression_to_native_binary() {
+    let root = temp_dir("ptn-native-sha1-file-binary-safe");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("sha1-file-binary-safe.php");
+    let output = root.join("sha1-file-binary-safe-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$filename = __DIR__ . \"/sha1-file.dat\";\n\
+$s = \"a\" . chr(0) . \"b\";\n\
+var_dump(file_put_contents($filename, $s));\n\
+echo sha1_file($filename), \"\\n\";\n\
+echo bin2hex(sha1_file($filename, true)), \"\\n\";\n\
+@unlink($filename);\n\
+@unlink($filename);\n\
+sha1_file($filename);\n\
+echo \"done\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("int(3)\n"));
+    assert!(stdout.contains(
+        "4a3dec2d1f8245280855c42db0ee4239f917fdb8\n4a3dec2d1f8245280855c42db0ee4239f917fdb8\n"
+    ));
+    assert!(stdout.contains("Warning: sha1_file("));
+    assert!(stdout.contains(
+        "sha1-file.dat): Failed to open stream: No such file or directory in ptn on line 9\n"
+    ));
+    assert!(!stdout.contains("Warning: unlink("));
+    assert!(stdout.ends_with("done\n"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_str_rot13_basic_phpt_shape_to_native_binary() {
     let root = temp_dir("ptn-native-str-rot13-basic-phpt-shape");
     fs::create_dir_all(&root).unwrap();

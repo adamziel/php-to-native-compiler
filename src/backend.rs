@@ -1308,6 +1308,9 @@ fn collect_value_runtime_requirements(
         | ValueExpr::Load { .. }
         | ValueExpr::Constant(_)
         | ValueExpr::MagicConstant { .. } => {}
+        ValueExpr::Assign { value, .. } => {
+            collect_value_runtime_requirements(value, functions, requirements);
+        }
         ValueExpr::Array(elements) => {
             for element in elements {
                 if let Some(key) = &element.key {
@@ -1778,6 +1781,18 @@ impl ValueEmitter {
                 line,
             } => self.emit_binary(out, *op, left, right, *line),
             ValueExpr::Unary { op, expr, line } => {
+                if matches!(op, UnaryOp::ErrorSuppress) {
+                    let saved_temp = self.next_temp();
+                    out.push_str("    int ");
+                    out.push_str(&saved_temp);
+                    out.push_str(" = runtime.diagnostics.suppressed;\n");
+                    out.push_str("    runtime.diagnostics.suppressed++;\n");
+                    let expr_temp = self.emit_materialized_value(out, expr);
+                    out.push_str("    runtime.diagnostics.suppressed = ");
+                    out.push_str(&saved_temp);
+                    out.push_str(";\n");
+                    return expr_temp;
+                }
                 let expr_temp = self.emit_materialized_value(out, expr);
                 let result_temp = self.next_temp();
                 out.push_str("    PtnValue ");
@@ -1788,6 +1803,7 @@ impl ValueEmitter {
                     UnaryOp::Negate => "ptn_negate",
                     UnaryOp::Not => "ptn_not",
                     UnaryOp::BitwiseNot => "ptn_bitwise_not",
+                    UnaryOp::ErrorSuppress => unreachable!(),
                 });
                 out.push('(');
                 out.push_str(&expr_temp);
@@ -1799,6 +1815,22 @@ impl ValueEmitter {
                 }
                 out.push_str(");\n");
                 emit_value_cleanup(out, "    ", &expr_temp);
+                result_temp
+            }
+            ValueExpr::Assign { name, value } => {
+                let value_temp = self.emit_materialized_value(out, value);
+                out.push_str("    ptn_symbols_set(&runtime.symbols, \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", ");
+                out.push_str(&value_temp);
+                out.push_str(");\n");
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_value_clone(");
+                out.push_str(&value_temp);
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &value_temp);
                 result_temp
             }
             ValueExpr::Cast { kind, expr, line } => {
@@ -2591,6 +2623,7 @@ impl ValueEmitter {
         if matches!(
             value,
             ValueExpr::Binary { .. }
+                | ValueExpr::Assign { .. }
                 | ValueExpr::InternalCall { .. }
                 | ValueExpr::Unary { .. }
                 | ValueExpr::Cast { .. }
