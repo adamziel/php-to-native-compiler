@@ -1,7 +1,7 @@
 # PTN Progress
 
-Last refresh: 2026-06-09T17:58Z
-Measured base: `ptn-cqu.47.12` rebased after `ptn-cqu.47.11`
+Last refresh: 2026-06-09T18:02Z
+Measured base: `ptn-cqu.47.1` rebased after `ptn-cqu.47.12`
 
 ## Test Dashboard
 
@@ -16,6 +16,7 @@ Measured base: `ptn-cqu.47.12` rebased after `ptn-cqu.47.11`
 | COW contract spec tests | 5 | 5 | 0 |
 | COW-focused native tests | 6 | 6 | 0 |
 | Focused COW reducer snippets | 16 | 16 | 0 |
+| COW oracle suite | 12 | 10 | 2 |
 | PHPT COW manifest | 29 | 2 | 27 |
 | Focused PHPT foreach COW row | 1 | 1 | 0 |
 
@@ -26,7 +27,9 @@ assignment-aliasing 0/4, string-offsets 2/4,
 array-writes-appends-unset 0/4, nested-arrays 0/4,
 foreach-mutation 0/4, function-boundaries 0/4,
 reference-interaction 0/5. Focused local foreach by-value PHPT row: 1/1.
-Native COW reducer matrix: 16 pass, 0 fail.
+Native COW reducer matrix: 16 pass, 0 fail. Dedicated oracle
+`tests/cow_oracle.rs`: arrays 2/2, strings 1/1, foreach 2/2, functions 3/3,
+nested values 2/2, references 0/2.
 
 ## Already Ported
 
@@ -38,20 +41,20 @@ generated C ABI share/drop handling, top-level user functions with scoped magic
 constants and `func_*` introspection, `print_r`, selected binary-string
 handling, string offset read diagnostics, direct-variable string offset writes,
 catchable `count()` non-array diagnostics, expression-form `??` reads, nested
-array path detach for assignment, append, and unset, and focused native COW
-reducers for assignment aliasing, array writes, nested copies, foreach
-by-value mutation, function boundaries, cursor helpers, `array_shift`, string
-offsets, and string compound assignment.
+array path detach for assignment, append, and unset, focused native COW
+reducers, and COW oracle coverage.
 
 ## Still Needed
 
 Broader COW coverage for strings, references, function boundaries,
-by-reference foreach, and dynamic edges. All non-COW work is paused unless it
-directly proves COW correctness or COW evidence. Assignment-form `??=` remains
-unsupported.
+by-reference foreach, and dynamic edges. Oracle blockers are reference
+assignment syntax and by-reference foreach support. All non-COW work is paused
+unless it directly proves COW correctness or COW evidence. Assignment-form
+`??=` remains unsupported.
 
 ## Next Focus
 
-1. Prove strings, references, and function boundaries.
-2. Carry COW through by-reference and dynamic call paths.
-3. Keep dashboard cells numeric and every status file under 500 words.
+1. Add reference parsing/compiler/runtime support for COW blockers.
+2. Carry array COW through by-reference and dynamic call paths.
+3. Extend string, nested-value, and function-boundary oracle coverage.
+4. Keep dashboard cells numeric and every status file under 500 words.
