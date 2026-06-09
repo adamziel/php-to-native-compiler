@@ -55,21 +55,22 @@ pub fn emit_c(module: &Module) -> String {
 }
 
 fn emit_runtime(out: &mut String, include_internal_functions: bool) {
-    let start = runtime::RUNTIME_C
+    let runtime_c = runtime::runtime_c();
+    let start = runtime_c
         .find(runtime::INTERNAL_FUNCTIONS_START)
         .expect("runtime internal-function start marker should exist");
     let after_start = start + runtime::INTERNAL_FUNCTIONS_START.len();
-    let relative_end = runtime::RUNTIME_C[after_start..]
+    let relative_end = runtime_c[after_start..]
         .find(runtime::INTERNAL_FUNCTIONS_END)
         .expect("runtime internal-function end marker should exist");
     let end = after_start + relative_end;
     let after_end = end + runtime::INTERNAL_FUNCTIONS_END.len();
 
-    out.push_str(&runtime::RUNTIME_C[..start]);
+    out.push_str(&runtime_c[..start]);
     if include_internal_functions {
-        out.push_str(&runtime::RUNTIME_C[after_start..end]);
+        out.push_str(&runtime_c[after_start..end]);
     }
-    out.push_str(&runtime::RUNTIME_C[after_end..]);
+    out.push_str(&runtime_c[after_end..]);
 }
 
 fn emit_user_function_prototypes(
