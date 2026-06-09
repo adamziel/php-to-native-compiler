@@ -1,6 +1,6 @@
 # PTN Progress
 
-Last refresh: 2026-06-09T19:04Z
+Last refresh: 2026-06-09T19:38Z
 Measured base: `ptn-cqu.33` rebased after `ptn-cqu.47.17`
 
 ## Test Dashboard
@@ -19,7 +19,7 @@ Measured base: `ptn-cqu.33` rebased after `ptn-cqu.47.17`
 | COW-focused native tests | 12 | 12 | 0 |
 | Focused COW reducer snippets | 26 | 26 | 0 |
 | COW oracle suite | 22 | 22 | 0 |
-| By-reference foreach COW oracle | 9 | 9 | 0 |
+| By-reference foreach COW oracle | 11 | 11 | 0 |
 | COW/reference-focused native tests | 10 | 10 | 0 |
 | Mutating-internal COW matrix | 12 | 12 | 0 |
 | PHPT COW manifest | 29 | 7 | 22 |
@@ -37,7 +37,7 @@ as fail because native recursive output exhausts `run-tests.php` diff memory.
 Native COW reducers: 26/26, including dynamic temporary/call-result/read-slot
 10/10. Oracle coverage: arrays 2/2, strings 1/1, foreach 2/2, functions 3/3,
 nested values 2/2, references 2/2, array element references 10/10.
-By-reference foreach oracle: 9/9. Mutating-internal matrix: 12/12 plus five
+By-reference foreach oracle: 11/11. Mutating-internal matrix: 12/12 plus five
 unsupported target diagnostics. Contract stress balances 12 nested cycles
 with 0 live payloads.
 

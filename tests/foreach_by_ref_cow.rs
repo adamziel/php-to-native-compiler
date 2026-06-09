@@ -185,6 +185,31 @@ $item = 99;
 var_dump($items);
 "#,
     },
+    Case {
+        name: "reference_preexisting_element_alias_survives",
+        source: r#"<?php
+$items = [1, 2];
+$ref =& $items[0];
+foreach ($items as &$item) {
+    $item += 5;
+}
+unset($item);
+var_dump($items[0], $ref, $items[1]);
+"#,
+    },
+    Case {
+        name: "nested_shared_rows_detach_through_reference",
+        source: r#"<?php
+$items = [["v" => 1], ["v" => 2]];
+$copy = $items;
+foreach ($items as &$row) {
+    $row["v"] += 10;
+}
+unset($row);
+var_dump($items);
+var_dump($copy);
+"#,
+    },
 ];
 
 fn run_php(path: &Path) -> ProcessOutput {
