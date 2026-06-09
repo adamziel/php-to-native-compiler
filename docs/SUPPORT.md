@@ -293,6 +293,12 @@ supports in generated native binaries.
   internal-call statements, conditions use the currently supported scalar
   expression subset, and the body is either a braced block or one supported
   statement. Missing conditions are treated as true.
+- `foreach (expr as $value) statement` and
+  `foreach (expr as $key => $value) statement` loops over current boxed ordered
+  arrays. The iterable expression is evaluated once, array entries are visited
+  in current insertion order, optional keys and values are assigned through the
+  ordinary runtime variable table before the body, and current
+  `break`/`continue` level semantics apply inside the body.
 - Braced `switch (expr) { case expr: ... default: ... }` statements over the
   currently supported scalar expression and statement subset. The generated
   native code evaluates the switch expression once, compares case expressions
@@ -340,12 +346,16 @@ supports in generated native binaries.
   expressions are modeled, ternary expressions beyond the modeled nested
   associativity diagnostics, PHP-exact chained comparison parse errors, and
   complete comparison parity for unsupported value types.
-- Unbraced switch bodies, alternate control-flow syntax, `foreach`,
+- Unbraced switch bodies, alternate control-flow syntax,
   branch-condition assignments, for-loop comma expressions and
   non-direct-variable clause lvalues, PHP-exact break/continue diagnostics
   beyond the currently modeled level/context fatals and switch-target warning,
   labels/goto inside unsupported functions, classes, and `try`/`finally`
   constructs, and exception/finally control-flow edges.
+- By-reference `foreach`, array mutation during `foreach`, copy-on-write/
+  reference identity and exact mutation visibility during `foreach`, object
+  `Traversable`, destructuring foreach targets, and PHP-exact non-array
+  `foreach` diagnostics.
 - PHP-exact `return` value propagation for includes/functions and return
   inside unsupported function/class contexts.
 - Switch alternate syntax and switch behavior for arrays, objects, references,
@@ -372,7 +382,7 @@ supports in generated native binaries.
   `func_get_args()`/`func_num_args()`, and PHP-exact function/include return
   propagation.
 - Type predicate coverage for arrays, objects, resources, and references.
-- Array element mutation, append/unset/iteration, recursive arrays, objects,
+- Array element mutation, append/unset, recursive arrays, objects,
   resources, references, copy-on-write, and `var_dump()` reference identity
   output.
 - Exact `array_key_exists()` TypeError parity for unsupported key/container

@@ -349,6 +349,53 @@ fn parser_accepts_braced_for_statements() {
 }
 
 #[test]
+fn parser_accepts_foreach_value_and_key_value_statements() {
+    let program = parser::parse(
+        "<?php foreach ($items as $value) { echo $value; } foreach ([1] as $key => $value) echo $key;",
+    )
+    .unwrap();
+    assert_eq!(program.statements.len(), 2);
+
+    let Statement::Foreach {
+        iterable,
+        key,
+        value,
+        body,
+        ..
+    } = &program.statements[0]
+    else {
+        panic!("expected value-only foreach statement");
+    };
+    assert!(matches!(iterable, Expr::Variable(name, _) if name == "items"));
+    assert_eq!(key, &None);
+    assert_eq!(value, "value");
+    assert_eq!(body.len(), 1);
+
+    let Statement::Foreach {
+        key, value, body, ..
+    } = &program.statements[1]
+    else {
+        panic!("expected key/value foreach statement");
+    };
+    assert_eq!(key.as_deref(), Some("key"));
+    assert_eq!(value, "value");
+    assert_eq!(body.len(), 1);
+}
+
+#[test]
+fn parser_rejects_unsupported_foreach_bindings() {
+    let by_ref = parser::parse("<?php foreach ($items as &$value) { echo $value; }").unwrap_err();
+    assert_eq!(by_ref.message, "by-reference foreach is unsupported");
+
+    let destructuring =
+        parser::parse("<?php foreach ($items as [$value]) { echo $value; }").unwrap_err();
+    assert_eq!(
+        destructuring.message,
+        "foreach destructuring is unsupported"
+    );
+}
+
+#[test]
 fn parser_rejects_print_expression_contexts() {
     let error = parser::parse("<?php $result = print \"hello\";").unwrap_err();
     assert!(error.message.contains("expected expression"));
@@ -4125,6 +4172,106 @@ var_dump(function_exists(\"COUNT\"), function_exists(\"abs\"));",
         String::from_utf8(execution.stdout).unwrap(),
         "int(23)\nint(23)\nfloat(23.45)\n\nDeprecated: abs(): Passing null to parameter #1 ($num) of type int|float is deprecated in ptn on line 4\nint(0)\nint(1)\nint(0)\nint(2)\nbool(true)\nbool(true)\n"
     );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_foreach_value_loop_to_native_binary() {
+    let root = temp_dir("ptn-native-foreach-values");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("foreach-values.php");
+    let output = root.join("foreach-values-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$items = [1, 2, 3];\n\
+$total = 0;\n\
+foreach ($items as $value) {\n\
+    echo $value;\n\
+    $total += $value;\n\
+}\n\
+echo \":$total\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "123:6\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_foreach_key_value_loop_to_native_binary() {
+    let root = temp_dir("ptn-native-foreach-key-values");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("foreach-key-values.php");
+    let output = root.join("foreach-key-values-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$items = [\"a\" => 2, \"b\" => 3, 5];\n\
+$total = 0;\n\
+foreach ($items as $key => $value) {\n\
+    echo $key, \":\", $value, \"\\n\";\n\
+    $total += $value;\n\
+}\n\
+echo \"total=\", $total, \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "a:2\nb:3\n0:5\ntotal=10\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_foreach_evaluates_iterable_once_to_native_binary() {
+    let root = temp_dir("ptn-native-foreach-evaluate-once");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("foreach-evaluate-once.php");
+    let output = root.join("foreach-evaluate-once-bin");
+    fs::write(
+        &input,
+        "<?php foreach ([var_dump(\"make\"), 1, 2] as $value) { echo \"v\"; } echo \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(4) \"make\"\nvvv\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_foreach_break_and_continue_to_native_binary() {
+    let root = temp_dir("ptn-native-foreach-break-continue");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("foreach-break-continue.php");
+    let output = root.join("foreach-break-continue-bin");
+    fs::write(
+        &input,
+        "<?php foreach ([1, 2, 3, 4] as $value) { if ($value == 2) continue; if ($value == 4) break; echo $value; } echo \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "13\n");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 

@@ -153,6 +153,12 @@ Current runtime/compiler slices:
   a braced block or one supported statement. The C backend emits initializers
   once, checks boxed scalar truthiness before each iteration when a condition
   is present, emits the body, then emits updates.
+- `foreach` statements lower to structured IR loop instructions over a shared
+  runtime `PtnArrayIterator`. The backend materializes the iterable expression
+  once, asks the runtime for the current boxed array iterator, assigns optional
+  key and value variables through `ptn_runtime_write_variable` before each body
+  execution, and reuses the same loop break/continue target stack as `while`
+  and `for`.
 - `break` carries an explicit level in IR. The C backend keeps a stack of
   emitted switch/loop exit labels so `break N;` can leave the requested number
   of nested control targets, and reports source-spanned fatals when the level
@@ -168,8 +174,8 @@ Current runtime/compiler slices:
 
 Near-term architecture targets:
 
-- Broader PHP array behavior: long-form `array(...)`, element access/mutation,
-  append/unset/iteration, recursive arrays, references, and copy-on-write.
+- Broader PHP array behavior: element mutation, append/unset, recursive arrays,
+  mutation-visible iteration, references, and copy-on-write.
 - References and copy-on-write.
 - Function and class metadata.
 - Broader diagnostics and exception channels.
@@ -202,9 +208,10 @@ Near-term architecture targets:
   disabled-functions behavior in symbol-existence predicates.
 - Scope-aware magic constants in functions, methods, classes, traits,
   namespaces, includes, and eval contexts.
-- Broader control flow: alternate syntax, unbraced switch bodies, `foreach`,
-  `continue`, for-loop comma expressions and non-direct-variable clause
-  lvalues, PHP-exact break/continue diagnostics, and exception/finally edges.
+- Broader control flow: alternate syntax, unbraced switch bodies,
+  by-reference/destructuring/object `foreach`, for-loop comma expressions and
+  non-direct-variable clause lvalues, PHP-exact break/continue diagnostics, and
+  exception/finally edges.
 - Full PHP increment/decrement semantics, including expression result values,
   strings, booleans, arrays/objects, references, and copy-on-write behavior.
 - Explicit fallback boundaries for `eval`, variable variables, and runtime

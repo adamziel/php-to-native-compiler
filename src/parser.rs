@@ -77,6 +77,7 @@ impl Parser {
             TokenKind::Do => self.parse_do_while(),
             TokenKind::While => self.parse_while(),
             TokenKind::For => self.parse_for(),
+            TokenKind::Foreach => self.parse_foreach(),
             TokenKind::Switch => self.parse_switch(),
             TokenKind::Break => self.parse_break(),
             TokenKind::Continue => self.parse_continue(),
@@ -387,6 +388,52 @@ impl Parser {
             body,
             span,
         })
+    }
+
+    fn parse_foreach(&mut self) -> Result<Statement> {
+        let span = self.expect_foreach()?;
+        self.expect_left_paren()?;
+        let iterable = self.parse_expr()?;
+        self.expect_as()?;
+        let first = self.parse_foreach_variable()?;
+        let (key, value) = if matches!(self.peek().kind, TokenKind::DoubleArrow) {
+            self.advance();
+            (Some(first), self.parse_foreach_variable()?)
+        } else {
+            (None, first)
+        };
+        self.expect_right_paren()?;
+        let body = self.parse_statement_body()?;
+        Ok(Statement::Foreach {
+            iterable,
+            key,
+            value,
+            body,
+            span,
+        })
+    }
+
+    fn parse_foreach_variable(&mut self) -> Result<String> {
+        if matches!(self.peek().kind, TokenKind::Ampersand) {
+            return Err(Diagnostic::new(
+                "by-reference foreach is unsupported",
+                Some(self.peek().span),
+            ));
+        }
+        if matches!(self.peek().kind, TokenKind::LeftBracket) {
+            return Err(Diagnostic::new(
+                "foreach destructuring is unsupported",
+                Some(self.peek().span),
+            ));
+        }
+        let token = self.advance().clone();
+        match token.kind {
+            TokenKind::Variable(name) => Ok(name),
+            _ => Err(Diagnostic::new(
+                "expected foreach variable",
+                Some(token.span),
+            )),
+        }
     }
 
     fn parse_for_clause_list(&mut self) -> Result<Vec<Statement>> {
@@ -1171,6 +1218,24 @@ impl Parser {
         }
     }
 
+    fn expect_foreach(&mut self) -> Result<SourceSpan> {
+        let token = self.advance();
+        if matches!(token.kind, TokenKind::Foreach) {
+            Ok(token.span)
+        } else {
+            Err(Diagnostic::new("expected foreach", Some(token.span)))
+        }
+    }
+
+    fn expect_as(&mut self) -> Result<SourceSpan> {
+        let token = self.advance();
+        if matches!(token.kind, TokenKind::As) {
+            Ok(token.span)
+        } else {
+            Err(Diagnostic::new("expected as", Some(token.span)))
+        }
+    }
+
     fn expect_do(&mut self) -> Result<SourceSpan> {
         let token = self.advance();
         if matches!(token.kind, TokenKind::Do) {
@@ -1422,6 +1487,8 @@ fn token_text(kind: &TokenKind) -> &'static str {
         TokenKind::Do => "do",
         TokenKind::While => "while",
         TokenKind::For => "for",
+        TokenKind::Foreach => "foreach",
+        TokenKind::As => "as",
         TokenKind::Switch => "switch",
         TokenKind::Case => "case",
         TokenKind::Default => "default",
@@ -1647,6 +1714,9 @@ fn collect_labels(
                 collect_labels(updates, labels, control_path)?;
                 collect_control_labels(*span, body, labels, control_path)?;
             }
+            Statement::Foreach { body, span, .. } => {
+                collect_control_labels(*span, body, labels, control_path)?;
+            }
             Statement::Switch { cases, span, .. } => {
                 control_path.push(span.byte_start);
                 for case in cases {
@@ -1716,6 +1786,9 @@ fn validate_gotos(
             } => {
                 validate_gotos(initializers, labels, control_path)?;
                 validate_gotos(updates, labels, control_path)?;
+                validate_control_gotos(*span, body, labels, control_path)?;
+            }
+            Statement::Foreach { body, span, .. } => {
                 validate_control_gotos(*span, body, labels, control_path)?;
             }
             Statement::Switch { cases, span, .. } => {

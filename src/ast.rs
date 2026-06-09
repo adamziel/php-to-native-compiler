@@ -88,6 +88,13 @@ pub enum Statement {
         body: Vec<Statement>,
         span: SourceSpan,
     },
+    Foreach {
+        iterable: Expr,
+        key: Option<String>,
+        value: String,
+        body: Vec<Statement>,
+        span: SourceSpan,
+    },
     Switch {
         expression: Expr,
         cases: Vec<SwitchCase>,

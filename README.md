@@ -269,6 +269,12 @@ Supported today:
   internal-call statements, conditions use the currently supported scalar
   expression subset, and the body is either a braced block or one supported
   statement. Missing conditions are treated as true.
+- `foreach (expr as $value) statement` and
+  `foreach (expr as $key => $value) statement` loops over current boxed ordered
+  arrays. The iterable expression is evaluated once, entries are visited in
+  current insertion order, optional keys and values are assigned through the
+  ordinary runtime variable table before each body execution, and existing
+  `break`/`continue` levels apply inside the body.
 - Braced `switch (expr) { case expr: ... default: ... }` statements over the
   currently supported scalar expression and statement subset, including
   source-order case matching with boxed loose comparison, PHP-style fallthrough,
@@ -288,7 +294,7 @@ Supported today:
 
 Unsupported today:
 
-- Array element mutation, append/unset, iteration, recursive arrays, arrays
+- Array element mutation, append/unset, recursive arrays, arrays
   with references/copy-on-write, objects, functions, classes, includes,
   references, resources, exceptions,
   string-offset writes/mutation, object/property/reference
@@ -307,7 +313,10 @@ Unsupported today:
   keyword boolean tails after direct assignment statements until assignment
   expressions are modeled, ternary expressions beyond the modeled nested
   associativity diagnostics, chained comparison parse errors, unbraced switch
-  bodies and alternate control-flow syntax, `foreach`, PHP-exact
+  bodies and alternate control-flow syntax, by-reference `foreach`, array
+  mutation during `foreach`, copy-on-write/reference identity and exact mutation
+  visibility during `foreach`, object `Traversable`, destructuring foreach
+  targets, PHP-exact non-array `foreach` diagnostics, PHP-exact
   break/continue diagnostics beyond the currently modeled level/context fatals
   and switch-target warning, labels/goto inside unsupported functions,
   classes, and `try`/`finally` constructs, full

@@ -478,6 +478,81 @@ fn emit_instruction(
             out.push_str(":\n");
             out.push_str("    ;\n");
         }
+        Instruction::Foreach {
+            iterable,
+            key,
+            value,
+            body,
+            line,
+        } => {
+            let end_label = values.next_label("ptn_foreach_end");
+            let continue_label = values.next_label("ptn_foreach_continue");
+            let iterable_temp = values.emit_materialized_value(out, iterable);
+            let iterator_temp = values.next_temp();
+            out.push_str("    PtnArrayIterator ");
+            out.push_str(&iterator_temp);
+            out.push_str(" = ptn_array_iterator_from_value(&runtime, ");
+            out.push_str(&iterable_temp);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            emit_label_reference(out, &end_label);
+            out.push_str("    while (");
+            out.push_str(&iterator_temp);
+            out.push_str(".valid) {\n");
+            if let Some(key) = key {
+                let key_temp = values.next_temp();
+                out.push_str("        PtnValue ");
+                out.push_str(&key_temp);
+                out.push_str(" = ptn_array_iterator_current_key(&");
+                out.push_str(&iterator_temp);
+                out.push_str(");\n");
+                out.push_str("        ptn_runtime_write_variable(&runtime, \"");
+                out.push_str(&c_string(key));
+                out.push_str("\", ");
+                out.push_str(&key_temp);
+                out.push_str(");\n");
+            }
+            let value_temp = values.next_temp();
+            out.push_str("        PtnValue ");
+            out.push_str(&value_temp);
+            out.push_str(" = ptn_array_iterator_current_value(&");
+            out.push_str(&iterator_temp);
+            out.push_str(");\n");
+            out.push_str("        ptn_runtime_write_variable(&runtime, \"");
+            out.push_str(&c_string(value));
+            out.push_str("\", ");
+            out.push_str(&value_temp);
+            out.push_str(");\n");
+            control_targets.push(ControlTarget::loop_target(
+                end_label.clone(),
+                continue_label.clone(),
+            ));
+            for body_instruction in body {
+                emit_instruction(
+                    out,
+                    values,
+                    body_instruction,
+                    control_targets,
+                    source_path,
+                    return_target,
+                );
+            }
+            control_targets.pop();
+            emit_label_reference(out, &continue_label);
+            out.push_str("    ");
+            out.push_str(&continue_label);
+            out.push_str(":\n");
+            out.push_str("    ;\n");
+            out.push_str("        ptn_array_iterator_advance(&");
+            out.push_str(&iterator_temp);
+            out.push_str(");\n");
+            out.push_str("    }\n");
+            out.push_str("    ");
+            out.push_str(&end_label);
+            out.push_str(":\n");
+            out.push_str("    ;\n");
+        }
         Instruction::Switch { expression, cases } => {
             emit_switch(
                 out,
@@ -614,6 +689,11 @@ fn collect_control_warnings_in(
                 collect_control_warnings_in(body, contexts, warnings);
                 contexts.pop();
                 collect_control_warnings_in(updates, contexts, warnings);
+            }
+            Instruction::Foreach { body, .. } => {
+                contexts.push(ControlTargetKind::Loop);
+                collect_control_warnings_in(body, contexts, warnings);
+                contexts.pop();
             }
             Instruction::Switch { cases, .. } => {
                 contexts.push(ControlTargetKind::Switch);
@@ -1423,6 +1503,12 @@ typedef struct {
     PtnValue value;
 } PtnArrayEntry;
 
+typedef struct {
+    PtnArray *array;
+    size_t index;
+    int valid;
+} PtnArrayIterator;
+
 struct PtnArray {
     size_t len;
     size_t capacity;
@@ -2203,6 +2289,49 @@ static PTN_UNUSED void ptn_emit_array_runtime_diagnostic(const char *kind, const
     fputs(" in ptn on line ", stdout);
     fprintf(stdout, "%zu", line);
     fputc('\n', stdout);
+}
+
+static PTN_UNUSED void ptn_emit_foreach_non_array_warning(PtnValue value, size_t line) {
+    char message[128];
+    snprintf(
+        message,
+        sizeof(message),
+        "foreach() argument must be of type array|object, %s given",
+        ptn_offset_container_type_name(value)
+    );
+    ptn_emit_array_runtime_diagnostic("Warning", message, line);
+}
+
+static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_value(PtnRuntime *runtime, PtnValue value, size_t line) {
+    (void)runtime;
+    PtnArrayIterator iterator;
+    iterator.array = NULL;
+    iterator.index = 0;
+    iterator.valid = 0;
+    if (value.type != PTN_ARRAY) {
+        ptn_emit_foreach_non_array_warning(value, line);
+        return iterator;
+    }
+    iterator.array = value.as.array;
+    iterator.valid = iterator.array->len != 0;
+    return iterator;
+}
+
+static PTN_UNUSED PtnValue ptn_array_iterator_current_key(PtnArrayIterator *iterator) {
+    PtnArrayKey key = iterator->array->entries[iterator->index].key;
+    if (key.type == PTN_ARRAY_KEY_INT) {
+        return ptn_int(key.as.integer);
+    }
+    return ptn_string(key.as.string);
+}
+
+static PTN_UNUSED PtnValue ptn_array_iterator_current_value(PtnArrayIterator *iterator) {
+    return iterator->array->entries[iterator->index].value;
+}
+
+static PTN_UNUSED void ptn_array_iterator_advance(PtnArrayIterator *iterator) {
+    iterator->index++;
+    iterator->valid = iterator->array != NULL && iterator->index < iterator->array->len;
 }
 
 static PTN_UNUSED char *ptn_array_key_diagnostic_name(PtnArrayKey key) {

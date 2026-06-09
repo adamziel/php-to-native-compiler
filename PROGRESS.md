@@ -1849,3 +1849,24 @@ for-loop comma expressions and non-direct-variable clause lvalues,
 PHP-exact break/continue diagnostic timing/wording beyond the current
 level/context fatals and switch-target warning, functions/classes, and
 exception/finally control-flow edges.
+
+Added native `foreach` over current ordered arrays:
+
+- The lexer/parser/AST/IR now support statement-form
+  `foreach (expr as $value) statement` and
+  `foreach (expr as $key => $value) statement` with direct variable bindings.
+- The generated C backend evaluates the iterable expression once, creates a
+  shared runtime `PtnArrayIterator` over the current boxed ordered-array
+  entries, assigns optional key and value variables through the existing
+  runtime symbol-table write path, and visits entries in insertion order.
+- `foreach` bodies reuse the current structured loop target stack, so existing
+  `break` and `continue` levels work inside foreach bodies.
+- Native tests prove value-only loops, key/value loops, iterable evaluation
+  once, insertion-order keys including automatic integer keys, and
+  break/continue behavior.
+
+Still unsupported after this foreach slice: by-reference `foreach`, array
+mutation during iteration, copy-on-write/reference identity and exact mutation
+visibility, object `Traversable`, destructuring targets, exact non-array
+diagnostic parity, recursive arrays, references, and broader array/object
+semantics.

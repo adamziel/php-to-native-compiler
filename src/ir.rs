@@ -79,6 +79,13 @@ pub enum Instruction {
         updates: Vec<Instruction>,
         body: Vec<Instruction>,
     },
+    Foreach {
+        iterable: ValueExpr,
+        key: Option<String>,
+        value: String,
+        body: Vec<Instruction>,
+        line: usize,
+    },
     Switch {
         expression: ValueExpr,
         cases: Vec<SwitchCase>,
@@ -360,6 +367,21 @@ fn lower_statements(statements: &[Statement]) -> Vec<Instruction> {
                     condition: condition.as_ref().map(lower_expr),
                     updates: lower_statements(updates),
                     body: lower_statements(body),
+                });
+            }
+            Statement::Foreach {
+                iterable,
+                key,
+                value,
+                body,
+                span,
+            } => {
+                instructions.push(Instruction::Foreach {
+                    iterable: lower_expr(iterable),
+                    key: key.clone(),
+                    value: value.clone(),
+                    body: lower_statements(body),
+                    line: span.line,
                 });
             }
             Statement::Switch {
