@@ -421,6 +421,22 @@ binary, runs the same input with `php`, and compares stdout, stderr, and exit
 status. It is telemetry for supported snippets only; it is not a PHPT pass-count
 claim.
 
+## Native Execution Benchmark
+
+For a repeatable execution-speed baseline of generated native binaries, run:
+
+```sh
+tools/benchmark-native-execution.sh --runs 5 --iterations 20000
+```
+
+The benchmark script builds the Rust `ptn` binary once, compiles three embedded
+PHP snippets to native executables, retains the generated C, times standalone
+`cc` compilation, and then times only native executable runtime. The snippets
+cover scalar arithmetic/control flow, string concatenation plus internal
+functions, and ordered array `foreach` iteration. Use `--output <path>` to save
+the Markdown report and `--keep-temp` to inspect generated PHP, C, and native
+binaries.
+
 ## Production Workflow
 
 A task is ready only when it is integrated into the branch that will be pushed.

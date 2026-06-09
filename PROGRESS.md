@@ -1870,3 +1870,19 @@ mutation during iteration, copy-on-write/reference identity and exact mutation
 visibility, object `Traversable`, destructuring targets, exact non-array
 diagnostic parity, recursive arrays, references, and broader array/object
 semantics.
+
+Added a repeatable native execution benchmark path:
+
+- `tools/benchmark-native-execution.sh` builds the Rust `ptn` compiler once,
+  generates three representative PHP snippets, compiles them to native
+  binaries, retains generated C, times standalone `cc` compilation, and times
+  generated native executable runtime separately.
+- The embedded benchmark snippets cover scalar arithmetic/control flow, string
+  concatenation with internal functions, and ordered array key/value
+  `foreach` iteration.
+- The script emits a Markdown report with commit SHA, command lines, host
+  resource notes, compile timings, native runtime min/average/max timings, and
+  stdout samples.
+
+This is a baseline measurement path only; it does not optimize generated code
+or claim stable performance thresholds.
