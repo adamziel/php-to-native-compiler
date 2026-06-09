@@ -108,23 +108,28 @@ supports in generated native binaries.
   and leading-numeric-string warning boundary.
 - Simple statement-form internal calls such as `var_dump(expr, ...)`,
   `strlen(expr);`, `str_rot13(expr);`, `strcmp(expr, expr);`,
-  `str_contains(expr, expr);`, `quotemeta(expr);`,
-  `chunk_split(expr[, expr[, expr]]);`, `strip_tags(expr);`, `md5(expr[, raw_output]);`,
+  `str_contains(expr, expr);`, `str_starts_with(expr, expr);`,
+  `str_ends_with(expr, expr);`, `quotemeta(expr);`,
+  `chunk_split(expr[, expr[, expr]]);`, `strip_tags(expr);`,
+  `md5(expr[, raw_output]);`,
   `sha1(expr[, raw_output]);`, `substr(expr, expr[, expr]);`, `bin2hex(expr);`,
-  `hex2bin(expr);`, `dirname(expr);`, `soundex(expr);`,
-  `ceil(expr);`, `floor(expr);`, `sqrt(expr);`, `fdiv(expr, expr);`,
-  `intdiv(expr, expr);`, `bindec(expr);`, `hexdec(expr);`, `octdec(expr);`,
-  `pi();`, `getrandmax();`, `getmypid();`, `php_sapi_name();`,
+  `hex2bin(expr);`, `quoted_printable_decode(expr);`, `dirname(expr);`,
+  `soundex(expr);`, `ceil(expr);`, `floor(expr);`, `sqrt(expr);`,
+  `fdiv(expr, expr);`, `intdiv(expr, expr);`, `bindec(expr);`,
+  `hexdec(expr);`, `octdec(expr);`, `pi();`, `getrandmax();`,
+  `getmypid();`, `php_sapi_name();`,
   `phpversion([extension]);`, `intval(expr);`, `chr(expr);`, `ord(expr);`,
   `is_finite(expr);`, `is_infinite(expr);`, `is_nan(expr);`, and
   `error_reporting(expr);`.
 - Expression-form internal calls for the currently registered functions,
   including `strlen(expr)`, `str_rot13(expr)`, `strcmp(expr, expr)`,
-  `str_contains(expr, expr)`, `quotemeta(expr)`,
-  `chunk_split(expr[, expr[, expr]])`, `strip_tags(expr)`, `md5(expr[, raw_output])`,
+  `str_contains(expr, expr)`, `str_starts_with(expr, expr)`,
+  `str_ends_with(expr, expr)`, `quotemeta(expr)`,
+  `chunk_split(expr[, expr[, expr]])`, `strip_tags(expr)`,
+  `md5(expr[, raw_output])`,
   `sha1(expr[, raw_output])`, `substr(expr, expr[, expr])`, `bin2hex(expr)`,
-  `hex2bin(expr)`, `dirname(expr)`, `soundex(expr)`, `ceil(expr)`,
-  `floor(expr)`,
+  `hex2bin(expr)`, `quoted_printable_decode(expr)`, `dirname(expr)`,
+  `soundex(expr)`, `ceil(expr)`, `floor(expr)`,
   `sqrt(expr)`, `fdiv(expr, expr)`, `intdiv(expr, expr)`, `bindec(expr)`,
   `hexdec(expr)`, `octdec(expr)`, `pi()`, `getrandmax()`, `getmypid()`,
   `php_sapi_name()`, `phpversion([extension])`, `intval(expr)`, `chr(expr)`,
@@ -157,6 +162,9 @@ supports in generated native binaries.
 - `str_contains()` over current boxed scalar values after scalar string
   conversion, returning whether the needle string is present in the haystack
   string through the current C-string-backed value path.
+- `str_starts_with()` and `str_ends_with()` over current boxed scalar values
+  after scalar string conversion, returning whether the haystack has the
+  requested prefix or suffix through the current C-string-backed value path.
 - `quotemeta()` over current boxed scalar values after scalar string
   conversion, prefixing `.`, `\`, `+`, `*`, `?`, `[`, `^`, `]`, `(`, `$`, and
   `)` bytes with backslashes through the current C-string-backed value path.
@@ -181,6 +189,9 @@ supports in generated native binaries.
 - `hex2bin()` over current boxed scalar values after scalar string conversion,
   decoding hexadecimal byte pairs and returning `false` with a warning boundary
   for odd-length or non-hexadecimal input.
+- `quoted_printable_decode()` over current boxed scalar values after scalar
+  string conversion, decoding `=HH` byte escapes and soft line breaks through
+  the current C-string-backed value path.
 - `dirname()` over current boxed scalar values after scalar string conversion,
   returning the parent directory for the current C-string-backed path.
 - `soundex()` over current boxed scalar values after scalar string conversion,
@@ -342,12 +353,14 @@ supports in generated native binaries.
 - Embedded NUL strings in runtime string values, `var_dump()` string
   length/output, `strlen()`, `str_rot13()`, `strcmp()`, `bin2hex()`, `chr()`,
   `hex2bin()`, `str_contains()`, `quotemeta()`, `chunk_split()`,
-  `strip_tags()`, `md5()`,
-  `sha1()`, `substr()`, `soundex()`, `ord()`, or bitwise string results.
+  `strip_tags()`, `quoted_printable_decode()`, `md5()`, `sha1()`, `substr()`,
+  `soundex()`, `ord()`, or bitwise string results.
 - Exact `strcmp()` binary-string behavior for embedded NUL bytes and
   unsupported array/object/resource/reference operands.
 - Exact `str_contains()` binary-string behavior for embedded NUL bytes and
   unsupported array/object/resource/reference operands.
+- Exact `str_starts_with()`/`str_ends_with()` binary-string behavior for
+  embedded NUL bytes and unsupported array/object/resource/reference operands.
 - Exact `quotemeta()` embedded-NUL behavior and unsupported
   array/object/resource/reference operand diagnostics.
 - Exact `chunk_split()` embedded-NUL behavior, non-positive length exception
@@ -355,6 +368,8 @@ supports in generated native binaries.
 - Exact `strip_tags()` binary-string behavior, allowed-tags argument support,
   malformed/incomplete tag parity, and unsupported
   array/object/resource/reference operand diagnostics.
+- Exact `quoted_printable_decode()` embedded-NUL output behavior and
+  unsupported array/object/resource/reference operand diagnostics.
 - `md5()`/`sha1()` raw binary output containing NUL bytes, embedded-NUL input
   parity, and unsupported array/object/resource/reference operand diagnostics.
 - Exact `substr()` binary-string behavior for embedded NUL bytes and

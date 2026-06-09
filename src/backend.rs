@@ -3099,6 +3099,36 @@ static PtnValue ptn_internal_str_contains(PtnRuntime *runtime, size_t argc, cons
     return ptn_bool(contains);
 }
 
+static PtnValue ptn_internal_str_starts_with(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    char *haystack = ptn_value_to_string(args[0]);
+    char *needle = ptn_value_to_string(args[1]);
+    size_t haystack_len = strlen(haystack);
+    size_t needle_len = strlen(needle);
+    int starts = needle_len <= haystack_len && memcmp(haystack, needle, needle_len) == 0;
+    free(haystack);
+    free(needle);
+    return ptn_bool(starts);
+}
+
+static PtnValue ptn_internal_str_ends_with(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    char *haystack = ptn_value_to_string(args[0]);
+    char *needle = ptn_value_to_string(args[1]);
+    size_t haystack_len = strlen(haystack);
+    size_t needle_len = strlen(needle);
+    int ends =
+        needle_len <= haystack_len &&
+        memcmp(haystack + haystack_len - needle_len, needle, needle_len) == 0;
+    free(haystack);
+    free(needle);
+    return ptn_bool(ends);
+}
+
 static int ptn_quotemeta_needs_escape(unsigned char byte) {
     switch (byte) {
         case '.':
@@ -3799,6 +3829,50 @@ static PtnValue ptn_internal_hex2bin(PtnRuntime *runtime, size_t argc, const Ptn
     return ptn_owned_string(binary);
 }
 
+static char *ptn_quoted_printable_decode_string(const char *input) {
+    size_t len = strlen(input);
+    char *output = malloc(len + 1);
+    if (output == NULL) {
+        ptn_abort_out_of_memory();
+    }
+
+    size_t out = 0;
+    for (size_t i = 0; i < len; i++) {
+        if (input[i] == '=') {
+            if (i + 1 < len && input[i + 1] == '\n') {
+                i += 1;
+                continue;
+            }
+            if (i + 2 < len && input[i + 1] == '\r' && input[i + 2] == '\n') {
+                i += 2;
+                continue;
+            }
+            if (i + 2 < len) {
+                int high = ptn_hex_nibble((unsigned char)input[i + 1]);
+                int low = ptn_hex_nibble((unsigned char)input[i + 2]);
+                if (high >= 0 && low >= 0) {
+                    output[out++] = (char)((high << 4) | low);
+                    i += 2;
+                    continue;
+                }
+            }
+        }
+        output[out++] = input[i];
+    }
+    output[out] = '\0';
+    return output;
+}
+
+static PtnValue ptn_internal_quoted_printable_decode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    char *input = ptn_value_to_string(args[0]);
+    char *output = ptn_quoted_printable_decode_string(input);
+    free(input);
+    return ptn_owned_string(output);
+}
+
 static int ptn_ascii_is_letter(unsigned char byte) {
     return (byte >= 'A' && byte <= 'Z') || (byte >= 'a' && byte <= 'z');
 }
@@ -4186,6 +4260,8 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "str_rot13", 1, 1, ptn_internal_str_rot13 },
         { "strcmp", 2, 2, ptn_internal_strcmp },
         { "str_contains", 2, 2, ptn_internal_str_contains },
+        { "str_starts_with", 2, 2, ptn_internal_str_starts_with },
+        { "str_ends_with", 2, 2, ptn_internal_str_ends_with },
         { "quotemeta", 1, 1, ptn_internal_quotemeta },
         { "chunk_split", 1, 3, ptn_internal_chunk_split },
         { "strip_tags", 1, 1, ptn_internal_strip_tags },
@@ -4195,6 +4271,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "dirname", 1, 1, ptn_internal_dirname },
         { "bin2hex", 1, 1, ptn_internal_bin2hex },
         { "hex2bin", 1, 1, ptn_internal_hex2bin },
+        { "quoted_printable_decode", 1, 1, ptn_internal_quoted_printable_decode },
         { "soundex", 1, 1, ptn_internal_soundex },
         { "ceil", 1, 1, ptn_internal_ceil },
         { "floor", 1, 1, ptn_internal_floor },

@@ -1662,3 +1662,44 @@ globals/superglobals/global declarations, static locals,
 declarations, PHP-exact function return/include propagation, PHP-exact
 function/type diagnostic wording, and scope-aware magic constants inside
 functions.
+
+Added scalar `quoted_printable_decode()`:
+
+- Registered `quoted_printable_decode()` in the generated C internal-function
+  registry, so normal calls and `function_exists()` share the same
+  case-insensitive lookup table.
+- The runtime converts the input through the current boxed scalar
+  string-conversion path, decodes `=HH` hexadecimal byte escapes, removes
+  `=\n` and `=\r\n` soft line breaks, and copies other bytes unchanged through
+  the current C-string-backed value path.
+- Native tests prove the public `quoted_printable_decode()` source shapes from
+  `ext/standard/tests/general_functions/002.phpt` and
+  `ext/standard/tests/general_functions/006.phpt`, scalar conversion, and
+  registry exposure.
+- Focused public PHPT telemetry through `phpc` passes
+  `ext/standard/tests/general_functions/002.phpt` and
+  `ext/standard/tests/general_functions/006.phpt`.
+
+Still unsupported after this `quoted_printable_decode()` slice: embedded-NUL
+decoded output parity, unsupported array/object/resource/reference operand
+diagnostics, and complete binary-string runtime parity.
+
+Added scalar prefix/suffix string predicates:
+
+- Registered `str_starts_with()` and `str_ends_with()` in the generated C
+  internal-function registry, so normal calls and `function_exists()` share the
+  same case-insensitive lookup table.
+- Both functions convert haystack and needle through the current boxed scalar
+  string-conversion path and return boxed booleans for prefix/suffix matches
+  using the current C-string-backed value representation.
+- Native tests prove the public `str_starts_with.phpt` and
+  `str_ends_with.phpt` source shapes, scalar conversion, empty-needle behavior,
+  and registry exposure.
+- Focused public PHPT telemetry through `phpc` passes
+  `ext/standard/tests/strings/str_starts_with.phpt` and
+  `ext/standard/tests/strings/str_ends_with.phpt`.
+
+Still unsupported after this prefix/suffix string slice: PHP-exact
+binary-string behavior for embedded NUL values, unsupported
+array/object/resource/reference operand diagnostics, and complete binary-string
+runtime parity.

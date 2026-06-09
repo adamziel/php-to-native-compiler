@@ -515,6 +515,22 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
     let error = parser::parse("<?php function Strip_Tags($value) { return $value; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function strip_tags()");
 
+    let error =
+        parser::parse("<?php function STR_STARTS_WITH($haystack, $needle) { return true; }")
+            .unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function str_starts_with()");
+
+    let error = parser::parse("<?php function Str_Ends_With($haystack, $needle) { return true; }")
+        .unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function str_ends_with()");
+
+    let error = parser::parse("<?php function Quoted_Printable_Decode($value) { return $value; }")
+        .unwrap_err();
+    assert_eq!(
+        error.message,
+        "Cannot redeclare function quoted_printable_decode()"
+    );
+
     let error = parser::parse("<?php function PhpVersion() { return null; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function phpversion()");
 
@@ -2422,6 +2438,146 @@ fn compile_hex2bin_invalid_input_to_native_binary() {
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "Warning: hex2bin(): Hexadecimal input string must have an even length in ptn on line 1\nbool(false)\nWarning: hex2bin(): Input string must be hexadecimal string in ptn on line 1\nbool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_str_starts_and_ends_with_phpt_shapes_to_native_binary() {
+    let root = temp_dir("ptn-native-str-starts-ends-with-phpt-shapes");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("str-starts-ends-with.php");
+    let output = root.join("str-starts-ends-with-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$testStr = \"beginningMiddleEnd\";\n\
+var_dump(str_starts_with($testStr, \"beginning\"));\n\
+var_dump(str_starts_with($testStr, \"Beginning\"));\n\
+var_dump(str_starts_with($testStr, \"eginning\"));\n\
+var_dump(str_starts_with($testStr, $testStr));\n\
+var_dump(str_starts_with($testStr, $testStr.$testStr));\n\
+var_dump(str_starts_with($testStr, \"\"));\n\
+var_dump(str_starts_with(\"\", \"\"));\n\
+var_dump(str_starts_with(\"\", \" \"));\n\
+var_dump(str_starts_with($testStr, \"\\x00\"));\n\
+var_dump(str_starts_with(\"\\x00\", \"\"));\n\
+var_dump(str_starts_with(\"\\x00\", \"\\x00\"));\n\
+var_dump(str_starts_with(\"\\x00a\", \"\\x00\"));\n\
+var_dump(str_starts_with(\"a\\x00bc\", \"a\\x00b\"));\n\
+var_dump(str_starts_with(\"a\\x00b\", \"a\\x00d\"));\n\
+var_dump(str_starts_with(\"a\\x00b\", \"z\\x00b\"));\n\
+var_dump(str_starts_with(\"a\", \"a\\x00\"));\n\
+var_dump(str_starts_with(\"a\", \"\\x00a\"));\n\
+var_dump(str_ends_with($testStr, \"End\"));\n\
+var_dump(str_ends_with($testStr, \"end\"));\n\
+var_dump(str_ends_with($testStr, \"en\"));\n\
+var_dump(str_ends_with($testStr, $testStr));\n\
+var_dump(str_ends_with($testStr, $testStr.$testStr));\n\
+var_dump(str_ends_with($testStr, \"\"));\n\
+var_dump(str_ends_with(\"\", \"\"));\n\
+var_dump(str_ends_with(\"\", \" \"));\n\
+var_dump(str_ends_with($testStr, \"\\x00\"));\n\
+var_dump(str_ends_with(\"\\x00\", \"\"));\n\
+var_dump(str_ends_with(\"\\x00\", \"\\x00\"));\n\
+var_dump(str_ends_with(\"a\\x00\", \"\\x00\"));\n\
+var_dump(str_ends_with(\"ab\\x00c\", \"b\\x00c\"));\n\
+var_dump(str_ends_with(\"a\\x00b\", \"d\\x00b\"));\n\
+var_dump(str_ends_with(\"a\\x00b\", \"a\\x00z\"));\n\
+var_dump(str_ends_with(\"a\", \"\\x00a\"));\n\
+var_dump(str_ends_with(\"a\", \"a\\x00\"));\n\
+?>",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nbool(false)\nbool(false)\nbool(true)\nbool(false)\nbool(true)\nbool(true)\nbool(false)\nbool(false)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(false)\nbool(false)\nbool(false)\nbool(false)\nbool(true)\nbool(false)\nbool(false)\nbool(true)\nbool(false)\nbool(true)\nbool(true)\nbool(false)\nbool(false)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(false)\nbool(false)\nbool(false)\nbool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_str_starts_and_ends_with_registry_and_scalar_conversion_to_native_binary() {
+    let root = temp_dir("ptn-native-str-starts-ends-with-registry");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("str-starts-ends-with-registry.php");
+    let output = root.join("str-starts-ends-with-registry-bin");
+    fs::write(
+        &input,
+        "<?php var_dump(str_starts_with(12345, \"12\"), str_starts_with(true, \"1\"), str_ends_with(12345, 45), str_ends_with(false, \"\"), function_exists(\"str_starts_with\"), function_exists(\"STR_ENDS_WITH\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_quoted_printable_decode_phpt_shapes_to_native_binary() {
+    let root = temp_dir("ptn-native-quoted-printable-decode-phpt-shapes");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("quoted-printable-decode.php");
+    let output = root.join("quoted-printable-decode-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+echo bin2hex(quoted_printable_decode(\"=FAwow-factor=C1=d0=D5=DD=C5=CE=CE=D9=C5=0A=\n\
+=20=D4=cf=D2=C7=CF=D7=D9=C5=\n\
+=20=\n\
+=D0=\n\
+=D2=CF=C5=CB=D4=D9\")), \"\\n\";\n\
+echo bin2hex(quoted_printable_decode(\"=FAwow-factor=C1=D0=D5=DD=C5=CE=CE=D9=C5=0A=\n\
+=20=D4=CF=D2=C7=CF=D7=D9=C5=\n\
+=20=\n\
+=D0=\n\
+=D2=CF=C5=CB=D4=D9\")), \"\\n\";\n\
+?>",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "fa776f772d666163746f72c1d0d5ddc5ceced9c50a20d4cfd2c7cfd7d9c520d0d2cfc5cbd4d9\n\
+fa776f772d666163746f72c1d0d5ddc5ceced9c50a20d4cfd2c7cfd7d9c520d0d2cfc5cbd4d9\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_quoted_printable_decode_registry_and_scalar_conversion_to_native_binary() {
+    let root = temp_dir("ptn-native-quoted-printable-decode-registry");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("quoted-printable-decode-registry.php");
+    let output = root.join("quoted-printable-decode-registry-bin");
+    fs::write(
+        &input,
+        "<?php var_dump(quoted_printable_decode(\"Hello=20World=21\"), quoted_printable_decode(true), quoted_printable_decode(123), function_exists(\"quoted_printable_decode\"), function_exists(\"QUOTED_PRINTABLE_DECODE\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(12) \"Hello World!\"\nstring(1) \"1\"\nstring(3) \"123\"\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
