@@ -23,14 +23,22 @@ pub fn emit_c(module: &Module) -> String {
     out.push_str("\nint main(void) {\n");
     out.push_str("    PtnRuntime runtime;\n");
     out.push_str("    ptn_runtime_init(&runtime);\n");
+    for warning in collect_control_warnings(&module.instructions) {
+        emit_control_warning(
+            &mut out,
+            &warning.message,
+            &module.source_file,
+            warning.line,
+        );
+    }
     let mut values = ValueEmitter::new(&module.source_file, &module.source_dir);
-    let mut break_targets = Vec::new();
+    let mut control_targets = Vec::new();
     for instruction in &module.instructions {
         emit_instruction(
             &mut out,
             &mut values,
             instruction,
-            &mut break_targets,
+            &mut control_targets,
             &module.source_file,
             None,
         );
@@ -195,7 +203,7 @@ fn emit_instruction(
     out: &mut String,
     values: &mut ValueEmitter,
     instruction: &Instruction,
-    break_targets: &mut Vec<String>,
+    control_targets: &mut Vec<ControlTarget>,
     source_path: &str,
     return_target: Option<&str>,
 ) {
@@ -218,19 +226,29 @@ fn emit_instruction(
             out.push_str(&line.to_string());
             out.push_str(");\n");
         }
+        Instruction::Expression(value) => {
+            let emitted_value = values.emit_materialized_value(out, value);
+            out.push_str("    (void)");
+            out.push_str(&emitted_value);
+            out.push_str(";\n");
+        }
         Instruction::Echo(value) => {
             let emitted_value = values.emit_value(out, value);
             out.push_str("    ptn_echo(");
             out.push_str(&emitted_value);
             out.push_str(");\n");
         }
-        Instruction::Increment { name, op } => {
+        Instruction::Increment { name, op, line } => {
             let current_temp = values.next_temp();
             out.push_str("    PtnValue ");
             out.push_str(&current_temp);
             out.push_str(" = ptn_runtime_read_variable(&runtime, \"");
             out.push_str(&c_string(name));
-            out.push_str("\");\n");
+            out.push_str("\", \"");
+            out.push_str(&c_string(source_path));
+            out.push_str("\", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
             let result_temp = values.next_temp();
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
@@ -296,7 +314,7 @@ fn emit_instruction(
                     out,
                     values,
                     body_instruction,
-                    break_targets,
+                    control_targets,
                     source_path,
                     return_target,
                 );
@@ -308,7 +326,7 @@ fn emit_instruction(
                         out,
                         values,
                         body_instruction,
-                        break_targets,
+                        control_targets,
                         source_path,
                         return_target,
                     );
@@ -318,8 +336,14 @@ fn emit_instruction(
         }
         Instruction::While { condition, body } => {
             let end_label = values.next_label("ptn_loop_end");
+            let continue_label = values.next_label("ptn_loop_continue");
             emit_label_reference(out, &end_label);
             out.push_str("    while (1) {\n");
+            emit_label_reference(out, &continue_label);
+            out.push_str("    ");
+            out.push_str(&continue_label);
+            out.push_str(":\n");
+            out.push_str("    ;\n");
             let condition_temp = values.emit_materialized_value(out, condition);
             out.push_str("        if (!ptn_is_truthy(");
             out.push_str(&condition_temp);
@@ -328,18 +352,21 @@ fn emit_instruction(
             out.push_str(&end_label);
             out.push_str(";\n");
             out.push_str("        }\n");
-            break_targets.push(end_label.clone());
+            control_targets.push(ControlTarget::loop_target(
+                end_label.clone(),
+                continue_label,
+            ));
             for body_instruction in body {
                 emit_instruction(
                     out,
                     values,
                     body_instruction,
-                    break_targets,
+                    control_targets,
                     source_path,
                     return_target,
                 );
             }
-            break_targets.pop();
+            control_targets.pop();
             out.push_str("    }\n");
             out.push_str("    ");
             out.push_str(&end_label);
@@ -348,20 +375,29 @@ fn emit_instruction(
         }
         Instruction::DoWhile { body, condition } => {
             let end_label = values.next_label("ptn_loop_end");
+            let continue_label = values.next_label("ptn_loop_continue");
             emit_label_reference(out, &end_label);
             out.push_str("    while (1) {\n");
-            break_targets.push(end_label.clone());
+            control_targets.push(ControlTarget::loop_target(
+                end_label.clone(),
+                continue_label.clone(),
+            ));
             for body_instruction in body {
                 emit_instruction(
                     out,
                     values,
                     body_instruction,
-                    break_targets,
+                    control_targets,
                     source_path,
                     return_target,
                 );
             }
-            break_targets.pop();
+            control_targets.pop();
+            emit_label_reference(out, &continue_label);
+            out.push_str("    ");
+            out.push_str(&continue_label);
+            out.push_str(":\n");
+            out.push_str("    ;\n");
             let condition_temp = values.emit_materialized_value(out, condition);
             out.push_str("        if (!ptn_is_truthy(");
             out.push_str(&condition_temp);
@@ -387,12 +423,13 @@ fn emit_instruction(
                     out,
                     values,
                     initializer,
-                    break_targets,
+                    control_targets,
                     source_path,
                     return_target,
                 );
             }
             let end_label = values.next_label("ptn_loop_end");
+            let continue_label = values.next_label("ptn_loop_continue");
             emit_label_reference(out, &end_label);
             out.push_str("    while (1) {\n");
             if let Some(condition) = condition {
@@ -405,24 +442,32 @@ fn emit_instruction(
                 out.push_str(";\n");
                 out.push_str("        }\n");
             }
-            break_targets.push(end_label.clone());
+            control_targets.push(ControlTarget::loop_target(
+                end_label.clone(),
+                continue_label.clone(),
+            ));
             for body_instruction in body {
                 emit_instruction(
                     out,
                     values,
                     body_instruction,
-                    break_targets,
+                    control_targets,
                     source_path,
                     return_target,
                 );
             }
-            break_targets.pop();
+            control_targets.pop();
+            emit_label_reference(out, &continue_label);
+            out.push_str("    ");
+            out.push_str(&continue_label);
+            out.push_str(":\n");
+            out.push_str("    ;\n");
             for update in updates {
                 emit_instruction(
                     out,
                     values,
                     update,
-                    break_targets,
+                    control_targets,
                     source_path,
                     return_target,
                 );
@@ -439,7 +484,7 @@ fn emit_instruction(
                 values,
                 expression,
                 cases,
-                break_targets,
+                control_targets,
                 source_path,
                 return_target,
             );
@@ -456,14 +501,33 @@ fn emit_instruction(
             out.push_str(";\n");
         }
         Instruction::Break { level, line } => {
-            if *level > 0 && *level <= break_targets.len() {
-                let target = &break_targets[break_targets.len() - *level];
+            if *level > 0 && *level <= control_targets.len() {
+                let target = &control_targets[control_targets.len() - *level].break_label;
                 out.push_str("    goto ");
                 out.push_str(target);
                 out.push_str(";\n");
             } else {
                 let suffix = if *level == 1 { "level" } else { "levels" };
                 out.push_str("    ptn_abort_control_error(\"Cannot 'break' ");
+                out.push_str(&level.to_string());
+                out.push(' ');
+                out.push_str(suffix);
+                out.push_str("\", \"");
+                out.push_str(&c_string(source_path));
+                out.push_str("\", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+            }
+        }
+        Instruction::Continue { level, line } => {
+            if *level > 0 && *level <= control_targets.len() {
+                let target = &control_targets[control_targets.len() - *level].continue_label;
+                out.push_str("    goto ");
+                out.push_str(target);
+                out.push_str(";\n");
+            } else {
+                let suffix = if *level == 1 { "level" } else { "levels" };
+                out.push_str("    ptn_abort_control_error(\"Cannot 'continue' ");
                 out.push_str(&level.to_string());
                 out.push(' ');
                 out.push_str(suffix);
@@ -481,12 +545,152 @@ fn user_function_c_name(index: usize) -> String {
     format!("ptn_user_function_{index}")
 }
 
+struct ControlTarget {
+    break_label: String,
+    continue_label: String,
+}
+
+impl ControlTarget {
+    fn loop_target(break_label: String, continue_label: String) -> Self {
+        Self {
+            break_label,
+            continue_label,
+        }
+    }
+
+    fn switch_target(end_label: String) -> Self {
+        Self {
+            break_label: end_label.clone(),
+            continue_label: end_label,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ControlTargetKind {
+    Loop,
+    Switch,
+}
+
+struct ControlWarning {
+    message: String,
+    line: usize,
+}
+
+fn collect_control_warnings(instructions: &[Instruction]) -> Vec<ControlWarning> {
+    let mut warnings = Vec::new();
+    collect_control_warnings_in(instructions, &mut Vec::new(), &mut warnings);
+    warnings
+}
+
+fn collect_control_warnings_in(
+    instructions: &[Instruction],
+    contexts: &mut Vec<ControlTargetKind>,
+    warnings: &mut Vec<ControlWarning>,
+) {
+    for instruction in instructions {
+        match instruction {
+            Instruction::Branch {
+                then_body,
+                else_body,
+                ..
+            } => {
+                collect_control_warnings_in(then_body, contexts, warnings);
+                collect_control_warnings_in(else_body, contexts, warnings);
+            }
+            Instruction::While { body, .. } | Instruction::DoWhile { body, .. } => {
+                contexts.push(ControlTargetKind::Loop);
+                collect_control_warnings_in(body, contexts, warnings);
+                contexts.pop();
+            }
+            Instruction::For {
+                initializers,
+                updates,
+                body,
+                ..
+            } => {
+                collect_control_warnings_in(initializers, contexts, warnings);
+                contexts.push(ControlTargetKind::Loop);
+                collect_control_warnings_in(body, contexts, warnings);
+                contexts.pop();
+                collect_control_warnings_in(updates, contexts, warnings);
+            }
+            Instruction::Switch { cases, .. } => {
+                contexts.push(ControlTargetKind::Switch);
+                for case in cases {
+                    collect_control_warnings_in(&case.body, contexts, warnings);
+                }
+                contexts.pop();
+            }
+            Instruction::Continue { level, line } => {
+                if *level > 0 && *level <= contexts.len() {
+                    let target_index = contexts.len() - *level;
+                    if contexts[target_index] == ControlTargetKind::Switch {
+                        warnings.push(ControlWarning {
+                            message: continue_targeting_switch_warning(
+                                *level,
+                                contexts,
+                                target_index,
+                            ),
+                            line: *line,
+                        });
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn continue_targeting_switch_warning(
+    level: usize,
+    contexts: &[ControlTargetKind],
+    target_index: usize,
+) -> String {
+    let mut message = format!(
+        "{} targeting switch is equivalent to {}",
+        quoted_control_operator("continue", level),
+        quoted_control_operator("break", level)
+    );
+    if let Some(suggested_level) = nearest_outer_loop_level(contexts, target_index) {
+        message.push_str(". Did you mean to use ");
+        message.push_str(&quoted_control_operator("continue", suggested_level));
+        message.push('?');
+    }
+    message
+}
+
+fn nearest_outer_loop_level(contexts: &[ControlTargetKind], target_index: usize) -> Option<usize> {
+    (0..target_index)
+        .rev()
+        .find(|index| contexts[*index] == ControlTargetKind::Loop)
+        .map(|index| contexts.len() - index)
+}
+
+fn quoted_control_operator(operator: &str, level: usize) -> String {
+    if level == 1 {
+        format!("\"{operator}\"")
+    } else {
+        format!("\"{operator} {level}\"")
+    }
+}
+
+fn emit_control_warning(out: &mut String, message: &str, source_path: &str, line: usize) {
+    out.push_str("    ptn_emit_control_warning(\"");
+    out.push_str(&c_string(message));
+    out.push_str("\", \"");
+    out.push_str(&c_string(source_path));
+    out.push_str("\", ");
+    out.push_str(&line.to_string());
+    out.push_str(");\n");
+}
+
 fn emit_switch(
     out: &mut String,
     values: &mut ValueEmitter,
     expression: &ValueExpr,
     cases: &[crate::ir::SwitchCase],
-    break_targets: &mut Vec<String>,
+    control_targets: &mut Vec<ControlTarget>,
     source_path: &str,
     return_target: Option<&str>,
 ) {
@@ -497,6 +701,11 @@ fn emit_switch(
         .map(|_| values.next_label("ptn_switch_case"))
         .collect();
     let switch_temp = values.emit_materialized_value(out, expression);
+    if cases.iter().all(|case| case.condition.is_none()) {
+        out.push_str("    (void)");
+        out.push_str(&switch_temp);
+        out.push_str(";\n");
+    }
     let mut default_label = None;
 
     for (case, label) in cases.iter().zip(labels.iter()) {
@@ -527,18 +736,18 @@ fn emit_switch(
         out.push_str(label);
         out.push_str(":\n");
         out.push_str("    ;\n");
-        break_targets.push(end_label.clone());
+        control_targets.push(ControlTarget::switch_target(end_label.clone()));
         for body_instruction in &case.body {
             emit_instruction(
                 out,
                 values,
                 body_instruction,
-                break_targets,
+                control_targets,
                 source_path,
                 return_target,
             );
         }
-        break_targets.pop();
+        control_targets.pop();
     }
 
     out.push_str("    ");
@@ -699,9 +908,11 @@ impl ValueEmitter {
             }
             ValueExpr::Isset { targets } => self.emit_isset(out, targets),
             ValueExpr::Empty { target } => self.emit_empty(out, target),
-            ValueExpr::Load(name) => format!(
-                "ptn_runtime_read_variable(&runtime, \"{}\")",
-                c_string(name)
+            ValueExpr::Load { name, line } => format!(
+                "ptn_runtime_read_variable(&runtime, \"{}\", \"{}\", {})",
+                c_string(name),
+                c_string(&self.source_file),
+                line
             ),
             ValueExpr::Constant(name) => {
                 format!("ptn_read_constant(&runtime, \"{}\")", c_string(name))
@@ -882,7 +1093,7 @@ impl ValueEmitter {
 
     fn emit_quiet_lookup(&mut self, out: &mut String, value: &ValueExpr) -> String {
         match value {
-            ValueExpr::Load(name) => {
+            ValueExpr::Load { name, .. } => {
                 let result_temp = self.next_temp();
                 out.push_str("        PtnLookupResult ");
                 out.push_str(&result_temp);
@@ -1555,10 +1766,19 @@ static void ptn_diagnostics_init(PtnDiagnosticSink *diagnostics, FILE *stream) {
     diagnostics->emitted_deprecation = 0;
 }
 
-static void ptn_emit_undefined_variable_warning(PtnDiagnosticSink *diagnostics, const char *name) {
+static void ptn_emit_undefined_variable_warning(
+    PtnDiagnosticSink *diagnostics,
+    const char *name,
+    const char *path,
+    size_t line
+) {
     FILE *stream = diagnostics->stream == NULL ? stderr : diagnostics->stream;
     fputs("Warning: Undefined variable $", stream);
     fputs(name, stream);
+    fputs(" in ", stream);
+    fputs(path, stream);
+    fputs(" on line ", stream);
+    fprintf(stream, "%zu", line);
     fputc('\n', stream);
 }
 
@@ -1644,6 +1864,17 @@ static void ptn_emit_warning(PtnDiagnosticSink *diagnostics, const char *message
     fputc('\n', stdout);
 }
 
+static PTN_UNUSED void ptn_emit_control_warning(const char *message, const char *path, size_t line) {
+    fputc('\n', stdout);
+    fputs("Warning: ", stdout);
+    fputs(message, stdout);
+    fputs(" in ", stdout);
+    fputs(path, stdout);
+    fputs(" on line ", stdout);
+    fprintf(stdout, "%zu", line);
+    fputc('\n', stdout);
+}
+
 static void ptn_emit_constant_already_defined_warning(
     PtnDiagnosticSink *diagnostics,
     const char *name,
@@ -1672,12 +1903,17 @@ static PTN_UNUSED void ptn_runtime_write_variable(PtnRuntime *runtime, const cha
     ptn_symbols_set(&runtime->symbols, name, value);
 }
 
-static PTN_UNUSED PtnValue ptn_runtime_read_variable(PtnRuntime *runtime, const char *name) {
+static PTN_UNUSED PtnValue ptn_runtime_read_variable(
+    PtnRuntime *runtime,
+    const char *name,
+    const char *path,
+    size_t line
+) {
     PtnValue value;
     if (ptn_symbols_get(&runtime->symbols, name, &value)) {
         return value;
     }
-    ptn_emit_undefined_variable_warning(&runtime->diagnostics, name);
+    ptn_emit_undefined_variable_warning(&runtime->diagnostics, name, path, line);
     return ptn_null();
 }
 

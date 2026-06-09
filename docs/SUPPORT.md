@@ -17,6 +17,9 @@ supports in generated native binaries.
   warning boundary and preserve the original value.
 - `echo` statements.
 - Statement-form `print expr;` for the same scalar expression subset as echo.
+- Statement-form expressions over the currently supported expression subset.
+  Generated native code evaluates the boxed value for side effects and
+  discards the result.
 - String, integer, float, boolean, and null literals. Numeric literals accept
   PHP digit separators between digits; integer literals include decimal,
   legacy octal, explicit octal `0o`/`0O`, binary `0b`/`0B`, and hexadecimal
@@ -28,8 +31,8 @@ supports in generated native binaries.
   concatenation paths as ordinary expressions.
 - Direct variable assignment and scalar reads through the generated runtime
   symbol table.
-- Undefined direct variable reads emit a generic runtime warning and then yield
-  `null`.
+- Undefined direct variable reads emit a runtime warning with generated source
+  path and line, then yield `null`.
 - Boxed scalar `+`, `-`, `*`, `**`, `/`, and `%` numeric arithmetic and `.`
   string concatenation. `**` is parsed right-associatively and binds with PHP's
   precedence relative to unary operators. Other arithmetic chains are parsed
@@ -45,7 +48,8 @@ supports in generated native binaries.
   `**=`, `.=`, `&=`, `|=`, `^=`, `<<=`, and `>>=`. The compiler lowers these as
   `read $x`, the matching boxed binary helper, then `write $x`. The direct
   variable read happens before the right-hand expression, so existing
-  undefined-variable diagnostics remain observable in source order.
+  source-spanned undefined-variable diagnostics remain observable in source
+  order.
 - Print statements use the same generated boxed output path as echo.
 - Parenthesized expressions for grouping supported scalar expressions,
   including nested grouping.
@@ -295,6 +299,10 @@ supports in generated native binaries.
   in source order with boxed loose `==` semantics, honors a single `default`,
   allows PHP-style fallthrough, and supports `break;` or explicit-level
   `break N;` from the active emitted switch/loop target stack.
+- `continue;` and explicit-level `continue N;` over active loop/switch targets.
+  The generated backend jumps to the appropriate loop continuation point, runs
+  `for` update clauses on `continue`, and emits the current PHP-style warning
+  boundary when a `continue` targets a `switch`.
 - User labels such as `L1:` and `goto L1;` statements inside the currently
   generated main function, including source-spanned fatal diagnostics for
   undefined target labels, duplicate labels, and `goto` jumps into active loop
@@ -332,9 +340,10 @@ supports in generated native binaries.
   expressions are modeled, ternary expressions beyond the modeled nested
   associativity diagnostics, PHP-exact chained comparison parse errors, and
   complete comparison parity for unsupported value types.
-- Unbraced switch bodies, alternate control-flow syntax, `foreach`, `continue`,
+- Unbraced switch bodies, alternate control-flow syntax, `foreach`,
   branch-condition assignments, for-loop comma expressions and
-  non-direct-variable clause lvalues, PHP-exact break/continue diagnostics,
+  non-direct-variable clause lvalues, PHP-exact break/continue diagnostics
+  beyond the currently modeled level/context fatals and switch-target warning,
   labels/goto inside unsupported functions, classes, and `try`/`finally`
   constructs, and exception/finally control-flow edges.
 - PHP-exact `return` value propagation for includes/functions and return
@@ -349,6 +358,7 @@ supports in generated native binaries.
 - Complex/braced string interpolation and interpolation of arrays, objects,
   offsets, properties, variable variables, or other non-direct-variable forms.
 - Internal functions outside the registered internal-function subset.
+- Exact undefined-constant and unsupported-expression-statement diagnostics.
 - Namespace/class constants, global `const` duplicate diagnostics and ordering
   parity with runtime `define()`, `define()`'s legacy case-insensitive flag, and
   built-in PHP/extension constants other than the currently modeled `E_ERROR`,

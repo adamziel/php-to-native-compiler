@@ -79,6 +79,7 @@ impl Parser {
             TokenKind::For => self.parse_for(),
             TokenKind::Switch => self.parse_switch(),
             TokenKind::Break => self.parse_break(),
+            TokenKind::Continue => self.parse_continue(),
             TokenKind::Return => self.parse_return(),
             TokenKind::Goto => self.parse_goto(),
             TokenKind::Const => self.parse_const(),
@@ -87,7 +88,9 @@ impl Parser {
             TokenKind::Identifier(_) if matches!(self.peek_next().kind, TokenKind::Colon) => {
                 self.parse_label()
             }
-            TokenKind::Identifier(_) => self.parse_call_statement(),
+            TokenKind::Identifier(_) if matches!(self.peek_next().kind, TokenKind::LeftParen) => {
+                self.parse_call_statement()
+            }
             TokenKind::Variable(_) => self.parse_variable_statement(),
             TokenKind::InlineHtml(_) => self.parse_inline_html(),
             _ if self.peek_starts_expression() => self.parse_expression_statement(),
@@ -195,6 +198,10 @@ impl Parser {
             }
             _ => {}
         }
+        if !self.peek_is_assignment_op() {
+            self.index -= 1;
+            return self.parse_expression_statement();
+        }
         let op = self.expect_assignment_op()?;
         let value = self.parse_assignment_value_expr()?;
         self.expect_statement_terminator()?;
@@ -241,6 +248,22 @@ impl Parser {
         let expression = self.parse_expr()?;
         self.expect_statement_terminator()?;
         Ok(Statement::Print { expression, span })
+    }
+
+    fn parse_expression_statement(&mut self) -> Result<Statement> {
+        let expression = self.parse_expr()?;
+        let span = expression.span();
+        if matches!(self.peek().kind, TokenKind::Question) {
+            return self.reject_unsupported_ternary_expression();
+        }
+        if self.peek_is_assignment_op() {
+            return Err(Diagnostic::new(
+                "expected assignment",
+                Some(self.peek().span),
+            ));
+        }
+        self.expect_statement_terminator()?;
+        Ok(Statement::Expression { expression, span })
     }
 
     fn parse_const(&mut self) -> Result<Statement> {
@@ -526,6 +549,19 @@ impl Parser {
         Ok(Statement::Break { level, span })
     }
 
+    fn parse_continue(&mut self) -> Result<Statement> {
+        let span = self.expect_continue()?;
+        let level = match self.peek().kind {
+            TokenKind::Int(value) if value >= 0 => {
+                self.advance();
+                value as usize
+            }
+            _ => 1,
+        };
+        self.expect_statement_terminator()?;
+        Ok(Statement::Continue { level, span })
+    }
+
     fn parse_return(&mut self) -> Result<Statement> {
         let span = self.expect_return()?;
         let value = if matches!(
@@ -575,17 +611,6 @@ impl Parser {
             arguments,
             span: token.span,
         })
-    }
-
-    fn parse_expression_statement(&mut self) -> Result<Statement> {
-        let expression = self.parse_expr()?;
-        if matches!(self.peek().kind, TokenKind::Question) {
-            return self.reject_unsupported_ternary_expression();
-        }
-        Err(Diagnostic::new(
-            "expression statements are unsupported",
-            Some(expression.span()),
-        ))
     }
 
     fn parse_inline_html(&mut self) -> Result<Statement> {
@@ -1073,6 +1098,8 @@ impl Parser {
                 | TokenKind::True
                 | TokenKind::False
                 | TokenKind::Null
+                | TokenKind::Variable(_)
+                | TokenKind::Identifier(_)
                 | TokenKind::Plus
                 | TokenKind::Minus
                 | TokenKind::Bang
@@ -1171,6 +1198,15 @@ impl Parser {
         }
     }
 
+    fn expect_continue(&mut self) -> Result<SourceSpan> {
+        let token = self.advance();
+        if matches!(token.kind, TokenKind::Continue) {
+            Ok(token.span)
+        } else {
+            Err(Diagnostic::new("expected continue", Some(token.span)))
+        }
+    }
+
     fn expect_function(&mut self) -> Result<SourceSpan> {
         let token = self.advance();
         if matches!(token.kind, TokenKind::Function) {
@@ -1216,6 +1252,25 @@ impl Parser {
             TokenKind::ShiftRightEqual => Ok(AssignmentOp::ShiftRightAssign),
             _ => Err(Diagnostic::new("expected assignment", Some(token.span))),
         }
+    }
+
+    fn peek_is_assignment_op(&self) -> bool {
+        matches!(
+            self.peek().kind,
+            TokenKind::Equal
+                | TokenKind::PlusEqual
+                | TokenKind::MinusEqual
+                | TokenKind::AsteriskEqual
+                | TokenKind::AsteriskAsteriskEqual
+                | TokenKind::SlashEqual
+                | TokenKind::PercentEqual
+                | TokenKind::DotEqual
+                | TokenKind::AmpersandEqual
+                | TokenKind::PipeEqual
+                | TokenKind::CaretEqual
+                | TokenKind::ShiftLeftEqual
+                | TokenKind::ShiftRightEqual
+        )
     }
 
     fn expect_equal(&mut self) -> Result<SourceSpan> {
@@ -1371,6 +1426,7 @@ fn token_text(kind: &TokenKind) -> &'static str {
         TokenKind::Case => "case",
         TokenKind::Default => "default",
         TokenKind::Break => "break",
+        TokenKind::Continue => "continue",
         TokenKind::Return => "return",
         TokenKind::Goto => "goto",
         TokenKind::Const => "const",

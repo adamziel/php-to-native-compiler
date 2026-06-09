@@ -1789,3 +1789,63 @@ append/unset/iteration, recursive arrays, references, copy-on-write,
 `Countable` objects, exact non-array `count()` diagnostics, exact `abs()`
 unsupported operand diagnostics, and complete integer overflow/formatting
 parity beyond the current boxed numeric path.
+
+Added statement-form expression evaluation:
+
+- The parser/AST now accept supported PHP expressions as statements when they
+  are not a more specific assignment, increment/decrement, label, or call
+  statement form.
+- Expression statements lower through the existing boxed value-expression path
+  and generated native code materializes the value for side effects before
+  discarding it.
+- Default-only switch statements now explicitly discard the evaluated switch
+  subject in generated C, preserving subject side effects without unused-temp
+  compiler warnings.
+- Native tests prove constant, variable, grouped, array-offset, and internal
+  call expression-statement parsing; runtime evaluation/discard behavior; and
+  a switch `default` body where `return;` prevents a following bare constant
+  expression from executing.
+- Direct variable-load IR now carries source lines, and generated native
+  undefined-variable warnings include the source path and line, matching the
+  selected PHPT's warning shape.
+- Focused public PHPT telemetry through `phpc` passes
+  `Zend/tests/code_before_loop_var_free.phpt`.
+
+Reviewed nearby public switch/jump rows on the same base:
+`tests/lang/bug26696.phpt`, `Zend/tests/switch/bug26281.phpt`,
+`Zend/tests/switch/bug26696.phpt`, and `Zend/tests/switch/bug26801.phpt`
+already pass before this patch, so they are not claimed as new coverage.
+
+Still unsupported after this expression-statement slice: exact
+undefined-constant diagnostics, expression statements for unsupported
+expression forms, broad PHP-exact warning channels/error-handler routing,
+`continue`, `foreach`, functions/classes, and exception/finally control-flow
+edges.
+
+Added generic `continue` loop-control semantics:
+
+- The lexer/parser/AST/IR now support `continue;` and explicit-level
+  `continue N;` using the same structured control-flow path as `break N;`.
+- The C backend now tracks active control targets with separate break and
+  continue labels. `while` continues recheck the condition, `do while`
+  continues jump to the post-test condition, and `for` continues run update
+  clauses before the next condition check.
+- `continue` targeting a `switch` emits the current PHP-style warning boundary
+  and exits the switch, including an outer-loop `continue N` suggestion when
+  the active control stack makes one available.
+- Native tests prove parser acceptance, `while`, `do while`, `for`, explicit
+  loop/switch levels, switch-target warnings, and excessive-level fatal
+  diagnostics.
+- Public PHPT telemetry was run for
+  `Zend/tests/switch/continue_targeting_switch_warning.phpt` and
+  `tests/lang/024.phpt`; those rows remain blocked by unsupported function
+  declarations and inline HTML between PHP blocks, respectively, so this entry
+  does not claim a new public PHPT pass.
+
+Still unsupported after this continue slice: public continue PHPT rows that
+require functions or broad mixed PHP/HTML parser support, `foreach`, alternate
+control-flow syntax, unbraced switch bodies, branch-condition assignments,
+for-loop comma expressions and non-direct-variable clause lvalues,
+PHP-exact break/continue diagnostic timing/wording beyond the current
+level/context fatals and switch-target warning, functions/classes, and
+exception/finally control-flow edges.

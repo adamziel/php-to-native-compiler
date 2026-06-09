@@ -53,6 +53,10 @@ pub enum Statement {
         expression: Expr,
         span: SourceSpan,
     },
+    Expression {
+        expression: Expr,
+        span: SourceSpan,
+    },
     Const {
         declarations: Vec<ConstDeclaration>,
         span: SourceSpan,
@@ -90,6 +94,10 @@ pub enum Statement {
         span: SourceSpan,
     },
     Break {
+        level: usize,
+        span: SourceSpan,
+    },
+    Continue {
         level: usize,
         span: SourceSpan,
     },

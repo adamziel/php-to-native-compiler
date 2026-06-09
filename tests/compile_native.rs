@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -9,6 +9,13 @@ use ptn::ast::{
 };
 use ptn::lexer::{self, TokenKind};
 use ptn::{compile_file, parser, CompileOptions, DiagnosticKind};
+
+fn undefined_variable_warning(path: &Path, name: &str, line: usize) -> String {
+    format!(
+        "Warning: Undefined variable ${name} in {} on line {line}\n",
+        path.display()
+    )
+}
 
 #[test]
 fn parser_preserves_echo_expression_order() {
@@ -1282,6 +1289,45 @@ A:
 }
 
 #[test]
+fn parser_accepts_supported_expression_statements() {
+    let program =
+        parser::parse("<?php Y; $value; ($value + 1); [1, 2][0]; strlen(\"abc\");").unwrap();
+    assert_eq!(program.statements.len(), 5);
+    assert!(matches!(
+        &program.statements[0],
+        Statement::Expression {
+            expression: Expr::Constant(name, _),
+            ..
+        } if name == "Y"
+    ));
+    assert!(matches!(
+        &program.statements[1],
+        Statement::Expression {
+            expression: Expr::Variable(name, _),
+            ..
+        } if name == "value"
+    ));
+    assert!(matches!(
+        &program.statements[2],
+        Statement::Expression {
+            expression: Expr::Grouped { .. },
+            ..
+        }
+    ));
+    assert!(matches!(
+        &program.statements[3],
+        Statement::Expression {
+            expression: Expr::ArrayAccess { .. },
+            ..
+        }
+    ));
+    assert!(matches!(
+        &program.statements[4],
+        Statement::Call { name, .. } if name == "strlen"
+    ));
+}
+
+#[test]
 fn parser_rejects_goto_to_undefined_label() {
     let error = parser::parse("<?php\ngoto L1;\n").unwrap_err();
     assert_eq!(error.kind, DiagnosticKind::Fatal);
@@ -1403,6 +1449,33 @@ fn parser_accepts_single_statement_loop_bodies_and_break_levels() {
         panic!("expected do while statement");
     };
     assert!(matches!(&body[0], Statement::Print { .. }));
+}
+
+#[test]
+fn parser_accepts_continue_statements_and_levels() {
+    let program = parser::parse(
+        "<?php for (;;) { while (true) { continue 2; } } do continue; while (false);",
+    )
+    .unwrap();
+
+    let Statement::For { body, .. } = &program.statements[0] else {
+        panic!("expected for statement");
+    };
+    let Statement::While {
+        body: while_body, ..
+    } = &body[0]
+    else {
+        panic!("expected nested while statement");
+    };
+    assert!(matches!(
+        &while_body[0],
+        Statement::Continue { level: 2, .. }
+    ));
+
+    let Statement::DoWhile { body, .. } = &program.statements[1] else {
+        panic!("expected do while statement");
+    };
+    assert!(matches!(&body[0], Statement::Continue { level: 1, .. }));
 }
 
 #[test]
@@ -1891,7 +1964,11 @@ fn compile_internal_call_arguments_evaluate_left_to_right_to_native_binary() {
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "NULL\nNULL\n");
     assert_eq!(
         String::from_utf8(execution.stderr).unwrap(),
-        "Warning: Undefined variable $left\nWarning: Undefined variable $right\n"
+        format!(
+            "{}{}",
+            undefined_variable_warning(&input, "left", 1),
+            undefined_variable_warning(&input, "right", 1)
+        )
     );
 }
 
@@ -2854,7 +2931,11 @@ fn compile_internal_call_expression_arguments_evaluate_left_to_right() {
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "0\n");
     assert_eq!(
         String::from_utf8(execution.stderr).unwrap(),
-        "Warning: Undefined variable $left\nWarning: Undefined variable $right\n"
+        format!(
+            "{}{}",
+            undefined_variable_warning(&input, "left", 1),
+            undefined_variable_warning(&input, "right", 1)
+        )
     );
 }
 
@@ -3940,7 +4021,11 @@ var_dump($left xor $right);\n",
     );
     assert_eq!(
         String::from_utf8(execution.stderr).unwrap(),
-        "Warning: Undefined variable $left\nWarning: Undefined variable $right\n"
+        format!(
+            "{}{}",
+            undefined_variable_warning(&input, "left", 10),
+            undefined_variable_warning(&input, "right", 10)
+        )
     );
 }
 
@@ -4342,7 +4427,7 @@ fn compile_if_condition_evaluates_before_selected_branch_to_native_binary() {
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "fallback\n");
     assert_eq!(
         String::from_utf8(execution.stderr).unwrap(),
-        "Warning: Undefined variable $missing\n"
+        undefined_variable_warning(&input, "missing", 1)
     );
 }
 
@@ -4493,6 +4578,58 @@ fn compile_return_statement_exits_script_to_native_binary() {
         "before\nstring(5) \"value\"\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_expression_statements_evaluate_and_discard_to_native_binary() {
+    let root = temp_dir("ptn-native-expression-statements");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("expression-statements.php");
+    let output = root.join("expression-statements-bin");
+    fs::write(
+        &input,
+        "<?php $value = 1; $value + 2; $missing; strlen(\"abc\"); echo \"done\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "done\n");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        undefined_variable_warning(&input, "missing", 1)
+    );
+}
+
+#[test]
+fn compile_switch_return_skips_unreachable_expression_statement_to_native_binary() {
+    let root = temp_dir("ptn-native-code-before-loop-var-free");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("code-before-loop-var-free.php");
+    let output = root.join("code-before-loop-var-free-bin");
+    fs::write(
+        &input,
+        "<?php
+switch ($x > 0) {
+default:
+    return;
+    Y;
+}
+?>",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        undefined_variable_warning(&input, "x", 2)
+    );
 }
 
 #[test]
@@ -4788,6 +4925,115 @@ fn compile_single_statement_loop_bodies_to_native_binary() {
 }
 
 #[test]
+fn compile_continue_rechecks_while_condition_to_native_binary() {
+    let root = temp_dir("ptn-native-while-continue");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("while-continue.php");
+    let output = root.join("while-continue-bin");
+    fs::write(
+        &input,
+        "<?php $i = 0; while ($i < 4) { $i++; if ($i == 2) continue; echo $i; } echo \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "134\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_continue_in_do_while_checks_condition_after_body_to_native_binary() {
+    let root = temp_dir("ptn-native-do-while-continue");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("do-while-continue.php");
+    let output = root.join("do-while-continue-bin");
+    fs::write(
+        &input,
+        "<?php $i = 0; do { $i++; if ($i == 1) continue; echo $i; } while ($i < 3); echo \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "23\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_for_continue_runs_update_to_native_binary() {
+    let root = temp_dir("ptn-native-for-continue-update");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("for-continue-update.php");
+    let output = root.join("for-continue-update-bin");
+    fs::write(
+        &input,
+        "<?php for ($i = 0; $i < 5; $i++) { if ($i == 1) continue; if ($i == 3) continue; echo $i; } echo \":$i\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "024:5\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_continue_levels_through_switch_to_native_binary() {
+    let root = temp_dir("ptn-native-switch-continue-levels");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("switch-continue-levels.php");
+    let output = root.join("switch-continue-levels-bin");
+    fs::write(
+        &input,
+        "<?php $i = 0; while ($i < 2) { switch ($i) { case 0: echo \"case\"; continue; case 1: echo \"one\"; $i++; continue 2; } echo \":after:\"; $i++; } echo \":done:$i\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "\nWarning: \"continue\" targeting switch is equivalent to \"break\". Did you mean to use \"continue 2\"? in {} on line 1\ncase:after:one:done:2\n",
+            input.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_unmatched_large_continue_level_reports_source_line_to_native_binary() {
+    let root = temp_dir("ptn-native-large-continue-level-fatal");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("large-continue-level.php");
+    let output = root.join("large-continue-level-bin");
+    fs::write(&input, "<?php\nfor(;;) continue 2147483648;\n").unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "Fatal error: Cannot 'continue' 2147483648 levels in {} on line 2\n",
+            input.display()
+        )
+    );
+}
+
+#[test]
 fn compile_unmatched_large_break_level_reports_source_line_to_native_binary() {
     let root = temp_dir("ptn-native-large-break-level-fatal");
     fs::create_dir_all(&root).unwrap();
@@ -4900,7 +5146,11 @@ fn compile_comparison_operands_evaluate_left_to_right_to_native_binary() {
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "1\n");
     assert_eq!(
         String::from_utf8(execution.stderr).unwrap(),
-        "Warning: Undefined variable $left\nWarning: Undefined variable $right\n"
+        format!(
+            "{}{}",
+            undefined_variable_warning(&input, "left", 1),
+            undefined_variable_warning(&input, "right", 1)
+        )
     );
 }
 
@@ -5006,7 +5256,13 @@ fn compound_assignments_read_left_before_rhs_and_then_write() {
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "0\n[]\n");
     assert_eq!(
         String::from_utf8(execution.stderr).unwrap(),
-        "Warning: Undefined variable $total\nWarning: Undefined variable $missing_number\nWarning: Undefined variable $text\nWarning: Undefined variable $missing_text\n"
+        format!(
+            "{}{}{}{}",
+            undefined_variable_warning(&input, "total", 1),
+            undefined_variable_warning(&input, "missing_number", 1),
+            undefined_variable_warning(&input, "text", 1),
+            undefined_variable_warning(&input, "missing_text", 1)
+        )
     );
 }
 
@@ -5182,7 +5438,12 @@ fn compile_arithmetic_operands_evaluate_left_to_right_to_native_binary() {
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "0\n");
     assert_eq!(
         String::from_utf8(execution.stderr).unwrap(),
-        "Warning: Undefined variable $left\nWarning: Undefined variable $right\nWarning: Undefined variable $third\n"
+        format!(
+            "{}{}{}",
+            undefined_variable_warning(&input, "left", 1),
+            undefined_variable_warning(&input, "right", 1),
+            undefined_variable_warning(&input, "third", 1)
+        )
     );
 }
 
@@ -5394,7 +5655,11 @@ fn compile_binary_operands_evaluate_left_to_right_to_native_binary() {
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "\n");
     assert_eq!(
         String::from_utf8(execution.stderr).unwrap(),
-        "Warning: Undefined variable $left\nWarning: Undefined variable $right\n"
+        format!(
+            "{}{}",
+            undefined_variable_warning(&input, "left", 1),
+            undefined_variable_warning(&input, "right", 1)
+        )
     );
 }
 
@@ -5420,14 +5685,14 @@ fn compile_defined_and_undefined_variable_reads_to_native_binary() {
     );
     assert_eq!(
         String::from_utf8(execution.stderr).unwrap(),
-        "Warning: Undefined variable $missing\n"
+        undefined_variable_warning(&input, "missing", 1)
     );
 }
 
 #[test]
 fn unsupported_constructs_fail_before_codegen() {
     let unsupported_operator = parser::parse("<?php $name ??= 1;").unwrap_err();
-    assert!(unsupported_operator.message.contains("expected assignment"));
+    assert!(unsupported_operator.message.contains("expected expression"));
 
     let unsupported_lvalue = parser::parse("<?php $items[0] += 1;").unwrap_err();
     assert!(unsupported_lvalue.message.contains("expected assignment"));

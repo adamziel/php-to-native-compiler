@@ -42,12 +42,14 @@ pub enum Instruction {
     Increment {
         name: String,
         op: IncDecOp,
+        line: usize,
     },
     DefineConstant {
         name: String,
         value: ValueExpr,
         line: usize,
     },
+    Expression(ValueExpr),
     Echo(ValueExpr),
     InternalCall {
         name: String,
@@ -85,6 +87,10 @@ pub enum Instruction {
         level: usize,
         line: usize,
     },
+    Continue {
+        level: usize,
+        line: usize,
+    },
     Label {
         name: String,
     },
@@ -106,7 +112,10 @@ pub enum ValueExpr {
     Float(f64),
     Bool(bool),
     Null,
-    Load(String),
+    Load {
+        name: String,
+        line: usize,
+    },
     Constant(String),
     MagicConstant {
         kind: MagicConstantKind,
@@ -257,17 +266,21 @@ fn lower_statements(statements: &[Statement]) -> Vec<Instruction> {
     for statement in statements {
         match statement {
             Statement::Assign {
-                name, op, value, ..
+                name,
+                op,
+                value,
+                span,
             } => {
                 instructions.push(Instruction::Store {
                     name: name.clone(),
-                    value: lower_assignment_value(name, *op, value),
+                    value: lower_assignment_value(name, *op, value, span.line),
                 });
             }
-            Statement::Increment { name, op, .. } => {
+            Statement::Increment { name, op, span } => {
                 instructions.push(Instruction::Increment {
                     name: name.clone(),
                     op: lower_inc_dec_op(*op),
+                    line: span.line,
                 });
             }
             Statement::Const { declarations, .. } => {
@@ -297,6 +310,9 @@ fn lower_statements(statements: &[Statement]) -> Vec<Instruction> {
             }
             Statement::Print { expression, .. } => {
                 instructions.push(Instruction::Echo(lower_expr(expression)));
+            }
+            Statement::Expression { expression, .. } => {
+                instructions.push(Instruction::Expression(lower_expr(expression)));
             }
             Statement::InlineHtml { content, .. } => {
                 instructions.push(Instruction::Echo(ValueExpr::String(content.clone())));
@@ -366,6 +382,12 @@ fn lower_statements(statements: &[Statement]) -> Vec<Instruction> {
                     line: span.line,
                 });
             }
+            Statement::Continue { level, span } => {
+                instructions.push(Instruction::Continue {
+                    level: *level,
+                    line: span.line,
+                });
+            }
             Statement::Return { value, span } => {
                 instructions.push(Instruction::Return {
                     value: value.as_ref().map(lower_expr),
@@ -385,39 +407,52 @@ fn lower_statements(statements: &[Statement]) -> Vec<Instruction> {
     instructions
 }
 
-fn lower_assignment_value(name: &str, op: AssignmentOp, value: &Expr) -> ValueExpr {
+fn lower_assignment_value(name: &str, op: AssignmentOp, value: &Expr, line: usize) -> ValueExpr {
     let right = lower_expr(value);
     match op {
         AssignmentOp::Assign => right,
-        AssignmentOp::AddAssign => lower_compound_assignment(name, BinaryOp::Add, right),
-        AssignmentOp::SubtractAssign => lower_compound_assignment(name, BinaryOp::Subtract, right),
-        AssignmentOp::MultiplyAssign => lower_compound_assignment(name, BinaryOp::Multiply, right),
-        AssignmentOp::PowerAssign => lower_compound_assignment(name, BinaryOp::Power, right),
-        AssignmentOp::DivideAssign => lower_compound_assignment(name, BinaryOp::Divide, right),
-        AssignmentOp::ModuloAssign => lower_compound_assignment(name, BinaryOp::Modulo, right),
-        AssignmentOp::ConcatAssign => lower_compound_assignment(name, BinaryOp::Concat, right),
+        AssignmentOp::AddAssign => lower_compound_assignment(name, line, BinaryOp::Add, right),
+        AssignmentOp::SubtractAssign => {
+            lower_compound_assignment(name, line, BinaryOp::Subtract, right)
+        }
+        AssignmentOp::MultiplyAssign => {
+            lower_compound_assignment(name, line, BinaryOp::Multiply, right)
+        }
+        AssignmentOp::PowerAssign => lower_compound_assignment(name, line, BinaryOp::Power, right),
+        AssignmentOp::DivideAssign => {
+            lower_compound_assignment(name, line, BinaryOp::Divide, right)
+        }
+        AssignmentOp::ModuloAssign => {
+            lower_compound_assignment(name, line, BinaryOp::Modulo, right)
+        }
+        AssignmentOp::ConcatAssign => {
+            lower_compound_assignment(name, line, BinaryOp::Concat, right)
+        }
         AssignmentOp::BitwiseAndAssign => {
-            lower_compound_assignment(name, BinaryOp::BitwiseAnd, right)
+            lower_compound_assignment(name, line, BinaryOp::BitwiseAnd, right)
         }
         AssignmentOp::BitwiseOrAssign => {
-            lower_compound_assignment(name, BinaryOp::BitwiseOr, right)
+            lower_compound_assignment(name, line, BinaryOp::BitwiseOr, right)
         }
         AssignmentOp::BitwiseXorAssign => {
-            lower_compound_assignment(name, BinaryOp::BitwiseXor, right)
+            lower_compound_assignment(name, line, BinaryOp::BitwiseXor, right)
         }
         AssignmentOp::ShiftLeftAssign => {
-            lower_compound_assignment(name, BinaryOp::ShiftLeft, right)
+            lower_compound_assignment(name, line, BinaryOp::ShiftLeft, right)
         }
         AssignmentOp::ShiftRightAssign => {
-            lower_compound_assignment(name, BinaryOp::ShiftRight, right)
+            lower_compound_assignment(name, line, BinaryOp::ShiftRight, right)
         }
     }
 }
 
-fn lower_compound_assignment(name: &str, op: BinaryOp, right: ValueExpr) -> ValueExpr {
+fn lower_compound_assignment(name: &str, line: usize, op: BinaryOp, right: ValueExpr) -> ValueExpr {
     ValueExpr::Binary {
         op,
-        left: Box::new(ValueExpr::Load(name.to_string())),
+        left: Box::new(ValueExpr::Load {
+            name: name.to_string(),
+            line,
+        }),
         right: Box::new(right),
     }
 }
@@ -430,7 +465,10 @@ fn lower_expr(expr: &Expr) -> ValueExpr {
         Expr::Float(value, _) => ValueExpr::Float(*value),
         Expr::Bool(value, _) => ValueExpr::Bool(*value),
         Expr::Null(_) => ValueExpr::Null,
-        Expr::Variable(name, _) => ValueExpr::Load(name.clone()),
+        Expr::Variable(name, span) => ValueExpr::Load {
+            name: name.clone(),
+            line: span.line,
+        },
         Expr::Constant(name, _) => ValueExpr::Constant(name.clone()),
         Expr::MagicConstant(kind, span) => ValueExpr::MagicConstant {
             kind: lower_magic_constant_kind(*kind),
@@ -492,7 +530,10 @@ fn lower_interpolated_string(parts: &[AstStringPart]) -> ValueExpr {
         AstStringPart::Literal(value) => Some(ValueExpr::String(value.clone())),
         AstStringPart::Variable(name) => Some(ValueExpr::Cast {
             kind: CastKind::String,
-            expr: Box::new(ValueExpr::Load(name.clone())),
+            expr: Box::new(ValueExpr::Load {
+                name: name.clone(),
+                line: 0,
+            }),
             line: 0,
         }),
     });

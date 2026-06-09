@@ -27,6 +27,9 @@ Supported today:
 - `echo` statements.
 - Statement-form `print expr;` for the same scalar expression subset as
   `echo`; emitted native code uses the same boxed output conversion path.
+- Statement-form expressions over the currently supported expression subset;
+  generated native code evaluates the boxed value for side effects and discards
+  the result.
 - Simple internal calls such as `var_dump(expr, ...)`, `strlen(expr)`,
   `str_rot13(expr)`, `strcmp(expr, expr)`, `str_contains(expr, expr)`,
   `str_starts_with(expr, expr)`, `str_ends_with(expr, expr)`,
@@ -162,8 +165,9 @@ Supported today:
   double-quoted strings preserve the backslash and escaped byte.
 - Direct variable assignment and reads for scalar values through the generated
   native runtime symbol table.
-- Generic runtime diagnostics for undefined direct variable reads. The read
-  still yields `null` after emitting a warning boundary.
+- Runtime diagnostics for undefined direct variable reads include the generated
+  source path and source line. The read still yields `null` after emitting a
+  warning boundary.
 - Boxed scalar `+`, `-`, `*`, `**`, `/`, and `%` numeric arithmetic and `.` string
   concatenation expressions, including chained expressions and assignment
   results. The parser treats `**` as right-associative with PHP's precedence
@@ -177,7 +181,7 @@ Supported today:
 - Direct named-variable compound assignment for `+=`, `-=`, `*=`, `/=`, `%=`,
   `**=`, `.=`, `&=`, `|=`, `^=`, `<<=`, and `>>=`. These lower as a variable
   read, the matching boxed binary helper, then a variable write, preserving the
-  existing undefined-variable diagnostic boundary.
+  existing source-spanned undefined-variable diagnostic boundary.
 - Parenthesized expressions, unary `+`, unary `-`, unary `!`, unary bitwise
   `~`, `(int)`, `(float)`, `(string)`, `(bool)`, and deprecated
   non-canonical `(integer)`, `(double)`, `(binary)`, and `(boolean)` casts for
@@ -270,6 +274,11 @@ Supported today:
   source-order case matching with boxed loose comparison, PHP-style fallthrough,
   one `default`, and `break;` or explicit-level `break N;` over active
   switch/loop targets.
+- `continue;` and explicit-level `continue N;` over active loop/switch targets.
+  `while` continues recheck the condition, `do while` continues jump to the
+  post-test condition, `for` continues run update clauses before the next
+  condition check, and `continue` targeting a `switch` emits the current
+  PHP-style warning boundary before acting like `break`.
 - User labels such as `L1:` and `goto L1;` statements inside the currently
   generated main function, including source-spanned fatal diagnostics for
   undefined target labels, duplicate labels, and `goto` jumps into active loop
@@ -298,8 +307,9 @@ Unsupported today:
   keyword boolean tails after direct assignment statements until assignment
   expressions are modeled, ternary expressions beyond the modeled nested
   associativity diagnostics, chained comparison parse errors, unbraced switch
-  bodies and alternate control-flow syntax, `foreach`, `continue`, PHP-exact
-  break/continue diagnostics, labels/goto inside unsupported functions,
+  bodies and alternate control-flow syntax, `foreach`, PHP-exact
+  break/continue diagnostics beyond the currently modeled level/context fatals
+  and switch-target warning, labels/goto inside unsupported functions,
   classes, and `try`/`finally` constructs, full
   switch parity for unsupported value types and alternate syntax,
   PHP-exact `return` value/include/function semantics,
@@ -310,8 +320,10 @@ Unsupported today:
   warning text/file/line/error-handler behavior, inline HTML before `<?php` or
   between PHP blocks, internal functions outside the registered
   internal-function subset,
-  namespace/class constants, `define()`'s legacy case-insensitive flag, and
-  built-in constants other than the currently modeled `E_ERROR`, `PHP_EOL`,
+  exact undefined-constant and unsupported-expression-statement diagnostics,
+  namespace/class constants, global `const` duplicate diagnostics and ordering
+  parity with runtime `define()`, `define()`'s legacy case-insensitive flag,
+  and built-in constants other than the currently modeled `E_ERROR`, `PHP_EOL`,
   `DIRECTORY_SEPARATOR`, `PATH_SEPARATOR`, `PHP_INT_MIN`, `PHP_INT_MAX`,
   `PHP_INT_SIZE`, `INF`, `NAN`, `M_PI`, and the modeled PHP math `M_*`
   constants, objects, resources, references,
