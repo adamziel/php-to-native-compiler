@@ -5017,6 +5017,96 @@ echo \"Done\\n\";",
 }
 
 #[test]
+fn compile_string_offset_writes_to_native_binary() {
+    let root = temp_dir("ptn-native-string-offset-writes");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("string-offset-writes.php");
+    let output = root.join("string-offset-writes-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$str = \"abcd\";\n\
+$str[1] = \"Z\";\n\
+var_dump($str);\n\
+$str[-1] = \"!\";\n\
+var_dump($str);\n\
+$str[6] = \"Q\";\n\
+var_dump($str);\n\
+$str[\"0xC\"] = \"T\";\n\
+var_dump($str);\n\
+$str[\"-9bad\"] = \"N\";\n\
+var_dump($str);\n\
+$str[true] = \"XYZ\";\n\
+var_dump($str);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(4) \"aZcd\"\nstring(4) \"aZc!\"\nstring(7) \"aZc!  Q\"\n\nWarning: Illegal string offset \"0xC\" in ptn on line 9\nstring(7) \"TZc!  Q\"\n\nWarning: Illegal string offset \"-9bad\" in ptn on line 11\n\nWarning: Illegal string offset -9 in ptn on line 11\nstring(7) \"TZc!  Q\"\n\nWarning: String offset cast occurred in ptn on line 13\n\nWarning: Only the first byte will be assigned to the string offset in ptn on line 13\nstring(7) \"TXc!  Q\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_string_offset_mutation_boundaries_to_native_binary() {
+    let root = temp_dir("ptn-native-string-offset-mutation-boundaries");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("string-offset-mutation-boundaries.php");
+    let output = root.join("string-offset-mutation-boundaries-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function mark($name, $value) {\n\
+    echo $name . \"\\n\";\n\
+    return $value;\n\
+}\n\
+$str = \"abcd\";\n\
+try {\n\
+    $str[] = \"Z\";\n\
+} catch (\\Error $e) {\n\
+    echo $e->getMessage() . \"\\n\";\n\
+}\n\
+try {\n\
+    $str[0] = \"\";\n\
+} catch (\\Error $e) {\n\
+    echo $e->getMessage() . \"\\n\";\n\
+}\n\
+try {\n\
+    $str[mark(\"assign-op-offset\", 1)] .= mark(\"assign-op-rhs\", \"Q\");\n\
+} catch (\\Error $e) {\n\
+    echo $e->getMessage() . \"\\n\";\n\
+}\n\
+try {\n\
+    unset($str[1]);\n\
+} catch (\\Error $e) {\n\
+    echo $e->getMessage() . \"\\n\";\n\
+}\n\
+try {\n\
+    $str[\"bad\"] = \"Q\";\n\
+} catch (\\TypeError $e) {\n\
+    echo $e->getMessage() . \"\\n\";\n\
+}\n\
+echo $str . \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "[] operator not supported for strings\nCannot assign an empty string to a string offset\nassign-op-offset\nassign-op-rhs\nCannot use assign-op operators with string offsets\nCannot unset string offsets\nCannot access offset of type string on string\nabcd\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_try_catches_string_offset_type_error_to_native_binary() {
     let root = temp_dir("ptn-native-try-catch-string-offset-type-error");
     fs::create_dir_all(&root).unwrap();
@@ -6840,9 +6930,10 @@ fn support_docs_name_var_dump_unsupported_edges() {
     let support = fs::read_to_string("docs/SUPPORT.md").unwrap();
     assert!(support.contains("Array read expressions"));
     assert!(support.contains("String offset read expressions"));
-    assert!(support.contains("Array element mutation"));
-    assert!(support.contains("String offset writes/mutation"));
-    assert!(support.contains("recursive arrays"));
+    assert!(support.contains("Variable-root ordered-array element mutation"));
+    assert!(support.contains("Direct-variable string offset assignment"));
+    assert!(support.contains("string-offset copy-on-write"));
+    assert!(support.contains("Recursive arrays"));
     assert!(support.contains("objects"));
     assert!(support.contains("resources"));
     assert!(support.contains("references"));

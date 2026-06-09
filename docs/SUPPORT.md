@@ -88,12 +88,27 @@ supports in generated native binaries.
   reads from literal or grouped array expressions. Reads use the current
   ordered-array key canonicalization path; undefined keys and non-array
   containers emit a warning boundary and yield `null`.
+- Variable-root ordered-array element mutation such as `$array[$key] = expr`,
+  `$array[] = expr`, keyed and append compound assignments over the current
+  compound operator set, and `unset($array[$key])`. Mutations use the same
+  integer/string key canonicalization and next-auto-key tracking as ordered
+  arrays.
 - String offset read expressions such as `$string[$offset]` for the current
   C-string-backed scalar string subset. Integer-compatible offsets, negative
   offsets, nested reads, integer strings, numeric prefix strings with PHP-style
-  illegal-offset warnings, and scalar cast warnings for `null`, booleans, and
+  illegal-offset warnings, float-looking/non-integer string offsets as
+  catchable `TypeError`, and scalar cast warnings for `null`, booleans, and
   floats are handled by the shared offset-read helper; out-of-range reads emit
   an uninitialized-offset warning and return an empty string.
+- Direct-variable string offset assignment such as `$string[$offset] = expr`
+  for the current C-string-backed scalar string subset. Integer-compatible
+  offsets, negative offsets, numeric-prefix string offsets with PHP-style
+  illegal-offset warnings, scalar cast warnings for `null`, booleans, and
+  floats, positive out-of-range padding with spaces, and first-byte assignment
+  warnings for multi-byte RHS strings are handled by the shared string-offset
+  write helper. Empty RHS strings, string append syntax, string-offset
+  assign-op operators, and string-offset `unset()` emit the modeled catchable
+  `Error` boundaries.
 - `array_key_exists()` over current ordered-array values, using the same
   integer/string key canonicalization path as array literals and reads. `null`
   keys emit the current PHP-like deprecation boundary and canonicalize to the
@@ -385,16 +400,15 @@ supports in generated native binaries.
   `func_get_args()`/`func_num_args()`, and PHP-exact function/include return
   propagation.
 - Type predicate coverage for arrays, objects, resources, and references.
-- Array element mutation, append/unset, recursive arrays, objects,
-  resources, references, copy-on-write, and `var_dump()` reference identity
-  output.
+- Recursive arrays, objects, resources, references, copy-on-write, and
+  `var_dump()` reference identity output.
 - Exact `array_key_exists()` TypeError parity for unsupported key/container
   types, object property checks, resources, references, and error-handler
   routing.
-- String offset writes/mutation, object/property/reference
-  `isset()`/`empty()` semantics, null-coalescing offset semantics,
-  string-offset references, string-offset unset, and complete TypeError/
-  exception parity for unsupported string offset key types.
+- Object/property/reference `isset()`/`empty()` semantics, null-coalescing
+  offset semantics, string-offset references, string-offset copy-on-write
+  behavior, and complete TypeError/exception parity for unsupported string
+  offset key types.
 - Embedded NUL strings in runtime string values, `var_dump()` string
   length/output, `strlen()`, `str_rot13()`, `strcmp()`, `bin2hex()`, `chr()`,
   `hex2bin()`, `str_contains()`, `quotemeta()`, `chunk_split()`,

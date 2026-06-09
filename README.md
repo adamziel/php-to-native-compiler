@@ -236,6 +236,15 @@ Supported today:
   catchable `TypeError`, and scalar cast warnings for `null`, booleans, and
   floats are handled by the shared offset-read helper; out-of-range reads emit
   an uninitialized-offset warning and return an empty string.
+- Direct-variable string offset assignment such as `$string[$offset] = expr`
+  for the current C-string-backed scalar string subset. Integer-compatible
+  offsets, negative offsets, numeric-prefix string offsets with PHP-style
+  illegal-offset warnings, scalar cast warnings for `null`, booleans, and
+  floats, positive out-of-range padding with spaces, and first-byte assignment
+  warnings for multi-byte RHS strings are handled by the shared string-offset
+  write helper. Empty RHS strings, string append syntax, string-offset
+  assign-op operators, and string-offset `unset()` emit the modeled catchable
+  `Error` boundaries.
 - `array_key_exists()` over current ordered-array values, using the same
   integer/string key canonicalization path as array literals and reads. `null`
   keys emit the current PHP-like deprecation boundary and canonicalize to the
@@ -315,13 +324,13 @@ Supported today:
 
 Unsupported today:
 
-- Nested array-dimension lvalues, string-offset writes/unset/assign-op
-  mutation, scalar-container autovivification parity such as `false` to array
+- Nested array-dimension lvalues, string-offset references, string-offset
+  copy-on-write behavior, scalar-container autovivification parity such as `false` to array
   conversion, recursive arrays, arrays with references/copy-on-write, objects,
   functions, classes, includes,
   references, resources, broad exception/object support, object/property/reference
   `isset()`/`empty()` semantics, null-coalescing offset semantics, string-offset
-  references/unset,
+  reference assignment,
   exact `array_key_exists()` TypeError parity for unsupported key/container
   types,
   nested array/object/reference compound-assignment lvalues,

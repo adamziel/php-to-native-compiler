@@ -3,14 +3,19 @@
 ## Progress Bar
 
 `[#########.] 54/59 PHPT rows passing`
-- Latest: 2026-06-09T18:20Z array-aware type predicate slice adds
+- Latest: 2026-06-09T18:27+02:00 direct-variable string offset assignment
+  now mutates current C-string-backed variable slots, while string append,
+  string-offset `unset()`, and string-offset assign-op forms emit explicit
+  catchable `Error` boundaries. Aggregate bounded PHPT patrol not rerun in
+  this branch.
+- Previous: 2026-06-09T18:20Z array-aware type predicate slice adds
   `is_array()` through the generic internal registry, with native scalar and
   ordered-array predicate coverage plus focused differential telemetry.
 - Prior: 2026-06-09T16:07Z focused array-lvalue telemetry passes
   `tests/basic/array_null_offset_deprecation.phpt` and
   `Zend/tests/assign_dim_op_undef.phpt`; `Zend/tests/offset_assign.phpt`
   still fails at the nested string-offset mutation boundary tracked by
-  `ptn-cqu.39`. Aggregate bounded patrol not rerun in this branch.
+  `ptn-cqu.39`.
 - Prior aggregate: 2026-06-09T15:27Z bounded PHPT patrol repeats 54/59; five
   array rows still fail.
 - Tests ported/passing: 54/59
@@ -2340,4 +2345,28 @@ Still unsupported after this array-lvalue slice: nested array-dimension
 lvalues, string-offset writes/unset/assign-op mutation, scalar-container
 autovivification parity such as `false` to array conversion, references,
 copy-on-write, recursive arrays, and object/property/static-property/
+variable-variable lvalues.
+
+Added direct-variable string offset assignment:
+
+- Generated root-variable offset writes now route existing string containers
+  through a string-specific mutation helper instead of treating them as scalar
+  array writes.
+- Supported writes cover integer-compatible offsets, negative offsets within
+  the current string, numeric-prefix string offsets with the existing illegal
+  offset warning boundary, scalar offset casts for `null`, booleans, and
+  floats, positive out-of-range padding with spaces, and first-byte assignment
+  warnings for multi-byte RHS strings.
+- Negative offsets outside the current string emit an `Illegal string offset`
+  warning and leave the string unchanged; empty RHS strings raise a catchable
+  `Error`.
+- String append syntax, string-offset `unset()`, and string-offset assign-op
+  forms now have explicit catchable `Error` boundaries instead of falling
+  through the ordered-array mutation lane.
+- Native tests prove successful direct string offset writes plus the append,
+  empty-RHS, assign-op, unset, and invalid-key error boundaries.
+
+Still unsupported after this string-offset write slice: nested
+array/string-dimension lvalues, string-offset references, copy-on-write,
+embedded-NUL string storage, and broader object/property/static-property/
 variable-variable lvalues.
