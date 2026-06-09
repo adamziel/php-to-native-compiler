@@ -171,9 +171,33 @@ fn parser_rejects_inline_html_before_open_tag() {
 }
 
 #[test]
-fn parser_rejects_inline_html_after_close_tag() {
-    let error = parser::parse("<?php print \"ok\"; ?> html").unwrap_err();
-    assert!(error.message.contains("inline HTML after close tag"));
+fn parser_accepts_inline_html_after_close_tag_as_output() {
+    let program = parser::parse("<?php print \"ok\"; ?> html").unwrap();
+    assert_eq!(program.statements.len(), 2);
+    assert!(matches!(
+        &program.statements[1],
+        Statement::InlineHtml { content, .. } if content == " html"
+    ));
+}
+
+#[test]
+fn parser_rejects_inline_html_between_php_blocks() {
+    let error = parser::parse("<?php print \"ok\"; ?> html <?php print \"again\";").unwrap_err();
+    assert!(error.message.contains("inline HTML between PHP blocks"));
+}
+
+#[test]
+fn parser_accepts_internal_call_statements_and_inline_html() {
+    let program = parser::parse("<?php VAR_DUMP(null, true, 2 < 3); ?>\nDONE\n").unwrap();
+    assert_eq!(program.statements.len(), 2);
+    assert!(matches!(
+        &program.statements[0],
+        Statement::Call { name, arguments, .. } if name == "var_dump" && arguments.len() == 3
+    ));
+    assert!(matches!(
+        &program.statements[1],
+        Statement::InlineHtml { content, .. } if content == "DONE\n"
+    ));
 }
 
 #[test]
@@ -407,6 +431,64 @@ fn compile_print_binary_expression_to_native_binary() {
         "Hello Ada 5\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_var_dump_scalars_to_native_binary() {
+    let root = temp_dir("ptn-native-var-dump-scalars");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("var-dump-scalars.php");
+    let output = root.join("var-dump-scalars-bin");
+    fs::write(
+        &input,
+        "<?php var_dump(null, true, false, (int)\"42\", -(1.5 + 0.5), (string)true, 2 < 3);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "NULL\nbool(true)\nbool(false)\nint(42)\nfloat(-2)\nstring(1) \"1\"\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_var_dump_null_phpt_shape_to_native_binary() {
+    let root = temp_dir("ptn-native-var-dump-null-phpt-shape");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("var-dump-null-phpt-shape.php");
+    let output = root.join("var-dump-null-phpt-shape-bin");
+    fs::write(&input, "<?php\n\nvar_dump(null);\n\n?>\nDONE\n").unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "NULL\nDONE\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_internal_call_arguments_evaluate_left_to_right_to_native_binary() {
+    let root = temp_dir("ptn-native-internal-call-left-to-right");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("internal-call-left-to-right.php");
+    let output = root.join("internal-call-left-to-right-bin");
+    fs::write(&input, "<?php var_dump($left, $right);").unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "NULL\nNULL\n");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        "Warning: Undefined variable $left\nWarning: Undefined variable $right\n"
+    );
 }
 
 #[test]
@@ -852,6 +934,31 @@ fn unsupported_constructs_fail_before_codegen() {
     assert!(unsupported_lvalue
         .message
         .contains("unsupported PHP token '['"));
+}
+
+#[test]
+fn var_dump_complex_edges_remain_unsupported_before_codegen() {
+    for source in [
+        "<?php var_dump([]);",
+        "<?php var_dump(new stdClass);",
+        "<?php var_dump(fopen('php://memory', 'r'));",
+        "<?php $array = []; $array[] = &$array; var_dump($array);",
+        "<?php $value = 1; $ref =& $value; var_dump($ref);",
+        "<?php var_dump(1e-5);",
+    ] {
+        assert!(
+            parser::parse(source).is_err(),
+            "expected unsupported var_dump edge to fail before codegen: {source}"
+        );
+    }
+}
+
+#[test]
+fn support_docs_name_var_dump_unsupported_edges() {
+    let support = fs::read_to_string("docs/SUPPORT.md").unwrap();
+    assert!(support.contains("Arrays, objects, resources, recursive structures, references"));
+    assert!(support.contains("Embedded NUL strings"));
+    assert!(support.contains("Full PHP float precision and formatting edge cases"));
 }
 
 fn temp_dir(name: &str) -> std::path::PathBuf {

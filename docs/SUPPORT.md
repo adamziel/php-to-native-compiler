@@ -9,7 +9,8 @@ supports in generated native binaries.
 - A Unix shebang at byte 0 before `<?php`.
 - PHP `//`, `#`, and `/* ... */` comments inside PHP code. One-line
   comments end at a newline or at a trailing `?>` close tag.
-- A trailing `?>` close tag when only whitespace follows it.
+- A `?>` close tag that ends PHP mode and emits following inline output, with
+  one immediately following newline swallowed.
 - `echo` statements.
 - Statement-form `print expr;` for the same scalar expression subset as echo.
 - String, integer, float, boolean, and null literals.
@@ -39,6 +40,13 @@ supports in generated native binaries.
 - Boxed scalar comparison operators `==`, `!=`, `<`, `<=`, `>`, and `>=`.
 - Boxed scalar boolean operators `&&` and `||`, with short-circuit evaluation
   over PHP truthiness for the currently supported scalar values.
+- Simple statement-form internal calls such as `var_dump(expr, ...)`.
+- Internal-call arguments are materialized left-to-right before generated C
+  runtime dispatch.
+- `var_dump()` output for current boxed scalar values: `NULL`, `bool(...)`,
+  `int(...)`, `float(...)`, and `string(length) "value"`.
+- A minimal `phpc` runner for supported PHPT rows. It compiles scripts or `-r`
+  snippets to temporary native binaries through the normal compiler pipeline.
 
 ## Not Yet Supported
 
@@ -54,7 +62,13 @@ supports in generated native binaries.
 - Comparison operators `===`, `!==`, `<=>`, keyword boolean operators
   `and`/`or`, PHP-exact chained comparison parse errors, and complete
   comparison parity for unsupported value types.
-- Inline HTML before `<?php`, between PHP blocks, or after a closing PHP tag.
+- Inline HTML before `<?php` or between PHP blocks.
+- Internal functions other than `var_dump()`.
+- Arrays, objects, resources, recursive structures, references, and
+  `var_dump()` reference identity output.
+- Embedded NUL strings in `var_dump()` string length/output.
+- Full PHP float precision and formatting edge cases for `var_dump()`.
+- Complete PHP CLI and PHPT runner option parity for `phpc`.
 - Doc comment retention for reflection or metadata. Comments are skipped today.
 - Compound assignment operators other than `+=`, `-=`, `*=`, `/=`, `%=`, and
   `.=`: `**=`, `&=`, `|=`, `^=`, `<<=`, `>>=`, and `??=`.

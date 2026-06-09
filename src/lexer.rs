@@ -4,8 +4,10 @@ use crate::diagnostic::{Diagnostic, Result, SourceSpan};
 pub enum TokenKind {
     OpenTag,
     CloseTag,
+    InlineHtml(String),
     Echo,
     Print,
+    Identifier(String),
     String(String),
     Int(i64),
     Float(f64),
@@ -82,15 +84,8 @@ impl<'a> Lexer<'a> {
     fn lex(mut self) -> Result<Vec<Token>> {
         while let Some(ch) = self.peek_char() {
             if self.closed_php {
-                if ch.is_whitespace() {
-                    self.bump_char();
-                    continue;
-                }
-
-                return Err(Diagnostic::new(
-                    "inline HTML after close tag is unsupported",
-                    Some(self.current_char_span()),
-                ));
+                self.lex_inline_html()?;
+                continue;
             }
 
             if !self.seen_open_tag {
@@ -205,6 +200,28 @@ impl<'a> Lexer<'a> {
                 break;
             }
         }
+    }
+
+    fn lex_inline_html(&mut self) -> Result<()> {
+        let start = self.current_span(0);
+        let mut content = String::new();
+        while let Some(ch) = self.peek_char() {
+            if self.rest().starts_with("<?php") {
+                return Err(Diagnostic::new(
+                    "inline HTML between PHP blocks is unsupported",
+                    Some(self.current_span(5)),
+                ));
+            }
+            content.push(ch);
+            self.bump_char();
+        }
+        if !content.is_empty() {
+            self.tokens.push(Token {
+                kind: TokenKind::InlineHtml(content),
+                span: SourceSpan::new(start.byte_start, self.cursor, start.line, start.column),
+            });
+        }
+        Ok(())
     }
 
     fn lex_string(&mut self, quote: char) -> Result<()> {
@@ -327,7 +344,8 @@ impl<'a> Lexer<'a> {
                 break;
             }
         }
-        let kind = match text.as_str() {
+        let lowercase = text.to_ascii_lowercase();
+        let kind = match lowercase.as_str() {
             "echo" => TokenKind::Echo,
             "print" => TokenKind::Print,
             "true" => TokenKind::True,
@@ -337,12 +355,7 @@ impl<'a> Lexer<'a> {
             "float" => TokenKind::FloatType,
             "string" => TokenKind::StringType,
             "bool" => TokenKind::BoolType,
-            _ => {
-                return Err(Diagnostic::new(
-                    format!("unsupported identifier `{text}`"),
-                    Some(start),
-                ))
-            }
+            _ => TokenKind::Identifier(text),
         };
         self.tokens.push(Token {
             kind,
@@ -365,7 +378,19 @@ impl<'a> Lexer<'a> {
     }
 
     fn push_close_tag(&mut self) {
-        self.push_fixed(TokenKind::CloseTag, 2);
+        let span = self.current_span(2);
+        self.bump_char();
+        self.bump_char();
+        if self.rest().starts_with("\r\n") {
+            self.bump_char();
+            self.bump_char();
+        } else if self.rest().starts_with('\n') {
+            self.bump_char();
+        }
+        self.tokens.push(Token {
+            kind: TokenKind::CloseTag,
+            span,
+        });
         self.closed_php = true;
     }
 

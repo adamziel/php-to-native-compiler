@@ -21,9 +21,9 @@ model grows toward full PHP semantics.
 Current runtime/compiler slices:
 
 - The lexer recognizes the supported PHP code envelope: optional byte-zero
-  Unix shebang, required `<?php`, PHP comments inside the code region, and a
-  trailing `?>` only when the remainder is whitespace. General inline HTML and
-  multi-block PHP/HTML mode switching remain unsupported.
+  Unix shebang, required `<?php`, PHP comments inside the code region, and one
+  `?>` close tag that switches to inline output through EOF. Inline HTML before
+  `<?php` and multi-block PHP/HTML mode switching remain unsupported.
 - Direct variables lower to generated C `PtnRuntime` symbol-table load/store
   calls.
 - Direct variable reads pass through a runtime helper that emits a generic
@@ -53,6 +53,11 @@ Current runtime/compiler slices:
   and `||` emit native C branches that short-circuit over boxed PHP truthiness.
   The ordered comparison helpers share `ptn_compare_order`, so `<`, `<=`, `>`,
   and `>=` use one scalar ordering path.
+- Simple statement-form calls lower to IR internal-call instructions carrying a
+  normalized function name and lowered arguments. The generated C backend
+  materializes arguments left-to-right and dispatches through a small internal
+  function registry. `var_dump` is currently the only registered internal
+  function, and it formats the boxed scalar runtime values directly.
 
 Near-term architecture targets:
 
@@ -70,5 +75,8 @@ Near-term architecture targets:
 - Complete comparison parity for arrays, objects, references, chained
   comparison parse errors, identity/spaceship operators, keyword boolean
   operators, and unsupported scalar edge cases.
+- A broader internal-function module system with shared argument parsing,
+  metadata, unsupported array/object/resource/reference diagnostics, and
+  PHP-exact `var_dump` precision/formatting behavior.
 - Explicit fallback boundaries for `eval`, variable variables, and runtime
   symbol mutation.

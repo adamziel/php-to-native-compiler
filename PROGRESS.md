@@ -226,3 +226,25 @@ Still unsupported for compound assignment: `**=`, `&=`, `|=`, `^=`, `<<=`,
 `>>=`, `??=`, array/object/string-offset/property/static-property/
 variable-variable lvalues, references, reference identity, and copy-on-write
 interactions.
+
+Implemented a narrow internal-call/output slice for scalar `var_dump()` on top
+of the grouping-aware baseline:
+
+- Lexer/parser support for identifier tokens, simple statement-form calls such
+  as `var_dump(expr, ...)`, and one close-tag inline-output segment after PHP
+  mode ends.
+- IR lowering for generic internal-call instructions carrying a function name
+  and lowered argument values.
+- Generated C internal-function dispatch with `var_dump` registered as the
+  first internal function rather than special-cased source text.
+- Scalar `var_dump` output for current boxed `PtnValue` types: `null`,
+  booleans, integers, floats, and strings.
+- A minimal `phpc` runner that can compile PHPT runner scripts/snippets through
+  the existing native compiler path for supported rows.
+- Native tests covering scalar `var_dump`, PHPT-shaped close-tag inline output,
+  left-to-right argument evaluation, unsupported complex var_dump edges, and
+  support-doc coverage for unsupported edges.
+
+Still unsupported for `var_dump`: arrays, objects, resources, recursion,
+references, embedded NUL strings, full PHP float precision/formatting edge
+cases, and complete PHP CLI/PHPT runner parity.

@@ -16,11 +16,12 @@ impl Parser {
     fn parse_program(&mut self) -> Result<Program> {
         self.expect_open_tag()?;
         let mut statements = Vec::new();
-        while !matches!(self.peek().kind, TokenKind::CloseTag | TokenKind::Eof) {
+        while !matches!(self.peek().kind, TokenKind::Eof) {
+            if matches!(self.peek().kind, TokenKind::OpenTag | TokenKind::CloseTag) {
+                self.advance();
+                continue;
+            }
             statements.push(self.parse_statement()?);
-        }
-        if matches!(self.peek().kind, TokenKind::CloseTag) {
-            self.advance();
         }
         Ok(Program { statements })
     }
@@ -29,7 +30,9 @@ impl Parser {
         match self.peek().kind {
             TokenKind::Echo => self.parse_echo(),
             TokenKind::Print => self.parse_print(),
+            TokenKind::Identifier(_) => self.parse_call_statement(),
             TokenKind::Variable(_) => self.parse_assignment(),
+            TokenKind::InlineHtml(_) => self.parse_inline_html(),
             _ => Err(Diagnostic::new(
                 "expected statement",
                 Some(self.peek().span),
@@ -69,6 +72,40 @@ impl Parser {
         let expression = self.parse_expr()?;
         self.expect_statement_terminator()?;
         Ok(Statement::Print { expression, span })
+    }
+
+    fn parse_call_statement(&mut self) -> Result<Statement> {
+        let token = self.advance().clone();
+        let TokenKind::Identifier(name) = token.kind else {
+            return Err(Diagnostic::new("expected function name", Some(token.span)));
+        };
+        self.expect_left_paren()?;
+        let mut arguments = Vec::new();
+        if !matches!(self.peek().kind, TokenKind::RightParen) {
+            arguments.push(self.parse_expr()?);
+            while matches!(self.peek().kind, TokenKind::Comma) {
+                self.advance();
+                arguments.push(self.parse_expr()?);
+            }
+        }
+        self.expect_right_paren()?;
+        self.expect_statement_terminator()?;
+        Ok(Statement::Call {
+            name: name.to_ascii_lowercase(),
+            arguments,
+            span: token.span,
+        })
+    }
+
+    fn parse_inline_html(&mut self) -> Result<Statement> {
+        let token = self.advance().clone();
+        let TokenKind::InlineHtml(content) = token.kind else {
+            return Err(Diagnostic::new("expected inline HTML", Some(token.span)));
+        };
+        Ok(Statement::InlineHtml {
+            content,
+            span: token.span,
+        })
     }
 
     fn parse_expr(&mut self) -> Result<Expr> {
@@ -249,11 +286,23 @@ impl Parser {
                 self.advance();
                 Ok(())
             }
-            TokenKind::CloseTag => Ok(()),
+            TokenKind::CloseTag | TokenKind::Eof => Ok(()),
             _ => Err(Diagnostic::new(
                 "expected semicolon",
                 Some(self.peek().span),
             )),
+        }
+    }
+
+    fn expect_left_paren(&mut self) -> Result<SourceSpan> {
+        let token = self.advance();
+        if matches!(token.kind, TokenKind::LeftParen) {
+            Ok(token.span)
+        } else {
+            Err(Diagnostic::new(
+                "expected left parenthesis",
+                Some(token.span),
+            ))
         }
     }
 

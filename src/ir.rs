@@ -10,8 +10,15 @@ pub struct Module {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Instruction {
-    Store { name: String, value: ValueExpr },
+    Store {
+        name: String,
+        value: ValueExpr,
+    },
     Echo(ValueExpr),
+    InternalCall {
+        name: String,
+        arguments: Vec<ValueExpr>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -81,6 +88,14 @@ pub fn lower(program: &Program) -> Module {
                     value: lower_assignment_value(name, *op, value),
                 });
             }
+            Statement::Call {
+                name, arguments, ..
+            } => {
+                instructions.push(Instruction::InternalCall {
+                    name: name.clone(),
+                    arguments: arguments.iter().map(lower_expr).collect(),
+                });
+            }
             Statement::Echo { expressions, .. } => {
                 for expression in expressions {
                     instructions.push(Instruction::Echo(lower_expr(expression)));
@@ -88,6 +103,9 @@ pub fn lower(program: &Program) -> Module {
             }
             Statement::Print { expression, .. } => {
                 instructions.push(Instruction::Echo(lower_expr(expression)));
+            }
+            Statement::InlineHtml { content, .. } => {
+                instructions.push(Instruction::Echo(ValueExpr::String(content.clone())));
             }
         }
     }

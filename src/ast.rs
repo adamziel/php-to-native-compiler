@@ -13,12 +13,21 @@ pub enum Statement {
         value: Expr,
         span: SourceSpan,
     },
+    Call {
+        name: String,
+        arguments: Vec<Expr>,
+        span: SourceSpan,
+    },
     Echo {
         expressions: Vec<Expr>,
         span: SourceSpan,
     },
     Print {
         expression: Expr,
+        span: SourceSpan,
+    },
+    InlineHtml {
+        content: String,
         span: SourceSpan,
     },
 }

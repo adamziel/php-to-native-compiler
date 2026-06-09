@@ -29,6 +29,9 @@ pub fn emit_c(module: &Module) -> String {
                 out.push_str(&emitted_value);
                 out.push_str(");\n");
             }
+            Instruction::InternalCall { name, arguments } => {
+                values.emit_internal_call(&mut out, name, arguments);
+            }
         }
     }
     out.push_str("    ptn_runtime_free(&runtime);\n");
@@ -275,6 +278,34 @@ impl ValueEmitter {
         temp
     }
 
+    fn emit_internal_call(&mut self, out: &mut String, name: &str, arguments: &[ValueExpr]) {
+        if arguments.is_empty() {
+            out.push_str("    ptn_call_internal(&runtime, \"");
+            out.push_str(&c_string(name));
+            out.push_str("\", 0, NULL);\n");
+            return;
+        }
+
+        let mut temps = Vec::with_capacity(arguments.len());
+        for argument in arguments {
+            temps.push(self.emit_materialized_value(out, argument));
+        }
+
+        let args_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&args_temp);
+        out.push_str("[] = { ");
+        out.push_str(&temps.join(", "));
+        out.push_str(" };\n");
+        out.push_str("    ptn_call_internal(&runtime, \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        out.push_str(&arguments.len().to_string());
+        out.push_str(", ");
+        out.push_str(&args_temp);
+        out.push_str(");\n");
+    }
+
     fn next_temp(&mut self) -> String {
         let temp = format!("ptn_tmp_{}", self.next_temp);
         self.next_temp += 1;
@@ -363,6 +394,14 @@ typedef struct {
     PtnSymbolTable symbols;
     PtnDiagnosticSink diagnostics;
 } PtnRuntime;
+
+typedef void (*PtnInternalFunctionHandler)(PtnRuntime *runtime, size_t argc, const PtnValue *args);
+
+typedef struct {
+    const char *name;
+    size_t min_args;
+    PtnInternalFunctionHandler handler;
+} PtnInternalFunction;
 
 static PTN_UNUSED PtnValue ptn_null(void) {
     PtnValue value;
@@ -480,6 +519,33 @@ static void ptn_emit_undefined_variable_warning(PtnDiagnosticSink *diagnostics, 
     fputs("Warning: Undefined variable $", stream);
     fputs(name, stream);
     fputc('\n', stream);
+}
+
+static void ptn_emit_undefined_function_error(PtnDiagnosticSink *diagnostics, const char *name) {
+    FILE *stream = diagnostics->stream == NULL ? stderr : diagnostics->stream;
+    fputs("Fatal error: Call to undefined function ", stream);
+    fputs(name, stream);
+    fputs("()\n", stream);
+}
+
+static void ptn_emit_argument_count_error(
+    PtnDiagnosticSink *diagnostics,
+    const char *name,
+    size_t min_args,
+    size_t argc
+) {
+    FILE *stream = diagnostics->stream == NULL ? stderr : diagnostics->stream;
+    fputs("Fatal error: ", stream);
+    fputs(name, stream);
+    fputs("() expects at least ", stream);
+    fprintf(stream, "%zu", min_args);
+    fputs(" argument", stream);
+    if (min_args != 1) {
+        fputc('s', stream);
+    }
+    fputs(", ", stream);
+    fprintf(stream, "%zu", argc);
+    fputs(" given\n", stream);
 }
 
 static void ptn_runtime_init(PtnRuntime *runtime) {
@@ -943,7 +1009,7 @@ static PTN_UNUSED PtnValue ptn_cast_bool(PtnValue value) {
     return ptn_bool(ptn_is_truthy(value));
 }
 
-static void ptn_echo(PtnValue value) {
+static PTN_UNUSED void ptn_echo(PtnValue value) {
     switch (value.type) {
         case PTN_NULL:
             break;
@@ -962,5 +1028,55 @@ static void ptn_echo(PtnValue value) {
             fputs(value.as.string, stdout);
             break;
     }
+}
+
+static void ptn_var_dump_value(PtnValue value) {
+    switch (value.type) {
+        case PTN_NULL:
+            fputs("NULL\n", stdout);
+            break;
+        case PTN_BOOL:
+            fputs(value.as.boolean ? "bool(true)\n" : "bool(false)\n", stdout);
+            break;
+        case PTN_INT:
+            printf("int(%lld)\n", (long long)value.as.integer);
+            break;
+        case PTN_FLOAT:
+            printf("float(%.14g)\n", value.as.floating);
+            break;
+        case PTN_STRING:
+            printf("string(%zu) \"", strlen(value.as.string));
+            fputs(value.as.string, stdout);
+            fputs("\"\n", stdout);
+            break;
+    }
+}
+
+static void ptn_internal_var_dump(PtnRuntime *runtime, size_t argc, const PtnValue *args) {
+    (void)runtime;
+    for (size_t i = 0; i < argc; i++) {
+        ptn_var_dump_value(args[i]);
+    }
+}
+
+static PTN_UNUSED void ptn_call_internal(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args) {
+    static const PtnInternalFunction functions[] = {
+        { "var_dump", 1, ptn_internal_var_dump },
+    };
+
+    for (size_t i = 0; i < sizeof(functions) / sizeof(functions[0]); i++) {
+        const PtnInternalFunction *function = &functions[i];
+        if (strcmp(function->name, name) == 0) {
+            if (argc < function->min_args) {
+                ptn_emit_argument_count_error(&runtime->diagnostics, name, function->min_args, argc);
+                exit(255);
+            }
+            function->handler(runtime, argc, args);
+            return;
+        }
+    }
+
+    ptn_emit_undefined_function_error(&runtime->diagnostics, name);
+    exit(255);
 }
 "#;

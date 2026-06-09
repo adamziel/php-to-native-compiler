@@ -123,7 +123,7 @@ if [ "$emit_c" -eq 1 ]; then
     compile_args+=(--emit-c)
 fi
 
-cargo run --quiet -- "${compile_args[@]}"
+cargo run --quiet --bin ptn -- "${compile_args[@]}"
 
 php_stdout="$tmp/php.stdout"
 php_stderr="$tmp/php.stderr"

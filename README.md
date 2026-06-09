@@ -17,10 +17,15 @@ Supported today:
 - `<?php` open tag.
 - A Unix shebang at the start of the file before `<?php`.
 - PHP `//`, `#`, and `/* ... */` comments inside PHP code.
-- A trailing `?>` close tag when only whitespace follows it.
+- A `?>` close tag that ends PHP mode and emits following inline output, with
+  the first immediately following newline swallowed as PHP does.
 - `echo` statements.
 - Statement-form `print expr;` for the same scalar expression subset as
   `echo`; emitted native code uses the same boxed output conversion path.
+- Simple statement-form internal calls such as `var_dump(expr, ...)`, lowered
+  through an IR internal-call node and generated C runtime dispatch.
+- `var_dump()` output for the current boxed scalar `PtnValue` types: `null`,
+  booleans, integers, floats, and strings.
 - String, integer, float, boolean, and null literals.
 - Direct variable assignment and reads for scalar values through the generated
   native runtime symbol table.
@@ -55,10 +60,12 @@ Unsupported today:
   unsupported types, identity/spaceship comparison operators, keyword boolean
   operators, chained comparison parse errors, complete overflow parity, exact
   scalar cast overflow behavior, PHP-exact warning
-  text/file/line/error-handler behavior, inline HTML before `<?php`, between
-  PHP blocks, or after a closing PHP tag, doc comment retention, variable
-  variables, and dynamic fallback. These are architecture targets, not excuses
-  for exact-shape hacks.
+  text/file/line/error-handler behavior, inline HTML before `<?php` or between
+  PHP blocks, internal functions other than `var_dump()`, arrays, objects,
+  resources, recursion, references, embedded NUL string handling, and full PHP
+  precision/formatting edge cases for `var_dump()`, doc comment retention,
+  variable variables, and dynamic fallback. These are architecture targets, not
+  excuses for exact-shape hacks.
 
 ## Build
 
@@ -75,15 +82,27 @@ cargo test
 ## Compile a PHP File
 
 ```sh
-cargo run -- compile examples/hello.php -o /tmp/ptn-hello
+cargo run --bin ptn -- compile examples/hello.php -o /tmp/ptn-hello
 /tmp/ptn-hello
 ```
 
+## PHPT Runner Telemetry
+
+PTN includes a minimal `phpc` runner for direct PHPT execution of the currently
+supported native subset:
+
+```sh
+cargo build --bin phpc
+PHPC_BIN="$PWD/target/debug/phpc" php /path/to/php-src/run-tests.php -q -p "$PWD/target/debug/phpc" /path/to/test.phpt
+```
+
+The runner compiles each script or `-r` snippet to a temporary native binary
+and forwards the result. It is not a complete PHP CLI implementation.
+
 ## Differential Native Output Telemetry
 
-PTN does not yet provide a PHP-compatible `phpc` runner for direct PHPT
-execution. For the currently supported subset, compare native output against the
-system PHP CLI with:
+For the currently supported subset, compare native output against the system PHP
+CLI with:
 
 ```sh
 tools/diff-native-output.sh --snippet '<?php echo "Hello ", 42, "\n";'
