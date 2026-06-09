@@ -782,6 +782,51 @@ fn parser_accepts_shift_expressions_and_bare_constants() {
 }
 
 #[test]
+fn parser_accepts_global_const_declarations() {
+    let program = parser::parse(
+        "<?php const C = 0 && __NAMESPACE__, D = PHP_EOL, A = [\"x\" => 1]; var_dump(C, defined(\"D\"));",
+    )
+    .unwrap();
+
+    let Statement::Const { declarations, .. } = &program.statements[0] else {
+        panic!("expected const declaration");
+    };
+    assert_eq!(declarations.len(), 3);
+    assert_eq!(declarations[0].name, "C");
+    assert!(matches!(
+        &declarations[0].value,
+        Expr::Binary {
+            op: BinaryOp::And,
+            ..
+        }
+    ));
+    assert!(matches!(
+        &declarations[1].value,
+        Expr::Constant(name, _) if name == "PHP_EOL"
+    ));
+    assert!(matches!(
+        &declarations[2].value,
+        Expr::Array { elements, .. } if elements.len() == 1
+    ));
+}
+
+#[test]
+fn parser_rejects_dynamic_global_const_initializer() {
+    let error = parser::parse("<?php const C = $value;").unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("constant expression contains invalid operation"));
+}
+
+#[test]
+fn parser_rejects_nested_global_const_declaration() {
+    let error = parser::parse("<?php if (true) const C = 1;").unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("constant declarations must be at global scope"));
+}
+
+#[test]
 fn parser_accepts_global_magic_constants() {
     let program = parser::parse(
         "<?php var_dump(__LINE__, __FILE__, __DIR__, __FUNCTION__, __METHOD__, __CLASS__, __TRAIT__, __NAMESPACE__);",
@@ -2250,6 +2295,32 @@ fn compile_bug27443_defined_type_shape_to_native_binary() {
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "boolean");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_const_eval_and_phpt_shape_to_native_binary() {
+    let root = temp_dir("ptn-native-const-eval-and");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("const-eval-and.php");
+    let output = root.join("const-eval-and-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+const C = 0 && __namespace__;\n\
+var_dump(C);\n\
+var_dump(defined(\"C\"), defined(\"c\"));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(false)\nbool(true)\nbool(false)\n"
+    );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 

@@ -1193,3 +1193,24 @@ Added source-spanned parse diagnostics for unterminated block comments:
 Still unsupported after this diagnostic slice: broader parse-error wording
 parity, stack traces, error-handler routing, PHP-exact warning/notice
 formatting, and unsupported PHP token recovery.
+
+Added global-scope `const` declarations:
+
+- The lexer/parser/AST now recognize global `const NAME = expr;` declarations,
+  including comma-separated declarations and a bounded constant-expression
+  subset made from current literals, arrays, unary/cast/grouped expressions,
+  binary expressions, bare constants, and magic constants.
+- Nested `const` declarations are rejected before lowering so unsupported local
+  declaration shapes do not silently compile.
+- IR lowers declarations to `DefineConstant`, and the generated runtime stores
+  declared constants in a per-runtime constant table used by bare constant
+  reads and `defined()` before falling back to the modeled built-in constants.
+- Native tests prove parser acceptance/rejection and the public
+  `const_eval_and.phpt` source shape.
+- Focused public PHPT telemetry through `phpc` passes
+  `Zend/tests/const_eval_and.phpt`.
+
+Still unsupported after this global const slice: namespace/class constants,
+dynamic `define()`/`constant()`, duplicate constant diagnostics, full
+PHP-exact constant-expression parity, additional built-in/extension constants,
+and eval contexts.

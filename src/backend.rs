@@ -47,6 +47,14 @@ fn emit_instruction(
             out.push_str(&emitted_value);
             out.push_str(");\n");
         }
+        Instruction::DefineConstant { name, value } => {
+            let emitted_value = values.emit_value(out, value);
+            out.push_str("    ptn_runtime_define_constant(&runtime, \"");
+            out.push_str(&c_string(name));
+            out.push_str("\", ");
+            out.push_str(&emitted_value);
+            out.push_str(");\n");
+        }
         Instruction::Echo(value) => {
             let emitted_value = values.emit_value(out, value);
             out.push_str("    ptn_echo(");
@@ -857,6 +865,7 @@ typedef struct {
 
 typedef struct {
     PtnSymbolTable symbols;
+    PtnSymbolTable constants;
     PtnDiagnosticSink diagnostics;
 } PtnRuntime;
 
@@ -1217,10 +1226,12 @@ static void ptn_emit_warning(PtnDiagnosticSink *diagnostics, const char *message
 
 static void ptn_runtime_init(PtnRuntime *runtime) {
     ptn_symbols_init(&runtime->symbols);
+    ptn_symbols_init(&runtime->constants);
     ptn_diagnostics_init(&runtime->diagnostics, stderr);
 }
 
 static void ptn_runtime_free(PtnRuntime *runtime) {
+    ptn_symbols_free(&runtime->constants);
     ptn_symbols_free(&runtime->symbols);
 }
 
@@ -1235,6 +1246,10 @@ static PTN_UNUSED PtnValue ptn_runtime_read_variable(PtnRuntime *runtime, const 
     }
     ptn_emit_undefined_variable_warning(&runtime->diagnostics, name);
     return ptn_null();
+}
+
+static PTN_UNUSED void ptn_runtime_define_constant(PtnRuntime *runtime, const char *name, PtnValue value) {
+    ptn_symbols_set(&runtime->constants, name, value);
 }
 
 static PTN_UNUSED PtnNumber ptn_number_int(int64_t integer) {
@@ -2118,7 +2133,7 @@ static PTN_UNUSED int ptn_ascii_case_equal(const char *left, const char *right) 
     return *left == '\0' && *right == '\0';
 }
 
-static PTN_UNUSED int ptn_constant_value(const char *name, PtnValue *out) {
+static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out) {
     if (strcmp(name, "E_ERROR") == 0) {
         *out = ptn_int(1);
         return 1;
@@ -2264,14 +2279,21 @@ static void ptn_format_var_dump_float(double value, char *buffer, size_t buffer_
     snprintf(buffer, buffer_size, "%.17g", value);
 }
 
-static PTN_UNUSED int ptn_constant_is_defined(const char *name) {
+static PTN_UNUSED int ptn_runtime_constant_value(PtnRuntime *runtime, const char *name, PtnValue *out) {
+    if (ptn_symbols_get(&runtime->constants, name, out)) {
+        return 1;
+    }
+    return ptn_builtin_constant_value(name, out);
+}
+
+static PTN_UNUSED int ptn_runtime_constant_is_defined(PtnRuntime *runtime, const char *name) {
     PtnValue value;
-    return ptn_constant_value(name, &value);
+    return ptn_runtime_constant_value(runtime, name, &value);
 }
 
 static PTN_UNUSED PtnValue ptn_read_constant(PtnRuntime *runtime, const char *name) {
     PtnValue value;
-    if (ptn_constant_value(name, &value)) {
+    if (ptn_runtime_constant_value(runtime, name, &value)) {
         return value;
     }
     ptn_emit_undefined_constant_error(&runtime->diagnostics, name);
@@ -3005,11 +3027,10 @@ static const PtnInternalFunction *ptn_find_internal_function(const char *name) {
 }
 
 static PtnValue ptn_internal_defined(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
     (void)line;
     char *name = ptn_value_to_string(args[0]);
-    int exists = ptn_constant_is_defined(name);
+    int exists = ptn_runtime_constant_is_defined(runtime, name);
     free(name);
     return ptn_bool(exists);
 }

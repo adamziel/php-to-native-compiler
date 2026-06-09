@@ -110,12 +110,16 @@ Current runtime/compiler slices:
   returns a placeholder reporting level; `gettype` and scalar `is_*` predicates
   query the current boxed scalar/null value domain, while `is_finite`,
   `is_infinite`, and `is_nan` query modeled non-finite float constants;
-  `function_exists` shares the registry lookup path; and `defined` checks the
-  current constant-registry boundary, which includes the modeled PHP `E_ERROR`,
-  `PHP_EOL`, `DIRECTORY_SEPARATOR`, `PATH_SEPARATOR`, `PHP_INT_MIN`,
-  `PHP_INT_MAX`, `PHP_INT_SIZE`, `INF`, `NAN`, `M_PI`, and modeled PHP math
-  `M_*` constants from `constants_basic.phpt`. Fixed-arity internal functions
-  record min/max arity metadata while `var_dump` remains variadic.
+  `function_exists` shares the registry lookup path; and `defined` checks
+  global `const` declarations plus the modeled PHP `E_ERROR`, `PHP_EOL`,
+  `DIRECTORY_SEPARATOR`, `PATH_SEPARATOR`, `PHP_INT_MIN`, `PHP_INT_MAX`,
+  `PHP_INT_SIZE`, `INF`, `NAN`, `M_PI`, and modeled PHP math `M_*` constants
+  from `constants_basic.phpt`. Fixed-arity internal functions record min/max
+  arity metadata while `var_dump` remains variadic.
+- Global-scope `const` declarations parse as AST statements with a bounded
+  constant-expression subset, lower to IR `DefineConstant` instructions, and
+  populate a runtime constant table used by bare constant reads and `defined()`
+  before falling back to modeled built-in constants.
 - Global-scope magic constants lower to dedicated IR value expressions with
   source line and compile-file path metadata. The backend emits `__LINE__`,
   `__FILE__`, and `__DIR__` directly and resolves scope-dependent names to the
@@ -187,10 +191,11 @@ Near-term architecture targets:
   parity, scalar math diagnostic/type parity including `fdiv` unsupported
   operands, base-conversion precision/range parity, and PHP-exact `getmypid`
   process model parity across SAPIs and unsupported platforms.
-- User-defined functions, classes/methods, constants beyond the currently
-  modeled `E_ERROR`, `PHP_EOL`, `PHP_INT_MIN`, `PHP_INT_MAX`, `PHP_INT_SIZE`,
-  `INF`, `NAN`, `M_PI`, and modeled PHP math `M_*` constants, namespaced
-  symbols, autoloading, and
+- User-defined functions, classes/methods, namespace/class constants, dynamic
+  `define()`/`constant()`, duplicate constant diagnostics, constants beyond the
+  currently modeled `E_ERROR`, `PHP_EOL`, `PHP_INT_MIN`, `PHP_INT_MAX`,
+  `PHP_INT_SIZE`, `INF`, `NAN`, `M_PI`, and modeled PHP math `M_*` constants,
+  namespaced symbols, autoloading, and
   disabled-functions behavior in symbol-existence predicates.
 - Scope-aware magic constants in functions, methods, classes, traits,
   namespaces, includes, and eval contexts.

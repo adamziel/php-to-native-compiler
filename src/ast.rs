@@ -31,6 +31,10 @@ pub enum Statement {
         expression: Expr,
         span: SourceSpan,
     },
+    Const {
+        declarations: Vec<ConstDeclaration>,
+        span: SourceSpan,
+    },
     If {
         condition: Expr,
         then_body: Vec<Statement>,
@@ -81,6 +85,13 @@ pub enum Statement {
 pub struct SwitchCase {
     pub condition: Option<Expr>,
     pub body: Vec<Statement>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ConstDeclaration {
+    pub name: String,
+    pub value: Expr,
     pub span: SourceSpan,
 }
 

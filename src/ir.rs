@@ -22,6 +22,10 @@ pub enum Instruction {
         name: String,
         op: IncDecOp,
     },
+    DefineConstant {
+        name: String,
+        value: ValueExpr,
+    },
     Echo(ValueExpr),
     InternalCall {
         name: String,
@@ -204,6 +208,14 @@ fn lower_statements(statements: &[Statement]) -> Vec<Instruction> {
                     name: name.clone(),
                     op: lower_inc_dec_op(*op),
                 });
+            }
+            Statement::Const { declarations, .. } => {
+                for declaration in declarations {
+                    instructions.push(Instruction::DefineConstant {
+                        name: declaration.name.clone(),
+                        value: lower_expr(&declaration.value),
+                    });
+                }
             }
             Statement::Call {
                 name,

@@ -11,6 +11,9 @@ supports in generated native binaries.
   comments end at a newline or at a trailing `?>` close tag.
 - A `?>` close tag that ends PHP mode and emits following inline output, with
   one immediately following newline swallowed.
+- Global-scope `const NAME = expr;` declarations for the currently supported
+  constant-expression subset. Declared constants are visible to bare constant
+  reads and `defined()`.
 - `echo` statements.
 - Statement-form `print expr;` for the same scalar expression subset as echo.
 - String, integer, float, boolean, and null literals. Numeric literals accept
@@ -150,8 +153,8 @@ supports in generated native binaries.
   `is_double()`, `is_string()`, `is_scalar()`, `is_finite()`,
   `is_infinite()`, and `is_nan()`.
 - `function_exists()` over the currently registered internal-function names.
-- `defined()` over the current constant registry, including the currently
-  modeled PHP constants `E_ERROR`, `PHP_EOL`, `DIRECTORY_SEPARATOR`,
+- `defined()` over global `const` declarations plus the current modeled
+  constant registry, including `E_ERROR`, `PHP_EOL`, `DIRECTORY_SEPARATOR`,
   `PATH_SEPARATOR`, `PHP_INT_MIN`, `PHP_INT_MAX`, `PHP_INT_SIZE`, `INF`,
   `NAN`, `M_PI`, and the modeled PHP math constants `M_E`, `M_LOG2E`,
   `M_LOG10E`, `M_LN2`, `M_LN10`, `M_PI_2`, `M_PI_4`, `M_1_PI`, `M_2_PI`,
@@ -221,7 +224,8 @@ supports in generated native binaries.
   offsets, properties, variable variables, or other non-direct-variable forms.
 - Internal functions outside the registered scalar subset.
 - User-defined functions in `function_exists()`.
-- User-defined constants and built-in PHP/extension constants other than the
+- Namespace/class constants, dynamic `define()`/`constant()`, duplicate
+  constant diagnostics, and built-in PHP/extension constants other than the
   currently modeled `E_ERROR`, `PHP_EOL`, `DIRECTORY_SEPARATOR`,
   `PATH_SEPARATOR`, `PHP_INT_MIN`, `PHP_INT_MAX`, `PHP_INT_SIZE`, `INF`,
   `NAN`, `M_PI`, and modeled PHP math `M_*` constants in `defined()`.

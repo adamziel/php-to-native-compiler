@@ -1,8 +1,8 @@
 use std::collections::HashSet;
 
 use crate::ast::{
-    ArrayElement, AssignmentOp, BinaryOp, CastKind, Expr, IncDecOp, MagicConstantKind, Program,
-    Statement, StringPart, SwitchCase, UnaryOp,
+    ArrayElement, AssignmentOp, BinaryOp, CastKind, ConstDeclaration, Expr, IncDecOp,
+    MagicConstantKind, Program, Statement, StringPart, SwitchCase, UnaryOp,
 };
 use crate::diagnostic::{Diagnostic, Result, SourceSpan};
 use crate::lexer::{lex, StringPart as TokenStringPart, Token, TokenKind};
@@ -11,12 +11,18 @@ const POWER_PRECEDENCE: u8 = 40;
 
 pub fn parse(source: &str) -> Result<Program> {
     let tokens = lex(source)?;
-    Parser { tokens, index: 0 }.parse_program()
+    Parser {
+        tokens,
+        index: 0,
+        block_depth: 0,
+    }
+    .parse_program()
 }
 
 struct Parser {
     tokens: Vec<Token>,
     index: usize,
+    block_depth: usize,
 }
 
 impl Parser {
@@ -45,6 +51,7 @@ impl Parser {
             TokenKind::Switch => self.parse_switch(),
             TokenKind::Break => self.parse_break(),
             TokenKind::Goto => self.parse_goto(),
+            TokenKind::Const => self.parse_const(),
             TokenKind::PlusPlus | TokenKind::MinusMinus => self.parse_prefix_increment_statement(),
             TokenKind::Identifier(_) if matches!(self.peek_next().kind, TokenKind::Colon) => {
                 self.parse_label()
@@ -131,6 +138,44 @@ impl Parser {
         let expression = self.parse_expr()?;
         self.expect_statement_terminator()?;
         Ok(Statement::Print { expression, span })
+    }
+
+    fn parse_const(&mut self) -> Result<Statement> {
+        let span = self.expect_const()?;
+        if self.block_depth != 0 {
+            return Err(Diagnostic::new(
+                "constant declarations must be at global scope",
+                Some(span),
+            ));
+        }
+
+        let mut declarations = vec![self.parse_const_declaration()?];
+        while matches!(self.peek().kind, TokenKind::Comma) {
+            self.advance();
+            declarations.push(self.parse_const_declaration()?);
+        }
+        self.expect_statement_terminator()?;
+        Ok(Statement::Const { declarations, span })
+    }
+
+    fn parse_const_declaration(&mut self) -> Result<ConstDeclaration> {
+        let token = self.advance().clone();
+        let TokenKind::Identifier(name) = token.kind else {
+            return Err(Diagnostic::new("expected constant name", Some(token.span)));
+        };
+        self.expect_equal()?;
+        let value = self.parse_expr()?;
+        if !is_supported_global_const_expr(&value) {
+            return Err(Diagnostic::new(
+                "constant expression contains invalid operation",
+                Some(value.span()),
+            ));
+        }
+        Ok(ConstDeclaration {
+            name,
+            value,
+            span: token.span,
+        })
     }
 
     fn parse_if(&mut self) -> Result<Statement> {
@@ -348,7 +393,7 @@ impl Parser {
                 self.peek().kind,
                 TokenKind::Case | TokenKind::Default | TokenKind::RightBrace | TokenKind::Eof
             ) {
-                body.push(self.parse_statement()?);
+                body.push(self.parse_nested_statement()?);
             }
             cases.push(SwitchCase {
                 condition,
@@ -430,7 +475,7 @@ impl Parser {
         self.expect_left_brace()?;
         let mut statements = Vec::new();
         while !matches!(self.peek().kind, TokenKind::RightBrace | TokenKind::Eof) {
-            statements.push(self.parse_statement()?);
+            statements.push(self.parse_nested_statement()?);
         }
         self.expect_right_brace()?;
         Ok(statements)
@@ -440,8 +485,15 @@ impl Parser {
         if matches!(self.peek().kind, TokenKind::LeftBrace) {
             self.parse_block()
         } else {
-            Ok(vec![self.parse_statement()?])
+            Ok(vec![self.parse_nested_statement()?])
         }
+    }
+
+    fn parse_nested_statement(&mut self) -> Result<Statement> {
+        self.block_depth += 1;
+        let statement = self.parse_statement();
+        self.block_depth -= 1;
+        statement
     }
 
     fn parse_expr(&mut self) -> Result<Expr> {
@@ -767,6 +819,15 @@ impl Parser {
         }
     }
 
+    fn expect_const(&mut self) -> Result<SourceSpan> {
+        let token = self.advance();
+        if matches!(token.kind, TokenKind::Const) {
+            Ok(token.span)
+        } else {
+            Err(Diagnostic::new("expected const", Some(token.span)))
+        }
+    }
+
     fn expect_if_like(&mut self) -> Result<SourceSpan> {
         let token = self.advance();
         if matches!(token.kind, TokenKind::If | TokenKind::Elseif) {
@@ -847,6 +908,15 @@ impl Parser {
             TokenKind::ShiftLeftEqual => Ok(AssignmentOp::ShiftLeftAssign),
             TokenKind::ShiftRightEqual => Ok(AssignmentOp::ShiftRightAssign),
             _ => Err(Diagnostic::new("expected assignment", Some(token.span))),
+        }
+    }
+
+    fn expect_equal(&mut self) -> Result<SourceSpan> {
+        let token = self.advance();
+        if matches!(token.kind, TokenKind::Equal) {
+            Ok(token.span)
+        } else {
+            Err(Diagnostic::new("expected equal", Some(token.span)))
         }
     }
 
@@ -1048,6 +1118,32 @@ fn lower_string_part(part: TokenStringPart) -> StringPart {
     match part {
         TokenStringPart::Literal(value) => StringPart::Literal(value),
         TokenStringPart::Variable(name) => StringPart::Variable(name),
+    }
+}
+
+fn is_supported_global_const_expr(expr: &Expr) -> bool {
+    match expr {
+        Expr::String(_, _)
+        | Expr::Int(_, _)
+        | Expr::Float(_, _)
+        | Expr::Bool(_, _)
+        | Expr::Null(_)
+        | Expr::Constant(_, _)
+        | Expr::MagicConstant(_, _) => true,
+        Expr::Array { elements, .. } => elements.iter().all(|element| {
+            element
+                .key
+                .as_ref()
+                .map_or(true, is_supported_global_const_expr)
+                && is_supported_global_const_expr(&element.value)
+        }),
+        Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::Grouped { expr, .. } => {
+            is_supported_global_const_expr(expr)
+        }
+        Expr::Binary { left, right, .. } => {
+            is_supported_global_const_expr(left) && is_supported_global_const_expr(right)
+        }
+        Expr::InterpolatedString(_, _) | Expr::Variable(_, _) | Expr::Call { .. } => false,
     }
 }
 
