@@ -1931,3 +1931,27 @@ Optimized generated string concatenation runtime behavior:
 - A native benchmark with 6000 chained and compound concat loop iterations
   produced the same `46890 34890` output and improved from about `real
   1.35-1.37s` before the change to `real 0.84-0.87s` after the change.
+
+Optimized generated user-defined function call overhead:
+
+- Statically known user-function calls now emit direct calls to the generated
+  `ptn_user_function_N` C entry point instead of routing through
+  `ptn_call_function()` and string-based user-function dispatch. Unknown or
+  modeled internal calls still use the shared dispatcher.
+- Generated function runtimes now keep a parent pointer for constant lookup
+  instead of copying every caller constant into every callee runtime. Local
+  variables remain isolated in each function runtime, and nested calls can
+  still see constants defined in their caller runtime according to the current
+  modeled semantics.
+- Native tests prove direct-call codegen, recursive calls, global constant
+  reads, nested function constant visibility, and non-leakage of current
+  function-local `define()` constants back to top-level runtime state.
+- `tools/bench-native-execution.sh` now includes non-recursive and recursive
+  user-function call benchmarks with constant reads alongside the existing
+  scalar, string, and array benchmarks.
+
+No new PHP surface is claimed by this performance slice. Argument
+introspection, defaults, variadics, named arguments, by-reference parameters or
+returns, global declarations, static locals, closures, methods/classes,
+namespaces, dynamic calls, and PHP-exact global `define()` semantics remain
+unsupported.

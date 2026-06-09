@@ -3168,6 +3168,53 @@ fn compile_user_function_reads_global_const_to_native_binary() {
 }
 
 #[test]
+fn compile_user_function_calls_emit_direct_native_dispatch() {
+    let root = temp_dir("ptn-native-user-function-direct-dispatch");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("user-function-direct-dispatch.php");
+    let output = root.join("user-function-direct-dispatch-bin");
+    fs::write(
+        &input,
+        "<?php function add_one($value) { return $value + 1; } echo add_one(4), \" \", strlen(\"abc\"), \"\\n\";",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_user_function_0(&runtime, 1,"));
+    assert!(!c_source.contains("ptn_call_function(&runtime, \"add_one\""));
+    assert!(c_source.contains("ptn_call_function(&runtime, \"strlen\""));
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "5 3\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_nested_user_function_constants_keep_current_visibility() {
+    let root = temp_dir("ptn-native-user-function-constant-chain");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("user-function-constant-chain.php");
+    let output = root.join("user-function-constant-chain-bin");
+    fs::write(
+        &input,
+        "<?php const OUTER = 10; function inner($value) { return $value + OUTER + LOCAL_ONLY; } function middle($value) { define(\"LOCAL_ONLY\", 2); return inner($value); } echo middle(3), \"\\n\"; var_dump(defined(\"LOCAL_ONLY\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "15\nbool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_user_function_exists_registry_to_native_binary() {
     let root = temp_dir("ptn-native-user-function-exists");
     fs::create_dir_all(&root).unwrap();

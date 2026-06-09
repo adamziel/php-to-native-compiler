@@ -6,7 +6,7 @@ usage() {
 usage:
   tools/bench-native-execution.sh [--runs N] [--keep-temp]
 
-Builds the PTN compiler, compiles three representative PHP microbenchmarks to
+Builds the PTN compiler, compiles five representative PHP microbenchmarks to
 native binaries, rebuilds the retained generated C, and times native execution
 separately from those build steps.
 
@@ -160,6 +160,33 @@ while ($passes < 12000) {
 echo $total, "\n";
 PHP
 
+cat >"$tmp/user_function_loop.php" <<'PHP'
+<?php
+const BASE = 3;
+const OFFSET = 7;
+function step($value) { return ($value * BASE) + OFFSET; }
+$sum = 0;
+$i = 0;
+while ($i < 80000) {
+    $sum += step($i);
+    $i++;
+}
+echo $sum, "\n";
+PHP
+
+cat >"$tmp/recursive_function.php" <<'PHP'
+<?php
+const ONE = 1;
+function depth($n) { if ($n <= 0) { return 0; } return ONE + depth($n - 1); }
+$total = 0;
+$i = 0;
+while ($i < 1000) {
+    $total += depth(50);
+    $i++;
+}
+echo $total, "\n";
+PHP
+
 cc_bin="${CC:-cc}"
 ptn_bin="$root/target/debug/ptn"
 commit="$(git rev-parse HEAD)"
@@ -276,3 +303,5 @@ run_benchmark() {
 run_benchmark "scalar_loop" "scalar arithmetic and braced control flow" "$tmp/scalar_loop.php"
 run_benchmark "string_work" "string concatenation plus strlen/str_rot13/md5/substr" "$tmp/string_work.php"
 run_benchmark "array_foreach" "ordered array literal and key/value foreach" "$tmp/array_foreach.php"
+run_benchmark "user_function_loop" "non-recursive user function calls with constant reads" "$tmp/user_function_loop.php"
+run_benchmark "recursive_function" "recursive user function calls with constant reads" "$tmp/recursive_function.php"

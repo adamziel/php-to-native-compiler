@@ -31,7 +31,7 @@ pub fn emit_c(module: &Module) -> String {
             warning.line,
         );
     }
-    let mut values = ValueEmitter::new(&module.source_file, &module.source_dir);
+    let mut values = ValueEmitter::new(&module.source_file, &module.source_dir, &module.functions);
     let mut control_targets = Vec::new();
     for instruction in &module.instructions {
         emit_instruction(
@@ -91,8 +91,7 @@ fn emit_user_functions(
             out.push_str("    }\n");
         }
         out.push_str("    PtnRuntime runtime;\n");
-        out.push_str("    ptn_runtime_init(&runtime);\n");
-        out.push_str("    ptn_runtime_import_constants(&runtime, caller_runtime);\n");
+        out.push_str("    ptn_runtime_init_child(&runtime, caller_runtime);\n");
         out.push_str("    PtnValue ptn_return_value = ptn_null();\n");
         for (parameter_index, parameter) in function.parameters.iter().enumerate() {
             if let Some(TypeHint::Null) = parameter.type_hint {
@@ -114,7 +113,7 @@ fn emit_user_functions(
             out.push_str(&parameter_index.to_string());
             out.push_str("]);\n");
         }
-        let mut values = ValueEmitter::new(source_file, source_dir);
+        let mut values = ValueEmitter::new(source_file, source_dir, functions);
         let mut break_targets = Vec::new();
         let return_label = values.next_label("ptn_function_return");
         for instruction in &function.body {
@@ -878,20 +877,22 @@ pub fn compile_c(c_source: &str, output: &Path) -> Result<()> {
     }
 }
 
-struct ValueEmitter {
+struct ValueEmitter<'a> {
     next_temp: usize,
     next_label: usize,
     source_file: String,
     source_dir: String,
+    user_functions: &'a [FunctionDecl],
 }
 
-impl ValueEmitter {
-    fn new(source_file: &str, source_dir: &str) -> Self {
+impl<'a> ValueEmitter<'a> {
+    fn new(source_file: &str, source_dir: &str, user_functions: &'a [FunctionDecl]) -> Self {
         Self {
             next_temp: 0,
             next_label: 0,
             source_file: source_file.to_string(),
             source_dir: source_dir.to_string(),
+            user_functions,
         }
     }
 
@@ -1354,13 +1355,24 @@ impl ValueEmitter {
         arguments: &[ValueExpr],
         line: usize,
     ) -> String {
+        let direct_user_call = self
+            .user_functions
+            .iter()
+            .position(|function| function.name == name)
+            .map(user_function_c_name);
         let result_temp = self.next_temp();
         if arguments.is_empty() {
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
-            out.push_str(" = ptn_call_function(&runtime, \"");
-            out.push_str(&c_string(name));
-            out.push_str("\", 0, NULL, ");
+            out.push_str(" = ");
+            if let Some(c_name) = &direct_user_call {
+                out.push_str(c_name);
+                out.push_str("(&runtime, 0, NULL, ");
+            } else {
+                out.push_str("ptn_call_function(&runtime, \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", 0, NULL, ");
+            }
             out.push_str(&line.to_string());
             out.push_str(");\n");
             return result_temp;
@@ -1379,9 +1391,15 @@ impl ValueEmitter {
         out.push_str(" };\n");
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
-        out.push_str(" = ptn_call_function(&runtime, \"");
-        out.push_str(&c_string(name));
-        out.push_str("\", ");
+        out.push_str(" = ");
+        if let Some(c_name) = &direct_user_call {
+            out.push_str(c_name);
+            out.push_str("(&runtime, ");
+        } else {
+            out.push_str("ptn_call_function(&runtime, \"");
+            out.push_str(&c_string(name));
+            out.push_str("\", ");
+        }
         out.push_str(&arguments.len().to_string());
         out.push_str(", ");
         out.push_str(&args_temp);
@@ -1564,9 +1582,10 @@ typedef struct {
     int emitted_deprecation;
 } PtnDiagnosticSink;
 
-typedef struct {
+typedef struct PtnRuntime {
     PtnSymbolTable symbols;
     PtnSymbolTable constants;
+    struct PtnRuntime *constant_parent;
     PtnDiagnosticSink diagnostics;
 } PtnRuntime;
 
@@ -2083,7 +2102,13 @@ static void ptn_emit_constant_already_defined_warning(
 static void ptn_runtime_init(PtnRuntime *runtime) {
     ptn_symbols_init(&runtime->symbols);
     ptn_symbols_init(&runtime->constants);
+    runtime->constant_parent = NULL;
     ptn_diagnostics_init(&runtime->diagnostics, stderr);
+}
+
+static PTN_UNUSED void ptn_runtime_init_child(PtnRuntime *runtime, PtnRuntime *constant_parent) {
+    ptn_runtime_init(runtime);
+    runtime->constant_parent = constant_parent;
 }
 
 static void ptn_runtime_free(PtnRuntime *runtime) {
@@ -2119,13 +2144,6 @@ static PTN_UNUSED PtnLookupResult ptn_runtime_read_variable_quiet(PtnRuntime *ru
 
 static PTN_UNUSED void ptn_runtime_define_constant(PtnRuntime *runtime, const char *name, PtnValue value) {
     ptn_symbols_set(&runtime->constants, name, value);
-}
-
-static PTN_UNUSED void ptn_runtime_import_constants(PtnRuntime *runtime, PtnRuntime *source) {
-    for (size_t i = 0; i < source->constants.len; i++) {
-        PtnSymbol *constant = &source->constants.items[i];
-        ptn_runtime_define_constant(runtime, constant->name, constant->value);
-    }
 }
 
 static PTN_UNUSED PtnNumber ptn_number_int(int64_t integer) {
@@ -3585,6 +3603,9 @@ static void ptn_format_var_dump_float(double value, char *buffer, size_t buffer_
 
 static PTN_UNUSED int ptn_runtime_constant_value(PtnRuntime *runtime, const char *name, PtnValue *out) {
     if (ptn_symbols_get(&runtime->constants, name, out)) {
+        return 1;
+    }
+    if (runtime->constant_parent != NULL && ptn_runtime_constant_value(runtime->constant_parent, name, out)) {
         return 1;
     }
     return ptn_builtin_constant_value(name, out);
