@@ -9,6 +9,7 @@ Measured base: `ptn-cqu.47.10` rebased after `ptn-cqu.47.3`
 | --- | ---: | ---: | ---: |
 | Source unit tests | 4 | 4 | 0 |
 | Native compiled PHP snippets | 309 | 309 | 0 |
+| Native smoke matrix | 6 | 6 | 0 |
 | PHPT parsed bounded log | 171 | 121 | 50 |
 | PHPT Zend rows | 76 | 60 | 16 |
 | PHPT ext/standard rows | 77 | 44 | 33 |
