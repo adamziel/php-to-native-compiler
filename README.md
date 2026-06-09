@@ -23,10 +23,10 @@ Supported today:
 - Statement-form `print expr;` for the same scalar expression subset as
   `echo`; emitted native code uses the same boxed output conversion path.
 - Simple internal calls such as `var_dump(expr, ...)`, `strlen(expr)`,
-  `bin2hex(expr)`, `bindec(expr)`, `hexdec(expr)`, `octdec(expr)`,
-  `chr(expr)`, `ord(expr)`, `error_reporting(expr)`, `gettype(expr)`, scalar
-  `is_*` type predicates, `defined(expr)`, and `function_exists(expr)`, lowered
-  through IR
+  `bin2hex(expr)`, `ceil(expr)`, `floor(expr)`, `bindec(expr)`,
+  `hexdec(expr)`, `octdec(expr)`, `chr(expr)`, `ord(expr)`,
+  `error_reporting(expr)`, `gettype(expr)`, scalar `is_*` type predicates,
+  `defined(expr)`, and `function_exists(expr)`, lowered through IR
   internal-call nodes and generated C runtime dispatch.
 - `var_dump()` output for the current boxed scalar `PtnValue` types: `null`,
   booleans, integers, floats, and strings.
@@ -34,6 +34,8 @@ Supported today:
   scalar string-conversion result.
 - `bin2hex()` as an expression returning lowercase hexadecimal bytes for the
   current boxed scalar string-conversion result.
+- `ceil()` and `floor()` as expressions returning boxed floats after the
+  current boxed scalar numeric-conversion result.
 - `bindec()`, `hexdec()`, and `octdec()` as expressions over the current boxed
   scalar string-conversion result, accepting the matching PHP base prefix and
   returning integers or floats based on native integer range.
@@ -121,7 +123,8 @@ Unsupported today:
   user constants and built-in constants other than the currently modeled
   `E_ERROR` and `PHP_EOL`, arrays, objects, resources, recursion, references,
   embedded NUL string handling, exact `chr()` deprecation diagnostics, exact
-  `ord()` argument type diagnostics, exact `error_reporting()`
+  `ord()` argument type diagnostics, exact `ceil()`/`floor()`
+  null/string/unsupported type diagnostics, exact `error_reporting()`
   configuration/filtering behavior, and full PHP precision/formatting edge
   cases for `var_dump()`/`strlen()`/`bin2hex()`/base-conversion internals, doc
   comment retention, variable variables, and dynamic fallback. These are

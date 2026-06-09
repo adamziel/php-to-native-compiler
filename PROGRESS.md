@@ -637,3 +637,21 @@ assignment lvalues, references and copy-on-write behavior, PHP-exact
 diagnostic formatting for shift/bitwise conversions, user-defined constants,
 and built-in or extension constants beyond the currently modeled `E_ERROR` and
 `PHP_EOL`.
+
+Added scalar `ceil()` and `floor()` internal functions:
+
+- Registered `ceil()` and `floor()` through the existing generated C
+  internal-function registry, so normal calls and `function_exists()` share the
+  same case-insensitive lookup table.
+- The functions convert the current boxed scalar argument through the shared
+  scalar numeric-conversion path and return boxed floats.
+- Generated C now links the standard math library for runtime scalar math
+  helpers that need it.
+- Native tests prove the public `floorceil.phpt` source shape and
+  case-insensitive registry exposure.
+- Focused public PHPT telemetry through `phpc` passes
+  `ext/standard/tests/math/floorceil.phpt`.
+
+Still unsupported after this `ceil()`/`floor()` slice: arrays, objects,
+resources, references, copy-on-write behavior, PHP-exact null deprecations,
+string and unsupported-type diagnostics, and complete special-float parity.

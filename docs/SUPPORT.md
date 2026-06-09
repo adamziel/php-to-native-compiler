@@ -52,13 +52,14 @@ supports in generated native binaries.
 - Boxed scalar bit shifts `<<` and `>>`. Supported scalar operands are
   converted to integers through the current bitwise integer-conversion path.
 - Simple statement-form internal calls such as `var_dump(expr, ...)`,
-  `strlen(expr);`, `bin2hex(expr);`, `bindec(expr);`, `hexdec(expr);`,
-  `octdec(expr);`, `chr(expr);`, `ord(expr);`, and `error_reporting(expr);`.
+  `strlen(expr);`, `bin2hex(expr);`, `ceil(expr);`, `floor(expr);`,
+  `bindec(expr);`, `hexdec(expr);`, `octdec(expr);`, `chr(expr);`,
+  `ord(expr);`, and `error_reporting(expr);`.
 - Expression-form internal calls for the currently registered scalar functions,
-  including `strlen(expr)`, `bin2hex(expr)`, `bindec(expr)`, `hexdec(expr)`,
-  `octdec(expr)`, `chr(expr)`, `ord(expr)`, `error_reporting(expr)`,
-  `gettype(expr)`, and scalar `is_*` type predicates in echo operands,
-  assignments, binary operands, and branch/loop conditions.
+  including `strlen(expr)`, `bin2hex(expr)`, `ceil(expr)`, `floor(expr)`,
+  `bindec(expr)`, `hexdec(expr)`, `octdec(expr)`, `chr(expr)`, `ord(expr)`,
+  `error_reporting(expr)`, `gettype(expr)`, and scalar `is_*` type predicates
+  in echo operands, assignments, binary operands, and branch/loop conditions.
 - Internal-call arguments are materialized left-to-right before generated C
   runtime dispatch.
 - `var_dump()` output for current boxed scalar values: `NULL`, `bool(...)`,
@@ -66,6 +67,8 @@ supports in generated native binaries.
 - `strlen()` over current boxed scalar values after scalar string conversion.
 - `bin2hex()` over current boxed scalar values after scalar string conversion,
   returning lowercase hexadecimal byte output.
+- `ceil()` and `floor()` over current boxed scalar values after scalar numeric
+  conversion, returning boxed floats.
 - `bindec()`, `hexdec()`, and `octdec()` over current boxed scalar values after
   scalar string conversion. The runtime accepts matching `0b`, `0x`, and `0o`
   prefixes, ignores invalid base digits with a deprecation boundary, and
@@ -148,6 +151,8 @@ supports in generated native binaries.
 - Exact `chr()` diagnostics for out-of-range integers or float-to-int precision
   loss.
 - Exact `ord()` strict-types and unsupported-type diagnostics.
+- Exact `ceil()`/`floor()` null deprecations, string and unsupported-type
+  diagnostics, and complete special-float parity.
 - Exact diagnostics and full precision/range parity for `bindec()`, `hexdec()`,
   and `octdec()` on very large or unsupported values.
 - Full PHP float precision and formatting edge cases for `var_dump()` or

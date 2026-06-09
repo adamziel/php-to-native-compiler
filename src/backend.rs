@@ -265,6 +265,7 @@ pub fn compile_c(c_source: &str, output: &Path) -> Result<()> {
         .arg(&c_path)
         .arg("-o")
         .arg(output)
+        .arg("-lm")
         .status()
         .map_err(|error| Diagnostic::new(format!("failed to launch cc: {error}"), None))?;
     if status.success() {
@@ -597,6 +598,7 @@ fn display_os(value: &OsStr) -> String {
 
 const RUNTIME_C: &str = r#"#include <ctype.h>
 #include <errno.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -1700,6 +1702,25 @@ static PtnValue ptn_internal_bin2hex(PtnRuntime *runtime, size_t argc, const Ptn
     return ptn_owned_string(hex);
 }
 
+static double ptn_value_to_double(PtnValue value) {
+    PtnNumber number = ptn_to_number(value);
+    return number.floating;
+}
+
+static PtnValue ptn_internal_ceil(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    return ptn_float(ceil(ptn_value_to_double(args[0])));
+}
+
+static PtnValue ptn_internal_floor(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    return ptn_float(floor(ptn_value_to_double(args[0])));
+}
+
 static int ptn_digit_value_for_base(unsigned char byte, int base) {
     int value = -1;
     if (byte >= '0' && byte <= '9') {
@@ -1852,6 +1873,8 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "var_dump", 1, PTN_VARIADIC_ARGS, ptn_internal_var_dump },
         { "strlen", 1, 1, ptn_internal_strlen },
         { "bin2hex", 1, 1, ptn_internal_bin2hex },
+        { "ceil", 1, 1, ptn_internal_ceil },
+        { "floor", 1, 1, ptn_internal_floor },
         { "bindec", 1, 1, ptn_internal_bindec },
         { "hexdec", 1, 1, ptn_internal_hexdec },
         { "octdec", 1, 1, ptn_internal_octdec },
