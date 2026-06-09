@@ -28,16 +28,19 @@ Current runtime/compiler slices:
   calls.
 - Direct variable reads pass through a runtime helper that emits a generic
   undefined-variable warning before yielding `null`.
-- Scalar binary `+`, `-`, `*`, `/`, `%`, and `.` expressions lower to IR
-  value-expression operation nodes. The C backend materializes operands into
-  `PtnValue` temporaries in source order before calling boxed runtime helpers
-  such as `ptn_add`, `ptn_subtract`, `ptn_multiply`, `ptn_divide`,
-  `ptn_modulo`, and `ptn_concat`.
-- Direct named-variable `+=`, `-=`, `*=`, `/=`, `%=`, and `.=` lower in IR as a
-  direct variable load, the same boxed binary helper used by the ordinary
-  binary operator, and a direct variable store. This keeps left-to-right reads
-  and undefined-variable diagnostics on the runtime read boundary rather than
-  adding a separate compound-assignment runtime path.
+- Scalar binary `+`, `-`, `*`, `/`, `%`, `.`, `&`, and `|` expressions lower
+  to IR value-expression operation nodes. The C backend materializes operands
+  into `PtnValue` temporaries in source order before calling boxed runtime
+  helpers such as `ptn_add`, `ptn_subtract`, `ptn_multiply`, `ptn_divide`,
+  `ptn_modulo`, `ptn_concat`, `ptn_bitwise_and`, and `ptn_bitwise_or`.
+  String/string bitwise operands use bytewise string helpers for non-NUL string
+  data; other supported scalar operands convert through the current numeric
+  path before integer bitwise operations.
+- Direct named-variable `+=`, `-=`, `*=`, `/=`, `%=`, `.=`, `&=`, and `|=`
+  lower in IR as a direct variable load, the same boxed binary helper used by
+  the ordinary binary operator, and a direct variable store. This keeps
+  left-to-right reads and undefined-variable diagnostics on the runtime read
+  boundary rather than adding a separate compound-assignment runtime path.
 - Statement-form `print expr;` lowers to the same boxed output IR instruction
   used by echo, so generated native code routes print output through the
   existing `ptn_echo` helper.
@@ -86,8 +89,8 @@ Near-term architecture targets:
   division/modulo-by-zero exception behavior, and complete overflow behavior for
   arithmetic helpers.
 - Array, object, and reference lvalues for compound assignment, plus
-  unsupported compound operators beyond `+=`, `-=`, `*=`, `/=`, `%=`, and `.=`:
-  `**=`, `&=`, `|=`, `^=`, `<<=`, `>>=`, `??=`.
+  unsupported compound operators beyond `+=`, `-=`, `*=`, `/=`, `%=`, `.=`,
+  `&=`, and `|=`: `**=`, `^=`, `<<=`, `>>=`, `??=`.
 - Complete comparison parity for arrays, objects, references, chained
   comparison parse errors, spaceship operator, keyword boolean operators, and
   unsupported scalar edge cases.

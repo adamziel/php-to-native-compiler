@@ -350,3 +350,24 @@ Still unsupported for internal calls: functions other than `var_dump()` and
 `strlen()`, arrays, objects, resources, references, embedded NUL byte string
 length parity, PHP-exact argument parsing and diagnostics, and user-defined
 functions.
+
+Added boxed scalar bitwise `&` and `|` expressions:
+
+- Lexer/parser/AST/IR support for binary `&` and `|` expressions with PHP-like
+  precedence between equality comparisons and `&&`/`||`.
+- Parser/AST/IR support for direct named-variable `&=` and `|=` compound
+  assignments, lowered through the same direct read, boxed binary helper, and
+  direct write path as the existing compound assignments.
+- Generated C runtime helpers for PHP scalar bitwise behavior: string/string
+  operands produce bytewise string results, while other currently supported
+  scalar operands are converted to integers through the boxed numeric
+  conversion path.
+- Native tests prove integer bitwise results, bytewise string `&`/`|`,
+  string compound assignment, and DEL-byte string output in compiled binaries.
+- Focused public PHPT telemetry through `phpc` passes
+  `Zend/tests/and_001.phpt` and `Zend/tests/or_001.phpt`.
+
+Still unsupported after this bitwise slice: bitwise `^`, unary bitwise `~`, bit
+shifts, compound `^=`, `<<=`, `>>=`, exact float-to-int bitwise diagnostics and
+overflow parity, embedded NUL bytes in string values, arrays, objects,
+references, and copy-on-write behavior.

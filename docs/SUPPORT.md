@@ -25,9 +25,9 @@ supports in generated native binaries.
 - Binary operands are materialized left-to-right before the generated C backend
   calls runtime helpers.
 - Direct named-variable compound assignment for `+=`, `-=`, `*=`, `/=`, `%=`,
-  and `.=`. The compiler lowers these as `read $x`, the matching boxed binary
-  helper, then `write $x`. The direct variable read happens before the
-  right-hand expression, so existing undefined-variable diagnostics remain
+  `.=`, `&=`, and `|=`. The compiler lowers these as `read $x`, the matching
+  boxed binary helper, then `write $x`. The direct variable read happens before
+  the right-hand expression, so existing undefined-variable diagnostics remain
   observable in source order.
 - Print statements use the same generated boxed output path as echo.
 - Parenthesized expressions for grouping supported scalar expressions,
@@ -42,6 +42,10 @@ supports in generated native binaries.
   and `>=`. Strict scalar identity compares type and value without coercion.
 - Boxed scalar boolean operators `&&` and `||`, with short-circuit evaluation
   over PHP truthiness for the currently supported scalar values.
+- Boxed scalar bitwise `&` and `|` operators. When both operands are strings,
+  the result is a bytewise string for non-NUL string data. Other supported
+  scalar operands are converted to integers through the current scalar numeric
+  conversion path.
 - Simple statement-form internal calls such as `var_dump(expr, ...)` and
   `strlen(expr);`.
 - Expression-form internal calls for the currently registered scalar functions,
@@ -86,13 +90,15 @@ supports in generated native binaries.
 - Internal functions other than `var_dump()` and `strlen()`.
 - Arrays, objects, resources, recursive structures, references, and
   `var_dump()` reference identity output.
-- Embedded NUL strings in `var_dump()` string length/output or `strlen()`.
+- Embedded NUL strings in runtime string values, `var_dump()` string
+  length/output, or `strlen()`.
 - Full PHP float precision and formatting edge cases for `var_dump()` or
   `strlen()` input conversion.
 - Complete PHP CLI and PHPT runner option parity for `phpc`.
 - Doc comment retention for reflection or metadata. Comments are skipped today.
-- Compound assignment operators other than `+=`, `-=`, `*=`, `/=`, `%=`, and
-  `.=`: `**=`, `&=`, `|=`, `^=`, `<<=`, `>>=`, and `??=`.
+- Bitwise `^`, unary bitwise `~`, and bit shifts.
+- Compound assignment operators other than `+=`, `-=`, `*=`, `/=`, `%=`, `.=`,
+  `&=`, and `|=`: `**=`, `^=`, `<<=`, `>>=`, and `??=`.
 - Array, object, string-offset, property, static-property, variable-variable,
   reference, and other non-direct-variable compound-assignment lvalues.
 - Reference semantics for compound assignment, including reference identity,

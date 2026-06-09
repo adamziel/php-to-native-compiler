@@ -334,6 +334,8 @@ impl Parser {
         match self.peek().kind {
             TokenKind::OrOr => Some((BinaryOp::Or, 1)),
             TokenKind::AndAnd => Some((BinaryOp::And, 2)),
+            TokenKind::Pipe => Some((BinaryOp::BitwiseOr, 3)),
+            TokenKind::Ampersand => Some((BinaryOp::BitwiseAnd, 4)),
             TokenKind::EqualEqualEqual => Some((BinaryOp::Identical, 5)),
             TokenKind::NotEqualEqual => Some((BinaryOp::NotIdentical, 5)),
             TokenKind::EqualEqual => Some((BinaryOp::Equal, 5)),
@@ -407,6 +409,8 @@ impl Parser {
             TokenKind::SlashEqual => Ok(AssignmentOp::DivideAssign),
             TokenKind::PercentEqual => Ok(AssignmentOp::ModuloAssign),
             TokenKind::DotEqual => Ok(AssignmentOp::ConcatAssign),
+            TokenKind::AmpersandEqual => Ok(AssignmentOp::BitwiseAndAssign),
+            TokenKind::PipeEqual => Ok(AssignmentOp::BitwiseOrAssign),
             _ => Err(Diagnostic::new("expected assignment", Some(token.span))),
         }
     }

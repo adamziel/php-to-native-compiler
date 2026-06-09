@@ -30,6 +30,8 @@ pub enum TokenKind {
     GreaterEqual,
     AndAnd,
     OrOr,
+    AmpersandEqual,
+    PipeEqual,
     PlusEqual,
     MinusEqual,
     PlusPlus,
@@ -43,6 +45,8 @@ pub enum TokenKind {
     Asterisk,
     Slash,
     Percent,
+    Ampersand,
+    Pipe,
     Bang,
     Dot,
     Comma,
@@ -138,7 +142,13 @@ impl<'a> Lexer<'a> {
                 '>' if self.rest().starts_with(">=") => self.push_fixed(TokenKind::GreaterEqual, 2),
                 '>' => self.push_fixed(TokenKind::Greater, 1),
                 '&' if self.rest().starts_with("&&") => self.push_fixed(TokenKind::AndAnd, 2),
+                '&' if self.rest().starts_with("&=") => {
+                    self.push_fixed(TokenKind::AmpersandEqual, 2)
+                }
+                '&' => self.push_fixed(TokenKind::Ampersand, 1),
                 '|' if self.rest().starts_with("||") => self.push_fixed(TokenKind::OrOr, 2),
+                '|' if self.rest().starts_with("|=") => self.push_fixed(TokenKind::PipeEqual, 2),
+                '|' => self.push_fixed(TokenKind::Pipe, 1),
                 '+' if self.rest().starts_with("+=") => self.push_fixed(TokenKind::PlusEqual, 2),
                 '+' if self.rest().starts_with("++") => self.push_fixed(TokenKind::PlusPlus, 2),
                 '+' => self.push_fixed(TokenKind::Plus, 1),

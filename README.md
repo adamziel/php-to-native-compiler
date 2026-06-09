@@ -39,9 +39,9 @@ Supported today:
   and `-`, and arithmetic as higher precedence than `.`, while the backend
   emits runtime calls over `PtnValue` operands.
 - Direct named-variable compound assignment for `+=`, `-=`, `*=`, `/=`, `%=`,
-  and `.=`. These lower as a variable read, the matching boxed binary helper,
-  then a variable write, preserving the existing undefined-variable diagnostic
-  boundary.
+  `.=`, `&=`, and `|=`. These lower as a variable read, the matching boxed
+  binary helper, then a variable write, preserving the existing
+  undefined-variable diagnostic boundary.
 - Parenthesized expressions, unary `+`, unary `-`, unary `!`, and `(int)`,
   `(float)`, `(string)`, and `(bool)` casts for boxed scalar values. Unary, cast, and
   binary operations are emitted as runtime helper calls over `PtnValue`
@@ -50,6 +50,9 @@ Supported today:
   `<`, `<=`, `>`, `>=`, `&&`, and `||`. Strict identity compares scalar type
   and value without coercion; boolean operators short-circuit over boxed PHP
   truthiness for the currently supported scalar value types.
+- Boxed scalar bitwise `&` and `|` expressions. String/string operands use PHP
+  bytewise string results for non-NUL strings; other supported scalar operands
+  are converted to integers through the current boxed numeric conversion path.
 - Braced `if`, `elseif`, and `else` statements. Branch conditions use boxed
   scalar truthiness and the currently supported expression subset, including
   grouped expressions and scalar comparisons.
@@ -62,13 +65,13 @@ Unsupported today:
 
 - Arrays, objects, functions, classes, includes, references, copy-on-write,
   resources, exceptions, array/object/reference compound-assignment lvalues,
-  compound operators other than `+=`, `-=`, `*=`, `/=`, `%=`, and `.=` (`**=`,
-  `&=`, `|=`, `^=`, `<<=`, `>>=`, `??=`), `print` as an expression returning
+  compound operators other than `+=`, `-=`, `*=`, `/=`, `%=`, `.=`, `&=`, and
+  `|=` (`**=`, `^=`, `<<=`, `>>=`, `??=`), `print` as an expression returning
   `1` even when spelled `print(...)`, increment/decrement operators, full
   PHP numeric-string and non-numeric string arithmetic diagnostics, exact
   division/modulo-by-zero exception behavior, complete comparison parity for
-  unsupported types, spaceship comparison operator, keyword boolean
-  operators, chained comparison parse errors, unbraced and alternate
+  unsupported types, spaceship comparison operator, bitwise `^`, `~`, shifts,
+  keyword boolean operators, chained comparison parse errors, unbraced and alternate
   control-flow syntax, `do while`, `for`, `foreach`, `switch`, `break`,
   `continue`, increment/decrement as expressions, PHP-exact increment/
   decrement semantics for strings/booleans and other edge values, complete

@@ -57,6 +57,8 @@ pub enum AssignmentOp {
     DivideAssign,
     ModuloAssign,
     ConcatAssign,
+    BitwiseAndAssign,
+    BitwiseOrAssign,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -112,6 +114,8 @@ pub enum BinaryOp {
     NotEqual,
     Identical,
     NotIdentical,
+    BitwiseAnd,
+    BitwiseOr,
     Less,
     LessEqual,
     Greater,

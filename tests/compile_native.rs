@@ -87,10 +87,10 @@ fn parser_accepts_print_as_statement() {
 #[test]
 fn parser_accepts_direct_variable_compound_assignments() {
     let program = parser::parse(
-        "<?php $value = 1; $value += 2; $value -= 3; $value *= 4; $value /= 5; $value %= 6; $value .= \"7\";",
+        "<?php $value = 1; $value += 2; $value -= 3; $value *= 4; $value /= 5; $value %= 6; $value .= \"7\"; $value &= \"8\"; $value |= \"9\";",
     )
     .unwrap();
-    assert_eq!(program.statements.len(), 7);
+    assert_eq!(program.statements.len(), 9);
 
     let Statement::Assign { op, .. } = &program.statements[1] else {
         panic!("expected add assignment statement");
@@ -121,6 +121,16 @@ fn parser_accepts_direct_variable_compound_assignments() {
         panic!("expected concat assignment statement");
     };
     assert_eq!(*op, AssignmentOp::ConcatAssign);
+
+    let Statement::Assign { op, .. } = &program.statements[7] else {
+        panic!("expected bitwise and assignment statement");
+    };
+    assert_eq!(*op, AssignmentOp::BitwiseAndAssign);
+
+    let Statement::Assign { op, .. } = &program.statements[8] else {
+        panic!("expected bitwise or assignment statement");
+    };
+    assert_eq!(*op, AssignmentOp::BitwiseOrAssign);
 }
 
 #[test]
@@ -399,6 +409,38 @@ fn parser_accepts_strict_identity_expressions() {
         &expressions[1],
         Expr::Binary {
             op: BinaryOp::NotIdentical,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn parser_accepts_bitwise_scalar_expressions() {
+    let program = parser::parse("<?php echo \"a\" & \"b\" | \"c\" && 1 == 1;").unwrap();
+    let Statement::Echo { expressions, .. } = &program.statements[0] else {
+        panic!("expected echo statement");
+    };
+
+    let Expr::Binary {
+        op: BinaryOp::And,
+        left,
+        ..
+    } = &expressions[0]
+    else {
+        panic!("expected outer boolean and");
+    };
+    let Expr::Binary {
+        op: BinaryOp::BitwiseOr,
+        left,
+        ..
+    } = left.as_ref()
+    else {
+        panic!("expected bitwise or below boolean and");
+    };
+    assert!(matches!(
+        left.as_ref(),
+        Expr::Binary {
+            op: BinaryOp::BitwiseAnd,
             ..
         }
     ));
@@ -1181,6 +1223,29 @@ fn compile_direct_arithmetic_compound_assignments_to_native_binary() {
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "3\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_bitwise_scalar_operations_to_native_binary() {
+    let root = temp_dir("ptn-native-bitwise-scalars");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("bitwise-scalars.php");
+    let output = root.join("bitwise-scalars-bin");
+    fs::write(
+        &input,
+        "<?php echo 6 & 3, \" \", 4 | 1, \"\\n\"; var_dump(\"123\" & \"234\"); var_dump(\"323423\" | \"2323.555\"); var_dump(\"some\" | \"test\"); $s = \"test\"; $s &= \"some long\"; var_dump($s); $o = \"some\"; $o |= \"test\"; var_dump($o);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "2 5\nstring(3) \"020\"\nstring(8) \"3337>755\"\nstring(4) \"wo\x7fu\"\nstring(4) \"pead\"\nstring(4) \"wo\x7fu\"\n"
+    );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 

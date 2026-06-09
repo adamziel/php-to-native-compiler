@@ -212,7 +212,9 @@ impl ValueEmitter {
             | BinaryOp::Multiply
             | BinaryOp::Divide
             | BinaryOp::Modulo
-            | BinaryOp::Concat => self.emit_runtime_binary(out, op, left, right),
+            | BinaryOp::Concat
+            | BinaryOp::BitwiseAnd
+            | BinaryOp::BitwiseOr => self.emit_runtime_binary(out, op, left, right),
             BinaryOp::Equal
             | BinaryOp::NotEqual
             | BinaryOp::Identical
@@ -245,6 +247,8 @@ impl ValueEmitter {
             BinaryOp::Divide => "ptn_divide",
             BinaryOp::Modulo => "ptn_modulo",
             BinaryOp::Concat => "ptn_concat",
+            BinaryOp::BitwiseAnd => "ptn_bitwise_and",
+            BinaryOp::BitwiseOr => "ptn_bitwise_or",
             _ => unreachable!(),
         });
         out.push('(');
@@ -1074,6 +1078,56 @@ static PTN_UNUSED PtnValue ptn_increment(PtnValue value) {
 
 static PTN_UNUSED PtnValue ptn_decrement(PtnValue value) {
     return ptn_subtract(value, ptn_int(1));
+}
+
+static PTN_UNUSED PtnValue ptn_bitwise_string_and(const char *left, const char *right) {
+    size_t left_len = strlen(left);
+    size_t right_len = strlen(right);
+    size_t result_len = left_len < right_len ? left_len : right_len;
+    char *result = malloc(result_len + 1);
+    if (result == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < result_len; i++) {
+        result[i] = (char)((unsigned char)left[i] & (unsigned char)right[i]);
+    }
+    result[result_len] = '\0';
+    return ptn_owned_string(result);
+}
+
+static PTN_UNUSED PtnValue ptn_bitwise_string_or(const char *left, const char *right) {
+    size_t left_len = strlen(left);
+    size_t right_len = strlen(right);
+    size_t result_len = left_len > right_len ? left_len : right_len;
+    char *result = malloc(result_len + 1);
+    if (result == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < result_len; i++) {
+        unsigned char left_byte = i < left_len ? (unsigned char)left[i] : 0;
+        unsigned char right_byte = i < right_len ? (unsigned char)right[i] : 0;
+        result[i] = (char)(left_byte | right_byte);
+    }
+    result[result_len] = '\0';
+    return ptn_owned_string(result);
+}
+
+static PTN_UNUSED int64_t ptn_value_to_integer(PtnValue value) {
+    return ptn_number_to_integer(ptn_to_number(value));
+}
+
+static PTN_UNUSED PtnValue ptn_bitwise_and(PtnValue left, PtnValue right) {
+    if (left.type == PTN_STRING && right.type == PTN_STRING) {
+        return ptn_bitwise_string_and(left.as.string, right.as.string);
+    }
+    return ptn_int(ptn_value_to_integer(left) & ptn_value_to_integer(right));
+}
+
+static PTN_UNUSED PtnValue ptn_bitwise_or(PtnValue left, PtnValue right) {
+    if (left.type == PTN_STRING && right.type == PTN_STRING) {
+        return ptn_bitwise_string_or(left.as.string, right.as.string);
+    }
+    return ptn_int(ptn_value_to_integer(left) | ptn_value_to_integer(right));
 }
 
 static PTN_UNUSED char *ptn_value_to_string(PtnValue value) {
