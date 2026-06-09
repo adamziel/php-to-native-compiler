@@ -59,6 +59,9 @@ pub enum Instruction {
         level: usize,
         line: usize,
     },
+    Return {
+        value: Option<ValueExpr>,
+    },
     Label {
         name: String,
     },
@@ -256,6 +259,9 @@ fn lower_statements(statements: &[Statement]) -> Vec<Instruction> {
                     else_body: lower_statements(else_body),
                 });
             }
+            Statement::Block { statements, .. } => {
+                instructions.extend(lower_statements(statements));
+            }
             Statement::While {
                 condition, body, ..
             } => {
@@ -304,6 +310,11 @@ fn lower_statements(statements: &[Statement]) -> Vec<Instruction> {
                 instructions.push(Instruction::Break {
                     level: *level,
                     line: span.line,
+                });
+            }
+            Statement::Return { value, .. } => {
+                instructions.push(Instruction::Return {
+                    value: value.as_ref().map(lower_expr),
                 });
             }
             Statement::Label { name, .. } => {

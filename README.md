@@ -194,6 +194,12 @@ Supported today:
 - Braced and single-statement `if`, `elseif`, and `else` statements. Branch
   conditions use boxed scalar truthiness and the currently supported expression
   subset, including grouped expressions and scalar comparisons.
+- Plain compound statement blocks `{ ... }` over the currently supported
+  statement subset. Blocks do not introduce a variable scope, and labels/gotos
+  remain visible through the existing recursive label validation.
+- Script-level `return;` and `return expr;` statements. Optional return
+  expressions are evaluated through the current boxed expression path, then the
+  generated native program frees runtime state and exits successfully.
 - `while (expr) statement` loops over the currently supported scalar expression
   and statement subset, with either a braced block or one supported statement
   as the body.
@@ -212,7 +218,8 @@ Supported today:
   switch/loop targets.
 - User labels such as `L1:` and `goto L1;` statements inside the currently
   generated main function, including source-spanned fatal diagnostics for
-  undefined target labels and duplicate labels.
+  undefined target labels, duplicate labels, and `goto` jumps into active loop
+  or switch scopes.
 - Statement-form direct variable `++` and `--`, such as `$i++;` and `--$i;`,
   using the boxed numeric arithmetic helper path.
 
@@ -233,9 +240,10 @@ Unsupported today:
   comparison parity for unsupported types,
   keyword boolean operators, chained comparison parse errors, unbraced switch
   bodies and alternate control-flow syntax, `foreach`, `continue`, PHP-exact
-  break/continue diagnostics, forbidden-scope goto restrictions for jumps
-  into/out of invalid scopes, full
+  break/continue diagnostics, labels/goto inside unsupported functions,
+  classes, and `try`/`finally` constructs, full
   switch parity for unsupported value types and alternate syntax,
+  PHP-exact `return` value/include/function semantics,
   increment/decrement as expressions, PHP-exact
   increment/decrement semantics for strings/booleans and other edge values,
   for-loop comma expressions and non-direct-variable clause lvalues,

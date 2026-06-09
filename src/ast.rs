@@ -35,6 +35,10 @@ pub enum Statement {
         declarations: Vec<ConstDeclaration>,
         span: SourceSpan,
     },
+    Block {
+        statements: Vec<Statement>,
+        span: SourceSpan,
+    },
     If {
         condition: Expr,
         then_body: Vec<Statement>,
@@ -65,6 +69,10 @@ pub enum Statement {
     },
     Break {
         level: usize,
+        span: SourceSpan,
+    },
+    Return {
+        value: Option<Expr>,
         span: SourceSpan,
     },
     Label {

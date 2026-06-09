@@ -1447,3 +1447,46 @@ Still unsupported after this integer-conversion slice: exact PHP file names,
 source lines, error-handler routing, complete numeric-string classification
 parity, exact scalar conversion overflow/range parity, and arrays, objects,
 resources, references, and copy-on-write behavior.
+
+Added plain compound blocks and script-level `return`:
+
+- The lexer/parser/AST now recognize statement-form `return` and plain
+  compound statement blocks `{ ... }` in the currently supported statement
+  subset.
+- Blocks lower transparently to their inner instructions, matching PHP's lack
+  of block-local variable scope while preserving recursive label/goto
+  validation and nested global-`const` rejection.
+- Script-level `return;` and `return expr;` lower to a native early exit from
+  the generated `main`. Optional return expressions are evaluated first through
+  the current boxed expression path, then runtime state is freed and the native
+  process exits successfully.
+- Native tests prove block-contained labels/gotos, nested blocks, and
+  return-expression evaluation before early exit.
+- Focused public PHPT telemetry through `phpc` passes
+  `Zend/tests/jump/jump14.phpt`.
+
+Still unsupported after this block/return slice: PHP-exact `return` value
+propagation for includes/functions, `return` inside unsupported functions,
+classes, and `try`/`finally` contexts, forbidden-scope goto restrictions beyond
+the currently modeled validator, and alternate control-flow syntax.
+
+Added loop/switch entry restrictions for `goto` labels:
+
+- Parser label validation now records the active loop/switch control path for
+  each script-level label and validates every `goto` against that path.
+- `goto` may jump within the same active control region or out to an enclosing
+  script/block label, but source-spanned PHP-style fatals reject jumps into a
+  loop or switch from outside that control region.
+- Plain blocks remain transparent for label visibility and do not introduce
+  jump restrictions.
+- Native tests prove rejected forward/backward jumps into `while` and `switch`,
+  accepted jumps out of a loop to an outer label, accepted jumps within one
+  loop, and `phpc` fatal rendering.
+- Focused public PHPT telemetry through `phpc` passes
+  `Zend/tests/jump/jump07.phpt`, `Zend/tests/jump/jump08.phpt`,
+  `Zend/tests/jump/jump09.phpt`, and `Zend/tests/jump/jump10.phpt`.
+
+Still unsupported after this goto-restriction slice: labels/goto inside
+unsupported functions, classes, `foreach`, and `try`/`finally` constructs,
+PHP-exact invalid-goto wording for broader unsupported constructs, and
+alternate control-flow syntax.

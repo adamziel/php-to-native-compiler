@@ -1004,6 +1004,45 @@ fn parser_accepts_labels_goto_and_single_statement_if() {
 }
 
 #[test]
+fn parser_accepts_plain_statement_blocks_and_return() {
+    let program = parser::parse(
+        "<?php
+goto A;
+{
+    B:
+        goto C;
+        return;
+}
+A:
+    goto B;
+{
+    C:
+    {
+        print \"Done!\\n\";
+    }
+}
+",
+    )
+    .unwrap();
+    assert_eq!(program.statements.len(), 5);
+    assert!(matches!(&program.statements[1], Statement::Block { .. }));
+    let Statement::Block { statements, .. } = &program.statements[1] else {
+        panic!("expected block statement");
+    };
+    assert!(matches!(&statements[0], Statement::Label { name, .. } if name == "B"));
+    assert!(matches!(&statements[1], Statement::Goto { label, .. } if label == "C"));
+    assert!(matches!(
+        &statements[2],
+        Statement::Return { value: None, .. }
+    ));
+    let Statement::Block { statements, .. } = &program.statements[4] else {
+        panic!("expected outer block statement");
+    };
+    assert!(matches!(&statements[0], Statement::Label { name, .. } if name == "C"));
+    assert!(matches!(&statements[1], Statement::Block { .. }));
+}
+
+#[test]
 fn parser_rejects_goto_to_undefined_label() {
     let error = parser::parse("<?php\ngoto L1;\n").unwrap_err();
     assert_eq!(error.kind, DiagnosticKind::Fatal);
@@ -1017,6 +1056,62 @@ fn parser_rejects_duplicate_labels() {
     assert_eq!(error.kind, DiagnosticKind::Fatal);
     assert_eq!(error.message, "Label 'foo' already defined");
     assert_eq!(error.span.unwrap().line, 4);
+}
+
+#[test]
+fn parser_rejects_goto_into_loop_or_switch() {
+    for (source, line) in [
+        ("<?php\nwhile (0) {\n    L1: echo \"bug\\n\";\n}\ngoto L1;\n", 5),
+        ("<?php\ngoto L1;\nwhile (0) {\n    L1: echo \"bug\\n\";\n}\n", 2),
+        (
+            "<?php\nswitch (0) {\n    case 1:\n        L1: echo \"bug\\n\";\n        break;\n}\ngoto L1;\n",
+            7,
+        ),
+        (
+            "<?php\ngoto L1;\nswitch (0) {\n    case 1:\n        L1: echo \"bug\\n\";\n        break;\n}\n",
+            2,
+        ),
+    ] {
+        let error = parser::parse(source).unwrap_err();
+        assert_eq!(error.kind, DiagnosticKind::Fatal);
+        assert_eq!(
+            error.message,
+            "'goto' into loop or switch statement is disallowed"
+        );
+        assert_eq!(error.span.unwrap().line, line);
+    }
+}
+
+#[test]
+fn parser_accepts_goto_leaving_loop_and_within_same_loop() {
+    parser::parse(
+        "<?php
+$s = \"X\";
+L1: if ($s != \"X\") {
+    echo \"done\\n\";
+} else {
+    while ($s != \"XXX\") {
+        $s .= \"X\";
+        goto L1;
+    }
+}
+",
+    )
+    .unwrap();
+
+    parser::parse(
+        "<?php
+do {
+    if (1) {
+        goto L1;
+    } else {
+L1:
+        echo \"ok\\n\";
+    }
+} while (0);
+",
+    )
+    .unwrap();
 }
 
 #[test]
@@ -1165,6 +1260,42 @@ fn phpc_renders_duplicate_label_as_php_fatal() {
             input.display()
         )
     );
+}
+
+#[test]
+fn phpc_renders_goto_into_loop_or_switch_as_php_fatal() {
+    let cases = [
+        (
+            "jump08.php",
+            "<?php\ngoto L1;\nwhile (0) {\n    L1: echo \"bug\\n\";\n}\n",
+            2,
+        ),
+        (
+            "jump10.php",
+            "<?php\ngoto L1;\nswitch (0) {\n    case 1:\n        L1: echo \"bug\\n\";\n        break;\n}\n",
+            2,
+        ),
+    ];
+
+    for (name, source, line) in cases {
+        let root_name = format!("ptn-phpc-goto-restriction-{name}");
+        let root = temp_dir(&root_name);
+        fs::create_dir_all(&root).unwrap();
+        let input = root.join(name);
+        fs::write(&input, source).unwrap();
+
+        let execution = Command::new(phpc_bin()).arg(&input).output().unwrap();
+        assert!(!execution.status.success());
+        assert_eq!(execution.status.code(), Some(255));
+        assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+        assert_eq!(
+            String::from_utf8(execution.stderr).unwrap(),
+            format!(
+                "Fatal error: 'goto' into loop or switch statement is disallowed in {} on line {line}\n",
+                input.display()
+            )
+        );
+    }
 }
 
 #[test]
@@ -3244,6 +3375,109 @@ L2:
         assert_eq!(String::from_utf8(execution.stdout).unwrap(), expected);
         assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
     }
+}
+
+#[test]
+fn compile_goto_from_loop_to_outer_label_to_native_binary() {
+    let root = temp_dir("ptn-native-goto-jump04-loop-exit");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("jump04-loop-exit.php");
+    let output = root.join("jump04-loop-exit-bin");
+    fs::write(
+        &input,
+        "<?php
+$s = \"X\";
+echo \"1: ok\\n\";
+L1: if ($s != \"X\") {
+    echo \"4: ok\\n\";
+} else {
+    echo \"2: ok\\n\";
+    while ($s != \"XXX\") {
+        echo \"3: ok\\n\";
+        $s .= \"X\";
+        goto L1;
+        echo \"bug\\n\";
+    }
+    echo \"bug\\n\";
+}
+?>",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "1: ok\n2: ok\n3: ok\n4: ok\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_goto_inside_plain_blocks_phpt_shape_to_native_binary() {
+    let root = temp_dir("ptn-native-goto-jump14-blocks");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("jump14.php");
+    let output = root.join("jump14-bin");
+    fs::write(
+        &input,
+        "<?php
+
+goto A;
+
+{
+    B:
+        goto C;
+        return;
+}
+
+A:
+    goto B;
+
+
+
+{
+    C:
+    {
+        print \"Done!\\n\";
+    }
+}
+
+?>",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "Done!\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_return_statement_exits_script_to_native_binary() {
+    let root = temp_dir("ptn-native-return-statement");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("return.php");
+    let output = root.join("return-bin");
+    fs::write(
+        &input,
+        "<?php echo \"before\\n\"; return var_dump(\"value\"); echo \"after\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "before\nstring(5) \"value\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

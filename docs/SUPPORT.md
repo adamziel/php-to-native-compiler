@@ -209,6 +209,12 @@ supports in generated native binaries.
 - Braced and single-statement `if`, `elseif`, and `else` statements whose
   conditions and bodies use the currently supported scalar expression and
   statement subset.
+- Plain compound statement blocks `{ ... }` over the currently supported
+  statement subset. Blocks do not introduce a variable scope, and labels/gotos
+  remain visible through recursive validation.
+- Script-level `return;` and `return expr;` statements. Optional return
+  expressions are evaluated through the current boxed expression path, then the
+  generated native program frees runtime state and exits successfully.
 - `while (expr) statement` loops where the condition and braced or
   single-statement body use the currently supported scalar expression and
   statement subset.
@@ -228,11 +234,13 @@ supports in generated native binaries.
   `break N;` from the active emitted switch/loop target stack.
 - User labels such as `L1:` and `goto L1;` statements inside the currently
   generated main function, including source-spanned fatal diagnostics for
-  undefined target labels and duplicate labels.
+  undefined target labels, duplicate labels, and `goto` jumps into active loop
+  or switch scopes.
 - Source-spanned compile diagnostics emitted through `phpc` use PHP-style fatal
   or parse-error boundaries with the source file and line. This currently
   covers duplicate `default:` clauses in `switch`, duplicate labels, undefined
-  `goto` labels, removed `(real)` and `(unset)` cast syntax,
+  `goto` labels, invalid `goto` jumps into loop or switch scopes, removed
+  `(real)` and `(unset)` cast syntax,
   expression-context `(void)` cast syntax, unterminated block comments, and
   invalid legacy octal integer literals containing `8` or `9`, plus
   unexpected-token parse errors at modeled statement terminators and right
@@ -260,8 +268,10 @@ supports in generated native binaries.
 - Unbraced switch bodies, alternate control-flow syntax, `foreach`, `continue`,
   branch-condition assignments, for-loop comma expressions and
   non-direct-variable clause lvalues, PHP-exact break/continue diagnostics,
-  forbidden-scope goto restrictions for jumps into/out of invalid scopes, and
-  exception/finally control-flow edges.
+  labels/goto inside unsupported functions, classes, and `try`/`finally`
+  constructs, and exception/finally control-flow edges.
+- PHP-exact `return` value propagation for includes/functions and return
+  inside unsupported function/class contexts.
 - Switch alternate syntax and switch behavior for arrays, objects, references,
   copy-on-write, and exceptions.
 - Increment/decrement as expressions, including pre/post result values in echo,

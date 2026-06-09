@@ -230,6 +230,16 @@ fn emit_instruction(
                 out.push_str(");\n");
             }
         }
+        Instruction::Return { value } => {
+            if let Some(value) = value {
+                let return_temp = values.emit_materialized_value(out, value);
+                out.push_str("    (void)");
+                out.push_str(&return_temp);
+                out.push_str(";\n");
+            }
+            out.push_str("    ptn_runtime_free(&runtime);\n");
+            out.push_str("    return 0;\n");
+        }
     }
 }
 

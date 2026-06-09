@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::HashMap;
 
 use crate::ast::{
     ArrayElement, AssignmentOp, BinaryOp, CastKind, ConstDeclaration, Expr, IncDecOp,
@@ -50,8 +50,10 @@ impl Parser {
             TokenKind::For => self.parse_for(),
             TokenKind::Switch => self.parse_switch(),
             TokenKind::Break => self.parse_break(),
+            TokenKind::Return => self.parse_return(),
             TokenKind::Goto => self.parse_goto(),
             TokenKind::Const => self.parse_const(),
+            TokenKind::LeftBrace => self.parse_compound_block(),
             TokenKind::PlusPlus | TokenKind::MinusMinus => self.parse_prefix_increment_statement(),
             TokenKind::Identifier(_) if matches!(self.peek_next().kind, TokenKind::Colon) => {
                 self.parse_label()
@@ -423,6 +425,20 @@ impl Parser {
         Ok(Statement::Break { level, span })
     }
 
+    fn parse_return(&mut self) -> Result<Statement> {
+        let span = self.expect_return()?;
+        let value = if matches!(
+            self.peek().kind,
+            TokenKind::Semicolon | TokenKind::CloseTag | TokenKind::Eof
+        ) {
+            None
+        } else {
+            Some(self.parse_expr()?)
+        };
+        self.expect_statement_terminator()?;
+        Ok(Statement::Return { value, span })
+    }
+
     fn parse_goto(&mut self) -> Result<Statement> {
         let token = self.advance().clone();
         let span = token.span;
@@ -469,6 +485,12 @@ impl Parser {
             content,
             span: token.span,
         })
+    }
+
+    fn parse_compound_block(&mut self) -> Result<Statement> {
+        let span = self.peek().span;
+        let statements = self.parse_block()?;
+        Ok(Statement::Block { statements, span })
     }
 
     fn parse_block(&mut self) -> Result<Vec<Statement>> {
@@ -897,6 +919,15 @@ impl Parser {
         }
     }
 
+    fn expect_return(&mut self) -> Result<SourceSpan> {
+        let token = self.advance();
+        if matches!(token.kind, TokenKind::Return) {
+            Ok(token.span)
+        } else {
+            Err(Diagnostic::new("expected return", Some(token.span)))
+        }
+    }
+
     fn expect_open_tag(&mut self) -> Result<()> {
         let token = self.advance();
         if matches!(token.kind, TokenKind::OpenTag) {
@@ -1068,6 +1099,7 @@ fn token_text(kind: &TokenKind) -> &'static str {
         TokenKind::Case => "case",
         TokenKind::Default => "default",
         TokenKind::Break => "break",
+        TokenKind::Return => "return",
         TokenKind::Goto => "goto",
         TokenKind::Const => "const",
         TokenKind::Identifier(_) => "identifier",
@@ -1156,13 +1188,23 @@ fn escape_token_text(value: &str) -> String {
         .collect()
 }
 
-fn validate_goto_labels(statements: &[Statement]) -> Result<()> {
-    let mut labels = HashSet::new();
-    collect_labels(statements, &mut labels)?;
-    validate_gotos(statements, &labels)
+#[derive(Debug, Clone)]
+struct LabelInfo {
+    control_path: Vec<usize>,
 }
 
-fn collect_labels(statements: &[Statement], labels: &mut HashSet<String>) -> Result<()> {
+fn validate_goto_labels(statements: &[Statement]) -> Result<()> {
+    let mut labels = HashMap::new();
+    let mut control_path = Vec::new();
+    collect_labels(statements, &mut labels, &mut control_path)?;
+    validate_gotos(statements, &labels, &mut control_path)
+}
+
+fn collect_labels(
+    statements: &[Statement],
+    labels: &mut HashMap<String, LabelInfo>,
+    control_path: &mut Vec<usize>,
+) -> Result<()> {
     for statement in statements {
         match statement {
             Statement::If {
@@ -1170,29 +1212,41 @@ fn collect_labels(statements: &[Statement], labels: &mut HashSet<String>) -> Res
                 else_body,
                 ..
             } => {
-                collect_labels(then_body, labels)?;
-                collect_labels(else_body, labels)?;
+                collect_labels(then_body, labels, control_path)?;
+                collect_labels(else_body, labels, control_path)?;
             }
-            Statement::While { body, .. } | Statement::DoWhile { body, .. } => {
-                collect_labels(body, labels)?;
+            Statement::Block { statements, .. } => {
+                collect_labels(statements, labels, control_path)?;
+            }
+            Statement::While { body, span, .. } | Statement::DoWhile { body, span, .. } => {
+                collect_control_labels(*span, body, labels, control_path)?;
             }
             Statement::For {
                 initializers,
                 updates,
                 body,
+                span,
                 ..
             } => {
-                collect_labels(initializers, labels)?;
-                collect_labels(updates, labels)?;
-                collect_labels(body, labels)?;
+                collect_labels(initializers, labels, control_path)?;
+                collect_labels(updates, labels, control_path)?;
+                collect_control_labels(*span, body, labels, control_path)?;
             }
-            Statement::Switch { cases, .. } => {
+            Statement::Switch { cases, span, .. } => {
+                control_path.push(span.byte_start);
                 for case in cases {
-                    collect_labels(&case.body, labels)?;
+                    collect_labels(&case.body, labels, control_path)?;
                 }
+                control_path.pop();
             }
             Statement::Label { name, span } => {
-                if !labels.insert(name.clone()) {
+                let previous = labels.insert(
+                    name.clone(),
+                    LabelInfo {
+                        control_path: control_path.clone(),
+                    },
+                );
+                if previous.is_some() {
                     return Err(Diagnostic::new(
                         format!("Label '{name}' already defined"),
                         Some(*span),
@@ -1205,7 +1259,23 @@ fn collect_labels(statements: &[Statement], labels: &mut HashSet<String>) -> Res
     Ok(())
 }
 
-fn validate_gotos(statements: &[Statement], labels: &HashSet<String>) -> Result<()> {
+fn collect_control_labels(
+    span: SourceSpan,
+    body: &[Statement],
+    labels: &mut HashMap<String, LabelInfo>,
+    control_path: &mut Vec<usize>,
+) -> Result<()> {
+    control_path.push(span.byte_start);
+    let result = collect_labels(body, labels, control_path);
+    control_path.pop();
+    result
+}
+
+fn validate_gotos(
+    statements: &[Statement],
+    labels: &HashMap<String, LabelInfo>,
+    control_path: &mut Vec<usize>,
+) -> Result<()> {
     for statement in statements {
         match statement {
             Statement::If {
@@ -1213,37 +1283,71 @@ fn validate_gotos(statements: &[Statement], labels: &HashSet<String>) -> Result<
                 else_body,
                 ..
             } => {
-                validate_gotos(then_body, labels)?;
-                validate_gotos(else_body, labels)?;
+                validate_gotos(then_body, labels, control_path)?;
+                validate_gotos(else_body, labels, control_path)?;
             }
-            Statement::While { body, .. } | Statement::DoWhile { body, .. } => {
-                validate_gotos(body, labels)?;
+            Statement::Block { statements, .. } => {
+                validate_gotos(statements, labels, control_path)?;
+            }
+            Statement::While { body, span, .. } | Statement::DoWhile { body, span, .. } => {
+                validate_control_gotos(*span, body, labels, control_path)?;
             }
             Statement::For {
                 initializers,
                 updates,
                 body,
+                span,
                 ..
             } => {
-                validate_gotos(initializers, labels)?;
-                validate_gotos(updates, labels)?;
-                validate_gotos(body, labels)?;
+                validate_gotos(initializers, labels, control_path)?;
+                validate_gotos(updates, labels, control_path)?;
+                validate_control_gotos(*span, body, labels, control_path)?;
             }
-            Statement::Switch { cases, .. } => {
+            Statement::Switch { cases, span, .. } => {
+                control_path.push(span.byte_start);
                 for case in cases {
-                    validate_gotos(&case.body, labels)?;
+                    validate_gotos(&case.body, labels, control_path)?;
                 }
+                control_path.pop();
             }
-            Statement::Goto { label, span } if !labels.contains(label) => {
-                return Err(Diagnostic::new(
-                    format!("'goto' to undefined label '{label}'"),
-                    Some(*span),
-                ));
+            Statement::Goto { label, span } => {
+                let Some(target) = labels.get(label) else {
+                    return Err(Diagnostic::new(
+                        format!("'goto' to undefined label '{label}'"),
+                        Some(*span),
+                    ));
+                };
+                if !target_control_path_is_reachable(&target.control_path, control_path) {
+                    return Err(Diagnostic::new(
+                        "'goto' into loop or switch statement is disallowed",
+                        Some(*span),
+                    ));
+                }
             }
             _ => {}
         }
     }
     Ok(())
+}
+
+fn validate_control_gotos(
+    span: SourceSpan,
+    body: &[Statement],
+    labels: &HashMap<String, LabelInfo>,
+    control_path: &mut Vec<usize>,
+) -> Result<()> {
+    control_path.push(span.byte_start);
+    let result = validate_gotos(body, labels, control_path);
+    control_path.pop();
+    result
+}
+
+fn target_control_path_is_reachable(target: &[usize], current: &[usize]) -> bool {
+    target.len() <= current.len()
+        && target
+            .iter()
+            .zip(current)
+            .all(|(target, current)| target == current)
 }
 
 fn combine_spans(left: SourceSpan, right: SourceSpan) -> SourceSpan {
