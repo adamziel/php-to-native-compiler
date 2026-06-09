@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-09T23:53Z
-Measured branch: `ptn-4yt.9` rebased after `ptn-4yt.8`
+Refresh: 2026-06-10T00:05Z
+Measured branches: `ptn-4yt.9` then `ptn-4yt.3` rebased on `master`
 
 ## Test Dashboard
 
@@ -17,7 +17,7 @@ Measured branch: `ptn-4yt.9` rebased after `ptn-4yt.8`
 | PHPT other rows | 2 | 2 | 0 |
 | COW contract spec tests | 7 | 7 | 0 |
 | COW-focused native tests | 15 | 15 | 0 |
-| Focused COW reducer snippets | 28 | 28 | 0 |
+| Focused COW reducer snippets | 30 | 30 | 0 |
 | COW oracle suite | 22 | 22 | 0 |
 | By-reference foreach COW oracle | 11 | 11 | 0 |
 | Post-merge COW gate | 15 | 15 | 0 |
@@ -35,7 +35,9 @@ string-offsets 4/4, array-writes-appends-unset 4/4, nested-arrays 0/4,
 foreach-mutation 2/4, function-boundaries 1/4, reference-interaction 4/5.
 The full bounded runner still stops at `Zend/tests/bug38469.phpt`; that row is
 counted failing. Remaining blockers are tracked in
-`docs/COW_PHPT_BLOCKERS_2026-06-09.md`.
+`docs/COW_PHPT_BLOCKERS_2026-06-09.md`. Native COW reducers are 30/30,
+by-reference foreach oracle is 11/11, mutating-internal matrix is 14/14 plus
+six unsupported target diagnostics, and the post-merge COW gate is 15/15.
 
 ## Already Ported
 
@@ -49,16 +51,19 @@ literal reference elements, array union `+`, scalar type hints, typed
 by-reference return separation, `count()`, `??`, COW gates/oracles, assignment
 expressions, expression-level `@` suppression, `file_put_contents()`,
 `sha1_file()`, `unlink()` byte-file slices, reference-aware
-`array_sum()`/`strtr()`, and `debug_zval_dump()` reference inspection.
+`array_sum()`/`strtr()`, `debug_zval_dump()` reference inspection, and
+string-valued dynamic function calls with lvalue reference arguments through
+the fallback dispatcher.
 
 ## Still Needed
 
-More PHPT COW rows, call-result references, broader by-reference returns,
-nested reference lvalues, recursive reference diagnostics, dynamic calls, and
-assignment-form `??=`. File API coverage remains narrow.
+More PHPT COW rows, reference-aware internals, call-result references, broader
+by-reference returns, nested reference lvalues, recursive reference diagnostics,
+closure/callback call surfaces, and assignment-form `??=`. File API coverage
+remains narrow.
 
 ## Next Focus
 
 1. Prove remaining function and reference boundaries.
-2. Carry COW through dynamic call paths and internals.
+2. Carry COW through remaining callback/internal call paths.
 3. Keep dashboard cells numeric and status files under 500 words.

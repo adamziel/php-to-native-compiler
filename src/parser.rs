@@ -106,6 +106,9 @@ impl Parser {
             TokenKind::Identifier(_) if matches!(self.peek_next().kind, TokenKind::LeftParen) => {
                 self.parse_call_statement()
             }
+            TokenKind::Variable(_) if matches!(self.peek_next().kind, TokenKind::LeftParen) => {
+                self.parse_expression_statement()
+            }
             TokenKind::Variable(_) => self.parse_variable_statement(),
             TokenKind::InlineHtml(_) => self.parse_inline_html(),
             _ if self.peek_starts_expression() => self.parse_expression_statement(),
@@ -1137,6 +1140,15 @@ impl Parser {
                     expr = Expr::MethodCall {
                         receiver: Box::new(expr),
                         name: name.to_ascii_lowercase(),
+                        arguments,
+                        span: combine_spans(start_span, right_span),
+                    };
+                }
+                TokenKind::LeftParen => {
+                    let start_span = expr.span();
+                    let (arguments, right_span) = self.parse_call_arguments()?;
+                    expr = Expr::DynamicCall {
+                        callee: Box::new(expr),
                         arguments,
                         span: combine_spans(start_span, right_span),
                     };
@@ -2398,6 +2410,7 @@ fn is_supported_global_const_expr(expr: &Expr) -> bool {
         | Expr::Variable(_, _)
         | Expr::Assign { .. }
         | Expr::Call { .. }
+        | Expr::DynamicCall { .. }
         | Expr::MethodCall { .. }
         | Expr::ArrayAccess { .. }
         | Expr::Isset { .. }

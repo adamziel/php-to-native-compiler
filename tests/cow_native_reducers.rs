@@ -274,6 +274,7 @@ function snapshot_arg($value) {\n\
     $copy[] = \"copy\";\n\
     return [$value, $arg, $copy];\n\
 }\n\
+function append_marker(&$value) { $value[] = \"callee\"; return count($value); }\n\
 function make_text($seed) { return $seed . \"bc\"; }\n\
 $pass = 0;\n\
 $fail = 0;\n\
@@ -324,6 +325,16 @@ if (record_case(\"function_returned_read_slot\", $source_slots[0][\"v\"] === 40 
 $arg_source = [\"seed\"];\n\
 $arg_result = snapshot_arg($arg_source);\n\
 if (record_case(\"func_get_arg_result\", count($arg_source) === 1 && count($arg_result[0]) === 1 && count($arg_result[1]) === 1 && count($arg_result[2]) === 2 && $arg_result[2][1] === \"copy\")) { $pass++; } else { $fail++; }\n\
+$dynamic_user = \"append_marker\";\n\
+$dynamic_source = [\"seed\"];\n\
+$dynamic_copy = $dynamic_source;\n\
+$dynamic_count = $dynamic_user($dynamic_copy);\n\
+if (record_case(\"dynamic_user_call_arg_cow\", $dynamic_count === 2 && count($dynamic_source) === 1 && count($dynamic_copy) === 2 && $dynamic_copy[1] === \"callee\")) { $pass++; } else { $fail++; }\n\
+$dynamic_shift = \"array_shift\";\n\
+$shift_source = [10, 20, 30];\n\
+$shift_copy = $shift_source;\n\
+$shifted = $dynamic_shift($shift_copy);\n\
+if (record_case(\"dynamic_array_shift_detaches_arg\", $shifted === 10 && count($shift_source) === 3 && count($shift_copy) === 2 && $shift_source[0] === 10 && $shift_copy[0] === 20)) { $pass++; } else { $fail++; }\n\
 echo \"dynamic temporary COW: pass=\", $pass, \" fail=\", $fail, \"\\n\";",
     )
     .unwrap();
@@ -359,12 +370,16 @@ echo \"dynamic temporary COW: pass=\", $pass, \" fail=\", $fail, \"\\n\";",
     );
     assert_eq!(
         String::from_utf8(native.stdout).unwrap(),
-        "dynamic temporary COW: pass=10 fail=0\n"
+        "dynamic temporary COW: pass=12 fail=0\n"
     );
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_value_share("));
     assert!(c_source.contains("ptn_value_drop(&ptn_tmp_"));
+    assert!(c_source.contains("ptn_dynamic_function_name("));
+    assert!(c_source.contains("ptn_call_dynamic_function_name(&runtime"));
+    assert!(c_source.contains("ptn_runtime_reference_for_variable(&runtime"));
+    assert!(c_source.contains("ptn_dynamic_call_detach_first_reference_argument"));
     assert!(
         c_source.contains("static PTN_UNUSED PtnArray *ptn_value_detach_array(PtnValue *value)")
     );

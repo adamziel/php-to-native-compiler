@@ -243,6 +243,11 @@ pub enum Expr {
         arguments: Vec<Expr>,
         span: SourceSpan,
     },
+    DynamicCall {
+        callee: Box<Expr>,
+        arguments: Vec<Expr>,
+        span: SourceSpan,
+    },
     MethodCall {
         receiver: Box<Expr>,
         name: String,
@@ -369,7 +374,9 @@ impl Expr {
             | Expr::Constant(_, span)
             | Expr::MagicConstant(_, span) => *span,
             Expr::Assign { span, .. } => *span,
-            Expr::Call { span, .. } | Expr::MethodCall { span, .. } => *span,
+            Expr::Call { span, .. }
+            | Expr::DynamicCall { span, .. }
+            | Expr::MethodCall { span, .. } => *span,
             Expr::Array { span, .. } => *span,
             Expr::ArrayAccess { span, .. } => *span,
             Expr::Isset { span, .. } => *span,

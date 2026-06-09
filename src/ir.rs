@@ -192,6 +192,11 @@ pub enum ValueExpr {
         arguments: Vec<ValueExpr>,
         line: usize,
     },
+    DynamicCall {
+        callee: Box<ValueExpr>,
+        arguments: Vec<ValueExpr>,
+        line: usize,
+    },
     MethodCall {
         receiver: Box<ValueExpr>,
         name: String,
@@ -721,6 +726,15 @@ fn lower_expr(expr: &Expr) -> ValueExpr {
             span,
         } => ValueExpr::InternalCall {
             name: name.clone(),
+            arguments: arguments.iter().map(lower_expr).collect(),
+            line: span.line,
+        },
+        Expr::DynamicCall {
+            callee,
+            arguments,
+            span,
+        } => ValueExpr::DynamicCall {
+            callee: Box::new(lower_expr(callee)),
             arguments: arguments.iter().map(lower_expr).collect(),
             line: span.line,
         },

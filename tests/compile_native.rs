@@ -616,6 +616,29 @@ fn parser_accepts_internal_call_expressions() {
 }
 
 #[test]
+fn parser_accepts_dynamic_function_value_calls() {
+    let program =
+        parser::parse("<?php $fn = \"strlen\"; echo $fn(\"abc\"); $fn(\"ignored\");").unwrap();
+    assert_eq!(program.statements.len(), 3);
+    let Statement::Echo { expressions, .. } = &program.statements[1] else {
+        panic!("expected echo statement");
+    };
+    assert!(matches!(
+        &expressions[0],
+        Expr::DynamicCall { callee, arguments, .. }
+            if matches!(callee.as_ref(), Expr::Variable(name, _) if name == "fn")
+                && arguments.len() == 1
+    ));
+    assert!(matches!(
+        &program.statements[2],
+        Statement::Expression {
+            expression: Expr::DynamicCall { arguments, .. },
+            ..
+        } if arguments.len() == 1
+    ));
+}
+
+#[test]
 fn parser_accepts_user_function_declarations_and_returns() {
     let program = parser::parse(
         "<?php function add($left, $right) { $sum = $left + $right; return $sum; } echo add(2, 3);",
@@ -3810,6 +3833,42 @@ fn compile_user_function_calls_use_direct_generated_path_to_native_binary() {
     assert!(!main_body.contains("ptn_call_function(&runtime, \"apply\""));
     assert!(!c_source.contains("ptn_call_internal"));
     assert!(!c_source.contains("ptn_internal_var_dump"));
+}
+
+#[test]
+fn compile_dynamic_function_value_calls_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-function-value-call");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-function-value-call.php");
+    let output = root.join("dynamic-function-value-call-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function add_one($value) { return $value + 1; }\n\
+function push_marker(&$items) { $items[] = \"mark\"; return count($items); }\n\
+$call = \"add_one\";\n\
+echo $call(6), \"\\n\";\n\
+$call = \"push_marker\";\n\
+$items = [\"seed\"];\n\
+echo $call($items), \":\", count($items), \":\", $items[1], \"\\n\";",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "7\n2:2:mark\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dynamic_function_name("));
+    assert!(c_source.contains("ptn_call_dynamic_function_name(&runtime"));
+    assert!(c_source.contains("ptn_runtime_reference_for_variable(&runtime, \"items\")"));
+    assert!(c_source.contains("ptn_dynamic_call_detach_first_reference_argument"));
 }
 
 #[test]
