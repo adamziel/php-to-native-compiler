@@ -2,7 +2,7 @@ use std::fs;
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use ptn::ast::{BinaryOp, Expr, Statement};
+use ptn::ast::{BinaryOp, CastKind, Expr, Statement, UnaryOp};
 use ptn::lexer::{self, TokenKind};
 use ptn::{compile_file, parser, CompileOptions};
 
@@ -107,6 +107,53 @@ fn parser_rejects_inline_html_before_open_tag() {
 fn parser_rejects_inline_html_after_close_tag() {
     let error = parser::parse("<?php print \"ok\"; ?> html").unwrap_err();
     assert!(error.message.contains("inline HTML after close tag"));
+}
+
+#[test]
+fn parser_accepts_parenthesized_unary_and_cast_expressions() {
+    let program =
+        parser::parse("<?php echo -(2 + 3), !(\"0\"), (int)\"42\", (string)true;").unwrap();
+    let Statement::Echo { expressions, .. } = &program.statements[0] else {
+        panic!("expected echo statement");
+    };
+
+    let Expr::Unary {
+        op: UnaryOp::Negate,
+        expr,
+        ..
+    } = &expressions[0]
+    else {
+        panic!("expected unary negation");
+    };
+    assert!(matches!(
+        expr.as_ref(),
+        Expr::Binary {
+            op: BinaryOp::Add,
+            ..
+        }
+    ));
+
+    assert!(matches!(
+        &expressions[1],
+        Expr::Unary {
+            op: UnaryOp::Not,
+            ..
+        }
+    ));
+    assert!(matches!(
+        &expressions[2],
+        Expr::Cast {
+            kind: CastKind::Int,
+            ..
+        }
+    ));
+    assert!(matches!(
+        &expressions[3],
+        Expr::Cast {
+            kind: CastKind::String,
+            ..
+        }
+    ));
 }
 
 #[test]
@@ -282,6 +329,29 @@ fn compile_numeric_string_and_float_addition_to_native_binary() {
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "5 2.5\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_unary_parenthesized_and_cast_expressions_to_native_binary() {
+    let root = temp_dir("ptn-native-unary-casts");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("unary-casts.php");
+    let output = root.join("unary-casts-bin");
+    fs::write(
+        &input,
+        "<?php echo -(2 + 3), \"\\n\"; echo !(\"0\"), \" \", !(\"x\"), \"\\n\"; echo (int)\"42\" + (float)\"0.5\", \" \", (string)true . (bool)\"0\", \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "-5\n1 \n42.5 1\n"
+    );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 

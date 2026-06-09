@@ -109,3 +109,21 @@ onto the print-enabled tree:
 Still unsupported for PHP tag handling: inline HTML before `<?php`, between PHP
 blocks, or after a close tag; short open tags; doc comment retention; and full
 PHP/HTML mode switching.
+
+Implemented a narrow boxed unary/cast expression slice in the CAO worktree:
+
+- Lexer support for `-`, `!`, `(`, `)`, and scalar cast keywords.
+- Parser/AST support for parenthesized expression grouping, unary `-`, unary
+  `!`, and `(int)`, `(float)`, `(string)`, and `(bool)` casts.
+- IR value-expression operation nodes for unary operations and scalar casts.
+- Generated C code that materializes operands once before calling boxed runtime
+  helpers.
+- Boxed runtime helpers for scalar numeric negation, PHP scalar truthiness
+  negation, and scalar casts using the existing number/string conversion
+  helpers.
+- Native tests proving grouped negation, truthiness negation, scalar casts, and
+  interaction with binary `+` and `.` expressions.
+
+Still unsupported for unary/casts: arrays, objects, references, copy-on-write,
+full numeric-string diagnostic parity, unsupported operand `TypeError` parity,
+and exact overflow behavior for scalar casts.

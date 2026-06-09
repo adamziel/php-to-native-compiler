@@ -22,13 +22,20 @@ supports in generated native binaries.
 - Binary operands are materialized left-to-right before the generated C backend
   calls runtime helpers.
 - Print statements use the same generated boxed output path as echo.
+- Parenthesized expressions for grouping.
+- Unary `-` over boxed scalar numeric values.
+- Unary `!` using boxed PHP scalar truthiness: `null`, `false`, numeric zero,
+  `0.0`, `""`, and `"0"` are falsey; other supported scalar values are truthy.
+- Scalar `(int)`, `(float)`, `(string)`, and `(bool)` casts over supported boxed
+  scalar values.
 
 ## Not Yet Supported
 
 - PHP-exact diagnostic formatting, file names, line numbers, error handlers, and
   error reporting configuration.
 - Full PHP numeric-string conversion warning parity, non-numeric string
-  arithmetic diagnostics, and complete overflow parity.
+  arithmetic diagnostics, complete overflow parity, and exact scalar cast
+  overflow behavior.
 - `print` as an expression returning `1`, including contexts such as assignment,
   echo operands, binary operands, and parenthesized `print(...)` syntax.
 - Inline HTML before `<?php`, between PHP blocks, or after a closing PHP tag.

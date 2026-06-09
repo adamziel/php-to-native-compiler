@@ -4,7 +4,7 @@ use std::path::Path;
 use std::process::Command;
 
 use crate::diagnostic::{Diagnostic, Result};
-use crate::ir::{BinaryOp, Instruction, Module, ValueExpr};
+use crate::ir::{BinaryOp, CastKind, Instruction, Module, UnaryOp, ValueExpr};
 
 pub fn emit_c(module: &Module) -> String {
     let mut out = String::new();
@@ -100,6 +100,38 @@ impl ValueEmitter {
                 out.push_str(");\n");
                 result_temp
             }
+            ValueExpr::Unary { op, expr } => {
+                let expr_temp = self.emit_materialized_value(out, expr);
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ");
+                out.push_str(match op {
+                    UnaryOp::Negate => "ptn_negate",
+                    UnaryOp::Not => "ptn_not",
+                });
+                out.push('(');
+                out.push_str(&expr_temp);
+                out.push_str(");\n");
+                result_temp
+            }
+            ValueExpr::Cast { kind, expr } => {
+                let expr_temp = self.emit_materialized_value(out, expr);
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ");
+                out.push_str(match kind {
+                    CastKind::Int => "ptn_cast_int",
+                    CastKind::Float => "ptn_cast_float",
+                    CastKind::String => "ptn_cast_string",
+                    CastKind::Bool => "ptn_cast_bool",
+                });
+                out.push('(');
+                out.push_str(&expr_temp);
+                out.push_str(");\n");
+                result_temp
+            }
             ValueExpr::String(value) => format!("ptn_string(\"{}\")", c_string(value)),
             ValueExpr::Int(value) => format!("ptn_int({value})"),
             ValueExpr::Float(value) => format!("ptn_float({value:?})"),
@@ -114,7 +146,10 @@ impl ValueEmitter {
     }
 
     fn emit_materialized_value(&mut self, out: &mut String, value: &ValueExpr) -> String {
-        if matches!(value, ValueExpr::Binary { .. }) {
+        if matches!(
+            value,
+            ValueExpr::Binary { .. } | ValueExpr::Unary { .. } | ValueExpr::Cast { .. }
+        ) {
             return self.emit_value(out, value);
         }
 
@@ -425,6 +460,50 @@ static PTN_UNUSED PtnNumber ptn_to_number(PtnValue value) {
     return ptn_number_int(0);
 }
 
+static PTN_UNUSED PtnValue ptn_negate(PtnValue value) {
+    PtnNumber number = ptn_to_number(value);
+    if (number.type == PTN_NUMBER_FLOAT) {
+        return ptn_float(-number.floating);
+    }
+    if (number.integer == INT64_MIN) {
+        return ptn_float(-(double)number.integer);
+    }
+    return ptn_int(-number.integer);
+}
+
+static PTN_UNUSED int ptn_is_truthy(PtnValue value) {
+    switch (value.type) {
+        case PTN_NULL:
+            return 0;
+        case PTN_BOOL:
+            return value.as.boolean != 0;
+        case PTN_INT:
+            return value.as.integer != 0;
+        case PTN_FLOAT:
+            return value.as.floating != 0.0;
+        case PTN_STRING:
+            return value.as.string[0] != '\0' && strcmp(value.as.string, "0") != 0;
+    }
+    return 0;
+}
+
+static PTN_UNUSED PtnValue ptn_not(PtnValue value) {
+    return ptn_bool(!ptn_is_truthy(value));
+}
+
+static PTN_UNUSED PtnValue ptn_cast_int(PtnValue value) {
+    PtnNumber number = ptn_to_number(value);
+    if (number.type == PTN_NUMBER_FLOAT) {
+        return ptn_int((int64_t)number.floating);
+    }
+    return ptn_int(number.integer);
+}
+
+static PTN_UNUSED PtnValue ptn_cast_float(PtnValue value) {
+    PtnNumber number = ptn_to_number(value);
+    return ptn_float(number.floating);
+}
+
 static PTN_UNUSED PtnValue ptn_add(PtnValue left, PtnValue right) {
     PtnNumber left_number = ptn_to_number(left);
     PtnNumber right_number = ptn_to_number(right);
@@ -485,6 +564,14 @@ static PTN_UNUSED PtnValue ptn_concat(PtnValue left, PtnValue right) {
     free(left_string);
     free(right_string);
     return ptn_owned_string(joined);
+}
+
+static PTN_UNUSED PtnValue ptn_cast_string(PtnValue value) {
+    return ptn_owned_string(ptn_value_to_string(value));
+}
+
+static PTN_UNUSED PtnValue ptn_cast_bool(PtnValue value) {
+    return ptn_bool(ptn_is_truthy(value));
 }
 
 static void ptn_echo(PtnValue value) {

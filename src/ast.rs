@@ -30,6 +30,16 @@ pub enum Expr {
     Bool(bool, SourceSpan),
     Null(SourceSpan),
     Variable(String, SourceSpan),
+    Unary {
+        op: UnaryOp,
+        expr: Box<Expr>,
+        span: SourceSpan,
+    },
+    Cast {
+        kind: CastKind,
+        expr: Box<Expr>,
+        span: SourceSpan,
+    },
     Binary {
         op: BinaryOp,
         left: Box<Expr>,
@@ -44,6 +54,20 @@ pub enum BinaryOp {
     Concat,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnaryOp {
+    Negate,
+    Not,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CastKind {
+    Int,
+    Float,
+    String,
+    Bool,
+}
+
 impl Expr {
     pub fn span(&self) -> SourceSpan {
         match self {
@@ -53,6 +77,7 @@ impl Expr {
             | Expr::Bool(_, span)
             | Expr::Null(span)
             | Expr::Variable(_, span) => *span,
+            Expr::Unary { span, .. } | Expr::Cast { span, .. } => *span,
             Expr::Binary { span, .. } => *span,
         }
     }

@@ -1,4 +1,4 @@
-use crate::ast::{BinaryOp, Expr, Program, Statement};
+use crate::ast::{BinaryOp, CastKind, Expr, Program, Statement, UnaryOp};
 use crate::diagnostic::{Diagnostic, Result, SourceSpan};
 use crate::lexer::{lex, Token, TokenKind};
 
@@ -75,7 +75,7 @@ impl Parser {
     }
 
     fn parse_binary_expr(&mut self, min_precedence: u8) -> Result<Expr> {
-        let mut left = self.parse_primary_expr()?;
+        let mut left = self.parse_unary_expr()?;
         while let Some((op, precedence)) = self.peek_binary_op() {
             if precedence < min_precedence {
                 break;
@@ -94,6 +94,45 @@ impl Parser {
         Ok(left)
     }
 
+    fn parse_unary_expr(&mut self) -> Result<Expr> {
+        match self.peek().kind {
+            TokenKind::Minus => {
+                let token = self.advance().clone();
+                let expr = self.parse_unary_expr()?;
+                let span = combine_spans(token.span, expr.span());
+                Ok(Expr::Unary {
+                    op: UnaryOp::Negate,
+                    expr: Box::new(expr),
+                    span,
+                })
+            }
+            TokenKind::Bang => {
+                let token = self.advance().clone();
+                let expr = self.parse_unary_expr()?;
+                let span = combine_spans(token.span, expr.span());
+                Ok(Expr::Unary {
+                    op: UnaryOp::Not,
+                    expr: Box::new(expr),
+                    span,
+                })
+            }
+            TokenKind::LeftParen => {
+                if let Some((kind, span)) = self.try_parse_cast_prefix()? {
+                    let expr = self.parse_unary_expr()?;
+                    let span = combine_spans(span, expr.span());
+                    Ok(Expr::Cast {
+                        kind,
+                        expr: Box::new(expr),
+                        span,
+                    })
+                } else {
+                    self.parse_primary_expr()
+                }
+            }
+            _ => self.parse_primary_expr(),
+        }
+    }
+
     fn parse_primary_expr(&mut self) -> Result<Expr> {
         let token = self.advance().clone();
         match token.kind {
@@ -104,7 +143,38 @@ impl Parser {
             TokenKind::False => Ok(Expr::Bool(false, token.span)),
             TokenKind::Null => Ok(Expr::Null(token.span)),
             TokenKind::Variable(name) => Ok(Expr::Variable(name, token.span)),
+            TokenKind::LeftParen => {
+                let expr = self.parse_expr()?;
+                self.expect_right_paren()?;
+                Ok(expr)
+            }
             _ => Err(Diagnostic::new("expected expression", Some(token.span))),
+        }
+    }
+
+    fn try_parse_cast_prefix(&mut self) -> Result<Option<(CastKind, SourceSpan)>> {
+        let start = self.index;
+        let left = self.advance().clone();
+        let Some(kind) = self.peek_cast_kind() else {
+            self.index = start;
+            return Ok(None);
+        };
+        self.advance();
+        if !matches!(self.peek().kind, TokenKind::RightParen) {
+            self.index = start;
+            return Ok(None);
+        }
+        let right = self.advance().clone();
+        Ok(Some((kind, combine_spans(left.span, right.span))))
+    }
+
+    fn peek_cast_kind(&self) -> Option<CastKind> {
+        match self.peek().kind {
+            TokenKind::IntType => Some(CastKind::Int),
+            TokenKind::FloatType => Some(CastKind::Float),
+            TokenKind::StringType => Some(CastKind::String),
+            TokenKind::BoolType => Some(CastKind::Bool),
+            _ => None,
         }
     }
 
@@ -163,6 +233,18 @@ impl Parser {
                 "expected semicolon",
                 Some(self.peek().span),
             )),
+        }
+    }
+
+    fn expect_right_paren(&mut self) -> Result<()> {
+        let token = self.advance();
+        if matches!(token.kind, TokenKind::RightParen) {
+            Ok(())
+        } else {
+            Err(Diagnostic::new(
+                "expected right parenthesis",
+                Some(token.span),
+            ))
         }
     }
 

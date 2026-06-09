@@ -30,17 +30,20 @@ Supported today:
   including chained expressions and assignment results. The parser treats `+`
   as higher precedence than `.` and the backend emits runtime calls over
   `PtnValue` operands.
+- Parenthesized expressions, unary `-`, unary `!`, and `(int)`, `(float)`,
+  `(string)`, and `(bool)` casts for boxed scalar values. Unary and cast
+  operations are emitted as runtime helper calls over `PtnValue` operands.
 
 Unsupported today:
 
 - Arrays, objects, functions, classes, includes, references, copy-on-write,
   resources, exceptions, compound assignment, `print` as an expression returning
   `1`, parenthesized `print(...)` syntax, full PHP numeric-string and
-  non-numeric string arithmetic diagnostics, overflow parity, PHP-exact warning
-  text/file/line/error-handler behavior, inline HTML before `<?php`, between
-  PHP blocks, or after a closing PHP tag, doc comment retention, variable
-  variables, and dynamic fallback. These are architecture targets, not excuses
-  for exact-shape hacks.
+  non-numeric string arithmetic diagnostics, overflow parity, exact scalar cast
+  overflow behavior, PHP-exact warning text/file/line/error-handler behavior,
+  inline HTML before `<?php`, between PHP blocks, or after a closing PHP tag,
+  doc comment retention, variable variables, and dynamic fallback. These are
+  architecture targets, not excuses for exact-shape hacks.
 
 ## Build
 

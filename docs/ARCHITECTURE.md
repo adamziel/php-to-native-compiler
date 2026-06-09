@@ -35,6 +35,10 @@ Current runtime/compiler slices:
 - Statement-form `print expr;` lowers to the same boxed output IR instruction
   used by echo, so generated native code routes print output through the
   existing `ptn_echo` helper.
+- Parenthesized expressions are parsed as grouping, while unary `-`, unary `!`,
+  and scalar `(int)`, `(float)`, `(string)`, and `(bool)` casts lower to IR
+  value-expression operation nodes. The C backend emits boxed runtime helper
+  calls such as `ptn_negate`, `ptn_not`, and `ptn_cast_*`.
 
 Near-term architecture targets:
 
@@ -43,6 +47,7 @@ Near-term architecture targets:
 - Function and class metadata.
 - Broader diagnostics and exception channels.
 - Full PHP numeric-string conversions, non-numeric string arithmetic
-  diagnostics, warnings, and overflow behavior for arithmetic helpers.
+  diagnostics, warnings, scalar cast overflow behavior, and overflow behavior
+  for arithmetic helpers.
 - Explicit fallback boundaries for `eval`, variable variables, and runtime
   symbol mutation.
