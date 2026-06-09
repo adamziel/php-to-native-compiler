@@ -2,7 +2,7 @@ use std::fs;
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use ptn::ast::{AssignmentOp, BinaryOp, CastKind, Expr, Statement, UnaryOp};
+use ptn::ast::{AssignmentOp, BinaryOp, CastKind, Expr, IncDecOp, Statement, UnaryOp};
 use ptn::lexer::{self, TokenKind};
 use ptn::{compile_file, parser, CompileOptions};
 
@@ -124,6 +124,33 @@ fn parser_accepts_direct_variable_compound_assignments() {
 }
 
 #[test]
+fn parser_accepts_direct_variable_increment_decrement_statements() {
+    let program = parser::parse("<?php $value = 1; $value++; ++$value; $value--; --$value; while ($value < 3) { $value++; }").unwrap();
+    assert_eq!(program.statements.len(), 6);
+
+    let Statement::Increment { op, .. } = &program.statements[1] else {
+        panic!("expected postfix increment statement");
+    };
+    assert_eq!(*op, IncDecOp::Increment);
+
+    let Statement::Increment { op, .. } = &program.statements[4] else {
+        panic!("expected prefix decrement statement");
+    };
+    assert_eq!(*op, IncDecOp::Decrement);
+
+    let Statement::While { body, .. } = &program.statements[5] else {
+        panic!("expected while statement");
+    };
+    assert!(matches!(
+        &body[0],
+        Statement::Increment {
+            op: IncDecOp::Increment,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn parser_rejects_print_expression_contexts() {
     let error = parser::parse("<?php $result = print \"hello\";").unwrap_err();
     assert!(error.message.contains("expected expression"));
@@ -133,12 +160,15 @@ fn parser_rejects_print_expression_contexts() {
 }
 
 #[test]
-fn parser_rejects_unsupported_increment_and_decrement_operators() {
+fn parser_rejects_increment_and_decrement_expression_contexts() {
     let increment = parser::parse("<?php echo ++$value;").unwrap_err();
-    assert!(increment.message.contains("unsupported increment operator"));
+    assert!(increment.message.contains("expected expression"));
 
-    let decrement = parser::parse("<?php echo --$value;").unwrap_err();
-    assert!(decrement.message.contains("unsupported decrement operator"));
+    let decrement = parser::parse("<?php echo $value--;").unwrap_err();
+    assert!(decrement.message.contains("expected semicolon"));
+
+    let invalid_prefix = parser::parse("<?php ++1;").unwrap_err();
+    assert!(invalid_prefix.message.contains("expected variable"));
 }
 
 #[test]
@@ -657,6 +687,62 @@ fn compile_if_condition_evaluates_before_selected_branch_to_native_binary() {
         String::from_utf8(execution.stderr).unwrap(),
         "Warning: Undefined variable $missing\n"
     );
+}
+
+#[test]
+fn compile_while_with_postfix_increment_to_native_binary() {
+    let root = temp_dir("ptn-native-while-postfix-increment");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("while-postfix-increment.php");
+    let output = root.join("while-postfix-increment-bin");
+    fs::write(&input, "<?php $a = 1; while ($a < 10) { echo $a; $a++; }").unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "123456789");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_prefix_increment_and_decrement_to_native_binary() {
+    let root = temp_dir("ptn-native-prefix-increment-decrement");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("prefix-increment-decrement.php");
+    let output = root.join("prefix-increment-decrement-bin");
+    fs::write(
+        &input,
+        "<?php $value = 1; ++$value; echo $value, \" \"; $value++; echo $value, \" \"; --$value; echo $value, \" \"; $value--; echo $value, \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "2 3 2 1\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_while_condition_rechecks_each_iteration_to_native_binary() {
+    let root = temp_dir("ptn-native-while-condition-recheck");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("while-condition-recheck.php");
+    let output = root.join("while-condition-recheck-bin");
+    fs::write(
+        &input,
+        "<?php $enabled = true; $i = 0; while ($enabled && $i < 3) { echo $i; $i++; if ($i == 2) { $enabled = false; } } echo \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "01\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

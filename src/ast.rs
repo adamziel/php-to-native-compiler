@@ -13,6 +13,11 @@ pub enum Statement {
         value: Expr,
         span: SourceSpan,
     },
+    Increment {
+        name: String,
+        op: IncDecOp,
+        span: SourceSpan,
+    },
     Call {
         name: String,
         arguments: Vec<Expr>,
@@ -32,6 +37,11 @@ pub enum Statement {
         else_body: Vec<Statement>,
         span: SourceSpan,
     },
+    While {
+        condition: Expr,
+        body: Vec<Statement>,
+        span: SourceSpan,
+    },
     InlineHtml {
         content: String,
         span: SourceSpan,
@@ -47,6 +57,12 @@ pub enum AssignmentOp {
     DivideAssign,
     ModuloAssign,
     ConcatAssign,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IncDecOp {
+    Increment,
+    Decrement,
 }
 
 #[derive(Debug, Clone, PartialEq)]

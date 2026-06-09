@@ -1,6 +1,6 @@
 use crate::ast::{
-    AssignmentOp, BinaryOp as AstBinaryOp, CastKind as AstCastKind, Expr, Program, Statement,
-    UnaryOp as AstUnaryOp,
+    AssignmentOp, BinaryOp as AstBinaryOp, CastKind as AstCastKind, Expr, IncDecOp as AstIncDecOp,
+    Program, Statement, UnaryOp as AstUnaryOp,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -14,6 +14,10 @@ pub enum Instruction {
         name: String,
         value: ValueExpr,
     },
+    Increment {
+        name: String,
+        op: IncDecOp,
+    },
     Echo(ValueExpr),
     InternalCall {
         name: String,
@@ -23,6 +27,10 @@ pub enum Instruction {
         condition: ValueExpr,
         then_body: Vec<Instruction>,
         else_body: Vec<Instruction>,
+    },
+    While {
+        condition: ValueExpr,
+        body: Vec<Instruction>,
     },
 }
 
@@ -81,6 +89,12 @@ pub enum CastKind {
     Bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IncDecOp {
+    Increment,
+    Decrement,
+}
+
 pub fn lower(program: &Program) -> Module {
     Module {
         instructions: lower_statements(&program.statements),
@@ -97,6 +111,12 @@ fn lower_statements(statements: &[Statement]) -> Vec<Instruction> {
                 instructions.push(Instruction::Store {
                     name: name.clone(),
                     value: lower_assignment_value(name, *op, value),
+                });
+            }
+            Statement::Increment { name, op, .. } => {
+                instructions.push(Instruction::Increment {
+                    name: name.clone(),
+                    op: lower_inc_dec_op(*op),
                 });
             }
             Statement::Call {
@@ -128,6 +148,14 @@ fn lower_statements(statements: &[Statement]) -> Vec<Instruction> {
                     condition: lower_expr(condition),
                     then_body: lower_statements(then_body),
                     else_body: lower_statements(else_body),
+                });
+            }
+            Statement::While {
+                condition, body, ..
+            } => {
+                instructions.push(Instruction::While {
+                    condition: lower_expr(condition),
+                    body: lower_statements(body),
                 });
             }
         }
@@ -196,6 +224,13 @@ fn lower_cast_kind(kind: AstCastKind) -> CastKind {
         AstCastKind::Float => CastKind::Float,
         AstCastKind::String => CastKind::String,
         AstCastKind::Bool => CastKind::Bool,
+    }
+}
+
+fn lower_inc_dec_op(op: AstIncDecOp) -> IncDecOp {
+    match op {
+        AstIncDecOp::Increment => IncDecOp::Increment,
+        AstIncDecOp::Decrement => IncDecOp::Decrement,
     }
 }
 

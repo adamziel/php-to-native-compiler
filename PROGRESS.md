@@ -270,3 +270,27 @@ Still unsupported for control flow: unbraced statements, alternate syntax,
 loops, `switch`, `break`, `continue`, branch-condition assignments/increments,
 arrays/objects/resources in truthiness, and exception/finally control-flow
 edges.
+
+Added a bounded braced loop and direct variable increment/decrement slice:
+
+- Lexer/parser/AST support for `while (expr) { statements }` with recursive
+  statement bodies.
+- Parser support for statement-form direct variable increment/decrement:
+  `$name++;`, `++$name;`, `$name--;`, and `--$name;`.
+- IR support for structured loop instructions and direct increment/decrement
+  instructions. Loop conditions remain boxed value expressions and loop bodies
+  preserve nested statements.
+- Generated C evaluates loop conditions at the top of each iteration and uses
+  the shared boxed scalar truthiness helper before emitting the body.
+- Direct increment/decrement emits a runtime variable read, boxed numeric
+  helper call, and runtime variable write, matching the existing direct
+  variable mutation boundary.
+- Native tests prove the public simple while-loop shape, prefix/postfix
+  statement increments and decrements, and loop-condition rechecks.
+- Focused public PHPT telemetry through `phpc` passes
+  `tests/lang/002.phpt`.
+
+Still unsupported for loops and increment/decrement: unbraced and alternate
+syntax, `do while`, `for`, `foreach`, `switch`, `break`, `continue`,
+increment/decrement expression result values, PHP-exact string/boolean edge
+semantics, references, copy-on-write, and exception/finally loop edges.

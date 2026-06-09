@@ -50,6 +50,10 @@ Supported today:
 - Braced `if`, `elseif`, and `else` statements. Branch conditions use boxed
   scalar truthiness and the currently supported expression subset, including
   grouped expressions and scalar comparisons.
+- Braced `while (expr) { statements }` loops over the currently supported
+  scalar expression and statement subset.
+- Statement-form direct variable `++` and `--`, such as `$i++;` and `--$i;`,
+  using the boxed numeric arithmetic helper path.
 
 Unsupported today:
 
@@ -62,8 +66,10 @@ Unsupported today:
   division/modulo-by-zero exception behavior, complete comparison parity for
   unsupported types, identity/spaceship comparison operators, keyword boolean
   operators, chained comparison parse errors, unbraced and alternate
-  control-flow syntax, loops, `switch`, `break`, `continue`, complete overflow
-  parity, exact scalar cast overflow behavior, PHP-exact warning
+  control-flow syntax, `do while`, `for`, `foreach`, `switch`, `break`,
+  `continue`, increment/decrement as expressions, PHP-exact increment/
+  decrement semantics for strings/booleans and other edge values, complete
+  overflow parity, exact scalar cast overflow behavior, PHP-exact warning
   text/file/line/error-handler behavior, inline HTML before `<?php` or between
   PHP blocks, internal functions other than `var_dump()`, arrays, objects,
   resources, recursion, references, embedded NUL string handling, and full PHP

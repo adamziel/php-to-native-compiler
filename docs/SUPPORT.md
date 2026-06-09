@@ -49,6 +49,10 @@ supports in generated native binaries.
   snippets to temporary native binaries through the normal compiler pipeline.
 - Braced `if`, `elseif`, and `else` statements whose conditions and bodies use
   the currently supported scalar expression and statement subset.
+- Braced `while (expr) { statements }` loops where the condition and body use
+  the currently supported scalar expression and statement subset.
+- Statement-form direct variable increment/decrement: `$name++;`, `++$name;`,
+  `$name--;`, and `--$name;`.
 
 ## Not Yet Supported
 
@@ -64,9 +68,13 @@ supports in generated native binaries.
 - Comparison operators `===`, `!==`, `<=>`, keyword boolean operators
   `and`/`or`, PHP-exact chained comparison parse errors, and complete
   comparison parity for unsupported value types.
-- Unbraced control-flow statements, alternate control-flow syntax, loops,
-  `switch`, `break`, `continue`, branch-condition assignments/increments, and
-  exception/finally control-flow edges.
+- Unbraced control-flow statements, alternate control-flow syntax, `do while`,
+  `for`, `foreach`, `switch`, `break`, `continue`, branch-condition
+  assignments, and exception/finally control-flow edges.
+- Increment/decrement as expressions, including pre/post result values in echo,
+  assignment, binary operands, function arguments, or branch conditions.
+- PHP-exact increment/decrement semantics for strings, booleans, arrays,
+  objects, references, copy-on-write, overflow edge cases, and diagnostics.
 - Inline HTML before `<?php` or between PHP blocks.
 - Internal functions other than `var_dump()`.
 - Arrays, objects, resources, recursive structures, references, and

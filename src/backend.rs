@@ -4,7 +4,7 @@ use std::path::Path;
 use std::process::Command;
 
 use crate::diagnostic::{Diagnostic, Result};
-use crate::ir::{BinaryOp, CastKind, Instruction, Module, UnaryOp, ValueExpr};
+use crate::ir::{BinaryOp, CastKind, IncDecOp, Instruction, Module, UnaryOp, ValueExpr};
 
 pub fn emit_c(module: &Module) -> String {
     let mut out = String::new();
@@ -37,6 +37,30 @@ fn emit_instruction(out: &mut String, values: &mut ValueEmitter, instruction: &I
             out.push_str(&emitted_value);
             out.push_str(");\n");
         }
+        Instruction::Increment { name, op } => {
+            let current_temp = values.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&current_temp);
+            out.push_str(" = ptn_runtime_read_variable(&runtime, \"");
+            out.push_str(&c_string(name));
+            out.push_str("\");\n");
+            let result_temp = values.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ");
+            out.push_str(match op {
+                IncDecOp::Increment => "ptn_increment",
+                IncDecOp::Decrement => "ptn_decrement",
+            });
+            out.push('(');
+            out.push_str(&current_temp);
+            out.push_str(");\n");
+            out.push_str("    ptn_runtime_write_variable(&runtime, \"");
+            out.push_str(&c_string(name));
+            out.push_str("\", ");
+            out.push_str(&result_temp);
+            out.push_str(");\n");
+        }
         Instruction::InternalCall { name, arguments } => {
             values.emit_internal_call(out, name, arguments);
         }
@@ -57,6 +81,19 @@ fn emit_instruction(out: &mut String, values: &mut ValueEmitter, instruction: &I
                 for body_instruction in else_body {
                     emit_instruction(out, values, body_instruction);
                 }
+            }
+            out.push_str("    }\n");
+        }
+        Instruction::While { condition, body } => {
+            out.push_str("    while (1) {\n");
+            let condition_temp = values.emit_materialized_value(out, condition);
+            out.push_str("        if (!ptn_is_truthy(");
+            out.push_str(&condition_temp);
+            out.push_str(")) {\n");
+            out.push_str("            break;\n");
+            out.push_str("        }\n");
+            for body_instruction in body {
+                emit_instruction(out, values, body_instruction);
             }
             out.push_str("    }\n");
         }
@@ -975,6 +1012,14 @@ static PTN_UNUSED PtnValue ptn_modulo(PtnValue left, PtnValue right) {
         return ptn_int(0);
     }
     return ptn_int(left_integer % right_integer);
+}
+
+static PTN_UNUSED PtnValue ptn_increment(PtnValue value) {
+    return ptn_add(value, ptn_int(1));
+}
+
+static PTN_UNUSED PtnValue ptn_decrement(PtnValue value) {
+    return ptn_subtract(value, ptn_int(1));
 }
 
 static PTN_UNUSED char *ptn_value_to_string(PtnValue value) {

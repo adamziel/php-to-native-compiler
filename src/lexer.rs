@@ -10,6 +10,7 @@ pub enum TokenKind {
     If,
     Elseif,
     Else,
+    While,
     Identifier(String),
     String(String),
     Int(i64),
@@ -29,6 +30,8 @@ pub enum TokenKind {
     OrOr,
     PlusEqual,
     MinusEqual,
+    PlusPlus,
+    MinusMinus,
     AsteriskEqual,
     SlashEqual,
     PercentEqual,
@@ -129,20 +132,10 @@ impl<'a> Lexer<'a> {
                 '&' if self.rest().starts_with("&&") => self.push_fixed(TokenKind::AndAnd, 2),
                 '|' if self.rest().starts_with("||") => self.push_fixed(TokenKind::OrOr, 2),
                 '+' if self.rest().starts_with("+=") => self.push_fixed(TokenKind::PlusEqual, 2),
-                '+' if self.rest().starts_with("++") => {
-                    return Err(Diagnostic::new(
-                        "unsupported increment operator `++`",
-                        Some(self.current_span(2)),
-                    ));
-                }
+                '+' if self.rest().starts_with("++") => self.push_fixed(TokenKind::PlusPlus, 2),
                 '+' => self.push_fixed(TokenKind::Plus, 1),
                 '-' if self.rest().starts_with("-=") => self.push_fixed(TokenKind::MinusEqual, 2),
-                '-' if self.rest().starts_with("--") => {
-                    return Err(Diagnostic::new(
-                        "unsupported decrement operator `--`",
-                        Some(self.current_span(2)),
-                    ));
-                }
+                '-' if self.rest().starts_with("--") => self.push_fixed(TokenKind::MinusMinus, 2),
                 '-' => self.push_fixed(TokenKind::Minus, 1),
                 '*' if self.rest().starts_with("*=") => {
                     self.push_fixed(TokenKind::AsteriskEqual, 2)
@@ -358,6 +351,7 @@ impl<'a> Lexer<'a> {
             "if" => TokenKind::If,
             "elseif" => TokenKind::Elseif,
             "else" => TokenKind::Else,
+            "while" => TokenKind::While,
             "true" => TokenKind::True,
             "false" => TokenKind::False,
             "null" => TokenKind::Null,

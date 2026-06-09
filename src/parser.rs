@@ -1,4 +1,4 @@
-use crate::ast::{AssignmentOp, BinaryOp, CastKind, Expr, Program, Statement, UnaryOp};
+use crate::ast::{AssignmentOp, BinaryOp, CastKind, Expr, IncDecOp, Program, Statement, UnaryOp};
 use crate::diagnostic::{Diagnostic, Result, SourceSpan};
 use crate::lexer::{lex, Token, TokenKind};
 
@@ -31,8 +31,10 @@ impl Parser {
             TokenKind::Echo => self.parse_echo(),
             TokenKind::Print => self.parse_print(),
             TokenKind::If => self.parse_if(),
+            TokenKind::While => self.parse_while(),
+            TokenKind::PlusPlus | TokenKind::MinusMinus => self.parse_prefix_increment_statement(),
             TokenKind::Identifier(_) => self.parse_call_statement(),
-            TokenKind::Variable(_) => self.parse_assignment(),
+            TokenKind::Variable(_) => self.parse_variable_statement(),
             TokenKind::InlineHtml(_) => self.parse_inline_html(),
             _ => Err(Diagnostic::new(
                 "expected statement",
@@ -41,11 +43,32 @@ impl Parser {
         }
     }
 
-    fn parse_assignment(&mut self) -> Result<Statement> {
+    fn parse_variable_statement(&mut self) -> Result<Statement> {
         let token = self.advance().clone();
         let TokenKind::Variable(name) = token.kind else {
             return Err(Diagnostic::new("expected variable", Some(token.span)));
         };
+        match self.peek().kind {
+            TokenKind::PlusPlus => {
+                self.advance();
+                self.expect_statement_terminator()?;
+                return Ok(Statement::Increment {
+                    name,
+                    op: IncDecOp::Increment,
+                    span: token.span,
+                });
+            }
+            TokenKind::MinusMinus => {
+                self.advance();
+                self.expect_statement_terminator()?;
+                return Ok(Statement::Increment {
+                    name,
+                    op: IncDecOp::Decrement,
+                    span: token.span,
+                });
+            }
+            _ => {}
+        }
         let op = self.expect_assignment_op()?;
         let value = self.parse_expr()?;
         self.expect_statement_terminator()?;
@@ -54,6 +77,25 @@ impl Parser {
             op,
             value,
             span: token.span,
+        })
+    }
+
+    fn parse_prefix_increment_statement(&mut self) -> Result<Statement> {
+        let op_token = self.advance().clone();
+        let op = match op_token.kind {
+            TokenKind::PlusPlus => IncDecOp::Increment,
+            TokenKind::MinusMinus => IncDecOp::Decrement,
+            _ => return Err(Diagnostic::new("expected increment", Some(op_token.span))),
+        };
+        let variable = self.advance().clone();
+        let TokenKind::Variable(name) = variable.kind else {
+            return Err(Diagnostic::new("expected variable", Some(variable.span)));
+        };
+        self.expect_statement_terminator()?;
+        Ok(Statement::Increment {
+            name,
+            op,
+            span: op_token.span,
         })
     }
 
@@ -93,6 +135,19 @@ impl Parser {
             condition,
             then_body,
             else_body,
+            span,
+        })
+    }
+
+    fn parse_while(&mut self) -> Result<Statement> {
+        let span = self.expect_while()?;
+        self.expect_left_paren()?;
+        let condition = self.parse_expr()?;
+        self.expect_right_paren()?;
+        let body = self.parse_block()?;
+        Ok(Statement::While {
+            condition,
+            body,
             span,
         })
     }
@@ -296,6 +351,15 @@ impl Parser {
             Ok(token.span)
         } else {
             Err(Diagnostic::new("expected if", Some(token.span)))
+        }
+    }
+
+    fn expect_while(&mut self) -> Result<SourceSpan> {
+        let token = self.advance();
+        if matches!(token.kind, TokenKind::While) {
+            Ok(token.span)
+        } else {
+            Err(Diagnostic::new("expected while", Some(token.span)))
         }
     }
 
