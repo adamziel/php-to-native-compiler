@@ -20,6 +20,7 @@ Measured base: `ptn-cqu.33` rebased after `ptn-cqu.47.17`
 | Focused COW reducer snippets | 26 | 26 | 0 |
 | COW oracle suite | 22 | 22 | 0 |
 | By-reference foreach COW oracle | 11 | 11 | 0 |
+| Post-merge COW gate | 14 | 14 | 0 |
 | COW/reference-focused native tests | 10 | 10 | 0 |
 | Mutating-internal COW matrix | 12 | 12 | 0 |
 | PHPT COW manifest | 29 | 7 | 22 |
@@ -38,8 +39,9 @@ Native COW reducers: 26/26, including dynamic temporary/call-result/read-slot
 10/10. Oracle coverage: arrays 2/2, strings 1/1, foreach 2/2, functions 3/3,
 nested values 2/2, references 2/2, array element references 10/10.
 By-reference foreach oracle: 11/11. Mutating-internal matrix: 12/12 plus five
-unsupported target diagnostics. Contract stress balances 12 nested cycles
-with 0 live payloads.
+unsupported target diagnostics. Post-merge COW gate: 10/10 oracle/native cases
+plus 4/4 unsupported-reference diagnostics. Contract stress balances 12 nested
+cycles with 0 live payloads.
 
 ## Already Ported
 
@@ -54,8 +56,8 @@ splits, recursive/user functions, magic constants, `func_*` and bounds
 diagnostics, `print_r`, binary strings, string offset reads/writes, `count()`
 diagnostics, `??`, array assignment/compound/append/unset COW, native/oracle
 COW reducers, native smoke matrix, array-element reference oracle coverage,
-unsupported mutating-internal diagnostics, PHPT COW blocker buckets, and
-payload lifetime debug counters.
+unsupported mutating-internal diagnostics, post-merge COW gate, PHPT COW
+blocker buckets, and payload lifetime debug counters.
 
 ## Still Needed
 

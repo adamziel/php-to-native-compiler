@@ -37,6 +37,7 @@ them about every 10 minutes.
 ```bash
 cargo test
 tools/run-native-smoke-matrix.sh
+tools/run-post-merge-cow-gate.sh
 cargo build --bin phpc
 PHPC_BIN="$PWD/target/debug/phpc" php /home/claude/php-src-phpt/run-tests.php -q -p "$PWD/target/debug/phpc" <manifest paths>
 ```
