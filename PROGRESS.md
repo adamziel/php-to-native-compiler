@@ -1,7 +1,7 @@
 # PTN Progress
 
-Last refresh: 2026-06-09T18:32Z
-Measured base: `ptn-cqu.47.10` rebased after `ptn-cqu.47.3`
+Last refresh: 2026-06-09T18:38Z
+Measured base: `ptn-cqu.47.18` rebased after `ptn-cqu.47.10`
 
 ## Test Dashboard
 
@@ -13,7 +13,7 @@ Measured base: `ptn-cqu.47.10` rebased after `ptn-cqu.47.3`
 | PHPT Zend rows | 76 | 60 | 16 |
 | PHPT ext/standard rows | 77 | 44 | 33 |
 | PHPT tests/basic+func+lang | 18 | 17 | 1 |
-| COW contract spec tests | 5 | 5 | 0 |
+| COW contract spec tests | 7 | 7 | 0 |
 | COW-focused native tests | 12 | 12 | 0 |
 | Focused COW reducer snippets | 16 | 16 | 0 |
 | COW oracle suite | 12 | 10 | 2 |
@@ -32,7 +32,9 @@ reference-interaction 0/5. Focused local foreach by-value PHPT row: 1/1.
 Native COW reducer matrix: 16 pass, 0 fail. Dedicated oracle
 `tests/cow_oracle.rs`: arrays 2/2, strings 1/1, foreach 2/2, functions 3/3,
 nested values 2/2, references 0/2. Mutating-internal matrix: 12 pass,
-0 fail plus five unsupported target diagnostics.
+0 fail plus five unsupported target diagnostics. Contract stress includes
+12 nested drop cycles with 48 array detaches, 12 string detaches, 108 frees,
+and 0 live payloads.
 
 ## Already Ported
 
@@ -52,7 +54,7 @@ string payloads with assignment/function sharing and detach-on-write offset
 mutation, catchable `count()` non-array diagnostics, expression-form `??`
 reads, nested array path detach for assignment, compound assignment, append,
 and unset, focused native COW reducers, COW oracle coverage, and five explicit
-unsupported diagnostics for non-variable mutating internals, plus COW debug
+unsupported diagnostics for non-variable mutating internals, plus debug
 counters/assertions for string and array payload alloc/free/share/drop/detach
 evidence.
 

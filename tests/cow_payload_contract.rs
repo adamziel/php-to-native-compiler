@@ -36,9 +36,17 @@ struct Payload {
     kind: PayloadKind,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct Counters {
+    array_detaches: usize,
+    string_detaches: usize,
+    payload_frees: usize,
+}
+
 #[derive(Default)]
 struct ContractStore {
     payloads: Vec<Payload>,
+    counters: Counters,
 }
 
 impl ContractStore {
@@ -117,6 +125,60 @@ impl ContractStore {
         }
     }
 
+    fn array_set_path(&mut self, slot: &mut Value, path: &[&str], value: Value) {
+        assert!(!path.is_empty());
+        if path.len() == 1 {
+            self.array_set(slot, path[0], value);
+            return;
+        }
+
+        let id = self.detach_array_for_write(slot);
+        let mut child = self.take_array_entry(id, path[0]);
+        self.array_set_path(&mut child, &path[1..], value);
+        self.put_array_entry(id, path[0], child);
+    }
+
+    fn array_unset(&mut self, slot: &mut Value, key: &str) {
+        let id = self.detach_array_for_write(slot);
+        let removed = {
+            let PayloadKind::Array(entries) = &mut self.payloads[id.0].kind else {
+                panic!("array slot should reference an array payload");
+            };
+            entries
+                .iter()
+                .position(|entry| entry.key == key)
+                .map(|index| entries.remove(index).value)
+        };
+        if let Some(value) = removed {
+            self.release_owned(value);
+        }
+    }
+
+    fn array_unset_path(&mut self, slot: &mut Value, path: &[&str]) {
+        assert!(!path.is_empty());
+        if path.len() == 1 {
+            self.array_unset(slot, path[0]);
+            return;
+        }
+
+        let id = self.detach_array_for_write(slot);
+        let mut child = self.take_array_entry(id, path[0]);
+        self.array_unset_path(&mut child, &path[1..]);
+        self.put_array_entry(id, path[0], child);
+    }
+
+    fn append_string_path(&mut self, slot: &mut Value, path: &[&str], suffix: &str) {
+        if path.is_empty() {
+            self.append_string(slot, suffix);
+            return;
+        }
+
+        let id = self.detach_array_for_write(slot);
+        let mut child = self.take_array_entry(id, path[0]);
+        self.append_string_path(&mut child, &path[1..], suffix);
+        self.put_array_entry(id, path[0], child);
+    }
+
     fn detach_string_for_write(&mut self, slot: &mut Value) -> PayloadId {
         let Value::String(id) = *slot else {
             panic!("slot should hold a string");
@@ -124,6 +186,7 @@ impl ContractStore {
         if self.is_unique_mutable(id) {
             return id;
         }
+        self.counters.string_detaches += 1;
         let copy = match &self.payloads[id.0].kind {
             PayloadKind::String(data) => data.clone(),
             PayloadKind::Array(_) => panic!("string slot should reference a string payload"),
@@ -141,6 +204,7 @@ impl ContractStore {
         if self.is_unique_mutable(id) {
             return id;
         }
+        self.counters.array_detaches += 1;
         let copied_entries = match &self.payloads[id.0].kind {
             PayloadKind::Array(entries) => entries.clone(),
             PayloadKind::String(_) => panic!("array slot should reference an array payload"),
@@ -182,8 +246,46 @@ impl ContractStore {
             .value
     }
 
+    fn take_array_entry(&mut self, id: PayloadId, key: &str) -> Value {
+        let PayloadKind::Array(entries) = &mut self.payloads[id.0].kind else {
+            panic!("payload should be an array");
+        };
+        let entry = entries
+            .iter_mut()
+            .find(|entry| entry.key == key)
+            .unwrap_or_else(|| panic!("array should contain key {key}"));
+        mem::replace(&mut entry.value, Value::Null)
+    }
+
+    fn put_array_entry(&mut self, id: PayloadId, key: &str, value: Value) {
+        let PayloadKind::Array(entries) = &mut self.payloads[id.0].kind else {
+            panic!("payload should be an array");
+        };
+        let entry = entries
+            .iter_mut()
+            .find(|entry| entry.key == key)
+            .unwrap_or_else(|| panic!("array should contain key {key}"));
+        assert_eq!(entry.value, Value::Null);
+        entry.value = value;
+    }
+
     fn is_freed(&self, id: PayloadId) -> bool {
         self.payloads[id.0].freed
+    }
+
+    fn counters(&self) -> Counters {
+        self.counters
+    }
+
+    fn total_payloads(&self) -> usize {
+        self.payloads.len()
+    }
+
+    fn live_payloads(&self) -> usize {
+        self.payloads
+            .iter()
+            .filter(|payload| !payload.freed)
+            .count()
     }
 
     fn string_id(&self, value: Value) -> PayloadId {
@@ -235,6 +337,7 @@ impl ContractStore {
                 }
             }
             payload.freed = true;
+            self.counters.payload_frees += 1;
             match &payload.kind {
                 PayloadKind::String(_) => Vec::new(),
                 PayloadKind::Array(entries) => entries.iter().map(|entry| entry.value).collect(),
@@ -393,4 +496,242 @@ fn call_arguments_and_temporaries_balance_owned_references() {
     assert_eq!(store.refcount(payload_id), Some(1));
     store.release_slot(&mut variable);
     assert!(store.is_freed(payload_id));
+}
+
+#[test]
+fn nested_detach_unset_return_and_temporary_cleanup_balance_counters() {
+    let mut store = ContractStore::default();
+    let mut leaf = store.new_string("leaf");
+    let leaf_id = store.string_id(leaf);
+    let leaf_for_branch = store.retain(leaf);
+    let drop_leaf = store.new_string("drop");
+    let branch = store.new_array(vec![("text", leaf_for_branch), ("drop", drop_leaf)]);
+    let mut root = store.new_array(vec![("branch", branch)]);
+
+    let mut alias = store.retain(root);
+    let mut returned = store.retain(root);
+    let mut temporary = store.retain(root);
+    assert_eq!(store.live_payloads(), 4, "initial live payloads");
+    assert_eq!(store.counters(), Counters::default(), "initial counters");
+
+    store.append_string_path(&mut alias, &["branch", "text"], "-copy");
+    assert_eq!(
+        store.counters().array_detaches,
+        2,
+        "alias path array detaches"
+    );
+    assert_eq!(
+        store.counters().string_detaches,
+        1,
+        "alias leaf string detach"
+    );
+    assert_eq!(
+        store.counters().payload_frees,
+        0,
+        "no payload freed during detach"
+    );
+    assert_eq!(
+        store.live_payloads(),
+        7,
+        "live payloads after nested string detach"
+    );
+    assert_eq!(
+        store.refcount(leaf_id),
+        Some(2),
+        "original leaf remains shared"
+    );
+
+    store.array_unset_path(&mut alias, &["branch", "drop"]);
+    assert_eq!(
+        store.counters().array_detaches,
+        2,
+        "unique alias unset avoids array detach"
+    );
+    assert_eq!(
+        store.counters().string_detaches,
+        1,
+        "unique alias unset avoids string detach"
+    );
+    assert_eq!(
+        store.counters().payload_frees,
+        0,
+        "shared unset does not free last drop"
+    );
+    assert_eq!(
+        store.live_payloads(),
+        7,
+        "unset only releases one shared child"
+    );
+
+    store.array_set_path(&mut returned, &["branch", "text"], Value::Int(7));
+    assert_eq!(
+        store.counters().array_detaches,
+        4,
+        "return path array detaches"
+    );
+    assert_eq!(
+        store.counters().string_detaches,
+        1,
+        "integer overwrite avoids string detach"
+    );
+    assert_eq!(
+        store.counters().payload_frees,
+        0,
+        "shared overwrite keeps children alive"
+    );
+    assert_eq!(
+        store.live_payloads(),
+        9,
+        "return path clones outer and branch arrays"
+    );
+    assert_eq!(
+        store.refcount(leaf_id),
+        Some(2),
+        "overwrite releases one retained leaf"
+    );
+
+    store.release_slot(&mut temporary);
+    assert_eq!(
+        store.counters().payload_frees,
+        0,
+        "temporary drop only decrements root"
+    );
+    assert_eq!(
+        store.live_payloads(),
+        9,
+        "temporary drop does not free shared graph"
+    );
+
+    store.release_slot(&mut returned);
+    assert_eq!(
+        store.counters().payload_frees,
+        2,
+        "returned graph frees two arrays"
+    );
+    assert_eq!(
+        store.live_payloads(),
+        7,
+        "returned graph children remain shared"
+    );
+
+    store.release_slot(&mut alias);
+    assert_eq!(
+        store.counters().payload_frees,
+        5,
+        "alias graph frees arrays and detached string"
+    );
+    assert_eq!(
+        store.live_payloads(),
+        4,
+        "only original graph and external leaf remain"
+    );
+
+    store.release_slot(&mut root);
+    assert_eq!(
+        store.counters().payload_frees,
+        8,
+        "root graph frees root branch and drop leaf"
+    );
+    assert_eq!(
+        store.refcount(leaf_id),
+        Some(1),
+        "external leaf retains final counted owner"
+    );
+    store.release_slot(&mut leaf);
+    assert_eq!(
+        store.counters(),
+        Counters {
+            array_detaches: 4,
+            string_detaches: 1,
+            payload_frees: 9,
+        },
+        "documented final detach/free counts"
+    );
+    assert_eq!(
+        store.total_payloads(),
+        9,
+        "documented total allocated payloads"
+    );
+    assert_eq!(
+        store.live_payloads(),
+        0,
+        "no leaked payloads after full cleanup"
+    );
+}
+
+#[test]
+fn repeated_nested_value_cycles_leave_no_live_payloads() {
+    let mut store = ContractStore::default();
+
+    for cycle in 0..12 {
+        let before = store.counters();
+        let before_total = store.total_payloads();
+        run_nested_value_drop_cycle(&mut store, cycle);
+
+        assert_eq!(
+            store.counters().array_detaches - before.array_detaches,
+            4,
+            "cycle {cycle} array detach count"
+        );
+        assert_eq!(
+            store.counters().string_detaches - before.string_detaches,
+            1,
+            "cycle {cycle} string detach count"
+        );
+        assert_eq!(
+            store.counters().payload_frees - before.payload_frees,
+            9,
+            "cycle {cycle} payload free count"
+        );
+        assert_eq!(
+            store.total_payloads() - before_total,
+            9,
+            "cycle {cycle} allocated payload count"
+        );
+        assert_eq!(store.live_payloads(), 0, "cycle {cycle} live payload count");
+    }
+
+    assert_eq!(
+        store.counters(),
+        Counters {
+            array_detaches: 48,
+            string_detaches: 12,
+            payload_frees: 108,
+        },
+        "documented aggregate counts across 12 nested COW cycles"
+    );
+    assert_eq!(
+        store.total_payloads(),
+        108,
+        "documented aggregate payload count"
+    );
+    assert_eq!(
+        store.live_payloads(),
+        0,
+        "no leaks after repeated nested COW cycles"
+    );
+}
+
+fn run_nested_value_drop_cycle(store: &mut ContractStore, cycle: usize) {
+    let leaf_text = format!("leaf-{cycle}");
+    let drop_text = format!("drop-{cycle}");
+    let mut leaf = store.new_string(&leaf_text);
+    let leaf_for_branch = store.retain(leaf);
+    let drop_leaf = store.new_string(&drop_text);
+    let branch = store.new_array(vec![("text", leaf_for_branch), ("drop", drop_leaf)]);
+    let mut root = store.new_array(vec![("branch", branch)]);
+
+    let mut alias = store.retain(root);
+    let mut returned = store.retain(root);
+    let mut temporary = store.retain(root);
+
+    store.append_string_path(&mut alias, &["branch", "text"], "-alias");
+    store.array_unset_path(&mut alias, &["branch", "drop"]);
+    store.array_set_path(&mut returned, &["branch", "text"], Value::Int(cycle as i64));
+
+    store.release_slot(&mut temporary);
+    store.release_slot(&mut returned);
+    store.release_slot(&mut alias);
+    store.release_slot(&mut root);
+    store.release_slot(&mut leaf);
 }
