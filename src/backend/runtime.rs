@@ -1649,7 +1649,7 @@ static PTN_UNUSED PtnLookupResult ptn_offset_lookup(PtnRuntime *runtime, PtnValu
         ptn_array_key_free(key);
         return ptn_lookup_missing();
     }
-    PtnValue value = ptn_value_borrow(entry->value);
+    PtnValue value = ptn_value_clone(entry->value);
     ptn_array_key_free(key);
     return ptn_lookup_found(value);
 }
@@ -1659,9 +1659,7 @@ static PTN_UNUSED PtnValue ptn_array_read(PtnRuntime *runtime, PtnValue containe
     if (!result.exists) {
         return ptn_null();
     }
-    PtnValue value = ptn_value_clone(result.value);
-    ptn_value_destroy(&result.value);
-    return value;
+    return result.value;
 }
 
 static PTN_UNUSED int ptn_offset_is_set(PtnRuntime *runtime, PtnValue container, PtnValue key_value, size_t line) {

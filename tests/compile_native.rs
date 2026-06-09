@@ -5937,6 +5937,47 @@ b7|\n"
 }
 
 #[test]
+fn compile_owned_temporaries_and_slots_are_destroyed_to_native_binary() {
+    let root = temp_dir("ptn-native-owned-temporary-cleanup");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("owned-temporary-cleanup.php");
+    let output = root.join("owned-temporary-cleanup-bin");
+    fs::write(
+        &input,
+        "<?php
+$value = \"\";
+$array = [];
+$i = 0;
+while ($i < 200) {
+    $value = \"prefix-\" . $i . \"-\" . str_rot13(\"abcdefghijk\");
+    md5(\"discard-\" . $i);
+    $array = [\"payload\" => $value . \"-array\", \"nested\" => [\"n\" => $i . \"-nested\"]];
+    $array = [\"replacement\" => $i];
+    $i++;
+}
+echo strlen($value), \" \", count($array), \" \", $array[\"replacement\"], \"\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "22 1 199\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("static PTN_UNUSED void ptn_value_destroy(PtnValue *value)"));
+    assert!(c_source.contains("ptn_value_destroy(&symbols->items[index].value);"));
+    let main_start = c_source
+        .find("\nint main(void)")
+        .expect("generated C should contain main");
+    let main_body = &c_source[main_start..];
+    assert!(main_body.contains("ptn_value_destroy(&ptn_tmp_"));
+}
+
+#[test]
 fn compile_array_concat_emits_string_conversion_warnings_to_native_binary() {
     let root = temp_dir("ptn-native-array-concat-warnings");
     fs::create_dir_all(&root).unwrap();

@@ -589,11 +589,11 @@ fn emit_instruction(
             out.push_str(&iterator_temp);
             out.push_str(");\n");
             out.push_str("    }\n");
-            emit_value_cleanup(out, "    ", &iterable_temp);
             out.push_str("    ");
             out.push_str(&end_label);
             out.push_str(":\n");
             out.push_str("    ;\n");
+            emit_value_cleanup(out, "    ", &iterable_temp);
         }
         Instruction::Switch { expression, cases } => {
             emit_switch(
@@ -925,11 +925,19 @@ fn emit_switch(
         if let Some(condition) = &case.condition {
             out.push_str("    {\n");
             let condition_temp = values.emit_materialized_value(out, condition);
-            out.push_str("        if (ptn_compare_equal(");
+            let matched_temp = values.next_temp();
+            out.push_str("        int ");
+            out.push_str(&matched_temp);
+            out.push_str(" = ptn_compare_equal(");
             out.push_str(&switch_temp);
             out.push_str(", ");
             out.push_str(&condition_temp);
-            out.push_str(")) {\n");
+            out.push_str(");\n");
+            emit_value_cleanup(out, "        ", &condition_temp);
+            out.push_str("        if (");
+            out.push_str(&matched_temp);
+            out.push_str(") {\n");
+            emit_value_cleanup(out, "            ", &switch_temp);
             out.push_str("            goto ");
             out.push_str(label);
             out.push_str(";\n");
@@ -940,6 +948,7 @@ fn emit_switch(
         }
     }
 
+    emit_value_cleanup(out, "    ", &switch_temp);
     out.push_str("    goto ");
     out.push_str(default_label.unwrap_or(&end_label));
     out.push_str(";\n");
@@ -1271,13 +1280,27 @@ impl ValueEmitter {
                 }
                 BinaryOp::Xor => self.emit_boolean_xor_condition(out, left, right),
                 _ => {
-                    let emitted_value = self.emit_value(out, value);
-                    format!("ptn_is_truthy({emitted_value})")
+                    let emitted_value = self.emit_materialized_value(out, value);
+                    let result_temp = self.next_temp();
+                    out.push_str("    int ");
+                    out.push_str(&result_temp);
+                    out.push_str(" = ptn_is_truthy(");
+                    out.push_str(&emitted_value);
+                    out.push_str(");\n");
+                    emit_value_cleanup(out, "    ", &emitted_value);
+                    result_temp
                 }
             },
             _ => {
-                let emitted_value = self.emit_value(out, value);
-                format!("ptn_is_truthy({emitted_value})")
+                let emitted_value = self.emit_materialized_value(out, value);
+                let result_temp = self.next_temp();
+                out.push_str("    int ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_is_truthy(");
+                out.push_str(&emitted_value);
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &emitted_value);
+                result_temp
             }
         }
     }
@@ -1562,6 +1585,8 @@ impl ValueEmitter {
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
                 out.push_str("        }\n");
+                emit_value_cleanup(out, "        ", &format!("{container_temp}.value"));
+                emit_value_cleanup(out, "        ", &index_temp);
                 result_temp
             }
             _ => {
@@ -1572,6 +1597,7 @@ impl ValueEmitter {
                 out.push_str(" = ");
                 out.push_str(&value_temp);
                 out.push_str(".type != PTN_NULL;\n");
+                emit_value_cleanup(out, "        ", &value_temp);
                 result_temp
             }
         }
@@ -1608,6 +1634,8 @@ impl ValueEmitter {
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
                 out.push_str("        }\n");
+                emit_value_cleanup(out, "        ", &format!("{container_temp}.value"));
+                emit_value_cleanup(out, "        ", &index_temp);
                 result_temp
             }
             _ => {
@@ -1618,6 +1646,7 @@ impl ValueEmitter {
                 out.push_str(" = !ptn_is_truthy(");
                 out.push_str(&value_temp);
                 out.push_str(");\n");
+                emit_value_cleanup(out, "        ", &value_temp);
                 result_temp
             }
         }
@@ -1658,6 +1687,8 @@ impl ValueEmitter {
                 out.push_str(&result_temp);
                 out.push_str(" = ptn_lookup_missing();\n");
                 out.push_str("        }\n");
+                emit_value_cleanup(out, "        ", &format!("{container_temp}.value"));
+                emit_value_cleanup(out, "        ", &index_temp);
                 result_temp
             }
             _ => {
@@ -1683,13 +1714,17 @@ impl ValueEmitter {
         }
 
         let mut entries = Vec::with_capacity(elements.len());
+        let mut entry_temps = Vec::with_capacity(elements.len() * 2);
         for element in elements {
             let (has_key, key_temp) = if let Some(key) = &element.key {
-                ("1", self.emit_materialized_value(out, key))
+                let key_temp = self.emit_materialized_value(out, key);
+                entry_temps.push(key_temp.clone());
+                ("1", key_temp)
             } else {
                 ("0", "ptn_null()".to_string())
             };
             let value_temp = self.emit_materialized_value(out, &element.value);
+            entry_temps.push(value_temp.clone());
             entries.push(format!("{{ {has_key}, {key_temp}, {value_temp} }}"));
         }
 
@@ -1706,6 +1741,9 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&entries_temp);
         out.push_str(");\n");
+        for temp in entry_temps {
+            emit_value_cleanup(out, "    ", &temp);
+        }
         result_temp
     }
 
@@ -1716,22 +1754,22 @@ impl ValueEmitter {
         left: &ValueExpr,
         right: &ValueExpr,
     ) -> String {
-        let left_temp = self.emit_materialized_value(out, left);
+        let left_predicate = self.emit_condition(out, left);
         let result_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
         out.push_str(";\n");
-        out.push_str("    if (ptn_is_truthy(");
-        out.push_str(&left_temp);
-        out.push_str(")) {\n");
+        out.push_str("    if (");
+        out.push_str(&left_predicate);
+        out.push_str(") {\n");
         match op {
             BinaryOp::And => {
-                let right_value = self.emit_value(out, right);
+                let right_predicate = self.emit_condition(out, right);
                 out.push_str("        ");
                 out.push_str(&result_temp);
-                out.push_str(" = ptn_bool(ptn_is_truthy(");
-                out.push_str(&right_value);
-                out.push_str("));\n");
+                out.push_str(" = ptn_bool(");
+                out.push_str(&right_predicate);
+                out.push_str(");\n");
                 out.push_str("    } else {\n");
                 out.push_str("        ");
                 out.push_str(&result_temp);
@@ -1742,12 +1780,12 @@ impl ValueEmitter {
                 out.push_str(&result_temp);
                 out.push_str(" = ptn_bool(1);\n");
                 out.push_str("    } else {\n");
-                let right_value = self.emit_value(out, right);
+                let right_predicate = self.emit_condition(out, right);
                 out.push_str("        ");
                 out.push_str(&result_temp);
-                out.push_str(" = ptn_bool(ptn_is_truthy(");
-                out.push_str(&right_value);
-                out.push_str("));\n");
+                out.push_str(" = ptn_bool(");
+                out.push_str(&right_predicate);
+                out.push_str(");\n");
             }
             _ => unreachable!(),
         }
@@ -1824,15 +1862,15 @@ impl ValueEmitter {
         left: &ValueExpr,
         right: &ValueExpr,
     ) -> String {
-        let left_temp = self.emit_materialized_value(out, left);
-        let right_temp = self.emit_materialized_value(out, right);
+        let left_predicate = self.emit_condition(out, left);
+        let right_predicate = self.emit_condition(out, right);
         let result_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
-        out.push_str(" = ptn_bool(ptn_is_truthy(");
-        out.push_str(&left_temp);
-        out.push_str(") != ptn_is_truthy(");
-        out.push_str(&right_temp);
+        out.push_str(" = ptn_bool((");
+        out.push_str(&left_predicate);
+        out.push_str(") != (");
+        out.push_str(&right_predicate);
         out.push_str("));\n");
         result_temp
     }
@@ -1877,6 +1915,7 @@ impl ValueEmitter {
             out.push_str(" = ptn_count_value(");
             out.push_str(&argument_temp);
             out.push_str(");\n");
+            emit_value_cleanup(out, "    ", &argument_temp);
             return result_temp;
         }
 
@@ -1893,6 +1932,8 @@ impl ValueEmitter {
             out.push_str(", ");
             out.push_str(&line.to_string());
             out.push_str(");\n");
+            emit_value_cleanup(out, "    ", &key_temp);
+            emit_value_cleanup(out, "    ", &array_temp);
             return result_temp;
         }
 
@@ -1943,6 +1984,9 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
+        for temp in temps {
+            emit_value_cleanup(out, "    ", &temp);
+        }
         result_temp
     }
 

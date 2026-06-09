@@ -3,7 +3,9 @@
 ## Progress Bar
 
 `[#########.] 54/59 PHPT rows passing`
-- Latest: 2026-06-09T14:04:54Z bounded PHPT patrol holds 54/59; no regressions.
+- Latest: Generated `PtnValue` payloads now carry ownership for strings and
+  arrays, runtime slots destroy overwritten and teardown values, and backend
+  emission cleans discarded temporaries; PHPT snapshot remains 54/59.
 - Tests ported/passing: 54/59
 - Commit: 57f061f73
 
@@ -34,6 +36,18 @@ Next integrated production target:
   scale to PHP references and copy-on-write.
 
 ## 2026-06-09
+
+Integrated generated runtime value destruction:
+
+- `PtnValue` now tracks owned string and array payloads in generated C.
+- Runtime symbol and constant tables deep-clone stored values, destroy
+  overwritten slots, and recursively free stored values during runtime teardown.
+- Generated backend code destroys materialized temporaries after stores,
+  constants, echoes, discarded expressions, internal calls, array literals,
+  comparisons, and loop/lookup consumers.
+- Added a native stress-style regression that repeatedly overwrites string and
+  array slots while discarding owned internal-call temporaries; output remains
+  stable and generated C includes the cleanup boundary.
 
 Added focused evidence for `Zend/tests/numeric_strings/string_offset.phpt`
 without expanding scope into exception handling:
