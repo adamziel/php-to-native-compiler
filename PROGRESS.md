@@ -2,11 +2,10 @@
 
 ## Progress Bar
 
-`[#########.] 51/59 PHPT rows passing`
-- Latest: Numeric string-offset PHPT blocker isolated with focused native
-  regression; PHPT snapshot remains 51/59.
-- Tests ported/passing: 51/59
-- Commit: pending branch head
+`[##########] 115/121 PHPT rows passing`
+- Latest: PHPT cycle: 115/121 selected rows passing, 6 failing.
+- Tests ported/passing: 115/121
+- Commit: e56e1a112
 
 ## 2026-06-08
 
