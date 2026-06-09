@@ -146,8 +146,11 @@ impl Parser {
             TokenKind::Variable(name) => Ok(Expr::Variable(name, token.span)),
             TokenKind::LeftParen => {
                 let expr = self.parse_expr()?;
-                self.expect_right_paren()?;
-                Ok(expr)
+                let right_span = self.expect_right_paren()?;
+                Ok(Expr::Grouped {
+                    expr: Box::new(expr),
+                    span: combine_spans(token.span, right_span),
+                })
             }
             _ => Err(Diagnostic::new("expected expression", Some(token.span))),
         }
@@ -244,10 +247,10 @@ impl Parser {
         }
     }
 
-    fn expect_right_paren(&mut self) -> Result<()> {
+    fn expect_right_paren(&mut self) -> Result<SourceSpan> {
         let token = self.advance();
         if matches!(token.kind, TokenKind::RightParen) {
-            Ok(())
+            Ok(token.span)
         } else {
             Err(Diagnostic::new(
                 "expected right parenthesis",

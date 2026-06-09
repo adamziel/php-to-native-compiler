@@ -33,7 +33,8 @@ Supported today:
 - Direct named-variable compound assignment for `+=` and `.=`. These lower as
   a variable read, boxed `+` or `.`, then a variable write, preserving the
   existing undefined-variable diagnostic boundary.
-- Parenthesized expressions, unary `-`, unary `!`, and `(int)`, `(float)`,
+- Parenthesized expressions for grouping supported scalar expressions,
+  including nested grouping, plus unary `-`, unary `!`, and `(int)`, `(float)`,
   `(string)`, and `(bool)` casts for boxed scalar values. Unary and cast
   operations are emitted as runtime helper calls over `PtnValue` operands.
 - Boxed scalar comparison and boolean expressions: `==`, `!=`, `<`, `>`, `&&`,
@@ -46,7 +47,7 @@ Unsupported today:
   resources, exceptions, array/object/reference compound-assignment lvalues,
   compound operators other than `+=` and `.=` (`-=`, `*=`, `/=`, `%=`, `**=`,
   `&=`, `|=`, `^=`, `<<=`, `>>=`, `??=`), `print` as an expression returning
-  `1`, parenthesized `print(...)` syntax, increment/decrement operators, full
+  `1` even when spelled `print(...)`, increment/decrement operators, full
   PHP numeric-string and non-numeric string arithmetic diagnostics, complete
   comparison parity for unsupported types and chained comparison parse errors,
   overflow parity, exact scalar cast overflow behavior, PHP-exact warning

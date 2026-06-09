@@ -128,6 +128,7 @@ fn lower_expr(expr: &Expr) -> ValueExpr {
             left: Box::new(lower_expr(left)),
             right: Box::new(lower_expr(right)),
         },
+        Expr::Grouped { expr, .. } => lower_expr(expr),
     }
 }
 

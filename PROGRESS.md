@@ -93,7 +93,7 @@ Implemented statement-form `print` for the current supported expression subset:
 
 Still unsupported for print: expression contexts such as
 `$result = print "value";`, `echo print "value";`, return value `1` semantics,
-and parenthesized `print(...)` syntax.
+and the parenthesized spelling `print(...)` in expression contexts.
 
 Rebased the lexer/parser source-compatibility slice for comments and PHP tags
 onto the print-enabled tree:
@@ -170,3 +170,10 @@ Still unsupported for comparisons/booleans: `<=`, `>=`, `===`, `!==`, `<=>`,
 keyword `and`/`or`, arrays, objects, references, copy-on-write behavior,
 PHP-exact chained comparison parse errors, and complete PHP comparison parity
 for unsupported value types.
+
+Refined parenthesized expression grouping in the CAO worktree:
+
+- Parenthesized expressions are preserved explicitly in the AST before IR
+  lowering erases grouping to the inner value expression.
+- Native tests prove grouped literals, grouped variable reads, grouped binary
+  expressions, nested grouping, and grouped assignment right-hand sides.

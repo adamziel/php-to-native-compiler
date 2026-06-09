@@ -27,7 +27,8 @@ supports in generated native binaries.
   read happens before the right-hand expression, so existing undefined-variable
   diagnostics remain observable in source order.
 - Print statements use the same generated boxed output path as echo.
-- Parenthesized expressions for grouping.
+- Parenthesized expressions for grouping supported scalar expressions,
+  including nested grouping.
 - Unary `-` over boxed scalar numeric values.
 - Unary `!` using boxed PHP scalar truthiness: `null`, `false`, numeric zero,
   `0.0`, `""`, and `"0"` are falsey; other supported scalar values are truthy.
@@ -47,7 +48,7 @@ supports in generated native binaries.
 - Prefix and postfix increment/decrement operators such as `++$value` and
   `--$value`.
 - `print` as an expression returning `1`, including contexts such as assignment,
-  echo operands, binary operands, and parenthesized `print(...)` syntax.
+  echo operands, binary operands, and the parenthesized spelling `print(...)`.
 - Comparison operators `<=`, `>=`, `===`, `!==`, `<=>`, keyword boolean
   operators `and`/`or`, PHP-exact chained comparison parse errors, and complete
   comparison parity for unsupported value types.

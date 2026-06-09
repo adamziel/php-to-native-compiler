@@ -54,6 +54,10 @@ pub enum Expr {
         right: Box<Expr>,
         span: SourceSpan,
     },
+    Grouped {
+        expr: Box<Expr>,
+        span: SourceSpan,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -92,7 +96,7 @@ impl Expr {
             | Expr::Null(span)
             | Expr::Variable(_, span) => *span,
             Expr::Unary { span, .. } | Expr::Cast { span, .. } => *span,
-            Expr::Binary { span, .. } => *span,
+            Expr::Binary { span, .. } | Expr::Grouped { span, .. } => *span,
         }
     }
 }

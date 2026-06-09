@@ -88,6 +88,9 @@ fn parser_accepts_direct_variable_compound_assignments() {
 fn parser_rejects_print_expression_contexts() {
     let error = parser::parse("<?php $result = print \"hello\";").unwrap_err();
     assert!(error.message.contains("expected expression"));
+
+    let error = parser::parse("<?php $result = print(\"hello\");").unwrap_err();
+    assert!(error.message.contains("expected expression"));
 }
 
 #[test]
@@ -150,6 +153,9 @@ fn parser_accepts_parenthesized_unary_and_cast_expressions() {
     else {
         panic!("expected unary negation");
     };
+    let Expr::Grouped { expr, .. } = expr.as_ref() else {
+        panic!("expected grouped negation operand");
+    };
     assert!(matches!(
         expr.as_ref(),
         Expr::Binary {
@@ -182,6 +188,35 @@ fn parser_accepts_parenthesized_unary_and_cast_expressions() {
 }
 
 #[test]
+fn parser_preserves_parenthesized_expression_grouping() {
+    let program = parser::parse("<?php echo (1), ($name), (1 + 2), ((\"a\" . \"b\"));").unwrap();
+    let Statement::Echo { expressions, .. } = &program.statements[0] else {
+        panic!("expected echo statement");
+    };
+
+    assert!(matches!(
+        &expressions[0],
+        Expr::Grouped { expr, .. } if matches!(expr.as_ref(), Expr::Int(1, _))
+    ));
+    assert!(matches!(
+        &expressions[1],
+        Expr::Grouped { expr, .. } if matches!(expr.as_ref(), Expr::Variable(name, _) if name == "name")
+    ));
+    assert!(matches!(
+        &expressions[2],
+        Expr::Grouped { expr, .. } if matches!(expr.as_ref(), Expr::Binary { op: BinaryOp::Add, .. })
+    ));
+
+    let Expr::Grouped { expr, .. } = &expressions[3] else {
+        panic!("expected outer grouping");
+    };
+    assert!(matches!(
+        expr.as_ref(),
+        Expr::Grouped { expr, .. } if matches!(expr.as_ref(), Expr::Binary { op: BinaryOp::Concat, .. })
+    ));
+}
+
+#[test]
 fn parser_accepts_comparison_boolean_and_grouping_expressions() {
     let program = parser::parse("<?php echo 1 + 2 == \"3\" && (false || true);").unwrap();
     let Statement::Echo { expressions, .. } = &program.statements[0] else {
@@ -203,8 +238,11 @@ fn parser_accepts_comparison_boolean_and_grouping_expressions() {
             ..
         }
     ));
+    let Expr::Grouped { expr, .. } = right.as_ref() else {
+        panic!("expected grouped boolean or");
+    };
     assert!(matches!(
-        right.as_ref(),
+        expr.as_ref(),
         Expr::Binary {
             op: BinaryOp::Or,
             ..
@@ -227,6 +265,29 @@ fn compile_echo_program_to_native_binary() {
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "Hello 42\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_parenthesized_expression_grouping_to_native_binary() {
+    let root = temp_dir("ptn-native-parenthesized-grouping");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("parenthesized-grouping.php");
+    let output = root.join("parenthesized-grouping-bin");
+    fs::write(
+        &input,
+        "<?php $name = \"Ada\"; $pair = (\"c\" . \"d\"); echo (\"lit\"), \" \", ($name), \" \", (1 + 2), \" \", ((\"a\" . \"b\")), \" \", $pair, \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "lit Ada 3 ab cd\n"
+    );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
