@@ -213,12 +213,6 @@ impl Parser {
                 self.index = start;
                 return self.parse_expression_statement();
             }
-            if !matches!(self.peek().kind, TokenKind::Equal) {
-                return Err(Diagnostic::new(
-                    "array-dimension compound assignment is unsupported",
-                    Some(self.peek().span),
-                ));
-            }
             let op = self.expect_assignment_op()?;
             let value = self.parse_assignment_value_expr()?;
             self.expect_statement_terminator()?;
@@ -250,7 +244,11 @@ impl Parser {
         variable_span: SourceSpan,
     ) -> Result<ArrayDimTarget> {
         self.expect_left_bracket()?;
-        let index = self.parse_expr()?;
+        let index = if matches!(self.peek().kind, TokenKind::RightBracket) {
+            None
+        } else {
+            Some(self.parse_expr()?)
+        };
         let right_span = self.expect_right_bracket()?;
         if matches!(self.peek().kind, TokenKind::LeftBracket) {
             return Err(Diagnostic::new(
@@ -807,7 +805,7 @@ impl Parser {
             Expr::ArrayAccess { array, index, span } => match *array {
                 Expr::Variable(name, variable_span) => Ok(UnsetTarget::ArrayDim(ArrayDimTarget {
                     array: name,
-                    index: *index,
+                    index: Some(*index),
                     span: combine_spans(variable_span, span),
                 })),
                 _ => Err(Diagnostic::new(

@@ -461,14 +461,65 @@ static PTN_UNUSED PtnValue ptn_array_key_value(PtnArrayKey key) {
     return ptn_owned_string(ptn_duplicate_string(key.as.string));
 }
 
-static PTN_UNUSED void ptn_runtime_array_set(
+static PTN_UNUSED void ptn_emit_assign_op_missing_array_key(PtnValue key_value, size_t line) {
+    if (key_value.type == PTN_NULL) {
+        ptn_emit_null_array_offset_deprecation(line);
+    }
+    PtnArrayKey key = ptn_array_key_from_value(key_value);
+    ptn_emit_undefined_array_key_warning(key, line);
+    ptn_array_key_free(key);
+}
+
+static PTN_UNUSED void ptn_runtime_array_warn_missing_base_for_assign_op(
+    PtnRuntime *runtime,
+    const char *name,
+    const char *path,
+    size_t line
+) {
+    PtnValue container;
+    if (!ptn_symbols_get(&runtime->symbols, name, &container)) {
+        ptn_emit_undefined_variable_warning(&runtime->diagnostics, name, path, line);
+    }
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_array_read_for_assign_op(
+    PtnRuntime *runtime,
+    const char *name,
+    const char *path,
+    const PtnValue *key_value,
+    size_t line
+) {
+    (void)path;
+    PtnValue container;
+    if (!ptn_symbols_get(&runtime->symbols, name, &container)) {
+        if (key_value != NULL) {
+            ptn_emit_assign_op_missing_array_key(*key_value, line);
+        }
+        return ptn_null();
+    }
+
+    if (key_value == NULL) {
+        return ptn_null();
+    }
+
+    if (container.type == PTN_ARRAY) {
+        return ptn_array_read(runtime, container, *key_value, line);
+    }
+    if (container.type == PTN_NULL) {
+        ptn_emit_assign_op_missing_array_key(*key_value, line);
+    }
+    return ptn_null();
+}
+
+static PTN_UNUSED void ptn_runtime_array_set_impl(
     PtnRuntime *runtime,
     const char *name,
     PtnValue key_value,
     PtnValue value,
-    size_t line
+    size_t line,
+    int emit_null_key_deprecation
 ) {
-    if (key_value.type == PTN_NULL) {
+    if (emit_null_key_deprecation && key_value.type == PTN_NULL) {
         ptn_emit_null_array_offset_deprecation(line);
     }
     PtnArrayKey key = ptn_array_key_from_value(key_value);
@@ -487,6 +538,52 @@ static PTN_UNUSED void ptn_runtime_array_set(
     }
 
     PtnValue array = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(array.as.array, key, ptn_value_clone(value));
+    ptn_runtime_write_variable(runtime, name, array);
+    ptn_value_destroy(&array);
+}
+
+static PTN_UNUSED void ptn_runtime_array_set(
+    PtnRuntime *runtime,
+    const char *name,
+    PtnValue key_value,
+    PtnValue value,
+    size_t line
+) {
+    ptn_runtime_array_set_impl(runtime, name, key_value, value, line, 1);
+}
+
+static PTN_UNUSED void ptn_runtime_array_set_from_assign_op(
+    PtnRuntime *runtime,
+    const char *name,
+    PtnValue key_value,
+    PtnValue value,
+    size_t line
+) {
+    ptn_runtime_array_set_impl(runtime, name, key_value, value, line, 0);
+}
+
+static PTN_UNUSED void ptn_runtime_array_append(
+    PtnRuntime *runtime,
+    const char *name,
+    PtnValue value,
+    size_t line
+) {
+    PtnValue container;
+    if (ptn_symbols_get(&runtime->symbols, name, &container)) {
+        if (container.type == PTN_ARRAY) {
+            PtnArrayKey key = ptn_array_int_key(container.as.array->next_auto_key);
+            ptn_array_set_entry(container.as.array, key, ptn_value_clone(value));
+            return;
+        }
+        if (container.type != PTN_NULL) {
+            ptn_emit_array_runtime_diagnostic("Warning", "Cannot use a scalar value as an array", line);
+            return;
+        }
+    }
+
+    PtnValue array = ptn_array_from_literal_entries(0, NULL);
+    PtnArrayKey key = ptn_array_int_key(array.as.array->next_auto_key);
     ptn_array_set_entry(array.as.array, key, ptn_value_clone(value));
     ptn_runtime_write_variable(runtime, name, array);
     ptn_value_destroy(&array);

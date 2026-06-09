@@ -3,7 +3,13 @@
 ## Progress Bar
 
 `[#########.] 54/59 PHPT rows passing`
-- Latest: 2026-06-09T15:27Z bounded PHPT patrol repeats 54/59; five array rows still fail.
+- Latest: 2026-06-09T16:07Z focused array-lvalue telemetry passes
+  `tests/basic/array_null_offset_deprecation.phpt` and
+  `Zend/tests/assign_dim_op_undef.phpt`; `Zend/tests/offset_assign.phpt`
+  still fails at the nested string-offset mutation boundary tracked by
+  `ptn-cqu.39`. Aggregate bounded patrol not rerun in this branch.
+- Prior aggregate: 2026-06-09T15:27Z bounded PHPT patrol repeats 54/59; five
+  array rows still fail.
 - Tests ported/passing: 54/59
 - Commit: 9a4282cdd
 
@@ -2271,3 +2277,35 @@ No new PHP surface is claimed by this performance slice. Binary-safe string
 storage, references/copy-on-write, array/object/resource concatenation parity
 beyond the current warning boundary, and exact string-conversion diagnostics
 remain outside the current boxed runtime boundary.
+
+Added variable-root ordered-array lvalue mutation:
+
+- Parser/AST/IR support now covers `$array[$key] = expr`, `$array[] = expr`,
+  keyed compound assignments such as `$array[$key] += expr` and `.=` over the
+  existing compound operator set, append compound assignments such as
+  `$array[] += expr`, and `unset($array[$key])`.
+- Generated C evaluates keyed assignment offsets once, materializes the RHS,
+  reads the current element for assign-op stores through a runtime helper, and
+  writes back through the shared ordered-array mutation path. Append stores use
+  the array's existing next-auto-key tracking.
+- Assign-op reads over missing bases emit the modeled undefined-variable
+  diagnostic before missing-key diagnostics; keyed missing elements read as
+  `null`, while append assign-op stores start from `null` without a
+  missing-key warning.
+- Undefined-variable diagnostics now insert blank separators between repeated
+  warnings on the same diagnostic sink, matching the PHPT warning-boundary
+  shape used by assign-op array-dimension rows.
+- Native tests prove ordinary offset assignment, append, unset, keyed and
+  append compound assignment, missing-key compound assignment, and undefined
+  base assign-op behavior.
+- Focused public PHPT telemetry through `phpc` passes
+  `tests/basic/array_null_offset_deprecation.phpt` and
+  `Zend/tests/assign_dim_op_undef.phpt`. `Zend/tests/offset_assign.phpt` still
+  fails at the nested string-offset mutation boundary already tracked by
+  `ptn-cqu.39`.
+
+Still unsupported after this array-lvalue slice: nested array-dimension
+lvalues, string-offset writes/unset/assign-op mutation, scalar-container
+autovivification parity such as `false` to array conversion, references,
+copy-on-write, recursive arrays, and object/property/static-property/
+variable-variable lvalues.

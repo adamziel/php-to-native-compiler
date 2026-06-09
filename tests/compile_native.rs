@@ -17,6 +17,17 @@ fn undefined_variable_warning(path: &Path, name: &str, line: usize) -> String {
     )
 }
 
+fn undefined_variable_warnings(path: &Path, warnings: &[(&str, usize)]) -> String {
+    let mut output = String::new();
+    for (index, (name, line)) in warnings.iter().enumerate() {
+        if index != 0 {
+            output.push('\n');
+        }
+        output.push_str(&undefined_variable_warning(path, name, *line));
+    }
+    output
+}
+
 #[test]
 fn parser_preserves_echo_expression_order() {
     let program = parser::parse("<?php echo \"a\", 12, true, false, null;").unwrap();
@@ -1033,9 +1044,11 @@ fn parser_accepts_array_read_expressions() {
 
 #[test]
 fn parser_accepts_variable_root_array_assignment_and_unset() {
-    let program =
-        parser::parse("<?php $items[null] = \"value\"; unset($items[null], $items);").unwrap();
-    assert_eq!(program.statements.len(), 2);
+    let program = parser::parse(
+        "<?php $items[null] = \"value\"; $items[] += 2; unset($items[null], $items);",
+    )
+    .unwrap();
+    assert_eq!(program.statements.len(), 3);
 
     let Statement::ArrayAssign {
         target, op, value, ..
@@ -1045,17 +1058,24 @@ fn parser_accepts_variable_root_array_assignment_and_unset() {
     };
     assert_eq!(target.array, "items");
     assert_eq!(*op, AssignmentOp::Assign);
-    assert!(matches!(&target.index, Expr::Null(_)));
+    assert!(matches!(target.index.as_ref(), Some(Expr::Null(_))));
     assert!(matches!(value, Expr::String(value, _) if value == "value"));
 
-    let Statement::Unset { targets, .. } = &program.statements[1] else {
+    let Statement::ArrayAssign { target, op, .. } = &program.statements[1] else {
+        panic!("expected array append compound assignment statement");
+    };
+    assert_eq!(target.array, "items");
+    assert_eq!(*op, AssignmentOp::AddAssign);
+    assert!(target.index.is_none());
+
+    let Statement::Unset { targets, .. } = &program.statements[2] else {
         panic!("expected unset statement");
     };
     assert_eq!(targets.len(), 2);
     assert!(matches!(
         &targets[0],
         UnsetTarget::ArrayDim(target)
-            if target.array == "items" && matches!(&target.index, Expr::Null(_))
+            if target.array == "items" && matches!(target.index.as_ref(), Some(Expr::Null(_)))
     ));
     assert!(matches!(
         &targets[1],
@@ -2153,11 +2173,7 @@ fn compile_internal_call_arguments_evaluate_left_to_right_to_native_binary() {
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "NULL\nNULL\n");
     assert_eq!(
         String::from_utf8(execution.stderr).unwrap(),
-        format!(
-            "{}{}",
-            undefined_variable_warning(&input, "left", 1),
-            undefined_variable_warning(&input, "right", 1)
-        )
+        undefined_variable_warnings(&input, &[("left", 1), ("right", 1)])
     );
 }
 
@@ -3196,11 +3212,7 @@ fn compile_internal_call_expression_arguments_evaluate_left_to_right() {
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "0\n");
     assert_eq!(
         String::from_utf8(execution.stderr).unwrap(),
-        format!(
-            "{}{}",
-            undefined_variable_warning(&input, "left", 1),
-            undefined_variable_warning(&input, "right", 1)
-        )
+        undefined_variable_warnings(&input, &[("left", 1), ("right", 1)])
     );
 }
 
@@ -4383,11 +4395,7 @@ var_dump($left xor $right);\n",
     );
     assert_eq!(
         String::from_utf8(execution.stderr).unwrap(),
-        format!(
-            "{}{}",
-            undefined_variable_warning(&input, "left", 10),
-            undefined_variable_warning(&input, "right", 10)
-        )
+        undefined_variable_warnings(&input, &[("left", 10), ("right", 10)])
     );
 }
 
@@ -4638,7 +4646,15 @@ $items = [];\n\
 $items[\"7\"] = \"seven\";\n\
 var_dump($items[7]);\n\
 unset($items[7]);\n\
-var_dump(isset($items[\"7\"]));",
+var_dump(isset($items[\"7\"]));\n\
+$items[] = \"appended\";\n\
+var_dump($items[8]);\n\
+$items[] += 2;\n\
+var_dump($items[9]);\n\
+$items[8] .= \"-tail\";\n\
+var_dump($items[8]);\n\
+$items[10] += 5;\n\
+var_dump($items[10]);",
     )
     .unwrap();
 
@@ -4648,9 +4664,41 @@ var_dump(isset($items[\"7\"]));",
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "\nDeprecated: Using null as an array offset is deprecated, use an empty string instead in ptn on line 3\nbaz\n\nDeprecated: Using null as an array offset is deprecated, use an empty string instead in ptn on line 4\nnew_value\n\nDeprecated: Using null as an array offset is deprecated, use an empty string instead in ptn on line 6\nbool(true)\nbool(false)\nstring(5) \"seven\"\nbool(false)\n"
+        "\nDeprecated: Using null as an array offset is deprecated, use an empty string instead in ptn on line 3\nbaz\n\nDeprecated: Using null as an array offset is deprecated, use an empty string instead in ptn on line 4\nnew_value\n\nDeprecated: Using null as an array offset is deprecated, use an empty string instead in ptn on line 6\nbool(true)\nbool(false)\nstring(5) \"seven\"\nbool(false)\nstring(8) \"appended\"\nint(2)\nstring(13) \"appended-tail\"\n\nWarning: Undefined array key 10 in ptn on line 20\nint(5)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_array_offset_compound_assignment_undef_to_native_binary() {
+    let root = temp_dir("ptn-native-array-offset-compound-undef");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-offset-compound-undef.php");
+    let output = root.join("array-offset-compound-undef-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$items[0] += 2;\n\
+var_dump($items[0]);\n\
+$append[] .= \"x\";\n\
+var_dump($append[0]);\n\
+$a[$b] += 1;\n\
+var_dump($a);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "\nWarning: Undefined array key 0 in ptn on line 2\nint(2)\nstring(1) \"x\"\n\nDeprecated: Using null as an array offset is deprecated, use an empty string instead in ptn on line 6\n\nWarning: Undefined array key \"\" in ptn on line 6\narray(1) {\n  [\"\"]=>\n  int(1)\n}\n"
+    );
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        undefined_variable_warnings(&input, &[("items", 2), ("append", 4), ("a", 6), ("b", 6)])
+    );
 }
 
 #[test]
@@ -5939,11 +5987,7 @@ fn compile_comparison_operands_evaluate_left_to_right_to_native_binary() {
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "1\n");
     assert_eq!(
         String::from_utf8(execution.stderr).unwrap(),
-        format!(
-            "{}{}",
-            undefined_variable_warning(&input, "left", 1),
-            undefined_variable_warning(&input, "right", 1)
-        )
+        undefined_variable_warnings(&input, &[("left", 1), ("right", 1)])
     );
 }
 
@@ -6049,12 +6093,14 @@ fn compound_assignments_read_left_before_rhs_and_then_write() {
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "0\n[]\n");
     assert_eq!(
         String::from_utf8(execution.stderr).unwrap(),
-        format!(
-            "{}{}{}{}",
-            undefined_variable_warning(&input, "total", 1),
-            undefined_variable_warning(&input, "missing_number", 1),
-            undefined_variable_warning(&input, "text", 1),
-            undefined_variable_warning(&input, "missing_text", 1)
+        undefined_variable_warnings(
+            &input,
+            &[
+                ("total", 1),
+                ("missing_number", 1),
+                ("text", 1),
+                ("missing_text", 1),
+            ]
         )
     );
 }
@@ -6407,12 +6453,7 @@ fn compile_arithmetic_operands_evaluate_left_to_right_to_native_binary() {
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "0\n");
     assert_eq!(
         String::from_utf8(execution.stderr).unwrap(),
-        format!(
-            "{}{}{}",
-            undefined_variable_warning(&input, "left", 1),
-            undefined_variable_warning(&input, "right", 1),
-            undefined_variable_warning(&input, "third", 1)
-        )
+        undefined_variable_warnings(&input, &[("left", 1), ("right", 1), ("third", 1)])
     );
 }
 
@@ -6647,11 +6688,7 @@ fn compile_binary_operands_evaluate_left_to_right_to_native_binary() {
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "\n");
     assert_eq!(
         String::from_utf8(execution.stderr).unwrap(),
-        format!(
-            "{}{}",
-            undefined_variable_warning(&input, "left", 1),
-            undefined_variable_warning(&input, "right", 1)
-        )
+        undefined_variable_warnings(&input, &[("left", 1), ("right", 1)])
     );
 }
 
@@ -6721,11 +6758,6 @@ fn compile_many_runtime_symbols_to_native_binary() {
 fn unsupported_constructs_fail_before_codegen() {
     let unsupported_operator = parser::parse("<?php $name ??= 1;").unwrap_err();
     assert!(unsupported_operator.message.contains("expected expression"));
-
-    let unsupported_lvalue = parser::parse("<?php $items[0] += 1;").unwrap_err();
-    assert!(unsupported_lvalue
-        .message
-        .contains("array-dimension compound assignment is unsupported"));
 }
 
 #[test]

@@ -251,19 +251,102 @@ fn emit_instruction(
             array,
             index,
             value,
+            compound_op,
             line,
         } => {
-            let index_temp = values.emit_materialized_value(out, index);
-            let value_temp = values.emit_value(out, value);
-            out.push_str("    ptn_runtime_array_set(&runtime, \"");
-            out.push_str(&c_string(array));
-            out.push_str("\", ");
-            out.push_str(&index_temp);
-            out.push_str(", ");
-            out.push_str(&value_temp);
-            out.push_str(", ");
-            out.push_str(&line.to_string());
-            out.push_str(");\n");
+            if compound_op.is_some() {
+                out.push_str("    ptn_runtime_array_warn_missing_base_for_assign_op(&runtime, \"");
+                out.push_str(&c_string(array));
+                out.push_str("\", \"");
+                out.push_str(&c_string(source_path));
+                out.push_str("\", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+            }
+            let index_temp = index
+                .as_ref()
+                .map(|index| values.emit_materialized_value(out, index));
+            let value_temp = values.emit_materialized_value(out, value);
+            let stored_temp = if let Some(op) = compound_op {
+                let current_temp = values.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&current_temp);
+                out.push_str(" = ptn_runtime_array_read_for_assign_op(&runtime, \"");
+                out.push_str(&c_string(array));
+                out.push_str("\", \"");
+                out.push_str(&c_string(source_path));
+                out.push_str("\", ");
+                match &index_temp {
+                    Some(index_temp) => {
+                        out.push('&');
+                        out.push_str(index_temp);
+                    }
+                    None => out.push_str("NULL"),
+                }
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                let result_temp = values.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ");
+                if matches!(op, BinaryOp::Concat) {
+                    out.push_str("ptn_concat(&runtime, ");
+                    out.push_str(&current_temp);
+                    out.push_str(", ");
+                    out.push_str(&value_temp);
+                    out.push_str(", ");
+                    out.push_str(&line.to_string());
+                    out.push_str(")");
+                } else {
+                    out.push_str(binary_runtime_function(*op));
+                    out.push('(');
+                    out.push_str(&current_temp);
+                    out.push_str(", ");
+                    out.push_str(&value_temp);
+                    out.push(')');
+                }
+                out.push_str(";\n");
+                emit_value_cleanup(out, "    ", &current_temp);
+                result_temp
+            } else {
+                value_temp.clone()
+            };
+            match &index_temp {
+                Some(index_temp) => {
+                    out.push_str("    ");
+                    out.push_str(if compound_op.is_some() {
+                        "ptn_runtime_array_set_from_assign_op"
+                    } else {
+                        "ptn_runtime_array_set"
+                    });
+                    out.push_str("(&runtime, \"");
+                    out.push_str(&c_string(array));
+                    out.push_str("\", ");
+                    out.push_str(index_temp);
+                    out.push_str(", ");
+                    out.push_str(&stored_temp);
+                    out.push_str(", ");
+                    out.push_str(&line.to_string());
+                    out.push_str(");\n");
+                }
+                None => {
+                    out.push_str("    ptn_runtime_array_append(&runtime, \"");
+                    out.push_str(&c_string(array));
+                    out.push_str("\", ");
+                    out.push_str(&stored_temp);
+                    out.push_str(", ");
+                    out.push_str(&line.to_string());
+                    out.push_str(");\n");
+                }
+            }
+            if compound_op.is_some() {
+                emit_value_cleanup(out, "    ", &stored_temp);
+            }
+            emit_value_cleanup(out, "    ", &value_temp);
+            if let Some(index_temp) = index_temp {
+                emit_value_cleanup(out, "    ", &index_temp);
+            }
         }
         Instruction::DefineConstant { name, value, line } => {
             let emitted_value = values.emit_materialized_value(out, value);
@@ -849,7 +932,8 @@ fn instruction_uses_function_dispatch(instruction: &Instruction) -> bool {
         | Instruction::Expression(value)
         | Instruction::Echo(value) => value_uses_function_dispatch(value),
         Instruction::StoreArrayDim { index, value, .. } => {
-            value_uses_function_dispatch(index) || value_uses_function_dispatch(value)
+            index.as_ref().is_some_and(value_uses_function_dispatch)
+                || value_uses_function_dispatch(value)
         }
         Instruction::Increment { .. } => false,
         Instruction::UnsetVariable { .. } => false,
@@ -1144,6 +1228,35 @@ fn emit_value_cleanup(out: &mut String, indent: &str, value: &str) {
     out.push_str("ptn_value_destroy(&");
     out.push_str(value);
     out.push_str(");\n");
+}
+
+fn binary_runtime_function(op: BinaryOp) -> &'static str {
+    match op {
+        BinaryOp::Add => "ptn_add",
+        BinaryOp::Subtract => "ptn_subtract",
+        BinaryOp::Multiply => "ptn_multiply",
+        BinaryOp::Power => "ptn_power",
+        BinaryOp::Divide => "ptn_divide",
+        BinaryOp::Modulo => "ptn_modulo",
+        BinaryOp::BitwiseAnd => "ptn_bitwise_and",
+        BinaryOp::BitwiseXor => "ptn_bitwise_xor",
+        BinaryOp::BitwiseOr => "ptn_bitwise_or",
+        BinaryOp::ShiftLeft => "ptn_shift_left",
+        BinaryOp::ShiftRight => "ptn_shift_right",
+        BinaryOp::Concat
+        | BinaryOp::Equal
+        | BinaryOp::NotEqual
+        | BinaryOp::Spaceship
+        | BinaryOp::Identical
+        | BinaryOp::NotIdentical
+        | BinaryOp::Less
+        | BinaryOp::LessEqual
+        | BinaryOp::Greater
+        | BinaryOp::GreaterEqual
+        | BinaryOp::And
+        | BinaryOp::Xor
+        | BinaryOp::Or => unreachable!("not a direct binary runtime helper"),
+    }
 }
 
 pub fn compile_c(c_source: &str, output: &Path) -> Result<()> {
@@ -1514,20 +1627,7 @@ impl ValueEmitter {
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
         out.push_str(" = ");
-        out.push_str(match op {
-            BinaryOp::Add => "ptn_add",
-            BinaryOp::Subtract => "ptn_subtract",
-            BinaryOp::Multiply => "ptn_multiply",
-            BinaryOp::Power => "ptn_power",
-            BinaryOp::Divide => "ptn_divide",
-            BinaryOp::Modulo => "ptn_modulo",
-            BinaryOp::BitwiseAnd => "ptn_bitwise_and",
-            BinaryOp::BitwiseXor => "ptn_bitwise_xor",
-            BinaryOp::BitwiseOr => "ptn_bitwise_or",
-            BinaryOp::ShiftLeft => "ptn_shift_left",
-            BinaryOp::ShiftRight => "ptn_shift_right",
-            _ => unreachable!(),
-        });
+        out.push_str(binary_runtime_function(op));
         out.push('(');
         out.push_str(&left_temp);
         out.push_str(", ");
