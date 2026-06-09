@@ -635,11 +635,29 @@ static PTN_UNUSED PtnValue ptn_array_next_value(PtnArray *array) {
         return ptn_bool(0);
     }
     array->current_index++;
-    return array->entries[array->current_index].value;
+    return ptn_value_clone(array->entries[array->current_index].value);
 }
 
 static PTN_UNUSED PtnValue ptn_array_reset_value(PtnArray *array) {
     array->current_index = 0;
+    return ptn_array_current_value(array);
+}
+
+static PTN_UNUSED PtnValue ptn_array_end_value(PtnArray *array) {
+    if (array->len == 0) {
+        array->current_index = 0;
+        return ptn_bool(0);
+    }
+    array->current_index = array->len - 1;
+    return ptn_array_current_value(array);
+}
+
+static PTN_UNUSED PtnValue ptn_array_prev_value(PtnArray *array) {
+    if (array->len == 0 || array->current_index == 0 || array->current_index >= array->len) {
+        array->current_index = array->len;
+        return ptn_bool(0);
+    }
+    array->current_index--;
     return ptn_array_current_value(array);
 }
 

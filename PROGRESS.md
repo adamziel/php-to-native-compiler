@@ -20,8 +20,9 @@ Commit: pending `ptn-ebd` branch head
 Lexer/parser, AST, IR, C backend, boxed values, direct variables, constants,
 selected string/math/type internals, length-aware string helper paths for
 selected internals and scalar bitwise strings, ordered arrays and `foreach`,
-numeric-string array key normalization coverage, top-level user functions with
-scoped `__FUNCTION__`/`__METHOD__` magic constants and
+array cursor internals on direct variable ordered arrays, numeric-string array
+key normalization coverage, top-level user functions with scoped
+`__FUNCTION__`/`__METHOD__` magic constants and
 `func_num_args()`/`func_get_arg()`/`func_get_args()` introspection, `print_r`,
 selected binary-string handling, catchable `TypeError` for string offset reads,
 and catchable `count()` non-array diagnostics.

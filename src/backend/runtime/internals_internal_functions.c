@@ -312,6 +312,20 @@ static PtnValue ptn_internal_next(PtnRuntime *runtime, size_t argc, const PtnVal
     return ptn_array_next_value(array);
 }
 
+static PtnValue ptn_internal_end(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "end", 1, "array", args[0]);
+    return ptn_array_end_value(array);
+}
+
+static PtnValue ptn_internal_prev(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "prev", 1, "array", args[0]);
+    return ptn_array_prev_value(array);
+}
+
 static PtnValue ptn_internal_reset(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     (void)line;
@@ -1721,6 +1735,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "define", 2, 2, ptn_internal_define },
         { "defined", 1, 1, ptn_internal_defined },
         { "dirname", 1, 1, ptn_internal_dirname },
+        { "end", 1, 1, ptn_internal_end },
         { "error_reporting", 0, 1, ptn_internal_error_reporting },
         { "fdiv", 2, 2, ptn_internal_fdiv },
         { "floor", 1, 1, ptn_internal_floor },
@@ -1756,6 +1771,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "php_sapi_name", 0, 0, ptn_internal_php_sapi_name },
         { "phpversion", 0, 1, ptn_internal_phpversion },
         { "pi", 0, 0, ptn_internal_pi },
+        { "prev", 1, 1, ptn_internal_prev },
         { "print_r", 1, 2, ptn_internal_print_r },
         { "quoted_printable_decode", 1, 1, ptn_internal_quoted_printable_decode },
         { "quotemeta", 1, 1, ptn_internal_quotemeta },
