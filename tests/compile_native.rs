@@ -479,6 +479,36 @@ fn parser_accepts_bitwise_scalar_expressions() {
 }
 
 #[test]
+fn parser_accepts_unary_bitwise_not_expressions() {
+    let program = parser::parse("<?php echo ~6 & 3, ~(\"some\");").unwrap();
+    let Statement::Echo { expressions, .. } = &program.statements[0] else {
+        panic!("expected echo statement");
+    };
+    let Expr::Binary {
+        op: BinaryOp::BitwiseAnd,
+        left,
+        ..
+    } = &expressions[0]
+    else {
+        panic!("expected bitwise and expression");
+    };
+    assert!(matches!(
+        left.as_ref(),
+        Expr::Unary {
+            op: UnaryOp::BitwiseNot,
+            ..
+        }
+    ));
+    assert!(matches!(
+        &expressions[1],
+        Expr::Unary {
+            op: UnaryOp::BitwiseNot,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn parser_accepts_braced_if_elseif_else_statements() {
     let program = parser::parse(
         "<?php $a = 1; if (($a == 0)) { echo \"bad\"; } elseif ($a == 1) { var_dump(true); } else { print \"bad\"; }",
@@ -1543,6 +1573,32 @@ fn compile_bitwise_scalar_operations_to_native_binary() {
         "2 5 5\nstring(3) \"020\"\nstring(8) \"3337>755\"\nstring(4) \"wo\x7fu\"\nstring(6) \"030107\"\nstring(4) \"pead\"\nstring(4) \"wo\x7fu\"\nstring(8) \"070a1e11\"\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_unary_bitwise_not_to_native_binary() {
+    let root = temp_dir("ptn-native-bitwise-not");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("bitwise-not.php");
+    let output = root.join("bitwise-not-bin");
+    fs::write(
+        &input,
+        "<?php var_dump(~23); var_dump(bin2hex(~\"some\")); var_dump(~23.67);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(-24)\nstring(8) \"8c90929a\"\nint(-24)\n"
+    );
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        "Deprecated: Implicit conversion from float 23.67 to int loses precision in ptn-generated-code on line 0\n"
+    );
 }
 
 #[test]

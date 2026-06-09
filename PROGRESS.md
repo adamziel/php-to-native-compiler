@@ -497,3 +497,25 @@ Added a scalar byte-construction internal-function slice:
 Still unsupported after this `chr()` slice: embedded NUL bytes in runtime
 strings, exact out-of-range and float-to-int deprecation diagnostics, arrays,
 objects, resources, references, and copy-on-write behavior.
+
+Added unary scalar bitwise-not support:
+
+- Lexer/parser/AST/IR support for unary `~` expressions at the existing unary
+  precedence level.
+- Generated C dispatch to a shared `ptn_bitwise_not` runtime helper rather
+  than special-casing output.
+- Runtime scalar bitwise-not semantics: string operands produce bytewise
+  string results for non-NUL string data, while other currently supported
+  scalar operands convert to integers through the same scalar bitwise integer
+  path used by `&`, `|`, and `^`.
+- Float operands that lose precision during bitwise integer conversion now
+  emit a generic precision-loss deprecation boundary before conversion.
+- Native tests prove integer, string, and float unary bitwise-not behavior,
+  including observable string bytes through `bin2hex()`.
+- Focused public PHPT telemetry through `phpc` passes `Zend/tests/not_001.phpt`.
+
+Still unsupported after this bitwise-not slice: bit shifts, compound `<<=` and
+`>>=`, PHP-exact file/line/error-handler behavior for float-to-int bitwise
+diagnostics, bitwise integer overflow parity, embedded NUL bytes in runtime
+strings and string bitwise results, arrays, objects, references, and
+copy-on-write behavior.

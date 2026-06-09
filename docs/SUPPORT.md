@@ -36,6 +36,9 @@ supports in generated native binaries.
 - Unary `-` over boxed scalar numeric values.
 - Unary `!` using boxed PHP scalar truthiness: `null`, `false`, numeric zero,
   `0.0`, `""`, and `"0"` are falsey; other supported scalar values are truthy.
+- Unary bitwise `~` over supported boxed scalar values. String operands produce
+  bytewise string results for non-NUL string data; other supported scalar
+  operands are converted to integers through the current scalar numeric path.
 - Scalar `(int)`, `(float)`, `(string)`, and `(bool)` casts over supported boxed
   scalar values.
 - Boxed scalar comparison operators `==`, `!=`, `===`, `!==`, `<`, `<=`, `>`,
@@ -126,7 +129,9 @@ supports in generated native binaries.
   `strlen()` input conversion.
 - Complete PHP CLI and PHPT runner option parity for `phpc`.
 - Doc comment retention for reflection or metadata. Comments are skipped today.
-- Unary bitwise `~` and bit shifts.
+- Bit shifts.
+- PHP-exact file names, line numbers, error-handler routing, and overflow
+  parity for bitwise integer-conversion diagnostics.
 - Compound assignment operators other than `+=`, `-=`, `*=`, `/=`, `%=`, `.=`,
   `&=`, `|=`, and `^=`: `**=`, `<<=`, `>>=`, and `??=`.
 - Array, object, string-offset, property, static-property, variable-variable,

@@ -104,6 +104,7 @@ pub enum UnaryOp {
     Positive,
     Negate,
     Not,
+    BitwiseNot,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -281,6 +282,7 @@ fn lower_unary_op(op: AstUnaryOp) -> UnaryOp {
         AstUnaryOp::Positive => UnaryOp::Positive,
         AstUnaryOp::Negate => UnaryOp::Negate,
         AstUnaryOp::Not => UnaryOp::Not,
+        AstUnaryOp::BitwiseNot => UnaryOp::BitwiseNot,
     }
 }
 

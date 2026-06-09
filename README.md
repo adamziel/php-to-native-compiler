@@ -54,18 +54,18 @@ Supported today:
   `.=`, `&=`, `|=`, and `^=`. These lower as a variable read, the matching boxed
   binary helper, then a variable write, preserving the existing
   undefined-variable diagnostic boundary.
-- Parenthesized expressions, unary `+`, unary `-`, unary `!`, and `(int)`,
-  `(float)`, `(string)`, and `(bool)` casts for boxed scalar values. Unary, cast, and
-  binary operations are emitted as runtime helper calls over `PtnValue`
-  operands.
+- Parenthesized expressions, unary `+`, unary `-`, unary `!`, unary bitwise
+  `~`, and `(int)`, `(float)`, `(string)`, and `(bool)` casts for boxed scalar
+  values. Unary, cast, and binary operations are emitted as runtime helper
+  calls over `PtnValue` operands.
 - Boxed scalar comparison and boolean expressions: `==`, `!=`, `===`, `!==`,
   `<`, `<=`, `>`, `>=`, `&&`, and `||`. Strict identity compares scalar type
   and value without coercion; boolean operators short-circuit over boxed PHP
   truthiness for the currently supported scalar value types.
-- Boxed scalar bitwise `&`, `^`, and `|` expressions. String/string operands
-  use PHP bytewise string results for non-NUL strings; other supported scalar
-  operands are converted to integers through the current boxed numeric
-  conversion path.
+- Boxed scalar bitwise `&`, `^`, `|`, and unary `~` expressions.
+  String/string binary operands and string unary `~` operands use PHP bytewise
+  string results for non-NUL strings; other supported scalar operands are
+  converted to integers through the current boxed numeric conversion path.
 - Braced `if`, `elseif`, and `else` statements. Branch conditions use boxed
   scalar truthiness and the currently supported expression subset, including
   grouped expressions and scalar comparisons.
@@ -90,7 +90,7 @@ Unsupported today:
   `1` even when spelled `print(...)`, increment/decrement operators, full
   PHP numeric-string and non-numeric string arithmetic diagnostics, exact
   division/modulo-by-zero exception behavior, complete comparison parity for
-  unsupported types, spaceship comparison operator, bitwise `~`, shifts,
+  unsupported types, spaceship comparison operator, shifts,
   keyword boolean operators, chained comparison parse errors, unbraced and alternate
   control-flow syntax, `for`, `foreach`, explicit-level `break`
   such as `break 2`, `continue`, full switch parity for unsupported value

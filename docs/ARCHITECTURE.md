@@ -46,9 +46,10 @@ Current runtime/compiler slices:
   used by echo, so generated native code routes print output through the
   existing `ptn_echo` helper.
 - Parenthesized expressions are parsed as grouping, while unary `+`, unary `-`,
-  unary `!`, and scalar `(int)`, `(float)`, `(string)`, and `(bool)` casts lower to IR
-  value-expression operation nodes. The C backend emits boxed runtime helper
-  calls such as `ptn_positive`, `ptn_negate`, `ptn_not`, and `ptn_cast_*`.
+  unary `!`, unary bitwise `~`, and scalar `(int)`, `(float)`, `(string)`, and
+  `(bool)` casts lower to IR value-expression operation nodes. The C backend
+  emits boxed runtime helper calls such as `ptn_positive`, `ptn_negate`,
+  `ptn_not`, `ptn_bitwise_not`, and `ptn_cast_*`.
 - Increment/decrement tokens are rejected while PHP assignment-style
   pre/post-increment semantics are unsupported, so spellings such as `--$value`
   cannot be mistaken for two unary negations.
@@ -99,6 +100,9 @@ Near-term architecture targets:
   diagnostics, warnings, scalar cast overflow behavior, exact
   division/modulo-by-zero exception behavior, and complete overflow behavior for
   arithmetic helpers.
+- PHP-exact file/line/error-handler behavior for bitwise float-to-int
+  precision-loss diagnostics, and overflow parity for bitwise integer
+  conversions.
 - Array, object, and reference lvalues for compound assignment, plus
   unsupported compound operators beyond `+=`, `-=`, `*=`, `/=`, `%=`, `.=`,
   `&=`, `|=`, and `^=`: `**=`, `<<=`, `>>=`, `??=`.

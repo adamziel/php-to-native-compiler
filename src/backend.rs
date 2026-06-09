@@ -272,6 +272,7 @@ impl ValueEmitter {
                     UnaryOp::Positive => "ptn_positive",
                     UnaryOp::Negate => "ptn_negate",
                     UnaryOp::Not => "ptn_not",
+                    UnaryOp::BitwiseNot => "ptn_bitwise_not",
                 });
                 out.push('(');
                 out.push_str(&expr_temp);
@@ -1277,29 +1278,72 @@ static PTN_UNUSED PtnValue ptn_bitwise_string_xor(const char *left, const char *
     return ptn_owned_string(result);
 }
 
+static PTN_UNUSED PtnValue ptn_bitwise_string_not(const char *value) {
+    size_t len = strlen(value);
+    char *result = malloc(len + 1);
+    if (result == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < len; i++) {
+        result[i] = (char)(~(unsigned char)value[i]);
+    }
+    result[len] = '\0';
+    return ptn_owned_string(result);
+}
+
+static PTN_UNUSED int ptn_float_to_int_loses_precision(double value) {
+    if (value < -9223372036854775808.0 || value >= 9223372036854775808.0) {
+        return 1;
+    }
+    int64_t integer = (int64_t)value;
+    return (double)integer != value;
+}
+
+static PTN_UNUSED void ptn_emit_float_to_int_precision_deprecation(double value) {
+    fprintf(
+        stderr,
+        "Deprecated: Implicit conversion from float %.14g to int loses precision in ptn-generated-code on line 0\n",
+        value
+    );
+}
+
 static PTN_UNUSED int64_t ptn_value_to_integer(PtnValue value) {
     return ptn_number_to_integer(ptn_to_number(value));
+}
+
+static PTN_UNUSED int64_t ptn_bitwise_integer_operand(PtnValue value) {
+    if (value.type == PTN_FLOAT && ptn_float_to_int_loses_precision(value.as.floating)) {
+        ptn_emit_float_to_int_precision_deprecation(value.as.floating);
+    }
+    return ptn_value_to_integer(value);
 }
 
 static PTN_UNUSED PtnValue ptn_bitwise_and(PtnValue left, PtnValue right) {
     if (left.type == PTN_STRING && right.type == PTN_STRING) {
         return ptn_bitwise_string_and(left.as.string, right.as.string);
     }
-    return ptn_int(ptn_value_to_integer(left) & ptn_value_to_integer(right));
+    return ptn_int(ptn_bitwise_integer_operand(left) & ptn_bitwise_integer_operand(right));
 }
 
 static PTN_UNUSED PtnValue ptn_bitwise_or(PtnValue left, PtnValue right) {
     if (left.type == PTN_STRING && right.type == PTN_STRING) {
         return ptn_bitwise_string_or(left.as.string, right.as.string);
     }
-    return ptn_int(ptn_value_to_integer(left) | ptn_value_to_integer(right));
+    return ptn_int(ptn_bitwise_integer_operand(left) | ptn_bitwise_integer_operand(right));
 }
 
 static PTN_UNUSED PtnValue ptn_bitwise_xor(PtnValue left, PtnValue right) {
     if (left.type == PTN_STRING && right.type == PTN_STRING) {
         return ptn_bitwise_string_xor(left.as.string, right.as.string);
     }
-    return ptn_int(ptn_value_to_integer(left) ^ ptn_value_to_integer(right));
+    return ptn_int(ptn_bitwise_integer_operand(left) ^ ptn_bitwise_integer_operand(right));
+}
+
+static PTN_UNUSED PtnValue ptn_bitwise_not(PtnValue value) {
+    if (value.type == PTN_STRING) {
+        return ptn_bitwise_string_not(value.as.string);
+    }
+    return ptn_int(~ptn_bitwise_integer_operand(value));
 }
 
 static PTN_UNUSED char *ptn_value_to_string(PtnValue value) {

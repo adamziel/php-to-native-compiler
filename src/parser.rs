@@ -329,6 +329,16 @@ impl Parser {
                     span,
                 })
             }
+            TokenKind::Tilde => {
+                let token = self.advance().clone();
+                let expr = self.parse_unary_expr()?;
+                let span = combine_spans(token.span, expr.span());
+                Ok(Expr::Unary {
+                    op: UnaryOp::BitwiseNot,
+                    expr: Box::new(expr),
+                    span,
+                })
+            }
             TokenKind::LeftParen => {
                 if let Some((kind, span)) = self.try_parse_cast_prefix()? {
                     let expr = self.parse_unary_expr()?;
