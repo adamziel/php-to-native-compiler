@@ -175,11 +175,12 @@ supports in generated native binaries.
   `break N;` from the active emitted switch/loop target stack.
 - User labels such as `L1:` and `goto L1;` statements inside the currently
   generated main function, including source-spanned fatal diagnostics for
-  undefined target labels.
+  undefined target labels and duplicate labels.
 - Source-spanned compile diagnostics emitted through `phpc` use PHP-style fatal
   or parse-error boundaries with the source file and line. This currently
-  covers duplicate `default:` clauses in `switch` and removed `(real)` and
-  `(unset)` cast syntax, plus expression-context `(void)` cast syntax.
+  covers duplicate `default:` clauses in `switch`, duplicate labels, undefined
+  `goto` labels, removed `(real)` and `(unset)` cast syntax, and
+  expression-context `(void)` cast syntax.
 - Statement-form direct variable increment/decrement: `$name++;`, `++$name;`,
   `$name--;`, and `--$name;`.
 
@@ -201,8 +202,8 @@ supports in generated native binaries.
 - Unbraced switch bodies, alternate control-flow syntax, `foreach`, `continue`,
   branch-condition assignments, for-loop comma expressions and
   non-direct-variable clause lvalues, PHP-exact break/continue diagnostics,
-  duplicate-label diagnostics, forbidden-scope goto restrictions for jumps
-  into/out of invalid scopes, and exception/finally control-flow edges.
+  forbidden-scope goto restrictions for jumps into/out of invalid scopes, and
+  exception/finally control-flow edges.
 - Switch alternate syntax and switch behavior for arrays, objects, references,
   copy-on-write, and exceptions.
 - Increment/decrement as expressions, including pre/post result values in echo,

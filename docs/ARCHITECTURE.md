@@ -152,7 +152,8 @@ Current runtime/compiler slices:
 - User labels and `goto` statements stay inside the current generated main
   function. After parsing, a validation pass collects labels from the supported
   statement tree and reports source-spanned fatals for `goto` targets that are
-  not defined before the backend emits generated labels.
+  not defined or labels that are repeated before the backend emits generated
+  labels.
 - Statement-form direct variable increment/decrement lowers to a runtime read,
   boxed numeric increment/decrement helper, and runtime write. Expression-value
   semantics for pre/post increment remain outside this slice.

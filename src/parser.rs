@@ -952,11 +952,11 @@ impl Parser {
 
 fn validate_goto_labels(statements: &[Statement]) -> Result<()> {
     let mut labels = HashSet::new();
-    collect_labels(statements, &mut labels);
+    collect_labels(statements, &mut labels)?;
     validate_gotos(statements, &labels)
 }
 
-fn collect_labels(statements: &[Statement], labels: &mut HashSet<String>) {
+fn collect_labels(statements: &[Statement], labels: &mut HashSet<String>) -> Result<()> {
     for statement in statements {
         match statement {
             Statement::If {
@@ -964,11 +964,11 @@ fn collect_labels(statements: &[Statement], labels: &mut HashSet<String>) {
                 else_body,
                 ..
             } => {
-                collect_labels(then_body, labels);
-                collect_labels(else_body, labels);
+                collect_labels(then_body, labels)?;
+                collect_labels(else_body, labels)?;
             }
             Statement::While { body, .. } | Statement::DoWhile { body, .. } => {
-                collect_labels(body, labels);
+                collect_labels(body, labels)?;
             }
             Statement::For {
                 initializers,
@@ -976,21 +976,27 @@ fn collect_labels(statements: &[Statement], labels: &mut HashSet<String>) {
                 body,
                 ..
             } => {
-                collect_labels(initializers, labels);
-                collect_labels(updates, labels);
-                collect_labels(body, labels);
+                collect_labels(initializers, labels)?;
+                collect_labels(updates, labels)?;
+                collect_labels(body, labels)?;
             }
             Statement::Switch { cases, .. } => {
                 for case in cases {
-                    collect_labels(&case.body, labels);
+                    collect_labels(&case.body, labels)?;
                 }
             }
-            Statement::Label { name, .. } => {
-                labels.insert(name.clone());
+            Statement::Label { name, span } => {
+                if !labels.insert(name.clone()) {
+                    return Err(Diagnostic::new(
+                        format!("Label '{name}' already defined"),
+                        Some(*span),
+                    ));
+                }
             }
             _ => {}
         }
     }
+    Ok(())
 }
 
 fn validate_gotos(statements: &[Statement], labels: &HashSet<String>) -> Result<()> {

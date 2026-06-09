@@ -1141,7 +1141,22 @@ Added undefined `goto` label diagnostics:
 - Focused public PHPT telemetry through `phpc` passes
   `Zend/tests/jump/jump06.phpt`.
 
-Still unsupported after this goto diagnostic slice: duplicate-label
-diagnostics, forbidden-scope goto restrictions for jumps into or out of invalid
-scopes, labels/goto inside unsupported functions/classes/try/finally
-constructs, and PHP-exact invalid-goto diagnostic wording for broader cases.
+Still unsupported after this goto diagnostic slice: duplicate labels,
+forbidden-scope goto restrictions for jumps into or out of invalid scopes,
+labels/goto inside unsupported functions/classes/try/finally constructs, and
+PHP-exact invalid-goto diagnostic wording for broader cases.
+
+Added duplicate label diagnostics:
+
+- The parser now rejects repeated user labels during the same recursive
+  validation pass used for `goto` target checks.
+- Duplicate labels produce a source-spanned PHP-style fatal diagnostic at the
+  second label span instead of falling through to duplicate generated C labels.
+- Native/CLI tests prove parser validation and `phpc` fatal rendering.
+- Focused public PHPT telemetry through `phpc` passes
+  `Zend/tests/duplicate_label_error.phpt`.
+
+Still unsupported after this label diagnostic slice: forbidden-scope goto
+restrictions for jumps into or out of invalid scopes, labels/goto inside
+unsupported functions/classes/try/finally constructs, and PHP-exact
+invalid-goto diagnostic wording for broader cases.

@@ -871,6 +871,14 @@ fn parser_rejects_goto_to_undefined_label() {
 }
 
 #[test]
+fn parser_rejects_duplicate_labels() {
+    let error = parser::parse("<?php\nfoo:\necho 1;\nfoo:\necho 2;\n").unwrap_err();
+    assert_eq!(error.kind, DiagnosticKind::Fatal);
+    assert_eq!(error.message, "Label 'foo' already defined");
+    assert_eq!(error.span.unwrap().line, 4);
+}
+
+#[test]
 fn parser_accepts_braced_switch_cases_default_and_break() {
     let program = parser::parse(
         "<?php $a = 1; switch ($a) { case 0: echo \"bad\"; break; case 1: echo \"good\"; break 2; default: echo \"bad\"; break; }",
@@ -993,6 +1001,26 @@ fn phpc_renders_undefined_goto_label_as_php_fatal() {
         String::from_utf8(execution.stderr).unwrap(),
         format!(
             "Fatal error: 'goto' to undefined label 'L1' in {} on line 2\n",
+            input.display()
+        )
+    );
+}
+
+#[test]
+fn phpc_renders_duplicate_label_as_php_fatal() {
+    let root = temp_dir("ptn-phpc-duplicate-label");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("duplicate-label.php");
+    fs::write(&input, "<?php\nfoo:\necho 1;\nfoo:\necho 2;\n").unwrap();
+
+    let execution = Command::new(phpc_bin()).arg(&input).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "Fatal error: Label 'foo' already defined in {} on line 4\n",
             input.display()
         )
     );
