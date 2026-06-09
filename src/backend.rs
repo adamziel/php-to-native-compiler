@@ -1549,6 +1549,14 @@ static PTN_UNUSED int ptn_constant_value(const char *name, PtnValue *out) {
         *out = ptn_string("\n");
         return 1;
     }
+    if (strcmp(name, "INF") == 0) {
+        *out = ptn_float(INFINITY);
+        return 1;
+    }
+    if (strcmp(name, "NAN") == 0) {
+        *out = ptn_float(NAN);
+        return 1;
+    }
     return 0;
 }
 
@@ -1676,6 +1684,30 @@ static PtnValue ptn_internal_is_scalar(PtnRuntime *runtime, size_t argc, const P
     (void)argc;
     (void)line;
     return ptn_is_scalar(args[0]);
+}
+
+static PtnValue ptn_internal_is_finite(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    if (args[0].type != PTN_FLOAT) {
+        return ptn_bool(1);
+    }
+    return ptn_bool(isfinite(args[0].as.floating));
+}
+
+static PtnValue ptn_internal_is_infinite(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    return ptn_bool(args[0].type == PTN_FLOAT && isinf(args[0].as.floating));
+}
+
+static PtnValue ptn_internal_is_nan(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    return ptn_bool(args[0].type == PTN_FLOAT && isnan(args[0].as.floating));
 }
 
 static PtnValue ptn_internal_bin2hex(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -1891,6 +1923,9 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "is_double", 1, 1, ptn_internal_is_float },
         { "is_string", 1, 1, ptn_internal_is_string },
         { "is_scalar", 1, 1, ptn_internal_is_scalar },
+        { "is_finite", 1, 1, ptn_internal_is_finite },
+        { "is_infinite", 1, 1, ptn_internal_is_infinite },
+        { "is_nan", 1, 1, ptn_internal_is_nan },
         { "defined", 1, 1, ptn_internal_defined },
         { "function_exists", 1, 1, ptn_internal_function_exists },
     };

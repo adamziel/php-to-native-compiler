@@ -26,7 +26,9 @@ Supported today:
   `bin2hex(expr)`, `ceil(expr)`, `floor(expr)`, `bindec(expr)`,
   `hexdec(expr)`, `octdec(expr)`, `chr(expr)`, `ord(expr)`,
   `error_reporting(expr)`, `gettype(expr)`, scalar `is_*` type predicates,
-  `defined(expr)`, and `function_exists(expr)`, lowered through IR
+  non-finite predicates such as `is_finite(expr)`, `is_infinite(expr)`, and
+  `is_nan(expr)`, `defined(expr)`, and `function_exists(expr)`, lowered through
+  IR
   internal-call nodes and generated C runtime dispatch.
 - `var_dump()` output for the current boxed scalar `PtnValue` types: `null`,
   booleans, integers, floats, and strings.
@@ -48,11 +50,12 @@ Supported today:
   placeholder reporting level. Runtime error filtering is not modeled yet.
 - `gettype()` and scalar type predicates for the current boxed scalar
   `PtnValue` types: `is_null()`, `is_bool()`, `is_int()`/`is_integer()`/
-  `is_long()`, `is_float()`/`is_double()`, `is_string()`, and `is_scalar()`.
+  `is_long()`, `is_float()`/`is_double()`, `is_string()`, `is_scalar()`,
+  `is_finite()`, `is_infinite()`, and `is_nan()`.
 - Symbol-existence predicates for currently modeled runtime tables:
   `function_exists()` checks the generated internal-function registry, and
   `defined()` checks the current constant registry, which currently includes
-  `E_ERROR` and `PHP_EOL`.
+  `E_ERROR`, `PHP_EOL`, `INF`, and `NAN`.
 - String, integer, float, boolean, and null literals.
 - Direct variable assignment and reads for scalar values through the generated
   native runtime symbol table.
@@ -121,14 +124,15 @@ Unsupported today:
   warning text/file/line/error-handler behavior, inline HTML before `<?php` or
   between PHP blocks, internal functions outside the registered scalar subset,
   user constants and built-in constants other than the currently modeled
-  `E_ERROR` and `PHP_EOL`, arrays, objects, resources, recursion, references,
-  embedded NUL string handling, exact `chr()` deprecation diagnostics, exact
-  `ord()` argument type diagnostics, exact `ceil()`/`floor()`
-  null/string/unsupported type diagnostics, exact `error_reporting()`
-  configuration/filtering behavior, and full PHP precision/formatting edge
-  cases for `var_dump()`/`strlen()`/`bin2hex()`/base-conversion internals, doc
-  comment retention, variable variables, and dynamic fallback. These are
-  architecture targets, not excuses for exact-shape hacks.
+  `E_ERROR`, `PHP_EOL`, `INF`, and `NAN`, arrays, objects, resources,
+  recursion, references, embedded NUL string handling, exact `chr()`
+  deprecation diagnostics, exact `ord()` argument type diagnostics, exact
+  `ceil()`/`floor()` null/string/unsupported type diagnostics, exact
+  `error_reporting()` configuration/filtering behavior, and full PHP
+  precision/formatting edge cases for
+  `var_dump()`/`strlen()`/`bin2hex()`/base-conversion internals, doc comment
+  retention, variable variables, and dynamic fallback. These are architecture
+  targets, not excuses for exact-shape hacks.
 
 ## Build
 

@@ -655,3 +655,23 @@ Added scalar `ceil()` and `floor()` internal functions:
 Still unsupported after this `ceil()`/`floor()` slice: arrays, objects,
 resources, references, copy-on-write behavior, PHP-exact null deprecations,
 string and unsupported-type diagnostics, and complete special-float parity.
+
+Added finite/infinite/NaN scalar predicates and constants:
+
+- The modeled constant registry now includes PHP `INF` and `NAN` alongside the
+  existing scalar constants.
+- Registered `is_finite()`, `is_infinite()`, and `is_nan()` through the
+  generated C internal-function registry, so normal calls and
+  `function_exists()` share the existing case-insensitive lookup table.
+- The predicates operate over the current boxed scalar value domain, returning
+  PHP booleans and using C `isfinite`, `isinf`, and `isnan` for boxed floats.
+- Native tests prove the public `bug74039.phpt` source shape for positive
+  infinity, negative infinity, and NaN, plus case-insensitive registry
+  exposure.
+- Focused public PHPT telemetry through `phpc` passes
+  `ext/standard/tests/math/bug74039.phpt`.
+
+Still unsupported after this non-finite float slice: complete PHP
+float-formatting parity for `NAN`/`INF` in all output paths, full comparison
+parity for non-finite floats outside these predicates, user-defined constants,
+and extension constants beyond the currently modeled scalar constants.

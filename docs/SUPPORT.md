@@ -54,10 +54,12 @@ supports in generated native binaries.
 - Simple statement-form internal calls such as `var_dump(expr, ...)`,
   `strlen(expr);`, `bin2hex(expr);`, `ceil(expr);`, `floor(expr);`,
   `bindec(expr);`, `hexdec(expr);`, `octdec(expr);`, `chr(expr);`,
-  `ord(expr);`, and `error_reporting(expr);`.
+  `ord(expr);`, `is_finite(expr);`, `is_infinite(expr);`, `is_nan(expr);`, and
+  `error_reporting(expr);`.
 - Expression-form internal calls for the currently registered scalar functions,
   including `strlen(expr)`, `bin2hex(expr)`, `ceil(expr)`, `floor(expr)`,
   `bindec(expr)`, `hexdec(expr)`, `octdec(expr)`, `chr(expr)`, `ord(expr)`,
+  `is_finite(expr)`, `is_infinite(expr)`, `is_nan(expr)`,
   `error_reporting(expr)`, `gettype(expr)`, and scalar `is_*` type predicates
   in echo operands, assignments, binary operands, and branch/loop conditions.
 - Internal-call arguments are materialized left-to-right before generated C
@@ -85,11 +87,12 @@ supports in generated native binaries.
   `integer`, `double`, or `string`.
 - Scalar type predicates over current boxed scalar values: `is_null()`,
   `is_bool()`, `is_int()`, `is_integer()`, `is_long()`, `is_float()`,
-  `is_double()`, `is_string()`, and `is_scalar()`.
+  `is_double()`, `is_string()`, `is_scalar()`, `is_finite()`,
+  `is_infinite()`, and `is_nan()`.
 - `function_exists()` over the currently registered internal-function names.
 - `defined()` over the current constant registry, including the currently
-  modeled PHP constants `E_ERROR` and `PHP_EOL`. Other ordinary names report as
-  undefined.
+  modeled PHP constants `E_ERROR`, `PHP_EOL`, `INF`, and `NAN`. Other ordinary
+  names report as undefined.
 - A minimal `phpc` runner for supported PHPT rows. It compiles scripts or `-r`
   snippets to temporary native binaries through the normal compiler pipeline.
 - Braced `if`, `elseif`, and `else` statements whose conditions and bodies use
@@ -141,7 +144,7 @@ supports in generated native binaries.
 - Internal functions outside the registered scalar subset.
 - User-defined functions in `function_exists()`.
 - User-defined constants and built-in PHP/extension constants other than the
-  currently modeled `E_ERROR` and `PHP_EOL` in `defined()`.
+  currently modeled `E_ERROR`, `PHP_EOL`, `INF`, and `NAN` in `defined()`.
 - Type predicate coverage for arrays, objects, resources, and references.
 - Arrays, objects, resources, recursive structures, references, and
   `var_dump()` reference identity output.
@@ -155,6 +158,8 @@ supports in generated native binaries.
   diagnostics, and complete special-float parity.
 - Exact diagnostics and full precision/range parity for `bindec()`, `hexdec()`,
   and `octdec()` on very large or unsupported values.
+- Exact `NAN`/`INF` formatting and complete comparison parity for non-finite
+  float values outside the current predicate helpers.
 - Full PHP float precision and formatting edge cases for `var_dump()` or
   `strlen()` input conversion.
 - Complete PHP CLI and PHPT runner option parity for `phpc`.

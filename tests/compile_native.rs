@@ -911,6 +911,29 @@ fn compile_scalar_type_internal_functions_to_native_binary() {
 }
 
 #[test]
+fn compile_finite_infinite_nan_internal_functions_to_native_binary() {
+    let root = temp_dir("ptn-native-finite-infinite-nan-functions");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("finite-infinite-nan-functions.php");
+    let output = root.join("finite-infinite-nan-functions-bin");
+    fs::write(
+        &input,
+        "<?php var_dump(is_finite(INF)); var_dump(is_infinite(INF)); var_dump(is_nan(INF)); var_dump(is_finite(-INF)); var_dump(is_infinite(-INF)); var_dump(is_nan(-INF)); var_dump(is_finite(NAN)); var_dump(is_infinite(NAN)); var_dump(is_nan(NAN)); var_dump(function_exists(\"is_nan\"), function_exists(\"IS_INFINITE\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(false)\nbool(true)\nbool(false)\nbool(false)\nbool(true)\nbool(false)\nbool(false)\nbool(false)\nbool(true)\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_bug30726_is_float_shape_to_native_binary() {
     let root = temp_dir("ptn-native-bug30726-is-float");
     fs::create_dir_all(&root).unwrap();

@@ -76,11 +76,12 @@ Current runtime/compiler slices:
   integer conversion; `ord` observes the first byte of scalar string
   conversion; `error_reporting` currently accepts zero or one argument and
   returns a placeholder reporting level; `gettype` and scalar `is_*` predicates
-  query the current boxed scalar/null value domain;
+  query the current boxed scalar/null value domain, while `is_finite`,
+  `is_infinite`, and `is_nan` query modeled non-finite float constants;
   `function_exists` shares the registry lookup path; and `defined` checks the
-  current constant-registry boundary, which includes the modeled PHP `E_ERROR`
-  and `PHP_EOL` constants. Fixed-arity internal functions record min/max arity
-  metadata while `var_dump` remains variadic.
+  current constant-registry boundary, which includes the modeled PHP `E_ERROR`,
+  `PHP_EOL`, `INF`, and `NAN` constants. Fixed-arity internal functions record
+  min/max arity metadata while `var_dump` remains variadic.
 - Braced `if`, `elseif`, and `else` statements lower to structured IR branch
   instructions. Conditions remain boxed value expressions, and the C backend
   emits native branches that call the shared scalar truthiness helper.
@@ -128,8 +129,8 @@ Near-term architecture targets:
   byte-string behavior, scalar math diagnostic/type parity, and
   base-conversion precision/range parity.
 - User-defined functions, classes/methods, constants beyond the currently
-  modeled `E_ERROR` and `PHP_EOL`, namespaced symbols, autoloading, and
-  disabled-functions behavior in symbol-existence predicates.
+  modeled `E_ERROR`, `PHP_EOL`, `INF`, and `NAN`, namespaced symbols,
+  autoloading, and disabled-functions behavior in symbol-existence predicates.
 - Broader control flow: unbraced and alternate syntax, `foreach`,
   explicit-level `break`, `continue`, for-loop comma expressions and
   non-direct-variable clause lvalues, and exception/finally edges.
