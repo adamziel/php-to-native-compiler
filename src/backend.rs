@@ -308,10 +308,10 @@ fn emit_instruction(
             then_body,
             else_body,
         } => {
-            let condition_temp = values.emit_materialized_value(out, condition);
-            out.push_str("    if (ptn_is_truthy(");
-            out.push_str(&condition_temp);
-            out.push_str(")) {\n");
+            let condition_predicate = values.emit_condition(out, condition);
+            out.push_str("    if (");
+            out.push_str(&condition_predicate);
+            out.push_str(") {\n");
             for body_instruction in then_body {
                 emit_instruction(
                     out,
@@ -347,9 +347,9 @@ fn emit_instruction(
             out.push_str(&continue_label);
             out.push_str(":\n");
             out.push_str("    ;\n");
-            let condition_temp = values.emit_materialized_value(out, condition);
-            out.push_str("        if (!ptn_is_truthy(");
-            out.push_str(&condition_temp);
+            let condition_predicate = values.emit_condition(out, condition);
+            out.push_str("        if (!(");
+            out.push_str(&condition_predicate);
             out.push_str(")) {\n");
             out.push_str("            goto ");
             out.push_str(&end_label);
@@ -401,9 +401,9 @@ fn emit_instruction(
             out.push_str(&continue_label);
             out.push_str(":\n");
             out.push_str("    ;\n");
-            let condition_temp = values.emit_materialized_value(out, condition);
-            out.push_str("        if (!ptn_is_truthy(");
-            out.push_str(&condition_temp);
+            let condition_predicate = values.emit_condition(out, condition);
+            out.push_str("        if (!(");
+            out.push_str(&condition_predicate);
             out.push_str(")) {\n");
             out.push_str("            goto ");
             out.push_str(&end_label);
@@ -436,9 +436,9 @@ fn emit_instruction(
             emit_label_reference(out, &end_label);
             out.push_str("    while (1) {\n");
             if let Some(condition) = condition {
-                let condition_temp = values.emit_materialized_value(out, condition);
-                out.push_str("        if (!ptn_is_truthy(");
-                out.push_str(&condition_temp);
+                let condition_predicate = values.emit_condition(out, condition);
+                out.push_str("        if (!(");
+                out.push_str(&condition_predicate);
                 out.push_str(")) {\n");
                 out.push_str("            goto ");
                 out.push_str(&end_label);
@@ -1060,6 +1060,56 @@ impl ValueEmitter {
         }
     }
 
+    fn emit_condition(&mut self, out: &mut String, value: &ValueExpr) -> String {
+        match value {
+            ValueExpr::Bool(true) => "1".to_string(),
+            ValueExpr::Bool(false) | ValueExpr::Null => "0".to_string(),
+            ValueExpr::Int(value) => {
+                if *value == 0 {
+                    "0".to_string()
+                } else {
+                    "1".to_string()
+                }
+            }
+            ValueExpr::Float(value) => {
+                if *value == 0.0 {
+                    "0".to_string()
+                } else {
+                    "1".to_string()
+                }
+            }
+            ValueExpr::Unary {
+                op: UnaryOp::Not,
+                expr,
+            } => {
+                let predicate = self.emit_condition(out, expr);
+                format!("!({predicate})")
+            }
+            ValueExpr::Binary { op, left, right } => match op {
+                BinaryOp::Equal
+                | BinaryOp::NotEqual
+                | BinaryOp::Identical
+                | BinaryOp::NotIdentical
+                | BinaryOp::Less
+                | BinaryOp::LessEqual
+                | BinaryOp::Greater
+                | BinaryOp::GreaterEqual => self.emit_comparison_predicate(out, *op, left, right),
+                BinaryOp::And | BinaryOp::Or => {
+                    self.emit_short_circuit_condition(out, *op, left, right)
+                }
+                BinaryOp::Xor => self.emit_boolean_xor_condition(out, left, right),
+                _ => {
+                    let emitted_value = self.emit_value(out, value);
+                    format!("ptn_is_truthy({emitted_value})")
+                }
+            },
+            _ => {
+                let emitted_value = self.emit_value(out, value);
+                format!("ptn_is_truthy({emitted_value})")
+            }
+        }
+    }
+
     fn emit_binary(
         &mut self,
         out: &mut String,
@@ -1175,6 +1225,32 @@ impl ValueEmitter {
         out.push_str(&comparison);
         out.push_str(");\n");
         result_temp
+    }
+
+    fn emit_comparison_predicate(
+        &mut self,
+        out: &mut String,
+        op: BinaryOp,
+        left: &ValueExpr,
+        right: &ValueExpr,
+    ) -> String {
+        let left_temp = self.emit_materialized_value(out, left);
+        let right_temp = self.emit_materialized_value(out, right);
+        match op {
+            BinaryOp::Equal => format!("ptn_compare_equal({left_temp}, {right_temp})"),
+            BinaryOp::NotEqual => format!("!ptn_compare_equal({left_temp}, {right_temp})"),
+            BinaryOp::Identical => format!("ptn_compare_identical({left_temp}, {right_temp})"),
+            BinaryOp::NotIdentical => {
+                format!("!ptn_compare_identical({left_temp}, {right_temp})")
+            }
+            BinaryOp::Less => format!("ptn_compare_less({left_temp}, {right_temp})"),
+            BinaryOp::LessEqual => format!("ptn_compare_less_equal({left_temp}, {right_temp})"),
+            BinaryOp::Greater => format!("ptn_compare_greater({left_temp}, {right_temp})"),
+            BinaryOp::GreaterEqual => {
+                format!("ptn_compare_greater_equal({left_temp}, {right_temp})")
+            }
+            _ => unreachable!(),
+        }
     }
 
     fn emit_isset(&mut self, out: &mut String, targets: &[ValueExpr]) -> String {
@@ -1342,6 +1418,69 @@ impl ValueEmitter {
         }
         out.push_str("    }\n");
         result_temp
+    }
+
+    fn emit_short_circuit_condition(
+        &mut self,
+        out: &mut String,
+        op: BinaryOp,
+        left: &ValueExpr,
+        right: &ValueExpr,
+    ) -> String {
+        let left_predicate = self.emit_condition(out, left);
+        let result_temp = self.next_temp();
+        out.push_str("    int ");
+        out.push_str(&result_temp);
+        out.push_str(" = 0;\n");
+        out.push_str("    if (");
+        out.push_str(&left_predicate);
+        out.push_str(") {\n");
+        match op {
+            BinaryOp::And => {
+                let right_predicate = self.emit_condition(out, right);
+                out.push_str("        ");
+                out.push_str(&result_temp);
+                out.push_str(" = (");
+                out.push_str(&right_predicate);
+                out.push_str(") != 0;\n");
+                out.push_str("    } else {\n");
+                out.push_str("        ");
+                out.push_str(&result_temp);
+                out.push_str(" = 0;\n");
+            }
+            BinaryOp::Or => {
+                out.push_str("        ");
+                out.push_str(&result_temp);
+                out.push_str(" = 1;\n");
+                out.push_str("    } else {\n");
+                let right_predicate = self.emit_condition(out, right);
+                out.push_str("        ");
+                out.push_str(&result_temp);
+                out.push_str(" = (");
+                out.push_str(&right_predicate);
+                out.push_str(") != 0;\n");
+            }
+            _ => unreachable!(),
+        }
+        out.push_str("    }\n");
+        result_temp
+    }
+
+    fn emit_boolean_xor_condition(
+        &mut self,
+        out: &mut String,
+        left: &ValueExpr,
+        right: &ValueExpr,
+    ) -> String {
+        let left_predicate = self.emit_condition(out, left);
+        let left_temp = self.next_temp();
+        out.push_str("    int ");
+        out.push_str(&left_temp);
+        out.push_str(" = (");
+        out.push_str(&left_predicate);
+        out.push_str(") != 0;\n");
+        let right_predicate = self.emit_condition(out, right);
+        format!("{left_temp} != (({right_predicate}) != 0)")
     }
 
     fn emit_boolean_xor(
