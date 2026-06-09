@@ -659,6 +659,9 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
         "Cannot redeclare function array_key_exists()"
     );
 
+    let error = parser::parse("<?php function Array_Keys($array) { return null; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function array_keys()");
+
     let error = parser::parse("<?php function Print_R($value) { return $value; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function print_r()");
 }
@@ -4826,6 +4829,33 @@ var_dump(function_exists(\"array_key_exists\"), function_exists(\"ARRAY_KEY_EXIS
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "bool(true)\nbool(false)\nDeprecated: Using null as the key parameter for array_key_exists() is deprecated, use an empty string instead in ptn on line 5\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_array_keys_to_native_binary() {
+    let root = temp_dir("ptn-native-array-keys");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-keys.php");
+    let output = root.join("array-keys-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$items = [\"a\" => 1, \"b\" => 2, 2 => 2.0, -23 => \"asdasd\", [1, 2, 3], \"2\" => \"replace\"];\n\
+var_dump(array_keys($items));\n\
+var_dump(array_keys([]));\n\
+var_dump(function_exists(\"array_keys\"), function_exists(\"ARRAY_KEYS\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(5) {\n  [0]=>\n  string(1) \"a\"\n  [1]=>\n  string(1) \"b\"\n  [2]=>\n  int(2)\n  [3]=>\n  int(-23)\n  [4]=>\n  int(3)\n}\narray(0) {\n}\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

@@ -276,6 +276,31 @@ static PtnValue ptn_internal_array_shift(PtnRuntime *runtime, size_t argc, const
     return ptn_array_shift_value(array);
 }
 
+static PtnValue ptn_internal_array_keys(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_keys", 1, "array", args[0]);
+    if (array->len == 0) {
+        return ptn_array_from_literal_entries(0, NULL);
+    }
+
+    PtnArrayLiteralEntry *entries = malloc(array->len * sizeof(PtnArrayLiteralEntry));
+    if (entries == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < array->len; i++) {
+        PtnArrayKey key = array->entries[i].key;
+        entries[i].has_key = 0;
+        entries[i].value = key.type == PTN_ARRAY_KEY_INT
+            ? ptn_int(key.as.integer)
+            : ptn_string(key.as.string);
+    }
+
+    PtnValue result = ptn_array_from_literal_entries(array->len, entries);
+    free(entries);
+    return result;
+}
+
 static PtnValue ptn_internal_current(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     (void)line;
@@ -1615,6 +1640,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
     static const PtnInternalFunction functions[] = {
         { "abs", 1, 1, ptn_internal_abs },
         { "array_key_exists", 2, 2, ptn_internal_array_key_exists },
+        { "array_keys", 1, 1, ptn_internal_array_keys },
         { "array_pop", 1, 1, ptn_internal_array_pop },
         { "array_push", 1, PTN_VARIADIC_ARGS, ptn_internal_array_push },
         { "array_shift", 1, 1, ptn_internal_array_shift },

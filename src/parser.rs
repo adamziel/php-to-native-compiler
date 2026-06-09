@@ -1897,6 +1897,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "empty"
             | "count"
             | "array_key_exists"
+            | "array_keys"
             | "array_pop"
             | "array_push"
             | "array_shift"
