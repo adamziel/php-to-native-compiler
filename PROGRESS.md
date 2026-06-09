@@ -1,7 +1,7 @@
 # PTN Progress
 
-Last refresh: 2026-06-09T18:31Z
-Commit: pending `ptn-ebd` branch head
+Last refresh: 2026-06-09T17:14Z
+Commit: pending `ptn-cqu.47.2` branch head
 
 ## Test Dashboard
 
@@ -13,7 +13,7 @@ Commit: pending `ptn-ebd` branch head
 | PHPT Zend rows | 76 | 60 | 16 |
 | PHPT ext/standard rows | 77 | 44 | 33 |
 | PHPT tests/basic+func+lang | 18 | 17 | 1 |
-| COW-focused tests | 0 | 0 | 1 full suite needed |
+| COW contract spec tests | 5 | 5 | Runtime COW implementation still needed |
 
 ## Already Ported
 
@@ -30,9 +30,9 @@ boundaries, and catchable `count()` non-array diagnostics.
 
 ## Still Needed
 
-Copy-on-write for arrays, strings, variables, function calls, foreach, nested
-containers, and references. All non-COW work is paused unless it is required to
-prove COW.
+Runtime copy-on-write for arrays, strings, variables, function calls, foreach,
+nested containers, and references. A design-only COW payload contract and
+executable spec tests now pin the required ownership transitions.
 
 ## Next Focus
 

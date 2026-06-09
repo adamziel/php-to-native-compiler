@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-09T16:41Z
-Commit: `ea176b8`
+Last refresh: 2026-06-09T17:14Z
+Commit: pending `ptn-cqu.47.2` branch head
 
 ## Operating Goal
 
@@ -14,18 +14,19 @@ Current mandate: solve copy-on-write first. Other work is allowed only when it
 directly unblocks COW correctness or evidence.
 
 Latest measured local tests: source unit 3/3 passing; native integration
-268/268 passing. Latest parsed bounded PHPT log records 121/171 passing rows.
+273/273 passing. Latest parsed bounded PHPT log records 121/171 passing rows.
+COW contract spec tests are 5/5 passing; runtime COW is not implemented yet.
 
 ## Active Buckets
 
 | Bucket | Count |
 | --- | --- |
 | Source unit tests | 3/3 passing |
-| Native compiled snippets | 268/268 passing |
+| Native compiled snippets | 273/273 passing |
 | PHPT Zend rows | 60/76 passing |
 | PHPT ext/standard rows | 44/77 passing |
 | PHPT tests/basic+func+lang | 17/18 passing |
-| COW-focused tests | 0 dedicated rows yet |
+| COW contract spec tests | 5/5 passing |
 
 ## Rules
 
