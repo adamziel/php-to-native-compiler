@@ -3329,6 +3329,75 @@ fn compile_user_function_extra_arguments_are_accepted_to_native_binary() {
 }
 
 #[test]
+fn compile_user_function_func_introspection_to_native_binary() {
+    let root = temp_dir("ptn-native-user-function-func-introspection");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("user-function-func-introspection.php");
+    let output = root.join("user-function-func-introspection-bin");
+    fs::write(
+        &input,
+        "<?php function inspect($left, $right) { $left = \"changed\"; unset($right); var_dump(func_num_args(), func_get_arg(0), func_get_arg(1), func_get_arg(2), func_get_args()); } inspect(\"original\", \"gone\", \"extra\");",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(3)\nstring(7) \"changed\"\nNULL\nstring(5) \"extra\"\narray(3) {\n  [0]=>\n  string(7) \"changed\"\n  [1]=>\n  NULL\n  [2]=>\n  string(5) \"extra\"\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_zero_parameter_user_function_func_args_to_native_binary() {
+    let root = temp_dir("ptn-native-zero-parameter-user-function-func-args");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("zero-parameter-user-function-func-args.php");
+    let output = root.join("zero-parameter-user-function-func-args-bin");
+    fs::write(
+        &input,
+        "<?php function inspect() { var_dump(func_num_args(), func_get_args()); } inspect(1, \"two\");",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(2)\narray(2) {\n  [0]=>\n  int(1)\n  [1]=>\n  string(3) \"two\"\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_func_introspection_registry_and_global_errors_to_native_binary() {
+    let root = temp_dir("ptn-native-func-introspection-global-errors");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("func-introspection-global-errors.php");
+    let output = root.join("func-introspection-global-errors-bin");
+    fs::write(
+        &input,
+        "<?php var_dump(function_exists(\"func_num_args\"), function_exists(\"FUNC_GET_ARG\"), function_exists(\"func_get_args\")); try { func_num_args(); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; } try { func_get_arg(0); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; } try { func_get_args(); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nbool(true)\nbool(true)\nfunc_num_args() must be called from a function context\nfunc_get_arg() cannot be called from the global scope\nfunc_get_args() cannot be called from the global scope\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_user_function_locals_do_not_overwrite_top_level_variables() {
     let root = temp_dir("ptn-native-user-function-local-scope");
     fs::create_dir_all(&root).unwrap();

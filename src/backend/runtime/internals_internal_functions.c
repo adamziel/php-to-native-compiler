@@ -1603,6 +1603,85 @@ static PtnValue ptn_internal_error_reporting(PtnRuntime *runtime, size_t argc, c
     return ptn_int(0);
 }
 
+static PtnCallFrame *ptn_current_call_frame(PtnRuntime *runtime, const char *function_name) {
+    if (runtime->call_frame != NULL) {
+        return runtime->call_frame;
+    }
+    char message[128];
+    const char *format = strcmp(function_name, "func_num_args") == 0
+        ? "%s() must be called from a function context"
+        : "%s() cannot be called from the global scope";
+    int written = snprintf(message, sizeof(message), format, function_name);
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "Error", message);
+    return NULL;
+}
+
+static PtnValue ptn_call_frame_arg_value(PtnRuntime *runtime, PtnCallFrame *frame, size_t position) {
+    if (position < frame->parameter_count) {
+        PtnValue value;
+        if (ptn_symbols_get(&runtime->symbols, frame->parameter_names[position], &value)) {
+            return ptn_value_clone(value);
+        }
+        return ptn_null();
+    }
+    return ptn_value_clone(frame->args[position]);
+}
+
+static PtnValue ptn_internal_func_num_args(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    PtnCallFrame *frame = ptn_current_call_frame(runtime, "func_num_args");
+    if (frame->argc > (size_t)INT64_MAX) {
+        ptn_abort_out_of_memory();
+    }
+    return ptn_int((int64_t)frame->argc);
+}
+
+static PtnValue ptn_internal_func_get_arg(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnCallFrame *frame = ptn_current_call_frame(runtime, "func_get_arg");
+    int64_t position = ptn_value_to_integer(args[0]);
+    if (position < 0) {
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "func_get_arg(): Argument #1 ($position) must be greater than or equal to 0"
+        );
+    }
+    if ((uint64_t)position >= (uint64_t)frame->argc) {
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "func_get_arg(): Argument #1 ($position) must be less than the number of the arguments passed to the currently executed function"
+        );
+    }
+    return ptn_call_frame_arg_value(runtime, frame, (size_t)position);
+}
+
+static PtnValue ptn_internal_func_get_args(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    PtnCallFrame *frame = ptn_current_call_frame(runtime, "func_get_args");
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < frame->argc; i++) {
+        if (i > (size_t)INT64_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_int_key((int64_t)i),
+            ptn_call_frame_arg_value(runtime, frame, i)
+        );
+    }
+    return result;
+}
+
 static PtnValue ptn_internal_define(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_constant(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static int ptn_user_function_exists(const char *name);
@@ -1632,6 +1711,9 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "error_reporting", 0, 1, ptn_internal_error_reporting },
         { "fdiv", 2, 2, ptn_internal_fdiv },
         { "floor", 1, 1, ptn_internal_floor },
+        { "func_get_arg", 1, 1, ptn_internal_func_get_arg },
+        { "func_get_args", 0, 0, ptn_internal_func_get_args },
+        { "func_num_args", 0, 0, ptn_internal_func_num_args },
         { "function_exists", 1, 1, ptn_internal_function_exists },
         { "getmypid", 0, 0, ptn_internal_getmypid },
         { "getrandmax", 0, 0, ptn_internal_getrandmax },

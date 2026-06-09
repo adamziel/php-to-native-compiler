@@ -14,6 +14,9 @@ expected rows, or one-off outputs.
 - Boxed C runtime for PHP-like values.
 - Native execution tests for parser, IR, backend, runtime, and selected PHP
   behavior.
+- Top-level by-value user functions with isolated locals, shared constants,
+  extra-argument acceptance, and `func_num_args()`, `func_get_arg()`, and
+  `func_get_args()` call-frame introspection.
 - Bounded PHPT telemetry from `/home/claude/php-src-phpt`.
 
 ## Status Files
