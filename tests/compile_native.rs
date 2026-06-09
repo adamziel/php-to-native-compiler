@@ -880,6 +880,60 @@ fn compile_strlen_expression_to_native_binary() {
 }
 
 #[test]
+fn compile_str_rot13_basic_phpt_shape_to_native_binary() {
+    let root = temp_dir("ptn-native-str-rot13-basic-phpt-shape");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("str-rot13-basic.php");
+    let output = root.join("str-rot13-basic-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+echo \"*** Testing str_rot13() : basic functionality ***\\n\";\n\
+\n\
+echo \"\\nBasic tests\\n\";\n\
+var_dump(str_rot13(\"str_rot13() tests starting\"));\n\
+var_dump(str_rot13(\"abcdefghijklmnopqrstuvwxyz\"));\n\
+\n\
+echo \"\\nEnsure numeric characters are left untouched\\n\";\n\
+if (strcmp(str_rot13(\"0123456789\"), \"0123456789\") == 0) {\n\
+    echo \"Strings equal : TEST PASSED\\n\";\n\
+} else {\n\
+    echo \"Strings unequal : TEST FAILED\\n\";\n\
+}\n\
+\n\
+echo \"\\nEnsure non-alphabetic characters are left untouched\\n\";\n\
+if (strcmp(str_rot13(\"!%^&*()_-+={}[]:;@~#<,>.?\"), \"!%^&*()_-+={}[]:;@~#<,>.?\")) {\n\
+    echo \"Strings equal : TEST PASSED\\n\";\n\
+} else {\n\
+    echo \"Strings unequal : TEST FAILED\\n\";\n\
+}\n\
+\n\
+echo \"\\nEnsure strings round trip\\n\";\n\
+$str = \"str_rot13() tests starting\";\n\
+$encode = str_rot13($str);\n\
+$decode = str_rot13($encode);\n\
+if (strcmp($str, $decode) == 0) {\n\
+    echo \"Strings equal : TEST PASSED\\n\";\n\
+} else {\n\
+    echo \"Strings unequal : TEST FAILED\\n\";\n\
+}\n\
+var_dump(function_exists(\"str_rot13\"), function_exists(\"STRCMP\"));\n\
+?>",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "*** Testing str_rot13() : basic functionality ***\n\nBasic tests\nstring(26) \"fge_ebg13() grfgf fgnegvat\"\nstring(26) \"nopqrstuvwxyzabcdefghijklm\"\n\nEnsure numeric characters are left untouched\nStrings equal : TEST PASSED\n\nEnsure non-alphabetic characters are left untouched\nStrings unequal : TEST FAILED\n\nEnsure strings round trip\nStrings equal : TEST PASSED\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_internal_call_expression_arguments_evaluate_left_to_right() {
     let root = temp_dir("ptn-native-call-expression-left-to-right");
     fs::create_dir_all(&root).unwrap();
@@ -1152,6 +1206,62 @@ fn compile_floorceil_phpt_shape_to_native_binary() {
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "float(0)\nfloat(-1)\nfloat(-1)\nfloat(-1)\nfloat(-2)\nfloat(0)\nfloat(1)\nfloat(1)\nfloat(2)\nfloat(2)\nfloat(3)\nfloat(0)\nfloat(-1)\nfloat(-1)\nfloat(-2)\nfloat(-2)\nfloat(-3)\nfloat(0)\nfloat(0)\nfloat(1)\nfloat(1)\nfloat(1)\nfloat(2)\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_pi_basic_phpt_shape_to_native_binary() {
+    let root = temp_dir("ptn-native-pi-basic-phpt-shape");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("pi-basic.php");
+    let output = root.join("pi-basic-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+echo pi(), \"\\n\";\n\
+echo M_PI, \"\\n\";\n\
+var_dump(function_exists(\"pi\"), function_exists(\"PI\"), defined(\"M_PI\"));\n\
+?>",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "3.1415926535898\n3.1415926535898\nbool(true)\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_sqrt_basic_phpt_shape_to_native_binary() {
+    let root = temp_dir("ptn-native-sqrt-basic-phpt-shape");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("sqrt-basic.php");
+    let output = root.join("sqrt-basic-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$arg_0 = 9.0;\n\
+\n\
+var_dump(sqrt($arg_0));\n\
+var_dump(function_exists(\"sqrt\"), function_exists(\"SQRT\"));\n\
+\n\
+?>",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "float(3)\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

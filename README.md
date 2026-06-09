@@ -23,21 +23,28 @@ Supported today:
 - Statement-form `print expr;` for the same scalar expression subset as
   `echo`; emitted native code uses the same boxed output conversion path.
 - Simple internal calls such as `var_dump(expr, ...)`, `strlen(expr)`,
-  `bin2hex(expr)`, `ceil(expr)`, `floor(expr)`, `bindec(expr)`,
-  `hexdec(expr)`, `octdec(expr)`, `chr(expr)`, `ord(expr)`,
-  `error_reporting(expr)`, `gettype(expr)`, scalar `is_*` type predicates,
-  non-finite predicates such as `is_finite(expr)`, `is_infinite(expr)`, and
-  `is_nan(expr)`, `defined(expr)`, and `function_exists(expr)`, lowered through
-  IR
+  `str_rot13(expr)`, `strcmp(expr, expr)`, `bin2hex(expr)`, `ceil(expr)`,
+  `floor(expr)`, `sqrt(expr)`, `bindec(expr)`, `hexdec(expr)`, `octdec(expr)`,
+  `pi()`, `chr(expr)`, `ord(expr)`, `error_reporting(expr)`, `gettype(expr)`,
+  scalar `is_*` type predicates, non-finite predicates such as
+  `is_finite(expr)`, `is_infinite(expr)`, and `is_nan(expr)`,
+  `defined(expr)`, and `function_exists(expr)`, lowered through IR
   internal-call nodes and generated C runtime dispatch.
 - `var_dump()` output for the current boxed scalar `PtnValue` types: `null`,
   booleans, integers, floats, and strings.
 - `strlen()` as an expression returning the byte length of the current boxed
   scalar string-conversion result.
+- `str_rot13()` as an expression returning ASCII ROT13 over the current boxed
+  scalar string-conversion result.
+- `strcmp()` as an expression returning negative, zero, or positive comparison
+  results over the current boxed scalar string-conversion results.
 - `bin2hex()` as an expression returning lowercase hexadecimal bytes for the
   current boxed scalar string-conversion result.
 - `ceil()` and `floor()` as expressions returning boxed floats after the
   current boxed scalar numeric-conversion result.
+- `sqrt()` as an expression returning a boxed float after the current boxed
+  scalar numeric-conversion result.
+- `pi()` as an expression returning the modeled boxed float value of `M_PI`.
 - `bindec()`, `hexdec()`, and `octdec()` as expressions over the current boxed
   scalar string-conversion result, accepting the matching PHP base prefix and
   returning integers or floats based on native integer range.
@@ -56,7 +63,7 @@ Supported today:
   `function_exists()` checks the generated internal-function registry, and
   `defined()` checks the current constant registry, which currently includes
   `E_ERROR`, `PHP_EOL`, `PHP_INT_MIN`, `PHP_INT_MAX`, `PHP_INT_SIZE`, `INF`,
-  and `NAN`.
+  `NAN`, and `M_PI`.
 - String, integer, float, boolean, and null literals.
 - Direct variable assignment and reads for scalar values through the generated
   native runtime symbol table.
@@ -128,15 +135,15 @@ Unsupported today:
   between PHP blocks, internal functions outside the registered scalar subset,
   user constants and built-in constants other than the currently modeled
   `E_ERROR`, `PHP_EOL`, `PHP_INT_MIN`, `PHP_INT_MAX`, `PHP_INT_SIZE`, `INF`,
-  and `NAN`, arrays, objects, resources, recursion, references, embedded NUL
-  string handling, exact `chr()`
-  deprecation diagnostics, exact `ord()` argument type diagnostics, exact
-  `ceil()`/`floor()` null/string/unsupported type diagnostics, exact
-  `error_reporting()` configuration/filtering behavior, and full PHP
-  precision/formatting edge cases for
-  `var_dump()`/`strlen()`/`bin2hex()`/base-conversion internals, doc comment
-  retention, variable variables, and dynamic fallback. These are architecture
-  targets, not excuses for exact-shape hacks.
+  `NAN`, and `M_PI`, arrays, objects, resources, recursion, references,
+  embedded NUL string handling, exact `strcmp()` binary-string parity, exact
+  `chr()` deprecation diagnostics, exact `ord()` argument type diagnostics,
+  exact `ceil()`/`floor()` null/string/unsupported type diagnostics, exact
+  `sqrt()` negative/non-finite edge parity, exact `error_reporting()`
+  configuration/filtering behavior, and full PHP precision/formatting edge
+  cases for `var_dump()`/`strlen()`/`bin2hex()`/base-conversion internals, doc
+  comment retention, variable variables, and dynamic fallback. These are
+  architecture targets, not excuses for exact-shape hacks.
 
 ## Build
 

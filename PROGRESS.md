@@ -727,3 +727,62 @@ Still unsupported after this NaN comparison slice: exact `NAN`/`INF`
 formatting, arrays, objects, resources, references, copy-on-write behavior,
 spaceship comparison, and complete comparison parity for unsupported value
 types.
+
+Added scalar string ROT13 and comparison internal functions:
+
+- Registered `str_rot13()` and `strcmp()` through the existing generated C
+  internal-function registry, so normal calls and `function_exists()` share the
+  same case-insensitive lookup table.
+- `str_rot13()` converts the current boxed scalar argument through the shared
+  scalar string-conversion path and applies ASCII ROT13 while leaving
+  non-letters unchanged.
+- `strcmp()` converts both boxed scalar arguments through the shared scalar
+  string-conversion path and returns a negative integer, zero, or a positive
+  integer from the current bytewise C-string comparison.
+- Native tests prove the public `str_rot13_basic.phpt` source shape, including
+  nested internal calls, braced branches, assignment round trips, scalar
+  comparison of `strcmp()` output, and case-insensitive registry exposure.
+- Focused public PHPT telemetry through `phpc` passes
+  `ext/standard/tests/strings/str_rot13_basic.phpt`.
+
+Still unsupported after this `str_rot13()`/`strcmp()` slice: arrays, objects,
+resources, references, copy-on-write behavior, embedded NUL strings, exact
+binary-string comparison parity, and exact unsupported-type diagnostics.
+
+Added scalar `pi()` and the `M_PI` math constant:
+
+- Registered `pi()` through the existing generated C internal-function
+  registry, so normal calls and `function_exists()` share the same
+  case-insensitive lookup table.
+- The modeled constant registry now includes `M_PI` alongside the existing
+  scalar constants, so direct constant reads and `defined()` share the same
+  lookup boundary.
+- `pi()` and `M_PI` return the same boxed float value through the current scalar
+  runtime paths.
+- Native tests prove the public `pi_basic.phpt` source shape, direct `M_PI`
+  output, and registry exposure through `function_exists()` and `defined()`.
+- Focused public PHPT telemetry through `phpc` passes
+  `ext/standard/tests/math/pi_basic.phpt`.
+
+Still unsupported after this `pi()`/`M_PI` slice: the rest of the predefined
+math constants, exact precision/formatting parity across all output paths, and
+user-defined or extension constants beyond the currently modeled scalar
+constant registry.
+
+Added scalar `sqrt()`:
+
+- Registered `sqrt()` through the existing generated C internal-function
+  registry, so normal calls and `function_exists()` share the same
+  case-insensitive lookup table.
+- `sqrt()` converts the current boxed scalar argument through the shared scalar
+  numeric-conversion path and returns a boxed float from the generated C runtime
+  math helper.
+- Native tests prove the public `sqrt_basic.phpt` source shape and
+  case-insensitive registry exposure.
+- Focused public PHPT telemetry through `phpc` passes
+  `ext/standard/tests/math/sqrt_basic.phpt`.
+
+Still unsupported after this `sqrt()` slice: PHP-exact diagnostics for null,
+string, array/object/resource/reference operands, complete negative/non-finite
+float parity, and precision/formatting parity beyond the current scalar output
+paths.

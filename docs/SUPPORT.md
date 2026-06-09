@@ -54,13 +54,15 @@ supports in generated native binaries.
 - Boxed scalar bit shifts `<<` and `>>`. Supported scalar operands are
   converted to integers through the current bitwise integer-conversion path.
 - Simple statement-form internal calls such as `var_dump(expr, ...)`,
-  `strlen(expr);`, `bin2hex(expr);`, `ceil(expr);`, `floor(expr);`,
-  `bindec(expr);`, `hexdec(expr);`, `octdec(expr);`, `chr(expr);`,
+  `strlen(expr);`, `str_rot13(expr);`, `strcmp(expr, expr);`,
+  `bin2hex(expr);`, `ceil(expr);`, `floor(expr);`, `sqrt(expr);`,
+  `bindec(expr);`, `hexdec(expr);`, `octdec(expr);`, `pi();`, `chr(expr);`,
   `ord(expr);`, `is_finite(expr);`, `is_infinite(expr);`, `is_nan(expr);`, and
   `error_reporting(expr);`.
 - Expression-form internal calls for the currently registered scalar functions,
-  including `strlen(expr)`, `bin2hex(expr)`, `ceil(expr)`, `floor(expr)`,
-  `bindec(expr)`, `hexdec(expr)`, `octdec(expr)`, `chr(expr)`, `ord(expr)`,
+  including `strlen(expr)`, `str_rot13(expr)`, `strcmp(expr, expr)`,
+  `bin2hex(expr)`, `ceil(expr)`, `floor(expr)`, `sqrt(expr)`, `bindec(expr)`,
+  `hexdec(expr)`, `octdec(expr)`, `pi()`, `chr(expr)`, `ord(expr)`,
   `is_finite(expr)`, `is_infinite(expr)`, `is_nan(expr)`,
   `error_reporting(expr)`, `gettype(expr)`, and scalar `is_*` type predicates
   in echo operands, assignments, binary operands, and branch/loop conditions.
@@ -69,10 +71,18 @@ supports in generated native binaries.
 - `var_dump()` output for current boxed scalar values: `NULL`, `bool(...)`,
   `int(...)`, `float(...)`, and `string(length) "value"`.
 - `strlen()` over current boxed scalar values after scalar string conversion.
+- `str_rot13()` over current boxed scalar values after scalar string conversion,
+  returning ASCII ROT13 output while leaving non-letters unchanged.
+- `strcmp()` over current boxed scalar values after scalar string conversion,
+  returning a negative integer, zero, or a positive integer from bytewise
+  comparison of the current C-string-backed values.
 - `bin2hex()` over current boxed scalar values after scalar string conversion,
   returning lowercase hexadecimal byte output.
 - `ceil()` and `floor()` over current boxed scalar values after scalar numeric
   conversion, returning boxed floats.
+- `sqrt()` over current boxed scalar values after scalar numeric conversion,
+  returning a boxed float.
+- `pi()` returns the modeled boxed float value of the `M_PI` constant.
 - `bindec()`, `hexdec()`, and `octdec()` over current boxed scalar values after
   scalar string conversion. The runtime accepts matching `0b`, `0x`, and `0o`
   prefixes, ignores invalid base digits with a deprecation boundary, and
@@ -94,7 +104,8 @@ supports in generated native binaries.
 - `function_exists()` over the currently registered internal-function names.
 - `defined()` over the current constant registry, including the currently
   modeled PHP constants `E_ERROR`, `PHP_EOL`, `PHP_INT_MIN`, `PHP_INT_MAX`,
-  `PHP_INT_SIZE`, `INF`, and `NAN`. Other ordinary names report as undefined.
+  `PHP_INT_SIZE`, `INF`, `NAN`, and `M_PI`. Other ordinary names report as
+  undefined.
 - A minimal `phpc` runner for supported PHPT rows. It compiles scripts or `-r`
   snippets to temporary native binaries through the normal compiler pipeline.
 - Braced `if`, `elseif`, and `else` statements whose conditions and bodies use
@@ -149,18 +160,21 @@ supports in generated native binaries.
 - User-defined functions in `function_exists()`.
 - User-defined constants and built-in PHP/extension constants other than the
   currently modeled `E_ERROR`, `PHP_EOL`, `PHP_INT_MIN`, `PHP_INT_MAX`,
-  `PHP_INT_SIZE`, `INF`, and `NAN` in `defined()`.
+  `PHP_INT_SIZE`, `INF`, `NAN`, and `M_PI` in `defined()`.
 - Type predicate coverage for arrays, objects, resources, and references.
 - Arrays, objects, resources, recursive structures, references, and
   `var_dump()` reference identity output.
 - Embedded NUL strings in runtime string values, `var_dump()` string
-  length/output, `strlen()`, `bin2hex()`, `chr()`, `ord()`, or bitwise string
-  results.
+  length/output, `strlen()`, `str_rot13()`, `strcmp()`, `bin2hex()`, `chr()`,
+  `ord()`, or bitwise string results.
+- Exact `strcmp()` binary-string behavior for embedded NUL bytes and
+  unsupported array/object/resource/reference operands.
 - Exact `chr()` diagnostics for out-of-range integers or float-to-int precision
   loss.
 - Exact `ord()` strict-types and unsupported-type diagnostics.
 - Exact `ceil()`/`floor()` null deprecations, string and unsupported-type
   diagnostics, and complete special-float parity.
+- Exact `sqrt()` diagnostics and complete negative/non-finite float parity.
 - Exact diagnostics and full precision/range parity for `bindec()`, `hexdec()`,
   and `octdec()` on very large or unsupported values.
 - Exact `NAN`/`INF` formatting and complete non-finite comparison parity for

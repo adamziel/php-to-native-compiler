@@ -1597,6 +1597,10 @@ static PTN_UNUSED int ptn_constant_value(const char *name, PtnValue *out) {
         *out = ptn_float(NAN);
         return 1;
     }
+    if (strcmp(name, "M_PI") == 0) {
+        *out = ptn_float(3.14159265358979323846264338327950288);
+        return 1;
+    }
     return 0;
 }
 
@@ -1675,6 +1679,55 @@ static PtnValue ptn_internal_strlen(PtnRuntime *runtime, size_t argc, const PtnV
     size_t len = strlen(string);
     free(string);
     return ptn_int((int64_t)len);
+}
+
+static char *ptn_rot13_string(const char *string) {
+    size_t len = strlen(string);
+    char *rotated = malloc(len + 1);
+    if (rotated == NULL) {
+        ptn_abort_out_of_memory();
+    }
+
+    for (size_t i = 0; i < len; i++) {
+        unsigned char byte = (unsigned char)string[i];
+        if (byte >= 'a' && byte <= 'z') {
+            rotated[i] = (char)('a' + ((byte - 'a' + 13) % 26));
+        } else if (byte >= 'A' && byte <= 'Z') {
+            rotated[i] = (char)('A' + ((byte - 'A' + 13) % 26));
+        } else {
+            rotated[i] = (char)byte;
+        }
+    }
+    rotated[len] = '\0';
+    return rotated;
+}
+
+static PtnValue ptn_internal_str_rot13(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    char *string = ptn_value_to_string(args[0]);
+    char *rotated = ptn_rot13_string(string);
+    free(string);
+    return ptn_owned_string(rotated);
+}
+
+static PtnValue ptn_internal_strcmp(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    char *left = ptn_value_to_string(args[0]);
+    char *right = ptn_value_to_string(args[1]);
+    int compared = strcmp(left, right);
+    free(left);
+    free(right);
+    if (compared < 0) {
+        return ptn_int(-1);
+    }
+    if (compared > 0) {
+        return ptn_int(1);
+    }
+    return ptn_int(0);
 }
 
 static PtnValue ptn_internal_gettype(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -1791,6 +1844,21 @@ static PtnValue ptn_internal_floor(PtnRuntime *runtime, size_t argc, const PtnVa
     (void)argc;
     (void)line;
     return ptn_float(floor(ptn_value_to_double(args[0])));
+}
+
+static PtnValue ptn_internal_sqrt(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    return ptn_float(sqrt(ptn_value_to_double(args[0])));
+}
+
+static PtnValue ptn_internal_pi(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_float(3.14159265358979323846264338327950288);
 }
 
 static int ptn_digit_value_for_base(unsigned char byte, int base) {
@@ -1944,9 +2012,13 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
     static const PtnInternalFunction functions[] = {
         { "var_dump", 1, PTN_VARIADIC_ARGS, ptn_internal_var_dump },
         { "strlen", 1, 1, ptn_internal_strlen },
+        { "str_rot13", 1, 1, ptn_internal_str_rot13 },
+        { "strcmp", 2, 2, ptn_internal_strcmp },
         { "bin2hex", 1, 1, ptn_internal_bin2hex },
         { "ceil", 1, 1, ptn_internal_ceil },
         { "floor", 1, 1, ptn_internal_floor },
+        { "sqrt", 1, 1, ptn_internal_sqrt },
+        { "pi", 0, 0, ptn_internal_pi },
         { "bindec", 1, 1, ptn_internal_bindec },
         { "hexdec", 1, 1, ptn_internal_hexdec },
         { "octdec", 1, 1, ptn_internal_octdec },
