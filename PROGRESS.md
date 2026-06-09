@@ -1931,3 +1931,27 @@ Optimized generated string concatenation runtime behavior:
 - A native benchmark with 6000 chained and compound concat loop iterations
   produced the same `46890 34890` output and improved from about `real
   1.35-1.37s` before the change to `real 0.84-0.87s` after the change.
+
+Added hash-assisted lookup for runtime variables and constants:
+
+- Generated C `PtnSymbolTable` values now keep the existing insertion-order
+  item vector while allocating an open-addressed string-name index once a
+  table reaches 16 symbols.
+- Direct variable reads/writes, quiet variable lookups for `isset()`/`empty()`,
+  global `const`, `define()`, `defined()`, `constant()`, and user-function
+  runtime constant import continue to share the same table API.
+- The index preserves current update semantics: variable overwrites update the
+  existing symbol slot, duplicate runtime constants still preserve the original
+  value through the existing duplicate-aware helper, and runtime constant
+  import can still iterate the item vector in insertion order.
+- Native tests prove a larger runtime symbol table with overwritten variables,
+  runtime constants, `constant()`, `defined()`, and quiet `isset()` lookups.
+- Native benchmark proof on 1,024 variables/constants with 2.56M repeated
+  lookups kept output `1309440000`. Direct variable reads improved from
+  25529/25610/27652 ms before the index to 252/242/219 ms after it in this
+  workspace. Runtime constant reads through `constant()` improved from
+  5676/6150/6206 ms before the index to 1130/967/1213 ms after it.
+
+No new PHP surface is claimed by this performance slice. Variable variables,
+globals/superglobals, namespace/class constants, additional built-in/extension
+constants, and exact runtime diagnostic/error-handler parity remain unsupported.

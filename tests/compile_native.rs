@@ -5948,6 +5948,42 @@ fn compile_defined_and_undefined_variable_reads_to_native_binary() {
 }
 
 #[test]
+fn compile_many_runtime_symbols_to_native_binary() {
+    let root = temp_dir("ptn-native-many-runtime-symbols");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("many-runtime-symbols.php");
+    let output = root.join("many-runtime-symbols-bin");
+
+    let mut source = String::from("<?php\n");
+    for i in 0..128 {
+        source.push_str(&format!("$v{i} = {i};\n"));
+    }
+    source.push_str("$v70 = 7000;\n");
+    for i in 0..128 {
+        source.push_str(&format!("define(\"C{i}\", {i});\n"));
+    }
+    source.push_str("$sum = 0;\n");
+    source.push_str("for ($i = 0; $i < 8; $i++) {\n");
+    source.push_str("    $sum += $v0 + $v15 + $v70 + $v127;\n");
+    source.push_str("    $sum += constant(\"C0\") + constant(\"C15\") + constant(\"C70\") + constant(\"C127\");\n");
+    source.push_str("}\n");
+    source.push_str(
+        "var_dump($sum, defined(\"C127\"), constant(\"C127\"), isset($v127), isset($missing));\n",
+    );
+    fs::write(&input, source).unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(58832)\nbool(true)\nint(127)\nbool(true)\nbool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn unsupported_constructs_fail_before_codegen() {
     let unsupported_operator = parser::parse("<?php $name ??= 1;").unwrap_err();
     assert!(unsupported_operator.message.contains("expected expression"));
