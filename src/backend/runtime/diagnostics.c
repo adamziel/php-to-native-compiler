@@ -192,9 +192,85 @@ static void ptn_emit_constant_already_defined_warning(
     fputc('\n', stdout);
 }
 
+static PTN_UNUSED void ptn_exception_state_init(PtnExceptionState *state) {
+    state->frame = NULL;
+    state->active_exception = ptn_null();
+}
+
+static PTN_UNUSED void ptn_runtime_push_exception_frame(PtnRuntime *runtime, PtnExceptionFrame *frame) {
+    frame->previous = runtime->exceptions->frame;
+    runtime->exceptions->frame = frame;
+}
+
+static PTN_UNUSED void ptn_runtime_pop_exception_frame(PtnRuntime *runtime) {
+    if (runtime->exceptions->frame != NULL) {
+        runtime->exceptions->frame = runtime->exceptions->frame->previous;
+    }
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_active_exception(PtnRuntime *runtime) {
+    return ptn_value_borrow(runtime->exceptions->active_exception);
+}
+
+static PTN_UNUSED void ptn_runtime_clear_exception(PtnRuntime *runtime) {
+    ptn_value_destroy(&runtime->exceptions->active_exception);
+    runtime->exceptions->active_exception = ptn_null();
+}
+
+static PTN_UNUSED int ptn_exception_matches(PtnValue exception, const char *class_name) {
+    if (exception.type != PTN_OBJECT) {
+        return 0;
+    }
+    const char *actual = exception.as.object->class_name;
+    if (ptn_ascii_case_equal(actual, class_name)) {
+        return 1;
+    }
+    if (ptn_ascii_case_equal(class_name, "Throwable")) {
+        return 1;
+    }
+    if (ptn_ascii_case_equal(class_name, "Error") && ptn_ascii_case_equal(actual, "TypeError")) {
+        return 1;
+    }
+    return 0;
+}
+
+static PTN_UNUSED void ptn_emit_uncaught_exception(PtnValue exception) {
+    if (exception.type != PTN_OBJECT) {
+        fputs("Fatal error: Uncaught unknown exception\n", stderr);
+        return;
+    }
+    fputs("Fatal error: Uncaught ", stderr);
+    fputs(exception.as.object->class_name, stderr);
+    fputs(": ", stderr);
+    fputs(exception.as.object->message, stderr);
+    fputs(" in ptn on line ", stderr);
+    fprintf(stderr, "%zu", exception.as.object->line);
+    fputc('\n', stderr);
+}
+
+static PTN_UNUSED void ptn_runtime_throw(PtnRuntime *runtime, const char *class_name, const char *message, size_t line) {
+    ptn_value_destroy(&runtime->exceptions->active_exception);
+    runtime->exceptions->active_exception = ptn_object(ptn_object_new(class_name, message, line));
+    if (runtime->exceptions->frame != NULL) {
+        longjmp(runtime->exceptions->frame->env, 1);
+    }
+    ptn_emit_uncaught_exception(runtime->exceptions->active_exception);
+    exit(255);
+}
+
+static PTN_UNUSED void ptn_runtime_rethrow(PtnRuntime *runtime) {
+    if (runtime->exceptions->frame != NULL) {
+        longjmp(runtime->exceptions->frame->env, 1);
+    }
+    ptn_emit_uncaught_exception(runtime->exceptions->active_exception);
+    exit(255);
+}
+
 static void ptn_runtime_init(PtnRuntime *runtime) {
     ptn_symbols_init(&runtime->symbols);
     ptn_symbols_init(&runtime->owned_constants);
     runtime->constants = &runtime->owned_constants;
+    ptn_exception_state_init(&runtime->owned_exceptions);
+    runtime->exceptions = &runtime->owned_exceptions;
     ptn_diagnostics_init(&runtime->diagnostics, stderr);
 }

@@ -383,6 +383,33 @@ fn parser_accepts_foreach_value_and_key_value_statements() {
 }
 
 #[test]
+fn parser_accepts_try_catch_and_method_call_expressions() {
+    let program = parser::parse(
+        "<?php try { echo $value->getMessage(); } catch (\\TypeError $e) { echo $e->getMessage() . \\PHP_EOL; }",
+    )
+    .unwrap();
+    assert_eq!(program.statements.len(), 1);
+
+    let Statement::Try { body, catches, .. } = &program.statements[0] else {
+        panic!("expected try statement");
+    };
+    assert_eq!(body.len(), 1);
+    assert_eq!(catches.len(), 1);
+    assert_eq!(catches[0].class_name, "TypeError");
+    assert_eq!(catches[0].variable.as_deref(), Some("e"));
+    let Statement::Echo { expressions, .. } = &catches[0].body[0] else {
+        panic!("expected echo in catch body");
+    };
+    assert!(matches!(
+        &expressions[0],
+        Expr::Binary {
+            op: BinaryOp::Concat,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn parser_rejects_unsupported_foreach_bindings() {
     let by_ref = parser::parse("<?php foreach ($items as &$value) { echo $value; }").unwrap_err();
     assert_eq!(by_ref.message, "by-reference foreach is unsupported");
@@ -4924,6 +4951,76 @@ echo \"Done\\n\";",
         "string(1) \"l\"\nstring(1) \"l\"\nstring(1) \"l\"\nstring(1) \"l\"\n\nWarning: Illegal string offset \"7str\" in ptn on line 17\nstring(1) \"l\"\n\nWarning: Illegal string offset \"  7str\" in ptn on line 17\nstring(1) \"l\"\n\nWarning: Illegal string offset \"  7  str\" in ptn on line 17\nstring(1) \"l\"\n\nWarning: Illegal string offset \"7  str\" in ptn on line 17\nstring(1) \"l\"\n\nWarning: Illegal string offset \"0xC\" in ptn on line 17\nstring(1) \"T\"\n\nWarning: Illegal string offset \"0b10\" in ptn on line 17\nstring(1) \"T\"\nstring(1) \"l\"\nDone\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_try_catches_string_offset_type_errors_to_native_binary() {
+    let root = temp_dir("ptn-native-string-offset-type-error-catch");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("string-offset-type-error-catch.php");
+    let output = root.join("string-offset-type-error-catch-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$str = \"The world is fun\";\n\
+$keys = [\n\
+    \"7\",\n\
+    \"7.5\",\n\
+    \"7str\",\n\
+    \"7.5str\",\n\
+    \"0xC\",\n\
+    \"07\",\n\
+];\n\
+foreach ($keys as $key) {\n\
+    try {\n\
+        var_dump($str[$key]);\n\
+    } catch (\\TypeError $e) {\n\
+        echo $e->getMessage() . \\PHP_EOL;\n\
+    }\n\
+}\n\
+echo \"Done\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(1) \"l\"\nCannot access offset of type string on string\n\nWarning: Illegal string offset \"7str\" in ptn on line 13\nstring(1) \"l\"\nCannot access offset of type string on string\n\nWarning: Illegal string offset \"0xC\" in ptn on line 13\nstring(1) \"T\"\nstring(1) \"l\"\nDone\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_unmatched_catch_rethrows_string_offset_type_errors_to_native_binary() {
+    let root = temp_dir("ptn-native-string-offset-type-error-rethrow");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("string-offset-type-error-rethrow.php");
+    let output = root.join("string-offset-type-error-rethrow-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$str = \"abc\";\n\
+try {\n\
+    var_dump($str[\"1.5\"]);\n\
+} catch (\\Exception $e) {\n\
+    echo \"wrong\\n\";\n\
+}\n\
+echo \"after\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        "Fatal error: Uncaught TypeError: Cannot access offset of type string on string in ptn on line 4\n"
+    );
 }
 
 #[test]

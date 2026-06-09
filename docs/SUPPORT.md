@@ -93,7 +93,9 @@ supports in generated native binaries.
   offsets, nested reads, integer strings, numeric prefix strings with PHP-style
   illegal-offset warnings, and scalar cast warnings for `null`, booleans, and
   floats are handled by the shared offset-read helper; out-of-range reads emit
-  an uninitialized-offset warning and return an empty string.
+  an uninitialized-offset warning and return an empty string. Invalid string
+  offset key types and float-looking string offsets throw a catchable
+  `TypeError` object with `getMessage()` support.
 - `array_key_exists()` over current ordered-array values, using the same
   integer/string key canonicalization path as array literals and reads. `null`
   keys emit the current PHP-like deprecation boundary and canonicalize to the
@@ -302,6 +304,11 @@ supports in generated native binaries.
   in current insertion order, optional keys and values are assigned through the
   ordinary runtime variable table before the body, and current
   `break`/`continue` level semantics apply inside the body.
+- Braced `try { ... } catch (ClassName $e) { ... }` statements over the
+  currently supported statement subset, without `finally`. The generated
+  runtime maintains exception frames for catchable runtime exceptions; modeled
+  `TypeError` objects can be caught by `TypeError`, `Error`, or `Throwable`,
+  assigned to the catch variable, and queried with `$e->getMessage()`.
 - Braced `switch (expr) { case expr: ... default: ... }` statements over the
   currently supported scalar expression and statement subset. The generated
   native code evaluates the switch expression once, compares case expressions
@@ -353,8 +360,8 @@ supports in generated native binaries.
   branch-condition assignments, for-loop comma expressions and
   non-direct-variable clause lvalues, PHP-exact break/continue diagnostics
   beyond the currently modeled level/context fatals and switch-target warning,
-  labels/goto inside unsupported functions, classes, and `try`/`finally`
-  constructs, and exception/finally control-flow edges.
+  labels/goto inside unsupported functions, classes, `throw` statements, and
+  `try`/`finally` constructs, and exception/finally control-flow edges.
 - By-reference `foreach`, array mutation during `foreach`, copy-on-write/
   reference identity and exact mutation visibility during `foreach`, object
   `Traversable`, destructuring foreach targets, and PHP-exact non-array
@@ -385,7 +392,7 @@ supports in generated native binaries.
   `func_get_args()`/`func_num_args()`, and PHP-exact function/include return
   propagation.
 - Type predicate coverage for arrays, objects, resources, and references.
-- Array element mutation, append/unset, recursive arrays, objects,
+- Array element mutation, append/unset, recursive arrays, general objects,
   resources, references, copy-on-write, and `var_dump()` reference identity
   output.
 - Exact `array_key_exists()` TypeError parity for unsupported key/container
@@ -394,7 +401,7 @@ supports in generated native binaries.
 - String offset writes/mutation, object/property/reference
   `isset()`/`empty()` semantics, null-coalescing offset semantics,
   string-offset references, string-offset unset, and complete TypeError/
-  exception parity for unsupported string offset key types.
+  exception parity beyond the current catchable string-offset key boundary.
 - Embedded NUL strings in runtime string values, `var_dump()` string
   length/output, `strlen()`, `str_rot13()`, `strcmp()`, `bin2hex()`, `chr()`,
   `hex2bin()`, `str_contains()`, `quotemeta()`, `chunk_split()`,
@@ -466,6 +473,7 @@ supports in generated native binaries.
   reference, and other non-direct-variable compound-assignment lvalues.
 - Reference semantics for compound assignment, including reference identity,
   copy-on-write interactions, and by-reference visibility during writes.
-- Arrays, references, copy-on-write, globals, superglobals, classes, objects,
-  resources, exceptions, variable variables, includes, and dynamic
+- Arrays, references, copy-on-write, globals, superglobals, classes, general
+  objects, resources, exceptions beyond the current runtime-thrown
+  `TypeError`/`Error` boundary, variable variables, includes, and dynamic
   fallback.

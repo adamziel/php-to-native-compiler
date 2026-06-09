@@ -100,6 +100,10 @@ pub enum Instruction {
         body: Vec<Instruction>,
         line: usize,
     },
+    Try {
+        body: Vec<Instruction>,
+        catches: Vec<CatchClause>,
+    },
     Switch {
         expression: ValueExpr,
         cases: Vec<SwitchCase>,
@@ -123,6 +127,13 @@ pub enum Instruction {
 #[derive(Debug, Clone, PartialEq)]
 pub struct SwitchCase {
     pub condition: Option<ValueExpr>,
+    pub body: Vec<Instruction>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CatchClause {
+    pub class_name: String,
+    pub variable: Option<String>,
     pub body: Vec<Instruction>,
 }
 
@@ -155,6 +166,12 @@ pub enum ValueExpr {
         target: Box<ValueExpr>,
     },
     InternalCall {
+        name: String,
+        arguments: Vec<ValueExpr>,
+        line: usize,
+    },
+    MethodCall {
+        target: Box<ValueExpr>,
         name: String,
         arguments: Vec<ValueExpr>,
         line: usize,
@@ -413,6 +430,19 @@ fn lower_statements(statements: &[Statement]) -> Vec<Instruction> {
                     line: span.line,
                 });
             }
+            Statement::Try { body, catches, .. } => {
+                instructions.push(Instruction::Try {
+                    body: lower_statements(body),
+                    catches: catches
+                        .iter()
+                        .map(|catch| CatchClause {
+                            class_name: catch.class_name.clone(),
+                            variable: catch.variable.clone(),
+                            body: lower_statements(&catch.body),
+                        })
+                        .collect(),
+                });
+            }
             Statement::Switch {
                 expression, cases, ..
             } => {
@@ -565,6 +595,17 @@ fn lower_expr(expr: &Expr) -> ValueExpr {
             arguments,
             span,
         } => ValueExpr::InternalCall {
+            name: name.clone(),
+            arguments: arguments.iter().map(lower_expr).collect(),
+            line: span.line,
+        },
+        Expr::MethodCall {
+            target,
+            name,
+            arguments,
+            span,
+        } => ValueExpr::MethodCall {
+            target: Box::new(lower_expr(target)),
             name: name.clone(),
             arguments: arguments.iter().map(lower_expr).collect(),
             line: span.line,

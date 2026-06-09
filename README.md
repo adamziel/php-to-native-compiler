@@ -226,7 +226,9 @@ Supported today:
   offsets, nested reads, integer strings, numeric prefix strings with PHP-style
   illegal-offset warnings, and scalar cast warnings for `null`, booleans, and
   floats are handled by the shared offset-read helper; out-of-range reads emit
-  an uninitialized-offset warning and return an empty string.
+  an uninitialized-offset warning and return an empty string. Invalid string
+  offset key types and float-looking string offsets throw a catchable
+  `TypeError` object with `getMessage()` support.
 - `array_key_exists()` over current ordered-array values, using the same
   integer/string key canonicalization path as array literals and reads. `null`
   keys emit the current PHP-like deprecation boundary and canonicalize to the
@@ -282,6 +284,11 @@ Supported today:
   current insertion order, optional keys and values are assigned through the
   ordinary runtime variable table before each body execution, and existing
   `break`/`continue` levels apply inside the body.
+- Braced `try { ... } catch (ClassName $e) { ... }` statements over the
+  currently supported statement subset, without `finally`. The generated
+  runtime maintains exception frames for catchable runtime exceptions; modeled
+  `TypeError` objects can be caught by `TypeError`, `Error`, or `Throwable`,
+  assigned to the catch variable, and queried with `$e->getMessage()`.
 - Braced `switch (expr) { case expr: ... default: ... }` statements over the
   currently supported scalar expression and statement subset, including
   source-order case matching with boxed loose comparison, PHP-style fallthrough,
@@ -302,8 +309,9 @@ Supported today:
 Unsupported today:
 
 - Array element mutation, append/unset, recursive arrays, arrays
-  with references/copy-on-write, objects, functions, classes, includes,
-  references, resources, exceptions,
+  with references/copy-on-write, general objects, functions, classes, includes,
+  references, resources, exceptions beyond the current runtime-thrown
+  `TypeError`/`Error` boundary,
   string-offset writes/mutation, object/property/reference
   `isset()`/`empty()` semantics, null-coalescing offset semantics, string-offset
   references/unset,
@@ -326,7 +334,7 @@ Unsupported today:
   targets, PHP-exact non-array `foreach` diagnostics, PHP-exact
   break/continue diagnostics beyond the currently modeled level/context fatals
   and switch-target warning, labels/goto inside unsupported functions,
-  classes, and `try`/`finally` constructs, full
+  classes, `throw` statements, and `try`/`finally` constructs, full
   switch parity for unsupported value types and alternate syntax,
   PHP-exact `return` value/include/function semantics,
   increment/decrement as expressions, PHP-exact

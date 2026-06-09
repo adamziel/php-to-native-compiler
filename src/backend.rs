@@ -6,8 +6,8 @@ use std::process::Command;
 
 use crate::diagnostic::{Diagnostic, Result};
 use crate::ir::{
-    ArrayElement as IrArrayElement, BinaryOp, CastKind, FunctionDecl, IncDecOp, Instruction,
-    MagicConstantKind, Module, TypeHint, UnaryOp, ValueExpr,
+    ArrayElement as IrArrayElement, BinaryOp, CastKind, CatchClause, FunctionDecl, IncDecOp,
+    Instruction, MagicConstantKind, Module, TypeHint, UnaryOp, ValueExpr,
 };
 
 mod runtime;
@@ -629,6 +629,17 @@ fn emit_instruction(
             out.push_str("    ;\n");
             emit_value_cleanup(out, "    ", &iterable_temp);
         }
+        Instruction::Try { body, catches } => {
+            emit_try_catch(
+                out,
+                values,
+                body,
+                catches,
+                control_targets,
+                source_path,
+                return_target,
+            );
+        }
         Instruction::Switch { expression, cases } => {
             emit_switch(
                 out,
@@ -788,6 +799,12 @@ fn instruction_uses_function_dispatch(instruction: &Instruction) -> bool {
         Instruction::Foreach { iterable, body, .. } => {
             value_uses_function_dispatch(iterable) || instructions_use_function_dispatch(body)
         }
+        Instruction::Try { body, catches } => {
+            instructions_use_function_dispatch(body)
+                || catches
+                    .iter()
+                    .any(|catch| instructions_use_function_dispatch(&catch.body))
+        }
         Instruction::Switch { expression, cases } => {
             value_uses_function_dispatch(expression)
                 || cases.iter().any(|case| {
@@ -827,6 +844,12 @@ fn value_uses_function_dispatch(value: &ValueExpr) -> bool {
         ValueExpr::Isset { targets } => targets.iter().any(value_uses_function_dispatch),
         ValueExpr::Empty { target } => value_uses_function_dispatch(target),
         ValueExpr::InternalCall { .. } => true,
+        ValueExpr::MethodCall {
+            target, arguments, ..
+        } => {
+            value_uses_function_dispatch(target)
+                || arguments.iter().any(value_uses_function_dispatch)
+        }
         ValueExpr::Unary { expr, .. } | ValueExpr::Cast { expr, .. } => {
             value_uses_function_dispatch(expr)
         }
@@ -872,6 +895,12 @@ fn collect_control_warnings_in(
                 contexts.push(ControlTargetKind::Loop);
                 collect_control_warnings_in(body, contexts, warnings);
                 contexts.pop();
+            }
+            Instruction::Try { body, catches } => {
+                collect_control_warnings_in(body, contexts, warnings);
+                for catch in catches {
+                    collect_control_warnings_in(&catch.body, contexts, warnings);
+                }
             }
             Instruction::Switch { cases, .. } => {
                 contexts.push(ControlTargetKind::Switch);
@@ -935,6 +964,91 @@ fn emit_control_warning(out: &mut String, message: &str, source_path: &str, line
     out.push_str("\", ");
     out.push_str(&line.to_string());
     out.push_str(");\n");
+}
+
+fn emit_try_catch(
+    out: &mut String,
+    values: &mut ValueEmitter,
+    body: &[Instruction],
+    catches: &[CatchClause],
+    control_targets: &mut Vec<ControlTarget>,
+    source_path: &str,
+    return_target: Option<&str>,
+) {
+    let frame_temp = values.next_temp();
+    let state_temp = values.next_temp();
+    let caught_temp = values.next_temp();
+    let exception_temp = values.next_temp();
+    out.push_str("    PtnExceptionFrame ");
+    out.push_str(&frame_temp);
+    out.push_str(";\n");
+    out.push_str("    int ");
+    out.push_str(&state_temp);
+    out.push_str(" = setjmp(");
+    out.push_str(&frame_temp);
+    out.push_str(".env);\n");
+    out.push_str("    if (");
+    out.push_str(&state_temp);
+    out.push_str(" == 0) {\n");
+    out.push_str("        ptn_runtime_push_exception_frame(&runtime, &");
+    out.push_str(&frame_temp);
+    out.push_str(");\n");
+    for body_instruction in body {
+        emit_instruction(
+            out,
+            values,
+            body_instruction,
+            control_targets,
+            source_path,
+            return_target,
+        );
+    }
+    out.push_str("        ptn_runtime_pop_exception_frame(&runtime);\n");
+    out.push_str("    } else {\n");
+    out.push_str("        ptn_runtime_pop_exception_frame(&runtime);\n");
+    out.push_str("        int ");
+    out.push_str(&caught_temp);
+    out.push_str(" = 0;\n");
+    out.push_str("        PtnValue ");
+    out.push_str(&exception_temp);
+    out.push_str(" = ptn_runtime_active_exception(&runtime);\n");
+    for catch in catches {
+        out.push_str("        if (!");
+        out.push_str(&caught_temp);
+        out.push_str(" && ptn_exception_matches(");
+        out.push_str(&exception_temp);
+        out.push_str(", \"");
+        out.push_str(&c_string(&catch.class_name));
+        out.push_str("\")) {\n");
+        out.push_str("            ");
+        out.push_str(&caught_temp);
+        out.push_str(" = 1;\n");
+        if let Some(variable) = &catch.variable {
+            out.push_str("            ptn_runtime_write_variable(&runtime, \"");
+            out.push_str(&c_string(variable));
+            out.push_str("\", ");
+            out.push_str(&exception_temp);
+            out.push_str(");\n");
+        }
+        out.push_str("            ptn_runtime_clear_exception(&runtime);\n");
+        for catch_instruction in &catch.body {
+            emit_instruction(
+                out,
+                values,
+                catch_instruction,
+                control_targets,
+                source_path,
+                return_target,
+            );
+        }
+        out.push_str("        }\n");
+    }
+    out.push_str("        if (!");
+    out.push_str(&caught_temp);
+    out.push_str(") {\n");
+    out.push_str("            ptn_runtime_rethrow(&runtime);\n");
+    out.push_str("        }\n");
+    out.push_str("    }\n");
 }
 
 fn emit_switch(
@@ -1043,7 +1157,11 @@ pub fn compile_c(c_source: &str, output: &Path) -> Result<()> {
     })?;
     let optimization_args = cc_optimization_args()?;
     let mut command = Command::new("cc");
-    command.arg("-std=c11").arg("-Wall").arg("-Wextra");
+    command
+        .arg("-std=c11")
+        .arg("-Wall")
+        .arg("-Wextra")
+        .arg("-Wno-clobbered");
     for arg in optimization_args {
         command.arg(arg);
     }
@@ -1274,6 +1392,12 @@ impl ValueEmitter {
                 arguments,
                 line,
             } => self.emit_internal_call(out, name, arguments, *line),
+            ValueExpr::MethodCall {
+                target,
+                name,
+                arguments,
+                line,
+            } => self.emit_method_call(out, target, name, arguments, *line),
         }
     }
 
@@ -1925,6 +2049,7 @@ impl ValueEmitter {
                 | ValueExpr::ArrayAccess { .. }
                 | ValueExpr::Isset { .. }
                 | ValueExpr::Empty { .. }
+                | ValueExpr::MethodCall { .. }
         ) {
             return self.emit_value(out, value);
         }
@@ -1937,6 +2062,61 @@ impl ValueEmitter {
         out.push_str(&emitted_value);
         out.push_str(";\n");
         temp
+    }
+
+    fn emit_method_call(
+        &mut self,
+        out: &mut String,
+        target: &ValueExpr,
+        name: &str,
+        arguments: &[ValueExpr],
+        line: usize,
+    ) -> String {
+        let target_temp = self.emit_materialized_value(out, target);
+        let result_temp = self.next_temp();
+        if arguments.is_empty() {
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_call_method(&runtime, ");
+            out.push_str(&target_temp);
+            out.push_str(", \"");
+            out.push_str(&c_string(name));
+            out.push_str("\", 0, NULL, ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            emit_value_cleanup(out, "    ", &target_temp);
+            return result_temp;
+        }
+
+        let mut temps = Vec::with_capacity(arguments.len());
+        for argument in arguments {
+            temps.push(self.emit_materialized_value(out, argument));
+        }
+
+        let args_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&args_temp);
+        out.push_str("[] = { ");
+        out.push_str(&temps.join(", "));
+        out.push_str(" };\n");
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_call_method(&runtime, ");
+        out.push_str(&target_temp);
+        out.push_str(", \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        out.push_str(&arguments.len().to_string());
+        out.push_str(", ");
+        out.push_str(&args_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        emit_value_cleanup(out, "    ", &target_temp);
+        for temp in temps {
+            emit_value_cleanup(out, "    ", &temp);
+        }
+        result_temp
     }
 
     fn emit_internal_call(

@@ -1,5 +1,6 @@
 #include <ctype.h>
 #include <errno.h>
+#include <setjmp.h>
 #include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -24,6 +25,8 @@
 #define PTN_SYMBOL_INDEX_MIN_ENTRIES 16
 
 typedef struct PtnArray PtnArray;
+typedef struct PtnObject PtnObject;
+typedef struct PtnExceptionFrame PtnExceptionFrame;
 
 typedef enum {
     PTN_NULL,
@@ -31,7 +34,8 @@ typedef enum {
     PTN_INT,
     PTN_FLOAT,
     PTN_STRING,
-    PTN_ARRAY
+    PTN_ARRAY,
+    PTN_OBJECT
 } PtnType;
 
 typedef enum {
@@ -56,6 +60,7 @@ typedef struct {
         double floating;
         const char *string;
         PtnArray *array;
+        PtnObject *object;
     } as;
 } PtnValue;
 
@@ -90,6 +95,22 @@ struct PtnArray {
     int64_t next_auto_key;
     size_t current_index;
 };
+
+struct PtnObject {
+    const char *class_name;
+    const char *message;
+    size_t line;
+};
+
+struct PtnExceptionFrame {
+    jmp_buf env;
+    PtnExceptionFrame *previous;
+};
+
+typedef struct {
+    PtnExceptionFrame *frame;
+    PtnValue active_exception;
+} PtnExceptionState;
 
 typedef struct {
     int has_key;
@@ -153,10 +174,13 @@ typedef struct {
     PtnSymbolTable symbols;
     PtnSymbolTable owned_constants;
     PtnSymbolTable *constants;
+    PtnExceptionState owned_exceptions;
+    PtnExceptionState *exceptions;
     PtnDiagnosticSink diagnostics;
 } PtnRuntime;
 
 static PTN_UNUSED int ptn_is_truthy(PtnValue value);
+static PTN_UNUSED int ptn_ascii_case_equal(const char *left, const char *right);
 
 typedef PtnValue (*PtnInternalFunctionHandler)(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 
@@ -221,6 +245,14 @@ static PTN_UNUSED PtnValue ptn_array(PtnArray *array) {
     value.type = PTN_ARRAY;
     value.owned = 1;
     value.as.array = array;
+    return value;
+}
+
+static PTN_UNUSED PtnValue ptn_object(PtnObject *object) {
+    PtnValue value;
+    value.type = PTN_OBJECT;
+    value.owned = 1;
+    value.as.object = object;
     return value;
 }
 

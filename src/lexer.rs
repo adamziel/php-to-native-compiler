@@ -22,6 +22,8 @@ pub enum TokenKind {
     Continue,
     Return,
     Goto,
+    Try,
+    Catch,
     Const,
     Function,
     Identifier(String),
@@ -67,6 +69,7 @@ pub enum TokenKind {
     DotEqual,
     Plus,
     Minus,
+    ObjectOperator,
     Asterisk,
     AsteriskAsterisk,
     Slash,
@@ -212,6 +215,9 @@ impl<'a> Lexer<'a> {
                 '+' if self.rest().starts_with("+=") => self.push_fixed(TokenKind::PlusEqual, 2),
                 '+' if self.rest().starts_with("++") => self.push_fixed(TokenKind::PlusPlus, 2),
                 '+' => self.push_fixed(TokenKind::Plus, 1),
+                '-' if self.rest().starts_with("->") => {
+                    self.push_fixed(TokenKind::ObjectOperator, 2)
+                }
                 '-' if self.rest().starts_with("-=") => self.push_fixed(TokenKind::MinusEqual, 2),
                 '-' if self.rest().starts_with("--") => self.push_fixed(TokenKind::MinusMinus, 2),
                 '-' => self.push_fixed(TokenKind::Minus, 1),
@@ -652,6 +658,8 @@ impl<'a> Lexer<'a> {
             "continue" => TokenKind::Continue,
             "return" => TokenKind::Return,
             "goto" => TokenKind::Goto,
+            "try" => TokenKind::Try,
+            "catch" => TokenKind::Catch,
             "const" => TokenKind::Const,
             "function" => TokenKind::Function,
             "true" => TokenKind::True,

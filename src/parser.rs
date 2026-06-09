@@ -1,9 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::ast::{
-    ArrayDimTarget, ArrayElement, AssignmentOp, BinaryOp, CastKind, ConstDeclaration, Expr,
-    FunctionDecl, FunctionParameter, IncDecOp, MagicConstantKind, Program, Statement, StringPart,
-    SwitchCase, TypeHint, UnaryOp, UnsetTarget,
+    ArrayDimTarget, ArrayElement, AssignmentOp, BinaryOp, CastKind, CatchClause, ConstDeclaration,
+    Expr, FunctionDecl, FunctionParameter, IncDecOp, MagicConstantKind, Program, Statement,
+    StringPart, SwitchCase, TypeHint, UnaryOp, UnsetTarget,
 };
 use crate::diagnostic::{Diagnostic, Result, SourceSpan};
 use crate::lexer::{lex, StringPart as TokenStringPart, Token, TokenKind};
@@ -78,6 +78,7 @@ impl Parser {
             TokenKind::While => self.parse_while(),
             TokenKind::For => self.parse_for(),
             TokenKind::Foreach => self.parse_foreach(),
+            TokenKind::Try => self.parse_try(),
             TokenKind::Switch => self.parse_switch(),
             TokenKind::Break => self.parse_break(),
             TokenKind::Continue => self.parse_continue(),
@@ -483,6 +484,60 @@ impl Parser {
                 "expected foreach variable",
                 Some(token.span),
             )),
+        }
+    }
+
+    fn parse_try(&mut self) -> Result<Statement> {
+        let span = self.expect_try()?;
+        let body = self.parse_block()?;
+        let mut catches = Vec::new();
+        while matches!(self.peek().kind, TokenKind::Catch) {
+            catches.push(self.parse_catch_clause()?);
+        }
+        if catches.is_empty() {
+            return Err(Diagnostic::new(
+                "try statements require at least one catch clause",
+                Some(span),
+            ));
+        }
+        Ok(Statement::Try {
+            body,
+            catches,
+            span,
+        })
+    }
+
+    fn parse_catch_clause(&mut self) -> Result<CatchClause> {
+        let span = self.expect_catch()?;
+        self.expect_left_paren()?;
+        let class_name = self.parse_class_name()?;
+        let variable = if matches!(self.peek().kind, TokenKind::Variable(_)) {
+            let token = self.advance().clone();
+            let TokenKind::Variable(name) = token.kind else {
+                unreachable!("variable token matched");
+            };
+            Some(name)
+        } else {
+            None
+        };
+        self.expect_right_paren()?;
+        let body = self.parse_block()?;
+        Ok(CatchClause {
+            class_name,
+            variable,
+            body,
+            span,
+        })
+    }
+
+    fn parse_class_name(&mut self) -> Result<String> {
+        if matches!(self.peek().kind, TokenKind::Backslash) {
+            self.advance();
+        }
+        let token = self.advance().clone();
+        match token.kind {
+            TokenKind::Identifier(name) => Ok(name),
+            _ => Err(Diagnostic::new("expected class name", Some(token.span))),
         }
     }
 
@@ -906,15 +961,34 @@ impl Parser {
 
     fn parse_postfix_expr(&mut self) -> Result<Expr> {
         let mut expr = self.parse_primary_expr()?;
-        while matches!(self.peek().kind, TokenKind::LeftBracket) {
-            self.advance();
-            let index = self.parse_expr()?;
-            let right_span = self.expect_right_bracket()?;
-            expr = Expr::ArrayAccess {
-                span: combine_spans(expr.span(), right_span),
-                array: Box::new(expr),
-                index: Box::new(index),
-            };
+        loop {
+            match self.peek().kind {
+                TokenKind::LeftBracket => {
+                    self.advance();
+                    let index = self.parse_expr()?;
+                    let right_span = self.expect_right_bracket()?;
+                    expr = Expr::ArrayAccess {
+                        span: combine_spans(expr.span(), right_span),
+                        array: Box::new(expr),
+                        index: Box::new(index),
+                    };
+                }
+                TokenKind::ObjectOperator => {
+                    self.advance();
+                    let method = self.advance().clone();
+                    let TokenKind::Identifier(name) = method.kind else {
+                        return Err(Diagnostic::new("expected method name", Some(method.span)));
+                    };
+                    let (arguments, right_span) = self.parse_call_arguments()?;
+                    expr = Expr::MethodCall {
+                        span: combine_spans(expr.span(), right_span),
+                        target: Box::new(expr),
+                        name: name.to_ascii_lowercase(),
+                        arguments,
+                    };
+                }
+                _ => break,
+            }
         }
         Ok(expr)
     }
@@ -1330,6 +1404,24 @@ impl Parser {
         }
     }
 
+    fn expect_try(&mut self) -> Result<SourceSpan> {
+        let token = self.advance();
+        if matches!(token.kind, TokenKind::Try) {
+            Ok(token.span)
+        } else {
+            Err(Diagnostic::new("expected try", Some(token.span)))
+        }
+    }
+
+    fn expect_catch(&mut self) -> Result<SourceSpan> {
+        let token = self.advance();
+        if matches!(token.kind, TokenKind::Catch) {
+            Ok(token.span)
+        } else {
+            Err(Diagnostic::new("expected catch", Some(token.span)))
+        }
+    }
+
     fn expect_as(&mut self) -> Result<SourceSpan> {
         let token = self.advance();
         if matches!(token.kind, TokenKind::As) {
@@ -1608,6 +1700,8 @@ fn token_text(kind: &TokenKind) -> &'static str {
         TokenKind::Continue => "continue",
         TokenKind::Return => "return",
         TokenKind::Goto => "goto",
+        TokenKind::Try => "try",
+        TokenKind::Catch => "catch",
         TokenKind::Const => "const",
         TokenKind::Function => "function",
         TokenKind::Identifier(_) => "identifier",
@@ -1646,6 +1740,7 @@ fn token_text(kind: &TokenKind) -> &'static str {
         TokenKind::MinusEqual => "-=",
         TokenKind::PlusPlus => "++",
         TokenKind::MinusMinus => "--",
+        TokenKind::ObjectOperator => "->",
         TokenKind::AsteriskEqual => "*=",
         TokenKind::AsteriskAsteriskEqual => "**=",
         TokenKind::SlashEqual => "/=",
@@ -1837,6 +1932,12 @@ fn collect_labels(
             Statement::Foreach { body, span, .. } => {
                 collect_control_labels(*span, body, labels, control_path)?;
             }
+            Statement::Try { body, catches, .. } => {
+                collect_labels(body, labels, control_path)?;
+                for catch in catches {
+                    collect_labels(&catch.body, labels, control_path)?;
+                }
+            }
             Statement::Switch { cases, span, .. } => {
                 control_path.push(span.byte_start);
                 for case in cases {
@@ -1910,6 +2011,12 @@ fn validate_gotos(
             }
             Statement::Foreach { body, span, .. } => {
                 validate_control_gotos(*span, body, labels, control_path)?;
+            }
+            Statement::Try { body, catches, .. } => {
+                validate_gotos(body, labels, control_path)?;
+                for catch in catches {
+                    validate_gotos(&catch.body, labels, control_path)?;
+                }
             }
             Statement::Switch { cases, span, .. } => {
                 control_path.push(span.byte_start);
@@ -1994,6 +2101,7 @@ fn is_supported_global_const_expr(expr: &Expr) -> bool {
         Expr::InterpolatedString(_, _)
         | Expr::Variable(_, _)
         | Expr::Call { .. }
+        | Expr::MethodCall { .. }
         | Expr::ArrayAccess { .. }
         | Expr::Isset { .. }
         | Expr::Empty { .. } => false,

@@ -11,6 +11,30 @@ static PTN_UNUSED PtnValue ptn_value_clone(PtnValue value);
 static PTN_UNUSED void ptn_value_destroy(PtnValue *value);
 static PTN_UNUSED void ptn_array_free(PtnArray *array);
 
+static PTN_UNUSED PtnObject *ptn_object_new(const char *class_name, const char *message, size_t line) {
+    PtnObject *object = malloc(sizeof(PtnObject));
+    if (object == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    object->class_name = ptn_duplicate_string(class_name);
+    object->message = ptn_duplicate_string(message);
+    object->line = line;
+    return object;
+}
+
+static PTN_UNUSED PtnObject *ptn_object_clone(PtnObject *source) {
+    return ptn_object_new(source->class_name, source->message, source->line);
+}
+
+static PTN_UNUSED void ptn_object_free(PtnObject *object) {
+    if (object == NULL) {
+        return;
+    }
+    free((char *)object->class_name);
+    free((char *)object->message);
+    free(object);
+}
+
 static PTN_UNUSED PtnArrayKey ptn_array_int_key(int64_t integer) {
     PtnArrayKey key;
     key.type = PTN_ARRAY_KEY_INT;
@@ -82,6 +106,7 @@ static PTN_UNUSED PtnArrayKey ptn_array_key_from_value(PtnValue value) {
             return ptn_array_string_key(value.as.string);
         }
         case PTN_ARRAY:
+        case PTN_OBJECT:
             ptn_abort_illegal_array_key();
     }
     return ptn_array_string_key("");

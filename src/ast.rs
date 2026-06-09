@@ -105,6 +105,11 @@ pub enum Statement {
         body: Vec<Statement>,
         span: SourceSpan,
     },
+    Try {
+        body: Vec<Statement>,
+        catches: Vec<CatchClause>,
+        span: SourceSpan,
+    },
     Switch {
         expression: Expr,
         cases: Vec<SwitchCase>,
@@ -139,6 +144,14 @@ pub enum Statement {
 #[derive(Debug, Clone, PartialEq)]
 pub struct SwitchCase {
     pub condition: Option<Expr>,
+    pub body: Vec<Statement>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CatchClause {
+    pub class_name: String,
+    pub variable: Option<String>,
     pub body: Vec<Statement>,
     pub span: SourceSpan,
 }
@@ -198,6 +211,12 @@ pub enum Expr {
     Constant(String, SourceSpan),
     MagicConstant(MagicConstantKind, SourceSpan),
     Call {
+        name: String,
+        arguments: Vec<Expr>,
+        span: SourceSpan,
+    },
+    MethodCall {
+        target: Box<Expr>,
         name: String,
         arguments: Vec<Expr>,
         span: SourceSpan,
@@ -314,6 +333,7 @@ impl Expr {
             | Expr::Constant(_, span)
             | Expr::MagicConstant(_, span) => *span,
             Expr::Call { span, .. } => *span,
+            Expr::MethodCall { span, .. } => *span,
             Expr::Array { span, .. } => *span,
             Expr::ArrayAccess { span, .. } => *span,
             Expr::Isset { span, .. } => *span,

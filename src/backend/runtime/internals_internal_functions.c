@@ -33,7 +33,69 @@ static PTN_UNUSED void ptn_echo(PtnValue value) {
         case PTN_ARRAY:
             fputs("Array", stdout);
             break;
+        case PTN_OBJECT:
+            fputs("Object", stdout);
+            break;
     }
+}
+
+static PTN_UNUSED PtnValue ptn_call_method(
+    PtnRuntime *runtime,
+    PtnValue target,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)args;
+    if (target.type != PTN_OBJECT) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Call to a member function %s() on %s",
+            name,
+            ptn_offset_container_type_name(target)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_runtime_throw(runtime, "Error", message, line);
+        return ptn_null();
+    }
+
+    if (ptn_ascii_case_equal(name, "getMessage")) {
+        if (argc != 0) {
+            char message[192];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "%s::getMessage() expects exactly 0 arguments, %zu given",
+                target.as.object->class_name,
+                argc
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_runtime_throw(runtime, "ArgumentCountError", message, line);
+            return ptn_null();
+        }
+        return ptn_owned_string(ptn_duplicate_string(target.as.object->message));
+    }
+
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Call to undefined method %s::%s()",
+        target.as.object->class_name,
+        name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_runtime_throw(runtime, "Error", message, line);
+    return ptn_null();
 }
 
 /* PTN_INTERNAL_FUNCTIONS_START */
@@ -88,6 +150,12 @@ static void ptn_var_dump_value_indented(PtnValue value, size_t indent) {
             fputs("}\n", stdout);
             break;
         }
+        case PTN_OBJECT:
+            ptn_var_dump_indent(indent);
+            printf("object(%s)#1 (0) {\n", value.as.object->class_name);
+            ptn_var_dump_indent(indent);
+            fputs("}\n", stdout);
+            break;
     }
 }
 
@@ -155,6 +223,9 @@ static void ptn_print_r_value_indented(PtnStringBuffer *buffer, PtnValue value, 
             break;
         case PTN_ARRAY:
             ptn_print_r_array(buffer, value.as.array, indent);
+            break;
+        case PTN_OBJECT:
+            ptn_string_buffer_append(buffer, "Object");
             break;
     }
 }

@@ -132,6 +132,8 @@ static PTN_UNUSED char *ptn_value_to_string(PtnValue value) {
             return ptn_duplicate_string(value.as.string);
         case PTN_ARRAY:
             return ptn_duplicate_string("Array");
+        case PTN_OBJECT:
+            return ptn_duplicate_string("Object");
     }
 
     if (written < 0 || (size_t)written >= sizeof(buffer)) {
@@ -179,6 +181,8 @@ static PTN_UNUSED PtnStringOperand ptn_value_to_string_operand(PtnValue value) {
             return ptn_string_operand_borrowed(value.as.string);
         case PTN_ARRAY:
             return ptn_string_operand_borrowed("Array");
+        case PTN_OBJECT:
+            return ptn_string_operand_borrowed("Object");
     }
 
     if (written < 0 || (size_t)written >= sizeof(buffer)) {
@@ -307,6 +311,8 @@ static PTN_UNUSED PtnValue ptn_gettype_value(PtnValue value) {
             return ptn_string("string");
         case PTN_ARRAY:
             return ptn_string("array");
+        case PTN_OBJECT:
+            return ptn_string("object");
     }
     return ptn_string("unknown type");
 }

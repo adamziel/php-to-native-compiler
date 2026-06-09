@@ -2,10 +2,13 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     ptn_symbols_init(&runtime->symbols);
     ptn_symbols_init(&runtime->owned_constants);
     runtime->constants = caller_runtime->constants;
+    ptn_exception_state_init(&runtime->owned_exceptions);
+    runtime->exceptions = caller_runtime->exceptions;
     ptn_diagnostics_init(&runtime->diagnostics, stderr);
 }
 
 static void ptn_runtime_free(PtnRuntime *runtime) {
+    ptn_value_destroy(&runtime->owned_exceptions.active_exception);
     ptn_symbols_free(&runtime->owned_constants);
     ptn_symbols_free(&runtime->symbols);
 }
@@ -120,6 +123,8 @@ static PTN_UNUSED PtnNumber ptn_to_number(PtnValue value) {
             return ptn_string_to_number(value.as.string);
         case PTN_ARRAY:
             return ptn_number_int(value.as.array->len == 0 ? 0 : 1);
+        case PTN_OBJECT:
+            return ptn_number_int(1);
     }
     return ptn_number_int(0);
 }
@@ -138,6 +143,7 @@ static PTN_UNUSED int ptn_fast_integer_value(PtnValue value, int64_t *integer) {
         case PTN_FLOAT:
         case PTN_STRING:
         case PTN_ARRAY:
+        case PTN_OBJECT:
             return 0;
     }
     return 0;
@@ -208,6 +214,8 @@ static PTN_UNUSED int ptn_is_truthy(PtnValue value) {
             return value.as.string[0] != '\0' && strcmp(value.as.string, "0") != 0;
         case PTN_ARRAY:
             return value.as.array->len != 0;
+        case PTN_OBJECT:
+            return 1;
     }
     return 0;
 }
@@ -330,6 +338,7 @@ static PTN_UNUSED int ptn_comparison_numeric_value(PtnValue value, double *numbe
         case PTN_NULL:
         case PTN_BOOL:
         case PTN_ARRAY:
+        case PTN_OBJECT:
             return 0;
     }
     return 0;

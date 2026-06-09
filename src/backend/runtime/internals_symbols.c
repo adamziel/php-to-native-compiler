@@ -1,6 +1,8 @@
             return ptn_owned_string(ptn_duplicate_string(value.as.string));
         case PTN_ARRAY:
             return ptn_array(ptn_array_clone(value.as.array));
+        case PTN_OBJECT:
+            return ptn_object(ptn_object_clone(value.as.object));
         case PTN_NULL:
         case PTN_BOOL:
         case PTN_INT:
@@ -33,6 +35,9 @@ static PTN_UNUSED void ptn_value_destroy(PtnValue *value) {
             break;
         case PTN_ARRAY:
             ptn_array_free(value->as.array);
+            break;
+        case PTN_OBJECT:
+            ptn_object_free(value->as.object);
             break;
         case PTN_NULL:
         case PTN_BOOL:

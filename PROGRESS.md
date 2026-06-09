@@ -3,10 +3,14 @@
 ## Progress Bar
 
 `[#########.] 54/59 PHPT rows passing`
-- Latest: Generated `PtnValue` payloads now carry ownership for strings and
-  arrays, runtime slots destroy overwritten and teardown values, and backend
-  emission cleans discarded temporaries; PHPT snapshot remains 54/59.
-- Tests ported/passing: 54/59
+- Latest: Braced `try`/`catch` now lowers to runtime exception frames, and
+  invalid string offset keys throw catchable `TypeError` objects with
+  `getMessage()` support, on top of generated value ownership cleanup. Focused
+  telemetry shows `Zend/tests/numeric_strings/string_offset.phpt` passes through
+  the minimal `phpc` runner; the latest bounded patrol baseline remains 54/59
+  pending the next patrol snapshot.
+- Tests ported/passing: 54/59 bounded patrol baseline, plus focused
+  `Zend/tests/numeric_strings/string_offset.phpt` pass verified separately.
 - Commit: 57f061f73
 
 ## 2026-06-08
@@ -48,6 +52,32 @@ Integrated generated runtime value destruction:
 - Added a native stress-style regression that repeatedly overwrites string and
   array slots while discarding owned internal-call temporaries; output remains
   stable and generated C includes the cleanup boundary.
+
+Integrated a generic catchable runtime exception slice for string offset reads:
+
+- Lexer/parser/AST support for braced `try { ... } catch (ClassName $e) { ... }`
+  statements, including leading-backslash catch class names such as
+  `\TypeError`.
+- Parser/AST/IR/backend support for ordinary method-call expressions such as
+  `$e->getMessage()` over the current boxed value subset.
+- Generated C runtime support for exception frames backed by `setjmp`/`longjmp`,
+  runtime-thrown exception objects, catch matching for modeled `TypeError`,
+  `Error`, and `Throwable`, catch-variable assignment, rethrow on unmatched
+  catches, and `getMessage()` dispatch on exception objects.
+- The shared string-offset read helper now throws a catchable `TypeError` for
+  invalid string offset key types and float-looking string offsets instead of
+  exiting the native process. Existing integer-compatible offsets, warning
+  order, and out-of-range empty-string behavior are preserved.
+- Native regressions cover parser acceptance, caught string-offset TypeErrors,
+  and unmatched catch rethrow/fatal behavior.
+- Focused public PHPT telemetry through `phpc` passes
+  `Zend/tests/numeric_strings/string_offset.phpt`.
+
+Still unsupported after this exception slice: `throw` syntax, `finally`,
+general classes/objects and exception hierarchies, PHP-exact uncaught exception
+stack traces, object properties/methods beyond modeled exception `getMessage()`,
+and exception-safe cleanup for arbitrary `break`/`continue`/`goto` exits from a
+try body.
 
 Added focused evidence for `Zend/tests/numeric_strings/string_offset.phpt`
 without expanding scope into exception handling:

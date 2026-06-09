@@ -69,6 +69,8 @@ static PTN_UNUSED const char *ptn_offset_container_type_name(PtnValue value) {
             return "string";
         case PTN_ARRAY:
             return "array";
+        case PTN_OBJECT:
+            return "object";
     }
     return "unknown";
 }
@@ -251,7 +253,7 @@ static PTN_UNUSED int ptn_string_to_offset(const char *string, int64_t *offset, 
     return 1;
 }
 
-static PTN_UNUSED int ptn_string_offset_from_value(PtnValue key_value, size_t line, int quiet, int64_t *offset) {
+static PTN_UNUSED int ptn_string_offset_from_value(PtnRuntime *runtime, PtnValue key_value, size_t line, int quiet, int64_t *offset) {
     switch (key_value.type) {
         case PTN_INT:
             *offset = key_value.as.integer;
@@ -288,15 +290,26 @@ static PTN_UNUSED int ptn_string_offset_from_value(PtnValue key_value, size_t li
             if (quiet) {
                 return 0;
             }
-            fputs("Fatal error: Cannot access offset of type string on string\n", stderr);
-            exit(255);
+            ptn_runtime_throw(runtime, "TypeError", "Cannot access offset of type string on string", line);
+            return 0;
         }
         case PTN_ARRAY:
+        case PTN_OBJECT:
             if (quiet) {
                 return 0;
             }
-            fputs("Fatal error: Cannot access offset of type array on string\n", stderr);
-            exit(255);
+            char message[96];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "Cannot access offset of type %s on string",
+                ptn_offset_container_type_name(key_value)
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_runtime_throw(runtime, "TypeError", message, line);
+            return 0;
     }
     return 0;
 }
@@ -319,9 +332,9 @@ static PTN_UNUSED int ptn_string_offset_index(size_t string_len, int64_t offset,
     return 1;
 }
 
-static PTN_UNUSED PtnLookupResult ptn_string_offset_lookup(PtnValue container, PtnValue key_value, size_t line, int quiet) {
+static PTN_UNUSED PtnLookupResult ptn_string_offset_lookup(PtnRuntime *runtime, PtnValue container, PtnValue key_value, size_t line, int quiet) {
     int64_t offset = 0;
-    if (!ptn_string_offset_from_value(key_value, line, quiet, &offset)) {
+    if (!ptn_string_offset_from_value(runtime, key_value, line, quiet, &offset)) {
         return ptn_lookup_missing();
     }
     size_t index = 0;
@@ -343,9 +356,8 @@ static PTN_UNUSED PtnLookupResult ptn_string_offset_lookup(PtnValue container, P
 }
 
 static PTN_UNUSED PtnLookupResult ptn_offset_lookup(PtnRuntime *runtime, PtnValue container, PtnValue key_value, size_t line, int quiet) {
-    (void)runtime;
     if (container.type == PTN_STRING) {
-        return ptn_string_offset_lookup(container, key_value, line, quiet);
+        return ptn_string_offset_lookup(runtime, container, key_value, line, quiet);
     }
 
     if (container.type != PTN_ARRAY) {
@@ -389,11 +401,10 @@ static PTN_UNUSED PtnValue ptn_array_read(PtnRuntime *runtime, PtnValue containe
 }
 
 static PTN_UNUSED int ptn_offset_is_set(PtnRuntime *runtime, PtnValue container, PtnValue key_value, size_t line) {
-    (void)runtime;
     if (container.type == PTN_STRING) {
         int64_t offset = 0;
         size_t index = 0;
-        return ptn_string_offset_from_value(key_value, line, 1, &offset) &&
+        return ptn_string_offset_from_value(runtime, key_value, line, 1, &offset) &&
             ptn_string_offset_index(strlen(container.as.string), offset, &index);
     }
 
@@ -412,11 +423,10 @@ static PTN_UNUSED int ptn_offset_is_set(PtnRuntime *runtime, PtnValue container,
 }
 
 static PTN_UNUSED int ptn_offset_is_empty(PtnRuntime *runtime, PtnValue container, PtnValue key_value, size_t line) {
-    (void)runtime;
     if (container.type == PTN_STRING) {
         int64_t offset = 0;
         size_t index = 0;
-        if (!ptn_string_offset_from_value(key_value, line, 1, &offset) ||
+        if (!ptn_string_offset_from_value(runtime, key_value, line, 1, &offset) ||
             !ptn_string_offset_index(strlen(container.as.string), offset, &index)) {
             return 1;
         }
