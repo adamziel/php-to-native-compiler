@@ -21,6 +21,11 @@ supports in generated native binaries.
   expressions are parsed left-associatively, with `+` binding tighter than `.`.
 - Binary operands are materialized left-to-right before the generated C backend
   calls runtime helpers.
+- Direct named-variable compound assignment for `+=` and `.=`. The compiler
+  lowers `$x += expr` as `read $x`, boxed `+`, then `write $x`; `$x .= expr`
+  lowers the same way through boxed string concatenation. The direct variable
+  read happens before the right-hand expression, so existing undefined-variable
+  diagnostics remain observable in source order.
 - Print statements use the same generated boxed output path as echo.
 - Parenthesized expressions for grouping.
 - Unary `-` over boxed scalar numeric values.
@@ -40,6 +45,12 @@ supports in generated native binaries.
   echo operands, binary operands, and parenthesized `print(...)` syntax.
 - Inline HTML before `<?php`, between PHP blocks, or after a closing PHP tag.
 - Doc comment retention for reflection or metadata. Comments are skipped today.
-- Arrays, references, copy-on-write, globals, superglobals, compound assignment,
-  functions, classes, objects, resources, exceptions, variable variables,
-  includes, and dynamic fallback.
+- Compound assignment operators other than `+=` and `.=`: `-=`, `*=`, `/=`,
+  `%=`, `**=`, `&=`, `|=`, `^=`, `<<=`, `>>=`, and `??=`.
+- Array, object, string-offset, property, static-property, variable-variable,
+  reference, and other non-direct-variable compound-assignment lvalues.
+- Reference semantics for compound assignment, including reference identity,
+  copy-on-write interactions, and by-reference visibility during writes.
+- Arrays, references, copy-on-write, globals, superglobals, functions, classes,
+  objects, resources, exceptions, variable variables, includes, and dynamic
+  fallback.

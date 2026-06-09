@@ -32,6 +32,11 @@ Current runtime/compiler slices:
   nodes. The C backend materializes operands into `PtnValue` temporaries in
   source order before calling boxed runtime helpers such as `ptn_add` and
   `ptn_concat`.
+- Direct named-variable `+=` and `.=` lower in IR as a direct variable load,
+  the same boxed binary helper used by ordinary `+` or `.`, and a direct
+  variable store. This keeps left-to-right reads and undefined-variable
+  diagnostics on the runtime read boundary rather than adding a separate
+  compound-assignment runtime path.
 - Statement-form `print expr;` lowers to the same boxed output IR instruction
   used by echo, so generated native code routes print output through the
   existing `ptn_echo` helper.
@@ -49,5 +54,8 @@ Near-term architecture targets:
 - Full PHP numeric-string conversions, non-numeric string arithmetic
   diagnostics, warnings, scalar cast overflow behavior, and overflow behavior
   for arithmetic helpers.
+- Array, object, and reference lvalues for compound assignment, plus
+  unsupported compound operators beyond `+=` and `.=` (`-=`, `*=`, `/=`, `%=`,
+  `**=`, `&=`, `|=`, `^=`, `<<=`, `>>=`, `??=`).
 - Explicit fallback boundaries for `eval`, variable variables, and runtime
   symbol mutation.

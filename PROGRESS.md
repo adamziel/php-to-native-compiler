@@ -51,8 +51,9 @@ Added a runtime diagnostics boundary for direct variable reads:
 - Native tests prove defined and undefined reads in the same compiled binary.
 
 Still unsupported: arrays, references, copy-on-write, globals/superglobals,
-compound assignment, variable variables, undefined-variable warning parity,
-functions, classes, resources, exceptions, and dynamic fallback.
+non-direct and reference-aware compound assignment, variable variables,
+undefined-variable warning parity, functions, classes, resources, exceptions,
+and dynamic fallback.
 
 Added a non-harness differential telemetry path:
 
@@ -127,3 +128,19 @@ Implemented a narrow boxed unary/cast expression slice in the CAO worktree:
 Still unsupported for unary/casts: arrays, objects, references, copy-on-write,
 full numeric-string diagnostic parity, unsupported operand `TypeError` parity,
 and exact overflow behavior for scalar casts.
+
+Implemented a direct named-variable compound-assignment slice on top of the
+unary/casts-enabled head:
+
+- Lexer/parser/AST support for `$x += expr` and `$x .= expr` statements.
+- IR lowering that rewrites compound assignment as a direct variable read, the
+  existing boxed `+` or `.` operation, then a direct variable write.
+- Native tests proving scalar add/concat compound assignment with print output,
+  RHS grouping/casts through the same expression path, source-order
+  undefined-variable diagnostics for the LHS read before the RHS read, and the
+  unsupported boundary for other compound operators and non-direct lvalues.
+
+Still unsupported for compound assignment: `-=`, `*=`, `/=`, `%=`, `**=`, `&=`,
+`|=`, `^=`, `<<=`, `>>=`, `??=`, array/object/string-offset/property/static
+property/variable-variable lvalues, references, reference identity, and
+copy-on-write interactions.

@@ -9,6 +9,7 @@ pub struct Program {
 pub enum Statement {
     Assign {
         name: String,
+        op: AssignmentOp,
         value: Expr,
         span: SourceSpan,
     },
@@ -20,6 +21,13 @@ pub enum Statement {
         expression: Expr,
         span: SourceSpan,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AssignmentOp {
+    Assign,
+    AddAssign,
+    ConcatAssign,
 }
 
 #[derive(Debug, Clone, PartialEq)]

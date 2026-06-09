@@ -1,5 +1,5 @@
 use crate::ast::{
-    BinaryOp as AstBinaryOp, CastKind as AstCastKind, Expr, Program, Statement,
+    AssignmentOp, BinaryOp as AstBinaryOp, CastKind as AstCastKind, Expr, Program, Statement,
     UnaryOp as AstUnaryOp,
 };
 
@@ -61,10 +61,12 @@ pub fn lower(program: &Program) -> Module {
     let mut instructions = Vec::new();
     for statement in &program.statements {
         match statement {
-            Statement::Assign { name, value, .. } => {
+            Statement::Assign {
+                name, op, value, ..
+            } => {
                 instructions.push(Instruction::Store {
                     name: name.clone(),
-                    value: lower_expr(value),
+                    value: lower_assignment_value(name, *op, value),
                 });
             }
             Statement::Echo { expressions, .. } => {
@@ -78,6 +80,23 @@ pub fn lower(program: &Program) -> Module {
         }
     }
     Module { instructions }
+}
+
+fn lower_assignment_value(name: &str, op: AssignmentOp, value: &Expr) -> ValueExpr {
+    let right = lower_expr(value);
+    match op {
+        AssignmentOp::Assign => right,
+        AssignmentOp::AddAssign => lower_compound_assignment(name, BinaryOp::Add, right),
+        AssignmentOp::ConcatAssign => lower_compound_assignment(name, BinaryOp::Concat, right),
+    }
+}
+
+fn lower_compound_assignment(name: &str, op: BinaryOp, right: ValueExpr) -> ValueExpr {
+    ValueExpr::Binary {
+        op,
+        left: Box::new(ValueExpr::Load(name.to_string())),
+        right: Box::new(right),
+    }
 }
 
 fn lower_expr(expr: &Expr) -> ValueExpr {

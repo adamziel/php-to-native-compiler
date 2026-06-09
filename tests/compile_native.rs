@@ -2,7 +2,7 @@ use std::fs;
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use ptn::ast::{BinaryOp, CastKind, Expr, Statement, UnaryOp};
+use ptn::ast::{AssignmentOp, BinaryOp, CastKind, Expr, Statement, UnaryOp};
 use ptn::lexer::{self, TokenKind};
 use ptn::{compile_file, parser, CompileOptions};
 
@@ -66,6 +66,22 @@ fn parser_accepts_print_as_statement() {
             ..
         }
     ));
+}
+
+#[test]
+fn parser_accepts_direct_variable_compound_assignments() {
+    let program = parser::parse("<?php $value = 1; $value += 2; $value .= \"3\";").unwrap();
+    assert_eq!(program.statements.len(), 3);
+
+    let Statement::Assign { op, .. } = &program.statements[1] else {
+        panic!("expected add assignment statement");
+    };
+    assert_eq!(*op, AssignmentOp::AddAssign);
+
+    let Statement::Assign { op, .. } = &program.statements[2] else {
+        panic!("expected concat assignment statement");
+    };
+    assert_eq!(*op, AssignmentOp::ConcatAssign);
 }
 
 #[test]
@@ -294,6 +310,72 @@ fn compile_variable_overwrite_to_native_binary() {
 }
 
 #[test]
+fn compile_direct_compound_assignments_to_native_binary() {
+    let root = temp_dir("ptn-native-compound-assignment");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("compound.php");
+    let output = root.join("compound-bin");
+    fs::write(
+        &input,
+        "<?php $total = 1; $total += 2 + 3; $name = \"Ada\"; $name .= \" Lovelace\"; print $name . \" \" . $total . \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Ada Lovelace 6\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_compound_assignments_with_grouping_and_casts_to_native_binary() {
+    let root = temp_dir("ptn-native-compound-assignment-grouped");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("compound-grouped.php");
+    let output = root.join("compound-grouped-bin");
+    fs::write(
+        &input,
+        "<?php $total = 10; $total += -(2 + (int)\"3\"); $text = \"value=\"; $text .= (string)$total; print $text . \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "value=5\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compound_assignments_read_left_before_rhs_and_then_write() {
+    let root = temp_dir("ptn-native-compound-assignment-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("compound-order.php");
+    let output = root.join("compound-order-bin");
+    fs::write(
+        &input,
+        "<?php $total += $missing_number; print $total . \"\\n\"; $text .= $missing_text; print \"[\" . $text . \"]\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "0\n[]\n");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        "Warning: Undefined variable $total\nWarning: Undefined variable $missing_number\nWarning: Undefined variable $text\nWarning: Undefined variable $missing_text\n"
+    );
+}
+
+#[test]
 fn compile_boxed_binary_operations_to_native_binary() {
     let root = temp_dir("ptn-native-binops");
     fs::create_dir_all(&root).unwrap();
@@ -402,8 +484,13 @@ fn compile_defined_and_undefined_variable_reads_to_native_binary() {
 
 #[test]
 fn unsupported_constructs_fail_before_codegen() {
-    let error = parser::parse("<?php $name += 1;").unwrap_err();
-    assert!(error.message.contains("expected assignment"));
+    let unsupported_operator = parser::parse("<?php $name -= 1;").unwrap_err();
+    assert!(unsupported_operator.message.contains("expected assignment"));
+
+    let unsupported_lvalue = parser::parse("<?php $items[0] += 1;").unwrap_err();
+    assert!(unsupported_lvalue
+        .message
+        .contains("unsupported PHP token '['"));
 }
 
 fn temp_dir(name: &str) -> std::path::PathBuf {

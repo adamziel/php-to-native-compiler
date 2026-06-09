@@ -30,6 +30,9 @@ Supported today:
   including chained expressions and assignment results. The parser treats `+`
   as higher precedence than `.` and the backend emits runtime calls over
   `PtnValue` operands.
+- Direct named-variable compound assignment for `+=` and `.=`. These lower as
+  a variable read, boxed `+` or `.`, then a variable write, preserving the
+  existing undefined-variable diagnostic boundary.
 - Parenthesized expressions, unary `-`, unary `!`, and `(int)`, `(float)`,
   `(string)`, and `(bool)` casts for boxed scalar values. Unary and cast
   operations are emitted as runtime helper calls over `PtnValue` operands.
@@ -37,7 +40,9 @@ Supported today:
 Unsupported today:
 
 - Arrays, objects, functions, classes, includes, references, copy-on-write,
-  resources, exceptions, compound assignment, `print` as an expression returning
+  resources, exceptions, array/object/reference compound-assignment lvalues,
+  compound operators other than `+=` and `.=` (`-=`, `*=`, `/=`, `%=`, `**=`,
+  `&=`, `|=`, `^=`, `<<=`, `>>=`, `??=`), `print` as an expression returning
   `1`, parenthesized `print(...)` syntax, full PHP numeric-string and
   non-numeric string arithmetic diagnostics, overflow parity, exact scalar cast
   overflow behavior, PHP-exact warning text/file/line/error-handler behavior,

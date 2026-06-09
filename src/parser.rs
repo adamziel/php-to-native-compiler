@@ -1,4 +1,4 @@
-use crate::ast::{BinaryOp, CastKind, Expr, Program, Statement, UnaryOp};
+use crate::ast::{AssignmentOp, BinaryOp, CastKind, Expr, Program, Statement, UnaryOp};
 use crate::diagnostic::{Diagnostic, Result, SourceSpan};
 use crate::lexer::{lex, Token, TokenKind};
 
@@ -42,11 +42,12 @@ impl Parser {
         let TokenKind::Variable(name) = token.kind else {
             return Err(Diagnostic::new("expected variable", Some(token.span)));
         };
-        self.expect_equal()?;
+        let op = self.expect_assignment_op()?;
         let value = self.parse_expr()?;
         self.expect_statement_terminator()?;
         Ok(Statement::Assign {
             name,
+            op,
             value,
             span: token.span,
         })
@@ -213,12 +214,13 @@ impl Parser {
         }
     }
 
-    fn expect_equal(&mut self) -> Result<()> {
+    fn expect_assignment_op(&mut self) -> Result<AssignmentOp> {
         let token = self.advance();
-        if matches!(token.kind, TokenKind::Equal) {
-            Ok(())
-        } else {
-            Err(Diagnostic::new("expected assignment", Some(token.span)))
+        match token.kind {
+            TokenKind::Equal => Ok(AssignmentOp::Assign),
+            TokenKind::PlusEqual => Ok(AssignmentOp::AddAssign),
+            TokenKind::DotEqual => Ok(AssignmentOp::ConcatAssign),
+            _ => Err(Diagnostic::new("expected assignment", Some(token.span))),
         }
     }
 
