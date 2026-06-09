@@ -1178,24 +1178,28 @@ impl ValueEmitter {
     }
 
     fn emit_isset(&mut self, out: &mut String, targets: &[ValueExpr]) -> String {
+        let flag_temp = self.next_temp();
+        out.push_str("    int ");
+        out.push_str(&flag_temp);
+        out.push_str(" = 1;\n");
+        for target in targets {
+            out.push_str("    if (");
+            out.push_str(&flag_temp);
+            out.push_str(") {\n");
+            let lookup_temp = self.emit_quiet_lookup(out, target);
+            out.push_str("        ");
+            out.push_str(&flag_temp);
+            out.push_str(" = ptn_lookup_result_is_isset(");
+            out.push_str(&lookup_temp);
+            out.push_str(");\n");
+            out.push_str("    }\n");
+        }
         let result_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
-        out.push_str(" = ptn_bool(1);\n");
-        for target in targets {
-            out.push_str("    if (ptn_is_truthy(");
-            out.push_str(&result_temp);
-            out.push_str(")) {\n");
-            let lookup_temp = self.emit_quiet_lookup(out, target);
-            out.push_str("        ");
-            out.push_str(&result_temp);
-            out.push_str(" = ptn_bool(");
-            out.push_str(&lookup_temp);
-            out.push_str(".exists && ");
-            out.push_str(&lookup_temp);
-            out.push_str(".value.type != PTN_NULL);\n");
-            out.push_str("    }\n");
-        }
+        out.push_str(" = ptn_bool(");
+        out.push_str(&flag_temp);
+        out.push_str(");\n");
         result_temp
     }
 
@@ -1204,11 +1208,9 @@ impl ValueEmitter {
         let result_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
-        out.push_str(" = ptn_bool(!");
+        out.push_str(" = ptn_bool(ptn_lookup_result_is_empty(");
         out.push_str(&lookup_temp);
-        out.push_str(".exists || !ptn_is_truthy(");
-        out.push_str(&lookup_temp);
-        out.push_str(".value));\n");
+        out.push_str("));\n");
         result_temp
     }
 
@@ -1395,6 +1397,13 @@ impl ValueEmitter {
         arguments: &[ValueExpr],
         line: usize,
     ) -> String {
+        if name.eq_ignore_ascii_case("count") && arguments.len() == 1 {
+            return self.emit_fast_count_call(out, &arguments[0], line);
+        }
+        if name.eq_ignore_ascii_case("array_key_exists") && arguments.len() == 2 {
+            return self.emit_fast_array_key_exists_call(out, &arguments[0], &arguments[1], line);
+        }
+
         let result_temp = self.next_temp();
         if arguments.is_empty() {
             out.push_str("    PtnValue ");
@@ -1426,6 +1435,46 @@ impl ValueEmitter {
         out.push_str(&arguments.len().to_string());
         out.push_str(", ");
         out.push_str(&args_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        result_temp
+    }
+
+    fn emit_fast_count_call(
+        &mut self,
+        out: &mut String,
+        argument: &ValueExpr,
+        line: usize,
+    ) -> String {
+        let value_temp = self.emit_materialized_value(out, argument);
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_fast_count(&runtime, ");
+        out.push_str(&value_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        result_temp
+    }
+
+    fn emit_fast_array_key_exists_call(
+        &mut self,
+        out: &mut String,
+        key: &ValueExpr,
+        array: &ValueExpr,
+        line: usize,
+    ) -> String {
+        let key_temp = self.emit_materialized_value(out, key);
+        let array_temp = self.emit_materialized_value(out, array);
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_fast_array_key_exists(&runtime, ");
+        out.push_str(&key_temp);
+        out.push_str(", ");
+        out.push_str(&array_temp);
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");

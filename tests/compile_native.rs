@@ -4411,6 +4411,47 @@ var_dump(function_exists(\"array_key_exists\"), function_exists(\"ARRAY_KEY_EXIS
 }
 
 #[test]
+fn compile_array_predicates_use_direct_fast_paths() {
+    let root = temp_dir("ptn-native-array-predicate-fast-paths");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-predicate-fast-paths.php");
+    let output = root.join("array-predicate-fast-paths-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$items = [\"a\" => 1, \"b\" => null, \"c\" => \"0\"];\n\
+var_dump(count($items));\n\
+var_dump(array_key_exists(\"b\", $items));\n\
+var_dump(array_key_exists(\"missing\", $items));\n\
+var_dump(isset($items[\"a\"], $items[\"c\"]));\n\
+var_dump(isset($items[\"a\"], $items[\"b\"]));\n\
+var_dump(empty($items[\"missing\"]));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(3)\nbool(true)\nbool(false)\nbool(true)\nbool(false)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    let main_source = c_source
+        .split_once("\nint main(void)")
+        .expect("generated C should contain main")
+        .1;
+    assert!(main_source.contains("ptn_fast_count(&runtime, "));
+    assert!(main_source.contains("ptn_fast_array_key_exists(&runtime, "));
+    assert!(main_source.contains("ptn_lookup_result_is_isset("));
+    assert!(!c_source.contains("ptn_call_function(&runtime, \"count\""));
+    assert!(!c_source.contains("ptn_call_function(&runtime, \"array_key_exists\""));
+}
+
+#[test]
 fn compile_large_ordered_array_lookup_to_native_binary() {
     let root = temp_dir("ptn-native-large-array-lookup");
     fs::create_dir_all(&root).unwrap();

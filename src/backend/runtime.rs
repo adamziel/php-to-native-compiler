@@ -905,6 +905,14 @@ static PTN_UNUSED int ptn_is_truthy(PtnValue value) {
     return 0;
 }
 
+static PTN_UNUSED int ptn_lookup_result_is_isset(PtnLookupResult result) {
+    return result.exists && result.value.type != PTN_NULL;
+}
+
+static PTN_UNUSED int ptn_lookup_result_is_empty(PtnLookupResult result) {
+    return !result.exists || !ptn_is_truthy(result.value);
+}
+
 static PTN_UNUSED PtnValue ptn_not(PtnValue value) {
     return ptn_bool(!ptn_is_truthy(value));
 }
@@ -3614,18 +3622,22 @@ static PtnValue ptn_internal_ord(PtnRuntime *runtime, size_t argc, const PtnValu
     return ptn_int(byte);
 }
 
-static PtnValue ptn_internal_count(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+static PTN_UNUSED PtnValue ptn_fast_count(PtnRuntime *runtime, PtnValue value, size_t line) {
     (void)runtime;
-    (void)argc;
     (void)line;
-    if (args[0].type == PTN_ARRAY) {
-        return ptn_int((int64_t)args[0].as.array->len);
+    if (value.type == PTN_ARRAY) {
+        return ptn_int((int64_t)value.as.array->len);
     }
     fputs("Fatal error: count(): Argument #1 ($value) must be of type Countable|array, ", stderr);
-    fputs(ptn_offset_container_type_name(args[0]), stderr);
+    fputs(ptn_offset_container_type_name(value), stderr);
     fputs(" given\n", stderr);
     exit(255);
     return ptn_null();
+}
+
+static PtnValue ptn_internal_count(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_fast_count(runtime, args[0], line);
 }
 
 static PtnValue ptn_internal_error_reporting(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -3753,23 +3765,27 @@ static PtnValue ptn_internal_function_exists(PtnRuntime *runtime, size_t argc, c
     return ptn_bool(exists);
 }
 
-static PtnValue ptn_internal_array_key_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)argc;
-    if (args[1].type != PTN_ARRAY) {
+static PTN_UNUSED PtnValue ptn_fast_array_key_exists(PtnRuntime *runtime, PtnValue key_value, PtnValue array_value, size_t line) {
+    if (array_value.type != PTN_ARRAY) {
         fputs("Fatal error: array_key_exists(): Argument #2 ($array) must be of type array\n", stderr);
         exit(255);
     }
-    if (args[0].type == PTN_NULL) {
+    if (key_value.type == PTN_NULL) {
         ptn_emit_deprecation(
             &runtime->diagnostics,
             "Using null as the key parameter for array_key_exists() is deprecated, use an empty string instead",
             line
         );
     }
-    PtnArrayKey key = ptn_array_key_from_value(args[0]);
-    int exists = ptn_array_entry_for_key(args[1].as.array, key) != NULL;
+    PtnArrayKey key = ptn_array_key_from_value(key_value);
+    int exists = ptn_array_entry_for_key(array_value.as.array, key) != NULL;
     ptn_array_key_free(key);
     return ptn_bool(exists);
+}
+
+static PtnValue ptn_internal_array_key_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_fast_array_key_exists(runtime, args[0], args[1], line);
 }
 
 static PTN_UNUSED PtnValue ptn_call_internal(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line) {

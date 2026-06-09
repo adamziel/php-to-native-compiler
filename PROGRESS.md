@@ -1970,6 +1970,25 @@ C:
 No PHP behavior or generated C output is intended to change from this
 modularization.
 
+Optimized generated array predicate and size fast paths:
+
+- Exact-arity generated calls to `count()` now dispatch directly to a shared
+  runtime count helper instead of building an argument array and entering the
+  generic user/internal function dispatcher.
+- Exact-arity generated calls to `array_key_exists()` now dispatch directly to
+  a shared runtime key-existence helper while preserving the current
+  null-key deprecation and non-array fatal boundaries.
+- Generated `isset()` uses an integer short-circuit flag plus the shared quiet
+  lookup result predicate, avoiding repeated boxed boolean truthiness checks
+  for multi-target `isset()` expressions.
+- Native tests prove the emitted C fast-path calls and the existing
+  `count()`/`array_key_exists()`/`isset()`/`empty()` behavior.
+
+No new PHP surface is claimed by this performance slice. Array mutation,
+append/unset, `Countable` objects, exact unsupported-type diagnostics,
+references, copy-on-write behavior, and broader array/object semantics remain
+unsupported.
+
 Made the generated C build profile explicit and configurable:
 
 - The system `cc` invocation uses `-O2` by default for generated native
