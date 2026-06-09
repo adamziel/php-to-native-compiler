@@ -5434,6 +5434,74 @@ echo \"Done\\n\";",
 }
 
 #[test]
+fn compile_string_offset_writes_to_native_binary() {
+    let root = temp_dir("ptn-native-string-offset-writes");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("string-offset-writes.php");
+    let output = root.join("string-offset-writes-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$str = \"abcd\";\n\
+$str[1] = \"XYZ\";\n\
+var_dump($str);\n\
+$str[-1] = \"Q\";\n\
+var_dump($str);\n\
+$str[6] = \"Z\";\n\
+var_dump($str);\n\
+$str[true] = \"T\";\n\
+var_dump($str);\n\
+$str[null] = \"N\";\n\
+var_dump($str);\n\
+$str[\"2str\"] = \"R\";\n\
+var_dump($str);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "\nWarning: Only the first byte will be assigned to the string offset in ptn on line 3\nstring(4) \"aXcd\"\nstring(4) \"aXcQ\"\nstring(7) \"aXcQ  Z\"\n\nWarning: String offset cast occurred in ptn on line 9\nstring(7) \"aTcQ  Z\"\n\nWarning: String offset cast occurred in ptn on line 11\nstring(7) \"NTcQ  Z\"\n\nWarning: Illegal string offset \"2str\" in ptn on line 13\nstring(7) \"NTRQ  Z\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_string_offset_mutation_boundaries_to_native_binary() {
+    let root = temp_dir("ptn-native-string-offset-mutation-boundaries");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("string-offset-mutation-boundaries.php");
+    let output = root.join("string-offset-mutation-boundaries-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$str = \"abcd\";\n\
+try { $str[1] = \"\"; } catch (\\Error $e) { echo $e->getMessage() . PHP_EOL; }\n\
+var_dump($str);\n\
+try { $str[\"1.5\"] = \"Q\"; } catch (\\TypeError $e) { echo $e->getMessage() . PHP_EOL; }\n\
+try { $str[] = \"A\"; } catch (\\Error $e) { echo $e->getMessage() . PHP_EOL; }\n\
+try { unset($str[0]); } catch (\\Error $e) { echo $e->getMessage() . PHP_EOL; }\n\
+try { $str[1] .= \"Z\"; } catch (\\Error $e) { echo $e->getMessage() . PHP_EOL; }\n\
+$str[-5] = \"Z\";\n\
+var_dump($str);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Cannot assign an empty string to a string offset\nstring(4) \"abcd\"\nCannot access offset of type string on string\n[] operator not supported for strings\nCannot unset string offsets\nCannot use assign-op operators with string offsets\n\nWarning: Illegal string offset -5 in ptn on line 9\nstring(4) \"abcd\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_try_catches_string_offset_type_error_to_native_binary() {
     let root = temp_dir("ptn-native-try-catch-string-offset-type-error");
     fs::create_dir_all(&root).unwrap();

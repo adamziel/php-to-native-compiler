@@ -24,8 +24,9 @@ array cursor internals on direct variable ordered arrays, `array_values()` over
 ordered arrays, numeric-string array key normalization coverage, top-level user
 functions with scoped `__FUNCTION__`/`__METHOD__` magic constants and
 `func_num_args()`/`func_get_arg()`/`func_get_args()` introspection, `print_r`,
-selected binary-string handling, catchable `TypeError` for string offset reads,
-and catchable `count()` non-array diagnostics.
+selected binary-string handling, string offset read diagnostics,
+direct-variable string offset writes with append/unset/assign-op Error
+boundaries, and catchable `count()` non-array diagnostics.
 
 ## Still Needed
 

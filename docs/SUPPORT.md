@@ -94,6 +94,16 @@ supports in generated native binaries.
   illegal-offset warnings, and scalar cast warnings for `null`, booleans, and
   floats are handled by the shared offset-read helper; out-of-range reads emit
   an uninitialized-offset warning and return an empty string.
+- String offset writes/mutation for direct-variable strings such as
+  `$string[$offset] = $value` in the current C-string-backed scalar string
+  subset. Integer-compatible offsets, negative offsets, integer strings,
+  numeric-prefix strings with PHP-style illegal-offset warnings, and scalar
+  offset casts are handled by the shared offset conversion path. Positive
+  out-of-range writes pad with spaces; negative out-of-range writes emit the
+  modeled illegal-offset warning and leave the string unchanged. The assigned
+  value is converted to a string, empty string results throw `Error`, and
+  multi-byte results emit the modeled first-byte warning before writing the
+  first byte.
 - `array_key_exists()` over current ordered-array values, using the same
   integer/string key canonicalization path as array literals and reads. `null`
   keys emit the current PHP-like deprecation boundary and canonicalize to the
@@ -398,10 +408,10 @@ supports in generated native binaries.
 - Exact `array_key_exists()` TypeError parity for unsupported key/container
   types, object property checks, resources, references, and error-handler
   routing.
-- String offset writes/mutation, object/property/reference
-  `isset()`/`empty()` semantics, null-coalescing offset semantics,
-  string-offset references, string-offset unset, and complete TypeError/
-  exception parity for unsupported string offset key types.
+- String-offset append, unset, compound assignment, references, object/
+  property/reference `isset()`/`empty()` semantics, null-coalescing offset
+  semantics, and complete TypeError/exception parity for unsupported string
+  offset key types.
 - Embedded NUL strings in runtime string values, `var_dump()` string
   length/output, `strlen()`, `str_rot13()`, `strcmp()`, `bin2hex()`, `chr()`,
   `hex2bin()`, `str_contains()`, `quotemeta()`, `chunk_split()`,

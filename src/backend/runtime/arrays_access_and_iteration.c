@@ -58,6 +58,8 @@ static PTN_UNUSED int ptn_compare_equal(PtnValue left, PtnValue right);
 static PTN_UNUSED int ptn_compare_identical(PtnValue left, PtnValue right);
 static PTN_UNUSED int ptn_compare_not_identical(PtnValue left, PtnValue right);
 static PTN_UNUSED int ptn_compare_order(PtnValue left, PtnValue right);
+static PTN_UNUSED PtnStringOperand ptn_value_to_string_operand(PtnValue value);
+static PTN_UNUSED void ptn_string_operand_free(PtnStringOperand operand);
 
 static PTN_UNUSED PtnArrayEntry *ptn_array_entry_for_key(PtnArray *array, PtnArrayKey key) {
     size_t index = ptn_array_find_key(array, key);
@@ -221,6 +223,23 @@ static PTN_UNUSED void ptn_emit_uninitialized_string_offset_warning(int64_t offs
     ptn_emit_array_runtime_diagnostic("Warning", message, line);
 }
 
+static PTN_UNUSED void ptn_emit_illegal_string_offset_integer_warning(int64_t offset, size_t line) {
+    char message[96];
+    int written = snprintf(message, sizeof(message), "Illegal string offset %lld", (long long)offset);
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_array_runtime_diagnostic("Warning", message, line);
+}
+
+static PTN_UNUSED void ptn_emit_string_offset_assignment_byte_warning(size_t line) {
+    ptn_emit_array_runtime_diagnostic(
+        "Warning",
+        "Only the first byte will be assigned to the string offset",
+        line
+    );
+}
+
 static PTN_UNUSED int ptn_string_to_offset(const char *string, int64_t *offset, int *warn_illegal) {
     const char *cursor = string;
     while (isspace((unsigned char)*cursor)) {
@@ -372,6 +391,94 @@ static PTN_UNUSED PtnLookupResult ptn_string_offset_lookup(
     return ptn_lookup_found(ptn_owned_string_len(result, 1));
 }
 
+static PTN_UNUSED int ptn_string_offset_assignment_index(
+    size_t string_len,
+    int64_t offset,
+    size_t line,
+    size_t *index,
+    size_t *new_len
+) {
+    if (offset >= 0) {
+        uint64_t positive = (uint64_t)offset;
+        if (positive >= (uint64_t)SIZE_MAX - 1) {
+            ptn_abort_out_of_memory();
+        }
+        *index = (size_t)positive;
+        *new_len = *index >= string_len ? *index + 1 : string_len;
+        return 1;
+    }
+
+    if (ptn_string_offset_index(string_len, offset, index)) {
+        *new_len = string_len;
+        return 1;
+    }
+
+    ptn_emit_illegal_string_offset_integer_warning(offset, line);
+    return 0;
+}
+
+static PTN_UNUSED unsigned char ptn_string_offset_assignment_byte(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t line
+) {
+    if (value.type == PTN_ARRAY) {
+        ptn_emit_warning(&runtime->diagnostics, "Array to string conversion", line);
+    }
+
+    PtnStringOperand string = ptn_value_to_string_operand(value);
+    if (string.len == 0) {
+        ptn_string_operand_free(string);
+        ptn_throw_exception(runtime, "Error", "Cannot assign an empty string to a string offset");
+        return 0;
+    }
+    if (string.len > 1) {
+        ptn_emit_string_offset_assignment_byte_warning(line);
+    }
+
+    unsigned char byte = (unsigned char)string.data[0];
+    ptn_string_operand_free(string);
+    return byte;
+}
+
+static PTN_UNUSED void ptn_runtime_string_offset_set(
+    PtnRuntime *runtime,
+    const char *name,
+    PtnValue container,
+    PtnValue key_value,
+    PtnValue value,
+    size_t line
+) {
+    int64_t offset = 0;
+    if (!ptn_string_offset_from_value(runtime, key_value, line, 0, &offset)) {
+        return;
+    }
+
+    size_t index = 0;
+    size_t new_len = 0;
+    if (!ptn_string_offset_assignment_index(container.as.string.len, offset, line, &index, &new_len)) {
+        return;
+    }
+
+    unsigned char byte = ptn_string_offset_assignment_byte(runtime, value, line);
+    char *buffer = malloc(new_len + 1);
+    if (buffer == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    if (container.as.string.len != 0) {
+        memcpy(buffer, container.as.string.data, container.as.string.len);
+    }
+    if (new_len > container.as.string.len) {
+        memset(buffer + container.as.string.len, ' ', new_len - container.as.string.len);
+    }
+    buffer[index] = (char)byte;
+    buffer[new_len] = '\0';
+
+    PtnValue updated = ptn_owned_string_len(buffer, new_len);
+    ptn_runtime_write_variable(runtime, name, updated);
+    ptn_value_destroy(&updated);
+}
+
 static PTN_UNUSED PtnLookupResult ptn_offset_lookup(PtnRuntime *runtime, PtnValue container, PtnValue key_value, size_t line, int quiet) {
     if (container.type == PTN_STRING) {
         return ptn_string_offset_lookup(runtime, container, key_value, line, quiet);
@@ -508,6 +615,14 @@ static PTN_UNUSED PtnValue ptn_runtime_array_read_for_assign_op(
         return ptn_null();
     }
 
+    if (container.type == PTN_STRING) {
+        if (key_value == NULL) {
+            ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
+        }
+        ptn_throw_exception(runtime, "Error", "Cannot use assign-op operators with string offsets");
+        return ptn_null();
+    }
+
     if (key_value == NULL) {
         return ptn_null();
     }
@@ -529,12 +644,17 @@ static PTN_UNUSED void ptn_runtime_array_set_impl(
     size_t line,
     int emit_null_key_deprecation
 ) {
+    PtnValue container;
+    if (ptn_symbols_get(&runtime->symbols, name, &container) && container.type == PTN_STRING) {
+        ptn_runtime_string_offset_set(runtime, name, container, key_value, value, line);
+        return;
+    }
+
     if (emit_null_key_deprecation && key_value.type == PTN_NULL) {
         ptn_emit_null_array_offset_deprecation(line);
     }
     PtnArrayKey key = ptn_array_key_from_value(key_value);
 
-    PtnValue container;
     if (ptn_symbols_get(&runtime->symbols, name, &container)) {
         if (container.type == PTN_ARRAY) {
             ptn_array_set_entry(container.as.array, key, ptn_value_clone(value));
@@ -581,6 +701,10 @@ static PTN_UNUSED void ptn_runtime_array_append(
 ) {
     PtnValue container;
     if (ptn_symbols_get(&runtime->symbols, name, &container)) {
+        if (container.type == PTN_STRING) {
+            ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
+            return;
+        }
         if (container.type == PTN_ARRAY) {
             PtnArrayKey key = ptn_array_int_key(container.as.array->next_auto_key);
             ptn_array_set_entry(container.as.array, key, ptn_value_clone(value));
@@ -607,7 +731,14 @@ static PTN_UNUSED void ptn_runtime_array_unset(
 ) {
     (void)line;
     PtnValue container;
-    if (!ptn_symbols_get(&runtime->symbols, name, &container) || container.type != PTN_ARRAY) {
+    if (!ptn_symbols_get(&runtime->symbols, name, &container)) {
+        return;
+    }
+    if (container.type == PTN_STRING) {
+        ptn_throw_exception(runtime, "Error", "Cannot unset string offsets");
+        return;
+    }
+    if (container.type != PTN_ARRAY) {
         return;
     }
 
