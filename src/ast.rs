@@ -87,6 +87,8 @@ pub enum AssignmentOp {
     BitwiseAndAssign,
     BitwiseOrAssign,
     BitwiseXorAssign,
+    ShiftLeftAssign,
+    ShiftRightAssign,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -50,7 +50,7 @@ Supported today:
 - Symbol-existence predicates for currently modeled runtime tables:
   `function_exists()` checks the generated internal-function registry, and
   `defined()` checks the current constant registry, which currently includes
-  `E_ERROR`.
+  `E_ERROR` and `PHP_EOL`.
 - String, integer, float, boolean, and null literals.
 - Direct variable assignment and reads for scalar values through the generated
   native runtime symbol table.
@@ -62,8 +62,8 @@ Supported today:
   and `-`, and arithmetic as higher precedence than `.`, while the backend
   emits runtime calls over `PtnValue` operands.
 - Direct named-variable compound assignment for `+=`, `-=`, `*=`, `/=`, `%=`,
-  `.=`, `&=`, `|=`, and `^=`. These lower as a variable read, the matching boxed
-  binary helper, then a variable write, preserving the existing
+  `.=`, `&=`, `|=`, `^=`, `<<=`, and `>>=`. These lower as a variable read, the
+  matching boxed binary helper, then a variable write, preserving the existing
   undefined-variable diagnostic boundary.
 - Parenthesized expressions, unary `+`, unary `-`, unary `!`, unary bitwise
   `~`, and `(int)`, `(float)`, `(string)`, and `(bool)` casts for boxed scalar
@@ -104,7 +104,7 @@ Unsupported today:
 - Arrays, objects, functions, classes, includes, references, copy-on-write,
   resources, exceptions, array/object/reference compound-assignment lvalues,
   compound operators other than `+=`, `-=`, `*=`, `/=`, `%=`, `.=`, `&=`, `|=`,
-  and `^=` (`**=`, `<<=`, `>>=`, `??=`), `print` as an expression returning
+  `^=`, `<<=`, and `>>=` (`**=`, `??=`), `print` as an expression returning
   `1` even when spelled `print(...)`, increment/decrement operators, full
   PHP numeric-string and non-numeric string arithmetic diagnostics, exact
   division/modulo-by-zero exception behavior, complete comparison parity for
@@ -119,13 +119,13 @@ Unsupported today:
   warning text/file/line/error-handler behavior, inline HTML before `<?php` or
   between PHP blocks, internal functions outside the registered scalar subset,
   user constants and built-in constants other than the currently modeled
-  `E_ERROR`, arrays, objects, resources, recursion, references, embedded NUL
-  string handling, exact `chr()` deprecation diagnostics, exact `ord()`
-  argument type diagnostics, exact `error_reporting()` configuration/filtering
-  behavior, and full PHP precision/formatting edge cases for
-  `var_dump()`/`strlen()`/`bin2hex()`/base-conversion internals, doc comment
-  retention, variable variables, and dynamic fallback. These are architecture
-  targets, not excuses for exact-shape hacks.
+  `E_ERROR` and `PHP_EOL`, arrays, objects, resources, recursion, references,
+  embedded NUL string handling, exact `chr()` deprecation diagnostics, exact
+  `ord()` argument type diagnostics, exact `error_reporting()`
+  configuration/filtering behavior, and full PHP precision/formatting edge
+  cases for `var_dump()`/`strlen()`/`bin2hex()`/base-conversion internals, doc
+  comment retention, variable variables, and dynamic fallback. These are
+  architecture targets, not excuses for exact-shape hacks.
 
 ## Build
 

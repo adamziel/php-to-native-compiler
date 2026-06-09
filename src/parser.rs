@@ -501,6 +501,19 @@ impl Parser {
                     Ok(Expr::Constant(name, token.span))
                 }
             }
+            TokenKind::Backslash => {
+                let name_token = self.advance().clone();
+                let TokenKind::Identifier(name) = name_token.kind else {
+                    return Err(Diagnostic::new(
+                        "expected fully qualified constant name",
+                        Some(name_token.span),
+                    ));
+                };
+                Ok(Expr::Constant(
+                    name,
+                    combine_spans(token.span, name_token.span),
+                ))
+            }
             TokenKind::LeftParen => {
                 let expr = self.parse_expr()?;
                 let right_span = self.expect_right_paren()?;
@@ -674,6 +687,8 @@ impl Parser {
             TokenKind::AmpersandEqual => Ok(AssignmentOp::BitwiseAndAssign),
             TokenKind::PipeEqual => Ok(AssignmentOp::BitwiseOrAssign),
             TokenKind::CaretEqual => Ok(AssignmentOp::BitwiseXorAssign),
+            TokenKind::ShiftLeftEqual => Ok(AssignmentOp::ShiftLeftAssign),
+            TokenKind::ShiftRightEqual => Ok(AssignmentOp::ShiftRightAssign),
             _ => Err(Diagnostic::new("expected assignment", Some(token.span))),
         }
     }

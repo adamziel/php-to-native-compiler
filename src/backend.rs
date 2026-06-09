@@ -1543,6 +1543,10 @@ static PTN_UNUSED int ptn_constant_value(const char *name, PtnValue *out) {
         *out = ptn_int(1);
         return 1;
     }
+    if (strcmp(name, "PHP_EOL") == 0) {
+        *out = ptn_string("\n");
+        return 1;
+    }
     return 0;
 }
 

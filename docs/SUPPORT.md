@@ -25,10 +25,10 @@ supports in generated native binaries.
 - Binary operands are materialized left-to-right before the generated C backend
   calls runtime helpers.
 - Direct named-variable compound assignment for `+=`, `-=`, `*=`, `/=`, `%=`,
-  `.=`, `&=`, `|=`, and `^=`. The compiler lowers these as `read $x`, the matching
-  boxed binary helper, then `write $x`. The direct variable read happens before
-  the right-hand expression, so existing undefined-variable diagnostics remain
-  observable in source order.
+  `.=`, `&=`, `|=`, `^=`, `<<=`, and `>>=`. The compiler lowers these as
+  `read $x`, the matching boxed binary helper, then `write $x`. The direct
+  variable read happens before the right-hand expression, so existing
+  undefined-variable diagnostics remain observable in source order.
 - Print statements use the same generated boxed output path as echo.
 - Parenthesized expressions for grouping supported scalar expressions,
   including nested grouping.
@@ -85,7 +85,8 @@ supports in generated native binaries.
   `is_double()`, `is_string()`, and `is_scalar()`.
 - `function_exists()` over the currently registered internal-function names.
 - `defined()` over the current constant registry, including the currently
-  modeled PHP constant `E_ERROR`. Other ordinary names report as undefined.
+  modeled PHP constants `E_ERROR` and `PHP_EOL`. Other ordinary names report as
+  undefined.
 - A minimal `phpc` runner for supported PHPT rows. It compiles scripts or `-r`
   snippets to temporary native binaries through the normal compiler pipeline.
 - Braced `if`, `elseif`, and `else` statements whose conditions and bodies use
@@ -137,7 +138,7 @@ supports in generated native binaries.
 - Internal functions outside the registered scalar subset.
 - User-defined functions in `function_exists()`.
 - User-defined constants and built-in PHP/extension constants other than the
-  currently modeled `E_ERROR` in `defined()`.
+  currently modeled `E_ERROR` and `PHP_EOL` in `defined()`.
 - Type predicate coverage for arrays, objects, resources, and references.
 - Arrays, objects, resources, recursive structures, references, and
   `var_dump()` reference identity output.
@@ -158,7 +159,7 @@ supports in generated native binaries.
   parity for bitwise integer-conversion diagnostics, including shift
   diagnostics.
 - Compound assignment operators other than `+=`, `-=`, `*=`, `/=`, `%=`, `.=`,
-  `&=`, `|=`, and `^=`: `**=`, `<<=`, `>>=`, and `??=`.
+  `&=`, `|=`, `^=`, `<<=`, and `>>=`: `**=` and `??=`.
 - Array, object, string-offset, property, static-property, variable-variable,
   reference, and other non-direct-variable compound-assignment lvalues.
 - Reference semantics for compound assignment, including reference identity,

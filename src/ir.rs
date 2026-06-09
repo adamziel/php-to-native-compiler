@@ -261,6 +261,12 @@ fn lower_assignment_value(name: &str, op: AssignmentOp, value: &Expr) -> ValueEx
         AssignmentOp::BitwiseXorAssign => {
             lower_compound_assignment(name, BinaryOp::BitwiseXor, right)
         }
+        AssignmentOp::ShiftLeftAssign => {
+            lower_compound_assignment(name, BinaryOp::ShiftLeft, right)
+        }
+        AssignmentOp::ShiftRightAssign => {
+            lower_compound_assignment(name, BinaryOp::ShiftRight, right)
+        }
     }
 }
 

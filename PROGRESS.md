@@ -617,3 +617,23 @@ Still unsupported after this base-conversion slice: arrays, objects, resources,
 references, copy-on-write behavior, exact unsupported-type diagnostics, embedded
 NUL strings, and complete PHP precision/range parity for very large
 base-conversion inputs.
+
+Added direct scalar compound shift assignment:
+
+- Lexer/parser/AST/IR support for direct named-variable `<<=` and `>>=`
+  compound assignment, lowering through the existing direct load, boxed shift
+  helper, and direct store path used by other compound operators.
+- Fully qualified bare constant reads such as `\PHP_EOL` now parse through the
+  constant-read expression path, and the modeled constant registry includes
+  `PHP_EOL` alongside `E_ERROR`.
+- Native tests prove compound shift assignment over scalar float literals and
+  `\PHP_EOL` output through generated native binaries.
+- Focused public PHPT telemetry through `phpc` passes
+  `Zend/tests/type_coercion/float_to_int/no_warnings_compatible_float_literals_assignment_ops.phpt`.
+
+Still unsupported after this compound-shift slice: `**=` and `??=`, array/
+object/string-offset/property/static-property/variable-variable compound
+assignment lvalues, references and copy-on-write behavior, PHP-exact
+diagnostic formatting for shift/bitwise conversions, user-defined constants,
+and built-in or extension constants beyond the currently modeled `E_ERROR` and
+`PHP_EOL`.

@@ -38,11 +38,11 @@ Current runtime/compiler slices:
   data; other supported scalar operands convert through the current numeric
   path before integer bitwise operations. Shift operands always use the current
   bitwise integer-conversion path.
-- Direct named-variable `+=`, `-=`, `*=`, `/=`, `%=`, `.=`, `&=`, `^=`, and `|=`
-  lower in IR as a direct variable load, the same boxed binary helper used by
-  the ordinary binary operator, and a direct variable store. This keeps
-  left-to-right reads and undefined-variable diagnostics on the runtime read
-  boundary rather than adding a separate compound-assignment runtime path.
+- Direct named-variable `+=`, `-=`, `*=`, `/=`, `%=`, `.=`, `&=`, `^=`, `|=`,
+  `<<=`, and `>>=` lower in IR as a direct variable load, the same boxed binary
+  helper used by the ordinary binary operator, and a direct variable store. This
+  keeps left-to-right reads and undefined-variable diagnostics on the runtime
+  read boundary rather than adding a separate compound-assignment runtime path.
 - Statement-form `print expr;` lowers to the same boxed output IR instruction
   used by echo, so generated native code routes print output through the
   existing `ptn_echo` helper.
@@ -51,9 +51,9 @@ Current runtime/compiler slices:
   `(bool)` casts lower to IR value-expression operation nodes. The C backend
   emits boxed runtime helper calls such as `ptn_positive`, `ptn_negate`,
   `ptn_not`, `ptn_bitwise_not`, and `ptn_cast_*`.
-- Increment/decrement tokens are rejected while PHP assignment-style
-  pre/post-increment semantics are unsupported, so spellings such as `--$value`
-  cannot be mistaken for two unary negations.
+- Increment/decrement expression contexts are rejected while full PHP
+  pre/post-increment value semantics are unsupported, so statement-form direct
+  variable support is not confused with expression result behavior.
 - Scalar comparison and boolean expressions share the same AST/IR binary node
   shape. Comparisons emit boxed booleans through runtime helpers, while `&&`
   and `||` emit native C branches that short-circuit over boxed PHP truthiness.
@@ -78,8 +78,8 @@ Current runtime/compiler slices:
   current boxed scalar/null value domain;
   `function_exists` shares the registry lookup path; and `defined` checks the
   current constant-registry boundary, which includes the modeled PHP `E_ERROR`
-  constant. Fixed-arity internal functions record min/max arity metadata while
-  `var_dump` remains variadic.
+  and `PHP_EOL` constants. Fixed-arity internal functions record min/max arity
+  metadata while `var_dump` remains variadic.
 - Braced `if`, `elseif`, and `else` statements lower to structured IR branch
   instructions. Conditions remain boxed value expressions, and the C backend
   emits native branches that call the shared scalar truthiness helper.
@@ -117,7 +117,7 @@ Near-term architecture targets:
   conversions and shifts.
 - Array, object, and reference lvalues for compound assignment, plus
   unsupported compound operators beyond `+=`, `-=`, `*=`, `/=`, `%=`, `.=`,
-  `&=`, `|=`, and `^=`: `**=`, `<<=`, `>>=`, `??=`.
+  `&=`, `|=`, `^=`, `<<=`, and `>>=`: `**=` and `??=`.
 - Complete comparison parity for arrays, objects, references, chained
   comparison parse errors, spaceship operator, keyword boolean operators, and
   unsupported scalar edge cases.
@@ -126,8 +126,8 @@ Near-term architecture targets:
   PHP-exact `var_dump` precision/formatting plus `strlen`/`bin2hex`
   byte-string behavior plus base-conversion precision/range parity.
 - User-defined functions, classes/methods, constants beyond the currently
-  modeled `E_ERROR`, namespaced symbols, autoloading, and disabled-functions
-  behavior in symbol-existence predicates.
+  modeled `E_ERROR` and `PHP_EOL`, namespaced symbols, autoloading, and
+  disabled-functions behavior in symbol-existence predicates.
 - Broader control flow: unbraced and alternate syntax, `foreach`,
   explicit-level `break`, `continue`, for-loop comma expressions and
   non-direct-variable clause lvalues, and exception/finally edges.

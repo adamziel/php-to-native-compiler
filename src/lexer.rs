@@ -33,9 +33,11 @@ pub enum TokenKind {
     Less,
     LessEqual,
     ShiftLeft,
+    ShiftLeftEqual,
     Greater,
     GreaterEqual,
     ShiftRight,
+    ShiftRightEqual,
     AndAnd,
     OrOr,
     AmpersandEqual,
@@ -59,6 +61,7 @@ pub enum TokenKind {
     Caret,
     Tilde,
     Bang,
+    Backslash,
     Dot,
     Comma,
     Colon,
@@ -150,9 +153,15 @@ impl<'a> Lexer<'a> {
                     self.push_fixed(TokenKind::NotEqualEqual, 3)
                 }
                 '!' if self.rest().starts_with("!=") => self.push_fixed(TokenKind::NotEqual, 2),
+                '<' if self.rest().starts_with("<<=") => {
+                    self.push_fixed(TokenKind::ShiftLeftEqual, 3)
+                }
                 '<' if self.rest().starts_with("<=") => self.push_fixed(TokenKind::LessEqual, 2),
                 '<' if self.rest().starts_with("<<") => self.push_fixed(TokenKind::ShiftLeft, 2),
                 '<' => self.push_fixed(TokenKind::Less, 1),
+                '>' if self.rest().starts_with(">>=") => {
+                    self.push_fixed(TokenKind::ShiftRightEqual, 3)
+                }
                 '>' if self.rest().starts_with(">=") => self.push_fixed(TokenKind::GreaterEqual, 2),
                 '>' if self.rest().starts_with(">>") => self.push_fixed(TokenKind::ShiftRight, 2),
                 '>' => self.push_fixed(TokenKind::Greater, 1),
@@ -182,6 +191,7 @@ impl<'a> Lexer<'a> {
                 '%' if self.rest().starts_with("%=") => self.push_fixed(TokenKind::PercentEqual, 2),
                 '%' => self.push_fixed(TokenKind::Percent, 1),
                 '!' => self.push_fixed(TokenKind::Bang, 1),
+                '\\' => self.push_fixed(TokenKind::Backslash, 1),
                 '.' if self.rest().starts_with(".=") => self.push_fixed(TokenKind::DotEqual, 2),
                 '.' => self.push_fixed(TokenKind::Dot, 1),
                 '(' => self.push_fixed(TokenKind::LeftParen, 1),

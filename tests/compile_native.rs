@@ -87,10 +87,10 @@ fn parser_accepts_print_as_statement() {
 #[test]
 fn parser_accepts_direct_variable_compound_assignments() {
     let program = parser::parse(
-        "<?php $value = 1; $value += 2; $value -= 3; $value *= 4; $value /= 5; $value %= 6; $value .= \"7\"; $value &= \"8\"; $value |= \"9\"; $value ^= \"10\";",
+        "<?php $value = 1; $value += 2; $value -= 3; $value *= 4; $value /= 5; $value %= 6; $value .= \"7\"; $value &= \"8\"; $value |= \"9\"; $value ^= \"10\"; $value <<= 11; $value >>= 12;",
     )
     .unwrap();
-    assert_eq!(program.statements.len(), 10);
+    assert_eq!(program.statements.len(), 12);
 
     let Statement::Assign { op, .. } = &program.statements[1] else {
         panic!("expected add assignment statement");
@@ -136,6 +136,16 @@ fn parser_accepts_direct_variable_compound_assignments() {
         panic!("expected bitwise xor assignment statement");
     };
     assert_eq!(*op, AssignmentOp::BitwiseXorAssign);
+
+    let Statement::Assign { op, .. } = &program.statements[10] else {
+        panic!("expected shift left assignment statement");
+    };
+    assert_eq!(*op, AssignmentOp::ShiftLeftAssign);
+
+    let Statement::Assign { op, .. } = &program.statements[11] else {
+        panic!("expected shift right assignment statement");
+    };
+    assert_eq!(*op, AssignmentOp::ShiftRightAssign);
 }
 
 #[test]
@@ -549,7 +559,7 @@ fn parser_accepts_unary_bitwise_not_expressions() {
 #[test]
 fn parser_accepts_shift_expressions_and_bare_constants() {
     let program = parser::parse(
-        "<?php error_reporting(E_ERROR); var_dump(\"34\" << \"1\", \"56\" >> \"2\");",
+        "<?php error_reporting(\\E_ERROR); var_dump(\"34\" << \"1\", \"56\" >> \"2\", \\PHP_EOL);",
     )
     .unwrap();
 
@@ -581,6 +591,10 @@ fn parser_accepts_shift_expressions_and_bare_constants() {
             op: BinaryOp::ShiftRight,
             ..
         }
+    ));
+    assert!(matches!(
+        &arguments[2],
+        Expr::Constant(constant, _) if constant == "PHP_EOL"
     ));
 }
 
@@ -1227,6 +1241,29 @@ fn compile_scalar_shift_strings_and_constants_to_native_binary() {
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "int(12)\nint(68)\nint(224)\nint(12)\nint(17)\nint(14)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_scalar_shift_compound_assignments_to_native_binary() {
+    let root = temp_dir("ptn-native-shift-compound-assignment");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("shift-compound.php");
+    let output = root.join("shift-compound-bin");
+    fs::write(
+        &input,
+        "<?php echo 'Bitwise ops:' . \\PHP_EOL; $var = 3; $var |= 1.0; var_dump($var); $var = 3; $var &= 1.0; var_dump($var); $var = 3; $var ^= 1.0; var_dump($var); $var = 3; $var <<= 1.0; var_dump($var); $var = 3; $var >>= 1.0; var_dump($var); echo 'Modulo:' . \\PHP_EOL; $var = 9; $var %= 2.0; var_dump($var);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Bitwise ops:\nint(3)\nint(1)\nint(2)\nint(6)\nint(1)\nModulo:\nint(1)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
