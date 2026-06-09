@@ -5320,6 +5320,227 @@ fn parser_rejects_temporary_array_cursor_mutation_calls() {
 }
 
 #[test]
+fn compile_array_copy_on_write_detaches_shared_payloads_to_native_binary() {
+    let root = temp_dir("ptn-native-array-cow-detach");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-cow-detach.php");
+    let output = root.join("array-cow-detach-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$original = [\"a\" => \"A\", \"b\" => \"B\", 2 => \"two\"];\n\
+$copy = $original;\n\
+$copy[\"a\"] = \"changed\";\n\
+$copy[] = \"appended\";\n\
+unset($copy[\"b\"]);\n\
+$copy[2] = \"replaced\";\n\
+var_dump($original);\n\
+var_dump($copy);\n\
+function mutate_array($arr) {\n\
+    $arr[\"fn\"] = \"changed\";\n\
+    $arr[] = \"tail\";\n\
+    unset($arr[\"drop\"]);\n\
+    return $arr;\n\
+}\n\
+$base = [\"fn\" => \"base\", \"drop\" => \"gone\"];\n\
+$result = mutate_array($base);\n\
+var_dump($base);\n\
+var_dump($result);\n\
+function identity_array($arr) { return $arr; }\n\
+$returned = identity_array($base);\n\
+$returned[\"fn\"] = \"return\";\n\
+var_dump($base);\n\
+var_dump($returned);\n\
+$nested_source = [[\"x\" => 1], [\"x\" => 2]];\n\
+foreach ($nested_source as $sub) {\n\
+    $sub[\"x\"] = 99;\n\
+    $sub[] = \"local\";\n\
+}\n\
+var_dump($nested_source);",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(3) {\n",
+            "  [\"a\"]=>\n",
+            "  string(1) \"A\"\n",
+            "  [\"b\"]=>\n",
+            "  string(1) \"B\"\n",
+            "  [2]=>\n",
+            "  string(3) \"two\"\n",
+            "}\n",
+            "array(3) {\n",
+            "  [\"a\"]=>\n",
+            "  string(7) \"changed\"\n",
+            "  [2]=>\n",
+            "  string(8) \"replaced\"\n",
+            "  [3]=>\n",
+            "  string(8) \"appended\"\n",
+            "}\n",
+            "array(2) {\n",
+            "  [\"fn\"]=>\n",
+            "  string(4) \"base\"\n",
+            "  [\"drop\"]=>\n",
+            "  string(4) \"gone\"\n",
+            "}\n",
+            "array(2) {\n",
+            "  [\"fn\"]=>\n",
+            "  string(7) \"changed\"\n",
+            "  [0]=>\n",
+            "  string(4) \"tail\"\n",
+            "}\n",
+            "array(2) {\n",
+            "  [\"fn\"]=>\n",
+            "  string(4) \"base\"\n",
+            "  [\"drop\"]=>\n",
+            "  string(4) \"gone\"\n",
+            "}\n",
+            "array(2) {\n",
+            "  [\"fn\"]=>\n",
+            "  string(6) \"return\"\n",
+            "  [\"drop\"]=>\n",
+            "  string(4) \"gone\"\n",
+            "}\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  array(1) {\n",
+            "    [\"x\"]=>\n",
+            "    int(1)\n",
+            "  }\n",
+            "  [1]=>\n",
+            "  array(1) {\n",
+            "    [\"x\"]=>\n",
+            "    int(2)\n",
+            "  }\n",
+            "}\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("size_t refcount;"));
+    assert!(c_source.contains("ptn_array_retain(value.as.array);"));
+    assert!(c_source.contains("if (array->refcount > 1)"));
+    assert!(c_source.contains("ptn_array_detach_value(&runtime->symbols.items[index].value);"));
+    assert!(c_source.contains("ptn_runtime_array_detach_variable"));
+}
+
+#[test]
+fn compile_array_copy_on_write_detaches_cursor_mutating_internals_to_native_binary() {
+    let root = temp_dir("ptn-native-array-cow-cursor-internals");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-cow-cursor-internals.php");
+    let output = root.join("array-cow-cursor-internals-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$cursor = [\"a\" => \"A\", \"b\" => \"B\", \"c\" => \"C\"];\n\
+$cursor_copy = $cursor;\n\
+var_dump(next($cursor_copy));\n\
+var_dump(key($cursor_copy));\n\
+var_dump(current($cursor));\n\
+var_dump(key($cursor));\n\
+var_dump(reset($cursor_copy));\n\
+var_dump(key($cursor_copy));\n\
+var_dump(key($cursor));\n\
+$end_copy = $cursor;\n\
+var_dump(end($end_copy));\n\
+var_dump(key($end_copy));\n\
+var_dump(key($cursor));\n\
+var_dump(prev($end_copy));\n\
+var_dump(key($end_copy));\n\
+var_dump(key($cursor));\n\
+$numbers = [1, 2, 3];\n\
+$numbers_copy = $numbers;\n\
+var_dump(array_pop($numbers_copy));\n\
+var_dump(array_push($numbers_copy, 4));\n\
+var_dump(array_shift($numbers_copy));\n\
+var_dump($numbers);\n\
+var_dump($numbers_copy);\n\
+function local_shift($arr) {\n\
+    var_dump(array_shift($arr));\n\
+    return $arr;\n\
+}\n\
+$base = [10, 20, 30];\n\
+$shifted = local_shift($base);\n\
+var_dump($base);\n\
+var_dump($shifted);",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(1) \"B\"\n",
+            "string(1) \"b\"\n",
+            "string(1) \"A\"\n",
+            "string(1) \"a\"\n",
+            "string(1) \"A\"\n",
+            "string(1) \"a\"\n",
+            "string(1) \"a\"\n",
+            "string(1) \"C\"\n",
+            "string(1) \"c\"\n",
+            "string(1) \"a\"\n",
+            "string(1) \"B\"\n",
+            "string(1) \"b\"\n",
+            "string(1) \"a\"\n",
+            "int(3)\n",
+            "int(3)\n",
+            "int(1)\n",
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  int(1)\n",
+            "  [1]=>\n",
+            "  int(2)\n",
+            "  [2]=>\n",
+            "  int(3)\n",
+            "}\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  int(2)\n",
+            "  [1]=>\n",
+            "  int(4)\n",
+            "}\n",
+            "int(10)\n",
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  int(10)\n",
+            "  [1]=>\n",
+            "  int(20)\n",
+            "  [2]=>\n",
+            "  int(30)\n",
+            "}\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  int(20)\n",
+            "  [1]=>\n",
+            "  int(30)\n",
+            "}\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_array_next_variable"));
+    assert!(c_source.contains("ptn_runtime_array_end_variable"));
+    assert!(c_source.contains("ptn_runtime_array_prev_variable"));
+    assert!(c_source.contains("ptn_runtime_array_reset_variable"));
+    assert!(c_source.contains("ptn_runtime_array_pop_variable"));
+    assert!(c_source.contains("ptn_runtime_array_push_variable"));
+    assert!(c_source.contains("ptn_runtime_array_shift_variable"));
+}
+
+#[test]
 fn compile_large_ordered_array_lookup_to_native_binary() {
     let root = temp_dir("ptn-native-large-array-lookup");
     fs::create_dir_all(&root).unwrap();

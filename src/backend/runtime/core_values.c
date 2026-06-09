@@ -97,6 +97,7 @@ typedef struct {
 } PtnArrayIterator;
 
 struct PtnArray {
+    size_t refcount;
     size_t len;
     size_t capacity;
     PtnArrayEntry *entries;

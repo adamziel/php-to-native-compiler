@@ -2380,6 +2380,10 @@ impl ValueEmitter {
             return result_temp;
         }
 
+        if let Some(result_temp) = self.emit_variable_array_mutator_call(out, name, arguments) {
+            return result_temp;
+        }
+
         let result_temp = self.next_temp();
         let direct_user_c_name = self.direct_user_function_c_name(name);
         if arguments.is_empty() {
@@ -2431,6 +2435,101 @@ impl ValueEmitter {
             emit_value_cleanup(out, "    ", &temp);
         }
         result_temp
+    }
+
+    fn emit_variable_array_mutator_call(
+        &mut self,
+        out: &mut String,
+        name: &str,
+        arguments: &[ValueExpr],
+    ) -> Option<String> {
+        let ValueExpr::Load {
+            name: variable_name,
+            ..
+        } = arguments.first()?
+        else {
+            return None;
+        };
+
+        let helper = if arguments.len() == 1 {
+            if name.eq_ignore_ascii_case("array_pop") {
+                Some("ptn_runtime_array_pop_variable")
+            } else if name.eq_ignore_ascii_case("array_shift") {
+                Some("ptn_runtime_array_shift_variable")
+            } else if name.eq_ignore_ascii_case("next") {
+                Some("ptn_runtime_array_next_variable")
+            } else if name.eq_ignore_ascii_case("end") {
+                Some("ptn_runtime_array_end_variable")
+            } else if name.eq_ignore_ascii_case("prev") {
+                Some("ptn_runtime_array_prev_variable")
+            } else if name.eq_ignore_ascii_case("reset") {
+                Some("ptn_runtime_array_reset_variable")
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        if let Some(helper) = helper {
+            let array_temp = self.emit_materialized_value(out, &arguments[0]);
+            let result_temp = self.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ");
+            out.push_str(helper);
+            out.push_str("(&runtime, \"");
+            out.push_str(&c_string(variable_name));
+            out.push_str("\", ");
+            out.push_str(&array_temp);
+            out.push_str(");\n");
+            emit_value_cleanup(out, "    ", &array_temp);
+            return Some(result_temp);
+        }
+
+        if !name.eq_ignore_ascii_case("array_push") {
+            return None;
+        }
+
+        let array_temp = self.emit_materialized_value(out, &arguments[0]);
+        let mut value_temps = Vec::with_capacity(arguments.len().saturating_sub(1));
+        for argument in &arguments[1..] {
+            value_temps.push(self.emit_materialized_value(out, argument));
+        }
+
+        let values_temp = if value_temps.is_empty() {
+            None
+        } else {
+            let values_temp = self.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&values_temp);
+            out.push_str("[] = { ");
+            out.push_str(&value_temps.join(", "));
+            out.push_str(" };\n");
+            Some(values_temp)
+        };
+
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_runtime_array_push_variable(&runtime, \"");
+        out.push_str(&c_string(variable_name));
+        out.push_str("\", ");
+        out.push_str(&array_temp);
+        out.push_str(", ");
+        out.push_str(&value_temps.len().to_string());
+        out.push_str(", ");
+        if let Some(values_temp) = &values_temp {
+            out.push_str(values_temp);
+        } else {
+            out.push_str("NULL");
+        }
+        out.push_str(");\n");
+        for temp in value_temps {
+            emit_value_cleanup(out, "    ", &temp);
+        }
+        emit_value_cleanup(out, "    ", &array_temp);
+        Some(result_temp)
     }
 
     fn emit_method_call(
