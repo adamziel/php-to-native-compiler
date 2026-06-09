@@ -4,8 +4,8 @@ use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use ptn::ast::{
-    AssignmentOp, BinaryOp, CastKind, Expr, IncDecOp, MagicConstantKind, Statement, StringPart,
-    TypeHint, UnaryOp, UnsetTarget,
+    ArrayElementValue, AssignmentOp, BinaryOp, CastKind, Expr, IncDecOp, MagicConstantKind,
+    ReferenceTarget, Statement, StringPart, TypeHint, UnaryOp, UnsetTarget,
 };
 use ptn::lexer::{self, TokenKind};
 use ptn::{compile_file, parser, CompileOptions, DiagnosticKind};
@@ -561,6 +561,19 @@ fn parser_accepts_shebang_comments_and_trailing_close_tag() {
 }
 
 #[test]
+fn parser_accepts_leading_whitespace_before_open_tag() {
+    let program = parser::parse("\n\t <?php print \"ok\";").unwrap();
+    assert_eq!(program.statements.len(), 1);
+    assert!(matches!(
+        &program.statements[0],
+        Statement::Print {
+            expression: Expr::String(value, _),
+            ..
+        } if value == "ok"
+    ));
+}
+
+#[test]
 fn parser_rejects_inline_html_before_open_tag() {
     let error = parser::parse("# not a shebang\n<?php print \"ok\";").unwrap_err();
     assert!(error.message.contains("expected <?php open tag"));
@@ -1074,8 +1087,32 @@ fn parser_accepts_array_literals_and_spaceship_expressions() {
     assert_eq!(elements.len(), 3);
     assert!(elements[0].key.is_none());
     assert!(elements[1].key.is_some());
-    assert!(matches!(&elements[2].value, Expr::Array { .. }));
+    assert!(matches!(
+        &elements[2].value,
+        ArrayElementValue::Expr(Expr::Array { .. })
+    ));
     assert!(matches!(right.as_ref(), Expr::Array { elements, .. } if elements.is_empty()));
+}
+
+#[test]
+fn parser_accepts_reference_values_in_array_literals() {
+    let program = parser::parse("<?php $refs = [&$a, \"b\" => &$b];").unwrap();
+    let Statement::Assign { name, value, .. } = &program.statements[0] else {
+        panic!("expected assignment");
+    };
+    assert_eq!(name, "refs");
+    let Expr::Array { elements, .. } = value else {
+        panic!("expected array literal");
+    };
+    assert_eq!(elements.len(), 2);
+    assert!(matches!(
+        &elements[0].value,
+        ArrayElementValue::Reference(ReferenceTarget::Variable { name, .. }) if name == "a"
+    ));
+    assert!(matches!(
+        &elements[1].value,
+        ArrayElementValue::Reference(ReferenceTarget::Variable { name, .. }) if name == "b"
+    ));
 }
 
 #[test]
@@ -5175,6 +5212,35 @@ fn compile_foreach_break_and_continue_to_native_binary() {
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "13\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_reference_array_literal_foreach_by_ref_to_native_binary() {
+    let root = temp_dir("ptn-native-reference-array-literal-foreach");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reference-array-literal-foreach.php");
+    let output = root.join("reference-array-literal-foreach-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$a = \"a\";\n\
+$b = \"b\";\n\
+foreach ([&$a, &$b] as &$value) {\n\
+    $value .= \"-foo\";\n\
+}\n\
+var_dump($a, $b);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(5) \"a-foo\"\nstring(5) \"b-foo\"\n"
+    );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 

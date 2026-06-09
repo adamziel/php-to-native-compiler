@@ -159,6 +159,10 @@ impl<'a> Lexer<'a> {
                     self.push_open_tag();
                     continue;
                 }
+                if ch.is_whitespace() {
+                    self.bump_char();
+                    continue;
+                }
 
                 return Err(Diagnostic::new(
                     "expected <?php open tag",

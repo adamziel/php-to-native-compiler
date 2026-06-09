@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-09T23:08Z
-Measured base: `ptn-4yt.5` rebased after `9d5c6070073e` (`ptn-cqu.26`)
+Refresh: 2026-06-09T23:18Z
+Measured base: `ptn-4yt.7` rebased after `ptn-4yt.5`
 
 ## Test Dashboard
 
@@ -23,19 +23,18 @@ Measured base: `ptn-4yt.5` rebased after `9d5c6070073e` (`ptn-cqu.26`)
 | Post-merge COW gate | 14 | 14 | 0 |
 | COW/reference-focused native tests | 11 | 11 | 0 |
 | Mutating-internal COW matrix | 14 | 14 | 0 |
-| PHPT COW manifest | 29 | 10 | 19 |
-| Focused PHPT foreach COW row | 1 | 1 | 0 |
+| PHPT COW manifest | 29 | 13 | 16 |
+| Focused PHPT foreach COW rows | 4 | 3 | 1 |
 
 ## COW PHPT Buckets
 
 `tools/phpt-cow-manifest.txt` still has 29 rows. Before evidence
-2026-06-09T20:32Z: 9 passing, 20 failing. Refresh at 2026-06-09T23:08Z on
-`ptn-4yt.5`: 10 passing, 19 failing. Bucket pass counts:
-assignment-aliasing 4/4, string-offsets 2/4, array-writes-appends-unset 3/4,
-nested-arrays 0/4, foreach-mutation 1/4, function-boundaries 0/4,
-reference-interaction 0/5. The full bounded runner still stops at
-`Zend/tests/bug38469.phpt`; the remaining rows were rerun bucket-wise and that
-row is counted failing. Blocker beads are linked in
+2026-06-09T20:32Z: 9 passing, 20 failing. `ptn-4yt.5` moved it to 10/29;
+this branch moves it to 13/29, counting `Zend/tests/bug38469.phpt` as a known
+diff-memory fail. The 28-row rerun excluding that row was 13 passing and 15
+failing. Bucket pass counts: assignment-aliasing 4/4, string-offsets 2/4,
+array-writes-appends-unset 3/4, nested-arrays 0/4, foreach-mutation 3/4,
+function-boundaries 0/4, reference-interaction 1/5. Blocker beads are linked in
 `docs/COW_PHPT_BLOCKERS_2026-06-09.md`. Native COW reducers are 28/28,
 by-reference foreach oracle is 11/11, mutating-internal matrix is 14/14 plus
 six unsupported target diagnostics, and the post-merge COW gate is 14/14.
@@ -49,13 +48,15 @@ references, by-reference parameters and `foreach`, array dimensions,
 temporaries, recursive/user functions, magic constants, `func_*`, `print_r`,
 binary strings, string offsets, corpus-style scalar offset diagnostics,
 `count()`, `??`, COW gates/oracles, assignment expressions,
-expression-level `@` suppression,
+expression-level `@` suppression, whitespace-only prelude before `<?php`,
+reference-valued array literals,
 `file_put_contents()`, `sha1_file()`, and `unlink()` byte-file slices.
 
 ## Still Needed
 
-More PHPT COW rows, reference-aware internals, by-reference returns, nested
-reference lvalues, recursive reference diagnostics, dynamic calls, and
+More PHPT COW rows, reference-aware internals, closures/callbacks, globals,
+by-reference returns, nested reference lvalues, recursive reference diagnostics,
+dynamic calls, and
 assignment-form `??=`. File API coverage remains intentionally narrow.
 
 ## Next Focus

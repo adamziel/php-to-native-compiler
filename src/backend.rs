@@ -6,9 +6,9 @@ use std::process::Command;
 
 use crate::diagnostic::{Diagnostic, Result};
 use crate::ir::{
-    ArrayElement as IrArrayElement, BinaryOp, CastKind, CatchClause as IrCatchClause, FunctionDecl,
-    IncDecOp, Instruction, MagicConstantKind, Module, ReferenceTarget, TypeHint, UnaryOp,
-    ValueExpr,
+    ArrayElement as IrArrayElement, ArrayElementValue as IrArrayElementValue, BinaryOp, CastKind,
+    CatchClause as IrCatchClause, FunctionDecl, IncDecOp, Instruction, MagicConstantKind, Module,
+    ReferenceTarget, TypeHint, UnaryOp, ValueExpr,
 };
 
 mod runtime;
@@ -1316,7 +1316,12 @@ fn collect_value_runtime_requirements(
                 if let Some(key) = &element.key {
                     collect_value_runtime_requirements(key, functions, requirements);
                 }
-                collect_value_runtime_requirements(&element.value, functions, requirements);
+                match &element.value {
+                    IrArrayElementValue::Value(value) => {
+                        collect_value_runtime_requirements(value, functions, requirements);
+                    }
+                    IrArrayElementValue::Reference(_) => {}
+                }
             }
         }
         ValueExpr::ArrayAccess { array, index, .. } => {
@@ -2467,7 +2472,10 @@ impl ValueEmitter {
             } else {
                 ("0", "ptn_null()".to_string())
             };
-            let value_temp = self.emit_materialized_value(out, &element.value);
+            let value_temp = match &element.value {
+                IrArrayElementValue::Value(value) => self.emit_materialized_value(out, value),
+                IrArrayElementValue::Reference(target) => self.emit_reference_target(out, target),
+            };
             entry_temps.push(value_temp.clone());
             entries.push(format!("{{ {has_key}, {key_temp}, {value_temp} }}"));
         }

@@ -5,7 +5,7 @@ supports in generated native binaries.
 
 ## Supported
 
-- `<?php` open tag.
+- `<?php` open tag, including whitespace-only prelude before the first tag.
 - A Unix shebang at byte 0 before `<?php`.
 - PHP `//`, `#`, and `/* ... */` comments inside PHP code. One-line
   comments end at a newline or at a trailing `?>` close tag.
@@ -83,7 +83,9 @@ supports in generated native binaries.
 - Short array literals `[...]` and long-form `array(...)` literals with
   optional scalar keys, automatic integer keys, integer-string key
   canonicalization, insertion order, and duplicate-key replacement in the
-  current literal-array value subset.
+  current literal-array value subset. Literal values may also be references to
+  direct variables or modeled array elements, preserving the reference cell in
+  the new array.
 - Array read expressions such as `$array[$key]`, including nested reads and
   reads from literal or grouped array expressions. Reads use the current
   ordered-array key canonicalization path; undefined keys and non-array
@@ -336,6 +338,11 @@ supports in generated native binaries.
   retains the iterable array payload for the loop snapshot, so appends and
   unsets through the source variable or its aliases detach through ordinary
   array copy-on-write and do not change the active iteration set.
+- `foreach (expr as &$value) statement` and
+  `foreach (expr as $key => &$value) statement` over boxed ordered arrays,
+  including direct variables, modeled array elements, and temporary arrays.
+  By-reference foreach binds the loop variable to source slots, visits live
+  appends, and preserves reference-valued temporary array entries.
 - Braced `switch (expr) { case expr: ... default: ... }` statements over the
   currently supported scalar expression and statement subset. The generated
   native code evaluates the switch expression once, compares case expressions
@@ -389,9 +396,9 @@ supports in generated native binaries.
   beyond the currently modeled level/context fatals and switch-target warning,
   labels/goto inside unsupported functions, classes, and `try`/`finally`
   constructs, and exception/finally control-flow edges.
-- By-reference `foreach`, reference identity and by-reference mutation
-  visibility during `foreach`, object `Traversable`, destructuring foreach
-  targets, and PHP-exact non-array `foreach` diagnostics.
+- Object `Traversable`, destructuring foreach targets, by-reference key
+  bindings, callback/global mutation during internal iteration helpers, and
+  PHP-exact non-array `foreach` diagnostics.
 - PHP-exact `return` value propagation for includes/functions and return
   inside unsupported function/class contexts.
 - Switch alternate syntax and switch behavior for arrays, objects, references,

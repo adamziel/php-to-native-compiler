@@ -1,9 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::ast::{
-    ArrayDimTarget, ArrayElement, AssignmentOp, BinaryOp, CastKind, CatchClause, ConstDeclaration,
-    Expr, FunctionDecl, FunctionParameter, IncDecOp, MagicConstantKind, Program, ReferenceTarget,
-    Statement, StringPart, SwitchCase, TypeHint, UnaryOp, UnsetTarget,
+    ArrayDimTarget, ArrayElement, ArrayElementValue, AssignmentOp, BinaryOp, CastKind, CatchClause,
+    ConstDeclaration, Expr, FunctionDecl, FunctionParameter, IncDecOp, MagicConstantKind, Program,
+    ReferenceTarget, Statement, StringPart, SwitchCase, TypeHint, UnaryOp, UnsetTarget,
 };
 use crate::diagnostic::{Diagnostic, Result, SourceSpan};
 use crate::lexer::{lex, StringPart as TokenStringPart, Token, TokenKind};
@@ -1234,10 +1234,23 @@ impl Parser {
     }
 
     fn parse_array_element(&mut self) -> Result<ArrayElement> {
+        if matches!(self.peek().kind, TokenKind::Ampersand) {
+            self.advance();
+            let target = self.parse_reference_target()?;
+            return Ok(ArrayElement {
+                key: None,
+                value: ArrayElementValue::Reference(target),
+            });
+        }
         let first = self.parse_expr()?;
         if matches!(self.peek().kind, TokenKind::DoubleArrow) {
             self.advance();
-            let value = self.parse_expr()?;
+            let value = if matches!(self.peek().kind, TokenKind::Ampersand) {
+                self.advance();
+                ArrayElementValue::Reference(self.parse_reference_target()?)
+            } else {
+                ArrayElementValue::Expr(self.parse_expr()?)
+            };
             Ok(ArrayElement {
                 key: Some(first),
                 value,
@@ -1245,7 +1258,7 @@ impl Parser {
         } else {
             Ok(ArrayElement {
                 key: None,
-                value: first,
+                value: ArrayElementValue::Expr(first),
             })
         }
     }
@@ -2336,7 +2349,10 @@ fn is_supported_global_const_expr(expr: &Expr) -> bool {
                 .key
                 .as_ref()
                 .is_none_or(is_supported_global_const_expr)
-                && is_supported_global_const_expr(&element.value)
+                && match &element.value {
+                    ArrayElementValue::Expr(value) => is_supported_global_const_expr(value),
+                    ArrayElementValue::Reference(_) => false,
+                }
         }),
         Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::Grouped { expr, .. } => {
             is_supported_global_const_expr(expr)
