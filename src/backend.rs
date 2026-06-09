@@ -154,6 +154,7 @@ impl ValueEmitter {
                 out.push_str(&result_temp);
                 out.push_str(" = ");
                 out.push_str(match op {
+                    UnaryOp::Positive => "ptn_positive",
                     UnaryOp::Negate => "ptn_negate",
                     UnaryOp::Not => "ptn_not",
                 });
@@ -708,6 +709,14 @@ static PTN_UNUSED PtnValue ptn_negate(PtnValue value) {
         return ptn_float(-(double)number.integer);
     }
     return ptn_int(-number.integer);
+}
+
+static PTN_UNUSED PtnValue ptn_positive(PtnValue value) {
+    PtnNumber number = ptn_to_number(value);
+    if (number.type == PTN_NUMBER_FLOAT) {
+        return ptn_float(number.floating);
+    }
+    return ptn_int(number.integer);
 }
 
 static PTN_UNUSED int ptn_is_truthy(PtnValue value) {

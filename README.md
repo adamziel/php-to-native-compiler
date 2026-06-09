@@ -40,8 +40,8 @@ Supported today:
   and `.=`. These lower as a variable read, the matching boxed binary helper,
   then a variable write, preserving the existing undefined-variable diagnostic
   boundary.
-- Parenthesized expressions, unary `-`, unary `!`, and `(int)`, `(float)`,
-  `(string)`, and `(bool)` casts for boxed scalar values. Unary, cast, and
+- Parenthesized expressions, unary `+`, unary `-`, unary `!`, and `(int)`,
+  `(float)`, `(string)`, and `(bool)` casts for boxed scalar values. Unary, cast, and
   binary operations are emitted as runtime helper calls over `PtnValue`
   operands.
 - Boxed scalar comparison and boolean expressions: `==`, `!=`, `<`, `<=`, `>`,

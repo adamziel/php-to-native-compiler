@@ -222,6 +222,16 @@ impl Parser {
 
     fn parse_unary_expr(&mut self) -> Result<Expr> {
         match self.peek().kind {
+            TokenKind::Plus => {
+                let token = self.advance().clone();
+                let expr = self.parse_unary_expr()?;
+                let span = combine_spans(token.span, expr.span());
+                Ok(Expr::Unary {
+                    op: UnaryOp::Positive,
+                    expr: Box::new(expr),
+                    span,
+                })
+            }
             TokenKind::Minus => {
                 let token = self.advance().clone();
                 let expr = self.parse_unary_expr()?;

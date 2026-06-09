@@ -77,6 +77,7 @@ pub enum BinaryOp {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnaryOp {
+    Positive,
     Negate,
     Not,
 }
@@ -213,6 +214,7 @@ fn lower_expr(expr: &Expr) -> ValueExpr {
 
 fn lower_unary_op(op: AstUnaryOp) -> UnaryOp {
     match op {
+        AstUnaryOp::Positive => UnaryOp::Positive,
         AstUnaryOp::Negate => UnaryOp::Negate,
         AstUnaryOp::Not => UnaryOp::Not,
     }

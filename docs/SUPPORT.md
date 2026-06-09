@@ -32,6 +32,7 @@ supports in generated native binaries.
 - Print statements use the same generated boxed output path as echo.
 - Parenthesized expressions for grouping supported scalar expressions,
   including nested grouping.
+- Unary `+` over boxed scalar numeric values.
 - Unary `-` over boxed scalar numeric values.
 - Unary `!` using boxed PHP scalar truthiness: `null`, `false`, numeric zero,
   `0.0`, `""`, and `"0"` are falsey; other supported scalar values are truthy.

@@ -41,10 +41,10 @@ Current runtime/compiler slices:
 - Statement-form `print expr;` lowers to the same boxed output IR instruction
   used by echo, so generated native code routes print output through the
   existing `ptn_echo` helper.
-- Parenthesized expressions are parsed as grouping, while unary `-`, unary `!`,
-  and scalar `(int)`, `(float)`, `(string)`, and `(bool)` casts lower to IR
+- Parenthesized expressions are parsed as grouping, while unary `+`, unary `-`,
+  unary `!`, and scalar `(int)`, `(float)`, `(string)`, and `(bool)` casts lower to IR
   value-expression operation nodes. The C backend emits boxed runtime helper
-  calls such as `ptn_negate`, `ptn_not`, and `ptn_cast_*`.
+  calls such as `ptn_positive`, `ptn_negate`, `ptn_not`, and `ptn_cast_*`.
 - Increment/decrement tokens are rejected while PHP assignment-style
   pre/post-increment semantics are unsupported, so spellings such as `--$value`
   cannot be mistaken for two unary negations.

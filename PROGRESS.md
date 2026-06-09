@@ -294,3 +294,18 @@ Still unsupported for loops and increment/decrement: unbraced and alternate
 syntax, `do while`, `for`, `foreach`, `switch`, `break`, `continue`,
 increment/decrement expression result values, PHP-exact string/boolean edge
 semantics, references, copy-on-write, and exception/finally loop edges.
+
+Added boxed unary plus support:
+
+- Parser/AST/IR support for unary `+` at the same unary precedence level as
+  unary `-` and `!`.
+- Generated C dispatch to a `ptn_positive` runtime helper that uses the shared
+  scalar numeric conversion path and returns a boxed integer or float.
+- Native tests prove grouped unary plus operands and PHP's unary precedence
+  shape for `1/-2*5` and `6/+2*-3`.
+- Focused public PHPT telemetry through `phpc` passes
+  `Zend/tests/grammar/bug41401.phpt`.
+
+Still unsupported for unary numeric conversion: arrays, objects, references,
+copy-on-write, exact unsupported-operand `TypeError` parity, and full
+numeric-string diagnostic parity.

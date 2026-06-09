@@ -233,16 +233,36 @@ fn parser_accepts_internal_call_statements_and_inline_html() {
 #[test]
 fn parser_accepts_parenthesized_unary_and_cast_expressions() {
     let program =
-        parser::parse("<?php echo -(2 + 3), !(\"0\"), (int)\"42\", (string)true;").unwrap();
+        parser::parse("<?php echo +(2 + 3), -(2 + 3), !(\"0\"), (int)\"42\", (string)true;")
+            .unwrap();
     let Statement::Echo { expressions, .. } = &program.statements[0] else {
         panic!("expected echo statement");
     };
 
     let Expr::Unary {
-        op: UnaryOp::Negate,
+        op: UnaryOp::Positive,
         expr,
         ..
     } = &expressions[0]
+    else {
+        panic!("expected unary plus");
+    };
+    let Expr::Grouped { expr, .. } = expr.as_ref() else {
+        panic!("expected grouped unary plus operand");
+    };
+    assert!(matches!(
+        expr.as_ref(),
+        Expr::Binary {
+            op: BinaryOp::Add,
+            ..
+        }
+    ));
+
+    let Expr::Unary {
+        op: UnaryOp::Negate,
+        expr,
+        ..
+    } = &expressions[1]
     else {
         panic!("expected unary negation");
     };
@@ -258,21 +278,21 @@ fn parser_accepts_parenthesized_unary_and_cast_expressions() {
     ));
 
     assert!(matches!(
-        &expressions[1],
+        &expressions[2],
         Expr::Unary {
             op: UnaryOp::Not,
             ..
         }
     ));
     assert!(matches!(
-        &expressions[2],
+        &expressions[3],
         Expr::Cast {
             kind: CastKind::Int,
             ..
         }
     ));
     assert!(matches!(
-        &expressions[3],
+        &expressions[4],
         Expr::Cast {
             kind: CastKind::String,
             ..
@@ -1051,6 +1071,22 @@ fn compile_unary_parenthesized_and_cast_expressions_to_native_binary() {
         String::from_utf8(execution.stdout).unwrap(),
         "-5\n1 \n42.5 1\n"
     );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_unary_plus_precedence_to_native_binary() {
+    let root = temp_dir("ptn-native-unary-plus-precedence");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("unary-plus-precedence.php");
+    let output = root.join("unary-plus-precedence-bin");
+    fs::write(&input, "<?php echo 1/-2*5; echo \"\\n\"; echo 6/+2*-3;").unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "-2.5\n-9");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
