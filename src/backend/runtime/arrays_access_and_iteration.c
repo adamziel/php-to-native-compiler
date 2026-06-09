@@ -551,14 +551,62 @@ static PTN_UNUSED unsigned char ptn_string_offset_assignment_byte(
     return byte;
 }
 
+static PTN_UNUSED char *ptn_string_detach_value_for_write(PtnValue *value, size_t new_len) {
+    if (value == NULL || value->type != PTN_STRING) {
+        return NULL;
+    }
+
+    PtnString string = value->as.string;
+    if (
+        value->owned &&
+        string.owned != NULL &&
+        string.refcount != NULL &&
+        *string.refcount == 1
+    ) {
+        char *buffer = realloc(string.owned, new_len + 1);
+        if (buffer == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        if (new_len > string.len) {
+            memset(buffer + string.len, ' ', new_len - string.len);
+        }
+        buffer[new_len] = '\0';
+        value->as.string.data = (const unsigned char *)buffer;
+        value->as.string.owned = buffer;
+        value->as.string.len = new_len;
+        return buffer;
+    }
+
+    char *buffer = malloc(new_len + 1);
+    if (buffer == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    size_t copy_len = string.len < new_len ? string.len : new_len;
+    if (copy_len != 0) {
+        memcpy(buffer, string.data, copy_len);
+    }
+    if (new_len > copy_len) {
+        memset(buffer + copy_len, ' ', new_len - copy_len);
+    }
+    buffer[new_len] = '\0';
+
+    PtnValue detached = ptn_owned_string_len(buffer, new_len);
+    ptn_value_destroy(value);
+    *value = detached;
+    return value->as.string.owned;
+}
+
 static PTN_UNUSED void ptn_runtime_string_offset_set(
     PtnRuntime *runtime,
-    const char *name,
-    PtnValue container,
+    PtnValue *target,
     PtnValue key_value,
     PtnValue value,
     size_t line
 ) {
+    if (target == NULL || target->type != PTN_STRING) {
+        return;
+    }
+
     int64_t offset = 0;
     if (!ptn_string_offset_from_value(runtime, key_value, line, 0, &offset)) {
         return;
@@ -566,27 +614,16 @@ static PTN_UNUSED void ptn_runtime_string_offset_set(
 
     size_t index = 0;
     size_t new_len = 0;
-    if (!ptn_string_offset_assignment_index(container.as.string.len, offset, line, &index, &new_len)) {
+    if (!ptn_string_offset_assignment_index(target->as.string.len, offset, line, &index, &new_len)) {
         return;
     }
 
     unsigned char byte = ptn_string_offset_assignment_byte(runtime, value, line);
-    char *buffer = malloc(new_len + 1);
+    char *buffer = ptn_string_detach_value_for_write(target, new_len);
     if (buffer == NULL) {
-        ptn_abort_out_of_memory();
-    }
-    if (container.as.string.len != 0) {
-        memcpy(buffer, container.as.string.data, container.as.string.len);
-    }
-    if (new_len > container.as.string.len) {
-        memset(buffer + container.as.string.len, ' ', new_len - container.as.string.len);
+        return;
     }
     buffer[index] = (char)byte;
-    buffer[new_len] = '\0';
-
-    PtnValue updated = ptn_owned_string_len(buffer, new_len);
-    ptn_runtime_write_variable(runtime, name, updated);
-    ptn_value_destroy(&updated);
 }
 
 static PTN_UNUSED PtnLookupResult ptn_offset_lookup(PtnRuntime *runtime, PtnValue container, PtnValue key_value, size_t line, int quiet) {
@@ -859,7 +896,7 @@ static PTN_UNUSED void ptn_runtime_array_path_set_impl(
                 ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
                 return;
             }
-            ptn_runtime_string_offset_set(runtime, name, ptn_value_borrow(*slot_value), segments[0].value, value, line);
+            ptn_runtime_string_offset_set(runtime, slot_value, segments[0].value, value, line);
             return;
         }
     }

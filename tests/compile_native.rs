@@ -5916,6 +5916,84 @@ var_dump($nested_source);",
 }
 
 #[test]
+fn compile_compound_shared_writes_detach_to_native_binary() {
+    let root = temp_dir("ptn-native-compound-shared-write-cow");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("compound-shared-write-cow.php");
+    let output = root.join("compound-shared-write-cow-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function note($id, $ok) {\n\
+    echo $id;\n\
+    if ($ok) {\n\
+        echo \" pass\\n\";\n\
+    } else {\n\
+        echo \" fail\\n\";\n\
+    }\n\
+}\n\
+$original = [\"n\" => 1, \"text\" => \"a\", \"drop\" => \"gone\"];\n\
+$copy = $original;\n\
+$copy[\"n\"] += 4;\n\
+note(1, $original[\"n\"] === 1 && $copy[\"n\"] === 5);\n\
+$copy[\"text\"] .= \"b\";\n\
+note(2, $original[\"text\"] === \"a\" && $copy[\"text\"] === \"ab\");\n\
+$copy[] .= \"tail\";\n\
+note(3, count($original) === 3 && $copy[0] === \"tail\");\n\
+unset($copy[\"drop\"]);\n\
+note(4, array_key_exists(\"drop\", $original) && !array_key_exists(\"drop\", $copy));\n\
+$nested = [[\"x\" => 10, \"s\" => \"q\", \"u\" => 1]];\n\
+$nested_copy = $nested;\n\
+$nested_copy[0][\"x\"] += 5;\n\
+note(5, $nested[0][\"x\"] === 10 && $nested_copy[0][\"x\"] === 15);\n\
+$nested_copy[0][\"s\"] .= \"r\";\n\
+note(6, $nested[0][\"s\"] === \"q\" && $nested_copy[0][\"s\"] === \"qr\");\n\
+$nested_copy[0][] = \"new\";\n\
+note(7, count($nested[0]) === 3 && $nested_copy[0][0] === \"new\");\n\
+unset($nested_copy[0][\"u\"]);\n\
+note(8, array_key_exists(\"u\", $nested[0]) && !array_key_exists(\"u\", $nested_copy[0]));\n\
+$str = \"abcd\";\n\
+$str_copy = $str;\n\
+$str_copy[1] = \"Z\";\n\
+note(9, $str === \"abcd\" && $str_copy === \"aZcd\");\n\
+$cat = \"left\";\n\
+$cat_copy = $cat;\n\
+$cat_copy .= \"-right\";\n\
+note(10, $cat === \"left\" && $cat_copy === \"left-right\");",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "1 pass\n",
+            "2 pass\n",
+            "3 pass\n",
+            "4 pass\n",
+            "5 pass\n",
+            "6 pass\n",
+            "7 pass\n",
+            "8 pass\n",
+            "9 pass\n",
+            "10 pass\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_array_path_read_for_assign_op"));
+    assert!(c_source.contains("ptn_runtime_array_path_set_from_assign_op"));
+    assert!(c_source.contains("ptn_runtime_array_path_unset"));
+    assert!(c_source.contains("ptn_array_detach_value(value);"));
+    assert!(c_source.contains("ptn_array_detach_value(entry_value);"));
+    assert!(c_source.contains("ptn_string_detach_value_for_write"));
+}
+
+#[test]
 fn compile_array_copy_on_write_detaches_cursor_mutating_internals_to_native_binary() {
     let root = temp_dir("ptn-native-array-cow-cursor-internals");
     fs::create_dir_all(&root).unwrap();

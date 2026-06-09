@@ -1,7 +1,7 @@
 # PTN Progress
 
-Last refresh: 2026-06-09T18:15Z
-Measured base: `ptn-cqu.47.7` rebased after `ptn-cqu.47.14`
+Last refresh: 2026-06-09T18:18Z
+Measured base: `ptn-cqu.47.13` rebased after `ptn-cqu.47.7`
 
 ## Test Dashboard
 
@@ -49,9 +49,9 @@ and extra arguments, top-level user functions with scoped magic constants and
 `func_*` introspection, `print_r`, selected binary-string handling, string
 offset read diagnostics, direct-variable string offset writes, catchable
 `count()` non-array diagnostics, expression-form `??` reads, nested array path
-detach for assignment, append, and unset, focused native COW reducers, COW
-oracle coverage, and five explicit unsupported diagnostics for non-variable
-mutating internals.
+detach for assignment, compound assignment, append, and unset, focused native
+COW reducers, COW oracle coverage, and five explicit unsupported diagnostics
+for non-variable mutating internals.
 
 ## Still Needed
 
