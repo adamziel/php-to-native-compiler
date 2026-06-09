@@ -4577,6 +4577,68 @@ echo [1, 2, 3][1], \"\\n\";",
 }
 
 #[test]
+fn compile_numeric_string_array_key_normalization_to_native_binary() {
+    let root = temp_dir("ptn-native-numeric-string-array-key-normalization");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("numeric-string-array-key-normalization.php");
+    let output = root.join("numeric-string-array-key-normalization-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$items = [\n\
+    \"8\" => \"literal-int\",\n\
+    \"08\" => \"literal-leading-zero\",\n\
+    \"+8\" => \"literal-plus\",\n\
+    \"8.0\" => \"literal-float\",\n\
+    \"-8\" => \"literal-negative\",\n\
+    \"-0\" => \"literal-minus-zero\",\n\
+    \"alpha\" => \"literal-alpha\",\n\
+];\n\
+var_dump($items);\n\
+var_dump($items[8]);\n\
+var_dump($items[\"8\"]);\n\
+var_dump($items[\"08\"]);\n\
+var_dump($items[\"+8\"]);\n\
+var_dump($items[\"8.0\"]);\n\
+var_dump($items[-8]);\n\
+var_dump($items[\"-8\"]);\n\
+var_dump($items[\"-0\"]);\n\
+var_dump($items[\"alpha\"]);\n\
+var_dump(array_key_exists(8, $items));\n\
+var_dump(array_key_exists(\"08\", $items));\n\
+var_dump(array_key_exists(-8, $items));\n\
+var_dump(array_key_exists(\"-8\", $items));\n\
+var_dump(isset($items[\"+8\"]), empty($items[\"missing\"]));\n\
+$items[\"9\"] = \"write-nine\";\n\
+var_dump($items[9]);\n\
+$items[9] = \"write-nine-replaced\";\n\
+var_dump($items[\"9\"]);\n\
+$items[\"09\"] = \"write-zero-nine\";\n\
+var_dump($items[9]);\n\
+var_dump($items[\"09\"]);\n\
+$items[\"-9\"] = \"write-negative-nine\";\n\
+var_dump($items[-9]);\n\
+unset($items[\"9\"]);\n\
+var_dump(array_key_exists(9, $items));\n\
+var_dump(array_key_exists(\"09\", $items));\n\
+foreach ($items as $key => $value) {\n\
+    echo gettype($key), \":\", $key, \"=\", $value, \"\\n\";\n\
+}",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(7) {\n  [8]=>\n  string(11) \"literal-int\"\n  [\"08\"]=>\n  string(20) \"literal-leading-zero\"\n  [\"+8\"]=>\n  string(12) \"literal-plus\"\n  [\"8.0\"]=>\n  string(13) \"literal-float\"\n  [-8]=>\n  string(16) \"literal-negative\"\n  [\"-0\"]=>\n  string(18) \"literal-minus-zero\"\n  [\"alpha\"]=>\n  string(13) \"literal-alpha\"\n}\nstring(11) \"literal-int\"\nstring(11) \"literal-int\"\nstring(20) \"literal-leading-zero\"\nstring(12) \"literal-plus\"\nstring(13) \"literal-float\"\nstring(16) \"literal-negative\"\nstring(16) \"literal-negative\"\nstring(18) \"literal-minus-zero\"\nstring(13) \"literal-alpha\"\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nstring(10) \"write-nine\"\nstring(19) \"write-nine-replaced\"\nstring(19) \"write-nine-replaced\"\nstring(15) \"write-zero-nine\"\nstring(19) \"write-negative-nine\"\nbool(false)\nbool(true)\ninteger:8=literal-int\nstring:08=literal-leading-zero\nstring:+8=literal-plus\nstring:8.0=literal-float\ninteger:-8=literal-negative\nstring:-0=literal-minus-zero\nstring:alpha=literal-alpha\nstring:09=write-zero-nine\ninteger:-9=write-negative-nine\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_legacy_array_count_and_abs_to_native_binary() {
     let root = temp_dir("ptn-native-legacy-array-count-abs");
     fs::create_dir_all(&root).unwrap();
