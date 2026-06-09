@@ -1856,6 +1856,45 @@ fn compile_echo_program_to_native_binary() {
 }
 
 #[test]
+fn compile_scalar_echo_keeps_direct_output_path_to_native_binary() {
+    let root = temp_dir("ptn-native-scalar-echo-direct-output");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("scalar-echo.php");
+    let output = root.join("scalar-echo-bin");
+    fs::write(
+        &input,
+        "<?php $word = \"runtime\"; echo \"literal \", $word, \" \", 123, \" \", 1.25, \" \", true, false, null, \"\\n\";",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "literal runtime 123 1.25 1\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    let echo_start = c_source
+        .find("static PTN_UNUSED void ptn_echo(PtnValue value)")
+        .expect("generated runtime should contain ptn_echo");
+    let echo_tail = &c_source[echo_start..];
+    let echo_end = echo_tail
+        .find("\nstatic void ptn_var_dump_indent")
+        .expect("ptn_echo should be followed by var_dump helper");
+    let echo_body = &echo_tail[..echo_end];
+    assert!(!echo_body.contains("ptn_value_to_string"));
+    assert!(echo_body.contains("case PTN_NULL:"));
+    assert!(echo_body.contains("case PTN_BOOL:"));
+    assert!(echo_body.contains("case PTN_INT:"));
+    assert!(echo_body.contains("case PTN_FLOAT:"));
+    assert!(echo_body.contains("case PTN_STRING:"));
+}
+
+#[test]
 fn compile_parenthesized_expression_grouping_to_native_binary() {
     let root = temp_dir("ptn-native-parenthesized-grouping");
     fs::create_dir_all(&root).unwrap();
