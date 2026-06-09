@@ -1,20 +1,21 @@
 # PTN Progress
 
-Last refresh: 2026-06-09T17:54Z
-Measured base: `ptn-cqu.47.11` rebased after `ptn-cqu.47.6`
+Last refresh: 2026-06-09T17:58Z
+Measured base: `ptn-cqu.47.12` rebased after `ptn-cqu.47.11`
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 287 | 287 | 0 |
+| Native compiled PHP snippets | 303 | 303 | 0 |
 | PHPT parsed bounded log | 171 | 121 | 50 |
 | PHPT Zend rows | 76 | 60 | 16 |
 | PHPT ext/standard rows | 77 | 44 | 33 |
 | PHPT tests/basic+func+lang | 18 | 17 | 1 |
 | COW contract spec tests | 5 | 5 | 0 |
-| COW-focused native tests | 5 | 5 | 0 |
+| COW-focused native tests | 6 | 6 | 0 |
+| Focused COW reducer snippets | 16 | 16 | 0 |
 | PHPT COW manifest | 29 | 2 | 27 |
 | Focused PHPT foreach COW row | 1 | 1 | 0 |
 
@@ -25,6 +26,7 @@ assignment-aliasing 0/4, string-offsets 2/4,
 array-writes-appends-unset 0/4, nested-arrays 0/4,
 foreach-mutation 0/4, function-boundaries 0/4,
 reference-interaction 0/5. Focused local foreach by-value PHPT row: 1/1.
+Native COW reducer matrix: 16 pass, 0 fail.
 
 ## Already Ported
 
@@ -35,8 +37,11 @@ payload refcounts with detach-on-write, by-value `foreach` COW snapshots,
 generated C ABI share/drop handling, top-level user functions with scoped magic
 constants and `func_*` introspection, `print_r`, selected binary-string
 handling, string offset read diagnostics, direct-variable string offset writes,
-catchable `count()` non-array diagnostics, expression-form `??` reads, and
-nested array path detach for assignment, append, and unset.
+catchable `count()` non-array diagnostics, expression-form `??` reads, nested
+array path detach for assignment, append, and unset, and focused native COW
+reducers for assignment aliasing, array writes, nested copies, foreach
+by-value mutation, function boundaries, cursor helpers, `array_shift`, string
+offsets, and string compound assignment.
 
 ## Still Needed
 
