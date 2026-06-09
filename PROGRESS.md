@@ -1915,3 +1915,19 @@ Added a repeatable generated-native execution benchmark path:
   Rust compiler build time, integrated `ptn compile` time, standalone generated
   C rebuild time, native runtime samples, and deterministic stdout checks for
   reviewable future speed deltas.
+
+Optimized generated string concatenation runtime behavior:
+
+- The generated C `ptn_concat` helper now uses a borrowed/owned string operand
+  view so already-string operands and static scalar string conversions do not
+  allocate duplicate temporary buffers before the joined result allocation.
+- Non-string numeric conversions still allocate conversion buffers through the
+  existing formatting path, and concat frees only those owned conversion
+  buffers after copying into the final result.
+- Codegen remains unchanged, so binary operands continue to materialize
+  left-to-right before the shared boxed concat helper runs.
+- Native tests prove chained `$x = $x . ...` concatenation and looped `.=` use
+  the same compiled binary path after the runtime optimization.
+- A native benchmark with 6000 chained and compound concat loop iterations
+  produced the same `46890 34890` output and improved from about `real
+  1.35-1.37s` before the change to `real 0.84-0.87s` after the change.
