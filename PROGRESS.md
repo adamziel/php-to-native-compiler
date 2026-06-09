@@ -1,6 +1,6 @@
 # PTN Progress
 
-Last refresh: 2026-06-09T17:52Z
+Last refresh: 2026-06-09T17:55Z
 Commit: pending `ptn-cqu.47.1` rebased after `ptn-cqu.47.11`
 
 ## Test Dashboard
@@ -8,7 +8,7 @@ Commit: pending `ptn-cqu.47.1` rebased after `ptn-cqu.47.11`
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | --- |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 287 | 287 | 0 |
+| Native compiled PHP snippets | 288 | 288 | 0 |
 | PHPT parsed bounded log | 171 | 121 | 50 |
 | PHPT Zend rows | 76 | 60 | 16 |
 | PHPT ext/standard rows | 77 | 44 | 33 |
