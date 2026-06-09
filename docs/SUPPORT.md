@@ -62,6 +62,9 @@ supports in generated native binaries.
   the currently supported scalar expression and statement subset.
 - Braced `while (expr) { statements }` loops where the condition and body use
   the currently supported scalar expression and statement subset.
+- Braced `do { statements } while (expr);` loops where the body and condition
+  use the currently supported scalar expression and statement subset. The body
+  executes once before the first condition check.
 - Statement-form direct variable increment/decrement: `$name++;`, `++$name;`,
   `$name--;`, and `--$name;`.
 
@@ -79,9 +82,9 @@ supports in generated native binaries.
 - Comparison operator `<=>`, keyword boolean operators `and`/`or`, PHP-exact
   chained comparison parse errors, and complete comparison parity for
   unsupported value types.
-- Unbraced control-flow statements, alternate control-flow syntax, `do while`,
-  `for`, `foreach`, `switch`, `break`, `continue`, branch-condition
-  assignments, and exception/finally control-flow edges.
+- Unbraced control-flow statements, alternate control-flow syntax, `for`,
+  `foreach`, `switch`, `break`, `continue`, branch-condition assignments, and
+  exception/finally control-flow edges.
 - Increment/decrement as expressions, including pre/post result values in echo,
   assignment, binary operands, function arguments, or branch conditions.
 - PHP-exact increment/decrement semantics for strings, booleans, arrays,

@@ -32,6 +32,10 @@ pub enum Instruction {
         condition: ValueExpr,
         body: Vec<Instruction>,
     },
+    DoWhile {
+        body: Vec<Instruction>,
+        condition: ValueExpr,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -165,6 +169,14 @@ fn lower_statements(statements: &[Statement]) -> Vec<Instruction> {
                 instructions.push(Instruction::While {
                     condition: lower_expr(condition),
                     body: lower_statements(body),
+                });
+            }
+            Statement::DoWhile {
+                body, condition, ..
+            } => {
+                instructions.push(Instruction::DoWhile {
+                    body: lower_statements(body),
+                    condition: lower_expr(condition),
                 });
             }
         }

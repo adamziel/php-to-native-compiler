@@ -31,6 +31,7 @@ impl Parser {
             TokenKind::Echo => self.parse_echo(),
             TokenKind::Print => self.parse_print(),
             TokenKind::If => self.parse_if(),
+            TokenKind::Do => self.parse_do_while(),
             TokenKind::While => self.parse_while(),
             TokenKind::PlusPlus | TokenKind::MinusMinus => self.parse_prefix_increment_statement(),
             TokenKind::Identifier(_) => self.parse_call_statement(),
@@ -148,6 +149,21 @@ impl Parser {
         Ok(Statement::While {
             condition,
             body,
+            span,
+        })
+    }
+
+    fn parse_do_while(&mut self) -> Result<Statement> {
+        let span = self.expect_do()?;
+        let body = self.parse_block()?;
+        self.expect_while()?;
+        self.expect_left_paren()?;
+        let condition = self.parse_expr()?;
+        self.expect_right_paren()?;
+        self.expect_statement_terminator()?;
+        Ok(Statement::DoWhile {
+            body,
+            condition,
             span,
         })
     }
@@ -387,6 +403,15 @@ impl Parser {
             Ok(token.span)
         } else {
             Err(Diagnostic::new("expected while", Some(token.span)))
+        }
+    }
+
+    fn expect_do(&mut self) -> Result<SourceSpan> {
+        let token = self.advance();
+        if matches!(token.kind, TokenKind::Do) {
+            Ok(token.span)
+        } else {
+            Err(Diagnostic::new("expected do", Some(token.span)))
         }
     }
 

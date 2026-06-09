@@ -58,6 +58,9 @@ Supported today:
   grouped expressions and scalar comparisons.
 - Braced `while (expr) { statements }` loops over the currently supported
   scalar expression and statement subset.
+- Braced `do { statements } while (expr);` loops over the currently supported
+  scalar expression and statement subset. The body executes before the
+  condition is checked.
 - Statement-form direct variable `++` and `--`, such as `$i++;` and `--$i;`,
   using the boxed numeric arithmetic helper path.
 
@@ -71,8 +74,8 @@ Unsupported today:
   PHP numeric-string and non-numeric string arithmetic diagnostics, exact
   division/modulo-by-zero exception behavior, complete comparison parity for
   unsupported types, spaceship comparison operator, bitwise `^`, `~`, shifts,
-  keyword boolean operators, chained comparison parse errors, unbraced and alternate
-  control-flow syntax, `do while`, `for`, `foreach`, `switch`, `break`,
+  keyword boolean operators, chained comparison parse errors, unbraced and
+  alternate control-flow syntax, `for`, `foreach`, `switch`, `break`,
   `continue`, increment/decrement as expressions, PHP-exact increment/
   decrement semantics for strings/booleans and other edge values, complete
   overflow parity, exact scalar cast overflow behavior, PHP-exact warning

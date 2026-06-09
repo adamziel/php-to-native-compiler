@@ -42,6 +42,11 @@ pub enum Statement {
         body: Vec<Statement>,
         span: SourceSpan,
     },
+    DoWhile {
+        body: Vec<Statement>,
+        condition: Expr,
+        span: SourceSpan,
+    },
     InlineHtml {
         content: String,
         span: SourceSpan,

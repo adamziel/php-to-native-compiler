@@ -100,6 +100,19 @@ fn emit_instruction(out: &mut String, values: &mut ValueEmitter, instruction: &I
             }
             out.push_str("    }\n");
         }
+        Instruction::DoWhile { body, condition } => {
+            out.push_str("    while (1) {\n");
+            for body_instruction in body {
+                emit_instruction(out, values, body_instruction);
+            }
+            let condition_temp = values.emit_materialized_value(out, condition);
+            out.push_str("        if (!ptn_is_truthy(");
+            out.push_str(&condition_temp);
+            out.push_str(")) {\n");
+            out.push_str("            break;\n");
+            out.push_str("        }\n");
+            out.push_str("    }\n");
+        }
     }
 }
 

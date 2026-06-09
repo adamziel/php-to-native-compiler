@@ -161,6 +161,25 @@ fn parser_accepts_direct_variable_increment_decrement_statements() {
 }
 
 #[test]
+fn parser_accepts_braced_do_while_statements() {
+    let program = parser::parse("<?php $i = 3; do { echo $i; $i--; } while ($i > 0);").unwrap();
+    let Statement::DoWhile {
+        body, condition, ..
+    } = &program.statements[1]
+    else {
+        panic!("expected do-while statement");
+    };
+    assert_eq!(body.len(), 2);
+    assert!(matches!(
+        condition,
+        Expr::Binary {
+            op: BinaryOp::Greater,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn parser_rejects_print_expression_contexts() {
     let error = parser::parse("<?php $result = print \"hello\";").unwrap_err();
     assert!(error.message.contains("expected expression"));
@@ -937,6 +956,46 @@ fn compile_while_condition_rechecks_each_iteration_to_native_binary() {
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "01\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_do_while_runs_body_before_condition_to_native_binary() {
+    let root = temp_dir("ptn-native-do-while-post-test");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("do-while-post-test.php");
+    let output = root.join("do-while-post-test-bin");
+    fs::write(
+        &input,
+        "<?php $a = 0; do { echo $a; $a++; } while ($a < 0); echo \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "0\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_do_while_countdown_to_native_binary() {
+    let root = temp_dir("ptn-native-do-while-countdown");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("do-while-countdown.php");
+    let output = root.join("do-while-countdown-bin");
+    fs::write(
+        &input,
+        "<?php $i = 3; do { echo $i; $i--; } while ($i > 0); echo \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "321\n");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 

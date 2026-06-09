@@ -371,3 +371,23 @@ Still unsupported after this bitwise slice: bitwise `^`, unary bitwise `~`, bit
 shifts, compound `^=`, `<<=`, `>>=`, exact float-to-int bitwise diagnostics and
 overflow parity, embedded NUL bytes in string values, arrays, objects,
 references, and copy-on-write behavior.
+
+Added a bounded braced `do while` loop slice:
+
+- Lexer/parser/AST support for `do { statements } while (expr);` with recursive
+  braced statement bodies and boxed scalar conditions.
+- IR support for structured post-test loop instructions. The loop body and
+  condition keep the same nested statement and value-expression shapes as
+  braced `while`.
+- Generated C emits the body first, then materializes the boxed condition and
+  breaks when the shared PHP truthiness helper reports false.
+- Native tests prove a countdown loop using direct decrement and the post-test
+  behavior where the body runs once before an initially false condition is
+  checked.
+- Focused public PHPT telemetry through `phpc` passes
+  `tests/lang/027.phpt`.
+
+Still unsupported for loops/control flow: unbraced and alternate syntax, `for`,
+`foreach`, `switch`, `break`, `continue`, loop-condition assignments and
+increment/decrement expressions, PHP-exact increment/decrement edge semantics,
+references, copy-on-write, and exception/finally loop edges.

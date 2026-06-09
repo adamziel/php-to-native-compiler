@@ -74,6 +74,10 @@ Current runtime/compiler slices:
 - Braced `while` statements lower to structured IR loop instructions. The C
   backend evaluates the boxed condition at the top of each iteration and uses
   the shared scalar truthiness helper before emitting the loop body.
+- Braced `do while` statements lower to structured IR loop instructions with
+  the same boxed condition and nested statement representation as `while`. The
+  C backend emits the body before materializing the condition and breaking on
+  falsey boxed truthiness.
 - Statement-form direct variable increment/decrement lowers to a runtime read,
   boxed numeric increment/decrement helper, and runtime write. Expression-value
   semantics for pre/post increment remain outside this slice.
@@ -97,8 +101,8 @@ Near-term architecture targets:
 - A broader internal-function module system with shared argument parsing,
   metadata, unsupported array/object/resource/reference diagnostics, and
   PHP-exact `var_dump` precision/formatting and `strlen` byte-string behavior.
-- Broader control flow: unbraced and alternate syntax, `do while`, `for`,
-  `foreach`, `switch`, `break`, `continue`, and exception/finally edges.
+- Broader control flow: unbraced and alternate syntax, `for`, `foreach`,
+  `switch`, `break`, `continue`, and exception/finally edges.
 - Full PHP increment/decrement semantics, including expression result values,
   strings, booleans, arrays/objects, references, and copy-on-write behavior.
 - Explicit fallback boundaries for `eval`, variable variables, and runtime
