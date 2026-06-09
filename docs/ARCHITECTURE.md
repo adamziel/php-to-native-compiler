@@ -80,8 +80,9 @@ Current runtime/compiler slices:
   `is_infinite`, and `is_nan` query modeled non-finite float constants;
   `function_exists` shares the registry lookup path; and `defined` checks the
   current constant-registry boundary, which includes the modeled PHP `E_ERROR`,
-  `PHP_EOL`, `INF`, and `NAN` constants. Fixed-arity internal functions record
-  min/max arity metadata while `var_dump` remains variadic.
+  `PHP_EOL`, `PHP_INT_MIN`, `PHP_INT_MAX`, `PHP_INT_SIZE`, `INF`, and `NAN`
+  constants. Fixed-arity internal functions record min/max arity metadata while
+  `var_dump` remains variadic.
 - Braced `if`, `elseif`, and `else` statements lower to structured IR branch
   instructions. Conditions remain boxed value expressions, and the C backend
   emits native branches that call the shared scalar truthiness helper.
@@ -129,8 +130,9 @@ Near-term architecture targets:
   byte-string behavior, scalar math diagnostic/type parity, and
   base-conversion precision/range parity.
 - User-defined functions, classes/methods, constants beyond the currently
-  modeled `E_ERROR`, `PHP_EOL`, `INF`, and `NAN`, namespaced symbols,
-  autoloading, and disabled-functions behavior in symbol-existence predicates.
+  modeled `E_ERROR`, `PHP_EOL`, `PHP_INT_MIN`, `PHP_INT_MAX`, `PHP_INT_SIZE`,
+  `INF`, and `NAN`, namespaced symbols, autoloading, and disabled-functions
+  behavior in symbol-existence predicates.
 - Broader control flow: unbraced and alternate syntax, `foreach`,
   explicit-level `break`, `continue`, for-loop comma expressions and
   non-direct-variable clause lvalues, and exception/finally edges.

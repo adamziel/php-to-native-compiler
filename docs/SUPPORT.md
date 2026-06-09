@@ -91,8 +91,8 @@ supports in generated native binaries.
   `is_infinite()`, and `is_nan()`.
 - `function_exists()` over the currently registered internal-function names.
 - `defined()` over the current constant registry, including the currently
-  modeled PHP constants `E_ERROR`, `PHP_EOL`, `INF`, and `NAN`. Other ordinary
-  names report as undefined.
+  modeled PHP constants `E_ERROR`, `PHP_EOL`, `PHP_INT_MIN`, `PHP_INT_MAX`,
+  `PHP_INT_SIZE`, `INF`, and `NAN`. Other ordinary names report as undefined.
 - A minimal `phpc` runner for supported PHPT rows. It compiles scripts or `-r`
   snippets to temporary native binaries through the normal compiler pipeline.
 - Braced `if`, `elseif`, and `else` statements whose conditions and bodies use
@@ -112,13 +112,16 @@ supports in generated native binaries.
   in source order with boxed loose `==` semantics, honors a single `default`,
   allows PHP-style fallthrough, and supports simple `break;` from the innermost
   emitted switch or loop.
+- Source-spanned compile diagnostics emitted through `phpc` use a PHP-style
+  fatal boundary with the source file and line. This currently covers duplicate
+  `default:` clauses in `switch`.
 - Statement-form direct variable increment/decrement: `$name++;`, `++$name;`,
   `$name--;`, and `--$name;`.
 
 ## Not Yet Supported
 
-- PHP-exact diagnostic formatting, file names, line numbers, error handlers, and
-  error reporting configuration.
+- PHP-exact diagnostic formatting beyond source-spanned compile fatals, warning
+  file names, line numbers, error handlers, and error reporting configuration.
 - Full PHP numeric-string conversion warning parity, non-numeric string
   arithmetic diagnostics, exact division/modulo-by-zero exception behavior,
   complete overflow parity, and exact scalar cast overflow behavior.
@@ -133,9 +136,8 @@ supports in generated native binaries.
   `break` with an explicit level such as `break 2`, `continue`,
   branch-condition assignments, for-loop comma expressions and
   non-direct-variable clause lvalues, and exception/finally control-flow edges.
-- Switch alternate syntax, multiple `default` runtime diagnostic parity, and
-  switch behavior for arrays, objects, references, copy-on-write, and
-  exceptions.
+- Switch alternate syntax and switch behavior for arrays, objects, references,
+  copy-on-write, and exceptions.
 - Increment/decrement as expressions, including pre/post result values in echo,
   assignment, binary operands, function arguments, or branch conditions.
 - PHP-exact increment/decrement semantics for strings, booleans, arrays,
@@ -144,7 +146,8 @@ supports in generated native binaries.
 - Internal functions outside the registered scalar subset.
 - User-defined functions in `function_exists()`.
 - User-defined constants and built-in PHP/extension constants other than the
-  currently modeled `E_ERROR`, `PHP_EOL`, `INF`, and `NAN` in `defined()`.
+  currently modeled `E_ERROR`, `PHP_EOL`, `PHP_INT_MIN`, `PHP_INT_MAX`,
+  `PHP_INT_SIZE`, `INF`, and `NAN` in `defined()`.
 - Type predicate coverage for arrays, objects, resources, and references.
 - Arrays, objects, resources, recursive structures, references, and
   `var_dump()` reference identity output.

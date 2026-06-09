@@ -1545,6 +1545,18 @@ static PTN_UNUSED int ptn_constant_value(const char *name, PtnValue *out) {
         *out = ptn_int(1);
         return 1;
     }
+    if (strcmp(name, "PHP_INT_MIN") == 0) {
+        *out = ptn_int(INT64_MIN);
+        return 1;
+    }
+    if (strcmp(name, "PHP_INT_MAX") == 0) {
+        *out = ptn_int(INT64_MAX);
+        return 1;
+    }
+    if (strcmp(name, "PHP_INT_SIZE") == 0) {
+        *out = ptn_int((int64_t)sizeof(int64_t));
+        return 1;
+    }
     if (strcmp(name, "PHP_EOL") == 0) {
         *out = ptn_string("\n");
         return 1;

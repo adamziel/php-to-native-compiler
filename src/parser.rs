@@ -317,7 +317,7 @@ impl Parser {
                     self.advance();
                     if seen_default {
                         return Err(Diagnostic::new(
-                            "switch statements may only contain one default clause",
+                            "Switch statements may only contain one default clause",
                             Some(case_span),
                         ));
                     }

@@ -55,7 +55,8 @@ Supported today:
 - Symbol-existence predicates for currently modeled runtime tables:
   `function_exists()` checks the generated internal-function registry, and
   `defined()` checks the current constant registry, which currently includes
-  `E_ERROR`, `PHP_EOL`, `INF`, and `NAN`.
+  `E_ERROR`, `PHP_EOL`, `PHP_INT_MIN`, `PHP_INT_MAX`, `PHP_INT_SIZE`, `INF`,
+  and `NAN`.
 - String, integer, float, boolean, and null literals.
 - Direct variable assignment and reads for scalar values through the generated
   native runtime symbol table.
@@ -124,8 +125,9 @@ Unsupported today:
   warning text/file/line/error-handler behavior, inline HTML before `<?php` or
   between PHP blocks, internal functions outside the registered scalar subset,
   user constants and built-in constants other than the currently modeled
-  `E_ERROR`, `PHP_EOL`, `INF`, and `NAN`, arrays, objects, resources,
-  recursion, references, embedded NUL string handling, exact `chr()`
+  `E_ERROR`, `PHP_EOL`, `PHP_INT_MIN`, `PHP_INT_MAX`, `PHP_INT_SIZE`, `INF`,
+  and `NAN`, arrays, objects, resources, recursion, references, embedded NUL
+  string handling, exact `chr()`
   deprecation diagnostics, exact `ord()` argument type diagnostics, exact
   `ceil()`/`floor()` null/string/unsupported type diagnostics, exact
   `error_reporting()` configuration/filtering behavior, and full PHP

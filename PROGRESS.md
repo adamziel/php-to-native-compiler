@@ -432,8 +432,25 @@ Added a bounded braced switch/case/default slice on the scalar bitwise head:
 
 Still unsupported after this switch slice: unbraced and alternate switch
 syntax, `break` with explicit levels such as `break 2`, `continue`, `for`,
-`foreach`, PHP-exact duplicate-default fatal formatting, arrays, objects,
-references, copy-on-write, and exception/finally control-flow edges.
+`foreach`, arrays, objects, references, copy-on-write, and exception/finally
+control-flow edges.
+
+Added PHP-style source-spanned compile fatals for the `phpc` runner:
+
+- Parser duplicate-`default` switch diagnostics now carry PHP's canonical
+  "Switch statements may only contain one default clause" wording at the
+  duplicate `default:` source span.
+- `phpc` preserves structured compiler diagnostics and renders source-spanned
+  compile failures as `Fatal error: ... in <file> on line <line>` instead of
+  the internal `phpc: ... at line:column` form.
+- Native/integration tests prove the parser diagnostic and `phpc` CLI fatal
+  output for a duplicate switch default.
+- Focused public PHPT telemetry through `phpc` passes
+  `Zend/tests/switch/034.phpt`.
+
+Still unsupported for diagnostics: PHP-exact warning/notice formatting,
+error-handler routing, complete parse error wording, stack traces, and
+diagnostic parity for unsupported runtime types and control-flow edges.
 
 Added the remaining scalar bitwise XOR slice:
 
@@ -675,3 +692,18 @@ Still unsupported after this non-finite float slice: complete PHP
 float-formatting parity for `NAN`/`INF` in all output paths, full comparison
 parity for non-finite floats outside these predicates, user-defined constants,
 and extension constants beyond the currently modeled scalar constants.
+
+Added scalar PHP integer limit constants:
+
+- The constant registry now models `PHP_INT_MIN`, `PHP_INT_MAX`, and
+  `PHP_INT_SIZE` alongside the existing scalar constants.
+- Bare constant reads and `defined()` share the same modeled constant lookup,
+  so the integer limits are observable through both paths.
+- Native tests prove the 64-bit integer min/max/size values and `defined()`
+  visibility.
+- Focused public PHPT telemetry through `phpc` passes
+  `tests/lang/constants/PHP_INT_64bit.phpt`.
+
+Still unsupported after this constant slice: user-defined constants,
+namespace-sensitive constants, dynamic `constant()`, and built-in or extension
+constants beyond the currently modeled scalar registry entries.

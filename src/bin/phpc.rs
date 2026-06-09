@@ -4,19 +4,19 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use ptn::{compile_file, CompileOptions};
+use ptn::{compile_file, CompileOptions, Diagnostic};
 
 fn main() {
     match run() {
         Ok(code) => std::process::exit(code),
         Err(error) => {
-            eprintln!("phpc: {error}");
+            eprintln!("{error}");
             std::process::exit(255);
         }
     }
 }
 
-fn run() -> Result<i32, String> {
+fn run() -> Result<i32, PhpcError> {
     let invocation = Invocation::parse(std::env::args().skip(1))?;
     match invocation.mode {
         Mode::Version => {
@@ -36,6 +36,39 @@ fn run() -> Result<i32, String> {
                 .map_err(|error| format!("failed to write inline source: {error}"))?;
             compile_and_run(temp.path(), &[])
         }
+    }
+}
+
+#[derive(Debug)]
+enum PhpcError {
+    Message(String),
+    SourceFatal {
+        diagnostic: Diagnostic,
+        script: PathBuf,
+    },
+}
+
+impl std::fmt::Display for PhpcError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PhpcError::Message(message) => write!(f, "phpc: {message}"),
+            PhpcError::SourceFatal { diagnostic, script } => match diagnostic.span {
+                Some(span) => write!(
+                    f,
+                    "Fatal error: {} in {} on line {}",
+                    diagnostic.message,
+                    script.display(),
+                    span.line
+                ),
+                None => write!(f, "phpc: {diagnostic}"),
+            },
+        }
+    }
+}
+
+impl From<String> for PhpcError {
+    fn from(message: String) -> Self {
+        PhpcError::Message(message)
     }
 }
 
@@ -128,15 +161,23 @@ impl Invocation {
     }
 }
 
-fn compile_and_run(script: &Path, args: &[String]) -> Result<i32, String> {
+fn compile_and_run(script: &Path, args: &[String]) -> Result<i32, PhpcError> {
     let native = TempPath::new("ptn-phpc-native", "bin");
-    compile_file(script, native.path(), CompileOptions { emit_c: false })
-        .map_err(|error| error.to_string())?;
+    compile_file(script, native.path(), CompileOptions { emit_c: false }).map_err(|error| {
+        if error.span.is_some() {
+            PhpcError::SourceFatal {
+                diagnostic: error,
+                script: script.to_path_buf(),
+            }
+        } else {
+            PhpcError::Message(error.to_string())
+        }
+    })?;
 
     let status = Command::new(native.path())
         .args(args)
         .status()
-        .map_err(|error| format!("failed to run native binary: {error}"))?;
+        .map_err(|error| PhpcError::Message(format!("failed to run native binary: {error}")))?;
     Ok(status.code().unwrap_or(255))
 }
 

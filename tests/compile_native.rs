@@ -1,4 +1,5 @@
 use std::fs;
+use std::path::PathBuf;
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -649,9 +650,35 @@ fn parser_rejects_multiple_switch_defaults() {
     let error =
         parser::parse("<?php switch (1) { default: echo 1; break; default: echo 2; break; }")
             .unwrap_err();
-    assert!(error
-        .message
-        .contains("switch statements may only contain one default clause"));
+    assert_eq!(
+        error.message,
+        "Switch statements may only contain one default clause"
+    );
+    assert_eq!(error.span.unwrap().line, 1);
+}
+
+#[test]
+fn phpc_renders_spanned_compile_diagnostics_as_php_fatals() {
+    let root = temp_dir("ptn-phpc-source-fatal");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("duplicate-default.php");
+    fs::write(
+        &input,
+        "<?php\n\nswitch (1) {\n    default:\n        print 1;\n    default:\n        print 2;\n}\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(phpc_bin()).arg(&input).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "Fatal error: Switch statements may only contain one default clause in {} on line 6\n",
+            input.display()
+        )
+    );
 }
 
 #[test]
@@ -1148,6 +1175,29 @@ fn compile_symbol_existence_internal_functions_to_native_binary() {
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "bool(true)\nbool(true)\nbool(false)\nbool(false)\nbool(true)\nboolean\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_php_int_constants_to_native_binary() {
+    let root = temp_dir("ptn-native-php-int-constants");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("php-int-constants.php");
+    let output = root.join("php-int-constants-bin");
+    fs::write(
+        &input,
+        "<?php var_dump(PHP_INT_MIN, PHP_INT_MAX, PHP_INT_SIZE, defined(\"PHP_INT_MIN\"), defined(\"PHP_INT_MAX\"), defined(\"PHP_INT_SIZE\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(-9223372036854775808)\nint(9223372036854775807)\nint(8)\nbool(true)\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -2078,4 +2128,10 @@ fn temp_dir(name: &str) -> std::path::PathBuf {
         .unwrap()
         .as_nanos();
     std::env::temp_dir().join(format!("{name}-{}-{now}", std::process::id()))
+}
+
+fn phpc_bin() -> PathBuf {
+    option_env!("CARGO_BIN_EXE_phpc")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("target/debug/phpc"))
 }
