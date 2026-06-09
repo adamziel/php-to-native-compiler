@@ -702,6 +702,7 @@ fn emit_instruction(
             line,
         } => {
             let end_label = values.next_label("ptn_foreach_end");
+            let cleanup_label = values.next_label("ptn_foreach_cleanup");
             let continue_label = values.next_label("ptn_foreach_continue");
             let iterable_temp = values.emit_materialized_value(out, iterable);
             let iterator_temp = values.next_temp();
@@ -712,6 +713,7 @@ fn emit_instruction(
             out.push_str(", ");
             out.push_str(&line.to_string());
             out.push_str(");\n");
+            emit_label_reference(out, &cleanup_label);
             emit_label_reference(out, &end_label);
             out.push_str("    while (");
             out.push_str(&iterator_temp);
@@ -743,7 +745,7 @@ fn emit_instruction(
             out.push_str(");\n");
             emit_value_cleanup(out, "        ", &value_temp);
             control_targets.push(ControlTarget::loop_target(
-                end_label.clone(),
+                cleanup_label.clone(),
                 continue_label.clone(),
             ));
             for body_instruction in body {
@@ -767,10 +769,17 @@ fn emit_instruction(
             out.push_str(");\n");
             out.push_str("    }\n");
             out.push_str("    ");
+            out.push_str(&cleanup_label);
+            out.push_str(":\n");
+            out.push_str("    ;\n");
+            out.push_str("    ptn_array_iterator_destroy(&");
+            out.push_str(&iterator_temp);
+            out.push_str(");\n");
+            emit_value_cleanup(out, "    ", &iterable_temp);
+            out.push_str("    ");
             out.push_str(&end_label);
             out.push_str(":\n");
             out.push_str("    ;\n");
-            emit_value_cleanup(out, "    ", &iterable_temp);
         }
         Instruction::Switch { expression, cases } => {
             emit_switch(

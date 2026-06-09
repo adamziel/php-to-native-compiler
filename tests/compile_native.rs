@@ -4998,6 +4998,128 @@ fn compile_foreach_break_and_continue_to_native_binary() {
 }
 
 #[test]
+fn compile_foreach_by_value_snapshots_iteration_set_to_native_binary() {
+    let root = temp_dir("ptn-native-foreach-cow-snapshot");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("foreach-cow-snapshot.php");
+    let output = root.join("foreach-cow-snapshot-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$items = [\"a\" => \"A\", \"b\" => \"B\", \"c\" => \"C\"];\n\
+foreach ($items as $key => $value) {\n\
+    echo $key, \"=\", $value, \"\\n\";\n\
+    if ($key === \"a\") {\n\
+        unset($items[\"a\"]);\n\
+        unset($items[\"b\"]);\n\
+        $items[] = \"D\";\n\
+    }\n\
+    if ($key === \"b\") {\n\
+        unset($items[\"c\"]);\n\
+    }\n\
+}\n\
+var_dump($items);",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "a=A\n",
+            "b=B\n",
+            "c=C\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  string(1) \"D\"\n",
+            "}\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_array_retain(iterator.array);"));
+    assert!(c_source.contains("ptn_array_iterator_destroy(&"));
+    assert!(c_source.contains("ptn_foreach_cleanup"));
+}
+
+#[test]
+fn compile_foreach_by_value_detaches_alias_mutations_to_native_binary() {
+    let root = temp_dir("ptn-native-foreach-cow-aliases");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("foreach-cow-aliases.php");
+    let output = root.join("foreach-cow-aliases-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$source = [\"x\" => 1, \"y\" => 2];\n\
+$alias = $source;\n\
+foreach ($source as $key => $value) {\n\
+    echo $key, \":\", $value, \"\\n\";\n\
+    if ($key === \"x\") {\n\
+        $source[\"z\"] = 3;\n\
+        $alias[\"y\"] = 20;\n\
+    }\n\
+}\n\
+var_dump($source);\n\
+var_dump($alias);\n\
+$post = $source;\n\
+$post[] = 4;\n\
+var_dump($source);\n\
+var_dump($post);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "x:1\n",
+            "y:2\n",
+            "array(3) {\n",
+            "  [\"x\"]=>\n",
+            "  int(1)\n",
+            "  [\"y\"]=>\n",
+            "  int(2)\n",
+            "  [\"z\"]=>\n",
+            "  int(3)\n",
+            "}\n",
+            "array(2) {\n",
+            "  [\"x\"]=>\n",
+            "  int(1)\n",
+            "  [\"y\"]=>\n",
+            "  int(20)\n",
+            "}\n",
+            "array(3) {\n",
+            "  [\"x\"]=>\n",
+            "  int(1)\n",
+            "  [\"y\"]=>\n",
+            "  int(2)\n",
+            "  [\"z\"]=>\n",
+            "  int(3)\n",
+            "}\n",
+            "array(4) {\n",
+            "  [\"x\"]=>\n",
+            "  int(1)\n",
+            "  [\"y\"]=>\n",
+            "  int(2)\n",
+            "  [\"z\"]=>\n",
+            "  int(3)\n",
+            "  [0]=>\n",
+            "  int(4)\n",
+            "}\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_array_read_diagnostics_to_native_binary() {
     let root = temp_dir("ptn-native-array-read-diagnostics");
     fs::create_dir_all(&root).unwrap();

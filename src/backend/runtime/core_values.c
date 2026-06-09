@@ -99,6 +99,7 @@ typedef struct {
 typedef struct {
     PtnArray *array;
     size_t index;
+    size_t length;
     int valid;
 } PtnArrayIterator;
 

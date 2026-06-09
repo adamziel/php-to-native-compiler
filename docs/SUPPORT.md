@@ -324,7 +324,10 @@ supports in generated native binaries.
   arrays. The iterable expression is evaluated once, array entries are visited
   in current insertion order, optional keys and values are assigned through the
   ordinary runtime variable table before the body, and current
-  `break`/`continue` level semantics apply inside the body.
+  `break`/`continue` level semantics apply inside the body. By-value foreach
+  retains the iterable array payload for the loop snapshot, so appends and
+  unsets through the source variable or its aliases detach through ordinary
+  array copy-on-write and do not change the active iteration set.
 - Braced `switch (expr) { case expr: ... default: ... }` statements over the
   currently supported scalar expression and statement subset. The generated
   native code evaluates the switch expression once, compares case expressions
@@ -378,10 +381,9 @@ supports in generated native binaries.
   beyond the currently modeled level/context fatals and switch-target warning,
   labels/goto inside unsupported functions, classes, and `try`/`finally`
   constructs, and exception/finally control-flow edges.
-- By-reference `foreach`, array mutation during `foreach`, copy-on-write/
-  reference identity and exact mutation visibility during `foreach`, object
-  `Traversable`, destructuring foreach targets, and PHP-exact non-array
-  `foreach` diagnostics.
+- By-reference `foreach`, reference identity and by-reference mutation
+  visibility during `foreach`, object `Traversable`, destructuring foreach
+  targets, and PHP-exact non-array `foreach` diagnostics.
 - PHP-exact `return` value propagation for includes/functions and return
   inside unsupported function/class contexts.
 - Switch alternate syntax and switch behavior for arrays, objects, references,

@@ -120,13 +120,16 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_value(PtnRuntime *run
     PtnArrayIterator iterator;
     iterator.array = NULL;
     iterator.index = 0;
+    iterator.length = 0;
     iterator.valid = 0;
     if (value.type != PTN_ARRAY) {
         ptn_emit_foreach_non_array_warning(value, line);
         return iterator;
     }
     iterator.array = value.as.array;
-    iterator.valid = iterator.array->len != 0;
+    iterator.length = iterator.array->len;
+    ptn_array_retain(iterator.array);
+    iterator.valid = iterator.length != 0;
     return iterator;
 }
 
@@ -144,7 +147,17 @@ static PTN_UNUSED PtnValue ptn_array_iterator_current_value(PtnArrayIterator *it
 
 static PTN_UNUSED void ptn_array_iterator_advance(PtnArrayIterator *iterator) {
     iterator->index++;
-    iterator->valid = iterator->array != NULL && iterator->index < iterator->array->len;
+    iterator->valid = iterator->array != NULL && iterator->index < iterator->length;
+}
+
+static PTN_UNUSED void ptn_array_iterator_destroy(PtnArrayIterator *iterator) {
+    if (iterator->array != NULL) {
+        ptn_array_free(iterator->array);
+        iterator->array = NULL;
+    }
+    iterator->index = 0;
+    iterator->length = 0;
+    iterator->valid = 0;
 }
 
 static PTN_UNUSED char *ptn_array_key_diagnostic_name(PtnArrayKey key) {
