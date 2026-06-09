@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Harness Status</title>
+<style>
+:root { color-scheme: light dark; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif; }
+body { max-width: 1100px; margin: 2rem auto; padding: 0 1rem; line-height: 1.45; }
+.card { border: 1px solid #8885; border-radius: 14px; padding: 1rem; margin: 1rem 0; box-shadow: 0 1px 8px #0001; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 1rem; }
+.bar { height: 1rem; background: #8883; border-radius: 999px; overflow: hidden; }
+.fill { height: 100%; background: linear-gradient(90deg, #2dd4bf, #2563eb); width: {{metric_percent}}%; }
+table { width: 100%; border-collapse: collapse; }
+th, td { border-bottom: 1px solid #8884; padding: .35rem; text-align: left; vertical-align: top; }
+.bad { color: #dc2626; font-weight: 700; }
+.warn { color: #d97706; font-weight: 700; }
+.good { color: #059669; font-weight: 700; }
+pre { white-space: pre-wrap; }
+</style>
+<body>
+<h1>Harness Status</h1>
+<p><strong>Last generated:</strong> {{generated_at}}</p>
+{{runtime_alerts_html}}
+<div class="card"><h2>Goal</h2><p>{{goal_html}}</p></div>
+<div class="grid">
+  <div class="card"><h2>Metric</h2><div class="bar"><div class="fill"></div></div><p>{{metric_html}}</p>{{metric_chart_html}}</div>
+  <div class="card"><h2>Resources</h2>{{resources_html}}</div>
+  <div class="card"><h2>Tests</h2>{{tests_html}}</div>
+</div>
+<div class="card"><h2>Agents</h2>{{agents_html}}</div>
+<div class="card"><h2>Work lanes</h2>{{work_lanes_html}}</div>
+<div class="card"><h2>Recent events</h2>{{events_html}}</div>
+<div class="card"><h2>Next steps</h2><p>{{next_steps_html}}</p></div>
+</body></html>
