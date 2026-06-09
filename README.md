@@ -132,19 +132,22 @@ Supported today:
 - Braced and single-statement `if`, `elseif`, and `else` statements. Branch
   conditions use boxed scalar truthiness and the currently supported expression
   subset, including grouped expressions and scalar comparisons.
-- Braced `while (expr) { statements }` loops over the currently supported
-  scalar expression and statement subset.
-- Braced `do { statements } while (expr);` loops over the currently supported
-  scalar expression and statement subset. The body executes before the
-  condition is checked.
-- Braced `for (init; condition; update) { statements }` loops where init and
-  update clauses use direct variable assignment, direct increment/decrement, or
-  simple internal-call statements, and conditions use the currently supported
-  scalar expression subset. Missing conditions are treated as true.
+- `while (expr) statement` loops over the currently supported scalar expression
+  and statement subset, with either a braced block or one supported statement
+  as the body.
+- `do statement while (expr);` loops over the currently supported scalar
+  expression and statement subset, with either a braced block or one supported
+  statement as the body. The body executes before the condition is checked.
+- `for (init; condition; update) statement` loops where init and update clauses
+  use direct variable assignment, direct increment/decrement, or simple
+  internal-call statements, conditions use the currently supported scalar
+  expression subset, and the body is either a braced block or one supported
+  statement. Missing conditions are treated as true.
 - Braced `switch (expr) { case expr: ... default: ... }` statements over the
   currently supported scalar expression and statement subset, including
   source-order case matching with boxed loose comparison, PHP-style fallthrough,
-  one `default`, and simple `break;`.
+  one `default`, and `break;` or explicit-level `break N;` over active
+  switch/loop targets.
 - User labels such as `L1:` and `goto L1;` statements inside the currently
   generated main function.
 - Statement-form direct variable `++` and `--`, such as `$i++;` and `--$i;`,
@@ -162,10 +165,10 @@ Unsupported today:
   PHP numeric-string and non-numeric string arithmetic diagnostics, exact
   division/modulo-by-zero exception behavior, exact numeric literal
   overflow/range parity, complete comparison parity for unsupported types,
-  keyword boolean operators, chained comparison parse errors, unbraced
-  loop/switch bodies and alternate control-flow syntax, `foreach`,
-  explicit-level `break` such as `break 2`, `continue`, invalid-goto
-  diagnostics and restrictions for jumps into/out of forbidden scopes, full
+  keyword boolean operators, chained comparison parse errors, unbraced switch
+  bodies and alternate control-flow syntax, `foreach`, `continue`, PHP-exact
+  break/continue diagnostics, invalid-goto diagnostics and restrictions for
+  jumps into/out of forbidden scopes, full
   switch parity for unsupported value types and alternate syntax,
   increment/decrement as expressions, PHP-exact
   increment/decrement semantics for strings/booleans and other edge values,

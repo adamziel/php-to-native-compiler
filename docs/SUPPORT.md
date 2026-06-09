@@ -150,21 +150,23 @@ supports in generated native binaries.
 - Braced and single-statement `if`, `elseif`, and `else` statements whose
   conditions and bodies use the currently supported scalar expression and
   statement subset.
-- Braced `while (expr) { statements }` loops where the condition and body use
-  the currently supported scalar expression and statement subset.
-- Braced `do { statements } while (expr);` loops where the body and condition
-  use the currently supported scalar expression and statement subset. The body
-  executes once before the first condition check.
-- Braced `for (init; condition; update) { statements }` loops where init and
-  update clauses use direct variable assignment, direct increment/decrement, or
-  simple internal-call statements, and conditions use the currently supported
-  scalar expression subset. Missing conditions are treated as true.
+- `while (expr) statement` loops where the condition and braced or
+  single-statement body use the currently supported scalar expression and
+  statement subset.
+- `do statement while (expr);` loops where the braced or single-statement body
+  and condition use the currently supported scalar expression and statement
+  subset. The body executes once before the first condition check.
+- `for (init; condition; update) statement` loops where init and update clauses
+  use direct variable assignment, direct increment/decrement, or simple
+  internal-call statements, conditions use the currently supported scalar
+  expression subset, and the body is either a braced block or one supported
+  statement. Missing conditions are treated as true.
 - Braced `switch (expr) { case expr: ... default: ... }` statements over the
   currently supported scalar expression and statement subset. The generated
   native code evaluates the switch expression once, compares case expressions
   in source order with boxed loose `==` semantics, honors a single `default`,
-  allows PHP-style fallthrough, and supports simple `break;` from the innermost
-  emitted switch or loop.
+  allows PHP-style fallthrough, and supports `break;` or explicit-level
+  `break N;` from the active emitted switch/loop target stack.
 - User labels such as `L1:` and `goto L1;` statements inside the currently
   generated main function.
 - Source-spanned compile diagnostics emitted through `phpc` use PHP-style fatal
@@ -189,12 +191,11 @@ supports in generated native binaries.
   echo operands, binary operands, and the parenthesized spelling `print(...)`.
 - Keyword boolean operators `and`/`or`, PHP-exact chained comparison parse
   errors, and complete comparison parity for unsupported value types.
-- Unbraced loop/switch bodies, alternate control-flow syntax, `foreach`,
-  `break` with an explicit level such as `break 2`, `continue`,
+- Unbraced switch bodies, alternate control-flow syntax, `foreach`, `continue`,
   branch-condition assignments, for-loop comma expressions and
-  non-direct-variable clause lvalues, invalid-goto diagnostics and restrictions
-  for jumps into/out of forbidden scopes, and exception/finally control-flow
-  edges.
+  non-direct-variable clause lvalues, PHP-exact break/continue diagnostics,
+  invalid-goto diagnostics and restrictions for jumps into/out of forbidden
+  scopes, and exception/finally control-flow edges.
 - Switch alternate syntax and switch behavior for arrays, objects, references,
   copy-on-write, and exceptions.
 - Increment/decrement as expressions, including pre/post result values in echo,

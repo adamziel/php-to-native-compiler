@@ -60,6 +60,7 @@ pub enum Statement {
         span: SourceSpan,
     },
     Break {
+        level: usize,
         span: SourceSpan,
     },
     Label {

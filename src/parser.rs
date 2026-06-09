@@ -157,7 +157,7 @@ impl Parser {
         self.expect_left_paren()?;
         let condition = self.parse_expr()?;
         self.expect_right_paren()?;
-        let body = self.parse_block()?;
+        let body = self.parse_statement_body()?;
         Ok(Statement::While {
             condition,
             body,
@@ -167,7 +167,7 @@ impl Parser {
 
     fn parse_do_while(&mut self) -> Result<Statement> {
         let span = self.expect_do()?;
-        let body = self.parse_block()?;
+        let body = self.parse_statement_body()?;
         self.expect_while()?;
         self.expect_left_paren()?;
         let condition = self.parse_expr()?;
@@ -204,7 +204,7 @@ impl Parser {
             self.parse_for_clause_list()?
         };
         self.expect_right_paren()?;
-        let body = self.parse_block()?;
+        let body = self.parse_statement_body()?;
 
         Ok(Statement::For {
             initializers,
@@ -364,8 +364,15 @@ impl Parser {
 
     fn parse_break(&mut self) -> Result<Statement> {
         let span = self.expect_break()?;
+        let level = match self.peek().kind {
+            TokenKind::Int(value) if value >= 0 => {
+                self.advance();
+                value as usize
+            }
+            _ => 1,
+        };
         self.expect_statement_terminator()?;
-        Ok(Statement::Break { span })
+        Ok(Statement::Break { level, span })
     }
 
     fn parse_goto(&mut self) -> Result<Statement> {

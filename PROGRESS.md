@@ -1077,3 +1077,23 @@ Added source-spanned fatal diagnostics for removed `(unset)` casts:
 Still unsupported after this removed-cast diagnostic slice: broader
 parse-error/fatal wording parity, array/object casts, stack traces,
 error-handler routing, and PHP-exact warning/notice formatting.
+
+Added explicit-level `break` and single-statement loop bodies:
+
+- The parser now accepts `break N;` while preserving plain `break;` as level 1,
+  and `while`, `do while`, and `for` bodies may be a single supported statement
+  instead of only a braced block.
+- Break levels lower through IR with source line metadata.
+- The C backend maintains a stack of emitted loop/switch exit labels so
+  `break N;` exits the requested active control target, and emits
+  source-spanned generated-binary fatals when a level is not valid.
+- Native tests prove nested switch/loop break levels, single-statement loop
+  bodies, and invalid large break-level diagnostics.
+- Focused public PHPT telemetry through `phpc` passes `tests/lang/021.phpt`
+  and `Zend/tests/bug77660.phpt`.
+
+Still unsupported after this control-flow slice: `continue`, `foreach`,
+alternate control-flow syntax, unbraced switch bodies, branch-condition
+assignments, for-loop comma expressions and non-direct-variable clause lvalues,
+PHP-exact break/continue diagnostic timing/wording, invalid-goto restrictions,
+and exception/finally edges.

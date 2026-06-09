@@ -51,7 +51,10 @@ pub enum Instruction {
         expression: ValueExpr,
         cases: Vec<SwitchCase>,
     },
-    Break,
+    Break {
+        level: usize,
+        line: usize,
+    },
     Label {
         name: String,
     },
@@ -280,8 +283,11 @@ fn lower_statements(statements: &[Statement]) -> Vec<Instruction> {
                         .collect(),
                 });
             }
-            Statement::Break { .. } => {
-                instructions.push(Instruction::Break);
+            Statement::Break { level, span } => {
+                instructions.push(Instruction::Break {
+                    level: *level,
+                    line: span.line,
+                });
             }
             Statement::Label { name, .. } => {
                 instructions.push(Instruction::Label { name: name.clone() });

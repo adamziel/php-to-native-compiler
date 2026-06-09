@@ -857,7 +857,7 @@ fn parser_accepts_labels_goto_and_single_statement_if() {
 #[test]
 fn parser_accepts_braced_switch_cases_default_and_break() {
     let program = parser::parse(
-        "<?php $a = 1; switch ($a) { case 0: echo \"bad\"; break; case 1: echo \"good\"; break; default: echo \"bad\"; break; }",
+        "<?php $a = 1; switch ($a) { case 0: echo \"bad\"; break; case 1: echo \"good\"; break 2; default: echo \"bad\"; break; }",
     )
     .unwrap();
 
@@ -874,8 +874,36 @@ fn parser_accepts_braced_switch_cases_default_and_break() {
     assert!(cases[2].condition.is_none());
     assert!(matches!(
         cases[1].body.last(),
-        Some(Statement::Break { .. })
+        Some(Statement::Break { level: 2, .. })
     ));
+}
+
+#[test]
+fn parser_accepts_single_statement_loop_bodies_and_break_levels() {
+    let program = parser::parse(
+        "<?php for (;;) break 2147483648; while (false) echo \"bad\"; do print \"once\"; while (false);",
+    )
+    .unwrap();
+
+    assert_eq!(program.statements.len(), 3);
+    let Statement::For { body, .. } = &program.statements[0] else {
+        panic!("expected for statement");
+    };
+    assert!(matches!(
+        &body[0],
+        Statement::Break {
+            level: 2_147_483_648usize,
+            ..
+        }
+    ));
+    let Statement::While { body, .. } = &program.statements[1] else {
+        panic!("expected while statement");
+    };
+    assert!(matches!(&body[0], Statement::Echo { .. }));
+    let Statement::DoWhile { body, .. } = &program.statements[2] else {
+        panic!("expected do while statement");
+    };
+    assert!(matches!(&body[0], Statement::Print { .. }));
 }
 
 #[test]
@@ -2528,6 +2556,119 @@ fn compile_for_break_skips_update_to_native_binary() {
     assert!(execution.status.success());
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "0:0:0\n");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_break_level_exits_outer_control_target_to_native_binary() {
+    let root = temp_dir("ptn-native-break-level-lang021-shape");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("break-level-lang021.php");
+    let output = root.join("break-level-lang021-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+for ($i=0; $i<=5; $i++)\n\
+{\n\
+  echo \"i=$i\\n\";\n\
+\n\
+  switch($i) {\n\
+    case 0:\n\
+      echo \"In branch 0\\n\";\n\
+      break;\n\
+    case 1:\n\
+      echo \"In branch 1\\n\";\n\
+      break;\n\
+    case 2:\n\
+      echo \"In branch 2\\n\";\n\
+      break;\n\
+    case 3:\n\
+      echo \"In branch 3\\n\";\n\
+      break 2;\n\
+    case 4:\n\
+      echo \"In branch 4\\n\";\n\
+      break;\n\
+    default:\n\
+      echo \"In default\\n\";\n\
+      break;\n\
+  }\n\
+}\n\
+echo \"hi\\n\";\n\
+?>",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "i=0\nIn branch 0\ni=1\nIn branch 1\ni=2\nIn branch 2\ni=3\nIn branch 3\nhi\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_break_level_from_loop_inside_switch_to_native_binary() {
+    let root = temp_dir("ptn-native-break-level-loop-inside-switch");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("break-level-loop-inside-switch.php");
+    let output = root.join("break-level-loop-inside-switch-bin");
+    fs::write(
+        &input,
+        "<?php switch (1) { case 1: $i = 0; while ($i < 5) { echo $i; if ($i == 2) break 2; $i++; } echo \"bad\"; break; } echo \":$i\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "012:2\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_single_statement_loop_bodies_to_native_binary() {
+    let root = temp_dir("ptn-native-single-statement-loop-bodies");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("single-statement-loop-bodies.php");
+    let output = root.join("single-statement-loop-bodies-bin");
+    fs::write(
+        &input,
+        "<?php $i = 0; while ($i < 2) $i++; for (; $i < 4; $i++) echo $i; do print \":done\\n\"; while (false);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "23:done\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_unmatched_large_break_level_reports_source_line_to_native_binary() {
+    let root = temp_dir("ptn-native-large-break-level-fatal");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("large-break-level.php");
+    let output = root.join("large-break-level-bin");
+    fs::write(&input, "<?php\nfor(;;) break 2147483648;\n").unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "Fatal error: Cannot 'break' 2147483648 levels in {} on line 2\n",
+            input.display()
+        )
+    );
 }
 
 #[test]

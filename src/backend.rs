@@ -16,25 +16,27 @@ pub fn emit_c(module: &Module) -> String {
     out.push_str("    PtnRuntime runtime;\n");
     out.push_str("    ptn_runtime_init(&runtime);\n");
     let mut values = ValueEmitter::new(&module.source_file, &module.source_dir);
+    let mut break_targets = Vec::new();
     for instruction in &module.instructions {
-        emit_instruction(&mut out, &mut values, instruction, None);
+        emit_instruction(
+            &mut out,
+            &mut values,
+            instruction,
+            &mut break_targets,
+            &module.source_file,
+        );
     }
     out.push_str("    ptn_runtime_free(&runtime);\n");
     out.push_str("    return 0;\n}\n");
     out
 }
 
-#[derive(Clone, Copy)]
-enum BreakTarget<'a> {
-    NativeBreak,
-    Label(&'a str),
-}
-
 fn emit_instruction(
     out: &mut String,
     values: &mut ValueEmitter,
     instruction: &Instruction,
-    break_target: Option<BreakTarget<'_>>,
+    break_targets: &mut Vec<String>,
+    source_path: &str,
 ) {
     match instruction {
         Instruction::Store { name, value } => {
@@ -95,51 +97,61 @@ fn emit_instruction(
             out.push_str(&condition_temp);
             out.push_str(")) {\n");
             for body_instruction in then_body {
-                emit_instruction(out, values, body_instruction, break_target);
+                emit_instruction(out, values, body_instruction, break_targets, source_path);
             }
             if !else_body.is_empty() {
                 out.push_str("    } else {\n");
                 for body_instruction in else_body {
-                    emit_instruction(out, values, body_instruction, break_target);
+                    emit_instruction(out, values, body_instruction, break_targets, source_path);
                 }
             }
             out.push_str("    }\n");
         }
         Instruction::While { condition, body } => {
+            let end_label = values.next_label("ptn_loop_end");
+            emit_label_reference(out, &end_label);
             out.push_str("    while (1) {\n");
             let condition_temp = values.emit_materialized_value(out, condition);
             out.push_str("        if (!ptn_is_truthy(");
             out.push_str(&condition_temp);
             out.push_str(")) {\n");
-            out.push_str("            break;\n");
+            out.push_str("            goto ");
+            out.push_str(&end_label);
+            out.push_str(";\n");
             out.push_str("        }\n");
+            break_targets.push(end_label.clone());
             for body_instruction in body {
-                emit_instruction(
-                    out,
-                    values,
-                    body_instruction,
-                    Some(BreakTarget::NativeBreak),
-                );
+                emit_instruction(out, values, body_instruction, break_targets, source_path);
             }
+            break_targets.pop();
             out.push_str("    }\n");
+            out.push_str("    ");
+            out.push_str(&end_label);
+            out.push_str(":\n");
+            out.push_str("    ;\n");
         }
         Instruction::DoWhile { body, condition } => {
+            let end_label = values.next_label("ptn_loop_end");
+            emit_label_reference(out, &end_label);
             out.push_str("    while (1) {\n");
+            break_targets.push(end_label.clone());
             for body_instruction in body {
-                emit_instruction(
-                    out,
-                    values,
-                    body_instruction,
-                    Some(BreakTarget::NativeBreak),
-                );
+                emit_instruction(out, values, body_instruction, break_targets, source_path);
             }
+            break_targets.pop();
             let condition_temp = values.emit_materialized_value(out, condition);
             out.push_str("        if (!ptn_is_truthy(");
             out.push_str(&condition_temp);
             out.push_str(")) {\n");
-            out.push_str("            break;\n");
+            out.push_str("            goto ");
+            out.push_str(&end_label);
+            out.push_str(";\n");
             out.push_str("        }\n");
             out.push_str("    }\n");
+            out.push_str("    ");
+            out.push_str(&end_label);
+            out.push_str(":\n");
+            out.push_str("    ;\n");
         }
         Instruction::For {
             initializers,
@@ -148,32 +160,37 @@ fn emit_instruction(
             body,
         } => {
             for initializer in initializers {
-                emit_instruction(out, values, initializer, break_target);
+                emit_instruction(out, values, initializer, break_targets, source_path);
             }
+            let end_label = values.next_label("ptn_loop_end");
+            emit_label_reference(out, &end_label);
             out.push_str("    while (1) {\n");
             if let Some(condition) = condition {
                 let condition_temp = values.emit_materialized_value(out, condition);
                 out.push_str("        if (!ptn_is_truthy(");
                 out.push_str(&condition_temp);
                 out.push_str(")) {\n");
-                out.push_str("            break;\n");
+                out.push_str("            goto ");
+                out.push_str(&end_label);
+                out.push_str(";\n");
                 out.push_str("        }\n");
             }
+            break_targets.push(end_label.clone());
             for body_instruction in body {
-                emit_instruction(
-                    out,
-                    values,
-                    body_instruction,
-                    Some(BreakTarget::NativeBreak),
-                );
+                emit_instruction(out, values, body_instruction, break_targets, source_path);
             }
+            break_targets.pop();
             for update in updates {
-                emit_instruction(out, values, update, Some(BreakTarget::NativeBreak));
+                emit_instruction(out, values, update, break_targets, source_path);
             }
             out.push_str("    }\n");
+            out.push_str("    ");
+            out.push_str(&end_label);
+            out.push_str(":\n");
+            out.push_str("    ;\n");
         }
         Instruction::Switch { expression, cases } => {
-            emit_switch(out, values, expression, cases);
+            emit_switch(out, values, expression, cases, break_targets, source_path);
         }
         Instruction::Label { name } => {
             out.push_str("    ");
@@ -186,19 +203,25 @@ fn emit_instruction(
             out.push_str(&c_label(label));
             out.push_str(";\n");
         }
-        Instruction::Break => match break_target {
-            Some(BreakTarget::NativeBreak) => {
-                out.push_str("    break;\n");
-            }
-            Some(BreakTarget::Label(label)) => {
+        Instruction::Break { level, line } => {
+            if *level > 0 && *level <= break_targets.len() {
+                let target = &break_targets[break_targets.len() - *level];
                 out.push_str("    goto ");
-                out.push_str(label);
+                out.push_str(target);
                 out.push_str(";\n");
+            } else {
+                let suffix = if *level == 1 { "level" } else { "levels" };
+                out.push_str("    ptn_abort_control_error(\"Cannot 'break' ");
+                out.push_str(&level.to_string());
+                out.push(' ');
+                out.push_str(suffix);
+                out.push_str("\", \"");
+                out.push_str(&c_string(source_path));
+                out.push_str("\", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
             }
-            None => {
-                out.push_str("    ptn_abort_control_error(\"Cannot 'break' 1 level\");\n");
-            }
-        },
+        }
     }
 }
 
@@ -207,8 +230,11 @@ fn emit_switch(
     values: &mut ValueEmitter,
     expression: &ValueExpr,
     cases: &[crate::ir::SwitchCase],
+    break_targets: &mut Vec<String>,
+    source_path: &str,
 ) {
     let end_label = values.next_label("ptn_switch_end");
+    emit_label_reference(out, &end_label);
     let labels: Vec<String> = cases
         .iter()
         .map(|_| values.next_label("ptn_switch_case"))
@@ -244,20 +270,23 @@ fn emit_switch(
         out.push_str(label);
         out.push_str(":\n");
         out.push_str("    ;\n");
+        break_targets.push(end_label.clone());
         for body_instruction in &case.body {
-            emit_instruction(
-                out,
-                values,
-                body_instruction,
-                Some(BreakTarget::Label(&end_label)),
-            );
+            emit_instruction(out, values, body_instruction, break_targets, source_path);
         }
+        break_targets.pop();
     }
 
     out.push_str("    ");
     out.push_str(&end_label);
     out.push_str(":\n");
     out.push_str("    ;\n");
+}
+
+fn emit_label_reference(out: &mut String, label: &str) {
+    out.push_str("    if (0) { goto ");
+    out.push_str(label);
+    out.push_str("; }\n");
 }
 
 pub fn compile_c(c_source: &str, output: &Path) -> Result<()> {
@@ -1339,9 +1368,13 @@ static PTN_UNUSED void ptn_abort_arithmetic_error(const char *message) {
     exit(1);
 }
 
-static PTN_UNUSED void ptn_abort_control_error(const char *message) {
+static PTN_UNUSED void ptn_abort_control_error(const char *message, const char *path, size_t line) {
     fputs("Fatal error: ", stderr);
     fputs(message, stderr);
+    fputs(" in ", stderr);
+    fputs(path, stderr);
+    fputs(" on line ", stderr);
+    fprintf(stderr, "%zu", line);
     fputc('\n', stderr);
     exit(255);
 }

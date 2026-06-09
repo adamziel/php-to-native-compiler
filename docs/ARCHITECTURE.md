@@ -128,17 +128,24 @@ Current runtime/compiler slices:
   branch, so future exception edges, temporaries, destructor timing,
   references, and copy-on-write behavior can stay attached to the statement
   tree.
-- Braced `while` statements lower to structured IR loop instructions. The C
-  backend evaluates the boxed condition at the top of each iteration and uses
-  the shared scalar truthiness helper before emitting the loop body.
-- Braced `do while` statements lower to structured IR loop instructions with
-  the same boxed condition and nested statement representation as `while`. The
-  C backend emits the body before materializing the condition and breaking on
-  falsey boxed truthiness.
-- Braced `for` statements lower to structured IR loop instructions with
-  initializer, optional condition, update, and body instruction lists. The C
-  backend emits initializers once, checks boxed scalar truthiness before each
-  iteration when a condition is present, emits the body, then emits updates.
+- `while` statements lower to structured IR loop instructions with either a
+  braced block or one supported statement as the body. The C backend evaluates
+  the boxed condition at the top of each iteration and uses the shared scalar
+  truthiness helper before emitting the loop body.
+- `do while` statements lower to structured IR loop instructions with the same
+  boxed condition and nested statement representation as `while`, and with
+  either a braced block or one supported statement as the body. The C backend
+  emits the body before materializing the condition and breaking on falsey
+  boxed truthiness.
+- `for` statements lower to structured IR loop instructions with initializer,
+  optional condition, update, and body instruction lists, where the body may be
+  a braced block or one supported statement. The C backend emits initializers
+  once, checks boxed scalar truthiness before each iteration when a condition
+  is present, emits the body, then emits updates.
+- `break` carries an explicit level in IR. The C backend keeps a stack of
+  emitted switch/loop exit labels so `break N;` can leave the requested number
+  of nested control targets, and reports source-spanned fatals when the level
+  is not valid for the active target stack.
 - Statement-form direct variable increment/decrement lowers to a runtime read,
   boxed numeric increment/decrement helper, and runtime write. Expression-value
   semantics for pre/post increment remain outside this slice.
@@ -177,9 +184,9 @@ Near-term architecture targets:
   disabled-functions behavior in symbol-existence predicates.
 - Scope-aware magic constants in functions, methods, classes, traits,
   namespaces, includes, and eval contexts.
-- Broader control flow: unbraced and alternate syntax, `foreach`,
-  explicit-level `break`, `continue`, for-loop comma expressions and
-  non-direct-variable clause lvalues, and exception/finally edges.
+- Broader control flow: alternate syntax, unbraced switch bodies, `foreach`,
+  `continue`, for-loop comma expressions and non-direct-variable clause
+  lvalues, PHP-exact break/continue diagnostics, and exception/finally edges.
 - Full PHP increment/decrement semantics, including expression result values,
   strings, booleans, arrays/objects, references, and copy-on-write behavior.
 - Explicit fallback boundaries for `eval`, variable variables, and runtime
