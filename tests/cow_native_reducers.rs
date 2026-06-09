@@ -230,6 +230,132 @@ echo bin2hex($s), \":\", bin2hex($t), \"\\n\";",
     assert_eq!(failed, 0, "COW reducer fail count changed");
 }
 
+#[test]
+fn compile_dynamic_temporary_cow_reducers_match_php_oracle() {
+    let root = temp_dir("ptn-native-dynamic-temporary-cow-reducers");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-temporary-cow-reducers.php");
+    let output = root.join("dynamic-temporary-cow-reducers-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function record_case($name, $ok) {\n\
+    if (!$ok) {\n\
+        echo \"FAIL \", $name, \"\\n\";\n\
+    }\n\
+    return $ok;\n\
+}\n\
+function make_pair($base) { return [$base, $base + 1]; }\n\
+function make_nested($base) { return [[\"v\" => $base], [\"v\" => $base + 1]]; }\n\
+function identity_value($value) { return $value; }\n\
+function pick_slot($items, $key) { return $items[$key]; }\n\
+function snapshot_arg($value) {\n\
+    $arg = func_get_arg(0);\n\
+    $copy = $arg;\n\
+    $copy[] = \"copy\";\n\
+    return [$value, $arg, $copy];\n\
+}\n\
+function make_text($seed) { return $seed . \"bc\"; }\n\
+$pass = 0;\n\
+$fail = 0;\n\
+$tmp = make_pair(10);\n\
+$tmp_copy = $tmp;\n\
+$tmp_copy[] = 12;\n\
+if (record_case(\"call_result_array_append\", count($tmp) === 2 && count($tmp_copy) === 3 && $tmp[0] === 10 && $tmp_copy[2] === 12)) { $pass++; } else { $fail++; }\n\
+$base = [\"drop\" => \"gone\", \"keep\" => \"base\"];\n\
+$result = identity_value($base);\n\
+$result_copy = $result;\n\
+unset($result_copy[\"drop\"]);\n\
+if (record_case(\"call_result_array_unset\", array_key_exists(\"drop\", $base) && array_key_exists(\"drop\", $result) && !array_key_exists(\"drop\", $result_copy))) { $pass++; } else { $fail++; }\n\
+$matrix = make_nested(20);\n\
+$key = 1;\n\
+$row = $matrix[$key];\n\
+$row_copy = $row;\n\
+$row_copy[\"v\"] = 99;\n\
+$row_copy[] = \"tail\";\n\
+if (record_case(\"dynamic_array_read_slot\", $matrix[1][\"v\"] === 21 && $row[\"v\"] === 21 && $row_copy[\"v\"] === 99 && count($row_copy) === 2)) { $pass++; } else { $fail++; }\n\
+$called_slot = make_nested(30)[0];\n\
+$called_slot_copy = $called_slot;\n\
+$called_slot_copy[\"v\"] = 77;\n\
+if (record_case(\"call_result_read_slot\", $called_slot[\"v\"] === 30 && $called_slot_copy[\"v\"] === 77)) { $pass++; } else { $fail++; }\n\
+$text = make_text(\"a\");\n\
+$text_copy = $text;\n\
+$text_copy[1] = \"Z\";\n\
+if (record_case(\"call_result_string_offset\", $text === \"abc\" && $text_copy === \"aZc\")) { $pass++; } else { $fail++; }\n\
+$strings = [\"ab\", str_rot13(\"no\")];\n\
+$string_key = 1;\n\
+$slot = $strings[$string_key];\n\
+$slot_copy = $slot;\n\
+$slot_copy[0] = \"Z\";\n\
+if (record_case(\"dynamic_string_read_slot\", $strings[1] === \"ab\" && $slot === \"ab\" && $slot_copy === \"Zb\")) { $pass++; } else { $fail++; }\n\
+$letters = [\"name\" => \"ptn\"];\n\
+$char = $letters[\"name\"][1];\n\
+$char_copy = $char;\n\
+$char_copy[0] = \"T\";\n\
+if (record_case(\"string_offset_read_result\", $letters[\"name\"] === \"ptn\" && $char === \"t\" && $char_copy === \"T\")) { $pass++; } else { $fail++; }\n\
+$values = array_values([\"x\" => 1, \"y\" => 2]);\n\
+$values_copy = $values;\n\
+$shifted = array_shift($values_copy);\n\
+if (record_case(\"array_values_call_result\", $shifted === 1 && count($values) === 2 && count($values_copy) === 1 && $values_copy[0] === 2)) { $pass++; } else { $fail++; }\n\
+$source_slots = make_nested(40);\n\
+$picked = pick_slot($source_slots, 0);\n\
+$picked_copy = $picked;\n\
+$picked_copy[\"v\"] += 5;\n\
+if (record_case(\"function_returned_read_slot\", $source_slots[0][\"v\"] === 40 && $picked[\"v\"] === 40 && $picked_copy[\"v\"] === 45)) { $pass++; } else { $fail++; }\n\
+$arg_source = [\"seed\"];\n\
+$arg_result = snapshot_arg($arg_source);\n\
+if (record_case(\"func_get_arg_result\", count($arg_source) === 1 && count($arg_result[0]) === 1 && count($arg_result[1]) === 1 && count($arg_result[2]) === 2 && $arg_result[2][1] === \"copy\")) { $pass++; } else { $fail++; }\n\
+echo \"dynamic temporary COW: pass=\", $pass, \" fail=\", $fail, \"\\n\";",
+    )
+    .unwrap();
+
+    let php = Command::new("php")
+        .arg(&input)
+        .output()
+        .expect("php oracle should run");
+    assert!(
+        php.status.success(),
+        "PHP oracle exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        php.status.code(),
+        String::from_utf8_lossy(&php.stdout),
+        String::from_utf8_lossy(&php.stderr)
+    );
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let native = Command::new(&output).output().unwrap();
+    assert!(
+        native.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        native.status.code(),
+        String::from_utf8_lossy(&native.stdout),
+        String::from_utf8_lossy(&native.stderr)
+    );
+    assert_eq!(
+        native.stdout, php.stdout,
+        "native stdout diverged from PHP oracle"
+    );
+    assert_eq!(
+        native.stderr, php.stderr,
+        "native stderr diverged from PHP oracle"
+    );
+    assert_eq!(
+        String::from_utf8(native.stdout).unwrap(),
+        "dynamic temporary COW: pass=10 fail=0\n"
+    );
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_value_share("));
+    assert!(c_source.contains("ptn_value_drop(&ptn_tmp_"));
+    assert!(
+        c_source.contains("static PTN_UNUSED PtnArray *ptn_value_detach_array(PtnValue *value)")
+    );
+    assert!(c_source.contains("ptn_array_detach_value(entry_value);"));
+    assert!(c_source.contains("ptn_runtime_string_offset_set"));
+    assert!(c_source.contains("ptn_runtime_array_path_set"));
+    assert!(c_source.contains("ptn_runtime_array_shift_variable"));
+    assert!(c_source.contains("ptn_array_read(&runtime"));
+}
+
 fn temp_dir(name: &str) -> PathBuf {
     let mut path = std::env::temp_dir();
     let unique = SystemTime::now()

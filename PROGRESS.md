@@ -1,7 +1,7 @@
 # PTN Progress
 
-Last refresh: 2026-06-09T18:38Z
-Measured base: `ptn-cqu.47.18` rebased after `ptn-cqu.47.10`
+Last refresh: 2026-06-09T18:43Z
+Measured base: `ptn-cqu.47.19` rebased after `ptn-cqu.47.18`
 
 ## Test Dashboard
 
@@ -15,7 +15,7 @@ Measured base: `ptn-cqu.47.18` rebased after `ptn-cqu.47.10`
 | PHPT tests/basic+func+lang | 18 | 17 | 1 |
 | COW contract spec tests | 7 | 7 | 0 |
 | COW-focused native tests | 12 | 12 | 0 |
-| Focused COW reducer snippets | 16 | 16 | 0 |
+| Focused COW reducer snippets | 26 | 26 | 0 |
 | COW oracle suite | 12 | 10 | 2 |
 | COW/reference-focused native tests | 10 | 10 | 0 |
 | Mutating-internal COW matrix | 12 | 12 | 0 |
@@ -29,7 +29,8 @@ assignment-aliasing 0/4, string-offsets 2/4,
 array-writes-appends-unset 0/4, nested-arrays 0/4,
 foreach-mutation 0/4, function-boundaries 0/4,
 reference-interaction 0/5. Focused local foreach by-value PHPT row: 1/1.
-Native COW reducer matrix: 16 pass, 0 fail. Dedicated oracle
+Native COW reducer matrix: 26 pass, 0 fail, including dynamic
+temporary/call-result/read-slot cases 10/10 against PHP oracle. Dedicated oracle
 `tests/cow_oracle.rs`: arrays 2/2, strings 1/1, foreach 2/2, functions 3/3,
 nested values 2/2, references 0/2. Mutating-internal matrix: 12 pass,
 0 fail plus five unsupported target diagnostics. Contract stress includes
@@ -38,25 +39,20 @@ and 0 live payloads.
 
 ## Already Ported
 
-Lexer/parser, AST, IR, C backend, boxed values, direct variables, constants,
-selected string/math/type internals, ordered arrays and `foreach`, array cursor
-internals plus `array_pop()`/`array_push()`/`array_shift()` on direct variable
-arrays, `array_values()`, numeric-string array key normalization, array payload
-refcounts with detach-on-write, by-value `foreach` COW snapshots, generated C
-ABI share/drop handling, shared array/string payload COW with nested path
-detach, direct variable reference aliases, array element references,
-by-reference user parameters, by-value parameter/reference split behavior,
-by-value function-boundary COW across arguments, locals, returns, recursion,
-and extra arguments, top-level user functions with scoped magic constants and
-`func_*` introspection, `print_r`, selected binary-string handling, string
-offset read diagnostics, direct-variable string offset writes, refcounted
-string payloads with assignment/function sharing and detach-on-write offset
-mutation, catchable `count()` non-array diagnostics, expression-form `??`
-reads, nested array path detach for assignment, compound assignment, append,
-and unset, focused native COW reducers, COW oracle coverage, and five explicit
-unsupported diagnostics for non-variable mutating internals, plus debug
-counters/assertions for string and array payload alloc/free/share/drop/detach
-evidence.
+Lexer/parser, AST, IR, C backend, boxed values, variables, constants,
+string/math/type internals, ordered arrays and `foreach`, array cursor
+internals, `array_values()`, numeric-string keys, array payload refcounts,
+by-value `foreach` COW snapshots, generated C ABI share/drop handling,
+shared array/string payload COW with nested path detach, reference aliases,
+array element references, by-reference user parameters, by-value parameter
+splits, function-boundary COW across arguments, locals, returns, recursion,
+and extras, user functions with scoped magic constants and `func_*`
+introspection, `print_r`, binary-string handling, string offset diagnostics
+and writes, refcounted string payload detach-on-write, catchable `count()`
+non-array diagnostics, expression-form `??`, nested array path detach for
+assignment, compound assignment, append, and unset, focused native COW
+reducers, dynamic temporary/read-slot COW oracle reducers, five unsupported
+mutating-internal diagnostics, and payload lifetime debug counters.
 
 ## Still Needed
 
