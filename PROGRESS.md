@@ -1931,3 +1931,25 @@ Optimized generated string concatenation runtime behavior:
 - A native benchmark with 6000 chained and compound concat loop iterations
   produced the same `46890 34890` output and improved from about `real
   1.35-1.37s` before the change to `real 0.84-0.87s` after the change.
+
+Improved generated loop and branch condition overhead:
+
+- The C backend now has a condition-emission path for `if`, `while`,
+  `do while`, and `for` tests that directly emits C integer predicates when a
+  supported comparison or boolean expression is immediately consumed as control
+  flow.
+- Comparison conditions still materialize operands left-to-right through the
+  boxed `PtnValue` path, preserving current diagnostics and evaluation order,
+  but avoid constructing a boxed boolean only to call `ptn_is_truthy()` on it.
+- Condition-only `&&`, `||`, `xor`, and unary `!` reuse the same direct
+  predicate path while keeping short-circuit behavior. Expression contexts
+  still produce boxed boolean `PtnValue` results.
+- Native loop telemetry on a mixed `for`/`while`/`foreach` snippet matched PHP
+  output and improved interleaved generated-binary timings from an average of
+  about 0.072s to about 0.063s on this worker.
+
+Still unsupported after this condition-emission optimization: unboxed numeric
+loop-variable specialization, reference/copy-on-write-aware loop mutation
+semantics, by-reference or object `foreach`, PHP-exact diagnostics beyond the
+currently modeled control-flow/runtime warning boundaries, and binary-safe
+string storage.
