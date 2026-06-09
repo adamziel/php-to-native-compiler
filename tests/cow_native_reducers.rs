@@ -136,6 +136,25 @@ echo array_shift($b), \":\", count($a), \":\", count($b), \":\", $a[0], \":\", $
             expected_stdout: "1:3:2:1:2\n",
         },
         CowReducerCase {
+            name: "array_unshift_shared_alias",
+            oracle: "ext/standard/tests/array/array_unshift_basic1.phpt",
+            source: "<?php\n\
+$a = [1, 2];\n\
+$b = $a;\n\
+echo array_unshift($b, 10), \":\", count($a), \":\", count($b), \":\", $a[0], \":\", $b[0], \":\", $b[2], \"\\n\";",
+            expected_stdout: "3:2:3:1:10:2\n",
+        },
+        CowReducerCase {
+            name: "array_reindexing_internals_unwrap_single_owner_refs",
+            oracle: "Zend/tests/foreach/foreach_reference.phpt",
+            source: "<?php\n\
+$items = [\"a\", \"b\", \"c\"];\n\
+foreach ($items as &$value) {}\n\
+var_dump(array_values($items));\n\
+var_dump(array_reverse($items));",
+            expected_stdout: "array(3) {\n  [0]=>\n  string(1) \"a\"\n  [1]=>\n  string(1) \"b\"\n  [2]=>\n  &string(1) \"c\"\n}\narray(3) {\n  [0]=>\n  &string(1) \"c\"\n  [1]=>\n  string(1) \"b\"\n  [2]=>\n  string(1) \"a\"\n}\n",
+        },
+        CowReducerCase {
             name: "string_offset_shared_alias",
             oracle: "Zend/tests/str_offset_001.phpt",
             source: "<?php\n\
@@ -226,7 +245,7 @@ echo bin2hex($s), \":\", bin2hex($t), \"\\n\";",
         );
     }
 
-    assert_eq!(passed, 16, "COW reducer pass count changed");
+    assert_eq!(passed, 18, "COW reducer pass count changed");
     assert_eq!(failed, 0, "COW reducer fail count changed");
 }
 

@@ -5892,6 +5892,10 @@ fn parser_rejects_non_variable_array_by_ref_mutation_calls() {
             "<?php $items = [[1], [2]]; var_dump(array_shift(current($items)));",
             "array_shift",
         ),
+        (
+            "<?php $items = [[1], [2]]; array_unshift($items[0], 0);",
+            "array_unshift",
+        ),
     ] {
         let error = parser::parse(source).unwrap_err();
         assert!(
@@ -5983,6 +5987,71 @@ var_dump(function_exists(\"array_unshift\"), function_exists(\"ARRAY_UNSHIFT\"))
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_runtime_array_unshift_variable"));
     assert!(c_source.contains("ptn_array_unshift_values"));
+}
+
+#[test]
+fn compile_array_reverse_and_reindexing_internals_to_native_binary() {
+    let root = temp_dir("ptn-native-array-reverse-reindexing-internals");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-reverse-reindexing-internals.php");
+    let output = root.join("array-reverse-reindexing-internals-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$refs = [\"a\", \"b\", \"c\"];\n\
+foreach ($refs as &$value) {}\n\
+var_dump(array_values($refs));\n\
+var_dump(array_reverse($refs));\n\
+$assoc = [0 => \"zero\", 1 => \"one\", 2 => \"two\", \"s\" => \"ess\", 3 => \"four\"];\n\
+var_dump(array_reverse($assoc, true));\n\
+var_dump(function_exists(\"array_reverse\"), function_exists(\"ARRAY_REVERSE\"));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  string(1) \"a\"\n",
+            "  [1]=>\n",
+            "  string(1) \"b\"\n",
+            "  [2]=>\n",
+            "  &string(1) \"c\"\n",
+            "}\n",
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  &string(1) \"c\"\n",
+            "  [1]=>\n",
+            "  string(1) \"b\"\n",
+            "  [2]=>\n",
+            "  string(1) \"a\"\n",
+            "}\n",
+            "array(5) {\n",
+            "  [3]=>\n",
+            "  string(4) \"four\"\n",
+            "  [\"s\"]=>\n",
+            "  string(3) \"ess\"\n",
+            "  [2]=>\n",
+            "  string(3) \"two\"\n",
+            "  [1]=>\n",
+            "  string(3) \"one\"\n",
+            "  [0]=>\n",
+            "  string(4) \"zero\"\n",
+            "}\n",
+            "bool(true)\n",
+            "bool(true)\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_array_reverse"));
+    assert!(c_source.contains("ptn_array_reindexing_internal_value"));
 }
 
 #[test]

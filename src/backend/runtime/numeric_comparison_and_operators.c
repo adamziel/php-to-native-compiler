@@ -5,6 +5,13 @@
     return (int64_t)array->len;
 }
 
+static PTN_UNUSED PtnValue ptn_array_reindexing_internal_value(PtnValue value) {
+    if (value.type == PTN_REFERENCE && value.as.reference->refcount == 1) {
+        return ptn_value_deref(value);
+    }
+    return value;
+}
+
 static PTN_UNUSED int ptn_compare_arrays_equal(PtnArray *left, PtnArray *right) {
     if (left->len != right->len) {
         return 0;

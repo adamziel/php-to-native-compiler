@@ -503,10 +503,39 @@ static PtnValue ptn_internal_array_values(PtnRuntime *runtime, size_t argc, cons
     }
     for (size_t i = 0; i < array->len; i++) {
         entries[i].has_key = 0;
-        entries[i].value = array->entries[i].value;
+        entries[i].value = ptn_array_reindexing_internal_value(array->entries[i].value);
     }
 
     PtnValue result = ptn_array_from_literal_entries(array->len, entries);
+    free(entries);
+    return result;
+}
+
+static PtnValue ptn_internal_array_reverse(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_reverse", 1, "array", args[0]);
+    int preserve_keys = argc >= 2 && ptn_is_truthy(args[1]);
+    if (array->len == 0) {
+        return ptn_array_from_literal_entries(0, NULL);
+    }
+
+    PtnArrayLiteralEntry *entries = malloc(array->len * sizeof(PtnArrayLiteralEntry));
+    if (entries == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < array->len; i++) {
+        PtnArrayEntry *source = &array->entries[array->len - i - 1];
+        entries[i].has_key = preserve_keys || source->key.type == PTN_ARRAY_KEY_STRING;
+        entries[i].key = entries[i].has_key ? ptn_array_key_value(source->key) : ptn_null();
+        entries[i].value = ptn_array_reindexing_internal_value(source->value);
+    }
+
+    PtnValue result = ptn_array_from_literal_entries(array->len, entries);
+    for (size_t i = 0; i < array->len; i++) {
+        if (entries[i].has_key) {
+            ptn_value_destroy(&entries[i].key);
+        }
+    }
     free(entries);
     return result;
 }
@@ -1947,6 +1976,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "array_key_exists", 2, 2, ptn_internal_array_key_exists },
         { "array_pop", 1, 1, ptn_internal_array_pop },
         { "array_push", 1, PTN_VARIADIC_ARGS, ptn_internal_array_push },
+        { "array_reverse", 1, 2, ptn_internal_array_reverse },
         { "array_shift", 1, 1, ptn_internal_array_shift },
         { "array_unshift", 1, PTN_VARIADIC_ARGS, ptn_internal_array_unshift },
         { "array_values", 1, 1, ptn_internal_array_values },
