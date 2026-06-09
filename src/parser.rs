@@ -156,7 +156,7 @@ impl Parser {
             self.advance();
             declarations.push(self.parse_const_declaration()?);
         }
-        self.expect_statement_terminator()?;
+        self.expect_const_statement_terminator()?;
         Ok(Statement::Const { declarations, span })
     }
 
@@ -974,6 +974,17 @@ impl Parser {
             }
             TokenKind::CloseTag | TokenKind::Eof => Ok(()),
             _ => Err(syntax_error_unexpected(self.peek(), None)),
+        }
+    }
+
+    fn expect_const_statement_terminator(&mut self) -> Result<()> {
+        match self.peek().kind {
+            TokenKind::Semicolon => {
+                self.advance();
+                Ok(())
+            }
+            TokenKind::CloseTag | TokenKind::Eof => Ok(()),
+            _ => Err(syntax_error_unexpected(self.peek(), Some("\",\" or \";\""))),
         }
     }
 

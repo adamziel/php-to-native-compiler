@@ -158,7 +158,8 @@ Supported today:
   parse error through the `phpc` runner.
 - Unexpected tokens at currently modeled statement terminators and right
   parentheses are rejected with source-spanned PHP-style parse errors through
-  the `phpc` runner.
+  the `phpc` runner. Global `const` declaration terminators report the
+  const-specific `"," or ";"` expected-token set.
 - Global-scope magic constants `__LINE__`, `__FILE__`, `__DIR__`,
   `__FUNCTION__`, `__METHOD__`, `__CLASS__`, `__TRAIT__`, and
   `__NAMESPACE__`. Scope-dependent names currently resolve to empty strings in

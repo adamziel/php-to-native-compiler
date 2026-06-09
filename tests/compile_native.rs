@@ -373,6 +373,16 @@ fn parser_reports_unexpected_tokens_with_parse_error_spans() {
     let span = integer.span.unwrap();
     assert_eq!(span.line, 2);
     assert_eq!(span.column, 16);
+
+    let const_delimiter = parser::parse("<?php\nconst FOO = \"BAR\"{0};").unwrap_err();
+    assert_eq!(
+        const_delimiter.message,
+        "syntax error, unexpected token \"{\", expecting \",\" or \";\""
+    );
+    assert_eq!(const_delimiter.kind, DiagnosticKind::ParseError);
+    let span = const_delimiter.span.unwrap();
+    assert_eq!(span.line, 2);
+    assert_eq!(span.column, 18);
 }
 
 #[test]
@@ -1433,6 +1443,26 @@ fn phpc_renders_unexpected_statement_token_as_php_parse_error() {
         String::from_utf8(execution.stderr).unwrap(),
         format!(
             "Parse error: syntax error, unexpected integer \"12\" in {} on line 3\n",
+            input.display()
+        )
+    );
+}
+
+#[test]
+fn phpc_renders_unexpected_const_terminator_as_php_parse_error() {
+    let root = temp_dir("ptn-phpc-unexpected-const-terminator");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("unexpected-const-terminator.php");
+    fs::write(&input, "<?php\nconst FOO_COMPILE_ERROR = \"BAR\"{0};\n").unwrap();
+
+    let execution = Command::new(phpc_bin()).arg(&input).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "Parse error: syntax error, unexpected token \"{{\", expecting \",\" or \";\" in {} on line 2\n",
             input.display()
         )
     );

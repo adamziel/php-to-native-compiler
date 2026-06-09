@@ -248,7 +248,8 @@ supports in generated native binaries.
   expression-context `(void)` cast syntax, unterminated block comments, and
   invalid legacy octal integer literals containing `8` or `9`, plus
   unexpected-token parse errors at modeled statement terminators and right
-  parentheses.
+  parentheses. Global `const` declaration terminators report the
+  const-specific `"," or ";"` expected-token set.
 - Statement-form direct variable increment/decrement: `$name++;`, `++$name;`,
   `$name--;`, and `--$name;`.
 

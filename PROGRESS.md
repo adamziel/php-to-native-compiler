@@ -1510,3 +1510,21 @@ namespace/class constants, namespaced constant declaration semantics,
 `define()`'s legacy case-insensitive flag, exact warning file-name/error-handler
 parity, additional built-in/extension constants, exception behavior for
 `constant()` failures, and eval contexts.
+
+Refined global `const` declaration terminator diagnostics:
+
+- Global `const` declarations now use a context-specific terminator check after
+  parsing one or more declarations. Unexpected tokens at that point produce the
+  generic PHP-style unexpected-token parse error with an expected-token set of
+  `"," or ";"`, while ordinary statement terminators keep their existing
+  behavior.
+- Native/CLI tests prove parser spans and `phpc` rendering for an unexpected
+  `{` after a const-expression value.
+- Focused public PHPT telemetry through `phpc` passes
+  `Zend/tests/grammar/alternative_offset_syntax_compile_error_in_const_expr.phpt`.
+
+Still unsupported after this const-diagnostic slice: complex/braced
+interpolation parse diagnostics such as
+`Zend/tests/grammar/alternative_offset_syntax_in_encaps_string.phpt`, exact
+parse-error expected-token sets at other grammar sites, namespace/class
+constants, and broader parser coverage for unsupported declarations.
