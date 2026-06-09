@@ -174,6 +174,17 @@ fn emit_instruction(
         Instruction::Switch { expression, cases } => {
             emit_switch(out, values, expression, cases);
         }
+        Instruction::Label { name } => {
+            out.push_str("    ");
+            out.push_str(&c_label(name));
+            out.push_str(":\n");
+            out.push_str("    ;\n");
+        }
+        Instruction::Goto { label } => {
+            out.push_str("    goto ");
+            out.push_str(&c_label(label));
+            out.push_str(";\n");
+        }
         Instruction::Break => match break_target {
             Some(BreakTarget::NativeBreak) => {
                 out.push_str("    break;\n");
@@ -641,6 +652,18 @@ fn c_string(value: &str) -> String {
             b'\t' => out.push_str("\\t"),
             0x20..=0x7e => out.push(byte as char),
             _ => out.push_str(&format!("\\x{byte:02x}")),
+        }
+    }
+    out
+}
+
+fn c_label(value: &str) -> String {
+    let mut out = String::from("ptn_user_label_");
+    for byte in value.bytes() {
+        if byte.is_ascii_alphanumeric() || byte == b'_' {
+            out.push(byte as char);
+        } else {
+            out.push_str(&format!("_x{byte:02x}"));
         }
     }
     out

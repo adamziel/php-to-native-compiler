@@ -41,7 +41,11 @@ impl Parser {
             TokenKind::For => self.parse_for(),
             TokenKind::Switch => self.parse_switch(),
             TokenKind::Break => self.parse_break(),
+            TokenKind::Goto => self.parse_goto(),
             TokenKind::PlusPlus | TokenKind::MinusMinus => self.parse_prefix_increment_statement(),
+            TokenKind::Identifier(_) if matches!(self.peek_next().kind, TokenKind::Colon) => {
+                self.parse_label()
+            }
             TokenKind::Identifier(_) => self.parse_call_statement(),
             TokenKind::Variable(_) => self.parse_variable_statement(),
             TokenKind::InlineHtml(_) => self.parse_inline_html(),
@@ -131,12 +135,12 @@ impl Parser {
         self.expect_left_paren()?;
         let condition = self.parse_expr()?;
         self.expect_right_paren()?;
-        let then_body = self.parse_block()?;
+        let then_body = self.parse_statement_body()?;
         let else_body = match self.peek().kind {
             TokenKind::Elseif => vec![self.parse_if()?],
             TokenKind::Else => {
                 self.advance();
-                self.parse_block()?
+                self.parse_statement_body()?
             }
             _ => Vec::new(),
         };
@@ -364,6 +368,29 @@ impl Parser {
         Ok(Statement::Break { span })
     }
 
+    fn parse_goto(&mut self) -> Result<Statement> {
+        let token = self.advance().clone();
+        let span = token.span;
+        let label = self.advance().clone();
+        let TokenKind::Identifier(label) = label.kind else {
+            return Err(Diagnostic::new("expected goto label", Some(label.span)));
+        };
+        self.expect_statement_terminator()?;
+        Ok(Statement::Goto { label, span })
+    }
+
+    fn parse_label(&mut self) -> Result<Statement> {
+        let token = self.advance().clone();
+        let TokenKind::Identifier(name) = token.kind else {
+            return Err(Diagnostic::new("expected label", Some(token.span)));
+        };
+        self.expect_colon()?;
+        Ok(Statement::Label {
+            name,
+            span: token.span,
+        })
+    }
+
     fn parse_call_statement(&mut self) -> Result<Statement> {
         let token = self.advance().clone();
         let TokenKind::Identifier(name) = token.kind else {
@@ -397,6 +424,14 @@ impl Parser {
         }
         self.expect_right_brace()?;
         Ok(statements)
+    }
+
+    fn parse_statement_body(&mut self) -> Result<Vec<Statement>> {
+        if matches!(self.peek().kind, TokenKind::LeftBrace) {
+            self.parse_block()
+        } else {
+            Ok(vec![self.parse_statement()?])
+        }
     }
 
     fn parse_expr(&mut self) -> Result<Expr> {
@@ -789,6 +824,12 @@ impl Parser {
 
     fn peek(&self) -> &Token {
         &self.tokens[self.index]
+    }
+
+    fn peek_next(&self) -> &Token {
+        self.tokens
+            .get(self.index + 1)
+            .unwrap_or_else(|| self.peek())
     }
 
     fn advance(&mut self) -> &Token {

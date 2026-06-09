@@ -1004,3 +1004,23 @@ Added scalar `dirname()`:
 Still unsupported after this `dirname()` slice: PHP-exact path edge behavior for
 unusual roots/trailing separators, embedded NUL path strings, and unsupported
 array/object/resource/reference operands.
+
+Added basic labels, `goto`, and single-statement `if` bodies for jump control
+flow:
+
+- The lexer/parser/AST/IR now support user labels such as `L1:` and
+  `goto L1;` statements in the currently generated main function.
+- `if`, `elseif`, and `else` bodies may now be either braced blocks or a single
+  supported statement, preserving the existing braced lowering path.
+- Generated C emits PHP label/goto statements as deterministic prefixed C
+  labels, keeping the implementation generic rather than PHPT-output-specific.
+- Native tests prove representative public jump source shapes, and focused
+  public PHPT telemetry through `phpc` passes `Zend/tests/jump/jump01.phpt`,
+  `Zend/tests/jump/jump02.phpt`, `Zend/tests/jump/jump03.phpt`, and
+  `Zend/tests/jump/jump04.phpt`.
+
+Still unsupported after this jump slice: PHP-exact invalid-goto diagnostics and
+restrictions for jumps into or out of forbidden scopes, labels/goto inside
+unsupported functions/classes/try/finally constructs, alternate control-flow
+syntax, `continue`, `foreach`, explicit-level `break`, and unbraced loop/switch
+bodies.

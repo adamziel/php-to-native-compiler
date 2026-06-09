@@ -122,9 +122,9 @@ Supported today:
 - Boxed scalar bit shifts `<<` and `>>`. Supported scalar operands are
   converted to integers through the current bitwise integer-conversion path,
   and operands are evaluated left-to-right before calling runtime helpers.
-- Braced `if`, `elseif`, and `else` statements. Branch conditions use boxed
-  scalar truthiness and the currently supported expression subset, including
-  grouped expressions and scalar comparisons.
+- Braced and single-statement `if`, `elseif`, and `else` statements. Branch
+  conditions use boxed scalar truthiness and the currently supported expression
+  subset, including grouped expressions and scalar comparisons.
 - Braced `while (expr) { statements }` loops over the currently supported
   scalar expression and statement subset.
 - Braced `do { statements } while (expr);` loops over the currently supported
@@ -138,6 +138,8 @@ Supported today:
   currently supported scalar expression and statement subset, including
   source-order case matching with boxed loose comparison, PHP-style fallthrough,
   one `default`, and simple `break;`.
+- User labels such as `L1:` and `goto L1;` statements inside the currently
+  generated main function.
 - Statement-form direct variable `++` and `--`, such as `$i++;` and `--$i;`,
   using the boxed numeric arithmetic helper path.
 
@@ -152,10 +154,12 @@ Unsupported today:
   division/modulo-by-zero exception behavior, exact numeric literal
   overflow/range parity, complete comparison parity for unsupported types,
   spaceship comparison operator,
-  keyword boolean operators, chained comparison parse errors, unbraced and alternate
-  control-flow syntax, `foreach`, explicit-level `break`
-  such as `break 2`, `continue`, full switch parity for unsupported value
-  types and alternate syntax, increment/decrement as expressions, PHP-exact
+  keyword boolean operators, chained comparison parse errors, unbraced
+  loop/switch bodies and alternate control-flow syntax, `foreach`,
+  explicit-level `break` such as `break 2`, `continue`, invalid-goto
+  diagnostics and restrictions for jumps into/out of forbidden scopes, full
+  switch parity for unsupported value types and alternate syntax,
+  increment/decrement as expressions, PHP-exact
   increment/decrement semantics for strings/booleans and other edge values,
   for-loop comma expressions and non-direct-variable clause lvalues,
   complete overflow parity, exact scalar cast overflow behavior, PHP-exact

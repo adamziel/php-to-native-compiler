@@ -51,6 +51,12 @@ pub enum Instruction {
         cases: Vec<SwitchCase>,
     },
     Break,
+    Label {
+        name: String,
+    },
+    Goto {
+        label: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -267,6 +273,14 @@ fn lower_statements(statements: &[Statement]) -> Vec<Instruction> {
             }
             Statement::Break { .. } => {
                 instructions.push(Instruction::Break);
+            }
+            Statement::Label { name, .. } => {
+                instructions.push(Instruction::Label { name: name.clone() });
+            }
+            Statement::Goto { label, .. } => {
+                instructions.push(Instruction::Goto {
+                    label: label.clone(),
+                });
             }
         }
     }

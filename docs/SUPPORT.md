@@ -138,8 +138,9 @@ supports in generated native binaries.
   and `M_SQRT3`. Other ordinary names report as undefined.
 - A minimal `phpc` runner for supported PHPT rows. It compiles scripts or `-r`
   snippets to temporary native binaries through the normal compiler pipeline.
-- Braced `if`, `elseif`, and `else` statements whose conditions and bodies use
-  the currently supported scalar expression and statement subset.
+- Braced and single-statement `if`, `elseif`, and `else` statements whose
+  conditions and bodies use the currently supported scalar expression and
+  statement subset.
 - Braced `while (expr) { statements }` loops where the condition and body use
   the currently supported scalar expression and statement subset.
 - Braced `do { statements } while (expr);` loops where the body and condition
@@ -155,6 +156,8 @@ supports in generated native binaries.
   in source order with boxed loose `==` semantics, honors a single `default`,
   allows PHP-style fallthrough, and supports simple `break;` from the innermost
   emitted switch or loop.
+- User labels such as `L1:` and `goto L1;` statements inside the currently
+  generated main function.
 - Source-spanned compile diagnostics emitted through `phpc` use a PHP-style
   fatal boundary with the source file and line. This currently covers duplicate
   `default:` clauses in `switch`.
@@ -176,10 +179,12 @@ supports in generated native binaries.
 - Comparison operator `<=>`, keyword boolean operators `and`/`or`, PHP-exact
   chained comparison parse errors, and complete comparison parity for
   unsupported value types.
-- Unbraced control-flow statements, alternate control-flow syntax, `foreach`,
+- Unbraced loop/switch bodies, alternate control-flow syntax, `foreach`,
   `break` with an explicit level such as `break 2`, `continue`,
   branch-condition assignments, for-loop comma expressions and
-  non-direct-variable clause lvalues, and exception/finally control-flow edges.
+  non-direct-variable clause lvalues, invalid-goto diagnostics and restrictions
+  for jumps into/out of forbidden scopes, and exception/finally control-flow
+  edges.
 - Switch alternate syntax and switch behavior for arrays, objects, references,
   copy-on-write, and exceptions.
 - Increment/decrement as expressions, including pre/post result values in echo,

@@ -782,6 +782,30 @@ fn parser_accepts_braced_if_elseif_else_statements() {
 }
 
 #[test]
+fn parser_accepts_labels_goto_and_single_statement_if() {
+    let program =
+        parser::parse("<?php $n = 1; L1: if ($n <= 3) goto L1; else echo \"done\\n\";").unwrap();
+    assert_eq!(program.statements.len(), 3);
+    assert!(matches!(
+        &program.statements[1],
+        Statement::Label { name, .. } if name == "L1"
+    ));
+    let Statement::If {
+        then_body,
+        else_body,
+        ..
+    } = &program.statements[2]
+    else {
+        panic!("expected if statement");
+    };
+    assert!(matches!(
+        &then_body[0],
+        Statement::Goto { label, .. } if label == "L1"
+    ));
+    assert!(matches!(&else_body[0], Statement::Echo { .. }));
+}
+
+#[test]
 fn parser_accepts_braced_switch_cases_default_and_break() {
     let program = parser::parse(
         "<?php $a = 1; switch ($a) { case 0: echo \"bad\"; break; case 1: echo \"good\"; break; default: echo \"bad\"; break; }",
@@ -2130,6 +2154,52 @@ fn compile_if_condition_evaluates_before_selected_branch_to_native_binary() {
         String::from_utf8(execution.stderr).unwrap(),
         "Warning: Undefined variable $missing\n"
     );
+}
+
+#[test]
+fn compile_goto_jump_phpt_shapes_to_native_binary() {
+    let cases = [
+        (
+            "jump01",
+            "<?php
+$n = 1;
+L1:
+echo \"$n: ok\\n\";
+$n++;
+if ($n <= 3) goto L1;
+?>",
+            "1: ok\n2: ok\n3: ok\n",
+        ),
+        (
+            "jump02",
+            "<?php
+$n = 1;
+L1:
+if ($n > 3) goto L2;
+echo \"$n: ok\\n\";
+$n++;
+goto L1;
+L2:
+?>",
+            "1: ok\n2: ok\n3: ok\n",
+        ),
+    ];
+
+    for (name, source, expected) in cases {
+        let root_name = format!("ptn-native-goto-{name}");
+        let root = temp_dir(&root_name);
+        fs::create_dir_all(&root).unwrap();
+        let input = root.join(format!("{name}.php"));
+        let output = root.join(format!("{name}-bin"));
+        fs::write(&input, source).unwrap();
+
+        compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+        let execution = Command::new(&output).output().unwrap();
+        assert!(execution.status.success());
+        assert_eq!(String::from_utf8(execution.stdout).unwrap(), expected);
+        assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+    }
 }
 
 #[test]

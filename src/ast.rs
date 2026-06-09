@@ -62,6 +62,14 @@ pub enum Statement {
     Break {
         span: SourceSpan,
     },
+    Label {
+        name: String,
+        span: SourceSpan,
+    },
+    Goto {
+        label: String,
+        span: SourceSpan,
+    },
     InlineHtml {
         content: String,
         span: SourceSpan,
