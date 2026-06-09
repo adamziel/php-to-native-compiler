@@ -942,10 +942,7 @@ impl Parser {
                 Ok(())
             }
             TokenKind::CloseTag | TokenKind::Eof => Ok(()),
-            _ => Err(Diagnostic::new(
-                "expected semicolon",
-                Some(self.peek().span),
-            )),
+            _ => Err(syntax_error_unexpected(self.peek(), None)),
         }
     }
 
@@ -975,10 +972,7 @@ impl Parser {
         if matches!(token.kind, TokenKind::RightParen) {
             Ok(token.span)
         } else {
-            Err(Diagnostic::new(
-                "expected right parenthesis",
-                Some(token.span),
-            ))
+            Err(syntax_error_unexpected(token, Some("\")\"")))
         }
     }
 
@@ -1033,6 +1027,133 @@ impl Parser {
         self.index += 1;
         token
     }
+}
+
+fn syntax_error_unexpected(token: &Token, expecting: Option<&str>) -> Diagnostic {
+    let unexpected = describe_unexpected_token(token);
+    let message = match expecting {
+        Some(expecting) => format!("syntax error, unexpected {unexpected}, expecting {expecting}"),
+        None => format!("syntax error, unexpected {unexpected}"),
+    };
+    Diagnostic::parse_error(message, Some(token.span))
+}
+
+fn describe_unexpected_token(token: &Token) -> String {
+    match &token.kind {
+        TokenKind::Identifier(name) => format!("identifier \"{name}\""),
+        TokenKind::Variable(name) => format!("variable \"${name}\""),
+        TokenKind::String(value) => format!("string \"{}\"", escape_token_text(value)),
+        TokenKind::InterpolatedString(_) => "encapsed string".to_string(),
+        TokenKind::Int(value) => format!("integer \"{value}\""),
+        TokenKind::Float(value) => format!("floating-point number \"{value}\""),
+        TokenKind::Eof => "end of file".to_string(),
+        _ => format!("token \"{}\"", token_text(&token.kind)),
+    }
+}
+
+fn token_text(kind: &TokenKind) -> &'static str {
+    match kind {
+        TokenKind::OpenTag => "<?php",
+        TokenKind::CloseTag => "?>",
+        TokenKind::InlineHtml(_) => "inline HTML",
+        TokenKind::Echo => "echo",
+        TokenKind::Print => "print",
+        TokenKind::If => "if",
+        TokenKind::Elseif => "elseif",
+        TokenKind::Else => "else",
+        TokenKind::Do => "do",
+        TokenKind::While => "while",
+        TokenKind::For => "for",
+        TokenKind::Switch => "switch",
+        TokenKind::Case => "case",
+        TokenKind::Default => "default",
+        TokenKind::Break => "break",
+        TokenKind::Goto => "goto",
+        TokenKind::Const => "const",
+        TokenKind::Identifier(_) => "identifier",
+        TokenKind::String(_) => "string",
+        TokenKind::InterpolatedString(_) => "encapsed string",
+        TokenKind::Int(_) => "integer",
+        TokenKind::Float(_) => "float",
+        TokenKind::True => "true",
+        TokenKind::False => "false",
+        TokenKind::Null => "null",
+        TokenKind::Variable(_) => "variable",
+        TokenKind::Equal => "=",
+        TokenKind::DoubleArrow => "=>",
+        TokenKind::EqualEqual => "==",
+        TokenKind::EqualEqualEqual => "===",
+        TokenKind::NotEqual => "!=",
+        TokenKind::NotEqualEqual => "!==",
+        TokenKind::Spaceship => "<=>",
+        TokenKind::Less => "<",
+        TokenKind::LessEqual => "<=",
+        TokenKind::ShiftLeft => "<<",
+        TokenKind::ShiftLeftEqual => "<<=",
+        TokenKind::Greater => ">",
+        TokenKind::GreaterEqual => ">=",
+        TokenKind::ShiftRight => ">>",
+        TokenKind::ShiftRightEqual => ">>=",
+        TokenKind::AndAnd => "&&",
+        TokenKind::OrOr => "||",
+        TokenKind::AmpersandEqual => "&=",
+        TokenKind::PipeEqual => "|=",
+        TokenKind::CaretEqual => "^=",
+        TokenKind::PlusEqual => "+=",
+        TokenKind::MinusEqual => "-=",
+        TokenKind::PlusPlus => "++",
+        TokenKind::MinusMinus => "--",
+        TokenKind::AsteriskEqual => "*=",
+        TokenKind::AsteriskAsteriskEqual => "**=",
+        TokenKind::SlashEqual => "/=",
+        TokenKind::PercentEqual => "%=",
+        TokenKind::DotEqual => ".=",
+        TokenKind::Plus => "+",
+        TokenKind::Minus => "-",
+        TokenKind::Asterisk => "*",
+        TokenKind::AsteriskAsterisk => "**",
+        TokenKind::Slash => "/",
+        TokenKind::Percent => "%",
+        TokenKind::Ampersand => "&",
+        TokenKind::Pipe => "|",
+        TokenKind::Caret => "^",
+        TokenKind::Tilde => "~",
+        TokenKind::Bang => "!",
+        TokenKind::Backslash => "\\",
+        TokenKind::Dot => ".",
+        TokenKind::Comma => ",",
+        TokenKind::Colon => ":",
+        TokenKind::Semicolon => ";",
+        TokenKind::LeftParen => "(",
+        TokenKind::RightParen => ")",
+        TokenKind::LeftBracket => "[",
+        TokenKind::RightBracket => "]",
+        TokenKind::LeftBrace => "{",
+        TokenKind::RightBrace => "}",
+        TokenKind::IntType => "int",
+        TokenKind::IntegerType => "integer",
+        TokenKind::FloatType => "float",
+        TokenKind::DoubleType => "double",
+        TokenKind::StringType => "string",
+        TokenKind::BinaryType => "binary",
+        TokenKind::BoolType => "bool",
+        TokenKind::BooleanType => "boolean",
+        TokenKind::Eof => "end of file",
+    }
+}
+
+fn escape_token_text(value: &str) -> String {
+    value
+        .chars()
+        .flat_map(|ch| match ch {
+            '\\' => "\\\\".chars().collect::<Vec<_>>(),
+            '"' => "\\\"".chars().collect::<Vec<_>>(),
+            '\n' => "\\n".chars().collect::<Vec<_>>(),
+            '\r' => "\\r".chars().collect::<Vec<_>>(),
+            '\t' => "\\t".chars().collect::<Vec<_>>(),
+            other => vec![other],
+        })
+        .collect()
 }
 
 fn validate_goto_labels(statements: &[Statement]) -> Result<()> {

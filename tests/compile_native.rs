@@ -25,7 +25,7 @@ fn parser_accepts_direct_assignment_and_variable_reads() {
 #[test]
 fn lexer_accepts_numeric_literal_separators_and_radices() {
     let tokens = lexer::lex(
-        "<?php 299_792_458 96_485.332_12 6.626_070_15e-34 0xCAFE_F00D 0b0101_1111 0137_041 0_124",
+        "<?php 299_792_458 96_485.332_12 6.626_070_15e-34 0xCAFE_F00D 0b0101_1111 0137_041 0_124 0o1_6 0O10",
     )
     .unwrap();
     assert!(matches!(tokens[1].kind, TokenKind::Int(299_792_458)));
@@ -41,6 +41,8 @@ fn lexer_accepts_numeric_literal_separators_and_radices() {
     assert!(matches!(tokens[5].kind, TokenKind::Int(0b0101_1111)));
     assert!(matches!(tokens[6].kind, TokenKind::Int(48_673)));
     assert!(matches!(tokens[7].kind, TokenKind::Int(84)));
+    assert!(matches!(tokens[8].kind, TokenKind::Int(14)));
+    assert!(matches!(tokens[9].kind, TokenKind::Int(8)));
 }
 
 #[test]
@@ -337,10 +339,31 @@ fn parser_rejects_increment_and_decrement_expression_contexts() {
     assert!(increment.message.contains("expected expression"));
 
     let decrement = parser::parse("<?php echo $value--;").unwrap_err();
-    assert!(decrement.message.contains("expected semicolon"));
+    assert_eq!(decrement.message, "syntax error, unexpected token \"--\"");
+    assert_eq!(decrement.kind, DiagnosticKind::ParseError);
 
     let invalid_prefix = parser::parse("<?php ++1;").unwrap_err();
     assert!(invalid_prefix.message.contains("expected variable"));
+}
+
+#[test]
+fn parser_reports_unexpected_tokens_with_parse_error_spans() {
+    let brace = parser::parse("<?php\nvar_dump($foo{0});").unwrap_err();
+    assert_eq!(
+        brace.message,
+        "syntax error, unexpected token \"{\", expecting \")\""
+    );
+    assert_eq!(brace.kind, DiagnosticKind::ParseError);
+    let span = brace.span.unwrap();
+    assert_eq!(span.line, 2);
+    assert_eq!(span.column, 14);
+
+    let integer = parser::parse("<?php\n$foo = (mixed) 12;").unwrap_err();
+    assert_eq!(integer.message, "syntax error, unexpected integer \"12\"");
+    assert_eq!(integer.kind, DiagnosticKind::ParseError);
+    let span = integer.span.unwrap();
+    assert_eq!(span.line, 2);
+    assert_eq!(span.column, 16);
 }
 
 #[test]
@@ -1230,6 +1253,46 @@ fn phpc_renders_invalid_legacy_octal_as_php_parse_error() {
         String::from_utf8(execution.stderr).unwrap(),
         format!(
             "Parse error: Invalid numeric literal in {} on line 3\n",
+            input.display()
+        )
+    );
+}
+
+#[test]
+fn phpc_renders_unexpected_right_paren_token_as_php_parse_error() {
+    let root = temp_dir("ptn-phpc-unexpected-right-paren-token");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("unexpected-right-paren-token.php");
+    fs::write(&input, "<?php\n$foo = 'BAR';\nvar_dump($foo{0});\n").unwrap();
+
+    let execution = Command::new(phpc_bin()).arg(&input).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "Parse error: syntax error, unexpected token \"{{\", expecting \")\" in {} on line 3\n",
+            input.display()
+        )
+    );
+}
+
+#[test]
+fn phpc_renders_unexpected_statement_token_as_php_parse_error() {
+    let root = temp_dir("ptn-phpc-unexpected-statement-token");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("unexpected-statement-token.php");
+    fs::write(&input, "<?php\n\n$foo = (mixed) 12;\n").unwrap();
+
+    let execution = Command::new(phpc_bin()).arg(&input).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "Parse error: syntax error, unexpected integer \"12\" in {} on line 3\n",
             input.display()
         )
     );

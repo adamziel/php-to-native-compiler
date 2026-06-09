@@ -460,6 +460,21 @@ impl<'a> Lexer<'a> {
             return Ok(());
         }
 
+        if self.starts_radix_integer_prefix("0o", |ch| matches!(ch, '0'..='7'))
+            || self.starts_radix_integer_prefix("0O", |ch| matches!(ch, '0'..='7'))
+        {
+            self.bump_char();
+            self.bump_char();
+            self.collect_digits(&mut text, |ch| matches!(ch, '0'..='7'));
+            let value = i64::from_str_radix(&text, 8)
+                .map_err(|_| Diagnostic::new("invalid integer literal", Some(start)))?;
+            self.tokens.push(Token {
+                kind: TokenKind::Int(value),
+                span: SourceSpan::new(start.byte_start, self.cursor, start.line, start.column),
+            });
+            return Ok(());
+        }
+
         self.collect_digits(&mut text, |ch| ch.is_ascii_digit());
         let mut is_float = false;
         if self.peek_char() == Some('.') {

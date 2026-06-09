@@ -110,7 +110,8 @@ Supported today:
   using the current scalar string-conversion result for the name.
 - String, integer, float, boolean, and null literals. Numeric literals accept
   PHP digit separators between digits; integer literals include decimal,
-  legacy octal, binary `0b`/`0B`, and hexadecimal `0x`/`0X` forms.
+  legacy octal, explicit octal `0o`/`0O`, binary `0b`/`0B`, and hexadecimal
+  `0x`/`0X` forms.
 - Invalid legacy octal integer literals containing `8` or `9` are rejected with
   source-spanned PHP-style parse errors through the `phpc` runner.
 - Double-quoted strings with direct `$name` variable interpolation. Interpolated
@@ -145,6 +146,9 @@ Supported today:
   PHP-style parse error through the `phpc` runner.
 - Unterminated block comments are rejected with a source-spanned PHP-style
   parse error through the `phpc` runner.
+- Unexpected tokens at currently modeled statement terminators and right
+  parentheses are rejected with source-spanned PHP-style parse errors through
+  the `phpc` runner.
 - Global-scope magic constants `__LINE__`, `__FILE__`, `__DIR__`,
   `__FUNCTION__`, `__METHOD__`, `__CLASS__`, `__TRAIT__`, and
   `__NAMESPACE__`. Scope-dependent names currently resolve to empty strings in

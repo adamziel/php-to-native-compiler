@@ -1349,3 +1349,27 @@ global `const` duplicate diagnostics and ordering parity with runtime
 `define()`, `define()`'s legacy case-insensitive flag, exact unsupported
 argument type diagnostics, additional built-in/extension constants, exception
 behavior for `constant()` failures, and eval contexts.
+
+Added source-spanned unexpected-token parse diagnostics for modeled parser
+delimiter sites:
+
+- The parser now formats unexpected tokens at statement terminators and right
+  parentheses as PHP-style parse errors carrying the offending token kind,
+  token text where available, and the original source span.
+- The lexer now recognizes explicit octal integer literal prefixes `0o` and
+  `0O` with digit separators, so modern octal tokens participate in the same
+  expression parser and diagnostic path as other integer literals.
+- Native/CLI tests prove explicit octal tokenization, parse-error kind and
+  source line/column spans for unexpected `{` and integer tokens, and `phpc`
+  parse-error rendering.
+- Focused public PHPT telemetry through `phpc` passes
+  `Zend/tests/grammar/alternative_offset_syntax_compile_error_outside_const_expr.phpt`,
+  `Zend/tests/oct_whitespace.phpt`, and
+  `Zend/tests/type_declarations/mixed/casting/mixed_cast_error.phpt`.
+
+Still unsupported after this parser-diagnostic slice: exact parse-error
+wording at other grammar sites, direct parser support for classes and reserved
+keyword handling inside class/member declarations, `eval()` parsing, invalid
+control-character diagnostics inside runtime-generated code, exact numeric
+literal overflow/range parity, and invalid numeric separator diagnostics beyond
+the already modeled legacy-octal boundary.
