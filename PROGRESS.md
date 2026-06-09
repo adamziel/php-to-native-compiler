@@ -1,7 +1,7 @@
 # PTN Progress
 
-Last refresh: 2026-06-09T18:59Z
-Measured base: `ptn-cqu.47.17` rebased after `ptn-0xy`
+Last refresh: 2026-06-09T19:04Z
+Measured base: `ptn-cqu.33` rebased after `ptn-cqu.47.17`
 
 ## Test Dashboard
 
@@ -9,6 +9,7 @@ Measured base: `ptn-cqu.47.17` rebased after `ptn-0xy`
 | --- | ---: | ---: | ---: |
 | Source unit tests | 4 | 4 | 0 |
 | Native compiled PHP snippets | 310 | 310 | 0 |
+| Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 145 | 55 |
 | PHPT Zend rows | 76 | 63 | 13 |
 | PHPT ext/standard rows | 77 | 47 | 30 |
@@ -34,10 +35,10 @@ reference-interaction 5/0/5. The 22 failing rows are bucketed in
 `docs/COW_PHPT_BLOCKERS_2026-06-09.md`; `Zend/tests/bug38469.phpt` is counted
 as fail because native recursive output exhausts `run-tests.php` diff memory.
 Native COW reducers: 26/26, including dynamic temporary/call-result/read-slot
-cases 10/10. Oracle coverage: arrays 2/2, strings 1/1, foreach 2/2,
-functions 3/3, nested values 2/2, references 2/2, array element references
-10/10. By-reference foreach oracle: 9/9. Mutating-internal matrix: 12/12 plus
-five unsupported target diagnostics. Contract stress balances 12 nested cycles
+10/10. Oracle coverage: arrays 2/2, strings 1/1, foreach 2/2, functions 3/3,
+nested values 2/2, references 2/2, array element references 10/10.
+By-reference foreach oracle: 9/9. Mutating-internal matrix: 12/12 plus five
+unsupported target diagnostics. Contract stress balances 12 nested cycles
 with 0 live payloads.
 
 ## Already Ported
@@ -52,9 +53,9 @@ live appends and source COW detach, by-value parameter/function-boundary
 splits, recursive/user functions, magic constants, `func_*` and bounds
 diagnostics, `print_r`, binary strings, string offset reads/writes, `count()`
 diagnostics, `??`, array assignment/compound/append/unset COW, native/oracle
-COW reducers, array-element reference oracle coverage, unsupported
-mutating-internal diagnostics, PHPT COW blocker buckets, and payload lifetime
-debug counters.
+COW reducers, native smoke matrix, array-element reference oracle coverage,
+unsupported mutating-internal diagnostics, PHPT COW blocker buckets, and
+payload lifetime debug counters.
 
 ## Still Needed
 
