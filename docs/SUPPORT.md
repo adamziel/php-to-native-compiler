@@ -50,6 +50,8 @@ supports in generated native binaries.
   supported boxed scalar values.
 - Removed `(real)` cast syntax is rejected with a source-spanned PHP-style
   parse error through `phpc`.
+- Removed `(unset)` cast syntax is rejected with a source-spanned PHP-style
+  fatal error through `phpc`.
 - Global-scope magic constants `__LINE__`, `__FILE__`, `__DIR__`,
   `__FUNCTION__`, `__METHOD__`, `__CLASS__`, `__TRAIT__`, and
   `__NAMESPACE__`. Scope-dependent names currently resolve to empty strings in
@@ -167,8 +169,8 @@ supports in generated native binaries.
   generated main function.
 - Source-spanned compile diagnostics emitted through `phpc` use PHP-style fatal
   or parse-error boundaries with the source file and line. This currently
-  covers duplicate `default:` clauses in `switch` and removed `(real)` cast
-  syntax.
+  covers duplicate `default:` clauses in `switch` and removed `(real)` and
+  `(unset)` cast syntax.
 - Statement-form direct variable increment/decrement: `$name++;`, `++$name;`,
   `$name--;`, and `--$name;`.
 
@@ -241,8 +243,8 @@ supports in generated native binaries.
 - PHP-exact `error_reporting()` configuration/filtering behavior.
 - PHP-exact `getmypid()` process model parity across SAPIs and unsupported
   platforms.
-- Non-canonical cast spellings beyond `(integer)`, `(double)`, `(binary)`, and
-  `(boolean)`.
+- Cast spelling diagnostics beyond the currently modeled non-canonical aliases
+  and removed `(real)`/`(unset)` boundaries.
 - Scope-aware magic constants inside functions, methods, classes, traits,
   namespaces, includes, and eval contexts.
 - PHP-exact file names, line numbers, error-handler routing, and overflow

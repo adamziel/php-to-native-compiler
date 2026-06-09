@@ -531,6 +531,14 @@ fn parser_rejects_removed_real_cast_with_parse_error_kind() {
 }
 
 #[test]
+fn parser_rejects_removed_unset_cast_with_php_message() {
+    let error = parser::parse("<?php var_dump((unset) $x);").unwrap_err();
+    assert_eq!(error.message, "The (unset) cast is no longer supported");
+    assert_eq!(error.kind, DiagnosticKind::Fatal);
+    assert_eq!(error.span.unwrap().line, 1);
+}
+
+#[test]
 fn parser_preserves_parenthesized_expression_grouping() {
     let program = parser::parse("<?php echo (1), ($name), (1 + 2), ((\"a\" . \"b\"));").unwrap();
     let Statement::Echo { expressions, .. } = &program.statements[0] else {
@@ -941,6 +949,26 @@ fn phpc_renders_spanned_parse_diagnostics_as_php_parse_errors() {
         String::from_utf8(execution.stderr).unwrap(),
         format!(
             "Parse error: The (real) cast has been removed, use (float) instead in {} on line 3\n",
+            input.display()
+        )
+    );
+}
+
+#[test]
+fn phpc_renders_removed_unset_cast_as_php_fatal() {
+    let root = temp_dir("ptn-phpc-unset-cast-fatal");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("unset-cast.php");
+    fs::write(&input, "<?php\n\n$x = 1;\nvar_dump((unset) $x);\n").unwrap();
+
+    let execution = Command::new(phpc_bin()).arg(&input).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "Fatal error: The (unset) cast is no longer supported in {} on line 4\n",
             input.display()
         )
     );

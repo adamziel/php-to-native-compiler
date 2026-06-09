@@ -1063,3 +1063,17 @@ array element access/mutation, append/unset/iteration, references,
 copy-on-write, recursive arrays, array unpacking, object/resource comparison
 parity, keyword boolean operators, chained comparison parse-error parity, and
 exact diagnostics.
+
+Added source-spanned fatal diagnostics for removed `(unset)` casts:
+
+- The parser recognizes only the exact removed cast-prefix syntax `(unset)` at
+  the cast boundary, reports PHP's canonical removal message, and does not
+  lower it as a runtime cast or deprecated alias.
+- Native/CLI tests prove the parser diagnostic and `phpc` fatal-error
+  rendering path.
+- Focused public PHPT telemetry through `phpc` passes
+  `Zend/tests/unset/unset_cast_removed.phpt`.
+
+Still unsupported after this removed-cast diagnostic slice: broader
+parse-error/fatal wording parity, array/object casts, stack traces,
+error-handler routing, and PHP-exact warning/notice formatting.
