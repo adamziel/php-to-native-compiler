@@ -97,8 +97,9 @@ Current runtime/compiler slices:
   parent directory from that same scalar
   string-conversion path; `soundex` returns a four-character ASCII soundex key
   from the current scalar string conversion; `ceil` and `floor` return boxed
-  floats after the current scalar numeric-conversion path; `sqrt` returns a
-  boxed float after that same numeric conversion path; `pi` returns the boxed
+  floats after the current scalar numeric-conversion path; `sqrt` and `fdiv`
+  return boxed floats after that same numeric conversion path, with `fdiv`
+  preserving IEEE zero-divisor and non-finite results; `pi` returns the boxed
   `M_PI` math constant; `getrandmax` returns the modeled maximum random
   integer; `getmypid` returns the generated native process id;
   `bindec`, `hexdec`, and `octdec` parse scalar string-conversion results
@@ -183,9 +184,9 @@ Near-term architecture targets:
   PHP-exact `var_dump` precision/formatting beyond the current scalar
   round-trip float path plus `strlen`/`bin2hex`/`hex2bin` byte-string behavior,
   `strcmp`/`str_contains` binary-string parity, `soundex` locale/non-ASCII
-  parity, scalar math diagnostic/type parity, base-conversion precision/range
-  parity, and PHP-exact `getmypid` process model parity across SAPIs and
-  unsupported platforms.
+  parity, scalar math diagnostic/type parity including `fdiv` unsupported
+  operands, base-conversion precision/range parity, and PHP-exact `getmypid`
+  process model parity across SAPIs and unsupported platforms.
 - User-defined functions, classes/methods, constants beyond the currently
   modeled `E_ERROR`, `PHP_EOL`, `PHP_INT_MIN`, `PHP_INT_MAX`, `PHP_INT_SIZE`,
   `INF`, `NAN`, `M_PI`, and modeled PHP math `M_*` constants, namespaced

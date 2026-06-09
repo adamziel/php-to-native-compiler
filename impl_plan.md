@@ -7,7 +7,8 @@ patches for individual PHPT rows.
 
 ## Operating Rules
 
-- Do not use CAO or the legacy harness workflow.
+- Use CAO for supervised developer lanes; do not use the legacy harness
+  workflow, legacy impl-agent panes, or non-CAO worker automation.
 - Do not use remote tunnels or expose the local network.
 - A task is ready only after it is integrated into the active branch, tested,
   documented, committed, and pushed.

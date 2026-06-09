@@ -25,9 +25,9 @@ Supported today:
 - Simple internal calls such as `var_dump(expr, ...)`, `strlen(expr)`,
   `str_rot13(expr)`, `strcmp(expr, expr)`, `str_contains(expr, expr)`,
   `bin2hex(expr)`, `hex2bin(expr)`, `dirname(expr)`, `soundex(expr)`,
-  `ceil(expr)`, `floor(expr)`, `sqrt(expr)`, `bindec(expr)`, `hexdec(expr)`,
-  `octdec(expr)`, `pi()`, `getrandmax()`, `getmypid()`, `chr(expr)`,
-  `ord(expr)`,
+  `ceil(expr)`, `floor(expr)`, `sqrt(expr)`, `fdiv(expr, expr)`,
+  `bindec(expr)`, `hexdec(expr)`, `octdec(expr)`, `pi()`, `getrandmax()`,
+  `getmypid()`, `chr(expr)`, `ord(expr)`,
   `error_reporting(expr)`, `gettype(expr)`, scalar `is_*` type predicates,
   non-finite predicates such as `is_finite(expr)`, `is_infinite(expr)`, and
   `is_nan(expr)`,
@@ -59,6 +59,9 @@ Supported today:
   current boxed scalar numeric-conversion result.
 - `sqrt()` as an expression returning a boxed float after the current boxed
   scalar numeric-conversion result.
+- `fdiv()` as an expression returning boxed IEEE-style floating-point division
+  after the current boxed scalar numeric-conversion result, including zero
+  divisors and non-finite operands.
 - `pi()` as an expression returning the modeled boxed float value of `M_PI`.
 - `getrandmax()` as an expression returning the modeled maximum random integer.
 - `getmypid()` as an expression returning the generated native process id.
@@ -195,11 +198,11 @@ Unsupported today:
   unsupported type diagnostics, exact `chr()` deprecation diagnostics, exact
   `ord()` argument type diagnostics, exact `ceil()`/`floor()`
   null/string/unsupported type diagnostics, exact `sqrt()` negative/non-finite
-  edge parity, exact `getmypid()` process model parity across SAPIs and
-  unsupported platforms, exact `error_reporting()` configuration/filtering
-  behavior, unsupported cast spelling diagnostics beyond the currently modeled
-  aliases and removed cast boundaries, statement-form `(void) expr;` casts,
-  and full PHP
+  edge parity, exact `fdiv()` unsupported operand diagnostics, exact
+  `getmypid()` process model parity across SAPIs and unsupported platforms,
+  exact `error_reporting()` configuration/filtering behavior, unsupported cast
+  spelling diagnostics beyond the currently modeled aliases and removed cast
+  boundaries, statement-form `(void) expr;` casts, and full PHP
   precision/formatting edge cases for
   `var_dump()`/`strlen()`/`bin2hex()`/`hex2bin()`/`str_contains()`/`soundex()`/
   base-conversion internals, scope-aware magic constants inside

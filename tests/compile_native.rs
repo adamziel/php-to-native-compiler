@@ -1398,6 +1398,90 @@ fn compile_str_contains_registry_and_scalar_conversion_to_native_binary() {
 }
 
 #[test]
+fn compile_fdiv_phpt_shape_to_native_binary() {
+    let root = temp_dir("ptn-native-fdiv-phpt-shape");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("fdiv.php");
+    let output = root.join("fdiv-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+\n\
+var_dump(fdiv(10, 3));\n\
+var_dump(fdiv(10., 3.));\n\
+var_dump(fdiv(-10., 2.5));\n\
+var_dump(fdiv(10., -2.5));\n\
+echo \"\\n\";\n\
+var_dump(fdiv(10., 0.));\n\
+var_dump(fdiv(10., -0.));\n\
+var_dump(fdiv(-10., 0.));\n\
+var_dump(fdiv(-10., -0.));\n\
+echo \"\\n\";\n\
+var_dump(fdiv(INF, 0.));\n\
+var_dump(fdiv(INF, -0.));\n\
+var_dump(fdiv(-INF, 0.));\n\
+var_dump(fdiv(-INF, -0.));\n\
+echo \"\\n\";\n\
+var_dump(fdiv(0., 0.));\n\
+var_dump(fdiv(0., -0.));\n\
+var_dump(fdiv(-0., 0.));\n\
+var_dump(fdiv(-0., -0.));\n\
+echo \"\\n\";\n\
+var_dump(fdiv(INF, INF));\n\
+var_dump(fdiv(INF, -INF));\n\
+var_dump(fdiv(-INF, INF));\n\
+var_dump(fdiv(-INF, -INF));\n\
+echo \"\\n\";\n\
+var_dump(fdiv(0., INF));\n\
+var_dump(fdiv(0., -INF));\n\
+var_dump(fdiv(-0., INF));\n\
+var_dump(fdiv(-0., -INF));\n\
+echo \"\\n\";\n\
+var_dump(fdiv(NAN, NAN));\n\
+var_dump(fdiv(INF, NAN));\n\
+var_dump(fdiv(0., NAN));\n\
+var_dump(fdiv(NAN, INF));\n\
+var_dump(fdiv(NAN, 0.));\n\
+\n\
+?>",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "float(3.3333333333333335)\nfloat(3.3333333333333335)\nfloat(-4)\nfloat(-4)\n\nfloat(INF)\nfloat(-INF)\nfloat(-INF)\nfloat(INF)\n\nfloat(INF)\nfloat(-INF)\nfloat(-INF)\nfloat(INF)\n\nfloat(NAN)\nfloat(NAN)\nfloat(NAN)\nfloat(NAN)\n\nfloat(NAN)\nfloat(NAN)\nfloat(NAN)\nfloat(NAN)\n\nfloat(0)\nfloat(-0)\nfloat(-0)\nfloat(0)\n\nfloat(NAN)\nfloat(NAN)\nfloat(NAN)\nfloat(NAN)\nfloat(NAN)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_fdiv_registry_and_scalar_conversion_to_native_binary() {
+    let root = temp_dir("ptn-native-fdiv-registry-and-scalar-conversion");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("fdiv-registry.php");
+    let output = root.join("fdiv-registry-bin");
+    fs::write(
+        &input,
+        "<?php var_dump(fdiv(\"9\", \"2\"), fdiv(true, 2), function_exists(\"fdiv\"), function_exists(\"FDIV\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "float(4.5)\nfloat(0.5)\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_hex2bin_basic_phpt_shape_to_native_binary() {
     let root = temp_dir("ptn-native-hex2bin-basic-phpt-shape");
     fs::create_dir_all(&root).unwrap();

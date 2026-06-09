@@ -1160,3 +1160,20 @@ Still unsupported after this label diagnostic slice: forbidden-scope goto
 restrictions for jumps into or out of invalid scopes, labels/goto inside
 unsupported functions/classes/try/finally constructs, and PHP-exact
 invalid-goto diagnostic wording for broader cases.
+
+Added scalar `fdiv()`:
+
+- Registered `fdiv()` through the generated C internal-function registry, so
+  normal calls and `function_exists()` share the same case-insensitive lookup
+  table.
+- `fdiv()` converts both operands through the current boxed scalar
+  numeric-conversion path and returns boxed IEEE floating-point division
+  results, preserving signed zeroes, infinities, and `NAN`.
+- Native tests prove the public `fdiv.phpt` source shape, scalar conversion,
+  and registry exposure.
+- Focused public PHPT telemetry through `phpc` passes
+  `ext/standard/tests/math/fdiv.phpt`.
+
+Still unsupported after this `fdiv()` slice: exact unsupported operand
+diagnostics for arrays, objects, resources, and references, strict type
+handling, and broader math-function coverage.

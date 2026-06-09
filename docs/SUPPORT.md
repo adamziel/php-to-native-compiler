@@ -78,7 +78,7 @@ supports in generated native binaries.
   `strlen(expr);`, `str_rot13(expr);`, `strcmp(expr, expr);`,
   `str_contains(expr, expr);`, `bin2hex(expr);`, `hex2bin(expr);`,
   `dirname(expr);`, `soundex(expr);`, `ceil(expr);`, `floor(expr);`,
-  `sqrt(expr);`,
+  `sqrt(expr);`, `fdiv(expr, expr);`,
   `bindec(expr);`, `hexdec(expr);`, `octdec(expr);`, `pi();`,
   `getrandmax();`, `getmypid();`, `chr(expr);`, `ord(expr);`,
   `is_finite(expr);`, `is_infinite(expr);`, `is_nan(expr);`, and
@@ -87,8 +87,9 @@ supports in generated native binaries.
   including `strlen(expr)`, `str_rot13(expr)`, `strcmp(expr, expr)`,
   `str_contains(expr, expr)`, `bin2hex(expr)`, `hex2bin(expr)`,
   `dirname(expr)`, `soundex(expr)`, `ceil(expr)`, `floor(expr)`,
-  `sqrt(expr)`, `bindec(expr)`, `hexdec(expr)`, `octdec(expr)`, `pi()`,
-  `getrandmax()`, `getmypid()`, `chr(expr)`, `ord(expr)`,
+  `sqrt(expr)`, `fdiv(expr, expr)`, `bindec(expr)`, `hexdec(expr)`,
+  `octdec(expr)`, `pi()`, `getrandmax()`, `getmypid()`, `chr(expr)`,
+  `ord(expr)`,
   `is_finite(expr)`, `is_infinite(expr)`, `is_nan(expr)`,
   `error_reporting(expr)`, `gettype(expr)`, and scalar `is_*` type
   predicates in echo operands, assignments, binary operands, and branch/loop
@@ -122,6 +123,9 @@ supports in generated native binaries.
   conversion, returning boxed floats.
 - `sqrt()` over current boxed scalar values after scalar numeric conversion,
   returning a boxed float.
+- `fdiv()` over current boxed scalar values after scalar numeric conversion,
+  returning boxed floating-point division results, including zero divisors,
+  signed zeroes, infinities, and `NAN`.
 - `pi()` returns the modeled boxed float value of the `M_PI` constant.
 - `getrandmax()` returns the modeled maximum random integer.
 - `getmypid()` returns the generated native process id.
@@ -237,6 +241,8 @@ supports in generated native binaries.
 - Exact `ceil()`/`floor()` null deprecations, string and unsupported-type
   diagnostics, and complete special-float parity.
 - Exact `sqrt()` diagnostics and complete negative/non-finite float parity.
+- Exact `fdiv()` unsupported-type diagnostics for arrays, objects, resources,
+  and references.
 - Exact diagnostics and full precision/range parity for `bindec()`, `hexdec()`,
   and `octdec()` on very large or unsupported values.
 - Exact `hex2bin()` warning text/file-name parity and unsupported

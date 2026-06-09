@@ -2764,6 +2764,15 @@ static PtnValue ptn_internal_sqrt(PtnRuntime *runtime, size_t argc, const PtnVal
     return ptn_float(sqrt(ptn_value_to_double(args[0])));
 }
 
+static PtnValue ptn_internal_fdiv(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    double dividend = ptn_value_to_double(args[0]);
+    double divisor = ptn_value_to_double(args[1]);
+    return ptn_float(dividend / divisor);
+}
+
 static PtnValue ptn_internal_pi(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)argc;
@@ -2953,6 +2962,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "ceil", 1, 1, ptn_internal_ceil },
         { "floor", 1, 1, ptn_internal_floor },
         { "sqrt", 1, 1, ptn_internal_sqrt },
+        { "fdiv", 2, 2, ptn_internal_fdiv },
         { "pi", 0, 0, ptn_internal_pi },
         { "getrandmax", 0, 0, ptn_internal_getrandmax },
         { "getmypid", 0, 0, ptn_internal_getmypid },
