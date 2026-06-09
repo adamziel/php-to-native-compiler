@@ -1870,3 +1870,17 @@ mutation during iteration, copy-on-write/reference identity and exact mutation
 visibility, object `Traversable`, destructuring targets, exact non-array
 diagnostic parity, recursive arrays, references, and broader array/object
 semantics.
+
+Split backend runtime emission into lane-owned Rust modules without changing
+generated C behavior:
+
+- `src/backend.rs` remains the public backend facade for `emit_c()` and
+  `compile_c()`, plus Rust-side IR-to-C emission for statements, expressions,
+  control-flow labels, user-function wrappers, and C compiler invocation.
+- `src/backend/runtime.rs` now owns the embedded generated C runtime string,
+  including boxed value definitions, arrays, symbol/constant tables,
+  diagnostics, scalar operators, output helpers, and internal-function
+  dispatch.
+- The split is intentionally mechanical. A before/after `--emit-c` compile of
+  `examples/hello.php` produced byte-for-byte identical generated C, so this
+  entry makes no new semantic support claim.
