@@ -49,13 +49,18 @@ supports in generated native binaries.
 - Simple statement-form internal calls such as `var_dump(expr, ...)` and
   `strlen(expr);`.
 - Expression-form internal calls for the currently registered scalar functions,
-  including `strlen(expr)` in echo operands, assignments, binary operands, and
-  branch/loop conditions.
+  including `strlen(expr)`, `gettype(expr)`, and scalar `is_*` type predicates
+  in echo operands, assignments, binary operands, and branch/loop conditions.
 - Internal-call arguments are materialized left-to-right before generated C
   runtime dispatch.
 - `var_dump()` output for current boxed scalar values: `NULL`, `bool(...)`,
   `int(...)`, `float(...)`, and `string(length) "value"`.
 - `strlen()` over current boxed scalar values after scalar string conversion.
+- `gettype()` over current boxed scalar values, returning `NULL`, `boolean`,
+  `integer`, `double`, or `string`.
+- Scalar type predicates over current boxed scalar values: `is_null()`,
+  `is_bool()`, `is_int()`, `is_integer()`, `is_long()`, `is_float()`,
+  `is_double()`, `is_string()`, and `is_scalar()`.
 - A minimal `phpc` runner for supported PHPT rows. It compiles scripts or `-r`
   snippets to temporary native binaries through the normal compiler pipeline.
 - Braced `if`, `elseif`, and `else` statements whose conditions and bodies use
@@ -90,7 +95,8 @@ supports in generated native binaries.
 - PHP-exact increment/decrement semantics for strings, booleans, arrays,
   objects, references, copy-on-write, overflow edge cases, and diagnostics.
 - Inline HTML before `<?php` or between PHP blocks.
-- Internal functions other than `var_dump()` and `strlen()`.
+- Internal functions outside the registered scalar subset.
+- Type predicate coverage for arrays, objects, resources, and references.
 - Arrays, objects, resources, recursive structures, references, and
   `var_dump()` reference identity output.
 - Embedded NUL strings in runtime string values, `var_dump()` string

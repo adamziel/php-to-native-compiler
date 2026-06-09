@@ -63,7 +63,10 @@ Current runtime/compiler slices:
   materializes arguments left-to-right and dispatches through a small internal
   function registry. Statement-form calls discard the returned boxed value.
   `var_dump` formats boxed scalar runtime values and returns `null`; `strlen`
-  returns the byte length of the current boxed scalar string conversion.
+  returns the byte length of the current boxed scalar string conversion;
+  `gettype` and scalar `is_*` predicates query the current boxed scalar/null
+  value domain through the same registry. Fixed-arity internal functions record
+  min/max arity metadata while `var_dump` remains variadic.
 - Braced `if`, `elseif`, and `else` statements lower to structured IR branch
   instructions. Conditions remain boxed value expressions, and the C backend
   emits native branches that call the shared scalar truthiness helper.

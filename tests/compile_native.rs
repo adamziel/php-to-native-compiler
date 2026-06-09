@@ -721,6 +721,45 @@ fn compile_statement_call_discards_internal_return_value() {
 }
 
 #[test]
+fn compile_scalar_type_internal_functions_to_native_binary() {
+    let root = temp_dir("ptn-native-scalar-type-functions");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("scalar-type-functions.php");
+    let output = root.join("scalar-type-functions-bin");
+    fs::write(
+        &input,
+        "<?php var_dump(gettype(null), gettype(true), gettype(42), gettype(1.5), gettype(\"x\")); var_dump(is_null(null), is_bool(false), is_int(1), is_integer(1), is_long(1), is_float(1.5), is_double(1.5), is_string(\"x\"), is_scalar(\"x\"), is_scalar(null), is_float('-.1' * 2));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(4) \"NULL\"\nstring(7) \"boolean\"\nstring(7) \"integer\"\nstring(6) \"double\"\nstring(6) \"string\"\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(false)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_bug30726_is_float_shape_to_native_binary() {
+    let root = temp_dir("ptn-native-bug30726-is-float");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("bug30726.php");
+    let output = root.join("bug30726-bin");
+    fs::write(&input, "<?php echo (int) is_float('-.1' * 2), \"\\n\";").unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "1\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_scalar_comparisons_to_native_binary() {
     let root = temp_dir("ptn-native-comparisons");
     fs::create_dir_all(&root).unwrap();

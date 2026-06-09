@@ -505,8 +505,11 @@ typedef PtnValue (*PtnInternalFunctionHandler)(PtnRuntime *runtime, size_t argc,
 typedef struct {
     const char *name;
     size_t min_args;
+    size_t max_args;
     PtnInternalFunctionHandler handler;
 } PtnInternalFunction;
+
+#define PTN_VARIADIC_ARGS ((size_t)-1)
 
 static PTN_UNUSED PtnValue ptn_null(void) {
     PtnValue value;
@@ -646,6 +649,26 @@ static void ptn_emit_argument_count_error(
     fprintf(stream, "%zu", min_args);
     fputs(" argument", stream);
     if (min_args != 1) {
+        fputc('s', stream);
+    }
+    fputs(", ", stream);
+    fprintf(stream, "%zu", argc);
+    fputs(" given\n", stream);
+}
+
+static void ptn_emit_too_many_arguments_error(
+    PtnDiagnosticSink *diagnostics,
+    const char *name,
+    size_t max_args,
+    size_t argc
+) {
+    FILE *stream = diagnostics->stream == NULL ? stderr : diagnostics->stream;
+    fputs("Fatal error: ", stream);
+    fputs(name, stream);
+    fputs("() expects at most ", stream);
+    fprintf(stream, "%zu", max_args);
+    fputs(" argument", stream);
+    if (max_args != 1) {
         fputc('s', stream);
     }
     fputs(", ", stream);
@@ -1199,6 +1222,35 @@ static PTN_UNUSED PtnValue ptn_cast_bool(PtnValue value) {
     return ptn_bool(ptn_is_truthy(value));
 }
 
+static PTN_UNUSED PtnValue ptn_gettype_value(PtnValue value) {
+    switch (value.type) {
+        case PTN_NULL:
+            return ptn_string("NULL");
+        case PTN_BOOL:
+            return ptn_string("boolean");
+        case PTN_INT:
+            return ptn_string("integer");
+        case PTN_FLOAT:
+            return ptn_string("double");
+        case PTN_STRING:
+            return ptn_string("string");
+    }
+    return ptn_string("unknown type");
+}
+
+static PTN_UNUSED PtnValue ptn_is_type(PtnValue value, PtnType type) {
+    return ptn_bool(value.type == type);
+}
+
+static PTN_UNUSED PtnValue ptn_is_scalar(PtnValue value) {
+    return ptn_bool(
+        value.type == PTN_BOOL ||
+        value.type == PTN_INT ||
+        value.type == PTN_FLOAT ||
+        value.type == PTN_STRING
+    );
+}
+
 static PTN_UNUSED void ptn_echo(PtnValue value) {
     switch (value.type) {
         case PTN_NULL:
@@ -1259,10 +1311,62 @@ static PtnValue ptn_internal_strlen(PtnRuntime *runtime, size_t argc, const PtnV
     return ptn_int((int64_t)len);
 }
 
+static PtnValue ptn_internal_gettype(PtnRuntime *runtime, size_t argc, const PtnValue *args) {
+    (void)runtime;
+    (void)argc;
+    return ptn_gettype_value(args[0]);
+}
+
+static PtnValue ptn_internal_is_null(PtnRuntime *runtime, size_t argc, const PtnValue *args) {
+    (void)runtime;
+    (void)argc;
+    return ptn_is_type(args[0], PTN_NULL);
+}
+
+static PtnValue ptn_internal_is_bool(PtnRuntime *runtime, size_t argc, const PtnValue *args) {
+    (void)runtime;
+    (void)argc;
+    return ptn_is_type(args[0], PTN_BOOL);
+}
+
+static PtnValue ptn_internal_is_int(PtnRuntime *runtime, size_t argc, const PtnValue *args) {
+    (void)runtime;
+    (void)argc;
+    return ptn_is_type(args[0], PTN_INT);
+}
+
+static PtnValue ptn_internal_is_float(PtnRuntime *runtime, size_t argc, const PtnValue *args) {
+    (void)runtime;
+    (void)argc;
+    return ptn_is_type(args[0], PTN_FLOAT);
+}
+
+static PtnValue ptn_internal_is_string(PtnRuntime *runtime, size_t argc, const PtnValue *args) {
+    (void)runtime;
+    (void)argc;
+    return ptn_is_type(args[0], PTN_STRING);
+}
+
+static PtnValue ptn_internal_is_scalar(PtnRuntime *runtime, size_t argc, const PtnValue *args) {
+    (void)runtime;
+    (void)argc;
+    return ptn_is_scalar(args[0]);
+}
+
 static PTN_UNUSED PtnValue ptn_call_internal(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args) {
     static const PtnInternalFunction functions[] = {
-        { "var_dump", 1, ptn_internal_var_dump },
-        { "strlen", 1, ptn_internal_strlen },
+        { "var_dump", 1, PTN_VARIADIC_ARGS, ptn_internal_var_dump },
+        { "strlen", 1, 1, ptn_internal_strlen },
+        { "gettype", 1, 1, ptn_internal_gettype },
+        { "is_null", 1, 1, ptn_internal_is_null },
+        { "is_bool", 1, 1, ptn_internal_is_bool },
+        { "is_int", 1, 1, ptn_internal_is_int },
+        { "is_integer", 1, 1, ptn_internal_is_int },
+        { "is_long", 1, 1, ptn_internal_is_int },
+        { "is_float", 1, 1, ptn_internal_is_float },
+        { "is_double", 1, 1, ptn_internal_is_float },
+        { "is_string", 1, 1, ptn_internal_is_string },
+        { "is_scalar", 1, 1, ptn_internal_is_scalar },
     };
 
     for (size_t i = 0; i < sizeof(functions) / sizeof(functions[0]); i++) {
@@ -1270,6 +1374,10 @@ static PTN_UNUSED PtnValue ptn_call_internal(PtnRuntime *runtime, const char *na
         if (strcmp(function->name, name) == 0) {
             if (argc < function->min_args) {
                 ptn_emit_argument_count_error(&runtime->diagnostics, name, function->min_args, argc);
+                exit(255);
+            }
+            if (function->max_args != PTN_VARIADIC_ARGS && argc > function->max_args) {
+                ptn_emit_too_many_arguments_error(&runtime->diagnostics, name, function->max_args, argc);
                 exit(255);
             }
             return function->handler(runtime, argc, args);

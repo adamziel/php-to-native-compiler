@@ -391,3 +391,25 @@ Still unsupported for loops/control flow: unbraced and alternate syntax, `for`,
 `foreach`, `switch`, `break`, `continue`, loop-condition assignments and
 increment/decrement expressions, PHP-exact increment/decrement edge semantics,
 references, copy-on-write, and exception/finally loop edges.
+
+Added a scalar type-query internal-function slice:
+
+- Registered `gettype()` and scalar type predicates through the existing
+  generated C internal-function registry rather than through parser or output
+  special cases.
+- `gettype()` reports the current boxed scalar value types as PHP names:
+  `NULL`, `boolean`, `integer`, `double`, and `string`.
+- Added `is_null()`, `is_bool()`, `is_int()`, `is_integer()`, `is_long()`,
+  `is_float()`, `is_double()`, `is_string()`, and `is_scalar()` over the
+  current boxed scalar/null `PtnValue` domain.
+- The registry now records a maximum argument count for fixed-arity functions
+  while preserving variadic `var_dump()`.
+- Native tests prove the type-query family and the public
+  `tests/lang/bug30726.phpt` source shape.
+- Focused public PHPT telemetry through `phpc` passes
+  `tests/lang/bug30726.phpt`.
+
+Still unsupported for type-query internals: arrays, objects, resources,
+references, user-defined functions, PHP-exact argument diagnostics, and the
+broader standard-library `is_*` families such as filesystem, callable,
+iterable, countable, finite, infinite, and NaN checks.
