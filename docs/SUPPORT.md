@@ -35,7 +35,9 @@ supports in generated native binaries.
   left-associatively, with `*`, `/`, and `%` binding tighter than `+` and `-`,
   and arithmetic binding tighter than `.`. Integer-only `%` conversions emit
   the current float/float-string precision-loss deprecation boundary when a
-  scalar operand loses precision while converting to an integer.
+  scalar operand loses precision while converting to an integer, and leading
+  numeric strings with trailing non-numeric data emit the current non-numeric
+  warning boundary.
 - Binary operands are materialized left-to-right before the generated C backend
   calls runtime helpers.
 - Direct named-variable compound assignment for `+=`, `-=`, `*=`, `/=`, `%=`,
@@ -53,7 +55,8 @@ supports in generated native binaries.
 - Unary bitwise `~` over supported boxed scalar values. String operands produce
   bytewise string results for non-NUL string data; other supported scalar
   operands are converted to integers through the current scalar numeric path,
-  including the current float/float-string precision-loss deprecation boundary.
+  including the current float/float-string precision-loss deprecation boundary
+  and leading-numeric-string warning boundary.
 - Scalar `(int)`, `(float)`, `(string)`, `(bool)`, and deprecated
   non-canonical `(integer)`, `(double)`, `(binary)`, and `(boolean)` casts over
   supported boxed scalar values.
@@ -93,10 +96,11 @@ supports in generated native binaries.
   the result is a bytewise string for non-NUL string data. Other supported
   scalar operands are converted to integers through the current scalar numeric
   conversion path, including the current float/float-string precision-loss
-  deprecation boundary.
+  deprecation boundary and leading-numeric-string warning boundary.
 - Boxed scalar bit shifts `<<` and `>>`. Supported scalar operands are
   converted to integers through the current bitwise integer-conversion path,
-  including the current float/float-string precision-loss deprecation boundary.
+  including the current float/float-string precision-loss deprecation boundary
+  and leading-numeric-string warning boundary.
 - Simple statement-form internal calls such as `var_dump(expr, ...)`,
   `strlen(expr);`, `str_rot13(expr);`, `strcmp(expr, expr);`,
   `str_contains(expr, expr);`, `quotemeta(expr);`, `md5(expr[, raw_output]);`,
@@ -104,7 +108,7 @@ supports in generated native binaries.
   `bin2hex(expr);`, `hex2bin(expr);`, `dirname(expr);`, `soundex(expr);`,
   `ceil(expr);`, `floor(expr);`, `sqrt(expr);`, `fdiv(expr, expr);`,
   `bindec(expr);`, `hexdec(expr);`, `octdec(expr);`, `pi();`,
-  `getrandmax();`, `getmypid();`, `chr(expr);`, `ord(expr);`,
+  `getrandmax();`, `getmypid();`, `intval(expr);`, `chr(expr);`, `ord(expr);`,
   `is_finite(expr);`, `is_infinite(expr);`, `is_nan(expr);`, and
   `error_reporting(expr);`.
 - Expression-form internal calls for the currently registered scalar functions,
@@ -114,8 +118,8 @@ supports in generated native binaries.
   `hex2bin(expr)`, `dirname(expr)`, `soundex(expr)`, `ceil(expr)`,
   `floor(expr)`,
   `sqrt(expr)`, `fdiv(expr, expr)`, `bindec(expr)`, `hexdec(expr)`,
-  `octdec(expr)`, `pi()`, `getrandmax()`, `getmypid()`, `chr(expr)`,
-  `ord(expr)`,
+  `octdec(expr)`, `pi()`, `getrandmax()`, `getmypid()`, `intval(expr)`,
+  `chr(expr)`, `ord(expr)`,
   `is_finite(expr)`, `is_infinite(expr)`, `is_nan(expr)`,
   `error_reporting(expr)`, `gettype(expr)`, and scalar `is_*` type
   predicates in echo operands, assignments, binary operands, and branch/loop
@@ -172,6 +176,8 @@ supports in generated native binaries.
   prefixes, ignores invalid base digits with a deprecation boundary, and
   returns integers until the parsed value exceeds native integer range, then
   floats.
+- `intval()` over current boxed scalar values after scalar integer conversion,
+  with bounded string/base conversion for supported bases.
 - `chr()` over current boxed scalar values after scalar integer conversion,
   returning a one-byte string with byte values constrained modulo 256.
 - `ord()` over current boxed scalar values after scalar string conversion,
@@ -302,8 +308,8 @@ supports in generated native binaries.
 - Exact `sqrt()` diagnostics and complete negative/non-finite float parity.
 - Exact `fdiv()` unsupported-type diagnostics for arrays, objects, resources,
   and references.
-- Exact diagnostics and full precision/range parity for `bindec()`, `hexdec()`,
-  and `octdec()` on very large or unsupported values.
+- Exact diagnostics and full precision/range parity for `intval()`, `bindec()`,
+  `hexdec()`, and `octdec()` on very large or unsupported values.
 - Exact `hex2bin()` warning text/file-name parity and unsupported
   array/object/resource/reference diagnostics.
 - Exact `dirname()` edge parity for unusual paths, embedded NULs, and

@@ -1424,3 +1424,26 @@ append, unset, `isset()`/`empty()`/null-coalescing offset semantics,
 string-offset references, embedded NUL string offsets, resources/objects as
 offset keys, exact `TypeError` exception behavior, PHP-exact warning file names
 and error-handler routing, and broader array/object/reference offset semantics.
+
+Added a scalar integer-conversion follow-up for exponent numeric strings:
+
+- Registered `intval()` in the generated C internal-function registry, so
+  normal calls and `function_exists()` share the same case-insensitive lookup
+  and argument-count checks.
+- `intval()` uses the current boxed scalar integer-conversion path, with a
+  bounded string/base conversion branch for supported bases.
+- Integer-only operator conversions now emit the current non-numeric warning
+  boundary for leading numeric strings with trailing non-numeric data before
+  converting the numeric prefix. This reuses the same modulo, bitwise, and shift
+  conversion boundary that already emits float/float-string precision-loss
+  deprecations.
+- Native tests prove exponent-form numeric strings through explicit casts,
+  `intval()`, `%`, `|`, base-aware `intval()`, and `function_exists()`
+  registry lookup.
+- Focused public PHPT telemetry through `phpc` passes
+  `Zend/tests/int_conversion_exponents.phpt`.
+
+Still unsupported after this integer-conversion slice: exact PHP file names,
+source lines, error-handler routing, complete numeric-string classification
+parity, exact scalar conversion overflow/range parity, and arrays, objects,
+resources, references, and copy-on-write behavior.

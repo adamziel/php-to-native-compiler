@@ -2132,6 +2132,30 @@ static PTN_UNUSED void ptn_emit_float_string_to_int_precision_deprecation(const 
     );
 }
 
+static PTN_UNUSED int ptn_string_has_trailing_non_numeric_data(const char *string) {
+    const char *start = string;
+    while (isspace((unsigned char)*start)) {
+        start++;
+    }
+    if (*start == '\0') {
+        return 0;
+    }
+
+    char *end = NULL;
+    (void)strtod(start, &end);
+    if (end == start) {
+        return 0;
+    }
+    while (isspace((unsigned char)*end)) {
+        end++;
+    }
+    return *end != '\0';
+}
+
+static PTN_UNUSED void ptn_emit_non_numeric_value_warning(void) {
+    printf("\nWarning: A non-numeric value encountered in ptn-generated-code on line 0\n");
+}
+
 static PTN_UNUSED int64_t ptn_number_to_integer(PtnNumber number) {
     if (number.type == PTN_NUMBER_FLOAT) {
         return (int64_t)number.floating;
@@ -2141,6 +2165,9 @@ static PTN_UNUSED int64_t ptn_number_to_integer(PtnNumber number) {
 
 static PTN_UNUSED int64_t ptn_value_to_integer_with_precision_deprecation(PtnValue value) {
     PtnNumber number = ptn_to_number(value);
+    if (value.type == PTN_STRING && ptn_string_has_trailing_non_numeric_data(value.as.string)) {
+        ptn_emit_non_numeric_value_warning();
+    }
     if (number.type == PTN_NUMBER_FLOAT && ptn_float_to_int_loses_precision(number.floating)) {
         if (value.type == PTN_STRING) {
             ptn_emit_float_string_to_int_precision_deprecation(value.as.string);
@@ -3628,6 +3655,26 @@ static PtnValue ptn_internal_octdec(PtnRuntime *runtime, size_t argc, const PtnV
     return value;
 }
 
+static PtnValue ptn_internal_intval(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)line;
+    if (argc >= 2 && args[0].type == PTN_STRING) {
+        int64_t base = ptn_number_to_integer(ptn_to_number(args[1]));
+        if (base == 0 || (base >= 2 && base <= 36)) {
+            const char *start = args[0].as.string;
+            while (isspace((unsigned char)*start)) {
+                start++;
+            }
+            errno = 0;
+            long long integer = strtoll(start, NULL, (int)base);
+            if (errno != ERANGE) {
+                return ptn_int((int64_t)integer);
+            }
+        }
+    }
+    return ptn_cast_int(args[0]);
+}
+
 static PtnValue ptn_internal_chr(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)argc;
@@ -3709,6 +3756,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "bindec", 1, 1, ptn_internal_bindec },
         { "hexdec", 1, 1, ptn_internal_hexdec },
         { "octdec", 1, 1, ptn_internal_octdec },
+        { "intval", 1, 2, ptn_internal_intval },
         { "chr", 1, 1, ptn_internal_chr },
         { "ord", 1, 1, ptn_internal_ord },
         { "error_reporting", 0, 1, ptn_internal_error_reporting },

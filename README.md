@@ -31,7 +31,8 @@ Supported today:
   `substr(expr, expr[, expr])`, `bin2hex(expr)`, `hex2bin(expr)`,
   `dirname(expr)`, `soundex(expr)`, `ceil(expr)`, `floor(expr)`,
   `sqrt(expr)`, `fdiv(expr, expr)`, `bindec(expr)`, `hexdec(expr)`,
-  `octdec(expr)`, `pi()`, `getrandmax()`, `getmypid()`, `chr(expr)`,
+  `octdec(expr)`, `intval(expr[, base])`, `pi()`, `getrandmax()`,
+  `getmypid()`, `chr(expr)`,
   `ord(expr)`,
   `error_reporting(expr)`, `gettype(expr)`, scalar `is_*` type predicates,
   non-finite predicates such as `is_finite(expr)`, `is_infinite(expr)`, and
@@ -85,6 +86,8 @@ Supported today:
 - `bindec()`, `hexdec()`, and `octdec()` as expressions over the current boxed
   scalar string-conversion result, accepting the matching PHP base prefix and
   returning integers or floats based on native integer range.
+- `intval()` as an expression over the current boxed scalar integer-conversion
+  result, with a bounded string/base conversion path for supported bases.
 - `chr()` as an expression returning a one-byte string from the current boxed
   scalar integer-conversion result, with byte values constrained modulo 256.
 - `ord()` as an expression returning the first byte of the current boxed scalar
@@ -131,7 +134,9 @@ Supported today:
   and `-`, and arithmetic as higher precedence than `.`, while the backend emits
   runtime calls over `PtnValue` operands. Integer-only `%` conversions emit the
   current float/float-string precision-loss deprecation boundary when a scalar
-  operand loses precision while converting to an integer.
+  operand loses precision while converting to an integer, and leading numeric
+  strings with trailing non-numeric data emit the current non-numeric warning
+  boundary.
 - Direct named-variable compound assignment for `+=`, `-=`, `*=`, `/=`, `%=`,
   `**=`, `.=`, `&=`, `|=`, `^=`, `<<=`, and `>>=`. These lower as a variable
   read, the matching boxed binary helper, then a variable write, preserving the
@@ -179,11 +184,13 @@ Supported today:
   String/string binary operands and string unary `~` operands use PHP bytewise
   string results for non-NUL strings; other supported scalar operands are
   converted to integers through the current boxed numeric conversion path,
-  including the current float/float-string precision-loss deprecation boundary.
+  including the current float/float-string precision-loss deprecation boundary
+  and leading-numeric-string warning boundary.
 - Boxed scalar bit shifts `<<` and `>>`. Supported scalar operands are
   converted to integers through the current bitwise integer-conversion path,
-  including the current float/float-string precision-loss deprecation boundary,
-  and operands are evaluated left-to-right before calling runtime helpers.
+  including the current float/float-string precision-loss deprecation boundary
+  and leading-numeric-string warning boundary, and operands are evaluated
+  left-to-right before calling runtime helpers.
 - Braced and single-statement `if`, `elseif`, and `else` statements. Branch
   conditions use boxed scalar truthiness and the currently supported expression
   subset, including grouped expressions and scalar comparisons.
@@ -258,7 +265,7 @@ Unsupported today:
   boundaries, statement-form `(void) expr;` casts, and full PHP
   precision/formatting edge cases for
   `var_dump()`/`strlen()`/`bin2hex()`/`hex2bin()`/`str_contains()`/
-  `quotemeta()`/`md5()`/`sha1()`/`substr()`/`soundex()`/base-conversion
+  `quotemeta()`/`md5()`/`sha1()`/`substr()`/`soundex()`/`intval()`/base-conversion
   internals, scope-aware magic constants inside functions/classes/namespaces/includes, exact
   file/line/error-handler behavior for integer-only operator precision-loss
   diagnostics, doc comment retention, variable variables, and dynamic fallback.

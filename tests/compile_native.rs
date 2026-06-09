@@ -4027,6 +4027,29 @@ fn compile_integer_operator_precision_deprecations_to_native_binary() {
 }
 
 #[test]
+fn compile_intval_and_integer_operator_exponent_strings_to_native_binary() {
+    let root = temp_dir("ptn-native-intval-exponent-strings");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intval-exponent-strings.php");
+    let output = root.join("intval-exponent-strings-bin");
+    fs::write(
+        &input,
+        "<?php var_dump((int)\"1.2345e9\"); var_dump(intval(\"-1.2345e9\")); var_dump(intval(\"ff\", 16)); var_dump(\" 1.2345e9  abc\" % PHP_INT_MAX); var_dump(\" -1.2345e9  abc\" | 0); var_dump(\"1.5abc\" | 0); var_dump(function_exists(\"intval\"), function_exists(\"INTVAL\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(1234500000)\nint(-1234500000)\nint(255)\n\nWarning: A non-numeric value encountered in ptn-generated-code on line 0\nint(1234500000)\n\nWarning: A non-numeric value encountered in ptn-generated-code on line 0\nint(-1234500000)\n\nWarning: A non-numeric value encountered in ptn-generated-code on line 0\n\nDeprecated: Implicit conversion from float-string \"1.5abc\" to int loses precision in ptn-generated-code on line 0\nint(1)\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_unary_parenthesized_and_cast_expressions_to_native_binary() {
     let root = temp_dir("ptn-native-unary-casts");
     fs::create_dir_all(&root).unwrap();
