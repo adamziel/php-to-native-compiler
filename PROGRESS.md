@@ -3,9 +3,10 @@
 ## Progress Bar
 
 `[#########.] 51/59 PHPT rows passing`
-- Latest: Array predicate/key-count fast paths integrated; PHPT snapshot 51/59.
+- Latest: Numeric string-offset PHPT blocker isolated with focused native
+  regression; PHPT snapshot remains 51/59.
 - Tests ported/passing: 51/59
-- Commit: 670aef40b
+- Commit: pending branch head
 
 ## 2026-06-08
 
@@ -34,6 +35,25 @@ Next integrated production target:
   scale to PHP references and copy-on-write.
 
 ## 2026-06-09
+
+Added focused evidence for `Zend/tests/numeric_strings/string_offset.phpt`
+without expanding scope into exception handling:
+
+- Added a native regression for the PHPT's non-exception numeric string offset
+  key classes through `foreach`: integer-compatible strings with surrounding
+  whitespace, leading numeric strings that emit `Illegal string offset`
+  warnings before reading the integer prefix, `0xC`/`0b10` as offset `0`, and
+  legacy-octal-looking `"07"` as decimal offset `7`.
+- Differential telemetry for the same supported snippet matches PHP's values
+  and warning order; the only mismatch is the existing generated diagnostic
+  filename placeholder (`ptn` instead of the temporary source path).
+- Full PHPT telemetry for
+  `Zend/tests/numeric_strings/string_offset.phpt` still fails before runtime on
+  unsupported `try { ... } catch (...) { ... }` syntax. The catch path also
+  needs generic catchable `TypeError` support for float-looking string offsets
+  such as `"7.5"` instead of the current process-fatal boundary.
+- Filed blocker bead `ptn-rey` for generic try/catch and catchable `TypeError`
+  behavior. No new public PHPT pass is claimed by this branch.
 
 Recovered the checkpoint worktree onto current `origin/master` at
 `ca130c503622ec9a479318d294bfd64d20e496a3` after stale pre-restart bundles

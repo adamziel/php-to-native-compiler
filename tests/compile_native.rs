@@ -4703,6 +4703,47 @@ var_dump($str[1.8]);",
 }
 
 #[test]
+fn compile_numeric_string_offset_reads_to_native_binary() {
+    let root = temp_dir("ptn-native-numeric-string-offset-reads");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("numeric-string-offset-reads.php");
+    let output = root.join("numeric-string-offset-reads-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$str = \"The world is fun\";\n\
+$keys = [\n\
+    \"7\",\n\
+    \"  7\",\n\
+    \"  7  \",\n\
+    \"7  \",\n\
+    \"7str\",\n\
+    \"  7str\",\n\
+    \"  7  str\",\n\
+    \"7  str\",\n\
+    \"0xC\",\n\
+    \"0b10\",\n\
+    \"07\",\n\
+];\n\
+foreach ($keys as $key) {\n\
+    var_dump($str[$key]);\n\
+}\n\
+echo \"Done\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(1) \"l\"\nstring(1) \"l\"\nstring(1) \"l\"\nstring(1) \"l\"\n\nWarning: Illegal string offset \"7str\" in ptn on line 17\nstring(1) \"l\"\n\nWarning: Illegal string offset \"  7str\" in ptn on line 17\nstring(1) \"l\"\n\nWarning: Illegal string offset \"  7  str\" in ptn on line 17\nstring(1) \"l\"\n\nWarning: Illegal string offset \"7  str\" in ptn on line 17\nstring(1) \"l\"\n\nWarning: Illegal string offset \"0xC\" in ptn on line 17\nstring(1) \"T\"\n\nWarning: Illegal string offset \"0b10\" in ptn on line 17\nstring(1) \"T\"\nstring(1) \"l\"\nDone\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_strict_identity_comparisons_to_native_binary() {
     let root = temp_dir("ptn-native-strict-identity");
     fs::create_dir_all(&root).unwrap();
