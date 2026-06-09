@@ -4,10 +4,16 @@
     }
 }
 
-static PTN_UNUSED int ptn_compare_number_and_string(PtnValue number, const char *string, int number_is_left) {
+static PTN_UNUSED int ptn_compare_number_and_string(PtnValue number, PtnString string, int number_is_left) {
     char number_string[128];
     ptn_number_value_to_string(number, number_string, sizeof(number_string));
-    int compared = ptn_compare_strings(number_string, string);
+    size_t number_len = strlen(number_string);
+    int compared = ptn_compare_string_bytes(
+        (const unsigned char *)number_string,
+        number_len,
+        string.data,
+        string.len
+    );
     return number_is_left ? compared : -compared;
 }
 
@@ -36,13 +42,16 @@ static PTN_UNUSED int ptn_compare_number_types(PtnValue left, PtnValue right, in
     return 0;
 }
 
-static PTN_UNUSED int ptn_compare_strings_loose(const char *left, const char *right) {
+static PTN_UNUSED int ptn_compare_strings_loose(PtnString left, PtnString right) {
     double left_number = 0.0;
     double right_number = 0.0;
-    if (ptn_is_numeric_string(left, &left_number) && ptn_is_numeric_string(right, &right_number)) {
+    if (!ptn_string_has_embedded_nul(left) &&
+        !ptn_string_has_embedded_nul(right) &&
+        ptn_is_numeric_string((const char *)left.data, &left_number) &&
+        ptn_is_numeric_string((const char *)right.data, &right_number)) {
         return ptn_compare_numbers(left_number, right_number);
     }
-    return ptn_compare_strings(left, right);
+    return ptn_compare_value_strings(left, right);
 }
 
 static PTN_UNUSED int ptn_compare_equal(PtnValue left, PtnValue right);
@@ -284,12 +293,13 @@ static PTN_UNUSED int ptn_string_offset_from_value(
             return 1;
         case PTN_STRING: {
             int warn_illegal = 0;
-            if (ptn_string_to_offset(key_value.as.string, offset, &warn_illegal)) {
+            const char *key_string = (const char *)key_value.as.string.data;
+            if (ptn_string_to_offset(key_string, offset, &warn_illegal)) {
                 if (warn_illegal) {
                     if (quiet) {
                         return 0;
                     }
-                    ptn_emit_illegal_string_offset_warning(key_value.as.string, line);
+                    ptn_emit_illegal_string_offset_warning(key_string, line);
                 }
                 return 1;
             }
@@ -345,7 +355,7 @@ static PTN_UNUSED PtnLookupResult ptn_string_offset_lookup(
         return ptn_lookup_missing();
     }
     size_t index = 0;
-    if (!ptn_string_offset_index(strlen(container.as.string), offset, &index)) {
+    if (!ptn_string_offset_index(container.as.string.len, offset, &index)) {
         if (!quiet) {
             ptn_emit_uninitialized_string_offset_warning(offset, line);
             return ptn_lookup_found(ptn_string(""));
@@ -357,9 +367,9 @@ static PTN_UNUSED PtnLookupResult ptn_string_offset_lookup(
     if (result == NULL) {
         ptn_abort_out_of_memory();
     }
-    result[0] = container.as.string[index];
+    result[0] = (char)container.as.string.data[index];
     result[1] = '\0';
-    return ptn_lookup_found(ptn_owned_string(result));
+    return ptn_lookup_found(ptn_owned_string_len(result, 1));
 }
 
 static PTN_UNUSED PtnLookupResult ptn_offset_lookup(PtnRuntime *runtime, PtnValue container, PtnValue key_value, size_t line, int quiet) {
@@ -412,7 +422,7 @@ static PTN_UNUSED int ptn_offset_is_set(PtnRuntime *runtime, PtnValue container,
         int64_t offset = 0;
         size_t index = 0;
         return ptn_string_offset_from_value(runtime, key_value, line, 1, &offset) &&
-            ptn_string_offset_index(strlen(container.as.string), offset, &index);
+            ptn_string_offset_index(container.as.string.len, offset, &index);
     }
 
     if (container.type != PTN_ARRAY) {
@@ -434,10 +444,10 @@ static PTN_UNUSED int ptn_offset_is_empty(PtnRuntime *runtime, PtnValue containe
         int64_t offset = 0;
         size_t index = 0;
         if (!ptn_string_offset_from_value(runtime, key_value, line, 1, &offset) ||
-            !ptn_string_offset_index(strlen(container.as.string), offset, &index)) {
+            !ptn_string_offset_index(container.as.string.len, offset, &index)) {
             return 1;
         }
-        return container.as.string[index] == '0';
+        return container.as.string.data[index] == '0';
     }
 
     if (container.type != PTN_ARRAY) {

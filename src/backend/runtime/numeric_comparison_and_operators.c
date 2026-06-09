@@ -89,7 +89,7 @@ static PTN_UNUSED int ptn_compare_equal(PtnValue left, PtnValue right) {
             case PTN_FLOAT:
                 return other.as.floating == 0.0;
             case PTN_STRING:
-                return other.as.string[0] == '\0';
+                return other.as.string.len == 0;
             case PTN_ARRAY:
                 return other.as.array->len == 0;
             case PTN_EXCEPTION:
@@ -132,10 +132,7 @@ static PTN_UNUSED int ptn_compare_identical(PtnValue left, PtnValue right) {
         case PTN_FLOAT:
             return left.as.floating == right.as.floating;
         case PTN_STRING:
-            if (left.as.string == right.as.string) {
-                return 1;
-            }
-            return strcmp(left.as.string, right.as.string) == 0;
+            return ptn_compare_value_strings(left.as.string, right.as.string) == PTN_COMPARE_EQUAL;
         case PTN_ARRAY:
             if (left.as.array == right.as.array) {
                 return 1;
@@ -161,10 +158,7 @@ static PTN_UNUSED int ptn_compare_not_identical(PtnValue left, PtnValue right) {
         case PTN_FLOAT:
             return left.as.floating != right.as.floating;
         case PTN_STRING:
-            if (left.as.string == right.as.string) {
-                return 0;
-            }
-            return strcmp(left.as.string, right.as.string) != 0;
+            return ptn_compare_value_strings(left.as.string, right.as.string) != PTN_COMPARE_EQUAL;
         case PTN_ARRAY:
             if (left.as.array == right.as.array) {
                 return 0;
@@ -215,7 +209,7 @@ static PTN_UNUSED int ptn_compare_order(PtnValue left, PtnValue right) {
             return ptn_compare_numbers(0.0, right_number);
         }
         if (right.type == PTN_STRING) {
-            return ptn_compare_strings("", right.as.string);
+            return ptn_compare_string_bytes((const unsigned char *)"", 0, right.as.string.data, right.as.string.len);
         }
         if (right.type == PTN_ARRAY) {
             return ptn_compare_numbers(0.0, (double)ptn_is_truthy(right));
@@ -230,7 +224,7 @@ static PTN_UNUSED int ptn_compare_order(PtnValue left, PtnValue right) {
             return ptn_compare_numbers(left_number, 0.0);
         }
         if (left.type == PTN_STRING) {
-            return ptn_compare_strings(left.as.string, "");
+            return ptn_compare_string_bytes(left.as.string.data, left.as.string.len, (const unsigned char *)"", 0);
         }
         if (left.type == PTN_ARRAY) {
             return ptn_compare_numbers((double)ptn_is_truthy(left), 0.0);
@@ -572,12 +566,13 @@ static PTN_UNUSED int64_t ptn_value_to_integer_with_precision_deprecation(PtnVal
     }
 
     PtnNumber number = ptn_to_number(value);
-    if (value.type == PTN_STRING && ptn_string_has_trailing_non_numeric_data(value.as.string)) {
+    const char *string_data = value.type == PTN_STRING ? (const char *)value.as.string.data : "";
+    if (value.type == PTN_STRING && ptn_string_has_trailing_non_numeric_data(string_data)) {
         ptn_emit_non_numeric_value_warning();
     }
     if (number.type == PTN_NUMBER_FLOAT && ptn_float_to_int_loses_precision(number.floating)) {
         if (value.type == PTN_STRING) {
-            ptn_emit_float_string_to_int_precision_deprecation(value.as.string);
+            ptn_emit_float_string_to_int_precision_deprecation(string_data);
         } else {
             ptn_emit_float_to_int_precision_deprecation(number.floating);
         }
@@ -632,64 +627,64 @@ static PTN_UNUSED PtnValue ptn_decrement(PtnValue value) {
     return ptn_subtract(value, ptn_int(1));
 }
 
-static PTN_UNUSED PtnValue ptn_bitwise_string_and(const char *left, const char *right) {
-    size_t left_len = strlen(left);
-    size_t right_len = strlen(right);
+static PTN_UNUSED PtnValue ptn_bitwise_string_and(PtnString left, PtnString right) {
+    size_t left_len = left.len;
+    size_t right_len = right.len;
     size_t result_len = left_len < right_len ? left_len : right_len;
     char *result = malloc(result_len + 1);
     if (result == NULL) {
         ptn_abort_out_of_memory();
     }
     for (size_t i = 0; i < result_len; i++) {
-        result[i] = (char)((unsigned char)left[i] & (unsigned char)right[i]);
+        result[i] = (char)(left.data[i] & right.data[i]);
     }
     result[result_len] = '\0';
-    return ptn_owned_string(result);
+    return ptn_owned_string_len(result, result_len);
 }
 
-static PTN_UNUSED PtnValue ptn_bitwise_string_or(const char *left, const char *right) {
-    size_t left_len = strlen(left);
-    size_t right_len = strlen(right);
+static PTN_UNUSED PtnValue ptn_bitwise_string_or(PtnString left, PtnString right) {
+    size_t left_len = left.len;
+    size_t right_len = right.len;
     size_t result_len = left_len > right_len ? left_len : right_len;
     char *result = malloc(result_len + 1);
     if (result == NULL) {
         ptn_abort_out_of_memory();
     }
     for (size_t i = 0; i < result_len; i++) {
-        unsigned char left_byte = i < left_len ? (unsigned char)left[i] : 0;
-        unsigned char right_byte = i < right_len ? (unsigned char)right[i] : 0;
+        unsigned char left_byte = i < left_len ? left.data[i] : 0;
+        unsigned char right_byte = i < right_len ? right.data[i] : 0;
         result[i] = (char)(left_byte | right_byte);
     }
     result[result_len] = '\0';
-    return ptn_owned_string(result);
+    return ptn_owned_string_len(result, result_len);
 }
 
-static PTN_UNUSED PtnValue ptn_bitwise_string_xor(const char *left, const char *right) {
-    size_t left_len = strlen(left);
-    size_t right_len = strlen(right);
+static PTN_UNUSED PtnValue ptn_bitwise_string_xor(PtnString left, PtnString right) {
+    size_t left_len = left.len;
+    size_t right_len = right.len;
     size_t result_len = left_len < right_len ? left_len : right_len;
     char *result = malloc(result_len + 1);
     if (result == NULL) {
         ptn_abort_out_of_memory();
     }
     for (size_t i = 0; i < result_len; i++) {
-        result[i] = (char)((unsigned char)left[i] ^ (unsigned char)right[i]);
+        result[i] = (char)(left.data[i] ^ right.data[i]);
     }
     result[result_len] = '\0';
-    return ptn_owned_string(result);
+    return ptn_owned_string_len(result, result_len);
 }
 
-static PTN_UNUSED PtnValue ptn_bitwise_string_not(const char *value) {
-    size_t len = strlen(value);
+static PTN_UNUSED PtnValue ptn_bitwise_string_not(PtnString value) {
+    size_t len = value.len;
     char *result = malloc(len + 1);
     if (result == NULL) {
         ptn_abort_out_of_memory();
     }
     for (size_t i = 0; i < len; i++) {
-        result[i] = (char)(~(unsigned char)value[i]);
+        result[i] = (char)(~value.data[i]);
     }
     result[len] = '\0';
-    return ptn_owned_string(result);
+    return ptn_owned_string_len(result, len);
 }
 
 static PTN_UNUSED int64_t ptn_value_to_integer(PtnValue value) {

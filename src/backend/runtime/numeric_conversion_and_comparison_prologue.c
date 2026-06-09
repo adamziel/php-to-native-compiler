@@ -196,6 +196,10 @@ static PTN_UNUSED int ptn_contains_float_marker(const char *start, const char *e
     return 0;
 }
 
+static PTN_UNUSED int ptn_string_has_embedded_nul(PtnString string) {
+    return memchr(string.data, '\0', string.len) != NULL;
+}
+
 static PTN_UNUSED PtnNumber ptn_string_to_number(const char *string) {
     const char *start = string;
     while (isspace((unsigned char)*start)) {
@@ -234,7 +238,10 @@ static PTN_UNUSED PtnNumber ptn_to_number(PtnValue value) {
         case PTN_FLOAT:
             return ptn_number_float(value.as.floating);
         case PTN_STRING:
-            return ptn_string_to_number(value.as.string);
+            if (ptn_string_has_embedded_nul(value.as.string)) {
+                return ptn_number_int(0);
+            }
+            return ptn_string_to_number((const char *)value.as.string.data);
         case PTN_ARRAY:
             return ptn_number_int(value.as.array->len == 0 ? 0 : 1);
         case PTN_EXCEPTION:
@@ -325,7 +332,8 @@ static PTN_UNUSED int ptn_is_truthy(PtnValue value) {
         case PTN_FLOAT:
             return value.as.floating != 0.0;
         case PTN_STRING:
-            return value.as.string[0] != '\0' && strcmp(value.as.string, "0") != 0;
+            return value.as.string.len != 0 &&
+                !(value.as.string.len == 1 && value.as.string.data[0] == '0');
         case PTN_ARRAY:
             return value.as.array->len != 0;
         case PTN_EXCEPTION:
@@ -448,7 +456,10 @@ static PTN_UNUSED int ptn_comparison_numeric_value(PtnValue value, double *numbe
             *number = value.as.floating;
             return 1;
         case PTN_STRING:
-            return ptn_is_numeric_string(value.as.string, number);
+            if (ptn_string_has_embedded_nul(value.as.string)) {
+                return 0;
+            }
+            return ptn_is_numeric_string((const char *)value.as.string.data, number);
         case PTN_NULL:
         case PTN_BOOL:
         case PTN_ARRAY:
@@ -491,6 +502,33 @@ static PTN_UNUSED int ptn_compare_integers(int64_t left, int64_t right) {
 static PTN_UNUSED int ptn_compare_strings(const char *left, const char *right) {
     int compared = strcmp(left, right);
     return compared < 0 ? -1 : (compared > 0 ? 1 : 0);
+}
+
+static PTN_UNUSED int ptn_compare_string_bytes(
+    const unsigned char *left,
+    size_t left_len,
+    const unsigned char *right,
+    size_t right_len
+) {
+    size_t shared_len = left_len < right_len ? left_len : right_len;
+    int compared = shared_len == 0 ? 0 : memcmp(left, right, shared_len);
+    if (compared < 0) {
+        return PTN_COMPARE_LESS;
+    }
+    if (compared > 0) {
+        return PTN_COMPARE_GREATER;
+    }
+    if (left_len < right_len) {
+        return PTN_COMPARE_LESS;
+    }
+    if (left_len > right_len) {
+        return PTN_COMPARE_GREATER;
+    }
+    return PTN_COMPARE_EQUAL;
+}
+
+static PTN_UNUSED int ptn_compare_value_strings(PtnString left, PtnString right) {
+    return ptn_compare_string_bytes(left.data, left.len, right.data, right.len);
 }
 
 static PTN_UNUSED void ptn_number_value_to_string(PtnValue value, char *buffer, size_t buffer_len) {

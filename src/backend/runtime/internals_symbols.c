@@ -1,4 +1,7 @@
-            return ptn_owned_string(ptn_duplicate_string(value.as.string));
+            return ptn_owned_string_len(
+                ptn_duplicate_string_len((const char *)value.as.string.data, value.as.string.len),
+                value.as.string.len
+            );
         case PTN_ARRAY:
             return ptn_array(ptn_array_clone(value.as.array));
         case PTN_EXCEPTION: {
@@ -46,7 +49,7 @@ static PTN_UNUSED void ptn_value_destroy(PtnValue *value) {
     }
     switch (value->type) {
         case PTN_STRING:
-            free((char *)value->as.string);
+            free(value->as.string.owned);
             break;
         case PTN_ARRAY:
             ptn_array_free(value->as.array);

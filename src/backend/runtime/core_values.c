@@ -48,6 +48,12 @@ typedef enum {
 } PtnArrayKeyType;
 
 typedef struct {
+    const unsigned char *data;
+    size_t len;
+    char *owned;
+} PtnString;
+
+typedef struct {
     PtnArrayKeyType type;
     union {
         int64_t integer;
@@ -62,7 +68,7 @@ typedef struct {
         int boolean;
         int64_t integer;
         double floating;
-        const char *string;
+        PtnString string;
         PtnArray *array;
         PtnException *exception;
     } as;
@@ -227,20 +233,32 @@ static PTN_UNUSED PtnValue ptn_float(double floating) {
     return value;
 }
 
-static PTN_UNUSED PtnValue ptn_string(const char *string) {
+static PTN_UNUSED PtnValue ptn_string_literal(const char *string, size_t len) {
     PtnValue value;
     value.type = PTN_STRING;
     value.owned = 0;
-    value.as.string = string;
+    value.as.string.data = (const unsigned char *)string;
+    value.as.string.len = len;
+    value.as.string.owned = NULL;
+    return value;
+}
+
+static PTN_UNUSED PtnValue ptn_string(const char *string) {
+    return ptn_string_literal(string, strlen(string));
+}
+
+static PTN_UNUSED PtnValue ptn_owned_string_len(char *string, size_t len) {
+    PtnValue value;
+    value.type = PTN_STRING;
+    value.owned = 1;
+    value.as.string.data = (const unsigned char *)string;
+    value.as.string.len = len;
+    value.as.string.owned = string;
     return value;
 }
 
 static PTN_UNUSED PtnValue ptn_owned_string(char *string) {
-    PtnValue value;
-    value.type = PTN_STRING;
-    value.owned = 1;
-    value.as.string = string;
-    return value;
+    return ptn_owned_string_len(string, strlen(string));
 }
 
 static PTN_UNUSED PtnValue ptn_array(PtnArray *array) {

@@ -6,6 +6,18 @@
     return copy;
 }
 
+static PTN_UNUSED char *ptn_duplicate_string_len(const char *string, size_t len) {
+    char *copy = malloc(len + 1);
+    if (copy == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    if (len != 0) {
+        memcpy(copy, string, len);
+    }
+    copy[len] = '\0';
+    return copy;
+}
+
 static PTN_UNUSED PtnValue ptn_value_borrow(PtnValue value);
 static PTN_UNUSED PtnValue ptn_value_clone(PtnValue value);
 static PTN_UNUSED void ptn_value_destroy(PtnValue *value);
@@ -76,10 +88,11 @@ static PTN_UNUSED PtnArrayKey ptn_array_key_from_value(PtnValue value) {
             return ptn_array_int_key((int64_t)value.as.floating);
         case PTN_STRING: {
             int64_t integer = 0;
-            if (ptn_string_is_integer_array_key(value.as.string, &integer)) {
+            const char *string = (const char *)value.as.string.data;
+            if (ptn_string_is_integer_array_key(string, &integer)) {
                 return ptn_array_int_key(integer);
             }
-            return ptn_array_string_key(value.as.string);
+            return ptn_array_string_key(string);
         }
         case PTN_ARRAY:
         case PTN_EXCEPTION:

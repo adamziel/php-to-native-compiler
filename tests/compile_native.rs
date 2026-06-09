@@ -2229,7 +2229,9 @@ int(5)\nstring(6) \"323535\"\nstring(2) \"23\"\n"
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("case PTN_STRING:"));
-    assert!(c_source.contains("return ptn_string_operand_borrowed(value.as.string);"));
+    assert!(c_source.contains(
+        "return ptn_string_operand_borrowed_len((const char *)value.as.string.data, value.as.string.len);"
+    ));
 
     for function in [
         "ptn_internal_strlen",
@@ -2271,6 +2273,60 @@ int(5)\nstring(6) \"323535\"\nstring(2) \"23\"\n"
             "{function} should not convert direct argument expressions unconditionally"
         );
     }
+}
+
+#[test]
+fn compile_binary_safe_value_strings_to_native_binary() {
+    let root = temp_dir("ptn-native-binary-safe-value-strings");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("binary-safe-value-strings.php");
+    let output = root.join("binary-safe-value-strings-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$s = \"a\" . chr(0) . \"b\";\n\
+echo bin2hex(chr(0)), \"\\n\";\n\
+echo strlen($s), \" \", bin2hex($s), \" \", ord($s[1]), \"\\n\";\n\
+var_dump($s);\n\
+echo $s;\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        execution.stdout,
+        b"00\n3 610062 0\nstring(3) \"a\0b\"\na\0b".to_vec()
+    );
+    assert_eq!(execution.stderr, Vec::<u8>::new());
+}
+
+#[test]
+fn compile_sha1_embedded_nul_input_and_raw_output_to_native_binary() {
+    let root = temp_dir("ptn-native-sha1-binary-safe");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("sha1-binary-safe.php");
+    let output = root.join("sha1-binary-safe-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$s = \"a\" . chr(0) . \"b\";\n\
+echo strlen($s), \" \", sha1($s), \"\\n\";\n\
+echo bin2hex(sha1($s, true)), \"\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "3 4a3dec2d1f8245280855c42db0ee4239f917fdb8\n4a3dec2d1f8245280855c42db0ee4239f917fdb8\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

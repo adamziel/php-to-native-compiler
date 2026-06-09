@@ -1577,7 +1577,13 @@ impl ValueEmitter {
                 emit_value_cleanup(out, "    ", &expr_temp);
                 result_temp
             }
-            ValueExpr::String(value) => format!("ptn_string(\"{}\")", c_string(value)),
+            ValueExpr::String(value) => {
+                format!(
+                    "ptn_string_literal(\"{}\", {})",
+                    c_string(value),
+                    value.len()
+                )
+            }
             ValueExpr::Int(value) => format!("ptn_int({value})"),
             ValueExpr::Float(value) => format!("ptn_float({value:?})"),
             ValueExpr::Bool(true) => "ptn_bool(1)".to_string(),
@@ -1615,10 +1621,18 @@ impl ValueEmitter {
             ValueExpr::MagicConstant { kind, line } => match kind {
                 MagicConstantKind::Line => format!("ptn_int({line})"),
                 MagicConstantKind::File => {
-                    format!("ptn_string(\"{}\")", c_string(&self.source_file))
+                    format!(
+                        "ptn_string_literal(\"{}\", {})",
+                        c_string(&self.source_file),
+                        self.source_file.len()
+                    )
                 }
                 MagicConstantKind::Dir => {
-                    format!("ptn_string(\"{}\")", c_string(&self.source_dir))
+                    format!(
+                        "ptn_string_literal(\"{}\", {})",
+                        c_string(&self.source_dir),
+                        self.source_dir.len()
+                    )
                 }
                 MagicConstantKind::Function
                 | MagicConstantKind::Method
@@ -2471,7 +2485,7 @@ fn c_string(value: &str) -> String {
             b'\r' => out.push_str("\\r"),
             b'\t' => out.push_str("\\t"),
             0x20..=0x7e => out.push(byte as char),
-            _ => out.push_str(&format!("\\x{byte:02x}")),
+            _ => out.push_str(&format!("\\{byte:03o}")),
         }
     }
     out
