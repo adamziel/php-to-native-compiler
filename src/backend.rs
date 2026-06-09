@@ -1035,6 +1035,12 @@ static PTN_UNUSED PtnArrayKey ptn_array_key_from_value(PtnValue value) {
     return ptn_array_string_key("");
 }
 
+static PTN_UNUSED void ptn_array_key_free(PtnArrayKey key) {
+    if (key.type == PTN_ARRAY_KEY_STRING) {
+        free((char *)key.as.string);
+    }
+}
+
 static PTN_UNUSED int ptn_array_keys_equal(PtnArrayKey left, PtnArrayKey right) {
     if (left.type != right.type) {
         return 0;
@@ -1067,6 +1073,7 @@ static PTN_UNUSED void ptn_array_set_entry(PtnArray *array, PtnArrayKey key, Ptn
     ptn_array_update_next_auto_key(array, key);
     if (index < array->len) {
         array->entries[index].value = value;
+        ptn_array_key_free(key);
         return;
     }
     if (array->len == array->capacity) {
@@ -1597,8 +1604,152 @@ static PTN_UNUSED void ptn_emit_undefined_array_key_warning(PtnArrayKey key, siz
     free(display);
 }
 
+static PTN_UNUSED void ptn_emit_string_offset_cast_warning(size_t line) {
+    ptn_emit_array_runtime_diagnostic("Warning", "String offset cast occurred", line);
+}
+
+static PTN_UNUSED void ptn_emit_illegal_string_offset_warning(const char *key, size_t line) {
+    const char *prefix = "Illegal string offset \"";
+    size_t prefix_len = strlen(prefix);
+    size_t key_len = strlen(key);
+    if (key_len > SIZE_MAX - prefix_len - 2) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc(prefix_len + key_len + 2);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    memcpy(message, prefix, prefix_len);
+    memcpy(message + prefix_len, key, key_len);
+    message[prefix_len + key_len] = '"';
+    message[prefix_len + key_len + 1] = '\0';
+    ptn_emit_array_runtime_diagnostic("Warning", message, line);
+    free(message);
+}
+
+static PTN_UNUSED void ptn_emit_uninitialized_string_offset_warning(int64_t offset, size_t line) {
+    char message[96];
+    int written = snprintf(message, sizeof(message), "Uninitialized string offset %lld", (long long)offset);
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_array_runtime_diagnostic("Warning", message, line);
+}
+
+static PTN_UNUSED int ptn_string_to_offset(const char *string, int64_t *offset, int *warn_illegal) {
+    const char *cursor = string;
+    while (isspace((unsigned char)*cursor)) {
+        cursor++;
+    }
+
+    const char *number_start = cursor;
+    if (*cursor == '-' || *cursor == '+') {
+        cursor++;
+    }
+    if (!isdigit((unsigned char)*cursor)) {
+        return 0;
+    }
+    while (isdigit((unsigned char)*cursor)) {
+        cursor++;
+    }
+
+    char *end = NULL;
+    errno = 0;
+    long long parsed = strtoll(number_start, &end, 10);
+    if (errno == ERANGE || end == number_start) {
+        return 0;
+    }
+
+    cursor = end;
+    while (isspace((unsigned char)*cursor)) {
+        cursor++;
+    }
+    if (*cursor == '\0') {
+        *offset = (int64_t)parsed;
+        return 1;
+    }
+    if (*cursor == '.') {
+        return 0;
+    }
+
+    *offset = (int64_t)parsed;
+    *warn_illegal = 1;
+    return 1;
+}
+
+static PTN_UNUSED int64_t ptn_string_offset_from_value(PtnValue key_value, size_t line) {
+    switch (key_value.type) {
+        case PTN_INT:
+            return key_value.as.integer;
+        case PTN_BOOL:
+            ptn_emit_string_offset_cast_warning(line);
+            return key_value.as.boolean ? 1 : 0;
+        case PTN_NULL:
+            ptn_emit_string_offset_cast_warning(line);
+            return 0;
+        case PTN_FLOAT:
+            ptn_emit_string_offset_cast_warning(line);
+            return (int64_t)key_value.as.floating;
+        case PTN_STRING: {
+            int warn_illegal = 0;
+            int64_t offset = 0;
+            if (ptn_string_to_offset(key_value.as.string, &offset, &warn_illegal)) {
+                if (warn_illegal) {
+                    ptn_emit_illegal_string_offset_warning(key_value.as.string, line);
+                }
+                return offset;
+            }
+            fputs("Fatal error: Cannot access offset of type string on string\n", stderr);
+            exit(255);
+        }
+        case PTN_ARRAY:
+            fputs("Fatal error: Cannot access offset of type array on string\n", stderr);
+            exit(255);
+    }
+    return 0;
+}
+
+static PTN_UNUSED int ptn_string_offset_index(size_t string_len, int64_t offset, size_t *index) {
+    if (offset >= 0) {
+        uint64_t positive = (uint64_t)offset;
+        if (positive >= string_len) {
+            return 0;
+        }
+        *index = (size_t)positive;
+        return 1;
+    }
+
+    uint64_t distance = (uint64_t)(-(offset + 1)) + 1;
+    if (distance > string_len) {
+        return 0;
+    }
+    *index = string_len - (size_t)distance;
+    return 1;
+}
+
+static PTN_UNUSED PtnValue ptn_string_offset_read(PtnValue container, PtnValue key_value, size_t line) {
+    int64_t offset = ptn_string_offset_from_value(key_value, line);
+    size_t index = 0;
+    if (!ptn_string_offset_index(strlen(container.as.string), offset, &index)) {
+        ptn_emit_uninitialized_string_offset_warning(offset, line);
+        return ptn_string("");
+    }
+
+    char *result = malloc(2);
+    if (result == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    result[0] = container.as.string[index];
+    result[1] = '\0';
+    return ptn_owned_string(result);
+}
+
 static PTN_UNUSED PtnValue ptn_array_read(PtnRuntime *runtime, PtnValue container, PtnValue key_value, size_t line) {
     (void)runtime;
+    if (container.type == PTN_STRING) {
+        return ptn_string_offset_read(container, key_value, line);
+    }
+
     if (container.type != PTN_ARRAY) {
         const char *prefix = "Trying to access array offset on value of type ";
         const char *type_name = ptn_offset_container_type_name(container);
@@ -1623,9 +1774,12 @@ static PTN_UNUSED PtnValue ptn_array_read(PtnRuntime *runtime, PtnValue containe
     PtnArrayEntry *entry = ptn_array_entry_for_key(container.as.array, key);
     if (entry == NULL) {
         ptn_emit_undefined_array_key_warning(key, line);
+        ptn_array_key_free(key);
         return ptn_null();
     }
-    return entry->value;
+    PtnValue value = entry->value;
+    ptn_array_key_free(key);
+    return value;
 }
 
 static PTN_UNUSED int ptn_compare_arrays_equal(PtnArray *left, PtnArray *right) {

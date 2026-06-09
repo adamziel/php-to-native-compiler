@@ -76,6 +76,12 @@ supports in generated native binaries.
   reads from literal or grouped array expressions. Reads use the current
   ordered-array key canonicalization path; undefined keys and non-array
   containers emit a warning boundary and yield `null`.
+- String offset read expressions such as `$string[$offset]` for the current
+  C-string-backed scalar string subset. Integer-compatible offsets, negative
+  offsets, nested reads, integer strings, numeric prefix strings with PHP-style
+  illegal-offset warnings, and scalar cast warnings for `null`, booleans, and
+  floats are handled by the shared offset-read helper; out-of-range reads emit
+  an uninitialized-offset warning and return an empty string.
 - Boxed scalar and literal-array comparison operators `==`, `!=`, `===`, `!==`,
   `<`, `<=`, `>`, `>=`, and `<=>`. Strict array identity compares type, key
   order, key type, and value. Numeric comparisons involving `NAN` are treated
@@ -271,6 +277,9 @@ supports in generated native binaries.
 - Array element mutation, append/unset/iteration, long-form
   `array(...)`, recursive arrays, objects, resources, references, copy-on-write,
   and `var_dump()` reference identity output.
+- String offset writes/mutation, `isset()`/`empty()`/null-coalescing offset
+  semantics, string-offset references, string-offset unset, and complete
+  TypeError/exception parity for unsupported string offset key types.
 - Embedded NUL strings in runtime string values, `var_dump()` string
   length/output, `strlen()`, `str_rot13()`, `strcmp()`, `bin2hex()`, `chr()`,
   `hex2bin()`, `str_contains()`, `quotemeta()`, `md5()`, `sha1()`, `substr()`,

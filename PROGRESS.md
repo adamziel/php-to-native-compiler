@@ -1396,3 +1396,31 @@ Still unsupported after this `quotemeta()` slice: embedded-NUL input parity,
 unsupported array/object/resource/reference operand diagnostics, and full PHP
 string-escape parity for octal, hexadecimal, Unicode, vertical-tab, escape, and
 form-feed spellings.
+
+Added read-only string offset fetches:
+
+- The generated runtime now handles `PTN_STRING` containers in the shared
+  offset-read helper instead of sending every string container through the
+  non-array diagnostic path.
+- String offset reads support integer offsets, negative offsets,
+  integer-compatible string offsets, numeric-prefix string offsets with the
+  current illegal-offset warning boundary, nested reads from one-byte string
+  results, and scalar cast warnings for `null`, booleans, and floats.
+- Out-of-range reads emit a generic `Uninitialized string offset` warning and
+  return an empty string through the existing boxed string value path.
+- Native tests prove successful reads, nested reads, negative offsets,
+  out-of-range diagnostics, and scalar offset casts.
+- Focused public PHPT telemetry through `phpc` passes
+  `Zend/tests/string_offset_int_min_max.phpt`.
+
+Quarantined nearby public offset rows that should not block this slice:
+`Zend/tests/str_offset_001.phpt` still requires user-defined functions before
+its read-only string-offset assertions can run, and
+`Zend/tests/numeric_strings/string_offset.phpt` still requires `foreach` and
+try/catch exception handling around unsupported string offset key types.
+
+Still unsupported after this string-offset read slice: string offset writes,
+append, unset, `isset()`/`empty()`/null-coalescing offset semantics,
+string-offset references, embedded NUL string offsets, resources/objects as
+offset keys, exact `TypeError` exception behavior, PHP-exact warning file names
+and error-handler routing, and broader array/object/reference offset semantics.

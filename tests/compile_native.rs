@@ -2994,6 +2994,41 @@ var_dump($value[0]);",
 }
 
 #[test]
+fn compile_string_offset_reads_to_native_binary() {
+    let root = temp_dir("ptn-native-string-offset-reads");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("string-offset-reads.php");
+    let output = root.join("string-offset-reads-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$str = \"abcd\";\n\
+var_dump($str[0]);\n\
+var_dump($str[\"2\"]);\n\
+var_dump($str[-1]);\n\
+var_dump($str[4]);\n\
+var_dump($str[-5]);\n\
+var_dump($str[1][0]);\n\
+var_dump($str[2][-2]);\n\
+var_dump($str[true]);\n\
+var_dump($str[false]);\n\
+var_dump($str[null]);\n\
+var_dump($str[1.8]);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(1) \"a\"\nstring(1) \"c\"\nstring(1) \"d\"\n\nWarning: Uninitialized string offset 4 in ptn on line 6\nstring(0) \"\"\n\nWarning: Uninitialized string offset -5 in ptn on line 7\nstring(0) \"\"\nstring(1) \"b\"\n\nWarning: Uninitialized string offset -2 in ptn on line 9\nstring(0) \"\"\n\nWarning: String offset cast occurred in ptn on line 10\nstring(1) \"b\"\n\nWarning: String offset cast occurred in ptn on line 11\nstring(1) \"a\"\n\nWarning: String offset cast occurred in ptn on line 12\nstring(1) \"a\"\n\nWarning: String offset cast occurred in ptn on line 13\nstring(1) \"b\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_strict_identity_comparisons_to_native_binary() {
     let root = temp_dir("ptn-native-strict-identity");
     fs::create_dir_all(&root).unwrap();
@@ -4165,7 +4200,9 @@ fn unsupported_internal_functions_fail_in_generated_runtime() {
 fn support_docs_name_var_dump_unsupported_edges() {
     let support = fs::read_to_string("docs/SUPPORT.md").unwrap();
     assert!(support.contains("Array read expressions"));
+    assert!(support.contains("String offset read expressions"));
     assert!(support.contains("Array element mutation"));
+    assert!(support.contains("String offset writes/mutation"));
     assert!(support.contains("recursive arrays, objects, resources, references"));
     assert!(support.contains("Embedded NUL strings"));
     assert!(support.contains("Full PHP float precision and formatting edge cases"));

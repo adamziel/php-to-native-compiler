@@ -163,6 +163,12 @@ Supported today:
   reads from literal or grouped array expressions. Reads use the current
   ordered-array key canonicalization path and return `null` with a warning
   boundary for undefined keys or non-array containers.
+- String offset read expressions such as `$string[$offset]` for the current
+  C-string-backed scalar string subset. Integer-compatible offsets, negative
+  offsets, nested reads, integer strings, numeric prefix strings with PHP-style
+  illegal-offset warnings, and scalar cast warnings for `null`, booleans, and
+  floats are handled by the shared offset-read helper; out-of-range reads emit
+  an uninitialized-offset warning and return an empty string.
 - Boxed scalar and literal-array comparison and boolean expressions: `==`,
   `!=`, `===`, `!==`, `<`, `<=`, `>`, `>=`, `<=>`, `&&`, and `||`. Strict
   identity compares type, key order, key type, and value; numeric scalar
@@ -208,6 +214,8 @@ Unsupported today:
 - Long-form `array(...)`, array element mutation, append/unset,
   iteration, recursive arrays, arrays with references/copy-on-write, objects,
   functions, classes, includes, references, resources, exceptions,
+  string-offset writes/mutation, `isset()`/`empty()`/null-coalescing offset
+  semantics, string-offset references/unset,
   array/object/reference compound-assignment lvalues,
   compound operators other than `+=`, `-=`, `*=`, `/=`, `%=`, `**=`, `.=`, `&=`,
   `|=`, `^=`, `<<=`, and `>>=` (`??=`), `print` as an expression returning
