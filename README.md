@@ -30,7 +30,8 @@ Supported today:
 - Statement-form expressions over the currently supported expression subset;
   generated native code evaluates the boxed value for side effects and discards
   the result.
-- Simple internal calls such as `var_dump(expr, ...)`, `strlen(expr)`,
+- Simple internal calls such as `var_dump(expr, ...)`,
+  `print_r(expr[, return])`, `strlen(expr)`,
   `str_rot13(expr)`, `strcmp(expr, expr)`, `str_contains(expr, expr)`,
   `str_starts_with(expr, expr)`, `str_ends_with(expr, expr)`,
   `quotemeta(expr)`, `chunk_split(expr[, expr[, expr]])`,
@@ -64,6 +65,9 @@ Supported today:
   double, with PHP-style uppercase `E` and unpadded exponent widths when
   scientific notation is required; `INF`, `-INF`, and `NAN` keep PHP-like
   special spellings.
+- `print_r()` output for the current boxed `PtnValue` types, including scalar
+  output, ordered-array formatting, nested arrays, and string-return mode via
+  the optional second argument.
 - `strlen()` as an expression returning the byte length of the current boxed
   scalar string-conversion result.
 - `str_rot13()` as an expression returning ASCII ROT13 over the current boxed

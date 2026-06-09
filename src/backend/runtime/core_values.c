@@ -1,6 +1,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <math.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -95,6 +96,12 @@ typedef struct {
     PtnValue key;
     PtnValue value;
 } PtnArrayLiteralEntry;
+
+typedef struct {
+    char *data;
+    size_t len;
+    size_t capacity;
+} PtnStringBuffer;
 
 typedef enum {
     PTN_NUMBER_INT,

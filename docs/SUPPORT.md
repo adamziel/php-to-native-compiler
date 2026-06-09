@@ -123,7 +123,7 @@ supports in generated native binaries.
   including the current float/float-string precision-loss deprecation boundary
   and leading-numeric-string warning boundary.
 - Simple statement-form internal calls such as `var_dump(expr, ...)`,
-  `strlen(expr);`, `str_rot13(expr);`, `strcmp(expr, expr);`,
+  `print_r(expr[, return]);`, `strlen(expr);`, `str_rot13(expr);`, `strcmp(expr, expr);`,
   `str_contains(expr, expr);`, `str_starts_with(expr, expr);`,
   `str_ends_with(expr, expr);`, `quotemeta(expr);`,
   `chunk_split(expr[, expr[, expr]]);`, `strip_tags(expr);`,
@@ -139,7 +139,7 @@ supports in generated native binaries.
   `is_finite(expr);`, `is_infinite(expr);`, `is_nan(expr);`, and
   `error_reporting(expr);`.
 - Expression-form internal calls for the currently registered functions,
-  including `strlen(expr)`, `str_rot13(expr)`, `strcmp(expr, expr)`,
+  including `print_r(expr[, return])`, `strlen(expr)`, `str_rot13(expr)`, `strcmp(expr, expr)`,
   `str_contains(expr, expr)`, `str_starts_with(expr, expr)`,
   `str_ends_with(expr, expr)`, `quotemeta(expr)`,
   `chunk_split(expr[, expr[, expr]])`, `strip_tags(expr)`,
@@ -171,6 +171,9 @@ supports in generated native binaries.
   the same native double, with PHP-style uppercase `E` and unpadded exponent
   widths when scientific notation is required; `INF`, `-INF`, and `NAN` keep
   PHP-like special spellings.
+- `print_r()` output for current boxed values, including scalar output,
+  ordered-array formatting, nested arrays, and string-return mode through the
+  optional second argument.
 - `strlen()` over current boxed scalar values after scalar string conversion.
 - `str_rot13()` over current boxed scalar values after scalar string conversion,
   returning ASCII ROT13 output while leaving non-letters unchanged.

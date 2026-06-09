@@ -1651,6 +1651,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "getmypid"
             | "php_sapi_name"
             | "phpversion"
+            | "print_r"
             | "bindec"
             | "hexdec"
             | "octdec"

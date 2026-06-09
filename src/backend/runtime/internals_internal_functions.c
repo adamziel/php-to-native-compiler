@@ -104,6 +104,76 @@ static PtnValue ptn_internal_var_dump(PtnRuntime *runtime, size_t argc, const Pt
     return ptn_null();
 }
 
+static void ptn_print_r_value_indented(PtnStringBuffer *buffer, PtnValue value, size_t indent);
+
+static void ptn_print_r_key(PtnStringBuffer *buffer, PtnArrayKey key) {
+    if (key.type == PTN_ARRAY_KEY_INT) {
+        ptn_string_buffer_append_format(buffer, "%lld", (long long)key.as.integer);
+    } else {
+        ptn_string_buffer_append(buffer, key.as.string);
+    }
+}
+
+static void ptn_print_r_array(PtnStringBuffer *buffer, PtnArray *array, size_t indent) {
+    ptn_string_buffer_append(buffer, "Array\n");
+    ptn_string_buffer_append_indent(buffer, indent);
+    ptn_string_buffer_append(buffer, "(\n");
+    for (size_t i = 0; i < array->len; i++) {
+        ptn_string_buffer_append_indent(buffer, indent + 4);
+        ptn_string_buffer_append_char(buffer, '[');
+        ptn_print_r_key(buffer, array->entries[i].key);
+        ptn_string_buffer_append(buffer, "] => ");
+        if (array->entries[i].value.type == PTN_ARRAY) {
+            ptn_print_r_value_indented(buffer, array->entries[i].value, indent + 8);
+            ptn_string_buffer_append_char(buffer, '\n');
+        } else {
+            ptn_print_r_value_indented(buffer, array->entries[i].value, indent);
+            ptn_string_buffer_append_char(buffer, '\n');
+        }
+    }
+    ptn_string_buffer_append_indent(buffer, indent);
+    ptn_string_buffer_append(buffer, ")\n");
+}
+
+static void ptn_print_r_value_indented(PtnStringBuffer *buffer, PtnValue value, size_t indent) {
+    switch (value.type) {
+        case PTN_NULL:
+            break;
+        case PTN_BOOL:
+            if (value.as.boolean) {
+                ptn_string_buffer_append_char(buffer, '1');
+            }
+            break;
+        case PTN_INT:
+            ptn_string_buffer_append_format(buffer, "%lld", (long long)value.as.integer);
+            break;
+        case PTN_FLOAT:
+            ptn_string_buffer_append_format(buffer, "%.14g", value.as.floating);
+            break;
+        case PTN_STRING:
+            ptn_string_buffer_append(buffer, value.as.string);
+            break;
+        case PTN_ARRAY:
+            ptn_print_r_array(buffer, value.as.array, indent);
+            break;
+    }
+}
+
+static PtnValue ptn_internal_print_r(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)line;
+    int return_output = argc >= 2 && ptn_is_truthy(args[1]);
+    PtnStringBuffer buffer;
+    ptn_string_buffer_init(&buffer);
+    ptn_print_r_value_indented(&buffer, args[0], 0);
+    if (return_output) {
+        return ptn_owned_string(buffer.data);
+    }
+    fputs(buffer.data, stdout);
+    free(buffer.data);
+    return ptn_bool(1);
+}
+
 static PtnArray *ptn_internal_expect_array_arg(
     PtnRuntime *runtime,
     const char *function_name,
@@ -1509,6 +1579,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "php_sapi_name", 0, 0, ptn_internal_php_sapi_name },
         { "phpversion", 0, 1, ptn_internal_phpversion },
         { "pi", 0, 0, ptn_internal_pi },
+        { "print_r", 1, 2, ptn_internal_print_r },
         { "quoted_printable_decode", 1, 1, ptn_internal_quoted_printable_decode },
         { "quotemeta", 1, 1, ptn_internal_quotemeta },
         { "reset", 1, 1, ptn_internal_reset },

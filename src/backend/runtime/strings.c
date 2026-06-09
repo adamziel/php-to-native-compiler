@@ -1,5 +1,82 @@
 }
 
+static PTN_UNUSED void ptn_string_buffer_init(PtnStringBuffer *buffer) {
+    buffer->capacity = 128;
+    buffer->len = 0;
+    buffer->data = malloc(buffer->capacity);
+    if (buffer->data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    buffer->data[0] = '\0';
+}
+
+static PTN_UNUSED void ptn_string_buffer_reserve(PtnStringBuffer *buffer, size_t additional_len) {
+    if (additional_len > SIZE_MAX - buffer->len - 1) {
+        ptn_abort_out_of_memory();
+    }
+    size_t required = buffer->len + additional_len + 1;
+    if (required <= buffer->capacity) {
+        return;
+    }
+    size_t new_capacity = buffer->capacity;
+    while (new_capacity < required) {
+        if (new_capacity > SIZE_MAX / 2) {
+            ptn_abort_out_of_memory();
+        }
+        new_capacity *= 2;
+    }
+    char *new_data = realloc(buffer->data, new_capacity);
+    if (new_data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    buffer->data = new_data;
+    buffer->capacity = new_capacity;
+}
+
+static PTN_UNUSED void ptn_string_buffer_append_len(PtnStringBuffer *buffer, const char *value, size_t len) {
+    ptn_string_buffer_reserve(buffer, len);
+    memcpy(buffer->data + buffer->len, value, len);
+    buffer->len += len;
+    buffer->data[buffer->len] = '\0';
+}
+
+static PTN_UNUSED void ptn_string_buffer_append(PtnStringBuffer *buffer, const char *value) {
+    ptn_string_buffer_append_len(buffer, value, strlen(value));
+}
+
+static PTN_UNUSED void ptn_string_buffer_append_char(PtnStringBuffer *buffer, char value) {
+    ptn_string_buffer_reserve(buffer, 1);
+    buffer->data[buffer->len] = value;
+    buffer->len++;
+    buffer->data[buffer->len] = '\0';
+}
+
+static PTN_UNUSED void ptn_string_buffer_append_format(PtnStringBuffer *buffer, const char *format, ...) {
+    va_list args;
+    va_start(args, format);
+    va_list copy;
+    va_copy(copy, args);
+    int needed = vsnprintf(NULL, 0, format, copy);
+    va_end(copy);
+    if (needed < 0) {
+        va_end(args);
+        ptn_abort_out_of_memory();
+    }
+    ptn_string_buffer_reserve(buffer, (size_t)needed);
+    int written = vsnprintf(buffer->data + buffer->len, buffer->capacity - buffer->len, format, args);
+    va_end(args);
+    if (written < 0 || written != needed) {
+        ptn_abort_out_of_memory();
+    }
+    buffer->len += (size_t)written;
+}
+
+static PTN_UNUSED void ptn_string_buffer_append_indent(PtnStringBuffer *buffer, size_t indent) {
+    for (size_t i = 0; i < indent; i++) {
+        ptn_string_buffer_append_char(buffer, ' ');
+    }
+}
+
 static PTN_UNUSED PtnValue ptn_bitwise_not(PtnValue value, const char *path, size_t line) {
     if (value.type == PTN_STRING) {
         return ptn_bitwise_string_not(value.as.string);

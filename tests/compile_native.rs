@@ -647,6 +647,9 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
         error.message,
         "Cannot redeclare function array_key_exists()"
     );
+
+    let error = parser::parse("<?php function Print_R($value) { return $value; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function print_r()");
 }
 
 #[test]
@@ -2034,6 +2037,72 @@ fn compile_var_dump_null_phpt_shape_to_native_binary() {
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "NULL\nDONE\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_print_r_current_boxed_values_to_native_binary() {
+    let root = temp_dir("ptn-native-print-r-current-values");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("print-r-current-values.php");
+    let output = root.join("print-r-current-values-bin");
+    fs::write(
+        &input,
+        r#"<?php
+print_r([1, 2, 3]);
+print_r(["x" => 1, "nested" => ["y" => 2], "" => null, true, false]);
+var_dump(print_r(["a" => [1]], true));
+var_dump(print_r(null, true), print_r(true, true), print_r(false, true), print_r(42, true), print_r(1.25, true), print_r("x", true));
+var_dump(print_r("out"));
+var_dump(function_exists("print_r"), function_exists("PRINT_R"));"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Array\n",
+            "(\n",
+            "    [0] => 1\n",
+            "    [1] => 2\n",
+            "    [2] => 3\n",
+            ")\n",
+            "Array\n",
+            "(\n",
+            "    [x] => 1\n",
+            "    [nested] => Array\n",
+            "        (\n",
+            "            [y] => 2\n",
+            "        )\n",
+            "\n",
+            "    [] => \n",
+            "    [0] => 1\n",
+            "    [1] => \n",
+            ")\n",
+            "string(69) \"Array\n",
+            "(\n",
+            "    [a] => Array\n",
+            "        (\n",
+            "            [0] => 1\n",
+            "        )\n",
+            "\n",
+            ")\n",
+            "\"\n",
+            "string(0) \"\"\n",
+            "string(1) \"1\"\n",
+            "string(0) \"\"\n",
+            "string(2) \"42\"\n",
+            "string(4) \"1.25\"\n",
+            "string(1) \"x\"\n",
+            "outbool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+        )
+    );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
