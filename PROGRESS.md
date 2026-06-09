@@ -3,11 +3,10 @@
 ## Progress Bar
 
 `[#########.] 54/59 PHPT rows passing`
-- Latest: Generated `PtnValue` payloads now carry ownership for strings and
-  arrays, runtime slots destroy overwritten and teardown values, and backend
-  emission cleans discarded temporaries; PHPT snapshot remains 54/59.
+- Latest: Patrol at `e71022c65` remains 54/59; null-offset and short-array rows
+  pass, while array 005/009 now fail with array 001/007/008.
 - Tests ported/passing: 54/59
-- Commit: 57f061f73
+- Commit: e71022c65
 
 ## 2026-06-08
 
