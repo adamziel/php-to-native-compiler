@@ -2003,3 +2003,34 @@ Optimized generated internal-function lookup:
 - Added `tools/benchmark-internal-dispatch.sh` to compile and run a generated
   native binary that repeatedly calls several internals without depending on
   the PHP interpreter.
+
+Optimized generated user-function call overhead:
+
+- Generated user-function frames now initialize local variable storage while
+  sharing the caller/global runtime constant table instead of copying constants
+  into a fresh table on every call.
+- Statically named calls to generated user functions now emit direct calls to
+  the generated C wrapper, including recursive and case-insensitive user calls;
+  the generic string dispatcher remains for internal functions, missing
+  functions, and registry checks.
+- Local variable isolation, global constant visibility, duplicate/undefined
+  constant behavior through the shared table, recursion, extra-argument
+  tolerance, and minimal `null` parameter/return type checks continue to use
+  the existing boxed runtime paths.
+- Native tests prove the direct generated call shape, constant visibility into
+  and out of user functions, recursive calls, local variable isolation, and
+  preserved null type diagnostics.
+- `tools/bench-native-execution.sh` now includes focused non-recursive and
+  recursive user-function workloads. In this workspace with 5 samples, the
+  non-recursive `user_function_step` benchmark kept output `14401920000` with
+  best runtime `0.023322s` and samples
+  `0.033208,0.031876,0.026527,0.023322,0.024995`; the recursive
+  `user_function_recursive` benchmark kept output `50000` with best runtime
+  `0.009758s` and samples
+  `0.009758,0.009954,0.010085,0.011147,0.010779`.
+
+No new broad function surface is claimed by this performance slice. Defaults,
+variadics, named arguments, by-reference parameters, closures, methods,
+conditional declarations, namespace/function imports, `global`, full
+argument-introspection semantics, exact diagnostic wording, and
+scope-aware magic constants inside functions remain unsupported.

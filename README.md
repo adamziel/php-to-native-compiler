@@ -53,8 +53,11 @@ Supported today:
   returns, recursive calls, and minimal `null` parameter and return type
   declarations over the currently supported expression and statement subset.
   Calls may pass extra arguments, which are currently ignored because argument
-  introspection is not modeled yet. Duplicate declarations and declarations
-  that collide with currently modeled internal function names are rejected.
+  introspection is not modeled yet. User-function frames keep local variables
+  isolated while sharing the runtime constant table, including constants
+  created through `define()` inside functions. Duplicate declarations and
+  declarations that collide with currently modeled internal function names are
+  rejected.
 - `var_dump()` output for the current boxed `PtnValue` types: `null`,
   booleans, integers, floats, strings, and ordered literal arrays. Finite
   floats use the shortest decimal spelling that round-trips to the same native

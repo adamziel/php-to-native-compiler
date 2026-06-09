@@ -3148,6 +3148,36 @@ fn compile_recursive_user_function_to_native_binary() {
 }
 
 #[test]
+fn compile_user_function_calls_use_direct_generated_path_to_native_binary() {
+    let root = temp_dir("ptn-native-user-function-direct-call-path");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("user-function-direct-call-path.php");
+    let output = root.join("user-function-direct-call-path-bin");
+    fs::write(
+        &input,
+        "<?php const BASE = 7; function step($value) { return $value + BASE; } function apply($value) { return STEP($value); } echo apply(5), \"\\n\";",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "12\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(!c_source.contains("ptn_runtime_import_constants"));
+    assert!(c_source.contains("ptn_runtime_init_function_frame(&runtime, caller_runtime);"));
+    assert!(c_source.contains("ptn_user_function_0(&runtime, 1,"));
+
+    let main_start = c_source.find("\nint main(void)").unwrap();
+    let main_body = &c_source[main_start..];
+    assert!(main_body.contains("ptn_user_function_1(&runtime, 1,"));
+    assert!(!main_body.contains("ptn_call_function(&runtime, \"apply\""));
+}
+
+#[test]
 fn compile_user_function_reads_global_const_to_native_binary() {
     let root = temp_dir("ptn-native-user-function-global-const");
     fs::create_dir_all(&root).unwrap();
@@ -3164,6 +3194,26 @@ fn compile_user_function_reads_global_const_to_native_binary() {
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "12\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_user_function_define_updates_shared_constant_table_to_native_binary() {
+    let root = temp_dir("ptn-native-user-function-shared-constants");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("user-function-shared-constants.php");
+    let output = root.join("user-function-shared-constants-bin");
+    fs::write(
+        &input,
+        "<?php function set_constant() { define(\"FROM_FUNCTION\", 13); return constant(\"FROM_FUNCTION\"); } echo set_constant(), \" \", constant(\"FROM_FUNCTION\"), \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "13 13\n");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
@@ -3188,6 +3238,30 @@ fn compile_user_function_exists_registry_to_native_binary() {
         "bool(true)\nbool(true)\nbool(true)\nbool(false)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_user_function_null_type_errors_with_direct_call_to_native_binary() {
+    let root = temp_dir("ptn-native-user-function-null-type-error-direct");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("user-function-null-type-error.php");
+    let output = root.join("user-function-null-type-error-bin");
+    fs::write(
+        &input,
+        "<?php function test(null $v): null { return $v; } var_dump(test(1));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        "Fatal error: test() argument $v must be of type null\n"
+    );
 }
 
 #[test]
