@@ -1,6 +1,6 @@
 use crate::ast::{
-    AssignmentOp, BinaryOp, CastKind, Expr, IncDecOp, Program, Statement, StringPart, SwitchCase,
-    UnaryOp,
+    AssignmentOp, BinaryOp, CastKind, Expr, IncDecOp, MagicConstantKind, Program, Statement,
+    StringPart, SwitchCase, UnaryOp,
 };
 use crate::diagnostic::{Diagnostic, Result, SourceSpan};
 use crate::lexer::{lex, StringPart as TokenStringPart, Token, TokenKind};
@@ -509,6 +509,8 @@ impl Parser {
                         arguments,
                         span: combine_spans(token.span, right_span),
                     })
+                } else if let Some(kind) = magic_constant_kind(&name) {
+                    Ok(Expr::MagicConstant(kind, token.span))
                 } else {
                     Ok(Expr::Constant(name, token.span))
                 }
@@ -801,5 +803,19 @@ fn lower_string_part(part: TokenStringPart) -> StringPart {
     match part {
         TokenStringPart::Literal(value) => StringPart::Literal(value),
         TokenStringPart::Variable(name) => StringPart::Variable(name),
+    }
+}
+
+fn magic_constant_kind(name: &str) -> Option<MagicConstantKind> {
+    match name.to_ascii_uppercase().as_str() {
+        "__LINE__" => Some(MagicConstantKind::Line),
+        "__FILE__" => Some(MagicConstantKind::File),
+        "__DIR__" => Some(MagicConstantKind::Dir),
+        "__FUNCTION__" => Some(MagicConstantKind::Function),
+        "__METHOD__" => Some(MagicConstantKind::Method),
+        "__CLASS__" => Some(MagicConstantKind::Class),
+        "__TRAIT__" => Some(MagicConstantKind::Trait),
+        "__NAMESPACE__" => Some(MagicConstantKind::Namespace),
+        _ => None,
     }
 }

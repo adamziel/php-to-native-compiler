@@ -3,7 +3,10 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use ptn::ast::{AssignmentOp, BinaryOp, CastKind, Expr, IncDecOp, Statement, StringPart, UnaryOp};
+use ptn::ast::{
+    AssignmentOp, BinaryOp, CastKind, Expr, IncDecOp, MagicConstantKind, Statement, StringPart,
+    UnaryOp,
+};
 use ptn::lexer::{self, TokenKind};
 use ptn::{compile_file, parser, CompileOptions};
 
@@ -684,6 +687,49 @@ fn parser_accepts_shift_expressions_and_bare_constants() {
     assert!(matches!(
         &arguments[2],
         Expr::Constant(constant, _) if constant == "PHP_EOL"
+    ));
+}
+
+#[test]
+fn parser_accepts_global_magic_constants() {
+    let program = parser::parse(
+        "<?php var_dump(__LINE__, __FILE__, __DIR__, __FUNCTION__, __METHOD__, __CLASS__, __TRAIT__, __NAMESPACE__);",
+    )
+    .unwrap();
+    let Statement::Call { arguments, .. } = &program.statements[0] else {
+        panic!("expected call statement");
+    };
+    assert!(matches!(
+        &arguments[0],
+        Expr::MagicConstant(MagicConstantKind::Line, _)
+    ));
+    assert!(matches!(
+        &arguments[1],
+        Expr::MagicConstant(MagicConstantKind::File, _)
+    ));
+    assert!(matches!(
+        &arguments[2],
+        Expr::MagicConstant(MagicConstantKind::Dir, _)
+    ));
+    assert!(matches!(
+        &arguments[3],
+        Expr::MagicConstant(MagicConstantKind::Function, _)
+    ));
+    assert!(matches!(
+        &arguments[4],
+        Expr::MagicConstant(MagicConstantKind::Method, _)
+    ));
+    assert!(matches!(
+        &arguments[5],
+        Expr::MagicConstant(MagicConstantKind::Class, _)
+    ));
+    assert!(matches!(
+        &arguments[6],
+        Expr::MagicConstant(MagicConstantKind::Trait, _)
+    ));
+    assert!(matches!(
+        &arguments[7],
+        Expr::MagicConstant(MagicConstantKind::Namespace, _)
     ));
 }
 
@@ -1418,6 +1464,49 @@ fn compile_math_constants_basic_phpt_shape_to_native_binary() {
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "M_E= float(2.718281828459045)\nM_LOG2E= float(1.4426950408889634)\nM_LOG10E= float(0.4342944819032518)\nM_LN2= float(0.6931471805599453)\nM_LN10= float(2.302585092994046)\nM_PI= float(3.141592653589793)\nM_PI_2= float(1.5707963267948966)\nM_PI_4= float(0.7853981633974483)\nM_1_PI= float(0.3183098861837907)\nM_2_PI= float(0.6366197723675814)\nM_SQRTPI= float(1.772453850905516)\nM_2_SQRTPI= float(1.1283791670955126)\nM_LNPI= float(1.1447298858494002)\nM_EULER= float(0.5772156649015329)\nM_SQRT2= float(1.4142135623730951)\nM_SQRT1_2= float(0.7071067811865476)\nM_SQRT3= float(1.7320508075688772)\nINF= float(INF)\nNAN= float(NAN)\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_global_magic_constants_phpt_shape_to_native_binary() {
+    let root = temp_dir("ptn-native-global-magic-constants");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("magic-constants.php");
+    let output = root.join("magic-constants-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+\n\
+var_dump(\n\
+    __LINE__,\n\
+    __FILE__,\n\
+    __DIR__,\n\
+    __FUNCTION__,\n\
+    __METHOD__,\n\
+    __CLASS__,\n\
+    __TRAIT__,\n\
+    __NAMESPACE__\n\
+);\n\
+?>",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let file = input.to_string_lossy();
+    let dir = root.to_string_lossy();
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "int(4)\nstring({}) \"{}\"\nstring({}) \"{}\"\nstring(0) \"\"\nstring(0) \"\"\nstring(0) \"\"\nstring(0) \"\"\nstring(0) \"\"\n",
+            file.len(),
+            file,
+            dir.len(),
+            dir
+        )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

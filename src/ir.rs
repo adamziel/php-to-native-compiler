@@ -1,11 +1,14 @@
 use crate::ast::{
     AssignmentOp, BinaryOp as AstBinaryOp, CastKind as AstCastKind, Expr, IncDecOp as AstIncDecOp,
-    Program, Statement, StringPart as AstStringPart, UnaryOp as AstUnaryOp,
+    MagicConstantKind as AstMagicConstantKind, Program, Statement, StringPart as AstStringPart,
+    UnaryOp as AstUnaryOp,
 };
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Module {
     pub instructions: Vec<Instruction>,
+    pub source_file: String,
+    pub source_dir: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -65,6 +68,10 @@ pub enum ValueExpr {
     Null,
     Load(String),
     Constant(String),
+    MagicConstant {
+        kind: MagicConstantKind,
+        line: usize,
+    },
     InternalCall {
         name: String,
         arguments: Vec<ValueExpr>,
@@ -130,14 +137,32 @@ pub enum CastKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MagicConstantKind {
+    Line,
+    File,
+    Dir,
+    Function,
+    Method,
+    Class,
+    Trait,
+    Namespace,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IncDecOp {
     Increment,
     Decrement,
 }
 
 pub fn lower(program: &Program) -> Module {
+    lower_with_source(program, String::new(), String::new())
+}
+
+pub fn lower_with_source(program: &Program, source_file: String, source_dir: String) -> Module {
     Module {
         instructions: lower_statements(&program.statements),
+        source_file,
+        source_dir,
     }
 }
 
@@ -292,6 +317,10 @@ fn lower_expr(expr: &Expr) -> ValueExpr {
         Expr::Null(_) => ValueExpr::Null,
         Expr::Variable(name, _) => ValueExpr::Load(name.clone()),
         Expr::Constant(name, _) => ValueExpr::Constant(name.clone()),
+        Expr::MagicConstant(kind, span) => ValueExpr::MagicConstant {
+            kind: lower_magic_constant_kind(*kind),
+            line: span.line,
+        },
         Expr::Call {
             name,
             arguments,
@@ -362,6 +391,19 @@ fn lower_cast_kind(kind: AstCastKind) -> CastKind {
         AstCastKind::String => CastKind::String,
         AstCastKind::Bool => CastKind::Bool,
         AstCastKind::Boolean => CastKind::Boolean,
+    }
+}
+
+fn lower_magic_constant_kind(kind: AstMagicConstantKind) -> MagicConstantKind {
+    match kind {
+        AstMagicConstantKind::Line => MagicConstantKind::Line,
+        AstMagicConstantKind::File => MagicConstantKind::File,
+        AstMagicConstantKind::Dir => MagicConstantKind::Dir,
+        AstMagicConstantKind::Function => MagicConstantKind::Function,
+        AstMagicConstantKind::Method => MagicConstantKind::Method,
+        AstMagicConstantKind::Class => MagicConstantKind::Class,
+        AstMagicConstantKind::Trait => MagicConstantKind::Trait,
+        AstMagicConstantKind::Namespace => MagicConstantKind::Namespace,
     }
 }
 

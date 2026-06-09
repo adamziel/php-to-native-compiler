@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use crate::backend::{compile_c, emit_c};
 use crate::diagnostic::{Diagnostic, Result};
-use crate::ir::lower;
+use crate::ir::lower_with_source;
 use crate::parser::parse;
 
 #[derive(Debug, Clone)]
@@ -22,7 +22,12 @@ pub fn compile_file(input: &Path, output: &Path, options: CompileOptions) -> Res
         Diagnostic::new(format!("failed to read {}: {error}", input.display()), None)
     })?;
     let program = parse(&source)?;
-    let module = lower(&program);
+    let source_file = input.to_string_lossy().into_owned();
+    let source_dir = input
+        .parent()
+        .map(|parent| parent.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let module = lower_with_source(&program, source_file, source_dir);
     let c_source = emit_c(&module);
     compile_c(&c_source, output)?;
     let c_path = output.with_extension("c");

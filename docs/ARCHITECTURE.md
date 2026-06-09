@@ -105,6 +105,10 @@ Current runtime/compiler slices:
   `PHP_INT_MAX`, `PHP_INT_SIZE`, `INF`, `NAN`, `M_PI`, and modeled PHP math
   `M_*` constants from `constants_basic.phpt`. Fixed-arity internal functions
   record min/max arity metadata while `var_dump` remains variadic.
+- Global-scope magic constants lower to dedicated IR value expressions with
+  source line and compile-file path metadata. The backend emits `__LINE__`,
+  `__FILE__`, and `__DIR__` directly and resolves scope-dependent names to the
+  global-scope empty string until functions/classes/namespaces exist.
 - Braced `if`, `elseif`, and `else` statements lower to structured IR branch
   instructions. Conditions remain boxed value expressions, and the C backend
   emits native branches that call the shared scalar truthiness helper.
@@ -158,6 +162,8 @@ Near-term architecture targets:
   `INF`, `NAN`, `M_PI`, and modeled PHP math `M_*` constants, namespaced
   symbols, autoloading, and
   disabled-functions behavior in symbol-existence predicates.
+- Scope-aware magic constants in functions, methods, classes, traits,
+  namespaces, includes, and eval contexts.
 - Broader control flow: unbraced and alternate syntax, `foreach`,
   explicit-level `break`, `continue`, for-loop comma expressions and
   non-direct-variable clause lvalues, and exception/finally edges.

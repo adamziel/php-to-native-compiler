@@ -930,3 +930,23 @@ Added deprecated non-canonical `(boolean)` casts:
 Still unsupported after this non-canonical cast slice: `(integer)`, `(double)`,
 `(real)`, `(binary)`, `(unset)`, array/object casts, and exact scalar cast
 overflow diagnostics.
+
+Added global-scope magic constants:
+
+- The AST and IR now represent magic constants separately from ordinary bare
+  constants for `__LINE__`, `__FILE__`, `__DIR__`, `__FUNCTION__`,
+  `__METHOD__`, `__CLASS__`, `__TRAIT__`, and `__NAMESPACE__`.
+- Parser recognition is case-insensitive and happens before ordinary constant
+  lookup.
+- `compile_file()` passes source file and parent-directory metadata into IR
+  lowering so generated C can emit global `__FILE__` and `__DIR__` values.
+- Global-scope `__LINE__` emits the source line; scope-dependent magic
+  constants currently emit empty strings until functions, classes, traits, and
+  namespaces exist.
+- Native tests prove parser recognition and the public PHPT source shape.
+- Focused public PHPT telemetry through `phpc` passes
+  `Zend/tests/constants/magic_const_in_global_scope.phpt`.
+
+Still unsupported after this magic-constant slice: scope-aware magic constant
+values inside functions, methods, classes, traits, namespaces, includes, and
+eval contexts.

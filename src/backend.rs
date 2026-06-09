@@ -4,7 +4,9 @@ use std::path::Path;
 use std::process::Command;
 
 use crate::diagnostic::{Diagnostic, Result};
-use crate::ir::{BinaryOp, CastKind, IncDecOp, Instruction, Module, UnaryOp, ValueExpr};
+use crate::ir::{
+    BinaryOp, CastKind, IncDecOp, Instruction, MagicConstantKind, Module, UnaryOp, ValueExpr,
+};
 
 pub fn emit_c(module: &Module) -> String {
     let mut out = String::new();
@@ -12,7 +14,7 @@ pub fn emit_c(module: &Module) -> String {
     out.push_str("\nint main(void) {\n");
     out.push_str("    PtnRuntime runtime;\n");
     out.push_str("    ptn_runtime_init(&runtime);\n");
-    let mut values = ValueEmitter::new();
+    let mut values = ValueEmitter::new(&module.source_file, &module.source_dir);
     for instruction in &module.instructions {
         emit_instruction(&mut out, &mut values, instruction, None);
     }
@@ -285,13 +287,17 @@ pub fn compile_c(c_source: &str, output: &Path) -> Result<()> {
 struct ValueEmitter {
     next_temp: usize,
     next_label: usize,
+    source_file: String,
+    source_dir: String,
 }
 
 impl ValueEmitter {
-    fn new() -> Self {
+    fn new(source_file: &str, source_dir: &str) -> Self {
         Self {
             next_temp: 0,
             next_label: 0,
+            source_file: source_file.to_string(),
+            source_dir: source_dir.to_string(),
         }
     }
 
@@ -353,6 +359,20 @@ impl ValueEmitter {
             ValueExpr::Constant(name) => {
                 format!("ptn_read_constant(&runtime, \"{}\")", c_string(name))
             }
+            ValueExpr::MagicConstant { kind, line } => match kind {
+                MagicConstantKind::Line => format!("ptn_int({line})"),
+                MagicConstantKind::File => {
+                    format!("ptn_string(\"{}\")", c_string(&self.source_file))
+                }
+                MagicConstantKind::Dir => {
+                    format!("ptn_string(\"{}\")", c_string(&self.source_dir))
+                }
+                MagicConstantKind::Function
+                | MagicConstantKind::Method
+                | MagicConstantKind::Class
+                | MagicConstantKind::Trait
+                | MagicConstantKind::Namespace => "ptn_string(\"\")".to_string(),
+            },
             ValueExpr::InternalCall {
                 name,
                 arguments,

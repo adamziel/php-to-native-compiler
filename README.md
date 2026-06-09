@@ -101,6 +101,10 @@ Supported today:
   non-canonical `(boolean)` casts for boxed scalar values. Unary, cast, and
   binary operations are emitted as runtime helper calls over `PtnValue`
   operands.
+- Global-scope magic constants `__LINE__`, `__FILE__`, `__DIR__`,
+  `__FUNCTION__`, `__METHOD__`, `__CLASS__`, `__TRAIT__`, and
+  `__NAMESPACE__`. Scope-dependent names currently resolve to empty strings in
+  global scope.
 - Boxed scalar comparison and boolean expressions: `==`, `!=`, `===`, `!==`,
   `<`, `<=`, `>`, `>=`, `&&`, and `||`. Strict identity compares scalar type
   and value without coercion; numeric scalar comparisons involving `NAN`
@@ -169,6 +173,7 @@ Unsupported today:
   behavior, non-canonical cast spellings beyond `(boolean)`, and full PHP
   precision/formatting edge cases for
   `var_dump()`/`strlen()`/`bin2hex()`/`hex2bin()`/base-conversion internals,
+  scope-aware magic constants inside functions/classes/namespaces/includes,
   doc comment retention, variable variables, and dynamic fallback. These are
   architecture targets, not excuses for exact-shape hacks.
 

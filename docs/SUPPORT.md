@@ -47,6 +47,10 @@ supports in generated native binaries.
   operands are converted to integers through the current scalar numeric path.
 - Scalar `(int)`, `(float)`, `(string)`, `(bool)`, and deprecated
   non-canonical `(boolean)` casts over supported boxed scalar values.
+- Global-scope magic constants `__LINE__`, `__FILE__`, `__DIR__`,
+  `__FUNCTION__`, `__METHOD__`, `__CLASS__`, `__TRAIT__`, and
+  `__NAMESPACE__`. Scope-dependent names currently resolve to empty strings in
+  global scope.
 - Boxed scalar comparison operators `==`, `!=`, `===`, `!==`, `<`, `<=`, `>`,
   and `>=`. Strict scalar identity compares type and value without coercion.
   Numeric comparisons involving `NAN` are treated as unordered, so equality and
@@ -214,6 +218,8 @@ supports in generated native binaries.
 - PHP-exact `getmypid()` process model parity across SAPIs and unsupported
   platforms.
 - Non-canonical cast spellings beyond `(boolean)`.
+- Scope-aware magic constants inside functions, methods, classes, traits,
+  namespaces, includes, and eval contexts.
 - PHP-exact file names, line numbers, error-handler routing, and overflow
   parity for bitwise integer-conversion diagnostics, including shift
   diagnostics.

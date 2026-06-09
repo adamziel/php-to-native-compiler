@@ -108,6 +108,7 @@ pub enum Expr {
     Null(SourceSpan),
     Variable(String, SourceSpan),
     Constant(String, SourceSpan),
+    MagicConstant(MagicConstantKind, SourceSpan),
     Call {
         name: String,
         arguments: Vec<Expr>,
@@ -194,10 +195,23 @@ impl Expr {
             | Expr::Bool(_, span)
             | Expr::Null(span)
             | Expr::Variable(_, span)
-            | Expr::Constant(_, span) => *span,
+            | Expr::Constant(_, span)
+            | Expr::MagicConstant(_, span) => *span,
             Expr::Call { span, .. } => *span,
             Expr::Unary { span, .. } | Expr::Cast { span, .. } => *span,
             Expr::Binary { span, .. } | Expr::Grouped { span, .. } => *span,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MagicConstantKind {
+    Line,
+    File,
+    Dir,
+    Function,
+    Method,
+    Class,
+    Trait,
+    Namespace,
 }
