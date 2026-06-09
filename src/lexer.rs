@@ -491,6 +491,12 @@ impl<'a> Lexer<'a> {
             });
         } else {
             let value = if text.len() > 1 && text.starts_with('0') {
+                if text.bytes().any(|digit| matches!(digit, b'8' | b'9')) {
+                    return Err(Diagnostic::parse_error(
+                        "Invalid numeric literal",
+                        Some(start),
+                    ));
+                }
                 i64::from_str_radix(&text, 8)
             } else {
                 text.parse::<i64>()

@@ -99,6 +99,8 @@ Supported today:
 - String, integer, float, boolean, and null literals. Numeric literals accept
   PHP digit separators between digits; integer literals include decimal,
   legacy octal, binary `0b`/`0B`, and hexadecimal `0x`/`0X` forms.
+- Invalid legacy octal integer literals containing `8` or `9` are rejected with
+  source-spanned PHP-style parse errors through the `phpc` runner.
 - Double-quoted strings with direct `$name` variable interpolation. Interpolated
   variables use ordinary runtime variable reads, scalar string casts, and boxed
   concatenation.
@@ -193,7 +195,8 @@ Unsupported today:
   `1` even when spelled `print(...)`, increment/decrement operators, full
   PHP numeric-string and non-numeric string arithmetic diagnostics, exact
   division/modulo-by-zero exception behavior, exact numeric literal
-  overflow/range parity, complete comparison parity for unsupported types,
+  overflow/range and invalid-separator/radix diagnostic parity, complete
+  comparison parity for unsupported types,
   keyword boolean operators, chained comparison parse errors, unbraced switch
   bodies and alternate control-flow syntax, `foreach`, `continue`, PHP-exact
   break/continue diagnostics, forbidden-scope goto restrictions for jumps

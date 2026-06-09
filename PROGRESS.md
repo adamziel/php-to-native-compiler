@@ -1283,3 +1283,22 @@ Still unsupported after this conversion slice: PHP-exact file names, source
 line propagation, error-handler routing, and overflow parity for integer-only
 operator conversions; arrays, objects, resources, references, and copy-on-write
 behavior remain outside this scalar boundary.
+
+Added source-spanned parse diagnostics for invalid legacy octal integer
+literals:
+
+- The lexer now recognizes legacy octal integer tokens containing `8` or `9`
+  after PHP digit-separator normalization and reports PHP's generic
+  `Invalid numeric literal` parse error before AST lowering or codegen.
+- Leading-zero decimal floats such as `08.5` and `08e1` remain accepted through
+  the existing float literal path, matching PHP's distinction between integer
+  and float literal scanning.
+- Native/CLI tests prove the lexer diagnostic kind, source line/column span,
+  float non-regression coverage, and `phpc` parse-error rendering.
+- Focused public PHPT telemetry through `phpc` passes
+  `tests/lang/invalid_octal.phpt`.
+
+Still unsupported after this numeric-literal diagnostic slice: invalid
+separator diagnostics for forms such as `100_`, `10__0`, `0x_0123`, and
+`1e_2`, invalid binary/hex suffix wording, exact numeric literal overflow/range
+parity, and broader parse-error wording parity.

@@ -19,6 +19,8 @@ supports in generated native binaries.
 - String, integer, float, boolean, and null literals. Numeric literals accept
   PHP digit separators between digits; integer literals include decimal,
   legacy octal, binary `0b`/`0B`, and hexadecimal `0x`/`0X` forms.
+- Invalid legacy octal integer literals containing `8` or `9` are rejected with
+  source-spanned PHP-style parse errors through `phpc`.
 - Double-quoted strings with direct `$name` variable interpolation. Interpolated
   variables use the same runtime variable read, scalar string cast, and
   concatenation paths as ordinary expressions.
@@ -204,7 +206,8 @@ supports in generated native binaries.
   or parse-error boundaries with the source file and line. This currently
   covers duplicate `default:` clauses in `switch`, duplicate labels, undefined
   `goto` labels, removed `(real)` and `(unset)` cast syntax,
-  expression-context `(void)` cast syntax, and unterminated block comments.
+  expression-context `(void)` cast syntax, unterminated block comments, and
+  invalid legacy octal integer literals containing `8` or `9`.
 - Statement-form direct variable increment/decrement: `$name++;`, `++$name;`,
   `$name--;`, and `--$name;`.
 
@@ -216,7 +219,8 @@ supports in generated native binaries.
 - Full PHP numeric-string conversion warning parity, non-numeric string
   arithmetic diagnostics, exact division/modulo-by-zero exception behavior,
   exact numeric literal overflow/range parity, complete overflow parity, and
-  exact scalar cast overflow behavior.
+  invalid numeric-separator/radix diagnostic parity beyond invalid legacy
+  octal integers, and exact scalar cast overflow behavior.
 - Prefix and postfix increment/decrement operators such as `++$value` and
   `--$value`.
 - `print` as an expression returning `1`, including contexts such as assignment,

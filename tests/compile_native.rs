@@ -44,6 +44,26 @@ fn lexer_accepts_numeric_literal_separators_and_radices() {
 }
 
 #[test]
+fn lexer_rejects_invalid_legacy_octal_integer_literals_as_parse_errors() {
+    for source in ["<?php\n$x = 08;", "<?php\n$x = 0_8;", "<?php\n$x = 019;"] {
+        let error = lexer::lex(source).unwrap_err();
+        assert_eq!(error.message, "Invalid numeric literal");
+        assert_eq!(error.kind, DiagnosticKind::ParseError);
+        let span = error.span.unwrap();
+        assert_eq!(span.line, 2);
+        assert_eq!(span.column, 6);
+    }
+}
+
+#[test]
+fn lexer_keeps_leading_zero_floats_decimal() {
+    let tokens = lexer::lex("<?php 08.5 08e1 007.25").unwrap();
+    assert!(matches!(tokens[1].kind, TokenKind::Float(value) if value == 8.5));
+    assert!(matches!(tokens[2].kind, TokenKind::Float(value) if value == 80.0));
+    assert!(matches!(tokens[3].kind, TokenKind::Float(value) if value == 7.25));
+}
+
+#[test]
 fn parser_accepts_precedence_aware_binary_expressions() {
     let program = parser::parse("<?php echo \"sum \" . 20 - 3 * 4 + 8 / 2 % 3 . \"\\n\";").unwrap();
     let Statement::Echo { expressions, .. } = &program.statements[0] else {
@@ -1190,6 +1210,26 @@ fn phpc_renders_unterminated_block_comment_as_php_parse_error() {
         String::from_utf8(execution.stderr).unwrap(),
         format!(
             "Parse error: Unterminated comment starting line 2 in {} on line 2\n",
+            input.display()
+        )
+    );
+}
+
+#[test]
+fn phpc_renders_invalid_legacy_octal_as_php_parse_error() {
+    let root = temp_dir("ptn-phpc-invalid-legacy-octal");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("invalid-octal.php");
+    fs::write(&input, "<?php\n\n$x = 08;\n").unwrap();
+
+    let execution = Command::new(phpc_bin()).arg(&input).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "Parse error: Invalid numeric literal in {} on line 3\n",
             input.display()
         )
     );
