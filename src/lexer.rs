@@ -82,6 +82,7 @@ pub enum TokenKind {
     Backslash,
     Dot,
     Comma,
+    QuestionQuestion,
     Question,
     Colon,
     Semicolon,
@@ -172,6 +173,9 @@ impl<'a> Lexer<'a> {
                 c if c.is_whitespace() => self.bump_char(),
                 ';' => self.push_fixed(TokenKind::Semicolon, 1),
                 ',' => self.push_fixed(TokenKind::Comma, 1),
+                '?' if self.rest().starts_with("??") => {
+                    self.push_fixed(TokenKind::QuestionQuestion, 2)
+                }
                 '?' => self.push_fixed(TokenKind::Question, 1),
                 ':' => self.push_fixed(TokenKind::Colon, 1),
                 '{' => self.push_fixed(TokenKind::LeftBrace, 1),
