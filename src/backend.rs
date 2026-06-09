@@ -2429,6 +2429,18 @@ static PtnValue ptn_internal_strcmp(PtnRuntime *runtime, size_t argc, const PtnV
     return ptn_int(0);
 }
 
+static PtnValue ptn_internal_str_contains(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    char *haystack = ptn_value_to_string(args[0]);
+    char *needle = ptn_value_to_string(args[1]);
+    int contains = needle[0] == '\0' || strstr(haystack, needle) != NULL;
+    free(haystack);
+    free(needle);
+    return ptn_bool(contains);
+}
+
 static int ptn_is_path_separator(char byte) {
     return byte == '/' || byte == '\\';
 }
@@ -2933,6 +2945,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "strlen", 1, 1, ptn_internal_strlen },
         { "str_rot13", 1, 1, ptn_internal_str_rot13 },
         { "strcmp", 2, 2, ptn_internal_strcmp },
+        { "str_contains", 2, 2, ptn_internal_str_contains },
         { "dirname", 1, 1, ptn_internal_dirname },
         { "bin2hex", 1, 1, ptn_internal_bin2hex },
         { "hex2bin", 1, 1, ptn_internal_hex2bin },

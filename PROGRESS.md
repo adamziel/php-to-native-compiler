@@ -1112,3 +1112,20 @@ Added source-spanned parse diagnostics for expression-context `(void)` casts:
 Still unsupported after this diagnostic slice: statement-form `(void) expr;`
 casts, broader parse-error wording parity, stack traces, error-handler routing,
 and PHP-exact warning/notice formatting.
+
+Added scalar `str_contains()`:
+
+- Registered `str_contains()` through the existing generated C internal-function
+  registry, so normal calls and `function_exists()` share the same
+  case-insensitive lookup table.
+- `str_contains()` converts both arguments through the current boxed scalar
+  string-conversion path and returns whether the needle occurs in the haystack
+  through the current C-string-backed string representation.
+- Native tests prove the public `str_contains.phpt` source shape, scalar
+  conversion basics, and registry exposure.
+- Focused public PHPT telemetry through `phpc` passes
+  `ext/standard/tests/strings/str_contains.phpt`.
+
+Still unsupported after this `str_contains()` slice: PHP-exact binary-string
+behavior for embedded NUL values, unsupported array/object/resource/reference
+operand diagnostics, and broader string runtime parity.

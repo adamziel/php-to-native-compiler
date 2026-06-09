@@ -23,10 +23,11 @@ Supported today:
 - Statement-form `print expr;` for the same scalar expression subset as
   `echo`; emitted native code uses the same boxed output conversion path.
 - Simple internal calls such as `var_dump(expr, ...)`, `strlen(expr)`,
-  `str_rot13(expr)`, `strcmp(expr, expr)`, `bin2hex(expr)`, `hex2bin(expr)`,
-  `dirname(expr)`, `soundex(expr)`, `ceil(expr)`, `floor(expr)`, `sqrt(expr)`,
-  `bindec(expr)`, `hexdec(expr)`, `octdec(expr)`, `pi()`, `getrandmax()`,
-  `getmypid()`, `chr(expr)`, `ord(expr)`,
+  `str_rot13(expr)`, `strcmp(expr, expr)`, `str_contains(expr, expr)`,
+  `bin2hex(expr)`, `hex2bin(expr)`, `dirname(expr)`, `soundex(expr)`,
+  `ceil(expr)`, `floor(expr)`, `sqrt(expr)`, `bindec(expr)`, `hexdec(expr)`,
+  `octdec(expr)`, `pi()`, `getrandmax()`, `getmypid()`, `chr(expr)`,
+  `ord(expr)`,
   `error_reporting(expr)`, `gettype(expr)`, scalar `is_*` type predicates,
   non-finite predicates such as `is_finite(expr)`, `is_infinite(expr)`, and
   `is_nan(expr)`,
@@ -42,6 +43,9 @@ Supported today:
   scalar string-conversion result.
 - `strcmp()` as an expression returning negative, zero, or positive comparison
   results over the current boxed scalar string-conversion results.
+- `str_contains()` as an expression returning whether the needle scalar
+  string-conversion result is present in the haystack scalar
+  string-conversion result.
 - `bin2hex()` as an expression returning lowercase hexadecimal bytes for the
   current boxed scalar string-conversion result.
 - `hex2bin()` as an expression decoding hexadecimal pairs from the current
@@ -183,9 +187,9 @@ Unsupported today:
   `PHP_INT_MIN`, `PHP_INT_MAX`, `PHP_INT_SIZE`, `INF`, `NAN`, `M_PI`, and the
   modeled PHP math `M_*` constants, objects, resources, recursion, references,
   embedded NUL string handling, complex/braced interpolation, interpolation of
-  arrays/objects/offsets/properties/variable variables, exact `strcmp()`
-  binary-string parity, exact `hex2bin()` embedded-NUL output parity and
-  warning text/file-name parity, exact `dirname()` edge parity for unusual
+  arrays/objects/offsets/properties/variable variables, exact `strcmp()` and
+  `str_contains()` binary-string parity, exact `hex2bin()` embedded-NUL output
+  parity and warning text/file-name parity, exact `dirname()` edge parity for unusual
   paths and unsupported operands, exact `soundex()` locale/non-ASCII parity and
   unsupported type diagnostics, exact `chr()` deprecation diagnostics, exact
   `ord()` argument type diagnostics, exact `ceil()`/`floor()`
@@ -196,9 +200,10 @@ Unsupported today:
   aliases and removed cast boundaries, statement-form `(void) expr;` casts,
   and full PHP
   precision/formatting edge cases for
-  `var_dump()`/`strlen()`/`bin2hex()`/`hex2bin()`/`soundex()`/base-conversion
-  internals, scope-aware magic constants inside functions/classes/namespaces/
-  includes, doc comment retention, variable variables, and dynamic fallback.
+  `var_dump()`/`strlen()`/`bin2hex()`/`hex2bin()`/`str_contains()`/`soundex()`/
+  base-conversion internals, scope-aware magic constants inside
+  functions/classes/namespaces/includes, doc comment retention, variable
+  variables, and dynamic fallback.
   These are architecture targets, not excuses for exact-shape hacks.
 
 ## Build

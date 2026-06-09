@@ -1283,6 +1283,65 @@ var_dump(function_exists(\"str_rot13\"), function_exists(\"STRCMP\"));\n\
 }
 
 #[test]
+fn compile_str_contains_phpt_shape_to_native_binary() {
+    let root = temp_dir("ptn-native-str-contains-phpt-shape");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("str-contains.php");
+    let output = root.join("str-contains-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(str_contains(\"test string\", \"test\"));\n\
+var_dump(str_contains(\"test string\", \"string\"));\n\
+var_dump(str_contains(\"test string\", \"strin\"));\n\
+var_dump(str_contains(\"test string\", \"t s\"));\n\
+var_dump(str_contains(\"test string\", \"g\"));\n\
+var_dump(str_contains(\"te\".chr(0).\"st\", chr(0)));\n\
+var_dump(str_contains(\"tEst\", \"test\"));\n\
+var_dump(str_contains(\"teSt\", \"test\"));\n\
+var_dump(str_contains(\"\", \"\"));\n\
+var_dump(str_contains(\"a\", \"\"));\n\
+var_dump(str_contains(\"\", \"a\"));\n\
+var_dump(str_contains(\"\\\\\\\\a\", \"\\\\a\"));\n\
+?>",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(false)\nbool(false)\nbool(true)\nbool(true)\nbool(false)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_str_contains_registry_and_scalar_conversion_to_native_binary() {
+    let root = temp_dir("ptn-native-str-contains-registry-and-scalar-conversion");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("str-contains-registry.php");
+    let output = root.join("str-contains-registry-bin");
+    fs::write(
+        &input,
+        "<?php var_dump(str_contains(12345, \"34\"), str_contains(false, \"\"), str_contains(\"abc\", \"D\"), function_exists(\"str_contains\"), function_exists(\"STR_CONTAINS\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nbool(true)\nbool(false)\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_hex2bin_basic_phpt_shape_to_native_binary() {
     let root = temp_dir("ptn-native-hex2bin-basic-phpt-shape");
     fs::create_dir_all(&root).unwrap();

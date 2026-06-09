@@ -89,10 +89,12 @@ Current runtime/compiler slices:
   the byte length of the current boxed scalar string conversion; `str_rot13`
   returns ASCII ROT13 output for that string conversion; `strcmp` compares two
   scalar string-conversion results through the current C-string-backed bytewise
-  path; `bin2hex` returns lowercase hexadecimal bytes for that same string
-  conversion; `hex2bin` decodes hexadecimal byte pairs from the current scalar
-  string conversion and returns `false` with a warning boundary for invalid
-  input; `dirname` returns the parent directory from that same scalar
+  path; `str_contains` searches one scalar string-conversion result inside
+  another through that same current string path; `bin2hex` returns lowercase
+  hexadecimal bytes for that same string conversion; `hex2bin` decodes
+  hexadecimal byte pairs from the current scalar string conversion and returns
+  `false` with a warning boundary for invalid input; `dirname` returns the
+  parent directory from that same scalar
   string-conversion path; `soundex` returns a four-character ASCII soundex key
   from the current scalar string conversion; `ceil` and `floor` return boxed
   floats after the current scalar numeric-conversion path; `sqrt` returns a
@@ -175,9 +177,10 @@ Near-term architecture targets:
   metadata, unsupported array/object/resource/reference diagnostics, and
   PHP-exact `var_dump` precision/formatting beyond the current scalar
   round-trip float path plus `strlen`/`bin2hex`/`hex2bin` byte-string behavior,
-  `strcmp` binary-string parity, `soundex` locale/non-ASCII parity, scalar math
-  diagnostic/type parity, base-conversion precision/range parity, and PHP-exact
-  `getmypid` process model parity across SAPIs and unsupported platforms.
+  `strcmp`/`str_contains` binary-string parity, `soundex` locale/non-ASCII
+  parity, scalar math diagnostic/type parity, base-conversion precision/range
+  parity, and PHP-exact `getmypid` process model parity across SAPIs and
+  unsupported platforms.
 - User-defined functions, classes/methods, constants beyond the currently
   modeled `E_ERROR`, `PHP_EOL`, `PHP_INT_MIN`, `PHP_INT_MAX`, `PHP_INT_SIZE`,
   `INF`, `NAN`, `M_PI`, and modeled PHP math `M_*` constants, namespaced
