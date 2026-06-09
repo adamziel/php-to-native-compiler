@@ -291,6 +291,7 @@ pub enum BinaryOp {
     BitwiseAnd,
     BitwiseXor,
     BitwiseOr,
+    NullCoalesce,
     Less,
     LessEqual,
     Greater,

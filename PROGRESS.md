@@ -3,7 +3,7 @@
 ## Progress Bar
 
 `[#########.] 54/59 PHPT rows passing`
-- Latest: 2026-06-09T15:27Z bounded PHPT patrol repeats 54/59; five array rows still fail.
+- Latest: 2026-06-09T16:06Z null-coalescing read slice integrated; bounded PHPT patrol was not rerun.
 - Tests ported/passing: 54/59
 - Commit: 9a4282cdd
 
@@ -2271,3 +2271,25 @@ No new PHP surface is claimed by this performance slice. Binary-safe string
 storage, references/copy-on-write, array/object/resource concatenation parity
 beyond the current warning boundary, and exact string-conversion diagnostics
 remain outside the current boxed runtime boundary.
+
+Added null-coalescing reads for variables and offsets:
+
+- The lexer/parser/AST/IR now support expression-form `??` as a
+  right-associative null-coalescing binary operator with PHP-shaped precedence
+  relative to symbolic and keyword boolean operators.
+- Generated C lowers the left operand through the shared quiet lookup path
+  already used by `isset()` and `empty()`. Missing direct variables, missing
+  array keys, non-array containers, and out-of-range or invalid string offsets
+  choose the right operand without ordinary read warnings.
+- Present non-`null` left values move directly into the result and skip
+  right-hand evaluation, while missing or `null` left values clean up the quiet
+  lookup value before materializing the right operand.
+- Native tests prove direct variables, assignment RHS use, array offsets,
+  nested offsets, string offsets, missing values, non-array containers, and
+  right-side short-circuiting through generated binaries.
+
+Still unsupported after this null-coalescing slice: null-coalescing assignment
+`??=`, object/property/reference/variable-variable semantics, array and string
+offset mutation/reference interactions, exact unsupported key/container
+`TypeError` parity, resources, error-handler routing, and broader
+array/object/reference behavior.

@@ -238,6 +238,12 @@ Supported today:
   non-array containers, and out-of-range string offsets do not emit ordinary
   read warnings; `isset()` returns false for missing or `null` values, and
   `empty()` returns true for missing or PHP-falsey values.
+- Null-coalescing expressions `expr ?? expr` over direct variables, array
+  reads, string offset reads, and currently supported value expressions. The
+  left operand uses the same quiet lookup foundation as `isset()`/`empty()`:
+  missing variables, missing offsets, non-array containers, and out-of-range
+  string offsets select the right operand without ordinary read warnings;
+  present non-`null` values short-circuit and preserve evaluation order.
 - Boxed scalar and literal-array comparison and boolean expressions: `==`,
   `!=`, `===`, `!==`, `<`, `<=`, `>`, `>=`, `<=>`, `&&`, `||`, `and`, `or`,
   and `xor`. Strict
@@ -311,7 +317,7 @@ Unsupported today:
   with references/copy-on-write, objects, functions, classes, includes,
   references, resources, broad exception/object support,
   string-offset writes/mutation, object/property/reference
-  `isset()`/`empty()` semantics, null-coalescing offset semantics, string-offset
+  `isset()`/`empty()`/null-coalescing semantics, string-offset
   references/unset,
   exact `array_key_exists()` TypeError parity for unsupported key/container
   types,

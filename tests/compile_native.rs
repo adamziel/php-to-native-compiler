@@ -90,6 +90,12 @@ fn lexer_accepts_keyword_boolean_operators() {
 }
 
 #[test]
+fn lexer_accepts_null_coalesce_operator() {
+    let tokens = lexer::lex("<?php $value ?? \"fallback\"").unwrap();
+    assert!(matches!(tokens[2].kind, TokenKind::QuestionQuestion));
+}
+
+#[test]
 fn parser_accepts_precedence_aware_binary_expressions() {
     let program = parser::parse("<?php echo \"sum \" . 20 - 3 * 4 + 8 / 2 % 3 . \"\\n\";").unwrap();
     let Statement::Echo { expressions, .. } = &program.statements[0] else {
@@ -174,6 +180,63 @@ fn parser_accepts_power_as_right_associative_above_unary() {
         right.as_ref(),
         Expr::Binary {
             op: BinaryOp::Power,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn parser_accepts_null_coalesce_precedence_and_associativity() {
+    let program =
+        parser::parse("<?php echo $a || $b ?? $c, $a ?? $b ?? $c, true and $a ?? $b;").unwrap();
+    let Statement::Echo { expressions, .. } = &program.statements[0] else {
+        panic!("expected echo statement");
+    };
+
+    let Expr::Binary {
+        op: BinaryOp::NullCoalesce,
+        left,
+        ..
+    } = &expressions[0]
+    else {
+        panic!("expected outer null-coalesce expression");
+    };
+    assert!(matches!(
+        left.as_ref(),
+        Expr::Binary {
+            op: BinaryOp::Or,
+            ..
+        }
+    ));
+
+    let Expr::Binary {
+        op: BinaryOp::NullCoalesce,
+        right,
+        ..
+    } = &expressions[1]
+    else {
+        panic!("expected outer null-coalesce expression");
+    };
+    assert!(matches!(
+        right.as_ref(),
+        Expr::Binary {
+            op: BinaryOp::NullCoalesce,
+            ..
+        }
+    ));
+
+    let Expr::Binary {
+        op: BinaryOp::And,
+        right,
+        ..
+    } = &expressions[2]
+    else {
+        panic!("expected outer keyword and expression");
+    };
+    assert!(matches!(
+        right.as_ref(),
+        Expr::Binary {
+            op: BinaryOp::NullCoalesce,
             ..
         }
     ));
@@ -4688,6 +4751,52 @@ var_dump(empty($string[\"foo\"]));",
         "bool(true)\nbool(false)\nbool(false)\nbool(false)\nbool(true)\nbool(true)\nbool(false)\nbool(true)\nbool(true)\nbool(true)\nbool(false)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_null_coalescing_reads_to_native_binary() {
+    let root = temp_dir("ptn-native-null-coalescing-reads");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("null-coalescing-reads.php");
+    let output = root.join("null-coalescing-reads-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$defined = \"value\";\n\
+$nullish = null;\n\
+$number = 42;\n\
+$items = [\"present\" => \"array\", \"null\" => null, \"nested\" => [\"leaf\" => \"leaf\"]];\n\
+$string = \"ab\";\n\
+var_dump($defined ?? \"fallback\");\n\
+var_dump($missing ?? \"fallback\");\n\
+var_dump($nullish ?? \"fallback\");\n\
+var_dump($items[\"present\"] ?? \"fallback\");\n\
+var_dump($items[\"missing\"] ?? \"fallback\");\n\
+var_dump($items[\"null\"] ?? \"fallback\");\n\
+var_dump($items[\"nested\"][\"leaf\"] ?? \"fallback\");\n\
+var_dump($string[1] ?? \"fallback\");\n\
+var_dump($string[99] ?? \"fallback\");\n\
+var_dump($string[\"foo\"] ?? \"fallback\");\n\
+var_dump($number[0] ?? \"fallback\");\n\
+$assigned = $missing_assign ?? \"assigned\";\n\
+var_dump($assigned);\n\
+var_dump($defined ?? $rhs_missing);\n\
+var_dump($nullish ?? $rhs_missing);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(5) \"value\"\nstring(8) \"fallback\"\nstring(8) \"fallback\"\nstring(5) \"array\"\nstring(8) \"fallback\"\nstring(8) \"fallback\"\nstring(4) \"leaf\"\nstring(1) \"b\"\nstring(8) \"fallback\"\nstring(8) \"fallback\"\nstring(8) \"fallback\"\nstring(8) \"assigned\"\nstring(5) \"value\"\nNULL\n"
+    );
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        undefined_variable_warning(&input, "rhs_missing", 21)
+    );
 }
 
 #[test]

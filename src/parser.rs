@@ -11,13 +11,14 @@ use crate::lexer::{lex, StringPart as TokenStringPart, Token, TokenKind};
 const KEYWORD_OR_PRECEDENCE: u8 = 1;
 const KEYWORD_XOR_PRECEDENCE: u8 = 2;
 const KEYWORD_AND_PRECEDENCE: u8 = 3;
-const SYMBOL_OR_PRECEDENCE: u8 = 4;
-const SYMBOL_AND_PRECEDENCE: u8 = 5;
-const BITWISE_OR_PRECEDENCE: u8 = 6;
-const BITWISE_XOR_PRECEDENCE: u8 = 7;
-const BITWISE_AND_PRECEDENCE: u8 = 8;
-const EQUALITY_PRECEDENCE: u8 = 9;
-const COMPARISON_PRECEDENCE: u8 = 10;
+const NULL_COALESCE_PRECEDENCE: u8 = 4;
+const SYMBOL_OR_PRECEDENCE: u8 = 5;
+const SYMBOL_AND_PRECEDENCE: u8 = 6;
+const BITWISE_OR_PRECEDENCE: u8 = 7;
+const BITWISE_XOR_PRECEDENCE: u8 = 8;
+const BITWISE_AND_PRECEDENCE: u8 = 9;
+const EQUALITY_PRECEDENCE: u8 = 10;
+const COMPARISON_PRECEDENCE: u8 = 11;
 const CONCAT_PRECEDENCE: u8 = 13;
 const SHIFT_PRECEDENCE: u8 = 18;
 const ADDITIVE_PRECEDENCE: u8 = 23;
@@ -869,7 +870,7 @@ impl Parser {
     }
 
     fn parse_assignment_value_expr(&mut self) -> Result<Expr> {
-        let value = self.parse_binary_expr(SYMBOL_OR_PRECEDENCE)?;
+        let value = self.parse_binary_expr(NULL_COALESCE_PRECEDENCE)?;
         if self.peek_is_keyword_boolean_operator() {
             return Err(Diagnostic::new(
                 "assignment expressions with keyword boolean operators are unsupported",
@@ -1262,6 +1263,9 @@ impl Parser {
             TokenKind::KeywordOr => Some((BinaryOp::Or, KEYWORD_OR_PRECEDENCE, false)),
             TokenKind::KeywordXor => Some((BinaryOp::Xor, KEYWORD_XOR_PRECEDENCE, false)),
             TokenKind::KeywordAnd => Some((BinaryOp::And, KEYWORD_AND_PRECEDENCE, false)),
+            TokenKind::QuestionQuestion => {
+                Some((BinaryOp::NullCoalesce, NULL_COALESCE_PRECEDENCE, true))
+            }
             TokenKind::OrOr => Some((BinaryOp::Or, SYMBOL_OR_PRECEDENCE, false)),
             TokenKind::AndAnd => Some((BinaryOp::And, SYMBOL_AND_PRECEDENCE, false)),
             TokenKind::Pipe => Some((BinaryOp::BitwiseOr, BITWISE_OR_PRECEDENCE, false)),
@@ -1772,6 +1776,7 @@ fn token_text(kind: &TokenKind) -> &'static str {
         TokenKind::Dot => ".",
         TokenKind::Comma => ",",
         TokenKind::Question => "?",
+        TokenKind::QuestionQuestion => "??",
         TokenKind::Colon => ":",
         TokenKind::Semicolon => ";",
         TokenKind::LeftParen => "(",

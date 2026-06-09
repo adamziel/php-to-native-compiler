@@ -1496,9 +1496,43 @@ impl ValueEmitter {
             | BinaryOp::Greater
             | BinaryOp::GreaterEqual => self.emit_comparison(out, op, left, right),
             BinaryOp::Spaceship => self.emit_spaceship(out, left, right),
+            BinaryOp::NullCoalesce => self.emit_null_coalesce(out, left, right),
             BinaryOp::Xor => self.emit_boolean_xor(out, left, right),
             BinaryOp::And | BinaryOp::Or => self.emit_short_circuit(out, op, left, right),
         }
+    }
+
+    fn emit_null_coalesce(
+        &mut self,
+        out: &mut String,
+        left: &ValueExpr,
+        right: &ValueExpr,
+    ) -> String {
+        let left_lookup = self.emit_quiet_lookup(out, left);
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(";\n");
+        out.push_str("    if (");
+        out.push_str(&left_lookup);
+        out.push_str(".exists && ");
+        out.push_str(&left_lookup);
+        out.push_str(".value.type != PTN_NULL) {\n");
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ");
+        out.push_str(&left_lookup);
+        out.push_str(".value;\n");
+        out.push_str("    } else {\n");
+        emit_value_cleanup(out, "        ", &format!("{left_lookup}.value"));
+        let right_temp = self.emit_materialized_value(out, right);
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ");
+        out.push_str(&right_temp);
+        out.push_str(";\n");
+        out.push_str("    }\n");
+        result_temp
     }
 
     fn emit_runtime_binary(
