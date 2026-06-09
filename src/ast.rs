@@ -26,6 +26,18 @@ pub enum Expr {
     Bool(bool, SourceSpan),
     Null(SourceSpan),
     Variable(String, SourceSpan),
+    Binary {
+        op: BinaryOp,
+        left: Box<Expr>,
+        right: Box<Expr>,
+        span: SourceSpan,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BinaryOp {
+    Add,
+    Concat,
 }
 
 impl Expr {
@@ -37,6 +49,7 @@ impl Expr {
             | Expr::Bool(_, span)
             | Expr::Null(span)
             | Expr::Variable(_, span) => *span,
+            Expr::Binary { span, .. } => *span,
         }
     }
 }

@@ -62,3 +62,23 @@ Added a non-harness differential telemetry path:
 - This does not claim PHPT compatibility. Direct PHPT execution remains blocked
   until PTN grows a PHP-compatible runner interface instead of only
   `ptn compile`.
+
+Implemented the next boxed expression slice in the CAO worktree:
+
+- Lexer support for `+` and `.` operator tokens.
+- Parser/AST support for left-associative binary expressions with `+` binding
+  tighter than string concatenation.
+- IR value-expression operation nodes for numeric addition and string
+  concatenation.
+- Generated C code that materializes operands left-to-right into `PtnValue`
+  temporaries before calling `ptn_add` and `ptn_concat`.
+- Boxed runtime helpers for scalar numeric addition and scalar string
+  concatenation, including basic scalar-to-number and scalar-to-string
+  conversions.
+- Native tests proving literal operations, variables, assignment results,
+  chained expressions, numeric-string/float addition basics, and observable
+  left-to-right operand evaluation in compiled binaries.
+
+Still unsupported for binary operations: full PHP numeric-string conversion
+warning parity, non-numeric string arithmetic diagnostics, complete overflow
+parity, arrays, objects, references, and copy-on-write behavior.

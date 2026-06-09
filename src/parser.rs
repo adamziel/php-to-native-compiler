@@ -1,4 +1,4 @@
-use crate::ast::{Expr, Program, Statement};
+use crate::ast::{BinaryOp, Expr, Program, Statement};
 use crate::diagnostic::{Diagnostic, Result, SourceSpan};
 use crate::lexer::{lex, Token, TokenKind};
 
@@ -62,6 +62,30 @@ impl Parser {
     }
 
     fn parse_expr(&mut self) -> Result<Expr> {
+        self.parse_binary_expr(0)
+    }
+
+    fn parse_binary_expr(&mut self, min_precedence: u8) -> Result<Expr> {
+        let mut left = self.parse_primary_expr()?;
+        while let Some((op, precedence)) = self.peek_binary_op() {
+            if precedence < min_precedence {
+                break;
+            }
+
+            self.advance();
+            let right = self.parse_binary_expr(precedence + 1)?;
+            let span = combine_spans(left.span(), right.span());
+            left = Expr::Binary {
+                op,
+                left: Box::new(left),
+                right: Box::new(right),
+                span,
+            };
+        }
+        Ok(left)
+    }
+
+    fn parse_primary_expr(&mut self) -> Result<Expr> {
         let token = self.advance().clone();
         match token.kind {
             TokenKind::String(value) => Ok(Expr::String(value, token.span)),
@@ -72,6 +96,14 @@ impl Parser {
             TokenKind::Null => Ok(Expr::Null(token.span)),
             TokenKind::Variable(name) => Ok(Expr::Variable(name, token.span)),
             _ => Err(Diagnostic::new("expected expression", Some(token.span))),
+        }
+    }
+
+    fn peek_binary_op(&self) -> Option<(BinaryOp, u8)> {
+        match self.peek().kind {
+            TokenKind::Dot => Some((BinaryOp::Concat, 10)),
+            TokenKind::Plus => Some((BinaryOp::Add, 20)),
+            _ => None,
         }
     }
 
@@ -111,4 +143,8 @@ impl Parser {
         self.index += 1;
         token
     }
+}
+
+fn combine_spans(left: SourceSpan, right: SourceSpan) -> SourceSpan {
+    SourceSpan::new(left.byte_start, right.byte_end, left.line, left.column)
 }

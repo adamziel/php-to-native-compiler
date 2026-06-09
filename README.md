@@ -21,13 +21,18 @@ Supported today:
   native runtime symbol table.
 - Generic runtime diagnostics for undefined direct variable reads. The read
   still yields `null` after emitting a warning boundary.
+- Boxed scalar `+` numeric addition and `.` string concatenation expressions,
+  including chained expressions and assignment results. The parser treats `+`
+  as higher precedence than `.` and the backend emits runtime calls over
+  `PtnValue` operands.
 
 Unsupported today:
 
-- Arrays, functions, classes, includes, references, copy-on-write, resources,
-  exceptions, compound assignment, PHP-exact warning text/file/line/error-handler
-  behavior, variable variables, and dynamic fallback. These are architecture
-  targets, not excuses for exact-shape hacks.
+- Arrays, objects, functions, classes, includes, references, copy-on-write,
+  resources, exceptions, compound assignment, full PHP numeric-string and
+  non-numeric string arithmetic diagnostics, overflow parity, PHP-exact warning
+  text/file/line/error-handler behavior, variable variables, and dynamic
+  fallback. These are architecture targets, not excuses for exact-shape hacks.
 
 ## Build
 

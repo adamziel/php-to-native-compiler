@@ -1,4 +1,4 @@
-use crate::ast::{Expr, Program, Statement};
+use crate::ast::{BinaryOp as AstBinaryOp, Expr, Program, Statement};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Module {
@@ -19,6 +19,17 @@ pub enum ValueExpr {
     Bool(bool),
     Null,
     Load(String),
+    Binary {
+        op: BinaryOp,
+        left: Box<ValueExpr>,
+        right: Box<ValueExpr>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BinaryOp {
+    Add,
+    Concat,
 }
 
 pub fn lower(program: &Program) -> Module {
@@ -49,5 +60,19 @@ fn lower_expr(expr: &Expr) -> ValueExpr {
         Expr::Bool(value, _) => ValueExpr::Bool(*value),
         Expr::Null(_) => ValueExpr::Null,
         Expr::Variable(name, _) => ValueExpr::Load(name.clone()),
+        Expr::Binary {
+            op, left, right, ..
+        } => ValueExpr::Binary {
+            op: lower_binary_op(*op),
+            left: Box::new(lower_expr(left)),
+            right: Box::new(lower_expr(right)),
+        },
+    }
+}
+
+fn lower_binary_op(op: AstBinaryOp) -> BinaryOp {
+    match op {
+        AstBinaryOp::Add => BinaryOp::Add,
+        AstBinaryOp::Concat => BinaryOp::Concat,
     }
 }
