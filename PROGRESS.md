@@ -1931,3 +1931,26 @@ Optimized generated string concatenation runtime behavior:
 - A native benchmark with 6000 chained and compound concat loop iterations
   produced the same `46890 34890` output and improved from about `real
   1.35-1.37s` before the change to `real 0.84-0.87s` after the change.
+
+Optimized generated C string internal operands:
+
+- Added a shared borrowed-or-owned string operand helper for generated C runtime
+  internals. Direct `PTN_STRING` values now pass their existing C string pointer
+  through string-processing internals without first allocating a duplicate,
+  while non-string operands still use the existing scalar string-conversion
+  path and release the owned conversion afterward.
+- Switched current string-consuming internals including `strlen()`,
+  `str_rot13()`, `strcmp()`, `str_contains()`, `str_starts_with()`,
+  `str_ends_with()`, `quotemeta()`, `chunk_split()`, `strip_tags()`, `md5()`,
+  `sha1()`, `substr()`, `dirname()`, `bin2hex()`, `hex2bin()`,
+  `quoted_printable_decode()`, `soundex()`, `phpversion()`, `bindec()`,
+  `hexdec()`, `octdec()`, and `ord()` to use that fast path.
+- Native tests prove direct-string behavior, scalar conversion fallback
+  behavior, and emitted C shape showing the direct string operand helper rather
+  than unconditional `ptn_value_to_string(args...)` conversion in those
+  internals.
+
+Still unsupported after this optimization: embedded-NUL string parity, exact
+unsupported array/object/resource/reference diagnostics for these internals,
+and broader binary-string length tracking beyond the current C-string-backed
+value model.

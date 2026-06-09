@@ -2079,6 +2079,82 @@ fn compile_strlen_expression_to_native_binary() {
 }
 
 #[test]
+fn compile_string_internals_use_direct_string_operand_fast_paths_to_native_binary() {
+    let root = temp_dir("ptn-native-string-internal-direct-operands");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("string-internal-direct-operands.php");
+    let output = root.join("string-internal-direct-operands-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+echo strlen(\"abcdef\"), \" \", strcmp(\"abc\", \"abd\"), \" \", str_contains(\"abcdef\", \"cd\"), \" \", str_starts_with(\"abcdef\", \"ab\"), \" \", str_ends_with(\"abcdef\", \"ef\"), \"\\n\";\n\
+echo str_rot13(\"abc\"), \" \", substr(\"abcdef\", 2, 3), \" \", bin2hex(\"Az\"), \" \", quotemeta(\"a.b\"), \" \", chunk_split(\"abcd\", 2, \"|\"), \"\\n\";\n\
+echo strip_tags(\"<b>x</b>\"), \" \", quoted_printable_decode(\"=41\"), \" \", soundex(\"Robert\"), \" \", ord(\"A\"), \" \", bindec(\"101\"), \" \", hexdec(\"ff\"), \" \", octdec(\"10\"), \"\\n\";\n\
+echo md5(\"\"), \" \", sha1(\"\"), \"\\n\";\n\
+var_dump(strlen(12345), bin2hex(255), substr(12345, 1, 2));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "6 -1 1 1 1\nnop cde 417a a\\.b ab|cd|\n\
+x A R163 65 5 255 8\n\
+d41d8cd98f00b204e9800998ecf8427e da39a3ee5e6b4b0d3255bfef95601890afd80709\n\
+int(5)\nstring(6) \"323535\"\nstring(2) \"23\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("case PTN_STRING:"));
+    assert!(c_source.contains("return ptn_string_operand_borrowed(value.as.string);"));
+
+    for function in [
+        "ptn_internal_strlen",
+        "ptn_internal_str_rot13",
+        "ptn_internal_strcmp",
+        "ptn_internal_str_contains",
+        "ptn_internal_str_starts_with",
+        "ptn_internal_str_ends_with",
+        "ptn_internal_quotemeta",
+        "ptn_internal_chunk_split",
+        "ptn_internal_strip_tags",
+        "ptn_internal_md5",
+        "ptn_internal_sha1",
+        "ptn_internal_substr",
+        "ptn_internal_dirname",
+        "ptn_internal_bin2hex",
+        "ptn_internal_hex2bin",
+        "ptn_internal_quoted_printable_decode",
+        "ptn_internal_soundex",
+        "ptn_internal_phpversion",
+        "ptn_internal_bindec",
+        "ptn_internal_hexdec",
+        "ptn_internal_octdec",
+        "ptn_internal_ord",
+    ] {
+        let marker = format!("static PtnValue {function}(");
+        let start = c_source
+            .find(&marker)
+            .unwrap_or_else(|| panic!("generated runtime should contain {function}"));
+        let tail = &c_source[start..];
+        let end = tail.find("\nstatic ").unwrap_or(tail.len());
+        let body = &tail[..end];
+        assert!(
+            body.contains("ptn_value_to_string_operand"),
+            "{function} should use the direct string operand helper"
+        );
+        assert!(
+            !body.contains("ptn_value_to_string(args"),
+            "{function} should not convert direct argument expressions unconditionally"
+        );
+    }
+}
+
+#[test]
 fn compile_str_rot13_basic_phpt_shape_to_native_binary() {
     let root = temp_dir("ptn-native-str-rot13-basic-phpt-shape");
     fs::create_dir_all(&root).unwrap();
