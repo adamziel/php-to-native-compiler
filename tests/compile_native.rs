@@ -5883,6 +5883,7 @@ fn parser_rejects_non_variable_array_by_ref_mutation_calls() {
         ("<?php array_pop([1, 2]);", "array_pop"),
         ("<?php var_dump(array_shift(array(1, 2)));", "array_shift"),
         ("<?php array_push([1], 2);", "array_push"),
+        ("<?php array_unshift([1], 2);", "array_unshift"),
         (
             "<?php $items = [[1], [2]]; array_pop($items[0]);",
             "array_pop",
@@ -5907,6 +5908,81 @@ fn parser_rejects_non_variable_array_by_ref_mutation_calls() {
 
     parser::parse("<?php $items = [1, 2]; array_pop(($items));").unwrap();
     parser::parse("<?php $items = [1]; array_push(($items), 2);").unwrap();
+    parser::parse("<?php $items = [1]; array_unshift(($items), 0);").unwrap();
+}
+
+#[test]
+fn compile_array_unshift_mutates_direct_variable_and_detaches_cow_to_native_binary() {
+    let root = temp_dir("ptn-native-array-unshift-cow");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-unshift-cow.php");
+    let output = root.join("array-unshift-cow-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$source = [\"x\" => \"X\", 4 => \"A\", 9 => \"B\"];\n\
+$copy = $source;\n\
+var_dump(array_unshift($copy, \"first\", \"second\"));\n\
+var_dump($source);\n\
+var_dump($copy);\n\
+$empty = [];\n\
+var_dump(array_unshift($empty));\n\
+var_dump($empty);\n\
+function local_unshift($arr) { return array_unshift($arr, 6); }\n\
+$local = [7, 8];\n\
+var_dump(local_unshift($local));\n\
+var_dump($local);\n\
+var_dump(function_exists(\"array_unshift\"), function_exists(\"ARRAY_UNSHIFT\"));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(5)\n",
+            "array(3) {\n",
+            "  [\"x\"]=>\n",
+            "  string(1) \"X\"\n",
+            "  [4]=>\n",
+            "  string(1) \"A\"\n",
+            "  [9]=>\n",
+            "  string(1) \"B\"\n",
+            "}\n",
+            "array(5) {\n",
+            "  [0]=>\n",
+            "  string(5) \"first\"\n",
+            "  [1]=>\n",
+            "  string(6) \"second\"\n",
+            "  [\"x\"]=>\n",
+            "  string(1) \"X\"\n",
+            "  [2]=>\n",
+            "  string(1) \"A\"\n",
+            "  [3]=>\n",
+            "  string(1) \"B\"\n",
+            "}\n",
+            "int(0)\n",
+            "array(0) {\n",
+            "}\n",
+            "int(3)\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  int(7)\n",
+            "  [1]=>\n",
+            "  int(8)\n",
+            "}\n",
+            "bool(true)\n",
+            "bool(true)\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_array_unshift_variable"));
+    assert!(c_source.contains("ptn_array_unshift_values"));
 }
 
 #[test]
@@ -6224,6 +6300,9 @@ function cow_local_pop($arr) {\n\
 function cow_local_push($arr) {\n\
     return array_push($arr, 9);\n\
 }\n\
+function cow_local_unshift($arr) {\n\
+    return array_unshift($arr, 6);\n\
+}\n\
 $pass = 0;\n\
 $fail = 0;\n\
 $pop_source = [1, 2, 3];\n\
@@ -6238,6 +6317,10 @@ $push_many_source = [1];\n\
 $push_many_copy = $push_many_source;\n\
 $push_many_count = array_push($push_many_copy, 2, 3);\n\
 if ($push_many_count === 3 && count($push_many_source) === 1 && count($push_many_copy) === 3 && $push_many_copy[2] === 3) { $pass++; } else { echo \"FAIL array_push_many\\n\"; $fail++; }\n\
+$unshift_source = [\"x\" => \"X\", 4 => \"A\", 9 => \"B\"];\n\
+$unshift_copy = $unshift_source;\n\
+$unshift_count = array_unshift($unshift_copy, \"first\", \"second\");\n\
+if ($unshift_count === 5 && count($unshift_source) === 3 && count($unshift_copy) === 5 && $unshift_copy[0] === \"first\" && $unshift_copy[1] === \"second\" && $unshift_copy[\"x\"] === \"X\" && $unshift_copy[2] === \"A\" && $unshift_copy[3] === \"B\" && $unshift_source[4] === \"A\") { $pass++; } else { echo \"FAIL array_unshift\\n\"; $fail++; }\n\
 $shift_source = [10, 20, 30];\n\
 $shift_copy = $shift_source;\n\
 $shift_value = array_shift($shift_copy);\n\
@@ -6274,6 +6357,9 @@ if ($local_pop_value === 8 && count($local_pop_source) === 2 && $local_pop_sourc
 $local_push_source = [7, 8];\n\
 $local_push_count = cow_local_push($local_push_source);\n\
 if ($local_push_count === 3 && count($local_push_source) === 2 && $local_push_source[1] === 8) { $pass++; } else { echo \"FAIL local_array_push\\n\"; $fail++; }\n\
+$local_unshift_source = [7, 8];\n\
+$local_unshift_count = cow_local_unshift($local_unshift_source);\n\
+if ($local_unshift_count === 3 && count($local_unshift_source) === 2 && $local_unshift_source[0] === 7) { $pass++; } else { echo \"FAIL local_array_unshift\\n\"; $fail++; }\n\
 echo \"mutating internal COW matrix: pass=\", $pass, \" fail=\", $fail, \"\\n\";",
     )
     .unwrap();
@@ -6284,7 +6370,7 @@ echo \"mutating internal COW matrix: pass=\", $pass, \" fail=\", $fail, \"\\n\";
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "mutating internal COW matrix: pass=12 fail=0\n"
+        "mutating internal COW matrix: pass=14 fail=0\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
@@ -6292,6 +6378,7 @@ echo \"mutating internal COW matrix: pass=\", $pass, \" fail=\", $fail, \"\\n\";
     assert!(c_source.contains("ptn_runtime_array_pop_variable"));
     assert!(c_source.contains("ptn_runtime_array_push_variable"));
     assert!(c_source.contains("ptn_runtime_array_shift_variable"));
+    assert!(c_source.contains("ptn_runtime_array_unshift_variable"));
     assert!(c_source.contains("ptn_runtime_array_next_variable"));
     assert!(c_source.contains("ptn_runtime_array_end_variable"));
     assert!(c_source.contains("ptn_runtime_array_prev_variable"));

@@ -1,7 +1,7 @@
 # PTN Progress
 
-Last refresh: 2026-06-09T20:17Z
-Measured base: `ptn-cqu.47.22` over `origin/master`
+Last refresh: 2026-06-09T20:21Z
+Measured base: `ptn-cqu.47.21` rebased after `ptn-cqu.47.22`
 
 ## Test Dashboard
 
@@ -22,26 +22,25 @@ Measured base: `ptn-cqu.47.22` over `origin/master`
 | By-reference foreach COW oracle | 11 | 11 | 0 |
 | Post-merge COW gate | 14 | 14 | 0 |
 | COW/reference-focused native tests | 10 | 10 | 0 |
-| Mutating-internal COW matrix | 12 | 12 | 0 |
-| PHPT COW manifest | 29 | 7 | 22 |
+| Mutating-internal COW matrix | 14 | 14 | 0 |
+| PHPT COW manifest | 29 | 8 | 21 |
 | Focused PHPT foreach COW row | 1 | 1 | 0 |
 
 ## COW PHPT Buckets
 
-`tools/phpt-cow-manifest.txt` at 2026-06-09T18:30Z:
+`tools/phpt-cow-manifest.txt` at 2026-06-09T20:21Z:
 assignment-aliasing 4/3/1, string-offsets 4/2/2,
-array-writes-appends-unset 4/2/2, nested-arrays 4/0/4,
+array-writes-appends-unset 4/3/1, nested-arrays 4/0/4,
 foreach-mutation 4/0/4, function-boundaries 4/0/4,
-reference-interaction 5/0/5. The 22 failing rows are bucketed in
+reference-interaction 5/0/5. The 21 failing rows are bucketed in
 `docs/COW_PHPT_BLOCKERS_2026-06-09.md`; `Zend/tests/bug38469.phpt` is counted
 as fail because native recursive output exhausts `run-tests.php` diff memory.
 Native COW reducers: 26/26, including dynamic temporary/call-result/read-slot
 10/10. Oracle coverage: arrays 2/2, strings 1/1, foreach 2/2, functions 3/3,
 nested values 2/2, references 2/2, array element references 10/10.
-By-reference foreach oracle: 11/11. Mutating-internal matrix: 12/12 plus five
-unsupported-target diagnostics. Post-merge COW gate: 10/10 oracle/native,
-4/4 unsupported-reference diagnostics. Contract stress balances 12 nested
-cycles with 0 live payloads.
+By-reference foreach oracle: 11/11. Mutating-internal matrix: 14/14 plus six
+unsupported target diagnostics. Post-merge COW gate: 14/14. Contract stress
+balances 12 nested cycles with 0 live payloads.
 
 ## Already Ported
 
@@ -54,10 +53,10 @@ by-reference `foreach` over variables, array dimensions, and temporaries with
 live appends and source COW detach, by-value parameter/function-boundary
 splits, recursive/user functions, magic constants, `func_*` and bounds
 diagnostics, `print_r`, binary strings, string offset reads/writes, `count()`
-diagnostics, `??`, array assignment/compound/append/unset COW, native/oracle
-COW reducers, native smoke matrix, array-element reference oracle coverage,
-unsupported mutating-internal diagnostics, post-merge COW gate, generated
-comparison operand cleanup, PHPT COW blocker buckets, and payload lifetime
+diagnostics, `??`, array assignment/compound/append/unset COW, `array_unshift()`,
+native/oracle COW reducers, native smoke matrix, array-element reference oracle
+coverage, unsupported mutating-internal diagnostics, post-merge COW gate, PHPT
+COW blocker buckets, generated comparison operand cleanup, and payload lifetime
 debug counters.
 
 ## Still Needed

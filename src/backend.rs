@@ -1603,7 +1603,14 @@ fn emit_value_cleanup(out: &mut String, indent: &str, value: &str) {
 fn is_array_mutating_internal_call(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
-        "array_pop" | "array_push" | "array_shift" | "end" | "next" | "prev" | "reset"
+        "array_pop"
+            | "array_push"
+            | "array_shift"
+            | "array_unshift"
+            | "end"
+            | "next"
+            | "prev"
+            | "reset"
     )
 }
 
@@ -2842,9 +2849,16 @@ impl ValueEmitter {
             return Some(result_temp);
         }
 
-        if !name.eq_ignore_ascii_case("array_push") {
+        let helper = if name.eq_ignore_ascii_case("array_push") {
+            Some("ptn_runtime_array_push_variable")
+        } else if name.eq_ignore_ascii_case("array_unshift") {
+            Some("ptn_runtime_array_unshift_variable")
+        } else {
+            None
+        };
+        let Some(helper) = helper else {
             return None;
-        }
+        };
 
         let array_temp = self.emit_materialized_value(out, &arguments[0]);
         let mut value_temps = Vec::with_capacity(arguments.len().saturating_sub(1));
@@ -2874,7 +2888,9 @@ impl ValueEmitter {
         let result_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
-        out.push_str(" = ptn_runtime_array_push_variable(&runtime, \"");
+        out.push_str(" = ");
+        out.push_str(helper);
+        out.push_str("(&runtime, \"");
         out.push_str(&c_string(variable_name));
         out.push_str("\", ");
         out.push_str(&array_temp);

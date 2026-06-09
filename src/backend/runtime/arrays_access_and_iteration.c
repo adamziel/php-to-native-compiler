@@ -1297,4 +1297,59 @@ static PTN_UNUSED PtnValue ptn_array_shift_value(PtnArray *array) {
     return removed;
 }
 
+static PTN_UNUSED int64_t ptn_array_unshift_values(PtnArray *array, size_t argc, const PtnValue *values) {
+    if (argc > SIZE_MAX - array->len) {
+        ptn_abort_out_of_memory();
+    }
+    size_t new_len = array->len + argc;
+    if (new_len > (size_t)INT64_MAX) {
+        ptn_abort_out_of_memory();
+    }
+
+    PtnArrayEntry *new_entries = NULL;
+    if (new_len != 0) {
+        if (new_len > SIZE_MAX / sizeof(PtnArrayEntry)) {
+            ptn_abort_out_of_memory();
+        }
+        new_entries = malloc(new_len * sizeof(PtnArrayEntry));
+        if (new_entries == NULL) {
+            ptn_abort_out_of_memory();
+        }
+    }
+
+    size_t out = 0;
+    int64_t next_integer_key = 0;
+    for (size_t i = 0; i < argc; i++) {
+        new_entries[out].key = ptn_array_int_key(next_integer_key);
+        new_entries[out].value = ptn_value_clone(values[i]);
+        out++;
+        if (next_integer_key < INT64_MAX) {
+            next_integer_key++;
+        }
+    }
+
+    for (size_t i = 0; i < array->len; i++) {
+        if (array->entries[i].key.type == PTN_ARRAY_KEY_INT) {
+            new_entries[out].key = ptn_array_int_key(next_integer_key);
+            ptn_array_key_free(array->entries[i].key);
+            if (next_integer_key < INT64_MAX) {
+                next_integer_key++;
+            }
+        } else {
+            new_entries[out].key = array->entries[i].key;
+        }
+        new_entries[out].value = array->entries[i].value;
+        out++;
+    }
+
+    free(array->entries);
+    array->entries = new_entries;
+    array->len = new_len;
+    array->capacity = new_len;
+    array->current_index = 0;
+    ptn_array_recompute_next_auto_key(array);
+    ptn_array_rebuild_index(array);
+    return (int64_t)array->len;
+}
+
 static PTN_UNUSED int64_t ptn_array_push_values(PtnArray *array, size_t argc, const PtnValue *values) {

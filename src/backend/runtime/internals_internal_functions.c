@@ -397,6 +397,24 @@ static PTN_UNUSED PtnValue ptn_runtime_array_shift_variable(PtnRuntime *runtime,
     return ptn_array_shift_value(array);
 }
 
+static PTN_UNUSED PtnValue ptn_runtime_array_unshift_variable(
+    PtnRuntime *runtime,
+    const char *name,
+    PtnValue value,
+    size_t value_count,
+    const PtnValue *values
+) {
+    PtnArray *array = ptn_internal_expect_mutable_array_variable_arg(
+        runtime,
+        "array_unshift",
+        1,
+        "array",
+        name,
+        value
+    );
+    return ptn_int(ptn_array_unshift_values(array, value_count, values));
+}
+
 static PTN_UNUSED PtnValue ptn_runtime_array_next_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
     PtnArray *array = ptn_internal_expect_mutable_array_variable_arg(
         runtime,
@@ -463,6 +481,12 @@ static PtnValue ptn_internal_array_shift(PtnRuntime *runtime, size_t argc, const
     (void)line;
     PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_shift", 1, "array", args[0]);
     return ptn_array_shift_value(array);
+}
+
+static PtnValue ptn_internal_array_unshift(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_unshift", 1, "array", args[0]);
+    return ptn_int(ptn_array_unshift_values(array, argc - 1, args + 1));
 }
 
 static PtnValue ptn_internal_array_values(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -1924,6 +1948,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "array_pop", 1, 1, ptn_internal_array_pop },
         { "array_push", 1, PTN_VARIADIC_ARGS, ptn_internal_array_push },
         { "array_shift", 1, 1, ptn_internal_array_shift },
+        { "array_unshift", 1, PTN_VARIADIC_ARGS, ptn_internal_array_unshift },
         { "array_values", 1, 1, ptn_internal_array_values },
         { "bin2hex", 1, 1, ptn_internal_bin2hex },
         { "bindec", 1, 1, ptn_internal_bindec },

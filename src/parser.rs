@@ -2026,7 +2026,7 @@ fn is_array_cursor_mutation_name(name: &str) -> bool {
 fn is_array_by_ref_mutation_name(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
-        "array_pop" | "array_push" | "array_shift"
+        "array_pop" | "array_push" | "array_shift" | "array_unshift"
     )
 }
 
