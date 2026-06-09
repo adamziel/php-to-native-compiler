@@ -31,7 +31,9 @@ Supported today:
   `defined(expr)`, and `function_exists(expr)`, lowered through IR
   internal-call nodes and generated C runtime dispatch.
 - `var_dump()` output for the current boxed scalar `PtnValue` types: `null`,
-  booleans, integers, floats, and strings.
+  booleans, integers, floats, and strings. Finite floats use the shortest
+  decimal spelling that round-trips to the same native double; `INF`, `-INF`,
+  and `NAN` keep PHP-like special spellings.
 - `strlen()` as an expression returning the byte length of the current boxed
   scalar string-conversion result.
 - `str_rot13()` as an expression returning ASCII ROT13 over the current boxed
@@ -63,7 +65,10 @@ Supported today:
   `function_exists()` checks the generated internal-function registry, and
   `defined()` checks the current constant registry, which currently includes
   `E_ERROR`, `PHP_EOL`, `PHP_INT_MIN`, `PHP_INT_MAX`, `PHP_INT_SIZE`, `INF`,
-  `NAN`, and `M_PI`.
+  `NAN`, `M_PI`, and the modeled PHP math constants `M_E`, `M_LOG2E`,
+  `M_LOG10E`, `M_LN2`, `M_LN10`, `M_PI_2`, `M_PI_4`, `M_1_PI`, `M_2_PI`,
+  `M_SQRTPI`, `M_2_SQRTPI`, `M_LNPI`, `M_EULER`, `M_SQRT2`, `M_SQRT1_2`,
+  and `M_SQRT3`.
 - String, integer, float, boolean, and null literals. Numeric literals accept
   PHP digit separators between digits; integer literals include decimal,
   legacy octal, binary `0b`/`0B`, and hexadecimal `0x`/`0X` forms.
@@ -141,7 +146,8 @@ Unsupported today:
   between PHP blocks, internal functions outside the registered scalar subset,
   user constants and built-in constants other than the currently modeled
   `E_ERROR`, `PHP_EOL`, `PHP_INT_MIN`, `PHP_INT_MAX`, `PHP_INT_SIZE`, `INF`,
-  `NAN`, and `M_PI`, arrays, objects, resources, recursion, references,
+  `NAN`, `M_PI`, and the modeled PHP math `M_*` constants, arrays, objects,
+  resources, recursion, references,
   embedded NUL string handling, complex/braced interpolation, interpolation of
   arrays/objects/offsets/properties/variable variables, exact `strcmp()`
   binary-string parity, exact `chr()` deprecation diagnostics, exact `ord()`

@@ -75,8 +75,10 @@ Current runtime/compiler slices:
   internal diagnostic boundaries. The generated C backend materializes
   arguments left-to-right and dispatches through a small internal function
   registry. Statement-form calls discard the returned boxed value. `var_dump`
-  formats boxed scalar runtime values and returns `null`; `strlen` returns the
-  byte length of the current boxed scalar string conversion; `str_rot13`
+  formats boxed scalar runtime values and returns `null`, with finite floats
+  using the shortest decimal spelling that round-trips to the same native
+  double while preserving `INF`, `-INF`, and `NAN` spellings; `strlen` returns
+  the byte length of the current boxed scalar string conversion; `str_rot13`
   returns ASCII ROT13 output for that string conversion; `strcmp` compares two
   scalar string-conversion results through the current C-string-backed bytewise
   path; `bin2hex` returns lowercase hexadecimal bytes for that same string
@@ -93,9 +95,10 @@ Current runtime/compiler slices:
   `is_infinite`, and `is_nan` query modeled non-finite float constants;
   `function_exists` shares the registry lookup path; and `defined` checks the
   current constant-registry boundary, which includes the modeled PHP `E_ERROR`,
-  `PHP_EOL`, `PHP_INT_MIN`, `PHP_INT_MAX`, `PHP_INT_SIZE`, `INF`, `NAN`, and
-  `M_PI` constants. Fixed-arity internal functions record min/max arity
-  metadata while `var_dump` remains variadic.
+  `PHP_EOL`, `PHP_INT_MIN`, `PHP_INT_MAX`, `PHP_INT_SIZE`, `INF`, `NAN`,
+  `M_PI`, and modeled PHP math `M_*` constants from `constants_basic.phpt`.
+  Fixed-arity internal functions record min/max arity metadata while
+  `var_dump` remains variadic.
 - Braced `if`, `elseif`, and `else` statements lower to structured IR branch
   instructions. Conditions remain boxed value expressions, and the C backend
   emits native branches that call the shared scalar truthiness helper.
@@ -139,12 +142,14 @@ Near-term architecture targets:
   unsupported scalar edge cases.
 - A broader internal-function module system with shared argument parsing,
   metadata, unsupported array/object/resource/reference diagnostics, and
-  PHP-exact `var_dump` precision/formatting plus `strlen`/`bin2hex`
+  PHP-exact `var_dump` precision/formatting beyond the current scalar
+  round-trip float path plus `strlen`/`bin2hex`
   byte-string behavior, `strcmp` binary-string parity, scalar math
   diagnostic/type parity, and base-conversion precision/range parity.
 - User-defined functions, classes/methods, constants beyond the currently
   modeled `E_ERROR`, `PHP_EOL`, `PHP_INT_MIN`, `PHP_INT_MAX`, `PHP_INT_SIZE`,
-  `INF`, `NAN`, and `M_PI`, namespaced symbols, autoloading, and
+  `INF`, `NAN`, `M_PI`, and modeled PHP math `M_*` constants, namespaced
+  symbols, autoloading, and
   disabled-functions behavior in symbol-existence predicates.
 - Broader control flow: unbraced and alternate syntax, `foreach`,
   explicit-level `break`, `continue`, for-loop comma expressions and

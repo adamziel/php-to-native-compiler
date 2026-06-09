@@ -823,3 +823,24 @@ Added numeric literal separator and radix parsing:
 Still unsupported after this numeric-literal slice: exact numeric literal
 overflow/range parity and PHP-exact parse diagnostic wording for invalid
 separator placements.
+
+Added modeled PHP math constants and shortest round-trip finite float
+`var_dump()` formatting:
+
+- The modeled constant registry now includes `M_E`, `M_LOG2E`, `M_LOG10E`,
+  `M_LN2`, `M_LN10`, `M_PI_2`, `M_PI_4`, `M_1_PI`, `M_2_PI`, `M_SQRTPI`,
+  `M_2_SQRTPI`, `M_LNPI`, `M_EULER`, `M_SQRT2`, `M_SQRT1_2`, and `M_SQRT3`
+  alongside the existing `M_PI` value.
+- Bare constant reads and `defined()` share the same constant lookup boundary.
+- `var_dump()` finite float formatting now chooses the shortest decimal
+  spelling that round-trips to the same native double, while preserving `INF`,
+  `-INF`, and `NAN` spelling for non-finite values.
+- Native tests prove the public `constants_basic.phpt` source shape and
+  representative `defined()` visibility.
+- Focused public PHPT telemetry through `phpc` passes
+  `ext/standard/tests/math/constants_basic.phpt`.
+
+Still unsupported after this math-constants slice: user-defined or extension
+constants beyond the modeled scalar constant registry, full PHP float
+precision/formatting parity outside the current scalar `var_dump()` path, and
+array/object/resource/reference output semantics.

@@ -1573,6 +1573,26 @@ static PTN_UNUSED int ptn_constant_value(const char *name, PtnValue *out) {
         *out = ptn_int(1);
         return 1;
     }
+    if (strcmp(name, "M_E") == 0) {
+        *out = ptn_float(2.718281828459045);
+        return 1;
+    }
+    if (strcmp(name, "M_LOG2E") == 0) {
+        *out = ptn_float(1.4426950408889634);
+        return 1;
+    }
+    if (strcmp(name, "M_LOG10E") == 0) {
+        *out = ptn_float(0.4342944819032518);
+        return 1;
+    }
+    if (strcmp(name, "M_LN2") == 0) {
+        *out = ptn_float(0.6931471805599453);
+        return 1;
+    }
+    if (strcmp(name, "M_LN10") == 0) {
+        *out = ptn_float(2.302585092994046);
+        return 1;
+    }
     if (strcmp(name, "PHP_INT_MIN") == 0) {
         *out = ptn_int(INT64_MIN);
         return 1;
@@ -1601,7 +1621,81 @@ static PTN_UNUSED int ptn_constant_value(const char *name, PtnValue *out) {
         *out = ptn_float(3.14159265358979323846264338327950288);
         return 1;
     }
+    if (strcmp(name, "M_PI_2") == 0) {
+        *out = ptn_float(1.5707963267948966);
+        return 1;
+    }
+    if (strcmp(name, "M_PI_4") == 0) {
+        *out = ptn_float(0.7853981633974483);
+        return 1;
+    }
+    if (strcmp(name, "M_1_PI") == 0) {
+        *out = ptn_float(0.3183098861837907);
+        return 1;
+    }
+    if (strcmp(name, "M_2_PI") == 0) {
+        *out = ptn_float(0.6366197723675814);
+        return 1;
+    }
+    if (strcmp(name, "M_SQRTPI") == 0) {
+        *out = ptn_float(1.772453850905516);
+        return 1;
+    }
+    if (strcmp(name, "M_2_SQRTPI") == 0) {
+        *out = ptn_float(1.1283791670955126);
+        return 1;
+    }
+    if (strcmp(name, "M_LNPI") == 0) {
+        *out = ptn_float(1.1447298858494002);
+        return 1;
+    }
+    if (strcmp(name, "M_EULER") == 0) {
+        *out = ptn_float(0.5772156649015329);
+        return 1;
+    }
+    if (strcmp(name, "M_SQRT2") == 0) {
+        *out = ptn_float(1.4142135623730951);
+        return 1;
+    }
+    if (strcmp(name, "M_SQRT1_2") == 0) {
+        *out = ptn_float(0.7071067811865476);
+        return 1;
+    }
+    if (strcmp(name, "M_SQRT3") == 0) {
+        *out = ptn_float(1.7320508075688772);
+        return 1;
+    }
     return 0;
+}
+
+static int ptn_same_double(double left, double right) {
+    return memcmp(&left, &right, sizeof(double)) == 0;
+}
+
+static void ptn_format_var_dump_float(double value, char *buffer, size_t buffer_size) {
+    if (isnan(value)) {
+        snprintf(buffer, buffer_size, "NAN");
+        return;
+    }
+    if (isinf(value)) {
+        snprintf(buffer, buffer_size, signbit(value) ? "-INF" : "INF");
+        return;
+    }
+
+    for (int precision = 1; precision <= 17; precision++) {
+        char candidate[64];
+        char *end = NULL;
+        double reparsed;
+        snprintf(candidate, sizeof(candidate), "%.*g", precision, value);
+        errno = 0;
+        reparsed = strtod(candidate, &end);
+        if (errno == 0 && end != NULL && *end == '\0' && ptn_same_double(reparsed, value)) {
+            snprintf(buffer, buffer_size, "%s", candidate);
+            return;
+        }
+    }
+
+    snprintf(buffer, buffer_size, "%.17g", value);
 }
 
 static PTN_UNUSED int ptn_constant_is_defined(const char *name) {
@@ -1651,9 +1745,12 @@ static void ptn_var_dump_value(PtnValue value) {
         case PTN_INT:
             printf("int(%lld)\n", (long long)value.as.integer);
             break;
-        case PTN_FLOAT:
-            printf("float(%.14g)\n", value.as.floating);
+        case PTN_FLOAT: {
+            char formatted[64];
+            ptn_format_var_dump_float(value.as.floating, formatted, sizeof(formatted));
+            printf("float(%s)\n", formatted);
             break;
+        }
         case PTN_STRING:
             printf("string(%zu) \"", strlen(value.as.string));
             fputs(value.as.string, stdout);

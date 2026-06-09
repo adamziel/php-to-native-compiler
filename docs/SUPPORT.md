@@ -74,7 +74,9 @@ supports in generated native binaries.
 - Internal-call arguments are materialized left-to-right before generated C
   runtime dispatch.
 - `var_dump()` output for current boxed scalar values: `NULL`, `bool(...)`,
-  `int(...)`, `float(...)`, and `string(length) "value"`.
+  `int(...)`, `float(...)`, and `string(length) "value"`. Finite floats use
+  the shortest decimal spelling that round-trips to the same native double;
+  `INF`, `-INF`, and `NAN` keep PHP-like special spellings.
 - `strlen()` over current boxed scalar values after scalar string conversion.
 - `str_rot13()` over current boxed scalar values after scalar string conversion,
   returning ASCII ROT13 output while leaving non-letters unchanged.
@@ -109,7 +111,10 @@ supports in generated native binaries.
 - `function_exists()` over the currently registered internal-function names.
 - `defined()` over the current constant registry, including the currently
   modeled PHP constants `E_ERROR`, `PHP_EOL`, `PHP_INT_MIN`, `PHP_INT_MAX`,
-  `PHP_INT_SIZE`, `INF`, `NAN`, and `M_PI`. Other ordinary names report as
+  `PHP_INT_SIZE`, `INF`, `NAN`, `M_PI`, and the modeled PHP math constants
+  `M_E`, `M_LOG2E`, `M_LOG10E`, `M_LN2`, `M_LN10`, `M_PI_2`, `M_PI_4`,
+  `M_1_PI`, `M_2_PI`, `M_SQRTPI`, `M_2_SQRTPI`, `M_LNPI`, `M_EULER`,
+  `M_SQRT2`, `M_SQRT1_2`, and `M_SQRT3`. Other ordinary names report as
   undefined.
 - A minimal `phpc` runner for supported PHPT rows. It compiles scripts or `-r`
   snippets to temporary native binaries through the normal compiler pipeline.
@@ -168,7 +173,8 @@ supports in generated native binaries.
 - User-defined functions in `function_exists()`.
 - User-defined constants and built-in PHP/extension constants other than the
   currently modeled `E_ERROR`, `PHP_EOL`, `PHP_INT_MIN`, `PHP_INT_MAX`,
-  `PHP_INT_SIZE`, `INF`, `NAN`, and `M_PI` in `defined()`.
+  `PHP_INT_SIZE`, `INF`, `NAN`, `M_PI`, and modeled PHP math `M_*` constants
+  in `defined()`.
 - Type predicate coverage for arrays, objects, resources, and references.
 - Arrays, objects, resources, recursive structures, references, and
   `var_dump()` reference identity output.
@@ -185,8 +191,9 @@ supports in generated native binaries.
 - Exact `sqrt()` diagnostics and complete negative/non-finite float parity.
 - Exact diagnostics and full precision/range parity for `bindec()`, `hexdec()`,
   and `octdec()` on very large or unsupported values.
-- Exact `NAN`/`INF` formatting and complete non-finite comparison parity for
-  unsupported arrays, objects, resources, and references.
+- Exact non-finite formatting outside current scalar `var_dump()` output and
+  complete non-finite comparison parity for unsupported arrays, objects,
+  resources, and references.
 - Full PHP float precision and formatting edge cases for `var_dump()` or
   `strlen()` input conversion.
 - Complete PHP CLI and PHPT runner option parity for `phpc`.
