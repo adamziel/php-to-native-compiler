@@ -2,7 +2,29 @@ use crate::diagnostic::SourceSpan;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Program {
+    pub functions: Vec<FunctionDecl>,
     pub statements: Vec<Statement>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct FunctionDecl {
+    pub name: String,
+    pub parameters: Vec<FunctionParameter>,
+    pub return_type: Option<TypeHint>,
+    pub body: Vec<Statement>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct FunctionParameter {
+    pub name: String,
+    pub type_hint: Option<TypeHint>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TypeHint {
+    Null,
 }
 
 #[derive(Debug, Clone, PartialEq)]

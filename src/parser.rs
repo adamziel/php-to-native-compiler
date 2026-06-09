@@ -1,8 +1,9 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::ast::{
-    ArrayElement, AssignmentOp, BinaryOp, CastKind, ConstDeclaration, Expr, IncDecOp,
-    MagicConstantKind, Program, Statement, StringPart, SwitchCase, UnaryOp,
+    ArrayElement, AssignmentOp, BinaryOp, CastKind, ConstDeclaration, Expr, FunctionDecl,
+    FunctionParameter, IncDecOp, MagicConstantKind, Program, Statement, StringPart, SwitchCase,
+    TypeHint, UnaryOp,
 };
 use crate::diagnostic::{Diagnostic, Result, SourceSpan};
 use crate::lexer::{lex, StringPart as TokenStringPart, Token, TokenKind};
@@ -15,6 +16,7 @@ pub fn parse(source: &str) -> Result<Program> {
         tokens,
         index: 0,
         block_depth: 0,
+        function_depth: 0,
     }
     .parse_program()
 }
@@ -23,21 +25,34 @@ struct Parser {
     tokens: Vec<Token>,
     index: usize,
     block_depth: usize,
+    function_depth: usize,
 }
 
 impl Parser {
     fn parse_program(&mut self) -> Result<Program> {
         self.expect_open_tag()?;
+        let mut functions = Vec::new();
         let mut statements = Vec::new();
         while !matches!(self.peek().kind, TokenKind::Eof) {
             if matches!(self.peek().kind, TokenKind::OpenTag | TokenKind::CloseTag) {
                 self.advance();
                 continue;
             }
-            statements.push(self.parse_statement()?);
+            if matches!(self.peek().kind, TokenKind::Function) {
+                functions.push(self.parse_function_decl()?);
+            } else {
+                statements.push(self.parse_statement()?);
+            }
+        }
+        validate_function_names(&functions)?;
+        for function in &functions {
+            validate_goto_labels(&function.body)?;
         }
         validate_goto_labels(&statements)?;
-        Ok(Program { statements })
+        Ok(Program {
+            functions,
+            statements,
+        })
     }
 
     fn parse_statement(&mut self) -> Result<Statement> {
@@ -65,6 +80,77 @@ impl Parser {
                 "expected statement",
                 Some(self.peek().span),
             )),
+        }
+    }
+
+    fn parse_function_decl(&mut self) -> Result<FunctionDecl> {
+        let span = self.expect_function()?;
+        let name_token = self.advance().clone();
+        let TokenKind::Identifier(name) = name_token.kind else {
+            return Err(Diagnostic::new(
+                "expected function name",
+                Some(name_token.span),
+            ));
+        };
+        let parameters = self.parse_function_parameters()?;
+        let return_type = if matches!(self.peek().kind, TokenKind::Colon) {
+            self.advance();
+            Some(self.parse_type_hint()?)
+        } else {
+            None
+        };
+        self.function_depth += 1;
+        let body = self.parse_block();
+        self.function_depth -= 1;
+        let body = body?;
+        Ok(FunctionDecl {
+            name: name.to_ascii_lowercase(),
+            parameters,
+            return_type,
+            body,
+            span,
+        })
+    }
+
+    fn parse_function_parameters(&mut self) -> Result<Vec<FunctionParameter>> {
+        self.expect_left_paren()?;
+        let mut parameters = Vec::new();
+        if !matches!(self.peek().kind, TokenKind::RightParen) {
+            parameters.push(self.parse_function_parameter()?);
+            while matches!(self.peek().kind, TokenKind::Comma) {
+                self.advance();
+                parameters.push(self.parse_function_parameter()?);
+            }
+        }
+        self.expect_right_paren()?;
+        Ok(parameters)
+    }
+
+    fn parse_function_parameter(&mut self) -> Result<FunctionParameter> {
+        let type_hint = if matches!(self.peek().kind, TokenKind::Null) {
+            Some(self.parse_type_hint()?)
+        } else {
+            None
+        };
+        let token = self.advance().clone();
+        let TokenKind::Variable(name) = token.kind else {
+            return Err(Diagnostic::new(
+                "expected function parameter variable",
+                Some(token.span),
+            ));
+        };
+        Ok(FunctionParameter {
+            name,
+            type_hint,
+            span: token.span,
+        })
+    }
+
+    fn parse_type_hint(&mut self) -> Result<TypeHint> {
+        let token = self.advance();
+        match token.kind {
+            TokenKind::Null => Ok(TypeHint::Null),
+            _ => Err(Diagnostic::new("expected type hint", Some(token.span))),
         }
     }
 
@@ -919,6 +1005,15 @@ impl Parser {
         }
     }
 
+    fn expect_function(&mut self) -> Result<SourceSpan> {
+        let token = self.advance();
+        if matches!(token.kind, TokenKind::Function) {
+            Ok(token.span)
+        } else {
+            Err(Diagnostic::new("expected function", Some(token.span)))
+        }
+    }
+
     fn expect_return(&mut self) -> Result<SourceSpan> {
         let token = self.advance();
         if matches!(token.kind, TokenKind::Return) {
@@ -1113,6 +1208,7 @@ fn token_text(kind: &TokenKind) -> &'static str {
         TokenKind::Return => "return",
         TokenKind::Goto => "goto",
         TokenKind::Const => "const",
+        TokenKind::Function => "function",
         TokenKind::Identifier(_) => "identifier",
         TokenKind::String(_) => "string",
         TokenKind::InterpolatedString(_) => "encapsed string",
@@ -1209,6 +1305,81 @@ fn validate_goto_labels(statements: &[Statement]) -> Result<()> {
     let mut control_path = Vec::new();
     collect_labels(statements, &mut labels, &mut control_path)?;
     validate_gotos(statements, &labels, &mut control_path)
+}
+
+fn validate_function_names(functions: &[FunctionDecl]) -> Result<()> {
+    let mut names = HashSet::new();
+    for function in functions {
+        if is_modeled_internal_function_name(&function.name) {
+            return Err(Diagnostic::new(
+                format!("Cannot redeclare function {}()", function.name),
+                Some(function.span),
+            ));
+        }
+        if !names.insert(function.name.clone()) {
+            return Err(Diagnostic::new(
+                format!("Cannot redeclare function {}()", function.name),
+                Some(function.span),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn is_modeled_internal_function_name(name: &str) -> bool {
+    matches!(
+        name,
+        "var_dump"
+            | "strlen"
+            | "str_rot13"
+            | "strcmp"
+            | "str_contains"
+            | "quotemeta"
+            | "chunk_split"
+            | "strip_tags"
+            | "md5"
+            | "sha1"
+            | "substr"
+            | "dirname"
+            | "bin2hex"
+            | "hex2bin"
+            | "soundex"
+            | "ceil"
+            | "floor"
+            | "sqrt"
+            | "fdiv"
+            | "intdiv"
+            | "pi"
+            | "getrandmax"
+            | "getmypid"
+            | "php_sapi_name"
+            | "phpversion"
+            | "bindec"
+            | "hexdec"
+            | "octdec"
+            | "intval"
+            | "chr"
+            | "ord"
+            | "error_reporting"
+            | "gettype"
+            | "is_null"
+            | "is_bool"
+            | "is_int"
+            | "is_integer"
+            | "is_long"
+            | "is_float"
+            | "is_double"
+            | "is_string"
+            | "is_scalar"
+            | "is_finite"
+            | "is_infinite"
+            | "is_nan"
+            | "define"
+            | "constant"
+            | "defined"
+            | "function_exists"
+            | "array_key_exists"
+    )
 }
 
 fn collect_labels(

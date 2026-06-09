@@ -1,15 +1,36 @@
 use crate::ast::{
     ArrayElement as AstArrayElement, AssignmentOp, BinaryOp as AstBinaryOp,
-    CastKind as AstCastKind, Expr, IncDecOp as AstIncDecOp,
+    CastKind as AstCastKind, Expr, FunctionDecl as AstFunctionDecl,
+    FunctionParameter as AstFunctionParameter, IncDecOp as AstIncDecOp,
     MagicConstantKind as AstMagicConstantKind, Program, Statement, StringPart as AstStringPart,
-    UnaryOp as AstUnaryOp,
+    TypeHint as AstTypeHint, UnaryOp as AstUnaryOp,
 };
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Module {
+    pub functions: Vec<FunctionDecl>,
     pub instructions: Vec<Instruction>,
     pub source_file: String,
     pub source_dir: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct FunctionDecl {
+    pub name: String,
+    pub parameters: Vec<FunctionParameter>,
+    pub return_type: Option<TypeHint>,
+    pub body: Vec<Instruction>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct FunctionParameter {
+    pub name: String,
+    pub type_hint: Option<TypeHint>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TypeHint {
+    Null,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -31,6 +52,10 @@ pub enum Instruction {
     InternalCall {
         name: String,
         arguments: Vec<ValueExpr>,
+        line: usize,
+    },
+    Return {
+        value: Option<ValueExpr>,
         line: usize,
     },
     Branch {
@@ -59,9 +84,6 @@ pub enum Instruction {
     Break {
         level: usize,
         line: usize,
-    },
-    Return {
-        value: Option<ValueExpr>,
     },
     Label {
         name: String,
@@ -194,9 +216,32 @@ pub fn lower(program: &Program) -> Module {
 
 pub fn lower_with_source(program: &Program, source_file: String, source_dir: String) -> Module {
     Module {
+        functions: program.functions.iter().map(lower_function).collect(),
         instructions: lower_statements(&program.statements),
         source_file,
         source_dir,
+    }
+}
+
+fn lower_function(function: &AstFunctionDecl) -> FunctionDecl {
+    FunctionDecl {
+        name: function.name.clone(),
+        parameters: function.parameters.iter().map(lower_parameter).collect(),
+        return_type: function.return_type.map(lower_type_hint),
+        body: lower_statements(&function.body),
+    }
+}
+
+fn lower_parameter(parameter: &AstFunctionParameter) -> FunctionParameter {
+    FunctionParameter {
+        name: parameter.name.clone(),
+        type_hint: parameter.type_hint.map(lower_type_hint),
+    }
+}
+
+fn lower_type_hint(type_hint: AstTypeHint) -> TypeHint {
+    match type_hint {
+        AstTypeHint::Null => TypeHint::Null,
     }
 }
 
@@ -314,9 +359,10 @@ fn lower_statements(statements: &[Statement]) -> Vec<Instruction> {
                     line: span.line,
                 });
             }
-            Statement::Return { value, .. } => {
+            Statement::Return { value, span } => {
                 instructions.push(Instruction::Return {
                     value: value.as_ref().map(lower_expr),
+                    line: span.line,
                 });
             }
             Statement::Label { name, .. } => {

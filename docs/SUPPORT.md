@@ -135,6 +135,13 @@ supports in generated native binaries.
   operands, and branch/loop conditions.
 - Internal-call arguments are materialized left-to-right before generated C
   runtime dispatch.
+- Top-level named user-defined functions with by-value positional parameters,
+  local variable storage, ordinary `return` statements, implicit `null`
+  returns, recursive calls, and minimal `null` parameter and return type
+  declarations over the currently supported expression and statement subset.
+  Calls may pass extra arguments, which are currently ignored because argument
+  introspection is not modeled yet. Duplicate declarations and declarations
+  that collide with currently modeled internal function names are rejected.
 - `var_dump()` output for current boxed values: `NULL`, `bool(...)`,
   `int(...)`, `float(...)`, `string(length) "value"`, and ordered literal
   arrays. Finite floats use the shortest decimal spelling that round-trips to
@@ -214,7 +221,8 @@ supports in generated native binaries.
   `is_bool()`, `is_int()`, `is_integer()`, `is_long()`, `is_float()`,
   `is_double()`, `is_string()`, `is_scalar()`, `is_finite()`,
   `is_infinite()`, and `is_nan()`.
-- `function_exists()` over the currently registered internal-function names.
+- `function_exists()` over generated user-function declarations and the
+  currently registered internal-function names.
 - `define()` creates runtime constants over the current boxed value subset,
   returning `false` with a warning when the requested name is already defined.
 - `constant()` reads the same runtime and modeled built-in constant registry
@@ -309,12 +317,18 @@ supports in generated native binaries.
 - Complex/braced string interpolation and interpolation of arrays, objects,
   offsets, properties, variable variables, or other non-direct-variable forms.
 - Internal functions outside the registered scalar subset.
-- User-defined functions in `function_exists()`.
-- Namespace/class constants, `define()`'s legacy case-insensitive flag, and
+- Namespace/class constants, global `const` duplicate diagnostics and ordering
+  parity with runtime `define()`, `define()`'s legacy case-insensitive flag, and
   built-in PHP/extension constants other than the currently modeled `E_ERROR`,
   `PHP_EOL`, `DIRECTORY_SEPARATOR`, `PATH_SEPARATOR`, `PHP_INT_MIN`,
   `PHP_INT_MAX`, `PHP_INT_SIZE`, `INF`, `NAN`, `M_PI`, and modeled PHP math
   `M_*` constants in `defined()`/`constant()`.
+- Function forms beyond top-level named by-value declarations, including
+  default arguments, variadics, named arguments, by-reference parameters or
+  returns, nested or conditional declarations, closures, methods, dynamic
+  calls, namespaces, globals, static locals, `func_get_arg()`/
+  `func_get_args()`/`func_num_args()`, and PHP-exact function/include return
+  propagation.
 - Type predicate coverage for arrays, objects, resources, and references.
 - Array element mutation, append/unset/iteration, long-form
   `array(...)`, recursive arrays, objects, resources, references, copy-on-write,
@@ -389,6 +403,6 @@ supports in generated native binaries.
   reference, and other non-direct-variable compound-assignment lvalues.
 - Reference semantics for compound assignment, including reference identity,
   copy-on-write interactions, and by-reference visibility during writes.
-- Arrays, references, copy-on-write, globals, superglobals, functions, classes,
-  objects, resources, exceptions, variable variables, includes, and dynamic
+- Arrays, references, copy-on-write, globals, superglobals, classes, objects,
+  resources, exceptions, variable variables, includes, and dynamic
   fallback.

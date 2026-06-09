@@ -5,7 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use ptn::ast::{
     AssignmentOp, BinaryOp, CastKind, Expr, IncDecOp, MagicConstantKind, Statement, StringPart,
-    UnaryOp,
+    TypeHint, UnaryOp,
 };
 use ptn::lexer::{self, TokenKind};
 use ptn::{compile_file, parser, CompileOptions, DiagnosticKind};
@@ -461,6 +461,75 @@ fn parser_accepts_internal_call_expressions() {
             ..
         }
     ));
+}
+
+#[test]
+fn parser_accepts_user_function_declarations_and_returns() {
+    let program = parser::parse(
+        "<?php function add($left, $right) { $sum = $left + $right; return $sum; } echo add(2, 3);",
+    )
+    .unwrap();
+
+    assert_eq!(program.functions.len(), 1);
+    assert_eq!(program.statements.len(), 1);
+    let function = &program.functions[0];
+    assert_eq!(function.name, "add");
+    assert_eq!(function.parameters.len(), 2);
+    assert_eq!(function.parameters[0].name, "left");
+    assert_eq!(function.parameters[1].name, "right");
+    assert_eq!(function.body.len(), 2);
+    assert!(matches!(
+        &function.body[1],
+        Statement::Return { value: Some(_), .. }
+    ));
+}
+
+#[test]
+fn parser_accepts_null_parameter_and_return_type_hints() {
+    let program =
+        parser::parse("<?php function test(null $v): null { return $v; } var_dump(test(null));")
+            .unwrap();
+
+    let function = &program.functions[0];
+    assert_eq!(function.return_type, Some(TypeHint::Null));
+    assert_eq!(function.parameters[0].type_hint, Some(TypeHint::Null));
+}
+
+#[test]
+fn parser_rejects_duplicate_user_function_declarations() {
+    let error = parser::parse("<?php function same() {} function same() {}").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function same()");
+}
+
+#[test]
+fn parser_rejects_user_function_redeclaring_modeled_internal() {
+    let error = parser::parse("<?php function STRLEN($value) { return $value; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function strlen()");
+
+    let error = parser::parse("<?php function Substr($value) { return $value; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function substr()");
+
+    let error = parser::parse("<?php function CHUNK_SPLIT($value) { return $value; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function chunk_split()");
+
+    let error = parser::parse("<?php function Strip_Tags($value) { return $value; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function strip_tags()");
+
+    let error = parser::parse("<?php function PhpVersion() { return null; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function phpversion()");
+
+    let error = parser::parse("<?php function PHP_SAPI_NAME() { return null; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function php_sapi_name()");
+
+    let error = parser::parse("<?php function IntDiv($a, $b) { return $a; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function intdiv()");
+
+    let error = parser::parse("<?php function ARRAY_KEY_EXISTS($key, $array) { return null; }")
+        .unwrap_err();
+    assert_eq!(
+        error.message,
+        "Cannot redeclare function array_key_exists()"
+    );
 }
 
 #[test]
@@ -2482,6 +2551,175 @@ fn compile_statement_call_discards_internal_return_value() {
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "done\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_user_function_parameters_and_return_to_native_binary() {
+    let root = temp_dir("ptn-native-user-function-parameters-return");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("user-functions.php");
+    let output = root.join("user-functions-bin");
+    fs::write(
+        &input,
+        "<?php function add($left, $right) { $sum = $left + $right; return $sum; } function label($value) { return \"value=\" . $value; } echo label(add(2, 3)), \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "value=5\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_user_function_extra_arguments_are_accepted_to_native_binary() {
+    let root = temp_dir("ptn-native-user-function-extra-arguments");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("user-function-extra-arguments.php");
+    let output = root.join("user-function-extra-arguments-bin");
+    fs::write(
+        &input,
+        "<?php function first($value) { return $value; } function zero() { return \"zero\"; } echo first(\"kept\", \"extra\"), \" \", zero(\"ignored\"), \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "kept zero\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_user_function_locals_do_not_overwrite_top_level_variables() {
+    let root = temp_dir("ptn-native-user-function-local-scope");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("user-function-local-scope.php");
+    let output = root.join("user-function-local-scope-bin");
+    fs::write(
+        &input,
+        "<?php $value = \"global\"; function change($value) { $value = $value . \"-local\"; return $value; } echo change(\"arg\"), \" \", $value, \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "arg-local global\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_user_function_early_return_and_implicit_null_to_native_binary() {
+    let root = temp_dir("ptn-native-user-function-return-flow");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("user-function-return-flow.php");
+    let output = root.join("user-function-return-flow-bin");
+    fs::write(
+        &input,
+        "<?php function choose($value) { if ($value) { return \"yes\"; } echo \"fallback \"; return \"no\"; } function nothing() { echo \"side \"; } echo choose(true), \" \", choose(false), \" \"; var_dump(nothing());",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "yes fallback no side NULL\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_recursive_user_function_to_native_binary() {
+    let root = temp_dir("ptn-native-user-function-recursion");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("user-function-recursion.php");
+    let output = root.join("user-function-recursion-bin");
+    fs::write(
+        &input,
+        "<?php function fact($n) { if ($n <= 1) { return 1; } return $n * fact($n - 1); } echo fact(5), \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "120\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_user_function_reads_global_const_to_native_binary() {
+    let root = temp_dir("ptn-native-user-function-global-const");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("user-function-global-const.php");
+    let output = root.join("user-function-global-const-bin");
+    fs::write(
+        &input,
+        "<?php const BASE = 4; function scale($value) { return $value * BASE; } echo scale(3), \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "12\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_user_function_exists_registry_to_native_binary() {
+    let root = temp_dir("ptn-native-user-function-exists");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("user-function-exists.php");
+    let output = root.join("user-function-exists-bin");
+    fs::write(
+        &input,
+        "<?php function local() { return null; } var_dump(function_exists(\"local\"), function_exists(\"LOCAL\"), function_exists(\"strlen\"), function_exists(\"missing\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nbool(true)\nbool(true)\nbool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_null_typed_user_function_to_native_binary() {
+    let root = temp_dir("ptn-native-user-function-null-type");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("user-function-null-type.php");
+    let output = root.join("user-function-null-type-bin");
+    fs::write(
+        &input,
+        "<?php function test(null $v): null { return $v; } var_dump(test(null));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "NULL\n");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 

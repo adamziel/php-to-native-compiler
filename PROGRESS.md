@@ -1633,3 +1633,32 @@ Still unsupported after this `strip_tags()` slice: allowed-tags argument
 support, embedded-NUL input parity, exact malformed/incomplete tag behavior,
 unsupported array/object/resource/reference operand diagnostics, and full
 binary-string runtime parity.
+
+Added a minimal generic user-function pipeline:
+
+- The parser now accepts top-level named function declarations with by-value
+  positional parameters, ordinary `return` statements, duplicate declaration
+  diagnostics, modeled internal-name redeclaration diagnostics, and minimal
+  `null` parameter and return type hints.
+- IR lowering carries user-function declarations separately from top-level
+  statements, and the C backend emits user-function wrappers with a local
+  runtime symbol table, recursive dispatch, implicit `null` returns, arity
+  checks for missing required parameters, PHP-like acceptance of extra
+  arguments without introspection, and shared user/internal call dispatch.
+- `function_exists()` now consults generated user-function declarations as
+  well as the internal-function registry.
+- Native tests prove parsing, local parameter scope, early and implicit
+  returns, recursion, user-function registry exposure, internal-name
+  redeclaration rejection, and `null` type checks.
+- Focused public PHPT telemetry through `phpc` passes
+  `Zend/tests/type_declarations/standalone_null.phpt` and
+  `tests/func/004.phpt`.
+
+Still unsupported after this user-function slice: nested or conditional
+function declarations, defaults, variadics, named arguments, by-reference
+parameters or returns, closures, methods/classes, namespaces, dynamic calls,
+globals/superglobals/global declarations, static locals,
+`func_get_arg()`/`func_get_args()`/`func_num_args()`, non-`null` type
+declarations, PHP-exact function return/include propagation, PHP-exact
+function/type diagnostic wording, and scope-aware magic constants inside
+functions.

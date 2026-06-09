@@ -5,13 +5,21 @@ use std::process::Command;
 
 use crate::diagnostic::{Diagnostic, Result};
 use crate::ir::{
-    ArrayElement as IrArrayElement, BinaryOp, CastKind, IncDecOp, Instruction, MagicConstantKind,
-    Module, UnaryOp, ValueExpr,
+    ArrayElement as IrArrayElement, BinaryOp, CastKind, FunctionDecl, IncDecOp, Instruction,
+    MagicConstantKind, Module, TypeHint, UnaryOp, ValueExpr,
 };
 
 pub fn emit_c(module: &Module) -> String {
     let mut out = String::new();
     out.push_str(RUNTIME_C);
+    emit_user_function_prototypes(&mut out, &module.functions);
+    emit_user_functions(
+        &mut out,
+        &module.functions,
+        &module.source_file,
+        &module.source_dir,
+    );
+    emit_user_function_dispatch(&mut out, &module.functions);
     out.push_str("\nint main(void) {\n");
     out.push_str("    PtnRuntime runtime;\n");
     out.push_str("    ptn_runtime_init(&runtime);\n");
@@ -24,11 +32,163 @@ pub fn emit_c(module: &Module) -> String {
             instruction,
             &mut break_targets,
             &module.source_file,
+            None,
         );
     }
     out.push_str("    ptn_runtime_free(&runtime);\n");
     out.push_str("    return 0;\n}\n");
     out
+}
+
+fn emit_user_function_prototypes(out: &mut String, functions: &[FunctionDecl]) {
+    out.push_str(
+        "\nstatic PTN_UNUSED PtnValue ptn_call_function(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line);\n",
+    );
+    for (index, _) in functions.iter().enumerate() {
+        out.push_str("static PtnValue ");
+        out.push_str(&user_function_c_name(index));
+        out.push_str(
+            "(PtnRuntime *caller_runtime, size_t argc, const PtnValue *args, size_t line);\n",
+        );
+    }
+}
+
+fn emit_user_functions(
+    out: &mut String,
+    functions: &[FunctionDecl],
+    source_file: &str,
+    source_dir: &str,
+) {
+    for (index, function) in functions.iter().enumerate() {
+        let c_name = user_function_c_name(index);
+        out.push_str("\nstatic PtnValue ");
+        out.push_str(&c_name);
+        out.push_str(
+            "(PtnRuntime *caller_runtime, size_t argc, const PtnValue *args, size_t line) {\n",
+        );
+        out.push_str("    (void)line;\n");
+        if function.parameters.is_empty() {
+            out.push_str("    (void)argc;\n");
+            out.push_str("    (void)args;\n");
+        } else {
+            out.push_str("    if (argc < ");
+            out.push_str(&function.parameters.len().to_string());
+            out.push_str(") {\n");
+            out.push_str("        ptn_emit_argument_count_error(&caller_runtime->diagnostics, \"");
+            out.push_str(&c_string(&function.name));
+            out.push_str("\", ");
+            out.push_str(&function.parameters.len().to_string());
+            out.push_str(", argc);\n");
+            out.push_str("        exit(255);\n");
+            out.push_str("    }\n");
+        }
+        out.push_str("    PtnRuntime runtime;\n");
+        out.push_str("    ptn_runtime_init(&runtime);\n");
+        out.push_str("    ptn_runtime_import_constants(&runtime, caller_runtime);\n");
+        out.push_str("    PtnValue ptn_return_value = ptn_null();\n");
+        for (parameter_index, parameter) in function.parameters.iter().enumerate() {
+            if let Some(TypeHint::Null) = parameter.type_hint {
+                out.push_str("    if (args[");
+                out.push_str(&parameter_index.to_string());
+                out.push_str("].type != PTN_NULL) {\n");
+                out.push_str("        ptn_emit_type_error(&caller_runtime->diagnostics, \"");
+                out.push_str(&c_string(&function.name));
+                out.push_str("() argument $");
+                out.push_str(&c_string(&parameter.name));
+                out.push_str(" must be of type null\");\n");
+                out.push_str("        ptn_runtime_free(&runtime);\n");
+                out.push_str("        exit(255);\n");
+                out.push_str("    }\n");
+            }
+            out.push_str("    ptn_runtime_write_variable(&runtime, \"");
+            out.push_str(&c_string(&parameter.name));
+            out.push_str("\", args[");
+            out.push_str(&parameter_index.to_string());
+            out.push_str("]);\n");
+        }
+        let mut values = ValueEmitter::new(source_file, source_dir);
+        let mut break_targets = Vec::new();
+        let return_label = values.next_label("ptn_function_return");
+        for instruction in &function.body {
+            emit_instruction(
+                out,
+                &mut values,
+                instruction,
+                &mut break_targets,
+                source_file,
+                Some(&return_label),
+            );
+        }
+        emit_label_reference(out, &return_label);
+        out.push_str("    ");
+        out.push_str(&return_label);
+        out.push_str(":\n");
+        if let Some(TypeHint::Null) = function.return_type {
+            out.push_str("    if (ptn_return_value.type != PTN_NULL) {\n");
+            out.push_str("        ptn_emit_type_error(&caller_runtime->diagnostics, \"");
+            out.push_str(&c_string(&function.name));
+            out.push_str("() return value must be of type null\");\n");
+            out.push_str("        ptn_runtime_free(&runtime);\n");
+            out.push_str("        exit(255);\n");
+            out.push_str("    }\n");
+        }
+        out.push_str("    ptn_runtime_free(&runtime);\n");
+        out.push_str("    return ptn_return_value;\n");
+        out.push_str("}\n");
+    }
+}
+
+fn emit_user_function_dispatch(out: &mut String, functions: &[FunctionDecl]) {
+    out.push_str("\nstatic int ptn_user_function_exists(const char *name) {\n");
+    if functions.is_empty() {
+        out.push_str("    (void)name;\n");
+    }
+    for function in functions {
+        out.push_str("    if (ptn_ascii_case_equal(name, \"");
+        out.push_str(&c_string(&function.name));
+        out.push_str("\")) {\n");
+        out.push_str("        return 1;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PtnValue ptn_call_user_function(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line, int *found) {\n",
+    );
+    if functions.is_empty() {
+        out.push_str("    (void)runtime;\n");
+        out.push_str("    (void)name;\n");
+        out.push_str("    (void)argc;\n");
+        out.push_str("    (void)args;\n");
+        out.push_str("    (void)line;\n");
+    }
+    for (index, function) in functions.iter().enumerate() {
+        out.push_str("    if (ptn_ascii_case_equal(name, \"");
+        out.push_str(&c_string(&function.name));
+        out.push_str("\")) {\n");
+        out.push_str("        *found = 1;\n");
+        out.push_str("        return ");
+        out.push_str(&user_function_c_name(index));
+        out.push_str("(runtime, argc, args, line);\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    *found = 0;\n");
+    out.push_str("    return ptn_null();\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED PtnValue ptn_call_function(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line) {\n",
+    );
+    out.push_str("    int found = 0;\n");
+    out.push_str(
+        "    PtnValue result = ptn_call_user_function(runtime, name, argc, args, line, &found);\n",
+    );
+    out.push_str("    if (found) {\n");
+    out.push_str("        return result;\n");
+    out.push_str("    }\n");
+    out.push_str("    return ptn_call_internal(runtime, name, argc, args, line);\n");
+    out.push_str("}\n");
 }
 
 fn emit_instruction(
@@ -37,6 +197,7 @@ fn emit_instruction(
     instruction: &Instruction,
     break_targets: &mut Vec<String>,
     source_path: &str,
+    return_target: Option<&str>,
 ) {
     match instruction {
         Instruction::Store { name, value } => {
@@ -97,6 +258,30 @@ fn emit_instruction(
             out.push_str(&result_temp);
             out.push_str(";\n");
         }
+        Instruction::Return { value, .. } => match return_target {
+            Some(target) => {
+                let result_value = value
+                    .as_ref()
+                    .map(|value| values.emit_value(out, value))
+                    .unwrap_or_else(|| "ptn_null()".to_string());
+                out.push_str("    ptn_return_value = ");
+                out.push_str(&result_value);
+                out.push_str(";\n");
+                out.push_str("    goto ");
+                out.push_str(target);
+                out.push_str(";\n");
+            }
+            None => {
+                if let Some(value) = value {
+                    let return_temp = values.emit_materialized_value(out, value);
+                    out.push_str("    (void)");
+                    out.push_str(&return_temp);
+                    out.push_str(";\n");
+                }
+                out.push_str("    ptn_runtime_free(&runtime);\n");
+                out.push_str("    return 0;\n");
+            }
+        },
         Instruction::Branch {
             condition,
             then_body,
@@ -107,12 +292,26 @@ fn emit_instruction(
             out.push_str(&condition_temp);
             out.push_str(")) {\n");
             for body_instruction in then_body {
-                emit_instruction(out, values, body_instruction, break_targets, source_path);
+                emit_instruction(
+                    out,
+                    values,
+                    body_instruction,
+                    break_targets,
+                    source_path,
+                    return_target,
+                );
             }
             if !else_body.is_empty() {
                 out.push_str("    } else {\n");
                 for body_instruction in else_body {
-                    emit_instruction(out, values, body_instruction, break_targets, source_path);
+                    emit_instruction(
+                        out,
+                        values,
+                        body_instruction,
+                        break_targets,
+                        source_path,
+                        return_target,
+                    );
                 }
             }
             out.push_str("    }\n");
@@ -131,7 +330,14 @@ fn emit_instruction(
             out.push_str("        }\n");
             break_targets.push(end_label.clone());
             for body_instruction in body {
-                emit_instruction(out, values, body_instruction, break_targets, source_path);
+                emit_instruction(
+                    out,
+                    values,
+                    body_instruction,
+                    break_targets,
+                    source_path,
+                    return_target,
+                );
             }
             break_targets.pop();
             out.push_str("    }\n");
@@ -146,7 +352,14 @@ fn emit_instruction(
             out.push_str("    while (1) {\n");
             break_targets.push(end_label.clone());
             for body_instruction in body {
-                emit_instruction(out, values, body_instruction, break_targets, source_path);
+                emit_instruction(
+                    out,
+                    values,
+                    body_instruction,
+                    break_targets,
+                    source_path,
+                    return_target,
+                );
             }
             break_targets.pop();
             let condition_temp = values.emit_materialized_value(out, condition);
@@ -170,7 +383,14 @@ fn emit_instruction(
             body,
         } => {
             for initializer in initializers {
-                emit_instruction(out, values, initializer, break_targets, source_path);
+                emit_instruction(
+                    out,
+                    values,
+                    initializer,
+                    break_targets,
+                    source_path,
+                    return_target,
+                );
             }
             let end_label = values.next_label("ptn_loop_end");
             emit_label_reference(out, &end_label);
@@ -187,11 +407,25 @@ fn emit_instruction(
             }
             break_targets.push(end_label.clone());
             for body_instruction in body {
-                emit_instruction(out, values, body_instruction, break_targets, source_path);
+                emit_instruction(
+                    out,
+                    values,
+                    body_instruction,
+                    break_targets,
+                    source_path,
+                    return_target,
+                );
             }
             break_targets.pop();
             for update in updates {
-                emit_instruction(out, values, update, break_targets, source_path);
+                emit_instruction(
+                    out,
+                    values,
+                    update,
+                    break_targets,
+                    source_path,
+                    return_target,
+                );
             }
             out.push_str("    }\n");
             out.push_str("    ");
@@ -200,7 +434,15 @@ fn emit_instruction(
             out.push_str("    ;\n");
         }
         Instruction::Switch { expression, cases } => {
-            emit_switch(out, values, expression, cases, break_targets, source_path);
+            emit_switch(
+                out,
+                values,
+                expression,
+                cases,
+                break_targets,
+                source_path,
+                return_target,
+            );
         }
         Instruction::Label { name } => {
             out.push_str("    ");
@@ -232,17 +474,11 @@ fn emit_instruction(
                 out.push_str(");\n");
             }
         }
-        Instruction::Return { value } => {
-            if let Some(value) = value {
-                let return_temp = values.emit_materialized_value(out, value);
-                out.push_str("    (void)");
-                out.push_str(&return_temp);
-                out.push_str(";\n");
-            }
-            out.push_str("    ptn_runtime_free(&runtime);\n");
-            out.push_str("    return 0;\n");
-        }
     }
+}
+
+fn user_function_c_name(index: usize) -> String {
+    format!("ptn_user_function_{index}")
 }
 
 fn emit_switch(
@@ -252,6 +488,7 @@ fn emit_switch(
     cases: &[crate::ir::SwitchCase],
     break_targets: &mut Vec<String>,
     source_path: &str,
+    return_target: Option<&str>,
 ) {
     let end_label = values.next_label("ptn_switch_end");
     emit_label_reference(out, &end_label);
@@ -292,7 +529,14 @@ fn emit_switch(
         out.push_str("    ;\n");
         break_targets.push(end_label.clone());
         for body_instruction in &case.body {
-            emit_instruction(out, values, body_instruction, break_targets, source_path);
+            emit_instruction(
+                out,
+                values,
+                body_instruction,
+                break_targets,
+                source_path,
+                return_target,
+            );
         }
         break_targets.pop();
     }
@@ -714,7 +958,7 @@ impl ValueEmitter {
         if arguments.is_empty() {
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
-            out.push_str(" = ptn_call_internal(&runtime, \"");
+            out.push_str(" = ptn_call_function(&runtime, \"");
             out.push_str(&c_string(name));
             out.push_str("\", 0, NULL, ");
             out.push_str(&line.to_string());
@@ -735,7 +979,7 @@ impl ValueEmitter {
         out.push_str(" };\n");
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
-        out.push_str(" = ptn_call_internal(&runtime, \"");
+        out.push_str(" = ptn_call_function(&runtime, \"");
         out.push_str(&c_string(name));
         out.push_str("\", ");
         out.push_str(&arguments.len().to_string());
@@ -1244,6 +1488,13 @@ static void ptn_emit_too_many_arguments_error(
     fputs(" given\n", stream);
 }
 
+static PTN_UNUSED void ptn_emit_type_error(PtnDiagnosticSink *diagnostics, const char *message) {
+    FILE *stream = diagnostics->stream == NULL ? stderr : diagnostics->stream;
+    fputs("Fatal error: ", stream);
+    fputs(message, stream);
+    fputc('\n', stream);
+}
+
 static void ptn_emit_deprecation(PtnDiagnosticSink *diagnostics, const char *message, size_t line) {
     if (diagnostics->emitted_deprecation) {
         fputc('\n', stdout);
@@ -1304,6 +1555,13 @@ static PTN_UNUSED PtnValue ptn_runtime_read_variable(PtnRuntime *runtime, const 
 
 static PTN_UNUSED void ptn_runtime_define_constant(PtnRuntime *runtime, const char *name, PtnValue value) {
     ptn_symbols_set(&runtime->constants, name, value);
+}
+
+static PTN_UNUSED void ptn_runtime_import_constants(PtnRuntime *runtime, PtnRuntime *source) {
+    for (size_t i = 0; i < source->constants.len; i++) {
+        PtnSymbol *constant = &source->constants.items[i];
+        ptn_runtime_define_constant(runtime, constant->name, constant->value);
+    }
 }
 
 static PTN_UNUSED PtnNumber ptn_number_int(int64_t integer) {
@@ -3916,6 +4174,7 @@ static PtnValue ptn_internal_error_reporting(PtnRuntime *runtime, size_t argc, c
 
 static PtnValue ptn_internal_define(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_constant(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static int ptn_user_function_exists(const char *name);
 static PtnValue ptn_internal_defined(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_function_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_array_key_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -4020,7 +4279,7 @@ static PtnValue ptn_internal_function_exists(PtnRuntime *runtime, size_t argc, c
     (void)argc;
     (void)line;
     char *name = ptn_value_to_string(args[0]);
-    int exists = ptn_find_internal_function(name) != NULL;
+    int exists = ptn_user_function_exists(name) || ptn_find_internal_function(name) != NULL;
     free(name);
     return ptn_bool(exists);
 }

@@ -43,6 +43,13 @@ Supported today:
   `defined(expr)`, `function_exists(expr)`, and
   `array_key_exists(expr, expr)`, lowered through IR
   internal-call nodes and generated C runtime dispatch.
+- Top-level named user-defined functions with by-value positional parameters,
+  local variable storage, ordinary `return` statements, implicit `null`
+  returns, recursive calls, and minimal `null` parameter and return type
+  declarations over the currently supported expression and statement subset.
+  Calls may pass extra arguments, which are currently ignored because argument
+  introspection is not modeled yet. Duplicate declarations and declarations
+  that collide with currently modeled internal function names are rejected.
 - `var_dump()` output for the current boxed `PtnValue` types: `null`,
   booleans, integers, floats, strings, and ordered literal arrays. Finite
   floats use the shortest decimal spelling that round-trips to the same native
@@ -119,10 +126,10 @@ Supported today:
   `is_long()`, `is_float()`/`is_double()`, `is_string()`, `is_scalar()`,
   `is_finite()`, `is_infinite()`, and `is_nan()`.
 - Symbol-existence predicates for currently modeled runtime tables:
-  `function_exists()` checks the generated internal-function registry, and
-  `defined()` checks global `const` declarations, constants created with
-  `define()`, plus the modeled constant registry, which currently includes
-  `E_ERROR`, `PHP_EOL`,
+  `function_exists()` checks generated user-function declarations and the
+  internal-function registry, and `defined()` checks global `const`
+  declarations, constants created with `define()`, plus the modeled constant
+  registry, which currently includes `E_ERROR`, `PHP_EOL`,
   `DIRECTORY_SEPARATOR`, `PATH_SEPARATOR`, `PHP_INT_MIN`, `PHP_INT_MAX`,
   `PHP_INT_SIZE`, `INF`, `NAN`, `M_PI`, and the modeled PHP math constants
   `M_E`, `M_LOG2E`, `M_LOG10E`, `M_LN2`, `M_LN10`, `M_PI_2`, `M_PI_4`,
@@ -251,7 +258,7 @@ Unsupported today:
 
 - Long-form `array(...)`, array element mutation, append/unset,
   iteration, recursive arrays, arrays with references/copy-on-write, objects,
-  functions, classes, includes, references, resources, exceptions,
+  classes, includes, references, resources, exceptions,
   string-offset writes/mutation, `isset()`/`empty()`/null-coalescing offset
   semantics, string-offset references/unset,
   exact `array_key_exists()` TypeError parity for unsupported key/container
@@ -280,7 +287,12 @@ Unsupported today:
   built-in constants other than the currently modeled `E_ERROR`, `PHP_EOL`,
   `DIRECTORY_SEPARATOR`, `PATH_SEPARATOR`, `PHP_INT_MIN`, `PHP_INT_MAX`,
   `PHP_INT_SIZE`, `INF`, `NAN`, `M_PI`, and the modeled PHP math `M_*`
-  constants, objects, resources, recursion, references,
+  constants, objects, resources, references,
+  function forms beyond top-level named by-value declarations, default
+  arguments, variadics, named arguments, by-reference parameters or returns,
+  nested or conditional declarations, closures, methods, dynamic calls,
+  namespaces, globals, static locals, `func_get_arg()`/`func_get_args()`/
+  `func_num_args()`, PHP-exact function/include return propagation,
   embedded NUL string handling, complex/braced interpolation, interpolation of
   arrays/objects/offsets/properties/variable variables, exact `strcmp()`,
   `str_contains()`, `quotemeta()`, `chunk_split()`, `strip_tags()`, and
