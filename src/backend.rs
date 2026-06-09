@@ -150,10 +150,7 @@ fn emit_user_functions(
             "(PtnRuntime *caller_runtime, size_t argc, const PtnValue *args, size_t line) {\n",
         );
         out.push_str("    (void)line;\n");
-        if function.parameters.is_empty() {
-            out.push_str("    (void)argc;\n");
-            out.push_str("    (void)args;\n");
-        } else {
+        if !function.parameters.is_empty() {
             out.push_str("    if (argc < ");
             out.push_str(&function.parameters.len().to_string());
             out.push_str(") {\n");
@@ -167,6 +164,23 @@ fn emit_user_functions(
         }
         out.push_str("    PtnRuntime runtime;\n");
         out.push_str("    ptn_runtime_init_function_frame(&runtime, caller_runtime);\n");
+        if function.parameters.is_empty() {
+            out.push_str("    ptn_runtime_set_call_frame(&runtime, argc, args, 0, NULL);\n");
+        } else {
+            out.push_str("    static const char *ptn_parameter_names[] = { ");
+            for (parameter_index, parameter) in function.parameters.iter().enumerate() {
+                if parameter_index > 0 {
+                    out.push_str(", ");
+                }
+                out.push('"');
+                out.push_str(&c_string(&parameter.name));
+                out.push('"');
+            }
+            out.push_str(" };\n");
+            out.push_str("    ptn_runtime_set_call_frame(&runtime, argc, args, ");
+            out.push_str(&function.parameters.len().to_string());
+            out.push_str(", ptn_parameter_names);\n");
+        }
         out.push_str("    PtnValue ptn_return_value = ptn_null();\n");
         for (parameter_index, parameter) in function.parameters.iter().enumerate() {
             if let Some(TypeHint::Null) = parameter.type_hint {

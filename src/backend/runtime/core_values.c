@@ -150,6 +150,13 @@ typedef struct {
     PtnTryFrame *try_frame;
 } PtnExceptionState;
 
+typedef struct {
+    size_t argc;
+    const PtnValue *args;
+    size_t parameter_count;
+    const char *const *parameter_names;
+} PtnCallFrame;
+
 struct PtnTryFrame {
     jmp_buf jump;
     PtnTryFrame *previous;
@@ -187,6 +194,8 @@ typedef struct {
     PtnDiagnosticSink diagnostics;
     PtnExceptionState owned_exceptions;
     PtnExceptionState *exceptions;
+    PtnCallFrame owned_call_frame;
+    PtnCallFrame *call_frame;
 } PtnRuntime;
 
 static PTN_UNUSED int ptn_is_truthy(PtnValue value);
