@@ -18,6 +18,11 @@ The generated C backend is the first native-code path, not the final backend.
 It lets the project exercise binary production from day one while the runtime
 model grows toward full PHP semantics.
 
+Generated C is compiled with the system `cc` using `-O2` by default. The
+`PTN_CC_OPT_LEVEL` environment variable selects a debug-friendly `-O0 -g`
+profile with `0` or `debug`, or optimized profiles `1`, `2`, `3`, `s`, and `z`
+for `-O1`, `-O2`, `-O3`, `-Os`, and `-Oz`.
+
 Current runtime/compiler slices:
 
 - The lexer recognizes the supported PHP code envelope: optional byte-zero
