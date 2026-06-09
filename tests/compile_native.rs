@@ -5561,6 +5561,64 @@ var_dump($cycle, $copy);",
 }
 
 #[test]
+fn compile_array_path_self_assignment_snapshots_rhs_to_native_binary() {
+    let root = temp_dir("ptn-native-array-path-self-assignment-snapshot");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-path-self-assignment-snapshot.php");
+    let output = root.join("array-path-self-assignment-snapshot-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$a = [];\n\
+$a[0] = $a;\n\
+var_dump($a);\n\
+$b = [[]];\n\
+$b[0][0] = $b;\n\
+var_dump($b);\n\
+$source = [[\"leaf\" => [\"v\" => 1]]];\n\
+$copy = $source;\n\
+$read = $copy[0][\"leaf\"];\n\
+$read[\"v\"] = 2;\n\
+var_dump($source[0][\"leaf\"][\"v\"], $copy[0][\"leaf\"][\"v\"], $read[\"v\"]);",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  array(0) {\n",
+            "  }\n",
+            "}\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  array(1) {\n",
+            "    [0]=>\n",
+            "    array(1) {\n",
+            "      [0]=>\n",
+            "      array(0) {\n",
+            "      }\n",
+            "    }\n",
+            "  }\n",
+            "}\n",
+            "int(1)\n",
+            "int(1)\n",
+            "int(2)\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains(" = ptn_value_clone("));
+    assert!(c_source.contains("ptn_runtime_array_path_set(&runtime"));
+}
+
+#[test]
 fn compile_reference_aliases_and_cow_split_to_native_binary() {
     let root = temp_dir("ptn-native-reference-aliases-cow-split");
     fs::create_dir_all(&root).unwrap();
