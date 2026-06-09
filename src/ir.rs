@@ -7,6 +7,7 @@ pub struct Module {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Instruction {
+    Store { name: String, value: ValueExpr },
     Echo(ValueExpr),
 }
 
@@ -17,12 +18,19 @@ pub enum ValueExpr {
     Float(f64),
     Bool(bool),
     Null,
+    Load(String),
 }
 
 pub fn lower(program: &Program) -> Module {
     let mut instructions = Vec::new();
     for statement in &program.statements {
         match statement {
+            Statement::Assign { name, value, .. } => {
+                instructions.push(Instruction::Store {
+                    name: name.clone(),
+                    value: lower_expr(value),
+                });
+            }
             Statement::Echo { expressions, .. } => {
                 for expression in expressions {
                     instructions.push(Instruction::Echo(lower_expr(expression)));
@@ -40,5 +48,6 @@ fn lower_expr(expr: &Expr) -> ValueExpr {
         Expr::Float(value, _) => ValueExpr::Float(*value),
         Expr::Bool(value, _) => ValueExpr::Bool(*value),
         Expr::Null(_) => ValueExpr::Null,
+        Expr::Variable(name, _) => ValueExpr::Load(name.clone()),
     }
 }

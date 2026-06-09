@@ -10,8 +10,17 @@ pub fn emit_c(module: &Module) -> String {
     let mut out = String::new();
     out.push_str(RUNTIME_C);
     out.push_str("\nint main(void) {\n");
+    out.push_str("    PtnSymbolTable symbols;\n");
+    out.push_str("    ptn_symbols_init(&symbols);\n");
     for instruction in &module.instructions {
         match instruction {
+            Instruction::Store { name, value } => {
+                out.push_str("    ptn_symbols_set(&symbols, \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", ");
+                out.push_str(&emit_value(value));
+                out.push_str(");\n");
+            }
             Instruction::Echo(value) => {
                 out.push_str("    ptn_echo(");
                 out.push_str(&emit_value(value));
@@ -19,6 +28,7 @@ pub fn emit_c(module: &Module) -> String {
             }
         }
     }
+    out.push_str("    ptn_symbols_free(&symbols);\n");
     out.push_str("    return 0;\n}\n");
     out
 }
@@ -66,6 +76,7 @@ fn emit_value(value: &ValueExpr) -> String {
         ValueExpr::Bool(true) => "ptn_bool(1)".to_string(),
         ValueExpr::Bool(false) => "ptn_bool(0)".to_string(),
         ValueExpr::Null => "ptn_null()".to_string(),
+        ValueExpr::Load(name) => format!("ptn_symbols_get(&symbols, \"{}\")", c_string(name)),
     }
 }
 
@@ -91,6 +102,8 @@ fn display_os(value: &OsStr) -> String {
 
 const RUNTIME_C: &str = r#"#include <stdio.h>
 #include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 
 #if defined(__GNUC__) || defined(__clang__)
 #define PTN_UNUSED __attribute__((unused))
@@ -115,6 +128,17 @@ typedef struct {
         const char *string;
     } as;
 } PtnValue;
+
+typedef struct {
+    const char *name;
+    PtnValue value;
+} PtnSymbol;
+
+typedef struct {
+    PtnSymbol *items;
+    size_t len;
+    size_t capacity;
+} PtnSymbolTable;
 
 static PTN_UNUSED PtnValue ptn_null(void) {
     PtnValue value;
@@ -148,6 +172,61 @@ static PTN_UNUSED PtnValue ptn_string(const char *string) {
     value.type = PTN_STRING;
     value.as.string = string;
     return value;
+}
+
+static void ptn_abort_out_of_memory(void) {
+    fputs("Fatal error: out of memory\n", stderr);
+    exit(1);
+}
+
+static void ptn_symbols_init(PtnSymbolTable *symbols) {
+    symbols->items = NULL;
+    symbols->len = 0;
+    symbols->capacity = 0;
+}
+
+static void ptn_symbols_free(PtnSymbolTable *symbols) {
+    free(symbols->items);
+    symbols->items = NULL;
+    symbols->len = 0;
+    symbols->capacity = 0;
+}
+
+static size_t ptn_symbols_find(PtnSymbolTable *symbols, const char *name) {
+    for (size_t i = 0; i < symbols->len; i++) {
+        if (strcmp(symbols->items[i].name, name) == 0) {
+            return i;
+        }
+    }
+    return symbols->len;
+}
+
+static PTN_UNUSED void ptn_symbols_set(PtnSymbolTable *symbols, const char *name, PtnValue value) {
+    size_t index = ptn_symbols_find(symbols, name);
+    if (index < symbols->len) {
+        symbols->items[index].value = value;
+        return;
+    }
+    if (symbols->len == symbols->capacity) {
+        size_t new_capacity = symbols->capacity == 0 ? 8 : symbols->capacity * 2;
+        PtnSymbol *new_items = realloc(symbols->items, new_capacity * sizeof(PtnSymbol));
+        if (new_items == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        symbols->items = new_items;
+        symbols->capacity = new_capacity;
+    }
+    symbols->items[symbols->len].name = name;
+    symbols->items[symbols->len].value = value;
+    symbols->len++;
+}
+
+static PTN_UNUSED PtnValue ptn_symbols_get(PtnSymbolTable *symbols, const char *name) {
+    size_t index = ptn_symbols_find(symbols, name);
+    if (index < symbols->len) {
+        return symbols->items[index].value;
+    }
+    return ptn_null();
 }
 
 static void ptn_echo(PtnValue value) {

@@ -11,6 +11,12 @@ fn parser_preserves_echo_expression_order() {
 }
 
 #[test]
+fn parser_accepts_direct_assignment_and_variable_reads() {
+    let program = parser::parse("<?php $greeting = \"hi\"; echo $greeting;").unwrap();
+    assert_eq!(program.statements.len(), 2);
+}
+
+#[test]
 fn compile_echo_program_to_native_binary() {
     let root = temp_dir("ptn-native-echo");
     fs::create_dir_all(&root).unwrap();
@@ -29,8 +35,48 @@ fn compile_echo_program_to_native_binary() {
 }
 
 #[test]
+fn compile_direct_variable_assignment_to_native_binary() {
+    let root = temp_dir("ptn-native-variables");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("variables.php");
+    let output = root.join("variables-bin");
+    fs::write(
+        &input,
+        "<?php $name = \"PTN\"; $count = 2; echo $name, \" \", $count, \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "PTN 2\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_variable_overwrite_to_native_binary() {
+    let root = temp_dir("ptn-native-variable-overwrite");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("overwrite.php");
+    let output = root.join("overwrite-bin");
+    fs::write(
+        &input,
+        "<?php $value = \"old\"; $value = \"new\"; echo $value;",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "new");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn unsupported_constructs_fail_before_codegen() {
-    let error = parser::parse("<?php $name = \"x\";").unwrap_err();
+    let error = parser::parse("<?php $name += 1;").unwrap_err();
     assert!(error.message.contains("unsupported PHP token"));
 }
 

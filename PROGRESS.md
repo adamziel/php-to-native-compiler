@@ -26,3 +26,21 @@ Next integrated production target:
 - Add variables and assignment using a real symbol-table/runtime model that can
   scale to PHP references and copy-on-write.
 
+## 2026-06-09
+
+Recovered the checkpoint worktree onto current `origin/master` at
+`ca130c503622ec9a479318d294bfd64d20e496a3` after stale pre-restart bundles
+conflicted with the new from-scratch tree.
+
+Integrated the next production slice:
+
+- Lexer support for direct PHP variable tokens such as `$name`.
+- Parser/AST support for direct assignment statements and variable reads in
+  expressions.
+- IR store/load instructions for named variables.
+- Generated C runtime symbol table storing boxed `PtnValue` slots by name.
+- Native tests proving assignment, reads, and overwrites in compiled binaries.
+
+Still unsupported: arrays, references, copy-on-write, globals/superglobals,
+compound assignment, variable variables, undefined-variable warning parity,
+functions, classes, resources, exceptions, and dynamic fallback.

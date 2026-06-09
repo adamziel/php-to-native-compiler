@@ -20,11 +20,11 @@ model grows toward full PHP semantics.
 
 Near-term architecture targets:
 
-- Runtime symbol table for variables.
+- Runtime symbol table for variables. The first slice emits a generated C
+  `PtnSymbolTable` that stores boxed values by direct variable name.
 - PHP ordered arrays.
 - References and copy-on-write.
 - Function and class metadata.
 - Diagnostics and exception channels.
 - Explicit fallback boundaries for `eval`, variable variables, and runtime
   symbol mutation.
-

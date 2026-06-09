@@ -17,12 +17,15 @@ Supported today:
 - `<?php` open tag.
 - `echo` statements.
 - String, integer, float, boolean, and null literals.
+- Direct variable assignment and reads for scalar values through the generated
+  native runtime symbol table.
 
 Unsupported today:
 
-- Variables, arrays, functions, classes, includes, references, copy-on-write,
-  resources, exceptions, and dynamic fallback. These are architecture targets,
-  not excuses for exact-shape hacks.
+- Arrays, functions, classes, includes, references, copy-on-write, resources,
+  exceptions, compound assignment, undefined-variable diagnostics, variable
+  variables, and dynamic fallback. These are architecture targets, not excuses
+  for exact-shape hacks.
 
 ## Build
 
@@ -56,4 +59,3 @@ The production line follows continuous improvement principles:
 - Make defects visible immediately in `PROGRESS.md`.
 - Prefer generic runtime/compiler capabilities over one-off fixes.
 - Push integrated progress often so remote history reflects actual movement.
-

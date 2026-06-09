@@ -10,6 +10,8 @@ pub enum TokenKind {
     True,
     False,
     Null,
+    Variable(String),
+    Equal,
     Comma,
     Semicolon,
     Eof,
@@ -51,6 +53,8 @@ impl<'a> Lexer<'a> {
                 c if c.is_whitespace() => self.bump_char(),
                 ';' => self.push_fixed(TokenKind::Semicolon, 1),
                 ',' => self.push_fixed(TokenKind::Comma, 1),
+                '=' => self.push_fixed(TokenKind::Equal, 1),
+                '$' => self.lex_variable()?,
                 '\'' | '"' => self.lex_string(ch)?,
                 c if c.is_ascii_digit() => self.lex_number()?,
                 c if is_ident_start(c) => self.lex_word()?,
@@ -144,6 +148,37 @@ impl<'a> Lexer<'a> {
                 span: SourceSpan::new(start.byte_start, self.cursor, start.line, start.column),
             });
         }
+        Ok(())
+    }
+
+    fn lex_variable(&mut self) -> Result<()> {
+        let start = self.current_span(0);
+        self.bump_char();
+        let Some(first) = self.peek_char() else {
+            return Err(Diagnostic::new(
+                "expected variable name after `$`",
+                Some(start),
+            ));
+        };
+        if !is_ident_start(first) {
+            return Err(Diagnostic::new(
+                "expected variable name after `$`",
+                Some(self.current_span(1)),
+            ));
+        }
+        let mut name = String::new();
+        while let Some(ch) = self.peek_char() {
+            if ch.is_ascii_alphanumeric() || ch == '_' {
+                name.push(ch);
+                self.bump_char();
+            } else {
+                break;
+            }
+        }
+        self.tokens.push(Token {
+            kind: TokenKind::Variable(name),
+            span: SourceSpan::new(start.byte_start, self.cursor, start.line, start.column),
+        });
         Ok(())
     }
 

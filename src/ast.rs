@@ -7,6 +7,11 @@ pub struct Program {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Statement {
+    Assign {
+        name: String,
+        value: Expr,
+        span: SourceSpan,
+    },
     Echo {
         expressions: Vec<Expr>,
         span: SourceSpan,
@@ -20,6 +25,7 @@ pub enum Expr {
     Float(f64, SourceSpan),
     Bool(bool, SourceSpan),
     Null(SourceSpan),
+    Variable(String, SourceSpan),
 }
 
 impl Expr {
@@ -29,7 +35,8 @@ impl Expr {
             | Expr::Int(_, span)
             | Expr::Float(_, span)
             | Expr::Bool(_, span)
-            | Expr::Null(span) => *span,
+            | Expr::Null(span)
+            | Expr::Variable(_, span) => *span,
         }
     }
 }

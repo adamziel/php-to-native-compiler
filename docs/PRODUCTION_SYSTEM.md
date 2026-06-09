@@ -18,6 +18,7 @@ Operational loop:
 2. Implement the smallest integrated slice.
 3. Add tests that prove the semantic behavior.
 4. Update `PROGRESS.md`.
-5. Commit and push.
-6. Start the next slice without waiting for unrelated blockers.
-
+5. Run `tools/checkpoint.sh` to format-check, test, diff-check, and commit.
+6. Push only after the checkpoint commit succeeds and the remote update is a
+   fast-forward.
+7. Start the next slice without waiting for unrelated blockers.
