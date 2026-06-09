@@ -44,6 +44,9 @@ Current runtime/compiler slices:
   and scalar `(int)`, `(float)`, `(string)`, and `(bool)` casts lower to IR
   value-expression operation nodes. The C backend emits boxed runtime helper
   calls such as `ptn_negate`, `ptn_not`, and `ptn_cast_*`.
+- Increment/decrement tokens are rejected while PHP assignment-style
+  pre/post-increment semantics are unsupported, so spellings such as `--$value`
+  cannot be mistaken for two unary negations.
 - Scalar comparison and boolean expressions share the same AST/IR binary node
   shape. Comparisons emit boxed booleans through runtime helpers, while `&&`
   and `||` emit native C branches that short-circuit over boxed PHP truthiness.

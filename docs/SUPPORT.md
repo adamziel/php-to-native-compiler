@@ -44,6 +44,8 @@ supports in generated native binaries.
 - Full PHP numeric-string conversion warning parity, non-numeric string
   arithmetic diagnostics, complete overflow parity, and exact scalar cast
   overflow behavior.
+- Prefix and postfix increment/decrement operators such as `++$value` and
+  `--$value`.
 - `print` as an expression returning `1`, including contexts such as assignment,
   echo operands, binary operands, and parenthesized `print(...)` syntax.
 - Comparison operators `<=`, `>=`, `===`, `!==`, `<=>`, keyword boolean

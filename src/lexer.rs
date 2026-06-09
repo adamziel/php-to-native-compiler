@@ -116,7 +116,19 @@ impl<'a> Lexer<'a> {
                 '&' if self.rest().starts_with("&&") => self.push_fixed(TokenKind::AndAnd, 2),
                 '|' if self.rest().starts_with("||") => self.push_fixed(TokenKind::OrOr, 2),
                 '+' if self.rest().starts_with("+=") => self.push_fixed(TokenKind::PlusEqual, 2),
+                '+' if self.rest().starts_with("++") => {
+                    return Err(Diagnostic::new(
+                        "unsupported increment operator `++`",
+                        Some(self.current_span(2)),
+                    ));
+                }
                 '+' => self.push_fixed(TokenKind::Plus, 1),
+                '-' if self.rest().starts_with("--") => {
+                    return Err(Diagnostic::new(
+                        "unsupported decrement operator `--`",
+                        Some(self.current_span(2)),
+                    ));
+                }
                 '-' => self.push_fixed(TokenKind::Minus, 1),
                 '!' => self.push_fixed(TokenKind::Bang, 1),
                 '.' if self.rest().starts_with(".=") => self.push_fixed(TokenKind::DotEqual, 2),

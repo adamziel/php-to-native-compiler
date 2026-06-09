@@ -127,7 +127,13 @@ Implemented a narrow boxed unary/cast expression slice in the CAO worktree:
 
 Still unsupported for unary/casts: arrays, objects, references, copy-on-write,
 full numeric-string diagnostic parity, unsupported operand `TypeError` parity,
-and exact overflow behavior for scalar casts.
+exact overflow behavior for scalar casts, and PHP increment/decrement
+operators such as `++$value` and `--$value`.
+
+Followed up after comparison/boolean integration by rejecting unsupported `++`
+and `--` operators lexically. This prevents `--$value` from being compiled as
+two supported unary negations before real PHP increment/decrement assignment
+semantics exist.
 
 Implemented a direct named-variable compound-assignment slice on top of the
 unary/casts-enabled head:

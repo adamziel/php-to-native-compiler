@@ -91,6 +91,15 @@ fn parser_rejects_print_expression_contexts() {
 }
 
 #[test]
+fn parser_rejects_unsupported_increment_and_decrement_operators() {
+    let increment = parser::parse("<?php echo ++$value;").unwrap_err();
+    assert!(increment.message.contains("unsupported increment operator"));
+
+    let decrement = parser::parse("<?php echo --$value;").unwrap_err();
+    assert!(decrement.message.contains("unsupported decrement operator"));
+}
+
+#[test]
 fn lexer_skips_php_comments_and_preserves_following_span() {
     let tokens =
         lexer::lex("<?php\n// first\n# second\n/* block\ncomment */\nprint \"ok\";").unwrap();
