@@ -173,6 +173,37 @@ fn parser_accepts_parenthesized_unary_and_cast_expressions() {
 }
 
 #[test]
+fn parser_accepts_comparison_boolean_and_grouping_expressions() {
+    let program = parser::parse("<?php echo 1 + 2 == \"3\" && (false || true);").unwrap();
+    let Statement::Echo { expressions, .. } = &program.statements[0] else {
+        panic!("expected echo statement");
+    };
+    let Expr::Binary {
+        op: BinaryOp::And,
+        left,
+        right,
+        ..
+    } = &expressions[0]
+    else {
+        panic!("expected outer boolean and");
+    };
+    assert!(matches!(
+        left.as_ref(),
+        Expr::Binary {
+            op: BinaryOp::Equal,
+            ..
+        }
+    ));
+    assert!(matches!(
+        right.as_ref(),
+        Expr::Binary {
+            op: BinaryOp::Or,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn compile_echo_program_to_native_binary() {
     let root = temp_dir("ptn-native-echo");
     fs::create_dir_all(&root).unwrap();
@@ -267,6 +298,85 @@ fn compile_print_binary_expression_to_native_binary() {
         "Hello Ada 5\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_scalar_comparisons_to_native_binary() {
+    let root = temp_dir("ptn-native-comparisons");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("comparisons.php");
+    let output = root.join("comparisons-bin");
+    fs::write(
+        &input,
+        "<?php echo 1 == 1, 1 != 2, 1 < 2, 3 > 2, \"42\" == \"000042\", 42 == \"42.0\", \"a\" < \"b\", \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "1111111\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_loose_scalar_comparison_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-comparison-edges");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("comparison-edges.php");
+    let output = root.join("comparison-edges-bin");
+    fs::write(
+        &input,
+        "<?php echo null == 0, null == \"\", null == \"0\", \"|\", 0 == \"foo\", \"|\", 2 < \"a\", \"|\", false == \"0\", true == \"0\", false == \"\", \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "11||1|11\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_boolean_short_circuit_ops_to_native_binary() {
+    let root = temp_dir("ptn-native-boolean-short-circuit");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("short-circuit.php");
+    let output = root.join("short-circuit-bin");
+    fs::write(
+        &input,
+        "<?php echo false && $missing, \"|\", true || $missing, \"|\", true && \"0\", \"|\", false || \"non-empty\", \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "|1||1\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_comparison_operands_evaluate_left_to_right_to_native_binary() {
+    let root = temp_dir("ptn-native-comparison-left-to-right");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("comparison-left-to-right.php");
+    let output = root.join("comparison-left-to-right-bin");
+    fs::write(&input, "<?php echo $left == $right, \"\\n\";").unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "1\n");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        "Warning: Undefined variable $left\nWarning: Undefined variable $right\n"
+    );
 }
 
 #[test]

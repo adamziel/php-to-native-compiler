@@ -41,6 +41,12 @@ pub enum ValueExpr {
 pub enum BinaryOp {
     Add,
     Concat,
+    Equal,
+    NotEqual,
+    Less,
+    Greater,
+    And,
+    Or,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -145,5 +151,11 @@ fn lower_binary_op(op: AstBinaryOp) -> BinaryOp {
     match op {
         AstBinaryOp::Add => BinaryOp::Add,
         AstBinaryOp::Concat => BinaryOp::Concat,
+        AstBinaryOp::Equal => BinaryOp::Equal,
+        AstBinaryOp::NotEqual => BinaryOp::NotEqual,
+        AstBinaryOp::Less => BinaryOp::Less,
+        AstBinaryOp::Greater => BinaryOp::Greater,
+        AstBinaryOp::And => BinaryOp::And,
+        AstBinaryOp::Or => BinaryOp::Or,
     }
 }

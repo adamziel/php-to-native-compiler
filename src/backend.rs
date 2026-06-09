@@ -82,24 +82,7 @@ impl ValueEmitter {
 
     fn emit_value(&mut self, out: &mut String, value: &ValueExpr) -> String {
         match value {
-            ValueExpr::Binary { op, left, right } => {
-                let left_temp = self.emit_materialized_value(out, left);
-                let right_temp = self.emit_materialized_value(out, right);
-                let result_temp = self.next_temp();
-                out.push_str("    PtnValue ");
-                out.push_str(&result_temp);
-                out.push_str(" = ");
-                out.push_str(match op {
-                    BinaryOp::Add => "ptn_add",
-                    BinaryOp::Concat => "ptn_concat",
-                });
-                out.push('(');
-                out.push_str(&left_temp);
-                out.push_str(", ");
-                out.push_str(&right_temp);
-                out.push_str(");\n");
-                result_temp
-            }
+            ValueExpr::Binary { op, left, right } => self.emit_binary(out, *op, left, right),
             ValueExpr::Unary { op, expr } => {
                 let expr_temp = self.emit_materialized_value(out, expr);
                 let result_temp = self.next_temp();
@@ -143,6 +126,119 @@ impl ValueEmitter {
                 c_string(name)
             ),
         }
+    }
+
+    fn emit_binary(
+        &mut self,
+        out: &mut String,
+        op: BinaryOp,
+        left: &ValueExpr,
+        right: &ValueExpr,
+    ) -> String {
+        match op {
+            BinaryOp::Add | BinaryOp::Concat => self.emit_runtime_binary(out, op, left, right),
+            BinaryOp::Equal | BinaryOp::NotEqual | BinaryOp::Less | BinaryOp::Greater => {
+                self.emit_comparison(out, op, left, right)
+            }
+            BinaryOp::And | BinaryOp::Or => self.emit_short_circuit(out, op, left, right),
+        }
+    }
+
+    fn emit_runtime_binary(
+        &mut self,
+        out: &mut String,
+        op: BinaryOp,
+        left: &ValueExpr,
+        right: &ValueExpr,
+    ) -> String {
+        let left_temp = self.emit_materialized_value(out, left);
+        let right_temp = self.emit_materialized_value(out, right);
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ");
+        out.push_str(match op {
+            BinaryOp::Add => "ptn_add",
+            BinaryOp::Concat => "ptn_concat",
+            _ => unreachable!(),
+        });
+        out.push('(');
+        out.push_str(&left_temp);
+        out.push_str(", ");
+        out.push_str(&right_temp);
+        out.push_str(");\n");
+        result_temp
+    }
+
+    fn emit_comparison(
+        &mut self,
+        out: &mut String,
+        op: BinaryOp,
+        left: &ValueExpr,
+        right: &ValueExpr,
+    ) -> String {
+        let left_temp = self.emit_materialized_value(out, left);
+        let right_temp = self.emit_materialized_value(out, right);
+        let result_temp = self.next_temp();
+        let comparison = match op {
+            BinaryOp::Equal => format!("ptn_compare_equal({left_temp}, {right_temp})"),
+            BinaryOp::NotEqual => format!("!ptn_compare_equal({left_temp}, {right_temp})"),
+            BinaryOp::Less => format!("ptn_compare_less({left_temp}, {right_temp})"),
+            BinaryOp::Greater => format!("ptn_compare_greater({left_temp}, {right_temp})"),
+            _ => unreachable!(),
+        };
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_bool(");
+        out.push_str(&comparison);
+        out.push_str(");\n");
+        result_temp
+    }
+
+    fn emit_short_circuit(
+        &mut self,
+        out: &mut String,
+        op: BinaryOp,
+        left: &ValueExpr,
+        right: &ValueExpr,
+    ) -> String {
+        let left_temp = self.emit_materialized_value(out, left);
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(";\n");
+        out.push_str("    if (ptn_is_truthy(");
+        out.push_str(&left_temp);
+        out.push_str(")) {\n");
+        match op {
+            BinaryOp::And => {
+                let right_value = self.emit_value(out, right);
+                out.push_str("        ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_bool(ptn_is_truthy(");
+                out.push_str(&right_value);
+                out.push_str("));\n");
+                out.push_str("    } else {\n");
+                out.push_str("        ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_bool(0);\n");
+            }
+            BinaryOp::Or => {
+                out.push_str("        ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_bool(1);\n");
+                out.push_str("    } else {\n");
+                let right_value = self.emit_value(out, right);
+                out.push_str("        ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_bool(ptn_is_truthy(");
+                out.push_str(&right_value);
+                out.push_str("));\n");
+            }
+            _ => unreachable!(),
+        }
+        out.push_str("    }\n");
+        result_temp
     }
 
     fn emit_materialized_value(&mut self, out: &mut String, value: &ValueExpr) -> String {
@@ -502,6 +598,168 @@ static PTN_UNUSED PtnValue ptn_cast_int(PtnValue value) {
 static PTN_UNUSED PtnValue ptn_cast_float(PtnValue value) {
     PtnNumber number = ptn_to_number(value);
     return ptn_float(number.floating);
+}
+
+static PTN_UNUSED int ptn_is_number_type(PtnValue value) {
+    return value.type == PTN_INT || value.type == PTN_FLOAT;
+}
+
+static PTN_UNUSED int ptn_is_numeric_string(const char *string, double *number) {
+    const char *start = string;
+    while (isspace((unsigned char)*start)) {
+        start++;
+    }
+    if (*start == '\0') {
+        return 0;
+    }
+
+    char *end = NULL;
+    double parsed = strtod(start, &end);
+    if (end == start) {
+        return 0;
+    }
+    while (isspace((unsigned char)*end)) {
+        end++;
+    }
+    if (*end != '\0') {
+        return 0;
+    }
+    *number = parsed;
+    return 1;
+}
+
+static PTN_UNUSED int ptn_comparison_numeric_value(PtnValue value, double *number) {
+    switch (value.type) {
+        case PTN_INT:
+            *number = (double)value.as.integer;
+            return 1;
+        case PTN_FLOAT:
+            *number = value.as.floating;
+            return 1;
+        case PTN_STRING:
+            return ptn_is_numeric_string(value.as.string, number);
+        case PTN_NULL:
+        case PTN_BOOL:
+            return 0;
+    }
+    return 0;
+}
+
+static PTN_UNUSED int ptn_compare_numbers(double left, double right) {
+    if (left < right) {
+        return -1;
+    }
+    if (left > right) {
+        return 1;
+    }
+    return 0;
+}
+
+static PTN_UNUSED int ptn_compare_strings(const char *left, const char *right) {
+    int compared = strcmp(left, right);
+    return compared < 0 ? -1 : (compared > 0 ? 1 : 0);
+}
+
+static PTN_UNUSED void ptn_number_value_to_string(PtnValue value, char *buffer, size_t buffer_len) {
+    if (value.type == PTN_INT) {
+        snprintf(buffer, buffer_len, "%lld", (long long)value.as.integer);
+    } else {
+        snprintf(buffer, buffer_len, "%.14g", value.as.floating);
+    }
+}
+
+static PTN_UNUSED int ptn_compare_number_and_string(PtnValue number, const char *string, int number_is_left) {
+    char number_string[128];
+    ptn_number_value_to_string(number, number_string, sizeof(number_string));
+    int compared = ptn_compare_strings(number_string, string);
+    return number_is_left ? compared : -compared;
+}
+
+static PTN_UNUSED int ptn_compare_equal(PtnValue left, PtnValue right) {
+    if (left.type == PTN_BOOL || right.type == PTN_BOOL) {
+        return ptn_is_truthy(left) == ptn_is_truthy(right);
+    }
+    if (left.type == PTN_NULL || right.type == PTN_NULL) {
+        if (left.type == PTN_NULL && right.type == PTN_NULL) {
+            return 1;
+        }
+        PtnValue other = left.type == PTN_NULL ? right : left;
+        switch (other.type) {
+            case PTN_NULL:
+                return 1;
+            case PTN_BOOL:
+                return ptn_is_truthy(other) == 0;
+            case PTN_INT:
+                return other.as.integer == 0;
+            case PTN_FLOAT:
+                return other.as.floating == 0.0;
+            case PTN_STRING:
+                return other.as.string[0] == '\0';
+        }
+    }
+
+    double left_number = 0.0;
+    double right_number = 0.0;
+    if (ptn_comparison_numeric_value(left, &left_number) &&
+        ptn_comparison_numeric_value(right, &right_number)) {
+        return ptn_compare_numbers(left_number, right_number) == 0;
+    }
+    if (left.type == PTN_STRING && right.type == PTN_STRING) {
+        return strcmp(left.as.string, right.as.string) == 0;
+    }
+    return 0;
+}
+
+static PTN_UNUSED int ptn_compare_order(PtnValue left, PtnValue right) {
+    if (left.type == PTN_BOOL || right.type == PTN_BOOL) {
+        return ptn_compare_numbers((double)ptn_is_truthy(left), (double)ptn_is_truthy(right));
+    }
+    if (left.type == PTN_NULL && right.type == PTN_NULL) {
+        return 0;
+    }
+    if (left.type == PTN_NULL) {
+        if (ptn_is_number_type(right)) {
+            double right_number = right.type == PTN_INT ? (double)right.as.integer : right.as.floating;
+            return ptn_compare_numbers(0.0, right_number);
+        }
+        if (right.type == PTN_STRING) {
+            return ptn_compare_strings("", right.as.string);
+        }
+    }
+    if (right.type == PTN_NULL) {
+        if (ptn_is_number_type(left)) {
+            double left_number = left.type == PTN_INT ? (double)left.as.integer : left.as.floating;
+            return ptn_compare_numbers(left_number, 0.0);
+        }
+        if (left.type == PTN_STRING) {
+            return ptn_compare_strings(left.as.string, "");
+        }
+    }
+
+    double left_number = 0.0;
+    double right_number = 0.0;
+    if (ptn_comparison_numeric_value(left, &left_number) &&
+        ptn_comparison_numeric_value(right, &right_number)) {
+        return ptn_compare_numbers(left_number, right_number);
+    }
+    if (left.type == PTN_STRING && right.type == PTN_STRING) {
+        return ptn_compare_strings(left.as.string, right.as.string);
+    }
+    if (ptn_is_number_type(left) && right.type == PTN_STRING) {
+        return ptn_compare_number_and_string(left, right.as.string, 1);
+    }
+    if (left.type == PTN_STRING && ptn_is_number_type(right)) {
+        return ptn_compare_number_and_string(right, left.as.string, 0);
+    }
+    return ptn_compare_numbers((double)ptn_is_truthy(left), (double)ptn_is_truthy(right));
+}
+
+static PTN_UNUSED int ptn_compare_less(PtnValue left, PtnValue right) {
+    return ptn_compare_order(left, right) < 0;
+}
+
+static PTN_UNUSED int ptn_compare_greater(PtnValue left, PtnValue right) {
+    return ptn_compare_order(left, right) > 0;
 }
 
 static PTN_UNUSED PtnValue ptn_add(PtnValue left, PtnValue right) {

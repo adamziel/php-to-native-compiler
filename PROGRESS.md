@@ -144,3 +144,23 @@ Still unsupported for compound assignment: `-=`, `*=`, `/=`, `%=`, `**=`, `&=`,
 `|=`, `^=`, `<<=`, `>>=`, `??=`, array/object/string-offset/property/static
 property/variable-variable lvalues, references, reference identity, and
 copy-on-write interactions.
+
+Rebased the comparison/boolean expression slice after boxed `+` and `.`
+integration:
+
+- Lexer/parser support for `==`, `!=`, `<`, `>`, `&&`, `||`, and parenthesized
+  expressions.
+- AST/IR binary operation variants for scalar comparisons and boolean
+  short-circuit expressions.
+- Generated C comparison emission that materializes operands left-to-right
+  before calling boxed runtime comparison helpers.
+- Generated C short-circuit emission for `&&` and `||` over boxed scalar PHP
+  truthiness.
+- Native tests proving scalar loose comparisons, numeric-string comparison
+  basics, boolean short-circuit behavior, grouping, and left-to-right operand
+  diagnostics.
+
+Still unsupported for comparisons/booleans: `<=`, `>=`, `===`, `!==`, `<=>`,
+keyword `and`/`or`, arrays, objects, references, copy-on-write behavior,
+PHP-exact chained comparison parse errors, and complete PHP comparison parity
+for unsupported value types.

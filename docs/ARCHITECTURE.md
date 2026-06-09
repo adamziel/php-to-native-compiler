@@ -44,6 +44,9 @@ Current runtime/compiler slices:
   and scalar `(int)`, `(float)`, `(string)`, and `(bool)` casts lower to IR
   value-expression operation nodes. The C backend emits boxed runtime helper
   calls such as `ptn_negate`, `ptn_not`, and `ptn_cast_*`.
+- Scalar comparison and boolean expressions share the same AST/IR binary node
+  shape. Comparisons emit boxed booleans through runtime helpers, while `&&`
+  and `||` emit native C branches that short-circuit over boxed PHP truthiness.
 
 Near-term architecture targets:
 
@@ -57,5 +60,8 @@ Near-term architecture targets:
 - Array, object, and reference lvalues for compound assignment, plus
   unsupported compound operators beyond `+=` and `.=` (`-=`, `*=`, `/=`, `%=`,
   `**=`, `&=`, `|=`, `^=`, `<<=`, `>>=`, `??=`).
+- Complete comparison parity for arrays, objects, references, chained
+  comparison parse errors, identity operators, and unsupported scalar edge
+  cases.
 - Explicit fallback boundaries for `eval`, variable variables, and runtime
   symbol mutation.

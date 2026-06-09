@@ -36,6 +36,9 @@ Supported today:
 - Parenthesized expressions, unary `-`, unary `!`, and `(int)`, `(float)`,
   `(string)`, and `(bool)` casts for boxed scalar values. Unary and cast
   operations are emitted as runtime helper calls over `PtnValue` operands.
+- Boxed scalar comparison and boolean expressions: `==`, `!=`, `<`, `>`, `&&`,
+  and `||`. Boolean operators short-circuit over boxed PHP truthiness for the
+  currently supported scalar value types.
 
 Unsupported today:
 
@@ -44,11 +47,12 @@ Unsupported today:
   compound operators other than `+=` and `.=` (`-=`, `*=`, `/=`, `%=`, `**=`,
   `&=`, `|=`, `^=`, `<<=`, `>>=`, `??=`), `print` as an expression returning
   `1`, parenthesized `print(...)` syntax, full PHP numeric-string and
-  non-numeric string arithmetic diagnostics, overflow parity, exact scalar cast
-  overflow behavior, PHP-exact warning text/file/line/error-handler behavior,
-  inline HTML before `<?php`, between PHP blocks, or after a closing PHP tag,
-  doc comment retention, variable variables, and dynamic fallback. These are
-  architecture targets, not excuses for exact-shape hacks.
+  non-numeric string arithmetic diagnostics, complete comparison parity for
+  unsupported types and chained comparison parse errors, overflow parity, exact
+  scalar cast overflow behavior, PHP-exact warning text/file/line/error-handler
+  behavior, inline HTML before `<?php`, between PHP blocks, or after a closing
+  PHP tag, doc comment retention, variable variables, and dynamic fallback.
+  These are architecture targets, not excuses for exact-shape hacks.
 
 ## Build
 

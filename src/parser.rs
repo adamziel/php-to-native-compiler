@@ -181,6 +181,12 @@ impl Parser {
 
     fn peek_binary_op(&self) -> Option<(BinaryOp, u8)> {
         match self.peek().kind {
+            TokenKind::OrOr => Some((BinaryOp::Or, 1)),
+            TokenKind::AndAnd => Some((BinaryOp::And, 2)),
+            TokenKind::EqualEqual => Some((BinaryOp::Equal, 5)),
+            TokenKind::NotEqual => Some((BinaryOp::NotEqual, 5)),
+            TokenKind::Less => Some((BinaryOp::Less, 6)),
+            TokenKind::Greater => Some((BinaryOp::Greater, 6)),
             TokenKind::Dot => Some((BinaryOp::Concat, 10)),
             TokenKind::Plus => Some((BinaryOp::Add, 20)),
             _ => None,

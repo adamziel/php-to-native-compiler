@@ -60,6 +60,12 @@ pub enum Expr {
 pub enum BinaryOp {
     Add,
     Concat,
+    Equal,
+    NotEqual,
+    Less,
+    Greater,
+    And,
+    Or,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -33,6 +33,9 @@ supports in generated native binaries.
   `0.0`, `""`, and `"0"` are falsey; other supported scalar values are truthy.
 - Scalar `(int)`, `(float)`, `(string)`, and `(bool)` casts over supported boxed
   scalar values.
+- Boxed scalar comparison operators `==`, `!=`, `<`, and `>`.
+- Boxed scalar boolean operators `&&` and `||`, with short-circuit evaluation
+  over PHP truthiness for the currently supported scalar values.
 
 ## Not Yet Supported
 
@@ -43,6 +46,9 @@ supports in generated native binaries.
   overflow behavior.
 - `print` as an expression returning `1`, including contexts such as assignment,
   echo operands, binary operands, and parenthesized `print(...)` syntax.
+- Comparison operators `<=`, `>=`, `===`, `!==`, `<=>`, keyword boolean
+  operators `and`/`or`, PHP-exact chained comparison parse errors, and complete
+  comparison parity for unsupported value types.
 - Inline HTML before `<?php`, between PHP blocks, or after a closing PHP tag.
 - Doc comment retention for reflection or metadata. Comments are skipped today.
 - Compound assignment operators other than `+=` and `.=`: `-=`, `*=`, `/=`,
