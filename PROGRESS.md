@@ -1870,3 +1870,19 @@ mutation during iteration, copy-on-write/reference identity and exact mutation
 visibility, object `Traversable`, destructuring targets, exact non-array
 diagnostic parity, recursive arrays, references, and broader array/object
 semantics.
+
+Split backend runtime emission into lane-owned modules without changing
+generated C semantics:
+
+- `src/backend.rs` owns the public backend API (`emit_c()` and `compile_c()`),
+  Rust IR-to-C emission, generated user-function wrappers, control-flow labels,
+  and native compiler invocation.
+- `src/backend/runtime.rs` owns the embedded generated C runtime source string,
+  including boxed values, arrays, symbol/constant tables, diagnostics, scalar
+  operators, output helpers, internal function dispatch, and runtime lookup
+  helpers.
+- `emit_c()` now prepends `backend::runtime::RUNTIME_C`; the runtime text was
+  mechanically extracted so follow-on runtime and codegen workers can edit
+  separate files.
+
+No PHP behavior changes are intended by this split.
