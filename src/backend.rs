@@ -298,6 +298,31 @@ fn emit_instruction(
 ) {
     match instruction {
         Instruction::Store { name, value } => {
+            if let ValueExpr::Binary {
+                op: BinaryOp::Concat,
+                left,
+                right,
+                line,
+            } = value
+            {
+                if matches!(left.as_ref(), ValueExpr::Load { name: left_name, .. } if left_name == name)
+                {
+                    let left_temp = values.emit_materialized_value(out, left);
+                    let right_temp = values.emit_materialized_value(out, right);
+                    out.push_str("    ptn_runtime_concat_assign_variable(&runtime, \"");
+                    out.push_str(&c_string(name));
+                    out.push_str("\", ");
+                    out.push_str(&left_temp);
+                    out.push_str(", ");
+                    out.push_str(&right_temp);
+                    out.push_str(", ");
+                    out.push_str(&line.to_string());
+                    out.push_str(");\n");
+                    emit_value_cleanup(out, "    ", &left_temp);
+                    emit_value_cleanup(out, "    ", &right_temp);
+                    return;
+                }
+            }
             let emitted_value = values.emit_materialized_value(out, value);
             out.push_str("    ptn_runtime_write_variable(&runtime, \"");
             out.push_str(&c_string(name));

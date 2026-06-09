@@ -5227,6 +5227,96 @@ var_dump($cycle, $copy);",
 }
 
 #[test]
+fn compile_compound_shared_writes_detach_copied_payloads_to_native_binary() {
+    let root = temp_dir("ptn-native-compound-shared-write-cow");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("compound-shared-write-cow.php");
+    let output = root.join("compound-shared-write-cow-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$pass = 0;
+$fail = 0;
+$a = [1, 2];
+$b = $a;
+$b[0] += 5;
+if ($a[0] === 1 && $b[0] === 6) { $pass += 1; echo "01 pass\n"; } else { $fail += 1; echo "01 fail\n"; }
+$a = ["s" => "x"];
+$b = $a;
+$b["s"] .= "y";
+if ($a["s"] === "x" && $b["s"] === "xy") { $pass += 1; echo "02 pass\n"; } else { $fail += 1; echo "02 fail\n"; }
+$a = [0 => "zero"];
+$b = $a;
+$b[] = "one";
+if (isset($a[1]) === false && $b[1] === "one") { $pass += 1; echo "03 pass\n"; } else { $fail += 1; echo "03 fail\n"; }
+$a = [];
+$b = $a;
+$b[] += 3;
+if (isset($a[0]) === false && $b[0] === 3) { $pass += 1; echo "04 pass\n"; } else { $fail += 1; echo "04 fail\n"; }
+$a = ["x" => 1, "y" => 2];
+$b = $a;
+unset($b["x"]);
+if (isset($a["x"]) === true && isset($b["x"]) === false) { $pass += 1; echo "05 pass\n"; } else { $fail += 1; echo "05 fail\n"; }
+$a = [["n" => 1]];
+$b = $a;
+$b[0]["n"] += 4;
+if ($a[0]["n"] === 1 && $b[0]["n"] === 5) { $pass += 1; echo "06 pass\n"; } else { $fail += 1; echo "06 fail\n"; }
+$s = "abcd";
+$t = $s;
+$t[1] = "X";
+if ($s === "abcd" && $t === "aXcd") { $pass += 1; echo "07 pass\n"; } else { $fail += 1; echo "07 fail\n"; }
+$s = "ab";
+$t = $s;
+$t[4] = "Z";
+if ($s === "ab" && $t === "ab  Z") { $pass += 1; echo "08 pass\n"; } else { $fail += 1; echo "08 fail\n"; }
+$s = "hi";
+$t = $s;
+$t .= "!";
+if ($s === "hi" && $t === "hi!") { $pass += 1; echo "09 pass\n"; } else { $fail += 1; echo "09 fail\n"; }
+$s = "A";
+$t = $s;
+$t .= $t;
+if ($s === "A" && $t === "AA") { $pass += 1; echo "10 pass\n"; } else { $fail += 1; echo "10 fail\n"; }
+echo "pass=", $pass, " fail=", $fail, "\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "01 pass\n",
+            "02 pass\n",
+            "03 pass\n",
+            "04 pass\n",
+            "05 pass\n",
+            "06 pass\n",
+            "07 pass\n",
+            "08 pass\n",
+            "09 pass\n",
+            "10 pass\n",
+            "pass=10 fail=0\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    let main_start = c_source
+        .find("\nint main(void)")
+        .expect("generated C should contain main");
+    let main_body = &c_source[main_start..];
+    assert!(c_source.contains("ptn_string_detach_value_for_write"));
+    assert!(c_source.contains("ptn_runtime_string_offset_set(runtime, slot"));
+    assert!(main_body.contains("ptn_runtime_concat_assign_variable(&runtime"));
+    assert!(main_body.contains("ptn_runtime_array_path_set_from_assign_op(&runtime"));
+    assert!(main_body.contains("ptn_runtime_array_path_unset(&runtime"));
+}
+
+#[test]
 fn compile_array_offset_compound_assignment_undef_to_native_binary() {
     let root = temp_dir("ptn-native-array-offset-compound-undef");
     fs::create_dir_all(&root).unwrap();

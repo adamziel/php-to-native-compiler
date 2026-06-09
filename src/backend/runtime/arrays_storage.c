@@ -400,6 +400,53 @@ static PTN_UNUSED PtnArray *ptn_array_detach_value(PtnValue *value) {
     return value->as.array;
 }
 
+static PTN_UNUSED int ptn_string_detach_value_for_write(PtnValue *value, size_t new_len) {
+    if (value == NULL || value->type != PTN_STRING) {
+        return 0;
+    }
+    if (new_len == SIZE_MAX) {
+        ptn_abort_out_of_memory();
+    }
+
+    size_t old_len = value->as.string.len;
+    if (value->as.string.owned != NULL &&
+        value->as.string.refcount != NULL &&
+        *value->as.string.refcount == 1) {
+        char *buffer = value->as.string.owned;
+        if (new_len != old_len) {
+            char *resized = realloc(buffer, new_len + 1);
+            if (resized == NULL) {
+                ptn_abort_out_of_memory();
+            }
+            buffer = resized;
+        }
+        if (new_len > old_len) {
+            memset(buffer + old_len, ' ', new_len - old_len);
+        }
+        buffer[new_len] = '\0';
+        value->as.string.owned = buffer;
+        value->as.string.data = (const unsigned char *)buffer;
+        value->as.string.len = new_len;
+        return 1;
+    }
+
+    char *buffer = malloc(new_len + 1);
+    if (buffer == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    size_t copied_len = old_len < new_len ? old_len : new_len;
+    if (copied_len != 0) {
+        memcpy(buffer, value->as.string.data, copied_len);
+    }
+    if (new_len > copied_len) {
+        memset(buffer + copied_len, ' ', new_len - copied_len);
+    }
+    buffer[new_len] = '\0';
+    ptn_value_destroy(value);
+    *value = ptn_owned_string_len(buffer, new_len);
+    return 1;
+}
+
 static PTN_UNUSED PtnValue ptn_value_share(PtnValue value) {
     switch (value.type) {
         case PTN_STRING:

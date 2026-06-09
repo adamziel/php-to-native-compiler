@@ -253,6 +253,57 @@ static PTN_UNUSED PtnValue ptn_concat(PtnRuntime *runtime, PtnValue left, PtnVal
     return ptn_concat_many(runtime, operands, 2, strings);
 }
 
+static PTN_UNUSED int ptn_string_value_same_payload(PtnValue left, PtnValue right) {
+    if (left.type != PTN_STRING || right.type != PTN_STRING) {
+        return 0;
+    }
+    if (left.as.string.refcount != NULL || right.as.string.refcount != NULL) {
+        return left.as.string.refcount != NULL &&
+            left.as.string.refcount == right.as.string.refcount;
+    }
+    return left.as.string.data == right.as.string.data &&
+        left.as.string.len == right.as.string.len;
+}
+
+static PTN_UNUSED void ptn_runtime_concat_assign_variable(
+    PtnRuntime *runtime,
+    const char *name,
+    PtnValue left,
+    PtnValue right,
+    size_t line
+) {
+    PtnValue *slot = ptn_symbols_value_slot(&runtime->symbols, name);
+    if (slot != NULL && ptn_string_value_same_payload(*slot, left)) {
+        PtnStringOperand suffix = ptn_concat_string_operand(runtime, right, line);
+        char *suffix_copy = ptn_duplicate_string_len(suffix.data, suffix.len);
+        size_t suffix_len = suffix.len;
+        ptn_string_operand_free(suffix);
+
+        if (suffix_len > SIZE_MAX - slot->as.string.len) {
+            free(suffix_copy);
+            ptn_abort_out_of_memory();
+        }
+        size_t old_len = slot->as.string.len;
+        size_t new_len = old_len + suffix_len;
+        if (!ptn_string_detach_value_for_write(slot, new_len)) {
+            free(suffix_copy);
+            return;
+        }
+        if (suffix_len != 0) {
+            memcpy(slot->as.string.owned + old_len, suffix_copy, suffix_len);
+        }
+        slot->as.string.owned[new_len] = '\0';
+        slot->as.string.data = (const unsigned char *)slot->as.string.owned;
+        slot->as.string.len = new_len;
+        free(suffix_copy);
+        return;
+    }
+
+    PtnValue result = ptn_concat(runtime, left, right, line);
+    ptn_runtime_write_variable(runtime, name, result);
+    ptn_value_destroy(&result);
+}
+
 static PTN_UNUSED PtnValue ptn_cast_string(PtnValue value) {
     PtnStringOperand string = ptn_value_to_string_operand(value);
     char *copy = ptn_duplicate_string_len(string.data, string.len);

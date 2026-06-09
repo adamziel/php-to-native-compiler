@@ -456,12 +456,15 @@ static PTN_UNUSED unsigned char ptn_string_offset_assignment_byte(
 
 static PTN_UNUSED void ptn_runtime_string_offset_set(
     PtnRuntime *runtime,
-    const char *name,
-    PtnValue container,
+    PtnValue *slot,
     PtnValue key_value,
     PtnValue value,
     size_t line
 ) {
+    if (slot == NULL || slot->type != PTN_STRING) {
+        return;
+    }
+
     int64_t offset = 0;
     if (!ptn_string_offset_from_value(runtime, key_value, line, 0, &offset)) {
         return;
@@ -469,27 +472,18 @@ static PTN_UNUSED void ptn_runtime_string_offset_set(
 
     size_t index = 0;
     size_t new_len = 0;
-    if (!ptn_string_offset_assignment_index(container.as.string.len, offset, line, &index, &new_len)) {
+    if (!ptn_string_offset_assignment_index(slot->as.string.len, offset, line, &index, &new_len)) {
         return;
     }
 
     unsigned char byte = ptn_string_offset_assignment_byte(runtime, value, line);
-    char *buffer = malloc(new_len + 1);
-    if (buffer == NULL) {
-        ptn_abort_out_of_memory();
+    if (!ptn_string_detach_value_for_write(slot, new_len)) {
+        return;
     }
-    if (container.as.string.len != 0) {
-        memcpy(buffer, container.as.string.data, container.as.string.len);
-    }
-    if (new_len > container.as.string.len) {
-        memset(buffer + container.as.string.len, ' ', new_len - container.as.string.len);
-    }
-    buffer[index] = (char)byte;
-    buffer[new_len] = '\0';
-
-    PtnValue updated = ptn_owned_string_len(buffer, new_len);
-    ptn_runtime_write_variable(runtime, name, updated);
-    ptn_value_destroy(&updated);
+    slot->as.string.owned[index] = (char)byte;
+    slot->as.string.owned[new_len] = '\0';
+    slot->as.string.data = (const unsigned char *)slot->as.string.owned;
+    slot->as.string.len = new_len;
 }
 
 static PTN_UNUSED PtnLookupResult ptn_offset_lookup(PtnRuntime *runtime, PtnValue container, PtnValue key_value, size_t line, int quiet) {
@@ -735,7 +729,7 @@ static PTN_UNUSED void ptn_runtime_array_path_set_impl(
             ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
             return;
         }
-        ptn_runtime_string_offset_set(runtime, name, ptn_value_borrow(*slot), segments[0].value, value, line);
+        ptn_runtime_string_offset_set(runtime, slot, segments[0].value, value, line);
         return;
     }
 

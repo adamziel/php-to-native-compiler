@@ -1,20 +1,20 @@
 # PTN Progress
 
-Last refresh: 2026-06-09T17:45Z
-Commit: pending `ptn-cqu.47.11` rebased after `ptn-cqu.47.6`
+Last refresh: 2026-06-09T19:55Z
+Commit: pending `ptn-cqu.47.13` rebased after `ptn-cqu.47.11`
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | --- |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 287 | 287 | 0 |
+| Native compiled PHP snippets | 289 | 289 | 0 |
 | PHPT parsed bounded log | 171 | 121 | 50 |
 | PHPT Zend rows | 76 | 60 | 16 |
 | PHPT ext/standard rows | 77 | 44 | 33 |
 | PHPT tests/basic+func+lang | 18 | 17 | 1 |
 | COW contract spec tests | 5 | 5 | 0 |
-| COW-focused native tests | 5 | 5 | 0 |
+| COW-focused native tests | 6 | 6 | 0 |
 | PHPT COW manifest | 29 | 2 | 27 failed, 0 skipped, 0 warned |
 | Focused PHPT foreach COW row | 1 | 1 | by-reference foreach remains unsupported |
 
@@ -39,21 +39,22 @@ slots, top-level user functions with scoped `__FUNCTION__`/`__METHOD__` magic
 constants plus `func_num_args()`/`func_get_arg()`/`func_get_args()`
 introspection, `print_r`, selected binary-string handling, string offset read
 diagnostics, direct-variable string offset writes with append/unset/assign-op
-Error boundaries, catchable `count()` non-array diagnostics, and
-expression-form `??` reads over direct variables, arrays, and string offsets
-using quiet lookup semantics, and shared array/string payload COW with path
-detach for nested array assignment, append, and unset.
+Error boundaries, catchable `count()` non-array diagnostics, expression-form
+`??` reads over direct variables, arrays, and string offsets using quiet lookup
+semantics, and shared array/string payload COW with path detach for nested array
+assignment, append, unset, compound array writes, string offset writes, and
+direct concatenation assignment.
 
 ## Still Needed
 
-Broader copy-on-write coverage for strings, references, function boundaries,
-by-reference foreach, and dynamic edges. Nested array path detach is present for
-assignment, append, and unset. All non-COW work is paused unless it is required
-to prove COW. Assignment-form null coalescing `??=` remains unsupported.
+Broader copy-on-write coverage for references, function boundaries, by-reference
+foreach, and dynamic edges. Nested array path detach is present for assignment,
+append, unset, and compound writes. All non-COW work is paused unless it is
+required to prove COW. Assignment-form null coalescing `??=` remains unsupported.
 
 ## Next Focus
 
-1. Extend the COW suite into strings, references, and function boundaries.
+1. Extend the COW suite into references and function boundaries.
 2. Carry array COW through additional by-reference/dynamic call paths.
 3. Prove by-reference foreach paths remain blocked or become implemented.
 4. Keep this dashboard numeric and under 500 words.
