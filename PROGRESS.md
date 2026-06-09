@@ -3,9 +3,9 @@
 ## Progress Bar
 
 `[#########.] 54/59 PHPT rows passing`
-- Latest: 2026-06-09T15:06Z bounded PHPT patrol: 54 pass, 5 array-function failures.
+- Latest: 2026-06-09T15:27Z bounded PHPT patrol repeats 54/59; five array rows still fail.
 - Tests ported/passing: 54/59
-- Commit: 9a4282cdda
+- Commit: 9a4282cdd
 
 ## 2026-06-08
 
