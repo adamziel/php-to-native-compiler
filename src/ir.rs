@@ -130,8 +130,11 @@ pub enum UnaryOp {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CastKind {
     Int,
+    Integer,
     Float,
+    Double,
     String,
+    Binary,
     Bool,
     Boolean,
 }
@@ -387,8 +390,11 @@ fn lower_unary_op(op: AstUnaryOp) -> UnaryOp {
 fn lower_cast_kind(kind: AstCastKind) -> CastKind {
     match kind {
         AstCastKind::Int => CastKind::Int,
+        AstCastKind::Integer => CastKind::Integer,
         AstCastKind::Float => CastKind::Float,
+        AstCastKind::Double => CastKind::Double,
         AstCastKind::String => CastKind::String,
+        AstCastKind::Binary => CastKind::Binary,
         AstCastKind::Bool => CastKind::Bool,
         AstCastKind::Boolean => CastKind::Boolean,
     }

@@ -46,7 +46,8 @@ supports in generated native binaries.
   bytewise string results for non-NUL string data; other supported scalar
   operands are converted to integers through the current scalar numeric path.
 - Scalar `(int)`, `(float)`, `(string)`, `(bool)`, and deprecated
-  non-canonical `(boolean)` casts over supported boxed scalar values.
+  non-canonical `(integer)`, `(double)`, `(binary)`, and `(boolean)` casts over
+  supported boxed scalar values.
 - Global-scope magic constants `__LINE__`, `__FILE__`, `__DIR__`,
   `__FUNCTION__`, `__METHOD__`, `__CLASS__`, `__TRAIT__`, and
   `__NAMESPACE__`. Scope-dependent names currently resolve to empty strings in
@@ -217,7 +218,8 @@ supports in generated native binaries.
 - PHP-exact `error_reporting()` configuration/filtering behavior.
 - PHP-exact `getmypid()` process model parity across SAPIs and unsupported
   platforms.
-- Non-canonical cast spellings beyond `(boolean)`.
+- Non-canonical cast spellings beyond `(integer)`, `(double)`, `(binary)`, and
+  `(boolean)`.
 - Scope-aware magic constants inside functions, methods, classes, traits,
   namespaces, includes, and eval contexts.
 - PHP-exact file names, line numbers, error-handler routing, and overflow

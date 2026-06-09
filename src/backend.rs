@@ -327,23 +327,47 @@ impl ValueEmitter {
                 out.push_str("    PtnValue ");
                 out.push_str(&result_temp);
                 out.push_str(" = ");
-                out.push_str(match kind {
-                    CastKind::Int => "ptn_cast_int",
-                    CastKind::Float => "ptn_cast_float",
-                    CastKind::String => "ptn_cast_string",
-                    CastKind::Bool => "ptn_cast_bool",
-                    CastKind::Boolean => "ptn_cast_boolean",
-                });
-                out.push('(');
-                if matches!(kind, CastKind::Boolean) {
-                    out.push_str("&runtime, ");
-                    out.push_str(&expr_temp);
-                    out.push_str(", ");
-                    out.push_str(&line.to_string());
-                } else {
-                    out.push_str(&expr_temp);
+                match kind {
+                    CastKind::Int | CastKind::Float | CastKind::String | CastKind::Bool => {
+                        out.push_str(match kind {
+                            CastKind::Int => "ptn_cast_int",
+                            CastKind::Float => "ptn_cast_float",
+                            CastKind::String => "ptn_cast_string",
+                            CastKind::Bool => "ptn_cast_bool",
+                            CastKind::Integer
+                            | CastKind::Double
+                            | CastKind::Binary
+                            | CastKind::Boolean => {
+                                unreachable!("non-canonical casts are handled separately")
+                            }
+                        });
+                        out.push('(');
+                        out.push_str(&expr_temp);
+                        out.push_str(");\n");
+                    }
+                    CastKind::Integer | CastKind::Double | CastKind::Binary | CastKind::Boolean => {
+                        let (spelling, canonical, target) = match kind {
+                            CastKind::Integer => ("integer", "int", "PTN_CAST_TARGET_INT"),
+                            CastKind::Double => ("double", "float", "PTN_CAST_TARGET_FLOAT"),
+                            CastKind::Binary => ("binary", "string", "PTN_CAST_TARGET_STRING"),
+                            CastKind::Boolean => ("boolean", "bool", "PTN_CAST_TARGET_BOOL"),
+                            CastKind::Int | CastKind::Float | CastKind::String | CastKind::Bool => {
+                                unreachable!("canonical casts are handled separately")
+                            }
+                        };
+                        out.push_str("ptn_cast_noncanonical(&runtime, ");
+                        out.push_str(&expr_temp);
+                        out.push_str(", \"");
+                        out.push_str(spelling);
+                        out.push_str("\", \"");
+                        out.push_str(canonical);
+                        out.push_str("\", ");
+                        out.push_str(target);
+                        out.push_str(", ");
+                        out.push_str(&line.to_string());
+                        out.push_str(");\n");
+                    }
                 }
-                out.push_str(");\n");
                 result_temp
             }
             ValueExpr::String(value) => format!("ptn_string(\"{}\")", c_string(value)),
@@ -1612,13 +1636,48 @@ static PTN_UNUSED PtnValue ptn_cast_bool(PtnValue value) {
     return ptn_bool(ptn_is_truthy(value));
 }
 
-static PTN_UNUSED PtnValue ptn_cast_boolean(PtnRuntime *runtime, PtnValue value, size_t line) {
-    ptn_emit_deprecation(
-        &runtime->diagnostics,
-        "Non-canonical cast (boolean) is deprecated, use the (bool) cast instead",
-        line
+typedef enum {
+    PTN_CAST_TARGET_INT,
+    PTN_CAST_TARGET_FLOAT,
+    PTN_CAST_TARGET_STRING,
+    PTN_CAST_TARGET_BOOL
+} PtnCastTarget;
+
+static PTN_UNUSED PtnValue ptn_cast_target(PtnValue value, PtnCastTarget target) {
+    switch (target) {
+        case PTN_CAST_TARGET_INT:
+            return ptn_cast_int(value);
+        case PTN_CAST_TARGET_FLOAT:
+            return ptn_cast_float(value);
+        case PTN_CAST_TARGET_STRING:
+            return ptn_cast_string(value);
+        case PTN_CAST_TARGET_BOOL:
+            return ptn_cast_bool(value);
+    }
+    return ptn_null();
+}
+
+static PTN_UNUSED PtnValue ptn_cast_noncanonical(
+    PtnRuntime *runtime,
+    PtnValue value,
+    const char *spelling,
+    const char *canonical,
+    PtnCastTarget target,
+    size_t line
+) {
+    char message[128];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Non-canonical cast (%s) is deprecated, use the (%s) cast instead",
+        spelling,
+        canonical
     );
-    return ptn_cast_bool(value);
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_deprecation(&runtime->diagnostics, message, line);
+    return ptn_cast_target(value, target);
 }
 
 static PTN_UNUSED PtnValue ptn_gettype_value(PtnValue value) {

@@ -494,6 +494,32 @@ fn parser_distinguishes_non_canonical_boolean_cast() {
 }
 
 #[test]
+fn parser_distinguishes_non_canonical_scalar_casts() {
+    let program = parser::parse(
+        "<?php var_dump((integer) 42, (int) 42, (double) 42, (float) 42, (binary) 42, (string) 42);",
+    )
+    .unwrap();
+    let Statement::Call { arguments, .. } = &program.statements[0] else {
+        panic!("expected call statement");
+    };
+    let expected = [
+        CastKind::Integer,
+        CastKind::Int,
+        CastKind::Double,
+        CastKind::Float,
+        CastKind::Binary,
+        CastKind::String,
+    ];
+
+    for (argument, expected_kind) in arguments.iter().zip(expected) {
+        let Expr::Cast { kind, .. } = argument else {
+            panic!("expected cast argument");
+        };
+        assert_eq!(*kind, expected_kind);
+    }
+}
+
+#[test]
 fn parser_preserves_parenthesized_expression_grouping() {
     let program = parser::parse("<?php echo (1), ($name), (1 + 2), ((\"a\" . \"b\"));").unwrap();
     let Statement::Echo { expressions, .. } = &program.statements[0] else {
@@ -2698,6 +2724,29 @@ fn compile_non_canonical_boolean_cast_phpt_shape_to_native_binary() {
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "Deprecated: Non-canonical cast (boolean) is deprecated, use the (bool) cast instead in ptn on line 3\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_non_canonical_scalar_casts_phpt_shapes_to_native_binary() {
+    let root = temp_dir("ptn-native-non-canonical-scalar-casts");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("non-canonical-scalar-casts.php");
+    let output = root.join("non-canonical-scalar-casts-bin");
+    fs::write(
+        &input,
+        "<?php\n\nvar_dump((integer) 42);\nvar_dump((double) 42);\nvar_dump((binary) 42);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Deprecated: Non-canonical cast (integer) is deprecated, use the (int) cast instead in ptn on line 3\nint(42)\n\nDeprecated: Non-canonical cast (double) is deprecated, use the (float) cast instead in ptn on line 4\nfloat(42)\n\nDeprecated: Non-canonical cast (binary) is deprecated, use the (string) cast instead in ptn on line 5\nstring(2) \"42\"\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

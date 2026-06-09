@@ -573,8 +573,11 @@ impl Parser {
     fn peek_cast_kind(&self) -> Option<CastKind> {
         match self.peek().kind {
             TokenKind::IntType => Some(CastKind::Int),
+            TokenKind::IntegerType => Some(CastKind::Integer),
             TokenKind::FloatType => Some(CastKind::Float),
+            TokenKind::DoubleType => Some(CastKind::Double),
             TokenKind::StringType => Some(CastKind::String),
+            TokenKind::BinaryType => Some(CastKind::Binary),
             TokenKind::BoolType => Some(CastKind::Bool),
             TokenKind::BooleanType => Some(CastKind::Boolean),
             _ => None,

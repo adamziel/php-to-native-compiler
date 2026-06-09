@@ -950,3 +950,22 @@ Added global-scope magic constants:
 Still unsupported after this magic-constant slice: scope-aware magic constant
 values inside functions, methods, classes, traits, namespaces, includes, and
 eval contexts.
+
+Extended deprecated non-canonical scalar cast aliases:
+
+- The lexer/parser now accept `(integer)`, `(double)`, and `(binary)` as cast
+  spellings distinct from canonical `(int)`, `(float)`, and `(string)`.
+- AST and IR cast nodes preserve the non-canonical cast kind and source line so
+  generated runtime diagnostics can be emitted before conversion.
+- Generated C uses a shared `ptn_cast_noncanonical()` helper for all supported
+  non-canonical spellings, including the already-supported `(boolean)`, then
+  dispatches to the canonical boxed scalar cast helpers.
+- Native tests prove parser distinction and the public non-canonical cast PHPT
+  source shapes.
+- Focused public PHPT telemetry through `phpc` passes
+  `Zend/tests/type_coercion/type_casts/non_canonical_integer_cast.phpt`,
+  `Zend/tests/type_coercion/type_casts/non_canonical_double_cast.phpt`, and
+  `Zend/tests/type_coercion/type_casts/non_canonical_binary_cast.phpt`.
+
+Still unsupported after this non-canonical cast extension: `(real)`, `(unset)`,
+array/object casts, and exact scalar cast overflow diagnostics.

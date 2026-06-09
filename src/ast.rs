@@ -179,8 +179,11 @@ pub enum UnaryOp {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CastKind {
     Int,
+    Integer,
     Float,
+    Double,
     String,
+    Binary,
     Bool,
     Boolean,
 }

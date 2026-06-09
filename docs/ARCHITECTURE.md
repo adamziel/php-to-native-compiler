@@ -53,9 +53,10 @@ Current runtime/compiler slices:
   existing `ptn_echo` helper.
 - Parenthesized expressions are parsed as grouping, while unary `+`, unary `-`,
   unary `!`, unary bitwise `~`, scalar `(int)`, `(float)`, `(string)`, and
-  `(bool)` casts, and deprecated non-canonical `(boolean)` casts lower to IR
-  value-expression operation nodes. The C backend emits boxed runtime helper
-  calls such as `ptn_positive`, `ptn_negate`, `ptn_not`, `ptn_bitwise_not`, and
+  `(bool)` casts, and deprecated non-canonical `(integer)`, `(double)`,
+  `(binary)`, and `(boolean)` casts lower to IR value-expression operation
+  nodes. The C backend emits boxed runtime helper calls such as `ptn_positive`,
+  `ptn_negate`, `ptn_not`, `ptn_bitwise_not`, and
   `ptn_cast_*`.
 - Double-quoted strings with direct `$name` interpolation lower to ordinary
   value-expression concatenation: literal string segments, runtime variable
