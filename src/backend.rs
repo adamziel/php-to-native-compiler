@@ -864,7 +864,7 @@ typedef struct {
 } PtnNumber;
 
 typedef struct {
-    const char *name;
+    char *name;
     PtnValue value;
 } PtnSymbol;
 
@@ -1109,6 +1109,9 @@ static void ptn_symbols_init(PtnSymbolTable *symbols) {
 }
 
 static void ptn_symbols_free(PtnSymbolTable *symbols) {
+    for (size_t i = 0; i < symbols->len; i++) {
+        free(symbols->items[i].name);
+    }
     free(symbols->items);
     symbols->items = NULL;
     symbols->len = 0;
@@ -1139,7 +1142,7 @@ static PTN_UNUSED void ptn_symbols_set(PtnSymbolTable *symbols, const char *name
         symbols->items = new_items;
         symbols->capacity = new_capacity;
     }
-    symbols->items[symbols->len].name = name;
+    symbols->items[symbols->len].name = ptn_duplicate_string(name);
     symbols->items[symbols->len].value = value;
     symbols->len++;
 }
@@ -1236,6 +1239,19 @@ static void ptn_emit_warning(PtnDiagnosticSink *diagnostics, const char *message
     fputs("Warning: ", stdout);
     fputs(message, stdout);
     fputs(" in ptn on line ", stdout);
+    fprintf(stdout, "%zu", line);
+    fputc('\n', stdout);
+}
+
+static void ptn_emit_constant_already_defined_warning(
+    PtnDiagnosticSink *diagnostics,
+    const char *name,
+    size_t line
+) {
+    (void)diagnostics;
+    fputs("Warning: Constant ", stdout);
+    fputs(name, stdout);
+    fputs(" already defined, this will be an error in PHP 9 in ptn on line ", stdout);
     fprintf(stdout, "%zu", line);
     fputc('\n', stdout);
 }
@@ -2425,6 +2441,20 @@ static PTN_UNUSED int ptn_runtime_constant_is_defined(PtnRuntime *runtime, const
     return ptn_runtime_constant_value(runtime, name, &value);
 }
 
+static PTN_UNUSED int ptn_runtime_define_constant_if_absent(
+    PtnRuntime *runtime,
+    const char *name,
+    PtnValue value,
+    size_t line
+) {
+    if (ptn_runtime_constant_is_defined(runtime, name)) {
+        ptn_emit_constant_already_defined_warning(&runtime->diagnostics, name, line);
+        return 0;
+    }
+    ptn_runtime_define_constant(runtime, name, value);
+    return 1;
+}
+
 static PTN_UNUSED PtnValue ptn_read_constant(PtnRuntime *runtime, const char *name) {
     PtnValue value;
     if (ptn_runtime_constant_value(runtime, name, &value)) {
@@ -3437,6 +3467,8 @@ static PtnValue ptn_internal_error_reporting(PtnRuntime *runtime, size_t argc, c
     return ptn_int(0);
 }
 
+static PtnValue ptn_internal_define(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_constant(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_defined(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_function_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 
@@ -3480,6 +3512,8 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "is_finite", 1, 1, ptn_internal_is_finite },
         { "is_infinite", 1, 1, ptn_internal_is_infinite },
         { "is_nan", 1, 1, ptn_internal_is_nan },
+        { "define", 2, 2, ptn_internal_define },
+        { "constant", 1, 1, ptn_internal_constant },
         { "defined", 1, 1, ptn_internal_defined },
         { "function_exists", 1, 1, ptn_internal_function_exists },
     };
@@ -3497,6 +3531,23 @@ static const PtnInternalFunction *ptn_find_internal_function(const char *name) {
         }
     }
     return NULL;
+}
+
+static PtnValue ptn_internal_define(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    char *name = ptn_value_to_string(args[0]);
+    int did_define = ptn_runtime_define_constant_if_absent(runtime, name, args[1], line);
+    free(name);
+    return ptn_bool(did_define);
+}
+
+static PtnValue ptn_internal_constant(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    char *name = ptn_value_to_string(args[0]);
+    PtnValue value = ptn_read_constant(runtime, name);
+    free(name);
+    return value;
 }
 
 static PtnValue ptn_internal_defined(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {

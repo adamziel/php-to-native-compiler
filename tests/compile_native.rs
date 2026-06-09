@@ -2606,6 +2606,60 @@ var_dump(defined(\"C\"), defined(\"c\"));\n",
 }
 
 #[test]
+fn compile_runtime_define_and_constant_to_native_binary() {
+    let root = temp_dir("ptn-native-runtime-define-constant");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("runtime-define-constant.php");
+    let output = root.join("runtime-define-constant-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(function_exists(\"define\"), function_exists(\"CONSTANT\"));\n\
+define(\"USER_CONST\", \"value\");\n\
+define(1, 2);\n\
+define(\"\", 3);\n\
+var_dump(defined(\"USER_CONST\"), constant(\"USER_CONST\"), constant(1), constant(\"\"));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nbool(true)\nbool(true)\nstring(5) \"value\"\nint(2)\nint(3)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_duplicate_define_warns_and_preserves_original_constant() {
+    let root = temp_dir("ptn-native-duplicate-define");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("duplicate-define.php");
+    let output = root.join("duplicate-define-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+define(\"dup\", 1);\n\
+var_dump(define(\"dup\", 2));\n\
+var_dump(constant(\"dup\"));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Warning: Constant dup already defined, this will be an error in PHP 9 in ptn on line 3\nbool(false)\nint(1)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_scalar_comparisons_to_native_binary() {
     let root = temp_dir("ptn-native-comparisons");
     fs::create_dir_all(&root).unwrap();

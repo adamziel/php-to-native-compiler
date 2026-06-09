@@ -21,7 +21,7 @@ Supported today:
   the first immediately following newline swallowed as PHP does.
 - Global-scope `const NAME = expr;` declarations for the currently supported
   constant-expression subset. Declared constants are visible to bare constant
-  reads and `defined()`.
+  reads, `defined()`, and `constant()`.
 - `echo` statements.
 - Statement-form `print expr;` for the same scalar expression subset as
   `echo`; emitted native code uses the same boxed output conversion path.
@@ -35,7 +35,7 @@ Supported today:
   `ord(expr)`,
   `error_reporting(expr)`, `gettype(expr)`, scalar `is_*` type predicates,
   non-finite predicates such as `is_finite(expr)`, `is_infinite(expr)`, and
-  `is_nan(expr)`,
+  `is_nan(expr)`, `define(expr, expr)`, `constant(expr)`,
   `defined(expr)`, and `function_exists(expr)`, lowered through IR
   internal-call nodes and generated C runtime dispatch.
 - `var_dump()` output for the current boxed `PtnValue` types: `null`,
@@ -96,13 +96,18 @@ Supported today:
   `is_finite()`, `is_infinite()`, and `is_nan()`.
 - Symbol-existence predicates for currently modeled runtime tables:
   `function_exists()` checks the generated internal-function registry, and
-  `defined()` checks global `const` declarations plus the modeled constant
-  registry, which currently includes `E_ERROR`, `PHP_EOL`,
+  `defined()` checks global `const` declarations, constants created with
+  `define()`, plus the modeled constant registry, which currently includes
+  `E_ERROR`, `PHP_EOL`,
   `DIRECTORY_SEPARATOR`, `PATH_SEPARATOR`, `PHP_INT_MIN`, `PHP_INT_MAX`,
   `PHP_INT_SIZE`, `INF`, `NAN`, `M_PI`, and the modeled PHP math constants
   `M_E`, `M_LOG2E`, `M_LOG10E`, `M_LN2`, `M_LN10`, `M_PI_2`, `M_PI_4`,
   `M_1_PI`, `M_2_PI`, `M_SQRTPI`, `M_2_SQRTPI`, `M_LNPI`, `M_EULER`,
   `M_SQRT2`, `M_SQRT1_2`, and `M_SQRT3`.
+- `define()` creates runtime constants over the current boxed value subset and
+  returns `false` with a warning when the requested name is already defined.
+  `constant()` reads the same runtime and modeled built-in constant registry
+  using the current scalar string-conversion result for the name.
 - String, integer, float, boolean, and null literals. Numeric literals accept
   PHP digit separators between digits; integer literals include decimal,
   legacy octal, binary `0b`/`0B`, and hexadecimal `0x`/`0X` forms.
@@ -215,11 +220,12 @@ Unsupported today:
   complete overflow parity, exact scalar cast overflow behavior, PHP-exact
   warning text/file/line/error-handler behavior, inline HTML before `<?php` or
   between PHP blocks, internal functions outside the registered scalar subset,
-  namespace/class constants, dynamic `define()`/`constant()`, duplicate
-  constant diagnostics, and built-in constants other than the currently
-  modeled `E_ERROR`, `PHP_EOL`, `DIRECTORY_SEPARATOR`, `PATH_SEPARATOR`,
-  `PHP_INT_MIN`, `PHP_INT_MAX`, `PHP_INT_SIZE`, `INF`, `NAN`, `M_PI`, and the
-  modeled PHP math `M_*` constants, objects, resources, recursion, references,
+  namespace/class constants, global `const` duplicate diagnostics and ordering
+  parity with runtime `define()`, `define()`'s legacy case-insensitive flag,
+  and built-in constants other than the currently modeled `E_ERROR`, `PHP_EOL`,
+  `DIRECTORY_SEPARATOR`, `PATH_SEPARATOR`, `PHP_INT_MIN`, `PHP_INT_MAX`,
+  `PHP_INT_SIZE`, `INF`, `NAN`, `M_PI`, and the modeled PHP math `M_*`
+  constants, objects, resources, recursion, references,
   embedded NUL string handling, complex/braced interpolation, interpolation of
   arrays/objects/offsets/properties/variable variables, exact `strcmp()`,
   `str_contains()`, and `substr()` binary-string parity, exact

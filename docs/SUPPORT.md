@@ -176,8 +176,13 @@ supports in generated native binaries.
   `is_double()`, `is_string()`, `is_scalar()`, `is_finite()`,
   `is_infinite()`, and `is_nan()`.
 - `function_exists()` over the currently registered internal-function names.
-- `defined()` over global `const` declarations plus the current modeled
-  constant registry, including `E_ERROR`, `PHP_EOL`, `DIRECTORY_SEPARATOR`,
+- `define()` creates runtime constants over the current boxed value subset,
+  returning `false` with a warning when the requested name is already defined.
+- `constant()` reads the same runtime and modeled built-in constant registry
+  using the current scalar string-conversion result for the name.
+- `defined()` over global `const` declarations, constants created with
+  `define()`, plus the current modeled constant registry, including `E_ERROR`,
+  `PHP_EOL`, `DIRECTORY_SEPARATOR`,
   `PATH_SEPARATOR`, `PHP_INT_MIN`, `PHP_INT_MAX`, `PHP_INT_SIZE`, `INF`,
   `NAN`, `M_PI`, and the modeled PHP math constants `M_E`, `M_LOG2E`,
   `M_LOG10E`, `M_LN2`, `M_LN10`, `M_PI_2`, `M_PI_4`, `M_1_PI`, `M_2_PI`,
@@ -249,11 +254,12 @@ supports in generated native binaries.
   offsets, properties, variable variables, or other non-direct-variable forms.
 - Internal functions outside the registered scalar subset.
 - User-defined functions in `function_exists()`.
-- Namespace/class constants, dynamic `define()`/`constant()`, duplicate
-  constant diagnostics, and built-in PHP/extension constants other than the
-  currently modeled `E_ERROR`, `PHP_EOL`, `DIRECTORY_SEPARATOR`,
-  `PATH_SEPARATOR`, `PHP_INT_MIN`, `PHP_INT_MAX`, `PHP_INT_SIZE`, `INF`,
-  `NAN`, `M_PI`, and modeled PHP math `M_*` constants in `defined()`.
+- Namespace/class constants, global `const` duplicate diagnostics and ordering
+  parity with runtime `define()`, `define()`'s legacy case-insensitive flag, and
+  built-in PHP/extension constants other than the currently modeled `E_ERROR`,
+  `PHP_EOL`, `DIRECTORY_SEPARATOR`, `PATH_SEPARATOR`, `PHP_INT_MIN`,
+  `PHP_INT_MAX`, `PHP_INT_SIZE`, `INF`, `NAN`, `M_PI`, and modeled PHP math
+  `M_*` constants in `defined()`/`constant()`.
 - Type predicate coverage for arrays, objects, resources, and references.
 - Array element mutation, append/unset/iteration, long-form
   `array(...)`, recursive arrays, objects, resources, references, copy-on-write,

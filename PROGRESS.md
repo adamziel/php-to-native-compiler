@@ -1325,3 +1325,27 @@ Added scalar `substr()`:
 Still unsupported after this `substr()` slice: exact binary-string behavior for
 embedded NUL values, unsupported array/object/resource/reference operand
 diagnostics, strict type handling, and broader string-runtime parity.
+
+Added dynamic runtime constants through `define()` and `constant()`:
+
+- Registered `define()` and `constant()` through the existing generated C
+  internal-function registry, so normal calls and `function_exists()` share the
+  same case-insensitive lookup table.
+- Runtime constants created by `define()` use the same per-runtime constant
+  table as global `const` declarations, bare constant reads, `defined()`, and
+  `constant()`.
+- Dynamic constant names are converted through the current boxed scalar
+  string-conversion path, including numeric and empty-string names in the
+  supported subset.
+- Duplicate `define()` calls preserve the original value, return `false`, and
+  emit a PHP-like warning boundary.
+- Native tests prove runtime constant creation, dynamic lookup, registry
+  visibility, numeric/empty names, and duplicate handling.
+- Focused public PHPT telemetry through `phpc` passes
+  `Zend/tests/constants/constants_001.phpt`.
+
+Still unsupported after this dynamic constant slice: namespace/class constants,
+global `const` duplicate diagnostics and ordering parity with runtime
+`define()`, `define()`'s legacy case-insensitive flag, exact unsupported
+argument type diagnostics, additional built-in/extension constants, exception
+behavior for `constant()` failures, and eval contexts.
