@@ -105,6 +105,8 @@ pub enum BinaryOp {
     Concat,
     Equal,
     NotEqual,
+    Identical,
+    NotIdentical,
     Less,
     LessEqual,
     Greater,

@@ -21,7 +21,9 @@ pub enum TokenKind {
     Variable(String),
     Equal,
     EqualEqual,
+    EqualEqualEqual,
     NotEqual,
+    NotEqualEqual,
     Less,
     LessEqual,
     Greater,
@@ -122,8 +124,14 @@ impl<'a> Lexer<'a> {
                 ',' => self.push_fixed(TokenKind::Comma, 1),
                 '{' => self.push_fixed(TokenKind::LeftBrace, 1),
                 '}' => self.push_fixed(TokenKind::RightBrace, 1),
+                '=' if self.rest().starts_with("===") => {
+                    self.push_fixed(TokenKind::EqualEqualEqual, 3)
+                }
                 '=' if self.rest().starts_with("==") => self.push_fixed(TokenKind::EqualEqual, 2),
                 '=' => self.push_fixed(TokenKind::Equal, 1),
+                '!' if self.rest().starts_with("!==") => {
+                    self.push_fixed(TokenKind::NotEqualEqual, 3)
+                }
                 '!' if self.rest().starts_with("!=") => self.push_fixed(TokenKind::NotEqual, 2),
                 '<' if self.rest().starts_with("<=") => self.push_fixed(TokenKind::LessEqual, 2),
                 '<' => self.push_fixed(TokenKind::Less, 1),

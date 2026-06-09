@@ -52,7 +52,9 @@ Current runtime/compiler slices:
   shape. Comparisons emit boxed booleans through runtime helpers, while `&&`
   and `||` emit native C branches that short-circuit over boxed PHP truthiness.
   The ordered comparison helpers share `ptn_compare_order`, so `<`, `<=`, `>`,
-  and `>=` use one scalar ordering path.
+  and `>=` use one scalar ordering path. Strict scalar identity uses a separate
+  helper that compares boxed type and value without numeric-string or boolean
+  coercion.
 - Simple statement-form calls lower to IR internal-call instructions carrying a
   normalized function name and lowered arguments. The generated C backend
   materializes arguments left-to-right and dispatches through a small internal
@@ -86,8 +88,8 @@ Near-term architecture targets:
   unsupported compound operators beyond `+=`, `-=`, `*=`, `/=`, `%=`, and `.=`:
   `**=`, `&=`, `|=`, `^=`, `<<=`, `>>=`, `??=`.
 - Complete comparison parity for arrays, objects, references, chained
-  comparison parse errors, identity/spaceship operators, keyword boolean
-  operators, and unsupported scalar edge cases.
+  comparison parse errors, spaceship operator, keyword boolean operators, and
+  unsupported scalar edge cases.
 - A broader internal-function module system with shared argument parsing,
   metadata, unsupported array/object/resource/reference diagnostics, and
   PHP-exact `var_dump` precision/formatting behavior.

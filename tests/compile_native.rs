@@ -364,6 +364,28 @@ fn parser_accepts_comparison_boolean_and_grouping_expressions() {
 }
 
 #[test]
+fn parser_accepts_strict_identity_expressions() {
+    let program = parser::parse("<?php echo 1 === 1, \"1\" !== 1;").unwrap();
+    let Statement::Echo { expressions, .. } = &program.statements[0] else {
+        panic!("expected echo statement");
+    };
+    assert!(matches!(
+        &expressions[0],
+        Expr::Binary {
+            op: BinaryOp::Identical,
+            ..
+        }
+    ));
+    assert!(matches!(
+        &expressions[1],
+        Expr::Binary {
+            op: BinaryOp::NotIdentical,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn parser_accepts_braced_if_elseif_else_statements() {
     let program = parser::parse(
         "<?php $a = 1; if (($a == 0)) { echo \"bad\"; } elseif ($a == 1) { var_dump(true); } else { print \"bad\"; }",
@@ -640,6 +662,43 @@ fn compile_boolean_short_circuit_ops_to_native_binary() {
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "|1||1\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_strict_identity_comparisons_to_native_binary() {
+    let root = temp_dir("ptn-native-strict-identity");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("strict-identity.php");
+    let output = root.join("strict-identity-bin");
+    fs::write(
+        &input,
+        "<?php $negativeZero = -0.0; echo 1 === 1, 1 === \"1\", \"1\" !== 1, $negativeZero === (float)(int)$negativeZero, $negativeZero === 0.0, null === null, false !== null, \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "111111\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_run_alias_executes_compiled_native_binary() {
+    let root = temp_dir("ptn-phpc-run-alias");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("run-alias.php");
+    fs::write(&input, "<?php echo 2 === 2, \"\\n\";").unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("run")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "1\n");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 

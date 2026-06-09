@@ -309,3 +309,23 @@ Added boxed unary plus support:
 Still unsupported for unary numeric conversion: arrays, objects, references,
 copy-on-write, exact unsupported-operand `TypeError` parity, and full
 numeric-string diagnostic parity.
+
+Added scalar strict identity comparisons:
+
+- Lexer/parser/AST/IR support for `===` and `!==` at equality precedence.
+- Generated C comparison emission routes strict comparisons through a dedicated
+  boxed runtime helper instead of reusing loose comparison coercions.
+- Runtime scalar identity compares boxed type first, then scalar value for
+  `null`, booleans, integers, floats, and strings. This preserves PHP scalar
+  behavior such as `-0.0 === 0.0`, `1 !== 1.0`, and `"1" !== 1`.
+- `phpc run <script.php>` is accepted as a wrapper-compatible alias for the
+  existing compile-and-run path.
+- Native tests prove strict scalar identity, negative-zero identity, and the
+  `phpc run` alias.
+- Focused public PHPT telemetry through `phpc` passes
+  `Zend/tests/type_coercion/float_to_int/negative_zero_check.phpt`.
+
+Still unsupported after this strict-comparison slice: `<=>`, keyword boolean
+operators `and`/`or`, arrays, objects, resources, references, complete
+comparison parity for unsupported value types, and PHP-exact chained comparison
+parse errors.

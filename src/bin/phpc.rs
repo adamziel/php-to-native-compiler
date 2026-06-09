@@ -93,6 +93,14 @@ impl Invocation {
                         mode: Mode::Inline { source },
                     });
                 }
+                "run" if script.is_none() => {
+                    let path = args
+                        .next()
+                        .ok_or_else(|| "missing script path after run".to_string())?;
+                    script = Some(PathBuf::from(path));
+                    script_args.extend(args);
+                    break;
+                }
                 "--" => {
                     if let Some(path) = args.next() {
                         script = Some(PathBuf::from(path));
@@ -172,5 +180,6 @@ impl Drop for TempPath {
 }
 
 fn usage() -> String {
-    "usage: phpc [-q] [-n] [-d key=value] [-c php.ini] [-r code] [-f] <script.php>".to_string()
+    "usage: phpc [-q] [-n] [-d key=value] [-c php.ini] [-r code] [-f] [run] <script.php>"
+        .to_string()
 }

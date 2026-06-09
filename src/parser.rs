@@ -321,6 +321,8 @@ impl Parser {
         match self.peek().kind {
             TokenKind::OrOr => Some((BinaryOp::Or, 1)),
             TokenKind::AndAnd => Some((BinaryOp::And, 2)),
+            TokenKind::EqualEqualEqual => Some((BinaryOp::Identical, 5)),
+            TokenKind::NotEqualEqual => Some((BinaryOp::NotIdentical, 5)),
             TokenKind::EqualEqual => Some((BinaryOp::Equal, 5)),
             TokenKind::NotEqual => Some((BinaryOp::NotEqual, 5)),
             TokenKind::Less => Some((BinaryOp::Less, 6)),

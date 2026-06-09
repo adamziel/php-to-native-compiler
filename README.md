@@ -44,8 +44,9 @@ Supported today:
   `(float)`, `(string)`, and `(bool)` casts for boxed scalar values. Unary, cast, and
   binary operations are emitted as runtime helper calls over `PtnValue`
   operands.
-- Boxed scalar comparison and boolean expressions: `==`, `!=`, `<`, `<=`, `>`,
-  `>=`, `&&`, and `||`. Boolean operators short-circuit over boxed PHP
+- Boxed scalar comparison and boolean expressions: `==`, `!=`, `===`, `!==`,
+  `<`, `<=`, `>`, `>=`, `&&`, and `||`. Strict identity compares scalar type
+  and value without coercion; boolean operators short-circuit over boxed PHP
   truthiness for the currently supported scalar value types.
 - Braced `if`, `elseif`, and `else` statements. Branch conditions use boxed
   scalar truthiness and the currently supported expression subset, including
@@ -64,7 +65,7 @@ Unsupported today:
   `1` even when spelled `print(...)`, increment/decrement operators, full
   PHP numeric-string and non-numeric string arithmetic diagnostics, exact
   division/modulo-by-zero exception behavior, complete comparison parity for
-  unsupported types, identity/spaceship comparison operators, keyword boolean
+  unsupported types, spaceship comparison operator, keyword boolean
   operators, chained comparison parse errors, unbraced and alternate
   control-flow syntax, `do while`, `for`, `foreach`, `switch`, `break`,
   `continue`, increment/decrement as expressions, PHP-exact increment/

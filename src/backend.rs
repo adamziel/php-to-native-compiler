@@ -209,6 +209,8 @@ impl ValueEmitter {
             | BinaryOp::Concat => self.emit_runtime_binary(out, op, left, right),
             BinaryOp::Equal
             | BinaryOp::NotEqual
+            | BinaryOp::Identical
+            | BinaryOp::NotIdentical
             | BinaryOp::Less
             | BinaryOp::LessEqual
             | BinaryOp::Greater
@@ -260,6 +262,10 @@ impl ValueEmitter {
         let comparison = match op {
             BinaryOp::Equal => format!("ptn_compare_equal({left_temp}, {right_temp})"),
             BinaryOp::NotEqual => format!("!ptn_compare_equal({left_temp}, {right_temp})"),
+            BinaryOp::Identical => format!("ptn_compare_identical({left_temp}, {right_temp})"),
+            BinaryOp::NotIdentical => {
+                format!("!ptn_compare_identical({left_temp}, {right_temp})")
+            }
             BinaryOp::Less => format!("ptn_compare_less({left_temp}, {right_temp})"),
             BinaryOp::LessEqual => format!("ptn_compare_less_equal({left_temp}, {right_temp})"),
             BinaryOp::Greater => format!("ptn_compare_greater({left_temp}, {right_temp})"),
@@ -865,6 +871,25 @@ static PTN_UNUSED int ptn_compare_equal(PtnValue left, PtnValue right) {
     }
     if (left.type == PTN_STRING && right.type == PTN_STRING) {
         return strcmp(left.as.string, right.as.string) == 0;
+    }
+    return 0;
+}
+
+static PTN_UNUSED int ptn_compare_identical(PtnValue left, PtnValue right) {
+    if (left.type != right.type) {
+        return 0;
+    }
+    switch (left.type) {
+        case PTN_NULL:
+            return 1;
+        case PTN_BOOL:
+            return left.as.boolean == right.as.boolean;
+        case PTN_INT:
+            return left.as.integer == right.as.integer;
+        case PTN_FLOAT:
+            return left.as.floating == right.as.floating;
+        case PTN_STRING:
+            return strcmp(left.as.string, right.as.string) == 0;
     }
     return 0;
 }
