@@ -1,14 +1,14 @@
 # PTN Progress
 
-Last refresh: 2026-06-09T18:53Z
-Measured base: `ptn-cqu.47.15` rebased after `ptn-cqu.47.16`
+Last refresh: 2026-06-09T18:55Z
+Measured base: `ptn-0xy` rebased after `ptn-cqu.47.15`
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 4 | 4 | 0 |
-| Native compiled PHP snippets | 309 | 309 | 0 |
+| Native compiled PHP snippets | 310 | 310 | 0 |
 | PHPT bounded manifest | 200 | 145 | 55 |
 | PHPT Zend rows | 76 | 63 | 13 |
 | PHPT ext/standard rows | 77 | 47 | 30 |
@@ -46,11 +46,11 @@ string/math/type internals, ordered arrays, `foreach`, array cursors,
 generated C ABI share/drop handling, shared array/string COW, nested path
 detach, reference aliases, element references, by-reference parameters,
 by-value parameter and function-boundary splits, recursive/user functions,
-magic constants, `func_*`, `print_r`, binary strings, string offset reads and
-writes, `count()` diagnostics, `??`, array assignment/compound/append/unset
-COW, focused native/oracle COW reducers, array-element reference oracle
-coverage, unsupported mutating-internal diagnostics, PHPT COW blocker buckets,
-and payload lifetime debug counters.
+magic constants, `func_*` and bounds diagnostics, `print_r`, binary strings,
+string offset reads and writes, `count()` diagnostics, `??`, array
+assignment/compound/append/unset COW, focused native/oracle COW reducers,
+array-element reference oracle coverage, unsupported mutating-internal
+diagnostics, PHPT COW blocker buckets, and payload lifetime debug counters.
 
 ## Still Needed
 

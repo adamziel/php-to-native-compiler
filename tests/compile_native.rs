@@ -3540,6 +3540,29 @@ fn compile_func_introspection_registry_and_global_errors_to_native_binary() {
 }
 
 #[test]
+fn compile_func_get_arg_bounds_errors_to_native_binary() {
+    let root = temp_dir("ptn-native-func-get-arg-bounds-errors");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("func-get-arg-bounds-errors.php");
+    let output = root.join("func-get-arg-bounds-errors-bin");
+    fs::write(
+        &input,
+        "<?php function inspect($value) { try { func_get_arg(-1); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; } try { func_get_arg(1); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; } } inspect(\"one\");",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "func_get_arg(): Argument #1 ($position) must be greater than or equal to 0\nfunc_get_arg(): Argument #1 ($position) must be less than the number of the arguments passed to the currently executed function\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_user_function_locals_do_not_overwrite_top_level_variables() {
     let root = temp_dir("ptn-native-user-function-local-scope");
     fs::create_dir_all(&root).unwrap();
