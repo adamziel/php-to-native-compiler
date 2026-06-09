@@ -2356,6 +2356,7 @@ fn compile_string_internals_use_direct_string_operand_fast_paths_to_native_binar
 echo strlen(\"abcdef\"), \" \", strcmp(\"abc\", \"abd\"), \" \", str_contains(\"abcdef\", \"cd\"), \" \", str_starts_with(\"abcdef\", \"ab\"), \" \", str_ends_with(\"abcdef\", \"ef\"), \"\\n\";\n\
 echo str_rot13(\"abc\"), \" \", substr(\"abcdef\", 2, 3), \" \", bin2hex(\"Az\"), \" \", quotemeta(\"a.b\"), \" \", chunk_split(\"abcd\", 2, \"|\"), \"\\n\";\n\
 echo strip_tags(\"<b>x</b>\"), \" \", quoted_printable_decode(\"=41\"), \" \", soundex(\"Robert\"), \" \", ord(\"A\"), \" \", bindec(\"101\"), \" \", hexdec(\"ff\"), \" \", octdec(\"10\"), \"\\n\";\n\
+echo bin2hex(strip_tags(\"<b>A</b>\" . chr(0) . \"<i>B</i>\")), \" \", soundex(\"A\" . chr(0) . \"B\"), \"\\n\";\n\
 echo md5(\"\"), \" \", sha1(\"\"), \"\\n\";\n\
 var_dump(strlen(12345), bin2hex(255), substr(12345, 1, 2));",
     )
@@ -2369,6 +2370,7 @@ var_dump(strlen(12345), bin2hex(255), substr(12345, 1, 2));",
         String::from_utf8(execution.stdout).unwrap(),
         "6 -1 1 1 1\nnop cde 417a a\\.b ab|cd|\n\
 x A R163 65 5 255 8\n\
+4142 A100\n\
 d41d8cd98f00b204e9800998ecf8427e da39a3ee5e6b4b0d3255bfef95601890afd80709\n\
 int(5)\nstring(6) \"323535\"\nstring(2) \"23\"\n"
     );
@@ -2419,7 +2421,7 @@ int(5)\nstring(6) \"323535\"\nstring(2) \"23\"\n"
     for expected_call in [
         "ptn_rot13_string(string.data, string.len)",
         "ptn_quotemeta_string(input.data, input.len, &output_len)",
-        "ptn_strip_tags_string(input.data, input.len)",
+        "ptn_strip_tags_string(input.data, input.len, &output_len)",
         "ptn_dirname_string(path.data, path.len)",
         "ptn_quoted_printable_decode_string(input.data, input.len, &output_len)",
         "ptn_base_string_to_number(runtime, string.data, string.len, 2, 'b', line)",
@@ -2451,6 +2453,13 @@ int(5)\nstring(6) \"323535\"\nstring(2) \"23\"\n"
             "{marker} should consume caller-provided lengths instead of rescanning"
         );
     }
+
+    let strip_tags_body =
+        generated_c_static_function_body(&c_source, "static char *ptn_strip_tags_string(");
+    assert!(
+        strip_tags_body.contains("size_t len, size_t *output_len_out"),
+        "strip_tags helper should report explicit output length"
+    );
 
     let soundex_body =
         generated_c_static_function_body(&c_source, "static PtnValue ptn_internal_soundex(");
@@ -8578,19 +8587,19 @@ fn compile_bitwise_scalar_operations_to_native_binary() {
         );
     }
     assert!(c_source.contains(
-        "static PTN_UNUSED PtnValue ptn_bitwise_string_and(PtnString left, PtnString right)"
+        "static PTN_UNUSED PtnValue ptn_bitwise_string_and(PtnStringOperand left, PtnStringOperand right)"
     ));
     assert!(c_source.contains(
-        "static PTN_UNUSED PtnValue ptn_bitwise_string_or(PtnString left, PtnString right)"
+        "static PTN_UNUSED PtnValue ptn_bitwise_string_or(PtnStringOperand left, PtnStringOperand right)"
     ));
     assert!(c_source.contains(
-        "static PTN_UNUSED PtnValue ptn_bitwise_string_xor(PtnString left, PtnString right)"
+        "static PTN_UNUSED PtnValue ptn_bitwise_string_xor(PtnStringOperand left, PtnStringOperand right)"
     ));
     assert!(c_source.contains("size_t left_len = left.len;"));
     assert!(c_source.contains("size_t right_len = right.len;"));
-    assert!(c_source.contains("ptn_bitwise_string_and(left.as.string, right.as.string)"));
-    assert!(c_source.contains("ptn_bitwise_string_or(left.as.string, right.as.string)"));
-    assert!(c_source.contains("ptn_bitwise_string_xor(left.as.string, right.as.string)"));
+    assert!(c_source.contains("ptn_bitwise_string_and(left_string, right_string)"));
+    assert!(c_source.contains("ptn_bitwise_string_or(left_string, right_string)"));
+    assert!(c_source.contains("ptn_bitwise_string_xor(left_string, right_string)"));
 }
 
 #[test]
@@ -8625,7 +8634,7 @@ fn compile_unary_bitwise_not_to_native_binary() {
         "ptn_bitwise_string_not should consume caller-provided lengths instead of rescanning"
     );
     assert!(body.contains("size_t len = value.len;"));
-    assert!(c_source.contains("ptn_bitwise_string_not(value.as.string)"));
+    assert!(c_source.contains("ptn_bitwise_string_not(string)"));
 }
 
 #[test]

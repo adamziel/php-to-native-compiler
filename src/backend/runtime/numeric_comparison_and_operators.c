@@ -656,7 +656,7 @@ static PTN_UNUSED PtnValue ptn_decrement(PtnValue value) {
     return ptn_subtract(value, ptn_int(1));
 }
 
-static PTN_UNUSED PtnValue ptn_bitwise_string_and(PtnString left, PtnString right) {
+static PTN_UNUSED PtnValue ptn_bitwise_string_and(PtnStringOperand left, PtnStringOperand right) {
     size_t left_len = left.len;
     size_t right_len = right.len;
     size_t result_len = left_len < right_len ? left_len : right_len;
@@ -665,13 +665,13 @@ static PTN_UNUSED PtnValue ptn_bitwise_string_and(PtnString left, PtnString righ
         ptn_abort_out_of_memory();
     }
     for (size_t i = 0; i < result_len; i++) {
-        result[i] = (char)(left.data[i] & right.data[i]);
+        result[i] = (char)((unsigned char)left.data[i] & (unsigned char)right.data[i]);
     }
     result[result_len] = '\0';
     return ptn_owned_string_len(result, result_len);
 }
 
-static PTN_UNUSED PtnValue ptn_bitwise_string_or(PtnString left, PtnString right) {
+static PTN_UNUSED PtnValue ptn_bitwise_string_or(PtnStringOperand left, PtnStringOperand right) {
     size_t left_len = left.len;
     size_t right_len = right.len;
     size_t result_len = left_len > right_len ? left_len : right_len;
@@ -680,15 +680,15 @@ static PTN_UNUSED PtnValue ptn_bitwise_string_or(PtnString left, PtnString right
         ptn_abort_out_of_memory();
     }
     for (size_t i = 0; i < result_len; i++) {
-        unsigned char left_byte = i < left_len ? left.data[i] : 0;
-        unsigned char right_byte = i < right_len ? right.data[i] : 0;
+        unsigned char left_byte = i < left_len ? (unsigned char)left.data[i] : 0;
+        unsigned char right_byte = i < right_len ? (unsigned char)right.data[i] : 0;
         result[i] = (char)(left_byte | right_byte);
     }
     result[result_len] = '\0';
     return ptn_owned_string_len(result, result_len);
 }
 
-static PTN_UNUSED PtnValue ptn_bitwise_string_xor(PtnString left, PtnString right) {
+static PTN_UNUSED PtnValue ptn_bitwise_string_xor(PtnStringOperand left, PtnStringOperand right) {
     size_t left_len = left.len;
     size_t right_len = right.len;
     size_t result_len = left_len < right_len ? left_len : right_len;
@@ -697,20 +697,20 @@ static PTN_UNUSED PtnValue ptn_bitwise_string_xor(PtnString left, PtnString righ
         ptn_abort_out_of_memory();
     }
     for (size_t i = 0; i < result_len; i++) {
-        result[i] = (char)(left.data[i] ^ right.data[i]);
+        result[i] = (char)((unsigned char)left.data[i] ^ (unsigned char)right.data[i]);
     }
     result[result_len] = '\0';
     return ptn_owned_string_len(result, result_len);
 }
 
-static PTN_UNUSED PtnValue ptn_bitwise_string_not(PtnString value) {
+static PTN_UNUSED PtnValue ptn_bitwise_string_not(PtnStringOperand value) {
     size_t len = value.len;
     char *result = malloc(len + 1);
     if (result == NULL) {
         ptn_abort_out_of_memory();
     }
     for (size_t i = 0; i < len; i++) {
-        result[i] = (char)(~value.data[i]);
+        result[i] = (char)(~(unsigned char)value.data[i]);
     }
     result[len] = '\0';
     return ptn_owned_string_len(result, len);
@@ -728,7 +728,17 @@ static PTN_UNUSED PtnValue ptn_bitwise_and(PtnValue left, PtnValue right) {
     left = ptn_value_deref(left);
     right = ptn_value_deref(right);
     if (left.type == PTN_STRING && right.type == PTN_STRING) {
-        return ptn_bitwise_string_and(left.as.string, right.as.string);
+        PtnStringOperand left_string = {
+            (const char *)left.as.string.data,
+            NULL,
+            left.as.string.len
+        };
+        PtnStringOperand right_string = {
+            (const char *)right.as.string.data,
+            NULL,
+            right.as.string.len
+        };
+        return ptn_bitwise_string_and(left_string, right_string);
     }
     return ptn_int(ptn_bitwise_integer_operand(left) & ptn_bitwise_integer_operand(right));
 }
@@ -737,7 +747,17 @@ static PTN_UNUSED PtnValue ptn_bitwise_or(PtnValue left, PtnValue right) {
     left = ptn_value_deref(left);
     right = ptn_value_deref(right);
     if (left.type == PTN_STRING && right.type == PTN_STRING) {
-        return ptn_bitwise_string_or(left.as.string, right.as.string);
+        PtnStringOperand left_string = {
+            (const char *)left.as.string.data,
+            NULL,
+            left.as.string.len
+        };
+        PtnStringOperand right_string = {
+            (const char *)right.as.string.data,
+            NULL,
+            right.as.string.len
+        };
+        return ptn_bitwise_string_or(left_string, right_string);
     }
     return ptn_int(ptn_bitwise_integer_operand(left) | ptn_bitwise_integer_operand(right));
 }
@@ -746,6 +766,16 @@ static PTN_UNUSED PtnValue ptn_bitwise_xor(PtnValue left, PtnValue right) {
     left = ptn_value_deref(left);
     right = ptn_value_deref(right);
     if (left.type == PTN_STRING && right.type == PTN_STRING) {
-        return ptn_bitwise_string_xor(left.as.string, right.as.string);
+        PtnStringOperand left_string = {
+            (const char *)left.as.string.data,
+            NULL,
+            left.as.string.len
+        };
+        PtnStringOperand right_string = {
+            (const char *)right.as.string.data,
+            NULL,
+            right.as.string.len
+        };
+        return ptn_bitwise_string_xor(left_string, right_string);
     }
     return ptn_int(ptn_bitwise_integer_operand(left) ^ ptn_bitwise_integer_operand(right));

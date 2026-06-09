@@ -824,7 +824,7 @@ static PtnValue ptn_internal_chunk_split(PtnRuntime *runtime, size_t argc, const
     return ptn_owned_string_len(output, output_len);
 }
 
-static char *ptn_strip_tags_string(const char *input, size_t len) {
+static char *ptn_strip_tags_string(const char *input, size_t len, size_t *output_len_out) {
     char *output = malloc(len + 1);
     if (output == NULL) {
         ptn_abort_out_of_memory();
@@ -852,9 +852,9 @@ static char *ptn_strip_tags_string(const char *input, size_t len) {
                     input_offset = tag_end + 2;
                     continue;
                 }
-            } else if (input_offset + 3 < len && strncmp(input + input_offset, "<!--", 4) == 0) {
+            } else if (input_offset + 3 < len && memcmp(input + input_offset, "<!--", 4) == 0) {
                 size_t tag_end = input_offset + 4;
-                while (tag_end + 2 < len && strncmp(input + tag_end, "-->", 3) != 0) {
+                while (tag_end + 2 < len && memcmp(input + tag_end, "-->", 3) != 0) {
                     tag_end++;
                 }
                 if (tag_end + 2 < len) {
@@ -872,9 +872,14 @@ static char *ptn_strip_tags_string(const char *input, size_t len) {
                 }
             }
         }
+        if (input[input_offset] == '\0') {
+            input_offset++;
+            continue;
+        }
         output[output_offset++] = input[input_offset++];
     }
     output[output_offset] = '\0';
+    *output_len_out = output_offset;
     return output;
 }
 
@@ -883,9 +888,10 @@ static PtnValue ptn_internal_strip_tags(PtnRuntime *runtime, size_t argc, const 
     (void)argc;
     (void)line;
     PtnStringOperand input = ptn_value_to_string_operand(args[0]);
-    char *output = ptn_strip_tags_string(input.data, input.len);
+    size_t output_len = 0;
+    char *output = ptn_strip_tags_string(input.data, input.len, &output_len);
     ptn_string_operand_free(input);
-    return ptn_owned_string(output);
+    return ptn_owned_string_len(output, output_len);
 }
 
 static uint32_t ptn_rotate_left32(uint32_t value, uint32_t amount) {
@@ -1549,7 +1555,7 @@ static PtnValue ptn_internal_soundex(PtnRuntime *runtime, size_t argc, const Ptn
     }
     if (first == string.len) {
         ptn_string_operand_free(string);
-        return ptn_owned_string(result);
+        return ptn_owned_string_len(result, 4);
     }
 
     result[0] = (char)ptn_ascii_upper((unsigned char)string.data[first]);
@@ -1571,7 +1577,7 @@ static PtnValue ptn_internal_soundex(PtnRuntime *runtime, size_t argc, const Ptn
     }
 
     ptn_string_operand_free(string);
-    return ptn_owned_string(result);
+    return ptn_owned_string_len(result, 4);
 }
 
 static double ptn_value_to_double(PtnValue value) {

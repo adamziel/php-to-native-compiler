@@ -80,7 +80,12 @@ static PTN_UNUSED void ptn_string_buffer_append_indent(PtnStringBuffer *buffer, 
 static PTN_UNUSED PtnValue ptn_bitwise_not(PtnValue value, const char *path, size_t line) {
     value = ptn_value_deref(value);
     if (value.type == PTN_STRING) {
-        return ptn_bitwise_string_not(value.as.string);
+        PtnStringOperand string = {
+            (const char *)value.as.string.data,
+            NULL,
+            value.as.string.len
+        };
+        return ptn_bitwise_string_not(string);
     }
     if (value.type == PTN_ARRAY) {
         ptn_abort_type_error_at("Cannot perform bitwise not on array", path, line);
