@@ -19,13 +19,15 @@ Supported today:
 - String, integer, float, boolean, and null literals.
 - Direct variable assignment and reads for scalar values through the generated
   native runtime symbol table.
+- Generic runtime diagnostics for undefined direct variable reads. The read
+  still yields `null` after emitting a warning boundary.
 
 Unsupported today:
 
 - Arrays, functions, classes, includes, references, copy-on-write, resources,
-  exceptions, compound assignment, undefined-variable diagnostics, variable
-  variables, and dynamic fallback. These are architecture targets, not excuses
-  for exact-shape hacks.
+  exceptions, compound assignment, PHP-exact warning text/file/line/error-handler
+  behavior, variable variables, and dynamic fallback. These are architecture
+  targets, not excuses for exact-shape hacks.
 
 ## Build
 

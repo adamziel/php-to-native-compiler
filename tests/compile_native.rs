@@ -75,6 +75,32 @@ fn compile_variable_overwrite_to_native_binary() {
 }
 
 #[test]
+fn compile_defined_and_undefined_variable_reads_to_native_binary() {
+    let root = temp_dir("ptn-native-undefined-variable");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("undefined.php");
+    let output = root.join("undefined-bin");
+    fs::write(
+        &input,
+        "<?php $defined = \"defined\"; echo $defined, $missing, \" done\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "defined done\n"
+    );
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        "Warning: Undefined variable $missing\n"
+    );
+}
+
+#[test]
 fn unsupported_constructs_fail_before_codegen() {
     let error = parser::parse("<?php $name += 1;").unwrap_err();
     assert!(error.message.contains("unsupported PHP token"));

@@ -41,6 +41,15 @@ Integrated the next production slice:
 - Generated C runtime symbol table storing boxed `PtnValue` slots by name.
 - Native tests proving assignment, reads, and overwrites in compiled binaries.
 
+Added a runtime diagnostics boundary for direct variable reads:
+
+- Generated native binaries route direct variable reads through `PtnRuntime`
+  rather than treating the symbol table as an ordinary nullable map.
+- Undefined direct variable reads emit a generic runtime warning and then yield
+  `null`, so current echo behavior remains PHP-like without hiding the
+  diagnostic boundary.
+- Native tests prove defined and undefined reads in the same compiled binary.
+
 Still unsupported: arrays, references, copy-on-write, globals/superglobals,
 compound assignment, variable variables, undefined-variable warning parity,
 functions, classes, resources, exceptions, and dynamic fallback.

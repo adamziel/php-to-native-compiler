@@ -10,12 +10,12 @@ pub fn emit_c(module: &Module) -> String {
     let mut out = String::new();
     out.push_str(RUNTIME_C);
     out.push_str("\nint main(void) {\n");
-    out.push_str("    PtnSymbolTable symbols;\n");
-    out.push_str("    ptn_symbols_init(&symbols);\n");
+    out.push_str("    PtnRuntime runtime;\n");
+    out.push_str("    ptn_runtime_init(&runtime);\n");
     for instruction in &module.instructions {
         match instruction {
             Instruction::Store { name, value } => {
-                out.push_str("    ptn_symbols_set(&symbols, \"");
+                out.push_str("    ptn_runtime_write_variable(&runtime, \"");
                 out.push_str(&c_string(name));
                 out.push_str("\", ");
                 out.push_str(&emit_value(value));
@@ -28,7 +28,7 @@ pub fn emit_c(module: &Module) -> String {
             }
         }
     }
-    out.push_str("    ptn_symbols_free(&symbols);\n");
+    out.push_str("    ptn_runtime_free(&runtime);\n");
     out.push_str("    return 0;\n}\n");
     out
 }
@@ -76,7 +76,10 @@ fn emit_value(value: &ValueExpr) -> String {
         ValueExpr::Bool(true) => "ptn_bool(1)".to_string(),
         ValueExpr::Bool(false) => "ptn_bool(0)".to_string(),
         ValueExpr::Null => "ptn_null()".to_string(),
-        ValueExpr::Load(name) => format!("ptn_symbols_get(&symbols, \"{}\")", c_string(name)),
+        ValueExpr::Load(name) => format!(
+            "ptn_runtime_read_variable(&runtime, \"{}\")",
+            c_string(name)
+        ),
     }
 }
 
@@ -139,6 +142,15 @@ typedef struct {
     size_t len;
     size_t capacity;
 } PtnSymbolTable;
+
+typedef struct {
+    FILE *stream;
+} PtnDiagnosticSink;
+
+typedef struct {
+    PtnSymbolTable symbols;
+    PtnDiagnosticSink diagnostics;
+} PtnRuntime;
 
 static PTN_UNUSED PtnValue ptn_null(void) {
     PtnValue value;
@@ -221,11 +233,45 @@ static PTN_UNUSED void ptn_symbols_set(PtnSymbolTable *symbols, const char *name
     symbols->len++;
 }
 
-static PTN_UNUSED PtnValue ptn_symbols_get(PtnSymbolTable *symbols, const char *name) {
+static int ptn_symbols_get(PtnSymbolTable *symbols, const char *name, PtnValue *out) {
     size_t index = ptn_symbols_find(symbols, name);
     if (index < symbols->len) {
-        return symbols->items[index].value;
+        *out = symbols->items[index].value;
+        return 1;
     }
+    return 0;
+}
+
+static void ptn_diagnostics_init(PtnDiagnosticSink *diagnostics, FILE *stream) {
+    diagnostics->stream = stream;
+}
+
+static void ptn_emit_undefined_variable_warning(PtnDiagnosticSink *diagnostics, const char *name) {
+    FILE *stream = diagnostics->stream == NULL ? stderr : diagnostics->stream;
+    fputs("Warning: Undefined variable $", stream);
+    fputs(name, stream);
+    fputc('\n', stream);
+}
+
+static void ptn_runtime_init(PtnRuntime *runtime) {
+    ptn_symbols_init(&runtime->symbols);
+    ptn_diagnostics_init(&runtime->diagnostics, stderr);
+}
+
+static void ptn_runtime_free(PtnRuntime *runtime) {
+    ptn_symbols_free(&runtime->symbols);
+}
+
+static PTN_UNUSED void ptn_runtime_write_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
+    ptn_symbols_set(&runtime->symbols, name, value);
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_read_variable(PtnRuntime *runtime, const char *name) {
+    PtnValue value;
+    if (ptn_symbols_get(&runtime->symbols, name, &value)) {
+        return value;
+    }
+    ptn_emit_undefined_variable_warning(&runtime->diagnostics, name);
     return ptn_null();
 }
 
