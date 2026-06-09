@@ -28,15 +28,16 @@ Current runtime/compiler slices:
   calls.
 - Direct variable reads pass through a runtime helper that emits a generic
   undefined-variable warning before yielding `null`.
-- Scalar binary `+`, `-`, `*`, `/`, `%`, `.`, `&`, `^`, and `|` expressions lower
+- Scalar binary `+`, `-`, `*`, `/`, `%`, `.`, `&`, `^`, `|`, `<<`, and `>>` expressions lower
   to IR value-expression operation nodes. The C backend materializes operands
   into `PtnValue` temporaries in source order before calling boxed runtime
   helpers such as `ptn_add`, `ptn_subtract`, `ptn_multiply`, `ptn_divide`,
   `ptn_modulo`, `ptn_concat`, `ptn_bitwise_and`, `ptn_bitwise_xor`, and
-  `ptn_bitwise_or`.
+  `ptn_bitwise_or`, `ptn_shift_left`, and `ptn_shift_right`.
   String/string bitwise operands use bytewise string helpers for non-NUL string
   data; other supported scalar operands convert through the current numeric
-  path before integer bitwise operations.
+  path before integer bitwise operations. Shift operands always use the current
+  bitwise integer-conversion path.
 - Direct named-variable `+=`, `-=`, `*=`, `/=`, `%=`, `.=`, `&=`, `^=`, and `|=`
   lower in IR as a direct variable load, the same boxed binary helper used by
   the ordinary binary operator, and a direct variable store. This keeps
@@ -69,10 +70,12 @@ Current runtime/compiler slices:
   byte length of the current boxed scalar string conversion; `bin2hex` returns
   lowercase hexadecimal bytes for that same string conversion; `chr` constructs
   one-byte strings from scalar integer conversion; `ord` observes the first
-  byte of scalar string conversion; `gettype` and scalar `is_*` predicates
-  query the current boxed scalar/null value domain; `function_exists` shares the
-  registry lookup path; and `defined` checks the current constant-registry
-  boundary. Fixed-arity internal functions record min/max arity metadata while
+  byte of scalar string conversion; `error_reporting` currently accepts zero or
+  one argument and returns a placeholder reporting level; `gettype` and scalar
+  `is_*` predicates query the current boxed scalar/null value domain;
+  `function_exists` shares the registry lookup path; and `defined` checks the
+  current constant-registry boundary, which includes the modeled PHP `E_ERROR`
+  constant. Fixed-arity internal functions record min/max arity metadata while
   `var_dump` remains variadic.
 - Braced `if`, `elseif`, and `else` statements lower to structured IR branch
   instructions. Conditions remain boxed value expressions, and the C backend
@@ -108,7 +111,7 @@ Near-term architecture targets:
   arithmetic helpers.
 - PHP-exact file/line/error-handler behavior for bitwise float-to-int
   precision-loss diagnostics, and overflow parity for bitwise integer
-  conversions.
+  conversions and shifts.
 - Array, object, and reference lvalues for compound assignment, plus
   unsupported compound operators beyond `+=`, `-=`, `*=`, `/=`, `%=`, `.=`,
   `&=`, `|=`, and `^=`: `**=`, `<<=`, `>>=`, `??=`.
@@ -119,10 +122,12 @@ Near-term architecture targets:
   metadata, unsupported array/object/resource/reference diagnostics, and
   PHP-exact `var_dump` precision/formatting plus `strlen`/`bin2hex`
   byte-string behavior.
-- User-defined functions, classes/methods, constants, namespaced symbols,
-  autoloading, and disabled-functions behavior in symbol-existence predicates.
-- Broader control flow: unbraced and alternate syntax, `for`, `foreach`,
-  explicit-level `break`, `continue`, and exception/finally edges.
+- User-defined functions, classes/methods, constants beyond the currently
+  modeled `E_ERROR`, namespaced symbols, autoloading, and disabled-functions
+  behavior in symbol-existence predicates.
+- Broader control flow: unbraced and alternate syntax, `foreach`,
+  explicit-level `break`, `continue`, for-loop comma expressions and
+  non-direct-variable clause lvalues, and exception/finally edges.
 - Full PHP increment/decrement semantics, including expression result values,
   strings, booleans, arrays/objects, references, and copy-on-write behavior.
 - Explicit fallback boundaries for `eval`, variable variables, and runtime

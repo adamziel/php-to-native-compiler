@@ -64,6 +64,7 @@ pub enum ValueExpr {
     Bool(bool),
     Null,
     Load(String),
+    Constant(String),
     InternalCall {
         name: String,
         arguments: Vec<ValueExpr>,
@@ -92,6 +93,8 @@ pub enum BinaryOp {
     Divide,
     Modulo,
     Concat,
+    ShiftLeft,
+    ShiftRight,
     Equal,
     NotEqual,
     Identical,
@@ -277,6 +280,7 @@ fn lower_expr(expr: &Expr) -> ValueExpr {
         Expr::Bool(value, _) => ValueExpr::Bool(*value),
         Expr::Null(_) => ValueExpr::Null,
         Expr::Variable(name, _) => ValueExpr::Load(name.clone()),
+        Expr::Constant(name, _) => ValueExpr::Constant(name.clone()),
         Expr::Call {
             name,
             arguments,
@@ -338,6 +342,8 @@ fn lower_binary_op(op: AstBinaryOp) -> BinaryOp {
         AstBinaryOp::Divide => BinaryOp::Divide,
         AstBinaryOp::Modulo => BinaryOp::Modulo,
         AstBinaryOp::Concat => BinaryOp::Concat,
+        AstBinaryOp::ShiftLeft => BinaryOp::ShiftLeft,
+        AstBinaryOp::ShiftRight => BinaryOp::ShiftRight,
         AstBinaryOp::Equal => BinaryOp::Equal,
         AstBinaryOp::NotEqual => BinaryOp::NotEqual,
         AstBinaryOp::Identical => BinaryOp::Identical,

@@ -490,12 +490,16 @@ impl Parser {
             TokenKind::Null => Ok(Expr::Null(token.span)),
             TokenKind::Variable(name) => Ok(Expr::Variable(name, token.span)),
             TokenKind::Identifier(name) => {
-                let (arguments, right_span) = self.parse_call_arguments()?;
-                Ok(Expr::Call {
-                    name: name.to_ascii_lowercase(),
-                    arguments,
-                    span: combine_spans(token.span, right_span),
-                })
+                if matches!(self.peek().kind, TokenKind::LeftParen) {
+                    let (arguments, right_span) = self.parse_call_arguments()?;
+                    Ok(Expr::Call {
+                        name: name.to_ascii_lowercase(),
+                        arguments,
+                        span: combine_spans(token.span, right_span),
+                    })
+                } else {
+                    Ok(Expr::Constant(name, token.span))
+                }
             }
             TokenKind::LeftParen => {
                 let expr = self.parse_expr()?;
@@ -565,6 +569,8 @@ impl Parser {
             TokenKind::Greater => Some((BinaryOp::Greater, 7)),
             TokenKind::GreaterEqual => Some((BinaryOp::GreaterEqual, 7)),
             TokenKind::Dot => Some((BinaryOp::Concat, 10)),
+            TokenKind::ShiftLeft => Some((BinaryOp::ShiftLeft, 15)),
+            TokenKind::ShiftRight => Some((BinaryOp::ShiftRight, 15)),
             TokenKind::Plus => Some((BinaryOp::Add, 20)),
             TokenKind::Minus => Some((BinaryOp::Subtract, 20)),
             TokenKind::Asterisk => Some((BinaryOp::Multiply, 30)),

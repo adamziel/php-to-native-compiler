@@ -23,8 +23,9 @@ Supported today:
 - Statement-form `print expr;` for the same scalar expression subset as
   `echo`; emitted native code uses the same boxed output conversion path.
 - Simple internal calls such as `var_dump(expr, ...)`, `strlen(expr)`,
-  `bin2hex(expr)`, `chr(expr)`, `ord(expr)`, `gettype(expr)`, scalar `is_*`
-  type predicates, `defined(expr)`, and `function_exists(expr)`, lowered through IR
+  `bin2hex(expr)`, `chr(expr)`, `ord(expr)`, `error_reporting(expr)`,
+  `gettype(expr)`, scalar `is_*` type predicates, `defined(expr)`, and
+  `function_exists(expr)`, lowered through IR
   internal-call nodes and generated C runtime dispatch.
 - `var_dump()` output for the current boxed scalar `PtnValue` types: `null`,
   booleans, integers, floats, and strings.
@@ -37,12 +38,15 @@ Supported today:
 - `ord()` as an expression returning the first byte of the current boxed scalar
   string-conversion result, including PHP-like deprecation diagnostics for
   empty and multi-byte strings.
+- `error_reporting()` accepts zero or one argument and returns the current
+  placeholder reporting level. Runtime error filtering is not modeled yet.
 - `gettype()` and scalar type predicates for the current boxed scalar
   `PtnValue` types: `is_null()`, `is_bool()`, `is_int()`/`is_integer()`/
   `is_long()`, `is_float()`/`is_double()`, `is_string()`, and `is_scalar()`.
 - Symbol-existence predicates for currently modeled runtime tables:
   `function_exists()` checks the generated internal-function registry, and
-  `defined()` checks the current constant registry.
+  `defined()` checks the current constant registry, which currently includes
+  `E_ERROR`.
 - String, integer, float, boolean, and null literals.
 - Direct variable assignment and reads for scalar values through the generated
   native runtime symbol table.
@@ -69,6 +73,9 @@ Supported today:
   String/string binary operands and string unary `~` operands use PHP bytewise
   string results for non-NUL strings; other supported scalar operands are
   converted to integers through the current boxed numeric conversion path.
+- Boxed scalar bit shifts `<<` and `>>`. Supported scalar operands are
+  converted to integers through the current bitwise integer-conversion path,
+  and operands are evaluated left-to-right before calling runtime helpers.
 - Braced `if`, `elseif`, and `else` statements. Branch conditions use boxed
   scalar truthiness and the currently supported expression subset, including
   grouped expressions and scalar comparisons.
@@ -97,7 +104,7 @@ Unsupported today:
   `1` even when spelled `print(...)`, increment/decrement operators, full
   PHP numeric-string and non-numeric string arithmetic diagnostics, exact
   division/modulo-by-zero exception behavior, complete comparison parity for
-  unsupported types, spaceship comparison operator, shifts,
+  unsupported types, spaceship comparison operator,
   keyword boolean operators, chained comparison parse errors, unbraced and alternate
   control-flow syntax, `foreach`, explicit-level `break`
   such as `break 2`, `continue`, full switch parity for unsupported value
@@ -107,12 +114,14 @@ Unsupported today:
   complete overflow parity, exact scalar cast overflow behavior, PHP-exact
   warning text/file/line/error-handler behavior, inline HTML before `<?php` or
   between PHP blocks, internal functions outside the registered scalar subset,
-  user constants and built-in constants, arrays, objects, resources, recursion,
-  references, embedded NUL string handling, exact `chr()` deprecation
-  diagnostics, full PHP precision/formatting edge cases for
-  `var_dump()`/`strlen()`/`bin2hex()`, exact `ord()` argument type diagnostics,
-  doc comment retention, variable variables, and dynamic fallback. These are
-  architecture targets, not excuses for exact-shape hacks.
+  user constants and built-in constants other than the currently modeled
+  `E_ERROR`, arrays, objects, resources, recursion, references, embedded NUL
+  string handling, exact `chr()` deprecation diagnostics, exact `ord()`
+  argument type diagnostics, exact `error_reporting()` configuration/filtering
+  behavior, and full PHP precision/formatting edge cases for
+  `var_dump()`/`strlen()`/`bin2hex()`, doc comment retention, variable
+  variables, and dynamic fallback. These are architecture targets, not excuses
+  for exact-shape hacks.
 
 ## Build
 

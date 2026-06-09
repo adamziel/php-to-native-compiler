@@ -103,6 +103,7 @@ pub enum Expr {
     Bool(bool, SourceSpan),
     Null(SourceSpan),
     Variable(String, SourceSpan),
+    Constant(String, SourceSpan),
     Call {
         name: String,
         arguments: Vec<Expr>,
@@ -138,6 +139,8 @@ pub enum BinaryOp {
     Divide,
     Modulo,
     Concat,
+    ShiftLeft,
+    ShiftRight,
     Equal,
     NotEqual,
     Identical,
@@ -177,7 +180,8 @@ impl Expr {
             | Expr::Float(_, span)
             | Expr::Bool(_, span)
             | Expr::Null(span)
-            | Expr::Variable(_, span) => *span,
+            | Expr::Variable(_, span)
+            | Expr::Constant(_, span) => *span,
             Expr::Call { span, .. } => *span,
             Expr::Unary { span, .. } | Expr::Cast { span, .. } => *span,
             Expr::Binary { span, .. } | Expr::Grouped { span, .. } => *span,

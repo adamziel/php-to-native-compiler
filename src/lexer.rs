@@ -32,8 +32,10 @@ pub enum TokenKind {
     NotEqualEqual,
     Less,
     LessEqual,
+    ShiftLeft,
     Greater,
     GreaterEqual,
+    ShiftRight,
     AndAnd,
     OrOr,
     AmpersandEqual,
@@ -149,8 +151,10 @@ impl<'a> Lexer<'a> {
                 }
                 '!' if self.rest().starts_with("!=") => self.push_fixed(TokenKind::NotEqual, 2),
                 '<' if self.rest().starts_with("<=") => self.push_fixed(TokenKind::LessEqual, 2),
+                '<' if self.rest().starts_with("<<") => self.push_fixed(TokenKind::ShiftLeft, 2),
                 '<' => self.push_fixed(TokenKind::Less, 1),
                 '>' if self.rest().starts_with(">=") => self.push_fixed(TokenKind::GreaterEqual, 2),
+                '>' if self.rest().starts_with(">>") => self.push_fixed(TokenKind::ShiftRight, 2),
                 '>' => self.push_fixed(TokenKind::Greater, 1),
                 '&' if self.rest().starts_with("&&") => self.push_fixed(TokenKind::AndAnd, 2),
                 '&' if self.rest().starts_with("&=") => {

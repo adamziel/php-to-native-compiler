@@ -341,6 +341,9 @@ impl ValueEmitter {
                 "ptn_runtime_read_variable(&runtime, \"{}\")",
                 c_string(name)
             ),
+            ValueExpr::Constant(name) => {
+                format!("ptn_read_constant(&runtime, \"{}\")", c_string(name))
+            }
             ValueExpr::InternalCall {
                 name,
                 arguments,
@@ -365,7 +368,9 @@ impl ValueEmitter {
             | BinaryOp::Concat
             | BinaryOp::BitwiseAnd
             | BinaryOp::BitwiseXor
-            | BinaryOp::BitwiseOr => self.emit_runtime_binary(out, op, left, right),
+            | BinaryOp::BitwiseOr
+            | BinaryOp::ShiftLeft
+            | BinaryOp::ShiftRight => self.emit_runtime_binary(out, op, left, right),
             BinaryOp::Equal
             | BinaryOp::NotEqual
             | BinaryOp::Identical
@@ -401,6 +406,8 @@ impl ValueEmitter {
             BinaryOp::BitwiseAnd => "ptn_bitwise_and",
             BinaryOp::BitwiseXor => "ptn_bitwise_xor",
             BinaryOp::BitwiseOr => "ptn_bitwise_or",
+            BinaryOp::ShiftLeft => "ptn_shift_left",
+            BinaryOp::ShiftRight => "ptn_shift_right",
             _ => unreachable!(),
         });
         out.push('(');
@@ -786,6 +793,13 @@ static void ptn_emit_undefined_function_error(PtnDiagnosticSink *diagnostics, co
     fputs("Fatal error: Call to undefined function ", stream);
     fputs(name, stream);
     fputs("()\n", stream);
+}
+
+static void ptn_emit_undefined_constant_error(PtnDiagnosticSink *diagnostics, const char *name) {
+    FILE *stream = diagnostics->stream == NULL ? stderr : diagnostics->stream;
+    fputs("Fatal error: Undefined constant \"", stream);
+    fputs(name, stream);
+    fputs("\"\n", stream);
 }
 
 static void ptn_emit_argument_count_error(
@@ -1402,6 +1416,32 @@ static PTN_UNUSED PtnValue ptn_bitwise_not(PtnValue value) {
     return ptn_int(~ptn_bitwise_integer_operand(value));
 }
 
+static PTN_UNUSED int64_t ptn_shift_distance(PtnValue value) {
+    int64_t distance = ptn_bitwise_integer_operand(value);
+    if (distance < 0) {
+        ptn_abort_arithmetic_error("Bit shift by negative number");
+    }
+    return distance;
+}
+
+static PTN_UNUSED PtnValue ptn_shift_left(PtnValue left, PtnValue right) {
+    uint64_t left_bits = (uint64_t)ptn_bitwise_integer_operand(left);
+    int64_t distance = ptn_shift_distance(right);
+    if (distance >= 64) {
+        return ptn_int(0);
+    }
+    return ptn_int((int64_t)(left_bits << (unsigned int)distance));
+}
+
+static PTN_UNUSED PtnValue ptn_shift_right(PtnValue left, PtnValue right) {
+    int64_t left_integer = ptn_bitwise_integer_operand(left);
+    int64_t distance = ptn_shift_distance(right);
+    if (distance >= 64) {
+        return ptn_int(left_integer < 0 ? -1 : 0);
+    }
+    return ptn_int(left_integer >> (unsigned int)distance);
+}
+
 static PTN_UNUSED char *ptn_value_to_string(PtnValue value) {
     char buffer[128];
     int written = 0;
@@ -1498,9 +1538,27 @@ static PTN_UNUSED int ptn_ascii_case_equal(const char *left, const char *right) 
     return *left == '\0' && *right == '\0';
 }
 
-static PTN_UNUSED int ptn_constant_is_defined(const char *name) {
-    (void)name;
+static PTN_UNUSED int ptn_constant_value(const char *name, PtnValue *out) {
+    if (strcmp(name, "E_ERROR") == 0) {
+        *out = ptn_int(1);
+        return 1;
+    }
     return 0;
+}
+
+static PTN_UNUSED int ptn_constant_is_defined(const char *name) {
+    PtnValue value;
+    return ptn_constant_value(name, &value);
+}
+
+static PTN_UNUSED PtnValue ptn_read_constant(PtnRuntime *runtime, const char *name) {
+    PtnValue value;
+    if (ptn_constant_value(name, &value)) {
+        return value;
+    }
+    ptn_emit_undefined_constant_error(&runtime->diagnostics, name);
+    exit(255);
+    return ptn_null();
 }
 
 static PTN_UNUSED void ptn_echo(PtnValue value) {
@@ -1681,6 +1739,14 @@ static PtnValue ptn_internal_ord(PtnRuntime *runtime, size_t argc, const PtnValu
     return ptn_int(byte);
 }
 
+static PtnValue ptn_internal_error_reporting(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_int(0);
+}
+
 static PtnValue ptn_internal_defined(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_function_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 
@@ -1691,6 +1757,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "bin2hex", 1, 1, ptn_internal_bin2hex },
         { "chr", 1, 1, ptn_internal_chr },
         { "ord", 1, 1, ptn_internal_ord },
+        { "error_reporting", 0, 1, ptn_internal_error_reporting },
         { "gettype", 1, 1, ptn_internal_gettype },
         { "is_null", 1, 1, ptn_internal_is_null },
         { "is_bool", 1, 1, ptn_internal_is_bool },

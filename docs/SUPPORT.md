@@ -49,12 +49,15 @@ supports in generated native binaries.
   the result is a bytewise string for non-NUL string data. Other supported
   scalar operands are converted to integers through the current scalar numeric
   conversion path.
+- Boxed scalar bit shifts `<<` and `>>`. Supported scalar operands are
+  converted to integers through the current bitwise integer-conversion path.
 - Simple statement-form internal calls such as `var_dump(expr, ...)`,
-  `strlen(expr);`, `bin2hex(expr);`, `chr(expr);`, and `ord(expr);`.
+  `strlen(expr);`, `bin2hex(expr);`, `chr(expr);`, `ord(expr);`, and
+  `error_reporting(expr);`.
 - Expression-form internal calls for the currently registered scalar functions,
   including `strlen(expr)`, `bin2hex(expr)`, `chr(expr)`, `ord(expr)`,
-  `gettype(expr)`, and scalar `is_*` type predicates in echo operands,
-  assignments, binary operands, and branch/loop conditions.
+  `error_reporting(expr)`, `gettype(expr)`, and scalar `is_*` type predicates
+  in echo operands, assignments, binary operands, and branch/loop conditions.
 - Internal-call arguments are materialized left-to-right before generated C
   runtime dispatch.
 - `var_dump()` output for current boxed scalar values: `NULL`, `bool(...)`,
@@ -67,14 +70,16 @@ supports in generated native binaries.
 - `ord()` over current boxed scalar values after scalar string conversion,
   returning the first byte as an integer. Empty and multi-byte strings emit
   PHP-like deprecation diagnostics with the internal-call source line.
+- `error_reporting()` currently accepts zero or one scalar argument and returns
+  a placeholder integer level. It does not configure diagnostic filtering yet.
 - `gettype()` over current boxed scalar values, returning `NULL`, `boolean`,
   `integer`, `double`, or `string`.
 - Scalar type predicates over current boxed scalar values: `is_null()`,
   `is_bool()`, `is_int()`, `is_integer()`, `is_long()`, `is_float()`,
   `is_double()`, `is_string()`, and `is_scalar()`.
 - `function_exists()` over the currently registered internal-function names.
-- `defined()` over the current constant registry. Constants are not modeled yet,
-  so current native binaries report ordinary names as undefined.
+- `defined()` over the current constant registry, including the currently
+  modeled PHP constant `E_ERROR`. Other ordinary names report as undefined.
 - A minimal `phpc` runner for supported PHPT rows. It compiles scripts or `-r`
   snippets to temporary native binaries through the normal compiler pipeline.
 - Braced `if`, `elseif`, and `else` statements whose conditions and bodies use
@@ -125,7 +130,8 @@ supports in generated native binaries.
 - Inline HTML before `<?php` or between PHP blocks.
 - Internal functions outside the registered scalar subset.
 - User-defined functions in `function_exists()`.
-- User-defined constants and built-in PHP/extension constants in `defined()`.
+- User-defined constants and built-in PHP/extension constants other than the
+  currently modeled `E_ERROR` in `defined()`.
 - Type predicate coverage for arrays, objects, resources, and references.
 - Arrays, objects, resources, recursive structures, references, and
   `var_dump()` reference identity output.
@@ -139,9 +145,10 @@ supports in generated native binaries.
   `strlen()` input conversion.
 - Complete PHP CLI and PHPT runner option parity for `phpc`.
 - Doc comment retention for reflection or metadata. Comments are skipped today.
-- Bit shifts.
+- PHP-exact `error_reporting()` configuration/filtering behavior.
 - PHP-exact file names, line numbers, error-handler routing, and overflow
-  parity for bitwise integer-conversion diagnostics.
+  parity for bitwise integer-conversion diagnostics, including shift
+  diagnostics.
 - Compound assignment operators other than `+=`, `-=`, `*=`, `/=`, `%=`, `.=`,
   `&=`, `|=`, and `^=`: `**=`, `<<=`, `>>=`, and `??=`.
 - Array, object, string-offset, property, static-property, variable-variable,

@@ -547,6 +547,44 @@ fn parser_accepts_unary_bitwise_not_expressions() {
 }
 
 #[test]
+fn parser_accepts_shift_expressions_and_bare_constants() {
+    let program = parser::parse(
+        "<?php error_reporting(E_ERROR); var_dump(\"34\" << \"1\", \"56\" >> \"2\");",
+    )
+    .unwrap();
+
+    let Statement::Call {
+        name, arguments, ..
+    } = &program.statements[0]
+    else {
+        panic!("expected error_reporting call");
+    };
+    assert_eq!(name, "error_reporting");
+    assert!(matches!(
+        &arguments[0],
+        Expr::Constant(constant, _) if constant == "E_ERROR"
+    ));
+
+    let Statement::Call { arguments, .. } = &program.statements[1] else {
+        panic!("expected var_dump call");
+    };
+    assert!(matches!(
+        &arguments[0],
+        Expr::Binary {
+            op: BinaryOp::ShiftLeft,
+            ..
+        }
+    ));
+    assert!(matches!(
+        &arguments[1],
+        Expr::Binary {
+            op: BinaryOp::ShiftRight,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn parser_accepts_braced_if_elseif_else_statements() {
     let program = parser::parse(
         "<?php $a = 1; if (($a == 0)) { echo \"bad\"; } elseif ($a == 1) { var_dump(true); } else { print \"bad\"; }",
@@ -974,7 +1012,7 @@ fn compile_symbol_existence_internal_functions_to_native_binary() {
     let output = root.join("symbol-existence-functions-bin");
     fs::write(
         &input,
-        "<?php var_dump(function_exists(\"strlen\"), function_exists(\"STRLEN\"), function_exists(\"sapi_windows_vt100_support\"), defined(\"test\")); echo gettype(defined(\"test\")), \"\\n\";",
+        "<?php var_dump(function_exists(\"strlen\"), function_exists(\"STRLEN\"), function_exists(\"sapi_windows_vt100_support\"), defined(\"test\"), defined(\"E_ERROR\")); echo gettype(defined(\"test\")), \"\\n\";",
     )
     .unwrap();
 
@@ -984,7 +1022,7 @@ fn compile_symbol_existence_internal_functions_to_native_binary() {
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "bool(true)\nbool(true)\nbool(false)\nbool(false)\nboolean\n"
+        "bool(true)\nbool(true)\nbool(false)\nbool(false)\nbool(true)\nboolean\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -1102,6 +1140,29 @@ fn compile_strict_identity_comparisons_to_native_binary() {
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "111111\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_scalar_shift_strings_and_constants_to_native_binary() {
+    let root = temp_dir("ptn-native-scalar-shifts");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("scalar-shifts.php");
+    let output = root.join("scalar-shifts-bin");
+    fs::write(
+        &input,
+        "<?php error_reporting(E_ERROR); var_dump(\"12\" << \"0\"); var_dump(\"34\" << \"1\"); var_dump(\"56\" << \"2\"); var_dump(\"12\" >> \"0\"); var_dump(\"34\" >> \"1\"); var_dump(\"56\" >> \"2\"); var_dump(defined(\"E_ERROR\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(12)\nint(68)\nint(224)\nint(12)\nint(17)\nint(14)\nbool(true)\n"
+    );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 

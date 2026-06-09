@@ -564,3 +564,31 @@ Added a scalar byte-observation internal-function slice:
 Still unsupported after this `ord()` slice: embedded NUL bytes in runtime
 strings, strict-types/internal argument `TypeError` parity, arrays, objects,
 resources, references, and copy-on-write behavior.
+
+Added a scalar bit-shift and modeled-constant slice:
+
+- Lexer/parser/AST/IR support for binary `<<` and `>>` expressions at PHP-like
+  shift precedence between concatenation and additive arithmetic.
+- Generated C dispatch to boxed `ptn_shift_left` and `ptn_shift_right` runtime
+  helpers after materializing operands left-to-right.
+- Shift operands convert through the current bitwise integer-conversion path,
+  sharing the existing scalar numeric-string conversion and float precision-loss
+  diagnostic boundary used by `&`, `|`, `^`, and unary `~`.
+- Bare identifier expressions now lower as constant reads when they are not
+  followed by a call argument list.
+- The constant registry now models PHP `E_ERROR`, and `defined("E_ERROR")`
+  observes that registry entry while ordinary names remain undefined.
+- Registered `error_reporting()` as a zero-or-one-argument internal function
+  with the current placeholder reporting-level behavior.
+- Native tests prove shift parsing, numeric-string shifts, `E_ERROR` constant
+  reads, and `defined("E_ERROR")`.
+- Focused public PHPT telemetry through `phpc` passes
+  `tests/lang/operators/bitwiseShiftLeft_variationStr2.phpt` and
+  `tests/lang/operators/bitwiseShiftRight_variationStr2.phpt`.
+
+Still unsupported after this shift slice: compound `<<=` and `>>=`, PHP-exact
+`error_reporting()` configuration/filtering behavior, user-defined constants,
+PHP built-in and extension constants beyond `E_ERROR`, exact shift diagnostic
+formatting and exception behavior, bitwise integer overflow parity, embedded
+NUL bytes in runtime strings and string bitwise results, arrays, objects,
+references, and copy-on-write behavior.
