@@ -166,6 +166,8 @@ typedef struct {
 struct PtnException {
     const char *class_name;
     char *message;
+    const char *path;
+    size_t line;
 };
 
 typedef struct {
@@ -220,6 +222,9 @@ typedef struct {
     PtnExceptionState *exceptions;
     PtnCallFrame owned_call_frame;
     PtnCallFrame *call_frame;
+    const char *source_path;
+    const char *current_function_name;
+    size_t call_site_line;
 } PtnRuntime;
 
 typedef struct {

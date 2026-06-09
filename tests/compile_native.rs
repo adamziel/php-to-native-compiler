@@ -4,8 +4,8 @@ use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use ptn::ast::{
-    AssignmentOp, BinaryOp, CastKind, Expr, IncDecOp, MagicConstantKind, Statement, StringPart,
-    TypeHint, UnaryOp, UnsetTarget,
+    ArrayElementValue, AssignmentOp, BinaryOp, CastKind, Expr, IncDecOp, MagicConstantKind,
+    ReferenceTarget, Statement, StringPart, TypeHint, UnaryOp, UnsetTarget,
 };
 use ptn::lexer::{self, TokenKind};
 use ptn::{compile_file, parser, CompileOptions, DiagnosticKind};
@@ -1074,8 +1074,32 @@ fn parser_accepts_array_literals_and_spaceship_expressions() {
     assert_eq!(elements.len(), 3);
     assert!(elements[0].key.is_none());
     assert!(elements[1].key.is_some());
-    assert!(matches!(&elements[2].value, Expr::Array { .. }));
+    assert!(matches!(
+        &elements[2].value,
+        ArrayElementValue::Value(Expr::Array { .. })
+    ));
     assert!(matches!(right.as_ref(), Expr::Array { elements, .. } if elements.is_empty()));
+}
+
+#[test]
+fn parser_accepts_array_literal_reference_elements() {
+    let program = parser::parse("<?php $array = [&$value, \"k\" => &$items[0]];").unwrap();
+    let Statement::Assign { value, .. } = &program.statements[0] else {
+        panic!("expected array assignment");
+    };
+    let Expr::Array { elements, .. } = value else {
+        panic!("expected array literal");
+    };
+    assert_eq!(elements.len(), 2);
+    assert!(matches!(
+        &elements[0].value,
+        ArrayElementValue::Reference(ReferenceTarget::Variable { name, .. }) if name == "value"
+    ));
+    assert!(matches!(
+        &elements[1].value,
+        ArrayElementValue::Reference(ReferenceTarget::ArrayDim(target))
+            if target.array == "items" && target.dimensions.len() == 1
+    ));
 }
 
 #[test]
@@ -5505,6 +5529,68 @@ var_dump($arr[0], $other, $elem);",
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "int(2)\nint(1)\nint(2)\nint(3)\nint(3)\nint(5)\nint(5)\nint(6)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_array_literal_reference_elements_to_native_binary() {
+    let root = temp_dir("ptn-native-array-literal-reference-elements");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-literal-reference-elements.php");
+    let output = root.join("array-literal-reference-elements-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$value = \"one\";\n\
+$refs = [&$value];\n\
+$refs[0] = \"two\";\n\
+echo $value, \":\", $refs[0], \"\\n\";\n\
+$items = [\"a\"];\n\
+$keyed = [\"k\" => &$items[0]];\n\
+$keyed[\"k\"] = \"b\";\n\
+echo $items[0], \":\", $keyed[\"k\"], \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "two:two\nb:b\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_string_offset_reference_array_literal_raises_error_to_native_binary() {
+    let root = temp_dir("ptn-native-string-offset-reference-array-literal");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("string-offset-reference-array-literal.php");
+    let output = root.join("string-offset-reference-array-literal-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$text = \"abc\";\n\
+try { $refs = [&$text[1]]; } catch (\\Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+echo $text, \"\\n\";\n\
+function string_offset_ref_in_function() {\n\
+    $inner = \"\";\n\
+    return array(&$inner[0]);\n\
+}\n\
+try { string_offset_ref_in_function(); } catch (\\Error $e) { echo $e->getMessage(), \"\\n\"; }",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Cannot create references to/from string offsets\nabc\nCannot create references to/from string offsets\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

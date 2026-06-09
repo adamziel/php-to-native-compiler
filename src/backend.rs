@@ -6,9 +6,9 @@ use std::process::Command;
 
 use crate::diagnostic::{Diagnostic, Result};
 use crate::ir::{
-    ArrayElement as IrArrayElement, BinaryOp, CastKind, CatchClause as IrCatchClause, FunctionDecl,
-    IncDecOp, Instruction, MagicConstantKind, Module, ReferenceTarget, TypeHint, UnaryOp,
-    ValueExpr,
+    ArrayElement as IrArrayElement, ArrayElementValue as IrArrayElementValue, BinaryOp, CastKind,
+    CatchClause as IrCatchClause, FunctionDecl, IncDecOp, Instruction, MagicConstantKind, Module,
+    ReferenceTarget, TypeHint, UnaryOp, ValueExpr,
 };
 
 mod runtime;
@@ -34,6 +34,9 @@ pub fn emit_c(module: &Module) -> String {
     out.push_str("\nint main(void) {\n");
     out.push_str("    PtnRuntime runtime;\n");
     out.push_str("    ptn_runtime_init(&runtime);\n");
+    out.push_str("    runtime.source_path = \"");
+    out.push_str(&c_string(&module.source_file));
+    out.push_str("\";\n");
     for warning in collect_control_warnings(&module.instructions) {
         emit_control_warning(
             &mut out,
@@ -165,6 +168,10 @@ fn emit_user_functions(
         }
         out.push_str("    PtnRuntime runtime;\n");
         out.push_str("    ptn_runtime_init_function_frame(&runtime, caller_runtime);\n");
+        out.push_str("    runtime.current_function_name = \"");
+        out.push_str(&c_string(&function.name));
+        out.push_str("\";\n");
+        out.push_str("    runtime.call_site_line = line;\n");
         if function.parameters.is_empty() {
             out.push_str("    ptn_runtime_set_call_frame(&runtime, argc, args, 0, NULL);\n");
         } else {
@@ -442,6 +449,9 @@ fn emit_instruction(
             out.push_str(", ");
             out.push_str(&source_temp);
             out.push_str(", ");
+            out.push('"');
+            out.push_str(&c_string(source_path));
+            out.push_str("\", ");
             out.push_str(&target.line.to_string());
             out.push_str(");\n");
             emit_value_cleanup(out, "    ", &source_temp);
@@ -1316,7 +1326,18 @@ fn collect_value_runtime_requirements(
                 if let Some(key) = &element.key {
                     collect_value_runtime_requirements(key, functions, requirements);
                 }
-                collect_value_runtime_requirements(&element.value, functions, requirements);
+                match &element.value {
+                    IrArrayElementValue::Value(value) => {
+                        collect_value_runtime_requirements(value, functions, requirements);
+                    }
+                    IrArrayElementValue::Reference(target) => {
+                        collect_reference_target_runtime_requirements(
+                            target,
+                            functions,
+                            requirements,
+                        );
+                    }
+                }
             }
         }
         ValueExpr::ArrayAccess { array, index, .. } => {
@@ -2467,7 +2488,10 @@ impl ValueEmitter {
             } else {
                 ("0", "ptn_null()".to_string())
             };
-            let value_temp = self.emit_materialized_value(out, &element.value);
+            let value_temp = match &element.value {
+                IrArrayElementValue::Value(value) => self.emit_materialized_value(out, value),
+                IrArrayElementValue::Reference(target) => self.emit_reference_target(out, target),
+            };
             entry_temps.push(value_temp.clone());
             entries.push(format!("{{ {has_key}, {key_temp}, {value_temp} }}"));
         }
@@ -2702,6 +2726,9 @@ impl ValueEmitter {
                     None => out.push_str("NULL"),
                 }
                 out.push_str(", ");
+                out.push('"');
+                out.push_str(&c_string(&self.source_file));
+                out.push_str("\", ");
                 out.push_str(&target.line.to_string());
                 out.push_str(");\n");
                 if let Some(index_temp) = index_temp {

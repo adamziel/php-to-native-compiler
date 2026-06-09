@@ -104,6 +104,9 @@ supports in generated native binaries.
   value is converted to a string, empty string results throw `Error`, and
   multi-byte results emit the modeled first-byte warning before writing the
   first byte.
+- Attempts to create references to/from string offsets in supported reference
+  lvalue positions, including array literal reference elements, raise the
+  modeled PHP `Error` through the runtime exception path.
 - `array_key_exists()` over current ordered-array values, using the same
   integer/string key canonicalization path as array literals and reads. `null`
   keys emit the current PHP-like deprecation boundary and canonicalize to the
@@ -192,8 +195,8 @@ supports in generated native binaries.
   Calls may pass extra arguments. Duplicate declarations and declarations that
   collide with currently modeled internal function names are rejected.
 - Direct variable reference aliases, single-dimension array element references,
-  and by-value copies near references, with unsupported recursive/non-lvalue
-  reference forms rejected explicitly.
+  array literal reference elements, and by-value copies near references, with
+  unsupported recursive/non-lvalue reference forms rejected explicitly.
 - `var_dump()` output for current boxed values: `NULL`, `bool(...)`,
   `int(...)`, `float(...)`, `string(length) "value"`, and ordered literal
   arrays. Finite floats use the shortest decimal spelling that round-trips to
@@ -422,9 +425,9 @@ supports in generated native binaries.
 - Exact `array_key_exists()` TypeError parity for unsupported key/container
   types, object property checks, resources, references, and error-handler
   routing.
-- String-offset append, unset, compound assignment, references, object/
-  property/reference `isset()`/`empty()` and null-coalescing semantics, and
-  complete TypeError/exception parity for unsupported string offset key types.
+- String-offset append, unset, compound assignment, object/property/reference
+  `isset()`/`empty()` and null-coalescing semantics, and complete
+  TypeError/exception parity for unsupported string offset key types.
 - Embedded NUL strings in runtime string values, `var_dump()` string
   length/output, `strlen()`, `str_rot13()`, `strcmp()`, `bin2hex()`, `chr()`,
   `hex2bin()`, `str_contains()`, `quotemeta()`, `chunk_split()`,

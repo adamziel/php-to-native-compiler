@@ -11,6 +11,9 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->owned_call_frame.parameter_count = 0;
     runtime->owned_call_frame.parameter_names = NULL;
     runtime->call_frame = NULL;
+    runtime->source_path = caller_runtime->source_path;
+    runtime->current_function_name = NULL;
+    runtime->call_site_line = 0;
 }
 
 static PTN_UNUSED void ptn_runtime_set_call_frame(
@@ -120,13 +123,20 @@ static PTN_UNUSED void ptn_runtime_unset_variable(PtnRuntime *runtime, const cha
     ptn_symbols_unset(&runtime->symbols, name);
 }
 
-static PTN_UNUSED PtnException *ptn_exception_new(const char *class_name, const char *message) {
+static PTN_UNUSED PtnException *ptn_exception_new(
+    const char *class_name,
+    const char *message,
+    const char *path,
+    size_t line
+) {
     PtnException *exception = malloc(sizeof(PtnException));
     if (exception == NULL) {
         ptn_abort_out_of_memory();
     }
     exception->class_name = class_name;
     exception->message = ptn_duplicate_string(message);
+    exception->path = path;
+    exception->line = line;
     return exception;
 }
 
@@ -167,16 +177,55 @@ static PTN_UNUSED void ptn_try_frame_pop(PtnRuntime *runtime, PtnTryFrame *frame
     }
 }
 
-static PTN_UNUSED void ptn_throw_exception(PtnRuntime *runtime, const char *class_name, const char *message) {
+static PTN_UNUSED void ptn_emit_uncaught_exception(PtnRuntime *runtime, PtnException *exception) {
+    if (exception->path == NULL || exception->line == 0) {
+        fputs("Fatal error: ", stderr);
+        fputs(exception->message, stderr);
+        fputc('\n', stderr);
+        return;
+    }
+
+    fprintf(
+        stderr,
+        "Fatal error: Uncaught %s: %s in %s:%zu\n",
+        exception->class_name,
+        exception->message,
+        exception->path,
+        exception->line
+    );
+    fputs("Stack trace:\n", stderr);
+    if (runtime->current_function_name != NULL && runtime->call_site_line != 0) {
+        fprintf(
+            stderr,
+            "#0 %s(%zu): %s()\n#1 {main}\n",
+            runtime->source_path != NULL ? runtime->source_path : exception->path,
+            runtime->call_site_line,
+            runtime->current_function_name
+        );
+    } else {
+        fputs("#0 {main}\n", stderr);
+    }
+    fprintf(stderr, "  thrown in %s on line %zu\n", exception->path, exception->line);
+}
+
+static PTN_UNUSED void ptn_throw_exception_at(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *message,
+    const char *path,
+    size_t line
+) {
     ptn_exception_free(runtime->exceptions->active_exception);
-    runtime->exceptions->active_exception = ptn_exception_new(class_name, message);
+    runtime->exceptions->active_exception = ptn_exception_new(class_name, message, path, line);
     if (runtime->exceptions->try_frame != NULL) {
         longjmp(runtime->exceptions->try_frame->jump, 1);
     }
-    fputs("Fatal error: ", stderr);
-    fputs(message, stderr);
-    fputc('\n', stderr);
+    ptn_emit_uncaught_exception(runtime, runtime->exceptions->active_exception);
     exit(255);
+}
+
+static PTN_UNUSED void ptn_throw_exception(PtnRuntime *runtime, const char *class_name, const char *message) {
+    ptn_throw_exception_at(runtime, class_name, message, NULL, 0);
 }
 
 static PTN_UNUSED int ptn_exception_matches(PtnRuntime *runtime, const char *type_name) {
@@ -204,9 +253,7 @@ static PTN_UNUSED void ptn_rethrow_exception(PtnRuntime *runtime) {
     if (runtime->exceptions->try_frame != NULL) {
         longjmp(runtime->exceptions->try_frame->jump, 1);
     }
-    fputs("Fatal error: ", stderr);
-    fputs(exception->message, stderr);
-    fputc('\n', stderr);
+    ptn_emit_uncaught_exception(runtime, exception);
     exit(255);
 }
 

@@ -122,6 +122,7 @@ static PTN_UNUSED void ptn_emit_foreach_non_array_warning(PtnValue value, size_t
 static PTN_UNUSED PtnArray *ptn_runtime_array_for_reference_write(
     PtnRuntime *runtime,
     const char *name,
+    const char *path,
     size_t line
 ) {
     (void)line;
@@ -140,7 +141,7 @@ static PTN_UNUSED PtnArray *ptn_runtime_array_for_reference_write(
         return array != NULL ? array : container.as.array;
     }
     if (container.type == PTN_STRING) {
-        ptn_throw_exception(runtime, "Error", "Cannot create references to/from string offsets");
+        ptn_throw_exception_at(runtime, "Error", "Cannot create references to/from string offsets", path, line);
         return NULL;
     }
 
@@ -172,9 +173,10 @@ static PTN_UNUSED PtnValue ptn_runtime_reference_for_array_dim(
     PtnRuntime *runtime,
     const char *name,
     const PtnValue *key_value,
+    const char *path,
     size_t line
 ) {
-    PtnArray *array = ptn_runtime_array_for_reference_write(runtime, name, line);
+    PtnArray *array = ptn_runtime_array_for_reference_write(runtime, name, path, line);
     if (array == NULL) {
         return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
     }
@@ -192,12 +194,13 @@ static PTN_UNUSED void ptn_runtime_bind_array_dim_reference(
     const char *name,
     const PtnValue *key_value,
     PtnValue reference,
+    const char *path,
     size_t line
 ) {
     if (reference.type != PTN_REFERENCE) {
         ptn_abort_out_of_memory();
     }
-    PtnArray *array = ptn_runtime_array_for_reference_write(runtime, name, line);
+    PtnArray *array = ptn_runtime_array_for_reference_write(runtime, name, path, line);
     if (array == NULL) {
         return;
     }

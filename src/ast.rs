@@ -286,7 +286,13 @@ pub enum Expr {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ArrayElement {
     pub key: Option<Expr>,
-    pub value: Expr,
+    pub value: ArrayElementValue,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ArrayElementValue {
+    Value(Expr),
+    Reference(ReferenceTarget),
 }
 
 #[derive(Debug, Clone, PartialEq)]

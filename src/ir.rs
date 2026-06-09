@@ -1,10 +1,11 @@
 use crate::ast::{
-    ArrayDimTarget as AstArrayDimTarget, ArrayElement as AstArrayElement, AssignmentOp,
-    BinaryOp as AstBinaryOp, CastKind as AstCastKind, CatchClause as AstCatchClause, Expr,
-    FunctionDecl as AstFunctionDecl, FunctionParameter as AstFunctionParameter,
-    IncDecOp as AstIncDecOp, MagicConstantKind as AstMagicConstantKind, Program,
-    ReferenceTarget as AstReferenceTarget, Statement, StringPart as AstStringPart,
-    TypeHint as AstTypeHint, UnaryOp as AstUnaryOp, UnsetTarget as AstUnsetTarget,
+    ArrayDimTarget as AstArrayDimTarget, ArrayElement as AstArrayElement,
+    ArrayElementValue as AstArrayElementValue, AssignmentOp, BinaryOp as AstBinaryOp,
+    CastKind as AstCastKind, CatchClause as AstCatchClause, Expr, FunctionDecl as AstFunctionDecl,
+    FunctionParameter as AstFunctionParameter, IncDecOp as AstIncDecOp,
+    MagicConstantKind as AstMagicConstantKind, Program, ReferenceTarget as AstReferenceTarget,
+    Statement, StringPart as AstStringPart, TypeHint as AstTypeHint, UnaryOp as AstUnaryOp,
+    UnsetTarget as AstUnsetTarget,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -213,7 +214,13 @@ pub enum ValueExpr {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ArrayElement {
     pub key: Option<ValueExpr>,
-    pub value: ValueExpr,
+    pub value: ArrayElementValue,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ArrayElementValue {
+    Value(ValueExpr),
+    Reference(ReferenceTarget),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -746,7 +753,16 @@ fn lower_expr(expr: &Expr) -> ValueExpr {
 fn lower_array_element(element: &AstArrayElement) -> ArrayElement {
     ArrayElement {
         key: element.key.as_ref().map(lower_expr),
-        value: lower_expr(&element.value),
+        value: lower_array_element_value(&element.value),
+    }
+}
+
+fn lower_array_element_value(value: &AstArrayElementValue) -> ArrayElementValue {
+    match value {
+        AstArrayElementValue::Value(value) => ArrayElementValue::Value(lower_expr(value)),
+        AstArrayElementValue::Reference(target) => {
+            ArrayElementValue::Reference(lower_reference_target(target))
+        }
     }
 }
 
