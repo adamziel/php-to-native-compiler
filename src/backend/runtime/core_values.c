@@ -30,6 +30,7 @@
 
 typedef struct PtnArray PtnArray;
 typedef struct PtnException PtnException;
+typedef struct PtnReference PtnReference;
 typedef struct PtnTryFrame PtnTryFrame;
 
 typedef enum {
@@ -39,7 +40,8 @@ typedef enum {
     PTN_FLOAT,
     PTN_STRING,
     PTN_ARRAY,
-    PTN_EXCEPTION
+    PTN_EXCEPTION,
+    PTN_REFERENCE
 } PtnType;
 
 typedef enum {
@@ -72,8 +74,14 @@ typedef struct {
         PtnString string;
         PtnArray *array;
         PtnException *exception;
+        PtnReference *reference;
     } as;
 } PtnValue;
+
+struct PtnReference {
+    size_t refcount;
+    PtnValue value;
+};
 
 typedef struct {
     int exists;
@@ -317,6 +325,14 @@ static PTN_UNUSED PtnValue ptn_exception_value(PtnException *exception) {
 static PTN_UNUSED PtnValue ptn_exception_borrow(PtnException *exception) {
     PtnValue value = ptn_exception_value(exception);
     value.owned = 0;
+    return value;
+}
+
+static PTN_UNUSED PtnValue ptn_reference_value(PtnReference *reference) {
+    PtnValue value;
+    value.type = PTN_REFERENCE;
+    value.owned = 1;
+    value.as.reference = reference;
     return value;
 }
 

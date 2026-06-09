@@ -17,6 +17,8 @@ expected rows, or one-off outputs.
 - Top-level user functions include scoped `__FUNCTION__` and `__METHOD__`
   magic-constant coverage plus `func_num_args()`, `func_get_arg()`, and
   `func_get_args()` call-frame introspection.
+- Direct variable references, array element references, and by-reference
+  userland parameters cover the first COW/reference boundary slice.
 - `count()` handles arrays and raises catchable `TypeError` diagnostics for
   non-array operands in the current boxed value domain.
 - Bounded PHPT telemetry from `/home/claude/php-src-phpt`.

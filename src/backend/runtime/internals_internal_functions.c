@@ -13,6 +13,7 @@ static PTN_UNUSED PtnValue ptn_read_constant(PtnRuntime *runtime, const char *na
 }
 
 static PTN_UNUSED void ptn_echo(PtnValue value) {
+    value = ptn_value_deref(value);
     switch (value.type) {
         case PTN_NULL:
             break;
@@ -36,11 +37,14 @@ static PTN_UNUSED void ptn_echo(PtnValue value) {
         case PTN_EXCEPTION:
             fputs("Object", stdout);
             break;
+        case PTN_REFERENCE:
+            break;
     }
 }
 
 /* PTN_DIRECT_INTERNAL_HELPERS_START */
 static PTN_UNUSED const char *ptn_count_operand_type_name(PtnValue value) {
+    value = ptn_value_deref(value);
     if (value.type == PTN_BOOL) {
         return value.as.boolean ? "true" : "false";
     }
@@ -48,6 +52,7 @@ static PTN_UNUSED const char *ptn_count_operand_type_name(PtnValue value) {
 }
 
 static PTN_UNUSED PtnValue ptn_count_value(PtnRuntime *runtime, PtnValue value) {
+    value = ptn_value_deref(value);
     if (value.type == PTN_ARRAY) {
         return ptn_int((int64_t)value.as.array->len);
     }
@@ -67,6 +72,8 @@ static PTN_UNUSED PtnValue ptn_count_value(PtnRuntime *runtime, PtnValue value) 
 }
 
 static PTN_UNUSED PtnValue ptn_array_key_exists_value(PtnRuntime *runtime, PtnValue key_value, PtnValue array_value, size_t line) {
+    key_value = ptn_value_deref(key_value);
+    array_value = ptn_value_deref(array_value);
     if (array_value.type != PTN_ARRAY) {
         fputs("Fatal error: array_key_exists(): Argument #2 ($array) must be of type array\n", stderr);
         exit(255);
@@ -93,35 +100,37 @@ static void ptn_var_dump_indent(size_t indent) {
 }
 
 static void ptn_var_dump_value_indented(PtnValue value, size_t indent) {
+    int is_reference = value.type == PTN_REFERENCE;
+    if (is_reference) {
+        value = ptn_value_deref(value);
+    }
+    ptn_var_dump_indent(indent);
+    if (is_reference) {
+        fputs("&", stdout);
+    }
     switch (value.type) {
         case PTN_NULL:
-            ptn_var_dump_indent(indent);
             fputs("NULL\n", stdout);
             break;
         case PTN_BOOL:
-            ptn_var_dump_indent(indent);
             fputs(value.as.boolean ? "bool(true)\n" : "bool(false)\n", stdout);
             break;
         case PTN_INT:
-            ptn_var_dump_indent(indent);
             printf("int(%lld)\n", (long long)value.as.integer);
             break;
         case PTN_FLOAT: {
             char formatted[64];
             ptn_format_var_dump_float(value.as.floating, formatted, sizeof(formatted));
-            ptn_var_dump_indent(indent);
             printf("float(%s)\n", formatted);
             break;
         }
         case PTN_STRING:
-            ptn_var_dump_indent(indent);
             printf("string(%zu) \"", value.as.string.len);
             fwrite(value.as.string.data, 1, value.as.string.len, stdout);
             fputs("\"\n", stdout);
             break;
         case PTN_ARRAY: {
             PtnArray *array = value.as.array;
-            ptn_var_dump_indent(indent);
             printf("array(%zu) {\n", array->len);
             for (size_t i = 0; i < array->len; i++) {
                 ptn_var_dump_indent(indent + 1);
@@ -138,7 +147,6 @@ static void ptn_var_dump_value_indented(PtnValue value, size_t indent) {
             break;
         }
         case PTN_EXCEPTION:
-            ptn_var_dump_indent(indent);
             printf("object(%s)#1 (1) {\n", value.as.exception->class_name);
             ptn_var_dump_indent(indent + 1);
             fputs("[\"message\"]=>\n", stdout);
@@ -148,6 +156,9 @@ static void ptn_var_dump_value_indented(PtnValue value, size_t indent) {
             fputs("\"\n", stdout);
             ptn_var_dump_indent(indent);
             fputs("}\n", stdout);
+            break;
+        case PTN_REFERENCE:
+            fputs("NULL\n", stdout);
             break;
     }
 }
@@ -184,11 +195,12 @@ static void ptn_print_r_array(PtnStringBuffer *buffer, PtnArray *array, size_t i
         ptn_string_buffer_append_char(buffer, '[');
         ptn_print_r_key(buffer, array->entries[i].key);
         ptn_string_buffer_append(buffer, "] => ");
-        if (array->entries[i].value.type == PTN_ARRAY) {
-            ptn_print_r_value_indented(buffer, array->entries[i].value, indent + 8);
+        PtnValue entry_value = ptn_value_deref(array->entries[i].value);
+        if (entry_value.type == PTN_ARRAY) {
+            ptn_print_r_value_indented(buffer, entry_value, indent + 8);
             ptn_string_buffer_append_char(buffer, '\n');
         } else {
-            ptn_print_r_value_indented(buffer, array->entries[i].value, indent);
+            ptn_print_r_value_indented(buffer, entry_value, indent);
             ptn_string_buffer_append_char(buffer, '\n');
         }
     }
@@ -197,6 +209,7 @@ static void ptn_print_r_array(PtnStringBuffer *buffer, PtnArray *array, size_t i
 }
 
 static void ptn_print_r_value_indented(PtnStringBuffer *buffer, PtnValue value, size_t indent) {
+    value = ptn_value_deref(value);
     switch (value.type) {
         case PTN_NULL:
             break;
@@ -224,6 +237,8 @@ static void ptn_print_r_value_indented(PtnStringBuffer *buffer, PtnValue value, 
         case PTN_EXCEPTION:
             ptn_string_buffer_append(buffer, "Object");
             break;
+        case PTN_REFERENCE:
+            break;
     }
 }
 
@@ -249,6 +264,7 @@ static PtnArray *ptn_internal_expect_array_arg(
     const char *argument_name,
     PtnValue value
 ) {
+    value = ptn_value_deref(value);
     if (value.type == PTN_ARRAY) {
         return value.as.array;
     }
@@ -1784,11 +1800,11 @@ static PtnValue ptn_call_frame_arg_value(PtnRuntime *runtime, PtnCallFrame *fram
     if (position < frame->parameter_count) {
         PtnValue value;
         if (ptn_symbols_get(&runtime->symbols, frame->parameter_names[position], &value)) {
-            return ptn_value_share(value);
+            return ptn_value_clone_deref(value);
         }
         return ptn_null();
     }
-    return ptn_value_share(frame->args[position]);
+    return ptn_value_clone_deref(frame->args[position]);
 }
 
 static PtnValue ptn_internal_func_num_args(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {

@@ -180,12 +180,15 @@ supports in generated native binaries.
 - Internal-call arguments are materialized left-to-right before generated C
   runtime dispatch.
 - Top-level named user-defined functions with by-value positional parameters,
-  local variable storage, ordinary `return` statements, implicit `null`
-  returns, recursive calls, and minimal `null` parameter and return type
+  direct by-reference positional parameters, local variable storage, ordinary
+  `return` statements, implicit `null` returns, recursive calls, call-frame
+  argument introspection, and minimal `null` parameter and return type
   declarations over the currently supported expression and statement subset.
-  Calls may pass extra arguments, which are currently ignored because argument
-  introspection is not modeled yet. Duplicate declarations and declarations
-  that collide with currently modeled internal function names are rejected.
+  Calls may pass extra arguments. Duplicate declarations and declarations that
+  collide with currently modeled internal function names are rejected.
+- Direct variable reference aliases, single-dimension array element references,
+  and by-value copies near references, with unsupported recursive/non-lvalue
+  reference forms rejected explicitly.
 - `var_dump()` output for current boxed values: `NULL`, `bool(...)`,
   `int(...)`, `float(...)`, `string(length) "value"`, and ordered literal
   arrays. Finite floats use the shortest decimal spelling that round-trips to
@@ -403,16 +406,14 @@ supports in generated native binaries.
   `PHP_EOL`, `DIRECTORY_SEPARATOR`, `PATH_SEPARATOR`, `PHP_INT_MIN`,
   `PHP_INT_MAX`, `PHP_INT_SIZE`, `INF`, `NAN`, `M_PI`, and modeled PHP math
   `M_*` constants in `defined()`/`constant()`.
-- Function forms beyond top-level named by-value declarations, including
-  default arguments, variadics, named arguments, by-reference parameters or
-  returns, nested or conditional declarations, closures, methods, dynamic
-  calls, namespaces, globals, static locals, `func_get_arg()`/
-  `func_get_args()`/`func_num_args()`, and PHP-exact function/include return
-  propagation.
+- Function forms beyond top-level named declarations, including default
+  arguments, variadics, named arguments, by-reference returns, nested or
+  conditional declarations, closures, methods, dynamic calls, namespaces,
+  globals, static locals, and PHP-exact function/include return propagation.
 - Type predicate coverage for arrays, objects, resources, and references.
-- Array element mutation, append/unset, recursive arrays, objects,
-  resources, references, copy-on-write, and `var_dump()` reference identity
-  output.
+- Unsupported recursive arrays, objects, resources, complete reference identity,
+  copy-on-write, and `var_dump()` reference identity beyond the currently
+  modeled ordered-array and direct-reference behavior.
 - Exact `array_key_exists()` TypeError parity for unsupported key/container
   types, object property checks, resources, references, and error-handler
   routing.
@@ -488,8 +489,9 @@ supports in generated native binaries.
   `.=`, `&=`, `|=`, `^=`, `<<=`, and `>>=`: `??=`.
 - Array, object, string-offset, property, static-property, variable-variable,
   reference, and other non-direct-variable compound-assignment lvalues.
-- Reference semantics for compound assignment, including reference identity,
-  copy-on-write interactions, and by-reference visibility during writes.
+- Remaining reference semantics for compound assignment outside direct
+  variables and modeled array elements, including full copy-on-write
+  interactions and by-reference visibility during writes.
 - Arrays, references, copy-on-write, globals, superglobals, classes, objects,
   resources, exceptions, variable variables, includes, and dynamic
   fallback.

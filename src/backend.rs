@@ -7,7 +7,8 @@ use std::process::Command;
 use crate::diagnostic::{Diagnostic, Result};
 use crate::ir::{
     ArrayElement as IrArrayElement, BinaryOp, CastKind, CatchClause as IrCatchClause, FunctionDecl,
-    IncDecOp, Instruction, MagicConstantKind, Module, TypeHint, UnaryOp, ValueExpr,
+    IncDecOp, Instruction, MagicConstantKind, Module, ReferenceTarget, TypeHint, UnaryOp,
+    ValueExpr,
 };
 
 mod runtime;
@@ -186,7 +187,13 @@ fn emit_user_functions(
             if let Some(TypeHint::Null) = parameter.type_hint {
                 out.push_str("    if (args[");
                 out.push_str(&parameter_index.to_string());
-                out.push_str("].type != PTN_NULL) {\n");
+                out.push_str("].type != PTN_NULL");
+                if parameter.by_ref {
+                    out.push_str(" && ptn_value_deref(args[");
+                    out.push_str(&parameter_index.to_string());
+                    out.push_str("]).type != PTN_NULL");
+                }
+                out.push_str(") {\n");
                 out.push_str("        ptn_emit_type_error(&caller_runtime->diagnostics, \"");
                 out.push_str(&c_string(&function.name));
                 out.push_str("() argument $");
@@ -196,11 +203,30 @@ fn emit_user_functions(
                 out.push_str("        exit(255);\n");
                 out.push_str("    }\n");
             }
-            out.push_str("    ptn_runtime_write_variable(&runtime, \"");
-            out.push_str(&c_string(&parameter.name));
-            out.push_str("\", args[");
-            out.push_str(&parameter_index.to_string());
-            out.push_str("]);\n");
+            if parameter.by_ref {
+                out.push_str("    if (args[");
+                out.push_str(&parameter_index.to_string());
+                out.push_str("].type != PTN_REFERENCE) {\n");
+                out.push_str("        ptn_abort_by_reference_argument_error(\"");
+                out.push_str(&c_string(&function.name));
+                out.push_str("\", ");
+                out.push_str(&(parameter_index + 1).to_string());
+                out.push_str(", \"");
+                out.push_str(&c_string(&parameter.name));
+                out.push_str("\");\n");
+                out.push_str("    }\n");
+                out.push_str("    ptn_runtime_bind_variable_reference(&runtime, \"");
+                out.push_str(&c_string(&parameter.name));
+                out.push_str("\", args[");
+                out.push_str(&parameter_index.to_string());
+                out.push_str("]);\n");
+            } else {
+                out.push_str("    ptn_runtime_write_variable(&runtime, \"");
+                out.push_str(&c_string(&parameter.name));
+                out.push_str("\", args[");
+                out.push_str(&parameter_index.to_string());
+                out.push_str("]);\n");
+            }
         }
         let mut values =
             ValueEmitter::new_for_function(source_file, source_dir, functions, &function.name);
@@ -306,6 +332,15 @@ fn emit_instruction(
             out.push_str(");\n");
             emit_value_cleanup(out, "    ", &emitted_value);
         }
+        Instruction::StoreRef { name, target } => {
+            let reference_temp = values.emit_reference_target(out, target);
+            out.push_str("    ptn_runtime_bind_variable_reference(&runtime, \"");
+            out.push_str(&c_string(name));
+            out.push_str("\", ");
+            out.push_str(&reference_temp);
+            out.push_str(");\n");
+            emit_value_cleanup(out, "    ", &reference_temp);
+        }
         Instruction::StoreArrayDim {
             array,
             dimensions,
@@ -386,6 +421,32 @@ fn emit_instruction(
             emit_value_cleanup(out, "    ", &value_temp);
             for segment_temp in path.value_temps {
                 emit_value_cleanup(out, "    ", &segment_temp);
+            }
+        }
+        Instruction::StoreArrayDimRef { target, source } => {
+            let source_temp = values.emit_reference_target(out, source);
+            let index_temp = target
+                .index
+                .as_ref()
+                .map(|index| values.emit_materialized_value(out, index));
+            out.push_str("    ptn_runtime_bind_array_dim_reference(&runtime, \"");
+            out.push_str(&c_string(&target.array));
+            out.push_str("\", ");
+            match &index_temp {
+                Some(index_temp) => {
+                    out.push('&');
+                    out.push_str(index_temp);
+                }
+                None => out.push_str("NULL"),
+            }
+            out.push_str(", ");
+            out.push_str(&source_temp);
+            out.push_str(", ");
+            out.push_str(&target.line.to_string());
+            out.push_str(");\n");
+            emit_value_cleanup(out, "    ", &source_temp);
+            if let Some(index_temp) = index_temp {
+                emit_value_cleanup(out, "    ", &index_temp);
             }
         }
         Instruction::DefineConstant { name, value, line } => {
@@ -1083,6 +1144,15 @@ fn collect_instruction_runtime_requirements(
             }
             collect_value_runtime_requirements(value, functions, requirements);
         }
+        Instruction::StoreRef { target, .. } => {
+            collect_reference_target_runtime_requirements(target, functions, requirements);
+        }
+        Instruction::StoreArrayDimRef { target, source } => {
+            if let Some(index) = &target.index {
+                collect_value_runtime_requirements(index, functions, requirements);
+            }
+            collect_reference_target_runtime_requirements(source, functions, requirements);
+        }
         Instruction::Increment { .. } => {}
         Instruction::UnsetVariable { .. } => {}
         Instruction::UnsetArrayDim { dimensions, .. } => {
@@ -1149,6 +1219,21 @@ fn collect_instruction_runtime_requirements(
         | Instruction::Continue { .. }
         | Instruction::Label { .. }
         | Instruction::Goto { .. } => {}
+    }
+}
+
+fn collect_reference_target_runtime_requirements(
+    target: &ReferenceTarget,
+    functions: &[FunctionDecl],
+    requirements: &mut RuntimeRequirements,
+) {
+    match target {
+        ReferenceTarget::Variable { .. } => {}
+        ReferenceTarget::ArrayDim(target) => {
+            if let Some(index) = &target.index {
+                collect_value_runtime_requirements(index, functions, requirements);
+            }
+        }
     }
 }
 
@@ -1348,6 +1433,23 @@ fn emit_control_warning(out: &mut String, message: &str, source_path: &str, line
     out.push_str(");\n");
 }
 
+fn reference_target_from_value(value: &ValueExpr) -> Option<ReferenceTarget> {
+    match value {
+        ValueExpr::Load { name, .. } => Some(ReferenceTarget::Variable { name: name.clone() }),
+        ValueExpr::ArrayAccess { array, index, line } => match array.as_ref() {
+            ValueExpr::Load { name, .. } => {
+                Some(ReferenceTarget::ArrayDim(crate::ir::ArrayDimTarget {
+                    array: name.clone(),
+                    index: Some((**index).clone()),
+                    line: *line,
+                }))
+            }
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 fn emit_switch(
     out: &mut String,
     values: &mut ValueEmitter,
@@ -1478,13 +1580,6 @@ fn binary_runtime_function(op: BinaryOp) -> &'static str {
     }
 }
 
-fn mutating_array_internal_name(name: &str) -> bool {
-    matches!(
-        name.to_ascii_lowercase().as_str(),
-        "array_pop" | "array_push" | "array_shift" | "end" | "next" | "prev" | "reset"
-    )
-}
-
 pub fn compile_c(c_source: &str, output: &Path) -> Result<()> {
     let c_path = output.with_extension("c");
     fs::write(&c_path, c_source).map_err(|error| {
@@ -1565,7 +1660,7 @@ struct ValueEmitter {
     source_file: String,
     source_dir: String,
     current_function_name: Option<String>,
-    user_function_names: Vec<String>,
+    user_functions: Vec<FunctionDecl>,
 }
 
 struct ConcatOperand<'a> {
@@ -1599,18 +1694,15 @@ impl ValueEmitter {
             source_file: source_file.to_string(),
             source_dir: source_dir.to_string(),
             current_function_name: current_function_name.map(str::to_string),
-            user_function_names: functions
-                .iter()
-                .map(|function| function.name.clone())
-                .collect(),
+            user_functions: functions.to_vec(),
         }
     }
 
-    fn direct_user_function_c_name(&self, name: &str) -> Option<String> {
-        self.user_function_names
+    fn direct_user_function(&self, name: &str) -> Option<(usize, &FunctionDecl)> {
+        self.user_functions
             .iter()
-            .position(|function_name| function_name.eq_ignore_ascii_case(name))
-            .map(user_function_c_name)
+            .enumerate()
+            .find(|(_, function)| function.name.eq_ignore_ascii_case(name))
     }
 
     fn emit_value(&mut self, out: &mut String, value: &ValueExpr) -> String {
@@ -2481,6 +2573,46 @@ impl ValueEmitter {
         self.emit_materialized_value(out, argument)
     }
 
+    fn emit_reference_target(&mut self, out: &mut String, target: &ReferenceTarget) -> String {
+        match target {
+            ReferenceTarget::Variable { name } => {
+                let temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&temp);
+                out.push_str(" = ptn_runtime_reference_for_variable(&runtime, \"");
+                out.push_str(&c_string(name));
+                out.push_str("\");\n");
+                temp
+            }
+            ReferenceTarget::ArrayDim(target) => {
+                let index_temp = target
+                    .index
+                    .as_ref()
+                    .map(|index| self.emit_materialized_value(out, index));
+                let temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&temp);
+                out.push_str(" = ptn_runtime_reference_for_array_dim(&runtime, \"");
+                out.push_str(&c_string(&target.array));
+                out.push_str("\", ");
+                match &index_temp {
+                    Some(index_temp) => {
+                        out.push('&');
+                        out.push_str(index_temp);
+                    }
+                    None => out.push_str("NULL"),
+                }
+                out.push_str(", ");
+                out.push_str(&target.line.to_string());
+                out.push_str(");\n");
+                if let Some(index_temp) = index_temp {
+                    emit_value_cleanup(out, "    ", &index_temp);
+                }
+                temp
+            }
+        }
+    }
+
     fn emit_internal_call(
         &mut self,
         out: &mut String,
@@ -2523,19 +2655,14 @@ impl ValueEmitter {
         }
 
         let result_temp = self.next_temp();
-        let direct_user_c_name = self.direct_user_function_c_name(name);
-        if mutating_array_internal_name(name) {
-            if let Some(ValueExpr::Load { name, .. }) = arguments.first() {
-                out.push_str("    ptn_runtime_separate_array_variable(&runtime, \"");
-                out.push_str(&c_string(name));
-                out.push_str("\");\n");
-            }
-        }
+        let direct_user = self
+            .direct_user_function(name)
+            .map(|(index, function)| (user_function_c_name(index), function.parameters.clone()));
         if arguments.is_empty() {
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
             out.push_str(" = ");
-            if let Some(c_name) = direct_user_c_name {
+            if let Some((c_name, _)) = &direct_user {
                 out.push_str(&c_name);
                 out.push_str("(&runtime, 0, NULL, ");
             } else {
@@ -2550,7 +2677,21 @@ impl ValueEmitter {
 
         let mut temps = Vec::with_capacity(arguments.len());
         for (argument_index, argument) in arguments.iter().enumerate() {
-            temps.push(self.emit_call_argument(out, name, argument_index, argument));
+            let by_ref_parameter = direct_user
+                .as_ref()
+                .and_then(|(_, parameters)| parameters.get(argument_index))
+                .filter(|parameter| parameter.by_ref);
+            if let Some(parameter) = by_ref_parameter {
+                temps.push(self.emit_by_ref_call_argument(
+                    out,
+                    argument,
+                    name,
+                    argument_index,
+                    &parameter.name,
+                ));
+            } else {
+                temps.push(self.emit_call_argument(out, name, argument_index, argument));
+            }
         }
 
         let args_temp = self.next_temp();
@@ -2569,7 +2710,7 @@ impl ValueEmitter {
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
         out.push_str(" = ");
-        if let Some(c_name) = direct_user_c_name {
+        if let Some((c_name, _)) = &direct_user {
             out.push_str(&c_name);
             out.push_str("(&runtime, ");
         } else {
@@ -2697,6 +2838,33 @@ impl ValueEmitter {
         }
         emit_value_cleanup(out, "    ", &array_temp);
         Some(result_temp)
+    }
+
+    fn emit_by_ref_call_argument(
+        &mut self,
+        out: &mut String,
+        argument: &ValueExpr,
+        function_name: &str,
+        argument_index: usize,
+        parameter_name: &str,
+    ) -> String {
+        match reference_target_from_value(argument) {
+            Some(target) => self.emit_reference_target(out, &target),
+            None => {
+                let temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&temp);
+                out.push_str(" = ptn_null();\n");
+                out.push_str("    ptn_abort_by_reference_argument_error(\"");
+                out.push_str(&c_string(function_name));
+                out.push_str("\", ");
+                out.push_str(&(argument_index + 1).to_string());
+                out.push_str(", \"");
+                out.push_str(&c_string(parameter_name));
+                out.push_str("\");\n");
+                temp
+            }
+        }
     }
 
     fn emit_method_call(

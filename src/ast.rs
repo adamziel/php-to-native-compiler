@@ -19,6 +19,7 @@ pub struct FunctionDecl {
 pub struct FunctionParameter {
     pub name: String,
     pub type_hint: Option<TypeHint>,
+    pub by_ref: bool,
     pub span: SourceSpan,
 }
 
@@ -35,10 +36,20 @@ pub enum Statement {
         value: Expr,
         span: SourceSpan,
     },
+    AssignRef {
+        name: String,
+        target: ReferenceTarget,
+        span: SourceSpan,
+    },
     ArrayAssign {
         target: ArrayDimTarget,
         op: AssignmentOp,
         value: Expr,
+        span: SourceSpan,
+    },
+    ArrayAssignRef {
+        target: ArrayDimTarget,
+        source: ReferenceTarget,
         span: SourceSpan,
     },
     Increment {
@@ -168,6 +179,12 @@ pub struct ArrayDimTarget {
     pub array: String,
     pub dimensions: Vec<Option<Expr>>,
     pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ReferenceTarget {
+    Variable { name: String, span: SourceSpan },
+    ArrayDim(ArrayDimTarget),
 }
 
 #[derive(Debug, Clone, PartialEq)]

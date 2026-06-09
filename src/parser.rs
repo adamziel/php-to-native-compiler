@@ -2,8 +2,8 @@ use std::collections::{HashMap, HashSet};
 
 use crate::ast::{
     ArrayDimTarget, ArrayElement, AssignmentOp, BinaryOp, CastKind, CatchClause, ConstDeclaration,
-    Expr, FunctionDecl, FunctionParameter, IncDecOp, MagicConstantKind, Program, Statement,
-    StringPart, SwitchCase, TypeHint, UnaryOp, UnsetTarget,
+    Expr, FunctionDecl, FunctionParameter, IncDecOp, MagicConstantKind, Program, ReferenceTarget,
+    Statement, StringPart, SwitchCase, TypeHint, UnaryOp, UnsetTarget,
 };
 use crate::diagnostic::{Diagnostic, Result, SourceSpan};
 use crate::lexer::{lex, StringPart as TokenStringPart, Token, TokenKind};
@@ -112,6 +112,12 @@ impl Parser {
 
     fn parse_function_decl(&mut self) -> Result<FunctionDecl> {
         let span = self.expect_function()?;
+        if matches!(self.peek().kind, TokenKind::Ampersand) {
+            return Err(Diagnostic::new(
+                "by-reference returns are unsupported",
+                Some(self.peek().span),
+            ));
+        }
         let name_token = self.advance().clone();
         let TokenKind::Identifier(name) = name_token.kind else {
             return Err(Diagnostic::new(
@@ -159,6 +165,12 @@ impl Parser {
         } else {
             None
         };
+        let by_ref = if matches!(self.peek().kind, TokenKind::Ampersand) {
+            self.advance();
+            true
+        } else {
+            false
+        };
         let token = self.advance().clone();
         let TokenKind::Variable(name) = token.kind else {
             return Err(Diagnostic::new(
@@ -169,6 +181,7 @@ impl Parser {
         Ok(FunctionParameter {
             name,
             type_hint,
+            by_ref,
             span: token.span,
         })
     }
@@ -215,6 +228,30 @@ impl Parser {
                 return self.parse_expression_statement();
             }
             let op = self.expect_assignment_op()?;
+            if matches!(op, AssignmentOp::Assign)
+                && matches!(self.peek().kind, TokenKind::Ampersand)
+            {
+                self.advance();
+                if target.dimensions.len() > 1 {
+                    return Err(Diagnostic::new(
+                        "nested reference lvalues are unsupported",
+                        Some(target.span),
+                    ));
+                }
+                let source = self.parse_reference_target()?;
+                if reference_target_is_variable(&source, &target.array) {
+                    return Err(Diagnostic::new(
+                        "recursive array references are unsupported",
+                        Some(target.span),
+                    ));
+                }
+                self.expect_statement_terminator()?;
+                return Ok(Statement::ArrayAssignRef {
+                    target,
+                    source,
+                    span: token.span,
+                });
+            }
             let value = self.parse_assignment_value_expr()?;
             self.expect_statement_terminator()?;
             return Ok(Statement::ArrayAssign {
@@ -229,6 +266,22 @@ impl Parser {
             return self.parse_expression_statement();
         }
         let op = self.expect_assignment_op()?;
+        if matches!(op, AssignmentOp::Assign) && matches!(self.peek().kind, TokenKind::Ampersand) {
+            self.advance();
+            let target = self.parse_reference_target()?;
+            if reference_target_is_array_dim_of(&target, &name) {
+                return Err(Diagnostic::new(
+                    "self-referential array-element aliases are unsupported",
+                    Some(token.span),
+                ));
+            }
+            self.expect_statement_terminator()?;
+            return Ok(Statement::AssignRef {
+                name,
+                target,
+                span: token.span,
+            });
+        }
         let value = self.parse_assignment_value_expr()?;
         self.expect_statement_terminator()?;
         Ok(Statement::Assign {
@@ -260,6 +313,30 @@ impl Parser {
             array,
             dimensions,
             span: combine_spans(variable_span, right_span),
+        })
+    }
+
+    fn parse_reference_target(&mut self) -> Result<ReferenceTarget> {
+        let token = self.advance().clone();
+        let TokenKind::Variable(name) = token.kind else {
+            return Err(Diagnostic::new(
+                "unsupported by-reference assignment target",
+                Some(token.span),
+            ));
+        };
+        if matches!(self.peek().kind, TokenKind::LeftBracket) {
+            let target = self.parse_array_dim_target(name, token.span)?;
+            if target.dimensions.len() > 1 {
+                return Err(Diagnostic::new(
+                    "nested reference lvalues are unsupported",
+                    Some(target.span),
+                ));
+            }
+            return Ok(ReferenceTarget::ArrayDim(target));
+        }
+        Ok(ReferenceTarget::Variable {
+            name,
+            span: token.span,
         })
     }
 
@@ -1813,6 +1890,14 @@ fn validate_goto_labels(statements: &[Statement]) -> Result<()> {
     let mut control_path = Vec::new();
     collect_labels(statements, &mut labels, &mut control_path)?;
     validate_gotos(statements, &labels, &mut control_path)
+}
+
+fn reference_target_is_variable(target: &ReferenceTarget, variable: &str) -> bool {
+    matches!(target, ReferenceTarget::Variable { name, .. } if name == variable)
+}
+
+fn reference_target_is_array_dim_of(target: &ReferenceTarget, variable: &str) -> bool {
+    matches!(target, ReferenceTarget::ArrayDim(target) if target.array == variable)
 }
 
 fn validate_function_names(functions: &[FunctionDecl]) -> Result<()> {

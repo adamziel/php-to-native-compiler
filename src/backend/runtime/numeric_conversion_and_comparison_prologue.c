@@ -33,7 +33,38 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
 }
 
 static PTN_UNUSED void ptn_runtime_write_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
-    ptn_symbols_set(&runtime->symbols, name, value);
+    PtnValue current;
+    if (ptn_symbols_get(&runtime->symbols, name, &current) && current.type == PTN_REFERENCE) {
+        ptn_reference_assign(current.as.reference, value);
+        return;
+    }
+    ptn_symbols_set(&runtime->symbols, name, ptn_value_deref(value));
+}
+
+static PTN_UNUSED void ptn_runtime_bind_variable_reference(PtnRuntime *runtime, const char *name, PtnValue reference) {
+    if (reference.type != PTN_REFERENCE) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_symbols_bind_reference(&runtime->symbols, name, reference);
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_reference_for_variable(PtnRuntime *runtime, const char *name) {
+    return ptn_symbols_reference_for_variable(&runtime->symbols, name);
+}
+
+static PTN_UNUSED void ptn_abort_by_reference_argument_error(
+    const char *function_name,
+    size_t position,
+    const char *parameter_name
+) {
+    fprintf(
+        stderr,
+        "Fatal error: %s(): Argument #%zu ($%s) cannot be passed by reference\n",
+        function_name,
+        position,
+        parameter_name
+    );
+    exit(255);
 }
 
 static PTN_UNUSED PtnValue ptn_runtime_read_variable(
@@ -44,7 +75,7 @@ static PTN_UNUSED PtnValue ptn_runtime_read_variable(
 ) {
     PtnValue value;
     if (ptn_symbols_get(&runtime->symbols, name, &value)) {
-        return value;
+        return ptn_value_deref(value);
     }
     ptn_emit_undefined_variable_warning(&runtime->diagnostics, name, path, line);
     return ptn_null();
@@ -70,19 +101,19 @@ static PTN_UNUSED PtnValue ptn_runtime_read_variable_for_array_mutation(
 static PTN_UNUSED PtnLookupResult ptn_runtime_read_variable_quiet(PtnRuntime *runtime, const char *name) {
     PtnValue value;
     if (ptn_symbols_get(&runtime->symbols, name, &value)) {
-        return ptn_lookup_found(value);
+        return ptn_lookup_found(ptn_value_deref(value));
     }
     return ptn_lookup_missing();
 }
 
 static PTN_UNUSED int ptn_runtime_variable_is_set(PtnRuntime *runtime, const char *name) {
     PtnValue value;
-    return ptn_symbols_get(&runtime->symbols, name, &value) && value.type != PTN_NULL;
+    return ptn_symbols_get(&runtime->symbols, name, &value) && ptn_value_deref(value).type != PTN_NULL;
 }
 
 static PTN_UNUSED int ptn_runtime_variable_is_empty(PtnRuntime *runtime, const char *name) {
     PtnValue value;
-    return !ptn_symbols_get(&runtime->symbols, name, &value) || !ptn_is_truthy(value);
+    return !ptn_symbols_get(&runtime->symbols, name, &value) || !ptn_is_truthy(ptn_value_deref(value));
 }
 
 static PTN_UNUSED void ptn_runtime_unset_variable(PtnRuntime *runtime, const char *name) {
@@ -264,6 +295,7 @@ static PTN_UNUSED PtnNumber ptn_string_to_number(const char *string) {
 }
 
 static PTN_UNUSED PtnNumber ptn_to_number(PtnValue value) {
+    value = ptn_value_deref(value);
     switch (value.type) {
         case PTN_NULL:
             return ptn_number_int(0);
@@ -282,11 +314,14 @@ static PTN_UNUSED PtnNumber ptn_to_number(PtnValue value) {
             return ptn_number_int(value.as.array->len == 0 ? 0 : 1);
         case PTN_EXCEPTION:
             return ptn_number_int(1);
+        case PTN_REFERENCE:
+            return ptn_number_int(0);
     }
     return ptn_number_int(0);
 }
 
 static PTN_UNUSED int ptn_fast_integer_value(PtnValue value, int64_t *integer) {
+    value = ptn_value_deref(value);
     switch (value.type) {
         case PTN_NULL:
             *integer = 0;
@@ -301,12 +336,14 @@ static PTN_UNUSED int ptn_fast_integer_value(PtnValue value, int64_t *integer) {
         case PTN_STRING:
         case PTN_ARRAY:
         case PTN_EXCEPTION:
+        case PTN_REFERENCE:
             return 0;
     }
     return 0;
 }
 
 static PTN_UNUSED int ptn_fast_scalar_double(PtnValue value, double *number) {
+    value = ptn_value_deref(value);
     int64_t integer = 0;
     if (ptn_fast_integer_value(value, &integer)) {
         *number = (double)integer;
@@ -320,6 +357,7 @@ static PTN_UNUSED int ptn_fast_scalar_double(PtnValue value, double *number) {
 }
 
 static PTN_UNUSED PtnValue ptn_negate(PtnValue value) {
+    value = ptn_value_deref(value);
     int64_t integer = 0;
     if (ptn_fast_integer_value(value, &integer)) {
         if (integer == INT64_MIN) {
@@ -342,6 +380,7 @@ static PTN_UNUSED PtnValue ptn_negate(PtnValue value) {
 }
 
 static PTN_UNUSED PtnValue ptn_positive(PtnValue value) {
+    value = ptn_value_deref(value);
     int64_t integer = 0;
     if (ptn_fast_integer_value(value, &integer)) {
         return ptn_int(integer);
@@ -358,6 +397,7 @@ static PTN_UNUSED PtnValue ptn_positive(PtnValue value) {
 }
 
 static PTN_UNUSED int ptn_is_truthy(PtnValue value) {
+    value = ptn_value_deref(value);
     switch (value.type) {
         case PTN_NULL:
             return 0;
@@ -374,6 +414,8 @@ static PTN_UNUSED int ptn_is_truthy(PtnValue value) {
             return value.as.array->len != 0;
         case PTN_EXCEPTION:
             return 1;
+        case PTN_REFERENCE:
+            return 0;
     }
     return 0;
 }
@@ -383,6 +425,7 @@ static PTN_UNUSED PtnValue ptn_not(PtnValue value) {
 }
 
 static PTN_UNUSED PtnValue ptn_cast_int(PtnValue value) {
+    value = ptn_value_deref(value);
     int64_t integer = 0;
     if (ptn_fast_integer_value(value, &integer)) {
         return ptn_int(integer);
@@ -399,6 +442,7 @@ static PTN_UNUSED PtnValue ptn_cast_int(PtnValue value) {
 }
 
 static PTN_UNUSED PtnValue ptn_cast_float(PtnValue value) {
+    value = ptn_value_deref(value);
     double fast_number = 0.0;
     if (ptn_fast_scalar_double(value, &fast_number)) {
         return ptn_float(fast_number);
@@ -438,6 +482,7 @@ static PTN_UNUSED void ptn_abort_control_error(const char *message, const char *
 }
 
 static PTN_UNUSED int ptn_is_number_type(PtnValue value) {
+    value = ptn_value_deref(value);
     return value.type == PTN_INT || value.type == PTN_FLOAT;
 }
 
@@ -484,6 +529,7 @@ static PTN_UNUSED int ptn_is_numeric_string(const char *string, double *number) 
 }
 
 static PTN_UNUSED int ptn_comparison_numeric_value(PtnValue value, double *number) {
+    value = ptn_value_deref(value);
     switch (value.type) {
         case PTN_INT:
             *number = (double)value.as.integer;
@@ -500,6 +546,7 @@ static PTN_UNUSED int ptn_comparison_numeric_value(PtnValue value, double *numbe
         case PTN_BOOL:
         case PTN_ARRAY:
         case PTN_EXCEPTION:
+        case PTN_REFERENCE:
             return 0;
     }
     return 0;

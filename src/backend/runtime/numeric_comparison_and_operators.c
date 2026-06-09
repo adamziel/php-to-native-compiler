@@ -52,6 +52,8 @@ static PTN_UNUSED int ptn_compare_arrays_order(PtnArray *left, PtnArray *right) 
 }
 
 static PTN_UNUSED int ptn_compare_equal(PtnValue left, PtnValue right) {
+    left = ptn_value_deref(left);
+    right = ptn_value_deref(right);
     if (left.type == right.type) {
         switch (left.type) {
             case PTN_NULL:
@@ -68,6 +70,8 @@ static PTN_UNUSED int ptn_compare_equal(PtnValue left, PtnValue right) {
                 return ptn_compare_arrays_equal(left.as.array, right.as.array);
             case PTN_EXCEPTION:
                 return left.as.exception == right.as.exception;
+            case PTN_REFERENCE:
+                return 0;
         }
     }
 
@@ -94,6 +98,8 @@ static PTN_UNUSED int ptn_compare_equal(PtnValue left, PtnValue right) {
                 return other.as.array->len == 0;
             case PTN_EXCEPTION:
                 return 0;
+            case PTN_REFERENCE:
+                return 0;
         }
     }
 
@@ -119,6 +125,8 @@ static PTN_UNUSED int ptn_compare_equal(PtnValue left, PtnValue right) {
 }
 
 static PTN_UNUSED int ptn_compare_identical(PtnValue left, PtnValue right) {
+    left = ptn_value_deref(left);
+    right = ptn_value_deref(right);
     if (left.type != right.type) {
         return 0;
     }
@@ -140,11 +148,15 @@ static PTN_UNUSED int ptn_compare_identical(PtnValue left, PtnValue right) {
             return ptn_compare_arrays_identical(left.as.array, right.as.array);
         case PTN_EXCEPTION:
             return left.as.exception == right.as.exception;
+        case PTN_REFERENCE:
+            return 0;
     }
     return 0;
 }
 
 static PTN_UNUSED int ptn_compare_not_identical(PtnValue left, PtnValue right) {
+    left = ptn_value_deref(left);
+    right = ptn_value_deref(right);
     if (left.type != right.type) {
         return 1;
     }
@@ -166,15 +178,20 @@ static PTN_UNUSED int ptn_compare_not_identical(PtnValue left, PtnValue right) {
             return !ptn_compare_arrays_identical(left.as.array, right.as.array);
         case PTN_EXCEPTION:
             return left.as.exception != right.as.exception;
+        case PTN_REFERENCE:
+            return 1;
     }
     return 1;
 }
 
 static PTN_UNUSED int ptn_value_is_nan(PtnValue value) {
+    value = ptn_value_deref(value);
     return value.type == PTN_FLOAT && isnan(value.as.floating);
 }
 
 static PTN_UNUSED int ptn_compare_order(PtnValue left, PtnValue right) {
+    left = ptn_value_deref(left);
+    right = ptn_value_deref(right);
     if (left.type == right.type) {
         switch (left.type) {
             case PTN_NULL:
@@ -191,6 +208,8 @@ static PTN_UNUSED int ptn_compare_order(PtnValue left, PtnValue right) {
                 return ptn_compare_arrays_order(left.as.array, right.as.array);
             case PTN_EXCEPTION:
                 return left.as.exception == right.as.exception ? PTN_COMPARE_EQUAL : PTN_COMPARE_GREATER;
+            case PTN_REFERENCE:
+                return PTN_COMPARE_UNORDERED;
         }
     }
 
@@ -554,6 +573,7 @@ static PTN_UNUSED int64_t ptn_number_to_integer(PtnNumber number) {
 }
 
 static PTN_UNUSED int64_t ptn_value_to_integer_with_precision_deprecation(PtnValue value) {
+    value = ptn_value_deref(value);
     int64_t integer = 0;
     if (ptn_fast_integer_value(value, &integer)) {
         return integer;
@@ -606,6 +626,7 @@ static PTN_UNUSED PtnValue ptn_modulo(PtnValue left, PtnValue right) {
 }
 
 static PTN_UNUSED PtnValue ptn_increment(PtnValue value) {
+    value = ptn_value_deref(value);
     int64_t integer = 0;
     if (ptn_fast_integer_value(value, &integer)) {
         return ptn_add_integers(integer, 1);
@@ -617,6 +638,7 @@ static PTN_UNUSED PtnValue ptn_increment(PtnValue value) {
 }
 
 static PTN_UNUSED PtnValue ptn_decrement(PtnValue value) {
+    value = ptn_value_deref(value);
     int64_t integer = 0;
     if (ptn_fast_integer_value(value, &integer)) {
         return ptn_subtract_integers(integer, 1);
@@ -696,6 +718,8 @@ static PTN_UNUSED int64_t ptn_bitwise_integer_operand(PtnValue value) {
 }
 
 static PTN_UNUSED PtnValue ptn_bitwise_and(PtnValue left, PtnValue right) {
+    left = ptn_value_deref(left);
+    right = ptn_value_deref(right);
     if (left.type == PTN_STRING && right.type == PTN_STRING) {
         return ptn_bitwise_string_and(left.as.string, right.as.string);
     }
@@ -703,6 +727,8 @@ static PTN_UNUSED PtnValue ptn_bitwise_and(PtnValue left, PtnValue right) {
 }
 
 static PTN_UNUSED PtnValue ptn_bitwise_or(PtnValue left, PtnValue right) {
+    left = ptn_value_deref(left);
+    right = ptn_value_deref(right);
     if (left.type == PTN_STRING && right.type == PTN_STRING) {
         return ptn_bitwise_string_or(left.as.string, right.as.string);
     }
@@ -710,6 +736,8 @@ static PTN_UNUSED PtnValue ptn_bitwise_or(PtnValue left, PtnValue right) {
 }
 
 static PTN_UNUSED PtnValue ptn_bitwise_xor(PtnValue left, PtnValue right) {
+    left = ptn_value_deref(left);
+    right = ptn_value_deref(right);
     if (left.type == PTN_STRING && right.type == PTN_STRING) {
         return ptn_bitwise_string_xor(left.as.string, right.as.string);
     }

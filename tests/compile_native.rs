@@ -1133,6 +1133,33 @@ fn parser_accepts_variable_root_array_assignment_and_unset() {
 }
 
 #[test]
+fn parser_rejects_unsupported_reference_forms_with_explicit_diagnostics() {
+    let by_ref_return = parser::parse("<?php function &factory() { return null; }").unwrap_err();
+    assert_eq!(
+        by_ref_return.message,
+        "by-reference returns are unsupported"
+    );
+
+    let temporary_assignment = parser::parse("<?php $alias =& factory();").unwrap_err();
+    assert_eq!(
+        temporary_assignment.message,
+        "unsupported by-reference assignment target"
+    );
+
+    let recursive_array = parser::parse("<?php $array = []; $array[] =& $array;").unwrap_err();
+    assert_eq!(
+        recursive_array.message,
+        "recursive array references are unsupported"
+    );
+
+    let nested_array_reference = parser::parse("<?php $array[0][1] =& $value;").unwrap_err();
+    assert_eq!(
+        nested_array_reference.message,
+        "nested reference lvalues are unsupported"
+    );
+}
+
+#[test]
 fn parser_accepts_long_array_literals_and_isset_empty_constructs() {
     let program = parser::parse(
         "<?php var_dump(isset($items[0], array('k' => 1)['k']), empty($items['missing']));",
@@ -5227,6 +5254,166 @@ var_dump($cycle, $copy);",
 }
 
 #[test]
+fn compile_reference_aliases_and_cow_split_to_native_binary() {
+    let root = temp_dir("ptn-native-reference-aliases-cow-split");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reference-aliases-cow-split.php");
+    let output = root.join("reference-aliases-cow-split-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$a = [1, 2];\n\
+$b = $a;\n\
+$ref =& $a;\n\
+$ref[0] = 9;\n\
+var_dump($a[0], $b[0]);\n\
+$x = 1;\n\
+$y =& $x;\n\
+$z = $x;\n\
+$y = 2;\n\
+var_dump($x, $y, $z);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(9)\nint(1)\nint(2)\nint(2)\nint(1)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_array_element_references_to_native_binary() {
+    let root = temp_dir("ptn-native-array-element-references");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-element-references.php");
+    let output = root.join("array-element-references-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$arr = [1];\n\
+$copy_before = $arr;\n\
+$elem =& $arr[0];\n\
+$copy_after = $arr;\n\
+$elem = 2;\n\
+var_dump($arr[0], $copy_before[0], $copy_after[0]);\n\
+$copy_after[0] = 3;\n\
+var_dump($arr[0], $elem);\n\
+$other = 4;\n\
+$arr[0] =& $other;\n\
+$other = 5;\n\
+$elem = 6;\n\
+var_dump($arr[0], $other, $elem);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(2)\nint(1)\nint(2)\nint(3)\nint(3)\nint(5)\nint(5)\nint(6)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_reference_parameters_to_native_binary() {
+    let root = temp_dir("ptn-native-reference-parameters");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reference-parameters.php");
+    let output = root.join("reference-parameters-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function bump(&$value) { $value += 1; return $value; }\n\
+function see($value) { $value += 10; return $value; }\n\
+function snapshot(&$value) { $args = func_get_args(); $value = 9; var_dump($args[0], func_get_arg(0)); }\n\
+$n = 1;\n\
+var_dump(bump($n), $n, see($n), $n);\n\
+$items = [1];\n\
+var_dump(bump($items[0]), $items[0]);\n\
+$m = 7;\n\
+snapshot($m);\n\
+var_dump($m);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(2)\nint(2)\nint(12)\nint(2)\nint(2)\nint(2)\nint(7)\nint(9)\nint(9)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_by_value_parameters_near_references_to_native_binary() {
+    let root = temp_dir("ptn-native-by-value-parameters-near-references");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("by-value-parameters-near-references.php");
+    let output = root.join("by-value-parameters-near-references-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function change_value($value) { $value = 99; return $value; }\n\
+function change_array_value($value) { $value[0] = 7; return $value[0]; }\n\
+function change_array_ref_element($value) { $value[0] = 8; return $value[0]; }\n\
+$q = 1;\n\
+$qr =& $q;\n\
+var_dump(change_value($q), $q);\n\
+$plain = [1];\n\
+$plain_ref =& $plain;\n\
+var_dump(change_array_value($plain), $plain[0]);\n\
+$with_ref = [1];\n\
+$leaf =& $with_ref[0];\n\
+var_dump(change_array_ref_element($with_ref), $with_ref[0], $leaf);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(99)\nint(1)\nint(7)\nint(1)\nint(8)\nint(8)\nint(8)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_by_reference_argument_diagnostic_to_native_binary() {
+    let root = temp_dir("ptn-native-by-reference-argument-diagnostic");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("by-reference-argument-diagnostic.php");
+    let output = root.join("by-reference-argument-diagnostic-bin");
+    fs::write(
+        &input,
+        "<?php function takes_ref(&$value) { $value = 1; } takes_ref(1 + 2);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        "Fatal error: takes_ref(): Argument #1 ($value) cannot be passed by reference\n"
+    );
+}
+
+#[test]
 fn compile_array_offset_compound_assignment_undef_to_native_binary() {
     let root = temp_dir("ptn-native-array-offset-compound-undef");
     fs::create_dir_all(&root).unwrap();
@@ -7878,7 +8065,7 @@ fn var_dump_complex_edges_remain_unsupported_before_codegen() {
     for source in [
         "<?php var_dump(new stdClass);",
         "<?php $array = []; $array[] = &$array; var_dump($array);",
-        "<?php $value = 1; $ref =& $value; var_dump($ref);",
+        "<?php $ref =& call();",
     ] {
         assert!(
             parser::parse(source).is_err(),
@@ -7911,7 +8098,7 @@ fn support_docs_name_var_dump_unsupported_edges() {
     let support = fs::read_to_string("docs/SUPPORT.md").unwrap();
     assert!(support.contains("Array read expressions"));
     assert!(support.contains("String offset read expressions"));
-    assert!(support.contains("Array element mutation"));
+    assert!(support.contains("complete reference identity"));
     assert!(support.contains("String offset writes/mutation"));
     assert!(support.contains("recursive arrays"));
     assert!(support.contains("objects"));

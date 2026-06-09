@@ -2,9 +2,9 @@ use crate::ast::{
     ArrayDimTarget as AstArrayDimTarget, ArrayElement as AstArrayElement, AssignmentOp,
     BinaryOp as AstBinaryOp, CastKind as AstCastKind, CatchClause as AstCatchClause, Expr,
     FunctionDecl as AstFunctionDecl, FunctionParameter as AstFunctionParameter,
-    IncDecOp as AstIncDecOp, MagicConstantKind as AstMagicConstantKind, Program, Statement,
-    StringPart as AstStringPart, TypeHint as AstTypeHint, UnaryOp as AstUnaryOp,
-    UnsetTarget as AstUnsetTarget,
+    IncDecOp as AstIncDecOp, MagicConstantKind as AstMagicConstantKind, Program,
+    ReferenceTarget as AstReferenceTarget, Statement, StringPart as AstStringPart,
+    TypeHint as AstTypeHint, UnaryOp as AstUnaryOp, UnsetTarget as AstUnsetTarget,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -27,6 +27,7 @@ pub struct FunctionDecl {
 pub struct FunctionParameter {
     pub name: String,
     pub type_hint: Option<TypeHint>,
+    pub by_ref: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -40,12 +41,20 @@ pub enum Instruction {
         name: String,
         value: ValueExpr,
     },
+    StoreRef {
+        name: String,
+        target: ReferenceTarget,
+    },
     StoreArrayDim {
         array: String,
         dimensions: Vec<Option<ValueExpr>>,
         value: ValueExpr,
         compound_op: Option<BinaryOp>,
         line: usize,
+    },
+    StoreArrayDimRef {
+        target: ArrayDimTarget,
+        source: ReferenceTarget,
     },
     Increment {
         name: String,
@@ -202,6 +211,19 @@ pub struct ArrayElement {
     pub value: ValueExpr,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct ArrayDimTarget {
+    pub array: String,
+    pub index: Option<ValueExpr>,
+    pub line: usize,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ReferenceTarget {
+    Variable { name: String },
+    ArrayDim(ArrayDimTarget),
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinaryOp {
     Add,
@@ -295,6 +317,7 @@ fn lower_parameter(parameter: &AstFunctionParameter) -> FunctionParameter {
     FunctionParameter {
         name: parameter.name.clone(),
         type_hint: parameter.type_hint.map(lower_type_hint),
+        by_ref: parameter.by_ref,
     }
 }
 
@@ -319,10 +342,22 @@ fn lower_statements(statements: &[Statement]) -> Vec<Instruction> {
                     value: lower_assignment_value(name, *op, value, span.line),
                 });
             }
+            Statement::AssignRef { name, target, .. } => {
+                instructions.push(Instruction::StoreRef {
+                    name: name.clone(),
+                    target: lower_reference_target(target),
+                });
+            }
             Statement::ArrayAssign {
                 target, op, value, ..
             } => {
                 instructions.push(lower_array_dim_store(target, *op, value));
+            }
+            Statement::ArrayAssignRef { target, source, .. } => {
+                instructions.push(Instruction::StoreArrayDimRef {
+                    target: lower_array_dim_target(target),
+                    source: lower_reference_target(source),
+                });
             }
             Statement::Increment { name, op, span } => {
                 instructions.push(Instruction::Increment {
@@ -496,6 +531,29 @@ fn lower_array_dim_store(
         value: lower_expr(value),
         compound_op: assignment_op_binary_op(op),
         line: target.span.line,
+    }
+}
+
+fn lower_array_dim_target(target: &AstArrayDimTarget) -> ArrayDimTarget {
+    ArrayDimTarget {
+        array: target.array.clone(),
+        index: target
+            .dimensions
+            .first()
+            .and_then(|dimension| dimension.as_ref())
+            .map(lower_expr),
+        line: target.span.line,
+    }
+}
+
+fn lower_reference_target(target: &AstReferenceTarget) -> ReferenceTarget {
+    match target {
+        AstReferenceTarget::Variable { name, .. } => {
+            ReferenceTarget::Variable { name: name.clone() }
+        }
+        AstReferenceTarget::ArrayDim(target) => {
+            ReferenceTarget::ArrayDim(lower_array_dim_target(target))
+        }
     }
 }
 

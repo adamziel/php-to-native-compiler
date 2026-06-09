@@ -20,7 +20,10 @@ static PTN_UNUSED char *ptn_duplicate_string_len(const char *string, size_t len)
 
 static PTN_UNUSED PtnValue ptn_value_borrow(PtnValue value);
 static PTN_UNUSED PtnValue ptn_value_share(PtnValue value);
+static PTN_UNUSED PtnValue ptn_value_deref(PtnValue value);
 static PTN_UNUSED PtnValue ptn_value_clone(PtnValue value);
+static PTN_UNUSED PtnValue ptn_value_clone_deref(PtnValue value);
+static PTN_UNUSED void ptn_reference_assign(PtnReference *reference, PtnValue value);
 static PTN_UNUSED void ptn_value_destroy(PtnValue *value);
 static PTN_UNUSED void ptn_value_drop(PtnValue *value);
 static PTN_UNUSED void ptn_array_free(PtnArray *array);
@@ -79,6 +82,7 @@ static PTN_UNUSED void ptn_abort_illegal_array_key(void) {
 }
 
 static PTN_UNUSED PtnArrayKey ptn_array_key_from_value(PtnValue value) {
+    value = ptn_value_deref(value);
     switch (value.type) {
         case PTN_NULL:
             return ptn_array_string_key("");
@@ -98,6 +102,7 @@ static PTN_UNUSED PtnArrayKey ptn_array_key_from_value(PtnValue value) {
         }
         case PTN_ARRAY:
         case PTN_EXCEPTION:
+        case PTN_REFERENCE:
             ptn_abort_illegal_array_key();
     }
     return ptn_array_string_key("");
@@ -284,6 +289,18 @@ static PTN_UNUSED void ptn_array_set_entry(PtnArray *array, PtnArrayKey key, Ptn
     ptn_array_index_insert(array, key, entry_index);
 }
 
+static PTN_UNUSED void ptn_array_write_entry(PtnArray *array, PtnArrayKey key, PtnValue value) {
+    size_t index = ptn_array_find_key(array, key);
+    if (index < array->len && array->entries[index].value.type == PTN_REFERENCE) {
+        ptn_array_update_next_auto_key(array, key);
+        ptn_reference_assign(array->entries[index].value.as.reference, value);
+        ptn_value_destroy(&value);
+        ptn_array_key_free(key);
+        return;
+    }
+    ptn_array_set_entry(array, key, value);
+}
+
 static PTN_UNUSED int ptn_array_unset_entry(PtnArray *array, PtnArrayKey key) {
     size_t index = ptn_array_find_key(array, key);
     if (index >= array->len) {
@@ -402,6 +419,10 @@ static PTN_UNUSED PtnArray *ptn_array_detach_value(PtnValue *value) {
 
 static PTN_UNUSED PtnValue ptn_value_share(PtnValue value) {
     switch (value.type) {
+        case PTN_REFERENCE:
+            value.as.reference->refcount++;
+            value.owned = 1;
+            return value;
         case PTN_STRING:
             if (value.as.string.owned != NULL && value.as.string.refcount != NULL) {
                 (*value.as.string.refcount)++;
