@@ -1703,3 +1703,40 @@ Still unsupported after this prefix/suffix string slice: PHP-exact
 binary-string behavior for embedded NUL values, unsupported
 array/object/resource/reference operand diagnostics, and complete binary-string
 runtime parity.
+
+Added keyword boolean operators for supported expression contexts:
+
+- The lexer/parser now recognize `and`, `or`, and `xor` as boolean operators
+  with PHP's low keyword precedence tiers below symbolic `||`/`&&`.
+- AST/IR lowering carries boolean `xor` separately from bitwise `^`; generated
+  C evaluates both `xor` operands left-to-right and returns boxed PHP
+  truthiness inequality.
+- Existing `and`/`or` expression lowering reuses the boolean short-circuit
+  path while preserving the lower keyword precedence.
+- Direct assignment statements parse RHS expressions at the symbolic-boolean
+  precedence boundary and report a generic unsupported diagnostic if an
+  unparenthesized keyword boolean tail remains, avoiding silent miscompiles
+  until assignment expressions are modeled.
+- Native tests prove keyword precedence, keyword `and`/`or` short-circuiting,
+  keyword `xor` operand evaluation, and the assignment-tail diagnostic.
+
+Still unsupported after this keyword-boolean slice: assignment expressions and
+their PHP-exact precedence around `=`, branch-condition assignments, complete
+PHP comparison parity for unsupported value types, and chained comparison
+parse-error parity.
+
+Added source-spanned fatal diagnostics for unparenthesized nested ternary
+expression statements:
+
+- The lexer now tokenizes `?` so modeled parser sites can diagnose unsupported
+  ternary forms instead of failing at lexing.
+- Expression-statement parsing recognizes the three PHP-forbidden nested
+  associativity shapes `a ? b : c ? d : e`, `a ?: b ? c : d`, and
+  `a ? b : c ?: d`, and reports the matching PHP-style compile fatal.
+- The diagnostic remains parser-only; ternary expressions are not lowered or
+  evaluated.
+- Native/CLI tests prove parser messages and `phpc` fatal rendering.
+
+Still unsupported after this ternary-diagnostic slice: executable ternary
+expressions, expression statements beyond diagnostics, nested ternaries inside
+larger supported expressions, and broader parse/fatal wording parity.

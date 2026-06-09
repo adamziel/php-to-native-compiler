@@ -755,6 +755,7 @@ impl ValueEmitter {
             | BinaryOp::Greater
             | BinaryOp::GreaterEqual => self.emit_comparison(out, op, left, right),
             BinaryOp::Spaceship => self.emit_spaceship(out, left, right),
+            BinaryOp::Xor => self.emit_boolean_xor(out, left, right),
             BinaryOp::And | BinaryOp::Or => self.emit_short_circuit(out, op, left, right),
         }
     }
@@ -921,6 +922,25 @@ impl ValueEmitter {
             _ => unreachable!(),
         }
         out.push_str("    }\n");
+        result_temp
+    }
+
+    fn emit_boolean_xor(
+        &mut self,
+        out: &mut String,
+        left: &ValueExpr,
+        right: &ValueExpr,
+    ) -> String {
+        let left_temp = self.emit_materialized_value(out, left);
+        let right_temp = self.emit_materialized_value(out, right);
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_bool(ptn_is_truthy(");
+        out.push_str(&left_temp);
+        out.push_str(") != ptn_is_truthy(");
+        out.push_str(&right_temp);
+        out.push_str("));\n");
         result_temp
     }
 

@@ -69,6 +69,9 @@ supports in generated native binaries.
   PHP-style parse error through `phpc`.
 - Unterminated block comments are rejected with a source-spanned PHP-style
   parse error through `phpc`.
+- Unparenthesized nested ternary expression statements are rejected with
+  PHP-style source-spanned fatal diagnostics for the currently modeled
+  forbidden associativity forms.
 - Global-scope magic constants `__LINE__`, `__FILE__`, `__DIR__`,
   `__FUNCTION__`, `__METHOD__`, `__CLASS__`, `__TRAIT__`, and
   `__NAMESPACE__`. Scope-dependent names currently resolve to empty strings in
@@ -95,8 +98,10 @@ supports in generated native binaries.
   order, key type, and value. Numeric comparisons involving `NAN` are treated
   as unordered, so equality and ordered scalar comparisons return false while
   `!=`/`!==` return true.
-- Boxed scalar boolean operators `&&` and `||`, with short-circuit evaluation
-  over PHP truthiness for the currently supported scalar values.
+- Boxed scalar boolean operators `&&`, `||`, `and`, `or`, and `xor`.
+  `&&`, `||`, `and`, and `or` short-circuit over PHP truthiness for the
+  currently supported scalar values; `xor` evaluates both operands
+  left-to-right.
 - Boxed scalar bitwise `&`, `^`, and `|` operators. When both operands are strings,
   the result is a bytewise string for non-NUL string data. Other supported
   scalar operands are converted to integers through the current scalar numeric
@@ -288,6 +293,7 @@ supports in generated native binaries.
   `(real)` and `(unset)` cast syntax,
   expression-context `(void)` cast syntax, unterminated block comments, and
   invalid legacy octal integer literals containing `8` or `9`, plus
+  unparenthesized nested ternary fatal diagnostics and
   unexpected-token parse errors at modeled statement terminators and right
   parentheses. Global `const` declaration terminators report the
   const-specific `"," or ";"` expected-token set.
@@ -309,8 +315,10 @@ supports in generated native binaries.
   `--$value`.
 - `print` as an expression returning `1`, including contexts such as assignment,
   echo operands, binary operands, and the parenthesized spelling `print(...)`.
-- Keyword boolean operators `and`/`or`, PHP-exact chained comparison parse
-  errors, and complete comparison parity for unsupported value types.
+- Keyword boolean tails after direct assignment statements until assignment
+  expressions are modeled, ternary expressions beyond the modeled nested
+  associativity diagnostics, PHP-exact chained comparison parse errors, and
+  complete comparison parity for unsupported value types.
 - Unbraced switch bodies, alternate control-flow syntax, `foreach`, `continue`,
   branch-condition assignments, for-loop comma expressions and
   non-direct-variable clause lvalues, PHP-exact break/continue diagnostics,

@@ -190,6 +190,9 @@ Supported today:
   parentheses are rejected with source-spanned PHP-style parse errors through
   the `phpc` runner. Global `const` declaration terminators report the
   const-specific `"," or ";"` expected-token set.
+- Unparenthesized nested ternary expression statements are rejected with
+  PHP-style source-spanned fatal diagnostics for the currently modeled
+  forbidden associativity forms.
 - Global-scope magic constants `__LINE__`, `__FILE__`, `__DIR__`,
   `__FUNCTION__`, `__METHOD__`, `__CLASS__`, `__TRAIT__`, and
   `__NAMESPACE__`. Scope-dependent names currently resolve to empty strings in
@@ -212,11 +215,13 @@ Supported today:
   keys emit the current PHP-like deprecation boundary and canonicalize to the
   empty string.
 - Boxed scalar and literal-array comparison and boolean expressions: `==`,
-  `!=`, `===`, `!==`, `<`, `<=`, `>`, `>=`, `<=>`, `&&`, and `||`. Strict
+  `!=`, `===`, `!==`, `<`, `<=`, `>`, `>=`, `<=>`, `&&`, `||`, `and`, `or`,
+  and `xor`. Strict
   identity compares type, key order, key type, and value; numeric scalar
   comparisons involving `NAN` evaluate as unordered so equality and ordered
-  comparisons return false. Boolean operators short-circuit over boxed PHP
-  truthiness for the currently supported value types.
+  comparisons return false. Boolean `&&`, `||`, `and`, and `or` short-circuit
+  over boxed PHP truthiness for the currently supported value types; `xor`
+  evaluates both operands left-to-right.
 - Boxed scalar bitwise `&`, `^`, `|`, and unary `~` expressions.
   String/string binary operands and string unary `~` operands use PHP bytewise
   string results for non-NUL strings; other supported scalar operands are
@@ -277,7 +282,9 @@ Unsupported today:
   division/modulo-by-zero exception behavior, exact numeric literal
   overflow/range and invalid-separator/radix diagnostic parity, complete
   comparison parity for unsupported types,
-  keyword boolean operators, chained comparison parse errors, unbraced switch
+  keyword boolean tails after direct assignment statements until assignment
+  expressions are modeled, ternary expressions beyond the modeled nested
+  associativity diagnostics, chained comparison parse errors, unbraced switch
   bodies and alternate control-flow syntax, `foreach`, `continue`, PHP-exact
   break/continue diagnostics, labels/goto inside unsupported functions,
   classes, and `try`/`finally` constructs, full

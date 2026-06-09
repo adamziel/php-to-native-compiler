@@ -8,6 +8,20 @@ use crate::ast::{
 use crate::diagnostic::{Diagnostic, Result, SourceSpan};
 use crate::lexer::{lex, StringPart as TokenStringPart, Token, TokenKind};
 
+const KEYWORD_OR_PRECEDENCE: u8 = 1;
+const KEYWORD_XOR_PRECEDENCE: u8 = 2;
+const KEYWORD_AND_PRECEDENCE: u8 = 3;
+const SYMBOL_OR_PRECEDENCE: u8 = 4;
+const SYMBOL_AND_PRECEDENCE: u8 = 5;
+const BITWISE_OR_PRECEDENCE: u8 = 6;
+const BITWISE_XOR_PRECEDENCE: u8 = 7;
+const BITWISE_AND_PRECEDENCE: u8 = 8;
+const EQUALITY_PRECEDENCE: u8 = 9;
+const COMPARISON_PRECEDENCE: u8 = 10;
+const CONCAT_PRECEDENCE: u8 = 13;
+const SHIFT_PRECEDENCE: u8 = 18;
+const ADDITIVE_PRECEDENCE: u8 = 23;
+const MULTIPLICATIVE_PRECEDENCE: u8 = 33;
 const POWER_PRECEDENCE: u8 = 40;
 
 pub fn parse(source: &str) -> Result<Program> {
@@ -76,6 +90,7 @@ impl Parser {
             TokenKind::Identifier(_) => self.parse_call_statement(),
             TokenKind::Variable(_) => self.parse_variable_statement(),
             TokenKind::InlineHtml(_) => self.parse_inline_html(),
+            _ if self.peek_starts_expression() => self.parse_expression_statement(),
             _ => Err(Diagnostic::new(
                 "expected statement",
                 Some(self.peek().span),
@@ -181,7 +196,7 @@ impl Parser {
             _ => {}
         }
         let op = self.expect_assignment_op()?;
-        let value = self.parse_expr()?;
+        let value = self.parse_assignment_value_expr()?;
         self.expect_statement_terminator()?;
         Ok(Statement::Assign {
             name,
@@ -396,7 +411,7 @@ impl Parser {
             }
             _ => {
                 let op = self.expect_assignment_op()?;
-                let value = self.parse_expr()?;
+                let value = self.parse_assignment_value_expr()?;
                 Ok(Statement::Assign {
                     name,
                     op,
@@ -562,6 +577,17 @@ impl Parser {
         })
     }
 
+    fn parse_expression_statement(&mut self) -> Result<Statement> {
+        let expression = self.parse_expr()?;
+        if matches!(self.peek().kind, TokenKind::Question) {
+            return self.reject_unsupported_ternary_expression();
+        }
+        Err(Diagnostic::new(
+            "expression statements are unsupported",
+            Some(expression.span()),
+        ))
+    }
+
     fn parse_inline_html(&mut self) -> Result<Statement> {
         let token = self.advance().clone();
         let TokenKind::InlineHtml(content) = token.kind else {
@@ -606,6 +632,17 @@ impl Parser {
 
     fn parse_expr(&mut self) -> Result<Expr> {
         self.parse_binary_expr(0)
+    }
+
+    fn parse_assignment_value_expr(&mut self) -> Result<Expr> {
+        let value = self.parse_binary_expr(SYMBOL_OR_PRECEDENCE)?;
+        if self.peek_is_keyword_boolean_operator() {
+            return Err(Diagnostic::new(
+                "assignment expressions with keyword boolean operators are unsupported",
+                Some(self.peek().span),
+            ));
+        }
+        Ok(value)
     }
 
     fn parse_binary_expr(&mut self, min_precedence: u8) -> Result<Expr> {
@@ -897,31 +934,95 @@ impl Parser {
 
     fn peek_binary_op(&self) -> Option<(BinaryOp, u8, bool)> {
         match self.peek().kind {
-            TokenKind::OrOr => Some((BinaryOp::Or, 1, false)),
-            TokenKind::AndAnd => Some((BinaryOp::And, 2, false)),
-            TokenKind::Pipe => Some((BinaryOp::BitwiseOr, 3, false)),
-            TokenKind::Caret => Some((BinaryOp::BitwiseXor, 4, false)),
-            TokenKind::Ampersand => Some((BinaryOp::BitwiseAnd, 5, false)),
-            TokenKind::EqualEqualEqual => Some((BinaryOp::Identical, 6, false)),
-            TokenKind::NotEqualEqual => Some((BinaryOp::NotIdentical, 6, false)),
-            TokenKind::EqualEqual => Some((BinaryOp::Equal, 6, false)),
-            TokenKind::NotEqual => Some((BinaryOp::NotEqual, 6, false)),
-            TokenKind::Spaceship => Some((BinaryOp::Spaceship, 6, false)),
-            TokenKind::Less => Some((BinaryOp::Less, 7, false)),
-            TokenKind::LessEqual => Some((BinaryOp::LessEqual, 7, false)),
-            TokenKind::Greater => Some((BinaryOp::Greater, 7, false)),
-            TokenKind::GreaterEqual => Some((BinaryOp::GreaterEqual, 7, false)),
-            TokenKind::Dot => Some((BinaryOp::Concat, 10, false)),
-            TokenKind::ShiftLeft => Some((BinaryOp::ShiftLeft, 15, false)),
-            TokenKind::ShiftRight => Some((BinaryOp::ShiftRight, 15, false)),
-            TokenKind::Plus => Some((BinaryOp::Add, 20, false)),
-            TokenKind::Minus => Some((BinaryOp::Subtract, 20, false)),
-            TokenKind::Asterisk => Some((BinaryOp::Multiply, 30, false)),
-            TokenKind::Slash => Some((BinaryOp::Divide, 30, false)),
-            TokenKind::Percent => Some((BinaryOp::Modulo, 30, false)),
+            TokenKind::KeywordOr => Some((BinaryOp::Or, KEYWORD_OR_PRECEDENCE, false)),
+            TokenKind::KeywordXor => Some((BinaryOp::Xor, KEYWORD_XOR_PRECEDENCE, false)),
+            TokenKind::KeywordAnd => Some((BinaryOp::And, KEYWORD_AND_PRECEDENCE, false)),
+            TokenKind::OrOr => Some((BinaryOp::Or, SYMBOL_OR_PRECEDENCE, false)),
+            TokenKind::AndAnd => Some((BinaryOp::And, SYMBOL_AND_PRECEDENCE, false)),
+            TokenKind::Pipe => Some((BinaryOp::BitwiseOr, BITWISE_OR_PRECEDENCE, false)),
+            TokenKind::Caret => Some((BinaryOp::BitwiseXor, BITWISE_XOR_PRECEDENCE, false)),
+            TokenKind::Ampersand => Some((BinaryOp::BitwiseAnd, BITWISE_AND_PRECEDENCE, false)),
+            TokenKind::EqualEqualEqual => Some((BinaryOp::Identical, EQUALITY_PRECEDENCE, false)),
+            TokenKind::NotEqualEqual => Some((BinaryOp::NotIdentical, EQUALITY_PRECEDENCE, false)),
+            TokenKind::EqualEqual => Some((BinaryOp::Equal, EQUALITY_PRECEDENCE, false)),
+            TokenKind::NotEqual => Some((BinaryOp::NotEqual, EQUALITY_PRECEDENCE, false)),
+            TokenKind::Spaceship => Some((BinaryOp::Spaceship, EQUALITY_PRECEDENCE, false)),
+            TokenKind::Less => Some((BinaryOp::Less, COMPARISON_PRECEDENCE, false)),
+            TokenKind::LessEqual => Some((BinaryOp::LessEqual, COMPARISON_PRECEDENCE, false)),
+            TokenKind::Greater => Some((BinaryOp::Greater, COMPARISON_PRECEDENCE, false)),
+            TokenKind::GreaterEqual => Some((BinaryOp::GreaterEqual, COMPARISON_PRECEDENCE, false)),
+            TokenKind::Dot => Some((BinaryOp::Concat, CONCAT_PRECEDENCE, false)),
+            TokenKind::ShiftLeft => Some((BinaryOp::ShiftLeft, SHIFT_PRECEDENCE, false)),
+            TokenKind::ShiftRight => Some((BinaryOp::ShiftRight, SHIFT_PRECEDENCE, false)),
+            TokenKind::Plus => Some((BinaryOp::Add, ADDITIVE_PRECEDENCE, false)),
+            TokenKind::Minus => Some((BinaryOp::Subtract, ADDITIVE_PRECEDENCE, false)),
+            TokenKind::Asterisk => Some((BinaryOp::Multiply, MULTIPLICATIVE_PRECEDENCE, false)),
+            TokenKind::Slash => Some((BinaryOp::Divide, MULTIPLICATIVE_PRECEDENCE, false)),
+            TokenKind::Percent => Some((BinaryOp::Modulo, MULTIPLICATIVE_PRECEDENCE, false)),
             TokenKind::AsteriskAsterisk => Some((BinaryOp::Power, POWER_PRECEDENCE, true)),
             _ => None,
         }
+    }
+
+    fn peek_is_keyword_boolean_operator(&self) -> bool {
+        matches!(
+            self.peek().kind,
+            TokenKind::KeywordAnd | TokenKind::KeywordOr | TokenKind::KeywordXor
+        )
+    }
+
+    fn reject_unsupported_ternary_expression(&mut self) -> Result<Statement> {
+        let question = self.advance().clone();
+        let first_is_short = if matches!(self.peek().kind, TokenKind::Colon) {
+            self.advance();
+            true
+        } else {
+            self.parse_expr()?;
+            self.expect_colon()?;
+            false
+        };
+
+        self.parse_expr()?;
+        if matches!(self.peek().kind, TokenKind::Question) {
+            let message = match (first_is_short, self.peek_next_is_colon()) {
+                (true, _) => "Unparenthesized `a ?: b ? c : d` is not supported. Use either `(a ?: b) ? c : d` or `a ?: (b ? c : d)`",
+                (false, true) => "Unparenthesized `a ? b : c ?: d` is not supported. Use either `(a ? b : c) ?: d` or `a ? b : (c ?: d)`",
+                (false, false) => "Unparenthesized `a ? b : c ? d : e` is not supported. Use either `(a ? b : c) ? d : e` or `a ? b : (c ? d : e)`",
+            };
+            return Err(Diagnostic::new(message, Some(question.span)));
+        }
+
+        Err(Diagnostic::new(
+            "ternary expressions are unsupported",
+            Some(question.span),
+        ))
+    }
+
+    fn peek_starts_expression(&self) -> bool {
+        matches!(
+            self.peek().kind,
+            TokenKind::String(_)
+                | TokenKind::InterpolatedString(_)
+                | TokenKind::Int(_)
+                | TokenKind::Float(_)
+                | TokenKind::True
+                | TokenKind::False
+                | TokenKind::Null
+                | TokenKind::Plus
+                | TokenKind::Minus
+                | TokenKind::Bang
+                | TokenKind::Tilde
+                | TokenKind::LeftParen
+                | TokenKind::LeftBracket
+                | TokenKind::Backslash
+        )
+    }
+
+    fn peek_next_is_colon(&self) -> bool {
+        matches!(
+            self.tokens.get(self.index + 1).map(|token| &token.kind),
+            Some(TokenKind::Colon)
+        )
     }
 
     fn expect_echo(&mut self) -> Result<SourceSpan> {
@@ -1233,6 +1334,9 @@ fn token_text(kind: &TokenKind) -> &'static str {
         TokenKind::GreaterEqual => ">=",
         TokenKind::ShiftRight => ">>",
         TokenKind::ShiftRightEqual => ">>=",
+        TokenKind::KeywordAnd => "and",
+        TokenKind::KeywordOr => "or",
+        TokenKind::KeywordXor => "xor",
         TokenKind::AndAnd => "&&",
         TokenKind::OrOr => "||",
         TokenKind::AmpersandEqual => "&=",
@@ -1261,6 +1365,7 @@ fn token_text(kind: &TokenKind) -> &'static str {
         TokenKind::Backslash => "\\",
         TokenKind::Dot => ".",
         TokenKind::Comma => ",",
+        TokenKind::Question => "?",
         TokenKind::Colon => ":",
         TokenKind::Semicolon => ";",
         TokenKind::LeftParen => "(",

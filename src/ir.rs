@@ -169,6 +169,7 @@ pub enum BinaryOp {
     BitwiseXor,
     BitwiseOr,
     And,
+    Xor,
     Or,
 }
 
@@ -564,6 +565,7 @@ fn lower_binary_op(op: AstBinaryOp) -> BinaryOp {
         AstBinaryOp::BitwiseXor => BinaryOp::BitwiseXor,
         AstBinaryOp::BitwiseOr => BinaryOp::BitwiseOr,
         AstBinaryOp::And => BinaryOp::And,
+        AstBinaryOp::Xor => BinaryOp::Xor,
         AstBinaryOp::Or => BinaryOp::Or,
     }
 }

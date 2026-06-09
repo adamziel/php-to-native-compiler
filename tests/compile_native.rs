@@ -75,6 +75,14 @@ fn lexer_preserves_unknown_string_escape_backslashes() {
 }
 
 #[test]
+fn lexer_accepts_keyword_boolean_operators() {
+    let tokens = lexer::lex("<?php true and false or true xor false").unwrap();
+    assert!(matches!(tokens[2].kind, TokenKind::KeywordAnd));
+    assert!(matches!(tokens[4].kind, TokenKind::KeywordOr));
+    assert!(matches!(tokens[6].kind, TokenKind::KeywordXor));
+}
+
+#[test]
 fn parser_accepts_precedence_aware_binary_expressions() {
     let program = parser::parse("<?php echo \"sum \" . 20 - 3 * 4 + 8 / 2 % 3 . \"\\n\";").unwrap();
     let Statement::Echo { expressions, .. } = &program.statements[0] else {
@@ -383,6 +391,33 @@ fn parser_reports_unexpected_tokens_with_parse_error_spans() {
     let span = const_delimiter.span.unwrap();
     assert_eq!(span.line, 2);
     assert_eq!(span.column, 18);
+}
+
+#[test]
+fn parser_rejects_unparenthesized_nested_ternaries() {
+    let full = parser::parse("<?php\n\n1 ? 2 : 3 ? 4 : 5;").unwrap_err();
+    assert_eq!(
+        full.message,
+        "Unparenthesized `a ? b : c ? d : e` is not supported. Use either `(a ? b : c) ? d : e` or `a ? b : (c ? d : e)`"
+    );
+    assert_eq!(full.kind, DiagnosticKind::Fatal);
+    assert_eq!(full.span.unwrap().line, 3);
+
+    let short_first = parser::parse("<?php\n\n1 ?: 2 ? 3 : 4;").unwrap_err();
+    assert_eq!(
+        short_first.message,
+        "Unparenthesized `a ?: b ? c : d` is not supported. Use either `(a ?: b) ? c : d` or `a ?: (b ? c : d)`"
+    );
+    assert_eq!(short_first.kind, DiagnosticKind::Fatal);
+    assert_eq!(short_first.span.unwrap().line, 3);
+
+    let short_second = parser::parse("<?php\n\n1 ? 2 : 3 ?: 4;").unwrap_err();
+    assert_eq!(
+        short_second.message,
+        "Unparenthesized `a ? b : c ?: d` is not supported. Use either `(a ? b : c) ?: d` or `a ? b : (c ?: d)`"
+    );
+    assert_eq!(short_second.kind, DiagnosticKind::Fatal);
+    assert_eq!(short_second.span.unwrap().line, 3);
 }
 
 #[test]
@@ -762,6 +797,80 @@ fn parser_accepts_comparison_boolean_and_grouping_expressions() {
             ..
         }
     ));
+}
+
+#[test]
+fn parser_accepts_keyword_boolean_precedence() {
+    let program = parser::parse(
+        "<?php echo true || false and false, false or true && false, true xor false || false;",
+    )
+    .unwrap();
+    let Statement::Echo { expressions, .. } = &program.statements[0] else {
+        panic!("expected echo statement");
+    };
+
+    let Expr::Binary {
+        op: BinaryOp::And,
+        left,
+        ..
+    } = &expressions[0]
+    else {
+        panic!("expected outer keyword and");
+    };
+    assert!(matches!(
+        left.as_ref(),
+        Expr::Binary {
+            op: BinaryOp::Or,
+            ..
+        }
+    ));
+
+    let Expr::Binary {
+        op: BinaryOp::Or,
+        right,
+        ..
+    } = &expressions[1]
+    else {
+        panic!("expected outer keyword or");
+    };
+    assert!(matches!(
+        right.as_ref(),
+        Expr::Binary {
+            op: BinaryOp::And,
+            ..
+        }
+    ));
+
+    let Expr::Binary {
+        op: BinaryOp::Xor,
+        right,
+        ..
+    } = &expressions[2]
+    else {
+        panic!("expected outer keyword xor");
+    };
+    assert!(matches!(
+        right.as_ref(),
+        Expr::Binary {
+            op: BinaryOp::Or,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn parser_rejects_keyword_boolean_after_direct_assignment() {
+    let error = parser::parse("<?php $result = true and false;").unwrap_err();
+    assert!(error
+        .message
+        .contains("assignment expressions with keyword boolean operators are unsupported"));
+
+    let compound = parser::parse("<?php $result += true xor false;").unwrap_err();
+    assert!(compound
+        .message
+        .contains("assignment expressions with keyword boolean operators are unsupported"));
+
+    parser::parse("<?php $result = (true and false);").unwrap();
 }
 
 #[test]
@@ -1548,6 +1657,26 @@ fn phpc_renders_unexpected_const_terminator_as_php_parse_error() {
         String::from_utf8(execution.stderr).unwrap(),
         format!(
             "Parse error: syntax error, unexpected token \"{{\", expecting \",\" or \";\" in {} on line 2\n",
+            input.display()
+        )
+    );
+}
+
+#[test]
+fn phpc_renders_unparenthesized_nested_ternary_as_php_fatal() {
+    let root = temp_dir("ptn-phpc-nested-ternary-fatal");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("nested-ternary.php");
+    fs::write(&input, "<?php\n\n1 ? 2 : 3 ? 4 : 5;\n").unwrap();
+
+    let execution = Command::new(phpc_bin()).arg(&input).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "Fatal error: Unparenthesized `a ? b : c ? d : e` is not supported. Use either `(a ? b : c) ? d : e` or `a ? b : (c ? d : e)` in {} on line 3\n",
             input.display()
         )
     );
@@ -3746,6 +3875,41 @@ fn compile_boolean_short_circuit_ops_to_native_binary() {
 }
 
 #[test]
+fn compile_keyword_boolean_ops_to_native_binary() {
+    let root = temp_dir("ptn-native-keyword-boolean-ops");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("keyword-boolean.php");
+    let output = root.join("keyword-boolean-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(true and false);\n\
+var_dump(false or true);\n\
+var_dump(true xor false);\n\
+var_dump(true xor true);\n\
+var_dump(true || false and false);\n\
+var_dump(false or true && false);\n\
+var_dump(false and $short_circuit_and);\n\
+var_dump(true or $short_circuit_or);\n\
+var_dump($left xor $right);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(false)\nbool(true)\nbool(true)\nbool(false)\nbool(false)\nbool(false)\nbool(false)\nbool(true)\nbool(false)\n"
+    );
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        "Warning: Undefined variable $left\nWarning: Undefined variable $right\n"
+    );
+}
+
+#[test]
 fn compile_array_spaceship_and_identity_to_native_binary() {
     let root = temp_dir("ptn-native-array-spaceship-identity");
     fs::create_dir_all(&root).unwrap();
@@ -5162,9 +5326,7 @@ fn compile_defined_and_undefined_variable_reads_to_native_binary() {
 #[test]
 fn unsupported_constructs_fail_before_codegen() {
     let unsupported_operator = parser::parse("<?php $name ??= 1;").unwrap_err();
-    assert!(unsupported_operator
-        .message
-        .contains("unsupported PHP token '?'"));
+    assert!(unsupported_operator.message.contains("expected assignment"));
 
     let unsupported_lvalue = parser::parse("<?php $items[0] += 1;").unwrap_err();
     assert!(unsupported_lvalue.message.contains("expected assignment"));
