@@ -1,14 +1,14 @@
 # PTN Progress
 
-Last refresh: 2026-06-09T16:41Z
-Commit: `ea176b8`
+Last refresh: 2026-06-09T16:49Z
+Commit: `ptn-ahf` recovery branch
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | --- |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 268 | 268 | 0 |
+| Native compiled PHP snippets | 276 | 276 | 0 |
 | PHPT parsed bounded log | 171 | 121 | 50 |
 | PHPT Zend rows | 76 | 60 | 16 |
 | PHPT ext/standard rows | 77 | 44 | 33 |
@@ -19,15 +19,16 @@ Commit: `ea176b8`
 
 Lexer/parser, AST, IR, C backend, boxed values, direct variables, constants,
 selected string/math/type internals, ordered arrays and `foreach`, top-level
-user functions with scoped `__FUNCTION__`/`__METHOD__` magic constants,
-`print_r`, selected binary-string handling, catchable `TypeError` for string
-offset reads, and catchable `count()` non-array diagnostics.
+user functions with scoped `__FUNCTION__`/`__METHOD__` magic constants and
+`func_*` call-frame introspection, `print_r`, selected binary-string handling,
+catchable `TypeError` for string offset reads, and catchable `count()` non-array
+diagnostics.
 
 ## Still Needed
 
 Copy-on-write for arrays, strings, variables, function calls, foreach, nested
 containers, and references. All non-COW work is paused unless it is required to
-prove COW.
+prove COW or recover already completed work.
 
 ## Next Focus
 

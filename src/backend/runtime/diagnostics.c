@@ -205,4 +205,9 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->owned_exceptions.active_exception = NULL;
     runtime->owned_exceptions.try_frame = NULL;
     runtime->exceptions = &runtime->owned_exceptions;
+    runtime->owned_call_frame.argc = 0;
+    runtime->owned_call_frame.args = NULL;
+    runtime->owned_call_frame.parameter_count = 0;
+    runtime->owned_call_frame.parameter_names = NULL;
+    runtime->call_frame = NULL;
 }

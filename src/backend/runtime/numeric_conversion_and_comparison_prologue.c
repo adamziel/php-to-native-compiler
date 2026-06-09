@@ -6,6 +6,25 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->owned_exceptions.active_exception = NULL;
     runtime->owned_exceptions.try_frame = NULL;
     runtime->exceptions = caller_runtime->exceptions;
+    runtime->owned_call_frame.argc = 0;
+    runtime->owned_call_frame.args = NULL;
+    runtime->owned_call_frame.parameter_count = 0;
+    runtime->owned_call_frame.parameter_names = NULL;
+    runtime->call_frame = NULL;
+}
+
+static PTN_UNUSED void ptn_runtime_set_call_frame(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t parameter_count,
+    const char *const *parameter_names
+) {
+    runtime->owned_call_frame.argc = argc;
+    runtime->owned_call_frame.args = args;
+    runtime->owned_call_frame.parameter_count = parameter_count;
+    runtime->owned_call_frame.parameter_names = parameter_names;
+    runtime->call_frame = &runtime->owned_call_frame;
 }
 
 static void ptn_runtime_free(PtnRuntime *runtime) {

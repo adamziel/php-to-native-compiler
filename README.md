@@ -15,7 +15,8 @@ expected rows, or one-off outputs.
 - Native execution tests for parser, IR, backend, runtime, and selected PHP
   behavior.
 - Top-level user functions include scoped `__FUNCTION__` and `__METHOD__`
-  magic-constant coverage.
+  magic-constant coverage plus call-frame metadata for `func_num_args()`,
+  `func_get_arg()`, and `func_get_args()`.
 - `count()` handles arrays and raises catchable `TypeError` diagnostics for
   non-array operands in the current boxed value domain.
 - Bounded PHPT telemetry from `/home/claude/php-src-phpt`.
