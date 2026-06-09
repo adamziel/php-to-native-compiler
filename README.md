@@ -64,7 +64,9 @@ Supported today:
   `defined()` checks the current constant registry, which currently includes
   `E_ERROR`, `PHP_EOL`, `PHP_INT_MIN`, `PHP_INT_MAX`, `PHP_INT_SIZE`, `INF`,
   `NAN`, and `M_PI`.
-- String, integer, float, boolean, and null literals.
+- String, integer, float, boolean, and null literals. Numeric literals accept
+  PHP digit separators between digits; integer literals include decimal,
+  legacy octal, binary `0b`/`0B`, and hexadecimal `0x`/`0X` forms.
 - Double-quoted strings with direct `$name` variable interpolation. Interpolated
   variables use ordinary runtime variable reads, scalar string casts, and boxed
   concatenation.
@@ -125,8 +127,9 @@ Unsupported today:
   `^=`, `<<=`, and `>>=` (`**=`, `??=`), `print` as an expression returning
   `1` even when spelled `print(...)`, increment/decrement operators, full
   PHP numeric-string and non-numeric string arithmetic diagnostics, exact
-  division/modulo-by-zero exception behavior, complete comparison parity for
-  unsupported types, spaceship comparison operator,
+  division/modulo-by-zero exception behavior, exact numeric literal
+  overflow/range parity, complete comparison parity for unsupported types,
+  spaceship comparison operator,
   keyword boolean operators, chained comparison parse errors, unbraced and alternate
   control-flow syntax, `foreach`, explicit-level `break`
   such as `break 2`, `continue`, full switch parity for unsupported value

@@ -13,7 +13,9 @@ supports in generated native binaries.
   one immediately following newline swallowed.
 - `echo` statements.
 - Statement-form `print expr;` for the same scalar expression subset as echo.
-- String, integer, float, boolean, and null literals.
+- String, integer, float, boolean, and null literals. Numeric literals accept
+  PHP digit separators between digits; integer literals include decimal,
+  legacy octal, binary `0b`/`0B`, and hexadecimal `0x`/`0X` forms.
 - Double-quoted strings with direct `$name` variable interpolation. Interpolated
   variables use the same runtime variable read, scalar string cast, and
   concatenation paths as ordinary expressions.
@@ -140,7 +142,8 @@ supports in generated native binaries.
   file names, line numbers, error handlers, and error reporting configuration.
 - Full PHP numeric-string conversion warning parity, non-numeric string
   arithmetic diagnostics, exact division/modulo-by-zero exception behavior,
-  complete overflow parity, and exact scalar cast overflow behavior.
+  exact numeric literal overflow/range parity, complete overflow parity, and
+  exact scalar cast overflow behavior.
 - Prefix and postfix increment/decrement operators such as `++$value` and
   `--$value`.
 - `print` as an expression returning `1`, including contexts such as assignment,

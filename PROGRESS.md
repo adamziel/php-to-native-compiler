@@ -803,3 +803,23 @@ Still unsupported after this interpolation slice: complex/braced
 interpolation, interpolation of arrays, objects, offsets, properties, variable
 variables, references, copy-on-write interactions, embedded NUL string parity,
 and PHP-exact interpolation diagnostics.
+
+Added numeric literal separator and radix parsing:
+
+- The lexer now accepts PHP digit separators between digits in decimal integer,
+  float, exponent, hexadecimal, binary, and legacy-octal numeric literals.
+- Hexadecimal `0x`/`0X`, binary `0b`/`0B`, and legacy-octal integer literals
+  lower to the existing integer literal token path, while decimal/exponent
+  forms lower to the existing integer or float token paths.
+- Separator placement stays lexical: separators are consumed only between
+  valid digits for the current radix or decimal/exponent component, leaving
+  invalid adjacent/trailing separator text for the normal parser diagnostic
+  path.
+- Native tests prove token values across decimal, float, exponent, hex, binary,
+  and octal forms plus the public valid numeric-literal-separator source shape.
+- Focused public PHPT telemetry through `phpc` passes
+  `Zend/tests/numeric_literal_separator/numeric_literal_separator_001.phpt`.
+
+Still unsupported after this numeric-literal slice: exact numeric literal
+overflow/range parity and PHP-exact parse diagnostic wording for invalid
+separator placements.

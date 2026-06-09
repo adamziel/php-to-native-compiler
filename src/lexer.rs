@@ -404,25 +404,59 @@ impl<'a> Lexer<'a> {
     fn lex_number(&mut self) -> Result<()> {
         let start = self.current_span(0);
         let mut text = String::new();
-        while let Some(ch) = self.peek_char() {
-            if ch.is_ascii_digit() {
-                text.push(ch);
-                self.bump_char();
-            } else {
-                break;
-            }
+
+        if self.starts_radix_integer_prefix("0x", |ch| ch.is_ascii_hexdigit())
+            || self.starts_radix_integer_prefix("0X", |ch| ch.is_ascii_hexdigit())
+        {
+            self.bump_char();
+            self.bump_char();
+            self.collect_digits(&mut text, |ch| ch.is_ascii_hexdigit());
+            let value = i64::from_str_radix(&text, 16)
+                .map_err(|_| Diagnostic::new("invalid integer literal", Some(start)))?;
+            self.tokens.push(Token {
+                kind: TokenKind::Int(value),
+                span: SourceSpan::new(start.byte_start, self.cursor, start.line, start.column),
+            });
+            return Ok(());
         }
+
+        if self.starts_radix_integer_prefix("0b", |ch| matches!(ch, '0' | '1'))
+            || self.starts_radix_integer_prefix("0B", |ch| matches!(ch, '0' | '1'))
+        {
+            self.bump_char();
+            self.bump_char();
+            self.collect_digits(&mut text, |ch| matches!(ch, '0' | '1'));
+            let value = i64::from_str_radix(&text, 2)
+                .map_err(|_| Diagnostic::new("invalid integer literal", Some(start)))?;
+            self.tokens.push(Token {
+                kind: TokenKind::Int(value),
+                span: SourceSpan::new(start.byte_start, self.cursor, start.line, start.column),
+            });
+            return Ok(());
+        }
+
+        self.collect_digits(&mut text, |ch| ch.is_ascii_digit());
+        let mut is_float = false;
         if self.peek_char() == Some('.') {
+            is_float = true;
             text.push('.');
             self.bump_char();
-            while let Some(ch) = self.peek_char() {
-                if ch.is_ascii_digit() {
-                    text.push(ch);
-                    self.bump_char();
-                } else {
-                    break;
-                }
+            self.collect_digits(&mut text, |ch| ch.is_ascii_digit());
+        }
+
+        if self.starts_valid_exponent() {
+            is_float = true;
+            let exponent = self.peek_char().expect("valid exponent has marker");
+            text.push(exponent);
+            self.bump_char();
+            if matches!(self.peek_char(), Some('+') | Some('-')) {
+                text.push(self.peek_char().expect("peeked sign"));
+                self.bump_char();
             }
+            self.collect_digits(&mut text, |ch| ch.is_ascii_digit());
+        }
+
+        if is_float {
             let value = text
                 .parse::<f64>()
                 .map_err(|_| Diagnostic::new("invalid float literal", Some(start)))?;
@@ -431,15 +465,70 @@ impl<'a> Lexer<'a> {
                 span: SourceSpan::new(start.byte_start, self.cursor, start.line, start.column),
             });
         } else {
-            let value = text
-                .parse::<i64>()
-                .map_err(|_| Diagnostic::new("invalid integer literal", Some(start)))?;
+            let value = if text.len() > 1 && text.starts_with('0') {
+                i64::from_str_radix(&text, 8)
+            } else {
+                text.parse::<i64>()
+            }
+            .map_err(|_| Diagnostic::new("invalid integer literal", Some(start)))?;
             self.tokens.push(Token {
                 kind: TokenKind::Int(value),
                 span: SourceSpan::new(start.byte_start, self.cursor, start.line, start.column),
             });
         }
         Ok(())
+    }
+
+    fn starts_radix_integer_prefix<F>(&self, prefix: &str, is_digit: F) -> bool
+    where
+        F: Fn(char) -> bool,
+    {
+        self.rest().starts_with(prefix)
+            && self.rest().chars().nth(prefix.len()).is_some_and(is_digit)
+    }
+
+    fn starts_valid_exponent(&self) -> bool {
+        let mut chars = self.rest().chars();
+        let Some(marker) = chars.next() else {
+            return false;
+        };
+        if !matches!(marker, 'e' | 'E') {
+            return false;
+        }
+        match chars.next() {
+            Some('+') | Some('-') => chars.next().is_some_and(|ch| ch.is_ascii_digit()),
+            Some(ch) => ch.is_ascii_digit(),
+            None => false,
+        }
+    }
+
+    fn collect_digits<F>(&mut self, text: &mut String, is_digit: F) -> bool
+    where
+        F: Fn(char) -> bool,
+    {
+        let mut saw_digit = false;
+        let mut last_was_digit = false;
+        while let Some(ch) = self.peek_char() {
+            if is_digit(ch) {
+                text.push(ch);
+                self.bump_char();
+                saw_digit = true;
+                last_was_digit = true;
+            } else if ch == '_' && last_was_digit && self.next_char_matches(&is_digit) {
+                self.bump_char();
+                last_was_digit = false;
+            } else {
+                break;
+            }
+        }
+        saw_digit
+    }
+
+    fn next_char_matches<F>(&self, predicate: &F) -> bool
+    where
+        F: Fn(char) -> bool,
+    {
+        self.rest().chars().nth(1).is_some_and(predicate)
     }
 
     fn lex_variable(&mut self) -> Result<()> {

@@ -24,6 +24,10 @@ Current runtime/compiler slices:
   Unix shebang, required `<?php`, PHP comments inside the code region, and one
   `?>` close tag that switches to inline output through EOF. Inline HTML before
   `<?php` and multi-block PHP/HTML mode switching remain unsupported.
+- Numeric literal lexing accepts PHP digit separators between valid digits and
+  routes decimal, exponent float, legacy octal, binary `0b`/`0B`, and
+  hexadecimal `0x`/`0X` spellings into the existing integer/float AST literal
+  paths.
 - Direct variables lower to generated C `PtnRuntime` symbol-table load/store
   calls.
 - Direct variable reads pass through a runtime helper that emits a generic

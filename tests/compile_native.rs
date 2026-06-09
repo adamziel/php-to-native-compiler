@@ -20,6 +20,27 @@ fn parser_accepts_direct_assignment_and_variable_reads() {
 }
 
 #[test]
+fn lexer_accepts_numeric_literal_separators_and_radices() {
+    let tokens = lexer::lex(
+        "<?php 299_792_458 96_485.332_12 6.626_070_15e-34 0xCAFE_F00D 0b0101_1111 0137_041 0_124",
+    )
+    .unwrap();
+    assert!(matches!(tokens[1].kind, TokenKind::Int(299_792_458)));
+    assert!(matches!(
+        tokens[2].kind,
+        TokenKind::Float(value) if value == 96_485.332_12
+    ));
+    assert!(matches!(
+        tokens[3].kind,
+        TokenKind::Float(value) if value == 6.626_070_15e-34
+    ));
+    assert!(matches!(tokens[4].kind, TokenKind::Int(0xCAFE_F00D)));
+    assert!(matches!(tokens[5].kind, TokenKind::Int(0b0101_1111)));
+    assert!(matches!(tokens[6].kind, TokenKind::Int(48_673)));
+    assert!(matches!(tokens[7].kind, TokenKind::Int(84)));
+}
+
+#[test]
 fn parser_accepts_precedence_aware_binary_expressions() {
     let program = parser::parse("<?php echo \"sum \" . 20 - 3 * 4 + 8 / 2 % 3 . \"\\n\";").unwrap();
     let Statement::Echo { expressions, .. } = &program.statements[0] else {
@@ -2065,6 +2086,41 @@ fn compile_boxed_arithmetic_literals_to_native_binary() {
 }
 
 #[test]
+fn compile_numeric_literal_separator_phpt_shape_to_native_binary() {
+    let root = temp_dir("ptn-native-numeric-literal-separators");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("numeric-literal-separators.php");
+    let output = root.join("numeric-literal-separators-bin");
+    fs::write(
+        &input,
+        "<?php
+var_dump(299_792_458 === 299792458);
+var_dump(135_00 === 13500);
+var_dump(96_485.332_12 === 96485.33212);
+var_dump(6.626_070_15e-34 === 6.62607015e-34);
+var_dump(6.674_083e-11 === 6.674083e-11);
+var_dump(0xCAFE_F00D === 0xCAFEF00D);
+var_dump(0x54_4A_42 === 0x544A42);
+var_dump(0b0101_1111 === 0b01011111);
+var_dump(0b01_0000_10 === 0b01000010);
+var_dump(0137_041 === 0137041);
+var_dump(0_124 === 0124);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\n".repeat(11)
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_boxed_arithmetic_variables_and_assignment_results_to_native_binary() {
     let root = temp_dir("ptn-native-arithmetic-variables");
     fs::create_dir_all(&root).unwrap();
@@ -2314,7 +2370,6 @@ fn var_dump_complex_edges_remain_unsupported_before_codegen() {
         "<?php var_dump(new stdClass);",
         "<?php $array = []; $array[] = &$array; var_dump($array);",
         "<?php $value = 1; $ref =& $value; var_dump($ref);",
-        "<?php var_dump(1e-5);",
     ] {
         assert!(
             parser::parse(source).is_err(),
