@@ -97,9 +97,10 @@ Supported today:
   read, the matching boxed binary helper, then a variable write, preserving the
   existing undefined-variable diagnostic boundary.
 - Parenthesized expressions, unary `+`, unary `-`, unary `!`, unary bitwise
-  `~`, and `(int)`, `(float)`, `(string)`, and `(bool)` casts for boxed scalar
-  values. Unary, cast, and binary operations are emitted as runtime helper
-  calls over `PtnValue` operands.
+  `~`, `(int)`, `(float)`, `(string)`, `(bool)`, and deprecated
+  non-canonical `(boolean)` casts for boxed scalar values. Unary, cast, and
+  binary operations are emitted as runtime helper calls over `PtnValue`
+  operands.
 - Boxed scalar comparison and boolean expressions: `==`, `!=`, `===`, `!==`,
   `<`, `<=`, `>`, `>=`, `&&`, and `||`. Strict identity compares scalar type
   and value without coercion; numeric scalar comparisons involving `NAN`
@@ -165,7 +166,8 @@ Unsupported today:
   null/string/unsupported type diagnostics, exact `sqrt()` negative/non-finite
   edge parity, exact `getmypid()` process model parity across SAPIs and
   unsupported platforms, exact `error_reporting()` configuration/filtering
-  behavior, and full PHP precision/formatting edge cases for
+  behavior, non-canonical cast spellings beyond `(boolean)`, and full PHP
+  precision/formatting edge cases for
   `var_dump()`/`strlen()`/`bin2hex()`/`hex2bin()`/base-conversion internals,
   doc comment retention, variable variables, and dynamic fallback. These are
   architecture targets, not excuses for exact-shape hacks.

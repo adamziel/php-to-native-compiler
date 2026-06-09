@@ -181,6 +181,7 @@ pub enum CastKind {
     Float,
     String,
     Bool,
+    Boolean,
 }
 
 impl Expr {

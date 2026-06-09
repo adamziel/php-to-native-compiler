@@ -77,6 +77,7 @@ pub enum ValueExpr {
     Cast {
         kind: CastKind,
         expr: Box<ValueExpr>,
+        line: usize,
     },
     Binary {
         op: BinaryOp,
@@ -125,6 +126,7 @@ pub enum CastKind {
     Float,
     String,
     Bool,
+    Boolean,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -303,9 +305,10 @@ fn lower_expr(expr: &Expr) -> ValueExpr {
             op: lower_unary_op(*op),
             expr: Box::new(lower_expr(expr)),
         },
-        Expr::Cast { kind, expr, .. } => ValueExpr::Cast {
+        Expr::Cast { kind, expr, span } => ValueExpr::Cast {
             kind: lower_cast_kind(*kind),
             expr: Box::new(lower_expr(expr)),
+            line: span.line,
         },
         Expr::Binary {
             op, left, right, ..
@@ -325,6 +328,7 @@ fn lower_interpolated_string(parts: &[AstStringPart]) -> ValueExpr {
         AstStringPart::Variable(name) => Some(ValueExpr::Cast {
             kind: CastKind::String,
             expr: Box::new(ValueExpr::Load(name.clone())),
+            line: 0,
         }),
     });
 
@@ -357,6 +361,7 @@ fn lower_cast_kind(kind: AstCastKind) -> CastKind {
         AstCastKind::Float => CastKind::Float,
         AstCastKind::String => CastKind::String,
         AstCastKind::Bool => CastKind::Bool,
+        AstCastKind::Boolean => CastKind::Boolean,
     }
 }
 

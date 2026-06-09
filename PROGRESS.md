@@ -914,3 +914,19 @@ Added scalar exponentiation operators:
 Still unsupported after this exponentiation slice: PHP-exact numeric-string
 diagnostics, full overflow/exception parity, array/object/resource/reference
 operands, non-direct-variable `**=` lvalues, and compound `??=`.
+
+Added deprecated non-canonical `(boolean)` casts:
+
+- The lexer/parser now distinguish `(boolean)` from canonical `(bool)` while
+  preserving the normal cast expression path and source line.
+- IR cast values carry source line metadata so the backend can emit PHP-like
+  deprecation diagnostics for the non-canonical spelling.
+- Generated C emits the deprecation and then delegates to the existing boxed
+  bool conversion helper.
+- Native tests prove parser distinction and the public PHPT source shape.
+- Focused public PHPT telemetry through `phpc` passes
+  `Zend/tests/type_coercion/type_casts/non_canonical_boolean_cast.phpt`.
+
+Still unsupported after this non-canonical cast slice: `(integer)`, `(double)`,
+`(real)`, `(binary)`, `(unset)`, array/object casts, and exact scalar cast
+overflow diagnostics.

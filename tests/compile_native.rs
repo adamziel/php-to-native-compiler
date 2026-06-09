@@ -469,6 +469,28 @@ fn parser_accepts_parenthesized_unary_and_cast_expressions() {
 }
 
 #[test]
+fn parser_distinguishes_non_canonical_boolean_cast() {
+    let program = parser::parse("<?php var_dump((boolean) 42, (bool) 42);").unwrap();
+    let Statement::Call { arguments, .. } = &program.statements[0] else {
+        panic!("expected call statement");
+    };
+    assert!(matches!(
+        &arguments[0],
+        Expr::Cast {
+            kind: CastKind::Boolean,
+            ..
+        }
+    ));
+    assert!(matches!(
+        &arguments[1],
+        Expr::Cast {
+            kind: CastKind::Bool,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn parser_preserves_parenthesized_expression_grouping() {
     let program = parser::parse("<?php echo (1), ($name), (1 + 2), ((\"a\" . \"b\"));").unwrap();
     let Statement::Echo { expressions, .. } = &program.statements[0] else {
@@ -2568,6 +2590,25 @@ fn compile_unary_parenthesized_and_cast_expressions_to_native_binary() {
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "-5\n1 \n42.5 1\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_non_canonical_boolean_cast_phpt_shape_to_native_binary() {
+    let root = temp_dir("ptn-native-non-canonical-boolean-cast");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("non-canonical-boolean-cast.php");
+    let output = root.join("non-canonical-boolean-cast-bin");
+    fs::write(&input, "<?php\n\nvar_dump((boolean) 42);\n").unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Deprecated: Non-canonical cast (boolean) is deprecated, use the (bool) cast instead in ptn on line 3\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

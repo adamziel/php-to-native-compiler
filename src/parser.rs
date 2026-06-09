@@ -574,6 +574,7 @@ impl Parser {
             TokenKind::FloatType => Some(CastKind::Float),
             TokenKind::StringType => Some(CastKind::String),
             TokenKind::BoolType => Some(CastKind::Bool),
+            TokenKind::BooleanType => Some(CastKind::Boolean),
             _ => None,
         }
     }

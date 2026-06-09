@@ -315,7 +315,7 @@ impl ValueEmitter {
                 out.push_str(");\n");
                 result_temp
             }
-            ValueExpr::Cast { kind, expr } => {
+            ValueExpr::Cast { kind, expr, line } => {
                 let expr_temp = self.emit_materialized_value(out, expr);
                 let result_temp = self.next_temp();
                 out.push_str("    PtnValue ");
@@ -326,9 +326,17 @@ impl ValueEmitter {
                     CastKind::Float => "ptn_cast_float",
                     CastKind::String => "ptn_cast_string",
                     CastKind::Bool => "ptn_cast_bool",
+                    CastKind::Boolean => "ptn_cast_boolean",
                 });
                 out.push('(');
-                out.push_str(&expr_temp);
+                if matches!(kind, CastKind::Boolean) {
+                    out.push_str("&runtime, ");
+                    out.push_str(&expr_temp);
+                    out.push_str(", ");
+                    out.push_str(&line.to_string());
+                } else {
+                    out.push_str(&expr_temp);
+                }
                 out.push_str(");\n");
                 result_temp
             }
@@ -1582,6 +1590,15 @@ static PTN_UNUSED PtnValue ptn_cast_string(PtnValue value) {
 
 static PTN_UNUSED PtnValue ptn_cast_bool(PtnValue value) {
     return ptn_bool(ptn_is_truthy(value));
+}
+
+static PTN_UNUSED PtnValue ptn_cast_boolean(PtnRuntime *runtime, PtnValue value, size_t line) {
+    ptn_emit_deprecation(
+        &runtime->diagnostics,
+        "Non-canonical cast (boolean) is deprecated, use the (bool) cast instead",
+        line
+    );
+    return ptn_cast_bool(value);
 }
 
 static PTN_UNUSED PtnValue ptn_gettype_value(PtnValue value) {

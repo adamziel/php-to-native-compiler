@@ -77,6 +77,7 @@ pub enum TokenKind {
     FloatType,
     StringType,
     BoolType,
+    BooleanType,
     Eof,
 }
 
@@ -602,6 +603,7 @@ impl<'a> Lexer<'a> {
             "float" => TokenKind::FloatType,
             "string" => TokenKind::StringType,
             "bool" => TokenKind::BoolType,
+            "boolean" => TokenKind::BooleanType,
             _ => TokenKind::Identifier(text),
         };
         self.tokens.push(Token {

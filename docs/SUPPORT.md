@@ -45,8 +45,8 @@ supports in generated native binaries.
 - Unary bitwise `~` over supported boxed scalar values. String operands produce
   bytewise string results for non-NUL string data; other supported scalar
   operands are converted to integers through the current scalar numeric path.
-- Scalar `(int)`, `(float)`, `(string)`, and `(bool)` casts over supported boxed
-  scalar values.
+- Scalar `(int)`, `(float)`, `(string)`, `(bool)`, and deprecated
+  non-canonical `(boolean)` casts over supported boxed scalar values.
 - Boxed scalar comparison operators `==`, `!=`, `===`, `!==`, `<`, `<=`, `>`,
   and `>=`. Strict scalar identity compares type and value without coercion.
   Numeric comparisons involving `NAN` are treated as unordered, so equality and
@@ -213,6 +213,7 @@ supports in generated native binaries.
 - PHP-exact `error_reporting()` configuration/filtering behavior.
 - PHP-exact `getmypid()` process model parity across SAPIs and unsupported
   platforms.
+- Non-canonical cast spellings beyond `(boolean)`.
 - PHP-exact file names, line numbers, error-handler routing, and overflow
   parity for bitwise integer-conversion diagnostics, including shift
   diagnostics.
