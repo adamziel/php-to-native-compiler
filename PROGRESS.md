@@ -1,12 +1,12 @@
 # PTN Progress
 
-Last refresh: 2026-06-09T17:45Z
-Commit: pending `ptn-cqu.47.11` rebased after `ptn-cqu.47.6`
+Last refresh: 2026-06-09T17:54Z
+Measured base: `ptn-cqu.47.11` rebased after `ptn-cqu.47.6`
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
-| --- | ---: | ---: | --- |
+| --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
 | Native compiled PHP snippets | 287 | 287 | 0 |
 | PHPT parsed bounded log | 171 | 121 | 50 |
@@ -15,45 +15,38 @@ Commit: pending `ptn-cqu.47.11` rebased after `ptn-cqu.47.6`
 | PHPT tests/basic+func+lang | 18 | 17 | 1 |
 | COW contract spec tests | 5 | 5 | 0 |
 | COW-focused native tests | 5 | 5 | 0 |
-| PHPT COW manifest | 29 | 2 | 27 failed, 0 skipped, 0 warned |
-| Focused PHPT foreach COW row | 1 | 1 | by-reference foreach remains unsupported |
+| PHPT COW manifest | 29 | 2 | 27 |
+| Focused PHPT foreach COW row | 1 | 1 | 0 |
 
 ## COW PHPT Buckets
 
-`tools/phpt-cow-manifest.txt` at 2026-06-09T17:30Z: assignment-aliasing
-0/4, string-offsets 2/4, array-writes-appends-unset 0/4, nested-arrays 0/4,
-foreach-mutation 0/4, function-boundaries 0/4, reference-interaction 0/5.
-Focused local foreach by-value PHPT row: 1/1.
+`tools/phpt-cow-manifest.txt` at 2026-06-09T17:30Z:
+assignment-aliasing 0/4, string-offsets 2/4,
+array-writes-appends-unset 0/4, nested-arrays 0/4,
+foreach-mutation 0/4, function-boundaries 0/4,
+reference-interaction 0/5. Focused local foreach by-value PHPT row: 1/1.
 
 ## Already Ported
 
 Lexer/parser, AST, IR, C backend, boxed values, direct variables, constants,
-selected string/math/type internals, length-aware string helper paths for
-selected internals and scalar bitwise strings, ordered arrays and `foreach`,
-array cursor internals on direct variable ordered arrays, `array_values()` over
-ordered arrays, numeric-string array key normalization coverage, array payload
-refcounts with detach-on-write for named mutations and cursor-mutating internals,
-by-value `foreach` COW snapshots for append/unset and alias mutation visibility,
-generated C ABI share/drop handling for returns, temporaries, and call argument
-slots, top-level user functions with scoped `__FUNCTION__`/`__METHOD__` magic
-constants plus `func_num_args()`/`func_get_arg()`/`func_get_args()`
-introspection, `print_r`, selected binary-string handling, string offset read
-diagnostics, direct-variable string offset writes with append/unset/assign-op
-Error boundaries, catchable `count()` non-array diagnostics, and
-expression-form `??` reads over direct variables, arrays, and string offsets
-using quiet lookup semantics, and shared array/string payload COW with path
-detach for nested array assignment, append, and unset.
+selected string/math/type internals, ordered arrays and `foreach`, array cursor
+internals, `array_values()`, numeric-string array key normalization, array
+payload refcounts with detach-on-write, by-value `foreach` COW snapshots,
+generated C ABI share/drop handling, top-level user functions with scoped magic
+constants and `func_*` introspection, `print_r`, selected binary-string
+handling, string offset read diagnostics, direct-variable string offset writes,
+catchable `count()` non-array diagnostics, expression-form `??` reads, and
+nested array path detach for assignment, append, and unset.
 
 ## Still Needed
 
-Broader copy-on-write coverage for strings, references, function boundaries,
-by-reference foreach, and dynamic edges. Nested array path detach is present for
-assignment, append, and unset. All non-COW work is paused unless it is required
-to prove COW. Assignment-form null coalescing `??=` remains unsupported.
+Broader COW coverage for strings, references, function boundaries,
+by-reference foreach, and dynamic edges. All non-COW work is paused unless it
+directly proves COW correctness or COW evidence. Assignment-form `??=` remains
+unsupported.
 
 ## Next Focus
 
-1. Extend the COW suite into strings, references, and function boundaries.
-2. Carry array COW through additional by-reference/dynamic call paths.
-3. Prove by-reference foreach paths remain blocked or become implemented.
-4. Keep this dashboard numeric and under 500 words.
+1. Prove strings, references, and function boundaries.
+2. Carry COW through by-reference and dynamic call paths.
+3. Keep dashboard cells numeric and every status file under 500 words.
