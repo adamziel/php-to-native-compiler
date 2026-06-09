@@ -698,7 +698,7 @@ static PTN_UNUSED PtnLookupResult ptn_offset_lookup(PtnRuntime *runtime, PtnValu
 
     if (container.type != PTN_ARRAY) {
         if (!quiet) {
-            const char *prefix = "Trying to access array offset on value of type ";
+            const char *prefix = "Trying to access array offset on ";
             const char *type_name = ptn_offset_container_type_name(container);
             char message[128];
             int written = snprintf(message, sizeof(message), "%s%s", prefix, type_name);

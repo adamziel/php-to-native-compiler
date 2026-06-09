@@ -5323,7 +5323,40 @@ var_dump($value[0]);",
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "\nWarning: Undefined array key \"7.5\" in ptn on line 3\nNULL\n\nWarning: Undefined array key 0 in ptn on line 4\nNULL\n\nWarning: Trying to access array offset on value of type int in ptn on line 6\nNULL\n"
+        "\nWarning: Undefined array key \"7.5\" in ptn on line 3\nNULL\n\nWarning: Undefined array key 0 in ptn on line 4\nNULL\n\nWarning: Trying to access array offset on int in ptn on line 6\nNULL\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_scalar_offset_assignment_aliasing_to_native_binary() {
+    let root = temp_dir("ptn-native-scalar-offset-assignment-aliasing");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("scalar-offset-assignment-aliasing.php");
+    let output = root.join("scalar-offset-assignment-aliasing-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$float = 0.213123123;\n\
+$float_alias =& $float;\n\
+$float = $float[1];\n\
+var_dump($float);\n\
+var_dump($float_alias);\n\
+$int = 7;\n\
+$int_alias =& $int;\n\
+$int = $int[0];\n\
+var_dump($int);\n\
+var_dump($int_alias);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "\nWarning: Trying to access array offset on float in ptn on line 4\nNULL\nNULL\n\nWarning: Trying to access array offset on int in ptn on line 9\nNULL\nNULL\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

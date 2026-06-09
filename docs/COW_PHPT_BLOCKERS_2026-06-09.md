@@ -2,38 +2,42 @@
 
 Evidence base:
 
-- Refreshed at 2026-06-09T23:02Z on `9d5c6070073e`
-  (`origin/master`, `ptn-cqu.26`).
+- Refreshed at 2026-06-09T23:08Z on `ptn-4yt.5` rebased after
+  `9d5c6070073e` (`origin/master`, `ptn-cqu.26`).
 - No `tools/phpt-cow-manifest.txt` row changes were needed: 29 rows in seven
   buckets.
 - Before evidence from 2026-06-09T20:32Z: 29 total, 9 pass, 20 fail.
-- After evidence from 2026-06-09T23:02Z: 29 total, 9 pass, 20 fail.
+- After evidence from 2026-06-09T23:08Z: 29 total, 10 pass, 19 fail.
 - `tools/run-bounded-phpt.sh tools/phpt-cow-manifest.txt` still stops in the
   nested-arrays bucket because `Zend/tests/bug38469.phpt` exhausts
-  `run-tests.php` diff memory. The other rows were rerun bucket-wise; counting
-  `bug38469` as failing gives the manifest total.
+  `run-tests.php` diff memory. The other rows were rerun bucket-wise; 28 rows
+  excluding `bug38469` are 10 passing and 18 failing. Counting `bug38469` as
+  failing gives the manifest total.
+- Fixed rows after the latest merges: `assign_to_var_003` passes through shared
+  scalar offset diagnostics, `array_unshift_basic1` passes through a generic
+  mutating-internal implementation, and `foreach_reference` passes after
+  `array_reverse()` plus reindexing-internal reference unwraps.
 
 ## Focused COW Counts
 
 | Bucket | Total | Pass | Fail |
 | --- | ---: | ---: | ---: |
-| assignment-aliasing | 4 | 3 | 1 |
+| assignment-aliasing | 4 | 4 | 0 |
 | string-offsets | 4 | 2 | 2 |
 | array-writes-appends-unset | 4 | 3 | 1 |
 | nested-arrays | 4 | 0 | 4 |
 | foreach-mutation | 4 | 1 | 3 |
 | function-boundaries | 4 | 0 | 4 |
 | reference-interaction | 5 | 0 | 5 |
-| **Total** | **29** | **9** | **20** |
+| **Total** | **29** | **10** | **19** |
 
-Before and after bucket counts are unchanged from the 2026-06-09T20:32Z
-measurement.
+Assignment-aliasing improved from 3/4 to 4/4 since the 2026-06-09T20:32Z
+measurement. Other bucket pass counts are unchanged.
 
 ## Linked Generic Blocker Beads
 
 | Generic blocker | Rows held | Bead |
 | --- | ---: | --- |
-| PHP-exact assignment/offset diagnostics | 1 | `ptn-4yt.5` |
 | String offset reference diagnostics and mutation COW | 2 | `ptn-4yt.6` |
 | Overlapping array-dim compound assignment snapshots | 1 | `ptn-4yt.1` |
 | Nested recursive reference lvalues, recursive array internals, and cycle-safe dumps | 4 | `ptn-4yt.2` |
@@ -45,6 +49,7 @@ measurement.
 
 | Bucket | PHPT row | Generic fix | Compact reducer |
 | --- | --- | --- | --- |
+| assignment-aliasing | `Zend/tests/assign_to_var_003.phpt` | Non-array offset reads emit corpus-compatible `Trying to access array offset on <type>` diagnostics through `ptn_offset_lookup()`; assignment through reference aliases keeps the shared cell visible. | `scalar_offset_assignment_aliasing` |
 | array-writes-appends-unset | `ext/standard/tests/array/array_unshift_basic1.phpt` | `array_unshift()` mutates direct variable arrays, detaches shared payloads, prepends values, reindexes integer keys, and preserves string keys. | `array_unshift_shared_alias` |
 | foreach-mutation | `Zend/tests/foreach/foreach_reference.phpt` | `array_reverse()` is registered, and `array_values()`/`array_reverse()` unwrap single-owner references while preserving shared references. | `array_reindexing_internals_unwrap_single_owner_refs` |
 
@@ -55,6 +60,7 @@ temporary/read-slot reducers.
 
 | PHPT row | Compact reduction | Current result |
 | --- | --- | --- |
+| `Zend/tests/assign_to_var_003.phpt` | `$x=0.25; $alias=&$x; $x=$x[1];` | fixed |
 | `ext/standard/tests/array/array_unshift_basic1.phpt` | `$b=$a; array_unshift($b, 10);` | fixed |
 | `Zend/tests/foreach/foreach_reference.phpt` | by-reference `foreach`, then `array_values()` and `array_reverse()` | fixed |
 | `Zend/tests/assign_dim_op_same_var.phpt` | `$ary=[[]]; $ary[0]+=$ary; var_dump($ary[0]);` | still emits `int(1)`; needs overlapping array-dim assign-op snapshots |
@@ -68,7 +74,6 @@ temporary/read-slot reducers.
 
 | Bucket | PHPT row | Current generic blocker | Bead |
 | --- | --- | --- | --- |
-| assignment-aliasing | `Zend/tests/assign_to_var_003.phpt` | Value result is correct; float offset warning text differs. | `ptn-4yt.5` |
 | string-offsets | `Zend/tests/str_offset_002.phpt` | `&$a[0]` is rejected while PHP raises `Error`. | `ptn-4yt.6` |
 | string-offsets | `Zend/tests/string_offset_optimization.phpt` | Same string-offset reference form inside a function. | `ptn-4yt.6` |
 | array-writes-appends-unset | `Zend/tests/assign_dim_op_same_var.phpt` | Compound array union assignment with overlapping LHS/RHS yields `int(1)`. | `ptn-4yt.1` |

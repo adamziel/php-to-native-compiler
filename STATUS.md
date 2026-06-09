@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-09T23:02Z
-Measured base: `9d5c6070073e` (`ptn-cqu.26`) on `origin/master`
+Last refresh: 2026-06-09T23:08Z
+Measured base: `ptn-4yt.5` rebased after `9d5c6070073e` (`ptn-cqu.26`)
 
 ## Operating Goal
 
@@ -10,16 +10,16 @@ COW correctness or COW evidence.
 
 ## Current Signal
 
-Source unit tests: 4/4. Native compiled snippets: 312/312. Bounded PHPT
+Source unit tests: 4/4. Native compiled snippets: 313/313. Bounded PHPT
 manifest: 146/200. COW-focused native tests: 13/13. Focused PHPT COW manifest:
-9/29.
+10/29.
 
 ## Active Buckets
 
 | Bucket | Count |
 | --- | ---: |
 | Source unit tests | 4/4 |
-| Native compiled snippets | 312/312 |
+| Native compiled snippets | 313/313 |
 | PHPT bounded manifest | 146/200 |
 | PHPT Zend rows | 63/76 |
 | PHPT ext/standard rows | 48/77 |
@@ -28,7 +28,7 @@ manifest: 146/200. COW-focused native tests: 13/13. Focused PHPT COW manifest:
 | COW contract spec tests | 7/7 |
 | COW-focused native tests | 13/13 |
 | COW reducers/oracle/internals | 75/75 |
-| PHPT COW manifest | 9/29 |
+| PHPT COW manifest | 10/29 |
 
 ## Rules
 
