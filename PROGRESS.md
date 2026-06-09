@@ -1,7 +1,7 @@
 # PTN Progress
 
-Last refresh: 2026-06-09T17:45Z
-Commit: pending `ptn-cqu.47.11` rebased after `ptn-cqu.47.6`
+Last refresh: 2026-06-09T17:52Z
+Commit: pending `ptn-cqu.47.1` rebased after `ptn-cqu.47.11`
 
 ## Test Dashboard
 
@@ -15,6 +15,7 @@ Commit: pending `ptn-cqu.47.11` rebased after `ptn-cqu.47.6`
 | PHPT tests/basic+func+lang | 18 | 17 | 1 |
 | COW contract spec tests | 5 | 5 | 0 |
 | COW-focused native tests | 5 | 5 | 0 |
+| COW oracle suite | 12 | 10 | references 2 compile blockers |
 | PHPT COW manifest | 29 | 2 | 27 failed, 0 skipped, 0 warned |
 | Focused PHPT foreach COW row | 1 | 1 | by-reference foreach remains unsupported |
 
@@ -23,7 +24,9 @@ Commit: pending `ptn-cqu.47.11` rebased after `ptn-cqu.47.6`
 `tools/phpt-cow-manifest.txt` at 2026-06-09T17:30Z: assignment-aliasing
 0/4, string-offsets 2/4, array-writes-appends-unset 0/4, nested-arrays 0/4,
 foreach-mutation 0/4, function-boundaries 0/4, reference-interaction 0/5.
-Focused local foreach by-value PHPT row: 1/1.
+Focused local foreach by-value PHPT row: 1/1. Dedicated oracle
+`tests/cow_oracle.rs`: arrays 2/2, strings 1/1, foreach 2/2, functions 3/3,
+nested values 2/2, references 0/2.
 
 ## Already Ported
 
@@ -48,12 +51,14 @@ detach for nested array assignment, append, and unset.
 
 Broader copy-on-write coverage for strings, references, function boundaries,
 by-reference foreach, and dynamic edges. Nested array path detach is present for
-assignment, append, and unset. All non-COW work is paused unless it is required
-to prove COW. Assignment-form null coalescing `??=` remains unsupported.
+assignment, append, and unset. Oracle blockers are reference assignment syntax
+and by-reference foreach compilation/runtime support. All non-COW work is
+paused unless required to prove COW. Assignment-form null coalescing `??=`
+remains unsupported.
 
 ## Next Focus
 
-1. Extend the COW suite into strings, references, and function boundaries.
-2. Carry array COW through additional by-reference/dynamic call paths.
-3. Prove by-reference foreach paths remain blocked or become implemented.
+1. Add reference parsing/compiler/runtime support for COW blockers.
+2. Carry array COW through by-reference and dynamic call paths.
+3. Extend string, nested-value, and function-boundary oracle coverage.
 4. Keep this dashboard numeric and under 500 words.
