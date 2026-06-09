@@ -1931,3 +1931,18 @@ Optimized generated string concatenation runtime behavior:
 - A native benchmark with 6000 chained and compound concat loop iterations
   produced the same `46890 34890` output and improved from about `real
   1.35-1.37s` before the change to `real 0.84-0.87s` after the change.
+
+Optimized generated internal-function lookup:
+
+- The generated C internal-function registry is now kept sorted by ASCII
+  case-insensitive name and `ptn_find_internal_function()` uses binary search
+  instead of scanning the whole table for each lookup.
+- Native internal calls and `function_exists()` still share the same
+  registry-backed, case-insensitive lookup path and preserve the existing
+  handler table, argument-count diagnostics, and unsupported-function fatal
+  boundary.
+- Native tests cover lookup edges across the sorted registry, including
+  uppercase names, first/last entries, normal calls, and missing internals.
+- Added `tools/benchmark-internal-dispatch.sh` to compile and run a generated
+  native binary that repeatedly calls several internals without depending on
+  the PHP interpreter.

@@ -3408,15 +3408,24 @@ static PTN_UNUSED PtnValue ptn_is_scalar(PtnValue value) {
     );
 }
 
-static PTN_UNUSED int ptn_ascii_case_equal(const char *left, const char *right) {
+static PTN_UNUSED int ptn_ascii_case_compare(const char *left, const char *right) {
     while (*left != '\0' && *right != '\0') {
-        if (tolower((unsigned char)*left) != tolower((unsigned char)*right)) {
-            return 0;
+        int left_byte = tolower((unsigned char)*left);
+        int right_byte = tolower((unsigned char)*right);
+        if (left_byte != right_byte) {
+            return left_byte < right_byte ? -1 : 1;
         }
         left++;
         right++;
     }
-    return *left == '\0' && *right == '\0';
+    if (*left == '\0' && *right == '\0') {
+        return 0;
+    }
+    return *left == '\0' ? -1 : 1;
+}
+
+static PTN_UNUSED int ptn_ascii_case_equal(const char *left, const char *right) {
+    return ptn_ascii_case_compare(left, right) == 0;
 }
 
 static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out) {
@@ -4974,62 +4983,63 @@ static PtnValue ptn_internal_function_exists(PtnRuntime *runtime, size_t argc, c
 static PtnValue ptn_internal_array_key_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 
 static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
+    /* Keep sorted by ASCII case-insensitive name for ptn_find_internal_function. */
     static const PtnInternalFunction functions[] = {
-        { "var_dump", 1, PTN_VARIADIC_ARGS, ptn_internal_var_dump },
-        { "strlen", 1, 1, ptn_internal_strlen },
-        { "str_rot13", 1, 1, ptn_internal_str_rot13 },
-        { "strcmp", 2, 2, ptn_internal_strcmp },
-        { "str_contains", 2, 2, ptn_internal_str_contains },
-        { "str_starts_with", 2, 2, ptn_internal_str_starts_with },
-        { "str_ends_with", 2, 2, ptn_internal_str_ends_with },
-        { "quotemeta", 1, 1, ptn_internal_quotemeta },
-        { "chunk_split", 1, 3, ptn_internal_chunk_split },
-        { "strip_tags", 1, 1, ptn_internal_strip_tags },
-        { "md5", 1, 2, ptn_internal_md5 },
-        { "sha1", 1, 2, ptn_internal_sha1 },
-        { "substr", 2, 3, ptn_internal_substr },
-        { "dirname", 1, 1, ptn_internal_dirname },
-        { "bin2hex", 1, 1, ptn_internal_bin2hex },
-        { "hex2bin", 1, 1, ptn_internal_hex2bin },
-        { "quoted_printable_decode", 1, 1, ptn_internal_quoted_printable_decode },
-        { "soundex", 1, 1, ptn_internal_soundex },
-        { "ceil", 1, 1, ptn_internal_ceil },
-        { "floor", 1, 1, ptn_internal_floor },
         { "abs", 1, 1, ptn_internal_abs },
-        { "sqrt", 1, 1, ptn_internal_sqrt },
-        { "fdiv", 2, 2, ptn_internal_fdiv },
-        { "intdiv", 2, 2, ptn_internal_intdiv },
-        { "pi", 0, 0, ptn_internal_pi },
-        { "getrandmax", 0, 0, ptn_internal_getrandmax },
-        { "getmypid", 0, 0, ptn_internal_getmypid },
-        { "php_sapi_name", 0, 0, ptn_internal_php_sapi_name },
-        { "phpversion", 0, 1, ptn_internal_phpversion },
+        { "array_key_exists", 2, 2, ptn_internal_array_key_exists },
+        { "bin2hex", 1, 1, ptn_internal_bin2hex },
         { "bindec", 1, 1, ptn_internal_bindec },
-        { "hexdec", 1, 1, ptn_internal_hexdec },
-        { "octdec", 1, 1, ptn_internal_octdec },
-        { "intval", 1, 2, ptn_internal_intval },
+        { "ceil", 1, 1, ptn_internal_ceil },
         { "chr", 1, 1, ptn_internal_chr },
-        { "ord", 1, 1, ptn_internal_ord },
+        { "chunk_split", 1, 3, ptn_internal_chunk_split },
+        { "constant", 1, 1, ptn_internal_constant },
         { "count", 1, 1, ptn_internal_count },
+        { "define", 2, 2, ptn_internal_define },
+        { "defined", 1, 1, ptn_internal_defined },
+        { "dirname", 1, 1, ptn_internal_dirname },
         { "error_reporting", 0, 1, ptn_internal_error_reporting },
+        { "fdiv", 2, 2, ptn_internal_fdiv },
+        { "floor", 1, 1, ptn_internal_floor },
+        { "function_exists", 1, 1, ptn_internal_function_exists },
+        { "getmypid", 0, 0, ptn_internal_getmypid },
+        { "getrandmax", 0, 0, ptn_internal_getrandmax },
         { "gettype", 1, 1, ptn_internal_gettype },
-        { "is_null", 1, 1, ptn_internal_is_null },
+        { "hex2bin", 1, 1, ptn_internal_hex2bin },
+        { "hexdec", 1, 1, ptn_internal_hexdec },
+        { "intdiv", 2, 2, ptn_internal_intdiv },
+        { "intval", 1, 2, ptn_internal_intval },
         { "is_bool", 1, 1, ptn_internal_is_bool },
+        { "is_double", 1, 1, ptn_internal_is_float },
+        { "is_finite", 1, 1, ptn_internal_is_finite },
+        { "is_float", 1, 1, ptn_internal_is_float },
+        { "is_infinite", 1, 1, ptn_internal_is_infinite },
         { "is_int", 1, 1, ptn_internal_is_int },
         { "is_integer", 1, 1, ptn_internal_is_int },
         { "is_long", 1, 1, ptn_internal_is_int },
-        { "is_float", 1, 1, ptn_internal_is_float },
-        { "is_double", 1, 1, ptn_internal_is_float },
-        { "is_string", 1, 1, ptn_internal_is_string },
-        { "is_scalar", 1, 1, ptn_internal_is_scalar },
-        { "is_finite", 1, 1, ptn_internal_is_finite },
-        { "is_infinite", 1, 1, ptn_internal_is_infinite },
         { "is_nan", 1, 1, ptn_internal_is_nan },
-        { "define", 2, 2, ptn_internal_define },
-        { "constant", 1, 1, ptn_internal_constant },
-        { "defined", 1, 1, ptn_internal_defined },
-        { "function_exists", 1, 1, ptn_internal_function_exists },
-        { "array_key_exists", 2, 2, ptn_internal_array_key_exists },
+        { "is_null", 1, 1, ptn_internal_is_null },
+        { "is_scalar", 1, 1, ptn_internal_is_scalar },
+        { "is_string", 1, 1, ptn_internal_is_string },
+        { "md5", 1, 2, ptn_internal_md5 },
+        { "octdec", 1, 1, ptn_internal_octdec },
+        { "ord", 1, 1, ptn_internal_ord },
+        { "php_sapi_name", 0, 0, ptn_internal_php_sapi_name },
+        { "phpversion", 0, 1, ptn_internal_phpversion },
+        { "pi", 0, 0, ptn_internal_pi },
+        { "quoted_printable_decode", 1, 1, ptn_internal_quoted_printable_decode },
+        { "quotemeta", 1, 1, ptn_internal_quotemeta },
+        { "sha1", 1, 2, ptn_internal_sha1 },
+        { "soundex", 1, 1, ptn_internal_soundex },
+        { "sqrt", 1, 1, ptn_internal_sqrt },
+        { "str_contains", 2, 2, ptn_internal_str_contains },
+        { "str_ends_with", 2, 2, ptn_internal_str_ends_with },
+        { "str_rot13", 1, 1, ptn_internal_str_rot13 },
+        { "str_starts_with", 2, 2, ptn_internal_str_starts_with },
+        { "strcmp", 2, 2, ptn_internal_strcmp },
+        { "strip_tags", 1, 1, ptn_internal_strip_tags },
+        { "strlen", 1, 1, ptn_internal_strlen },
+        { "substr", 2, 3, ptn_internal_substr },
+        { "var_dump", 1, PTN_VARIADIC_ARGS, ptn_internal_var_dump },
     };
     *count = sizeof(functions) / sizeof(functions[0]);
     return functions;
@@ -5038,10 +5048,18 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
 static const PtnInternalFunction *ptn_find_internal_function(const char *name) {
     size_t count = 0;
     const PtnInternalFunction *functions = ptn_internal_functions(&count);
-    for (size_t i = 0; i < count; i++) {
-        const PtnInternalFunction *function = &functions[i];
-        if (ptn_ascii_case_equal(function->name, name)) {
-            return function;
+    size_t low = 0;
+    size_t high = count;
+    while (low < high) {
+        size_t mid = low + ((high - low) / 2);
+        int ordering = ptn_ascii_case_compare(name, functions[mid].name);
+        if (ordering == 0) {
+            return &functions[mid];
+        }
+        if (ordering < 0) {
+            high = mid;
+        } else {
+            low = mid + 1;
         }
     }
     return NULL;
