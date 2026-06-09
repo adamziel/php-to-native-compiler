@@ -2839,6 +2839,80 @@ fn compile_getmypid_registry_to_native_binary() {
 }
 
 #[test]
+fn compile_php_sapi_name_phpt_shape_to_native_binary() {
+    let root = temp_dir("ptn-native-php-sapi-name-phpt-shape");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("php-sapi-name.php");
+    let output = root.join("php-sapi-name-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+\n\
+var_dump(php_sapi_name());\n\
+?>",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(3) \"cli\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_phpversion_phpt_shape_to_native_binary() {
+    let root = temp_dir("ptn-native-phpversion-phpt-shape");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("phpversion.php");
+    let output = root.join("phpversion-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+\n\
+print phpversion();\n\
+print \"\\n\";\n\
+print phpversion('standard');\n\
+?>",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "8.4.0\n8.4.0");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_versioning_registry_and_unknown_extension_to_native_binary() {
+    let root = temp_dir("ptn-native-versioning-registry");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("versioning-registry.php");
+    let output = root.join("versioning-registry-bin");
+    fs::write(
+        &input,
+        "<?php var_dump(function_exists(\"php_sapi_name\"), function_exists(\"PHPVERSION\"), phpversion(\"STANDARD\"), phpversion(\"missing_extension\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nbool(true)\nstring(5) \"8.4.0\"\nbool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_symbol_existence_internal_functions_to_native_binary() {
     let root = temp_dir("ptn-native-symbol-existence-functions");
     fs::create_dir_all(&root).unwrap();

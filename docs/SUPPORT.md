@@ -110,7 +110,8 @@ supports in generated native binaries.
   `hex2bin(expr);`, `dirname(expr);`, `soundex(expr);`,
   `ceil(expr);`, `floor(expr);`, `sqrt(expr);`, `fdiv(expr, expr);`,
   `bindec(expr);`, `hexdec(expr);`, `octdec(expr);`, `pi();`,
-  `getrandmax();`, `getmypid();`, `intval(expr);`, `chr(expr);`, `ord(expr);`,
+  `getrandmax();`, `getmypid();`, `php_sapi_name();`,
+  `phpversion([extension]);`, `intval(expr);`, `chr(expr);`, `ord(expr);`,
   `is_finite(expr);`, `is_infinite(expr);`, `is_nan(expr);`, and
   `error_reporting(expr);`.
 - Expression-form internal calls for the currently registered scalar functions,
@@ -121,8 +122,8 @@ supports in generated native binaries.
   `hex2bin(expr)`, `dirname(expr)`, `soundex(expr)`, `ceil(expr)`,
   `floor(expr)`,
   `sqrt(expr)`, `fdiv(expr, expr)`, `bindec(expr)`, `hexdec(expr)`,
-  `octdec(expr)`, `pi()`, `getrandmax()`, `getmypid()`, `intval(expr)`,
-  `chr(expr)`, `ord(expr)`,
+  `octdec(expr)`, `pi()`, `getrandmax()`, `getmypid()`, `php_sapi_name()`,
+  `phpversion([extension])`, `intval(expr)`, `chr(expr)`, `ord(expr)`,
   `is_finite(expr)`, `is_infinite(expr)`, `is_nan(expr)`,
   `error_reporting(expr)`, `gettype(expr)`, and scalar `is_*` type
   predicates in echo operands, assignments, binary operands, and branch/loop
@@ -178,6 +179,10 @@ supports in generated native binaries.
 - `pi()` returns the modeled boxed float value of the `M_PI` constant.
 - `getrandmax()` returns the modeled maximum random integer.
 - `getmypid()` returns the generated native process id.
+- `php_sapi_name()` returns the modeled CLI SAPI name.
+- `phpversion()` returns the modeled PHP version string. The optional
+  extension argument returns the same version for `core`, `standard`, and an
+  empty extension name, and `false` for unmodeled extension names.
 - `bindec()`, `hexdec()`, and `octdec()` over current boxed scalar values after
   scalar string conversion. The runtime accepts matching `0b`, `0x`, and `0o`
   prefixes, ignores invalid base digits with a deprecation boundary, and
@@ -348,6 +353,8 @@ supports in generated native binaries.
 - PHP-exact `error_reporting()` configuration/filtering behavior.
 - PHP-exact `getmypid()` process model parity across SAPIs and unsupported
   platforms.
+- PHP-exact version, SAPI, and extension metadata beyond the modeled CLI/core/
+  standard boundary.
 - Cast spelling diagnostics beyond the currently modeled non-canonical aliases
   and removed `(real)`/`(unset)` plus expression-context `(void)` boundaries.
 - Statement-form `(void) expr;` casts.

@@ -35,7 +35,7 @@ Supported today:
   `dirname(expr)`, `soundex(expr)`, `ceil(expr)`, `floor(expr)`,
   `sqrt(expr)`, `fdiv(expr, expr)`, `bindec(expr)`, `hexdec(expr)`,
   `octdec(expr)`, `intval(expr[, base])`, `pi()`, `getrandmax()`,
-  `getmypid()`, `chr(expr)`,
+  `getmypid()`, `php_sapi_name()`, `phpversion([extension])`, `chr(expr)`,
   `ord(expr)`,
   `error_reporting(expr)`, `gettype(expr)`, scalar `is_*` type predicates,
   non-finite predicates such as `is_finite(expr)`, `is_infinite(expr)`, and
@@ -91,6 +91,9 @@ Supported today:
 - `pi()` as an expression returning the modeled boxed float value of `M_PI`.
 - `getrandmax()` as an expression returning the modeled maximum random integer.
 - `getmypid()` as an expression returning the generated native process id.
+- `php_sapi_name()` as an expression returning the modeled CLI SAPI name, and
+  `phpversion()`/`phpversion("standard")` as expressions returning the modeled
+  PHP version string.
 - `bindec()`, `hexdec()`, and `octdec()` as expressions over the current boxed
   scalar string-conversion result, accepting the matching PHP base prefix and
   returning integers or floats based on native integer range.
@@ -276,6 +279,7 @@ Unsupported today:
   null/string/unsupported type diagnostics, exact `sqrt()` negative/non-finite
   edge parity, exact `fdiv()` unsupported operand diagnostics, exact
   `getmypid()` process model parity across SAPIs and unsupported platforms,
+  exact PHP version/SAPI/extension metadata beyond the modeled CLI boundary,
   exact `error_reporting()` configuration/filtering behavior, unsupported cast
   spelling diagnostics beyond the currently modeled aliases and removed cast
   boundaries, statement-form `(void) expr;` casts, and full PHP

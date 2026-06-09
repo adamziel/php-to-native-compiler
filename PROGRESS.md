@@ -1549,3 +1549,23 @@ Still unsupported after this `chunk_split()` slice: embedded-NUL input and
 ending parity, exact non-positive length `ValueError` behavior, unsupported
 array/object/resource/reference operand diagnostics, and complete binary-string
 runtime parity.
+
+Added modeled versioning internals:
+
+- Registered `php_sapi_name()` and `phpversion()` through the generated C
+  internal-function registry, so normal calls and `function_exists()` share the
+  same case-insensitive lookup and argument-count checks.
+- `php_sapi_name()` returns the modeled CLI SAPI name for generated native
+  binaries.
+- `phpversion()` returns the modeled PHP version string for core, `standard`,
+  and empty extension names, and returns `false` for unmodeled extension names.
+- Native tests prove the public `php_sapi_name.phpt` and `phpversion.phpt`
+  source shapes, extension-name lookup, unknown-extension results, and registry
+  exposure.
+- Focused public PHPT telemetry through `phpc` passes
+  `ext/standard/tests/versioning/php_sapi_name.phpt` and
+  `ext/standard/tests/versioning/phpversion.phpt`.
+
+Still unsupported after this versioning slice: PHP-exact SAPI identity outside
+the modeled CLI runner boundary, exact PHP/extension version metadata,
+extension loading state, and versioning behavior for unsupported SAPIs.

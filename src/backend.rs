@@ -811,6 +811,9 @@ const RUNTIME_C: &str = r#"#include <ctype.h>
 #define PTN_UNUSED
 #endif
 
+#define PTN_PHP_VERSION "8.4.0"
+#define PTN_PHP_SAPI_NAME "cli"
+
 typedef struct PtnArray PtnArray;
 
 typedef enum {
@@ -3622,6 +3625,33 @@ static PtnValue ptn_internal_getmypid(PtnRuntime *runtime, size_t argc, const Pt
 #endif
 }
 
+static PtnValue ptn_internal_php_sapi_name(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_string(PTN_PHP_SAPI_NAME);
+}
+
+static PtnValue ptn_internal_phpversion(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)line;
+    if (argc == 0) {
+        return ptn_string(PTN_PHP_VERSION);
+    }
+
+    char *extension = ptn_value_to_string(args[0]);
+    int modeled_extension =
+        extension[0] == '\0' ||
+        ptn_ascii_case_equal(extension, "core") ||
+        ptn_ascii_case_equal(extension, "standard");
+    free(extension);
+    if (modeled_extension) {
+        return ptn_string(PTN_PHP_VERSION);
+    }
+    return ptn_bool(0);
+}
+
 static int ptn_digit_value_for_base(unsigned char byte, int base) {
     int value = -1;
     if (byte >= '0' && byte <= '9') {
@@ -3814,6 +3844,8 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "pi", 0, 0, ptn_internal_pi },
         { "getrandmax", 0, 0, ptn_internal_getrandmax },
         { "getmypid", 0, 0, ptn_internal_getmypid },
+        { "php_sapi_name", 0, 0, ptn_internal_php_sapi_name },
+        { "phpversion", 0, 1, ptn_internal_phpversion },
         { "bindec", 1, 1, ptn_internal_bindec },
         { "hexdec", 1, 1, ptn_internal_hexdec },
         { "octdec", 1, 1, ptn_internal_octdec },
