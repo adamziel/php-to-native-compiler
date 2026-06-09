@@ -1,14 +1,14 @@
 # PTN Progress
 
-Refresh: 2026-06-09T23:35Z
-Measured base: `ptn-4yt.8` rebased after `ptn-4yt.1` and `ptn-4yt.6`
+Refresh: 2026-06-09T23:53Z
+Measured branch: `ptn-4yt.9` rebased after `ptn-4yt.8`
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 4 | 4 | 0 |
-| Native compiled PHP snippets | 315 | 315 | 0 |
+| Native compiled PHP snippets | 318 | 318 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 146 | 54 |
 | PHPT Zend rows | 76 | 63 | 13 |
@@ -21,22 +21,21 @@ Measured base: `ptn-4yt.8` rebased after `ptn-4yt.1` and `ptn-4yt.6`
 | COW oracle suite | 22 | 22 | 0 |
 | By-reference foreach COW oracle | 11 | 11 | 0 |
 | Post-merge COW gate | 15 | 15 | 0 |
-| COW/reference-focused native tests | 11 | 11 | 0 |
+| COW/reference-focused native tests | 12 | 12 | 0 |
 | Mutating-internal COW matrix | 14 | 14 | 0 |
-| PHPT COW manifest | 29 | 14 | 15 |
+| PHPT COW manifest | 29 | 19 | 10 |
 | Focused PHPT foreach COW row | 1 | 1 | 0 |
 
 ## COW PHPT Buckets
 
-`tools/phpt-cow-manifest.txt` at 2026-06-09T23:35Z: 29 rows, 14 passing,
-15 failing. Bucket pass counts: assignment-aliasing 4/4, string-offsets 4/4,
-array-writes-appends-unset 4/4, nested-arrays 0/4, foreach-mutation 1/4,
-function-boundaries 1/4, reference-interaction 0/5. The full bounded runner
-still stops at `Zend/tests/bug38469.phpt`; that row is counted failing. Failing
-rows are bucketed in `docs/COW_PHPT_BLOCKERS_2026-06-09.md`. Native COW
-reducers are 28/28, by-reference foreach oracle is 11/11, mutating-internal
-matrix is 14/14 plus six unsupported target diagnostics, and the post-merge COW
-gate is 15/15.
+`tools/phpt-cow-manifest.txt` still has 29 rows. Reference-interaction improved
+from 0/5 on `origin/master` to 4/5 on `ptn-4yt.9`; total COW manifest evidence
+is now 19 passing, 10 failing. Bucket pass counts: assignment-aliasing 4/4,
+string-offsets 4/4, array-writes-appends-unset 4/4, nested-arrays 0/4,
+foreach-mutation 2/4, function-boundaries 1/4, reference-interaction 4/5.
+The full bounded runner still stops at `Zend/tests/bug38469.phpt`; that row is
+counted failing. Remaining blockers are tracked in
+`docs/COW_PHPT_BLOCKERS_2026-06-09.md`.
 
 ## Already Ported
 
@@ -49,13 +48,14 @@ binary strings, string offsets, corpus-style scalar offset diagnostics, array
 literal reference elements, array union `+`, scalar type hints, typed
 by-reference return separation, `count()`, `??`, COW gates/oracles, assignment
 expressions, expression-level `@` suppression, `file_put_contents()`,
-`sha1_file()`, and `unlink()` byte-file slices.
+`sha1_file()`, `unlink()` byte-file slices, reference-aware
+`array_sum()`/`strtr()`, and `debug_zval_dump()` reference inspection.
 
 ## Still Needed
 
-More PHPT COW rows, reference-aware internals, call-result references, broader
-by-reference returns, nested reference lvalues, recursive reference diagnostics,
-dynamic calls, and assignment-form `??=`. File API coverage remains narrow.
+More PHPT COW rows, call-result references, broader by-reference returns,
+nested reference lvalues, recursive reference diagnostics, dynamic calls, and
+assignment-form `??=`. File API coverage remains narrow.
 
 ## Next Focus
 

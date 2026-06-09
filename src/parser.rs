@@ -2383,10 +2383,10 @@ fn is_supported_global_const_expr(expr: &Expr) -> bool {
                 .key
                 .as_ref()
                 .is_none_or(is_supported_global_const_expr)
-                && matches!(
-                    &element.value,
-                    ArrayElementValue::Value(value) if is_supported_global_const_expr(value)
-                )
+                && match &element.value {
+                    ArrayElementValue::Value(value) => is_supported_global_const_expr(value),
+                    ArrayElementValue::Reference(_) => false,
+                }
         }),
         Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::Grouped { expr, .. } => {
             is_supported_global_const_expr(expr)
