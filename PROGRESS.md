@@ -3,8 +3,8 @@
 ## Progress Bar
 
 `[#########.] 51/59 PHPT rows passing`
-- Latest: Numeric string-offset PHPT blocker isolated with focused native
-  regression; PHPT snapshot remains 51/59.
+- Latest: Generated concat chains now lower through a single builder call that
+  allocates one joined output buffer; PHPT snapshot remains 51/59.
 - Tests ported/passing: 51/59
 - Commit: pending branch head
 
@@ -2205,3 +2205,32 @@ No new PHP surface is claimed by this performance slice. Objects, resources,
 references, copy-on-write behavior, binary-safe string storage, and complete
 comparison parity for unsupported value types remain outside the current boxed
 runtime boundary.
+
+Optimized generated concat-chain allocation:
+
+- The C backend now flattens `BinaryOp::Concat` trees before emission,
+  including the current direct-variable `.=` lowering when its right-hand side
+  is itself a concat chain.
+- Generated C materializes every concat operand left-to-right as boxed
+  `PtnValue`s, builds a local `PtnConcatOperand` array carrying each operand's
+  diagnostic line, and calls `ptn_concat_many()` once for the chain instead of
+  emitting nested `ptn_concat()` intermediates.
+- The runtime `ptn_concat_many()` reuses the existing concat string-conversion
+  and array-warning path, computes the total output length once, allocates one
+  joined output buffer, copies each borrowed/owned operand view into it, and
+  frees only owned scalar-conversion buffers. Generated sites provide fixed
+  stack scratch storage for operand views rather than allocating helper
+  metadata on the heap.
+- Native tests prove preserved output and warning order for plain concat
+  chains and `.=` chains, plus generated-C shape with two chain sites producing
+  two `ptn_concat_many(&runtime, ...)` calls and zero generated
+  `ptn_concat(&runtime, ...)` calls in `main`.
+- Full `cargo test` passed with 257 native/compiler tests. Short native
+  benchmark evidence from `tools/bench-native-execution.sh --runs 3` kept the
+  `string_work` output `19290 2e6a4d7a` with best runtime `0.026079s` and
+  samples `0.026956,0.026079,0.028062` in this workspace.
+
+No new PHP surface is claimed by this performance slice. Binary-safe string
+storage, references/copy-on-write, array/object/resource concatenation parity
+beyond the current warning boundary, and exact string-conversion diagnostics
+remain outside the current boxed runtime boundary.

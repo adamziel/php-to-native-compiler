@@ -1044,6 +1044,11 @@ struct ValueEmitter {
     user_function_names: Vec<String>,
 }
 
+struct ConcatOperand<'a> {
+    value: &'a ValueExpr,
+    line: usize,
+}
+
 impl ValueEmitter {
     fn new(source_file: &str, source_dir: &str, functions: &[FunctionDecl]) -> Self {
         Self {
@@ -1262,18 +1267,18 @@ impl ValueEmitter {
         line: usize,
     ) -> String {
         match op {
+            BinaryOp::Concat => self.emit_concat(out, left, right, line),
             BinaryOp::Add
             | BinaryOp::Subtract
             | BinaryOp::Multiply
             | BinaryOp::Power
             | BinaryOp::Divide
             | BinaryOp::Modulo
-            | BinaryOp::Concat
             | BinaryOp::BitwiseAnd
             | BinaryOp::BitwiseXor
             | BinaryOp::BitwiseOr
             | BinaryOp::ShiftLeft
-            | BinaryOp::ShiftRight => self.emit_runtime_binary(out, op, left, right, line),
+            | BinaryOp::ShiftRight => self.emit_runtime_binary(out, op, left, right),
             BinaryOp::Equal
             | BinaryOp::NotEqual
             | BinaryOp::Identical
@@ -1294,7 +1299,6 @@ impl ValueEmitter {
         op: BinaryOp,
         left: &ValueExpr,
         right: &ValueExpr,
-        line: usize,
     ) -> String {
         let left_temp = self.emit_materialized_value(out, left);
         let right_temp = self.emit_materialized_value(out, right);
@@ -1314,20 +1318,65 @@ impl ValueEmitter {
             BinaryOp::BitwiseOr => "ptn_bitwise_or",
             BinaryOp::ShiftLeft => "ptn_shift_left",
             BinaryOp::ShiftRight => "ptn_shift_right",
-            BinaryOp::Concat => "ptn_concat",
             _ => unreachable!(),
         });
         out.push('(');
-        if matches!(op, BinaryOp::Concat) {
-            out.push_str("&runtime, ");
-        }
         out.push_str(&left_temp);
         out.push_str(", ");
         out.push_str(&right_temp);
-        if matches!(op, BinaryOp::Concat) {
-            out.push_str(", ");
-            out.push_str(&line.to_string());
+        out.push_str(");\n");
+        result_temp
+    }
+
+    fn emit_concat(
+        &mut self,
+        out: &mut String,
+        left: &ValueExpr,
+        right: &ValueExpr,
+        line: usize,
+    ) -> String {
+        let mut operands = Vec::new();
+        collect_concat_operands(left, line, &mut operands);
+        collect_concat_operands(right, line, &mut operands);
+
+        let mut emitted_operands = Vec::with_capacity(operands.len());
+        for operand in operands {
+            let value_temp = self.emit_materialized_value(out, operand.value);
+            emitted_operands.push((value_temp, operand.line));
         }
+
+        let operands_temp = self.next_temp();
+        out.push_str("    PtnConcatOperand ");
+        out.push_str(&operands_temp);
+        out.push_str("[] = { ");
+        for (index, (value_temp, operand_line)) in emitted_operands.iter().enumerate() {
+            if index > 0 {
+                out.push_str(", ");
+            }
+            out.push_str("{ ");
+            out.push_str(value_temp);
+            out.push_str(", ");
+            out.push_str(&operand_line.to_string());
+            out.push_str(" }");
+        }
+        out.push_str(" };\n");
+
+        let strings_temp = self.next_temp();
+        out.push_str("    PtnStringOperand ");
+        out.push_str(&strings_temp);
+        out.push('[');
+        out.push_str(&emitted_operands.len().to_string());
+        out.push_str("];\n");
+
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_concat_many(&runtime, ");
+        out.push_str(&operands_temp);
+        out.push_str(", ");
+        out.push_str(&emitted_operands.len().to_string());
+        out.push_str(", ");
+        out.push_str(&strings_temp);
         out.push_str(");\n");
         result_temp
     }
@@ -1867,6 +1916,25 @@ impl ValueEmitter {
         let label = format!("{prefix}_{}", self.next_label);
         self.next_label += 1;
         label
+    }
+}
+
+fn collect_concat_operands<'a>(
+    value: &'a ValueExpr,
+    line: usize,
+    operands: &mut Vec<ConcatOperand<'a>>,
+) {
+    match value {
+        ValueExpr::Binary {
+            op: BinaryOp::Concat,
+            left,
+            right,
+            line: concat_line,
+        } => {
+            collect_concat_operands(left, *concat_line, operands);
+            collect_concat_operands(right, *concat_line, operands);
+        }
+        _ => operands.push(ConcatOperand { value, line }),
     }
 }
 

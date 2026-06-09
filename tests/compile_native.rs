@@ -5894,6 +5894,49 @@ echo strlen($chain), \" \", strlen($compound), \"\\n\";
 }
 
 #[test]
+fn compile_concat_chains_emit_single_builder_calls_to_native_binary() {
+    let root = temp_dir("ptn-native-concat-chain-builder");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("concat-chain-builder.php");
+    let output = root.join("concat-chain-builder-bin");
+    fs::write(
+        &input,
+        "<?php
+$a = [1];
+$b = [2];
+$text = $a . \"x\" . 42 . $b;
+$out = \"\";
+$i = 7;
+$out .= \"b\" . $i . \"|\";
+echo $text, \"\\n\", $out, \"\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Warning: Array to string conversion in ptn on line 4\n\
+Warning: Array to string conversion in ptn on line 4\n\
+Arrayx42Array\n\
+b7|\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    let main_start = c_source
+        .find("\nint main(void)")
+        .expect("generated C should contain main");
+    let main_body = &c_source[main_start..];
+    assert_eq!(main_body.matches("ptn_concat_many(&runtime").count(), 2);
+    assert!(!main_body.contains("ptn_concat(&runtime"));
+    assert!(main_body.contains("PtnConcatOperand"));
+}
+
+#[test]
 fn compile_array_concat_emits_string_conversion_warnings_to_native_binary() {
     let root = temp_dir("ptn-native-array-concat-warnings");
     fs::create_dir_all(&root).unwrap();

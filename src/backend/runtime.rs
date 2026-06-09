@@ -113,6 +113,11 @@ typedef struct {
 } PtnStringOperand;
 
 typedef struct {
+    PtnValue value;
+    size_t line;
+} PtnConcatOperand;
+
+typedef struct {
     char *name;
     PtnValue value;
 } PtnSymbol;
@@ -2574,13 +2579,24 @@ static PTN_UNUSED PtnStringOperand ptn_concat_string_operand(
     return ptn_value_to_string_operand(value);
 }
 
-static PTN_UNUSED PtnValue ptn_concat(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line) {
-    PtnStringOperand left_string = ptn_concat_string_operand(runtime, left, line);
-    PtnStringOperand right_string = ptn_concat_string_operand(runtime, right, line);
-    if (left_string.len > SIZE_MAX - right_string.len) {
-        ptn_abort_out_of_memory();
+static PTN_UNUSED PtnValue ptn_concat_many(
+    PtnRuntime *runtime,
+    const PtnConcatOperand *operands,
+    size_t count,
+    PtnStringOperand *strings
+) {
+    if (count == 0) {
+        return ptn_string("");
     }
-    size_t joined_len = left_string.len + right_string.len;
+
+    size_t joined_len = 0;
+    for (size_t i = 0; i < count; i++) {
+        strings[i] = ptn_concat_string_operand(runtime, operands[i].value, operands[i].line);
+        if (strings[i].len > SIZE_MAX - joined_len) {
+            ptn_abort_out_of_memory();
+        }
+        joined_len += strings[i].len;
+    }
     if (joined_len == SIZE_MAX) {
         ptn_abort_out_of_memory();
     }
@@ -2588,12 +2604,22 @@ static PTN_UNUSED PtnValue ptn_concat(PtnRuntime *runtime, PtnValue left, PtnVal
     if (joined == NULL) {
         ptn_abort_out_of_memory();
     }
-    memcpy(joined, left_string.data, left_string.len);
-    memcpy(joined + left_string.len, right_string.data, right_string.len);
+    size_t offset = 0;
+    for (size_t i = 0; i < count; i++) {
+        memcpy(joined + offset, strings[i].data, strings[i].len);
+        offset += strings[i].len;
+    }
     joined[joined_len] = '\0';
-    ptn_string_operand_free(left_string);
-    ptn_string_operand_free(right_string);
+    for (size_t i = 0; i < count; i++) {
+        ptn_string_operand_free(strings[i]);
+    }
     return ptn_owned_string(joined);
+}
+
+static PTN_UNUSED PtnValue ptn_concat(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line) {
+    PtnConcatOperand operands[] = { { left, line }, { right, line } };
+    PtnStringOperand strings[2];
+    return ptn_concat_many(runtime, operands, 2, strings);
 }
 
 static PTN_UNUSED PtnValue ptn_cast_string(PtnValue value) {
