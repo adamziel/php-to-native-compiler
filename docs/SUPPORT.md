@@ -113,6 +113,11 @@ supports in generated native binaries.
   calls are currently limited to direct variable arguments; temporary arrays,
   array offsets, and other non-variable cursor mutation targets fail before
   code generation with an explicit unsupported diagnostic.
+- Mutating array internals `array_pop($array)`, `array_push($array, ...)`, and
+  `array_shift($array)` over direct variable ordered arrays. These calls detach
+  shared array payloads before mutation; temporary arrays, array offsets, and
+  other non-direct-variable mutation targets fail before code generation with an
+  explicit unsupported diagnostic.
 - `isset(expr[, ...])` and `empty(expr)` over variables, array reads, string
   offset reads, and currently supported value expressions. Variable and offset
   operands use a quiet existence lookup: missing variables, missing offsets,

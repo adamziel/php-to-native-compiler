@@ -1,23 +1,24 @@
 # PTN Progress
 
-Last refresh: 2026-06-09T18:07Z
-Measured base: `ptn-cqu.47.8` rebased after `ptn-cqu.47.1`
+Last refresh: 2026-06-09T18:11Z
+Measured base: `ptn-cqu.47.14` rebased after `ptn-cqu.47.8`
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 4 | 4 | 0 |
-| Native compiled PHP snippets | 303 | 303 | 0 |
+| Native compiled PHP snippets | 304 | 304 | 0 |
 | PHPT parsed bounded log | 171 | 121 | 50 |
 | PHPT Zend rows | 76 | 60 | 16 |
 | PHPT ext/standard rows | 77 | 44 | 33 |
 | PHPT tests/basic+func+lang | 18 | 17 | 1 |
 | COW contract spec tests | 5 | 5 | 0 |
-| COW-focused native tests | 6 | 6 | 0 |
+| COW-focused native tests | 7 | 7 | 0 |
 | Focused COW reducer snippets | 16 | 16 | 0 |
 | COW oracle suite | 12 | 10 | 2 |
 | COW/reference-focused native tests | 10 | 10 | 0 |
+| Mutating-internal COW matrix | 12 | 12 | 0 |
 | PHPT COW manifest | 29 | 2 | 27 |
 | Focused PHPT foreach COW row | 1 | 1 | 0 |
 
@@ -30,22 +31,26 @@ foreach-mutation 0/4, function-boundaries 0/4,
 reference-interaction 0/5. Focused local foreach by-value PHPT row: 1/1.
 Native COW reducer matrix: 16 pass, 0 fail. Dedicated oracle
 `tests/cow_oracle.rs`: arrays 2/2, strings 1/1, foreach 2/2, functions 3/3,
-nested values 2/2, references 0/2.
+nested values 2/2, references 0/2. Mutating-internal matrix: 12 pass,
+0 fail plus five unsupported target diagnostics.
 
 ## Already Ported
 
 Lexer/parser, AST, IR, C backend, boxed values, direct variables, constants,
-selected internals, ordered arrays and `foreach`, array cursor internals,
-`array_values()`, numeric-string array key normalization, array payload
+selected string/math/type internals, ordered arrays and `foreach`, array cursor
+internals plus `array_pop()`/`array_push()`/`array_shift()` on direct variable
+arrays, `array_values()`, numeric-string array key normalization, array payload
 refcounts with detach-on-write, by-value `foreach` COW snapshots, generated C
 ABI share/drop handling, shared array/string payload COW with nested path
-detach, top-level user functions with scoped magic constants and `func_*`
+detach, direct variable reference aliases, array element references,
+by-reference user parameters, by-value parameter/reference split behavior,
+top-level user functions with scoped magic constants and `func_*`
 introspection, `print_r`, selected binary-string handling, string offset read
-diagnostics, direct-variable string offset writes, direct variable reference
-aliases, array element references, by-reference user parameters, by-value
-parameter/reference split behavior, catchable `count()` non-array diagnostics,
-expression-form `??` reads, focused native COW reducers, and COW oracle
-coverage.
+diagnostics, direct-variable string offset writes, catchable `count()`
+non-array diagnostics, expression-form `??` reads, nested array path detach for
+assignment, append, and unset, focused native COW reducers, COW oracle
+coverage, and five explicit unsupported diagnostics for non-variable mutating
+internals.
 
 ## Still Needed
 
