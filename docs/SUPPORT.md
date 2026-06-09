@@ -48,6 +48,8 @@ supports in generated native binaries.
 - Scalar `(int)`, `(float)`, `(string)`, `(bool)`, and deprecated
   non-canonical `(integer)`, `(double)`, `(binary)`, and `(boolean)` casts over
   supported boxed scalar values.
+- Removed `(real)` cast syntax is rejected with a source-spanned PHP-style
+  parse error through `phpc`.
 - Global-scope magic constants `__LINE__`, `__FILE__`, `__DIR__`,
   `__FUNCTION__`, `__METHOD__`, `__CLASS__`, `__TRAIT__`, and
   `__NAMESPACE__`. Scope-dependent names currently resolve to empty strings in
@@ -158,16 +160,18 @@ supports in generated native binaries.
   emitted switch or loop.
 - User labels such as `L1:` and `goto L1;` statements inside the currently
   generated main function.
-- Source-spanned compile diagnostics emitted through `phpc` use a PHP-style
-  fatal boundary with the source file and line. This currently covers duplicate
-  `default:` clauses in `switch`.
+- Source-spanned compile diagnostics emitted through `phpc` use PHP-style fatal
+  or parse-error boundaries with the source file and line. This currently
+  covers duplicate `default:` clauses in `switch` and removed `(real)` cast
+  syntax.
 - Statement-form direct variable increment/decrement: `$name++;`, `++$name;`,
   `$name--;`, and `--$name;`.
 
 ## Not Yet Supported
 
-- PHP-exact diagnostic formatting beyond source-spanned compile fatals, warning
-  file names, line numbers, error handlers, and error reporting configuration.
+- PHP-exact diagnostic formatting beyond source-spanned compile fatals and
+  parse errors, warning file names, line numbers, error handlers, and error
+  reporting configuration.
 - Full PHP numeric-string conversion warning parity, non-numeric string
   arithmetic diagnostics, exact division/modulo-by-zero exception behavior,
   exact numeric literal overflow/range parity, complete overflow parity, and

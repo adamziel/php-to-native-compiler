@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use ptn::{compile_file, CompileOptions, Diagnostic};
+use ptn::{compile_file, CompileOptions, Diagnostic, DiagnosticKind};
 
 fn main() {
     match run() {
@@ -55,7 +55,11 @@ impl std::fmt::Display for PhpcError {
             PhpcError::SourceFatal { diagnostic, script } => match diagnostic.span {
                 Some(span) => write!(
                     f,
-                    "Fatal error: {} in {} on line {}",
+                    "{}: {} in {} on line {}",
+                    match diagnostic.kind {
+                        DiagnosticKind::Fatal => "Fatal error",
+                        DiagnosticKind::ParseError => "Parse error",
+                    },
                     diagnostic.message,
                     script.display(),
                     span.line

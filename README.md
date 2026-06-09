@@ -105,6 +105,8 @@ Supported today:
   non-canonical `(integer)`, `(double)`, `(binary)`, and `(boolean)` casts for
   boxed scalar values. Unary, cast, and binary operations are emitted as runtime
   helper calls over `PtnValue` operands.
+- Removed `(real)` cast syntax is rejected with a source-spanned PHP-style
+  parse error through the `phpc` runner.
 - Global-scope magic constants `__LINE__`, `__FILE__`, `__DIR__`,
   `__FUNCTION__`, `__METHOD__`, `__CLASS__`, `__TRAIT__`, and
   `__NAMESPACE__`. Scope-dependent names currently resolve to empty strings in
@@ -180,8 +182,7 @@ Unsupported today:
   null/string/unsupported type diagnostics, exact `sqrt()` negative/non-finite
   edge parity, exact `getmypid()` process model parity across SAPIs and
   unsupported platforms, exact `error_reporting()` configuration/filtering
-  behavior, non-canonical cast spellings beyond `(integer)`, `(double)`,
-  `(binary)`, and `(boolean)`, and full PHP
+  behavior, unsupported cast spellings such as `(unset)`, and full PHP
   precision/formatting edge cases for
   `var_dump()`/`strlen()`/`bin2hex()`/`hex2bin()`/`soundex()`/base-conversion
   internals, scope-aware magic constants inside functions/classes/namespaces/

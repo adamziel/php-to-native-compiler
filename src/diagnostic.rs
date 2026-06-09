@@ -23,6 +23,13 @@ impl SourceSpan {
 pub struct Diagnostic {
     pub message: String,
     pub span: Option<SourceSpan>,
+    pub kind: DiagnosticKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiagnosticKind {
+    Fatal,
+    ParseError,
 }
 
 impl Diagnostic {
@@ -30,6 +37,15 @@ impl Diagnostic {
         Self {
             message: message.into(),
             span,
+            kind: DiagnosticKind::Fatal,
+        }
+    }
+
+    pub fn parse_error(message: impl Into<String>, span: Option<SourceSpan>) -> Self {
+        Self {
+            message: message.into(),
+            span,
+            kind: DiagnosticKind::ParseError,
         }
     }
 }

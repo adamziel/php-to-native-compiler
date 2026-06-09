@@ -58,6 +58,9 @@ Current runtime/compiler slices:
   nodes. The C backend emits boxed runtime helper calls such as `ptn_positive`,
   `ptn_negate`, `ptn_not`, `ptn_bitwise_not`, and
   `ptn_cast_*`.
+- Removed cast syntax such as `(real)` stays at the parser diagnostic boundary.
+  It does not lower as a runtime cast; the parser returns a source-spanned
+  parse-error diagnostic that `phpc` renders with PHP's parse-error prefix.
 - Double-quoted strings with direct `$name` interpolation lower to ordinary
   value-expression concatenation: literal string segments, runtime variable
   reads, scalar string casts, and the existing boxed concat helper. Complex and

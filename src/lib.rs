@@ -7,4 +7,4 @@ pub mod lexer;
 pub mod parser;
 
 pub use compiler::{compile_file, CompileOptions, CompileOutput};
-pub use diagnostic::{Diagnostic, Result};
+pub use diagnostic::{Diagnostic, DiagnosticKind, Result};

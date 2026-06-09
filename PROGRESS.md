@@ -1024,3 +1024,20 @@ restrictions for jumps into or out of forbidden scopes, labels/goto inside
 unsupported functions/classes/try/finally constructs, alternate control-flow
 syntax, `continue`, `foreach`, explicit-level `break`, and unbraced loop/switch
 bodies.
+
+Added source-spanned parse diagnostics for removed `(real)` casts:
+
+- Compiler diagnostics now carry a generic kind so `phpc` can render
+  source-spanned parser errors as `Parse error:` while preserving existing
+  source-spanned compiler fatals as `Fatal error:`.
+- The parser recognizes only the exact removed cast-prefix syntax `(real)` at
+  the cast boundary, reports PHP's canonical removal message, and does not
+  lower it as a runtime cast or deprecated alias.
+- Native/CLI tests prove the parser diagnostic kind and `phpc` parse-error
+  rendering while preserving duplicate-switch-default fatal rendering.
+- Focused public PHPT telemetry through `phpc` passes
+  `Zend/tests/type_coercion/type_casts/real_cast.phpt`.
+
+Still unsupported after this parse-diagnostic slice: broader parse-error
+wording parity, `(unset)`, array/object casts, stack traces, error-handler
+routing, and PHP-exact warning/notice formatting.
