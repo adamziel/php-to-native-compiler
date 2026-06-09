@@ -670,6 +670,12 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
         "Cannot redeclare function array_key_exists()"
     );
 
+    let error = parser::parse("<?php function End($array) { return $array; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function end()");
+
+    let error = parser::parse("<?php function Prev($array) { return $array; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function prev()");
+
     let error = parser::parse("<?php function Print_R($value) { return $value; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function print_r()");
 }
@@ -5027,9 +5033,24 @@ $items = [\"a\" => \"apple\", \"b\" => \"book\", \"c\" => \"cook\"];\n\
 var_dump(current($items));\n\
 var_dump(key($items));\n\
 var_dump(next($items));\n\
+var_dump(current($items));\n\
+var_dump(key($items));\n\
+var_dump(end($items));\n\
+var_dump(key($items));\n\
+var_dump(prev($items));\n\
+var_dump(key($items));\n\
+var_dump(next($items));\n\
+var_dump(next($items));\n\
+var_dump(prev($items));\n\
 var_dump(key($items));\n\
 var_dump(reset($items));\n\
 var_dump(key($items));\n\
+$empty = [];\n\
+var_dump(current($empty));\n\
+var_dump(key($empty));\n\
+var_dump(end($empty));\n\
+var_dump(prev($empty));\n\
+var_dump(reset($empty));\n\
 $numbers = [1, 2, 3];\n\
 var_dump(array_pop($numbers));\n\
 var_dump(array_push($numbers, 4, 5));\n\
@@ -5046,7 +5067,7 @@ var_dump(array_shift($copy));\n\
 var_dump($copy_source[0]);\n\
 foreach ($copy_source as $sub) { array_shift($sub); }\n\
 var_dump($copy_source[1]);\n\
-var_dump(function_exists(\"ARRAY_POP\"), function_exists(\"current\"), function_exists(\"reset\"));",
+var_dump(function_exists(\"ARRAY_POP\"), function_exists(\"current\"), function_exists(\"end\"), function_exists(\"prev\"), function_exists(\"reset\"));",
     )
     .unwrap();
 
@@ -5056,9 +5077,36 @@ var_dump(function_exists(\"ARRAY_POP\"), function_exists(\"current\"), function_
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "string(5) \"apple\"\nstring(1) \"a\"\nstring(4) \"book\"\nstring(1) \"b\"\nstring(5) \"apple\"\nstring(1) \"a\"\nint(3)\nint(4)\narray(4) {\n  [0]=>\n  int(1)\n  [1]=>\n  int(2)\n  [2]=>\n  int(4)\n  [3]=>\n  int(5)\n}\nstring(5) \"fubar\"\narray(2) {\n  [3]=>\n  string(3) \"foo\"\n  [4]=>\n  string(3) \"bar\"\n}\nstring(2) \"ex\"\narray(3) {\n  [0]=>\n  string(4) \"four\"\n  [1]=>\n  string(4) \"nine\"\n  [\"z\"]=>\n  string(3) \"zed\"\n}\nint(10)\narray(2) {\n  [0]=>\n  int(10)\n  [1]=>\n  int(20)\n}\narray(2) {\n  [0]=>\n  int(30)\n  [1]=>\n  int(40)\n}\nbool(true)\nbool(true)\nbool(true)\n"
+        "string(5) \"apple\"\nstring(1) \"a\"\nstring(4) \"book\"\nstring(4) \"book\"\nstring(1) \"b\"\nstring(4) \"cook\"\nstring(1) \"c\"\nstring(4) \"book\"\nstring(1) \"b\"\nstring(4) \"cook\"\nbool(false)\nbool(false)\nNULL\nstring(5) \"apple\"\nstring(1) \"a\"\nbool(false)\nNULL\nbool(false)\nbool(false)\nbool(false)\nint(3)\nint(4)\narray(4) {\n  [0]=>\n  int(1)\n  [1]=>\n  int(2)\n  [2]=>\n  int(4)\n  [3]=>\n  int(5)\n}\nstring(5) \"fubar\"\narray(2) {\n  [3]=>\n  string(3) \"foo\"\n  [4]=>\n  string(3) \"bar\"\n}\nstring(2) \"ex\"\narray(3) {\n  [0]=>\n  string(4) \"four\"\n  [1]=>\n  string(4) \"nine\"\n  [\"z\"]=>\n  string(3) \"zed\"\n}\nint(10)\narray(2) {\n  [0]=>\n  int(10)\n  [1]=>\n  int(20)\n}\narray(2) {\n  [0]=>\n  int(30)\n  [1]=>\n  int(40)\n}\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn parser_rejects_temporary_array_cursor_mutation_calls() {
+    for (source, function) in [
+        ("<?php next([1, 2]);", "next"),
+        ("<?php var_dump(reset(array(1, 2)));", "reset"),
+        ("<?php $items = [[1], [2]]; end($items[0]);", "end"),
+        (
+            "<?php $items = [1, 2]; var_dump(prev(current($items)));",
+            "prev",
+        ),
+    ] {
+        let error = parser::parse(source).unwrap_err();
+        assert!(
+            error.message.contains(&format!(
+                "{function}() requires a direct variable array argument"
+            )),
+            "unexpected diagnostic for {function}: {}",
+            error.message
+        );
+        assert!(error
+            .message
+            .contains("temporary array cursor mutation is unsupported"));
+    }
+
+    parser::parse("<?php $items = [1, 2]; next(($items));").unwrap();
 }
 
 #[test]

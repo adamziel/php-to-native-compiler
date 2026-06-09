@@ -20,8 +20,9 @@ Commit: `ea176b8`
 Lexer/parser, AST, IR, C backend, boxed values, direct variables, constants,
 selected string/math/type internals, ordered arrays and `foreach`, top-level
 user functions with scoped `__FUNCTION__`/`__METHOD__` magic constants,
-`print_r`, selected binary-string handling, catchable `TypeError` for string
-offset reads, and catchable `count()` non-array diagnostics.
+`print_r`, array cursor internals on direct variable ordered arrays, selected
+binary-string handling, catchable `TypeError` for string offset reads, and
+catchable `count()` non-array diagnostics.
 
 ## Still Needed
 
