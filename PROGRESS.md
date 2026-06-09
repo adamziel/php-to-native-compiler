@@ -388,8 +388,8 @@ Added a bounded braced `do while` loop slice:
   `tests/lang/027.phpt`.
 
 Still unsupported for loops/control flow: unbraced and alternate syntax, `for`,
-`foreach`, `switch`, `break`, `continue`, loop-condition assignments and
-increment/decrement expressions, PHP-exact increment/decrement edge semantics,
+`foreach`, `break`, `continue`, loop-condition assignments and increment/
+decrement expressions, PHP-exact increment/decrement edge semantics,
 references, copy-on-write, and exception/finally loop edges.
 
 Added a scalar type-query internal-function slice:
@@ -413,3 +413,24 @@ Still unsupported for type-query internals: arrays, objects, resources,
 references, user-defined functions, PHP-exact argument diagnostics, and the
 broader standard-library `is_*` families such as filesystem, callable,
 iterable, countable, finite, infinite, and NaN checks.
+
+Added a bounded braced switch/case/default slice on the scalar bitwise head:
+
+- Lexer/parser/AST support for braced `switch (expr) { ... }`, `case expr:`,
+  one `default:`, and simple statement-form `break;`.
+- Switch bodies preserve source-order case groups for PHP fallthrough instead
+  of flattening cases into independent branches.
+- IR support for structured switch instructions carrying the lowered switch
+  expression, case expressions, default group, and nested statement bodies.
+- Generated C evaluates the switch expression once, compares case expressions
+  in source order through the existing boxed loose-comparison helper, jumps to
+  the matched case or default, preserves fallthrough, and lowers simple
+  `break;` to the innermost emitted switch/loop end label.
+- Native tests prove the public simple-switch shape, default fallthrough, and
+  that case expressions stop evaluating once a match is found.
+- Focused public PHPT telemetry through `phpc` passes `tests/lang/003.phpt`.
+
+Still unsupported after this switch slice: unbraced and alternate switch
+syntax, `break` with explicit levels such as `break 2`, `continue`, `for`,
+`foreach`, PHP-exact duplicate-default fatal formatting, arrays, objects,
+references, copy-on-write, and exception/finally control-flow edges.

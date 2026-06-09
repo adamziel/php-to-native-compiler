@@ -47,10 +47,25 @@ pub enum Statement {
         condition: Expr,
         span: SourceSpan,
     },
+    Switch {
+        expression: Expr,
+        cases: Vec<SwitchCase>,
+        span: SourceSpan,
+    },
+    Break {
+        span: SourceSpan,
+    },
     InlineHtml {
         content: String,
         span: SourceSpan,
     },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SwitchCase {
+    pub condition: Option<Expr>,
+    pub body: Vec<Statement>,
+    pub span: SourceSpan,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

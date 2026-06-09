@@ -14,14 +14,25 @@ pub fn emit_c(module: &Module) -> String {
     out.push_str("    ptn_runtime_init(&runtime);\n");
     let mut values = ValueEmitter::new();
     for instruction in &module.instructions {
-        emit_instruction(&mut out, &mut values, instruction);
+        emit_instruction(&mut out, &mut values, instruction, None);
     }
     out.push_str("    ptn_runtime_free(&runtime);\n");
     out.push_str("    return 0;\n}\n");
     out
 }
 
-fn emit_instruction(out: &mut String, values: &mut ValueEmitter, instruction: &Instruction) {
+#[derive(Clone, Copy)]
+enum BreakTarget<'a> {
+    NativeBreak,
+    Label(&'a str),
+}
+
+fn emit_instruction(
+    out: &mut String,
+    values: &mut ValueEmitter,
+    instruction: &Instruction,
+    break_target: Option<BreakTarget<'_>>,
+) {
     match instruction {
         Instruction::Store { name, value } => {
             let emitted_value = values.emit_value(out, value);
@@ -77,12 +88,12 @@ fn emit_instruction(out: &mut String, values: &mut ValueEmitter, instruction: &I
             out.push_str(&condition_temp);
             out.push_str(")) {\n");
             for body_instruction in then_body {
-                emit_instruction(out, values, body_instruction);
+                emit_instruction(out, values, body_instruction, break_target);
             }
             if !else_body.is_empty() {
                 out.push_str("    } else {\n");
                 for body_instruction in else_body {
-                    emit_instruction(out, values, body_instruction);
+                    emit_instruction(out, values, body_instruction, break_target);
                 }
             }
             out.push_str("    }\n");
@@ -96,14 +107,24 @@ fn emit_instruction(out: &mut String, values: &mut ValueEmitter, instruction: &I
             out.push_str("            break;\n");
             out.push_str("        }\n");
             for body_instruction in body {
-                emit_instruction(out, values, body_instruction);
+                emit_instruction(
+                    out,
+                    values,
+                    body_instruction,
+                    Some(BreakTarget::NativeBreak),
+                );
             }
             out.push_str("    }\n");
         }
         Instruction::DoWhile { body, condition } => {
             out.push_str("    while (1) {\n");
             for body_instruction in body {
-                emit_instruction(out, values, body_instruction);
+                emit_instruction(
+                    out,
+                    values,
+                    body_instruction,
+                    Some(BreakTarget::NativeBreak),
+                );
             }
             let condition_temp = values.emit_materialized_value(out, condition);
             out.push_str("        if (!ptn_is_truthy(");
@@ -113,7 +134,81 @@ fn emit_instruction(out: &mut String, values: &mut ValueEmitter, instruction: &I
             out.push_str("        }\n");
             out.push_str("    }\n");
         }
+        Instruction::Switch { expression, cases } => {
+            emit_switch(out, values, expression, cases);
+        }
+        Instruction::Break => match break_target {
+            Some(BreakTarget::NativeBreak) => {
+                out.push_str("    break;\n");
+            }
+            Some(BreakTarget::Label(label)) => {
+                out.push_str("    goto ");
+                out.push_str(label);
+                out.push_str(";\n");
+            }
+            None => {
+                out.push_str("    ptn_abort_control_error(\"Cannot 'break' 1 level\");\n");
+            }
+        },
     }
+}
+
+fn emit_switch(
+    out: &mut String,
+    values: &mut ValueEmitter,
+    expression: &ValueExpr,
+    cases: &[crate::ir::SwitchCase],
+) {
+    let end_label = values.next_label("ptn_switch_end");
+    let labels: Vec<String> = cases
+        .iter()
+        .map(|_| values.next_label("ptn_switch_case"))
+        .collect();
+    let switch_temp = values.emit_materialized_value(out, expression);
+    let mut default_label = None;
+
+    for (case, label) in cases.iter().zip(labels.iter()) {
+        if let Some(condition) = &case.condition {
+            out.push_str("    {\n");
+            let condition_temp = values.emit_materialized_value(out, condition);
+            out.push_str("        if (ptn_compare_equal(");
+            out.push_str(&switch_temp);
+            out.push_str(", ");
+            out.push_str(&condition_temp);
+            out.push_str(")) {\n");
+            out.push_str("            goto ");
+            out.push_str(label);
+            out.push_str(";\n");
+            out.push_str("        }\n");
+            out.push_str("    }\n");
+        } else {
+            default_label = Some(label.as_str());
+        }
+    }
+
+    out.push_str("    goto ");
+    out.push_str(default_label.unwrap_or(&end_label));
+    out.push_str(";\n");
+
+    for (case, label) in cases.iter().zip(labels.iter()) {
+        out.push_str("    ");
+        out.push_str(label);
+        out.push_str(":\n");
+        out.push_str("    ;\n");
+        for body_instruction in &case.body {
+            emit_instruction(
+                out,
+                values,
+                body_instruction,
+                Some(BreakTarget::Label(&end_label)),
+            );
+        }
+    }
+
+    out.push_str("    ");
+    out.push_str(&end_label);
+    out.push_str(":\n");
+    out.push_str("    ;\n");
 }
 
 pub fn compile_c(c_source: &str, output: &Path) -> Result<()> {
@@ -153,11 +248,15 @@ pub fn compile_c(c_source: &str, output: &Path) -> Result<()> {
 
 struct ValueEmitter {
     next_temp: usize,
+    next_label: usize,
 }
 
 impl ValueEmitter {
     fn new() -> Self {
-        Self { next_temp: 0 }
+        Self {
+            next_temp: 0,
+            next_label: 0,
+        }
     }
 
     fn emit_value(&mut self, out: &mut String, value: &ValueExpr) -> String {
@@ -415,6 +514,12 @@ impl ValueEmitter {
         let temp = format!("ptn_tmp_{}", self.next_temp);
         self.next_temp += 1;
         temp
+    }
+
+    fn next_label(&mut self, prefix: &str) -> String {
+        let label = format!("{prefix}_{}", self.next_label);
+        self.next_label += 1;
+        label
     }
 }
 
@@ -823,6 +928,13 @@ static PTN_UNUSED void ptn_abort_arithmetic_error(const char *message) {
     fputs(message, stderr);
     fputc('\n', stderr);
     exit(1);
+}
+
+static PTN_UNUSED void ptn_abort_control_error(const char *message) {
+    fputs("Fatal error: ", stderr);
+    fputs(message, stderr);
+    fputc('\n', stderr);
+    exit(255);
 }
 
 static PTN_UNUSED int ptn_is_number_type(PtnValue value) {

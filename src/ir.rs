@@ -36,6 +36,17 @@ pub enum Instruction {
         body: Vec<Instruction>,
         condition: ValueExpr,
     },
+    Switch {
+        expression: ValueExpr,
+        cases: Vec<SwitchCase>,
+    },
+    Break,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SwitchCase {
+    pub condition: Option<ValueExpr>,
+    pub body: Vec<Instruction>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -178,6 +189,23 @@ fn lower_statements(statements: &[Statement]) -> Vec<Instruction> {
                     body: lower_statements(body),
                     condition: lower_expr(condition),
                 });
+            }
+            Statement::Switch {
+                expression, cases, ..
+            } => {
+                instructions.push(Instruction::Switch {
+                    expression: lower_expr(expression),
+                    cases: cases
+                        .iter()
+                        .map(|case| SwitchCase {
+                            condition: case.condition.as_ref().map(lower_expr),
+                            body: lower_statements(&case.body),
+                        })
+                        .collect(),
+                });
+            }
+            Statement::Break { .. } => {
+                instructions.push(Instruction::Break);
             }
         }
     }

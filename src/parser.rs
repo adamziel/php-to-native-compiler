@@ -1,4 +1,6 @@
-use crate::ast::{AssignmentOp, BinaryOp, CastKind, Expr, IncDecOp, Program, Statement, UnaryOp};
+use crate::ast::{
+    AssignmentOp, BinaryOp, CastKind, Expr, IncDecOp, Program, Statement, SwitchCase, UnaryOp,
+};
 use crate::diagnostic::{Diagnostic, Result, SourceSpan};
 use crate::lexer::{lex, Token, TokenKind};
 
@@ -33,6 +35,8 @@ impl Parser {
             TokenKind::If => self.parse_if(),
             TokenKind::Do => self.parse_do_while(),
             TokenKind::While => self.parse_while(),
+            TokenKind::Switch => self.parse_switch(),
+            TokenKind::Break => self.parse_break(),
             TokenKind::PlusPlus | TokenKind::MinusMinus => self.parse_prefix_increment_statement(),
             TokenKind::Identifier(_) => self.parse_call_statement(),
             TokenKind::Variable(_) => self.parse_variable_statement(),
@@ -166,6 +170,72 @@ impl Parser {
             condition,
             span,
         })
+    }
+
+    fn parse_switch(&mut self) -> Result<Statement> {
+        let span = self.expect_switch()?;
+        self.expect_left_paren()?;
+        let expression = self.parse_expr()?;
+        self.expect_right_paren()?;
+        self.expect_left_brace()?;
+
+        let mut cases = Vec::new();
+        let mut seen_default = false;
+        while !matches!(self.peek().kind, TokenKind::RightBrace | TokenKind::Eof) {
+            let case_span = self.peek().span;
+            let condition = match self.peek().kind {
+                TokenKind::Case => {
+                    self.advance();
+                    let condition = self.parse_expr()?;
+                    self.expect_colon()?;
+                    Some(condition)
+                }
+                TokenKind::Default => {
+                    self.advance();
+                    if seen_default {
+                        return Err(Diagnostic::new(
+                            "switch statements may only contain one default clause",
+                            Some(case_span),
+                        ));
+                    }
+                    seen_default = true;
+                    self.expect_colon()?;
+                    None
+                }
+                _ => {
+                    return Err(Diagnostic::new(
+                        "expected switch case or default",
+                        Some(self.peek().span),
+                    ))
+                }
+            };
+
+            let mut body = Vec::new();
+            while !matches!(
+                self.peek().kind,
+                TokenKind::Case | TokenKind::Default | TokenKind::RightBrace | TokenKind::Eof
+            ) {
+                body.push(self.parse_statement()?);
+            }
+            cases.push(SwitchCase {
+                condition,
+                body,
+                span: case_span,
+            });
+        }
+
+        self.expect_right_brace()?;
+        Ok(Statement::Switch {
+            expression,
+            cases,
+            span,
+        })
+    }
+
+    fn parse_break(&mut self) -> Result<Statement> {
+        let span = self.expect_break()?;
+        self.expect_statement_terminator()?;
+        Ok(Statement::Break { span })
     }
 
     fn parse_call_statement(&mut self) -> Result<Statement> {
@@ -415,6 +485,24 @@ impl Parser {
         }
     }
 
+    fn expect_switch(&mut self) -> Result<SourceSpan> {
+        let token = self.advance();
+        if matches!(token.kind, TokenKind::Switch) {
+            Ok(token.span)
+        } else {
+            Err(Diagnostic::new("expected switch", Some(token.span)))
+        }
+    }
+
+    fn expect_break(&mut self) -> Result<SourceSpan> {
+        let token = self.advance();
+        if matches!(token.kind, TokenKind::Break) {
+            Ok(token.span)
+        } else {
+            Err(Diagnostic::new("expected break", Some(token.span)))
+        }
+    }
+
     fn expect_open_tag(&mut self) -> Result<()> {
         let token = self.advance();
         if matches!(token.kind, TokenKind::OpenTag) {
@@ -475,6 +563,15 @@ impl Parser {
                 "expected right parenthesis",
                 Some(token.span),
             ))
+        }
+    }
+
+    fn expect_colon(&mut self) -> Result<SourceSpan> {
+        let token = self.advance();
+        if matches!(token.kind, TokenKind::Colon) {
+            Ok(token.span)
+        } else {
+            Err(Diagnostic::new("expected colon", Some(token.span)))
         }
     }
 

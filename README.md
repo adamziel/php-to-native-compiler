@@ -65,6 +65,10 @@ Supported today:
 - Braced `do { statements } while (expr);` loops over the currently supported
   scalar expression and statement subset. The body executes before the
   condition is checked.
+- Braced `switch (expr) { case expr: ... default: ... }` statements over the
+  currently supported scalar expression and statement subset, including
+  source-order case matching with boxed loose comparison, PHP-style fallthrough,
+  one `default`, and simple `break;`.
 - Statement-form direct variable `++` and `--`, such as `$i++;` and `--$i;`,
   using the boxed numeric arithmetic helper path.
 
@@ -78,17 +82,19 @@ Unsupported today:
   PHP numeric-string and non-numeric string arithmetic diagnostics, exact
   division/modulo-by-zero exception behavior, complete comparison parity for
   unsupported types, spaceship comparison operator, bitwise `^`, `~`, shifts,
-  keyword boolean operators, chained comparison parse errors, unbraced and
-  alternate control-flow syntax, `for`, `foreach`, `switch`, `break`,
-  `continue`, increment/decrement as expressions, PHP-exact increment/
-  decrement semantics for strings/booleans and other edge values, complete
-  overflow parity, exact scalar cast overflow behavior, PHP-exact warning
-  text/file/line/error-handler behavior, inline HTML before `<?php` or between
-  PHP blocks, internal functions outside the registered scalar subset, arrays,
-  objects, resources, recursion, references, embedded NUL string handling, and
-  full PHP precision/formatting edge cases for `var_dump()`/`strlen()`, doc
-  comment retention, variable variables, and dynamic fallback. These are
-  architecture targets, not excuses for exact-shape hacks.
+  keyword boolean operators, chained comparison parse errors, unbraced and alternate
+  control-flow syntax, `for`, `foreach`, explicit-level `break`
+  such as `break 2`, `continue`, full switch parity for unsupported value
+  types and alternate syntax, increment/decrement as expressions, PHP-exact
+  increment/decrement semantics for strings/booleans and other edge values,
+  complete overflow parity, exact scalar cast overflow behavior, PHP-exact
+  warning text/file/line/error-handler behavior, inline HTML before `<?php` or
+  between PHP blocks, internal functions outside the registered scalar subset,
+  arrays, objects, resources, recursion, references, embedded NUL string
+  handling, and full PHP precision/formatting edge cases for
+  `var_dump()`/`strlen()`, doc comment retention, variable variables, and
+  dynamic fallback. These are architecture targets, not excuses for exact-shape
+  hacks.
 
 ## Build
 

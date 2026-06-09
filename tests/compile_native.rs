@@ -488,6 +488,40 @@ fn parser_accepts_braced_if_elseif_else_statements() {
 }
 
 #[test]
+fn parser_accepts_braced_switch_cases_default_and_break() {
+    let program = parser::parse(
+        "<?php $a = 1; switch ($a) { case 0: echo \"bad\"; break; case 1: echo \"good\"; break; default: echo \"bad\"; break; }",
+    )
+    .unwrap();
+
+    let Statement::Switch {
+        expression, cases, ..
+    } = &program.statements[1]
+    else {
+        panic!("expected switch statement");
+    };
+    assert!(matches!(expression, Expr::Variable(name, _) if name == "a"));
+    assert_eq!(cases.len(), 3);
+    assert!(matches!(cases[0].condition, Some(Expr::Int(0, _))));
+    assert!(matches!(cases[1].condition, Some(Expr::Int(1, _))));
+    assert!(cases[2].condition.is_none());
+    assert!(matches!(
+        cases[1].body.last(),
+        Some(Statement::Break { .. })
+    ));
+}
+
+#[test]
+fn parser_rejects_multiple_switch_defaults() {
+    let error =
+        parser::parse("<?php switch (1) { default: echo 1; break; default: echo 2; break; }")
+            .unwrap_err();
+    assert!(error
+        .message
+        .contains("switch statements may only contain one default clause"));
+}
+
+#[test]
 fn compile_echo_program_to_native_binary() {
     let root = temp_dir("ptn-native-echo");
     fs::create_dir_all(&root).unwrap();
@@ -940,6 +974,72 @@ fn compile_if_condition_evaluates_before_selected_branch_to_native_binary() {
         String::from_utf8(execution.stderr).unwrap(),
         "Warning: Undefined variable $missing\n"
     );
+}
+
+#[test]
+fn compile_braced_switch_to_native_binary() {
+    let root = temp_dir("ptn-native-switch-basic");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("switch-basic.php");
+    let output = root.join("switch-basic-bin");
+    fs::write(
+        &input,
+        "<?php $a = 1; switch($a) { case 0: echo \"bad\"; break; case 1: echo \"good\"; break; default: echo \"bad\"; break; } ?>",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "good");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_switch_default_and_case_fallthrough_to_native_binary() {
+    let root = temp_dir("ptn-native-switch-fallthrough");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("switch-fallthrough.php");
+    let output = root.join("switch-fallthrough-bin");
+    fs::write(
+        &input,
+        "<?php switch (\"x\") { case \"y\": echo \"bad\"; break; default: echo \"default\"; case \"z\": echo \" fall\"; break; } echo \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "default fall\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_switch_evaluates_subject_and_cases_until_match() {
+    let root = temp_dir("ptn-native-switch-evaluation-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("switch-evaluation-order.php");
+    let output = root.join("switch-evaluation-order-bin");
+    fs::write(
+        &input,
+        "<?php switch (var_dump(\"subject\")) { case var_dump(\"case1\"): echo \"matched\\n\"; break; case var_dump(\"case2\"): echo \"bad\\n\"; break; }",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(7) \"subject\"\nstring(5) \"case1\"\nmatched\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

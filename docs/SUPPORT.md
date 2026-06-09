@@ -70,6 +70,12 @@ supports in generated native binaries.
 - Braced `do { statements } while (expr);` loops where the body and condition
   use the currently supported scalar expression and statement subset. The body
   executes once before the first condition check.
+- Braced `switch (expr) { case expr: ... default: ... }` statements over the
+  currently supported scalar expression and statement subset. The generated
+  native code evaluates the switch expression once, compares case expressions
+  in source order with boxed loose `==` semantics, honors a single `default`,
+  allows PHP-style fallthrough, and supports simple `break;` from the innermost
+  emitted switch or loop.
 - Statement-form direct variable increment/decrement: `$name++;`, `++$name;`,
   `$name--;`, and `--$name;`.
 
@@ -88,8 +94,11 @@ supports in generated native binaries.
   chained comparison parse errors, and complete comparison parity for
   unsupported value types.
 - Unbraced control-flow statements, alternate control-flow syntax, `for`,
-  `foreach`, `switch`, `break`, `continue`, branch-condition assignments, and
-  exception/finally control-flow edges.
+  `foreach`, `break` with an explicit level such as `break 2`, `continue`,
+  branch-condition assignments, and exception/finally control-flow edges.
+- Switch alternate syntax, multiple `default` runtime diagnostic parity, and
+  switch behavior for arrays, objects, references, copy-on-write, and
+  exceptions.
 - Increment/decrement as expressions, including pre/post result values in echo,
   assignment, binary operands, function arguments, or branch conditions.
 - PHP-exact increment/decrement semantics for strings, booleans, arrays,
