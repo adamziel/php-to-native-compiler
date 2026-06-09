@@ -59,6 +59,45 @@ static PTN_UNUSED PtnValue *ptn_symbols_get_slot(PtnSymbolTable *symbols, const 
     return ptn_symbols_value_slot(symbols, name);
 }
 
+static PTN_UNUSED PtnSymbol *ptn_symbols_slot_for_write(PtnSymbolTable *symbols, const char *name) {
+    ptn_symbols_ensure_index(symbols, symbols->len + 1);
+    size_t index = ptn_symbols_find(symbols, name);
+    if (index < symbols->len) {
+        return &symbols->items[index];
+    }
+    if (symbols->len == symbols->capacity) {
+        size_t new_capacity = symbols->capacity == 0 ? 8 : symbols->capacity * 2;
+        PtnSymbol *new_items = realloc(symbols->items, new_capacity * sizeof(PtnSymbol));
+        if (new_items == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        symbols->items = new_items;
+        symbols->capacity = new_capacity;
+    }
+    size_t symbol_index = symbols->len;
+    symbols->items[symbol_index].name = ptn_duplicate_string(name);
+    symbols->items[symbol_index].value = ptn_null();
+    symbols->len++;
+    ptn_symbol_index_insert(symbols, name, symbol_index);
+    return &symbols->items[symbol_index];
+}
+
+static PTN_UNUSED PtnValue ptn_symbols_reference_for_variable(PtnSymbolTable *symbols, const char *name) {
+    PtnSymbol *symbol = ptn_symbols_slot_for_write(symbols, name);
+    if (symbol->value.type != PTN_REFERENCE) {
+        PtnValue current = symbol->value;
+        PtnReference *reference = ptn_reference_new_owned(current);
+        symbol->value = ptn_reference_value(reference);
+    }
+    return ptn_value_clone(symbol->value);
+}
+
+static PTN_UNUSED void ptn_symbols_bind_reference(PtnSymbolTable *symbols, const char *name, PtnValue reference) {
+    PtnSymbol *symbol = ptn_symbols_slot_for_write(symbols, name);
+    ptn_value_destroy(&symbol->value);
+    symbol->value = ptn_value_clone(reference);
+}
+
 static PTN_UNUSED void ptn_symbols_unset(PtnSymbolTable *symbols, const char *name) {
     size_t index = ptn_symbols_find(symbols, name);
     if (index >= symbols->len) {

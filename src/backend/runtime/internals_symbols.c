@@ -45,6 +45,37 @@ static PTN_UNUSED void ptn_exception_free(PtnException *exception) {
     free(exception);
 }
 
+static PTN_UNUSED PtnReference *ptn_reference_new_owned(PtnValue value) {
+    PtnReference *reference = malloc(sizeof(PtnReference));
+    if (reference == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    reference->refcount = 1;
+    reference->value = value;
+    return reference;
+}
+
+static PTN_UNUSED void ptn_reference_assign(PtnReference *reference, PtnValue value) {
+    PtnValue stored_value = ptn_value_clone_deref(value);
+    ptn_value_destroy(&reference->value);
+    reference->value = stored_value;
+}
+
+static PTN_UNUSED void ptn_reference_release(PtnReference *reference) {
+    if (reference == NULL) {
+        return;
+    }
+    if (reference->refcount == 0) {
+        return;
+    }
+    reference->refcount--;
+    if (reference->refcount != 0) {
+        return;
+    }
+    ptn_value_destroy(&reference->value);
+    free(reference);
+}
+
 static PTN_UNUSED void ptn_array_free(PtnArray *array) {
     if (array == NULL) {
         return;
@@ -89,6 +120,9 @@ static PTN_UNUSED void ptn_value_drop(PtnValue *value) {
         case PTN_EXCEPTION:
             ptn_exception_free(value->as.exception);
             break;
+        case PTN_REFERENCE:
+            ptn_reference_release(value->as.reference);
+            break;
         case PTN_NULL:
         case PTN_BOOL:
         case PTN_INT:
@@ -105,6 +139,17 @@ static PTN_UNUSED void ptn_value_destroy(PtnValue *value) {
 static PTN_UNUSED PtnValue ptn_value_borrow(PtnValue value) {
     value.owned = 0;
     return value;
+}
+
+static PTN_UNUSED PtnValue ptn_value_deref(PtnValue value) {
+    while (value.type == PTN_REFERENCE) {
+        value = value.as.reference->value;
+    }
+    return ptn_value_borrow(value);
+}
+
+static PTN_UNUSED PtnValue ptn_value_clone_deref(PtnValue value) {
+    return ptn_value_clone(ptn_value_deref(value));
 }
 
 static void ptn_symbols_init(PtnSymbolTable *symbols) {

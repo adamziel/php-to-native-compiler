@@ -78,6 +78,7 @@ static PTN_UNUSED void ptn_string_buffer_append_indent(PtnStringBuffer *buffer, 
 }
 
 static PTN_UNUSED PtnValue ptn_bitwise_not(PtnValue value, const char *path, size_t line) {
+    value = ptn_value_deref(value);
     if (value.type == PTN_STRING) {
         return ptn_bitwise_string_not(value.as.string);
     }
@@ -88,6 +89,7 @@ static PTN_UNUSED PtnValue ptn_bitwise_not(PtnValue value, const char *path, siz
 }
 
 static PTN_UNUSED int64_t ptn_shift_distance(PtnValue value) {
+    value = ptn_value_deref(value);
     int64_t distance = ptn_bitwise_integer_operand(value);
     if (distance < 0) {
         ptn_abort_arithmetic_error("Bit shift by negative number");
@@ -96,6 +98,8 @@ static PTN_UNUSED int64_t ptn_shift_distance(PtnValue value) {
 }
 
 static PTN_UNUSED PtnValue ptn_shift_left(PtnValue left, PtnValue right) {
+    left = ptn_value_deref(left);
+    right = ptn_value_deref(right);
     uint64_t left_bits = (uint64_t)ptn_bitwise_integer_operand(left);
     int64_t distance = ptn_shift_distance(right);
     if (distance >= 64) {
@@ -105,6 +109,8 @@ static PTN_UNUSED PtnValue ptn_shift_left(PtnValue left, PtnValue right) {
 }
 
 static PTN_UNUSED PtnValue ptn_shift_right(PtnValue left, PtnValue right) {
+    left = ptn_value_deref(left);
+    right = ptn_value_deref(right);
     int64_t left_integer = ptn_bitwise_integer_operand(left);
     int64_t distance = ptn_shift_distance(right);
     if (distance >= 64) {
@@ -114,6 +120,7 @@ static PTN_UNUSED PtnValue ptn_shift_right(PtnValue left, PtnValue right) {
 }
 
 static PTN_UNUSED char *ptn_value_to_string(PtnValue value) {
+    value = ptn_value_deref(value);
     char buffer[128];
     int written = 0;
 
@@ -134,6 +141,8 @@ static PTN_UNUSED char *ptn_value_to_string(PtnValue value) {
             return ptn_duplicate_string("Array");
         case PTN_EXCEPTION:
             return ptn_duplicate_string("Object");
+        case PTN_REFERENCE:
+            return ptn_duplicate_string("");
     }
 
     if (written < 0 || (size_t)written >= sizeof(buffer)) {
@@ -171,6 +180,7 @@ static PTN_UNUSED void ptn_string_operand_free(PtnStringOperand operand) {
 }
 
 static PTN_UNUSED PtnStringOperand ptn_value_to_string_operand(PtnValue value) {
+    value = ptn_value_deref(value);
     char buffer[128];
     int written = 0;
 
@@ -191,6 +201,8 @@ static PTN_UNUSED PtnStringOperand ptn_value_to_string_operand(PtnValue value) {
             return ptn_string_operand_borrowed("Array");
         case PTN_EXCEPTION:
             return ptn_string_operand_borrowed("Object");
+        case PTN_REFERENCE:
+            return ptn_string_operand_borrowed("");
     }
 
     if (written < 0 || (size_t)written >= sizeof(buffer)) {
@@ -204,6 +216,7 @@ static PTN_UNUSED PtnStringOperand ptn_concat_string_operand(
     PtnValue value,
     size_t line
 ) {
+    value = ptn_value_deref(value);
     if (value.type == PTN_ARRAY) {
         ptn_emit_warning(&runtime->diagnostics, "Array to string conversion", line);
     }
@@ -310,6 +323,7 @@ static PTN_UNUSED PtnValue ptn_cast_noncanonical(
 }
 
 static PTN_UNUSED PtnValue ptn_gettype_value(PtnValue value) {
+    value = ptn_value_deref(value);
     switch (value.type) {
         case PTN_NULL:
             return ptn_string("NULL");
@@ -325,12 +339,14 @@ static PTN_UNUSED PtnValue ptn_gettype_value(PtnValue value) {
             return ptn_string("array");
         case PTN_EXCEPTION:
             return ptn_string("object");
+        case PTN_REFERENCE:
+            return ptn_string("unknown type");
     }
     return ptn_string("unknown type");
 }
 
 static PTN_UNUSED PtnValue ptn_is_type(PtnValue value, PtnType type) {
-    return ptn_bool(value.type == type);
+    return ptn_bool(ptn_value_deref(value).type == type);
 }
 
 static PTN_UNUSED PtnValue ptn_is_scalar(PtnValue value) {
