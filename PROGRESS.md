@@ -1766,3 +1766,26 @@ unset, null-coalescing offsets, object/property/reference semantics, variable
 variables, exact unsupported key/container TypeError parity, exact float
 offset conversion diagnostics, resources, error-handler routing, and broader
 array/object/reference behavior.
+
+Added long-form array literals plus `count()` and `abs()` internals:
+
+- Parser support for long-form `array(...)` literals now lowers to the same
+  ordered-array AST/IR/runtime path as short `[...]` literals, including keyed
+  elements, automatic integer keys, insertion order, and nested literal arrays.
+- Registered `count()` through the generated C internal-function registry.
+  Current support returns the length of boxed arrays and exposes the function
+  through the same case-insensitive lookup used by `function_exists()`.
+- Registered `abs()` through the generated C internal-function registry. It
+  uses the shared boxed scalar numeric-conversion path, preserves integer
+  results where possible, returns floats for float inputs or integer overflow,
+  and emits the modeled null-deprecation boundary.
+- Native tests prove long-form arrays, `count()` in a `for` condition, array
+  reads, `abs()` over the current scalar subset, and registry exposure.
+- Focused public PHPT telemetry through `phpc` passes
+  `ext/standard/tests/math/abs_basic.phpt`.
+
+Still unsupported after this array/count/abs slice: array mutation,
+append/unset/iteration, recursive arrays, references, copy-on-write,
+`Countable` objects, exact non-array `count()` diagnostics, exact `abs()`
+unsupported operand diagnostics, and complete integer overflow/formatting
+parity beyond the current boxed numeric path.

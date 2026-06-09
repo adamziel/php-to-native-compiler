@@ -76,11 +76,10 @@ supports in generated native binaries.
   `__FUNCTION__`, `__METHOD__`, `__CLASS__`, `__TRAIT__`, and
   `__NAMESPACE__`. Scope-dependent names currently resolve to empty strings in
   global scope.
-- Short array literals `[...]` with optional scalar keys, automatic integer
-  keys, integer-string key canonicalization, insertion order, and duplicate-key
-  replacement in the current literal-array value subset.
-- Long-form array literals `array(...)` for the same currently supported
-  literal-array subset as short array literals.
+- Short array literals `[...]` and long-form `array(...)` literals with
+  optional scalar keys, automatic integer keys, integer-string key
+  canonicalization, insertion order, and duplicate-key replacement in the
+  current literal-array value subset.
 - Array read expressions such as `$array[$key]`, including nested reads and
   reads from literal or grouped array expressions. Reads use the current
   ordered-array key canonicalization path; undefined keys and non-array
@@ -127,11 +126,12 @@ supports in generated native binaries.
   `md5(expr[, raw_output]);`,
   `sha1(expr[, raw_output]);`, `substr(expr, expr[, expr]);`, `bin2hex(expr);`,
   `hex2bin(expr);`, `quoted_printable_decode(expr);`, `dirname(expr);`,
-  `soundex(expr);`, `ceil(expr);`, `floor(expr);`, `sqrt(expr);`,
+  `soundex(expr);`, `ceil(expr);`, `floor(expr);`, `abs(expr);`, `sqrt(expr);`,
   `fdiv(expr, expr);`, `intdiv(expr, expr);`, `bindec(expr);`,
   `hexdec(expr);`, `octdec(expr);`, `pi();`, `getrandmax();`,
   `getmypid();`, `php_sapi_name();`,
   `phpversion([extension]);`, `intval(expr);`, `chr(expr);`, `ord(expr);`,
+  `count(expr);`,
   `is_finite(expr);`, `is_infinite(expr);`, `is_nan(expr);`, and
   `error_reporting(expr);`.
 - Expression-form internal calls for the currently registered functions,
@@ -143,10 +143,11 @@ supports in generated native binaries.
   `sha1(expr[, raw_output])`, `substr(expr, expr[, expr])`, `bin2hex(expr)`,
   `hex2bin(expr)`, `quoted_printable_decode(expr)`, `dirname(expr)`,
   `soundex(expr)`, `ceil(expr)`, `floor(expr)`,
-  `sqrt(expr)`, `fdiv(expr, expr)`, `intdiv(expr, expr)`, `bindec(expr)`,
+  `abs(expr)`, `sqrt(expr)`, `fdiv(expr, expr)`, `intdiv(expr, expr)`, `bindec(expr)`,
   `hexdec(expr)`, `octdec(expr)`, `pi()`, `getrandmax()`, `getmypid()`,
   `php_sapi_name()`, `phpversion([extension])`, `intval(expr)`, `chr(expr)`,
   `ord(expr)`,
+  `count(expr)`,
   `is_finite(expr)`, `is_infinite(expr)`, `is_nan(expr)`,
   `error_reporting(expr)`, `gettype(expr)`, scalar `is_*` type predicates, and
   `array_key_exists(expr, expr)` in echo operands, assignments, binary
@@ -211,6 +212,9 @@ supports in generated native binaries.
   returning a PHP-style four-character ASCII soundex key.
 - `ceil()` and `floor()` over current boxed scalar values after scalar numeric
   conversion, returning boxed floats.
+- `abs()` over current boxed scalar values after scalar numeric conversion,
+  returning boxed integer or float magnitudes and emitting the modeled
+  PHP null-deprecation boundary.
 - `sqrt()` over current boxed scalar values after scalar numeric conversion,
   returning a boxed float.
 - `fdiv()` over current boxed scalar values after scalar numeric conversion,
@@ -237,6 +241,7 @@ supports in generated native binaries.
 - `ord()` over current boxed scalar values after scalar string conversion,
   returning the first byte as an integer. Empty and multi-byte strings emit
   PHP-like deprecation diagnostics with the internal-call source line.
+- `count()` over current boxed arrays, returning their length as an integer.
 - `error_reporting()` currently accepts zero or one scalar argument and returns
   a placeholder integer level. It does not configure diagnostic filtering yet.
 - `gettype()` over current boxed scalar values, returning `NULL`, `boolean`,
@@ -343,7 +348,7 @@ supports in generated native binaries.
 - Inline HTML before `<?php` or between PHP blocks.
 - Complex/braced string interpolation and interpolation of arrays, objects,
   offsets, properties, variable variables, or other non-direct-variable forms.
-- Internal functions outside the registered scalar subset.
+- Internal functions outside the registered internal-function subset.
 - Namespace/class constants, global `const` duplicate diagnostics and ordering
   parity with runtime `define()`, `define()`'s legacy case-insensitive flag, and
   built-in PHP/extension constants other than the currently modeled `E_ERROR`,
@@ -396,6 +401,9 @@ supports in generated native binaries.
 - Exact `ord()` strict-types and unsupported-type diagnostics.
 - Exact `ceil()`/`floor()` null deprecations, string and unsupported-type
   diagnostics, and complete special-float parity.
+- Exact `abs()` diagnostics for unsupported array/object/resource/reference
+  operands and complete overflow parity beyond the current boxed numeric path.
+- `count()` support for `Countable` objects and exact non-array diagnostics.
 - Exact `sqrt()` diagnostics and complete negative/non-finite float parity.
 - Exact `fdiv()` unsupported-type diagnostics for arrays, objects, resources,
   and references.

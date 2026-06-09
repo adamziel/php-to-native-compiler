@@ -4165,6 +4165,30 @@ static PtnValue ptn_internal_floor(PtnRuntime *runtime, size_t argc, const PtnVa
     return ptn_float(floor(ptn_value_to_double(args[0])));
 }
 
+static PtnValue ptn_internal_abs(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    if (args[0].type == PTN_NULL) {
+        ptn_emit_array_runtime_diagnostic(
+            "Deprecated",
+            "abs(): Passing null to parameter #1 ($num) of type int|float is deprecated",
+            line
+        );
+    }
+
+    PtnNumber number = ptn_to_number(args[0]);
+    if (number.type == PTN_NUMBER_FLOAT) {
+        return ptn_float(fabs(number.floating));
+    }
+    if (number.integer == INT64_MIN) {
+        return ptn_float(fabs((double)number.integer));
+    }
+    if (number.integer < 0) {
+        return ptn_int(-number.integer);
+    }
+    return ptn_int(number.integer);
+}
+
 static PtnValue ptn_internal_sqrt(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)argc;
@@ -4407,6 +4431,20 @@ static PtnValue ptn_internal_ord(PtnRuntime *runtime, size_t argc, const PtnValu
     return ptn_int(byte);
 }
 
+static PtnValue ptn_internal_count(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    if (args[0].type == PTN_ARRAY) {
+        return ptn_int((int64_t)args[0].as.array->len);
+    }
+    fputs("Fatal error: count(): Argument #1 ($value) must be of type Countable|array, ", stderr);
+    fputs(ptn_offset_container_type_name(args[0]), stderr);
+    fputs(" given\n", stderr);
+    exit(255);
+    return ptn_null();
+}
+
 static PtnValue ptn_internal_error_reporting(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)argc;
@@ -4444,6 +4482,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "soundex", 1, 1, ptn_internal_soundex },
         { "ceil", 1, 1, ptn_internal_ceil },
         { "floor", 1, 1, ptn_internal_floor },
+        { "abs", 1, 1, ptn_internal_abs },
         { "sqrt", 1, 1, ptn_internal_sqrt },
         { "fdiv", 2, 2, ptn_internal_fdiv },
         { "intdiv", 2, 2, ptn_internal_intdiv },
@@ -4458,6 +4497,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "intval", 1, 2, ptn_internal_intval },
         { "chr", 1, 1, ptn_internal_chr },
         { "ord", 1, 1, ptn_internal_ord },
+        { "count", 1, 1, ptn_internal_count },
         { "error_reporting", 0, 1, ptn_internal_error_reporting },
         { "gettype", 1, 1, ptn_internal_gettype },
         { "is_null", 1, 1, ptn_internal_is_null },

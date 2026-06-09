@@ -578,6 +578,12 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
     let error = parser::parse("<?php function Empty($value) { return true; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function empty()");
 
+    let error = parser::parse("<?php function Abs($value) { return $value; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function abs()");
+
+    let error = parser::parse("<?php function Count($value) { return 0; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function count()");
+
     let error = parser::parse("<?php function IntDiv($a, $b) { return $a; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function intdiv()");
 
@@ -903,7 +909,8 @@ fn parser_accepts_strict_identity_expressions() {
 
 #[test]
 fn parser_accepts_array_literals_and_spaceship_expressions() {
-    let program = parser::parse("<?php var_dump([1, \"2\" => 3, 4 => [5]] <=> []);").unwrap();
+    let program =
+        parser::parse("<?php var_dump(array(1, \"2\" => 3, 4 => array(5)) <=> []);").unwrap();
     let Statement::Call {
         name, arguments, ..
     } = &program.statements[0]
@@ -4003,6 +4010,35 @@ echo [1, 2, 3][1], \"\\n\";",
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "int(10)\nint(10)\nint(20)\nstring(5) \"seven\"\n\nDeprecated: Using null as an array offset is deprecated, use an empty string instead in ptn on line 8\nstring(5) \"empty\"\nstring(8) \"bool-key\"\nstring(2) \"ok\"\n2\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_legacy_array_count_and_abs_to_native_binary() {
+    let root = temp_dir("ptn-native-legacy-array-count-abs");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("legacy-array-count-abs.php");
+    let output = root.join("legacy-array-count-abs-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$values = array(23, -23, \"23.45\", null, true, false);\n\
+for ($i = 0; $i < count($values); $i++) {\n\
+    var_dump(abs($values[$i]));\n\
+}\n\
+var_dump(count(array(\"x\" => 1, 2)));\n\
+var_dump(function_exists(\"COUNT\"), function_exists(\"abs\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(23)\nint(23)\nfloat(23.45)\n\nDeprecated: abs(): Passing null to parameter #1 ($num) of type int|float is deprecated in ptn on line 4\nint(0)\nint(1)\nint(0)\nint(2)\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

@@ -1519,6 +1519,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "soundex"
             | "ceil"
             | "floor"
+            | "abs"
             | "sqrt"
             | "fdiv"
             | "intdiv"
@@ -1553,6 +1554,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "function_exists"
             | "isset"
             | "empty"
+            | "count"
             | "array_key_exists"
     )
 }

@@ -34,10 +34,11 @@ Supported today:
   `strip_tags(expr)`, `md5(expr[, raw_output])`, `sha1(expr[, raw_output])`,
   `substr(expr, expr[, expr])`, `bin2hex(expr)`, `hex2bin(expr)`,
   `quoted_printable_decode(expr)`, `dirname(expr)`, `soundex(expr)`,
-  `ceil(expr)`, `floor(expr)`, `sqrt(expr)`, `fdiv(expr, expr)`,
+  `ceil(expr)`, `floor(expr)`, `abs(expr)`, `sqrt(expr)`, `fdiv(expr, expr)`,
   `intdiv(expr, expr)`, `bindec(expr)`, `hexdec(expr)`, `octdec(expr)`,
   `intval(expr[, base])`, `pi()`, `getrandmax()`, `getmypid()`,
   `php_sapi_name()`, `phpversion([extension])`, `chr(expr)`, `ord(expr)`,
+  `count(expr)`,
   `error_reporting(expr)`, `gettype(expr)`, scalar `is_*` type predicates,
   non-finite predicates such as `is_finite(expr)`, `is_infinite(expr)`, and
   `is_nan(expr)`, `define(expr, expr)`, `constant(expr)`,
@@ -102,6 +103,9 @@ Supported today:
   soundex key for the current boxed scalar string-conversion result.
 - `ceil()` and `floor()` as expressions returning boxed floats after the
   current boxed scalar numeric-conversion result.
+- `abs()` as an expression returning boxed integer or float magnitudes after
+  the current boxed scalar numeric-conversion result, including the modeled
+  PHP null-deprecation boundary.
 - `sqrt()` as an expression returning a boxed float after the current boxed
   scalar numeric-conversion result.
 - `fdiv()` as an expression returning boxed IEEE-style floating-point division
@@ -125,6 +129,7 @@ Supported today:
 - `ord()` as an expression returning the first byte of the current boxed scalar
   string-conversion result, including PHP-like deprecation diagnostics for
   empty and multi-byte strings.
+- `count()` as an expression returning the length of current boxed arrays.
 - `error_reporting()` accepts zero or one argument and returns the current
   placeholder reporting level. Runtime error filtering is not modeled yet.
 - `gettype()` and scalar type predicates for the current boxed scalar
@@ -197,11 +202,10 @@ Supported today:
   `__FUNCTION__`, `__METHOD__`, `__CLASS__`, `__TRAIT__`, and
   `__NAMESPACE__`. Scope-dependent names currently resolve to empty strings in
   global scope.
-- Short array literals `[...]` with optional scalar keys, automatic integer
-  keys, integer-string key canonicalization, insertion order, and duplicate-key
-  replacement in the current literal-array value subset.
-- Long-form array literals `array(...)` for the same currently supported
-  literal-array subset as short array literals.
+- Short array literals `[...]` and long-form `array(...)` literals with
+  optional scalar keys, automatic integer keys, integer-string key
+  canonicalization, insertion order, and duplicate-key replacement in the
+  current literal-array value subset.
 - Array read expressions such as `$array[$key]`, including nested reads and
   reads from literal or grouped array expressions. Reads use the current
   ordered-array key canonicalization path and return `null` with a warning
@@ -304,7 +308,8 @@ Unsupported today:
   for-loop comma expressions and non-direct-variable clause lvalues,
   complete overflow parity, exact scalar cast overflow behavior, PHP-exact
   warning text/file/line/error-handler behavior, inline HTML before `<?php` or
-  between PHP blocks, internal functions outside the registered scalar subset,
+  between PHP blocks, internal functions outside the registered
+  internal-function subset,
   namespace/class constants, `define()`'s legacy case-insensitive flag, and
   built-in constants other than the currently modeled `E_ERROR`, `PHP_EOL`,
   `DIRECTORY_SEPARATOR`, `PATH_SEPARATOR`, `PHP_INT_MIN`, `PHP_INT_MAX`,
@@ -326,13 +331,15 @@ Unsupported today:
   `dirname()` edge parity for unusual paths and unsupported operands, exact
   `soundex()` locale/non-ASCII parity and unsupported type diagnostics, exact
   `chr()` deprecation diagnostics, exact `ord()` argument type diagnostics,
-  exact `ceil()`/`floor()`
-  null/string/unsupported type diagnostics, exact `sqrt()` negative/non-finite
-  edge parity, exact `fdiv()` unsupported operand diagnostics, exact `intdiv()`
-  catchable exception behavior for zero divisors, `PHP_INT_MIN / -1`, and
-  unsupported operands, exact `getmypid()` process model parity across SAPIs
-  and unsupported platforms, exact PHP version/SAPI/extension metadata beyond
-  the modeled CLI boundary,
+  exact `ceil()`/`floor()` null/string/unsupported type diagnostics, exact
+  `abs()` diagnostics for unsupported operands and complete overflow parity,
+  `count()` support for `Countable` objects and exact non-array diagnostics,
+  exact `sqrt()` negative/non-finite
+  edge parity, exact `fdiv()` unsupported operand diagnostics, exact
+  `intdiv()` catchable exception behavior for zero divisors, `PHP_INT_MIN / -1`,
+  and unsupported operands, exact `getmypid()` process model parity across
+  SAPIs and unsupported platforms, exact PHP version/SAPI/extension metadata
+  beyond the modeled CLI boundary,
   exact `error_reporting()` configuration/filtering behavior, unsupported cast
   spelling diagnostics beyond the currently modeled aliases and removed cast
   boundaries, statement-form `(void) expr;` casts, and full PHP
