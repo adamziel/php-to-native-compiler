@@ -176,6 +176,75 @@ static PtnValue ptn_internal_var_dump(PtnRuntime *runtime, size_t argc, const Pt
     return ptn_null();
 }
 
+static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent) {
+    ptn_var_dump_indent(indent);
+    switch (value.type) {
+        case PTN_REFERENCE:
+            printf("reference refcount(%zu) {\n", value.as.reference->refcount);
+            ptn_debug_zval_dump_value_indented(value.as.reference->value, indent + 1);
+            ptn_var_dump_indent(indent);
+            fputs("}\n", stdout);
+            break;
+        case PTN_ARRAY: {
+            PtnArray *array = value.as.array;
+            printf("array(%zu) packed refcount(%zu){\n", array->len, array->refcount);
+            for (size_t i = 0; i < array->len; i++) {
+                ptn_var_dump_indent(indent + 1);
+                PtnArrayKey key = array->entries[i].key;
+                if (key.type == PTN_ARRAY_KEY_INT) {
+                    printf("[%lld]=>\n", (long long)key.as.integer);
+                } else {
+                    printf("[\"%s\"]=>\n", key.as.string);
+                }
+                ptn_debug_zval_dump_value_indented(array->entries[i].value, indent + 1);
+            }
+            ptn_var_dump_indent(indent);
+            fputs("}\n", stdout);
+            break;
+        }
+        case PTN_NULL:
+            fputs("NULL\n", stdout);
+            break;
+        case PTN_BOOL:
+            fputs(value.as.boolean ? "bool(true)\n" : "bool(false)\n", stdout);
+            break;
+        case PTN_INT:
+            printf("int(%lld)\n", (long long)value.as.integer);
+            break;
+        case PTN_FLOAT: {
+            char formatted[64];
+            ptn_format_var_dump_float(value.as.floating, formatted, sizeof(formatted));
+            printf("float(%s)\n", formatted);
+            break;
+        }
+        case PTN_STRING:
+            printf("string(%zu) \"", value.as.string.len);
+            fwrite(value.as.string.data, 1, value.as.string.len, stdout);
+            fputs("\"\n", stdout);
+            break;
+        case PTN_EXCEPTION:
+            printf("object(%s)#1 (1) {\n", value.as.exception->class_name);
+            ptn_var_dump_indent(indent + 1);
+            fputs("[\"message\"]=>\n", stdout);
+            ptn_var_dump_indent(indent + 1);
+            printf("string(%zu) \"", strlen(value.as.exception->message));
+            fputs(value.as.exception->message, stdout);
+            fputs("\"\n", stdout);
+            ptn_var_dump_indent(indent);
+            fputs("}\n", stdout);
+            break;
+    }
+}
+
+static PtnValue ptn_internal_debug_zval_dump(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)line;
+    for (size_t i = 0; i < argc; i++) {
+        ptn_debug_zval_dump_value_indented(args[i], 0);
+    }
+    return ptn_null();
+}
+
 static PtnValue ptn_internal__ptn_cow_debug_reset(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)argc;
@@ -483,6 +552,30 @@ static PtnValue ptn_internal_array_shift(PtnRuntime *runtime, size_t argc, const
     return ptn_array_shift_value(array);
 }
 
+static PtnValue ptn_internal_array_sum(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_sum", 1, "array", args[0]);
+    int use_float = 0;
+    int64_t integer_sum = 0;
+    double float_sum = 0.0;
+    for (size_t i = 0; i < array->len; i++) {
+        PtnNumber number = ptn_to_number(array->entries[i].value);
+        if (number.type == PTN_NUMBER_FLOAT) {
+            if (!use_float) {
+                float_sum = (double)integer_sum;
+                use_float = 1;
+            }
+            float_sum += number.floating;
+        } else if (use_float) {
+            float_sum += (double)number.integer;
+        } else {
+            integer_sum += number.integer;
+        }
+    }
+    return use_float ? ptn_float(float_sum) : ptn_int(integer_sum);
+}
+
 static PtnValue ptn_internal_array_unshift(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)line;
     PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_unshift", 1, "array", args[0]);
@@ -694,6 +787,51 @@ static PtnValue ptn_internal_str_ends_with(PtnRuntime *runtime, size_t argc, con
     ptn_string_operand_free(haystack);
     ptn_string_operand_free(needle);
     return ptn_bool(ends);
+}
+
+static PtnValue ptn_internal_strtr(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnStringOperand input = ptn_value_to_string_operand(args[0]);
+    PtnArray *replacements = ptn_internal_expect_array_arg(runtime, "strtr", 2, "replace_pairs", args[1]);
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+
+    size_t offset = 0;
+    while (offset < input.len) {
+        size_t best_index = replacements->len;
+        size_t best_len = 0;
+        for (size_t i = 0; i < replacements->len; i++) {
+            PtnValue key_value = ptn_array_key_value(replacements->entries[i].key);
+            PtnStringOperand key = ptn_value_to_string_operand(key_value);
+            int matches = key.len != 0 &&
+                key.len <= input.len - offset &&
+                memcmp(input.data + offset, key.data, key.len) == 0 &&
+                key.len > best_len;
+            size_t key_len = key.len;
+            ptn_string_operand_free(key);
+            ptn_value_destroy(&key_value);
+            if (matches) {
+                best_index = i;
+                best_len = key_len;
+            }
+        }
+
+        if (best_index < replacements->len) {
+            PtnStringOperand replacement = ptn_value_to_string_operand(
+                replacements->entries[best_index].value
+            );
+            ptn_string_buffer_append_len(&output, replacement.data, replacement.len);
+            ptn_string_operand_free(replacement);
+            offset += best_len;
+        } else {
+            ptn_string_buffer_append_len(&output, input.data + offset, 1);
+            offset++;
+        }
+    }
+
+    ptn_string_operand_free(input);
+    return ptn_owned_string_len(output.data, output.len);
 }
 
 static int ptn_quotemeta_needs_escape(unsigned char byte) {
@@ -2183,6 +2321,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "array_push", 1, PTN_VARIADIC_ARGS, ptn_internal_array_push },
         { "array_reverse", 1, 2, ptn_internal_array_reverse },
         { "array_shift", 1, 1, ptn_internal_array_shift },
+        { "array_sum", 1, 1, ptn_internal_array_sum },
         { "array_unshift", 1, PTN_VARIADIC_ARGS, ptn_internal_array_unshift },
         { "array_values", 1, 1, ptn_internal_array_values },
         { "bin2hex", 1, 1, ptn_internal_bin2hex },
@@ -2193,6 +2332,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "constant", 1, 1, ptn_internal_constant },
         { "count", 1, 1, ptn_internal_count },
         { "current", 1, 1, ptn_internal_current },
+        { "debug_zval_dump", 1, PTN_VARIADIC_ARGS, ptn_internal_debug_zval_dump },
         { "define", 2, 2, ptn_internal_define },
         { "defined", 1, 1, ptn_internal_defined },
         { "dirname", 1, 1, ptn_internal_dirname },
@@ -2249,6 +2389,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "strcmp", 2, 2, ptn_internal_strcmp },
         { "strip_tags", 1, 1, ptn_internal_strip_tags },
         { "strlen", 1, 1, ptn_internal_strlen },
+        { "strtr", 2, 2, ptn_internal_strtr },
         { "substr", 2, 3, ptn_internal_substr },
         { "unlink", 1, 1, ptn_internal_unlink },
         { "var_dump", 1, PTN_VARIADIC_ARGS, ptn_internal_var_dump },

@@ -4,8 +4,8 @@ use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use ptn::ast::{
-    AssignmentOp, BinaryOp, CastKind, Expr, IncDecOp, MagicConstantKind, Statement, StringPart,
-    TypeHint, UnaryOp, UnsetTarget,
+    ArrayElementValue, AssignmentOp, BinaryOp, CastKind, Expr, IncDecOp, MagicConstantKind,
+    ReferenceTarget, Statement, StringPart, TypeHint, UnaryOp, UnsetTarget,
 };
 use ptn::lexer::{self, TokenKind};
 use ptn::{compile_file, parser, CompileOptions, DiagnosticKind};
@@ -1074,7 +1074,10 @@ fn parser_accepts_array_literals_and_spaceship_expressions() {
     assert_eq!(elements.len(), 3);
     assert!(elements[0].key.is_none());
     assert!(elements[1].key.is_some());
-    assert!(matches!(&elements[2].value, Expr::Array { .. }));
+    assert!(matches!(
+        &elements[2].value,
+        ArrayElementValue::Value(Expr::Array { .. })
+    ));
     assert!(matches!(right.as_ref(), Expr::Array { elements, .. } if elements.is_empty()));
 }
 
@@ -1200,6 +1203,27 @@ fn parser_rejects_unsupported_reference_forms_with_explicit_diagnostics() {
         nested_array_reference.message,
         "nested reference lvalues are unsupported"
     );
+}
+
+#[test]
+fn parser_accepts_reference_array_literal_values() {
+    let program = parser::parse("<?php $items = [&$value, 'k' => &$source[0]];").unwrap();
+    let Statement::Assign { value, .. } = &program.statements[0] else {
+        panic!("expected assignment statement");
+    };
+    let Expr::Array { elements, .. } = value else {
+        panic!("expected array literal");
+    };
+    assert_eq!(elements.len(), 2);
+    assert!(matches!(
+        &elements[0].value,
+        ArrayElementValue::Reference(ReferenceTarget::Variable { name, .. }) if name == "value"
+    ));
+    assert!(matches!(
+        &elements[1].value,
+        ArrayElementValue::Reference(ReferenceTarget::ArrayDim(target))
+            if target.array == "source" && target.dimensions.len() == 1
+    ));
 }
 
 #[test]
@@ -5505,6 +5529,50 @@ var_dump($arr[0], $other, $elem);",
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "int(2)\nint(1)\nint(2)\nint(3)\nint(3)\nint(5)\nint(5)\nint(6)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_reference_array_literals_and_internals_to_native_binary() {
+    let root = temp_dir("ptn-native-reference-array-literals-internals");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reference-array-literals-internals.php");
+    let output = root.join("reference-array-literals-internals-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$foo = 42;\n\
+$array1 = [&$foo];\n\
+$array2 = [$foo];\n\
+var_dump($array1 === $array2);\n\
+$n = \"10\";\n\
+$n .= \"0\";\n\
+$nums = [&$n, 100];\n\
+var_dump(array_sum($nums));\n\
+var_dump($n);\n\
+$word = \"foo\";\n\
+$map = [\"bar\" => &$word];\n\
+var_dump(strtr(\"foobar\", $map));\n\
+$r = 1;\n\
+$a = [&$r];\n\
+debug_zval_dump($a);\n\
+$a[] =& $r;\n\
+debug_zval_dump($a);\n\
+unset($a[1]);\n\
+debug_zval_dump($a);\n\
+unset($r);\n\
+debug_zval_dump($a);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nint(200)\nstring(3) \"100\"\nstring(6) \"foofoo\"\narray(1) packed refcount(2){\n  [0]=>\n  reference refcount(2) {\n    int(1)\n  }\n}\narray(2) packed refcount(2){\n  [0]=>\n  reference refcount(3) {\n    int(1)\n  }\n  [1]=>\n  reference refcount(3) {\n    int(1)\n  }\n}\narray(1) packed refcount(2){\n  [0]=>\n  reference refcount(2) {\n    int(1)\n  }\n}\narray(1) packed refcount(2){\n  [0]=>\n  reference refcount(1) {\n    int(1)\n  }\n}\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
