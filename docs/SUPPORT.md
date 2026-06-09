@@ -64,6 +64,9 @@ supports in generated native binaries.
 - Scalar type predicates over current boxed scalar values: `is_null()`,
   `is_bool()`, `is_int()`, `is_integer()`, `is_long()`, `is_float()`,
   `is_double()`, `is_string()`, and `is_scalar()`.
+- `function_exists()` over the currently registered internal-function names.
+- `defined()` over the current constant registry. Constants are not modeled yet,
+  so current native binaries report ordinary names as undefined.
 - A minimal `phpc` runner for supported PHPT rows. It compiles scripts or `-r`
   snippets to temporary native binaries through the normal compiler pipeline.
 - Braced `if`, `elseif`, and `else` statements whose conditions and bodies use
@@ -108,6 +111,8 @@ supports in generated native binaries.
   objects, references, copy-on-write, overflow edge cases, and diagnostics.
 - Inline HTML before `<?php` or between PHP blocks.
 - Internal functions outside the registered scalar subset.
+- User-defined functions in `function_exists()`.
+- User-defined constants and built-in PHP/extension constants in `defined()`.
 - Type predicate coverage for arrays, objects, resources, and references.
 - Arrays, objects, resources, recursive structures, references, and
   `var_dump()` reference identity output.

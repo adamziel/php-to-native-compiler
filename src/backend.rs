@@ -1387,6 +1387,22 @@ static PTN_UNUSED PtnValue ptn_is_scalar(PtnValue value) {
     );
 }
 
+static PTN_UNUSED int ptn_ascii_case_equal(const char *left, const char *right) {
+    while (*left != '\0' && *right != '\0') {
+        if (tolower((unsigned char)*left) != tolower((unsigned char)*right)) {
+            return 0;
+        }
+        left++;
+        right++;
+    }
+    return *left == '\0' && *right == '\0';
+}
+
+static PTN_UNUSED int ptn_constant_is_defined(const char *name) {
+    (void)name;
+    return 0;
+}
+
 static PTN_UNUSED void ptn_echo(PtnValue value) {
     switch (value.type) {
         case PTN_NULL:
@@ -1512,7 +1528,10 @@ static PtnValue ptn_internal_bin2hex(PtnRuntime *runtime, size_t argc, const Ptn
     return ptn_owned_string(hex);
 }
 
-static PTN_UNUSED PtnValue ptn_call_internal(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args) {
+static PtnValue ptn_internal_defined(PtnRuntime *runtime, size_t argc, const PtnValue *args);
+static PtnValue ptn_internal_function_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args);
+
+static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
     static const PtnInternalFunction functions[] = {
         { "var_dump", 1, PTN_VARIADIC_ARGS, ptn_internal_var_dump },
         { "strlen", 1, 1, ptn_internal_strlen },
@@ -1527,21 +1546,55 @@ static PTN_UNUSED PtnValue ptn_call_internal(PtnRuntime *runtime, const char *na
         { "is_double", 1, 1, ptn_internal_is_float },
         { "is_string", 1, 1, ptn_internal_is_string },
         { "is_scalar", 1, 1, ptn_internal_is_scalar },
+        { "defined", 1, 1, ptn_internal_defined },
+        { "function_exists", 1, 1, ptn_internal_function_exists },
     };
+    *count = sizeof(functions) / sizeof(functions[0]);
+    return functions;
+}
 
-    for (size_t i = 0; i < sizeof(functions) / sizeof(functions[0]); i++) {
+static const PtnInternalFunction *ptn_find_internal_function(const char *name) {
+    size_t count = 0;
+    const PtnInternalFunction *functions = ptn_internal_functions(&count);
+    for (size_t i = 0; i < count; i++) {
         const PtnInternalFunction *function = &functions[i];
-        if (strcmp(function->name, name) == 0) {
-            if (argc < function->min_args) {
-                ptn_emit_argument_count_error(&runtime->diagnostics, name, function->min_args, argc);
-                exit(255);
-            }
-            if (function->max_args != PTN_VARIADIC_ARGS && argc > function->max_args) {
-                ptn_emit_too_many_arguments_error(&runtime->diagnostics, name, function->max_args, argc);
-                exit(255);
-            }
-            return function->handler(runtime, argc, args);
+        if (ptn_ascii_case_equal(function->name, name)) {
+            return function;
         }
+    }
+    return NULL;
+}
+
+static PtnValue ptn_internal_defined(PtnRuntime *runtime, size_t argc, const PtnValue *args) {
+    (void)runtime;
+    (void)argc;
+    char *name = ptn_value_to_string(args[0]);
+    int exists = ptn_constant_is_defined(name);
+    free(name);
+    return ptn_bool(exists);
+}
+
+static PtnValue ptn_internal_function_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args) {
+    (void)runtime;
+    (void)argc;
+    char *name = ptn_value_to_string(args[0]);
+    int exists = ptn_find_internal_function(name) != NULL;
+    free(name);
+    return ptn_bool(exists);
+}
+
+static PTN_UNUSED PtnValue ptn_call_internal(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args) {
+    const PtnInternalFunction *function = ptn_find_internal_function(name);
+    if (function != NULL) {
+        if (argc < function->min_args) {
+            ptn_emit_argument_count_error(&runtime->diagnostics, name, function->min_args, argc);
+            exit(255);
+        }
+        if (function->max_args != PTN_VARIADIC_ARGS && argc > function->max_args) {
+            ptn_emit_too_many_arguments_error(&runtime->diagnostics, name, function->max_args, argc);
+            exit(255);
+        }
+        return function->handler(runtime, argc, args);
     }
 
     ptn_emit_undefined_function_error(&runtime->diagnostics, name);

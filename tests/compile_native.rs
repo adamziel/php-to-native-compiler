@@ -807,6 +807,45 @@ fn compile_bug30726_is_float_shape_to_native_binary() {
 }
 
 #[test]
+fn compile_symbol_existence_internal_functions_to_native_binary() {
+    let root = temp_dir("ptn-native-symbol-existence-functions");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("symbol-existence-functions.php");
+    let output = root.join("symbol-existence-functions-bin");
+    fs::write(
+        &input,
+        "<?php var_dump(function_exists(\"strlen\"), function_exists(\"STRLEN\"), function_exists(\"sapi_windows_vt100_support\"), defined(\"test\")); echo gettype(defined(\"test\")), \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nbool(true)\nbool(false)\nbool(false)\nboolean\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_bug27443_defined_type_shape_to_native_binary() {
+    let root = temp_dir("ptn-native-bug27443-defined");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("bug27443.php");
+    let output = root.join("bug27443-bin");
+    fs::write(&input, "<?php echo gettype(defined('test'));").unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "boolean");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_scalar_comparisons_to_native_binary() {
     let root = temp_dir("ptn-native-comparisons");
     fs::create_dir_all(&root).unwrap();

@@ -457,3 +457,26 @@ Still unsupported after this XOR slice: unary bitwise `~`, bit shifts,
 compound `<<=` and `>>=`, exact float-to-int bitwise diagnostics and overflow
 parity, embedded NUL bytes in runtime strings and string bitwise results,
 arrays, objects, references, and copy-on-write behavior.
+
+Added scalar symbol-existence internal predicates:
+
+- Registered `defined()` and `function_exists()` through the existing generated
+  C internal-function registry.
+- The registry now has a shared case-insensitive internal-function lookup used
+  by both native dispatch and `function_exists()`.
+- `function_exists()` checks the current generated internal-function registry
+  and returns boxed booleans for registered and absent names.
+- `defined()` checks an explicit current constant-registry boundary. Constants
+  are not modeled yet, so ordinary names report as undefined rather than
+  pretending user or extension constants exist.
+- Native tests prove registered and absent function lookups, case-insensitive
+  internal function names, `defined()` return typing, and the public
+  `tests/lang/bug27443.phpt` source shape.
+- Focused public PHPT telemetry through `phpc` passes
+  `tests/lang/bug27443.phpt` and
+  `tests/output/sapi_windows_vt100_support_notwindows.phpt`.
+
+Still unsupported for symbol-existence internals: user-defined functions,
+classes/methods, user-defined constants, PHP built-in and extension constants,
+namespaced symbols, autoloading, disabled-functions behavior, and PHP-exact
+argument diagnostics.

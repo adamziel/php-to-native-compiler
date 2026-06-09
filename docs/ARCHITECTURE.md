@@ -67,8 +67,10 @@ Current runtime/compiler slices:
   returns the byte length of the current boxed scalar string conversion;
   `bin2hex` returns lowercase hexadecimal bytes for that same string
   conversion; `gettype` and scalar `is_*` predicates query the current boxed
-  scalar/null value domain through the same registry. Fixed-arity internal
-  functions record min/max arity metadata while `var_dump` remains variadic.
+  scalar/null value domain; `function_exists` shares the registry lookup path;
+  and `defined` checks the current constant-registry boundary. Fixed-arity
+  internal functions record min/max arity metadata while `var_dump` remains
+  variadic.
 - Braced `if`, `elseif`, and `else` statements lower to structured IR branch
   instructions. Conditions remain boxed value expressions, and the C backend
   emits native branches that call the shared scalar truthiness helper.
@@ -107,6 +109,8 @@ Near-term architecture targets:
   metadata, unsupported array/object/resource/reference diagnostics, and
   PHP-exact `var_dump` precision/formatting plus `strlen`/`bin2hex`
   byte-string behavior.
+- User-defined functions, classes/methods, constants, namespaced symbols,
+  autoloading, and disabled-functions behavior in symbol-existence predicates.
 - Broader control flow: unbraced and alternate syntax, `for`, `foreach`,
   explicit-level `break`, `continue`, and exception/finally edges.
 - Full PHP increment/decrement semantics, including expression result values,

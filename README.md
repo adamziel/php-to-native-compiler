@@ -23,8 +23,9 @@ Supported today:
 - Statement-form `print expr;` for the same scalar expression subset as
   `echo`; emitted native code uses the same boxed output conversion path.
 - Simple internal calls such as `var_dump(expr, ...)`, `strlen(expr)`,
-  `bin2hex(expr)`, `gettype(expr)`, and scalar `is_*` type predicates, lowered
-  through IR internal-call nodes and generated C runtime dispatch.
+  `bin2hex(expr)`, `gettype(expr)`, scalar `is_*` type predicates,
+  `defined(expr)`, and `function_exists(expr)`, lowered through IR
+  internal-call nodes and generated C runtime dispatch.
 - `var_dump()` output for the current boxed scalar `PtnValue` types: `null`,
   booleans, integers, floats, and strings.
 - `strlen()` as an expression returning the byte length of the current boxed
@@ -34,6 +35,9 @@ Supported today:
 - `gettype()` and scalar type predicates for the current boxed scalar
   `PtnValue` types: `is_null()`, `is_bool()`, `is_int()`/`is_integer()`/
   `is_long()`, `is_float()`/`is_double()`, `is_string()`, and `is_scalar()`.
+- Symbol-existence predicates for currently modeled runtime tables:
+  `function_exists()` checks the generated internal-function registry, and
+  `defined()` checks the current constant registry.
 - String, integer, float, boolean, and null literals.
 - Direct variable assignment and reads for scalar values through the generated
   native runtime symbol table.
@@ -93,11 +97,11 @@ Unsupported today:
   complete overflow parity, exact scalar cast overflow behavior, PHP-exact
   warning text/file/line/error-handler behavior, inline HTML before `<?php` or
   between PHP blocks, internal functions outside the registered scalar subset,
-  arrays, objects, resources, recursion, references, embedded NUL string
-  handling, and full PHP precision/formatting edge cases for
-  `var_dump()`/`strlen()`, doc comment retention, variable variables, and
-  dynamic fallback. These are architecture targets, not excuses for exact-shape
-  hacks.
+  user constants and built-in constants, arrays, objects, resources, recursion,
+  references, embedded NUL string handling, and full PHP precision/formatting
+  edge cases for `var_dump()`/`strlen()`/`bin2hex()`, doc comment retention,
+  variable variables, and dynamic fallback. These are architecture targets, not
+  excuses for exact-shape hacks.
 
 ## Build
 
