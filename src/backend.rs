@@ -2599,6 +2599,22 @@ static int ptn_same_double(double left, double right) {
     return memcmp(&left, &right, sizeof(double)) == 0;
 }
 
+static void ptn_normalize_var_dump_exponent(char *buffer) {
+    for (char *cursor = buffer; *cursor != '\0'; cursor++) {
+        if (*cursor == 'e' || *cursor == 'E') {
+            *cursor = 'E';
+            cursor++;
+            if (*cursor == '+' || *cursor == '-') {
+                cursor++;
+            }
+            while (*cursor == '0' && isdigit((unsigned char)cursor[1])) {
+                memmove(cursor, cursor + 1, strlen(cursor));
+            }
+            return;
+        }
+    }
+}
+
 static void ptn_format_var_dump_float(double value, char *buffer, size_t buffer_size) {
     if (isnan(value)) {
         snprintf(buffer, buffer_size, "NAN");
@@ -2614,6 +2630,7 @@ static void ptn_format_var_dump_float(double value, char *buffer, size_t buffer_
         char *end = NULL;
         double reparsed;
         snprintf(candidate, sizeof(candidate), "%.*g", precision, value);
+        ptn_normalize_var_dump_exponent(candidate);
         errno = 0;
         reparsed = strtod(candidate, &end);
         if (errno == 0 && end != NULL && *end == '\0' && ptn_same_double(reparsed, value)) {
@@ -2623,6 +2640,7 @@ static void ptn_format_var_dump_float(double value, char *buffer, size_t buffer_
     }
 
     snprintf(buffer, buffer_size, "%.17g", value);
+    ptn_normalize_var_dump_exponent(buffer);
 }
 
 static PTN_UNUSED int ptn_runtime_constant_value(PtnRuntime *runtime, const char *name, PtnValue *out) {
@@ -3597,6 +3615,21 @@ static PtnValue ptn_internal_fdiv(PtnRuntime *runtime, size_t argc, const PtnVal
     return ptn_float(dividend / divisor);
 }
 
+static PtnValue ptn_internal_intdiv(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    int64_t dividend = ptn_value_to_integer_with_precision_deprecation(args[0]);
+    int64_t divisor = ptn_value_to_integer_with_precision_deprecation(args[1]);
+    if (divisor == 0) {
+        ptn_abort_arithmetic_error("Division by zero");
+    }
+    if (dividend == INT64_MIN && divisor == -1) {
+        ptn_abort_arithmetic_error("Division of PHP_INT_MIN by -1 is not an integer");
+    }
+    return ptn_int(dividend / divisor);
+}
+
 static PtnValue ptn_internal_pi(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)argc;
@@ -3841,6 +3874,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "floor", 1, 1, ptn_internal_floor },
         { "sqrt", 1, 1, ptn_internal_sqrt },
         { "fdiv", 2, 2, ptn_internal_fdiv },
+        { "intdiv", 2, 2, ptn_internal_intdiv },
         { "pi", 0, 0, ptn_internal_pi },
         { "getrandmax", 0, 0, ptn_internal_getrandmax },
         { "getmypid", 0, 0, ptn_internal_getmypid },

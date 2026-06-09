@@ -1864,6 +1864,71 @@ fn compile_fdiv_registry_and_scalar_conversion_to_native_binary() {
 }
 
 #[test]
+fn compile_intdiv_internal_function_to_native_binary() {
+    let root = temp_dir("ptn-native-intdiv-function");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intdiv-function.php");
+    let output = root.join("intdiv-function-bin");
+    fs::write(
+        &input,
+        "<?php var_dump(intdiv(3, 2), intdiv(-3, 2), intdiv(3, -2), intdiv(-3, -2), intdiv(PHP_INT_MAX, PHP_INT_MAX), intdiv(PHP_INT_MIN, PHP_INT_MIN), intdiv(\"9\", \"2\"), function_exists(\"intdiv\"), function_exists(\"INTDIV\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(1)\nint(-1)\nint(-1)\nint(1)\nint(1)\nint(1)\nint(4)\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_intdiv_float_precision_diagnostic_to_native_binary() {
+    let root = temp_dir("ptn-native-intdiv-float-precision");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intdiv-float-precision.php");
+    let output = root.join("intdiv-float-precision-bin");
+    fs::write(&input, "<?php var_dump(intdiv(5.9, 2));").unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "\nDeprecated: Implicit conversion from float 5.9 to int loses precision in ptn-generated-code on line 0\nint(2)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn var_dump_float_exponents_use_php_spelling_in_native_binary() {
+    let root = temp_dir("ptn-native-var-dump-float-exponents");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("var-dump-float-exponents.php");
+    let output = root.join("var-dump-float-exponents-bin");
+    fs::write(
+        &input,
+        "<?php var_dump(-9.22337203900226E+18); var_dump(1.4757395258967642E+19); var_dump(1.2e-5);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "float(-9.22337203900226E+18)\nfloat(1.4757395258967642E+19)\nfloat(1.2E-5)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_quotemeta_basic_phpt_shape_to_native_binary() {
     let root = temp_dir("ptn-native-quotemeta-basic-phpt-shape");
     fs::create_dir_all(&root).unwrap();

@@ -109,8 +109,8 @@ supports in generated native binaries.
   `sha1(expr[, raw_output]);`, `substr(expr, expr[, expr]);`, `bin2hex(expr);`,
   `hex2bin(expr);`, `dirname(expr);`, `soundex(expr);`,
   `ceil(expr);`, `floor(expr);`, `sqrt(expr);`, `fdiv(expr, expr);`,
-  `bindec(expr);`, `hexdec(expr);`, `octdec(expr);`, `pi();`,
-  `getrandmax();`, `getmypid();`, `php_sapi_name();`,
+  `intdiv(expr, expr);`, `bindec(expr);`, `hexdec(expr);`, `octdec(expr);`,
+  `pi();`, `getrandmax();`, `getmypid();`, `php_sapi_name();`,
   `phpversion([extension]);`, `intval(expr);`, `chr(expr);`, `ord(expr);`,
   `is_finite(expr);`, `is_infinite(expr);`, `is_nan(expr);`, and
   `error_reporting(expr);`.
@@ -121,9 +121,10 @@ supports in generated native binaries.
   `sha1(expr[, raw_output])`, `substr(expr, expr[, expr])`, `bin2hex(expr)`,
   `hex2bin(expr)`, `dirname(expr)`, `soundex(expr)`, `ceil(expr)`,
   `floor(expr)`,
-  `sqrt(expr)`, `fdiv(expr, expr)`, `bindec(expr)`, `hexdec(expr)`,
-  `octdec(expr)`, `pi()`, `getrandmax()`, `getmypid()`, `php_sapi_name()`,
-  `phpversion([extension])`, `intval(expr)`, `chr(expr)`, `ord(expr)`,
+  `sqrt(expr)`, `fdiv(expr, expr)`, `intdiv(expr, expr)`, `bindec(expr)`,
+  `hexdec(expr)`, `octdec(expr)`, `pi()`, `getrandmax()`, `getmypid()`,
+  `php_sapi_name()`, `phpversion([extension])`, `intval(expr)`, `chr(expr)`,
+  `ord(expr)`,
   `is_finite(expr)`, `is_infinite(expr)`, `is_nan(expr)`,
   `error_reporting(expr)`, `gettype(expr)`, and scalar `is_*` type
   predicates in echo operands, assignments, binary operands, and branch/loop
@@ -133,8 +134,9 @@ supports in generated native binaries.
 - `var_dump()` output for current boxed values: `NULL`, `bool(...)`,
   `int(...)`, `float(...)`, `string(length) "value"`, and ordered literal
   arrays. Finite floats use the shortest decimal spelling that round-trips to
-  the same native double; `INF`, `-INF`, and `NAN` keep PHP-like special
-  spellings.
+  the same native double, with PHP-style uppercase `E` and unpadded exponent
+  widths when scientific notation is required; `INF`, `-INF`, and `NAN` keep
+  PHP-like special spellings.
 - `strlen()` over current boxed scalar values after scalar string conversion.
 - `str_rot13()` over current boxed scalar values after scalar string conversion,
   returning ASCII ROT13 output while leaving non-letters unchanged.
@@ -176,6 +178,8 @@ supports in generated native binaries.
 - `fdiv()` over current boxed scalar values after scalar numeric conversion,
   returning boxed floating-point division results, including zero divisors,
   signed zeroes, infinities, and `NAN`.
+- `intdiv()` over current boxed scalar values after scalar integer conversion,
+  returning a boxed integer quotient for supported non-zero divisors.
 - `pi()` returns the modeled boxed float value of the `M_PI` constant.
 - `getrandmax()` returns the modeled maximum random integer.
 - `getmypid()` returns the generated native process id.
@@ -335,6 +339,8 @@ supports in generated native binaries.
 - Exact `sqrt()` diagnostics and complete negative/non-finite float parity.
 - Exact `fdiv()` unsupported-type diagnostics for arrays, objects, resources,
   and references.
+- Exact `intdiv()` catchable exception behavior for zero divisors,
+  `PHP_INT_MIN / -1`, and unsupported array/object/resource/reference operands.
 - Exact diagnostics and full precision/range parity for `intval()`, `bindec()`,
   `hexdec()`, and `octdec()` on very large or unsupported values.
 - Exact `hex2bin()` warning text/file-name parity and unsupported

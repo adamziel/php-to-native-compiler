@@ -1569,3 +1569,27 @@ Added modeled versioning internals:
 Still unsupported after this versioning slice: PHP-exact SAPI identity outside
 the modeled CLI runner boundary, exact PHP/extension version metadata,
 extension loading state, and versioning behavior for unsupported SAPIs.
+
+Added scalar `intdiv()` and PHP-style `var_dump()` float exponent spelling:
+
+- Registered `intdiv()` in the generated C internal-function registry, so
+  normal calls and `function_exists()` share the same case-insensitive lookup
+  and argument-count checks.
+- `intdiv()` converts both operands through the current boxed scalar
+  integer-conversion path, including the existing float-to-int precision-loss
+  diagnostic boundary, then returns the truncating integer quotient for
+  supported non-zero divisors.
+- `var_dump()` finite float formatting now normalizes scientific notation to
+  PHP-style uppercase `E` with unpadded exponent widths while preserving the
+  shortest round-trip decimal selection.
+- Native tests prove signed `intdiv()` quotients, scalar string and float
+  conversion, registry exposure, and exponent-form `var_dump()` output.
+- Focused public PHPT telemetry through `phpc` passes
+  `Zend/tests/zend_signed_multiply-64bit.phpt` and
+  `Zend/tests/zend_signed_multiply-64bit-2.phpt`.
+
+Still unsupported after this `intdiv()` slice: PHP-exact catchable exception
+objects and messages for zero divisors and `PHP_INT_MIN / -1`, unsupported
+array/object/resource/reference operands, exact warning file names and line
+numbers for integer conversion diagnostics, and complete float formatting
+parity outside current scalar `var_dump()`.

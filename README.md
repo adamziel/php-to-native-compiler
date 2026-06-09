@@ -33,8 +33,8 @@ Supported today:
   `md5(expr[, raw_output])`, `sha1(expr[, raw_output])`,
   `substr(expr, expr[, expr])`, `bin2hex(expr)`, `hex2bin(expr)`,
   `dirname(expr)`, `soundex(expr)`, `ceil(expr)`, `floor(expr)`,
-  `sqrt(expr)`, `fdiv(expr, expr)`, `bindec(expr)`, `hexdec(expr)`,
-  `octdec(expr)`, `intval(expr[, base])`, `pi()`, `getrandmax()`,
+  `sqrt(expr)`, `fdiv(expr, expr)`, `intdiv(expr, expr)`, `bindec(expr)`,
+  `hexdec(expr)`, `octdec(expr)`, `intval(expr[, base])`, `pi()`, `getrandmax()`,
   `getmypid()`, `php_sapi_name()`, `phpversion([extension])`, `chr(expr)`,
   `ord(expr)`,
   `error_reporting(expr)`, `gettype(expr)`, scalar `is_*` type predicates,
@@ -45,7 +45,9 @@ Supported today:
 - `var_dump()` output for the current boxed `PtnValue` types: `null`,
   booleans, integers, floats, strings, and ordered literal arrays. Finite
   floats use the shortest decimal spelling that round-trips to the same native
-  double; `INF`, `-INF`, and `NAN` keep PHP-like special spellings.
+  double, with PHP-style uppercase `E` and unpadded exponent widths when
+  scientific notation is required; `INF`, `-INF`, and `NAN` keep PHP-like
+  special spellings.
 - `strlen()` as an expression returning the byte length of the current boxed
   scalar string-conversion result.
 - `str_rot13()` as an expression returning ASCII ROT13 over the current boxed
@@ -88,6 +90,8 @@ Supported today:
 - `fdiv()` as an expression returning boxed IEEE-style floating-point division
   after the current boxed scalar numeric-conversion result, including zero
   divisors and non-finite operands.
+- `intdiv()` as an expression returning the boxed integer quotient after both
+  operands use the current boxed scalar integer-conversion path.
 - `pi()` as an expression returning the modeled boxed float value of `M_PI`.
 - `getrandmax()` as an expression returning the modeled maximum random integer.
 - `getmypid()` as an expression returning the generated native process id.
@@ -277,9 +281,11 @@ Unsupported today:
   `chr()` deprecation diagnostics, exact `ord()` argument type diagnostics,
   exact `ceil()`/`floor()`
   null/string/unsupported type diagnostics, exact `sqrt()` negative/non-finite
-  edge parity, exact `fdiv()` unsupported operand diagnostics, exact
-  `getmypid()` process model parity across SAPIs and unsupported platforms,
-  exact PHP version/SAPI/extension metadata beyond the modeled CLI boundary,
+  edge parity, exact `fdiv()` unsupported operand diagnostics, exact `intdiv()`
+  catchable exception behavior for zero divisors, `PHP_INT_MIN / -1`, and
+  unsupported operands, exact `getmypid()` process model parity across SAPIs
+  and unsupported platforms, exact PHP version/SAPI/extension metadata beyond
+  the modeled CLI boundary,
   exact `error_reporting()` configuration/filtering behavior, unsupported cast
   spelling diagnostics beyond the currently modeled aliases and removed cast
   boundaries, statement-form `(void) expr;` casts, and full PHP
