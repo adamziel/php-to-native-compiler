@@ -142,6 +142,8 @@ typedef struct {
     PtnDiagnosticSink diagnostics;
 } PtnRuntime;
 
+static PTN_UNUSED int ptn_is_truthy(PtnValue value);
+
 typedef PtnValue (*PtnInternalFunctionHandler)(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 
 typedef struct {
@@ -796,6 +798,16 @@ static PTN_UNUSED PtnLookupResult ptn_runtime_read_variable_quiet(PtnRuntime *ru
     return ptn_lookup_missing();
 }
 
+static PTN_UNUSED int ptn_runtime_variable_is_set(PtnRuntime *runtime, const char *name) {
+    PtnValue value;
+    return ptn_symbols_get(&runtime->symbols, name, &value) && value.type != PTN_NULL;
+}
+
+static PTN_UNUSED int ptn_runtime_variable_is_empty(PtnRuntime *runtime, const char *name) {
+    PtnValue value;
+    return !ptn_symbols_get(&runtime->symbols, name, &value) || !ptn_is_truthy(value);
+}
+
 static PTN_UNUSED void ptn_runtime_define_constant(PtnRuntime *runtime, const char *name, PtnValue value) {
     ptn_symbols_set(runtime->constants, name, value);
 }
@@ -1435,6 +1447,63 @@ static PTN_UNUSED PtnLookupResult ptn_offset_lookup(PtnRuntime *runtime, PtnValu
 static PTN_UNUSED PtnValue ptn_array_read(PtnRuntime *runtime, PtnValue container, PtnValue key_value, size_t line) {
     PtnLookupResult result = ptn_offset_lookup(runtime, container, key_value, line, 0);
     return result.exists ? result.value : ptn_null();
+}
+
+static PTN_UNUSED int ptn_offset_is_set(PtnRuntime *runtime, PtnValue container, PtnValue key_value, size_t line) {
+    (void)runtime;
+    if (container.type == PTN_STRING) {
+        int64_t offset = 0;
+        size_t index = 0;
+        return ptn_string_offset_from_value(key_value, line, 1, &offset) &&
+            ptn_string_offset_index(strlen(container.as.string), offset, &index);
+    }
+
+    if (container.type != PTN_ARRAY) {
+        return 0;
+    }
+    if (key_value.type == PTN_NULL) {
+        ptn_emit_array_runtime_diagnostic(
+            "Deprecated",
+            "Using null as an array offset is deprecated, use an empty string instead",
+            line
+        );
+    }
+
+    PtnArrayKey key = ptn_array_key_from_value(key_value);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(container.as.array, key);
+    int result = entry != NULL && entry->value.type != PTN_NULL;
+    ptn_array_key_free(key);
+    return result;
+}
+
+static PTN_UNUSED int ptn_offset_is_empty(PtnRuntime *runtime, PtnValue container, PtnValue key_value, size_t line) {
+    (void)runtime;
+    if (container.type == PTN_STRING) {
+        int64_t offset = 0;
+        size_t index = 0;
+        if (!ptn_string_offset_from_value(key_value, line, 1, &offset) ||
+            !ptn_string_offset_index(strlen(container.as.string), offset, &index)) {
+            return 1;
+        }
+        return container.as.string[index] == '0';
+    }
+
+    if (container.type != PTN_ARRAY) {
+        return 1;
+    }
+    if (key_value.type == PTN_NULL) {
+        ptn_emit_array_runtime_diagnostic(
+            "Deprecated",
+            "Using null as an array offset is deprecated, use an empty string instead",
+            line
+        );
+    }
+
+    PtnArrayKey key = ptn_array_key_from_value(key_value);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(container.as.array, key);
+    int result = entry == NULL || !ptn_is_truthy(entry->value);
+    ptn_array_key_free(key);
+    return result;
 }
 
 static PTN_UNUSED int ptn_compare_arrays_equal(PtnArray *left, PtnArray *right) {
@@ -3856,18 +3925,22 @@ static PtnValue ptn_internal_ord(PtnRuntime *runtime, size_t argc, const PtnValu
     return ptn_int(byte);
 }
 
+static PTN_UNUSED PtnValue ptn_count_value(PtnValue value) {
+    if (value.type == PTN_ARRAY) {
+        return ptn_int((int64_t)value.as.array->len);
+    }
+    fputs("Fatal error: count(): Argument #1 ($value) must be of type Countable|array, ", stderr);
+    fputs(ptn_offset_container_type_name(value), stderr);
+    fputs(" given\n", stderr);
+    exit(255);
+    return ptn_null();
+}
+
 static PtnValue ptn_internal_count(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)argc;
     (void)line;
-    if (args[0].type == PTN_ARRAY) {
-        return ptn_int((int64_t)args[0].as.array->len);
-    }
-    fputs("Fatal error: count(): Argument #1 ($value) must be of type Countable|array, ", stderr);
-    fputs(ptn_offset_container_type_name(args[0]), stderr);
-    fputs(" given\n", stderr);
-    exit(255);
-    return ptn_null();
+    return ptn_count_value(args[0]);
 }
 
 static PtnValue ptn_internal_error_reporting(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -4004,23 +4077,27 @@ static PtnValue ptn_internal_function_exists(PtnRuntime *runtime, size_t argc, c
     return ptn_bool(exists);
 }
 
-static PtnValue ptn_internal_array_key_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)argc;
-    if (args[1].type != PTN_ARRAY) {
+static PTN_UNUSED PtnValue ptn_array_key_exists_value(PtnRuntime *runtime, PtnValue key_value, PtnValue array_value, size_t line) {
+    if (array_value.type != PTN_ARRAY) {
         fputs("Fatal error: array_key_exists(): Argument #2 ($array) must be of type array\n", stderr);
         exit(255);
     }
-    if (args[0].type == PTN_NULL) {
+    if (key_value.type == PTN_NULL) {
         ptn_emit_deprecation(
             &runtime->diagnostics,
             "Using null as the key parameter for array_key_exists() is deprecated, use an empty string instead",
             line
         );
     }
-    PtnArrayKey key = ptn_array_key_from_value(args[0]);
-    int exists = ptn_array_entry_for_key(args[1].as.array, key) != NULL;
+    PtnArrayKey key = ptn_array_key_from_value(key_value);
+    int exists = ptn_array_entry_for_key(array_value.as.array, key) != NULL;
     ptn_array_key_free(key);
     return ptn_bool(exists);
+}
+
+static PtnValue ptn_internal_array_key_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_array_key_exists_value(runtime, args[0], args[1], line);
 }
 
 static PTN_UNUSED PtnValue ptn_call_internal(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line) {
