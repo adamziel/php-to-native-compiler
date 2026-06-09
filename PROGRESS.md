@@ -1302,3 +1302,26 @@ Still unsupported after this numeric-literal diagnostic slice: invalid
 separator diagnostics for forms such as `100_`, `10__0`, `0x_0123`, and
 `1e_2`, invalid binary/hex suffix wording, exact numeric literal overflow/range
 parity, and broader parse-error wording parity.
+
+Added scalar `substr()`:
+
+- Registered `substr()` through the generated C internal-function registry, so
+  normal calls and `function_exists()` share the same case-insensitive lookup
+  table.
+- `substr()` converts the input through the current boxed scalar
+  string-conversion path and converts start/length through the current boxed
+  scalar integer-conversion path.
+- The runtime implements byte-offset slicing for the current C-string-backed
+  scalar values: non-negative starts clamp at the end, negative starts count
+  back from the end, negative lengths truncate from the end, omitted or `null`
+  lengths read to the end, and `INT64_MIN`-sized negative offsets clamp without
+  overflow.
+- Native tests prove the public `substr_int_min.phpt` source shape, scalar
+  conversion, positive and negative bounds, omitted/null length, and registry
+  exposure.
+- Focused public PHPT telemetry through `phpc` passes
+  `ext/standard/tests/strings/substr_int_min.phpt`.
+
+Still unsupported after this `substr()` slice: exact binary-string behavior for
+embedded NUL values, unsupported array/object/resource/reference operand
+diagnostics, strict type handling, and broader string-runtime parity.

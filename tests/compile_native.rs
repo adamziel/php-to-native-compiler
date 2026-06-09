@@ -1777,6 +1777,65 @@ var_dump(function_exists(\"sha1\"), function_exists(\"SHA1\"));\n\
 }
 
 #[test]
+fn compile_substr_int_min_phpt_shape_to_native_binary() {
+    let root = temp_dir("ptn-native-substr-int-min-phpt-shape");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("substr-int-min.php");
+    let output = root.join("substr-int-min-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(substr('x', PHP_INT_MIN));\n\
+var_dump(substr('x', 0, PHP_INT_MIN));\n\
+?>",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(1) \"x\"\nstring(0) \"\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_substr_scalar_conversion_and_bounds_to_native_binary() {
+    let root = temp_dir("ptn-native-substr-scalar-conversion-and-bounds");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("substr-scalar-conversion.php");
+    let output = root.join("substr-scalar-conversion-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(substr(\"abcdef\", 1));\n\
+var_dump(substr(\"abcdef\", -2));\n\
+var_dump(substr(\"abcdef\", 1, 3));\n\
+var_dump(substr(\"abcdef\", 1, -3));\n\
+var_dump(substr(\"abcdef\", 4, -4));\n\
+var_dump(substr(\"abcdef\", -8));\n\
+var_dump(substr(\"abcdef\", 2, null));\n\
+var_dump(substr(12345, \"1\", \"3\"));\n\
+var_dump(function_exists(\"substr\"), function_exists(\"SUBSTR\"));\n\
+?>",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(5) \"bcdef\"\nstring(2) \"ef\"\nstring(3) \"bcd\"\nstring(2) \"bc\"\nstring(0) \"\"\nstring(6) \"abcdef\"\nstring(4) \"cdef\"\nstring(3) \"234\"\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_hex2bin_basic_phpt_shape_to_native_binary() {
     let root = temp_dir("ptn-native-hex2bin-basic-phpt-shape");
     fs::create_dir_all(&root).unwrap();

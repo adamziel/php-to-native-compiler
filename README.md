@@ -27,11 +27,12 @@ Supported today:
   `echo`; emitted native code uses the same boxed output conversion path.
 - Simple internal calls such as `var_dump(expr, ...)`, `strlen(expr)`,
   `str_rot13(expr)`, `strcmp(expr, expr)`, `str_contains(expr, expr)`,
-  `md5(expr[, raw_output])`, `sha1(expr[, raw_output])`, `bin2hex(expr)`,
-  `hex2bin(expr)`, `dirname(expr)`, `soundex(expr)`, `ceil(expr)`,
-  `floor(expr)`, `sqrt(expr)`, `fdiv(expr, expr)`, `bindec(expr)`,
-  `hexdec(expr)`, `octdec(expr)`, `pi()`, `getrandmax()`, `getmypid()`,
-  `chr(expr)`, `ord(expr)`,
+  `md5(expr[, raw_output])`, `sha1(expr[, raw_output])`,
+  `substr(expr, expr[, expr])`, `bin2hex(expr)`, `hex2bin(expr)`,
+  `dirname(expr)`, `soundex(expr)`, `ceil(expr)`, `floor(expr)`,
+  `sqrt(expr)`, `fdiv(expr, expr)`, `bindec(expr)`, `hexdec(expr)`,
+  `octdec(expr)`, `pi()`, `getrandmax()`, `getmypid()`, `chr(expr)`,
+  `ord(expr)`,
   `error_reporting(expr)`, `gettype(expr)`, scalar `is_*` type predicates,
   non-finite predicates such as `is_finite(expr)`, `is_infinite(expr)`, and
   `is_nan(expr)`,
@@ -54,6 +55,12 @@ Supported today:
   output for the current boxed scalar string-conversion result. The optional
   `raw_output` argument returns raw digest bytes through the current
   C-string-backed value path.
+- `substr()` as an expression returning a byte slice of the current boxed
+  scalar string-conversion result, with start and optional length operands
+  converted through the current boxed scalar integer-conversion path. Negative
+  starts count back from the end, negative lengths truncate from the end,
+  omitted or `null` lengths read to the end, and extreme negative offsets clamp
+  to the beginning.
 - `bin2hex()` as an expression returning lowercase hexadecimal bytes for the
   current boxed scalar string-conversion result.
 - `hex2bin()` as an expression decoding hexadecimal pairs from the current
@@ -214,13 +221,14 @@ Unsupported today:
   `PHP_INT_MIN`, `PHP_INT_MAX`, `PHP_INT_SIZE`, `INF`, `NAN`, `M_PI`, and the
   modeled PHP math `M_*` constants, objects, resources, recursion, references,
   embedded NUL string handling, complex/braced interpolation, interpolation of
-  arrays/objects/offsets/properties/variable variables, exact `strcmp()` and
-  `str_contains()` binary-string parity, exact `md5()`/`sha1()` raw-output and
-  embedded-NUL input parity, exact `hex2bin()` embedded-NUL output parity and
-  warning text/file-name parity, exact `dirname()` edge parity for unusual
-  paths and unsupported operands, exact `soundex()` locale/non-ASCII parity and
-  unsupported type diagnostics, exact `chr()` deprecation diagnostics, exact
-  `ord()` argument type diagnostics, exact `ceil()`/`floor()`
+  arrays/objects/offsets/properties/variable variables, exact `strcmp()`,
+  `str_contains()`, and `substr()` binary-string parity, exact
+  `md5()`/`sha1()` raw-output and embedded-NUL input parity, exact `hex2bin()`
+  embedded-NUL output parity and warning text/file-name parity, exact
+  `dirname()` edge parity for unusual paths and unsupported operands, exact
+  `soundex()` locale/non-ASCII parity and unsupported type diagnostics, exact
+  `chr()` deprecation diagnostics, exact `ord()` argument type diagnostics,
+  exact `ceil()`/`floor()`
   null/string/unsupported type diagnostics, exact `sqrt()` negative/non-finite
   edge parity, exact `fdiv()` unsupported operand diagnostics, exact
   `getmypid()` process model parity across SAPIs and unsupported platforms,
@@ -229,10 +237,10 @@ Unsupported today:
   boundaries, statement-form `(void) expr;` casts, and full PHP
   precision/formatting edge cases for
   `var_dump()`/`strlen()`/`bin2hex()`/`hex2bin()`/`str_contains()`/`md5()`/
-  `sha1()`/`soundex()`/base-conversion internals, scope-aware magic constants
-  inside functions/classes/namespaces/includes, exact file/line/error-handler
-  behavior for integer-only operator precision-loss diagnostics, doc comment
-  retention, variable variables, and dynamic fallback.
+  `sha1()`/`substr()`/`soundex()`/base-conversion internals, scope-aware magic
+  constants inside functions/classes/namespaces/includes, exact
+  file/line/error-handler behavior for integer-only operator precision-loss
+  diagnostics, doc comment retention, variable variables, and dynamic fallback.
   These are architecture targets, not excuses for exact-shape hacks.
 
 ## Build

@@ -2856,6 +2856,83 @@ static PtnValue ptn_internal_sha1(PtnRuntime *runtime, size_t argc, const PtnVal
     return ptn_digest_value(digest, sizeof(digest), raw_output);
 }
 
+static size_t ptn_substr_clamped_positive(int64_t value, size_t limit) {
+    if (value <= 0) {
+        return 0;
+    }
+    uint64_t unsigned_value = (uint64_t)value;
+    if (unsigned_value > (uint64_t)limit) {
+        return limit;
+    }
+    return (size_t)unsigned_value;
+}
+
+static size_t ptn_substr_clamped_negative_distance(int64_t value, size_t limit) {
+    if (value >= 0) {
+        return 0;
+    }
+    if (value == INT64_MIN) {
+        return limit;
+    }
+    uint64_t distance = (uint64_t)(-value);
+    if (distance > (uint64_t)limit) {
+        return limit;
+    }
+    return (size_t)distance;
+}
+
+static size_t ptn_substr_start_offset(size_t string_len, int64_t start) {
+    if (start >= 0) {
+        return ptn_substr_clamped_positive(start, string_len);
+    }
+    size_t distance = ptn_substr_clamped_negative_distance(start, string_len);
+    return string_len - distance;
+}
+
+static char *ptn_substr_copy(const char *string, size_t start, size_t len) {
+    if (len == SIZE_MAX) {
+        ptn_abort_out_of_memory();
+    }
+    char *result = malloc(len + 1);
+    if (result == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    memcpy(result, string + start, len);
+    result[len] = '\0';
+    return result;
+}
+
+static PtnValue ptn_internal_substr(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)line;
+    char *string = ptn_value_to_string(args[0]);
+    size_t string_len = strlen(string);
+    size_t start = ptn_substr_start_offset(string_len, ptn_value_to_integer(args[1]));
+    size_t end = string_len;
+
+    if (argc >= 3 && args[2].type != PTN_NULL) {
+        int64_t length = ptn_value_to_integer(args[2]);
+        if (length >= 0) {
+            size_t requested_len = ptn_substr_clamped_positive(length, string_len);
+            size_t available_len = string_len - start;
+            if (requested_len > available_len) {
+                requested_len = available_len;
+            }
+            end = start + requested_len;
+        } else {
+            size_t truncate_len = ptn_substr_clamped_negative_distance(length, string_len);
+            end = string_len - truncate_len;
+            if (end < start) {
+                end = start;
+            }
+        }
+    }
+
+    char *substring = ptn_substr_copy(string, start, end - start);
+    free(string);
+    return ptn_owned_string(substring);
+}
+
 static int ptn_is_path_separator(char byte) {
     return byte == '/' || byte == '\\';
 }
@@ -3372,6 +3449,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "str_contains", 2, 2, ptn_internal_str_contains },
         { "md5", 1, 2, ptn_internal_md5 },
         { "sha1", 1, 2, ptn_internal_sha1 },
+        { "substr", 2, 3, ptn_internal_substr },
         { "dirname", 1, 1, ptn_internal_dirname },
         { "bin2hex", 1, 1, ptn_internal_bin2hex },
         { "hex2bin", 1, 1, ptn_internal_hex2bin },

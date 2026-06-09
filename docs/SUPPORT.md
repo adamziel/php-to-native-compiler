@@ -93,9 +93,9 @@ supports in generated native binaries.
 - Simple statement-form internal calls such as `var_dump(expr, ...)`,
   `strlen(expr);`, `str_rot13(expr);`, `strcmp(expr, expr);`,
   `str_contains(expr, expr);`, `md5(expr[, raw_output]);`,
-  `sha1(expr[, raw_output]);`, `bin2hex(expr);`, `hex2bin(expr);`,
-  `dirname(expr);`, `soundex(expr);`, `ceil(expr);`, `floor(expr);`,
-  `sqrt(expr);`, `fdiv(expr, expr);`,
+  `sha1(expr[, raw_output]);`, `substr(expr, expr[, expr]);`,
+  `bin2hex(expr);`, `hex2bin(expr);`, `dirname(expr);`, `soundex(expr);`,
+  `ceil(expr);`, `floor(expr);`, `sqrt(expr);`, `fdiv(expr, expr);`,
   `bindec(expr);`, `hexdec(expr);`, `octdec(expr);`, `pi();`,
   `getrandmax();`, `getmypid();`, `chr(expr);`, `ord(expr);`,
   `is_finite(expr);`, `is_infinite(expr);`, `is_nan(expr);`, and
@@ -103,8 +103,9 @@ supports in generated native binaries.
 - Expression-form internal calls for the currently registered scalar functions,
   including `strlen(expr)`, `str_rot13(expr)`, `strcmp(expr, expr)`,
   `str_contains(expr, expr)`, `md5(expr[, raw_output])`,
-  `sha1(expr[, raw_output])`, `bin2hex(expr)`, `hex2bin(expr)`,
-  `dirname(expr)`, `soundex(expr)`, `ceil(expr)`, `floor(expr)`,
+  `sha1(expr[, raw_output])`, `substr(expr, expr[, expr])`, `bin2hex(expr)`,
+  `hex2bin(expr)`, `dirname(expr)`, `soundex(expr)`, `ceil(expr)`,
+  `floor(expr)`,
   `sqrt(expr)`, `fdiv(expr, expr)`, `bindec(expr)`, `hexdec(expr)`,
   `octdec(expr)`, `pi()`, `getrandmax()`, `getmypid()`, `chr(expr)`,
   `ord(expr)`,
@@ -132,6 +133,11 @@ supports in generated native binaries.
   conversion, returning lowercase hexadecimal digest output, or raw digest
   bytes when the optional `raw_output` argument is truthy and the current
   C-string-backed value path can carry the produced bytes.
+- `substr()` over current boxed scalar values after scalar string conversion,
+  with start and optional length converted through the current scalar integer
+  conversion path. Negative starts count back from the end, negative lengths
+  truncate from the end, omitted or `null` lengths read to the end, and extreme
+  negative offsets clamp to the beginning.
 - `bin2hex()` over current boxed scalar values after scalar string conversion,
   returning lowercase hexadecimal byte output.
 - `hex2bin()` over current boxed scalar values after scalar string conversion,
@@ -254,14 +260,16 @@ supports in generated native binaries.
   and `var_dump()` reference identity output.
 - Embedded NUL strings in runtime string values, `var_dump()` string
   length/output, `strlen()`, `str_rot13()`, `strcmp()`, `bin2hex()`, `chr()`,
-  `hex2bin()`, `str_contains()`, `md5()`, `sha1()`, `soundex()`, `ord()`, or
-  bitwise string results.
+  `hex2bin()`, `str_contains()`, `md5()`, `sha1()`, `substr()`, `soundex()`,
+  `ord()`, or bitwise string results.
 - Exact `strcmp()` binary-string behavior for embedded NUL bytes and
   unsupported array/object/resource/reference operands.
 - Exact `str_contains()` binary-string behavior for embedded NUL bytes and
   unsupported array/object/resource/reference operands.
 - `md5()`/`sha1()` raw binary output containing NUL bytes, embedded-NUL input
   parity, and unsupported array/object/resource/reference operand diagnostics.
+- Exact `substr()` binary-string behavior for embedded NUL bytes and
+  unsupported array/object/resource/reference operands.
 - Exact `chr()` diagnostics for out-of-range integers or float-to-int precision
   loss.
 - Exact `ord()` strict-types and unsupported-type diagnostics.
