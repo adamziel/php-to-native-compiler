@@ -148,6 +148,7 @@ pub enum ValueExpr {
     Unary {
         op: UnaryOp,
         expr: Box<ValueExpr>,
+        line: usize,
     },
     Cast {
         kind: CastKind,
@@ -519,9 +520,10 @@ fn lower_expr(expr: &Expr) -> ValueExpr {
             arguments: arguments.iter().map(lower_expr).collect(),
             line: span.line,
         },
-        Expr::Unary { op, expr, .. } => ValueExpr::Unary {
+        Expr::Unary { op, expr, span } => ValueExpr::Unary {
             op: lower_unary_op(*op),
             expr: Box::new(lower_expr(expr)),
+            line: span.line,
         },
         Expr::Cast { kind, expr, span } => ValueExpr::Cast {
             kind: lower_cast_kind(*kind),

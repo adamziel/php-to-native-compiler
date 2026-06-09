@@ -6014,6 +6014,29 @@ fn compile_unary_bitwise_not_to_native_binary() {
 }
 
 #[test]
+fn compile_unary_bitwise_not_array_operand_fatals() {
+    let root = temp_dir("ptn-native-bitwise-not-array");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("bitwise-not-array.php");
+    let output = root.join("bitwise-not-array-bin");
+    fs::write(&input, "<?php\n$value = [1, 2];\nvar_dump(~$value);").unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "Fatal error: Cannot perform bitwise not on array in {} on line 3\n",
+            input.display()
+        )
+    );
+}
+
+#[test]
 fn compile_integer_operator_precision_deprecations_to_native_binary() {
     let root = temp_dir("ptn-native-int-operator-precision-deprecations");
     fs::create_dir_all(&root).unwrap();
