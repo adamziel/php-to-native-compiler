@@ -1,3 +1,4 @@
+use std::env;
 use std::ffi::OsStr;
 use std::fs;
 use std::path::Path;
@@ -853,11 +854,13 @@ pub fn compile_c(c_source: &str, output: &Path) -> Result<()> {
             None,
         )
     })?;
-    let status = Command::new("cc")
-        .arg("-std=c11")
-        .arg("-Wall")
-        .arg("-Wextra")
-        .arg("-O2")
+    let optimization_args = cc_optimization_args()?;
+    let mut command = Command::new("cc");
+    command.arg("-std=c11").arg("-Wall").arg("-Wextra");
+    for arg in optimization_args {
+        command.arg(arg);
+    }
+    let status = command
         .arg(&c_path)
         .arg("-o")
         .arg(output)
@@ -875,6 +878,42 @@ pub fn compile_c(c_source: &str, output: &Path) -> Result<()> {
             ),
             None,
         ))
+    }
+}
+
+const CC_OPT_LEVEL_ENV: &str = "PTN_CC_OPT_LEVEL";
+
+fn cc_optimization_args() -> Result<Vec<&'static str>> {
+    let value = match env::var(CC_OPT_LEVEL_ENV) {
+        Ok(value) => Some(value),
+        Err(env::VarError::NotPresent) => None,
+        Err(env::VarError::NotUnicode(_)) => {
+            return Err(Diagnostic::new(
+                format!("{CC_OPT_LEVEL_ENV} must be valid Unicode"),
+                None,
+            ))
+        }
+    };
+    cc_optimization_args_for(value.as_deref())
+}
+
+fn cc_optimization_args_for(value: Option<&str>) -> Result<Vec<&'static str>> {
+    let Some(raw) = value.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(vec!["-O2"]);
+    };
+    match raw.to_ascii_lowercase().as_str() {
+        "0" | "o0" | "-o0" | "debug" => Ok(vec!["-O0", "-g"]),
+        "1" | "o1" | "-o1" => Ok(vec!["-O1"]),
+        "2" | "o2" | "-o2" => Ok(vec!["-O2"]),
+        "3" | "o3" | "-o3" => Ok(vec!["-O3"]),
+        "s" | "os" | "-os" => Ok(vec!["-Os"]),
+        "z" | "oz" | "-oz" => Ok(vec!["-Oz"]),
+        _ => Err(Diagnostic::new(
+            format!(
+                "invalid {CC_OPT_LEVEL_ENV} value `{raw}`; expected 0, 1, 2, 3, s, z, or debug"
+            ),
+            None,
+        )),
     }
 }
 
@@ -5121,3 +5160,37 @@ static PTN_UNUSED PtnValue ptn_call_internal(PtnRuntime *runtime, const char *na
     return ptn_null();
 }
 "#;
+
+#[cfg(test)]
+mod tests {
+    use super::cc_optimization_args_for;
+
+    #[test]
+    fn default_c_compiler_profile_uses_o2() {
+        assert_eq!(cc_optimization_args_for(None).unwrap(), vec!["-O2"]);
+        assert_eq!(cc_optimization_args_for(Some("")).unwrap(), vec!["-O2"]);
+    }
+
+    #[test]
+    fn c_compiler_profile_accepts_debug_and_optimization_levels() {
+        assert_eq!(
+            cc_optimization_args_for(Some("debug")).unwrap(),
+            vec!["-O0", "-g"]
+        );
+        assert_eq!(
+            cc_optimization_args_for(Some("0")).unwrap(),
+            vec!["-O0", "-g"]
+        );
+        assert_eq!(cc_optimization_args_for(Some("-O1")).unwrap(), vec!["-O1"]);
+        assert_eq!(cc_optimization_args_for(Some("2")).unwrap(), vec!["-O2"]);
+        assert_eq!(cc_optimization_args_for(Some("O3")).unwrap(), vec!["-O3"]);
+        assert_eq!(cc_optimization_args_for(Some("s")).unwrap(), vec!["-Os"]);
+        assert_eq!(cc_optimization_args_for(Some("Oz")).unwrap(), vec!["-Oz"]);
+    }
+
+    #[test]
+    fn c_compiler_profile_rejects_unknown_values() {
+        let error = cc_optimization_args_for(Some("fast")).unwrap_err();
+        assert!(error.message.contains("invalid PTN_CC_OPT_LEVEL value"));
+    }
+}
