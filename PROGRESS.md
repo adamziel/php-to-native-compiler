@@ -2,10 +2,10 @@
 
 ## Progress Bar
 
-`[#########.] 54/59 PHPT rows passing`
-- Latest: 2026-06-09T14:04:54Z bounded PHPT patrol holds 54/59; no regressions.
-- Tests ported/passing: 54/59
-- Commit: 57f061f73
+`[#########.] 53/59 PHPT rows passing`
+- Latest: 2026-06-09T14:21:01Z bounded PHPT patrol at 53/59; ext/standard/tests/array/005.phpt regressed.
+- Tests ported/passing: 53/59
+- Commit: eb2390e2e
 
 ## 2026-06-08
 
