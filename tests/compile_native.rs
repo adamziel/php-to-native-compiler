@@ -5558,14 +5558,42 @@ var_dump(function_exists(\"ARRAY_POP\"), function_exists(\"current\"), function_
 }
 
 #[test]
-fn parser_rejects_temporary_array_cursor_mutation_calls() {
-    for (source, function) in [
-        ("<?php next([1, 2]);", "next"),
-        ("<?php var_dump(reset(array(1, 2)));", "reset"),
-        ("<?php $items = [[1], [2]]; end($items[0]);", "end"),
+fn parser_rejects_temporary_array_mutating_internal_calls() {
+    for (source, function, unsupported_form) in [
+        (
+            "<?php next([1, 2]);",
+            "next",
+            "temporary array cursor mutation is unsupported",
+        ),
+        (
+            "<?php var_dump(reset(array(1, 2)));",
+            "reset",
+            "temporary array cursor mutation is unsupported",
+        ),
+        (
+            "<?php $items = [[1], [2]]; end($items[0]);",
+            "end",
+            "temporary array cursor mutation is unsupported",
+        ),
         (
             "<?php $items = [1, 2]; var_dump(prev(current($items)));",
             "prev",
+            "temporary array cursor mutation is unsupported",
+        ),
+        (
+            "<?php array_pop([1, 2]);",
+            "array_pop",
+            "temporary array mutation is unsupported",
+        ),
+        (
+            "<?php var_dump(array_shift(array(1, 2)));",
+            "array_shift",
+            "temporary array mutation is unsupported",
+        ),
+        (
+            "<?php $items = [[1], [2]]; array_push($items[0], 3);",
+            "array_push",
+            "temporary array mutation is unsupported",
         ),
     ] {
         let error = parser::parse(source).unwrap_err();
@@ -5576,12 +5604,11 @@ fn parser_rejects_temporary_array_cursor_mutation_calls() {
             "unexpected diagnostic for {function}: {}",
             error.message
         );
-        assert!(error
-            .message
-            .contains("temporary array cursor mutation is unsupported"));
+        assert!(error.message.contains(unsupported_form));
     }
 
     parser::parse("<?php $items = [1, 2]; next(($items));").unwrap();
+    parser::parse("<?php $items = [1, 2]; array_push(($items), 3);").unwrap();
 }
 
 #[test]
@@ -5803,6 +5830,85 @@ var_dump($shifted);",
     assert!(c_source.contains("ptn_runtime_array_pop_variable"));
     assert!(c_source.contains("ptn_runtime_array_push_variable"));
     assert!(c_source.contains("ptn_runtime_array_shift_variable"));
+}
+
+#[test]
+fn compile_mutating_internal_copy_on_write_matrix_to_native_binary() {
+    let root = temp_dir("ptn-native-mutating-internal-cow-matrix");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("mutating-internal-cow-matrix.php");
+    let output = root.join("mutating-internal-cow-matrix-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$pass = 0;\n\
+$fail = 0;\n\
+$unsupported = 0;\n\
+$base = [1, 2, 3];\n\
+$copy = $base;\n\
+$ret = array_pop($copy);\n\
+if ($ret === 3 && $base === [1, 2, 3] && $copy === [1, 2]) { $pass++; } else { echo \"FAIL array_pop detach\\n\"; $fail++; }\n\
+$base = [1, 2, 3];\n\
+$copy = $base;\n\
+$ret = array_push($copy, 4, 5);\n\
+if ($ret === 5 && $base === [1, 2, 3] && $copy === [1, 2, 3, 4, 5]) { $pass++; } else { echo \"FAIL array_push detach\\n\"; $fail++; }\n\
+$base = [1, 2, 3];\n\
+$copy = $base;\n\
+$ret = array_shift($copy);\n\
+if ($ret === 1 && $base === [1, 2, 3] && $copy === [2, 3]) { $pass++; } else { echo \"FAIL array_shift detach\\n\"; $fail++; }\n\
+$cursor = [\"a\" => \"A\", \"b\" => \"B\", \"c\" => \"C\"];\n\
+$cursor_copy = $cursor;\n\
+$ret = next($cursor_copy);\n\
+if ($ret === \"B\" && key($cursor_copy) === \"b\" && current($cursor) === \"A\" && key($cursor) === \"a\") { $pass++; } else { echo \"FAIL next detach\\n\"; $fail++; }\n\
+$ret = reset($cursor_copy);\n\
+if ($ret === \"A\" && key($cursor_copy) === \"a\" && key($cursor) === \"a\") { $pass++; } else { echo \"FAIL reset detach\\n\"; $fail++; }\n\
+$end_copy = $cursor;\n\
+$ret = end($end_copy);\n\
+if ($ret === \"C\" && key($end_copy) === \"c\" && key($cursor) === \"a\") { $pass++; } else { echo \"FAIL end detach\\n\"; $fail++; }\n\
+$ret = prev($end_copy);\n\
+if ($ret === \"B\" && key($end_copy) === \"b\" && key($cursor) === \"a\") { $pass++; } else { echo \"FAIL prev detach\\n\"; $fail++; }\n\
+$string = \"abcd\";\n\
+$string_copy = $string;\n\
+$string_copy[1] = \"X\";\n\
+if ($string === \"abcd\" && $string_copy === \"aXcd\") { $pass++; } else { echo \"FAIL string offset replace detach\\n\"; $fail++; }\n\
+$string_copy = $string;\n\
+$string_copy[-1] = \"Z\";\n\
+if ($string === \"abcd\" && $string_copy === \"abcZ\") { $pass++; } else { echo \"FAIL string negative offset detach\\n\"; $fail++; }\n\
+$string_copy = $string;\n\
+$string_copy[5] = \"Q\";\n\
+if ($string === \"abcd\" && $string_copy === \"abcd Q\") { $pass++; } else { echo \"FAIL string extension detach\\n\"; $fail++; }\n\
+$append_base = \"abcd\";\n\
+$append_copy = $append_base;\n\
+try { $append_copy[] = \"Z\"; echo \"FAIL string append no throw\\n\"; $fail++; } catch (\\Error $e) { if ($e->getMessage() === \"[] operator not supported for strings\" && $append_base === \"abcd\" && $append_copy === \"abcd\") { $pass++; $unsupported++; } else { echo \"FAIL string append diagnostic\\n\"; $fail++; } }\n\
+$unset_base = \"abcd\";\n\
+$unset_copy = $unset_base;\n\
+try { unset($unset_copy[0]); echo \"FAIL string unset no throw\\n\"; $fail++; } catch (\\Error $e) { if ($e->getMessage() === \"Cannot unset string offsets\" && $unset_base === \"abcd\" && $unset_copy === \"abcd\") { $pass++; $unsupported++; } else { echo \"FAIL string unset diagnostic\\n\"; $fail++; } }\n\
+$assign_base = \"abcd\";\n\
+$assign_copy = $assign_base;\n\
+try { $assign_copy[1] .= \"Z\"; echo \"FAIL string assign-op no throw\\n\"; $fail++; } catch (\\Error $e) { if ($e->getMessage() === \"Cannot use assign-op operators with string offsets\" && $assign_base === \"abcd\" && $assign_copy === \"abcd\") { $pass++; $unsupported++; } else { echo \"FAIL string assign-op diagnostic\\n\"; $fail++; } }\n\
+echo \"mutating-internal COW matrix: pass=\", $pass, \" fail=\", $fail, \" unsupported=\", $unsupported, \"\\n\";",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "mutating-internal COW matrix: pass=13 fail=0 unsupported=3\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_array_pop_variable"));
+    assert!(c_source.contains("ptn_runtime_array_push_variable"));
+    assert!(c_source.contains("ptn_runtime_array_shift_variable"));
+    assert!(c_source.contains("ptn_runtime_array_next_variable"));
+    assert!(c_source.contains("ptn_runtime_array_end_variable"));
+    assert!(c_source.contains("ptn_runtime_array_prev_variable"));
+    assert!(c_source.contains("ptn_runtime_array_reset_variable"));
+    assert!(c_source.contains("ptn_runtime_string_offset_set"));
 }
 
 #[test]

@@ -1,20 +1,20 @@
 # PTN Progress
 
-Last refresh: 2026-06-09T17:54Z
-Measured base: `ptn-cqu.47.11` rebased after `ptn-cqu.47.6`
+Last refresh: 2026-06-09T19:58Z
+Measured base: `ptn-cqu.47.14` rebased after `ptn-cqu.47.11`
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 287 | 287 | 0 |
+| Native compiled PHP snippets | 289 | 289 | 0 |
 | PHPT parsed bounded log | 171 | 121 | 50 |
 | PHPT Zend rows | 76 | 60 | 16 |
 | PHPT ext/standard rows | 77 | 44 | 33 |
 | PHPT tests/basic+func+lang | 18 | 17 | 1 |
 | COW contract spec tests | 5 | 5 | 0 |
-| COW-focused native tests | 5 | 5 | 0 |
+| COW-focused native tests | 7 | 7 | 0 |
 | PHPT COW manifest | 29 | 2 | 27 |
 | Focused PHPT foreach COW row | 1 | 1 | 0 |
 
@@ -30,13 +30,16 @@ reference-interaction 0/5. Focused local foreach by-value PHPT row: 1/1.
 
 Lexer/parser, AST, IR, C backend, boxed values, direct variables, constants,
 selected string/math/type internals, ordered arrays and `foreach`, array cursor
-internals, `array_values()`, numeric-string array key normalization, array
-payload refcounts with detach-on-write, by-value `foreach` COW snapshots,
-generated C ABI share/drop handling, top-level user functions with scoped magic
-constants and `func_*` introspection, `print_r`, selected binary-string
-handling, string offset read diagnostics, direct-variable string offset writes,
-catchable `count()` non-array diagnostics, expression-form `??` reads, and
-nested array path detach for assignment, append, and unset.
+internals, `array_values()`, numeric-string array key normalization, array and
+string payload COW, by-value `foreach` COW snapshots, generated C ABI
+share/drop handling, mutating-internal COW matrix coverage for array
+pop/push/shift, cursor mutators, and string offset writes (13 pass, 0 fail,
+3 unsupported diagnostics), temporary/nested array mutator diagnostics,
+top-level user functions with scoped magic constants and `func_*`
+introspection, `print_r`, selected binary-string handling, string offset read
+diagnostics, direct-variable string offset writes, catchable `count()`
+non-array diagnostics, expression-form `??` reads, and nested array path detach
+for assignment, append, and unset.
 
 ## Still Needed
 

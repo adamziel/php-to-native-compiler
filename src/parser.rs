@@ -565,7 +565,7 @@ impl Parser {
             return Err(Diagnostic::new("expected function name", Some(token.span)));
         };
         let (arguments, _) = self.parse_call_arguments()?;
-        validate_array_cursor_mutation_call(&name, &arguments, token.span)?;
+        validate_mutating_array_internal_call(&name, &arguments, token.span)?;
         Ok(Statement::Call {
             name: name.to_ascii_lowercase(),
             arguments,
@@ -760,7 +760,7 @@ impl Parser {
             return Err(Diagnostic::new("expected function name", Some(token.span)));
         };
         let (arguments, _) = self.parse_call_arguments()?;
-        validate_array_cursor_mutation_call(&name, &arguments, token.span)?;
+        validate_mutating_array_internal_call(&name, &arguments, token.span)?;
         self.expect_statement_terminator()?;
         Ok(Statement::Call {
             name: name.to_ascii_lowercase(),
@@ -1019,7 +1019,7 @@ impl Parser {
                         "empty" => self.parse_empty_expr(token.span),
                         _ => {
                             let (arguments, right_span) = self.parse_call_arguments()?;
-                            validate_array_cursor_mutation_call(
+                            validate_mutating_array_internal_call(
                                 &lowercase, &arguments, token.span,
                             )?;
                             Ok(Expr::Call {
@@ -1920,6 +1920,14 @@ fn is_array_cursor_mutation_name(name: &str) -> bool {
     )
 }
 
+fn mutating_array_internal_requires_direct_variable(name: &str, argument_count: usize) -> bool {
+    match name.to_ascii_lowercase().as_str() {
+        "array_pop" | "array_shift" => argument_count == 1,
+        "array_push" => argument_count >= 1,
+        _ => is_array_cursor_mutation_name(name) && argument_count == 1,
+    }
+}
+
 fn is_direct_variable_argument(expr: &Expr) -> bool {
     match expr {
         Expr::Variable(_, _) => true,
@@ -1928,21 +1936,26 @@ fn is_direct_variable_argument(expr: &Expr) -> bool {
     }
 }
 
-fn validate_array_cursor_mutation_call(
+fn validate_mutating_array_internal_call(
     name: &str,
     arguments: &[Expr],
     call_span: SourceSpan,
 ) -> Result<()> {
-    if !is_array_cursor_mutation_name(name) || arguments.len() != 1 {
+    if !mutating_array_internal_requires_direct_variable(name, arguments.len()) {
         return Ok(());
     }
     if is_direct_variable_argument(&arguments[0]) {
         return Ok(());
     }
+    let unsupported_form = if is_array_cursor_mutation_name(name) {
+        "temporary array cursor mutation"
+    } else {
+        "temporary array mutation"
+    };
     Err(Diagnostic::new(
         format!(
-            "{}() requires a direct variable array argument; temporary array cursor mutation is unsupported",
-            name.to_ascii_lowercase()
+            "{}() requires a direct variable array argument; {unsupported_form} is unsupported",
+            name.to_ascii_lowercase(),
         ),
         Some(arguments.first().map_or(call_span, Expr::span)),
     ))
