@@ -1,8 +1,9 @@
 use crate::ast::{
-    AssignmentOp, BinaryOp, CastKind, Expr, IncDecOp, Program, Statement, SwitchCase, UnaryOp,
+    AssignmentOp, BinaryOp, CastKind, Expr, IncDecOp, Program, Statement, StringPart, SwitchCase,
+    UnaryOp,
 };
 use crate::diagnostic::{Diagnostic, Result, SourceSpan};
-use crate::lexer::{lex, Token, TokenKind};
+use crate::lexer::{lex, StringPart as TokenStringPart, Token, TokenKind};
 
 pub fn parse(source: &str) -> Result<Program> {
     let tokens = lex(source)?;
@@ -483,6 +484,10 @@ impl Parser {
         let token = self.advance().clone();
         match token.kind {
             TokenKind::String(value) => Ok(Expr::String(value, token.span)),
+            TokenKind::InterpolatedString(parts) => Ok(Expr::InterpolatedString(
+                parts.into_iter().map(lower_string_part).collect(),
+                token.span,
+            )),
             TokenKind::Int(value) => Ok(Expr::Int(value, token.span)),
             TokenKind::Float(value) => Ok(Expr::Float(value, token.span)),
             TokenKind::True => Ok(Expr::Bool(true, token.span)),
@@ -780,4 +785,11 @@ impl Parser {
 
 fn combine_spans(left: SourceSpan, right: SourceSpan) -> SourceSpan {
     SourceSpan::new(left.byte_start, right.byte_end, left.line, left.column)
+}
+
+fn lower_string_part(part: TokenStringPart) -> StringPart {
+    match part {
+        TokenStringPart::Literal(value) => StringPart::Literal(value),
+        TokenStringPart::Variable(name) => StringPart::Variable(name),
+    }
 }

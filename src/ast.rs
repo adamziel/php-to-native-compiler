@@ -100,6 +100,7 @@ pub enum IncDecOp {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     String(String, SourceSpan),
+    InterpolatedString(Vec<StringPart>, SourceSpan),
     Int(i64, SourceSpan),
     Float(f64, SourceSpan),
     Bool(bool, SourceSpan),
@@ -131,6 +132,12 @@ pub enum Expr {
         expr: Box<Expr>,
         span: SourceSpan,
     },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum StringPart {
+    Literal(String),
+    Variable(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -178,6 +185,7 @@ impl Expr {
     pub fn span(&self) -> SourceSpan {
         match self {
             Expr::String(_, span)
+            | Expr::InterpolatedString(_, span)
             | Expr::Int(_, span)
             | Expr::Float(_, span)
             | Expr::Bool(_, span)

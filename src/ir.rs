@@ -1,6 +1,6 @@
 use crate::ast::{
     AssignmentOp, BinaryOp as AstBinaryOp, CastKind as AstCastKind, Expr, IncDecOp as AstIncDecOp,
-    Program, Statement, UnaryOp as AstUnaryOp,
+    Program, Statement, StringPart as AstStringPart, UnaryOp as AstUnaryOp,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -281,6 +281,7 @@ fn lower_compound_assignment(name: &str, op: BinaryOp, right: ValueExpr) -> Valu
 fn lower_expr(expr: &Expr) -> ValueExpr {
     match expr {
         Expr::String(value, _) => ValueExpr::String(value.clone()),
+        Expr::InterpolatedString(parts, _) => lower_interpolated_string(parts),
         Expr::Int(value, _) => ValueExpr::Int(*value),
         Expr::Float(value, _) => ValueExpr::Float(*value),
         Expr::Bool(value, _) => ValueExpr::Bool(*value),
@@ -313,6 +314,30 @@ fn lower_expr(expr: &Expr) -> ValueExpr {
         },
         Expr::Grouped { expr, .. } => lower_expr(expr),
     }
+}
+
+fn lower_interpolated_string(parts: &[AstStringPart]) -> ValueExpr {
+    let mut values = parts.iter().filter_map(|part| match part {
+        AstStringPart::Literal(value) if value.is_empty() => None,
+        AstStringPart::Literal(value) => Some(ValueExpr::String(value.clone())),
+        AstStringPart::Variable(name) => Some(ValueExpr::Cast {
+            kind: CastKind::String,
+            expr: Box::new(ValueExpr::Load(name.clone())),
+        }),
+    });
+
+    let Some(mut expr) = values.next() else {
+        return ValueExpr::String(String::new());
+    };
+
+    for next in values {
+        expr = ValueExpr::Binary {
+            op: BinaryOp::Concat,
+            left: Box::new(expr),
+            right: Box::new(next),
+        };
+    }
+    expr
 }
 
 fn lower_unary_op(op: AstUnaryOp) -> UnaryOp {

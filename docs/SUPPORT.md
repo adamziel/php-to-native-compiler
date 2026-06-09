@@ -14,6 +14,9 @@ supports in generated native binaries.
 - `echo` statements.
 - Statement-form `print expr;` for the same scalar expression subset as echo.
 - String, integer, float, boolean, and null literals.
+- Double-quoted strings with direct `$name` variable interpolation. Interpolated
+  variables use the same runtime variable read, scalar string cast, and
+  concatenation paths as ordinary expressions.
 - Direct variable assignment and scalar reads through the generated runtime
   symbol table.
 - Undefined direct variable reads emit a generic runtime warning and then yield
@@ -156,6 +159,8 @@ supports in generated native binaries.
 - PHP-exact increment/decrement semantics for strings, booleans, arrays,
   objects, references, copy-on-write, overflow edge cases, and diagnostics.
 - Inline HTML before `<?php` or between PHP blocks.
+- Complex/braced string interpolation and interpolation of arrays, objects,
+  offsets, properties, variable variables, or other non-direct-variable forms.
 - Internal functions outside the registered scalar subset.
 - User-defined functions in `function_exists()`.
 - User-defined constants and built-in PHP/extension constants other than the

@@ -19,6 +19,7 @@ pub enum TokenKind {
     Break,
     Identifier(String),
     String(String),
+    InterpolatedString(Vec<StringPart>),
     Int(i64),
     Float(f64),
     True,
@@ -75,6 +76,12 @@ pub enum TokenKind {
     StringType,
     BoolType,
     Eof,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum StringPart {
+    Literal(String),
+    Variable(String),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -271,6 +278,10 @@ impl<'a> Lexer<'a> {
     }
 
     fn lex_string(&mut self, quote: char) -> Result<()> {
+        if quote == '"' {
+            return self.lex_double_quoted_string();
+        }
+
         let start = self.current_span(0);
         self.bump_char();
         let mut value = String::new();
@@ -304,6 +315,89 @@ impl<'a> Lexer<'a> {
                 self.bump_char();
             }
         }
+        Err(Diagnostic::new("unterminated string literal", Some(start)))
+    }
+
+    fn lex_double_quoted_string(&mut self) -> Result<()> {
+        let start = self.current_span(0);
+        self.bump_char();
+        let mut literal = String::new();
+        let mut parts = Vec::new();
+        let mut has_variable = false;
+
+        while let Some(ch) = self.peek_char() {
+            if ch == '"' {
+                self.bump_char();
+                let kind = if has_variable {
+                    if !literal.is_empty() {
+                        parts.push(StringPart::Literal(literal));
+                    }
+                    TokenKind::InterpolatedString(parts)
+                } else {
+                    TokenKind::String(literal)
+                };
+                self.tokens.push(Token {
+                    kind,
+                    span: SourceSpan::new(start.byte_start, self.cursor, start.line, start.column),
+                });
+                return Ok(());
+            }
+
+            if ch == '\\' {
+                self.bump_char();
+                let escaped = self.peek_char().ok_or_else(|| {
+                    Diagnostic::new("unterminated string escape", Some(self.current_span(0)))
+                })?;
+                let mapped = match escaped {
+                    'n' => '\n',
+                    'r' => '\r',
+                    't' => '\t',
+                    '\\' => '\\',
+                    '"' => '"',
+                    '$' => '$',
+                    other => other,
+                };
+                literal.push(mapped);
+                self.bump_char();
+                continue;
+            }
+
+            if ch == '$' {
+                self.bump_char();
+                if let Some(first) = self.peek_char() {
+                    if is_ident_start(first) {
+                        if literal.ends_with('{') {
+                            return Err(Diagnostic::new(
+                                "complex string interpolation is unsupported",
+                                Some(self.current_span(1)),
+                            ));
+                        }
+                        if !literal.is_empty() {
+                            parts.push(StringPart::Literal(literal));
+                            literal = String::new();
+                        }
+                        let mut name = String::new();
+                        while let Some(ch) = self.peek_char() {
+                            if ch.is_ascii_alphanumeric() || ch == '_' {
+                                name.push(ch);
+                                self.bump_char();
+                            } else {
+                                break;
+                            }
+                        }
+                        parts.push(StringPart::Variable(name));
+                        has_variable = true;
+                        continue;
+                    }
+                }
+                literal.push('$');
+                continue;
+            }
+
+            literal.push(ch);
+            self.bump_char();
+        }
+
         Err(Diagnostic::new("unterminated string literal", Some(start)))
     }
 

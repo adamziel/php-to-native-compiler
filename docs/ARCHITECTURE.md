@@ -51,6 +51,10 @@ Current runtime/compiler slices:
   `(bool)` casts lower to IR value-expression operation nodes. The C backend
   emits boxed runtime helper calls such as `ptn_positive`, `ptn_negate`,
   `ptn_not`, `ptn_bitwise_not`, and `ptn_cast_*`.
+- Double-quoted strings with direct `$name` interpolation lower to ordinary
+  value-expression concatenation: literal string segments, runtime variable
+  reads, scalar string casts, and the existing boxed concat helper. Complex and
+  braced interpolation remain outside this slice.
 - Increment/decrement expression contexts are rejected while full PHP
   pre/post-increment value semantics are unsupported, so statement-form direct
   variable support is not confused with expression result behavior.

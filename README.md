@@ -65,6 +65,9 @@ Supported today:
   `E_ERROR`, `PHP_EOL`, `PHP_INT_MIN`, `PHP_INT_MAX`, `PHP_INT_SIZE`, `INF`,
   `NAN`, and `M_PI`.
 - String, integer, float, boolean, and null literals.
+- Double-quoted strings with direct `$name` variable interpolation. Interpolated
+  variables use ordinary runtime variable reads, scalar string casts, and boxed
+  concatenation.
 - Direct variable assignment and reads for scalar values through the generated
   native runtime symbol table.
 - Generic runtime diagnostics for undefined direct variable reads. The read
@@ -136,14 +139,16 @@ Unsupported today:
   user constants and built-in constants other than the currently modeled
   `E_ERROR`, `PHP_EOL`, `PHP_INT_MIN`, `PHP_INT_MAX`, `PHP_INT_SIZE`, `INF`,
   `NAN`, and `M_PI`, arrays, objects, resources, recursion, references,
-  embedded NUL string handling, exact `strcmp()` binary-string parity, exact
-  `chr()` deprecation diagnostics, exact `ord()` argument type diagnostics,
-  exact `ceil()`/`floor()` null/string/unsupported type diagnostics, exact
-  `sqrt()` negative/non-finite edge parity, exact `error_reporting()`
-  configuration/filtering behavior, and full PHP precision/formatting edge
-  cases for `var_dump()`/`strlen()`/`bin2hex()`/base-conversion internals, doc
-  comment retention, variable variables, and dynamic fallback. These are
-  architecture targets, not excuses for exact-shape hacks.
+  embedded NUL string handling, complex/braced interpolation, interpolation of
+  arrays/objects/offsets/properties/variable variables, exact `strcmp()`
+  binary-string parity, exact `chr()` deprecation diagnostics, exact `ord()`
+  argument type diagnostics, exact `ceil()`/`floor()`
+  null/string/unsupported type diagnostics, exact `sqrt()` negative/non-finite
+  edge parity, exact `error_reporting()` configuration/filtering behavior, and
+  full PHP precision/formatting edge cases for
+  `var_dump()`/`strlen()`/`bin2hex()`/base-conversion internals, doc comment
+  retention, variable variables, and dynamic fallback. These are architecture
+  targets, not excuses for exact-shape hacks.
 
 ## Build
 

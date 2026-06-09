@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use ptn::ast::{AssignmentOp, BinaryOp, CastKind, Expr, IncDecOp, Statement, UnaryOp};
+use ptn::ast::{AssignmentOp, BinaryOp, CastKind, Expr, IncDecOp, Statement, StringPart, UnaryOp};
 use ptn::lexer::{self, TokenKind};
 use ptn::{compile_file, parser, CompileOptions};
 
@@ -643,6 +643,26 @@ fn parser_accepts_braced_switch_cases_default_and_break() {
         cases[1].body.last(),
         Some(Statement::Break { .. })
     ));
+}
+
+#[test]
+fn parser_accepts_direct_variable_interpolated_strings() {
+    let program = parser::parse("<?php echo \"value=$value\\n\", \"literal\\$value\\n\";").unwrap();
+    let Statement::Echo { expressions, .. } = &program.statements[0] else {
+        panic!("expected echo statement");
+    };
+    let Expr::InterpolatedString(parts, _) = &expressions[0] else {
+        panic!("expected interpolated string");
+    };
+    assert_eq!(
+        parts,
+        &vec![
+            StringPart::Literal("value=".to_string()),
+            StringPart::Variable("value".to_string()),
+            StringPart::Literal("\n".to_string()),
+        ]
+    );
+    assert!(matches!(&expressions[1], Expr::String(value, _) if value == "literal$value\n"));
 }
 
 #[test]
@@ -1779,6 +1799,81 @@ fn compile_for_break_skips_update_to_native_binary() {
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "0:0:0\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_direct_variable_interpolation_to_native_binary() {
+    let root = temp_dir("ptn-native-direct-interpolation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("direct-interpolation.php");
+    let output = root.join("direct-interpolation-bin");
+    fs::write(
+        &input,
+        "<?php $name = \"Ada\"; $count = 3; echo \"name=$name count=$count\\n\"; echo \"literal\\$name\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "name=Ada count=3\nliteral$name\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_lang020_switch_for_interpolation_shape_to_native_binary() {
+    let root = temp_dir("ptn-native-lang020-shape");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("lang020-shape.php");
+    let output = root.join("lang020-shape-bin");
+    fs::write(
+        &input,
+        "<?php
+$i = \"abc\";
+for ($j = 0; $j < 10; $j++) {
+    switch (1) {
+        case 1:
+            echo \"In branch 1\\n\";
+            switch ($i) {
+                case \"ab\":
+                    echo \"This doesn't work... :(\\n\";
+                    break;
+                case \"abcd\":
+                    echo \"This works!\\n\";
+                    break;
+                case \"blah\":
+                    echo \"Hmmm, no worki\\n\";
+                    break;
+                default:
+                    echo \"Inner default...\\n\";
+            }
+            for ($blah = 0; $blah < 200; $blah++) {
+                if ($blah == 100) {
+                    echo \"blah=$blah\\n\";
+                }
+            }
+            break;
+        default:
+            echo \"bad\\n\";
+            break;
+    }
+}",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let expected = (0..10)
+        .map(|_| "In branch 1\nInner default...\nblah=100\n")
+        .collect::<String>();
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), expected);
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 

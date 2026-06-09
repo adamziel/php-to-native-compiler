@@ -786,3 +786,20 @@ Still unsupported after this `sqrt()` slice: PHP-exact diagnostics for null,
 string, array/object/resource/reference operands, complete negative/non-finite
 float parity, and precision/formatting parity beyond the current scalar output
 paths.
+
+Added direct variable interpolation in double-quoted strings:
+
+- The lexer, AST, parser, and IR now represent double-quoted strings with direct
+  `$name` interpolation separately from plain string literals.
+- Direct interpolation lowers through ordinary runtime variable reads, scalar
+  string casts, and boxed concatenation helpers instead of a separate output
+  path.
+- Escaped `\$name` remains literal text.
+- Native tests prove parser representation, direct interpolation output, and the
+  public nested switch/for source shape from `tests/lang/020.phpt`.
+- Focused public PHPT telemetry through `phpc` passes `tests/lang/020.phpt`.
+
+Still unsupported after this interpolation slice: complex/braced
+interpolation, interpolation of arrays, objects, offsets, properties, variable
+variables, references, copy-on-write interactions, embedded NUL string parity,
+and PHP-exact interpolation diagnostics.
