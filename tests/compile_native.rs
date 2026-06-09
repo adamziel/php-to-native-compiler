@@ -3399,6 +3399,37 @@ var_dump($value[0]);",
 }
 
 #[test]
+fn compile_array_key_exists_to_native_binary() {
+    let root = temp_dir("ptn-native-array-key-exists");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-key-exists.php");
+    let output = root.join("array-key-exists-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$items = [\"foo\" => \"bar\", \"\" => \"empty\", \"0\" => \"zero\", \"n\" => null];\n\
+var_dump(array_key_exists(\"foo\", $items));\n\
+var_dump(array_key_exists(\"missing\", $items));\n\
+var_dump(array_key_exists(null, $items));\n\
+var_dump(array_key_exists(\"\", $items));\n\
+var_dump(array_key_exists(\"0\", $items));\n\
+var_dump(array_key_exists(\"n\", $items));\n\
+var_dump(function_exists(\"array_key_exists\"), function_exists(\"ARRAY_KEY_EXISTS\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nbool(false)\nDeprecated: Using null as the key parameter for array_key_exists() is deprecated, use an empty string instead in ptn on line 5\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_string_offset_reads_to_native_binary() {
     let root = temp_dir("ptn-native-string-offset-reads");
     fs::create_dir_all(&root).unwrap();

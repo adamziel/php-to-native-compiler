@@ -3853,6 +3853,7 @@ static PtnValue ptn_internal_define(PtnRuntime *runtime, size_t argc, const PtnV
 static PtnValue ptn_internal_constant(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_defined(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_function_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_array_key_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 
 static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
     static const PtnInternalFunction functions[] = {
@@ -3904,6 +3905,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "constant", 1, 1, ptn_internal_constant },
         { "defined", 1, 1, ptn_internal_defined },
         { "function_exists", 1, 1, ptn_internal_function_exists },
+        { "array_key_exists", 2, 2, ptn_internal_array_key_exists },
     };
     *count = sizeof(functions) / sizeof(functions[0]);
     return functions;
@@ -3954,6 +3956,25 @@ static PtnValue ptn_internal_function_exists(PtnRuntime *runtime, size_t argc, c
     char *name = ptn_value_to_string(args[0]);
     int exists = ptn_find_internal_function(name) != NULL;
     free(name);
+    return ptn_bool(exists);
+}
+
+static PtnValue ptn_internal_array_key_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    if (args[1].type != PTN_ARRAY) {
+        fputs("Fatal error: array_key_exists(): Argument #2 ($array) must be of type array\n", stderr);
+        exit(255);
+    }
+    if (args[0].type == PTN_NULL) {
+        ptn_emit_deprecation(
+            &runtime->diagnostics,
+            "Using null as the key parameter for array_key_exists() is deprecated, use an empty string instead",
+            line
+        );
+    }
+    PtnArrayKey key = ptn_array_key_from_value(args[0]);
+    int exists = ptn_array_entry_for_key(args[1].as.array, key) != NULL;
+    ptn_array_key_free(key);
     return ptn_bool(exists);
 }
 

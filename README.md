@@ -40,7 +40,8 @@ Supported today:
   `error_reporting(expr)`, `gettype(expr)`, scalar `is_*` type predicates,
   non-finite predicates such as `is_finite(expr)`, `is_infinite(expr)`, and
   `is_nan(expr)`, `define(expr, expr)`, `constant(expr)`,
-  `defined(expr)`, and `function_exists(expr)`, lowered through IR
+  `defined(expr)`, `function_exists(expr)`, and
+  `array_key_exists(expr, expr)`, lowered through IR
   internal-call nodes and generated C runtime dispatch.
 - `var_dump()` output for the current boxed `PtnValue` types: `null`,
   booleans, integers, floats, strings, and ordered literal arrays. Finite
@@ -190,6 +191,10 @@ Supported today:
   illegal-offset warnings, and scalar cast warnings for `null`, booleans, and
   floats are handled by the shared offset-read helper; out-of-range reads emit
   an uninitialized-offset warning and return an empty string.
+- `array_key_exists()` over current ordered-array values, using the same
+  integer/string key canonicalization path as array literals and reads. `null`
+  keys emit the current PHP-like deprecation boundary and canonicalize to the
+  empty string.
 - Boxed scalar and literal-array comparison and boolean expressions: `==`,
   `!=`, `===`, `!==`, `<`, `<=`, `>`, `>=`, `<=>`, `&&`, and `||`. Strict
   identity compares type, key order, key type, and value; numeric scalar
@@ -246,6 +251,8 @@ Unsupported today:
   functions, classes, includes, references, resources, exceptions,
   string-offset writes/mutation, `isset()`/`empty()`/null-coalescing offset
   semantics, string-offset references/unset,
+  exact `array_key_exists()` TypeError parity for unsupported key/container
+  types,
   array/object/reference compound-assignment lvalues,
   compound operators other than `+=`, `-=`, `*=`, `/=`, `%=`, `**=`, `.=`, `&=`,
   `|=`, `^=`, `<<=`, and `>>=` (`??=`), `print` as an expression returning

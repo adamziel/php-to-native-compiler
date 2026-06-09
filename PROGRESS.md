@@ -1593,3 +1593,23 @@ objects and messages for zero divisors and `PHP_INT_MIN / -1`, unsupported
 array/object/resource/reference operands, exact warning file names and line
 numbers for integer conversion diagnostics, and complete float formatting
 parity outside current scalar `var_dump()`.
+
+Added `array_key_exists()` over the current ordered-array subset:
+
+- Registered `array_key_exists()` in the generated C internal-function
+  registry, so normal calls and `function_exists()` share the same
+  case-insensitive lookup and argument-count checks.
+- The runtime reuses the ordered-array integer/string key canonicalization path
+  already used by array literals and array reads, including integer-string
+  keys and `null` canonicalizing to the empty string.
+- `null` keys emit the current PHP-like `array_key_exists()` deprecation
+  boundary before lookup.
+- Native tests prove present/missing keys, null-key deprecation, empty-string
+  and integer-string keys, null stored values, and registry exposure.
+- Focused public PHPT telemetry through `phpc` passes
+  `tests/basic/array_key_exists_null_deprecation.phpt`.
+
+Still unsupported after this `array_key_exists()` slice: exact TypeError
+parity for unsupported key/container types, object property checks, resources,
+references, error-handler routing, and broader array/object/reference
+semantics.

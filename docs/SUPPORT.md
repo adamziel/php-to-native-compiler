@@ -86,6 +86,10 @@ supports in generated native binaries.
   illegal-offset warnings, and scalar cast warnings for `null`, booleans, and
   floats are handled by the shared offset-read helper; out-of-range reads emit
   an uninitialized-offset warning and return an empty string.
+- `array_key_exists()` over current ordered-array values, using the same
+  integer/string key canonicalization path as array literals and reads. `null`
+  keys emit the current PHP-like deprecation boundary and canonicalize to the
+  empty string.
 - Boxed scalar and literal-array comparison operators `==`, `!=`, `===`, `!==`,
   `<`, `<=`, `>`, `>=`, and `<=>`. Strict array identity compares type, key
   order, key type, and value. Numeric comparisons involving `NAN` are treated
@@ -114,7 +118,7 @@ supports in generated native binaries.
   `phpversion([extension]);`, `intval(expr);`, `chr(expr);`, `ord(expr);`,
   `is_finite(expr);`, `is_infinite(expr);`, `is_nan(expr);`, and
   `error_reporting(expr);`.
-- Expression-form internal calls for the currently registered scalar functions,
+- Expression-form internal calls for the currently registered functions,
   including `strlen(expr)`, `str_rot13(expr)`, `strcmp(expr, expr)`,
   `str_contains(expr, expr)`, `quotemeta(expr)`,
   `chunk_split(expr[, expr[, expr]])`, `md5(expr[, raw_output])`,
@@ -126,9 +130,9 @@ supports in generated native binaries.
   `php_sapi_name()`, `phpversion([extension])`, `intval(expr)`, `chr(expr)`,
   `ord(expr)`,
   `is_finite(expr)`, `is_infinite(expr)`, `is_nan(expr)`,
-  `error_reporting(expr)`, `gettype(expr)`, and scalar `is_*` type
-  predicates in echo operands, assignments, binary operands, and branch/loop
-  conditions.
+  `error_reporting(expr)`, `gettype(expr)`, scalar `is_*` type predicates, and
+  `array_key_exists(expr, expr)` in echo operands, assignments, binary
+  operands, and branch/loop conditions.
 - Internal-call arguments are materialized left-to-right before generated C
   runtime dispatch.
 - `var_dump()` output for current boxed values: `NULL`, `bool(...)`,
@@ -312,6 +316,9 @@ supports in generated native binaries.
 - Array element mutation, append/unset/iteration, long-form
   `array(...)`, recursive arrays, objects, resources, references, copy-on-write,
   and `var_dump()` reference identity output.
+- Exact `array_key_exists()` TypeError parity for unsupported key/container
+  types, object property checks, resources, references, and error-handler
+  routing.
 - String offset writes/mutation, `isset()`/`empty()`/null-coalescing offset
   semantics, string-offset references, string-offset unset, and complete
   TypeError/exception parity for unsupported string offset key types.
