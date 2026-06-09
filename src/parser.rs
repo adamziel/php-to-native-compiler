@@ -1862,7 +1862,7 @@ fn is_supported_global_const_expr(expr: &Expr) -> bool {
             element
                 .key
                 .as_ref()
-                .map_or(true, is_supported_global_const_expr)
+                .is_none_or(is_supported_global_const_expr)
                 && is_supported_global_const_expr(&element.value)
         }),
         Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::Grouped { expr, .. } => {

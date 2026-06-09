@@ -702,19 +702,13 @@ fn collect_control_warnings_in(
                 }
                 contexts.pop();
             }
-            Instruction::Continue { level, line } => {
-                if *level > 0 && *level <= contexts.len() {
-                    let target_index = contexts.len() - *level;
-                    if contexts[target_index] == ControlTargetKind::Switch {
-                        warnings.push(ControlWarning {
-                            message: continue_targeting_switch_warning(
-                                *level,
-                                contexts,
-                                target_index,
-                            ),
-                            line: *line,
-                        });
-                    }
+            Instruction::Continue { level, line } if *level > 0 && *level <= contexts.len() => {
+                let target_index = contexts.len() - *level;
+                if contexts[target_index] == ControlTargetKind::Switch {
+                    warnings.push(ControlWarning {
+                        message: continue_targeting_switch_warning(*level, contexts, target_index),
+                        line: *line,
+                    });
                 }
             }
             _ => {}
