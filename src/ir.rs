@@ -42,8 +42,9 @@ pub enum Instruction {
     },
     StoreArrayDim {
         array: String,
-        index: ValueExpr,
+        index: Option<ValueExpr>,
         value: ValueExpr,
+        compound_op: Option<BinaryOp>,
         line: usize,
     },
     Increment {
@@ -320,10 +321,7 @@ fn lower_statements(statements: &[Statement]) -> Vec<Instruction> {
             Statement::ArrayAssign {
                 target, op, value, ..
             } => {
-                let AssignmentOp::Assign = op else {
-                    unreachable!("parser rejects array-dimension compound assignment");
-                };
-                instructions.push(lower_array_dim_store(target, value));
+                instructions.push(lower_array_dim_store(target, *op, value));
             }
             Statement::Increment { name, op, span } => {
                 instructions.push(Instruction::Increment {
@@ -482,11 +480,16 @@ fn lower_statements(statements: &[Statement]) -> Vec<Instruction> {
     instructions
 }
 
-fn lower_array_dim_store(target: &AstArrayDimTarget, value: &Expr) -> Instruction {
+fn lower_array_dim_store(
+    target: &AstArrayDimTarget,
+    op: AssignmentOp,
+    value: &Expr,
+) -> Instruction {
     Instruction::StoreArrayDim {
         array: target.array.clone(),
-        index: lower_expr(&target.index),
+        index: target.index.as_ref().map(lower_expr),
         value: lower_expr(value),
+        compound_op: assignment_op_binary_op(op),
         line: target.span.line,
     }
 }
@@ -496,9 +499,32 @@ fn lower_unset_target(target: &AstUnsetTarget) -> Instruction {
         AstUnsetTarget::Variable { name, .. } => Instruction::UnsetVariable { name: name.clone() },
         AstUnsetTarget::ArrayDim(target) => Instruction::UnsetArrayDim {
             array: target.array.clone(),
-            index: lower_expr(&target.index),
+            index: lower_expr(
+                target
+                    .index
+                    .as_ref()
+                    .expect("parser rejects append syntax in unset targets"),
+            ),
             line: target.span.line,
         },
+    }
+}
+
+fn assignment_op_binary_op(op: AssignmentOp) -> Option<BinaryOp> {
+    match op {
+        AssignmentOp::Assign => None,
+        AssignmentOp::AddAssign => Some(BinaryOp::Add),
+        AssignmentOp::SubtractAssign => Some(BinaryOp::Subtract),
+        AssignmentOp::MultiplyAssign => Some(BinaryOp::Multiply),
+        AssignmentOp::PowerAssign => Some(BinaryOp::Power),
+        AssignmentOp::DivideAssign => Some(BinaryOp::Divide),
+        AssignmentOp::ModuloAssign => Some(BinaryOp::Modulo),
+        AssignmentOp::ConcatAssign => Some(BinaryOp::Concat),
+        AssignmentOp::BitwiseAndAssign => Some(BinaryOp::BitwiseAnd),
+        AssignmentOp::BitwiseOrAssign => Some(BinaryOp::BitwiseOr),
+        AssignmentOp::BitwiseXorAssign => Some(BinaryOp::BitwiseXor),
+        AssignmentOp::ShiftLeftAssign => Some(BinaryOp::ShiftLeft),
+        AssignmentOp::ShiftRightAssign => Some(BinaryOp::ShiftRight),
     }
 }
 

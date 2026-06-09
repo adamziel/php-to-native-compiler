@@ -68,6 +68,7 @@ static PTN_UNUSED void ptn_symbols_unset(PtnSymbolTable *symbols, const char *na
 static void ptn_diagnostics_init(PtnDiagnosticSink *diagnostics, FILE *stream) {
     diagnostics->stream = stream;
     diagnostics->emitted_deprecation = 0;
+    diagnostics->emitted_warning = 0;
 }
 
 static void ptn_emit_undefined_variable_warning(
@@ -77,6 +78,10 @@ static void ptn_emit_undefined_variable_warning(
     size_t line
 ) {
     FILE *stream = diagnostics->stream == NULL ? stderr : diagnostics->stream;
+    if (diagnostics->emitted_warning) {
+        fputc('\n', stream);
+    }
+    diagnostics->emitted_warning = 1;
     fputs("Warning: Undefined variable $", stream);
     fputs(name, stream);
     fputs(" in ", stream);

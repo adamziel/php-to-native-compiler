@@ -221,6 +221,14 @@ Supported today:
   reads from literal or grouped array expressions. Reads use the current
   ordered-array key canonicalization path and return `null` with a warning
   boundary for undefined keys or non-array containers.
+- Variable-root ordered-array element mutation: `$array[$key] = expr`,
+  `$array[] = expr`, keyed compound assignments such as `$array[$key] += expr`
+  and `$array[$key] .= expr` over the current compound operator set, append
+  compound assignments such as `$array[] += expr`, and `unset($array[$key])`.
+  Mutations use the same integer/string key canonicalization and next-auto-key
+  tracking as current ordered arrays. Keyed assign-op stores read missing
+  elements as `null` with the modeled missing-key diagnostics; append
+  assign-op stores start from `null` without a missing-key warning.
 - String offset read expressions such as `$string[$offset]` for the current
   C-string-backed scalar string subset. Integer-compatible offsets, negative
   offsets, nested reads, integer strings, numeric prefix strings with PHP-style
@@ -307,15 +315,16 @@ Supported today:
 
 Unsupported today:
 
-- Array element mutation, append/unset, recursive arrays, arrays
-  with references/copy-on-write, objects, functions, classes, includes,
-  references, resources, broad exception/object support,
-  string-offset writes/mutation, object/property/reference
+- Nested array-dimension lvalues, string-offset writes/unset/assign-op
+  mutation, scalar-container autovivification parity such as `false` to array
+  conversion, recursive arrays, arrays with references/copy-on-write, objects,
+  functions, classes, includes,
+  references, resources, broad exception/object support, object/property/reference
   `isset()`/`empty()` semantics, null-coalescing offset semantics, string-offset
   references/unset,
   exact `array_key_exists()` TypeError parity for unsupported key/container
   types,
-  array/object/reference compound-assignment lvalues,
+  nested array/object/reference compound-assignment lvalues,
   compound operators other than `+=`, `-=`, `*=`, `/=`, `%=`, `**=`, `.=`, `&=`,
   `|=`, `^=`, `<<=`, and `>>=` (`??=`), `print` as an expression returning
   `1` even when spelled `print(...)`, increment/decrement operators, full
