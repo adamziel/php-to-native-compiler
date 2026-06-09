@@ -1,7 +1,7 @@
 # PTN Progress
 
-Last refresh: 2026-06-09T19:04Z
-Commit: pending `ptn-cqu.47.6` rebased after `ptn-cqu.47.5`
+Last refresh: 2026-06-09T17:45Z
+Commit: pending `ptn-cqu.47.11` rebased after `ptn-cqu.47.6`
 
 ## Test Dashboard
 
@@ -34,15 +34,15 @@ array cursor internals on direct variable ordered arrays, `array_values()` over
 ordered arrays, numeric-string array key normalization coverage, array payload
 refcounts with detach-on-write for named mutations and cursor-mutating internals,
 by-value `foreach` COW snapshots for append/unset and alias mutation visibility,
-top-level user functions with scoped `__FUNCTION__`/`__METHOD__` magic constants
-plus
-`func_num_args()`/`func_get_arg()`/`func_get_args()` introspection, `print_r`,
-selected binary-string handling, string offset read diagnostics,
-direct-variable string offset writes with append/unset/assign-op Error
-boundaries, catchable `count()` non-array diagnostics, expression-form `??`
-reads over direct variables, arrays, and string offsets using quiet lookup
-semantics, and shared array/string payload COW with path detach for nested array
-assignment, append, and unset.
+generated C ABI share/drop handling for returns, temporaries, and call argument
+slots, top-level user functions with scoped `__FUNCTION__`/`__METHOD__` magic
+constants plus `func_num_args()`/`func_get_arg()`/`func_get_args()`
+introspection, `print_r`, selected binary-string handling, string offset read
+diagnostics, direct-variable string offset writes with append/unset/assign-op
+Error boundaries, catchable `count()` non-array diagnostics, and
+expression-form `??` reads over direct variables, arrays, and string offsets
+using quiet lookup semantics, and shared array/string payload COW with path
+detach for nested array assignment, append, and unset.
 
 ## Still Needed
 

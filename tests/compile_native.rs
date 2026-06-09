@@ -7256,7 +7256,68 @@ echo strlen($value), \" \", count($array), \" \", $array[\"replacement\"], \"\\n
         .find("\nint main(void)")
         .expect("generated C should contain main");
     let main_body = &c_source[main_start..];
-    assert!(main_body.contains("ptn_value_destroy(&ptn_tmp_"));
+    assert!(main_body.contains("ptn_value_drop(&ptn_tmp_"));
+}
+
+#[test]
+fn compile_cow_shared_payload_mutations_to_native_binary() {
+    let root = temp_dir("ptn-native-cow-shared-payload-mutations");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("cow-shared-payload-mutations.php");
+    let output = root.join("cow-shared-payload-mutations-bin");
+    fs::write(
+        &input,
+        "<?php
+$a = [1, 2];
+$b = $a;
+$b[] = 3;
+var_dump($a, $b);
+
+$c = [10, 20];
+$d = $c;
+var_dump(array_shift($d));
+var_dump($c, $d);
+
+$s = \"ab\";
+$t = $s;
+$t[0] = \"Z\";
+var_dump($s, $t);
+
+function passthrough($value) {
+    $local = $value;
+    $local[] = \"fn\";
+    return $local;
+}
+$source = [\"x\"];
+$result = passthrough($source);
+var_dump($source, $result);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(2) {\n  [0]=>\n  int(1)\n  [1]=>\n  int(2)\n}\narray(3) {\n  [0]=>\n  int(1)\n  [1]=>\n  int(2)\n  [2]=>\n  int(3)\n}\nint(10)\narray(2) {\n  [0]=>\n  int(10)\n  [1]=>\n  int(20)\n}\narray(1) {\n  [0]=>\n  int(20)\n}\nstring(2) \"ab\"\nstring(2) \"Zb\"\narray(1) {\n  [0]=>\n  string(1) \"x\"\n}\narray(2) {\n  [0]=>\n  string(1) \"x\"\n  [1]=>\n  string(2) \"fn\"\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    let main_start = c_source
+        .find("\nint main(void)")
+        .expect("generated C should contain main");
+    let main_body = &c_source[main_start..];
+    assert!(c_source.contains("static PTN_UNUSED PtnValue ptn_value_share(PtnValue value)"));
+    assert!(c_source.contains("static PTN_UNUSED void ptn_value_drop(PtnValue *value)"));
+    assert!(
+        c_source.contains("static PTN_UNUSED PtnArray *ptn_value_detach_array(PtnValue *value)")
+    );
+    assert!(main_body.contains("ptn_runtime_array_shift_variable(&runtime, \"d\""));
+    assert!(main_body.contains("ptn_value_share(ptn_tmp_"));
+    assert!(main_body.contains("ptn_value_drop(&ptn_tmp_"));
 }
 
 #[test]

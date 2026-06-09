@@ -482,7 +482,7 @@ fn emit_instruction(
             Some(target) => {
                 if let Some(value) = value {
                     let result_value = values.emit_materialized_value(out, value);
-                    out.push_str("    ptn_return_value = ptn_value_clone(");
+                    out.push_str("    ptn_return_value = ptn_value_share(");
                     out.push_str(&result_value);
                     out.push_str(");\n");
                     emit_value_cleanup(out, "    ", &result_value);
@@ -1436,9 +1436,16 @@ fn emit_label_reference(out: &mut String, label: &str) {
 
 fn emit_value_cleanup(out: &mut String, indent: &str, value: &str) {
     out.push_str(indent);
-    out.push_str("ptn_value_destroy(&");
+    out.push_str("ptn_value_drop(&");
     out.push_str(value);
     out.push_str(");\n");
+}
+
+fn is_array_mutating_internal_call(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "array_pop" | "array_push" | "array_shift" | "end" | "next" | "prev" | "reset"
+    )
 }
 
 fn binary_runtime_function(op: BinaryOp) -> &'static str {
@@ -2448,6 +2455,32 @@ impl ValueEmitter {
         temp
     }
 
+    fn emit_call_argument(
+        &mut self,
+        out: &mut String,
+        call_name: &str,
+        argument_index: usize,
+        argument: &ValueExpr,
+    ) -> String {
+        if argument_index == 0 && is_array_mutating_internal_call(call_name) {
+            if let ValueExpr::Load { name, line } = argument {
+                let temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&temp);
+                out.push_str(" = ptn_runtime_read_variable_for_array_mutation(&runtime, \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", \"");
+                out.push_str(&c_string(&self.source_file));
+                out.push_str("\", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                return temp;
+            }
+        }
+
+        self.emit_materialized_value(out, argument)
+    }
+
     fn emit_internal_call(
         &mut self,
         out: &mut String,
@@ -2516,15 +2549,22 @@ impl ValueEmitter {
         }
 
         let mut temps = Vec::with_capacity(arguments.len());
-        for argument in arguments {
-            temps.push(self.emit_materialized_value(out, argument));
+        for (argument_index, argument) in arguments.iter().enumerate() {
+            temps.push(self.emit_call_argument(out, name, argument_index, argument));
         }
 
         let args_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&args_temp);
         out.push_str("[] = { ");
-        out.push_str(&temps.join(", "));
+        for (index, temp) in temps.iter().enumerate() {
+            if index > 0 {
+                out.push_str(", ");
+            }
+            out.push_str("ptn_value_share(");
+            out.push_str(temp);
+            out.push(')');
+        }
         out.push_str(" };\n");
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
@@ -2543,6 +2583,9 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
+        for index in 0..temps.len() {
+            emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
+        }
         for temp in temps {
             emit_value_cleanup(out, "    ", &temp);
         }
@@ -2616,7 +2659,14 @@ impl ValueEmitter {
             out.push_str("    PtnValue ");
             out.push_str(&values_temp);
             out.push_str("[] = { ");
-            out.push_str(&value_temps.join(", "));
+            for (index, temp) in value_temps.iter().enumerate() {
+                if index > 0 {
+                    out.push_str(", ");
+                }
+                out.push_str("ptn_value_share(");
+                out.push_str(temp);
+                out.push(')');
+            }
             out.push_str(" };\n");
             Some(values_temp)
         };
@@ -2637,6 +2687,11 @@ impl ValueEmitter {
             out.push_str("NULL");
         }
         out.push_str(");\n");
+        if let Some(values_temp) = &values_temp {
+            for index in 0..value_temps.len() {
+                emit_value_cleanup(out, "    ", &format!("{values_temp}[{index}]"));
+            }
+        }
         for temp in value_temps {
             emit_value_cleanup(out, "    ", &temp);
         }
@@ -2675,7 +2730,14 @@ impl ValueEmitter {
         out.push_str("    PtnValue ");
         out.push_str(&args_temp);
         out.push_str("[] = { ");
-        out.push_str(&temps.join(", "));
+        for (index, temp) in temps.iter().enumerate() {
+            if index > 0 {
+                out.push_str(", ");
+            }
+            out.push_str("ptn_value_share(");
+            out.push_str(temp);
+            out.push(')');
+        }
         out.push_str(" };\n");
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
@@ -2690,6 +2752,12 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
+        for index in 0..temps.len() {
+            emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
+        }
+        for temp in temps {
+            emit_value_cleanup(out, "    ", &temp);
+        }
         result_temp
     }
 
