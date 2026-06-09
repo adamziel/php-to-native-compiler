@@ -4652,6 +4652,46 @@ fn compile_scalar_comparisons_to_native_binary() {
 }
 
 #[test]
+fn compile_comparison_operands_drop_cow_payloads_to_native_binary() {
+    let root = temp_dir("ptn-native-comparison-cow-cleanup");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("comparison-cow-cleanup.php");
+    let output = root.join("comparison-cow-cleanup-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+_ptn_cow_debug_reset();\n\
+var_dump([1, [\"x\" => \"y\"]] == [1, [\"x\" => \"y\"]]);\n\
+var_dump([\"k\" => \"v\"] !== [\"k\" => \"v\"]);\n\
+var_dump((\"a\" . \"b\") == (\"a\" . \"b\"));\n\
+_ptn_cow_debug_assert_counter(\"array.live\", 0);\n\
+_ptn_cow_debug_assert_counter(\"string.live\", 0);\n\
+_ptn_cow_debug_assert_balanced();\n\
+echo _ptn_cow_debug_counter(\"array.live\"), \":\", _ptn_cow_debug_counter(\"string.live\"), \"\\n\";",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nbool(false)\nbool(true)\n0:0\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    let main_start = c_source
+        .find("\nint main(void)")
+        .expect("generated C should contain main");
+    let main_body = &c_source[main_start..];
+    assert!(main_body.contains(" = ptn_bool(ptn_compare_equal("));
+    assert!(main_body.contains(" = ptn_bool(ptn_compare_not_identical("));
+    assert!(main_body.contains("ptn_value_drop(&ptn_tmp_"));
+}
+
+#[test]
 fn compile_less_equal_greater_equal_edges_to_native_binary() {
     let root = temp_dir("ptn-native-comparison-equality-bounds");
     fs::create_dir_all(&root).unwrap();

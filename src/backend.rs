@@ -2182,6 +2182,8 @@ impl ValueEmitter {
         out.push_str(" = ptn_bool(");
         out.push_str(&comparison);
         out.push_str(");\n");
+        emit_value_cleanup(out, "    ", &left_temp);
+        emit_value_cleanup(out, "    ", &right_temp);
         result_temp
     }
 

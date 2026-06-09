@@ -1,14 +1,14 @@
 # PTN Progress
 
-Last refresh: 2026-06-09T19:38Z
-Measured base: `ptn-cqu.33` rebased after `ptn-cqu.47.17`
+Last refresh: 2026-06-09T20:17Z
+Measured base: `ptn-cqu.47.22` over `origin/master`
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 4 | 4 | 0 |
-| Native compiled PHP snippets | 310 | 310 | 0 |
+| Native compiled PHP snippets | 311 | 311 | 0 |
 | Native smoke matrix | 6 | 6 | 0 |
 | PHPT bounded manifest | 200 | 145 | 55 |
 | PHPT Zend rows | 76 | 63 | 13 |
@@ -16,7 +16,7 @@ Measured base: `ptn-cqu.33` rebased after `ptn-cqu.47.17`
 | PHPT tests/basic+func+lang | 45 | 33 | 12 |
 | PHPT other rows | 2 | 2 | 0 |
 | COW contract spec tests | 7 | 7 | 0 |
-| COW-focused native tests | 12 | 12 | 0 |
+| COW-focused native tests | 13 | 13 | 0 |
 | Focused COW reducer snippets | 26 | 26 | 0 |
 | COW oracle suite | 22 | 22 | 0 |
 | By-reference foreach COW oracle | 11 | 11 | 0 |
@@ -39,8 +39,8 @@ Native COW reducers: 26/26, including dynamic temporary/call-result/read-slot
 10/10. Oracle coverage: arrays 2/2, strings 1/1, foreach 2/2, functions 3/3,
 nested values 2/2, references 2/2, array element references 10/10.
 By-reference foreach oracle: 11/11. Mutating-internal matrix: 12/12 plus five
-unsupported target diagnostics. Post-merge COW gate: 10/10 oracle/native cases
-plus 4/4 unsupported-reference diagnostics. Contract stress balances 12 nested
+unsupported-target diagnostics. Post-merge COW gate: 10/10 oracle/native,
+4/4 unsupported-reference diagnostics. Contract stress balances 12 nested
 cycles with 0 live payloads.
 
 ## Already Ported
@@ -56,8 +56,9 @@ splits, recursive/user functions, magic constants, `func_*` and bounds
 diagnostics, `print_r`, binary strings, string offset reads/writes, `count()`
 diagnostics, `??`, array assignment/compound/append/unset COW, native/oracle
 COW reducers, native smoke matrix, array-element reference oracle coverage,
-unsupported mutating-internal diagnostics, post-merge COW gate, PHPT COW
-blocker buckets, and payload lifetime debug counters.
+unsupported mutating-internal diagnostics, post-merge COW gate, generated
+comparison operand cleanup, PHPT COW blocker buckets, and payload lifetime
+debug counters.
 
 ## Still Needed
 
