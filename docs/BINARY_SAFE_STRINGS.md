@@ -1,0 +1,223 @@
+# Binary-Safe String Storage Design Slice
+
+Status: design-only. This artifact describes the next incremental runtime
+string storage change. It does not change generated native behavior.
+
+## Problem
+
+PHP strings are byte buffers with explicit lengths. PTN currently represents
+runtime strings as C strings in generated C, so embedded NUL bytes terminate
+most string operations early. That blocks PHP compatibility for binary string
+data and also leaves performance on the table because many helpers recompute
+length with `strlen()`.
+
+The target is a generic length-aware runtime string primitive, not fixes shaped
+around one PHPT row.
+
+## Current Representation
+
+The generated C runtime lives in `src/backend/runtime.rs` as `RUNTIME_C`.
+String values currently use `PTN_STRING` with `PtnValue.as.string` as
+`const char *`. The constructors `ptn_string(const char *)` and
+`ptn_owned_string(char *)` store only the pointer; they do not carry length or
+ownership metadata.
+
+The central conversion path is also C-string-backed:
+
+- `ptn_duplicate_string()` copies with `strlen()`.
+- `ptn_value_to_string()` returns an allocated NUL-terminated `char *`.
+- `PtnStringOperand` has a `len` field, but
+  `ptn_string_operand_borrowed()` and `ptn_string_operand_owned()` fill it with
+  `strlen(data)`.
+- `ptn_value_to_string_operand()` borrows `value.as.string` for string values
+  and still derives length with `strlen()`.
+
+The Rust C backend emits string literals from `src/backend.rs` through
+`ValueExpr::String(value) => ptn_string("...")`, with escaping handled by
+`c_string()`. That path cannot tell the runtime the intended byte length. It
+also emits non-printable bytes as `\xNN`, which is unsafe around following hex
+digits in C string literals unless the literal emission is made length-aware or
+uses fixed-width octal/split literals.
+
+Array keys, symbol names, constant names, and internal-function names are also
+C-string-backed today. They should stay out of the first value-string slice
+except where a PHP value is converted into an array key.
+
+## Affected Runtime Surfaces
+
+The following generated C helpers either store strings, compute string length,
+or use C library functions that stop at NUL:
+
+- Storage and conversion:
+  `PtnValue`, `ptn_string`, `ptn_owned_string`, `ptn_duplicate_string`,
+  `ptn_value_to_string`, `PtnStringOperand`,
+  `ptn_value_to_string_operand`, `ptn_concat`, `ptn_cast_string`.
+- Output and debug formatting:
+  `ptn_echo` uses `fputs`, and `ptn_var_dump_value_indented` uses
+  `strlen(value.as.string)`, `printf`, and `fputs`.
+- String offset reads:
+  `ptn_string_offset_lookup` uses `strlen(container.as.string)` and returns a
+  one-byte NUL-terminated string, so reading an embedded NUL offset currently
+  becomes an empty string.
+- String internals:
+  `ptn_internal_strlen`, `ptn_internal_str_rot13`, `ptn_internal_strcmp`,
+  `ptn_internal_str_contains`, `ptn_internal_str_starts_with`,
+  `ptn_internal_str_ends_with`, `ptn_internal_quotemeta`,
+  `ptn_internal_chunk_split`, `ptn_internal_strip_tags`,
+  `ptn_internal_md5`, `ptn_internal_sha1`, `ptn_internal_substr`,
+  `ptn_internal_dirname`, `ptn_internal_bin2hex`, `ptn_internal_hex2bin`,
+  `ptn_internal_quoted_printable_decode`, `ptn_internal_soundex`,
+  `ptn_internal_bindec`, `ptn_internal_hexdec`, `ptn_internal_octdec`,
+  `ptn_internal_intval`, `ptn_internal_chr`, and `ptn_internal_ord`.
+- Bytewise operators and comparisons:
+  string/string bitwise helpers, strict identity, loose comparison helpers,
+  and truthiness all inspect `value.as.string` through C-string assumptions.
+- PHP string keys:
+  `ptn_array_key_from_value`, `ptn_array_keys_equal`,
+  `ptn_array_key_hash`, and `ptn_array_string_key` treat string keys as
+  NUL-terminated. Binary-safe array keys should be a follow-up slice because
+  they change hash/equality and key ownership together.
+
+## Migration Strategy
+
+Introduce a length-aware runtime string value before broad internal-function
+rewrites:
+
+```c
+typedef struct {
+    const unsigned char *data;
+    size_t len;
+    char *owned;
+} PtnString;
+```
+
+Then change `PtnValue.as.string` to store `PtnString`. Keep a trailing NUL in
+owned allocations for C-library interop during migration, but make every PTN
+helper consume `data` plus `len` when observing PHP string bytes.
+
+Add constructors with explicit length:
+
+- `ptn_string_literal(const char *data, size_t len)` for generated C literals
+  and static runtime constants.
+- `ptn_owned_string_len(char *data, size_t len)` for buffers allocated by
+  runtime helpers.
+- `ptn_string_cstr(const char *data)` only for metadata-like values that are
+  known to be ordinary C strings, such as modeled PHP version strings.
+
+Update `src/backend.rs` string literal emission in the same slice that changes
+the constructor shape. `ValueExpr::String` should call the explicit-length
+constructor, and literal escaping should avoid greedy `\x` escapes by using
+fixed three-digit octal escapes, split literals, or generated byte arrays with
+explicit lengths.
+
+Update `ptn_value_to_string_operand()` to return a borrowed or owned
+`PtnStringOperand { data, len, owned }` without recomputing length for existing
+string values. Numeric and boolean conversions may still allocate NUL-terminated
+temporary strings, but the computed length should come from `snprintf()`
+rather than a second `strlen()`.
+
+Switch the first consumers to length-aware output and byte observation:
+
+- `ptn_echo` should use `fwrite(data, 1, len, stdout)` for `PTN_STRING`.
+- `ptn_var_dump_value_indented` should print `string(len) "` and use
+  `fwrite()` for payload bytes.
+- `ptn_internal_strlen` should return the operand length.
+- `ptn_concat` should use operand lengths and return `ptn_owned_string_len`.
+- `ptn_internal_chr` should return length `1` even for byte `0`.
+- `ptn_internal_ord` should read the first byte when `len > 0`.
+- `ptn_internal_bin2hex` should iterate over all bytes.
+- `ptn_string_offset_lookup` should index by stored length and return a
+  one-byte length-aware string.
+
+After those are green, migrate search/slice internals:
+
+- `strcmp` should compare `min(left.len, right.len)` bytes, then length.
+- `str_contains`, `str_starts_with`, and `str_ends_with` should use
+  `memmem`-style local loops and `memcmp`.
+- `substr` should slice by stored byte length.
+- `md5` and `sha1` should pass the full operand length to the digest routines.
+- `hex2bin` and `quoted_printable_decode` should return length-aware binary
+  output.
+
+Only then migrate the remaining C-string users.
+
+Defer array-key and symbol-table string storage until value strings are stable.
+Binary-safe PHP array keys require length-aware key equality, hashing,
+canonicalization, duplication, and freeing as one coherent change.
+
+## First Safe Implementation Slice
+
+Suggested first implementation bead:
+
+`Introduce length-aware PtnValue strings for construction, output, concat,
+strlen, chr, ord, bin2hex, and string offset reads.`
+
+Keep this slice small:
+
+- Do not change array key storage, symbol names, constant names, or function
+  registry names.
+- Do not add copy-on-write or refcounts yet.
+- Keep owned string buffers NUL-terminated as an interop convenience, but never
+  use the terminator for PHP string length.
+- Add native tests that assert raw stdout bytes, not only UTF-8 text.
+
+Suggested immediate native test rows:
+
+- `bin2hex(chr(0))` outputs `00`.
+- `$s = "a" . chr(0) . "b"; strlen($s)` outputs `3`.
+- `bin2hex($s)` outputs `610062`.
+- `ord($s[1])` outputs `0`.
+- `var_dump($s)` reports `string(3)` and writes the embedded NUL byte between
+  `a` and `b`.
+
+Suggested follow-up bead:
+
+`Migrate binary-safe string search, slice, digest, decode, and PHP string array
+keys after the value-string slice lands.`
+
+## PHPT Clusters Unlocked
+
+Binary-safe storage should unlock or make honest telemetry possible for these
+families:
+
+- `ext/standard/tests/strings/strlen*` rows with embedded NUL bytes.
+- `ext/standard/tests/strings/chr*` and `ord*` rows that observe byte `0`.
+- `ext/standard/tests/strings/bin2hex*` and `hex2bin*` binary round trips.
+- `ext/standard/tests/strings/substr*` and string offset reads over binary
+  data.
+- `ext/standard/tests/strings/str_contains*`, `str_starts_with*`,
+  `str_ends_with*`, and `strcmp*` rows where the interesting byte sequence
+  includes NUL.
+- `ext/standard/tests/strings/quoted_printable_decode*` rows that produce
+  embedded NUL output.
+- `ext/standard/tests/strings/md5*` and `sha1*` rows for embedded-NUL input and
+  raw digest output.
+
+Current tests such as `compile_str_contains_phpt_shape_to_native_binary` mention
+`chr(0)`, but they do not prove binary payload preservation because `chr(0)` is
+currently represented as an empty C string. The new tests should assert the
+actual bytes.
+
+## Compatibility And Performance Risks
+
+- Passing `PtnValue` by value becomes more expensive if the string union member
+  grows from one pointer to a three-field struct. That is acceptable for a first
+  compatibility slice, but later refcounted string storage can shrink copies to
+  one pointer.
+- Current runtime values do not have a complete destructor/free path for string
+  payloads. The first slice should preserve the current leak-tolerant lifetime
+  model or add a narrow value-free helper only where ownership is unambiguous.
+  It should not attempt full copy-on-write at the same time.
+- Keeping trailing NUL bytes for interop is useful, but any helper that uses
+  `strlen`, `strcmp`, `strstr`, `fputs`, or `%s` for PHP string payloads will
+  remain a compatibility bug.
+- Literal emission needs care. C `\xNN` escapes can consume following hex
+  digits, so generated binary string literals should use explicit lengths and
+  non-greedy escaping.
+- Array keys are a separate risk. Switching PHP string values without switching
+  key hashing/equality is safe only if the first slice avoids binary-string
+  array keys.
+- Length-aware helpers can improve speed by removing repeated `strlen()` in
+  `ptn_concat`, `strlen`, `var_dump`, `bin2hex`, offsets, search, and digest
+  paths. The first slice should avoid adding duplicate length scans while
+  preserving the current simple allocation strategy.
