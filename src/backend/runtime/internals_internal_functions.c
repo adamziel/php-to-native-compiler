@@ -176,6 +176,52 @@ static PtnValue ptn_internal_var_dump(PtnRuntime *runtime, size_t argc, const Pt
     return ptn_null();
 }
 
+static PtnValue ptn_internal__ptn_cow_debug_reset(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    ptn_cow_debug_reset();
+    return ptn_null();
+}
+
+static PtnValue ptn_internal__ptn_cow_debug_counter(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    char *name = ptn_value_to_string(args[0]);
+    size_t counter = 0;
+    int found = ptn_cow_debug_counter(name, &counter);
+    free(name);
+    if (!found) {
+        ptn_cow_debug_abort("unknown counter");
+    }
+    if (counter > (size_t)INT64_MAX) {
+        ptn_abort_out_of_memory();
+    }
+    return ptn_int((int64_t)counter);
+}
+
+static PtnValue ptn_internal__ptn_cow_debug_assert_counter(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    char *name = ptn_value_to_string(args[0]);
+    PtnValue expected = ptn_cast_int(args[1]);
+    ptn_cow_debug_assert_named_counter(name, expected.as.integer);
+    free(name);
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_internal__ptn_cow_debug_assert_balanced(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    ptn_cow_debug_assert_balanced();
+    return ptn_bool(1);
+}
+
 static void ptn_print_r_value_indented(PtnStringBuffer *buffer, PtnValue value, size_t indent);
 
 static void ptn_print_r_key(PtnStringBuffer *buffer, PtnArrayKey key) {
@@ -1869,6 +1915,10 @@ static PtnValue ptn_internal_array_key_exists(PtnRuntime *runtime, size_t argc, 
 static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
     /* Keep sorted by ASCII case-insensitive name for ptn_find_internal_function. */
     static const PtnInternalFunction functions[] = {
+        { "_ptn_cow_debug_assert_balanced", 0, 0, ptn_internal__ptn_cow_debug_assert_balanced },
+        { "_ptn_cow_debug_assert_counter", 2, 2, ptn_internal__ptn_cow_debug_assert_counter },
+        { "_ptn_cow_debug_counter", 1, 1, ptn_internal__ptn_cow_debug_counter },
+        { "_ptn_cow_debug_reset", 0, 0, ptn_internal__ptn_cow_debug_reset },
         { "abs", 1, 1, ptn_internal_abs },
         { "array_key_exists", 2, 2, ptn_internal_array_key_exists },
         { "array_pop", 1, 1, ptn_internal_array_pop },

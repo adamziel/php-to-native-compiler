@@ -41,10 +41,14 @@ static PTN_UNUSED void ptn_array_free(PtnArray *array) {
     if (array == NULL) {
         return;
     }
+    ptn_cow_debug_assert_array_refcount(array, "release");
+    ptn_cow_debug_note_array_release();
     if (array->refcount > 1) {
         array->refcount--;
         return;
     }
+    ptn_cow_debug_note_array_free();
+    array->refcount = 0;
     for (size_t i = 0; i < array->len; i++) {
         ptn_array_key_free(array->entries[i].key);
         ptn_value_destroy(&array->entries[i].value);
@@ -63,13 +67,7 @@ static PTN_UNUSED void ptn_value_drop(PtnValue *value) {
             ptn_string_payload_release(value->as.string.payload);
             break;
         case PTN_ARRAY:
-            if (value->as.array != NULL) {
-                if (value->as.array->refcount > 1) {
-                    value->as.array->refcount--;
-                    break;
-                }
-                ptn_array_free(value->as.array);
-            }
+            ptn_array_free(value->as.array);
             break;
         case PTN_EXCEPTION:
             ptn_exception_free(value->as.exception);

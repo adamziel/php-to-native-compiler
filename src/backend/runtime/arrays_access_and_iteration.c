@@ -574,6 +574,7 @@ static PTN_UNUSED void ptn_runtime_string_offset_set(
     }
 
     unsigned char byte = ptn_string_offset_assignment_byte(runtime, value, line);
+    ptn_cow_debug_note_string_detach();
     ptn_value_detach_for_write(target);
     if (target->as.string.len != new_len) {
         ptn_string_value_resize(target, new_len);

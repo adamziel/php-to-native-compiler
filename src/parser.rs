@@ -1923,7 +1923,11 @@ fn validate_function_names(functions: &[FunctionDecl]) -> Result<()> {
 fn is_modeled_internal_function_name(name: &str) -> bool {
     matches!(
         name,
-        "var_dump"
+        "_ptn_cow_debug_assert_balanced"
+            | "_ptn_cow_debug_assert_counter"
+            | "_ptn_cow_debug_counter"
+            | "_ptn_cow_debug_reset"
+            | "var_dump"
             | "strlen"
             | "str_rot13"
             | "strcmp"

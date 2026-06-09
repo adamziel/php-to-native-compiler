@@ -17,7 +17,7 @@ static size_t ptn_symbols_find(PtnSymbolTable *symbols, const char *name) {
 }
 
 static PTN_UNUSED void ptn_symbols_set(PtnSymbolTable *symbols, const char *name, PtnValue value) {
-    PtnValue stored_value = ptn_value_share(value);
+    PtnValue stored_value = ptn_value_clone(value);
     ptn_symbols_ensure_index(symbols, symbols->len + 1);
     size_t index = ptn_symbols_find(symbols, name);
     if (index < symbols->len) {

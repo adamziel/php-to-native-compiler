@@ -1,20 +1,20 @@
 # PTN Progress
 
-Last refresh: 2026-06-09T18:24Z
-Measured base: `ptn-cqu.47.3` rebased after `ptn-cqu.47.13`
+Last refresh: 2026-06-09T18:32Z
+Measured base: `ptn-cqu.47.10` rebased after `ptn-cqu.47.3`
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | ---: |
 | Source unit tests | 4 | 4 | 0 |
-| Native compiled PHP snippets | 307 | 307 | 0 |
+| Native compiled PHP snippets | 309 | 309 | 0 |
 | PHPT parsed bounded log | 171 | 121 | 50 |
 | PHPT Zend rows | 76 | 60 | 16 |
 | PHPT ext/standard rows | 77 | 44 | 33 |
 | PHPT tests/basic+func+lang | 18 | 17 | 1 |
 | COW contract spec tests | 5 | 5 | 0 |
-| COW-focused native tests | 10 | 10 | 0 |
+| COW-focused native tests | 12 | 12 | 0 |
 | Focused COW reducer snippets | 16 | 16 | 0 |
 | COW oracle suite | 12 | 10 | 2 |
 | COW/reference-focused native tests | 10 | 10 | 0 |
@@ -52,7 +52,9 @@ string payloads with assignment/function sharing and detach-on-write offset
 mutation, catchable `count()` non-array diagnostics, expression-form `??`
 reads, nested array path detach for assignment, compound assignment, append,
 and unset, focused native COW reducers, COW oracle coverage, and five explicit
-unsupported diagnostics for non-variable mutating internals.
+unsupported diagnostics for non-variable mutating internals, plus COW debug
+counters/assertions for string and array payload alloc/free/share/drop/detach
+evidence.
 
 ## Still Needed
 
