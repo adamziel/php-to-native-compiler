@@ -35,9 +35,19 @@ pub enum Statement {
         value: Expr,
         span: SourceSpan,
     },
+    ArrayAssign {
+        target: ArrayDimTarget,
+        op: AssignmentOp,
+        value: Expr,
+        span: SourceSpan,
+    },
     Increment {
         name: String,
         op: IncDecOp,
+        span: SourceSpan,
+    },
+    Unset {
+        targets: Vec<UnsetTarget>,
         span: SourceSpan,
     },
     Call {
@@ -138,6 +148,19 @@ pub struct ConstDeclaration {
     pub name: String,
     pub value: Expr,
     pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ArrayDimTarget {
+    pub array: String,
+    pub index: Expr,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum UnsetTarget {
+    Variable { name: String, span: SourceSpan },
+    ArrayDim(ArrayDimTarget),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

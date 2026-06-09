@@ -268,6 +268,27 @@ static PTN_UNUSED void ptn_array_set_entry(PtnArray *array, PtnArrayKey key, Ptn
     ptn_array_index_insert(array, key, entry_index);
 }
 
+static PTN_UNUSED int ptn_array_unset_entry(PtnArray *array, PtnArrayKey key) {
+    size_t index = ptn_array_find_key(array, key);
+    if (index >= array->len) {
+        ptn_array_key_free(key);
+        return 0;
+    }
+
+    ptn_array_key_free(array->entries[index].key);
+    ptn_value_destroy(&array->entries[index].value);
+    for (size_t i = index + 1; i < array->len; i++) {
+        array->entries[i - 1] = array->entries[i];
+    }
+    array->len--;
+    if (array->current_index > array->len) {
+        array->current_index = array->len;
+    }
+    ptn_array_key_free(key);
+    ptn_array_rebuild_index(array);
+    return 1;
+}
+
 static PTN_UNUSED PtnValue ptn_array_from_literal_entries(size_t entry_count, const PtnArrayLiteralEntry *entries) {
     PtnArray *array = malloc(sizeof(PtnArray));
     if (array == NULL) {

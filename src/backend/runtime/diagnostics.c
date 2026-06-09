@@ -50,6 +50,21 @@ static int ptn_symbols_get(PtnSymbolTable *symbols, const char *name, PtnValue *
     return 0;
 }
 
+static PTN_UNUSED void ptn_symbols_unset(PtnSymbolTable *symbols, const char *name) {
+    size_t index = ptn_symbols_find(symbols, name);
+    if (index >= symbols->len) {
+        return;
+    }
+
+    free(symbols->items[index].name);
+    ptn_value_destroy(&symbols->items[index].value);
+    for (size_t i = index + 1; i < symbols->len; i++) {
+        symbols->items[i - 1] = symbols->items[i];
+    }
+    symbols->len--;
+    ptn_symbols_rebuild_index(symbols, symbols->len);
+}
+
 static void ptn_diagnostics_init(PtnDiagnosticSink *diagnostics, FILE *stream) {
     diagnostics->stream = stream;
     diagnostics->emitted_deprecation = 0;
@@ -183,4 +198,3 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->constants = &runtime->owned_constants;
     ptn_diagnostics_init(&runtime->diagnostics, stderr);
 }
-

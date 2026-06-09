@@ -46,6 +46,10 @@ static PTN_UNUSED int ptn_runtime_variable_is_empty(PtnRuntime *runtime, const c
     return !ptn_symbols_get(&runtime->symbols, name, &value) || !ptn_is_truthy(value);
 }
 
+static PTN_UNUSED void ptn_runtime_unset_variable(PtnRuntime *runtime, const char *name) {
+    ptn_symbols_unset(&runtime->symbols, name);
+}
+
 static PTN_UNUSED void ptn_runtime_define_constant(PtnRuntime *runtime, const char *name, PtnValue value) {
     ptn_symbols_set(runtime->constants, name, value);
 }

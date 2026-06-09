@@ -247,6 +247,24 @@ fn emit_instruction(
             out.push_str(");\n");
             emit_value_cleanup(out, "    ", &emitted_value);
         }
+        Instruction::StoreArrayDim {
+            array,
+            index,
+            value,
+            line,
+        } => {
+            let index_temp = values.emit_materialized_value(out, index);
+            let value_temp = values.emit_value(out, value);
+            out.push_str("    ptn_runtime_array_set(&runtime, \"");
+            out.push_str(&c_string(array));
+            out.push_str("\", ");
+            out.push_str(&index_temp);
+            out.push_str(", ");
+            out.push_str(&value_temp);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+        }
         Instruction::DefineConstant { name, value, line } => {
             let emitted_value = values.emit_materialized_value(out, value);
             out.push_str("    (void)ptn_runtime_define_constant_if_absent(&runtime, \"");
@@ -301,6 +319,21 @@ fn emit_instruction(
             out.push_str(");\n");
             emit_value_cleanup(out, "    ", &current_temp);
             emit_value_cleanup(out, "    ", &result_temp);
+        }
+        Instruction::UnsetVariable { name } => {
+            out.push_str("    ptn_runtime_unset_variable(&runtime, \"");
+            out.push_str(&c_string(name));
+            out.push_str("\");\n");
+        }
+        Instruction::UnsetArrayDim { array, index, line } => {
+            let index_temp = values.emit_materialized_value(out, index);
+            out.push_str("    ptn_runtime_array_unset(&runtime, \"");
+            out.push_str(&c_string(array));
+            out.push_str("\", ");
+            out.push_str(&index_temp);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
         }
         Instruction::InternalCall {
             name,
@@ -719,7 +752,12 @@ fn instruction_uses_function_dispatch(instruction: &Instruction) -> bool {
         | Instruction::DefineConstant { value, .. }
         | Instruction::Expression(value)
         | Instruction::Echo(value) => value_uses_function_dispatch(value),
+        Instruction::StoreArrayDim { index, value, .. } => {
+            value_uses_function_dispatch(index) || value_uses_function_dispatch(value)
+        }
         Instruction::Increment { .. } => false,
+        Instruction::UnsetVariable { .. } => false,
+        Instruction::UnsetArrayDim { index, .. } => value_uses_function_dispatch(index),
         Instruction::InternalCall { .. } => true,
         Instruction::Return { value, .. } => {
             value.as_ref().is_some_and(value_uses_function_dispatch)

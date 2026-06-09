@@ -5,7 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use ptn::ast::{
     AssignmentOp, BinaryOp, CastKind, Expr, IncDecOp, MagicConstantKind, Statement, StringPart,
-    TypeHint, UnaryOp,
+    TypeHint, UnaryOp, UnsetTarget,
 };
 use ptn::lexer::{self, TokenKind};
 use ptn::{compile_file, parser, CompileOptions, DiagnosticKind};
@@ -1028,6 +1028,38 @@ fn parser_accepts_array_read_expressions() {
         &expressions[3],
         Expr::ArrayAccess { array, .. }
             if matches!(array.as_ref(), Expr::Array { .. })
+    ));
+}
+
+#[test]
+fn parser_accepts_variable_root_array_assignment_and_unset() {
+    let program =
+        parser::parse("<?php $items[null] = \"value\"; unset($items[null], $items);").unwrap();
+    assert_eq!(program.statements.len(), 2);
+
+    let Statement::ArrayAssign {
+        target, op, value, ..
+    } = &program.statements[0]
+    else {
+        panic!("expected array assignment statement");
+    };
+    assert_eq!(target.array, "items");
+    assert_eq!(*op, AssignmentOp::Assign);
+    assert!(matches!(&target.index, Expr::Null(_)));
+    assert!(matches!(value, Expr::String(value, _) if value == "value"));
+
+    let Statement::Unset { targets, .. } = &program.statements[1] else {
+        panic!("expected unset statement");
+    };
+    assert_eq!(targets.len(), 2);
+    assert!(matches!(
+        &targets[0],
+        UnsetTarget::ArrayDim(target)
+            if target.array == "items" && matches!(&target.index, Expr::Null(_))
+    ));
+    assert!(matches!(
+        &targets[1],
+        UnsetTarget::Variable { name, .. } if name == "items"
     ));
 }
 
@@ -4587,6 +4619,41 @@ var_dump($value[0]);",
 }
 
 #[test]
+fn compile_array_offset_assignment_and_unset_to_native_binary() {
+    let root = temp_dir("ptn-native-array-offset-assignment-unset");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-offset-assignment-unset.php");
+    let output = root.join("array-offset-assignment-unset-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$arr = ['foo' => 'bar', '' => 'baz'];\n\
+echo $arr[null] . \"\\n\";\n\
+$arr[null] = 'new_value';\n\
+echo $arr[''] . \"\\n\";\n\
+var_dump(isset($arr[null]));\n\
+unset($arr[null]);\n\
+var_dump(isset($arr['']));\n\
+$items = [];\n\
+$items[\"7\"] = \"seven\";\n\
+var_dump($items[7]);\n\
+unset($items[7]);\n\
+var_dump(isset($items[\"7\"]));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "\nDeprecated: Using null as an array offset is deprecated, use an empty string instead in ptn on line 3\nbaz\n\nDeprecated: Using null as an array offset is deprecated, use an empty string instead in ptn on line 4\nnew_value\n\nDeprecated: Using null as an array offset is deprecated, use an empty string instead in ptn on line 6\nbool(true)\nbool(false)\nstring(5) \"seven\"\nbool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_isset_empty_offsets_to_native_binary() {
     let root = temp_dir("ptn-native-isset-empty-offsets");
     fs::create_dir_all(&root).unwrap();
@@ -6569,7 +6636,9 @@ fn unsupported_constructs_fail_before_codegen() {
     assert!(unsupported_operator.message.contains("expected expression"));
 
     let unsupported_lvalue = parser::parse("<?php $items[0] += 1;").unwrap_err();
-    assert!(unsupported_lvalue.message.contains("expected assignment"));
+    assert!(unsupported_lvalue
+        .message
+        .contains("array-dimension compound assignment is unsupported"));
 }
 
 #[test]

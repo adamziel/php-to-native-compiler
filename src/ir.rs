@@ -1,9 +1,9 @@
 use crate::ast::{
-    ArrayElement as AstArrayElement, AssignmentOp, BinaryOp as AstBinaryOp,
-    CastKind as AstCastKind, Expr, FunctionDecl as AstFunctionDecl,
+    ArrayDimTarget as AstArrayDimTarget, ArrayElement as AstArrayElement, AssignmentOp,
+    BinaryOp as AstBinaryOp, CastKind as AstCastKind, Expr, FunctionDecl as AstFunctionDecl,
     FunctionParameter as AstFunctionParameter, IncDecOp as AstIncDecOp,
     MagicConstantKind as AstMagicConstantKind, Program, Statement, StringPart as AstStringPart,
-    TypeHint as AstTypeHint, UnaryOp as AstUnaryOp,
+    TypeHint as AstTypeHint, UnaryOp as AstUnaryOp, UnsetTarget as AstUnsetTarget,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -39,9 +39,23 @@ pub enum Instruction {
         name: String,
         value: ValueExpr,
     },
+    StoreArrayDim {
+        array: String,
+        index: ValueExpr,
+        value: ValueExpr,
+        line: usize,
+    },
     Increment {
         name: String,
         op: IncDecOp,
+        line: usize,
+    },
+    UnsetVariable {
+        name: String,
+    },
+    UnsetArrayDim {
+        array: String,
+        index: ValueExpr,
         line: usize,
     },
     DefineConstant {
@@ -285,12 +299,25 @@ fn lower_statements(statements: &[Statement]) -> Vec<Instruction> {
                     value: lower_assignment_value(name, *op, value, span.line),
                 });
             }
+            Statement::ArrayAssign {
+                target, op, value, ..
+            } => {
+                let AssignmentOp::Assign = op else {
+                    unreachable!("parser rejects array-dimension compound assignment");
+                };
+                instructions.push(lower_array_dim_store(target, value));
+            }
             Statement::Increment { name, op, span } => {
                 instructions.push(Instruction::Increment {
                     name: name.clone(),
                     op: lower_inc_dec_op(*op),
                     line: span.line,
                 });
+            }
+            Statement::Unset { targets, .. } => {
+                for target in targets {
+                    instructions.push(lower_unset_target(target));
+                }
             }
             Statement::Const { declarations, .. } => {
                 for declaration in declarations {
@@ -429,6 +456,26 @@ fn lower_statements(statements: &[Statement]) -> Vec<Instruction> {
         }
     }
     instructions
+}
+
+fn lower_array_dim_store(target: &AstArrayDimTarget, value: &Expr) -> Instruction {
+    Instruction::StoreArrayDim {
+        array: target.array.clone(),
+        index: lower_expr(&target.index),
+        value: lower_expr(value),
+        line: target.span.line,
+    }
+}
+
+fn lower_unset_target(target: &AstUnsetTarget) -> Instruction {
+    match target {
+        AstUnsetTarget::Variable { name, .. } => Instruction::UnsetVariable { name: name.clone() },
+        AstUnsetTarget::ArrayDim(target) => Instruction::UnsetArrayDim {
+            array: target.array.clone(),
+            index: lower_expr(&target.index),
+            line: target.span.line,
+        },
+    }
 }
 
 fn lower_assignment_value(name: &str, op: AssignmentOp, value: &Expr, line: usize) -> ValueExpr {

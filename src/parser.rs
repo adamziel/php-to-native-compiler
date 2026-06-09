@@ -1,9 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::ast::{
-    ArrayElement, AssignmentOp, BinaryOp, CastKind, ConstDeclaration, Expr, FunctionDecl,
-    FunctionParameter, IncDecOp, MagicConstantKind, Program, Statement, StringPart, SwitchCase,
-    TypeHint, UnaryOp,
+    ArrayDimTarget, ArrayElement, AssignmentOp, BinaryOp, CastKind, ConstDeclaration, Expr,
+    FunctionDecl, FunctionParameter, IncDecOp, MagicConstantKind, Program, Statement, StringPart,
+    SwitchCase, TypeHint, UnaryOp, UnsetTarget,
 };
 use crate::diagnostic::{Diagnostic, Result, SourceSpan};
 use crate::lexer::{lex, StringPart as TokenStringPart, Token, TokenKind};
@@ -88,6 +88,12 @@ impl Parser {
             TokenKind::PlusPlus | TokenKind::MinusMinus => self.parse_prefix_increment_statement(),
             TokenKind::Identifier(_) if matches!(self.peek_next().kind, TokenKind::Colon) => {
                 self.parse_label()
+            }
+            TokenKind::Identifier(ref name)
+                if name.eq_ignore_ascii_case("unset")
+                    && matches!(self.peek_next().kind, TokenKind::LeftParen) =>
+            {
+                self.parse_unset_statement()
             }
             TokenKind::Identifier(_) if matches!(self.peek_next().kind, TokenKind::LeftParen) => {
                 self.parse_call_statement()
@@ -174,6 +180,7 @@ impl Parser {
     }
 
     fn parse_variable_statement(&mut self) -> Result<Statement> {
+        let start = self.index;
         let token = self.advance().clone();
         let TokenKind::Variable(name) = token.kind else {
             return Err(Diagnostic::new("expected variable", Some(token.span)));
@@ -199,8 +206,30 @@ impl Parser {
             }
             _ => {}
         }
+        if matches!(self.peek().kind, TokenKind::LeftBracket) {
+            let target = self.parse_array_dim_target(name, token.span)?;
+            if !self.peek_is_assignment_op() {
+                self.index = start;
+                return self.parse_expression_statement();
+            }
+            if !matches!(self.peek().kind, TokenKind::Equal) {
+                return Err(Diagnostic::new(
+                    "array-dimension compound assignment is unsupported",
+                    Some(self.peek().span),
+                ));
+            }
+            let op = self.expect_assignment_op()?;
+            let value = self.parse_assignment_value_expr()?;
+            self.expect_statement_terminator()?;
+            return Ok(Statement::ArrayAssign {
+                target,
+                op,
+                value,
+                span: token.span,
+            });
+        }
         if !self.peek_is_assignment_op() {
-            self.index -= 1;
+            self.index = start;
             return self.parse_expression_statement();
         }
         let op = self.expect_assignment_op()?;
@@ -211,6 +240,27 @@ impl Parser {
             op,
             value,
             span: token.span,
+        })
+    }
+
+    fn parse_array_dim_target(
+        &mut self,
+        array: String,
+        variable_span: SourceSpan,
+    ) -> Result<ArrayDimTarget> {
+        self.expect_left_bracket()?;
+        let index = self.parse_expr()?;
+        let right_span = self.expect_right_bracket()?;
+        if matches!(self.peek().kind, TokenKind::LeftBracket) {
+            return Err(Diagnostic::new(
+                "nested array-dimension assignment is unsupported",
+                Some(self.peek().span),
+            ));
+        }
+        Ok(ArrayDimTarget {
+            array,
+            index,
+            span: combine_spans(variable_span, right_span),
         })
     }
 
@@ -658,6 +708,59 @@ impl Parser {
             arguments,
             span: token.span,
         })
+    }
+
+    fn parse_unset_statement(&mut self) -> Result<Statement> {
+        let token = self.advance().clone();
+        let TokenKind::Identifier(name) = token.kind else {
+            return Err(Diagnostic::new("expected unset", Some(token.span)));
+        };
+        if !name.eq_ignore_ascii_case("unset") {
+            return Err(Diagnostic::new("expected unset", Some(token.span)));
+        }
+        self.expect_left_paren()?;
+        let mut targets = Vec::new();
+        if !matches!(self.peek().kind, TokenKind::RightParen) {
+            targets.push(self.parse_unset_target()?);
+            while matches!(self.peek().kind, TokenKind::Comma) {
+                self.advance();
+                targets.push(self.parse_unset_target()?);
+            }
+        }
+        if targets.is_empty() {
+            return Err(Diagnostic::new(
+                "unset() expects at least one argument",
+                Some(token.span),
+            ));
+        }
+        let right_span = self.expect_right_paren()?;
+        self.expect_statement_terminator()?;
+        Ok(Statement::Unset {
+            targets,
+            span: combine_spans(token.span, right_span),
+        })
+    }
+
+    fn parse_unset_target(&mut self) -> Result<UnsetTarget> {
+        let target = self.parse_expr()?;
+        match target {
+            Expr::Variable(name, span) => Ok(UnsetTarget::Variable { name, span }),
+            Expr::ArrayAccess { array, index, span } => match *array {
+                Expr::Variable(name, variable_span) => Ok(UnsetTarget::ArrayDim(ArrayDimTarget {
+                    array: name,
+                    index: *index,
+                    span: combine_spans(variable_span, span),
+                })),
+                _ => Err(Diagnostic::new(
+                    "unsupported unset target",
+                    Some(array.span()),
+                )),
+            },
+            _ => Err(Diagnostic::new(
+                "unsupported unset target",
+                Some(target.span()),
+            )),
+        }
     }
 
     fn parse_inline_html(&mut self) -> Result<Statement> {
@@ -1396,6 +1499,15 @@ impl Parser {
             Ok(token.span)
         } else {
             Err(syntax_error_unexpected(token, Some("\")\"")))
+        }
+    }
+
+    fn expect_left_bracket(&mut self) -> Result<SourceSpan> {
+        let token = self.advance();
+        if matches!(token.kind, TokenKind::LeftBracket) {
+            Ok(token.span)
+        } else {
+            Err(Diagnostic::new("expected left bracket", Some(token.span)))
         }
     }
 

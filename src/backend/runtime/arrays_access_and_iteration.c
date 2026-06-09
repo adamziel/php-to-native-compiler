@@ -83,6 +83,14 @@ static PTN_UNUSED void ptn_emit_array_runtime_diagnostic(const char *kind, const
     fputc('\n', stdout);
 }
 
+static PTN_UNUSED void ptn_emit_null_array_offset_deprecation(size_t line) {
+    ptn_emit_array_runtime_diagnostic(
+        "Deprecated",
+        "Using null as an array offset is deprecated, use an empty string instead",
+        line
+    );
+}
+
 static PTN_UNUSED void ptn_emit_foreach_non_array_warning(PtnValue value, size_t line) {
     char message[128];
     snprintf(
@@ -355,11 +363,7 @@ static PTN_UNUSED PtnLookupResult ptn_offset_lookup(PtnRuntime *runtime, PtnValu
     }
 
     if (key_value.type == PTN_NULL) {
-        ptn_emit_array_runtime_diagnostic(
-            "Deprecated",
-            "Using null as an array offset is deprecated, use an empty string instead",
-            line
-        );
+        ptn_emit_null_array_offset_deprecation(line);
     }
 
     PtnArrayKey key = ptn_array_key_from_value(key_value);
@@ -397,11 +401,7 @@ static PTN_UNUSED int ptn_offset_is_set(PtnRuntime *runtime, PtnValue container,
         return 0;
     }
     if (key_value.type == PTN_NULL) {
-        ptn_emit_array_runtime_diagnostic(
-            "Deprecated",
-            "Using null as an array offset is deprecated, use an empty string instead",
-            line
-        );
+        ptn_emit_null_array_offset_deprecation(line);
     }
 
     PtnArrayKey key = ptn_array_key_from_value(key_value);
@@ -427,11 +427,7 @@ static PTN_UNUSED int ptn_offset_is_empty(PtnRuntime *runtime, PtnValue containe
         return 1;
     }
     if (key_value.type == PTN_NULL) {
-        ptn_emit_array_runtime_diagnostic(
-            "Deprecated",
-            "Using null as an array offset is deprecated, use an empty string instead",
-            line
-        );
+        ptn_emit_null_array_offset_deprecation(line);
     }
 
     PtnArrayKey key = ptn_array_key_from_value(key_value);
@@ -446,6 +442,53 @@ static PTN_UNUSED PtnValue ptn_array_key_value(PtnArrayKey key) {
         return ptn_int(key.as.integer);
     }
     return ptn_owned_string(ptn_duplicate_string(key.as.string));
+}
+
+static PTN_UNUSED void ptn_runtime_array_set(
+    PtnRuntime *runtime,
+    const char *name,
+    PtnValue key_value,
+    PtnValue value,
+    size_t line
+) {
+    if (key_value.type == PTN_NULL) {
+        ptn_emit_null_array_offset_deprecation(line);
+    }
+    PtnArrayKey key = ptn_array_key_from_value(key_value);
+
+    PtnValue container;
+    if (ptn_symbols_get(&runtime->symbols, name, &container)) {
+        if (container.type == PTN_ARRAY) {
+            ptn_array_set_entry(container.as.array, key, ptn_value_clone(value));
+            return;
+        }
+        if (container.type != PTN_NULL) {
+            ptn_array_key_free(key);
+            ptn_emit_array_runtime_diagnostic("Warning", "Cannot use a scalar value as an array", line);
+            return;
+        }
+    }
+
+    PtnValue array = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(array.as.array, key, ptn_value_clone(value));
+    ptn_runtime_write_variable(runtime, name, array);
+    ptn_value_destroy(&array);
+}
+
+static PTN_UNUSED void ptn_runtime_array_unset(
+    PtnRuntime *runtime,
+    const char *name,
+    PtnValue key_value,
+    size_t line
+) {
+    (void)line;
+    PtnValue container;
+    if (!ptn_symbols_get(&runtime->symbols, name, &container) || container.type != PTN_ARRAY) {
+        return;
+    }
+
+    PtnArrayKey key = ptn_array_key_from_value(key_value);
+    (void)ptn_array_unset_entry(container.as.array, key);
 }
 
 static PTN_UNUSED PtnValue ptn_array_current_value(PtnArray *array) {
