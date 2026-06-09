@@ -1963,6 +1963,34 @@ No new PHP surface is claimed by this performance slice. Variable variables,
 globals/superglobals, namespace/class constants, additional built-in/extension
 constants, and exact runtime diagnostic/error-handler parity remain unsupported.
 
+Optimized generated scalar numeric hot paths:
+
+- Generated C runtime helpers now check already-boxed `int`, `float`, `bool`,
+  and `null` operands before falling back to the generic `ptn_to_number()`
+  conversion path.
+- Arithmetic helpers for `+`, `-`, `*`, `**`, `/`, and `%` keep the existing
+  integer overflow and divide/modulo-by-zero boundaries while avoiding generic
+  conversion work for common scalar operands.
+- Integer-only conversion users such as `%`, bitwise operators, shifts, and
+  `intdiv()` still emit the existing float and float-string precision-loss
+  deprecation boundaries when those slower operands are present.
+- Scalar numeric comparisons, unary `+`/`-`, `(int)`, `(float)`, and math
+  internals such as `ceil()`, `floor()`, `sqrt()`, and `fdiv()` share the same
+  fast scalar checks before using string/array fallback conversion.
+- Native tests prove common `int`/`float`/`bool`/`null` arithmetic,
+  comparison, casts, `%`, and `fdiv()` through compiled binaries, alongside
+  existing arithmetic and integer-operator deprecation coverage.
+- Native benchmark proof with `tools/bench-native-execution.sh --runs 5` on the
+  same host compared current `origin/master` at
+  `1a62663fd6f57dc2039144f5a00cffa8900c1443` to the optimized branch:
+  `scalar_loop` best improved from `0.015246s` to `0.011427s`,
+  `string_work` best from `0.017859s` to `0.017607s`, and `array_foreach`
+  remained essentially flat at `0.013769s` vs `0.013962s`.
+
+No new PHP surface is claimed by this performance slice. Strings, arrays,
+unsupported objects, and diagnostic edge cases still use the existing generic
+conversion and unsupported-boundary behavior.
+
 Split backend runtime emission into lane-owned modules without changing emitted
 C:
 
