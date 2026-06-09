@@ -759,13 +759,21 @@ impl Parser {
             TokenKind::Null => Ok(Expr::Null(token.span)),
             TokenKind::Variable(name) => Ok(Expr::Variable(name, token.span)),
             TokenKind::Identifier(name) => {
+                let lowercase = name.to_ascii_lowercase();
                 if matches!(self.peek().kind, TokenKind::LeftParen) {
-                    let (arguments, right_span) = self.parse_call_arguments()?;
-                    Ok(Expr::Call {
-                        name: name.to_ascii_lowercase(),
-                        arguments,
-                        span: combine_spans(token.span, right_span),
-                    })
+                    match lowercase.as_str() {
+                        "array" => self.parse_long_array_literal(token.span),
+                        "isset" => self.parse_isset_expr(token.span),
+                        "empty" => self.parse_empty_expr(token.span),
+                        _ => {
+                            let (arguments, right_span) = self.parse_call_arguments()?;
+                            Ok(Expr::Call {
+                                name: lowercase,
+                                arguments,
+                                span: combine_spans(token.span, right_span),
+                            })
+                        }
+                    }
                 } else if let Some(kind) = magic_constant_kind(&name) {
                     Ok(Expr::MagicConstant(kind, token.span))
                 } else {
@@ -799,22 +807,51 @@ impl Parser {
     }
 
     fn parse_array_literal(&mut self, left_span: SourceSpan) -> Result<Expr> {
+        let (elements, right_span) = self.parse_array_elements(TokenKind::RightBracket)?;
+        Ok(Expr::Array {
+            elements,
+            span: combine_spans(left_span, right_span),
+        })
+    }
+
+    fn parse_long_array_literal(&mut self, start_span: SourceSpan) -> Result<Expr> {
+        self.expect_left_paren()?;
+        let (elements, right_span) = self.parse_array_elements(TokenKind::RightParen)?;
+        Ok(Expr::Array {
+            elements,
+            span: combine_spans(start_span, right_span),
+        })
+    }
+
+    fn parse_array_elements(
+        &mut self,
+        terminator: TokenKind,
+    ) -> Result<(Vec<ArrayElement>, SourceSpan)> {
         let mut elements = Vec::new();
-        while !matches!(self.peek().kind, TokenKind::RightBracket) {
+        while !self.at_array_terminator(&terminator) {
             elements.push(self.parse_array_element()?);
             if !matches!(self.peek().kind, TokenKind::Comma) {
                 break;
             }
             self.advance();
-            if matches!(self.peek().kind, TokenKind::RightBracket) {
+            if self.at_array_terminator(&terminator) {
                 break;
             }
         }
-        let right_span = self.expect_right_bracket()?;
-        Ok(Expr::Array {
-            elements,
-            span: combine_spans(left_span, right_span),
-        })
+        let right_span = match terminator {
+            TokenKind::RightBracket => self.expect_right_bracket()?,
+            TokenKind::RightParen => self.expect_right_paren()?,
+            _ => unreachable!("array literal terminators are brackets or parentheses"),
+        };
+        Ok((elements, right_span))
+    }
+
+    fn at_array_terminator(&self, terminator: &TokenKind) -> bool {
+        matches!(
+            (&self.peek().kind, terminator),
+            (TokenKind::RightBracket, TokenKind::RightBracket)
+                | (TokenKind::RightParen, TokenKind::RightParen)
+        )
     }
 
     fn parse_array_element(&mut self) -> Result<ArrayElement> {
@@ -832,6 +869,34 @@ impl Parser {
                 value: first,
             })
         }
+    }
+
+    fn parse_isset_expr(&mut self, start_span: SourceSpan) -> Result<Expr> {
+        let (targets, right_span) = self.parse_call_arguments()?;
+        if targets.is_empty() {
+            return Err(Diagnostic::new(
+                "isset() expects at least one argument",
+                Some(start_span),
+            ));
+        }
+        Ok(Expr::Isset {
+            targets,
+            span: combine_spans(start_span, right_span),
+        })
+    }
+
+    fn parse_empty_expr(&mut self, start_span: SourceSpan) -> Result<Expr> {
+        let (mut arguments, right_span) = self.parse_call_arguments()?;
+        if arguments.len() != 1 {
+            return Err(Diagnostic::new(
+                "empty() expects exactly one argument",
+                Some(start_span),
+            ));
+        }
+        Ok(Expr::Empty {
+            target: Box::new(arguments.remove(0)),
+            span: combine_spans(start_span, right_span),
+        })
     }
 
     fn parse_call_arguments(&mut self) -> Result<(Vec<Expr>, SourceSpan)> {
@@ -1486,6 +1551,8 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "constant"
             | "defined"
             | "function_exists"
+            | "isset"
+            | "empty"
             | "array_key_exists"
     )
 }
@@ -1676,7 +1743,9 @@ fn is_supported_global_const_expr(expr: &Expr) -> bool {
         Expr::InterpolatedString(_, _)
         | Expr::Variable(_, _)
         | Expr::Call { .. }
-        | Expr::ArrayAccess { .. } => false,
+        | Expr::ArrayAccess { .. }
+        | Expr::Isset { .. }
+        | Expr::Empty { .. } => false,
     }
 }
 

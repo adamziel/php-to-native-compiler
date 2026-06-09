@@ -118,6 +118,12 @@ pub enum ValueExpr {
         index: Box<ValueExpr>,
         line: usize,
     },
+    Isset {
+        targets: Vec<ValueExpr>,
+    },
+    Empty {
+        target: Box<ValueExpr>,
+    },
     InternalCall {
         name: String,
         arguments: Vec<ValueExpr>,
@@ -437,6 +443,12 @@ fn lower_expr(expr: &Expr) -> ValueExpr {
             array: Box::new(lower_expr(array)),
             index: Box::new(lower_expr(index)),
             line: span.line,
+        },
+        Expr::Isset { targets, .. } => ValueExpr::Isset {
+            targets: targets.iter().map(lower_expr).collect(),
+        },
+        Expr::Empty { target, .. } => ValueExpr::Empty {
+            target: Box::new(lower_expr(target)),
         },
         Expr::Call {
             name,

@@ -1740,3 +1740,29 @@ expression statements:
 Still unsupported after this ternary-diagnostic slice: executable ternary
 expressions, expression statements beyond diagnostics, nested ternaries inside
 larger supported expressions, and broader parse/fatal wording parity.
+
+Added expression-form `isset()`/`empty()` over quiet variable and offset
+lookups:
+
+- The parser/AST/IR now represent `isset(expr[, ...])` and `empty(expr)` as
+  PHP language constructs instead of normal internal-function calls.
+- Long-form `array(...)` literals now lower to the same ordered-array literal
+  representation as `[...]` for the currently supported array element subset.
+- Generated C uses a shared quiet lookup result for variables, array offsets,
+  and string offsets. Missing variables, missing array keys, non-array
+  containers, and out-of-range string offsets no longer emit ordinary read
+  warnings inside `isset()` and `empty()`.
+- `isset()` returns false for missing or `null` values and short-circuits
+  multiple arguments. `empty()` returns true for missing or PHP-falsey values.
+- Native tests prove present/null/missing keys, undefined variables, nested
+  array reads, nested string-offset reads, long-form arrays, and quiet
+  non-numeric string offset checks.
+- Focused public PHPT telemetry through `phpc` passes
+  `tests/lang/empty_variation.phpt` and
+  `tests/strings/offsets_chaining_3.phpt`.
+
+Still unsupported after this `isset()`/`empty()` slice: array writes/mutation,
+unset, null-coalescing offsets, object/property/reference semantics, variable
+variables, exact unsupported key/container TypeError parity, exact float
+offset conversion diagnostics, resources, error-handler routing, and broader
+array/object/reference behavior.

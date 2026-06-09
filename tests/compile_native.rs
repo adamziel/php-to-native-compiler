@@ -572,6 +572,12 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
     let error = parser::parse("<?php function PHP_SAPI_NAME() { return null; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function php_sapi_name()");
 
+    let error = parser::parse("<?php function IsSet($value) { return true; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function isset()");
+
+    let error = parser::parse("<?php function Empty($value) { return true; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function empty()");
+
     let error = parser::parse("<?php function IntDiv($a, $b) { return $a; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function intdiv()");
 
@@ -959,6 +965,28 @@ fn parser_accepts_array_read_expressions() {
         Expr::ArrayAccess { array, .. }
             if matches!(array.as_ref(), Expr::Array { .. })
     ));
+}
+
+#[test]
+fn parser_accepts_long_array_literals_and_isset_empty_constructs() {
+    let program = parser::parse(
+        "<?php var_dump(isset($items[0], array('k' => 1)['k']), empty($items['missing']));",
+    )
+    .unwrap();
+    let Statement::Call {
+        name, arguments, ..
+    } = &program.statements[0]
+    else {
+        panic!("expected var_dump statement");
+    };
+    assert_eq!(name, "var_dump");
+    assert_eq!(arguments.len(), 2);
+    assert!(matches!(
+        &arguments[0],
+        Expr::Isset { targets, .. } if targets.len() == 2
+            && matches!(&targets[1], Expr::ArrayAccess { array, .. } if matches!(array.as_ref(), Expr::Array { .. }))
+    ));
+    assert!(matches!(&arguments[1], Expr::Empty { .. }));
 }
 
 #[test]
@@ -4008,6 +4036,43 @@ var_dump($value[0]);",
 }
 
 #[test]
+fn compile_isset_empty_offsets_to_native_binary() {
+    let root = temp_dir("ptn-native-isset-empty-offsets");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("isset-empty-offsets.php");
+    let output = root.join("isset-empty-offsets-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$items = array(\"empty\" => \"0\", \"truthy\" => 1, \"null\" => null, \"nested\" => [\"leaf\" => \"\"]);\n\
+var_dump(isset($items[\"truthy\"]));\n\
+var_dump(isset($items[\"null\"]));\n\
+var_dump(isset($items[\"missing\"]));\n\
+var_dump(isset($missing));\n\
+var_dump(isset($items[\"nested\"][\"leaf\"]));\n\
+var_dump(empty($items[\"empty\"]));\n\
+var_dump(empty($items[\"truthy\"]));\n\
+var_dump(empty($items[\"missing\"]));\n\
+var_dump(empty($missing));\n\
+$string = \"foobar\";\n\
+var_dump(isset($string[0][0][0][0]));\n\
+var_dump(isset($string[\"foo\"]));\n\
+var_dump(empty($string[\"foo\"]));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nbool(false)\nbool(false)\nbool(false)\nbool(true)\nbool(true)\nbool(false)\nbool(true)\nbool(true)\nbool(true)\nbool(false)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_array_key_exists_to_native_binary() {
     let root = temp_dir("ptn-native-array-key-exists");
     fs::create_dir_all(&root).unwrap();
@@ -5372,7 +5437,10 @@ fn support_docs_name_var_dump_unsupported_edges() {
     assert!(support.contains("String offset read expressions"));
     assert!(support.contains("Array element mutation"));
     assert!(support.contains("String offset writes/mutation"));
-    assert!(support.contains("recursive arrays, objects, resources, references"));
+    assert!(support.contains("recursive arrays"));
+    assert!(support.contains("objects"));
+    assert!(support.contains("resources"));
+    assert!(support.contains("references"));
     assert!(support.contains("Embedded NUL strings"));
     assert!(support.contains("Full PHP float precision and formatting edge cases"));
 }

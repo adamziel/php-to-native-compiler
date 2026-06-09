@@ -200,6 +200,8 @@ Supported today:
 - Short array literals `[...]` with optional scalar keys, automatic integer
   keys, integer-string key canonicalization, insertion order, and duplicate-key
   replacement in the current literal-array value subset.
+- Long-form array literals `array(...)` for the same currently supported
+  literal-array subset as short array literals.
 - Array read expressions such as `$array[$key]`, including nested reads and
   reads from literal or grouped array expressions. Reads use the current
   ordered-array key canonicalization path and return `null` with a warning
@@ -214,6 +216,12 @@ Supported today:
   integer/string key canonicalization path as array literals and reads. `null`
   keys emit the current PHP-like deprecation boundary and canonicalize to the
   empty string.
+- `isset(expr[, ...])` and `empty(expr)` over variables, array reads, string
+  offset reads, and currently supported value expressions. Variable and offset
+  operands use a quiet existence lookup: missing variables, missing offsets,
+  non-array containers, and out-of-range string offsets do not emit ordinary
+  read warnings; `isset()` returns false for missing or `null` values, and
+  `empty()` returns true for missing or PHP-falsey values.
 - Boxed scalar and literal-array comparison and boolean expressions: `==`,
   `!=`, `===`, `!==`, `<`, `<=`, `>`, `>=`, `<=>`, `&&`, `||`, `and`, `or`,
   and `xor`. Strict
@@ -267,11 +275,12 @@ Supported today:
 
 Unsupported today:
 
-- Long-form `array(...)`, array element mutation, append/unset,
-  iteration, recursive arrays, arrays with references/copy-on-write, objects,
-  classes, includes, references, resources, exceptions,
-  string-offset writes/mutation, `isset()`/`empty()`/null-coalescing offset
-  semantics, string-offset references/unset,
+- Array element mutation, append/unset, iteration, recursive arrays, arrays
+  with references/copy-on-write, objects, functions, classes, includes,
+  references, resources, exceptions,
+  string-offset writes/mutation, object/property/reference
+  `isset()`/`empty()` semantics, null-coalescing offset semantics, string-offset
+  references/unset,
   exact `array_key_exists()` TypeError parity for unsupported key/container
   types,
   array/object/reference compound-assignment lvalues,

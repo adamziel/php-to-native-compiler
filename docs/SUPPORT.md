@@ -79,6 +79,8 @@ supports in generated native binaries.
 - Short array literals `[...]` with optional scalar keys, automatic integer
   keys, integer-string key canonicalization, insertion order, and duplicate-key
   replacement in the current literal-array value subset.
+- Long-form array literals `array(...)` for the same currently supported
+  literal-array subset as short array literals.
 - Array read expressions such as `$array[$key]`, including nested reads and
   reads from literal or grouped array expressions. Reads use the current
   ordered-array key canonicalization path; undefined keys and non-array
@@ -93,6 +95,12 @@ supports in generated native binaries.
   integer/string key canonicalization path as array literals and reads. `null`
   keys emit the current PHP-like deprecation boundary and canonicalize to the
   empty string.
+- `isset(expr[, ...])` and `empty(expr)` over variables, array reads, string
+  offset reads, and currently supported value expressions. Variable and offset
+  operands use a quiet existence lookup: missing variables, missing offsets,
+  non-array containers, and out-of-range string offsets do not emit ordinary
+  read warnings; `isset()` returns false for missing or `null` values, and
+  `empty()` returns true for missing or PHP-falsey values.
 - Boxed scalar and literal-array comparison operators `==`, `!=`, `===`, `!==`,
   `<`, `<=`, `>`, `>=`, and `<=>`. Strict array identity compares type, key
   order, key type, and value. Numeric comparisons involving `NAN` are treated
@@ -349,15 +357,16 @@ supports in generated native binaries.
   `func_get_args()`/`func_num_args()`, and PHP-exact function/include return
   propagation.
 - Type predicate coverage for arrays, objects, resources, and references.
-- Array element mutation, append/unset/iteration, long-form
-  `array(...)`, recursive arrays, objects, resources, references, copy-on-write,
-  and `var_dump()` reference identity output.
+- Array element mutation, append/unset/iteration, recursive arrays, objects,
+  resources, references, copy-on-write, and `var_dump()` reference identity
+  output.
 - Exact `array_key_exists()` TypeError parity for unsupported key/container
   types, object property checks, resources, references, and error-handler
   routing.
-- String offset writes/mutation, `isset()`/`empty()`/null-coalescing offset
-  semantics, string-offset references, string-offset unset, and complete
-  TypeError/exception parity for unsupported string offset key types.
+- String offset writes/mutation, object/property/reference
+  `isset()`/`empty()` semantics, null-coalescing offset semantics,
+  string-offset references, string-offset unset, and complete TypeError/
+  exception parity for unsupported string offset key types.
 - Embedded NUL strings in runtime string values, `var_dump()` string
   length/output, `strlen()`, `str_rot13()`, `strcmp()`, `bin2hex()`, `chr()`,
   `hex2bin()`, `str_contains()`, `quotemeta()`, `chunk_split()`,

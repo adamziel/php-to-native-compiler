@@ -697,6 +697,8 @@ impl ValueEmitter {
                 out.push_str(");\n");
                 result_temp
             }
+            ValueExpr::Isset { targets } => self.emit_isset(out, targets),
+            ValueExpr::Empty { target } => self.emit_empty(out, target),
             ValueExpr::Load(name) => format!(
                 "ptn_runtime_read_variable(&runtime, \"{}\")",
                 c_string(name)
@@ -843,6 +845,91 @@ impl ValueEmitter {
         result_temp
     }
 
+    fn emit_isset(&mut self, out: &mut String, targets: &[ValueExpr]) -> String {
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_bool(1);\n");
+        for target in targets {
+            out.push_str("    if (ptn_is_truthy(");
+            out.push_str(&result_temp);
+            out.push_str(")) {\n");
+            let lookup_temp = self.emit_quiet_lookup(out, target);
+            out.push_str("        ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_bool(");
+            out.push_str(&lookup_temp);
+            out.push_str(".exists && ");
+            out.push_str(&lookup_temp);
+            out.push_str(".value.type != PTN_NULL);\n");
+            out.push_str("    }\n");
+        }
+        result_temp
+    }
+
+    fn emit_empty(&mut self, out: &mut String, target: &ValueExpr) -> String {
+        let lookup_temp = self.emit_quiet_lookup(out, target);
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_bool(!");
+        out.push_str(&lookup_temp);
+        out.push_str(".exists || !ptn_is_truthy(");
+        out.push_str(&lookup_temp);
+        out.push_str(".value));\n");
+        result_temp
+    }
+
+    fn emit_quiet_lookup(&mut self, out: &mut String, value: &ValueExpr) -> String {
+        match value {
+            ValueExpr::Load(name) => {
+                let result_temp = self.next_temp();
+                out.push_str("        PtnLookupResult ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_runtime_read_variable_quiet(&runtime, \"");
+                out.push_str(&c_string(name));
+                out.push_str("\");\n");
+                result_temp
+            }
+            ValueExpr::ArrayAccess { array, index, line } => {
+                let container_temp = self.emit_quiet_lookup(out, array);
+                let index_temp = self.emit_materialized_value(out, index);
+                let result_temp = self.next_temp();
+                out.push_str("        PtnLookupResult ");
+                out.push_str(&result_temp);
+                out.push_str(";\n");
+                out.push_str("        if (");
+                out.push_str(&container_temp);
+                out.push_str(".exists) {\n");
+                out.push_str("            ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_offset_lookup(&runtime, ");
+                out.push_str(&container_temp);
+                out.push_str(".value, ");
+                out.push_str(&index_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(", 1);\n");
+                out.push_str("        } else {\n");
+                out.push_str("            ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_lookup_missing();\n");
+                out.push_str("        }\n");
+                result_temp
+            }
+            _ => {
+                let value_temp = self.emit_materialized_value(out, value);
+                let result_temp = self.next_temp();
+                out.push_str("        PtnLookupResult ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_lookup_found(");
+                out.push_str(&value_temp);
+                out.push_str(");\n");
+                result_temp
+            }
+        }
+    }
+
     fn emit_array(&mut self, out: &mut String, elements: &[IrArrayElement]) -> String {
         let result_temp = self.next_temp();
         if elements.is_empty() {
@@ -953,6 +1040,8 @@ impl ValueEmitter {
                 | ValueExpr::Cast { .. }
                 | ValueExpr::Array(_)
                 | ValueExpr::ArrayAccess { .. }
+                | ValueExpr::Isset { .. }
+                | ValueExpr::Empty { .. }
         ) {
             return self.emit_value(out, value);
         }
@@ -1114,6 +1203,11 @@ typedef struct {
 } PtnValue;
 
 typedef struct {
+    int exists;
+    PtnValue value;
+} PtnLookupResult;
+
+typedef struct {
     PtnArrayKey key;
     PtnValue value;
 } PtnArrayEntry;
@@ -1221,6 +1315,20 @@ static PTN_UNUSED PtnValue ptn_array(PtnArray *array) {
     value.type = PTN_ARRAY;
     value.as.array = array;
     return value;
+}
+
+static PTN_UNUSED PtnLookupResult ptn_lookup_missing(void) {
+    PtnLookupResult result;
+    result.exists = 0;
+    result.value = ptn_null();
+    return result;
+}
+
+static PTN_UNUSED PtnLookupResult ptn_lookup_found(PtnValue value) {
+    PtnLookupResult result;
+    result.exists = 1;
+    result.value = value;
+    return result;
 }
 
 static void ptn_abort_out_of_memory(void) {
@@ -1571,6 +1679,14 @@ static PTN_UNUSED PtnValue ptn_runtime_read_variable(PtnRuntime *runtime, const 
     }
     ptn_emit_undefined_variable_warning(&runtime->diagnostics, name);
     return ptn_null();
+}
+
+static PTN_UNUSED PtnLookupResult ptn_runtime_read_variable_quiet(PtnRuntime *runtime, const char *name) {
+    PtnValue value;
+    if (ptn_symbols_get(&runtime->symbols, name, &value)) {
+        return ptn_lookup_found(value);
+    }
+    return ptn_lookup_missing();
 }
 
 static PTN_UNUSED void ptn_runtime_define_constant(PtnRuntime *runtime, const char *name, PtnValue value) {
@@ -1970,32 +2086,50 @@ static PTN_UNUSED int ptn_string_to_offset(const char *string, int64_t *offset, 
     return 1;
 }
 
-static PTN_UNUSED int64_t ptn_string_offset_from_value(PtnValue key_value, size_t line) {
+static PTN_UNUSED int ptn_string_offset_from_value(PtnValue key_value, size_t line, int quiet, int64_t *offset) {
     switch (key_value.type) {
         case PTN_INT:
-            return key_value.as.integer;
+            *offset = key_value.as.integer;
+            return 1;
         case PTN_BOOL:
-            ptn_emit_string_offset_cast_warning(line);
-            return key_value.as.boolean ? 1 : 0;
+            if (!quiet) {
+                ptn_emit_string_offset_cast_warning(line);
+            }
+            *offset = key_value.as.boolean ? 1 : 0;
+            return 1;
         case PTN_NULL:
-            ptn_emit_string_offset_cast_warning(line);
-            return 0;
+            if (!quiet) {
+                ptn_emit_string_offset_cast_warning(line);
+            }
+            *offset = 0;
+            return 1;
         case PTN_FLOAT:
-            ptn_emit_string_offset_cast_warning(line);
-            return (int64_t)key_value.as.floating;
+            if (!quiet) {
+                ptn_emit_string_offset_cast_warning(line);
+            }
+            *offset = (int64_t)key_value.as.floating;
+            return 1;
         case PTN_STRING: {
             int warn_illegal = 0;
-            int64_t offset = 0;
-            if (ptn_string_to_offset(key_value.as.string, &offset, &warn_illegal)) {
+            if (ptn_string_to_offset(key_value.as.string, offset, &warn_illegal)) {
                 if (warn_illegal) {
+                    if (quiet) {
+                        return 0;
+                    }
                     ptn_emit_illegal_string_offset_warning(key_value.as.string, line);
                 }
-                return offset;
+                return 1;
+            }
+            if (quiet) {
+                return 0;
             }
             fputs("Fatal error: Cannot access offset of type string on string\n", stderr);
             exit(255);
         }
         case PTN_ARRAY:
+            if (quiet) {
+                return 0;
+            }
             fputs("Fatal error: Cannot access offset of type array on string\n", stderr);
             exit(255);
     }
@@ -2020,12 +2154,18 @@ static PTN_UNUSED int ptn_string_offset_index(size_t string_len, int64_t offset,
     return 1;
 }
 
-static PTN_UNUSED PtnValue ptn_string_offset_read(PtnValue container, PtnValue key_value, size_t line) {
-    int64_t offset = ptn_string_offset_from_value(key_value, line);
+static PTN_UNUSED PtnLookupResult ptn_string_offset_lookup(PtnValue container, PtnValue key_value, size_t line, int quiet) {
+    int64_t offset = 0;
+    if (!ptn_string_offset_from_value(key_value, line, quiet, &offset)) {
+        return ptn_lookup_missing();
+    }
     size_t index = 0;
     if (!ptn_string_offset_index(strlen(container.as.string), offset, &index)) {
-        ptn_emit_uninitialized_string_offset_warning(offset, line);
-        return ptn_string("");
+        if (!quiet) {
+            ptn_emit_uninitialized_string_offset_warning(offset, line);
+            return ptn_lookup_found(ptn_string(""));
+        }
+        return ptn_lookup_missing();
     }
 
     char *result = malloc(2);
@@ -2034,25 +2174,27 @@ static PTN_UNUSED PtnValue ptn_string_offset_read(PtnValue container, PtnValue k
     }
     result[0] = container.as.string[index];
     result[1] = '\0';
-    return ptn_owned_string(result);
+    return ptn_lookup_found(ptn_owned_string(result));
 }
 
-static PTN_UNUSED PtnValue ptn_array_read(PtnRuntime *runtime, PtnValue container, PtnValue key_value, size_t line) {
+static PTN_UNUSED PtnLookupResult ptn_offset_lookup(PtnRuntime *runtime, PtnValue container, PtnValue key_value, size_t line, int quiet) {
     (void)runtime;
     if (container.type == PTN_STRING) {
-        return ptn_string_offset_read(container, key_value, line);
+        return ptn_string_offset_lookup(container, key_value, line, quiet);
     }
 
     if (container.type != PTN_ARRAY) {
-        const char *prefix = "Trying to access array offset on value of type ";
-        const char *type_name = ptn_offset_container_type_name(container);
-        char message[128];
-        int written = snprintf(message, sizeof(message), "%s%s", prefix, type_name);
-        if (written < 0 || (size_t)written >= sizeof(message)) {
-            ptn_abort_out_of_memory();
+        if (!quiet) {
+            const char *prefix = "Trying to access array offset on value of type ";
+            const char *type_name = ptn_offset_container_type_name(container);
+            char message[128];
+            int written = snprintf(message, sizeof(message), "%s%s", prefix, type_name);
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_emit_array_runtime_diagnostic("Warning", message, line);
         }
-        ptn_emit_array_runtime_diagnostic("Warning", message, line);
-        return ptn_null();
+        return ptn_lookup_missing();
     }
 
     if (key_value.type == PTN_NULL) {
@@ -2066,13 +2208,20 @@ static PTN_UNUSED PtnValue ptn_array_read(PtnRuntime *runtime, PtnValue containe
     PtnArrayKey key = ptn_array_key_from_value(key_value);
     PtnArrayEntry *entry = ptn_array_entry_for_key(container.as.array, key);
     if (entry == NULL) {
-        ptn_emit_undefined_array_key_warning(key, line);
+        if (!quiet) {
+            ptn_emit_undefined_array_key_warning(key, line);
+        }
         ptn_array_key_free(key);
-        return ptn_null();
+        return ptn_lookup_missing();
     }
     PtnValue value = entry->value;
     ptn_array_key_free(key);
-    return value;
+    return ptn_lookup_found(value);
+}
+
+static PTN_UNUSED PtnValue ptn_array_read(PtnRuntime *runtime, PtnValue container, PtnValue key_value, size_t line) {
+    PtnLookupResult result = ptn_offset_lookup(runtime, container, key_value, line, 0);
+    return result.exists ? result.value : ptn_null();
 }
 
 static PTN_UNUSED int ptn_compare_arrays_equal(PtnArray *left, PtnArray *right) {

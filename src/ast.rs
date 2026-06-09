@@ -173,6 +173,14 @@ pub enum Expr {
         index: Box<Expr>,
         span: SourceSpan,
     },
+    Isset {
+        targets: Vec<Expr>,
+        span: SourceSpan,
+    },
+    Empty {
+        target: Box<Expr>,
+        span: SourceSpan,
+    },
     Unary {
         op: UnaryOp,
         expr: Box<Expr>,
@@ -270,6 +278,8 @@ impl Expr {
             Expr::Call { span, .. } => *span,
             Expr::Array { span, .. } => *span,
             Expr::ArrayAccess { span, .. } => *span,
+            Expr::Isset { span, .. } => *span,
+            Expr::Empty { span, .. } => *span,
             Expr::Unary { span, .. } | Expr::Cast { span, .. } => *span,
             Expr::Binary { span, .. } | Expr::Grouped { span, .. } => *span,
         }
