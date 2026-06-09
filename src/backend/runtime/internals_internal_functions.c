@@ -971,6 +971,13 @@ static PtnValue ptn_internal_is_null(PtnRuntime *runtime, size_t argc, const Ptn
     return ptn_is_type(args[0], PTN_NULL);
 }
 
+static PtnValue ptn_internal_is_array(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    return ptn_is_type(args[0], PTN_ARRAY);
+}
+
 static PtnValue ptn_internal_is_bool(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)argc;
@@ -1597,6 +1604,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "hexdec", 1, 1, ptn_internal_hexdec },
         { "intdiv", 2, 2, ptn_internal_intdiv },
         { "intval", 1, 2, ptn_internal_intval },
+        { "is_array", 1, 1, ptn_internal_is_array },
         { "is_bool", 1, 1, ptn_internal_is_bool },
         { "is_double", 1, 1, ptn_internal_is_float },
         { "is_finite", 1, 1, ptn_internal_is_finite },

@@ -3,7 +3,10 @@
 ## Progress Bar
 
 `[#########.] 54/59 PHPT rows passing`
-- Latest: 2026-06-09T16:07Z focused array-lvalue telemetry passes
+- Latest: 2026-06-09T18:20Z array-aware type predicate slice adds
+  `is_array()` through the generic internal registry, with native scalar and
+  ordered-array predicate coverage plus focused differential telemetry.
+- Prior: 2026-06-09T16:07Z focused array-lvalue telemetry passes
   `tests/basic/array_null_offset_deprecation.phpt` and
   `Zend/tests/assign_dim_op_undef.phpt`; `Zend/tests/offset_assign.phpt`
   still fails at the nested string-offset mutation boundary tracked by

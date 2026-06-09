@@ -43,7 +43,7 @@ Supported today:
   `intval(expr[, base])`, `pi()`, `getrandmax()`, `getmypid()`,
   `php_sapi_name()`, `phpversion([extension])`, `chr(expr)`, `ord(expr)`,
   `count(expr)`,
-  `error_reporting(expr)`, `gettype(expr)`, scalar `is_*` type predicates,
+  `error_reporting(expr)`, `gettype(expr)`, scalar and array `is_*` type predicates,
   non-finite predicates such as `is_finite(expr)`, `is_infinite(expr)`, and
   `is_nan(expr)`, `define(expr, expr)`, `constant(expr)`,
   `defined(expr)`, `function_exists(expr)`, and
@@ -142,10 +142,10 @@ Supported today:
 - `count()` as an expression returning the length of current boxed arrays.
 - `error_reporting()` accepts zero or one argument and returns the current
   placeholder reporting level. Runtime error filtering is not modeled yet.
-- `gettype()` and scalar type predicates for the current boxed scalar
+- `gettype()` and type predicates for the current boxed scalar and ordered-array
   `PtnValue` types: `is_null()`, `is_bool()`, `is_int()`/`is_integer()`/
   `is_long()`, `is_float()`/`is_double()`, `is_string()`, `is_scalar()`,
-  `is_finite()`, `is_infinite()`, and `is_nan()`.
+  `is_array()`, `is_finite()`, `is_infinite()`, and `is_nan()`.
 - Symbol-existence predicates for currently modeled runtime tables:
   `function_exists()` checks generated user-function declarations and the
   internal-function registry, and `defined()` checks global `const`

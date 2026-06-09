@@ -1876,6 +1876,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "ord"
             | "error_reporting"
             | "gettype"
+            | "is_array"
             | "is_null"
             | "is_bool"
             | "is_int"
