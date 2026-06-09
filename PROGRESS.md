@@ -1214,3 +1214,27 @@ Still unsupported after this global const slice: namespace/class constants,
 dynamic `define()`/`constant()`, duplicate constant diagnostics, full
 PHP-exact constant-expression parity, additional built-in/extension constants,
 and eval contexts.
+
+Added scalar digest internals through shared runtime dispatch:
+
+- Registered `md5()` and `sha1()` in the generated C internal-function registry,
+  so normal calls and `function_exists()` share the same case-insensitive lookup
+  table and argument-count checks.
+- `md5()` and `sha1()` convert the input through the current boxed scalar
+  string-conversion path, compute the digest in the shared runtime, and return
+  lowercase hexadecimal output by default.
+- The optional `raw_output` argument is accepted for both functions and returns
+  raw digest bytes through the current C-string-backed value path.
+- Native tests prove ASCII digest vectors, optional raw-output handling through
+  `bin2hex()`, scalar input conversion, and registry exposure.
+- Focused public PHPT telemetry through `phpc` passes
+  `ext/standard/tests/strings/md5.phpt`,
+  `ext/standard/tests/strings/md5_basic1.phpt`,
+  `ext/standard/tests/strings/md5_basic2.phpt`,
+  `ext/standard/tests/strings/sha1_basic.phpt`, and
+  `ext/standard/tests/strings/sha1raw.phpt`.
+
+Still unsupported after this scalar digest slice: length-aware binary string
+storage, raw digest output containing embedded NUL bytes, embedded-NUL input
+parity, `md5_file()`/`sha1_file()`, and unsupported
+array/object/resource/reference operand diagnostics.

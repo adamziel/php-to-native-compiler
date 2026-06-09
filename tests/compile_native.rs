@@ -1555,6 +1555,152 @@ fn compile_fdiv_registry_and_scalar_conversion_to_native_binary() {
 }
 
 #[test]
+fn compile_md5_phpt_shape_to_native_binary() {
+    let root = temp_dir("ptn-native-md5-phpt-shape");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("md5.php");
+    let output = root.join("md5-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+echo md5(\"\").\"\\n\";\n\
+echo md5(\"a\").\"\\n\";\n\
+echo md5(\"abc\").\"\\n\";\n\
+echo md5(\"message digest\").\"\\n\";\n\
+echo md5(\"abcdefghijklmnopqrstuvwxyz\").\"\\n\";\n\
+echo md5(\"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789\").\"\\n\";\n\
+echo md5(\"12345678901234567890123456789012345678901234567890123456789012345678901234567890\").\"\\n\";\n\
+?>",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "d41d8cd98f00b204e9800998ecf8427e\n0cc175b9c0f1b6a831c399e269772661\n900150983cd24fb0d6963f7d28e17f72\nf96b697d7cb7938d525a2f31aaf161d0\nc3fcd3d76192e4007dfb496cca67e13b\nd174ab98d277d9f5a5611c2c9f419d9f\n57edf4a22be3c955ac49da2e2107b67a\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_md5_registry_and_scalar_conversion_to_native_binary() {
+    let root = temp_dir("ptn-native-md5-registry-and-scalar-conversion");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("md5-registry.php");
+    let output = root.join("md5-registry-bin");
+    fs::write(
+        &input,
+        "<?php var_dump(md5(123), md5(true), function_exists(\"md5\"), function_exists(\"MD5\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(32) \"202cb962ac59075b964b07152d234b70\"\nstring(32) \"c4ca4238a0b923820dcc509a6f75849b\"\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_md5_raw_output_argument_to_native_binary() {
+    let root = temp_dir("ptn-native-md5-raw-output-argument");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("md5-raw-output.php");
+    let output = root.join("md5-raw-output-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+echo \"*** Testing md5() : basic functionality - with raw output***\\n\";\n\
+$str = \"Hello World\";\n\
+$md5_raw = md5($str, true);\n\
+var_dump(bin2hex($md5_raw));\n\
+\n\
+$md5 = md5($str, false);\n\
+\n\
+if (strcmp(bin2hex($md5_raw), $md5) == 0 ) {\n\
+    echo \"TEST PASSED\\n\";\n\
+} else {\n\
+    echo \"TEST FAILED\\n\";\n\
+    var_dump($md5_raw, $md5);\n\
+}\n\
+\n\
+?>",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "*** Testing md5() : basic functionality - with raw output***\nstring(32) \"b10a8db164e0754105b7a99be72e3fe5\"\nTEST PASSED\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_sha1_basic_and_raw_output_to_native_binary() {
+    let root = temp_dir("ptn-native-sha1-basic-and-raw-output");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("sha1-basic.php");
+    let output = root.join("sha1-basic-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+echo \"*** Testing sha1() : basic functionality ***\\n\";\n\
+\n\
+echo \"\\n-- Without raw argument --\\n\";\n\
+var_dump(sha1(\"\"));\n\
+var_dump(sha1(\"a\"));\n\
+var_dump(sha1(\"abc\"));\n\
+var_dump(sha1(\"message digest\"));\n\
+var_dump(sha1(\"abcdefghijklmnopqrstuvwxyz\"));\n\
+var_dump(sha1(\"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789\"));\n\
+var_dump(sha1(\"12345678901234567890123456789012345678901234567890123456789012345678901234567890\"));\n\
+\n\
+echo \"\\n-- With raw == false --\\n\";\n\
+var_dump(sha1(\"\", false));\n\
+var_dump(sha1(\"a\", false));\n\
+var_dump(sha1(\"abc\", false));\n\
+var_dump(sha1(\"message digest\", false));\n\
+var_dump(sha1(\"abcdefghijklmnopqrstuvwxyz\", false));\n\
+var_dump(sha1(\"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789\", false));\n\
+var_dump(sha1(\"12345678901234567890123456789012345678901234567890123456789012345678901234567890\", false));\n\
+\n\
+echo \"\\n-- With raw == true --\\n\";\n\
+var_dump(bin2hex(sha1(\"\", true)));\n\
+var_dump(bin2hex(sha1(\"a\", true)));\n\
+var_dump(bin2hex(sha1(\"abc\", true)));\n\
+var_dump(bin2hex(sha1(\"message digest\", true)));\n\
+var_dump(bin2hex(sha1(\"abcdefghijklmnopqrstuvwxyz\", true)));\n\
+var_dump(bin2hex(sha1(\"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789\", true)));\n\
+var_dump(bin2hex(sha1(\"12345678901234567890123456789012345678901234567890123456789012345678901234567890\", true)));\n\
+var_dump(function_exists(\"sha1\"), function_exists(\"SHA1\"));\n\
+\n\
+?>",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "*** Testing sha1() : basic functionality ***\n\n-- Without raw argument --\nstring(40) \"da39a3ee5e6b4b0d3255bfef95601890afd80709\"\nstring(40) \"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8\"\nstring(40) \"a9993e364706816aba3e25717850c26c9cd0d89d\"\nstring(40) \"c12252ceda8be8994d5fa0290a47231c1d16aae3\"\nstring(40) \"32d10c7b8cf96570ca04ce37f2a19d84240d3a89\"\nstring(40) \"761c457bf73b14d27e9e9265c46f4b4dda11f940\"\nstring(40) \"50abf5706a150990a08b2c5ea40fa0e585554732\"\n\n-- With raw == false --\nstring(40) \"da39a3ee5e6b4b0d3255bfef95601890afd80709\"\nstring(40) \"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8\"\nstring(40) \"a9993e364706816aba3e25717850c26c9cd0d89d\"\nstring(40) \"c12252ceda8be8994d5fa0290a47231c1d16aae3\"\nstring(40) \"32d10c7b8cf96570ca04ce37f2a19d84240d3a89\"\nstring(40) \"761c457bf73b14d27e9e9265c46f4b4dda11f940\"\nstring(40) \"50abf5706a150990a08b2c5ea40fa0e585554732\"\n\n-- With raw == true --\nstring(40) \"da39a3ee5e6b4b0d3255bfef95601890afd80709\"\nstring(40) \"86f7e437faa5a7fce15d1ddcb9eaeaea377667b8\"\nstring(40) \"a9993e364706816aba3e25717850c26c9cd0d89d\"\nstring(40) \"c12252ceda8be8994d5fa0290a47231c1d16aae3\"\nstring(40) \"32d10c7b8cf96570ca04ce37f2a19d84240d3a89\"\nstring(40) \"761c457bf73b14d27e9e9265c46f4b4dda11f940\"\nstring(40) \"50abf5706a150990a08b2c5ea40fa0e585554732\"\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_hex2bin_basic_phpt_shape_to_native_binary() {
     let root = temp_dir("ptn-native-hex2bin-basic-phpt-shape");
     fs::create_dir_all(&root).unwrap();
