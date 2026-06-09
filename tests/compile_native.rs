@@ -585,6 +585,14 @@ fn parser_accepts_user_function_declarations_and_returns() {
 }
 
 #[test]
+fn parser_preserves_user_function_declared_name_case() {
+    let program =
+        parser::parse("<?php function MixedCase() { return null; } mixedcase();").unwrap();
+
+    assert_eq!(program.functions[0].name, "MixedCase");
+}
+
+#[test]
 fn parser_accepts_null_parameter_and_return_type_hints() {
     let program =
         parser::parse("<?php function test(null $v): null { return $v; } var_dump(test(null));")
@@ -598,6 +606,9 @@ fn parser_accepts_null_parameter_and_return_type_hints() {
 #[test]
 fn parser_rejects_duplicate_user_function_declarations() {
     let error = parser::parse("<?php function same() {} function same() {}").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function same()");
+
+    let error = parser::parse("<?php function Same() {} function same() {}").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function same()");
 }
 
@@ -3859,6 +3870,41 @@ var_dump(\n\
         String::from_utf8(execution.stdout).unwrap(),
         format!(
             "int(4)\nstring({}) \"{}\"\nstring({}) \"{}\"\nstring(0) \"\"\nstring(0) \"\"\nstring(0) \"\"\nstring(0) \"\"\nstring(0) \"\"\n",
+            file.len(),
+            file,
+            dir.len(),
+            dir
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_user_function_magic_constants_to_native_binary() {
+    let root = temp_dir("ptn-native-user-function-magic-constants");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("function-magic-constants.php");
+    let output = root.join("function-magic-constants-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function MixedCase() { var_dump(__LINE__, __FILE__, __DIR__, __FUNCTION__, __METHOD__, __CLASS__, __TRAIT__, __NAMESPACE__); }\n\
+var_dump(__FUNCTION__, __METHOD__);\n\
+mixedcase();\n\
+?>",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let file = input.to_string_lossy();
+    let dir = root.to_string_lossy();
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "string(0) \"\"\nstring(0) \"\"\nint(2)\nstring({}) \"{}\"\nstring({}) \"{}\"\nstring(9) \"MixedCase\"\nstring(9) \"MixedCase\"\nstring(0) \"\"\nstring(0) \"\"\nstring(0) \"\"\n",
             file.len(),
             file,
             dir.len(),

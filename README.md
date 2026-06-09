@@ -14,6 +14,8 @@ expected rows, or one-off outputs.
 - Boxed C runtime for PHP-like values.
 - Native execution tests for parser, IR, backend, runtime, and selected PHP
   behavior.
+- Top-level user functions include scoped `__FUNCTION__` and `__METHOD__`
+  magic-constant coverage.
 - Bounded PHPT telemetry from `/home/claude/php-src-phpt`.
 
 ## Status Files

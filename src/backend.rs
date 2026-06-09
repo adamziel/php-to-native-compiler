@@ -188,7 +188,8 @@ fn emit_user_functions(
             out.push_str(&parameter_index.to_string());
             out.push_str("]);\n");
         }
-        let mut values = ValueEmitter::new(source_file, source_dir, functions);
+        let mut values =
+            ValueEmitter::new_for_function(source_file, source_dir, functions, &function.name);
         let mut break_targets = Vec::new();
         let return_label = values.next_label("ptn_function_return");
         for instruction in &function.body {
@@ -1466,6 +1467,7 @@ struct ValueEmitter {
     next_label: usize,
     source_file: String,
     source_dir: String,
+    current_function_name: Option<String>,
     user_function_names: Vec<String>,
 }
 
@@ -1476,11 +1478,30 @@ struct ConcatOperand<'a> {
 
 impl ValueEmitter {
     fn new(source_file: &str, source_dir: &str, functions: &[FunctionDecl]) -> Self {
+        Self::new_with_scope(source_file, source_dir, functions, None)
+    }
+
+    fn new_for_function(
+        source_file: &str,
+        source_dir: &str,
+        functions: &[FunctionDecl],
+        function_name: &str,
+    ) -> Self {
+        Self::new_with_scope(source_file, source_dir, functions, Some(function_name))
+    }
+
+    fn new_with_scope(
+        source_file: &str,
+        source_dir: &str,
+        functions: &[FunctionDecl],
+        current_function_name: Option<&str>,
+    ) -> Self {
         Self {
             next_temp: 0,
             next_label: 0,
             source_file: source_file.to_string(),
             source_dir: source_dir.to_string(),
+            current_function_name: current_function_name.map(str::to_string),
             user_function_names: functions
                 .iter()
                 .map(|function| function.name.clone())
@@ -1634,9 +1655,13 @@ impl ValueEmitter {
                         self.source_dir.len()
                     )
                 }
-                MagicConstantKind::Function
-                | MagicConstantKind::Method
-                | MagicConstantKind::Class
+                MagicConstantKind::Function | MagicConstantKind::Method => {
+                    format!(
+                        "ptn_string(\"{}\")",
+                        c_string(self.current_function_name.as_deref().unwrap_or(""))
+                    )
+                }
+                MagicConstantKind::Class
                 | MagicConstantKind::Trait
                 | MagicConstantKind::Namespace => "ptn_string(\"\")".to_string(),
             },
