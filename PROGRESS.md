@@ -166,10 +166,10 @@ integration:
   basics, boolean short-circuit behavior, grouping, and left-to-right operand
   diagnostics.
 
-Still unsupported for comparisons/booleans: `<=`, `>=`, `===`, `!==`, `<=>`,
-keyword `and`/`or`, arrays, objects, references, copy-on-write behavior,
-PHP-exact chained comparison parse errors, and complete PHP comparison parity
-for unsupported value types.
+Still unsupported for comparisons/booleans: `===`, `!==`, `<=>`, keyword
+`and`/`or`, arrays, objects, references, copy-on-write behavior, PHP-exact
+chained comparison parse errors, and complete PHP comparison parity for
+unsupported value types.
 
 Refined parenthesized expression grouping in the CAO worktree:
 
@@ -177,3 +177,18 @@ Refined parenthesized expression grouping in the CAO worktree:
   lowering erases grouping to the inner value expression.
 - Native tests prove grouped literals, grouped variable reads, grouped binary
   expressions, nested grouping, and grouped assignment right-hand sides.
+
+Extended the boxed scalar comparison slice after the grouping-preservation head:
+
+- Lexer/parser/AST/IR support for `<=` and `>=` at the same comparison
+  precedence as `<` and `>`.
+- Generated C comparison emission for `<=` and `>=` reuses the shared
+  `ptn_compare_order` path through boxed runtime helpers, matching the existing
+  scalar loose ordering behavior.
+- Native tests prove integer, numeric-string, string, null, and boolean scalar
+  `<=`/`>=` cases, plus parser coverage through grouped boolean expressions.
+
+Still unsupported after this comparison extension: identity comparisons
+`===`/`!==`, spaceship `<=>`, keyword `and`/`or`, arrays, objects, references,
+copy-on-write behavior, PHP-exact chained comparison parse errors, and complete
+PHP comparison parity for unsupported value types.

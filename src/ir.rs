@@ -44,7 +44,9 @@ pub enum BinaryOp {
     Equal,
     NotEqual,
     Less,
+    LessEqual,
     Greater,
+    GreaterEqual,
     And,
     Or,
 }
@@ -155,7 +157,9 @@ fn lower_binary_op(op: AstBinaryOp) -> BinaryOp {
         AstBinaryOp::Equal => BinaryOp::Equal,
         AstBinaryOp::NotEqual => BinaryOp::NotEqual,
         AstBinaryOp::Less => BinaryOp::Less,
+        AstBinaryOp::LessEqual => BinaryOp::LessEqual,
         AstBinaryOp::Greater => BinaryOp::Greater,
+        AstBinaryOp::GreaterEqual => BinaryOp::GreaterEqual,
         AstBinaryOp::And => BinaryOp::And,
         AstBinaryOp::Or => BinaryOp::Or,
     }

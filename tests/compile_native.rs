@@ -218,7 +218,7 @@ fn parser_preserves_parenthesized_expression_grouping() {
 
 #[test]
 fn parser_accepts_comparison_boolean_and_grouping_expressions() {
-    let program = parser::parse("<?php echo 1 + 2 == \"3\" && (false || true);").unwrap();
+    let program = parser::parse("<?php echo 1 + 2 <= \"3\" && (false || 4 >= 4);").unwrap();
     let Statement::Echo { expressions, .. } = &program.statements[0] else {
         panic!("expected echo statement");
     };
@@ -234,7 +234,7 @@ fn parser_accepts_comparison_boolean_and_grouping_expressions() {
     assert!(matches!(
         left.as_ref(),
         Expr::Binary {
-            op: BinaryOp::Equal,
+            op: BinaryOp::LessEqual,
             ..
         }
     ));
@@ -378,7 +378,7 @@ fn compile_scalar_comparisons_to_native_binary() {
     let output = root.join("comparisons-bin");
     fs::write(
         &input,
-        "<?php echo 1 == 1, 1 != 2, 1 < 2, 3 > 2, \"42\" == \"000042\", 42 == \"42.0\", \"a\" < \"b\", \"\\n\";",
+        "<?php echo 1 == 1, 1 != 2, 1 < 2, 2 <= 2, 3 > 2, 3 >= 3, \"42\" == \"000042\", 42 == \"42.0\", \"a\" <= \"b\", \"b\" >= \"b\", \"\\n\";",
     )
     .unwrap();
 
@@ -386,7 +386,27 @@ fn compile_scalar_comparisons_to_native_binary() {
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
-    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "1111111\n");
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "1111111111\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_less_equal_greater_equal_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-comparison-equality-bounds");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("comparison-equality-bounds.php");
+    let output = root.join("comparison-equality-bounds-bin");
+    fs::write(
+        &input,
+        "<?php echo 2 <= \"2.0\", 3 <= 2, \"b\" >= \"a\", \"a\" >= \"b\", null <= 0, true >= \"1\", \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "1111\n");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 

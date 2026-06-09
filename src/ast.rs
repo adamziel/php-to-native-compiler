@@ -67,7 +67,9 @@ pub enum BinaryOp {
     Equal,
     NotEqual,
     Less,
+    LessEqual,
     Greater,
+    GreaterEqual,
     And,
     Or,
 }

@@ -37,9 +37,9 @@ Supported today:
   including nested grouping, plus unary `-`, unary `!`, and `(int)`, `(float)`,
   `(string)`, and `(bool)` casts for boxed scalar values. Unary and cast
   operations are emitted as runtime helper calls over `PtnValue` operands.
-- Boxed scalar comparison and boolean expressions: `==`, `!=`, `<`, `>`, `&&`,
-  and `||`. Boolean operators short-circuit over boxed PHP truthiness for the
-  currently supported scalar value types.
+- Boxed scalar comparison and boolean expressions: `==`, `!=`, `<`, `<=`, `>`,
+  `>=`, `&&`, and `||`. Boolean operators short-circuit over boxed PHP
+  truthiness for the currently supported scalar value types.
 
 Unsupported today:
 
@@ -49,7 +49,8 @@ Unsupported today:
   `&=`, `|=`, `^=`, `<<=`, `>>=`, `??=`), `print` as an expression returning
   `1` even when spelled `print(...)`, increment/decrement operators, full
   PHP numeric-string and non-numeric string arithmetic diagnostics, complete
-  comparison parity for unsupported types and chained comparison parse errors,
+  comparison parity for unsupported types, identity/spaceship comparison
+  operators, keyword boolean operators, chained comparison parse errors,
   overflow parity, exact scalar cast overflow behavior, PHP-exact warning
   text/file/line/error-handler behavior, inline HTML before `<?php`, between
   PHP blocks, or after a closing PHP tag, doc comment retention, variable

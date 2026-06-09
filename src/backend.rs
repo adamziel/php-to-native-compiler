@@ -137,9 +137,12 @@ impl ValueEmitter {
     ) -> String {
         match op {
             BinaryOp::Add | BinaryOp::Concat => self.emit_runtime_binary(out, op, left, right),
-            BinaryOp::Equal | BinaryOp::NotEqual | BinaryOp::Less | BinaryOp::Greater => {
-                self.emit_comparison(out, op, left, right)
-            }
+            BinaryOp::Equal
+            | BinaryOp::NotEqual
+            | BinaryOp::Less
+            | BinaryOp::LessEqual
+            | BinaryOp::Greater
+            | BinaryOp::GreaterEqual => self.emit_comparison(out, op, left, right),
             BinaryOp::And | BinaryOp::Or => self.emit_short_circuit(out, op, left, right),
         }
     }
@@ -184,7 +187,11 @@ impl ValueEmitter {
             BinaryOp::Equal => format!("ptn_compare_equal({left_temp}, {right_temp})"),
             BinaryOp::NotEqual => format!("!ptn_compare_equal({left_temp}, {right_temp})"),
             BinaryOp::Less => format!("ptn_compare_less({left_temp}, {right_temp})"),
+            BinaryOp::LessEqual => format!("ptn_compare_less_equal({left_temp}, {right_temp})"),
             BinaryOp::Greater => format!("ptn_compare_greater({left_temp}, {right_temp})"),
+            BinaryOp::GreaterEqual => {
+                format!("ptn_compare_greater_equal({left_temp}, {right_temp})")
+            }
             _ => unreachable!(),
         };
         out.push_str("    PtnValue ");
@@ -758,8 +765,16 @@ static PTN_UNUSED int ptn_compare_less(PtnValue left, PtnValue right) {
     return ptn_compare_order(left, right) < 0;
 }
 
+static PTN_UNUSED int ptn_compare_less_equal(PtnValue left, PtnValue right) {
+    return ptn_compare_order(left, right) <= 0;
+}
+
 static PTN_UNUSED int ptn_compare_greater(PtnValue left, PtnValue right) {
     return ptn_compare_order(left, right) > 0;
+}
+
+static PTN_UNUSED int ptn_compare_greater_equal(PtnValue left, PtnValue right) {
+    return ptn_compare_order(left, right) >= 0;
 }
 
 static PTN_UNUSED PtnValue ptn_add(PtnValue left, PtnValue right) {

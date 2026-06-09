@@ -50,6 +50,8 @@ Current runtime/compiler slices:
 - Scalar comparison and boolean expressions share the same AST/IR binary node
   shape. Comparisons emit boxed booleans through runtime helpers, while `&&`
   and `||` emit native C branches that short-circuit over boxed PHP truthiness.
+  The ordered comparison helpers share `ptn_compare_order`, so `<`, `<=`, `>`,
+  and `>=` use one scalar ordering path.
 
 Near-term architecture targets:
 
@@ -64,7 +66,7 @@ Near-term architecture targets:
   unsupported compound operators beyond `+=` and `.=` (`-=`, `*=`, `/=`, `%=`,
   `**=`, `&=`, `|=`, `^=`, `<<=`, `>>=`, `??=`).
 - Complete comparison parity for arrays, objects, references, chained
-  comparison parse errors, identity operators, and unsupported scalar edge
-  cases.
+  comparison parse errors, identity/spaceship operators, keyword boolean
+  operators, and unsupported scalar edge cases.
 - Explicit fallback boundaries for `eval`, variable variables, and runtime
   symbol mutation.
