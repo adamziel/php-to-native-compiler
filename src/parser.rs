@@ -658,6 +658,17 @@ impl Parser {
                 Some(left.span),
             ));
         }
+        if self.peek_is_void_cast_name()
+            && matches!(
+                self.tokens.get(self.index + 1).map(|token| &token.kind),
+                Some(TokenKind::RightParen)
+            )
+        {
+            return Err(Diagnostic::parse_error(
+                "syntax error, unexpected token \"(void)\"",
+                Some(left.span),
+            ));
+        }
         let Some(kind) = self.peek_cast_kind() else {
             self.index = start;
             return Ok(None);
@@ -682,6 +693,13 @@ impl Parser {
         matches!(
             &self.peek().kind,
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("unset")
+        )
+    }
+
+    fn peek_is_void_cast_name(&self) -> bool {
+        matches!(
+            &self.peek().kind,
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("void")
         )
     }
 

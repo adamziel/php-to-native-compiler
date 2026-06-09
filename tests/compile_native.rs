@@ -539,6 +539,14 @@ fn parser_rejects_removed_unset_cast_with_php_message() {
 }
 
 #[test]
+fn parser_rejects_void_cast_expression_context_with_parse_error_kind() {
+    let error = parser::parse("<?php $tmp = (void)$dummy;").unwrap_err();
+    assert_eq!(error.message, "syntax error, unexpected token \"(void)\"");
+    assert_eq!(error.kind, DiagnosticKind::ParseError);
+    assert_eq!(error.span.unwrap().line, 1);
+}
+
+#[test]
 fn parser_preserves_parenthesized_expression_grouping() {
     let program = parser::parse("<?php echo (1), ($name), (1 + 2), ((\"a\" . \"b\"));").unwrap();
     let Statement::Echo { expressions, .. } = &program.statements[0] else {
@@ -997,6 +1005,26 @@ fn phpc_renders_removed_unset_cast_as_php_fatal() {
         String::from_utf8(execution.stderr).unwrap(),
         format!(
             "Fatal error: The (unset) cast is no longer supported in {} on line 4\n",
+            input.display()
+        )
+    );
+}
+
+#[test]
+fn phpc_renders_void_cast_expression_context_as_php_parse_error() {
+    let root = temp_dir("ptn-phpc-void-cast-expression-parse-error");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("void-cast-expression.php");
+    fs::write(&input, "<?php\n\n$tmp = (void)$dummy;\n").unwrap();
+
+    let execution = Command::new(phpc_bin()).arg(&input).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "Parse error: syntax error, unexpected token \"(void)\" in {} on line 3\n",
             input.display()
         )
     );

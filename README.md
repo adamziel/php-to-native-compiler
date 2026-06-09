@@ -109,6 +109,8 @@ Supported today:
   parse error through the `phpc` runner.
 - Removed `(unset)` cast syntax is rejected with a source-spanned PHP-style
   fatal error through the `phpc` runner.
+- Expression-context `(void)` cast syntax is rejected with a source-spanned
+  PHP-style parse error through the `phpc` runner.
 - Global-scope magic constants `__LINE__`, `__FILE__`, `__DIR__`,
   `__FUNCTION__`, `__METHOD__`, `__CLASS__`, `__TRAIT__`, and
   `__NAMESPACE__`. Scope-dependent names currently resolve to empty strings in
@@ -191,7 +193,8 @@ Unsupported today:
   edge parity, exact `getmypid()` process model parity across SAPIs and
   unsupported platforms, exact `error_reporting()` configuration/filtering
   behavior, unsupported cast spelling diagnostics beyond the currently modeled
-  aliases and removed cast boundaries, and full PHP
+  aliases and removed cast boundaries, statement-form `(void) expr;` casts,
+  and full PHP
   precision/formatting edge cases for
   `var_dump()`/`strlen()`/`bin2hex()`/`hex2bin()`/`soundex()`/base-conversion
   internals, scope-aware magic constants inside functions/classes/namespaces/

@@ -1097,3 +1097,18 @@ alternate control-flow syntax, unbraced switch bodies, branch-condition
 assignments, for-loop comma expressions and non-direct-variable clause lvalues,
 PHP-exact break/continue diagnostic timing/wording, invalid-goto restrictions,
 and exception/finally edges.
+
+Added source-spanned parse diagnostics for expression-context `(void)` casts:
+
+- The parser recognizes exact `(void)` cast-prefix syntax while parsing an
+  expression and reports PHP's unexpected-token parse error instead of falling
+  through to a misleading statement terminator diagnostic.
+- The diagnostic does not lower `(void)` as a runtime cast.
+- Native/CLI tests prove the parser diagnostic and `phpc` parse-error
+  rendering path.
+- Focused public PHPT telemetry through `phpc` passes
+  `Zend/tests/type_coercion/type_casts/cast_to_void_statement.phpt`.
+
+Still unsupported after this diagnostic slice: statement-form `(void) expr;`
+casts, broader parse-error wording parity, stack traces, error-handler routing,
+and PHP-exact warning/notice formatting.
