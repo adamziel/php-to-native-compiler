@@ -18,9 +18,10 @@ Commit: `ea176b8`
 ## Already Ported
 
 Lexer/parser, AST, IR, C backend, boxed values, direct variables, constants,
-selected string/math/type internals, ordered arrays and `foreach`, top-level
-user functions, `print_r`, selected binary-string handling, and catchable
-`TypeError` for string offset reads.
+selected string/math/type internals, length-aware string helper paths for
+selected internals and scalar bitwise strings, ordered arrays and `foreach`,
+top-level user functions, `print_r`, selected binary-string handling, and
+catchable `TypeError` for string offset reads.
 
 ## Still Needed
 

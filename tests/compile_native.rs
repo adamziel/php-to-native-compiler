@@ -28,6 +28,15 @@ fn undefined_variable_warnings(path: &Path, warnings: &[(&str, usize)]) -> Strin
     output
 }
 
+fn generated_c_static_function_body<'a>(c_source: &'a str, marker: &str) -> &'a str {
+    let start = c_source
+        .find(marker)
+        .unwrap_or_else(|| panic!("generated runtime should contain {marker}"));
+    let tail = &c_source[start..];
+    let end = tail.find("\nstatic ").unwrap_or(tail.len());
+    &tail[..end]
+}
+
 #[test]
 fn parser_preserves_echo_expression_order() {
     let program = parser::parse("<?php echo \"a\", 12, true, false, null;").unwrap();
@@ -2258,12 +2267,7 @@ int(5)\nstring(6) \"323535\"\nstring(2) \"23\"\n"
         "ptn_internal_ord",
     ] {
         let marker = format!("static PtnValue {function}(");
-        let start = c_source
-            .find(&marker)
-            .unwrap_or_else(|| panic!("generated runtime should contain {function}"));
-        let tail = &c_source[start..];
-        let end = tail.find("\nstatic ").unwrap_or(tail.len());
-        let body = &tail[..end];
+        let body = generated_c_static_function_body(&c_source, &marker);
         assert!(
             body.contains("ptn_value_to_string_operand"),
             "{function} should use the direct string operand helper"
@@ -2273,6 +2277,49 @@ int(5)\nstring(6) \"323535\"\nstring(2) \"23\"\n"
             "{function} should not convert direct argument expressions unconditionally"
         );
     }
+
+    for expected_call in [
+        "ptn_rot13_string(string.data, string.len)",
+        "ptn_quotemeta_string(input.data, input.len, &output_len)",
+        "ptn_strip_tags_string(input.data, input.len)",
+        "ptn_dirname_string(path.data, path.len)",
+        "ptn_quoted_printable_decode_string(input.data, input.len, &output_len)",
+        "ptn_base_string_to_number(runtime, string.data, string.len, 2, 'b', line)",
+        "ptn_base_string_to_number(runtime, string.data, string.len, 16, 'x', line)",
+        "ptn_base_string_to_number(runtime, string.data, string.len, 8, 'o', line)",
+    ] {
+        assert!(
+            c_source.contains(expected_call),
+            "generated runtime should pass known operand lengths through {expected_call}"
+        );
+    }
+    assert!(
+        c_source.contains("input.data,\n        input.len,\n        (size_t)chunk_len_value,\n        ending.data,\n        ending.len,\n        &output_len"),
+        "chunk_split helper should receive input and ending lengths"
+    );
+
+    for marker in [
+        "static char *ptn_rot13_string(",
+        "static char *ptn_quotemeta_string(",
+        "static char *ptn_chunk_split_string(",
+        "static char *ptn_strip_tags_string(",
+        "static char *ptn_dirname_string(",
+        "static char *ptn_quoted_printable_decode_string(",
+        "static PtnValue ptn_base_string_to_number(",
+    ] {
+        let body = generated_c_static_function_body(&c_source, marker);
+        assert!(
+            !body.contains("strlen("),
+            "{marker} should consume caller-provided lengths instead of rescanning"
+        );
+    }
+
+    let soundex_body =
+        generated_c_static_function_body(&c_source, "static PtnValue ptn_internal_soundex(");
+    assert!(
+        soundex_body.contains("first < string.len") && soundex_body.contains("i < string.len"),
+        "soundex should iterate using the known operand length"
+    );
 }
 
 #[test]
@@ -6587,7 +6634,7 @@ fn compile_bitwise_scalar_operations_to_native_binary() {
     )
     .unwrap();
 
-    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
@@ -6596,6 +6643,33 @@ fn compile_bitwise_scalar_operations_to_native_binary() {
         "2 5 5\nstring(3) \"020\"\nstring(8) \"3337>755\"\nstring(4) \"wo\x7fu\"\nstring(6) \"030107\"\nstring(4) \"pead\"\nstring(4) \"wo\x7fu\"\nstring(8) \"070a1e11\"\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    for marker in [
+        "static PTN_UNUSED PtnValue ptn_bitwise_string_and(",
+        "static PTN_UNUSED PtnValue ptn_bitwise_string_or(",
+        "static PTN_UNUSED PtnValue ptn_bitwise_string_xor(",
+    ] {
+        let body = generated_c_static_function_body(&c_source, marker);
+        assert!(
+            !body.contains("strlen("),
+            "{marker} should consume caller-provided lengths instead of rescanning"
+        );
+    }
+    assert!(c_source.contains(
+        "static PTN_UNUSED PtnValue ptn_bitwise_string_and(PtnString left, PtnString right)"
+    ));
+    assert!(c_source.contains(
+        "static PTN_UNUSED PtnValue ptn_bitwise_string_or(PtnString left, PtnString right)"
+    ));
+    assert!(c_source.contains(
+        "static PTN_UNUSED PtnValue ptn_bitwise_string_xor(PtnString left, PtnString right)"
+    ));
+    assert!(c_source.contains("size_t left_len = left.len;"));
+    assert!(c_source.contains("size_t right_len = right.len;"));
+    assert!(c_source.contains("ptn_bitwise_string_and(left.as.string, right.as.string)"));
+    assert!(c_source.contains("ptn_bitwise_string_or(left.as.string, right.as.string)"));
+    assert!(c_source.contains("ptn_bitwise_string_xor(left.as.string, right.as.string)"));
 }
 
 #[test]
@@ -6610,7 +6684,7 @@ fn compile_unary_bitwise_not_to_native_binary() {
     )
     .unwrap();
 
-    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
@@ -6619,6 +6693,18 @@ fn compile_unary_bitwise_not_to_native_binary() {
         "int(-24)\nstring(8) \"8c90929a\"\n\nDeprecated: Implicit conversion from float 23.67 to int loses precision in ptn-generated-code on line 0\nint(-24)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    let body = generated_c_static_function_body(
+        &c_source,
+        "static PTN_UNUSED PtnValue ptn_bitwise_string_not(",
+    );
+    assert!(
+        !body.contains("strlen("),
+        "ptn_bitwise_string_not should consume caller-provided lengths instead of rescanning"
+    );
+    assert!(body.contains("size_t len = value.len;"));
+    assert!(c_source.contains("ptn_bitwise_string_not(value.as.string)"));
 }
 
 #[test]
