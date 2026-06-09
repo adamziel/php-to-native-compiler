@@ -6,6 +6,8 @@
 - Latest: 2026-06-09T18:20Z array-aware type predicate slice adds
   `is_array()` through the generic internal registry, with native scalar and
   ordered-array predicate coverage plus focused differential telemetry.
+- Prior: 2026-06-09T16:15Z added native numeric-string array key
+  normalization coverage; focused array-offset PHPT evidence still passes.
 - Prior: 2026-06-09T16:07Z focused array-lvalue telemetry passes
   `tests/basic/array_null_offset_deprecation.phpt` and
   `Zend/tests/assign_dim_op_undef.phpt`; `Zend/tests/offset_assign.phpt`
@@ -2341,3 +2343,18 @@ lvalues, string-offset writes/unset/assign-op mutation, scalar-container
 autovivification parity such as `false` to array conversion, references,
 copy-on-write, recursive arrays, and object/property/static-property/
 variable-variable lvalues.
+
+Added focused numeric-string array key normalization coverage:
+
+- Native regression now covers the shared ordered-array key canonicalization
+  path for literals, reads, writes, unsets, `array_key_exists()`,
+  `isset()`/`empty()`, and `foreach` key exposure.
+- Covered key classes include canonical integer-like strings such as `"8"` and
+  `"-8"`, non-canonical numeric strings such as `"08"`, `"+8"`, `"8.0"`, and
+  `"-0"`, plus ordinary string keys such as `"alpha"`.
+- The existing runtime behavior already matched PHP for this bounded slice, so
+  no generated C runtime changes were needed.
+- Focused public PHPT telemetry through `phpc` still passes
+  `Zend/tests/numeric_strings/array_offset.phpt`; the run-tests self-info probe
+  still emits the known unsupported `run-test-info.php` diagnostics before the
+  selected test result.
