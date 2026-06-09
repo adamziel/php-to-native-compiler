@@ -6,7 +6,12 @@
 - Latest: 2026-06-09T18:20Z array-aware type predicate slice adds
   `is_array()` through the generic internal registry, with native scalar and
   ordered-array predicate coverage plus focused differential telemetry.
-- Prior: 2026-06-09T16:07Z focused array-lvalue telemetry passes
+- Prior: 2026-06-09T16:23Z top-level user-function magic constants resolve
+  `__FUNCTION__` and `__METHOD__` to the declared function name while preserving
+  global empty-string behavior and unsupported class/trait/namespace scope
+  boundaries. Native coverage added; aggregate bounded PHPT patrol not rerun in
+  this branch.
+- Previous latest: 2026-06-09T16:07Z focused array-lvalue telemetry passes
   `tests/basic/array_null_offset_deprecation.phpt` and
   `Zend/tests/assign_dim_op_undef.phpt`; `Zend/tests/offset_assign.phpt`
   still fails at the nested string-offset mutation boundary tracked by
@@ -43,6 +48,18 @@ Next integrated production target:
   scale to PHP references and copy-on-write.
 
 ## 2026-06-09
+
+Integrated top-level user-function magic constants:
+
+- Generated user-function body emission now carries the declared function name
+  as the current scope for magic-constant emission.
+- `__FUNCTION__` and `__METHOD__` inside top-level user functions resolve to
+  the declared function name, including case-insensitive call sites.
+- Global scope still resolves scope-dependent magic constants to empty strings,
+  and class, trait, namespace, include, and eval scopes remain explicitly
+  unsupported.
+- Native tests prove global and function-scope magic constants through compiled
+  binaries.
 
 Integrated generated runtime value destruction:
 
@@ -1733,8 +1750,8 @@ parameters or returns, closures, methods/classes, namespaces, dynamic calls,
 globals/superglobals/global declarations, static locals,
 `func_get_arg()`/`func_get_args()`/`func_num_args()`, non-`null` type
 declarations, PHP-exact function return/include propagation, PHP-exact
-function/type diagnostic wording, and scope-aware magic constants inside
-functions.
+function/type diagnostic wording, and scope-aware magic constants beyond
+top-level functions.
 
 Added scalar `quoted_printable_decode()`:
 
@@ -2174,7 +2191,7 @@ No new broad function surface is claimed by this performance slice. Defaults,
 variadics, named arguments, by-reference parameters, closures, methods,
 conditional declarations, namespace/function imports, `global`, full
 argument-introspection semantics, exact diagnostic wording, and
-scope-aware magic constants inside functions remain unsupported.
+scope-aware magic constants beyond top-level functions remain unsupported.
 
 Reduced generated C size for programs that do not perform function calls:
 

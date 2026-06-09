@@ -56,9 +56,10 @@ Supported today:
   Calls may pass extra arguments, which are currently ignored because argument
   introspection is not modeled yet. User-function frames keep local variables
   isolated while sharing the runtime constant table, including constants
-  created through `define()` inside functions. Duplicate declarations and
-  declarations that collide with currently modeled internal function names are
-  rejected.
+  created through `define()` inside functions. Function-scope `__FUNCTION__`
+  and `__METHOD__` magic constants resolve to the declared function name.
+  Duplicate declarations and declarations that collide with currently modeled
+  internal function names are rejected.
 - `var_dump()` output for the current boxed `PtnValue` types: `null`,
   booleans, integers, floats, strings, and ordered literal arrays. Finite
   floats use the shortest decimal spelling that round-trips to the same native
@@ -212,7 +213,9 @@ Supported today:
 - Global-scope magic constants `__LINE__`, `__FILE__`, `__DIR__`,
   `__FUNCTION__`, `__METHOD__`, `__CLASS__`, `__TRAIT__`, and
   `__NAMESPACE__`. Scope-dependent names currently resolve to empty strings in
-  global scope.
+  global scope. Inside top-level user functions, `__FUNCTION__` and
+  `__METHOD__` resolve to the declared function name while class, trait, and
+  namespace scopes remain empty until those scopes are modeled.
 - Short array literals `[...]` and long-form `array(...)` literals with
   optional scalar keys, automatic integer keys, integer-string key
   canonicalization, insertion order, and duplicate-key replacement in the
@@ -390,8 +393,8 @@ Unsupported today:
   `var_dump()`/`strlen()`/`bin2hex()`/`hex2bin()`/`str_contains()`/
   `str_starts_with()`/`str_ends_with()`/`quotemeta()`/`chunk_split()`/
   `strip_tags()`/`quoted_printable_decode()`/`md5()`/`sha1()`/`substr()`/
-  `soundex()`/`intval()`/base-conversion internals, scope-aware magic constants inside
-  functions/classes/namespaces/includes, exact
+  `soundex()`/`intval()`/base-conversion internals, scope-aware magic constants beyond
+  top-level functions, including classes/traits/namespaces/includes, exact
   file/line/error-handler behavior for integer-only operator precision-loss
   diagnostics, doc comment retention, variable variables, and dynamic fallback.
   These are architecture targets, not excuses for exact-shape hacks.

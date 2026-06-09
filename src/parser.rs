@@ -130,7 +130,7 @@ impl Parser {
         self.function_depth -= 1;
         let body = body?;
         Ok(FunctionDecl {
-            name: name.to_ascii_lowercase(),
+            name,
             parameters,
             return_type,
             body,
@@ -1819,15 +1819,16 @@ fn validate_goto_labels(statements: &[Statement]) -> Result<()> {
 fn validate_function_names(functions: &[FunctionDecl]) -> Result<()> {
     let mut names = HashSet::new();
     for function in functions {
-        if is_modeled_internal_function_name(&function.name) {
+        let lookup_name = function.name.to_ascii_lowercase();
+        if is_modeled_internal_function_name(&lookup_name) {
             return Err(Diagnostic::new(
-                format!("Cannot redeclare function {}()", function.name),
+                format!("Cannot redeclare function {lookup_name}()"),
                 Some(function.span),
             ));
         }
-        if !names.insert(function.name.clone()) {
+        if !names.insert(lookup_name.clone()) {
             return Err(Diagnostic::new(
-                format!("Cannot redeclare function {}()", function.name),
+                format!("Cannot redeclare function {lookup_name}()"),
                 Some(function.span),
             ));
         }
