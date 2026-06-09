@@ -2145,6 +2145,110 @@ static PtnValue ptn_internal_hex2bin(PtnRuntime *runtime, size_t argc, const Ptn
     return ptn_owned_string(binary);
 }
 
+static int ptn_ascii_is_letter(unsigned char byte) {
+    return (byte >= 'A' && byte <= 'Z') || (byte >= 'a' && byte <= 'z');
+}
+
+static unsigned char ptn_ascii_upper(unsigned char byte) {
+    if (byte >= 'a' && byte <= 'z') {
+        return (unsigned char)(byte - ('a' - 'A'));
+    }
+    return byte;
+}
+
+static char ptn_soundex_code(unsigned char byte) {
+    switch (ptn_ascii_upper(byte)) {
+        case 'B':
+        case 'F':
+        case 'P':
+        case 'V':
+            return '1';
+        case 'C':
+        case 'G':
+        case 'J':
+        case 'K':
+        case 'Q':
+        case 'S':
+        case 'X':
+        case 'Z':
+            return '2';
+        case 'D':
+        case 'T':
+            return '3';
+        case 'L':
+            return '4';
+        case 'M':
+        case 'N':
+            return '5';
+        case 'R':
+            return '6';
+        default:
+            return '\0';
+    }
+}
+
+static int ptn_soundex_resets_previous(unsigned char byte) {
+    switch (ptn_ascii_upper(byte)) {
+        case 'A':
+        case 'E':
+        case 'I':
+        case 'O':
+        case 'U':
+        case 'Y':
+        case 'H':
+        case 'W':
+            return 1;
+        default:
+            return 0;
+    }
+}
+
+static PtnValue ptn_internal_soundex(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    char *string = ptn_value_to_string(args[0]);
+    char *result = malloc(5);
+    if (result == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    result[0] = '0';
+    result[1] = '0';
+    result[2] = '0';
+    result[3] = '0';
+    result[4] = '\0';
+
+    size_t first = 0;
+    while (string[first] != '\0' && !ptn_ascii_is_letter((unsigned char)string[first])) {
+        first++;
+    }
+    if (string[first] == '\0') {
+        free(string);
+        return ptn_owned_string(result);
+    }
+
+    result[0] = (char)ptn_ascii_upper((unsigned char)string[first]);
+    char previous = ptn_soundex_code((unsigned char)string[first]);
+    size_t output_len = 1;
+    for (size_t i = first + 1; string[i] != '\0' && output_len < 4; i++) {
+        unsigned char byte = (unsigned char)string[i];
+        char code = ptn_soundex_code(byte);
+        if (code == '\0') {
+            if (ptn_soundex_resets_previous(byte)) {
+                previous = '\0';
+            }
+            continue;
+        }
+        if (code != previous) {
+            result[output_len++] = code;
+        }
+        previous = code;
+    }
+
+    free(string);
+    return ptn_owned_string(result);
+}
+
 static double ptn_value_to_double(PtnValue value) {
     PtnNumber number = ptn_to_number(value);
     return number.floating;
@@ -2354,6 +2458,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "strcmp", 2, 2, ptn_internal_strcmp },
         { "bin2hex", 1, 1, ptn_internal_bin2hex },
         { "hex2bin", 1, 1, ptn_internal_hex2bin },
+        { "soundex", 1, 1, ptn_internal_soundex },
         { "ceil", 1, 1, ptn_internal_ceil },
         { "floor", 1, 1, ptn_internal_floor },
         { "sqrt", 1, 1, ptn_internal_sqrt },

@@ -24,9 +24,9 @@ Supported today:
   `echo`; emitted native code uses the same boxed output conversion path.
 - Simple internal calls such as `var_dump(expr, ...)`, `strlen(expr)`,
   `str_rot13(expr)`, `strcmp(expr, expr)`, `bin2hex(expr)`, `hex2bin(expr)`,
-  `ceil(expr)`, `floor(expr)`, `sqrt(expr)`, `bindec(expr)`, `hexdec(expr)`,
-  `octdec(expr)`, `pi()`, `getrandmax()`, `getmypid()`, `chr(expr)`,
-  `ord(expr)`,
+  `soundex(expr)`, `ceil(expr)`, `floor(expr)`, `sqrt(expr)`, `bindec(expr)`,
+  `hexdec(expr)`, `octdec(expr)`, `pi()`, `getrandmax()`, `getmypid()`,
+  `chr(expr)`, `ord(expr)`,
   `error_reporting(expr)`, `gettype(expr)`, scalar `is_*` type predicates,
   non-finite predicates such as `is_finite(expr)`, `is_infinite(expr)`, and
   `is_nan(expr)`,
@@ -47,6 +47,8 @@ Supported today:
 - `hex2bin()` as an expression decoding hexadecimal pairs from the current
   boxed scalar string-conversion result, returning `false` with a warning
   boundary for odd-length or non-hexadecimal input.
+- `soundex()` as an expression returning the PHP-style four-character ASCII
+  soundex key for the current boxed scalar string-conversion result.
 - `ceil()` and `floor()` as expressions returning boxed floats after the
   current boxed scalar numeric-conversion result.
 - `sqrt()` as an expression returning a boxed float after the current boxed
@@ -165,7 +167,8 @@ Unsupported today:
   embedded NUL string handling, complex/braced interpolation, interpolation of
   arrays/objects/offsets/properties/variable variables, exact `strcmp()`
   binary-string parity, exact `hex2bin()` embedded-NUL output parity and
-  warning text/file-name parity, exact `chr()` deprecation diagnostics, exact
+  warning text/file-name parity, exact `soundex()` locale/non-ASCII parity and
+  unsupported type diagnostics, exact `chr()` deprecation diagnostics, exact
   `ord()` argument type diagnostics, exact `ceil()`/`floor()`
   null/string/unsupported type diagnostics, exact `sqrt()` negative/non-finite
   edge parity, exact `getmypid()` process model parity across SAPIs and
@@ -173,10 +176,10 @@ Unsupported today:
   behavior, non-canonical cast spellings beyond `(integer)`, `(double)`,
   `(binary)`, and `(boolean)`, and full PHP
   precision/formatting edge cases for
-  `var_dump()`/`strlen()`/`bin2hex()`/`hex2bin()`/base-conversion internals,
-  scope-aware magic constants inside functions/classes/namespaces/includes,
-  doc comment retention, variable variables, and dynamic fallback. These are
-  architecture targets, not excuses for exact-shape hacks.
+  `var_dump()`/`strlen()`/`bin2hex()`/`hex2bin()`/`soundex()`/base-conversion
+  internals, scope-aware magic constants inside functions/classes/namespaces/
+  includes, doc comment retention, variable variables, and dynamic fallback.
+  These are architecture targets, not excuses for exact-shape hacks.
 
 ## Build
 

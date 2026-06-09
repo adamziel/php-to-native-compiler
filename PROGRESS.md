@@ -969,3 +969,22 @@ Extended deprecated non-canonical scalar cast aliases:
 
 Still unsupported after this non-canonical cast extension: `(real)`, `(unset)`,
 array/object casts, and exact scalar cast overflow diagnostics.
+
+Added scalar `soundex()`:
+
+- Registered `soundex()` through the existing generated C internal-function
+  registry, so normal calls and `function_exists()` share the same
+  case-insensitive lookup table.
+- Added PHP-style ASCII soundex key generation over the current boxed scalar
+  string-conversion result, including leading non-letter skipping, duplicate
+  code suppression, vowel/`h`/`w`/`y` reset behavior, and `0000` for inputs
+  without ASCII letters.
+- Native tests prove the public `soundex_basic.phpt` source shape, registry
+  exposure, and reset edge cases such as `Ashcraft`, `Tymczak`, and `Pfister`.
+- Focused public PHPT telemetry through `phpc` passes
+  `ext/standard/tests/strings/soundex_basic.phpt`.
+
+Still unsupported after this `soundex()` slice: PHP-exact behavior for
+unsupported array/object/resource/reference operands, locale/non-ASCII
+collation differences beyond the current ASCII scan, exact diagnostics for
+unsupported value domains, and embedded-NUL string storage parity.

@@ -1168,6 +1168,71 @@ fn compile_hex2bin_invalid_input_to_native_binary() {
 }
 
 #[test]
+fn compile_soundex_basic_phpt_shape_to_native_binary() {
+    let root = temp_dir("ptn-native-soundex-basic-phpt-shape");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soundex-basic.php");
+    let output = root.join("soundex-basic-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+echo \"*** Testing soundex() : basic functionality ***\\n\";\n\
+\n\
+var_dump(soundex(\"Euler\"));\n\
+var_dump(soundex(\"Gauss\"));\n\
+var_dump(soundex(\"Hilbert\"));\n\
+var_dump(soundex(\"Knuth\"));\n\
+var_dump(soundex(\"Lloyd\"));\n\
+var_dump(soundex(\"Lukasiewicz\"));\n\
+\n\
+var_dump(soundex(\"Euler\")       == soundex(\"Ellery\"));\n\
+var_dump(soundex(\"Gauss\")       == soundex(\"Ghosh\"));\n\
+var_dump(soundex(\"Hilbert\")     == soundex(\"Heilbronn\"));\n\
+var_dump(soundex(\"Knuth\")       == soundex(\"Kant\"));\n\
+var_dump(soundex(\"Lloyd\")       == soundex(\"Ladd\"));\n\
+var_dump(soundex(\"Lukasiewicz\") == soundex(\"Lissajous\"));\n\
+\n\
+var_dump(soundex(\"Lukasiewicz\") == soundex(\"Ghosh\"));\n\
+var_dump(soundex(\"Hilbert\") == soundex(\"Ladd\"));\n\
+?>",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "*** Testing soundex() : basic functionality ***\nstring(4) \"E460\"\nstring(4) \"G200\"\nstring(4) \"H416\"\nstring(4) \"K530\"\nstring(4) \"L300\"\nstring(4) \"L222\"\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(false)\nbool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_soundex_registry_and_reset_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-soundex-registry-and-reset-edges");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("soundex-registry.php");
+    let output = root.join("soundex-registry-bin");
+    fs::write(
+        &input,
+        "<?php var_dump(soundex(\"Ashcraft\"), soundex(\"Tymczak\"), soundex(\"Pfister\"), soundex(\"123\"), function_exists(\"soundex\"), function_exists(\"SOUNDEX\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(4) \"A226\"\nstring(4) \"T522\"\nstring(4) \"P236\"\nstring(4) \"0000\"\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_internal_call_expression_arguments_evaluate_left_to_right() {
     let root = temp_dir("ptn-native-call-expression-left-to-right");
     fs::create_dir_all(&root).unwrap();
