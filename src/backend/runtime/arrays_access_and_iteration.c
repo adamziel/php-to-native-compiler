@@ -474,6 +474,7 @@ static PTN_UNUSED void ptn_runtime_string_offset_set(
     }
 
     unsigned char byte = ptn_string_offset_assignment_byte(runtime, value, line);
+    ptn_cow_debug_note_string_detach();
     char *buffer = malloc(new_len + 1);
     if (buffer == NULL) {
         ptn_abort_out_of_memory();

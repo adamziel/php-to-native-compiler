@@ -308,6 +308,7 @@ static PTN_UNUSED PtnValue ptn_array_from_literal_entries(size_t entry_count, co
     if (array == NULL) {
         ptn_abort_out_of_memory();
     }
+    ptn_cow_debug_note_array_alloc();
     array->refcount = 1;
     array->len = 0;
     array->capacity = entry_count;
@@ -345,6 +346,8 @@ static PTN_UNUSED PtnArray *ptn_array_clone(PtnArray *source) {
     if (array == NULL) {
         ptn_abort_out_of_memory();
     }
+    ptn_cow_debug_note_array_alloc();
+    ptn_cow_debug_note_array_clone();
     array->refcount = 1;
     array->len = 0;
     array->capacity = source->len;
@@ -373,9 +376,11 @@ static PTN_UNUSED void ptn_array_retain(PtnArray *array) {
     if (array == NULL) {
         return;
     }
+    ptn_cow_debug_assert_array_refcount(array, "retain");
     if (array->refcount == SIZE_MAX) {
         ptn_abort_out_of_memory();
     }
+    ptn_cow_debug_note_array_retain();
     array->refcount++;
 }
 
@@ -384,10 +389,13 @@ static PTN_UNUSED PtnArray *ptn_array_detach_value(PtnValue *value) {
         return NULL;
     }
     PtnArray *array = value->as.array;
+    ptn_cow_debug_assert_array_refcount(array, "detach");
     if (array->refcount <= 1) {
+        ptn_cow_debug_note_array_detach_skip();
         return array;
     }
 
+    ptn_cow_debug_note_array_detach();
     PtnArray *detached = ptn_array_clone(array);
     ptn_value_destroy(value);
     *value = ptn_array(detached);
@@ -398,6 +406,12 @@ static PTN_UNUSED PtnValue ptn_value_clone(PtnValue value) {
     switch (value.type) {
         case PTN_STRING:
             if (value.as.string.owned != NULL && value.as.string.refcount != NULL) {
+                ptn_cow_debug_assert_string_refcount(value.as.string.refcount, "retain");
+                if (*value.as.string.refcount == SIZE_MAX) {
+                    ptn_abort_out_of_memory();
+                }
+                ptn_cow_debug_note_string_clone();
+                ptn_cow_debug_note_string_retain();
                 (*value.as.string.refcount)++;
                 value.owned = 1;
                 return value;

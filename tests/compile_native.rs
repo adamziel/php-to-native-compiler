@@ -5806,6 +5806,88 @@ var_dump($shifted);",
 }
 
 #[test]
+fn compile_cow_debug_counters_assert_repeated_array_cycles_to_native_binary() {
+    let root = temp_dir("ptn-native-cow-debug-array-cycles");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("cow-debug-array-cycles.php");
+    let output = root.join("cow-debug-array-cycles-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+_ptn_cow_debug_reset();\n\
+for ($i = 0; $i < 6; $i++) {\n\
+    $source = [\"value\" => $i, \"drop\" => \"x\"];\n\
+    $copy = $source;\n\
+    $copy[\"value\"] = $i + 10;\n\
+    $copy[] = \"tail\";\n\
+    unset($copy[\"drop\"]);\n\
+    unset($copy, $source);\n\
+}\n\
+_ptn_cow_debug_assert_counter(\"array.detach\", 6);\n\
+_ptn_cow_debug_assert_counter(\"array.clone\", 6);\n\
+_ptn_cow_debug_assert_counter(\"array.retain\", 12);\n\
+_ptn_cow_debug_assert_counter(\"array.release\", 24);\n\
+_ptn_cow_debug_assert_counter(\"array.live\", 0);\n\
+_ptn_cow_debug_assert_balanced();\n\
+echo _ptn_cow_debug_counter(\"array.detach\"), \":\", _ptn_cow_debug_counter(\"array.retain\"), \":\", _ptn_cow_debug_counter(\"array.release\"), \":\", _ptn_cow_debug_counter(\"array.live\"), \"\\n\";",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "6:12:24:0\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("PtnCowDebugCounters"));
+    assert!(c_source.contains("ptn_cow_debug_note_array_detach();"));
+    assert!(c_source.contains("ptn_cow_debug_assert_balanced();"));
+}
+
+#[test]
+fn compile_cow_debug_counters_assert_repeated_string_cycles_to_native_binary() {
+    let root = temp_dir("ptn-native-cow-debug-string-cycles");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("cow-debug-string-cycles.php");
+    let output = root.join("cow-debug-string-cycles-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+_ptn_cow_debug_reset();\n\
+for ($i = 0; $i < 6; $i++) {\n\
+    $text = \"abcd\";\n\
+    $copy = $text;\n\
+    $copy[1] = \"Z\";\n\
+    $copy[3] = \"Q\";\n\
+    unset($copy, $text);\n\
+}\n\
+_ptn_cow_debug_assert_counter(\"string.detach\", 12);\n\
+_ptn_cow_debug_assert_counter(\"string.retain\", 18);\n\
+_ptn_cow_debug_assert_counter(\"string.release\", 36);\n\
+_ptn_cow_debug_assert_counter(\"string.live\", 0);\n\
+_ptn_cow_debug_assert_balanced();\n\
+echo _ptn_cow_debug_counter(\"string.detach\"), \":\", _ptn_cow_debug_counter(\"string.retain\"), \":\", _ptn_cow_debug_counter(\"string.release\"), \":\", _ptn_cow_debug_counter(\"string.live\"), \"\\n\";",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "12:18:36:0\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_cow_debug_note_string_detach();"));
+    assert!(c_source.contains("ptn_cow_debug_note_string_retain();"));
+    assert!(c_source.contains("ptn_cow_debug_note_string_release();"));
+    assert!(c_source.contains("ptn_cow_debug_note_string_free();"));
+    assert!(c_source.contains("_ptn_cow_debug_assert_counter"));
+}
+
+#[test]
 fn compile_large_ordered_array_lookup_to_native_binary() {
     let root = temp_dir("ptn-native-large-array-lookup");
     fs::create_dir_all(&root).unwrap();

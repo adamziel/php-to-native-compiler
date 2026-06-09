@@ -1,20 +1,20 @@
 # PTN Progress
 
-Last refresh: 2026-06-09T19:04Z
-Commit: pending `ptn-cqu.47.6` rebased after `ptn-cqu.47.5`
+Last refresh: 2026-06-09T19:49Z
+Commit: pending `ptn-cqu.47.10` rebased after `ptn-cqu.47.6`
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | --- |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 287 | 287 | 0 |
+| Native compiled PHP snippets | 289 | 289 | 0 |
 | PHPT parsed bounded log | 171 | 121 | 50 |
 | PHPT Zend rows | 76 | 60 | 16 |
 | PHPT ext/standard rows | 77 | 44 | 33 |
 | PHPT tests/basic+func+lang | 18 | 17 | 1 |
 | COW contract spec tests | 5 | 5 | 0 |
-| COW-focused native tests | 5 | 5 | 0 |
+| COW-focused native tests | 7 | 7 | 0 |
 | PHPT COW manifest | 29 | 2 | 27 failed, 0 skipped, 0 warned |
 | Focused PHPT foreach COW row | 1 | 1 | by-reference foreach remains unsupported |
 
@@ -42,7 +42,8 @@ direct-variable string offset writes with append/unset/assign-op Error
 boundaries, catchable `count()` non-array diagnostics, expression-form `??`
 reads over direct variables, arrays, and string offsets using quiet lookup
 semantics, and shared array/string payload COW with path detach for nested array
-assignment, append, and unset.
+assignment, append, and unset, plus COW debug counters/assertions for string and
+array payload alloc/free/share/drop/detach evidence.
 
 ## Still Needed
 

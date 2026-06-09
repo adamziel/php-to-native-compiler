@@ -1,3 +1,4 @@
+            ptn_cow_debug_note_string_clone();
             return ptn_owned_string_len(
                 ptn_duplicate_string_len((const char *)value.as.string.data, value.as.string.len),
                 value.as.string.len
@@ -35,10 +36,14 @@ static PTN_UNUSED void ptn_array_free(PtnArray *array) {
     if (array == NULL) {
         return;
     }
+    ptn_cow_debug_assert_array_refcount(array, "release");
+    ptn_cow_debug_note_array_release();
     if (array->refcount > 1) {
         array->refcount--;
         return;
     }
+    ptn_cow_debug_note_array_free();
+    array->refcount = 0;
     for (size_t i = 0; i < array->len; i++) {
         ptn_array_key_free(array->entries[i].key);
         ptn_value_destroy(&array->entries[i].value);
@@ -55,13 +60,20 @@ static PTN_UNUSED void ptn_value_destroy(PtnValue *value) {
     switch (value->type) {
         case PTN_STRING:
             if (value->as.string.owned != NULL && value->as.string.refcount != NULL) {
+                ptn_cow_debug_assert_string_refcount(value->as.string.refcount, "release");
+                ptn_cow_debug_note_string_release();
                 if (*value->as.string.refcount > 1) {
                     (*value->as.string.refcount)--;
                 } else {
+                    ptn_cow_debug_note_string_free();
                     free(value->as.string.owned);
                     free(value->as.string.refcount);
                 }
             } else {
+                if (value->as.string.owned != NULL) {
+                    ptn_cow_debug_note_string_release();
+                    ptn_cow_debug_note_string_free();
+                }
                 free(value->as.string.owned);
             }
             break;
