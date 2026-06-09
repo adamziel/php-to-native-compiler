@@ -1,7 +1,7 @@
 # PTN Progress
 
-Last refresh: 2026-06-09T17:28Z
-Commit: pending `ptn-cqu.42` rebased after `ptn-cqu.47.4`
+Last refresh: 2026-06-09T17:34Z
+Commit: pending `ptn-cqu.47.1` COW oracle suite
 
 ## Test Dashboard
 
@@ -15,6 +15,7 @@ Commit: pending `ptn-cqu.42` rebased after `ptn-cqu.47.4`
 | PHPT tests/basic+func+lang | 18 | 17 | 1 |
 | COW contract spec tests | 5 | 5 | Runtime COW implementation still needed |
 | COW-focused tests | 2 | 2 | strings, nested write targets, references |
+| COW oracle suite | 13 | 9 | arrays 2/2, strings 2/2, foreach 1/2, functions 3/3, nested values 1/2, references 0/2 |
 
 ## Already Ported
 
@@ -35,15 +36,15 @@ semantics.
 
 ## Still Needed
 
-Copy-on-write for strings, nested write targets, references, function
-boundaries, foreach mutation visibility, and broader dynamic edges. Initial
-array payload COW and executable COW contract tests are now present. All
-non-COW work is paused unless it is required to prove COW. Assignment-form null
-coalescing `??=` remains unsupported.
+Copy-on-write for nested write targets, references, foreach source mutation
+snapshots, and broader dynamic edges. COW oracle gaps are categorized as one
+foreach runtime mismatch, one nested direct-write compile blocker, and two
+reference compile blockers. Assignment-form null coalescing `??=` remains
+unsupported.
 
 ## Next Focus
 
-1. Extend the COW suite into strings, nested write targets, and references.
+1. Fix foreach source mutation snapshots against the COW oracle.
 2. Carry array COW through additional by-reference/dynamic call paths.
-3. Prove strings, nested values, foreach, and function boundaries.
+3. Add nested direct write targets and reference-aware COW semantics.
 4. Keep this dashboard numeric and under 500 words.
