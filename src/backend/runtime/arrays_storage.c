@@ -82,6 +82,7 @@ static PTN_UNUSED PtnArrayKey ptn_array_key_from_value(PtnValue value) {
             return ptn_array_string_key(value.as.string);
         }
         case PTN_ARRAY:
+        case PTN_EXCEPTION:
             ptn_abort_illegal_array_key();
     }
     return ptn_array_string_key("");

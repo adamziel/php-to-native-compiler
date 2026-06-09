@@ -2,6 +2,7 @@
 #include <errno.h>
 #include <math.h>
 #include <stdarg.h>
+#include <setjmp.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -18,12 +19,18 @@
 #define PTN_UNUSED
 #endif
 
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic ignored "-Wclobbered"
+#endif
+
 #define PTN_PHP_VERSION "8.4.0"
 #define PTN_PHP_SAPI_NAME "cli"
 #define PTN_ARRAY_INDEX_MIN_ENTRIES 16
 #define PTN_SYMBOL_INDEX_MIN_ENTRIES 16
 
 typedef struct PtnArray PtnArray;
+typedef struct PtnException PtnException;
+typedef struct PtnTryFrame PtnTryFrame;
 
 typedef enum {
     PTN_NULL,
@@ -31,7 +38,8 @@ typedef enum {
     PTN_INT,
     PTN_FLOAT,
     PTN_STRING,
-    PTN_ARRAY
+    PTN_ARRAY,
+    PTN_EXCEPTION
 } PtnType;
 
 typedef enum {
@@ -56,6 +64,7 @@ typedef struct {
         double floating;
         const char *string;
         PtnArray *array;
+        PtnException *exception;
     } as;
 } PtnValue;
 
@@ -125,6 +134,21 @@ typedef struct {
     size_t line;
 } PtnConcatOperand;
 
+struct PtnException {
+    const char *class_name;
+    char *message;
+};
+
+typedef struct {
+    PtnException *active_exception;
+    PtnTryFrame *try_frame;
+} PtnExceptionState;
+
+struct PtnTryFrame {
+    jmp_buf jump;
+    PtnTryFrame *previous;
+};
+
 typedef struct {
     char *name;
     PtnValue value;
@@ -154,6 +178,8 @@ typedef struct {
     PtnSymbolTable owned_constants;
     PtnSymbolTable *constants;
     PtnDiagnosticSink diagnostics;
+    PtnExceptionState owned_exceptions;
+    PtnExceptionState *exceptions;
 } PtnRuntime;
 
 static PTN_UNUSED int ptn_is_truthy(PtnValue value);
@@ -221,6 +247,20 @@ static PTN_UNUSED PtnValue ptn_array(PtnArray *array) {
     value.type = PTN_ARRAY;
     value.owned = 1;
     value.as.array = array;
+    return value;
+}
+
+static PTN_UNUSED PtnValue ptn_exception_value(PtnException *exception) {
+    PtnValue value;
+    value.type = PTN_EXCEPTION;
+    value.owned = 1;
+    value.as.exception = exception;
+    return value;
+}
+
+static PTN_UNUSED PtnValue ptn_exception_borrow(PtnException *exception) {
+    PtnValue value = ptn_exception_value(exception);
+    value.owned = 0;
     return value;
 }
 

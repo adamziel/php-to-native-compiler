@@ -3,6 +3,9 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     ptn_symbols_init(&runtime->owned_constants);
     runtime->constants = caller_runtime->constants;
     ptn_diagnostics_init(&runtime->diagnostics, stderr);
+    runtime->owned_exceptions.active_exception = NULL;
+    runtime->owned_exceptions.try_frame = NULL;
+    runtime->exceptions = caller_runtime->exceptions;
 }
 
 static void ptn_runtime_free(PtnRuntime *runtime) {
@@ -48,6 +51,120 @@ static PTN_UNUSED int ptn_runtime_variable_is_empty(PtnRuntime *runtime, const c
 
 static PTN_UNUSED void ptn_runtime_unset_variable(PtnRuntime *runtime, const char *name) {
     ptn_symbols_unset(&runtime->symbols, name);
+}
+
+static PTN_UNUSED PtnException *ptn_exception_new(const char *class_name, const char *message) {
+    PtnException *exception = malloc(sizeof(PtnException));
+    if (exception == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    exception->class_name = class_name;
+    exception->message = ptn_duplicate_string(message);
+    return exception;
+}
+
+static PTN_UNUSED int ptn_exception_name_equal(const char *left, const char *right) {
+    while (*left != '\0' && *right != '\0') {
+        int left_byte = tolower((unsigned char)*left);
+        int right_byte = tolower((unsigned char)*right);
+        if (left_byte != right_byte) {
+            return 0;
+        }
+        left++;
+        right++;
+    }
+    return *left == '\0' && *right == '\0';
+}
+
+static PTN_UNUSED int ptn_exception_type_matches_name(const char *class_name, const char *type_name) {
+    if (type_name[0] == '\\') {
+        type_name++;
+    }
+    if (ptn_exception_name_equal(class_name, type_name)) {
+        return 1;
+    }
+    if (ptn_exception_name_equal(type_name, "Throwable")) {
+        return 1;
+    }
+    return 0;
+}
+
+static PTN_UNUSED void ptn_try_frame_push(PtnRuntime *runtime, PtnTryFrame *frame) {
+    frame->previous = runtime->exceptions->try_frame;
+    runtime->exceptions->try_frame = frame;
+}
+
+static PTN_UNUSED void ptn_try_frame_pop(PtnRuntime *runtime, PtnTryFrame *frame) {
+    if (runtime->exceptions->try_frame == frame) {
+        runtime->exceptions->try_frame = frame->previous;
+    }
+}
+
+static PTN_UNUSED void ptn_throw_exception(PtnRuntime *runtime, const char *class_name, const char *message) {
+    ptn_exception_free(runtime->exceptions->active_exception);
+    runtime->exceptions->active_exception = ptn_exception_new(class_name, message);
+    if (runtime->exceptions->try_frame != NULL) {
+        longjmp(runtime->exceptions->try_frame->jump, 1);
+    }
+    fputs("Fatal error: ", stderr);
+    fputs(message, stderr);
+    fputc('\n', stderr);
+    exit(255);
+}
+
+static PTN_UNUSED int ptn_exception_matches(PtnRuntime *runtime, const char *type_name) {
+    return runtime->exceptions->active_exception != NULL &&
+        ptn_exception_type_matches_name(runtime->exceptions->active_exception->class_name, type_name);
+}
+
+static PTN_UNUSED PtnValue ptn_current_exception_value(PtnRuntime *runtime) {
+    if (runtime->exceptions->active_exception == NULL) {
+        return ptn_null();
+    }
+    return ptn_exception_borrow(runtime->exceptions->active_exception);
+}
+
+static PTN_UNUSED void ptn_clear_exception(PtnRuntime *runtime) {
+    ptn_exception_free(runtime->exceptions->active_exception);
+    runtime->exceptions->active_exception = NULL;
+}
+
+static PTN_UNUSED void ptn_rethrow_exception(PtnRuntime *runtime) {
+    PtnException *exception = runtime->exceptions->active_exception;
+    if (exception == NULL) {
+        return;
+    }
+    if (runtime->exceptions->try_frame != NULL) {
+        longjmp(runtime->exceptions->try_frame->jump, 1);
+    }
+    fputs("Fatal error: ", stderr);
+    fputs(exception->message, stderr);
+    fputc('\n', stderr);
+    exit(255);
+}
+
+static PTN_UNUSED PtnValue ptn_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)args;
+    (void)line;
+    if (receiver.type == PTN_EXCEPTION && ptn_exception_name_equal(name, "getMessage")) {
+        if (argc != 0) {
+            ptn_throw_exception(
+                runtime,
+                "ArgumentCountError",
+                "Too many arguments to exception method getMessage()"
+            );
+        }
+        return ptn_string(receiver.as.exception->message);
+    }
+    ptn_throw_exception(runtime, "Error", "Call to undefined method");
+    return ptn_null();
 }
 
 static PTN_UNUSED void ptn_runtime_define_constant(PtnRuntime *runtime, const char *name, PtnValue value) {
@@ -120,6 +237,8 @@ static PTN_UNUSED PtnNumber ptn_to_number(PtnValue value) {
             return ptn_string_to_number(value.as.string);
         case PTN_ARRAY:
             return ptn_number_int(value.as.array->len == 0 ? 0 : 1);
+        case PTN_EXCEPTION:
+            return ptn_number_int(1);
     }
     return ptn_number_int(0);
 }
@@ -138,6 +257,7 @@ static PTN_UNUSED int ptn_fast_integer_value(PtnValue value, int64_t *integer) {
         case PTN_FLOAT:
         case PTN_STRING:
         case PTN_ARRAY:
+        case PTN_EXCEPTION:
             return 0;
     }
     return 0;
@@ -208,6 +328,8 @@ static PTN_UNUSED int ptn_is_truthy(PtnValue value) {
             return value.as.string[0] != '\0' && strcmp(value.as.string, "0") != 0;
         case PTN_ARRAY:
             return value.as.array->len != 0;
+        case PTN_EXCEPTION:
+            return 1;
     }
     return 0;
 }
@@ -330,6 +452,7 @@ static PTN_UNUSED int ptn_comparison_numeric_value(PtnValue value, double *numbe
         case PTN_NULL:
         case PTN_BOOL:
         case PTN_ARRAY:
+        case PTN_EXCEPTION:
             return 0;
     }
     return 0;

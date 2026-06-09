@@ -224,7 +224,8 @@ Supported today:
 - String offset read expressions such as `$string[$offset]` for the current
   C-string-backed scalar string subset. Integer-compatible offsets, negative
   offsets, nested reads, integer strings, numeric prefix strings with PHP-style
-  illegal-offset warnings, and scalar cast warnings for `null`, booleans, and
+  illegal-offset warnings, float-looking/non-integer string offsets as
+  catchable `TypeError`, and scalar cast warnings for `null`, booleans, and
   floats are handled by the shared offset-read helper; out-of-range reads emit
   an uninitialized-offset warning and return an empty string.
 - `array_key_exists()` over current ordered-array values, using the same
@@ -287,6 +288,11 @@ Supported today:
   source-order case matching with boxed loose comparison, PHP-style fallthrough,
   one `default`, and `break;` or explicit-level `break N;` over active
   switch/loop targets.
+- `try { ... } catch (TypeName $e) { ... }` statements over the currently
+  supported statement subset, backed by a runtime exception state and catch
+  matching by class name. The currently modeled exception object surface
+  supports catchable `TypeError` from invalid string offset reads and
+  `$e->getMessage()`.
 - `continue;` and explicit-level `continue N;` over active loop/switch targets.
   `while` continues recheck the condition, `do while` continues jump to the
   post-test condition, `for` continues run update clauses before the next
@@ -303,7 +309,7 @@ Unsupported today:
 
 - Array element mutation, append/unset, recursive arrays, arrays
   with references/copy-on-write, objects, functions, classes, includes,
-  references, resources, exceptions,
+  references, resources, broad exception/object support,
   string-offset writes/mutation, object/property/reference
   `isset()`/`empty()` semantics, null-coalescing offset semantics, string-offset
   references/unset,
@@ -326,7 +332,7 @@ Unsupported today:
   targets, PHP-exact non-array `foreach` diagnostics, PHP-exact
   break/continue diagnostics beyond the currently modeled level/context fatals
   and switch-target warning, labels/goto inside unsupported functions,
-  classes, and `try`/`finally` constructs, full
+  classes, and `finally` constructs, full
   switch parity for unsupported value types and alternate syntax,
   PHP-exact `return` value/include/function semantics,
   increment/decrement as expressions, PHP-exact

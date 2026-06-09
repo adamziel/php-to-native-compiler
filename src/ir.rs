@@ -1,9 +1,10 @@
 use crate::ast::{
     ArrayDimTarget as AstArrayDimTarget, ArrayElement as AstArrayElement, AssignmentOp,
-    BinaryOp as AstBinaryOp, CastKind as AstCastKind, Expr, FunctionDecl as AstFunctionDecl,
-    FunctionParameter as AstFunctionParameter, IncDecOp as AstIncDecOp,
-    MagicConstantKind as AstMagicConstantKind, Program, Statement, StringPart as AstStringPart,
-    TypeHint as AstTypeHint, UnaryOp as AstUnaryOp, UnsetTarget as AstUnsetTarget,
+    BinaryOp as AstBinaryOp, CastKind as AstCastKind, CatchClause as AstCatchClause, Expr,
+    FunctionDecl as AstFunctionDecl, FunctionParameter as AstFunctionParameter,
+    IncDecOp as AstIncDecOp, MagicConstantKind as AstMagicConstantKind, Program, Statement,
+    StringPart as AstStringPart, TypeHint as AstTypeHint, UnaryOp as AstUnaryOp,
+    UnsetTarget as AstUnsetTarget,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -74,6 +75,10 @@ pub enum Instruction {
         value: Option<ValueExpr>,
         line: usize,
     },
+    Try {
+        body: Vec<Instruction>,
+        catches: Vec<CatchClause>,
+    },
     Branch {
         condition: ValueExpr,
         then_body: Vec<Instruction>,
@@ -121,6 +126,13 @@ pub enum Instruction {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct CatchClause {
+    pub type_name: String,
+    pub variable: Option<String>,
+    pub body: Vec<Instruction>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct SwitchCase {
     pub condition: Option<ValueExpr>,
     pub body: Vec<Instruction>,
@@ -155,6 +167,12 @@ pub enum ValueExpr {
         target: Box<ValueExpr>,
     },
     InternalCall {
+        name: String,
+        arguments: Vec<ValueExpr>,
+        line: usize,
+    },
+    MethodCall {
+        receiver: Box<ValueExpr>,
         name: String,
         arguments: Vec<ValueExpr>,
         line: usize,
@@ -445,6 +463,12 @@ fn lower_statements(statements: &[Statement]) -> Vec<Instruction> {
                     line: span.line,
                 });
             }
+            Statement::Try { body, catches, .. } => {
+                instructions.push(Instruction::Try {
+                    body: lower_statements(body),
+                    catches: catches.iter().map(lower_catch_clause).collect(),
+                });
+            }
             Statement::Label { name, .. } => {
                 instructions.push(Instruction::Label { name: name.clone() });
             }
@@ -475,6 +499,14 @@ fn lower_unset_target(target: &AstUnsetTarget) -> Instruction {
             index: lower_expr(&target.index),
             line: target.span.line,
         },
+    }
+}
+
+fn lower_catch_clause(catch: &AstCatchClause) -> CatchClause {
+    CatchClause {
+        type_name: catch.type_name.clone(),
+        variable: catch.variable.clone(),
+        body: lower_statements(&catch.body),
     }
 }
 
@@ -565,6 +597,17 @@ fn lower_expr(expr: &Expr) -> ValueExpr {
             arguments,
             span,
         } => ValueExpr::InternalCall {
+            name: name.clone(),
+            arguments: arguments.iter().map(lower_expr).collect(),
+            line: span.line,
+        },
+        Expr::MethodCall {
+            receiver,
+            name,
+            arguments,
+            span,
+        } => ValueExpr::MethodCall {
+            receiver: Box::new(lower_expr(receiver)),
             name: name.clone(),
             arguments: arguments.iter().map(lower_expr).collect(),
             line: span.line,

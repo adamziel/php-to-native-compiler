@@ -122,6 +122,11 @@ pub enum Statement {
         value: Option<Expr>,
         span: SourceSpan,
     },
+    Try {
+        body: Vec<Statement>,
+        catches: Vec<CatchClause>,
+        span: SourceSpan,
+    },
     Label {
         name: String,
         span: SourceSpan,
@@ -134,6 +139,14 @@ pub enum Statement {
         content: String,
         span: SourceSpan,
     },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CatchClause {
+    pub type_name: String,
+    pub variable: Option<String>,
+    pub body: Vec<Statement>,
+    pub span: SourceSpan,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -198,6 +211,12 @@ pub enum Expr {
     Constant(String, SourceSpan),
     MagicConstant(MagicConstantKind, SourceSpan),
     Call {
+        name: String,
+        arguments: Vec<Expr>,
+        span: SourceSpan,
+    },
+    MethodCall {
+        receiver: Box<Expr>,
         name: String,
         arguments: Vec<Expr>,
         span: SourceSpan,
@@ -313,7 +332,7 @@ impl Expr {
             | Expr::Variable(_, span)
             | Expr::Constant(_, span)
             | Expr::MagicConstant(_, span) => *span,
-            Expr::Call { span, .. } => *span,
+            Expr::Call { span, .. } | Expr::MethodCall { span, .. } => *span,
             Expr::Array { span, .. } => *span,
             Expr::ArrayAccess { span, .. } => *span,
             Expr::Isset { span, .. } => *span,

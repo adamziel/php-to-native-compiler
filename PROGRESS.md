@@ -2,12 +2,11 @@
 
 ## Progress Bar
 
-`[#########.] 54/59 PHPT rows passing`
-- Latest: Generated `PtnValue` payloads now carry ownership for strings and
-  arrays, runtime slots destroy overwritten and teardown values, and backend
-  emission cleans discarded temporaries; PHPT snapshot remains 54/59.
-- Tests ported/passing: 54/59
-- Commit: 57f061f73
+`[#########.] 55/59 PHPT rows passing`
+- Latest: 2026-06-09T14:32Z focused PHPT telemetry passes
+  `Zend/tests/numeric_strings/string_offset.phpt`; full `cargo test` passes.
+- Tests ported/passing: 55/59
+- Commit: current branch
 
 ## 2026-06-08
 
@@ -67,6 +66,32 @@ without expanding scope into exception handling:
   such as `"7.5"` instead of the current process-fatal boundary.
 - Filed blocker bead `ptn-rey` for generic try/catch and catchable `TypeError`
   behavior. No new public PHPT pass is claimed by this branch.
+
+Integrated generic try/catch and catchable string-offset `TypeError` behavior:
+
+- Lexer/parser/AST/IR support for `try { ... } catch (TypeName $e) { ... }`
+  statements and simple method-call expressions such as `$e->getMessage()`.
+- Generated C runtime now has a small exception value/state model with
+  `setjmp`-backed try frames, catch matching by class name, caught exception
+  assignment through the ordinary symbol table, and rethrow of unmatched
+  exceptions.
+- Invalid string offset keys that PHP treats as type errors, including
+  float-looking strings such as `"7.5"` and `"7.5str"`, now raise catchable
+  `TypeError` objects whose `getMessage()` returns
+  `Cannot access offset of type string on string`; uncaught cases still exit
+  through the existing fatal boundary.
+- Existing integer-compatible and leading-numeric string offset behavior is
+  preserved, including `Illegal string offset` warnings for integer-prefix
+  strings and `0xC`/`0b10` mapping to offset `0`.
+- Native tests prove caught and uncaught string-offset `TypeError`, the
+  foreach numeric-string offset shape, and exception message method calls.
+- Focused public PHPT telemetry through `phpc` passes
+  `Zend/tests/numeric_strings/string_offset.phpt`.
+
+Still unsupported after this try/catch slice: `finally`, `throw` statements,
+user-defined exception classes, stack traces, broad object/method semantics,
+catch unions, exact uncaught-exception formatting, and cleanup of active try
+frames for arbitrary `break`/`continue`/`goto` exits from try bodies.
 
 Recovered the checkpoint worktree onto current `origin/master` at
 `ca130c503622ec9a479318d294bfd64d20e496a3` after stale pre-restart bundles
@@ -2247,27 +2272,3 @@ No new PHP surface is claimed by this performance slice. Binary-safe string
 storage, references/copy-on-write, array/object/resource concatenation parity
 beyond the current warning boundary, and exact string-conversion diagnostics
 remain outside the current boxed runtime boundary.
-
-Added generated native `PtnValue` destruction boundaries for owned runtime
-payloads:
-
-- `PtnValue` now tracks whether string and array payloads are owned or borrowed.
-  Owned strings and arrays are recursively destroyed through a shared
-  `ptn_value_destroy()` path, while runtime reads expose borrowed views.
-- Runtime symbol and constant tables still clone values into slots, but now
-  destroy overwritten slot payloads and all remaining slot values during
-  `ptn_runtime_free()`. Array entries clone stored values, destroy replacements,
-  and recursively release keys and values when arrays are destroyed.
-- Generated C now destroys boxed temporaries after stores, constant definitions,
-  echoes, discarded expression and internal-call statements, call arguments,
-  array literal inputs, array reads, concat/binary/comparison operands,
-  condition predicates, switch subjects/cases, and `foreach` key/value/iterable
-  temporaries, including active `foreach` iterables before return jumps.
-  User-function returns are cloned before frame teardown so local slot
-  destruction cannot invalidate returned strings or arrays.
-- Native tests prove destructor emission at the generated-C/runtime boundaries
-  and exercise repeated owned string/array overwrites without changing output.
-
-No new PHP surface is claimed by this ownership slice. Recursive arrays,
-references/copy-on-write, object/resource destructors, and cleanup across every
-future exception/finally edge remain outside the current runtime boundary.

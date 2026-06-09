@@ -33,6 +33,9 @@ static PTN_UNUSED void ptn_echo(PtnValue value) {
         case PTN_ARRAY:
             fputs("Array", stdout);
             break;
+        case PTN_EXCEPTION:
+            fputs("Object", stdout);
+            break;
     }
 }
 
@@ -88,6 +91,18 @@ static void ptn_var_dump_value_indented(PtnValue value, size_t indent) {
             fputs("}\n", stdout);
             break;
         }
+        case PTN_EXCEPTION:
+            ptn_var_dump_indent(indent);
+            printf("object(%s)#1 (1) {\n", value.as.exception->class_name);
+            ptn_var_dump_indent(indent + 1);
+            fputs("[\"message\"]=>\n", stdout);
+            ptn_var_dump_indent(indent + 1);
+            printf("string(%zu) \"", strlen(value.as.exception->message));
+            fputs(value.as.exception->message, stdout);
+            fputs("\"\n", stdout);
+            ptn_var_dump_indent(indent);
+            fputs("}\n", stdout);
+            break;
     }
 }
 
@@ -155,6 +170,9 @@ static void ptn_print_r_value_indented(PtnStringBuffer *buffer, PtnValue value, 
             break;
         case PTN_ARRAY:
             ptn_print_r_array(buffer, value.as.array, indent);
+            break;
+        case PTN_EXCEPTION:
+            ptn_string_buffer_append(buffer, "Object");
             break;
     }
 }

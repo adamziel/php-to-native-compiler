@@ -197,4 +197,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     ptn_symbols_init(&runtime->owned_constants);
     runtime->constants = &runtime->owned_constants;
     ptn_diagnostics_init(&runtime->diagnostics, stderr);
+    runtime->owned_exceptions.active_exception = NULL;
+    runtime->owned_exceptions.try_frame = NULL;
+    runtime->exceptions = &runtime->owned_exceptions;
 }

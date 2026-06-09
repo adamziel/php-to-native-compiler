@@ -6,8 +6,8 @@ use std::process::Command;
 
 use crate::diagnostic::{Diagnostic, Result};
 use crate::ir::{
-    ArrayElement as IrArrayElement, BinaryOp, CastKind, FunctionDecl, IncDecOp, Instruction,
-    MagicConstantKind, Module, TypeHint, UnaryOp, ValueExpr,
+    ArrayElement as IrArrayElement, BinaryOp, CastKind, CatchClause as IrCatchClause, FunctionDecl,
+    IncDecOp, Instruction, MagicConstantKind, Module, TypeHint, UnaryOp, ValueExpr,
 };
 
 mod runtime;
@@ -39,14 +39,12 @@ pub fn emit_c(module: &Module) -> String {
     }
     let mut values = ValueEmitter::new(&module.source_file, &module.source_dir, &module.functions);
     let mut control_targets = Vec::new();
-    let mut return_cleanups = Vec::new();
     for instruction in &module.instructions {
         emit_instruction(
             &mut out,
             &mut values,
             instruction,
             &mut control_targets,
-            &mut return_cleanups,
             &module.source_file,
             None,
         );
@@ -148,7 +146,6 @@ fn emit_user_functions(
         }
         let mut values = ValueEmitter::new(source_file, source_dir, functions);
         let mut break_targets = Vec::new();
-        let mut return_cleanups = Vec::new();
         let return_label = values.next_label("ptn_function_return");
         for instruction in &function.body {
             emit_instruction(
@@ -156,7 +153,6 @@ fn emit_user_functions(
                 &mut values,
                 instruction,
                 &mut break_targets,
-                &mut return_cleanups,
                 source_file,
                 Some(&return_label),
             );
@@ -238,7 +234,6 @@ fn emit_instruction(
     values: &mut ValueEmitter,
     instruction: &Instruction,
     control_targets: &mut Vec<ControlTarget>,
-    return_cleanups: &mut Vec<String>,
     source_path: &str,
     return_target: Option<&str>,
 ) {
@@ -362,7 +357,6 @@ fn emit_instruction(
                 } else {
                     out.push_str("    ptn_return_value = ptn_null();\n");
                 }
-                emit_active_value_cleanups(out, return_cleanups);
                 out.push_str("    goto ");
                 out.push_str(target);
                 out.push_str(";\n");
@@ -375,11 +369,21 @@ fn emit_instruction(
                     out.push_str(";\n");
                     emit_value_cleanup(out, "    ", &return_temp);
                 }
-                emit_active_value_cleanups(out, return_cleanups);
                 out.push_str("    ptn_runtime_free(&runtime);\n");
                 out.push_str("    return 0;\n");
             }
         },
+        Instruction::Try { body, catches } => {
+            emit_try(
+                out,
+                values,
+                body,
+                catches,
+                control_targets,
+                source_path,
+                return_target,
+            );
+        }
         Instruction::Branch {
             condition,
             then_body,
@@ -395,7 +399,6 @@ fn emit_instruction(
                     values,
                     body_instruction,
                     control_targets,
-                    return_cleanups,
                     source_path,
                     return_target,
                 );
@@ -408,7 +411,6 @@ fn emit_instruction(
                         values,
                         body_instruction,
                         control_targets,
-                        return_cleanups,
                         source_path,
                         return_target,
                     );
@@ -444,7 +446,6 @@ fn emit_instruction(
                     values,
                     body_instruction,
                     control_targets,
-                    return_cleanups,
                     source_path,
                     return_target,
                 );
@@ -471,7 +472,6 @@ fn emit_instruction(
                     values,
                     body_instruction,
                     control_targets,
-                    return_cleanups,
                     source_path,
                     return_target,
                 );
@@ -508,7 +508,6 @@ fn emit_instruction(
                     values,
                     initializer,
                     control_targets,
-                    return_cleanups,
                     source_path,
                     return_target,
                 );
@@ -537,7 +536,6 @@ fn emit_instruction(
                     values,
                     body_instruction,
                     control_targets,
-                    return_cleanups,
                     source_path,
                     return_target,
                 );
@@ -554,7 +552,6 @@ fn emit_instruction(
                     values,
                     update,
                     control_targets,
-                    return_cleanups,
                     source_path,
                     return_target,
                 );
@@ -617,19 +614,16 @@ fn emit_instruction(
                 end_label.clone(),
                 continue_label.clone(),
             ));
-            return_cleanups.push(iterable_temp.clone());
             for body_instruction in body {
                 emit_instruction(
                     out,
                     values,
                     body_instruction,
                     control_targets,
-                    return_cleanups,
                     source_path,
                     return_target,
                 );
             }
-            return_cleanups.pop();
             control_targets.pop();
             emit_label_reference(out, &continue_label);
             out.push_str("    ");
@@ -653,7 +647,6 @@ fn emit_instruction(
                 expression,
                 cases,
                 control_targets,
-                return_cleanups,
                 source_path,
                 return_target,
             );
@@ -708,6 +701,91 @@ fn emit_instruction(
             }
         }
     }
+}
+
+fn emit_try(
+    out: &mut String,
+    values: &mut ValueEmitter,
+    body: &[Instruction],
+    catches: &[IrCatchClause],
+    control_targets: &mut Vec<ControlTarget>,
+    source_path: &str,
+    return_target: Option<&str>,
+) {
+    let frame_temp = values.next_temp();
+    let caught_temp = values.next_temp();
+    let end_label = values.next_label("ptn_try_end");
+    out.push_str("    {\n");
+    out.push_str("        PtnTryFrame ");
+    out.push_str(&frame_temp);
+    out.push_str(";\n");
+    out.push_str("        ptn_try_frame_push(&runtime, &");
+    out.push_str(&frame_temp);
+    out.push_str(");\n");
+    out.push_str("        if (setjmp(");
+    out.push_str(&frame_temp);
+    out.push_str(".jump) == 0) {\n");
+    for body_instruction in body {
+        emit_instruction(
+            out,
+            values,
+            body_instruction,
+            control_targets,
+            source_path,
+            return_target,
+        );
+    }
+    out.push_str("            ptn_try_frame_pop(&runtime, &");
+    out.push_str(&frame_temp);
+    out.push_str(");\n");
+    out.push_str("        } else {\n");
+    out.push_str("            ptn_try_frame_pop(&runtime, &");
+    out.push_str(&frame_temp);
+    out.push_str(");\n");
+    out.push_str("            int ");
+    out.push_str(&caught_temp);
+    out.push_str(" = 0;\n");
+    for catch in catches {
+        out.push_str("            if (!");
+        out.push_str(&caught_temp);
+        out.push_str(" && ptn_exception_matches(&runtime, \"");
+        out.push_str(&c_string(&catch.type_name));
+        out.push_str("\")) {\n");
+        out.push_str("                ");
+        out.push_str(&caught_temp);
+        out.push_str(" = 1;\n");
+        if let Some(variable) = &catch.variable {
+            out.push_str("                ptn_runtime_write_variable(&runtime, \"");
+            out.push_str(&c_string(variable));
+            out.push_str("\", ptn_current_exception_value(&runtime));\n");
+        }
+        out.push_str("                ptn_clear_exception(&runtime);\n");
+        for body_instruction in &catch.body {
+            emit_instruction(
+                out,
+                values,
+                body_instruction,
+                control_targets,
+                source_path,
+                return_target,
+            );
+        }
+        out.push_str("            }\n");
+    }
+    out.push_str("            if (!");
+    out.push_str(&caught_temp);
+    out.push_str(") {\n");
+    out.push_str("                ptn_rethrow_exception(&runtime);\n");
+    out.push_str("            }\n");
+    out.push_str("        }\n");
+    out.push_str("        goto ");
+    out.push_str(&end_label);
+    out.push_str(";\n");
+    out.push_str("    }\n");
+    out.push_str("    ");
+    out.push_str(&end_label);
+    out.push_str(":\n");
+    out.push_str("    ;\n");
 }
 
 fn user_function_c_name(index: usize) -> String {
@@ -780,6 +858,12 @@ fn instruction_uses_function_dispatch(instruction: &Instruction) -> bool {
         Instruction::Return { value, .. } => {
             value.as_ref().is_some_and(value_uses_function_dispatch)
         }
+        Instruction::Try { body, catches } => {
+            instructions_use_function_dispatch(body)
+                || catches
+                    .iter()
+                    .any(|catch| instructions_use_function_dispatch(&catch.body))
+        }
         Instruction::Branch {
             condition,
             then_body,
@@ -845,6 +929,14 @@ fn value_uses_function_dispatch(value: &ValueExpr) -> bool {
         ValueExpr::Isset { targets } => targets.iter().any(value_uses_function_dispatch),
         ValueExpr::Empty { target } => value_uses_function_dispatch(target),
         ValueExpr::InternalCall { .. } => true,
+        ValueExpr::MethodCall {
+            receiver,
+            arguments,
+            ..
+        } => {
+            value_uses_function_dispatch(receiver)
+                || arguments.iter().any(value_uses_function_dispatch)
+        }
         ValueExpr::Unary { expr, .. } | ValueExpr::Cast { expr, .. } => {
             value_uses_function_dispatch(expr)
         }
@@ -868,6 +960,12 @@ fn collect_control_warnings_in(
             } => {
                 collect_control_warnings_in(then_body, contexts, warnings);
                 collect_control_warnings_in(else_body, contexts, warnings);
+            }
+            Instruction::Try { body, catches } => {
+                collect_control_warnings_in(body, contexts, warnings);
+                for catch in catches {
+                    collect_control_warnings_in(&catch.body, contexts, warnings);
+                }
             }
             Instruction::While { body, .. } | Instruction::DoWhile { body, .. } => {
                 contexts.push(ControlTargetKind::Loop);
@@ -961,7 +1059,6 @@ fn emit_switch(
     expression: &ValueExpr,
     cases: &[crate::ir::SwitchCase],
     control_targets: &mut Vec<ControlTarget>,
-    return_cleanups: &mut Vec<String>,
     source_path: &str,
     return_target: Option<&str>,
 ) {
@@ -1023,7 +1120,6 @@ fn emit_switch(
                 values,
                 body_instruction,
                 control_targets,
-                return_cleanups,
                 source_path,
                 return_target,
             );
@@ -1048,12 +1144,6 @@ fn emit_value_cleanup(out: &mut String, indent: &str, value: &str) {
     out.push_str("ptn_value_destroy(&");
     out.push_str(value);
     out.push_str(");\n");
-}
-
-fn emit_active_value_cleanups(out: &mut String, values: &[String]) {
-    for value in values.iter().rev() {
-        emit_value_cleanup(out, "    ", value);
-    }
 }
 
 pub fn compile_c(c_source: &str, output: &Path) -> Result<()> {
@@ -1300,6 +1390,12 @@ impl ValueEmitter {
                 arguments,
                 line,
             } => self.emit_internal_call(out, name, arguments, *line),
+            ValueExpr::MethodCall {
+                receiver,
+                name,
+                arguments,
+                line,
+            } => self.emit_method_call(out, receiver, name, arguments, *line),
         }
     }
 
@@ -1951,6 +2047,7 @@ impl ValueEmitter {
                 | ValueExpr::ArrayAccess { .. }
                 | ValueExpr::Isset { .. }
                 | ValueExpr::Empty { .. }
+                | ValueExpr::MethodCall { .. }
         ) {
             return self.emit_value(out, value);
         }
@@ -2052,6 +2149,55 @@ impl ValueEmitter {
         for temp in temps {
             emit_value_cleanup(out, "    ", &temp);
         }
+        result_temp
+    }
+
+    fn emit_method_call(
+        &mut self,
+        out: &mut String,
+        receiver: &ValueExpr,
+        name: &str,
+        arguments: &[ValueExpr],
+        line: usize,
+    ) -> String {
+        let receiver_temp = self.emit_materialized_value(out, receiver);
+        let result_temp = self.next_temp();
+        if arguments.is_empty() {
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_call_method(&runtime, ");
+            out.push_str(&receiver_temp);
+            out.push_str(", \"");
+            out.push_str(&c_string(name));
+            out.push_str("\", 0, NULL, ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            return result_temp;
+        }
+
+        let mut temps = Vec::with_capacity(arguments.len());
+        for argument in arguments {
+            temps.push(self.emit_materialized_value(out, argument));
+        }
+        let args_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&args_temp);
+        out.push_str("[] = { ");
+        out.push_str(&temps.join(", "));
+        out.push_str(" };\n");
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_call_method(&runtime, ");
+        out.push_str(&receiver_temp);
+        out.push_str(", \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        out.push_str(&arguments.len().to_string());
+        out.push_str(", ");
+        out.push_str(&args_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
         result_temp
     }
 

@@ -1,6 +1,15 @@
             return ptn_owned_string(ptn_duplicate_string(value.as.string));
         case PTN_ARRAY:
             return ptn_array(ptn_array_clone(value.as.array));
+        case PTN_EXCEPTION: {
+            PtnException *exception = malloc(sizeof(PtnException));
+            if (exception == NULL) {
+                ptn_abort_out_of_memory();
+            }
+            exception->class_name = value.as.exception->class_name;
+            exception->message = ptn_duplicate_string(value.as.exception->message);
+            return ptn_exception_value(exception);
+        }
         case PTN_NULL:
         case PTN_BOOL:
         case PTN_INT:
@@ -8,6 +17,14 @@
             return value;
     }
     return value;
+}
+
+static PTN_UNUSED void ptn_exception_free(PtnException *exception) {
+    if (exception == NULL) {
+        return;
+    }
+    free(exception->message);
+    free(exception);
 }
 
 static PTN_UNUSED void ptn_array_free(PtnArray *array) {
@@ -33,6 +50,9 @@ static PTN_UNUSED void ptn_value_destroy(PtnValue *value) {
             break;
         case PTN_ARRAY:
             ptn_array_free(value->as.array);
+            break;
+        case PTN_EXCEPTION:
+            ptn_exception_free(value->as.exception);
             break;
         case PTN_NULL:
         case PTN_BOOL:
