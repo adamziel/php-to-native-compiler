@@ -364,6 +364,7 @@ impl ValueEmitter {
             BinaryOp::Add
             | BinaryOp::Subtract
             | BinaryOp::Multiply
+            | BinaryOp::Power
             | BinaryOp::Divide
             | BinaryOp::Modulo
             | BinaryOp::Concat
@@ -401,6 +402,7 @@ impl ValueEmitter {
             BinaryOp::Add => "ptn_add",
             BinaryOp::Subtract => "ptn_subtract",
             BinaryOp::Multiply => "ptn_multiply",
+            BinaryOp::Power => "ptn_power",
             BinaryOp::Divide => "ptn_divide",
             BinaryOp::Modulo => "ptn_modulo",
             BinaryOp::Concat => "ptn_concat",
@@ -1298,6 +1300,46 @@ static PTN_UNUSED PtnValue ptn_multiply(PtnValue left, PtnValue right) {
         return ptn_float((double)left_number.integer * (double)right_number.integer);
     }
     return ptn_int(left_number.integer * right_number.integer);
+}
+
+static PTN_UNUSED int ptn_integer_power_fits(int64_t base, int64_t exponent, int64_t *out) {
+    if (exponent < 0) {
+        return 0;
+    }
+
+    int64_t result = 1;
+    int64_t factor = base;
+    int64_t remaining = exponent;
+    while (remaining > 0) {
+        if ((remaining & 1) != 0) {
+            if (ptn_multiply_overflows(result, factor)) {
+                return 0;
+            }
+            result *= factor;
+        }
+        remaining >>= 1;
+        if (remaining > 0) {
+            if (ptn_multiply_overflows(factor, factor)) {
+                return 0;
+            }
+            factor *= factor;
+        }
+    }
+
+    *out = result;
+    return 1;
+}
+
+static PTN_UNUSED PtnValue ptn_power(PtnValue left, PtnValue right) {
+    PtnNumber left_number = ptn_to_number(left);
+    PtnNumber right_number = ptn_to_number(right);
+    if (left_number.type == PTN_NUMBER_INT && right_number.type == PTN_NUMBER_INT) {
+        int64_t integer_result = 0;
+        if (ptn_integer_power_fits(left_number.integer, right_number.integer, &integer_result)) {
+            return ptn_int(integer_result);
+        }
+    }
+    return ptn_float(pow(left_number.floating, right_number.floating));
 }
 
 static PTN_UNUSED int64_t ptn_number_to_integer(PtnNumber number) {

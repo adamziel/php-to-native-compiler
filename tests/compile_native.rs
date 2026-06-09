@@ -91,6 +91,46 @@ fn parser_accepts_precedence_aware_binary_expressions() {
 }
 
 #[test]
+fn parser_accepts_power_as_right_associative_above_unary() {
+    let program = parser::parse("<?php echo -3 ** 2, 2 ** 3 ** 2;").unwrap();
+    let Statement::Echo { expressions, .. } = &program.statements[0] else {
+        panic!("expected echo statement");
+    };
+
+    let Expr::Unary {
+        op: UnaryOp::Negate,
+        expr,
+        ..
+    } = &expressions[0]
+    else {
+        panic!("expected unary negation around power expression");
+    };
+    assert!(matches!(
+        expr.as_ref(),
+        Expr::Binary {
+            op: BinaryOp::Power,
+            ..
+        }
+    ));
+
+    let Expr::Binary {
+        op: BinaryOp::Power,
+        right,
+        ..
+    } = &expressions[1]
+    else {
+        panic!("expected outer power expression");
+    };
+    assert!(matches!(
+        right.as_ref(),
+        Expr::Binary {
+            op: BinaryOp::Power,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn parser_accepts_print_as_statement() {
     let program = parser::parse("<?php print \"hello\" . 2 + 3;").unwrap();
     assert_eq!(program.statements.len(), 1);
@@ -109,10 +149,10 @@ fn parser_accepts_print_as_statement() {
 #[test]
 fn parser_accepts_direct_variable_compound_assignments() {
     let program = parser::parse(
-        "<?php $value = 1; $value += 2; $value -= 3; $value *= 4; $value /= 5; $value %= 6; $value .= \"7\"; $value &= \"8\"; $value |= \"9\"; $value ^= \"10\"; $value <<= 11; $value >>= 12;",
+        "<?php $value = 1; $value += 2; $value -= 3; $value *= 4; $value **= 2; $value /= 5; $value %= 6; $value .= \"7\"; $value &= \"8\"; $value |= \"9\"; $value ^= \"10\"; $value <<= 11; $value >>= 12;",
     )
     .unwrap();
-    assert_eq!(program.statements.len(), 12);
+    assert_eq!(program.statements.len(), 13);
 
     let Statement::Assign { op, .. } = &program.statements[1] else {
         panic!("expected add assignment statement");
@@ -130,41 +170,46 @@ fn parser_accepts_direct_variable_compound_assignments() {
     assert_eq!(*op, AssignmentOp::MultiplyAssign);
 
     let Statement::Assign { op, .. } = &program.statements[4] else {
+        panic!("expected power assignment statement");
+    };
+    assert_eq!(*op, AssignmentOp::PowerAssign);
+
+    let Statement::Assign { op, .. } = &program.statements[5] else {
         panic!("expected divide assignment statement");
     };
     assert_eq!(*op, AssignmentOp::DivideAssign);
 
-    let Statement::Assign { op, .. } = &program.statements[5] else {
+    let Statement::Assign { op, .. } = &program.statements[6] else {
         panic!("expected modulo assignment statement");
     };
     assert_eq!(*op, AssignmentOp::ModuloAssign);
 
-    let Statement::Assign { op, .. } = &program.statements[6] else {
+    let Statement::Assign { op, .. } = &program.statements[7] else {
         panic!("expected concat assignment statement");
     };
     assert_eq!(*op, AssignmentOp::ConcatAssign);
 
-    let Statement::Assign { op, .. } = &program.statements[7] else {
+    let Statement::Assign { op, .. } = &program.statements[8] else {
         panic!("expected bitwise and assignment statement");
     };
     assert_eq!(*op, AssignmentOp::BitwiseAndAssign);
 
-    let Statement::Assign { op, .. } = &program.statements[8] else {
+    let Statement::Assign { op, .. } = &program.statements[9] else {
         panic!("expected bitwise or assignment statement");
     };
     assert_eq!(*op, AssignmentOp::BitwiseOrAssign);
 
-    let Statement::Assign { op, .. } = &program.statements[9] else {
+    let Statement::Assign { op, .. } = &program.statements[10] else {
         panic!("expected bitwise xor assignment statement");
     };
     assert_eq!(*op, AssignmentOp::BitwiseXorAssign);
 
-    let Statement::Assign { op, .. } = &program.statements[10] else {
+    let Statement::Assign { op, .. } = &program.statements[11] else {
         panic!("expected shift left assignment statement");
     };
     assert_eq!(*op, AssignmentOp::ShiftLeftAssign);
 
-    let Statement::Assign { op, .. } = &program.statements[11] else {
+    let Statement::Assign { op, .. } = &program.statements[12] else {
         panic!("expected shift right assignment statement");
     };
     assert_eq!(*op, AssignmentOp::ShiftRightAssign);
@@ -1752,6 +1797,29 @@ fn compile_scalar_shift_compound_assignments_to_native_binary() {
 }
 
 #[test]
+fn compile_power_operator_to_native_binary() {
+    let root = temp_dir("ptn-native-power-operator");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("power-operator.php");
+    let output = root.join("power-operator-bin");
+    fs::write(
+        &input,
+        "<?php $x = 2; $x **= 3; var_dump(-3 ** 2 === -9); var_dump((-3) ** 2 === 9); var_dump(2 ** 3 ** 2 === 512); var_dump((2 ** 3) ** 2 === 64); var_dump($x === 8);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn phpc_run_alias_executes_compiled_native_binary() {
     let root = temp_dir("ptn-phpc-run-alias");
     fs::create_dir_all(&root).unwrap();
@@ -2567,8 +2635,10 @@ fn compile_defined_and_undefined_variable_reads_to_native_binary() {
 
 #[test]
 fn unsupported_constructs_fail_before_codegen() {
-    let unsupported_operator = parser::parse("<?php $name **= 1;").unwrap_err();
-    assert!(unsupported_operator.message.contains("expected assignment"));
+    let unsupported_operator = parser::parse("<?php $name ??= 1;").unwrap_err();
+    assert!(unsupported_operator
+        .message
+        .contains("unsupported PHP token '?'"));
 
     let unsupported_lvalue = parser::parse("<?php $items[0] += 1;").unwrap_err();
     assert!(unsupported_lvalue

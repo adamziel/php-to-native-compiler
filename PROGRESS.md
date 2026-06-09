@@ -894,3 +894,23 @@ Added scalar `hex2bin()`:
 Still unsupported after this `hex2bin()` slice: embedded-NUL decoded output
 parity from the current C-string-backed runtime, exact warning file names and
 line text, and unsupported array/object/resource/reference diagnostics.
+
+Added scalar exponentiation operators:
+
+- The lexer and parser now accept `**` and direct named-variable `**=`.
+- `**` parses as right-associative with PHP precedence relative to unary
+  operators and casts, so `-3 ** 2` groups as `-(3 ** 2)`.
+- Direct `$x **= expr` lowers through the existing compound-assignment path:
+  read the variable, evaluate the right-hand expression, call the boxed power
+  helper, then write the variable.
+- The generated C runtime keeps integer results for non-negative integer
+  exponents that fit in `int64_t`, with `pow()` fallback for other scalar
+  numeric cases.
+- Native tests prove precedence, associativity, grouped exponentiation, `**=`,
+  and the public `pow-operator.phpt` source shape.
+- Focused public PHPT telemetry through `phpc` passes
+  `ext/standard/tests/math/pow-operator.phpt`.
+
+Still unsupported after this exponentiation slice: PHP-exact numeric-string
+diagnostics, full overflow/exception parity, array/object/resource/reference
+operands, non-direct-variable `**=` lvalues, and compound `??=`.

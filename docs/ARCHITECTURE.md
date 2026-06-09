@@ -42,11 +42,12 @@ Current runtime/compiler slices:
   data; other supported scalar operands convert through the current numeric
   path before integer bitwise operations. Shift operands always use the current
   bitwise integer-conversion path.
-- Direct named-variable `+=`, `-=`, `*=`, `/=`, `%=`, `.=`, `&=`, `^=`, `|=`,
-  `<<=`, and `>>=` lower in IR as a direct variable load, the same boxed binary
-  helper used by the ordinary binary operator, and a direct variable store. This
-  keeps left-to-right reads and undefined-variable diagnostics on the runtime
-  read boundary rather than adding a separate compound-assignment runtime path.
+- Direct named-variable `+=`, `-=`, `*=`, `**=`, `/=`, `%=`, `.=`, `&=`, `^=`,
+  `|=`, `<<=`, and `>>=` lower in IR as a direct variable load, the same boxed
+  binary helper used by the ordinary binary operator, and a direct variable
+  store. This keeps left-to-right reads and undefined-variable diagnostics on
+  the runtime read boundary rather than adding a separate compound-assignment
+  runtime path.
 - Statement-form `print expr;` lowers to the same boxed output IR instruction
   used by echo, so generated native code routes print output through the
   existing `ptn_echo` helper.
@@ -139,8 +140,8 @@ Near-term architecture targets:
   precision-loss diagnostics, and overflow parity for bitwise integer
   conversions and shifts.
 - Array, object, and reference lvalues for compound assignment, plus
-  unsupported compound operators beyond `+=`, `-=`, `*=`, `/=`, `%=`, `.=`,
-  `&=`, `|=`, `^=`, `<<=`, and `>>=`: `**=` and `??=`.
+  unsupported compound operators beyond `+=`, `-=`, `*=`, `**=`, `/=`, `%=`,
+  `.=`, `&=`, `|=`, `^=`, `<<=`, and `>>=`: `??=`.
 - Complete comparison parity for arrays, objects, references, chained
   comparison parse errors, spaceship operator, keyword boolean operators, and
   unsupported scalar edge cases.

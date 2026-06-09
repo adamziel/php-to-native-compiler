@@ -86,15 +86,16 @@ Supported today:
   native runtime symbol table.
 - Generic runtime diagnostics for undefined direct variable reads. The read
   still yields `null` after emitting a warning boundary.
-- Boxed scalar `+`, `-`, `*`, `/`, and `%` numeric arithmetic and `.` string
+- Boxed scalar `+`, `-`, `*`, `**`, `/`, and `%` numeric arithmetic and `.` string
   concatenation expressions, including chained expressions and assignment
-  results. The parser treats `*`, `/`, and `%` as higher precedence than `+`
-  and `-`, and arithmetic as higher precedence than `.`, while the backend
-  emits runtime calls over `PtnValue` operands.
+  results. The parser treats `**` as right-associative with PHP's precedence
+  relative to unary operators, `*`, `/`, and `%` as higher precedence than `+`
+  and `-`, and arithmetic as higher precedence than `.`, while the backend emits
+  runtime calls over `PtnValue` operands.
 - Direct named-variable compound assignment for `+=`, `-=`, `*=`, `/=`, `%=`,
-  `.=`, `&=`, `|=`, `^=`, `<<=`, and `>>=`. These lower as a variable read, the
-  matching boxed binary helper, then a variable write, preserving the existing
-  undefined-variable diagnostic boundary.
+  `**=`, `.=`, `&=`, `|=`, `^=`, `<<=`, and `>>=`. These lower as a variable
+  read, the matching boxed binary helper, then a variable write, preserving the
+  existing undefined-variable diagnostic boundary.
 - Parenthesized expressions, unary `+`, unary `-`, unary `!`, unary bitwise
   `~`, and `(int)`, `(float)`, `(string)`, and `(bool)` casts for boxed scalar
   values. Unary, cast, and binary operations are emitted as runtime helper
@@ -135,8 +136,8 @@ Unsupported today:
 
 - Arrays, objects, functions, classes, includes, references, copy-on-write,
   resources, exceptions, array/object/reference compound-assignment lvalues,
-  compound operators other than `+=`, `-=`, `*=`, `/=`, `%=`, `.=`, `&=`, `|=`,
-  `^=`, `<<=`, and `>>=` (`**=`, `??=`), `print` as an expression returning
+  compound operators other than `+=`, `-=`, `*=`, `/=`, `%=`, `**=`, `.=`, `&=`,
+  `|=`, `^=`, `<<=`, and `>>=` (`??=`), `print` as an expression returning
   `1` even when spelled `print(...)`, increment/decrement operators, full
   PHP numeric-string and non-numeric string arithmetic diagnostics, exact
   division/modulo-by-zero exception behavior, exact numeric literal

@@ -5,6 +5,8 @@ use crate::ast::{
 use crate::diagnostic::{Diagnostic, Result, SourceSpan};
 use crate::lexer::{lex, StringPart as TokenStringPart, Token, TokenKind};
 
+const POWER_PRECEDENCE: u8 = 40;
+
 pub fn parse(source: &str) -> Result<Program> {
     let tokens = lex(source)?;
     Parser { tokens, index: 0 }.parse_program()
@@ -403,13 +405,18 @@ impl Parser {
 
     fn parse_binary_expr(&mut self, min_precedence: u8) -> Result<Expr> {
         let mut left = self.parse_unary_expr()?;
-        while let Some((op, precedence)) = self.peek_binary_op() {
+        while let Some((op, precedence, right_associative)) = self.peek_binary_op() {
             if precedence < min_precedence {
                 break;
             }
 
             self.advance();
-            let right = self.parse_binary_expr(precedence + 1)?;
+            let next_min_precedence = if right_associative {
+                precedence
+            } else {
+                precedence + 1
+            };
+            let right = self.parse_binary_expr(next_min_precedence)?;
             let span = combine_spans(left.span(), right.span());
             left = Expr::Binary {
                 op,
@@ -425,7 +432,7 @@ impl Parser {
         match self.peek().kind {
             TokenKind::Plus => {
                 let token = self.advance().clone();
-                let expr = self.parse_unary_expr()?;
+                let expr = self.parse_binary_expr(POWER_PRECEDENCE)?;
                 let span = combine_spans(token.span, expr.span());
                 Ok(Expr::Unary {
                     op: UnaryOp::Positive,
@@ -435,7 +442,7 @@ impl Parser {
             }
             TokenKind::Minus => {
                 let token = self.advance().clone();
-                let expr = self.parse_unary_expr()?;
+                let expr = self.parse_binary_expr(POWER_PRECEDENCE)?;
                 let span = combine_spans(token.span, expr.span());
                 Ok(Expr::Unary {
                     op: UnaryOp::Negate,
@@ -445,7 +452,7 @@ impl Parser {
             }
             TokenKind::Bang => {
                 let token = self.advance().clone();
-                let expr = self.parse_unary_expr()?;
+                let expr = self.parse_binary_expr(POWER_PRECEDENCE)?;
                 let span = combine_spans(token.span, expr.span());
                 Ok(Expr::Unary {
                     op: UnaryOp::Not,
@@ -455,7 +462,7 @@ impl Parser {
             }
             TokenKind::Tilde => {
                 let token = self.advance().clone();
-                let expr = self.parse_unary_expr()?;
+                let expr = self.parse_binary_expr(POWER_PRECEDENCE)?;
                 let span = combine_spans(token.span, expr.span());
                 Ok(Expr::Unary {
                     op: UnaryOp::BitwiseNot,
@@ -465,7 +472,7 @@ impl Parser {
             }
             TokenKind::LeftParen => {
                 if let Some((kind, span)) = self.try_parse_cast_prefix()? {
-                    let expr = self.parse_unary_expr()?;
+                    let expr = self.parse_binary_expr(POWER_PRECEDENCE)?;
                     let span = combine_spans(span, expr.span());
                     Ok(Expr::Cast {
                         kind,
@@ -571,29 +578,30 @@ impl Parser {
         }
     }
 
-    fn peek_binary_op(&self) -> Option<(BinaryOp, u8)> {
+    fn peek_binary_op(&self) -> Option<(BinaryOp, u8, bool)> {
         match self.peek().kind {
-            TokenKind::OrOr => Some((BinaryOp::Or, 1)),
-            TokenKind::AndAnd => Some((BinaryOp::And, 2)),
-            TokenKind::Pipe => Some((BinaryOp::BitwiseOr, 3)),
-            TokenKind::Caret => Some((BinaryOp::BitwiseXor, 4)),
-            TokenKind::Ampersand => Some((BinaryOp::BitwiseAnd, 5)),
-            TokenKind::EqualEqualEqual => Some((BinaryOp::Identical, 6)),
-            TokenKind::NotEqualEqual => Some((BinaryOp::NotIdentical, 6)),
-            TokenKind::EqualEqual => Some((BinaryOp::Equal, 6)),
-            TokenKind::NotEqual => Some((BinaryOp::NotEqual, 6)),
-            TokenKind::Less => Some((BinaryOp::Less, 7)),
-            TokenKind::LessEqual => Some((BinaryOp::LessEqual, 7)),
-            TokenKind::Greater => Some((BinaryOp::Greater, 7)),
-            TokenKind::GreaterEqual => Some((BinaryOp::GreaterEqual, 7)),
-            TokenKind::Dot => Some((BinaryOp::Concat, 10)),
-            TokenKind::ShiftLeft => Some((BinaryOp::ShiftLeft, 15)),
-            TokenKind::ShiftRight => Some((BinaryOp::ShiftRight, 15)),
-            TokenKind::Plus => Some((BinaryOp::Add, 20)),
-            TokenKind::Minus => Some((BinaryOp::Subtract, 20)),
-            TokenKind::Asterisk => Some((BinaryOp::Multiply, 30)),
-            TokenKind::Slash => Some((BinaryOp::Divide, 30)),
-            TokenKind::Percent => Some((BinaryOp::Modulo, 30)),
+            TokenKind::OrOr => Some((BinaryOp::Or, 1, false)),
+            TokenKind::AndAnd => Some((BinaryOp::And, 2, false)),
+            TokenKind::Pipe => Some((BinaryOp::BitwiseOr, 3, false)),
+            TokenKind::Caret => Some((BinaryOp::BitwiseXor, 4, false)),
+            TokenKind::Ampersand => Some((BinaryOp::BitwiseAnd, 5, false)),
+            TokenKind::EqualEqualEqual => Some((BinaryOp::Identical, 6, false)),
+            TokenKind::NotEqualEqual => Some((BinaryOp::NotIdentical, 6, false)),
+            TokenKind::EqualEqual => Some((BinaryOp::Equal, 6, false)),
+            TokenKind::NotEqual => Some((BinaryOp::NotEqual, 6, false)),
+            TokenKind::Less => Some((BinaryOp::Less, 7, false)),
+            TokenKind::LessEqual => Some((BinaryOp::LessEqual, 7, false)),
+            TokenKind::Greater => Some((BinaryOp::Greater, 7, false)),
+            TokenKind::GreaterEqual => Some((BinaryOp::GreaterEqual, 7, false)),
+            TokenKind::Dot => Some((BinaryOp::Concat, 10, false)),
+            TokenKind::ShiftLeft => Some((BinaryOp::ShiftLeft, 15, false)),
+            TokenKind::ShiftRight => Some((BinaryOp::ShiftRight, 15, false)),
+            TokenKind::Plus => Some((BinaryOp::Add, 20, false)),
+            TokenKind::Minus => Some((BinaryOp::Subtract, 20, false)),
+            TokenKind::Asterisk => Some((BinaryOp::Multiply, 30, false)),
+            TokenKind::Slash => Some((BinaryOp::Divide, 30, false)),
+            TokenKind::Percent => Some((BinaryOp::Modulo, 30, false)),
+            TokenKind::AsteriskAsterisk => Some((BinaryOp::Power, POWER_PRECEDENCE, true)),
             _ => None,
         }
     }
@@ -686,6 +694,7 @@ impl Parser {
             TokenKind::PlusEqual => Ok(AssignmentOp::AddAssign),
             TokenKind::MinusEqual => Ok(AssignmentOp::SubtractAssign),
             TokenKind::AsteriskEqual => Ok(AssignmentOp::MultiplyAssign),
+            TokenKind::AsteriskAsteriskEqual => Ok(AssignmentOp::PowerAssign),
             TokenKind::SlashEqual => Ok(AssignmentOp::DivideAssign),
             TokenKind::PercentEqual => Ok(AssignmentOp::ModuloAssign),
             TokenKind::DotEqual => Ok(AssignmentOp::ConcatAssign),

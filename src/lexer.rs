@@ -49,12 +49,14 @@ pub enum TokenKind {
     PlusPlus,
     MinusMinus,
     AsteriskEqual,
+    AsteriskAsteriskEqual,
     SlashEqual,
     PercentEqual,
     DotEqual,
     Plus,
     Minus,
     Asterisk,
+    AsteriskAsterisk,
     Slash,
     Percent,
     Ampersand,
@@ -189,6 +191,12 @@ impl<'a> Lexer<'a> {
                 '-' if self.rest().starts_with("-=") => self.push_fixed(TokenKind::MinusEqual, 2),
                 '-' if self.rest().starts_with("--") => self.push_fixed(TokenKind::MinusMinus, 2),
                 '-' => self.push_fixed(TokenKind::Minus, 1),
+                '*' if self.rest().starts_with("**=") => {
+                    self.push_fixed(TokenKind::AsteriskAsteriskEqual, 3)
+                }
+                '*' if self.rest().starts_with("**") => {
+                    self.push_fixed(TokenKind::AsteriskAsterisk, 2)
+                }
                 '*' if self.rest().starts_with("*=") => {
                     self.push_fixed(TokenKind::AsteriskEqual, 2)
                 }

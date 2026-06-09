@@ -23,14 +23,15 @@ supports in generated native binaries.
   symbol table.
 - Undefined direct variable reads emit a generic runtime warning and then yield
   `null`.
-- Boxed scalar `+`, `-`, `*`, `/`, and `%` numeric arithmetic and `.` string
-  concatenation. Chained expressions are parsed left-associatively, with `*`,
-  `/`, and `%` binding tighter than `+` and `-`, and arithmetic binding tighter
-  than `.`.
+- Boxed scalar `+`, `-`, `*`, `**`, `/`, and `%` numeric arithmetic and `.`
+  string concatenation. `**` is parsed right-associatively and binds with PHP's
+  precedence relative to unary operators. Other arithmetic chains are parsed
+  left-associatively, with `*`, `/`, and `%` binding tighter than `+` and `-`,
+  and arithmetic binding tighter than `.`.
 - Binary operands are materialized left-to-right before the generated C backend
   calls runtime helpers.
 - Direct named-variable compound assignment for `+=`, `-=`, `*=`, `/=`, `%=`,
-  `.=`, `&=`, `|=`, `^=`, `<<=`, and `>>=`. The compiler lowers these as
+  `**=`, `.=`, `&=`, `|=`, `^=`, `<<=`, and `>>=`. The compiler lowers these as
   `read $x`, the matching boxed binary helper, then `write $x`. The direct
   variable read happens before the right-hand expression, so existing
   undefined-variable diagnostics remain observable in source order.
@@ -215,8 +216,8 @@ supports in generated native binaries.
 - PHP-exact file names, line numbers, error-handler routing, and overflow
   parity for bitwise integer-conversion diagnostics, including shift
   diagnostics.
-- Compound assignment operators other than `+=`, `-=`, `*=`, `/=`, `%=`, `.=`,
-  `&=`, `|=`, `^=`, `<<=`, and `>>=`: `**=` and `??=`.
+- Compound assignment operators other than `+=`, `-=`, `*=`, `/=`, `%=`, `**=`,
+  `.=`, `&=`, `|=`, `^=`, `<<=`, and `>>=`: `??=`.
 - Array, object, string-offset, property, static-property, variable-variable,
   reference, and other non-direct-variable compound-assignment lvalues.
 - Reference semantics for compound assignment, including reference identity,
