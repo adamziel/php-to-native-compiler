@@ -314,6 +314,28 @@ fn parser_accepts_comparison_boolean_and_grouping_expressions() {
 }
 
 #[test]
+fn parser_accepts_braced_if_elseif_else_statements() {
+    let program = parser::parse(
+        "<?php $a = 1; if (($a == 0)) { echo \"bad\"; } elseif ($a == 1) { var_dump(true); } else { print \"bad\"; }",
+    )
+    .unwrap();
+    assert_eq!(program.statements.len(), 2);
+    let Statement::If {
+        condition,
+        then_body,
+        else_body,
+        ..
+    } = &program.statements[1]
+    else {
+        panic!("expected if statement");
+    };
+    assert!(matches!(condition, Expr::Grouped { .. }));
+    assert_eq!(then_body.len(), 1);
+    assert_eq!(else_body.len(), 1);
+    assert!(matches!(&else_body[0], Statement::If { .. }));
+}
+
+#[test]
 fn compile_echo_program_to_native_binary() {
     let root = temp_dir("ptn-native-echo");
     fs::create_dir_all(&root).unwrap();
@@ -569,6 +591,72 @@ fn compile_boolean_short_circuit_ops_to_native_binary() {
     assert!(execution.status.success());
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "|1||1\n");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_if_elseif_else_to_native_binary() {
+    let root = temp_dir("ptn-native-if-elseif-else");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("if-elseif-else.php");
+    let output = root.join("if-elseif-else-bin");
+    fs::write(
+        &input,
+        "<?php $a = 1; if ($a == 0) { echo \"bad\"; } elseif ($a == 1) { echo \"good\"; } else { echo \"bad\"; } echo \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "good\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_nested_if_branch_truthiness_to_native_binary() {
+    let root = temp_dir("ptn-native-nested-if-truthiness");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("nested-if-truthiness.php");
+    let output = root.join("nested-if-truthiness-bin");
+    fs::write(
+        &input,
+        "<?php $a = 1; $b = \"0\"; if ($a && !$b) { if ((2 >= 2)) { var_dump(\"ok\"); } else { echo \"bad\"; } } else { echo \"bad\"; }",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(2) \"ok\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_if_condition_evaluates_before_selected_branch_to_native_binary() {
+    let root = temp_dir("ptn-native-if-condition-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("if-condition-order.php");
+    let output = root.join("if-condition-order-bin");
+    fs::write(
+        &input,
+        "<?php if ($missing) { echo \"bad\"; } else { echo \"fallback\\n\"; }",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "fallback\n");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        "Warning: Undefined variable $missing\n"
+    );
 }
 
 #[test]

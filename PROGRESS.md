@@ -248,3 +248,25 @@ of the grouping-aware baseline:
 Still unsupported for `var_dump`: arrays, objects, resources, recursion,
 references, embedded NUL strings, full PHP float precision/formatting edge
 cases, and complete PHP CLI/PHPT runner parity.
+
+Added braced branch control flow on top of the scalar `var_dump` head:
+
+- Lexer/parser/AST support for braced `if`, `elseif`, and `else` statements,
+  including grouped branch conditions and nested statement bodies.
+- IR support for structured branch instructions whose conditions and branch
+  bodies preserve statement nesting for future temporary, destructor,
+  exception, reference, and copy-on-write handling.
+- Generated C backend support for native branches over boxed PHP values through
+  the existing runtime truthiness helper.
+- Branch conditions reuse the existing scalar comparison, boolean
+  short-circuit, unary, cast, and grouped-expression paths.
+- Native tests prove `if`/`elseif`/`else`, nested branches, scalar truthiness,
+  `var_dump` in branch bodies, and source-order condition diagnostics.
+- Focused public PHPT telemetry through the minimal `phpc` runner passes
+  `tests/lang/001.phpt`, `tests/lang/004.phpt`, `tests/lang/005.phpt`, and
+  `tests/lang/006.phpt`.
+
+Still unsupported for control flow: unbraced statements, alternate syntax,
+loops, `switch`, `break`, `continue`, branch-condition assignments/increments,
+arrays/objects/resources in truthiness, and exception/finally control-flow
+edges.

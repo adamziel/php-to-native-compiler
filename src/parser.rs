@@ -30,6 +30,7 @@ impl Parser {
         match self.peek().kind {
             TokenKind::Echo => self.parse_echo(),
             TokenKind::Print => self.parse_print(),
+            TokenKind::If => self.parse_if(),
             TokenKind::Identifier(_) => self.parse_call_statement(),
             TokenKind::Variable(_) => self.parse_assignment(),
             TokenKind::InlineHtml(_) => self.parse_inline_html(),
@@ -74,6 +75,28 @@ impl Parser {
         Ok(Statement::Print { expression, span })
     }
 
+    fn parse_if(&mut self) -> Result<Statement> {
+        let span = self.expect_if_like()?;
+        self.expect_left_paren()?;
+        let condition = self.parse_expr()?;
+        self.expect_right_paren()?;
+        let then_body = self.parse_block()?;
+        let else_body = match self.peek().kind {
+            TokenKind::Elseif => vec![self.parse_if()?],
+            TokenKind::Else => {
+                self.advance();
+                self.parse_block()?
+            }
+            _ => Vec::new(),
+        };
+        Ok(Statement::If {
+            condition,
+            then_body,
+            else_body,
+            span,
+        })
+    }
+
     fn parse_call_statement(&mut self) -> Result<Statement> {
         let token = self.advance().clone();
         let TokenKind::Identifier(name) = token.kind else {
@@ -106,6 +129,16 @@ impl Parser {
             content,
             span: token.span,
         })
+    }
+
+    fn parse_block(&mut self) -> Result<Vec<Statement>> {
+        self.expect_left_brace()?;
+        let mut statements = Vec::new();
+        while !matches!(self.peek().kind, TokenKind::RightBrace | TokenKind::Eof) {
+            statements.push(self.parse_statement()?);
+        }
+        self.expect_right_brace()?;
+        Ok(statements)
     }
 
     fn parse_expr(&mut self) -> Result<Expr> {
@@ -257,6 +290,15 @@ impl Parser {
         }
     }
 
+    fn expect_if_like(&mut self) -> Result<SourceSpan> {
+        let token = self.advance();
+        if matches!(token.kind, TokenKind::If | TokenKind::Elseif) {
+            Ok(token.span)
+        } else {
+            Err(Diagnostic::new("expected if", Some(token.span)))
+        }
+    }
+
     fn expect_open_tag(&mut self) -> Result<()> {
         let token = self.advance();
         if matches!(token.kind, TokenKind::OpenTag) {
@@ -315,6 +357,24 @@ impl Parser {
                 "expected right parenthesis",
                 Some(token.span),
             ))
+        }
+    }
+
+    fn expect_left_brace(&mut self) -> Result<SourceSpan> {
+        let token = self.advance();
+        if matches!(token.kind, TokenKind::LeftBrace) {
+            Ok(token.span)
+        } else {
+            Err(Diagnostic::new("expected left brace", Some(token.span)))
+        }
+    }
+
+    fn expect_right_brace(&mut self) -> Result<SourceSpan> {
+        let token = self.advance();
+        if matches!(token.kind, TokenKind::RightBrace) {
+            Ok(token.span)
+        } else {
+            Err(Diagnostic::new("expected right brace", Some(token.span)))
         }
     }
 

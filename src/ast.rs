@@ -26,6 +26,12 @@ pub enum Statement {
         expression: Expr,
         span: SourceSpan,
     },
+    If {
+        condition: Expr,
+        then_body: Vec<Statement>,
+        else_body: Vec<Statement>,
+        span: SourceSpan,
+    },
     InlineHtml {
         content: String,
         span: SourceSpan,

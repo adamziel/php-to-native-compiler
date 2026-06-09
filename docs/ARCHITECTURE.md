@@ -58,6 +58,13 @@ Current runtime/compiler slices:
   materializes arguments left-to-right and dispatches through a small internal
   function registry. `var_dump` is currently the only registered internal
   function, and it formats the boxed scalar runtime values directly.
+- Braced `if`, `elseif`, and `else` statements lower to structured IR branch
+  instructions. Conditions remain boxed value expressions, and the C backend
+  emits native branches that call the shared scalar truthiness helper.
+- `elseif` is represented as an else branch containing another structured
+  branch, so future exception edges, temporaries, destructor timing,
+  references, and copy-on-write behavior can stay attached to the statement
+  tree.
 
 Near-term architecture targets:
 
@@ -78,5 +85,7 @@ Near-term architecture targets:
 - A broader internal-function module system with shared argument parsing,
   metadata, unsupported array/object/resource/reference diagnostics, and
   PHP-exact `var_dump` precision/formatting behavior.
+- Broader control flow: unbraced and alternate syntax, loops, `switch`,
+  `break`, `continue`, and exception/finally edges.
 - Explicit fallback boundaries for `eval`, variable variables, and runtime
   symbol mutation.

@@ -47,6 +47,8 @@ supports in generated native binaries.
   `int(...)`, `float(...)`, and `string(length) "value"`.
 - A minimal `phpc` runner for supported PHPT rows. It compiles scripts or `-r`
   snippets to temporary native binaries through the normal compiler pipeline.
+- Braced `if`, `elseif`, and `else` statements whose conditions and bodies use
+  the currently supported scalar expression and statement subset.
 
 ## Not Yet Supported
 
@@ -62,6 +64,9 @@ supports in generated native binaries.
 - Comparison operators `===`, `!==`, `<=>`, keyword boolean operators
   `and`/`or`, PHP-exact chained comparison parse errors, and complete
   comparison parity for unsupported value types.
+- Unbraced control-flow statements, alternate control-flow syntax, loops,
+  `switch`, `break`, `continue`, branch-condition assignments/increments, and
+  exception/finally control-flow edges.
 - Inline HTML before `<?php` or between PHP blocks.
 - Internal functions other than `var_dump()`.
 - Arrays, objects, resources, recursive structures, references, and

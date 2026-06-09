@@ -14,29 +14,53 @@ pub fn emit_c(module: &Module) -> String {
     out.push_str("    ptn_runtime_init(&runtime);\n");
     let mut values = ValueEmitter::new();
     for instruction in &module.instructions {
-        match instruction {
-            Instruction::Store { name, value } => {
-                let emitted_value = values.emit_value(&mut out, value);
-                out.push_str("    ptn_runtime_write_variable(&runtime, \"");
-                out.push_str(&c_string(name));
-                out.push_str("\", ");
-                out.push_str(&emitted_value);
-                out.push_str(");\n");
-            }
-            Instruction::Echo(value) => {
-                let emitted_value = values.emit_value(&mut out, value);
-                out.push_str("    ptn_echo(");
-                out.push_str(&emitted_value);
-                out.push_str(");\n");
-            }
-            Instruction::InternalCall { name, arguments } => {
-                values.emit_internal_call(&mut out, name, arguments);
-            }
-        }
+        emit_instruction(&mut out, &mut values, instruction);
     }
     out.push_str("    ptn_runtime_free(&runtime);\n");
     out.push_str("    return 0;\n}\n");
     out
+}
+
+fn emit_instruction(out: &mut String, values: &mut ValueEmitter, instruction: &Instruction) {
+    match instruction {
+        Instruction::Store { name, value } => {
+            let emitted_value = values.emit_value(out, value);
+            out.push_str("    ptn_runtime_write_variable(&runtime, \"");
+            out.push_str(&c_string(name));
+            out.push_str("\", ");
+            out.push_str(&emitted_value);
+            out.push_str(");\n");
+        }
+        Instruction::Echo(value) => {
+            let emitted_value = values.emit_value(out, value);
+            out.push_str("    ptn_echo(");
+            out.push_str(&emitted_value);
+            out.push_str(");\n");
+        }
+        Instruction::InternalCall { name, arguments } => {
+            values.emit_internal_call(out, name, arguments);
+        }
+        Instruction::Branch {
+            condition,
+            then_body,
+            else_body,
+        } => {
+            let condition_temp = values.emit_materialized_value(out, condition);
+            out.push_str("    if (ptn_is_truthy(");
+            out.push_str(&condition_temp);
+            out.push_str(")) {\n");
+            for body_instruction in then_body {
+                emit_instruction(out, values, body_instruction);
+            }
+            if !else_body.is_empty() {
+                out.push_str("    } else {\n");
+                for body_instruction in else_body {
+                    emit_instruction(out, values, body_instruction);
+                }
+            }
+            out.push_str("    }\n");
+        }
+    }
 }
 
 pub fn compile_c(c_source: &str, output: &Path) -> Result<()> {

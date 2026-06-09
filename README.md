@@ -47,6 +47,9 @@ Supported today:
 - Boxed scalar comparison and boolean expressions: `==`, `!=`, `<`, `<=`, `>`,
   `>=`, `&&`, and `||`. Boolean operators short-circuit over boxed PHP
   truthiness for the currently supported scalar value types.
+- Braced `if`, `elseif`, and `else` statements. Branch conditions use boxed
+  scalar truthiness and the currently supported expression subset, including
+  grouped expressions and scalar comparisons.
 
 Unsupported today:
 
@@ -58,8 +61,9 @@ Unsupported today:
   PHP numeric-string and non-numeric string arithmetic diagnostics, exact
   division/modulo-by-zero exception behavior, complete comparison parity for
   unsupported types, identity/spaceship comparison operators, keyword boolean
-  operators, chained comparison parse errors, complete overflow parity, exact
-  scalar cast overflow behavior, PHP-exact warning
+  operators, chained comparison parse errors, unbraced and alternate
+  control-flow syntax, loops, `switch`, `break`, `continue`, complete overflow
+  parity, exact scalar cast overflow behavior, PHP-exact warning
   text/file/line/error-handler behavior, inline HTML before `<?php` or between
   PHP blocks, internal functions other than `var_dump()`, arrays, objects,
   resources, recursion, references, embedded NUL string handling, and full PHP

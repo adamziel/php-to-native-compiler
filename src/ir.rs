@@ -19,6 +19,11 @@ pub enum Instruction {
         name: String,
         arguments: Vec<ValueExpr>,
     },
+    Branch {
+        condition: ValueExpr,
+        then_body: Vec<Instruction>,
+        else_body: Vec<Instruction>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -77,8 +82,14 @@ pub enum CastKind {
 }
 
 pub fn lower(program: &Program) -> Module {
+    Module {
+        instructions: lower_statements(&program.statements),
+    }
+}
+
+fn lower_statements(statements: &[Statement]) -> Vec<Instruction> {
     let mut instructions = Vec::new();
-    for statement in &program.statements {
+    for statement in statements {
         match statement {
             Statement::Assign {
                 name, op, value, ..
@@ -107,9 +118,21 @@ pub fn lower(program: &Program) -> Module {
             Statement::InlineHtml { content, .. } => {
                 instructions.push(Instruction::Echo(ValueExpr::String(content.clone())));
             }
+            Statement::If {
+                condition,
+                then_body,
+                else_body,
+                ..
+            } => {
+                instructions.push(Instruction::Branch {
+                    condition: lower_expr(condition),
+                    then_body: lower_statements(then_body),
+                    else_body: lower_statements(else_body),
+                });
+            }
         }
     }
-    Module { instructions }
+    instructions
 }
 
 fn lower_assignment_value(name: &str, op: AssignmentOp, value: &Expr) -> ValueExpr {
