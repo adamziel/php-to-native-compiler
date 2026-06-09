@@ -17,15 +17,17 @@ supports in generated native binaries.
   symbol table.
 - Undefined direct variable reads emit a generic runtime warning and then yield
   `null`.
-- Boxed scalar `+` numeric addition and `.` string concatenation. Chained
-  expressions are parsed left-associatively, with `+` binding tighter than `.`.
+- Boxed scalar `+`, `-`, `*`, `/`, and `%` numeric arithmetic and `.` string
+  concatenation. Chained expressions are parsed left-associatively, with `*`,
+  `/`, and `%` binding tighter than `+` and `-`, and arithmetic binding tighter
+  than `.`.
 - Binary operands are materialized left-to-right before the generated C backend
   calls runtime helpers.
-- Direct named-variable compound assignment for `+=` and `.=`. The compiler
-  lowers `$x += expr` as `read $x`, boxed `+`, then `write $x`; `$x .= expr`
-  lowers the same way through boxed string concatenation. The direct variable
-  read happens before the right-hand expression, so existing undefined-variable
-  diagnostics remain observable in source order.
+- Direct named-variable compound assignment for `+=`, `-=`, `*=`, `/=`, `%=`,
+  and `.=`. The compiler lowers these as `read $x`, the matching boxed binary
+  helper, then `write $x`. The direct variable read happens before the
+  right-hand expression, so existing undefined-variable diagnostics remain
+  observable in source order.
 - Print statements use the same generated boxed output path as echo.
 - Parenthesized expressions for grouping supported scalar expressions,
   including nested grouping.
@@ -43,8 +45,8 @@ supports in generated native binaries.
 - PHP-exact diagnostic formatting, file names, line numbers, error handlers, and
   error reporting configuration.
 - Full PHP numeric-string conversion warning parity, non-numeric string
-  arithmetic diagnostics, complete overflow parity, and exact scalar cast
-  overflow behavior.
+  arithmetic diagnostics, exact division/modulo-by-zero exception behavior,
+  complete overflow parity, and exact scalar cast overflow behavior.
 - Prefix and postfix increment/decrement operators such as `++$value` and
   `--$value`.
 - `print` as an expression returning `1`, including contexts such as assignment,
@@ -54,8 +56,8 @@ supports in generated native binaries.
   comparison parity for unsupported value types.
 - Inline HTML before `<?php`, between PHP blocks, or after a closing PHP tag.
 - Doc comment retention for reflection or metadata. Comments are skipped today.
-- Compound assignment operators other than `+=` and `.=`: `-=`, `*=`, `/=`,
-  `%=`, `**=`, `&=`, `|=`, `^=`, `<<=`, `>>=`, and `??=`.
+- Compound assignment operators other than `+=`, `-=`, `*=`, `/=`, `%=`, and
+  `.=`: `**=`, `&=`, `|=`, `^=`, `<<=`, `>>=`, and `??=`.
 - Array, object, string-offset, property, static-property, variable-variable,
   reference, and other non-direct-variable compound-assignment lvalues.
 - Reference semantics for compound assignment, including reference identity,

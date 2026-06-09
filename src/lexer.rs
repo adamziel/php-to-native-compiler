@@ -23,9 +23,16 @@ pub enum TokenKind {
     AndAnd,
     OrOr,
     PlusEqual,
+    MinusEqual,
+    AsteriskEqual,
+    SlashEqual,
+    PercentEqual,
     DotEqual,
     Plus,
     Minus,
+    Asterisk,
+    Slash,
+    Percent,
     Bang,
     Dot,
     Comma,
@@ -127,6 +134,7 @@ impl<'a> Lexer<'a> {
                     ));
                 }
                 '+' => self.push_fixed(TokenKind::Plus, 1),
+                '-' if self.rest().starts_with("-=") => self.push_fixed(TokenKind::MinusEqual, 2),
                 '-' if self.rest().starts_with("--") => {
                     return Err(Diagnostic::new(
                         "unsupported decrement operator `--`",
@@ -134,6 +142,14 @@ impl<'a> Lexer<'a> {
                     ));
                 }
                 '-' => self.push_fixed(TokenKind::Minus, 1),
+                '*' if self.rest().starts_with("*=") => {
+                    self.push_fixed(TokenKind::AsteriskEqual, 2)
+                }
+                '*' => self.push_fixed(TokenKind::Asterisk, 1),
+                '/' if self.rest().starts_with("/=") => self.push_fixed(TokenKind::SlashEqual, 2),
+                '/' => self.push_fixed(TokenKind::Slash, 1),
+                '%' if self.rest().starts_with("%=") => self.push_fixed(TokenKind::PercentEqual, 2),
+                '%' => self.push_fixed(TokenKind::Percent, 1),
                 '!' => self.push_fixed(TokenKind::Bang, 1),
                 '.' if self.rest().starts_with(".=") => self.push_fixed(TokenKind::DotEqual, 2),
                 '.' => self.push_fixed(TokenKind::Dot, 1),

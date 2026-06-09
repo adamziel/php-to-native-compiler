@@ -194,6 +194,10 @@ impl Parser {
             TokenKind::GreaterEqual => Some((BinaryOp::GreaterEqual, 6)),
             TokenKind::Dot => Some((BinaryOp::Concat, 10)),
             TokenKind::Plus => Some((BinaryOp::Add, 20)),
+            TokenKind::Minus => Some((BinaryOp::Subtract, 20)),
+            TokenKind::Asterisk => Some((BinaryOp::Multiply, 30)),
+            TokenKind::Slash => Some((BinaryOp::Divide, 30)),
+            TokenKind::Percent => Some((BinaryOp::Modulo, 30)),
             _ => None,
         }
     }
@@ -230,6 +234,10 @@ impl Parser {
         match token.kind {
             TokenKind::Equal => Ok(AssignmentOp::Assign),
             TokenKind::PlusEqual => Ok(AssignmentOp::AddAssign),
+            TokenKind::MinusEqual => Ok(AssignmentOp::SubtractAssign),
+            TokenKind::AsteriskEqual => Ok(AssignmentOp::MultiplyAssign),
+            TokenKind::SlashEqual => Ok(AssignmentOp::DivideAssign),
+            TokenKind::PercentEqual => Ok(AssignmentOp::ModuloAssign),
             TokenKind::DotEqual => Ok(AssignmentOp::ConcatAssign),
             _ => Err(Diagnostic::new("expected assignment", Some(token.span))),
         }

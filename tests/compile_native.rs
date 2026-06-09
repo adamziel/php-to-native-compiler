@@ -20,7 +20,7 @@ fn parser_accepts_direct_assignment_and_variable_reads() {
 
 #[test]
 fn parser_accepts_precedence_aware_binary_expressions() {
-    let program = parser::parse("<?php echo \"sum \" . 2 + 3 . \"\\n\";").unwrap();
+    let program = parser::parse("<?php echo \"sum \" . 20 - 3 * 4 + 8 / 2 % 3 . \"\\n\";").unwrap();
     let Statement::Echo { expressions, .. } = &program.statements[0] else {
         panic!("expected echo statement");
     };
@@ -50,6 +50,22 @@ fn parser_accepts_precedence_aware_binary_expressions() {
             ..
         }
     ));
+
+    let Expr::Binary {
+        op: BinaryOp::Add,
+        right,
+        ..
+    } = right.as_ref()
+    else {
+        panic!("expected nested addition");
+    };
+    assert!(matches!(
+        right.as_ref(),
+        Expr::Binary {
+            op: BinaryOp::Modulo,
+            ..
+        }
+    ));
 }
 
 #[test]
@@ -70,8 +86,11 @@ fn parser_accepts_print_as_statement() {
 
 #[test]
 fn parser_accepts_direct_variable_compound_assignments() {
-    let program = parser::parse("<?php $value = 1; $value += 2; $value .= \"3\";").unwrap();
-    assert_eq!(program.statements.len(), 3);
+    let program = parser::parse(
+        "<?php $value = 1; $value += 2; $value -= 3; $value *= 4; $value /= 5; $value %= 6; $value .= \"7\";",
+    )
+    .unwrap();
+    assert_eq!(program.statements.len(), 7);
 
     let Statement::Assign { op, .. } = &program.statements[1] else {
         panic!("expected add assignment statement");
@@ -79,6 +98,26 @@ fn parser_accepts_direct_variable_compound_assignments() {
     assert_eq!(*op, AssignmentOp::AddAssign);
 
     let Statement::Assign { op, .. } = &program.statements[2] else {
+        panic!("expected subtract assignment statement");
+    };
+    assert_eq!(*op, AssignmentOp::SubtractAssign);
+
+    let Statement::Assign { op, .. } = &program.statements[3] else {
+        panic!("expected multiply assignment statement");
+    };
+    assert_eq!(*op, AssignmentOp::MultiplyAssign);
+
+    let Statement::Assign { op, .. } = &program.statements[4] else {
+        panic!("expected divide assignment statement");
+    };
+    assert_eq!(*op, AssignmentOp::DivideAssign);
+
+    let Statement::Assign { op, .. } = &program.statements[5] else {
+        panic!("expected modulo assignment statement");
+    };
+    assert_eq!(*op, AssignmentOp::ModuloAssign);
+
+    let Statement::Assign { op, .. } = &program.statements[6] else {
         panic!("expected concat assignment statement");
     };
     assert_eq!(*op, AssignmentOp::ConcatAssign);
@@ -615,6 +654,128 @@ fn compile_numeric_string_and_float_addition_to_native_binary() {
 }
 
 #[test]
+fn compile_boxed_arithmetic_literals_to_native_binary() {
+    let root = temp_dir("ptn-native-arithmetic-literals");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("arithmetic-literals.php");
+    let output = root.join("arithmetic-literals-bin");
+    fs::write(
+        &input,
+        "<?php echo 10 - 3, \" \", 2 * 3, \" \", 7 / 2, \" \", 8 % 3, \" \", -5 % 2, \" \", 5 % -2, \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "7 6 3.5 2 -1 1\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_boxed_arithmetic_variables_and_assignment_results_to_native_binary() {
+    let root = temp_dir("ptn-native-arithmetic-variables");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("arithmetic-variables.php");
+    let output = root.join("arithmetic-variables-bin");
+    fs::write(
+        &input,
+        "<?php $left = \"10\"; $right = 3; $difference = $left - $right; $product = $difference * $right; $quotient = $product / 3; $remainder = $product % 5; echo $difference, \" \", $product, \" \", $quotient, \" \", $remainder, \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "7 21 7 1\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_boxed_arithmetic_chained_precedence_to_native_binary() {
+    let root = temp_dir("ptn-native-arithmetic-precedence");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("arithmetic-precedence.php");
+    let output = root.join("arithmetic-precedence-bin");
+    fs::write(
+        &input,
+        "<?php echo 20 - 3 * 4 + 8 / 2 . \" \"; echo (20 - 3) * (4 + 8) / 2 % 7, \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "12 4\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_numeric_string_multiplicative_arithmetic_to_native_binary() {
+    let root = temp_dir("ptn-native-arithmetic-conversions");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("arithmetic-conversions.php");
+    let output = root.join("arithmetic-conversions-bin");
+    fs::write(
+        &input,
+        "<?php echo \"8\" - true, \" \", \"2.5\" * 2, \" \", \"6\" / \"3\", \" \", \"5\" % \"2\", \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "7 5 2 1\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_arithmetic_operands_evaluate_left_to_right_to_native_binary() {
+    let root = temp_dir("ptn-native-arithmetic-left-to-right");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("arithmetic-left-to-right.php");
+    let output = root.join("arithmetic-left-to-right-bin");
+    fs::write(&input, "<?php echo $left * $right + $third . \"\\n\";").unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "0\n");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        "Warning: Undefined variable $left\nWarning: Undefined variable $right\nWarning: Undefined variable $third\n"
+    );
+}
+
+#[test]
+fn compile_direct_arithmetic_compound_assignments_to_native_binary() {
+    let root = temp_dir("ptn-native-arithmetic-compound-assignment");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("arithmetic-compound.php");
+    let output = root.join("arithmetic-compound-bin");
+    fs::write(
+        &input,
+        "<?php $total = 20; $total -= 4; $total *= 2; $total /= 4; $total %= 5; print $total . \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "3\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_unary_parenthesized_and_cast_expressions_to_native_binary() {
     let root = temp_dir("ptn-native-unary-casts");
     fs::create_dir_all(&root).unwrap();
@@ -684,7 +845,7 @@ fn compile_defined_and_undefined_variable_reads_to_native_binary() {
 
 #[test]
 fn unsupported_constructs_fail_before_codegen() {
-    let unsupported_operator = parser::parse("<?php $name -= 1;").unwrap_err();
+    let unsupported_operator = parser::parse("<?php $name **= 1;").unwrap_err();
     assert!(unsupported_operator.message.contains("expected assignment"));
 
     let unsupported_lvalue = parser::parse("<?php $items[0] += 1;").unwrap_err();

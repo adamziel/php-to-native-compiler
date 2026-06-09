@@ -40,6 +40,10 @@ pub enum ValueExpr {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinaryOp {
     Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Modulo,
     Concat,
     Equal,
     NotEqual,
@@ -95,6 +99,10 @@ fn lower_assignment_value(name: &str, op: AssignmentOp, value: &Expr) -> ValueEx
     match op {
         AssignmentOp::Assign => right,
         AssignmentOp::AddAssign => lower_compound_assignment(name, BinaryOp::Add, right),
+        AssignmentOp::SubtractAssign => lower_compound_assignment(name, BinaryOp::Subtract, right),
+        AssignmentOp::MultiplyAssign => lower_compound_assignment(name, BinaryOp::Multiply, right),
+        AssignmentOp::DivideAssign => lower_compound_assignment(name, BinaryOp::Divide, right),
+        AssignmentOp::ModuloAssign => lower_compound_assignment(name, BinaryOp::Modulo, right),
         AssignmentOp::ConcatAssign => lower_compound_assignment(name, BinaryOp::Concat, right),
     }
 }
@@ -153,6 +161,10 @@ fn lower_cast_kind(kind: AstCastKind) -> CastKind {
 fn lower_binary_op(op: AstBinaryOp) -> BinaryOp {
     match op {
         AstBinaryOp::Add => BinaryOp::Add,
+        AstBinaryOp::Subtract => BinaryOp::Subtract,
+        AstBinaryOp::Multiply => BinaryOp::Multiply,
+        AstBinaryOp::Divide => BinaryOp::Divide,
+        AstBinaryOp::Modulo => BinaryOp::Modulo,
         AstBinaryOp::Concat => BinaryOp::Concat,
         AstBinaryOp::Equal => BinaryOp::Equal,
         AstBinaryOp::NotEqual => BinaryOp::NotEqual,

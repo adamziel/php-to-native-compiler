@@ -192,3 +192,37 @@ Still unsupported after this comparison extension: identity comparisons
 `===`/`!==`, spaceship `<=>`, keyword `and`/`or`, arrays, objects, references,
 copy-on-write behavior, PHP-exact chained comparison parse errors, and complete
 PHP comparison parity for unsupported value types.
+
+Added boxed scalar arithmetic operators beyond addition on the scalar
+comparison-extension head:
+
+- Lexer support for `*`, `/`, and `%` operator tokens, with binary `-` reusing
+  the existing minus token from unary negation while preserving lexical
+  rejection for unsupported `++` and `--`.
+- Parser/AST support for left-associative binary `-`, `*`, `/`, and `%`
+  expressions. Multiplicative operators bind tighter than additive operators,
+  arithmetic binds tighter than string concatenation, and the existing
+  comparison/boolean precedence levels remain below arithmetic.
+- Parser/AST/IR support for direct named-variable `-=`, `*=`, `/=`, and `%=`
+  compound assignments, lowering through the same direct load, boxed binary
+  operation, and direct store path as `+=` and `.=` rather than through a
+  separate runtime path.
+- IR operation nodes for subtraction, multiplication, division, and modulo.
+- Generated C dispatch to shared `PtnValue` runtime helpers while preserving
+  left-to-right operand materialization.
+- Boxed runtime helpers for scalar subtraction, multiplication, division, and
+  modulo using the existing scalar numeric conversion path.
+- Native tests proving literals, variables, assignment results, chained
+  precedence, numeric-string arithmetic basics, modulo sign behavior, direct
+  arithmetic compound assignment, and observable left-to-right operand
+  evaluation in compiled binaries.
+
+Still unsupported for arithmetic: full PHP numeric-string warning parity,
+non-numeric string arithmetic diagnostics, exact division/modulo-by-zero
+exception behavior, complete overflow parity, arrays, objects, references, and
+copy-on-write behavior.
+
+Still unsupported for compound assignment: `**=`, `&=`, `|=`, `^=`, `<<=`,
+`>>=`, `??=`, array/object/string-offset/property/static-property/
+variable-variable lvalues, references, reference identity, and copy-on-write
+interactions.

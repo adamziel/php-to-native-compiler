@@ -26,17 +26,19 @@ Supported today:
   native runtime symbol table.
 - Generic runtime diagnostics for undefined direct variable reads. The read
   still yields `null` after emitting a warning boundary.
-- Boxed scalar `+` numeric addition and `.` string concatenation expressions,
-  including chained expressions and assignment results. The parser treats `+`
-  as higher precedence than `.` and the backend emits runtime calls over
-  `PtnValue` operands.
-- Direct named-variable compound assignment for `+=` and `.=`. These lower as
-  a variable read, boxed `+` or `.`, then a variable write, preserving the
-  existing undefined-variable diagnostic boundary.
-- Parenthesized expressions for grouping supported scalar expressions,
-  including nested grouping, plus unary `-`, unary `!`, and `(int)`, `(float)`,
-  `(string)`, and `(bool)` casts for boxed scalar values. Unary and cast
-  operations are emitted as runtime helper calls over `PtnValue` operands.
+- Boxed scalar `+`, `-`, `*`, `/`, and `%` numeric arithmetic and `.` string
+  concatenation expressions, including chained expressions and assignment
+  results. The parser treats `*`, `/`, and `%` as higher precedence than `+`
+  and `-`, and arithmetic as higher precedence than `.`, while the backend
+  emits runtime calls over `PtnValue` operands.
+- Direct named-variable compound assignment for `+=`, `-=`, `*=`, `/=`, `%=`,
+  and `.=`. These lower as a variable read, the matching boxed binary helper,
+  then a variable write, preserving the existing undefined-variable diagnostic
+  boundary.
+- Parenthesized expressions, unary `-`, unary `!`, and `(int)`, `(float)`,
+  `(string)`, and `(bool)` casts for boxed scalar values. Unary, cast, and
+  binary operations are emitted as runtime helper calls over `PtnValue`
+  operands.
 - Boxed scalar comparison and boolean expressions: `==`, `!=`, `<`, `<=`, `>`,
   `>=`, `&&`, and `||`. Boolean operators short-circuit over boxed PHP
   truthiness for the currently supported scalar value types.
@@ -45,13 +47,14 @@ Unsupported today:
 
 - Arrays, objects, functions, classes, includes, references, copy-on-write,
   resources, exceptions, array/object/reference compound-assignment lvalues,
-  compound operators other than `+=` and `.=` (`-=`, `*=`, `/=`, `%=`, `**=`,
+  compound operators other than `+=`, `-=`, `*=`, `/=`, `%=`, and `.=` (`**=`,
   `&=`, `|=`, `^=`, `<<=`, `>>=`, `??=`), `print` as an expression returning
   `1` even when spelled `print(...)`, increment/decrement operators, full
-  PHP numeric-string and non-numeric string arithmetic diagnostics, complete
-  comparison parity for unsupported types, identity/spaceship comparison
-  operators, keyword boolean operators, chained comparison parse errors,
-  overflow parity, exact scalar cast overflow behavior, PHP-exact warning
+  PHP numeric-string and non-numeric string arithmetic diagnostics, exact
+  division/modulo-by-zero exception behavior, complete comparison parity for
+  unsupported types, identity/spaceship comparison operators, keyword boolean
+  operators, chained comparison parse errors, complete overflow parity, exact
+  scalar cast overflow behavior, PHP-exact warning
   text/file/line/error-handler behavior, inline HTML before `<?php`, between
   PHP blocks, or after a closing PHP tag, doc comment retention, variable
   variables, and dynamic fallback. These are architecture targets, not excuses

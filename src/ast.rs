@@ -27,6 +27,10 @@ pub enum Statement {
 pub enum AssignmentOp {
     Assign,
     AddAssign,
+    SubtractAssign,
+    MultiplyAssign,
+    DivideAssign,
+    ModuloAssign,
     ConcatAssign,
 }
 
@@ -63,6 +67,10 @@ pub enum Expr {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinaryOp {
     Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Modulo,
     Concat,
     Equal,
     NotEqual,

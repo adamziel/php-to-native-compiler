@@ -136,7 +136,12 @@ impl ValueEmitter {
         right: &ValueExpr,
     ) -> String {
         match op {
-            BinaryOp::Add | BinaryOp::Concat => self.emit_runtime_binary(out, op, left, right),
+            BinaryOp::Add
+            | BinaryOp::Subtract
+            | BinaryOp::Multiply
+            | BinaryOp::Divide
+            | BinaryOp::Modulo
+            | BinaryOp::Concat => self.emit_runtime_binary(out, op, left, right),
             BinaryOp::Equal
             | BinaryOp::NotEqual
             | BinaryOp::Less
@@ -162,6 +167,10 @@ impl ValueEmitter {
         out.push_str(" = ");
         out.push_str(match op {
             BinaryOp::Add => "ptn_add",
+            BinaryOp::Subtract => "ptn_subtract",
+            BinaryOp::Multiply => "ptn_multiply",
+            BinaryOp::Divide => "ptn_divide",
+            BinaryOp::Modulo => "ptn_modulo",
             BinaryOp::Concat => "ptn_concat",
             _ => unreachable!(),
         });
@@ -607,6 +616,13 @@ static PTN_UNUSED PtnValue ptn_cast_float(PtnValue value) {
     return ptn_float(number.floating);
 }
 
+static PTN_UNUSED void ptn_abort_arithmetic_error(const char *message) {
+    fputs("Fatal error: ", stderr);
+    fputs(message, stderr);
+    fputc('\n', stderr);
+    exit(1);
+}
+
 static PTN_UNUSED int ptn_is_number_type(PtnValue value) {
     return value.type == PTN_INT || value.type == PTN_FLOAT;
 }
@@ -789,6 +805,86 @@ static PTN_UNUSED PtnValue ptn_add(PtnValue left, PtnValue right) {
         return ptn_float((double)left_number.integer + (double)right_number.integer);
     }
     return ptn_int(left_number.integer + right_number.integer);
+}
+
+static PTN_UNUSED PtnValue ptn_subtract(PtnValue left, PtnValue right) {
+    PtnNumber left_number = ptn_to_number(left);
+    PtnNumber right_number = ptn_to_number(right);
+    if (left_number.type == PTN_NUMBER_FLOAT || right_number.type == PTN_NUMBER_FLOAT) {
+        return ptn_float(left_number.floating - right_number.floating);
+    }
+
+    if ((right_number.integer < 0 && left_number.integer > INT64_MAX + right_number.integer) ||
+        (right_number.integer > 0 && left_number.integer < INT64_MIN + right_number.integer)) {
+        return ptn_float((double)left_number.integer - (double)right_number.integer);
+    }
+    return ptn_int(left_number.integer - right_number.integer);
+}
+
+static PTN_UNUSED int ptn_multiply_overflows(int64_t left, int64_t right) {
+    if (left == 0 || right == 0) {
+        return 0;
+    }
+    if (left > 0) {
+        if (right > 0) {
+            return left > INT64_MAX / right;
+        }
+        return right < INT64_MIN / left;
+    }
+    if (right > 0) {
+        return left < INT64_MIN / right;
+    }
+    return right < INT64_MAX / left;
+}
+
+static PTN_UNUSED PtnValue ptn_multiply(PtnValue left, PtnValue right) {
+    PtnNumber left_number = ptn_to_number(left);
+    PtnNumber right_number = ptn_to_number(right);
+    if (left_number.type == PTN_NUMBER_FLOAT || right_number.type == PTN_NUMBER_FLOAT) {
+        return ptn_float(left_number.floating * right_number.floating);
+    }
+
+    if (ptn_multiply_overflows(left_number.integer, right_number.integer)) {
+        return ptn_float((double)left_number.integer * (double)right_number.integer);
+    }
+    return ptn_int(left_number.integer * right_number.integer);
+}
+
+static PTN_UNUSED int64_t ptn_number_to_integer(PtnNumber number) {
+    if (number.type == PTN_NUMBER_FLOAT) {
+        return (int64_t)number.floating;
+    }
+    return number.integer;
+}
+
+static PTN_UNUSED PtnValue ptn_divide(PtnValue left, PtnValue right) {
+    PtnNumber left_number = ptn_to_number(left);
+    PtnNumber right_number = ptn_to_number(right);
+    if (right_number.floating == 0.0) {
+        ptn_abort_arithmetic_error("Division by zero");
+    }
+
+    if (left_number.type == PTN_NUMBER_INT && right_number.type == PTN_NUMBER_INT) {
+        if (left_number.integer == INT64_MIN && right_number.integer == -1) {
+            return ptn_float((double)left_number.integer / (double)right_number.integer);
+        }
+        if (left_number.integer % right_number.integer == 0) {
+            return ptn_int(left_number.integer / right_number.integer);
+        }
+    }
+    return ptn_float(left_number.floating / right_number.floating);
+}
+
+static PTN_UNUSED PtnValue ptn_modulo(PtnValue left, PtnValue right) {
+    int64_t left_integer = ptn_number_to_integer(ptn_to_number(left));
+    int64_t right_integer = ptn_number_to_integer(ptn_to_number(right));
+    if (right_integer == 0) {
+        ptn_abort_arithmetic_error("Modulo by zero");
+    }
+    if (left_integer == INT64_MIN && right_integer == -1) {
+        return ptn_int(0);
+    }
+    return ptn_int(left_integer % right_integer);
 }
 
 static PTN_UNUSED char *ptn_value_to_string(PtnValue value) {
