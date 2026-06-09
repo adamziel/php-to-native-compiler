@@ -15,16 +15,18 @@ enum Category {
     Functions,
     NestedValues,
     References,
+    ArrayElementReferences,
 }
 
 impl Category {
-    const ALL: [Category; 6] = [
+    const ALL: [Category; 7] = [
         Category::Arrays,
         Category::Strings,
         Category::Foreach,
         Category::Functions,
         Category::NestedValues,
         Category::References,
+        Category::ArrayElementReferences,
     ];
 
     fn name(self) -> &'static str {
@@ -35,6 +37,7 @@ impl Category {
             Category::Functions => "functions",
             Category::NestedValues => "nested values",
             Category::References => "references",
+            Category::ArrayElementReferences => "array element references",
         }
     }
 }
@@ -253,6 +256,125 @@ unset($item);
 var_dump($items);
 "#,
     },
+    CowCase {
+        name: "array_element_reference_after_prior_copy_detaches_plain_copy",
+        category: Category::ArrayElementReferences,
+        source: r#"<?php
+$items = [1];
+$copy = $items;
+$ref =& $items[0];
+$ref = 2;
+var_dump($items[0], $copy[0], $ref);
+"#,
+    },
+    CowCase {
+        name: "copy_after_array_element_reference_shares_cell",
+        category: Category::ArrayElementReferences,
+        source: r#"<?php
+$items = [1];
+$ref =& $items[0];
+$copy = $items;
+$copy[0] = 2;
+var_dump($items[0], $ref, $copy[0]);
+"#,
+    },
+    CowCase {
+        name: "copied_array_non_reference_sibling_detaches",
+        category: Category::ArrayElementReferences,
+        source: r#"<?php
+$items = [1, 2];
+$ref =& $items[0];
+$copy = $items;
+$copy[1] = 8;
+var_dump($items[0], $ref, $items[1], $copy[0], $copy[1]);
+"#,
+    },
+    CowCase {
+        name: "copied_array_append_keeps_shared_reference_cell",
+        category: Category::ArrayElementReferences,
+        source: r#"<?php
+$items = [1];
+$ref =& $items[0];
+$copy = $items;
+$copy[] = 2;
+$copy[0] = 3;
+var_dump($items[0], $ref, $copy[0], $copy[1]);
+"#,
+    },
+    CowCase {
+        name: "copied_array_unset_non_reference_preserves_reference_cell",
+        category: Category::ArrayElementReferences,
+        source: r#"<?php
+$items = ["x" => 1, "y" => 2];
+$ref =& $items["x"];
+$copy = $items;
+unset($copy["y"]);
+$copy["x"] = 4;
+var_dump(isset($items["y"]), isset($copy["y"]), $items["x"], $ref, $copy["x"]);
+"#,
+    },
+    CowCase {
+        name: "reference_assignment_into_copied_array_detaches_target",
+        category: Category::ArrayElementReferences,
+        source: r#"<?php
+$items = [1];
+$copy = $items;
+$other = 5;
+$copy[0] =& $other;
+$other = 6;
+$copy[0] = 7;
+var_dump($items[0], $copy[0], $other);
+"#,
+    },
+    CowCase {
+        name: "reference_assignment_between_elements_after_copy",
+        category: Category::ArrayElementReferences,
+        source: r#"<?php
+$items = [1, 2];
+$copy = $items;
+$copy[1] =& $items[0];
+$copy[1] = 9;
+var_dump($items[0], $items[1], $copy[0], $copy[1]);
+"#,
+    },
+    CowCase {
+        name: "nested_reference_element_mutation_stays_shared",
+        category: Category::ArrayElementReferences,
+        source: r#"<?php
+$items = [["x" => 1]];
+$ref =& $items[0];
+$copy = $items;
+$copy[0]["x"] = 2;
+var_dump($items[0]["x"], $ref["x"], $copy[0]["x"]);
+"#,
+    },
+    CowCase {
+        name: "nested_plain_sibling_detaches_while_reference_sibling_shares",
+        category: Category::ArrayElementReferences,
+        source: r#"<?php
+$items = [["plain" => 1], ["ref" => 2]];
+$ref =& $items[1];
+$copy = $items;
+$copy[0]["plain"] = 9;
+$copy[1]["ref"] = 8;
+var_dump($items[0]["plain"], $copy[0]["plain"], $items[1]["ref"], $copy[1]["ref"], $ref["ref"]);
+"#,
+    },
+    CowCase {
+        name: "by_value_function_argument_preserves_reference_cells",
+        category: Category::ArrayElementReferences,
+        source: r#"<?php
+function mutate($value) {
+    $value[0] = 7;
+    $value[1] = 8;
+    return $value;
+}
+$items = [1, 2];
+$ref =& $items[0];
+$result = mutate($items);
+var_dump($items[0], $ref, $items[1], $result[0], $result[1]);
+"#,
+    },
 ];
 
 fn run_php(path: &Path) -> ProcessOutput {
@@ -392,7 +514,8 @@ fn assert_baseline(stats: &BTreeMap<Category, CategoryStats>, report: &str) {
         (Category::Foreach, 2, 2),
         (Category::Functions, 3, 3),
         (Category::NestedValues, 2, 2),
-        (Category::References, 2, 0),
+        (Category::References, 2, 1),
+        (Category::ArrayElementReferences, 10, 10),
     ];
 
     let mut total_matched = 0;
@@ -414,8 +537,8 @@ fn assert_baseline(stats: &BTreeMap<Category, CategoryStats>, report: &str) {
         );
     }
     assert!(
-        total_matched >= 10,
-        "COW oracle coverage regressed below 10/12\n{}",
+        total_matched >= 21,
+        "COW oracle coverage regressed below 21/22\n{}",
         report
     );
 }
