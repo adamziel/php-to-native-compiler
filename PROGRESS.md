@@ -1955,3 +1955,17 @@ Added hash-assisted lookup for runtime variables and constants:
 No new PHP surface is claimed by this performance slice. Variable variables,
 globals/superglobals, namespace/class constants, additional built-in/extension
 constants, and exact runtime diagnostic/error-handler parity remain unsupported.
+
+Split backend runtime emission into lane-owned modules without changing emitted
+C:
+
+- `src/backend.rs` continues to own the public `emit_c()` and `compile_c()`
+  APIs, Rust IR-to-C emission, user-function wrappers, control-flow labels, and
+  native compiler invocation.
+- `src/backend/runtime.rs` owns the embedded generated C runtime string,
+  including boxed values, arrays, symbol/constant tables, diagnostics, scalar
+  operators, output helpers, internal function dispatch, and runtime lookup
+  helpers.
+
+No PHP behavior or generated C output is intended to change from this
+modularization.
