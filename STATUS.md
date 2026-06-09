@@ -1,6 +1,6 @@
 # Harness Status
 
-Last generated: 2026-06-09T09:38:47+00:00
+Last generated: 2026-06-09T09:38:55+00:00
 
 ## Runtime alerts
 None.
@@ -27,6 +27,10 @@ No resource samples recorded yet.
 - 2026-06-09T09:38:46+00:00 **goal**: Goal recorded
 - 2026-06-09T09:38:46+00:00 **mcp**: Harness MCP server passed init preflight
 - 2026-06-09T09:38:47+00:00 **index**: Indexed 60 files during init
+- 2026-06-09T09:38:48+00:00 **status_published**: Committed and pushed status update to origin/master
+- 2026-06-09T09:38:48+00:00 **init**: Harness initialized or repaired
+- 2026-06-09T09:38:55+00:00 **mcp**: Harness MCP tools exposed to Codex workers
+- 2026-06-09T09:38:55+00:00 **tmux**: Interactive support windows ready
 
 ## Next steps
 Keep scheduler loops running, refresh status, and audit measurable progress.
