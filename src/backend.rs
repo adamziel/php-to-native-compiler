@@ -1534,6 +1534,12 @@ typedef struct {
 } PtnNumber;
 
 typedef struct {
+    const char *data;
+    char *owned;
+    size_t len;
+} PtnStringOperand;
+
+typedef struct {
     char *name;
     PtnValue value;
 } PtnSymbol;
@@ -3154,15 +3160,60 @@ static PTN_UNUSED char *ptn_value_to_string(PtnValue value) {
     return ptn_duplicate_string(buffer);
 }
 
-static PTN_UNUSED PtnValue ptn_concat(PtnValue left, PtnValue right) {
-    char *left_string = ptn_value_to_string(left);
-    char *right_string = ptn_value_to_string(right);
-    size_t left_len = strlen(left_string);
-    size_t right_len = strlen(right_string);
-    if (left_len > SIZE_MAX - right_len) {
+static PTN_UNUSED PtnStringOperand ptn_string_operand_borrowed(const char *data) {
+    PtnStringOperand operand;
+    operand.data = data;
+    operand.owned = NULL;
+    operand.len = strlen(data);
+    return operand;
+}
+
+static PTN_UNUSED PtnStringOperand ptn_string_operand_owned(char *data) {
+    PtnStringOperand operand;
+    operand.data = data;
+    operand.owned = data;
+    operand.len = strlen(data);
+    return operand;
+}
+
+static PTN_UNUSED void ptn_string_operand_free(PtnStringOperand operand) {
+    free(operand.owned);
+}
+
+static PTN_UNUSED PtnStringOperand ptn_value_to_string_operand(PtnValue value) {
+    char buffer[128];
+    int written = 0;
+
+    switch (value.type) {
+        case PTN_NULL:
+            return ptn_string_operand_borrowed("");
+        case PTN_BOOL:
+            return ptn_string_operand_borrowed(value.as.boolean ? "1" : "");
+        case PTN_INT:
+            written = snprintf(buffer, sizeof(buffer), "%lld", (long long)value.as.integer);
+            break;
+        case PTN_FLOAT:
+            written = snprintf(buffer, sizeof(buffer), "%.14g", value.as.floating);
+            break;
+        case PTN_STRING:
+            return ptn_string_operand_borrowed(value.as.string);
+        case PTN_ARRAY:
+            return ptn_string_operand_borrowed("Array");
+    }
+
+    if (written < 0 || (size_t)written >= sizeof(buffer)) {
         ptn_abort_out_of_memory();
     }
-    size_t joined_len = left_len + right_len;
+    return ptn_string_operand_owned(ptn_duplicate_string(buffer));
+}
+
+static PTN_UNUSED PtnValue ptn_concat(PtnValue left, PtnValue right) {
+    PtnStringOperand left_string = ptn_value_to_string_operand(left);
+    PtnStringOperand right_string = ptn_value_to_string_operand(right);
+    if (left_string.len > SIZE_MAX - right_string.len) {
+        ptn_abort_out_of_memory();
+    }
+    size_t joined_len = left_string.len + right_string.len;
     if (joined_len == SIZE_MAX) {
         ptn_abort_out_of_memory();
     }
@@ -3170,10 +3221,11 @@ static PTN_UNUSED PtnValue ptn_concat(PtnValue left, PtnValue right) {
     if (joined == NULL) {
         ptn_abort_out_of_memory();
     }
-    memcpy(joined, left_string, left_len);
-    memcpy(joined + left_len, right_string, right_len + 1);
-    free(left_string);
-    free(right_string);
+    memcpy(joined, left_string.data, left_string.len);
+    memcpy(joined + left_string.len, right_string.data, right_string.len);
+    joined[joined_len] = '\0';
+    ptn_string_operand_free(left_string);
+    ptn_string_operand_free(right_string);
     return ptn_owned_string(joined);
 }
 

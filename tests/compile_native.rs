@@ -5437,6 +5437,40 @@ fn compile_boxed_binary_operations_to_native_binary() {
 }
 
 #[test]
+fn compile_concat_chains_and_compound_loops_to_native_binary() {
+    let root = temp_dir("ptn-native-concat-chains-and-loops");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("concat-chains-and-loops.php");
+    let output = root.join("concat-chains-and-loops-bin");
+    fs::write(
+        &input,
+        "<?php
+$chain = \"\";
+$i = 0;
+while ($i < 25) {
+    $chain = $chain . \"a\" . $i . \"-\";
+    $i++;
+}
+$compound = \"\";
+for ($j = 0; $j < 25; $j++) {
+    $compound .= \"b\";
+    $compound .= $j;
+    $compound .= \"|\";
+}
+echo strlen($chain), \" \", strlen($compound), \"\\n\";
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "90 90\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_numeric_string_and_float_addition_to_native_binary() {
     let root = temp_dir("ptn-native-addition-conversions");
     fs::create_dir_all(&root).unwrap();
