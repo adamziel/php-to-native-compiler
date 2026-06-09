@@ -7630,6 +7630,152 @@ var_dump($source, $result);
 }
 
 #[test]
+fn compile_function_boundary_cow_payloads_to_native_binary() {
+    let root = temp_dir("ptn-native-function-boundary-cow-payloads");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("function-boundary-cow-payloads.php");
+    let output = root.join("function-boundary-cow-payloads-bin");
+    fs::write(
+        &input,
+        "<?php
+function mutate_by_value($arr, $str) {
+    $local_arr = $arr;
+    $local_str = $str;
+    $local_extra = func_get_arg(2);
+    $arr[\"param\"] = \"changed\";
+    $local_arr[] = \"local\";
+    $str[0] = \"Z\";
+    $local_str[1] = \"Y\";
+    $local_extra[] = \"extra-local\";
+    return [$arr, $local_arr, $str, $local_str, func_get_arg(0), func_get_arg(1), func_get_arg(2), $local_extra];
+}
+
+function identity($value) { return $value; }
+
+function recurse_array($value, $depth) {
+    if ($depth <= 0) {
+        return $value;
+    }
+    $again = recurse_array($value, $depth - 1);
+    $again[] = \"depth-\" . $depth;
+    return $again;
+}
+
+$base = [\"k\" => \"v\"];
+$text = \"abc\";
+$extra = [\"e\" => \"v\"];
+$result = mutate_by_value($base, $text, $extra);
+var_dump($base, $text, $extra, $result);
+
+$returned_arr = identity($base);
+$returned_arr[\"r\"] = \"ret\";
+$returned_str = identity($text);
+$returned_str[2] = \"Z\";
+var_dump($base, $returned_arr, $text, $returned_str);
+
+$recursive_seed = [\"seed\"];
+$recursive = recurse_array($recursive_seed, 2);
+var_dump($recursive_seed, $recursive);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(1) {\n",
+            "  [\"k\"]=>\n",
+            "  string(1) \"v\"\n",
+            "}\n",
+            "string(3) \"abc\"\n",
+            "array(1) {\n",
+            "  [\"e\"]=>\n",
+            "  string(1) \"v\"\n",
+            "}\n",
+            "array(8) {\n",
+            "  [0]=>\n",
+            "  array(2) {\n",
+            "    [\"k\"]=>\n",
+            "    string(1) \"v\"\n",
+            "    [\"param\"]=>\n",
+            "    string(7) \"changed\"\n",
+            "  }\n",
+            "  [1]=>\n",
+            "  array(2) {\n",
+            "    [\"k\"]=>\n",
+            "    string(1) \"v\"\n",
+            "    [0]=>\n",
+            "    string(5) \"local\"\n",
+            "  }\n",
+            "  [2]=>\n",
+            "  string(3) \"Zbc\"\n",
+            "  [3]=>\n",
+            "  string(3) \"aYc\"\n",
+            "  [4]=>\n",
+            "  array(2) {\n",
+            "    [\"k\"]=>\n",
+            "    string(1) \"v\"\n",
+            "    [\"param\"]=>\n",
+            "    string(7) \"changed\"\n",
+            "  }\n",
+            "  [5]=>\n",
+            "  string(3) \"Zbc\"\n",
+            "  [6]=>\n",
+            "  array(1) {\n",
+            "    [\"e\"]=>\n",
+            "    string(1) \"v\"\n",
+            "  }\n",
+            "  [7]=>\n",
+            "  array(2) {\n",
+            "    [\"e\"]=>\n",
+            "    string(1) \"v\"\n",
+            "    [0]=>\n",
+            "    string(11) \"extra-local\"\n",
+            "  }\n",
+            "}\n",
+            "array(1) {\n",
+            "  [\"k\"]=>\n",
+            "  string(1) \"v\"\n",
+            "}\n",
+            "array(2) {\n",
+            "  [\"k\"]=>\n",
+            "  string(1) \"v\"\n",
+            "  [\"r\"]=>\n",
+            "  string(3) \"ret\"\n",
+            "}\n",
+            "string(3) \"abc\"\n",
+            "string(3) \"abZ\"\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  string(4) \"seed\"\n",
+            "}\n",
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  string(4) \"seed\"\n",
+            "  [1]=>\n",
+            "  string(7) \"depth-1\"\n",
+            "  [2]=>\n",
+            "  string(7) \"depth-2\"\n",
+            "}\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_set_call_frame"));
+    assert!(c_source.contains("ptn_return_value = ptn_value_share("));
+    assert!(c_source.contains("ptn_runtime_write_variable(&runtime, \"arr\", args[0]);"));
+    assert!(c_source.contains("ptn_runtime_write_variable(&runtime, \"str\", args[1]);"));
+    assert!(
+        c_source.contains("static PTN_UNUSED PtnArray *ptn_value_detach_array(PtnValue *value)")
+    );
+}
+
+#[test]
 fn compile_array_concat_emits_string_conversion_warnings_to_native_binary() {
     let root = temp_dir("ptn-native-array-concat-warnings");
     fs::create_dir_all(&root).unwrap();

@@ -1,7 +1,7 @@
 # PTN Progress
 
-Last refresh: 2026-06-09T18:11Z
-Measured base: `ptn-cqu.47.14` rebased after `ptn-cqu.47.8`
+Last refresh: 2026-06-09T18:15Z
+Measured base: `ptn-cqu.47.7` rebased after `ptn-cqu.47.14`
 
 ## Test Dashboard
 
@@ -44,24 +44,23 @@ refcounts with detach-on-write, by-value `foreach` COW snapshots, generated C
 ABI share/drop handling, shared array/string payload COW with nested path
 detach, direct variable reference aliases, array element references,
 by-reference user parameters, by-value parameter/reference split behavior,
-top-level user functions with scoped magic constants and `func_*`
-introspection, `print_r`, selected binary-string handling, string offset read
-diagnostics, direct-variable string offset writes, catchable `count()`
-non-array diagnostics, expression-form `??` reads, nested array path detach for
-assignment, append, and unset, focused native COW reducers, COW oracle
-coverage, and five explicit unsupported diagnostics for non-variable mutating
-internals.
+by-value function-boundary COW across arguments, locals, returns, recursion,
+and extra arguments, top-level user functions with scoped magic constants and
+`func_*` introspection, `print_r`, selected binary-string handling, string
+offset read diagnostics, direct-variable string offset writes, catchable
+`count()` non-array diagnostics, expression-form `??` reads, nested array path
+detach for assignment, append, and unset, focused native COW reducers, COW
+oracle coverage, and five explicit unsupported diagnostics for non-variable
+mutating internals.
 
 ## Still Needed
 
-Broader COW for strings, function boundaries, by-reference foreach, and
-remaining reference edges such as by-reference returns, nested reference lvalues,
-recursive reference diagnostics, and dynamic calls. Assignment-form `??=`
-remains unsupported.
+Broader COW for strings, references, by-reference foreach, and dynamic edges
+such as by-reference returns, nested reference lvalues, recursive reference
+diagnostics, and dynamic calls. Assignment-form `??=` remains unsupported.
 
 ## Next Focus
 
-1. Expand the COW/reference suite into strings and function boundaries.
-2. Carry array COW through more by-reference and dynamic call paths.
-3. Prove by-reference foreach paths remain blocked or become implemented.
-4. Keep dashboard cells numeric and every status file under 500 words.
+1. Prove strings and references.
+2. Carry COW through by-reference and dynamic call paths.
+3. Keep dashboard cells numeric and every status file under 500 words.
