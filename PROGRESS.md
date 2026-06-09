@@ -1963,6 +1963,36 @@ No new PHP surface is claimed by this performance slice. Variable variables,
 globals/superglobals, namespace/class constants, additional built-in/extension
 constants, and exact runtime diagnostic/error-handler parity remain unsupported.
 
+Optimized generated scalar numeric hot paths:
+
+- Generated C runtime helpers now check already-boxed `int`, `float`, `bool`,
+  and `null` operands before falling back to the generic `ptn_to_number()`
+  conversion path.
+- Arithmetic helpers for `+`, `-`, `*`, `**`, `/`, and `%` keep the existing
+  integer overflow and divide/modulo-by-zero boundaries while avoiding generic
+  conversion work for common scalar operands.
+- Integer-only conversion users such as `%`, bitwise operators, shifts, and
+  `intdiv()` still emit the existing float and float-string precision-loss
+  deprecation boundaries when those slower operands are present.
+- Scalar numeric comparisons, unary `+`/`-`, `(int)`, `(float)`, and math
+  internals such as `ceil()`, `floor()`, `sqrt()`, and `fdiv()` share the same
+  fast scalar checks before using string/array fallback conversion.
+- Native tests prove common `int`/`float`/`bool`/`null` arithmetic,
+  comparison, casts, `%`, and `fdiv()` through compiled binaries, alongside
+  existing arithmetic and integer-operator deprecation coverage.
+- Native benchmark proof after the latest baseline at
+  `b4a833ae359d5ff2df68d398fed9527126cd3ee3`: the short
+  `tools/bench-native-execution.sh --runs 5` scalar loop is close to timer
+  noise after direct predicate specialization, so a larger temporary
+  2,000,000-iteration loop with the same scalar arithmetic body was used for
+  the speed delta. That loop improved from `0.244812s` best on current master
+  to `0.164415s` best on the optimized branch, with the same deterministic
+  output.
+
+No new PHP surface is claimed by this performance slice. Strings, arrays,
+unsupported objects, and diagnostic edge cases still use the existing generic
+conversion and unsupported-boundary behavior.
+
 Split backend runtime emission into lane-owned modules without changing emitted
 C:
 

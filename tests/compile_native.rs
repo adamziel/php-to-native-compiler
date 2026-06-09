@@ -5737,6 +5737,29 @@ fn compile_numeric_string_and_float_addition_to_native_binary() {
 }
 
 #[test]
+fn compile_common_scalar_numeric_paths_to_native_binary() {
+    let root = temp_dir("ptn-native-common-scalar-numeric-paths");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("common-scalar-numeric-paths.php");
+    let output = root.join("common-scalar-numeric-paths-bin");
+    fs::write(
+        &input,
+        "<?php $int = 10; $float = 2.5; $truthy = true; $empty = null; var_dump($int + $truthy); var_dump($float * $int); var_dump($int / 2); var_dump($empty + 4); var_dump($int % 4); var_dump($int > 9); var_dump((int)$truthy); var_dump((float)$int); var_dump(fdiv($int, 4));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(11)\nfloat(25)\nint(5)\nint(4)\nint(2)\nbool(true)\nint(1)\nfloat(1E+1)\nfloat(2.5)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_boxed_arithmetic_literals_to_native_binary() {
     let root = temp_dir("ptn-native-arithmetic-literals");
     fs::create_dir_all(&root).unwrap();

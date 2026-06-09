@@ -870,7 +870,50 @@ static PTN_UNUSED PtnNumber ptn_to_number(PtnValue value) {
     return ptn_number_int(0);
 }
 
+static PTN_UNUSED int ptn_fast_integer_value(PtnValue value, int64_t *integer) {
+    switch (value.type) {
+        case PTN_NULL:
+            *integer = 0;
+            return 1;
+        case PTN_BOOL:
+            *integer = value.as.boolean ? 1 : 0;
+            return 1;
+        case PTN_INT:
+            *integer = value.as.integer;
+            return 1;
+        case PTN_FLOAT:
+        case PTN_STRING:
+        case PTN_ARRAY:
+            return 0;
+    }
+    return 0;
+}
+
+static PTN_UNUSED int ptn_fast_scalar_double(PtnValue value, double *number) {
+    int64_t integer = 0;
+    if (ptn_fast_integer_value(value, &integer)) {
+        *number = (double)integer;
+        return 1;
+    }
+    if (value.type == PTN_FLOAT) {
+        *number = value.as.floating;
+        return 1;
+    }
+    return 0;
+}
+
 static PTN_UNUSED PtnValue ptn_negate(PtnValue value) {
+    int64_t integer = 0;
+    if (ptn_fast_integer_value(value, &integer)) {
+        if (integer == INT64_MIN) {
+            return ptn_float(-(double)integer);
+        }
+        return ptn_int(-integer);
+    }
+    if (value.type == PTN_FLOAT) {
+        return ptn_float(-value.as.floating);
+    }
+
     PtnNumber number = ptn_to_number(value);
     if (number.type == PTN_NUMBER_FLOAT) {
         return ptn_float(-number.floating);
@@ -882,6 +925,14 @@ static PTN_UNUSED PtnValue ptn_negate(PtnValue value) {
 }
 
 static PTN_UNUSED PtnValue ptn_positive(PtnValue value) {
+    int64_t integer = 0;
+    if (ptn_fast_integer_value(value, &integer)) {
+        return ptn_int(integer);
+    }
+    if (value.type == PTN_FLOAT) {
+        return ptn_float(value.as.floating);
+    }
+
     PtnNumber number = ptn_to_number(value);
     if (number.type == PTN_NUMBER_FLOAT) {
         return ptn_float(number.floating);
@@ -912,6 +963,14 @@ static PTN_UNUSED PtnValue ptn_not(PtnValue value) {
 }
 
 static PTN_UNUSED PtnValue ptn_cast_int(PtnValue value) {
+    int64_t integer = 0;
+    if (ptn_fast_integer_value(value, &integer)) {
+        return ptn_int(integer);
+    }
+    if (value.type == PTN_FLOAT) {
+        return ptn_int((int64_t)value.as.floating);
+    }
+
     PtnNumber number = ptn_to_number(value);
     if (number.type == PTN_NUMBER_FLOAT) {
         return ptn_int((int64_t)number.floating);
@@ -920,6 +979,11 @@ static PTN_UNUSED PtnValue ptn_cast_int(PtnValue value) {
 }
 
 static PTN_UNUSED PtnValue ptn_cast_float(PtnValue value) {
+    double fast_number = 0.0;
+    if (ptn_fast_scalar_double(value, &fast_number)) {
+        return ptn_float(fast_number);
+    }
+
     PtnNumber number = ptn_to_number(value);
     return ptn_float(number.floating);
 }
@@ -999,6 +1063,16 @@ static PTN_UNUSED int ptn_compare_numbers(double left, double right) {
     if (isnan(left) || isnan(right)) {
         return PTN_COMPARE_UNORDERED;
     }
+    if (left < right) {
+        return PTN_COMPARE_LESS;
+    }
+    if (left > right) {
+        return PTN_COMPARE_GREATER;
+    }
+    return PTN_COMPARE_EQUAL;
+}
+
+static PTN_UNUSED int ptn_compare_integers(int64_t left, int64_t right) {
     if (left < right) {
         return PTN_COMPARE_LESS;
     }
@@ -1443,6 +1517,14 @@ static PTN_UNUSED int ptn_compare_equal(PtnValue left, PtnValue right) {
 
     double left_number = 0.0;
     double right_number = 0.0;
+    if (left.type == PTN_INT && right.type == PTN_INT) {
+        return left.as.integer == right.as.integer;
+    }
+    if (ptn_is_number_type(left) && ptn_is_number_type(right)) {
+        left_number = left.type == PTN_INT ? (double)left.as.integer : left.as.floating;
+        right_number = right.type == PTN_INT ? (double)right.as.integer : right.as.floating;
+        return ptn_compare_numbers(left_number, right_number) == PTN_COMPARE_EQUAL;
+    }
     if (ptn_comparison_numeric_value(left, &left_number) &&
         ptn_comparison_numeric_value(right, &right_number)) {
         return ptn_compare_numbers(left_number, right_number) == PTN_COMPARE_EQUAL;
@@ -1525,6 +1607,14 @@ static PTN_UNUSED int ptn_compare_order(PtnValue left, PtnValue right) {
 
     double left_number = 0.0;
     double right_number = 0.0;
+    if (left.type == PTN_INT && right.type == PTN_INT) {
+        return ptn_compare_integers(left.as.integer, right.as.integer);
+    }
+    if (ptn_is_number_type(left) && ptn_is_number_type(right)) {
+        left_number = left.type == PTN_INT ? (double)left.as.integer : left.as.floating;
+        right_number = right.type == PTN_INT ? (double)right.as.integer : right.as.floating;
+        return ptn_compare_numbers(left_number, right_number);
+    }
     if (ptn_comparison_numeric_value(left, &left_number) &&
         ptn_comparison_numeric_value(right, &right_number)) {
         return ptn_compare_numbers(left_number, right_number);
@@ -1576,32 +1666,68 @@ static PTN_UNUSED int ptn_compare_spaceship(PtnValue left, PtnValue right) {
     return 1;
 }
 
+static PTN_UNUSED int ptn_fast_numeric_pair(PtnValue left, PtnValue right, double *left_number, double *right_number) {
+    return ptn_fast_scalar_double(left, left_number) && ptn_fast_scalar_double(right, right_number);
+}
+
+static PTN_UNUSED PtnValue ptn_add_integers(int64_t left, int64_t right) {
+    if ((right > 0 && left > INT64_MAX - right) ||
+        (right < 0 && left < INT64_MIN - right)) {
+        return ptn_float((double)left + (double)right);
+    }
+    return ptn_int(left + right);
+}
+
 static PTN_UNUSED PtnValue ptn_add(PtnValue left, PtnValue right) {
+    int64_t left_integer = 0;
+    int64_t right_integer = 0;
+    if (ptn_fast_integer_value(left, &left_integer) && ptn_fast_integer_value(right, &right_integer)) {
+        return ptn_add_integers(left_integer, right_integer);
+    }
+
+    double left_fast_number = 0.0;
+    double right_fast_number = 0.0;
+    if (ptn_fast_numeric_pair(left, right, &left_fast_number, &right_fast_number)) {
+        return ptn_float(left_fast_number + right_fast_number);
+    }
+
     PtnNumber left_number = ptn_to_number(left);
     PtnNumber right_number = ptn_to_number(right);
     if (left_number.type == PTN_NUMBER_FLOAT || right_number.type == PTN_NUMBER_FLOAT) {
         return ptn_float(left_number.floating + right_number.floating);
     }
 
-    if ((right_number.integer > 0 && left_number.integer > INT64_MAX - right_number.integer) ||
-        (right_number.integer < 0 && left_number.integer < INT64_MIN - right_number.integer)) {
-        return ptn_float((double)left_number.integer + (double)right_number.integer);
+    return ptn_add_integers(left_number.integer, right_number.integer);
+}
+
+static PTN_UNUSED PtnValue ptn_subtract_integers(int64_t left, int64_t right) {
+    if ((right < 0 && left > INT64_MAX + right) ||
+        (right > 0 && left < INT64_MIN + right)) {
+        return ptn_float((double)left - (double)right);
     }
-    return ptn_int(left_number.integer + right_number.integer);
+    return ptn_int(left - right);
 }
 
 static PTN_UNUSED PtnValue ptn_subtract(PtnValue left, PtnValue right) {
+    int64_t left_integer = 0;
+    int64_t right_integer = 0;
+    if (ptn_fast_integer_value(left, &left_integer) && ptn_fast_integer_value(right, &right_integer)) {
+        return ptn_subtract_integers(left_integer, right_integer);
+    }
+
+    double left_fast_number = 0.0;
+    double right_fast_number = 0.0;
+    if (ptn_fast_numeric_pair(left, right, &left_fast_number, &right_fast_number)) {
+        return ptn_float(left_fast_number - right_fast_number);
+    }
+
     PtnNumber left_number = ptn_to_number(left);
     PtnNumber right_number = ptn_to_number(right);
     if (left_number.type == PTN_NUMBER_FLOAT || right_number.type == PTN_NUMBER_FLOAT) {
         return ptn_float(left_number.floating - right_number.floating);
     }
 
-    if ((right_number.integer < 0 && left_number.integer > INT64_MAX + right_number.integer) ||
-        (right_number.integer > 0 && left_number.integer < INT64_MIN + right_number.integer)) {
-        return ptn_float((double)left_number.integer - (double)right_number.integer);
-    }
-    return ptn_int(left_number.integer - right_number.integer);
+    return ptn_subtract_integers(left_number.integer, right_number.integer);
 }
 
 static PTN_UNUSED int ptn_multiply_overflows(int64_t left, int64_t right) {
@@ -1620,17 +1746,33 @@ static PTN_UNUSED int ptn_multiply_overflows(int64_t left, int64_t right) {
     return right < INT64_MAX / left;
 }
 
+static PTN_UNUSED PtnValue ptn_multiply_integers(int64_t left, int64_t right) {
+    if (ptn_multiply_overflows(left, right)) {
+        return ptn_float((double)left * (double)right);
+    }
+    return ptn_int(left * right);
+}
+
 static PTN_UNUSED PtnValue ptn_multiply(PtnValue left, PtnValue right) {
+    int64_t left_integer = 0;
+    int64_t right_integer = 0;
+    if (ptn_fast_integer_value(left, &left_integer) && ptn_fast_integer_value(right, &right_integer)) {
+        return ptn_multiply_integers(left_integer, right_integer);
+    }
+
+    double left_fast_number = 0.0;
+    double right_fast_number = 0.0;
+    if (ptn_fast_numeric_pair(left, right, &left_fast_number, &right_fast_number)) {
+        return ptn_float(left_fast_number * right_fast_number);
+    }
+
     PtnNumber left_number = ptn_to_number(left);
     PtnNumber right_number = ptn_to_number(right);
     if (left_number.type == PTN_NUMBER_FLOAT || right_number.type == PTN_NUMBER_FLOAT) {
         return ptn_float(left_number.floating * right_number.floating);
     }
 
-    if (ptn_multiply_overflows(left_number.integer, right_number.integer)) {
-        return ptn_float((double)left_number.integer * (double)right_number.integer);
-    }
-    return ptn_int(left_number.integer * right_number.integer);
+    return ptn_multiply_integers(left_number.integer, right_number.integer);
 }
 
 static PTN_UNUSED int ptn_integer_power_fits(int64_t base, int64_t exponent, int64_t *out) {
@@ -1662,6 +1804,22 @@ static PTN_UNUSED int ptn_integer_power_fits(int64_t base, int64_t exponent, int
 }
 
 static PTN_UNUSED PtnValue ptn_power(PtnValue left, PtnValue right) {
+    int64_t left_integer = 0;
+    int64_t right_integer = 0;
+    if (ptn_fast_integer_value(left, &left_integer) && ptn_fast_integer_value(right, &right_integer)) {
+        int64_t integer_result = 0;
+        if (ptn_integer_power_fits(left_integer, right_integer, &integer_result)) {
+            return ptn_int(integer_result);
+        }
+        return ptn_float(pow((double)left_integer, (double)right_integer));
+    }
+
+    double left_fast_number = 0.0;
+    double right_fast_number = 0.0;
+    if (ptn_fast_numeric_pair(left, right, &left_fast_number, &right_fast_number)) {
+        return ptn_float(pow(left_fast_number, right_fast_number));
+    }
+
     PtnNumber left_number = ptn_to_number(left);
     PtnNumber right_number = ptn_to_number(right);
     if (left_number.type == PTN_NUMBER_INT && right_number.type == PTN_NUMBER_INT) {
@@ -1674,6 +1832,30 @@ static PTN_UNUSED PtnValue ptn_power(PtnValue left, PtnValue right) {
 }
 
 static PTN_UNUSED PtnValue ptn_divide(PtnValue left, PtnValue right) {
+    int64_t left_integer = 0;
+    int64_t right_integer = 0;
+    if (ptn_fast_integer_value(left, &left_integer) && ptn_fast_integer_value(right, &right_integer)) {
+        if (right_integer == 0) {
+            ptn_abort_arithmetic_error("Division by zero");
+        }
+        if (left_integer == INT64_MIN && right_integer == -1) {
+            return ptn_float((double)left_integer / (double)right_integer);
+        }
+        if (left_integer % right_integer == 0) {
+            return ptn_int(left_integer / right_integer);
+        }
+        return ptn_float((double)left_integer / (double)right_integer);
+    }
+
+    double left_fast_number = 0.0;
+    double right_fast_number = 0.0;
+    if (ptn_fast_numeric_pair(left, right, &left_fast_number, &right_fast_number)) {
+        if (right_fast_number == 0.0) {
+            ptn_abort_arithmetic_error("Division by zero");
+        }
+        return ptn_float(left_fast_number / right_fast_number);
+    }
+
     PtnNumber left_number = ptn_to_number(left);
     PtnNumber right_number = ptn_to_number(right);
     if (right_number.floating == 0.0) {
@@ -1745,6 +1927,17 @@ static PTN_UNUSED int64_t ptn_number_to_integer(PtnNumber number) {
 }
 
 static PTN_UNUSED int64_t ptn_value_to_integer_with_precision_deprecation(PtnValue value) {
+    int64_t integer = 0;
+    if (ptn_fast_integer_value(value, &integer)) {
+        return integer;
+    }
+    if (value.type == PTN_FLOAT) {
+        if (ptn_float_to_int_loses_precision(value.as.floating)) {
+            ptn_emit_float_to_int_precision_deprecation(value.as.floating);
+        }
+        return (int64_t)value.as.floating;
+    }
+
     PtnNumber number = ptn_to_number(value);
     if (value.type == PTN_STRING && ptn_string_has_trailing_non_numeric_data(value.as.string)) {
         ptn_emit_non_numeric_value_warning();
@@ -1760,6 +1953,19 @@ static PTN_UNUSED int64_t ptn_value_to_integer_with_precision_deprecation(PtnVal
 }
 
 static PTN_UNUSED PtnValue ptn_modulo(PtnValue left, PtnValue right) {
+    int64_t left_fast_integer = 0;
+    int64_t right_fast_integer = 0;
+    if (ptn_fast_integer_value(left, &left_fast_integer) &&
+        ptn_fast_integer_value(right, &right_fast_integer)) {
+        if (right_fast_integer == 0) {
+            ptn_abort_arithmetic_error("Modulo by zero");
+        }
+        if (left_fast_integer == INT64_MIN && right_fast_integer == -1) {
+            return ptn_int(0);
+        }
+        return ptn_int(left_fast_integer % right_fast_integer);
+    }
+
     int64_t left_integer = ptn_value_to_integer_with_precision_deprecation(left);
     int64_t right_integer = ptn_value_to_integer_with_precision_deprecation(right);
     if (right_integer == 0) {
@@ -1772,10 +1978,24 @@ static PTN_UNUSED PtnValue ptn_modulo(PtnValue left, PtnValue right) {
 }
 
 static PTN_UNUSED PtnValue ptn_increment(PtnValue value) {
+    int64_t integer = 0;
+    if (ptn_fast_integer_value(value, &integer)) {
+        return ptn_add_integers(integer, 1);
+    }
+    if (value.type == PTN_FLOAT) {
+        return ptn_float(value.as.floating + 1.0);
+    }
     return ptn_add(value, ptn_int(1));
 }
 
 static PTN_UNUSED PtnValue ptn_decrement(PtnValue value) {
+    int64_t integer = 0;
+    if (ptn_fast_integer_value(value, &integer)) {
+        return ptn_subtract_integers(integer, 1);
+    }
+    if (value.type == PTN_FLOAT) {
+        return ptn_float(value.as.floating - 1.0);
+    }
     return ptn_subtract(value, ptn_int(1));
 }
 
@@ -3347,6 +3567,11 @@ static PtnValue ptn_internal_soundex(PtnRuntime *runtime, size_t argc, const Ptn
 }
 
 static double ptn_value_to_double(PtnValue value) {
+    double fast_number = 0.0;
+    if (ptn_fast_scalar_double(value, &fast_number)) {
+        return fast_number;
+    }
+
     PtnNumber number = ptn_to_number(value);
     return number.floating;
 }
