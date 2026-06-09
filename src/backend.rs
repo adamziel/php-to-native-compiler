@@ -1528,6 +1528,23 @@ static PtnValue ptn_internal_bin2hex(PtnRuntime *runtime, size_t argc, const Ptn
     return ptn_owned_string(hex);
 }
 
+static PtnValue ptn_internal_chr(PtnRuntime *runtime, size_t argc, const PtnValue *args) {
+    (void)runtime;
+    (void)argc;
+    int64_t integer = ptn_value_to_integer(args[0]);
+    int64_t normalized = integer % 256;
+    if (normalized < 0) {
+        normalized += 256;
+    }
+    char *string = malloc(2);
+    if (string == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    string[0] = (char)(unsigned char)normalized;
+    string[1] = '\0';
+    return ptn_owned_string(string);
+}
+
 static PtnValue ptn_internal_defined(PtnRuntime *runtime, size_t argc, const PtnValue *args);
 static PtnValue ptn_internal_function_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args);
 
@@ -1536,6 +1553,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "var_dump", 1, PTN_VARIADIC_ARGS, ptn_internal_var_dump },
         { "strlen", 1, 1, ptn_internal_strlen },
         { "bin2hex", 1, 1, ptn_internal_bin2hex },
+        { "chr", 1, 1, ptn_internal_chr },
         { "gettype", 1, 1, ptn_internal_gettype },
         { "is_null", 1, 1, ptn_internal_is_null },
         { "is_bool", 1, 1, ptn_internal_is_bool },

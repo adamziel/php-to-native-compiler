@@ -47,11 +47,11 @@ supports in generated native binaries.
   scalar operands are converted to integers through the current scalar numeric
   conversion path.
 - Simple statement-form internal calls such as `var_dump(expr, ...)`,
-  `strlen(expr);`, and `bin2hex(expr);`.
+  `strlen(expr);`, `bin2hex(expr);`, and `chr(expr);`.
 - Expression-form internal calls for the currently registered scalar functions,
-  including `strlen(expr)`, `bin2hex(expr)`, `gettype(expr)`, and scalar `is_*`
-  type predicates in echo operands, assignments, binary operands, and
-  branch/loop conditions.
+  including `strlen(expr)`, `bin2hex(expr)`, `chr(expr)`, `gettype(expr)`, and
+  scalar `is_*` type predicates in echo operands, assignments, binary operands,
+  and branch/loop conditions.
 - Internal-call arguments are materialized left-to-right before generated C
   runtime dispatch.
 - `var_dump()` output for current boxed scalar values: `NULL`, `bool(...)`,
@@ -59,6 +59,8 @@ supports in generated native binaries.
 - `strlen()` over current boxed scalar values after scalar string conversion.
 - `bin2hex()` over current boxed scalar values after scalar string conversion,
   returning lowercase hexadecimal byte output.
+- `chr()` over current boxed scalar values after scalar integer conversion,
+  returning a one-byte string with byte values constrained modulo 256.
 - `gettype()` over current boxed scalar values, returning `NULL`, `boolean`,
   `integer`, `double`, or `string`.
 - Scalar type predicates over current boxed scalar values: `is_null()`,
@@ -117,7 +119,9 @@ supports in generated native binaries.
 - Arrays, objects, resources, recursive structures, references, and
   `var_dump()` reference identity output.
 - Embedded NUL strings in runtime string values, `var_dump()` string
-  length/output, `strlen()`, `bin2hex()`, or bitwise string results.
+  length/output, `strlen()`, `bin2hex()`, `chr()`, or bitwise string results.
+- Exact `chr()` diagnostics for out-of-range integers or float-to-int precision
+  loss.
 - Full PHP float precision and formatting edge cases for `var_dump()` or
   `strlen()` input conversion.
 - Complete PHP CLI and PHPT runner option parity for `phpc`.

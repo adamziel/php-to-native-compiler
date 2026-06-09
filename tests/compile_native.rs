@@ -807,6 +807,52 @@ fn compile_bug30726_is_float_shape_to_native_binary() {
 }
 
 #[test]
+fn compile_chr_internal_function_to_native_binary() {
+    let root = temp_dir("ptn-native-chr-function");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("chr-function.php");
+    let output = root.join("chr-function-bin");
+    fs::write(
+        &input,
+        "<?php echo chr(72). chr(101) . chr(108) . chr(108). chr(111); echo chr(10); echo bin2hex(chr(255)), \" \", bin2hex(chr(-1)), \" \", bin2hex(chr(\"65\")), \"\\n\"; var_dump(function_exists(\"chr\"), function_exists(\"CHR\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Hello\nff ff 41\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_chr_basic_phpt_shape_to_native_binary() {
+    let root = temp_dir("ptn-native-chr-basic-phpt-shape");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("chr-basic.php");
+    let output = root.join("chr-basic-bin");
+    fs::write(
+        &input,
+        "<?php\n\necho \"*** Testing chr() : basic functionality ***\\n\";\n\necho chr(72). chr(101) . chr(108) . chr(108). chr(111); // Hello\necho chr(10); // \"\\n\"\necho \"World\";\necho \"\\n\";\n?>",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "*** Testing chr() : basic functionality ***\nHello\nWorld\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_symbol_existence_internal_functions_to_native_binary() {
     let root = temp_dir("ptn-native-symbol-existence-functions");
     fs::create_dir_all(&root).unwrap();

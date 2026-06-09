@@ -23,7 +23,7 @@ Supported today:
 - Statement-form `print expr;` for the same scalar expression subset as
   `echo`; emitted native code uses the same boxed output conversion path.
 - Simple internal calls such as `var_dump(expr, ...)`, `strlen(expr)`,
-  `bin2hex(expr)`, `gettype(expr)`, scalar `is_*` type predicates,
+  `bin2hex(expr)`, `chr(expr)`, `gettype(expr)`, scalar `is_*` type predicates,
   `defined(expr)`, and `function_exists(expr)`, lowered through IR
   internal-call nodes and generated C runtime dispatch.
 - `var_dump()` output for the current boxed scalar `PtnValue` types: `null`,
@@ -32,6 +32,8 @@ Supported today:
   scalar string-conversion result.
 - `bin2hex()` as an expression returning lowercase hexadecimal bytes for the
   current boxed scalar string-conversion result.
+- `chr()` as an expression returning a one-byte string from the current boxed
+  scalar integer-conversion result, with byte values constrained modulo 256.
 - `gettype()` and scalar type predicates for the current boxed scalar
   `PtnValue` types: `is_null()`, `is_bool()`, `is_int()`/`is_integer()`/
   `is_long()`, `is_float()`/`is_double()`, `is_string()`, and `is_scalar()`.
@@ -98,10 +100,11 @@ Unsupported today:
   warning text/file/line/error-handler behavior, inline HTML before `<?php` or
   between PHP blocks, internal functions outside the registered scalar subset,
   user constants and built-in constants, arrays, objects, resources, recursion,
-  references, embedded NUL string handling, and full PHP precision/formatting
-  edge cases for `var_dump()`/`strlen()`/`bin2hex()`, doc comment retention,
-  variable variables, and dynamic fallback. These are architecture targets, not
-  excuses for exact-shape hacks.
+  references, embedded NUL string handling, exact `chr()` deprecation
+  diagnostics, and full PHP precision/formatting edge cases for
+  `var_dump()`/`strlen()`/`bin2hex()`, doc comment retention, variable
+  variables, and dynamic fallback. These are architecture targets, not excuses
+  for exact-shape hacks.
 
 ## Build
 

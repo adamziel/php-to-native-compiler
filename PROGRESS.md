@@ -480,3 +480,20 @@ Still unsupported for symbol-existence internals: user-defined functions,
 classes/methods, user-defined constants, PHP built-in and extension constants,
 namespaced symbols, autoloading, disabled-functions behavior, and PHP-exact
 argument diagnostics.
+
+Added a scalar byte-construction internal-function slice:
+
+- Registered `chr()` through the existing generated C internal-function
+  registry, so normal calls and `function_exists()` share the same
+  case-insensitive lookup table.
+- `chr()` converts the current boxed scalar argument through the shared scalar
+  integer-conversion path, constrains the result modulo 256, and returns a
+  one-byte string in the current C-string runtime representation.
+- Native tests prove ordinary byte output, newline output, byte wrapping,
+  scalar string input conversion, and `function_exists("chr")`.
+- Focused public PHPT telemetry through `phpc` passes
+  `ext/standard/tests/strings/chr_basic.phpt`.
+
+Still unsupported after this `chr()` slice: embedded NUL bytes in runtime
+strings, exact out-of-range and float-to-int deprecation diagnostics, arrays,
+objects, resources, references, and copy-on-write behavior.
