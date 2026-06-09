@@ -112,6 +112,7 @@ pub enum Instruction {
         iterable: ValueExpr,
         key: Option<String>,
         value: String,
+        value_by_ref: bool,
         body: Vec<Instruction>,
         line: usize,
     },
@@ -454,6 +455,7 @@ fn lower_statements(statements: &[Statement]) -> Vec<Instruction> {
                 iterable,
                 key,
                 value,
+                value_by_ref,
                 body,
                 span,
             } => {
@@ -461,6 +463,7 @@ fn lower_statements(statements: &[Statement]) -> Vec<Instruction> {
                     iterable: lower_expr(iterable),
                     key: key.clone(),
                     value: value.clone(),
+                    value_by_ref: *value_by_ref,
                     body: lower_statements(body),
                     line: span.line,
                 });

@@ -37,6 +37,20 @@ static PTN_UNUSED void ptn_reference_release(PtnReference *reference) {
     free(reference);
 }
 
+static PTN_UNUSED void ptn_array_destroy_storage(PtnArray *array) {
+    if (array == NULL) {
+        return;
+    }
+    ptn_cow_debug_note_array_free();
+    for (size_t i = 0; i < array->len; i++) {
+        ptn_array_key_free(array->entries[i].key);
+        ptn_value_destroy(&array->entries[i].value);
+    }
+    free(array->index_slots);
+    free(array->entries);
+    free(array);
+}
+
 static PTN_UNUSED void ptn_array_free(PtnArray *array) {
     if (array == NULL) {
         return;
@@ -47,15 +61,11 @@ static PTN_UNUSED void ptn_array_free(PtnArray *array) {
         array->refcount--;
         return;
     }
-    ptn_cow_debug_note_array_free();
     array->refcount = 0;
-    for (size_t i = 0; i < array->len; i++) {
-        ptn_array_key_free(array->entries[i].key);
-        ptn_value_destroy(&array->entries[i].value);
+    if (array->iterator_refcount != 0) {
+        return;
     }
-    free(array->index_slots);
-    free(array->entries);
-    free(array);
+    ptn_array_destroy_storage(array);
 }
 
 static PTN_UNUSED void ptn_value_drop(PtnValue *value) {

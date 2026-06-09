@@ -380,6 +380,7 @@ fn parser_accepts_foreach_value_and_key_value_statements() {
         iterable,
         key,
         value,
+        value_by_ref,
         body,
         ..
     } = &program.statements[0]
@@ -389,23 +390,65 @@ fn parser_accepts_foreach_value_and_key_value_statements() {
     assert!(matches!(iterable, Expr::Variable(name, _) if name == "items"));
     assert_eq!(key, &None);
     assert_eq!(value, "value");
+    assert!(!value_by_ref);
     assert_eq!(body.len(), 1);
 
     let Statement::Foreach {
-        key, value, body, ..
+        key,
+        value,
+        value_by_ref,
+        body,
+        ..
     } = &program.statements[1]
     else {
         panic!("expected key/value foreach statement");
     };
     assert_eq!(key.as_deref(), Some("key"));
     assert_eq!(value, "value");
+    assert!(!value_by_ref);
     assert_eq!(body.len(), 1);
 }
 
 #[test]
+fn parser_accepts_by_reference_foreach_value_binding() {
+    let program = parser::parse(
+        "<?php foreach ($items as &$value) { echo $value; } foreach ($items as $key => &$value) echo $key;",
+    )
+    .unwrap();
+    assert_eq!(program.statements.len(), 2);
+
+    let Statement::Foreach {
+        key,
+        value,
+        value_by_ref,
+        ..
+    } = &program.statements[0]
+    else {
+        panic!("expected value-only foreach statement");
+    };
+    assert_eq!(key, &None);
+    assert_eq!(value, "value");
+    assert!(*value_by_ref);
+
+    let Statement::Foreach {
+        key,
+        value,
+        value_by_ref,
+        ..
+    } = &program.statements[1]
+    else {
+        panic!("expected key/value foreach statement");
+    };
+    assert_eq!(key.as_deref(), Some("key"));
+    assert_eq!(value, "value");
+    assert!(*value_by_ref);
+}
+
+#[test]
 fn parser_rejects_unsupported_foreach_bindings() {
-    let by_ref = parser::parse("<?php foreach ($items as &$value) { echo $value; }").unwrap_err();
-    assert_eq!(by_ref.message, "by-reference foreach is unsupported");
+    let by_ref_key =
+        parser::parse("<?php foreach ($items as &$key => $value) { echo $value; }").unwrap_err();
+    assert_eq!(by_ref_key.message, "Key element cannot be a reference");
 
     let destructuring =
         parser::parse("<?php foreach ($items as [$value]) { echo $value; }").unwrap_err();

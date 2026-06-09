@@ -100,12 +100,12 @@ static void ptn_var_dump_indent(size_t indent) {
 }
 
 static void ptn_var_dump_value_indented(PtnValue value, size_t indent) {
-    int is_reference = value.type == PTN_REFERENCE;
-    if (is_reference) {
+    int print_reference = value.type == PTN_REFERENCE && value.as.reference->refcount > 1;
+    if (value.type == PTN_REFERENCE) {
         value = ptn_value_deref(value);
     }
     ptn_var_dump_indent(indent);
-    if (is_reference) {
+    if (print_reference) {
         fputs("&", stdout);
     }
     switch (value.type) {

@@ -114,10 +114,12 @@ typedef struct {
     size_t index;
     size_t length;
     int valid;
+    int live;
 } PtnArrayIterator;
 
 struct PtnArray {
     size_t refcount;
+    size_t iterator_refcount;
     size_t len;
     size_t capacity;
     PtnArrayEntry *entries;

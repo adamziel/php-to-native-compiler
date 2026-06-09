@@ -113,6 +113,7 @@ pub enum Statement {
         iterable: Expr,
         key: Option<String>,
         value: String,
+        value_by_ref: bool,
         body: Vec<Statement>,
         span: SourceSpan,
     },

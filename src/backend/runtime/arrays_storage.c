@@ -329,6 +329,7 @@ static PTN_UNUSED PtnValue ptn_array_from_literal_entries(size_t entry_count, co
     }
     ptn_cow_debug_note_array_alloc();
     array->refcount = 1;
+    array->iterator_refcount = 0;
     array->len = 0;
     array->capacity = entry_count;
     array->entries = NULL;
@@ -368,6 +369,7 @@ static PTN_UNUSED PtnArray *ptn_array_clone(PtnArray *source) {
     ptn_cow_debug_note_array_alloc();
     ptn_cow_debug_note_array_clone();
     array->refcount = 1;
+    array->iterator_refcount = 0;
     array->len = 0;
     array->capacity = source->len;
     array->entries = NULL;
@@ -401,6 +403,16 @@ static PTN_UNUSED void ptn_array_retain(PtnArray *array) {
     }
     ptn_cow_debug_note_array_retain();
     array->refcount++;
+}
+
+static PTN_UNUSED void ptn_array_iterator_retain(PtnArray *array) {
+    if (array == NULL) {
+        return;
+    }
+    if (array->iterator_refcount == SIZE_MAX) {
+        ptn_abort_out_of_memory();
+    }
+    array->iterator_refcount++;
 }
 
 static PTN_UNUSED PtnArray *ptn_array_detach_value(PtnValue *value) {

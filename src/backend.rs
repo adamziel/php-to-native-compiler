@@ -759,21 +759,67 @@ fn emit_instruction(
             iterable,
             key,
             value,
+            value_by_ref,
             body,
             line,
         } => {
             let end_label = values.next_label("ptn_foreach_end");
             let cleanup_label = values.next_label("ptn_foreach_cleanup");
             let continue_label = values.next_label("ptn_foreach_continue");
-            let iterable_temp = values.emit_materialized_value(out, iterable);
             let iterator_temp = values.next_temp();
             out.push_str("    PtnArrayIterator ");
             out.push_str(&iterator_temp);
-            out.push_str(" = ptn_array_iterator_from_value(&runtime, ");
-            out.push_str(&iterable_temp);
-            out.push_str(", ");
-            out.push_str(&line.to_string());
-            out.push_str(");\n");
+            out.push_str(";\n");
+            let iterable_temp = if *value_by_ref {
+                match iterable {
+                    ValueExpr::Load { name, .. } => {
+                        out.push_str("    ");
+                        out.push_str(&iterator_temp);
+                        out.push_str(" = ptn_array_iterator_by_ref_from_variable(&runtime, \"");
+                        out.push_str(&c_string(name));
+                        out.push_str("\", \"");
+                        out.push_str(&c_string(source_path));
+                        out.push_str("\", ");
+                        out.push_str(&line.to_string());
+                        out.push_str(");\n");
+                        None
+                    }
+                    _ => {
+                        if let Some(target) = reference_target_from_value(iterable) {
+                            let reference_temp = values.emit_reference_target(out, &target);
+                            out.push_str("    ");
+                            out.push_str(&iterator_temp);
+                            out.push_str(" = ptn_array_iterator_by_ref_from_reference(&runtime, ");
+                            out.push_str(&reference_temp);
+                            out.push_str(", ");
+                            out.push_str(&line.to_string());
+                            out.push_str(");\n");
+                            emit_value_cleanup(out, "    ", &reference_temp);
+                            None
+                        } else {
+                            let iterable_temp = values.emit_materialized_value(out, iterable);
+                            out.push_str("    ");
+                            out.push_str(&iterator_temp);
+                            out.push_str(" = ptn_array_iterator_by_ref_from_value(&runtime, &");
+                            out.push_str(&iterable_temp);
+                            out.push_str(", ");
+                            out.push_str(&line.to_string());
+                            out.push_str(");\n");
+                            Some(iterable_temp)
+                        }
+                    }
+                }
+            } else {
+                let iterable_temp = values.emit_materialized_value(out, iterable);
+                out.push_str("    ");
+                out.push_str(&iterator_temp);
+                out.push_str(" = ptn_array_iterator_from_value(&runtime, ");
+                out.push_str(&iterable_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                Some(iterable_temp)
+            };
             emit_label_reference(out, &cleanup_label);
             emit_label_reference(out, &end_label);
             out.push_str("    while (");
@@ -796,10 +842,19 @@ fn emit_instruction(
             let value_temp = values.next_temp();
             out.push_str("        PtnValue ");
             out.push_str(&value_temp);
-            out.push_str(" = ptn_array_iterator_current_value(&");
+            out.push_str(" = ");
+            if *value_by_ref {
+                out.push_str("ptn_array_iterator_current_reference(&");
+            } else {
+                out.push_str("ptn_array_iterator_current_value(&");
+            }
             out.push_str(&iterator_temp);
             out.push_str(");\n");
-            out.push_str("        ptn_runtime_write_variable(&runtime, \"");
+            if *value_by_ref {
+                out.push_str("        ptn_runtime_bind_variable_reference(&runtime, \"");
+            } else {
+                out.push_str("        ptn_runtime_write_variable(&runtime, \"");
+            }
             out.push_str(&c_string(value));
             out.push_str("\", ");
             out.push_str(&value_temp);
@@ -836,7 +891,9 @@ fn emit_instruction(
             out.push_str("    ptn_array_iterator_destroy(&");
             out.push_str(&iterator_temp);
             out.push_str(");\n");
-            emit_value_cleanup(out, "    ", &iterable_temp);
+            if let Some(iterable_temp) = iterable_temp {
+                emit_value_cleanup(out, "    ", &iterable_temp);
+            }
             out.push_str("    ");
             out.push_str(&end_label);
             out.push_str(":\n");

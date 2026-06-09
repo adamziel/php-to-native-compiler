@@ -43,6 +43,12 @@ struct Parser {
     function_depth: usize,
 }
 
+struct ForeachVariable {
+    name: String,
+    by_ref: bool,
+    span: SourceSpan,
+}
+
 impl Parser {
     fn parse_program(&mut self) -> Result<Program> {
         self.expect_open_tag()?;
@@ -522,11 +528,18 @@ impl Parser {
         let iterable = self.parse_expr()?;
         self.expect_as()?;
         let first = self.parse_foreach_variable()?;
-        let (key, value) = if matches!(self.peek().kind, TokenKind::DoubleArrow) {
+        let (key, value, value_by_ref) = if matches!(self.peek().kind, TokenKind::DoubleArrow) {
+            if first.by_ref {
+                return Err(Diagnostic::new(
+                    "Key element cannot be a reference",
+                    Some(first.span),
+                ));
+            }
             self.advance();
-            (Some(first), self.parse_foreach_variable()?)
+            let value = self.parse_foreach_variable()?;
+            (Some(first.name), value.name, value.by_ref)
         } else {
-            (None, first)
+            (None, first.name, first.by_ref)
         };
         self.expect_right_paren()?;
         let body = self.parse_statement_body()?;
@@ -534,17 +547,18 @@ impl Parser {
             iterable,
             key,
             value,
+            value_by_ref,
             body,
             span,
         })
     }
 
-    fn parse_foreach_variable(&mut self) -> Result<String> {
+    fn parse_foreach_variable(&mut self) -> Result<ForeachVariable> {
+        let mut by_ref = false;
+        let mut span = self.peek().span;
         if matches!(self.peek().kind, TokenKind::Ampersand) {
-            return Err(Diagnostic::new(
-                "by-reference foreach is unsupported",
-                Some(self.peek().span),
-            ));
+            by_ref = true;
+            span = self.advance().span;
         }
         if matches!(self.peek().kind, TokenKind::LeftBracket) {
             return Err(Diagnostic::new(
@@ -554,7 +568,7 @@ impl Parser {
         }
         let token = self.advance().clone();
         match token.kind {
-            TokenKind::Variable(name) => Ok(name),
+            TokenKind::Variable(name) => Ok(ForeachVariable { name, by_ref, span }),
             _ => Err(Diagnostic::new(
                 "expected foreach variable",
                 Some(token.span),

@@ -514,7 +514,7 @@ fn assert_baseline(stats: &BTreeMap<Category, CategoryStats>, report: &str) {
         (Category::Foreach, 2, 2),
         (Category::Functions, 3, 3),
         (Category::NestedValues, 2, 2),
-        (Category::References, 2, 1),
+        (Category::References, 2, 2),
         (Category::ArrayElementReferences, 10, 10),
     ];
 
@@ -537,8 +537,8 @@ fn assert_baseline(stats: &BTreeMap<Category, CategoryStats>, report: &str) {
         );
     }
     assert!(
-        total_matched >= 21,
-        "COW oracle coverage regressed below 21/22\n{}",
+        total_matched >= 22,
+        "COW oracle coverage regressed below 22/22\n{}",
         report
     );
 }
