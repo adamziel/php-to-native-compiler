@@ -1068,7 +1068,7 @@ impl ValueEmitter {
     fn emit_value(&mut self, out: &mut String, value: &ValueExpr) -> String {
         match value {
             ValueExpr::Binary { op, left, right } => self.emit_binary(out, *op, left, right),
-            ValueExpr::Unary { op, expr } => {
+            ValueExpr::Unary { op, expr, line } => {
                 let expr_temp = self.emit_materialized_value(out, expr);
                 let result_temp = self.next_temp();
                 out.push_str("    PtnValue ");
@@ -1082,6 +1082,12 @@ impl ValueEmitter {
                 });
                 out.push('(');
                 out.push_str(&expr_temp);
+                if matches!(op, UnaryOp::BitwiseNot) {
+                    out.push_str(", \"");
+                    out.push_str(&c_string(&self.source_file));
+                    out.push_str("\", ");
+                    out.push_str(&line.to_string());
+                }
                 out.push_str(");\n");
                 result_temp
             }
@@ -1210,6 +1216,7 @@ impl ValueEmitter {
             ValueExpr::Unary {
                 op: UnaryOp::Not,
                 expr,
+                ..
             } => {
                 let predicate = self.emit_condition(out, expr);
                 format!("!({predicate})")

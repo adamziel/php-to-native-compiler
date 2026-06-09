@@ -1007,6 +1007,17 @@ static PTN_UNUSED void ptn_abort_arithmetic_error(const char *message) {
     exit(1);
 }
 
+static PTN_UNUSED void ptn_abort_type_error_at(const char *message, const char *path, size_t line) {
+    fputs("Fatal error: ", stderr);
+    fputs(message, stderr);
+    fputs(" in ", stderr);
+    fputs(path, stderr);
+    fputs(" on line ", stderr);
+    fprintf(stderr, "%zu", line);
+    fputc('\n', stderr);
+    exit(255);
+}
+
 static PTN_UNUSED void ptn_abort_control_error(const char *message, const char *path, size_t line) {
     fputs("Fatal error: ", stderr);
     fputs(message, stderr);
@@ -2157,9 +2168,12 @@ static PTN_UNUSED PtnValue ptn_bitwise_xor(PtnValue left, PtnValue right) {
     return ptn_int(ptn_bitwise_integer_operand(left) ^ ptn_bitwise_integer_operand(right));
 }
 
-static PTN_UNUSED PtnValue ptn_bitwise_not(PtnValue value) {
+static PTN_UNUSED PtnValue ptn_bitwise_not(PtnValue value, const char *path, size_t line) {
     if (value.type == PTN_STRING) {
         return ptn_bitwise_string_not(value.as.string);
+    }
+    if (value.type == PTN_ARRAY) {
+        ptn_abort_type_error_at("Cannot perform bitwise not on array", path, line);
     }
     return ptn_int(~ptn_bitwise_integer_operand(value));
 }
