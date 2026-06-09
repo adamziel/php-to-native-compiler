@@ -281,6 +281,7 @@ pub enum BinaryOp {
     Divide,
     Modulo,
     Concat,
+    Coalesce,
     ShiftLeft,
     ShiftRight,
     Equal,

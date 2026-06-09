@@ -37,6 +37,7 @@ pub enum TokenKind {
     Variable(String),
     Equal,
     DoubleArrow,
+    QuestionQuestion,
     EqualEqual,
     EqualEqualEqual,
     NotEqual,
@@ -166,6 +167,9 @@ impl<'a> Lexer<'a> {
 
             match ch {
                 '?' if self.rest().starts_with("?>") => self.push_close_tag(),
+                '?' if self.rest().starts_with("??") => {
+                    self.push_fixed(TokenKind::QuestionQuestion, 2)
+                }
                 '/' if self.rest().starts_with("//") => self.skip_line_comment(),
                 '/' if self.rest().starts_with("/*") => self.skip_block_comment()?,
                 '#' => self.skip_line_comment(),

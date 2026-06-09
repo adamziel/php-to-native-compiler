@@ -1135,6 +1135,34 @@ fn parser_accepts_long_array_literals_and_isset_empty_constructs() {
 }
 
 #[test]
+fn parser_accepts_null_coalescing_as_right_associative_expression() {
+    let program = parser::parse("<?php echo $a ?? $b ?? \"fallback\";").unwrap();
+    let Statement::Echo { expressions, .. } = &program.statements[0] else {
+        panic!("expected echo statement");
+    };
+    let Expr::Binary {
+        op: BinaryOp::Coalesce,
+        left,
+        right,
+        ..
+    } = &expressions[0]
+    else {
+        panic!("expected null coalescing expression");
+    };
+    assert!(matches!(left.as_ref(), Expr::Variable(name, _) if name == "a"));
+    assert!(matches!(
+        right.as_ref(),
+        Expr::Binary {
+            op: BinaryOp::Coalesce,
+            left,
+            right,
+            ..
+        } if matches!(left.as_ref(), Expr::Variable(name, _) if name == "b")
+            && matches!(right.as_ref(), Expr::String(value, _) if value == "fallback")
+    ));
+}
+
+#[test]
 fn parser_accepts_bitwise_scalar_expressions() {
     let program = parser::parse("<?php echo \"a\" & \"b\" ^ \"d\" | \"c\" && 1 == 1;").unwrap();
     let Statement::Echo { expressions, .. } = &program.statements[0] else {
@@ -5087,6 +5115,65 @@ var_dump(empty($string[\"foo\"]));",
         "bool(true)\nbool(false)\nbool(false)\nbool(false)\nbool(true)\nbool(true)\nbool(false)\nbool(true)\nbool(true)\nbool(true)\nbool(false)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_null_coalescing_variables_and_offsets_to_native_binary() {
+    let root = temp_dir("ptn-native-null-coalescing");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("null-coalescing.php");
+    let output = root.join("null-coalescing-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$present = \"present\";\n\
+$nullish = null;\n\
+$items = [\"value\" => \"hit\", \"nullish\" => null, \"nested\" => [\"leaf\" => \"\"]];\n\
+$string = \"abc\";\n\
+var_dump($present ?? $warn);\n\
+var_dump($nullish ?? \"null-fallback\");\n\
+var_dump($missing ?? \"missing-fallback\");\n\
+var_dump($items[\"value\"] ?? \"array-fallback\");\n\
+var_dump($items[\"nullish\"] ?? \"array-null-fallback\");\n\
+var_dump($items[\"missing\"] ?? \"array-missing-fallback\");\n\
+var_dump($items[\"nested\"][\"leaf\"] ?? \"nested-fallback\");\n\
+var_dump($string[1] ?? \"string-fallback\");\n\
+var_dump($string[99] ?? \"string-missing-fallback\");\n\
+var_dump($string[\"foo\"] ?? \"string-key-fallback\");\n\
+var_dump($missingArray[\"key\"] ?? \"base-fallback\");\n\
+var_dump($nullish ?? $missing ?? \"chain-fallback\");",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(7) \"present\"\n\
+string(13) \"null-fallback\"\n\
+string(16) \"missing-fallback\"\n\
+string(3) \"hit\"\n\
+string(19) \"array-null-fallback\"\n\
+string(22) \"array-missing-fallback\"\n\
+string(0) \"\"\n\
+string(1) \"b\"\n\
+string(23) \"string-missing-fallback\"\n\
+string(19) \"string-key-fallback\"\n\
+string(13) \"base-fallback\"\n\
+string(14) \"chain-fallback\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    let main_start = c_source
+        .find("\nint main(void)")
+        .expect("generated C should contain main");
+    let main_body = &c_source[main_start..];
+    assert!(main_body.contains("ptn_runtime_read_variable_quiet(&runtime"));
+    assert!(main_body.contains("ptn_offset_lookup(&runtime"));
+    assert!(main_body.contains(", 1);"));
 }
 
 #[test]

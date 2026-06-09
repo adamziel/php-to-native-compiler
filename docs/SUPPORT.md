@@ -119,6 +119,12 @@ supports in generated native binaries.
   non-array containers, and out-of-range string offsets do not emit ordinary
   read warnings; `isset()` returns false for missing or `null` values, and
   `empty()` returns true for missing or PHP-falsey values.
+- Expression-form null coalescing `left ?? right` over direct variables, array
+  reads, string offset reads, and currently supported value expressions. The
+  left operand uses the same quiet lookup path as `isset()`/`empty()`, returns
+  present non-`null` values without evaluating the right operand, and evaluates
+  the right operand only for missing or `null` left values. Assignment-form
+  `??=` remains unsupported.
 - Boxed scalar and literal-array comparison operators `==`, `!=`, `===`, `!==`,
   `<`, `<=`, `>`, `>=`, and `<=>`. Strict array identity compares type, key
   order, key type, and value. Numeric comparisons involving `NAN` are treated
@@ -409,9 +415,8 @@ supports in generated native binaries.
   types, object property checks, resources, references, and error-handler
   routing.
 - String-offset append, unset, compound assignment, references, object/
-  property/reference `isset()`/`empty()` semantics, null-coalescing offset
-  semantics, and complete TypeError/exception parity for unsupported string
-  offset key types.
+  property/reference `isset()`/`empty()` and null-coalescing semantics, and
+  complete TypeError/exception parity for unsupported string offset key types.
 - Embedded NUL strings in runtime string values, `var_dump()` string
   length/output, `strlen()`, `str_rot13()`, `strcmp()`, `bin2hex()`, `chr()`,
   `hex2bin()`, `str_contains()`, `quotemeta()`, `chunk_split()`,

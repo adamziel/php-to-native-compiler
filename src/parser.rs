@@ -12,6 +12,7 @@ const KEYWORD_OR_PRECEDENCE: u8 = 1;
 const KEYWORD_XOR_PRECEDENCE: u8 = 2;
 const KEYWORD_AND_PRECEDENCE: u8 = 3;
 const SYMBOL_OR_PRECEDENCE: u8 = 4;
+const COALESCE_PRECEDENCE: u8 = 4;
 const SYMBOL_AND_PRECEDENCE: u8 = 5;
 const BITWISE_OR_PRECEDENCE: u8 = 6;
 const BITWISE_XOR_PRECEDENCE: u8 = 7;
@@ -1265,6 +1266,7 @@ impl Parser {
             TokenKind::KeywordOr => Some((BinaryOp::Or, KEYWORD_OR_PRECEDENCE, false)),
             TokenKind::KeywordXor => Some((BinaryOp::Xor, KEYWORD_XOR_PRECEDENCE, false)),
             TokenKind::KeywordAnd => Some((BinaryOp::And, KEYWORD_AND_PRECEDENCE, false)),
+            TokenKind::QuestionQuestion => Some((BinaryOp::Coalesce, COALESCE_PRECEDENCE, true)),
             TokenKind::OrOr => Some((BinaryOp::Or, SYMBOL_OR_PRECEDENCE, false)),
             TokenKind::AndAnd => Some((BinaryOp::And, SYMBOL_AND_PRECEDENCE, false)),
             TokenKind::Pipe => Some((BinaryOp::BitwiseOr, BITWISE_OR_PRECEDENCE, false)),
@@ -1729,6 +1731,7 @@ fn token_text(kind: &TokenKind) -> &'static str {
         TokenKind::Variable(_) => "variable",
         TokenKind::Equal => "=",
         TokenKind::DoubleArrow => "=>",
+        TokenKind::QuestionQuestion => "??",
         TokenKind::EqualEqual => "==",
         TokenKind::EqualEqualEqual => "===",
         TokenKind::NotEqual => "!=",

@@ -1387,6 +1387,7 @@ fn binary_runtime_function(op: BinaryOp) -> &'static str {
         BinaryOp::ShiftLeft => "ptn_shift_left",
         BinaryOp::ShiftRight => "ptn_shift_right",
         BinaryOp::Concat
+        | BinaryOp::Coalesce
         | BinaryOp::Equal
         | BinaryOp::NotEqual
         | BinaryOp::Spaceship
@@ -1792,6 +1793,7 @@ impl ValueEmitter {
             BinaryOp::Spaceship => self.emit_spaceship(out, left, right),
             BinaryOp::Xor => self.emit_boolean_xor(out, left, right),
             BinaryOp::And | BinaryOp::Or => self.emit_short_circuit(out, op, left, right),
+            BinaryOp::Coalesce => self.emit_coalesce(out, left, right),
         }
     }
 
@@ -1888,6 +1890,34 @@ impl ValueEmitter {
         out.push_str("));\n");
         emit_value_cleanup(out, "    ", &left_temp);
         emit_value_cleanup(out, "    ", &right_temp);
+        result_temp
+    }
+
+    fn emit_coalesce(&mut self, out: &mut String, left: &ValueExpr, right: &ValueExpr) -> String {
+        let left_lookup = self.emit_quiet_lookup(out, left);
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(";\n");
+        out.push_str("    if (");
+        out.push_str(&left_lookup);
+        out.push_str(".exists && ");
+        out.push_str(&left_lookup);
+        out.push_str(".value.type != PTN_NULL) {\n");
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ");
+        out.push_str(&left_lookup);
+        out.push_str(".value;\n");
+        out.push_str("    } else {\n");
+        emit_value_cleanup(out, "        ", &format!("{left_lookup}.value"));
+        let right_temp = self.emit_materialized_value(out, right);
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ");
+        out.push_str(&right_temp);
+        out.push_str(";\n");
+        out.push_str("    }\n");
         result_temp
     }
 

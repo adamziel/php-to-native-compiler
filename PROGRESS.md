@@ -1,14 +1,14 @@
 # PTN Progress
 
-Last refresh: 2026-06-09T17:20Z
-Commit: pending `ptn-cqu.47.4` rebased after `ptn-cqu.47.2`
+Last refresh: 2026-06-09T17:28Z
+Commit: pending `ptn-cqu.42` rebased after `ptn-cqu.47.4`
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | --- |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 275 | 275 | 0 |
+| Native compiled PHP snippets | 284 | 284 | 0 |
 | PHPT parsed bounded log | 171 | 121 | 50 |
 | PHPT Zend rows | 76 | 60 | 16 |
 | PHPT ext/standard rows | 77 | 44 | 33 |
@@ -29,14 +29,17 @@ plus
 `func_num_args()`/`func_get_arg()`/`func_get_args()` introspection, `print_r`,
 selected binary-string handling, string offset read diagnostics,
 direct-variable string offset writes with append/unset/assign-op Error
-boundaries, and catchable `count()` non-array diagnostics.
+boundaries, catchable `count()` non-array diagnostics, and expression-form `??`
+reads over direct variables, arrays, and string offsets using quiet lookup
+semantics.
 
 ## Still Needed
 
 Copy-on-write for strings, nested write targets, references, function
 boundaries, foreach mutation visibility, and broader dynamic edges. Initial
 array payload COW and executable COW contract tests are now present. All
-non-COW work is paused unless it is required to prove COW.
+non-COW work is paused unless it is required to prove COW. Assignment-form null
+coalescing `??=` remains unsupported.
 
 ## Next Focus
 
