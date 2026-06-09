@@ -1901,3 +1901,17 @@ No new PHP surface is claimed by this performance slice. User-level array
 element mutation, append/unset, `array_merge()`, mutation-visible iteration,
 copy-on-write/reference identity, recursive arrays, and broader array/object
 semantics remain unsupported.
+
+Added a repeatable generated-native execution benchmark path:
+
+- `tools/bench-native-execution.sh` builds the current `ptn` compiler, compiles
+  three representative PHP snippets to native binaries, keeps generated C for a
+  standalone rebuild timing, and samples native runtime separately from build
+  timings.
+- The benchmark set covers scalar arithmetic/control-flow loops, string
+  concatenation with registered internal functions, and ordered array
+  key/value `foreach` iteration using currently supported PHP semantics.
+- The benchmark report records commit, host/resource notes, command lines,
+  Rust compiler build time, integrated `ptn compile` time, standalone generated
+  C rebuild time, native runtime samples, and deterministic stdout checks for
+  reviewable future speed deltas.
