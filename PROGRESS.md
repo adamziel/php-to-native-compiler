@@ -1988,3 +1988,24 @@ Made the generated C build profile explicit and configurable:
   compiler diagnostic rather than silently changing build behavior.
 - Focused Rust tests cover profile selection without changing parser, IR, or
   PHP runtime semantics.
+
+Added a binary-safe string storage design slice:
+
+- Documented the current generated C string representation in
+  `docs/BINARY_SAFE_STRINGS.md`: `PTN_STRING` values are still stored as bare
+  C-string pointers, while a transient concat operand already carries a length.
+- Mapped the affected runtime helpers, including output, `var_dump()`,
+  `strlen()`, concat, string offsets, comparisons/search, digest inputs and raw
+  outputs, byte transforms, and decoders.
+- Defined an incremental migration path to a length-aware `PtnString` with an
+  authoritative byte length and trailing-NUL compatibility byte, while
+  explicitly deferring value freeing/refcounting until copy-on-write ownership
+  work is designed.
+- Identified the first safe implementation bead: migrate storage plus
+  output/length observers such as `echo`, `var_dump()`, `strlen()`,
+  `bin2hex()`, `ord()`, `chr()`, concat, and string offset reads with native
+  byte-output tests around `chr(0)`.
+- Listed follow-up beads for byte comparisons/search, binary transforms and
+  decoders, ownership/refcounting, and length-aware array string keys.
+
+No generated runtime behavior changed in this design slice.

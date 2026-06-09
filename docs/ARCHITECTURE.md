@@ -208,6 +208,10 @@ Near-term architecture targets:
   parity, scalar math diagnostic/type parity including `fdiv` unsupported
   operands, base-conversion precision/range parity, and PHP-exact `getmypid`
   process model parity across SAPIs and unsupported platforms.
+- Length-aware binary-safe string storage for `PTN_STRING`, staged so output,
+  byte-length observers, byte comparisons, and binary-producing string
+  internals can stop depending on C-string termination without prematurely
+  adding unsafe value-freeing semantics. See `docs/BINARY_SAFE_STRINGS.md`.
 - User-defined functions, classes/methods, namespace/class constants, dynamic
   `define()`/`constant()`, duplicate constant diagnostics, constants beyond the
   currently modeled `E_ERROR`, `PHP_EOL`, `PHP_INT_MIN`, `PHP_INT_MAX`,
