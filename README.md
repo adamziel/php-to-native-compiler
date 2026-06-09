@@ -444,6 +444,17 @@ The report includes the commit, host/resource notes, command lines, Rust
 compiler build time, integrated `ptn compile` time, standalone generated-C
 rebuild time, and repeated native runtime samples.
 
+For a focused internal-function dispatch benchmark that uses only generated
+native binaries:
+
+```sh
+tools/benchmark-internal-dispatch.sh
+tools/benchmark-internal-dispatch.sh 500000
+```
+
+The command compiles a temporary supported PHP program, runs the generated
+binary, verifies its output, and reports elapsed native execution time.
+
 ## Production Workflow
 
 A task is ready only when it is integrated into the branch that will be pushed.

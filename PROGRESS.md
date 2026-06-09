@@ -1988,3 +1988,18 @@ Made the generated C build profile explicit and configurable:
   compiler diagnostic rather than silently changing build behavior.
 - Focused Rust tests cover profile selection without changing parser, IR, or
   PHP runtime semantics.
+
+Optimized generated internal-function lookup:
+
+- The generated C internal-function registry is now kept sorted by ASCII
+  case-insensitive name and `ptn_find_internal_function()` uses binary search
+  instead of scanning the whole table for each lookup.
+- Native internal calls and `function_exists()` still share the same
+  registry-backed, case-insensitive lookup path and preserve the existing
+  handler table, argument-count diagnostics, and unsupported-function fatal
+  boundary.
+- Native tests cover lookup edges across the sorted registry, including
+  uppercase names, first/last entries, normal calls, and missing internals.
+- Added `tools/benchmark-internal-dispatch.sh` to compile and run a generated
+  native binary that repeatedly calls several internals without depending on
+  the PHP interpreter.
