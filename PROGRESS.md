@@ -2,11 +2,10 @@
 
 ## Progress Bar
 
-`[#########.] 51/59 PHPT rows passing`
-- Latest: Generated concat chains now lower through a single builder call that
-  allocates one joined output buffer; PHPT snapshot remains 51/59.
-- Tests ported/passing: 51/59
-- Commit: pending branch head
+`[#########.] 54/59 PHPT rows passing`
+- Latest: 2026-06-09T14:04:54Z bounded PHPT patrol holds 54/59; no regressions.
+- Tests ported/passing: 54/59
+- Commit: 57f061f73
 
 ## 2026-06-08
 
