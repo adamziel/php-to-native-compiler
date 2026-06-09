@@ -36,6 +36,7 @@ oracle_cases=(
     string_offset_alias_detach
     function_return_string_offset
     array_element_reference_after_copy
+    typed_by_reference_return_separation
 )
 
 diagnostic_cases=(
@@ -77,6 +78,9 @@ coverage() {
         array_element_reference_after_copy)
             printf 'array element references and copied siblings preserve COW\n'
             ;;
+        typed_by_reference_return_separation)
+            printf 'typed by-reference returns separate reference-bound values\n'
+            ;;
         unsupported_foreach_reference_key)
             printf 'diagnostic: foreach key binding cannot be by reference\n'
             ;;
@@ -84,7 +88,7 @@ coverage() {
             printf 'diagnostic: foreach destructuring remains explicit unsupported behavior\n'
             ;;
         unsupported_by_reference_return)
-            printf 'diagnostic: by-reference returns remain explicit unsupported behavior\n'
+            printf 'diagnostic: untyped by-reference returns remain explicit unsupported behavior\n'
             ;;
         unsupported_reference_assignment_from_call)
             printf 'diagnostic: by-reference assignment from call results remains explicit unsupported behavior\n'
@@ -217,6 +221,22 @@ $ref =& $items[0];
 $ref = 7;
 $copy[1] = 8;
 echo $items[0], ":", $copy[0], ":", $items[1], ":", $copy[1], ":", $ref, "\n";
+PHP
+            ;;
+        typed_by_reference_return_separation)
+            cat >"$path" <<'PHP'
+<?php
+function test_value(&$value): string {
+    return $value;
+}
+
+function &test_reference(int &$value): string {
+    return $value;
+}
+
+$value = 123;
+echo test_value($value), ":", gettype($value), "\n";
+echo test_reference($value), ":", gettype($value), ":", $value, "\n";
 PHP
             ;;
         *)

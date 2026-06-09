@@ -118,12 +118,13 @@ impl Parser {
 
     fn parse_function_decl(&mut self) -> Result<FunctionDecl> {
         let span = self.expect_function()?;
-        if matches!(self.peek().kind, TokenKind::Ampersand) {
-            return Err(Diagnostic::new(
-                "by-reference returns are unsupported",
-                Some(self.peek().span),
-            ));
-        }
+        let mut return_by_ref_span = None;
+        let return_by_ref = if matches!(self.peek().kind, TokenKind::Ampersand) {
+            return_by_ref_span = Some(self.advance().span);
+            true
+        } else {
+            false
+        };
         let name_token = self.advance().clone();
         let TokenKind::Identifier(name) = name_token.kind else {
             return Err(Diagnostic::new(
@@ -138,6 +139,12 @@ impl Parser {
         } else {
             None
         };
+        if return_by_ref && return_type.is_none() {
+            return Err(Diagnostic::new(
+                "by-reference returns are unsupported",
+                return_by_ref_span,
+            ));
+        }
         self.function_depth += 1;
         let body = self.parse_block();
         self.function_depth -= 1;
@@ -146,6 +153,7 @@ impl Parser {
             name,
             parameters,
             return_type,
+            return_by_ref,
             body,
             span,
         })
@@ -166,7 +174,7 @@ impl Parser {
     }
 
     fn parse_function_parameter(&mut self) -> Result<FunctionParameter> {
-        let type_hint = if matches!(self.peek().kind, TokenKind::Null) {
+        let type_hint = if self.peek_is_type_hint() {
             Some(self.parse_type_hint()?)
         } else {
             None
@@ -196,8 +204,27 @@ impl Parser {
         let token = self.advance();
         match token.kind {
             TokenKind::Null => Ok(TypeHint::Null),
+            TokenKind::IntType | TokenKind::IntegerType => Ok(TypeHint::Int),
+            TokenKind::FloatType | TokenKind::DoubleType => Ok(TypeHint::Float),
+            TokenKind::StringType | TokenKind::BinaryType => Ok(TypeHint::String),
+            TokenKind::BoolType | TokenKind::BooleanType => Ok(TypeHint::Bool),
             _ => Err(Diagnostic::new("expected type hint", Some(token.span))),
         }
+    }
+
+    fn peek_is_type_hint(&self) -> bool {
+        matches!(
+            self.peek().kind,
+            TokenKind::Null
+                | TokenKind::IntType
+                | TokenKind::IntegerType
+                | TokenKind::FloatType
+                | TokenKind::DoubleType
+                | TokenKind::StringType
+                | TokenKind::BinaryType
+                | TokenKind::BoolType
+                | TokenKind::BooleanType
+        )
     }
 
     fn parse_variable_statement(&mut self) -> Result<Statement> {

@@ -656,6 +656,22 @@ fn parser_accepts_null_parameter_and_return_type_hints() {
 }
 
 #[test]
+fn parser_accepts_scalar_parameter_return_hints_and_by_ref_returns() {
+    let program = parser::parse(
+        "<?php function &test(int $a, string &$b): string { return $b; } var_dump(test(1, $x));",
+    )
+    .unwrap();
+
+    let function = &program.functions[0];
+    assert!(function.return_by_ref);
+    assert_eq!(function.return_type, Some(TypeHint::String));
+    assert_eq!(function.parameters[0].type_hint, Some(TypeHint::Int));
+    assert!(!function.parameters[0].by_ref);
+    assert_eq!(function.parameters[1].type_hint, Some(TypeHint::String));
+    assert!(function.parameters[1].by_ref);
+}
+
+#[test]
 fn parser_rejects_duplicate_user_function_declarations() {
     let error = parser::parse("<?php function same() {} function same() {}").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function same()");
@@ -8486,6 +8502,72 @@ var_dump($recursive_seed, $recursive);
     assert!(
         c_source.contains("static PTN_UNUSED PtnArray *ptn_value_detach_array(PtnValue *value)")
     );
+}
+
+#[test]
+fn compile_typed_by_ref_return_separates_function_boundaries_to_native_binary() {
+    let root = temp_dir("ptn-native-typed-by-ref-return-separation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("typed-by-ref-return-separation.php");
+    let output = root.join("typed-by-ref-return-separation-bin");
+    fs::write(
+        &input,
+        "<?php
+function test1(&$abc) : string {
+    return $abc;
+}
+
+function &test2(int $abc) : string {
+    return $abc;
+}
+
+function &test3(int &$abc) : string {
+    return $abc;
+}
+
+function test4(string $abc) : string {
+    return $abc;
+}
+
+$a = 123;
+
+var_dump(test4(456));
+var_dump(test1($a));
+var_dump($a);
+var_dump(test2($a));
+var_dump($a);
+var_dump(test3($a));
+var_dump($a);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(3) \"456\"\n",
+            "string(3) \"123\"\n",
+            "int(123)\n",
+            "string(3) \"123\"\n",
+            "int(123)\n",
+            "string(3) \"123\"\n",
+            "string(3) \"123\"\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("const char *ptn_return_reference_name = NULL;"));
+    assert!(
+        c_source.contains("PtnValue ptn_typed_return_value = ptn_cast_string(ptn_return_value);")
+    );
+    assert!(c_source.contains(
+        "ptn_runtime_write_variable(&runtime, ptn_return_reference_name, ptn_return_value);"
+    ));
 }
 
 #[test]

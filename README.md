@@ -16,7 +16,8 @@ expected rows, or one-off outputs.
   behavior.
 - Top-level user functions include scoped `__FUNCTION__` and `__METHOD__`
   magic-constant coverage plus `func_num_args()`, `func_get_arg()`, and
-  `func_get_args()` call-frame introspection.
+  `func_get_args()` call-frame introspection, scalar type hints, and the first
+  typed by-reference return separation slice.
 - Direct variable references, array element references, and by-reference
   userland parameters cover the first COW/reference boundary slice.
 - `count()` handles arrays and raises catchable `TypeError` diagnostics for

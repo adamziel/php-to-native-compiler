@@ -1,7 +1,7 @@
 # PTN Progress
 
-Refresh: 2026-06-09T23:25Z
-Measured base: `ptn-4yt.1` rebased after `ptn-4yt.6`
+Refresh: 2026-06-09T23:35Z
+Measured base: `ptn-4yt.8` rebased after `ptn-4yt.1` and `ptn-4yt.6`
 
 ## Test Dashboard
 
@@ -20,23 +20,23 @@ Measured base: `ptn-4yt.1` rebased after `ptn-4yt.6`
 | Focused COW reducer snippets | 28 | 28 | 0 |
 | COW oracle suite | 22 | 22 | 0 |
 | By-reference foreach COW oracle | 11 | 11 | 0 |
-| Post-merge COW gate | 14 | 14 | 0 |
+| Post-merge COW gate | 15 | 15 | 0 |
 | COW/reference-focused native tests | 11 | 11 | 0 |
 | Mutating-internal COW matrix | 14 | 14 | 0 |
-| PHPT COW manifest | 29 | 13 | 16 |
+| PHPT COW manifest | 29 | 14 | 15 |
 | Focused PHPT foreach COW row | 1 | 1 | 0 |
 
 ## COW PHPT Buckets
 
-`tools/phpt-cow-manifest.txt` at 2026-06-09T23:25Z: 29 rows, 13 passing,
-16 failing. Bucket pass counts: assignment-aliasing 4/4, string-offsets 4/4,
+`tools/phpt-cow-manifest.txt` at 2026-06-09T23:35Z: 29 rows, 14 passing,
+15 failing. Bucket pass counts: assignment-aliasing 4/4, string-offsets 4/4,
 array-writes-appends-unset 4/4, nested-arrays 0/4, foreach-mutation 1/4,
-function-boundaries 0/4, reference-interaction 0/5. The full bounded runner
+function-boundaries 1/4, reference-interaction 0/5. The full bounded runner
 still stops at `Zend/tests/bug38469.phpt`; that row is counted failing. Failing
-rows are bucketed in
-`docs/COW_PHPT_BLOCKERS_2026-06-09.md`. Native COW reducers are 28/28,
-by-reference foreach oracle is 11/11, mutating-internal matrix is 14/14 plus
-six unsupported target diagnostics, and the post-merge COW gate is 14/14.
+rows are bucketed in `docs/COW_PHPT_BLOCKERS_2026-06-09.md`. Native COW
+reducers are 28/28, by-reference foreach oracle is 11/11, mutating-internal
+matrix is 14/14 plus six unsupported target diagnostics, and the post-merge COW
+gate is 15/15.
 
 ## Already Ported
 
@@ -46,15 +46,16 @@ string/math/type internals, ordered arrays, `foreach`, array cursors,
 references, by-reference parameters and `foreach`, array dimensions,
 temporaries, recursive/user functions, magic constants, `func_*`, `print_r`,
 binary strings, string offsets, corpus-style scalar offset diagnostics, array
-literal reference elements, array union `+`, `count()`, `??`, COW gates/oracles,
-assignment expressions, expression-level `@` suppression,
-`file_put_contents()`, `sha1_file()`, and `unlink()` byte-file slices.
+literal reference elements, array union `+`, scalar type hints, typed
+by-reference return separation, `count()`, `??`, COW gates/oracles, assignment
+expressions, expression-level `@` suppression, `file_put_contents()`,
+`sha1_file()`, and `unlink()` byte-file slices.
 
 ## Still Needed
 
-More PHPT COW rows, reference-aware internals, by-reference returns, nested
-reference lvalues, recursive reference diagnostics, dynamic calls, and
-assignment-form `??=`. File API coverage remains intentionally narrow.
+More PHPT COW rows, reference-aware internals, call-result references, broader
+by-reference returns, nested reference lvalues, recursive reference diagnostics,
+dynamic calls, and assignment-form `??=`. File API coverage remains narrow.
 
 ## Next Focus
 

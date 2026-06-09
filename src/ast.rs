@@ -11,6 +11,7 @@ pub struct FunctionDecl {
     pub name: String,
     pub parameters: Vec<FunctionParameter>,
     pub return_type: Option<TypeHint>,
+    pub return_by_ref: bool,
     pub body: Vec<Statement>,
     pub span: SourceSpan,
 }
@@ -26,6 +27,10 @@ pub struct FunctionParameter {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TypeHint {
     Null,
+    Int,
+    Float,
+    String,
+    Bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]

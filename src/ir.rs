@@ -21,6 +21,7 @@ pub struct FunctionDecl {
     pub name: String,
     pub parameters: Vec<FunctionParameter>,
     pub return_type: Option<TypeHint>,
+    pub return_by_ref: bool,
     pub body: Vec<Instruction>,
 }
 
@@ -34,6 +35,10 @@ pub struct FunctionParameter {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TypeHint {
     Null,
+    Int,
+    Float,
+    String,
+    Bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -322,6 +327,7 @@ fn lower_function(function: &AstFunctionDecl) -> FunctionDecl {
         name: function.name.clone(),
         parameters: function.parameters.iter().map(lower_parameter).collect(),
         return_type: function.return_type.map(lower_type_hint),
+        return_by_ref: function.return_by_ref,
         body: lower_statements(&function.body),
     }
 }
@@ -337,6 +343,10 @@ fn lower_parameter(parameter: &AstFunctionParameter) -> FunctionParameter {
 fn lower_type_hint(type_hint: AstTypeHint) -> TypeHint {
     match type_hint {
         AstTypeHint::Null => TypeHint::Null,
+        AstTypeHint::Int => TypeHint::Int,
+        AstTypeHint::Float => TypeHint::Float,
+        AstTypeHint::String => TypeHint::String,
+        AstTypeHint::Bool => TypeHint::Bool,
     }
 }
 

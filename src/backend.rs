@@ -190,6 +190,9 @@ fn emit_user_functions(
             out.push_str(", ptn_parameter_names);\n");
         }
         out.push_str("    PtnValue ptn_return_value = ptn_null();\n");
+        if function.return_by_ref {
+            out.push_str("    const char *ptn_return_reference_name = NULL;\n");
+        }
         for (parameter_index, parameter) in function.parameters.iter().enumerate() {
             if let Some(TypeHint::Null) = parameter.type_hint {
                 out.push_str("    if (args[");
@@ -210,6 +213,24 @@ fn emit_user_functions(
                 out.push_str("        exit(255);\n");
                 out.push_str("    }\n");
             }
+            let parameter_cast_temp =
+                if let Some(cast_helper) = type_hint_scalar_cast_helper(parameter.type_hint) {
+                    let temp = format!("ptn_parameter_{}", parameter_index);
+                    out.push_str("    PtnValue ");
+                    out.push_str(&temp);
+                    out.push_str(" = ");
+                    out.push_str(cast_helper);
+                    out.push_str("(args[");
+                    out.push_str(&parameter_index.to_string());
+                    out.push_str("]);\n");
+                    Some(temp)
+                } else {
+                    None
+                };
+            let parameter_value = parameter_cast_temp
+                .as_deref()
+                .map(str::to_string)
+                .unwrap_or_else(|| format!("args[{parameter_index}]"));
             if parameter.by_ref {
                 out.push_str("    if (args[");
                 out.push_str(&parameter_index.to_string());
@@ -222,6 +243,14 @@ fn emit_user_functions(
                 out.push_str(&c_string(&parameter.name));
                 out.push_str("\");\n");
                 out.push_str("    }\n");
+                if let Some(temp) = &parameter_cast_temp {
+                    out.push_str("    ptn_reference_assign(args[");
+                    out.push_str(&parameter_index.to_string());
+                    out.push_str("].as.reference, ");
+                    out.push_str(temp);
+                    out.push_str(");\n");
+                    emit_value_cleanup(out, "    ", temp);
+                }
                 out.push_str("    ptn_runtime_bind_variable_reference(&runtime, \"");
                 out.push_str(&c_string(&parameter.name));
                 out.push_str("\", args[");
@@ -230,13 +259,21 @@ fn emit_user_functions(
             } else {
                 out.push_str("    ptn_runtime_write_variable(&runtime, \"");
                 out.push_str(&c_string(&parameter.name));
-                out.push_str("\", args[");
-                out.push_str(&parameter_index.to_string());
-                out.push_str("]);\n");
+                out.push_str("\", ");
+                out.push_str(&parameter_value);
+                out.push_str(");\n");
+                if let Some(temp) = &parameter_cast_temp {
+                    emit_value_cleanup(out, "    ", temp);
+                }
             }
         }
-        let mut values =
-            ValueEmitter::new_for_function(source_file, source_dir, functions, &function.name);
+        let mut values = ValueEmitter::new_for_function(
+            source_file,
+            source_dir,
+            functions,
+            &function.name,
+            function.return_by_ref,
+        );
         let mut break_targets = Vec::new();
         let return_label = values.next_label("ptn_function_return");
         for instruction in &function.body {
@@ -253,18 +290,52 @@ fn emit_user_functions(
         out.push_str("    ");
         out.push_str(&return_label);
         out.push_str(":\n");
-        if let Some(TypeHint::Null) = function.return_type {
+        if let Some(return_type) = function.return_type {
+            emit_return_type_boundary(out, return_type, &function.name);
+            if function.return_by_ref {
+                out.push_str("    if (ptn_return_reference_name != NULL) {\n");
+                out.push_str(
+                    "        ptn_runtime_write_variable(&runtime, ptn_return_reference_name, ptn_return_value);\n",
+                );
+                out.push_str("    }\n");
+            }
+        }
+        out.push_str("    ptn_runtime_free(&runtime);\n");
+        out.push_str("    return ptn_return_value;\n");
+        out.push_str("}\n");
+    }
+}
+
+fn emit_return_type_boundary(out: &mut String, return_type: TypeHint, function_name: &str) {
+    match return_type {
+        TypeHint::Null => {
             out.push_str("    if (ptn_return_value.type != PTN_NULL) {\n");
             out.push_str("        ptn_emit_type_error(&caller_runtime->diagnostics, \"");
-            out.push_str(&c_string(&function.name));
+            out.push_str(&c_string(function_name));
             out.push_str("() return value must be of type null\");\n");
             out.push_str("        ptn_runtime_free(&runtime);\n");
             out.push_str("        exit(255);\n");
             out.push_str("    }\n");
         }
-        out.push_str("    ptn_runtime_free(&runtime);\n");
-        out.push_str("    return ptn_return_value;\n");
-        out.push_str("}\n");
+        TypeHint::Int | TypeHint::Float | TypeHint::String | TypeHint::Bool => {
+            let cast_helper = type_hint_scalar_cast_helper(Some(return_type))
+                .expect("scalar return type should map to cast helper");
+            out.push_str("    PtnValue ptn_typed_return_value = ");
+            out.push_str(cast_helper);
+            out.push_str("(ptn_return_value);\n");
+            out.push_str("    ptn_value_drop(&ptn_return_value);\n");
+            out.push_str("    ptn_return_value = ptn_typed_return_value;\n");
+        }
+    }
+}
+
+fn type_hint_scalar_cast_helper(type_hint: Option<TypeHint>) -> Option<&'static str> {
+    match type_hint {
+        Some(TypeHint::Int) => Some("ptn_cast_int"),
+        Some(TypeHint::Float) => Some("ptn_cast_float"),
+        Some(TypeHint::String) => Some("ptn_cast_string"),
+        Some(TypeHint::Bool) => Some("ptn_cast_bool"),
+        Some(TypeHint::Null) | None => None,
     }
 }
 
@@ -552,6 +623,15 @@ fn emit_instruction(
         Instruction::Return { value, .. } => match return_target {
             Some(target) => {
                 if let Some(value) = value {
+                    if values.current_function_return_by_ref {
+                        if let ValueExpr::Load { name, .. } = value {
+                            out.push_str("    ptn_return_reference_name = \"");
+                            out.push_str(&c_string(name));
+                            out.push_str("\";\n");
+                        } else {
+                            out.push_str("    ptn_return_reference_name = NULL;\n");
+                        }
+                    }
                     let result_value = values.emit_materialized_value(out, value);
                     out.push_str("    ptn_return_value = ptn_value_share(");
                     out.push_str(&result_value);
@@ -1748,6 +1828,7 @@ struct ValueEmitter {
     source_file: String,
     source_dir: String,
     current_function_name: Option<String>,
+    current_function_return_by_ref: bool,
     user_functions: Vec<FunctionDecl>,
 }
 
@@ -1758,7 +1839,7 @@ struct ConcatOperand<'a> {
 
 impl ValueEmitter {
     fn new(source_file: &str, source_dir: &str, functions: &[FunctionDecl]) -> Self {
-        Self::new_with_scope(source_file, source_dir, functions, None)
+        Self::new_with_scope(source_file, source_dir, functions, None, false)
     }
 
     fn new_for_function(
@@ -1766,8 +1847,15 @@ impl ValueEmitter {
         source_dir: &str,
         functions: &[FunctionDecl],
         function_name: &str,
+        return_by_ref: bool,
     ) -> Self {
-        Self::new_with_scope(source_file, source_dir, functions, Some(function_name))
+        Self::new_with_scope(
+            source_file,
+            source_dir,
+            functions,
+            Some(function_name),
+            return_by_ref,
+        )
     }
 
     fn new_with_scope(
@@ -1775,6 +1863,7 @@ impl ValueEmitter {
         source_dir: &str,
         functions: &[FunctionDecl],
         current_function_name: Option<&str>,
+        current_function_return_by_ref: bool,
     ) -> Self {
         Self {
             next_temp: 0,
@@ -1782,6 +1871,7 @@ impl ValueEmitter {
             source_file: source_file.to_string(),
             source_dir: source_dir.to_string(),
             current_function_name: current_function_name.map(str::to_string),
+            current_function_return_by_ref,
             user_functions: functions.to_vec(),
         }
     }
