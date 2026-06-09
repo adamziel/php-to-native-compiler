@@ -1528,3 +1528,24 @@ interpolation parse diagnostics such as
 `Zend/tests/grammar/alternative_offset_syntax_in_encaps_string.phpt`, exact
 parse-error expected-token sets at other grammar sites, namespace/class
 constants, and broader parser coverage for unsupported declarations.
+
+Added scalar `chunk_split()`:
+
+- Registered `chunk_split()` in the generated C internal-function registry, so
+  normal calls and `function_exists()` share the same case-insensitive lookup
+  table.
+- `chunk_split()` converts the input through the current boxed scalar
+  string-conversion path, the optional chunk length through the current boxed
+  scalar integer-conversion path, and the optional ending through the current
+  boxed scalar string-conversion path.
+- The runtime emits an ending after each produced chunk, using PHP's current
+  default chunk length `76` and default ending `"\r\n"` for omitted arguments.
+- Native tests prove the public `chunk_split_basic.phpt` source shape, scalar
+  conversion, default arguments, custom endings, and registry exposure.
+- Focused public PHPT telemetry through `phpc` passes
+  `ext/standard/tests/strings/chunk_split_basic.phpt`.
+
+Still unsupported after this `chunk_split()` slice: embedded-NUL input and
+ending parity, exact non-positive length `ValueError` behavior, unsupported
+array/object/resource/reference operand diagnostics, and complete binary-string
+runtime parity.

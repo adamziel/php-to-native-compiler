@@ -2878,6 +2878,54 @@ static PtnValue ptn_internal_quotemeta(PtnRuntime *runtime, size_t argc, const P
     return ptn_owned_string(output);
 }
 
+static char *ptn_chunk_split_string(const char *input, size_t chunk_len, const char *ending) {
+    size_t input_len = strlen(input);
+    size_t ending_len = strlen(ending);
+    size_t chunk_count = input_len == 0 ? 0 : ((input_len - 1) / chunk_len) + 1;
+    if (chunk_count != 0 && ending_len > (SIZE_MAX - input_len) / chunk_count) {
+        ptn_abort_out_of_memory();
+    }
+    size_t output_len = input_len + (chunk_count * ending_len);
+    if (output_len == SIZE_MAX) {
+        ptn_abort_out_of_memory();
+    }
+
+    char *output = malloc(output_len + 1);
+    if (output == NULL) {
+        ptn_abort_out_of_memory();
+    }
+
+    size_t input_offset = 0;
+    size_t output_offset = 0;
+    while (input_offset < input_len) {
+        size_t remaining = input_len - input_offset;
+        size_t copy_len = remaining < chunk_len ? remaining : chunk_len;
+        memcpy(output + output_offset, input + input_offset, copy_len);
+        input_offset += copy_len;
+        output_offset += copy_len;
+        memcpy(output + output_offset, ending, ending_len);
+        output_offset += ending_len;
+    }
+    output[output_offset] = '\0';
+    return output;
+}
+
+static PtnValue ptn_internal_chunk_split(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)line;
+    char *input = ptn_value_to_string(args[0]);
+    int64_t chunk_len_value = argc >= 2 ? ptn_value_to_integer(args[1]) : 76;
+    if (chunk_len_value <= 0) {
+        free(input);
+        ptn_abort_arithmetic_error("chunk_split(): Argument #2 ($length) must be greater than 0");
+    }
+    char *ending = argc >= 3 ? ptn_value_to_string(args[2]) : ptn_duplicate_string("\r\n");
+    char *output = ptn_chunk_split_string(input, (size_t)chunk_len_value, ending);
+    free(input);
+    free(ending);
+    return ptn_owned_string(output);
+}
+
 static uint32_t ptn_rotate_left32(uint32_t value, uint32_t amount) {
     return (value << amount) | (value >> (32 - amount));
 }
@@ -3751,6 +3799,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "strcmp", 2, 2, ptn_internal_strcmp },
         { "str_contains", 2, 2, ptn_internal_str_contains },
         { "quotemeta", 1, 1, ptn_internal_quotemeta },
+        { "chunk_split", 1, 3, ptn_internal_chunk_split },
         { "md5", 1, 2, ptn_internal_md5 },
         { "sha1", 1, 2, ptn_internal_sha1 },
         { "substr", 2, 3, ptn_internal_substr },

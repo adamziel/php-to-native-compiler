@@ -1925,6 +1925,64 @@ fn compile_quotemeta_empty_registry_and_scalar_conversion_to_native_binary() {
 }
 
 #[test]
+fn compile_chunk_split_basic_phpt_shape_to_native_binary() {
+    let root = temp_dir("ptn-native-chunk-split-basic-phpt-shape");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("chunk-split-basic.php");
+    let output = root.join("chunk-split-basic-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+echo \"*** Testing chunk_split() : basic functionality ***\\n\";\n\
+$str = 'Testing';\n\
+$chunklen = 2;\n\
+$ending = '##';\n\
+echo \"-- Testing chunk_split() with all possible arguments --\\n\";\n\
+var_dump(chunk_split($str, $chunklen, $ending));\n\
+echo \"-- Testing chunk_split() with default ending string --\\n\";\n\
+var_dump(chunk_split($str, $chunklen));\n\
+echo \"-- Testing chunk_split() with default chunklen and ending string --\\n\";\n\
+var_dump(chunk_split($str));\n\
+echo \"Done\";\n\
+?>",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "*** Testing chunk_split() : basic functionality ***\n-- Testing chunk_split() with all possible arguments --\nstring(15) \"Te##st##in##g##\"\n-- Testing chunk_split() with default ending string --\nstring(15) \"Te\r\nst\r\nin\r\ng\r\n\"\n-- Testing chunk_split() with default chunklen and ending string --\nstring(9) \"Testing\r\n\"\nDone"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_chunk_split_registry_and_scalar_conversion_to_native_binary() {
+    let root = temp_dir("ptn-native-chunk-split-registry-and-scalar-conversion");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("chunk-split-registry.php");
+    let output = root.join("chunk-split-registry-bin");
+    fs::write(
+        &input,
+        "<?php var_dump(chunk_split(12345, 2, \".\"), chunk_split(\"abc\", \"2\", true), function_exists(\"chunk_split\"), function_exists(\"CHUNK_SPLIT\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(8) \"12.34.5.\"\nstring(5) \"ab1c1\"\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_md5_phpt_shape_to_native_binary() {
     let root = temp_dir("ptn-native-md5-phpt-shape");
     fs::create_dir_all(&root).unwrap();
