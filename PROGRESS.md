@@ -1,19 +1,20 @@
 # PTN Progress
 
-Last refresh: 2026-06-09T16:41Z
-Commit: `ea176b8`
+Last refresh: 2026-06-09T16:56Z
+Commit: `70e7254bcae0`
+Priority: COW only. Non-COW work allowed: 0 unless required for COW.
 
 ## Test Dashboard
 
-| Format / source | Ported | Passing | Needs work |
-| --- | ---: | ---: | --- |
-| Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 268 | 268 | 0 |
-| PHPT parsed bounded log | 171 | 121 | 50 |
-| PHPT Zend rows | 76 | 60 | 16 |
-| PHPT ext/standard rows | 77 | 44 | 33 |
-| PHPT tests/basic+func+lang | 18 | 17 | 1 |
-| COW-focused tests | 0 | 0 | 1 full suite needed |
+| Format / source | Ported | Passing | Failing | Needed |
+| --- | ---: | ---: | ---: | ---: |
+| Source unit tests | 3 | 3 | 0 | 0 |
+| Native compiled PHP snippets | 273 | 273 | 0 | 0 |
+| COW-adjacent native | 1 | 1 | 0 | 5 |
+| PHPT bounded total | 200 | 138 | 62 | 62 |
+| PHPT Zend rows | 76 | 60 | 16 | 16 |
+| PHPT ext/standard rows | 77 | 46 | 31 | 31 |
+| PHPT tests/* rows | 47 | 32 | 15 | 15 |
 
 ## Already Ported
 
@@ -24,15 +25,15 @@ array key normalization coverage, top-level user functions with scoped
 handling, catchable `TypeError` for string offset reads, and catchable
 `count()` non-array diagnostics.
 
-## Still Needed
+## COW Blockers
 
-Copy-on-write for arrays, strings, variables, function calls, foreach, nested
-containers, and references. All non-COW work is paused unless it is required to
-prove COW.
+5: shared payload refcounts, detach-on-write, nested container cloning,
+by-value `foreach` mutation visibility, function-boundary value separation.
+COW-adjacent PHPT failures: 32/200.
 
 ## Next Focus
 
 1. Build a dedicated COW correctness suite.
 2. Implement shared payload refcounts and detach-on-write.
 3. Prove arrays, strings, nested values, foreach, and function boundaries.
-4. Keep this dashboard numeric and under 500 words.
+4. Keep dashboards numeric and under 500 words.

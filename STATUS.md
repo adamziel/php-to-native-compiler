@@ -1,35 +1,31 @@
 # PTN Status
 
-Last refresh: 2026-06-09T16:41Z
-Commit: `ea176b8`
+Last refresh: 2026-06-09T16:56Z
+Commit: `70e7254bcae0`
 
-## Operating Goal
+## Mandate
 
-Grow PHP-to-native support through generic compiler/runtime semantics while
-keeping generated binaries independent of the PHP interpreter.
+Copy-on-write first. Non-COW implementation work allowed: 0, except direct COW
+prerequisites.
 
 ## Current Signal
 
-Current mandate: solve copy-on-write first. Other work is allowed only when it
-directly unblocks COW correctness or evidence.
-
-Latest measured local tests: source unit 3/3 passing; native integration
-268/268 passing. Latest parsed bounded PHPT log records 121/171 passing rows.
+Local tests: 276/276 passed. Bounded PHPT: 138/200 passed, 62/200 failed,
+0/200 skipped, 0/200 warned. COW-adjacent PHPT failures: 32/200.
 
 ## Active Buckets
 
-| Bucket | Count |
-| --- | --- |
-| Source unit tests | 3/3 passing |
-| Native compiled snippets | 268/268 passing |
-| PHPT Zend rows | 60/76 passing |
-| PHPT ext/standard rows | 44/77 passing |
-| PHPT tests/basic+func+lang | 17/18 passing |
-| COW-focused tests | 0 dedicated rows yet |
+| Bucket | Ported | Pass | Fail | Need |
+| --- | ---: | ---: | ---: | ---: |
+| Source unit tests | 3 | 3 | 0 | 0 |
+| Native compiled snippets | 273 | 273 | 0 | 0 |
+| COW-adjacent native | 1 | 1 | 0 | 5 |
+| PHPT bounded total | 200 | 138 | 62 | 62 |
+| PHPT Zend rows | 76 | 60 | 16 | 16 |
+| PHPT ext/standard rows | 77 | 46 | 31 | 31 |
+| PHPT tests/* rows | 47 | 32 | 15 | 15 |
 
-## Rules
+## COW Blockers
 
-- Update `PROGRESS.md` and mirrors every 10 minutes.
-- Report counts, not essays.
-- Use only numeric counts in dashboard cells.
-- Never claim broad PHP compatibility from row-specific patches.
+5: shared payload refcounts, detach-on-write, nested container cloning,
+by-value `foreach` mutation visibility, function-boundary value separation.

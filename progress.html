@@ -2,16 +2,19 @@
 <meta charset="utf-8">
 <title>PTN Progress</title>
 <h1>PTN Progress</h1>
-<p><strong>Last refresh:</strong> 2026-06-09T16:41Z<br>
-<strong>Commit:</strong> <code>ea176b8</code></p>
+<p><strong>Last refresh:</strong> 2026-06-09T16:56Z<br>
+<strong>Commit:</strong> <code>70e7254bcae0</code></p>
+<p>COW priority. Non-COW implementation allowance: 0.</p>
 <table>
-  <thead><tr><th>Format/source</th><th>Ported</th><th>Passing</th><th>Needs work</th></tr></thead>
+  <thead><tr><th>Format/source</th><th>Ported</th><th>Passing</th><th>Failing</th><th>Needed</th></tr></thead>
   <tbody>
-    <tr><td>Source unit</td><td>3</td><td>3</td><td>0</td></tr>
-    <tr><td>Native snippets</td><td>268</td><td>268</td><td>0</td></tr>
-    <tr><td>PHPT Zend</td><td>76</td><td>60</td><td>16</td></tr>
-    <tr><td>PHPT ext/standard</td><td>77</td><td>44</td><td>33</td></tr>
-    <tr><td>COW-focused</td><td>0</td><td>0</td><td>1 suite</td></tr>
+    <tr><td>Source unit</td><td>3</td><td>3</td><td>0</td><td>0</td></tr>
+    <tr><td>Native snippets</td><td>273</td><td>273</td><td>0</td><td>0</td></tr>
+    <tr><td>COW-adjacent native</td><td>1</td><td>1</td><td>0</td><td>5</td></tr>
+    <tr><td>PHPT total</td><td>200</td><td>138</td><td>62</td><td>62</td></tr>
+    <tr><td>PHPT Zend</td><td>76</td><td>60</td><td>16</td><td>16</td></tr>
+    <tr><td>PHPT ext/standard</td><td>77</td><td>46</td><td>31</td><td>31</td></tr>
+    <tr><td>PHPT tests/*</td><td>47</td><td>32</td><td>15</td><td>15</td></tr>
   </tbody>
 </table>
-<p>Canonical text dashboard lives in <code>PROGRESS.md</code>. Keep every progress file under 500 words.</p>
+<p>COW-adjacent PHPT failures: 32/200. COW blockers: 5/5.</p>
