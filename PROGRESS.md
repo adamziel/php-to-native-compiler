@@ -1,14 +1,14 @@
 # PTN Progress
 
-Last refresh: 2026-06-09T16:41Z
-Commit: `ea176b8`
+Last refresh: 2026-06-09T16:44Z
+Commit: pending `ptn-cqu.45` branch
 
 ## Test Dashboard
 
 | Format / source | Ported | Passing | Needs work |
 | --- | ---: | ---: | --- |
 | Source unit tests | 3 | 3 | 0 |
-| Native compiled PHP snippets | 268 | 268 | 0 |
+| Native compiled PHP snippets | 273 | 273 | 0 |
 | PHPT parsed bounded log | 171 | 121 | 50 |
 | PHPT Zend rows | 76 | 60 | 16 |
 | PHPT ext/standard rows | 77 | 44 | 33 |
@@ -20,8 +20,9 @@ Commit: `ea176b8`
 Lexer/parser, AST, IR, C backend, boxed values, direct variables, constants,
 selected string/math/type internals, ordered arrays and `foreach`, top-level
 user functions with scoped `__FUNCTION__`/`__METHOD__` magic constants,
-`print_r`, selected binary-string handling, catchable `TypeError` for string
-offset reads, and catchable `count()` non-array diagnostics.
+`print_r`, selected binary-string handling, `array_values()` over ordered
+arrays, catchable `TypeError` for string offset reads, and catchable `count()`
+non-array diagnostics.
 
 ## Still Needed
 
