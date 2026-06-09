@@ -2627,6 +2627,64 @@ static PtnValue ptn_internal_str_contains(PtnRuntime *runtime, size_t argc, cons
     return ptn_bool(contains);
 }
 
+static int ptn_quotemeta_needs_escape(unsigned char byte) {
+    switch (byte) {
+        case '.':
+        case '\\':
+        case '+':
+        case '*':
+        case '?':
+        case '[':
+        case '^':
+        case ']':
+        case '(':
+        case '$':
+        case ')':
+            return 1;
+        default:
+            return 0;
+    }
+}
+
+static char *ptn_quotemeta_string(const char *input) {
+    size_t len = strlen(input);
+    size_t escape_count = 0;
+    for (size_t i = 0; i < len; i++) {
+        if (ptn_quotemeta_needs_escape((unsigned char)input[i])) {
+            escape_count++;
+        }
+    }
+    if (escape_count > SIZE_MAX - len - 1) {
+        ptn_abort_out_of_memory();
+    }
+
+    char *output = malloc(len + escape_count + 1);
+    if (output == NULL) {
+        ptn_abort_out_of_memory();
+    }
+
+    size_t out = 0;
+    for (size_t i = 0; i < len; i++) {
+        unsigned char byte = (unsigned char)input[i];
+        if (ptn_quotemeta_needs_escape(byte)) {
+            output[out++] = '\\';
+        }
+        output[out++] = (char)byte;
+    }
+    output[out] = '\0';
+    return output;
+}
+
+static PtnValue ptn_internal_quotemeta(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    char *input = ptn_value_to_string(args[0]);
+    char *output = ptn_quotemeta_string(input);
+    free(input);
+    return ptn_owned_string(output);
+}
+
 static uint32_t ptn_rotate_left32(uint32_t value, uint32_t amount) {
     return (value << amount) | (value >> (32 - amount));
 }
@@ -3479,6 +3537,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "str_rot13", 1, 1, ptn_internal_str_rot13 },
         { "strcmp", 2, 2, ptn_internal_strcmp },
         { "str_contains", 2, 2, ptn_internal_str_contains },
+        { "quotemeta", 1, 1, ptn_internal_quotemeta },
         { "md5", 1, 2, ptn_internal_md5 },
         { "sha1", 1, 2, ptn_internal_sha1 },
         { "substr", 2, 3, ptn_internal_substr },

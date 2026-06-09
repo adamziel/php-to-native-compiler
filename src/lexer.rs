@@ -324,16 +324,18 @@ impl<'a> Lexer<'a> {
                 let escaped = self.peek_char().ok_or_else(|| {
                     Diagnostic::new("unterminated string escape", Some(self.current_span(0)))
                 })?;
-                let mapped = match escaped {
-                    'n' if quote == '"' => '\n',
-                    'r' if quote == '"' => '\r',
-                    't' if quote == '"' => '\t',
-                    '\\' => '\\',
-                    '\'' if quote == '\'' => '\'',
-                    '"' if quote == '"' => '"',
-                    other => other,
-                };
-                value.push(mapped);
+                match escaped {
+                    'n' if quote == '"' => value.push('\n'),
+                    'r' if quote == '"' => value.push('\r'),
+                    't' if quote == '"' => value.push('\t'),
+                    '\\' => value.push('\\'),
+                    '\'' if quote == '\'' => value.push('\''),
+                    '"' if quote == '"' => value.push('"'),
+                    other => {
+                        value.push('\\');
+                        value.push(other);
+                    }
+                }
                 self.bump_char();
             } else {
                 value.push(ch);
@@ -373,16 +375,18 @@ impl<'a> Lexer<'a> {
                 let escaped = self.peek_char().ok_or_else(|| {
                     Diagnostic::new("unterminated string escape", Some(self.current_span(0)))
                 })?;
-                let mapped = match escaped {
-                    'n' => '\n',
-                    'r' => '\r',
-                    't' => '\t',
-                    '\\' => '\\',
-                    '"' => '"',
-                    '$' => '$',
-                    other => other,
-                };
-                literal.push(mapped);
+                match escaped {
+                    'n' => literal.push('\n'),
+                    'r' => literal.push('\r'),
+                    't' => literal.push('\t'),
+                    '\\' => literal.push('\\'),
+                    '"' => literal.push('"'),
+                    '$' => literal.push('$'),
+                    other => {
+                        literal.push('\\');
+                        literal.push(other);
+                    }
+                }
                 self.bump_char();
                 continue;
             }

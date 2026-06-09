@@ -27,7 +27,7 @@ Supported today:
   `echo`; emitted native code uses the same boxed output conversion path.
 - Simple internal calls such as `var_dump(expr, ...)`, `strlen(expr)`,
   `str_rot13(expr)`, `strcmp(expr, expr)`, `str_contains(expr, expr)`,
-  `md5(expr[, raw_output])`, `sha1(expr[, raw_output])`,
+  `quotemeta(expr)`, `md5(expr[, raw_output])`, `sha1(expr[, raw_output])`,
   `substr(expr, expr[, expr])`, `bin2hex(expr)`, `hex2bin(expr)`,
   `dirname(expr)`, `soundex(expr)`, `ceil(expr)`, `floor(expr)`,
   `sqrt(expr)`, `fdiv(expr, expr)`, `bindec(expr)`, `hexdec(expr)`,
@@ -51,6 +51,8 @@ Supported today:
 - `str_contains()` as an expression returning whether the needle scalar
   string-conversion result is present in the haystack scalar
   string-conversion result.
+- `quotemeta()` as an expression prefixing PHP regex metacharacter bytes with
+  backslashes after the current boxed scalar string-conversion result.
 - `md5()` and `sha1()` as expressions returning lowercase hexadecimal digest
   output for the current boxed scalar string-conversion result. The optional
   `raw_output` argument returns raw digest bytes through the current
@@ -116,7 +118,8 @@ Supported today:
   source-spanned PHP-style parse errors through the `phpc` runner.
 - Double-quoted strings with direct `$name` variable interpolation. Interpolated
   variables use ordinary runtime variable reads, scalar string casts, and boxed
-  concatenation.
+  concatenation. Unrecognized backslash escapes in single-quoted and
+  double-quoted strings preserve the backslash and escaped byte.
 - Direct variable assignment and reads for scalar values through the generated
   native runtime symbol table.
 - Generic runtime diagnostics for undefined direct variable reads. The read
@@ -232,7 +235,7 @@ Unsupported today:
   constants, objects, resources, recursion, references,
   embedded NUL string handling, complex/braced interpolation, interpolation of
   arrays/objects/offsets/properties/variable variables, exact `strcmp()`,
-  `str_contains()`, and `substr()` binary-string parity, exact
+  `str_contains()`, `quotemeta()`, and `substr()` binary-string parity, exact
   `md5()`/`sha1()` raw-output and embedded-NUL input parity, exact `hex2bin()`
   embedded-NUL output parity and warning text/file-name parity, exact
   `dirname()` edge parity for unusual paths and unsupported operands, exact
@@ -246,9 +249,9 @@ Unsupported today:
   spelling diagnostics beyond the currently modeled aliases and removed cast
   boundaries, statement-form `(void) expr;` casts, and full PHP
   precision/formatting edge cases for
-  `var_dump()`/`strlen()`/`bin2hex()`/`hex2bin()`/`str_contains()`/`md5()`/
-  `sha1()`/`substr()`/`soundex()`/base-conversion internals, scope-aware magic
-  constants inside functions/classes/namespaces/includes, exact
+  `var_dump()`/`strlen()`/`bin2hex()`/`hex2bin()`/`str_contains()`/
+  `quotemeta()`/`md5()`/`sha1()`/`substr()`/`soundex()`/base-conversion
+  internals, scope-aware magic constants inside functions/classes/namespaces/includes, exact
   file/line/error-handler behavior for integer-only operator precision-loss
   diagnostics, doc comment retention, variable variables, and dynamic fallback.
   These are architecture targets, not excuses for exact-shape hacks.

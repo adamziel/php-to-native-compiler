@@ -66,6 +66,15 @@ fn lexer_keeps_leading_zero_floats_decimal() {
 }
 
 #[test]
+fn lexer_preserves_unknown_string_escape_backslashes() {
+    let tokens = lexer::lex("<?php \"\\+\" '\\t' \"\\$\" \"\\n\"").unwrap();
+    assert!(matches!(&tokens[1].kind, TokenKind::String(value) if value == "\\+"));
+    assert!(matches!(&tokens[2].kind, TokenKind::String(value) if value == "\\t"));
+    assert!(matches!(&tokens[3].kind, TokenKind::String(value) if value == "$"));
+    assert!(matches!(&tokens[4].kind, TokenKind::String(value) if value == "\n"));
+}
+
+#[test]
 fn parser_accepts_precedence_aware_binary_expressions() {
     let program = parser::parse("<?php echo \"sum \" . 20 - 3 * 4 + 8 / 2 % 3 . \"\\n\";").unwrap();
     let Statement::Echo { expressions, .. } = &program.statements[0] else {
@@ -1689,6 +1698,67 @@ fn compile_fdiv_registry_and_scalar_conversion_to_native_binary() {
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "float(4.5)\nfloat(0.5)\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_quotemeta_basic_phpt_shape_to_native_binary() {
+    let root = temp_dir("ptn-native-quotemeta-basic-phpt-shape");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("quotemeta-basic.php");
+    let output = root.join("quotemeta-basic-bin");
+    fs::write(
+        &input,
+        r#"<?php
+
+echo "*** Testing quotemeta() : basic functionality ***\n";
+
+var_dump(quotemeta("Hello how are you ?"));
+var_dump(quotemeta("(100 + 50) * 10"));
+var_dump(quotemeta("\+*?[^]($)"));
+?>"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "*** Testing quotemeta() : basic functionality ***\n",
+            r#"string(20) "Hello how are you \?""#,
+            "\n",
+            r#"string(19) "\(100 \+ 50\) \* 10""#,
+            "\n",
+            r#"string(20) "\\\+\*\?\[\^\]\(\$\)""#,
+            "\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_quotemeta_empty_registry_and_scalar_conversion_to_native_binary() {
+    let root = temp_dir("ptn-native-quotemeta-registry-and-scalar-conversion");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("quotemeta-registry.php");
+    let output = root.join("quotemeta-registry-bin");
+    fs::write(
+        &input,
+        "<?php var_dump(quotemeta(\"\"), quotemeta(123.5), quotemeta(true), quotemeta(false), function_exists(\"quotemeta\"), function_exists(\"QUOTEMETA\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(0) \"\"\nstring(6) \"123\\.5\"\nstring(1) \"1\"\nstring(0) \"\"\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

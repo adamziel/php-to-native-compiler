@@ -1373,3 +1373,26 @@ keyword handling inside class/member declarations, `eval()` parsing, invalid
 control-character diagnostics inside runtime-generated code, exact numeric
 literal overflow/range parity, and invalid numeric separator diagnostics beyond
 the already modeled legacy-octal boundary.
+
+Added scalar `quotemeta()` through shared runtime dispatch:
+
+- Registered `quotemeta()` in the generated C internal-function registry, so
+  normal calls and `function_exists()` share the same case-insensitive lookup
+  table and argument-count checks.
+- `quotemeta()` converts its input through the current boxed scalar string path
+  and prefixes PHP regex metacharacter bytes with backslashes through the
+  current C-string-backed value representation.
+- Single-quoted and double-quoted string lexing now preserves the backslash for
+  unrecognized escape sequences, matching PHP's source string behavior for
+  scalar strings such as `"\+"` and `'\t'`.
+- Native tests prove the public `quotemeta_basic.phpt` and
+  `quotemeta_basic_1.phpt` source shapes, scalar conversion, string-escape
+  preservation, and registry exposure.
+- Focused public PHPT telemetry through `phpc` passes
+  `ext/standard/tests/strings/quotemeta_basic.phpt` and
+  `ext/standard/tests/strings/quotemeta_basic_1.phpt`.
+
+Still unsupported after this `quotemeta()` slice: embedded-NUL input parity,
+unsupported array/object/resource/reference operand diagnostics, and full PHP
+string-escape parity for octal, hexadecimal, Unicode, vertical-tab, escape, and
+form-feed spellings.
