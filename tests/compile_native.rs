@@ -6370,14 +6370,20 @@ $nested_copy[0][] = \"new\";\n\
 note(7, count($nested[0]) === 3 && $nested_copy[0][0] === \"new\");\n\
 unset($nested_copy[0][\"u\"]);\n\
 note(8, array_key_exists(\"u\", $nested[0]) && !array_key_exists(\"u\", $nested_copy[0]));\n\
+$union_source = [[\"left\" => \"source\"]];\n\
+$union_copy = $union_source;\n\
+$union_copy[0] += $union_copy;\n\
+note(9, count($union_source[0]) === 1 && count($union_copy[0]) === 2 && $union_copy[0][\"left\"] === \"source\" && is_array($union_copy[0][0]) && $union_copy[0][0][\"left\"] === \"source\");\n\
+$union_copy[0][\"left\"] = \"changed\";\n\
+note(10, $union_source[0][\"left\"] === \"source\" && $union_copy[0][\"left\"] === \"changed\" && $union_copy[0][0][\"left\"] === \"source\");\n\
 $str = \"abcd\";\n\
 $str_copy = $str;\n\
 $str_copy[1] = \"Z\";\n\
-note(9, $str === \"abcd\" && $str_copy === \"aZcd\");\n\
+note(11, $str === \"abcd\" && $str_copy === \"aZcd\");\n\
 $cat = \"left\";\n\
 $cat_copy = $cat;\n\
 $cat_copy .= \"-right\";\n\
-note(10, $cat === \"left\" && $cat_copy === \"left-right\");",
+note(12, $cat === \"left\" && $cat_copy === \"left-right\");",
     )
     .unwrap();
 
@@ -6397,7 +6403,9 @@ note(10, $cat === \"left\" && $cat_copy === \"left-right\");",
             "7 pass\n",
             "8 pass\n",
             "9 pass\n",
-            "10 pass\n"
+            "10 pass\n",
+            "11 pass\n",
+            "12 pass\n"
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -6406,6 +6414,7 @@ note(10, $cat === \"left\" && $cat_copy === \"left-right\");",
     assert!(c_source.contains("ptn_runtime_array_path_read_for_assign_op"));
     assert!(c_source.contains("ptn_runtime_array_path_set_from_assign_op"));
     assert!(c_source.contains("ptn_runtime_array_path_unset"));
+    assert!(c_source.contains("ptn_array_union"));
     assert!(c_source.contains("ptn_array_detach_value(value);"));
     assert!(c_source.contains("ptn_array_detach_value(entry_value);"));
     assert!(c_source.contains("ptn_value_detach_for_write"));

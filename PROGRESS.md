@@ -1,7 +1,7 @@
 # PTN Progress
 
 Refresh: 2026-06-09T23:25Z
-Measured base: `ptn-4yt.6` rebased after `ptn-4yt.5`
+Measured base: `ptn-4yt.1` rebased after `ptn-4yt.6`
 
 ## Test Dashboard
 
@@ -23,14 +23,14 @@ Measured base: `ptn-4yt.6` rebased after `ptn-4yt.5`
 | Post-merge COW gate | 14 | 14 | 0 |
 | COW/reference-focused native tests | 11 | 11 | 0 |
 | Mutating-internal COW matrix | 14 | 14 | 0 |
-| PHPT COW manifest | 29 | 12 | 17 |
+| PHPT COW manifest | 29 | 13 | 16 |
 | Focused PHPT foreach COW row | 1 | 1 | 0 |
 
 ## COW PHPT Buckets
 
-`tools/phpt-cow-manifest.txt` at 2026-06-09T23:25Z: 29 rows, 12 passing,
-17 failing. Bucket pass counts: assignment-aliasing 4/4, string-offsets 4/4,
-array-writes-appends-unset 3/4, nested-arrays 0/4, foreach-mutation 1/4,
+`tools/phpt-cow-manifest.txt` at 2026-06-09T23:25Z: 29 rows, 13 passing,
+16 failing. Bucket pass counts: assignment-aliasing 4/4, string-offsets 4/4,
+array-writes-appends-unset 4/4, nested-arrays 0/4, foreach-mutation 1/4,
 function-boundaries 0/4, reference-interaction 0/5. The full bounded runner
 still stops at `Zend/tests/bug38469.phpt`; that row is counted failing. Failing
 rows are bucketed in
@@ -46,8 +46,8 @@ string/math/type internals, ordered arrays, `foreach`, array cursors,
 references, by-reference parameters and `foreach`, array dimensions,
 temporaries, recursive/user functions, magic constants, `func_*`, `print_r`,
 binary strings, string offsets, corpus-style scalar offset diagnostics, array
-literal reference elements, `count()`, `??`, COW gates/oracles, assignment
-expressions, expression-level `@` suppression,
+literal reference elements, array union `+`, `count()`, `??`, COW gates/oracles,
+assignment expressions, expression-level `@` suppression,
 `file_put_contents()`, `sha1_file()`, and `unlink()` byte-file slices.
 
 ## Still Needed

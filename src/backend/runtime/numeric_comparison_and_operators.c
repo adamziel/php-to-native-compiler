@@ -12,6 +12,32 @@ static PTN_UNUSED PtnValue ptn_array_reindexing_internal_value(PtnValue value) {
     return value;
 }
 
+static PTN_UNUSED PtnValue ptn_array_union(PtnArray *left, PtnArray *right) {
+    PtnValue union_value = ptn_array_from_literal_entries(0, NULL);
+    PtnArray *union_array = union_value.as.array;
+
+    for (size_t i = 0; i < left->len; i++) {
+        ptn_array_set_entry(
+            union_array,
+            ptn_array_key_clone(left->entries[i].key),
+            ptn_value_clone(left->entries[i].value)
+        );
+    }
+
+    for (size_t i = 0; i < right->len; i++) {
+        if (ptn_array_find_key(union_array, right->entries[i].key) < union_array->len) {
+            continue;
+        }
+        ptn_array_set_entry(
+            union_array,
+            ptn_array_key_clone(right->entries[i].key),
+            ptn_value_clone(right->entries[i].value)
+        );
+    }
+
+    return union_value;
+}
+
 static PTN_UNUSED int ptn_compare_arrays_equal(PtnArray *left, PtnArray *right) {
     if (left->len != right->len) {
         return 0;
@@ -332,6 +358,12 @@ static PTN_UNUSED PtnValue ptn_add_integers(int64_t left, int64_t right) {
 }
 
 static PTN_UNUSED PtnValue ptn_add(PtnValue left, PtnValue right) {
+    left = ptn_value_deref(left);
+    right = ptn_value_deref(right);
+    if (left.type == PTN_ARRAY && right.type == PTN_ARRAY) {
+        return ptn_array_union(left.as.array, right.as.array);
+    }
+
     int64_t left_integer = 0;
     int64_t right_integer = 0;
     if (ptn_fast_integer_value(left, &left_integer) && ptn_fast_integer_value(right, &right_integer)) {
