@@ -2,11 +2,10 @@
 
 ## Progress Bar
 
-`[#########.] 55/59 PHPT rows passing`
-- Latest: 2026-06-09T14:32Z focused PHPT telemetry passes
-  `Zend/tests/numeric_strings/string_offset.phpt`; full `cargo test` passes.
-- Tests ported/passing: 55/59
-- Commit: current branch
+`[#########.] 54/59 PHPT rows passing`
+- Latest: 2026-06-09T15:06Z bounded PHPT patrol: 54 pass, 5 array-function failures.
+- Tests ported/passing: 54/59
+- Commit: 9a4282cdda
 
 ## 2026-06-08
 
