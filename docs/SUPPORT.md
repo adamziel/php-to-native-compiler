@@ -30,7 +30,9 @@ supports in generated native binaries.
   string concatenation. `**` is parsed right-associatively and binds with PHP's
   precedence relative to unary operators. Other arithmetic chains are parsed
   left-associatively, with `*`, `/`, and `%` binding tighter than `+` and `-`,
-  and arithmetic binding tighter than `.`.
+  and arithmetic binding tighter than `.`. Integer-only `%` conversions emit
+  the current float/float-string precision-loss deprecation boundary when a
+  scalar operand loses precision while converting to an integer.
 - Binary operands are materialized left-to-right before the generated C backend
   calls runtime helpers.
 - Direct named-variable compound assignment for `+=`, `-=`, `*=`, `/=`, `%=`,
@@ -47,7 +49,8 @@ supports in generated native binaries.
   `0.0`, `""`, and `"0"` are falsey; other supported scalar values are truthy.
 - Unary bitwise `~` over supported boxed scalar values. String operands produce
   bytewise string results for non-NUL string data; other supported scalar
-  operands are converted to integers through the current scalar numeric path.
+  operands are converted to integers through the current scalar numeric path,
+  including the current float/float-string precision-loss deprecation boundary.
 - Scalar `(int)`, `(float)`, `(string)`, `(bool)`, and deprecated
   non-canonical `(integer)`, `(double)`, `(binary)`, and `(boolean)` casts over
   supported boxed scalar values.
@@ -76,9 +79,11 @@ supports in generated native binaries.
 - Boxed scalar bitwise `&`, `^`, and `|` operators. When both operands are strings,
   the result is a bytewise string for non-NUL string data. Other supported
   scalar operands are converted to integers through the current scalar numeric
-  conversion path.
+  conversion path, including the current float/float-string precision-loss
+  deprecation boundary.
 - Boxed scalar bit shifts `<<` and `>>`. Supported scalar operands are
-  converted to integers through the current bitwise integer-conversion path.
+  converted to integers through the current bitwise integer-conversion path,
+  including the current float/float-string precision-loss deprecation boundary.
 - Simple statement-form internal calls such as `var_dump(expr, ...)`,
   `strlen(expr);`, `str_rot13(expr);`, `strcmp(expr, expr);`,
   `str_contains(expr, expr);`, `md5(expr[, raw_output]);`,
@@ -281,8 +286,8 @@ supports in generated native binaries.
 - Scope-aware magic constants inside functions, methods, classes, traits,
   namespaces, includes, and eval contexts.
 - PHP-exact file names, line numbers, error-handler routing, and overflow
-  parity for bitwise integer-conversion diagnostics, including shift
-  diagnostics.
+  parity for integer-only operator conversion diagnostics, including bitwise,
+  shift, and modulo diagnostics.
 - Compound assignment operators other than `+=`, `-=`, `*=`, `/=`, `%=`, `**=`,
   `.=`, `&=`, `|=`, `^=`, `<<=`, and `>>=`: `??=`.
 - Array, object, string-offset, property, static-property, variable-variable,

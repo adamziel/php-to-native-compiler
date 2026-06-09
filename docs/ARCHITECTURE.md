@@ -40,8 +40,11 @@ Current runtime/compiler slices:
   `ptn_bitwise_or`, `ptn_shift_left`, and `ptn_shift_right`.
   String/string bitwise operands use bytewise string helpers for non-NUL string
   data; other supported scalar operands convert through the current numeric
-  path before integer bitwise operations. Shift operands always use the current
-  bitwise integer-conversion path.
+  path before integer bitwise operations. Bitwise, shift, and modulo helpers
+  share the current integer-only operator conversion boundary, including
+  float/float-string precision-loss deprecations when scalar conversion would
+  discard a fractional part. Shift operands always use that integer-conversion
+  path.
 - Direct named-variable `+=`, `-=`, `*=`, `**=`, `/=`, `%=`, `.=`, `&=`, `^=`,
   `|=`, `<<=`, and `>>=` lower in IR as a direct variable load, the same boxed
   binary helper used by the ordinary binary operator, and a direct variable
@@ -174,9 +177,9 @@ Near-term architecture targets:
   diagnostics, warnings, scalar cast overflow behavior, exact
   division/modulo-by-zero exception behavior, and complete overflow behavior for
   arithmetic helpers.
-- PHP-exact file/line/error-handler behavior for bitwise float-to-int
-  precision-loss diagnostics, and overflow parity for bitwise integer
-  conversions and shifts.
+- PHP-exact file/line/error-handler behavior for integer-only operator
+  float-to-int precision-loss diagnostics, and overflow parity for bitwise,
+  shift, and modulo integer conversions.
 - Array, object, and reference lvalues for compound assignment, plus
   unsupported compound operators beyond `+=`, `-=`, `*=`, `**=`, `/=`, `%=`,
   `.=`, `&=`, `|=`, `^=`, `<<=`, and `>>=`: `??=`.

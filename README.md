@@ -111,7 +111,9 @@ Supported today:
   results. The parser treats `**` as right-associative with PHP's precedence
   relative to unary operators, `*`, `/`, and `%` as higher precedence than `+`
   and `-`, and arithmetic as higher precedence than `.`, while the backend emits
-  runtime calls over `PtnValue` operands.
+  runtime calls over `PtnValue` operands. Integer-only `%` conversions emit the
+  current float/float-string precision-loss deprecation boundary when a scalar
+  operand loses precision while converting to an integer.
 - Direct named-variable compound assignment for `+=`, `-=`, `*=`, `/=`, `%=`,
   `**=`, `.=`, `&=`, `|=`, `^=`, `<<=`, and `>>=`. These lower as a variable
   read, the matching boxed binary helper, then a variable write, preserving the
@@ -145,9 +147,11 @@ Supported today:
 - Boxed scalar bitwise `&`, `^`, `|`, and unary `~` expressions.
   String/string binary operands and string unary `~` operands use PHP bytewise
   string results for non-NUL strings; other supported scalar operands are
-  converted to integers through the current boxed numeric conversion path.
+  converted to integers through the current boxed numeric conversion path,
+  including the current float/float-string precision-loss deprecation boundary.
 - Boxed scalar bit shifts `<<` and `>>`. Supported scalar operands are
   converted to integers through the current bitwise integer-conversion path,
+  including the current float/float-string precision-loss deprecation boundary,
   and operands are evaluated left-to-right before calling runtime helpers.
 - Braced and single-statement `if`, `elseif`, and `else` statements. Branch
   conditions use boxed scalar truthiness and the currently supported expression
@@ -219,8 +223,9 @@ Unsupported today:
   precision/formatting edge cases for
   `var_dump()`/`strlen()`/`bin2hex()`/`hex2bin()`/`str_contains()`/`md5()`/
   `sha1()`/`soundex()`/base-conversion internals, scope-aware magic constants
-  inside functions/classes/namespaces/includes, doc comment retention,
-  variable variables, and dynamic fallback.
+  inside functions/classes/namespaces/includes, exact file/line/error-handler
+  behavior for integer-only operator precision-loss diagnostics, doc comment
+  retention, variable variables, and dynamic fallback.
   These are architecture targets, not excuses for exact-shape hacks.
 
 ## Build

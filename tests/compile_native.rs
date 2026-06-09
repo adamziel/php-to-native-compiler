@@ -3580,12 +3580,32 @@ fn compile_unary_bitwise_not_to_native_binary() {
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "int(-24)\nstring(8) \"8c90929a\"\nint(-24)\n"
+        "int(-24)\nstring(8) \"8c90929a\"\n\nDeprecated: Implicit conversion from float 23.67 to int loses precision in ptn-generated-code on line 0\nint(-24)\n"
     );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_integer_operator_precision_deprecations_to_native_binary() {
+    let root = temp_dir("ptn-native-int-operator-precision-deprecations");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("int-operator-precision-deprecations.php");
+    let output = root.join("int-operator-precision-deprecations-bin");
+    fs::write(
+        &input,
+        "<?php $var = 3; $var |= 1.5; var_dump($var); $var = 3; $var &= '1.5'; var_dump($var); $var = 9; $var %= 2.5; var_dump($var); $var = 9; $var %= '2.5'; var_dump($var);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
     assert_eq!(
-        String::from_utf8(execution.stderr).unwrap(),
-        "Deprecated: Implicit conversion from float 23.67 to int loses precision in ptn-generated-code on line 0\n"
+        String::from_utf8(execution.stdout).unwrap(),
+        "\nDeprecated: Implicit conversion from float 1.5 to int loses precision in ptn-generated-code on line 0\nint(3)\n\nDeprecated: Implicit conversion from float-string \"1.5\" to int loses precision in ptn-generated-code on line 0\nint(1)\n\nDeprecated: Implicit conversion from float 2.5 to int loses precision in ptn-generated-code on line 0\nint(1)\n\nDeprecated: Implicit conversion from float-string \"2.5\" to int loses precision in ptn-generated-code on line 0\nint(1)\n"
     );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

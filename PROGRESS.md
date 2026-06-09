@@ -1238,3 +1238,25 @@ Still unsupported after this scalar digest slice: length-aware binary string
 storage, raw digest output containing embedded NUL bytes, embedded-NUL input
 parity, `md5_file()`/`sha1_file()`, and unsupported
 array/object/resource/reference operand diagnostics.
+
+Added a shared integer-only scalar operator conversion boundary:
+
+- Bitwise, shift, and modulo helpers now route scalar operands through the same
+  integer-only conversion helper instead of limiting precision-loss diagnostics
+  to direct float bitwise operands.
+- Float operands that lose precision while converting for integer-only
+  operators emit the current generic deprecation boundary before conversion.
+- Float-string operands such as `"1.5"` now emit the matching float-string
+  precision-loss deprecation boundary before integer-only operator conversion.
+- Native tests prove unary bitwise not, bitwise compound assignment, modulo
+  compound assignment, and float/float-string precision-loss deprecations
+  through generated native binaries.
+- Focused public PHPT telemetry through `phpc` passes
+  `Zend/tests/type_coercion/float_to_int/warnings_float_literals_assignment_ops.phpt`
+  and
+  `Zend/tests/type_coercion/float_to_int/warnings_string_float_literals_assignment_ops.phpt`.
+
+Still unsupported after this conversion slice: PHP-exact file names, source
+line propagation, error-handler routing, and overflow parity for integer-only
+operator conversions; arrays, objects, resources, references, and copy-on-write
+behavior remain outside this scalar boundary.

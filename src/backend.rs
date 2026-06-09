@@ -1803,13 +1803,6 @@ static PTN_UNUSED PtnValue ptn_power(PtnValue left, PtnValue right) {
     return ptn_float(pow(left_number.floating, right_number.floating));
 }
 
-static PTN_UNUSED int64_t ptn_number_to_integer(PtnNumber number) {
-    if (number.type == PTN_NUMBER_FLOAT) {
-        return (int64_t)number.floating;
-    }
-    return number.integer;
-}
-
 static PTN_UNUSED PtnValue ptn_divide(PtnValue left, PtnValue right) {
     PtnNumber left_number = ptn_to_number(left);
     PtnNumber right_number = ptn_to_number(right);
@@ -1828,9 +1821,50 @@ static PTN_UNUSED PtnValue ptn_divide(PtnValue left, PtnValue right) {
     return ptn_float(left_number.floating / right_number.floating);
 }
 
+static PTN_UNUSED int ptn_float_to_int_loses_precision(double value) {
+    if (value < -9223372036854775808.0 || value >= 9223372036854775808.0) {
+        return 1;
+    }
+    int64_t integer = (int64_t)value;
+    return (double)integer != value;
+}
+
+static PTN_UNUSED void ptn_emit_float_to_int_precision_deprecation(double value) {
+    printf(
+        "\nDeprecated: Implicit conversion from float %.14g to int loses precision in ptn-generated-code on line 0\n",
+        value
+    );
+}
+
+static PTN_UNUSED void ptn_emit_float_string_to_int_precision_deprecation(const char *value) {
+    printf(
+        "\nDeprecated: Implicit conversion from float-string \"%s\" to int loses precision in ptn-generated-code on line 0\n",
+        value
+    );
+}
+
+static PTN_UNUSED int64_t ptn_number_to_integer(PtnNumber number) {
+    if (number.type == PTN_NUMBER_FLOAT) {
+        return (int64_t)number.floating;
+    }
+    return number.integer;
+}
+
+static PTN_UNUSED int64_t ptn_value_to_integer_with_precision_deprecation(PtnValue value) {
+    PtnNumber number = ptn_to_number(value);
+    if (number.type == PTN_NUMBER_FLOAT && ptn_float_to_int_loses_precision(number.floating)) {
+        if (value.type == PTN_STRING) {
+            ptn_emit_float_string_to_int_precision_deprecation(value.as.string);
+        } else {
+            ptn_emit_float_to_int_precision_deprecation(number.floating);
+        }
+    }
+    return ptn_number_to_integer(number);
+}
+
 static PTN_UNUSED PtnValue ptn_modulo(PtnValue left, PtnValue right) {
-    int64_t left_integer = ptn_number_to_integer(ptn_to_number(left));
-    int64_t right_integer = ptn_number_to_integer(ptn_to_number(right));
+    int64_t left_integer = ptn_value_to_integer_with_precision_deprecation(left);
+    int64_t right_integer = ptn_value_to_integer_with_precision_deprecation(right);
     if (right_integer == 0) {
         ptn_abort_arithmetic_error("Modulo by zero");
     }
@@ -1908,31 +1942,12 @@ static PTN_UNUSED PtnValue ptn_bitwise_string_not(const char *value) {
     return ptn_owned_string(result);
 }
 
-static PTN_UNUSED int ptn_float_to_int_loses_precision(double value) {
-    if (value < -9223372036854775808.0 || value >= 9223372036854775808.0) {
-        return 1;
-    }
-    int64_t integer = (int64_t)value;
-    return (double)integer != value;
-}
-
-static PTN_UNUSED void ptn_emit_float_to_int_precision_deprecation(double value) {
-    fprintf(
-        stderr,
-        "Deprecated: Implicit conversion from float %.14g to int loses precision in ptn-generated-code on line 0\n",
-        value
-    );
-}
-
 static PTN_UNUSED int64_t ptn_value_to_integer(PtnValue value) {
-    return ptn_number_to_integer(ptn_to_number(value));
+    return ptn_value_to_integer_with_precision_deprecation(value);
 }
 
 static PTN_UNUSED int64_t ptn_bitwise_integer_operand(PtnValue value) {
-    if (value.type == PTN_FLOAT && ptn_float_to_int_loses_precision(value.as.floating)) {
-        ptn_emit_float_to_int_precision_deprecation(value.as.floating);
-    }
-    return ptn_value_to_integer(value);
+    return ptn_value_to_integer_with_precision_deprecation(value);
 }
 
 static PTN_UNUSED PtnValue ptn_bitwise_and(PtnValue left, PtnValue right) {
