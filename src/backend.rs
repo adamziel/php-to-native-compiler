@@ -1383,38 +1383,132 @@ impl ValueEmitter {
     }
 
     fn emit_isset(&mut self, out: &mut String, targets: &[ValueExpr]) -> String {
+        let state_temp = self.next_temp();
+        out.push_str("    int ");
+        out.push_str(&state_temp);
+        out.push_str(" = 1;\n");
+        for target in targets {
+            out.push_str("    if (");
+            out.push_str(&state_temp);
+            out.push_str(") {\n");
+            let check_temp = self.emit_isset_check(out, target);
+            out.push_str("        ");
+            out.push_str(&state_temp);
+            out.push_str(" = ");
+            out.push_str(&check_temp);
+            out.push_str(";\n");
+            out.push_str("    }\n");
+        }
         let result_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
-        out.push_str(" = ptn_bool(1);\n");
-        for target in targets {
-            out.push_str("    if (ptn_is_truthy(");
-            out.push_str(&result_temp);
-            out.push_str(")) {\n");
-            let lookup_temp = self.emit_quiet_lookup(out, target);
-            out.push_str("        ");
-            out.push_str(&result_temp);
-            out.push_str(" = ptn_bool(");
-            out.push_str(&lookup_temp);
-            out.push_str(".exists && ");
-            out.push_str(&lookup_temp);
-            out.push_str(".value.type != PTN_NULL);\n");
-            out.push_str("    }\n");
-        }
+        out.push_str(" = ptn_bool(");
+        out.push_str(&state_temp);
+        out.push_str(");\n");
         result_temp
     }
 
     fn emit_empty(&mut self, out: &mut String, target: &ValueExpr) -> String {
-        let lookup_temp = self.emit_quiet_lookup(out, target);
+        let check_temp = self.emit_empty_check(out, target);
         let result_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
-        out.push_str(" = ptn_bool(!");
-        out.push_str(&lookup_temp);
-        out.push_str(".exists || !ptn_is_truthy(");
-        out.push_str(&lookup_temp);
-        out.push_str(".value));\n");
+        out.push_str(" = ptn_bool(");
+        out.push_str(&check_temp);
+        out.push_str(");\n");
         result_temp
+    }
+
+    fn emit_isset_check(&mut self, out: &mut String, value: &ValueExpr) -> String {
+        match value {
+            ValueExpr::Load { name, .. } => {
+                let result_temp = self.next_temp();
+                out.push_str("        int ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_runtime_variable_is_set(&runtime, \"");
+                out.push_str(&c_string(name));
+                out.push_str("\");\n");
+                result_temp
+            }
+            ValueExpr::ArrayAccess { array, index, line } => {
+                let container_temp = self.emit_quiet_lookup(out, array);
+                let index_temp = self.emit_materialized_value(out, index);
+                let result_temp = self.next_temp();
+                out.push_str("        int ");
+                out.push_str(&result_temp);
+                out.push_str(" = 0;\n");
+                out.push_str("        if (");
+                out.push_str(&container_temp);
+                out.push_str(".exists) {\n");
+                out.push_str("            ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_offset_is_set(&runtime, ");
+                out.push_str(&container_temp);
+                out.push_str(".value, ");
+                out.push_str(&index_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                out.push_str("        }\n");
+                result_temp
+            }
+            _ => {
+                let value_temp = self.emit_materialized_value(out, value);
+                let result_temp = self.next_temp();
+                out.push_str("        int ");
+                out.push_str(&result_temp);
+                out.push_str(" = ");
+                out.push_str(&value_temp);
+                out.push_str(".type != PTN_NULL;\n");
+                result_temp
+            }
+        }
+    }
+
+    fn emit_empty_check(&mut self, out: &mut String, value: &ValueExpr) -> String {
+        match value {
+            ValueExpr::Load { name, .. } => {
+                let result_temp = self.next_temp();
+                out.push_str("        int ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_runtime_variable_is_empty(&runtime, \"");
+                out.push_str(&c_string(name));
+                out.push_str("\");\n");
+                result_temp
+            }
+            ValueExpr::ArrayAccess { array, index, line } => {
+                let container_temp = self.emit_quiet_lookup(out, array);
+                let index_temp = self.emit_materialized_value(out, index);
+                let result_temp = self.next_temp();
+                out.push_str("        int ");
+                out.push_str(&result_temp);
+                out.push_str(" = 1;\n");
+                out.push_str("        if (");
+                out.push_str(&container_temp);
+                out.push_str(".exists) {\n");
+                out.push_str("            ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_offset_is_empty(&runtime, ");
+                out.push_str(&container_temp);
+                out.push_str(".value, ");
+                out.push_str(&index_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                out.push_str("        }\n");
+                result_temp
+            }
+            _ => {
+                let value_temp = self.emit_materialized_value(out, value);
+                let result_temp = self.next_temp();
+                out.push_str("        int ");
+                out.push_str(&result_temp);
+                out.push_str(" = !ptn_is_truthy(");
+                out.push_str(&value_temp);
+                out.push_str(");\n");
+                result_temp
+            }
+        }
     }
 
     fn emit_quiet_lookup(&mut self, out: &mut String, value: &ValueExpr) -> String {
@@ -1663,6 +1757,33 @@ impl ValueEmitter {
         arguments: &[ValueExpr],
         line: usize,
     ) -> String {
+        if name == "count" && arguments.len() == 1 {
+            let argument_temp = self.emit_materialized_value(out, &arguments[0]);
+            let result_temp = self.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_count_value(");
+            out.push_str(&argument_temp);
+            out.push_str(");\n");
+            return result_temp;
+        }
+
+        if name == "array_key_exists" && arguments.len() == 2 {
+            let key_temp = self.emit_materialized_value(out, &arguments[0]);
+            let array_temp = self.emit_materialized_value(out, &arguments[1]);
+            let result_temp = self.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_array_key_exists_value(&runtime, ");
+            out.push_str(&key_temp);
+            out.push_str(", ");
+            out.push_str(&array_temp);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            return result_temp;
+        }
+
         let result_temp = self.next_temp();
         let direct_user_c_name = self.direct_user_function_c_name(name);
         if arguments.is_empty() {

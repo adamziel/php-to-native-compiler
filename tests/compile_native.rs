@@ -4586,6 +4586,50 @@ var_dump(function_exists(\"array_key_exists\"), function_exists(\"ARRAY_KEY_EXIS
 }
 
 #[test]
+fn compile_array_predicates_use_generated_fast_paths() {
+    let root = temp_dir("ptn-native-array-predicate-fast-paths");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-predicate-fast-paths.php");
+    let output = root.join("array-predicate-fast-paths-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$items = [\"present\" => 1, \"nullish\" => null, \"zero\" => \"0\"];\n\
+var_dump(count($items));\n\
+var_dump(array_key_exists(\"nullish\", $items));\n\
+var_dump(isset($items[\"present\"]));\n\
+var_dump(isset($items[\"nullish\"]));\n\
+var_dump(empty($items[\"missing\"]));\n\
+var_dump(empty($items[\"zero\"]));\n\
+var_dump(empty($missing));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(3)\nbool(true)\nbool(true)\nbool(false)\nbool(true)\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    let main_start = c_source
+        .find("\nint main(void)")
+        .expect("generated C should contain main");
+    let main_body = &c_source[main_start..];
+    assert!(main_body.contains("ptn_count_value("));
+    assert!(main_body.contains("ptn_array_key_exists_value(&runtime"));
+    assert!(main_body.contains("ptn_offset_is_set(&runtime"));
+    assert!(main_body.contains("ptn_offset_is_empty(&runtime"));
+    assert!(main_body.contains("ptn_runtime_variable_is_empty(&runtime"));
+    assert!(!main_body.contains("ptn_call_function(&runtime, \"count\""));
+    assert!(!main_body.contains("ptn_call_function(&runtime, \"array_key_exists\""));
+}
+
+#[test]
 fn compile_large_ordered_array_lookup_to_native_binary() {
     let root = temp_dir("ptn-native-large-array-lookup");
     fs::create_dir_all(&root).unwrap();

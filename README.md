@@ -458,6 +458,17 @@ tools/benchmark-internal-dispatch.sh 500000
 The command compiles a temporary supported PHP program, runs the generated
 binary, verifies its output, and reports elapsed native execution time.
 
+For focused generated array predicate and key-existence fast-path telemetry:
+
+```sh
+tools/benchmark-array-fast-paths.sh
+tools/benchmark-array-fast-paths.sh 500000
+```
+
+The command compiles a temporary supported PHP program with repeated `count()`,
+`array_key_exists()`, `isset()`, `empty()`, and array reads, verifies its
+output, and reports elapsed native execution time.
+
 ## Production Workflow
 
 A task is ready only when it is integrated into the branch that will be pushed.

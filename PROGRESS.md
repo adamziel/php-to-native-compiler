@@ -3,7 +3,7 @@
 ## Progress Bar
 
 `[#########.] 51/59 PHPT rows passing`
-- Latest: PHPT reporter snapshot: 51/59 selected rows passing.
+- Latest: Array predicate/key-count fast paths integrated; PHPT snapshot 51/59.
 - Tests ported/passing: 51/59
 - Commit: 670aef40b
 
@@ -2130,3 +2130,29 @@ Reduced generated C size for programs that do not perform function calls:
 No new PHP surface is claimed by this performance slice. Function calls keep
 the existing conservative dispatch path and unsupported internal functions
 continue to report through the generated runtime error boundary.
+
+Optimized generated array predicate and key-count fast paths:
+
+- Exact-arity generated `count()` calls now emit a direct `ptn_count_value()`
+  helper call, avoiding the internal-function registry and temporary argument
+  array while preserving current non-array fatal diagnostics through the same
+  shared helper used by the internal dispatch path.
+- Exact-arity generated `array_key_exists()` calls now emit a direct
+  `ptn_array_key_exists_value()` helper call, preserving key canonicalization,
+  hash-assisted lookup, null-key deprecation diagnostics, and non-array fatal
+  behavior.
+- Generated `isset()` now short-circuits with an integer predicate state rather
+  than repeatedly boxing boolean state and calling `ptn_is_truthy()` on it.
+- Generated `isset()` and `empty()` over variables and offsets use direct
+  runtime predicate helpers, avoiding `PtnLookupResult` construction for the
+  final offset check while keeping quiet missing-variable/missing-offset
+  behavior and the current null-offset deprecation boundary.
+- Native tests now prove behavior and emitted C shape for the direct
+  `count()`, `array_key_exists()`, `isset()`, and `empty()` paths.
+- Added `tools/benchmark-array-fast-paths.sh` to compile and run a generated
+  native benchmark for repeated array predicate/key checks.
+
+No new PHP surface is claimed by this performance slice. Array mutation,
+append/unset, recursive arrays, references, copy-on-write, `Countable` objects,
+and exact unsupported operand diagnostics beyond the current modeled boundaries
+remain unsupported.
