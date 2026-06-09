@@ -174,7 +174,8 @@ supports in generated native binaries.
   allows PHP-style fallthrough, and supports `break;` or explicit-level
   `break N;` from the active emitted switch/loop target stack.
 - User labels such as `L1:` and `goto L1;` statements inside the currently
-  generated main function.
+  generated main function, including source-spanned fatal diagnostics for
+  undefined target labels.
 - Source-spanned compile diagnostics emitted through `phpc` use PHP-style fatal
   or parse-error boundaries with the source file and line. This currently
   covers duplicate `default:` clauses in `switch` and removed `(real)` and
@@ -200,8 +201,8 @@ supports in generated native binaries.
 - Unbraced switch bodies, alternate control-flow syntax, `foreach`, `continue`,
   branch-condition assignments, for-loop comma expressions and
   non-direct-variable clause lvalues, PHP-exact break/continue diagnostics,
-  invalid-goto diagnostics and restrictions for jumps into/out of forbidden
-  scopes, and exception/finally control-flow edges.
+  duplicate-label diagnostics, forbidden-scope goto restrictions for jumps
+  into/out of invalid scopes, and exception/finally control-flow edges.
 - Switch alternate syntax and switch behavior for arrays, objects, references,
   copy-on-write, and exceptions.
 - Increment/decrement as expressions, including pre/post result values in echo,

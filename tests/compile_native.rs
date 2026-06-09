@@ -863,6 +863,14 @@ fn parser_accepts_labels_goto_and_single_statement_if() {
 }
 
 #[test]
+fn parser_rejects_goto_to_undefined_label() {
+    let error = parser::parse("<?php\ngoto L1;\n").unwrap_err();
+    assert_eq!(error.kind, DiagnosticKind::Fatal);
+    assert_eq!(error.message, "'goto' to undefined label 'L1'");
+    assert_eq!(error.span.unwrap().line, 2);
+}
+
+#[test]
 fn parser_accepts_braced_switch_cases_default_and_break() {
     let program = parser::parse(
         "<?php $a = 1; switch ($a) { case 0: echo \"bad\"; break; case 1: echo \"good\"; break 2; default: echo \"bad\"; break; }",
@@ -965,6 +973,26 @@ fn phpc_renders_spanned_compile_diagnostics_as_php_fatals() {
         String::from_utf8(execution.stderr).unwrap(),
         format!(
             "Fatal error: Switch statements may only contain one default clause in {} on line 6\n",
+            input.display()
+        )
+    );
+}
+
+#[test]
+fn phpc_renders_undefined_goto_label_as_php_fatal() {
+    let root = temp_dir("ptn-phpc-undefined-goto-label");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("jump06.php");
+    fs::write(&input, "<?php\ngoto L1;\n").unwrap();
+
+    let execution = Command::new(phpc_bin()).arg(&input).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "Fatal error: 'goto' to undefined label 'L1' in {} on line 2\n",
             input.display()
         )
     );

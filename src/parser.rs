@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use crate::ast::{
     ArrayElement, AssignmentOp, BinaryOp, CastKind, Expr, IncDecOp, MagicConstantKind, Program,
     Statement, StringPart, SwitchCase, UnaryOp,
@@ -28,6 +30,7 @@ impl Parser {
             }
             statements.push(self.parse_statement()?);
         }
+        validate_goto_labels(&statements)?;
         Ok(Program { statements })
     }
 
@@ -945,6 +948,90 @@ impl Parser {
         self.index += 1;
         token
     }
+}
+
+fn validate_goto_labels(statements: &[Statement]) -> Result<()> {
+    let mut labels = HashSet::new();
+    collect_labels(statements, &mut labels);
+    validate_gotos(statements, &labels)
+}
+
+fn collect_labels(statements: &[Statement], labels: &mut HashSet<String>) {
+    for statement in statements {
+        match statement {
+            Statement::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                collect_labels(then_body, labels);
+                collect_labels(else_body, labels);
+            }
+            Statement::While { body, .. } | Statement::DoWhile { body, .. } => {
+                collect_labels(body, labels);
+            }
+            Statement::For {
+                initializers,
+                updates,
+                body,
+                ..
+            } => {
+                collect_labels(initializers, labels);
+                collect_labels(updates, labels);
+                collect_labels(body, labels);
+            }
+            Statement::Switch { cases, .. } => {
+                for case in cases {
+                    collect_labels(&case.body, labels);
+                }
+            }
+            Statement::Label { name, .. } => {
+                labels.insert(name.clone());
+            }
+            _ => {}
+        }
+    }
+}
+
+fn validate_gotos(statements: &[Statement], labels: &HashSet<String>) -> Result<()> {
+    for statement in statements {
+        match statement {
+            Statement::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                validate_gotos(then_body, labels)?;
+                validate_gotos(else_body, labels)?;
+            }
+            Statement::While { body, .. } | Statement::DoWhile { body, .. } => {
+                validate_gotos(body, labels)?;
+            }
+            Statement::For {
+                initializers,
+                updates,
+                body,
+                ..
+            } => {
+                validate_gotos(initializers, labels)?;
+                validate_gotos(updates, labels)?;
+                validate_gotos(body, labels)?;
+            }
+            Statement::Switch { cases, .. } => {
+                for case in cases {
+                    validate_gotos(&case.body, labels)?;
+                }
+            }
+            Statement::Goto { label, span } if !labels.contains(label) => {
+                return Err(Diagnostic::new(
+                    format!("'goto' to undefined label '{label}'"),
+                    Some(*span),
+                ));
+            }
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
 fn combine_spans(left: SourceSpan, right: SourceSpan) -> SourceSpan {

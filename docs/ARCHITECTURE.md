@@ -149,6 +149,10 @@ Current runtime/compiler slices:
   emitted switch/loop exit labels so `break N;` can leave the requested number
   of nested control targets, and reports source-spanned fatals when the level
   is not valid for the active target stack.
+- User labels and `goto` statements stay inside the current generated main
+  function. After parsing, a validation pass collects labels from the supported
+  statement tree and reports source-spanned fatals for `goto` targets that are
+  not defined before the backend emits generated labels.
 - Statement-form direct variable increment/decrement lowers to a runtime read,
   boxed numeric increment/decrement helper, and runtime write. Expression-value
   semantics for pre/post increment remain outside this slice.

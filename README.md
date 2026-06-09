@@ -155,7 +155,8 @@ Supported today:
   one `default`, and `break;` or explicit-level `break N;` over active
   switch/loop targets.
 - User labels such as `L1:` and `goto L1;` statements inside the currently
-  generated main function.
+  generated main function, including source-spanned fatal diagnostics for
+  undefined target labels.
 - Statement-form direct variable `++` and `--`, such as `$i++;` and `--$i;`,
   using the boxed numeric arithmetic helper path.
 
@@ -173,8 +174,8 @@ Unsupported today:
   overflow/range parity, complete comparison parity for unsupported types,
   keyword boolean operators, chained comparison parse errors, unbraced switch
   bodies and alternate control-flow syntax, `foreach`, `continue`, PHP-exact
-  break/continue diagnostics, invalid-goto diagnostics and restrictions for
-  jumps into/out of forbidden scopes, full
+  break/continue diagnostics, duplicate-label diagnostics, forbidden-scope goto
+  restrictions for jumps into/out of invalid scopes, full
   switch parity for unsupported value types and alternate syntax,
   increment/decrement as expressions, PHP-exact
   increment/decrement semantics for strings/booleans and other edge values,

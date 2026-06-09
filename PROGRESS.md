@@ -1129,3 +1129,19 @@ Added scalar `str_contains()`:
 Still unsupported after this `str_contains()` slice: PHP-exact binary-string
 behavior for embedded NUL values, unsupported array/object/resource/reference
 operand diagnostics, and broader string runtime parity.
+
+Added undefined `goto` label diagnostics:
+
+- After parsing the supported statement tree, the parser now collects user
+  labels and validates every `goto` target before IR lowering and C code
+  generation.
+- Undefined labels produce a source-spanned PHP-style fatal diagnostic instead
+  of falling through to a C compiler error for an undefined generated label.
+- Native/CLI tests prove parser validation and `phpc` fatal rendering.
+- Focused public PHPT telemetry through `phpc` passes
+  `Zend/tests/jump/jump06.phpt`.
+
+Still unsupported after this goto diagnostic slice: duplicate-label
+diagnostics, forbidden-scope goto restrictions for jumps into or out of invalid
+scopes, labels/goto inside unsupported functions/classes/try/finally
+constructs, and PHP-exact invalid-goto diagnostic wording for broader cases.
