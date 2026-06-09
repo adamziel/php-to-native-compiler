@@ -275,10 +275,14 @@ static PTN_UNUSED void ptn_array_set_entry(PtnArray *array, PtnArrayKey key, Ptn
         array->entries = new_entries;
         array->capacity = new_capacity;
     }
+    int cursor_was_invalid = array->current_index >= array->len;
     size_t entry_index = array->len;
     array->entries[entry_index].key = key;
     array->entries[entry_index].value = value;
     array->len++;
+    if (cursor_was_invalid) {
+        array->current_index = entry_index;
+    }
     ptn_array_index_insert(array, key, entry_index);
 }
 
@@ -289,13 +293,16 @@ static PTN_UNUSED int ptn_array_unset_entry(PtnArray *array, PtnArrayKey key) {
         return 0;
     }
 
+    if (array->current_index < array->len && index < array->current_index) {
+        array->current_index--;
+    }
     ptn_array_key_free(array->entries[index].key);
     ptn_value_destroy(&array->entries[index].value);
     for (size_t i = index + 1; i < array->len; i++) {
         array->entries[i - 1] = array->entries[i];
     }
     array->len--;
-    if (array->current_index > array->len) {
+    if (array->current_index != SIZE_MAX && array->current_index > array->len) {
         array->current_index = array->len;
     }
     ptn_array_key_free(key);
@@ -350,7 +357,9 @@ static PTN_UNUSED PtnArray *ptn_array_clone(PtnArray *source) {
     array->index_slots = NULL;
     array->index_capacity = 0;
     array->next_auto_key = 0;
-    array->current_index = source->current_index <= source->len ? source->current_index : source->len;
+    array->current_index = source->current_index == SIZE_MAX
+        ? SIZE_MAX
+        : (source->current_index <= source->len ? source->current_index : source->len);
     if (source->len != 0) {
         array->entries = malloc(source->len * sizeof(PtnArrayEntry));
         if (array->entries == NULL) {

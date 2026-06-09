@@ -1141,6 +1141,10 @@ fn collect_call_runtime_requirements(
     if is_generated_user_function_call(name, functions) {
         return;
     }
+    if is_mutating_array_cursor_call(name, arguments.len()) {
+        requirements.direct_internal_helpers = true;
+        return;
+    }
     if is_direct_internal_helper_call(name, arguments.len()) {
         requirements.direct_internal_helpers = true;
         return;
@@ -1157,6 +1161,24 @@ fn is_generated_user_function_call(name: &str, functions: &[FunctionDecl]) -> bo
 fn is_direct_internal_helper_call(name: &str, argument_count: usize) -> bool {
     (name.eq_ignore_ascii_case("count") && argument_count == 1)
         || (name.eq_ignore_ascii_case("array_key_exists") && argument_count == 2)
+}
+
+fn is_mutating_array_cursor_call(name: &str, argument_count: usize) -> bool {
+    argument_count == 1 && array_cursor_helper_name(name).is_some()
+}
+
+fn array_cursor_helper_name(name: &str) -> Option<&'static str> {
+    if name.eq_ignore_ascii_case("next") {
+        Some("ptn_runtime_array_cursor_next")
+    } else if name.eq_ignore_ascii_case("prev") {
+        Some("ptn_runtime_array_cursor_prev")
+    } else if name.eq_ignore_ascii_case("reset") {
+        Some("ptn_runtime_array_cursor_reset")
+    } else if name.eq_ignore_ascii_case("end") {
+        Some("ptn_runtime_array_cursor_end")
+    } else {
+        None
+    }
 }
 
 fn collect_control_warnings_in(
@@ -2336,6 +2358,29 @@ impl ValueEmitter {
         arguments: &[ValueExpr],
         line: usize,
     ) -> String {
+        if arguments.len() == 1 {
+            if let Some(helper_name) = array_cursor_helper_name(name) {
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ");
+                match &arguments[0] {
+                    ValueExpr::Load { name: variable, .. } => {
+                        out.push_str(helper_name);
+                        out.push_str("(&runtime, \"");
+                        out.push_str(&c_string(variable));
+                        out.push_str("\");\n");
+                    }
+                    _ => {
+                        out.push_str("ptn_array_cursor_pass_by_reference_error(&runtime, \"");
+                        out.push_str(&c_string(name));
+                        out.push_str("\");\n");
+                    }
+                }
+                return result_temp;
+            }
+        }
+
         if name.eq_ignore_ascii_case("count") && arguments.len() == 1 {
             let argument_temp = self.emit_materialized_value(out, &arguments[0]);
             let result_temp = self.next_temp();

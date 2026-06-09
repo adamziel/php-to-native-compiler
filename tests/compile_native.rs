@@ -4958,6 +4958,130 @@ if (!array_key_exists(\"absent\", $items)) echo \"absent\\n\";",
 }
 
 #[test]
+fn compile_array_cursor_internals_to_native_binary() {
+    let root = temp_dir("ptn-native-array-cursors");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-cursors.php");
+    let output = root.join("array-cursors-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$items = [\"a\" => \"apple\", \"b\" => \"book\", \"c\" => \"cook\"];\n\
+var_dump(current($items));\n\
+var_dump(key($items));\n\
+var_dump(next($items));\n\
+var_dump(current($items));\n\
+var_dump(key($items));\n\
+var_dump(end($items));\n\
+var_dump(key($items));\n\
+var_dump(prev($items));\n\
+var_dump(key($items));\n\
+var_dump(prev($items));\n\
+var_dump(key($items));\n\
+var_dump(prev($items));\n\
+var_dump(key($items));\n\
+var_dump(current($items));\n\
+var_dump(reset($items));\n\
+var_dump(key($items));\n\
+$empty = [];\n\
+var_dump(current($empty));\n\
+var_dump(key($empty));\n\
+var_dump(next($empty));\n\
+var_dump(prev($empty));\n\
+var_dump(end($empty));\n\
+var_dump(reset($empty));\n\
+var_dump(function_exists(\"END\"), function_exists(\"prev\"), function_exists(\"NEXT\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(5) \"apple\"\nstring(1) \"a\"\nstring(4) \"book\"\nstring(4) \"book\"\nstring(1) \"b\"\nstring(4) \"cook\"\nstring(1) \"c\"\nstring(4) \"book\"\nstring(1) \"b\"\nstring(5) \"apple\"\nstring(1) \"a\"\nbool(false)\nNULL\nbool(false)\nstring(5) \"apple\"\nstring(1) \"a\"\nbool(false)\nNULL\nbool(false)\nbool(false)\nbool(false)\nbool(false)\nbool(true)\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_direct_array_cursor_helpers_omit_internal_dispatch_block() {
+    let root = temp_dir("ptn-native-array-cursor-direct-helpers");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-cursor-direct-helpers.php");
+    let output = root.join("array-cursor-direct-helpers-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$items = [1, 2, 3];\n\
+echo next($items), \" \", end($items), \" \", prev($items), \" \", reset($items), \"\\n\";",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "2 3 2 1\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_array_cursor_next(&runtime"));
+    assert!(c_source.contains("ptn_runtime_array_cursor_end(&runtime"));
+    assert!(c_source.contains("ptn_runtime_array_cursor_prev(&runtime"));
+    assert!(c_source.contains("ptn_runtime_array_cursor_reset(&runtime"));
+    assert!(!c_source.contains("ptn_call_internal"));
+    assert!(!c_source.contains("ptn_internal_next"));
+    assert!(!c_source.contains("ptn_internal_var_dump"));
+}
+
+#[test]
+fn array_cursor_unsupported_boundaries_are_diagnostic() {
+    let literal_root = temp_dir("ptn-native-array-cursor-literal-boundary");
+    fs::create_dir_all(&literal_root).unwrap();
+    let literal_input = literal_root.join("array-cursor-literal-boundary.php");
+    let literal_output = literal_root.join("array-cursor-literal-boundary-bin");
+    fs::write(&literal_input, "<?php next([1, 2]);").unwrap();
+
+    compile_file(
+        &literal_input,
+        &literal_output,
+        CompileOptions { emit_c: false },
+    )
+    .unwrap();
+
+    let literal_execution = Command::new(&literal_output).output().unwrap();
+    assert!(!literal_execution.status.success());
+    assert_eq!(String::from_utf8(literal_execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(literal_execution.stderr).unwrap(),
+        "Fatal error: next(): Argument #1 ($array) cannot be passed by reference\n"
+    );
+
+    let scalar_root = temp_dir("ptn-native-array-cursor-scalar-boundary");
+    fs::create_dir_all(&scalar_root).unwrap();
+    let scalar_input = scalar_root.join("array-cursor-scalar-boundary.php");
+    let scalar_output = scalar_root.join("array-cursor-scalar-boundary-bin");
+    fs::write(&scalar_input, "<?php $value = 42; end($value);").unwrap();
+
+    compile_file(
+        &scalar_input,
+        &scalar_output,
+        CompileOptions { emit_c: false },
+    )
+    .unwrap();
+
+    let scalar_execution = Command::new(&scalar_output).output().unwrap();
+    assert!(!scalar_execution.status.success());
+    assert_eq!(String::from_utf8(scalar_execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(scalar_execution.stderr).unwrap(),
+        "Fatal error: end(): Argument #1 ($array) must be of type array, int given\n"
+    );
+}
+
+#[test]
 fn compile_array_pointer_and_mutation_internals_to_native_binary() {
     let root = temp_dir("ptn-native-array-pointer-mutation");
     fs::create_dir_all(&root).unwrap();

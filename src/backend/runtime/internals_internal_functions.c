@@ -68,6 +68,64 @@ static PTN_UNUSED PtnValue ptn_array_key_exists_value(PtnRuntime *runtime, PtnVa
     ptn_array_key_free(key);
     return ptn_bool(exists);
 }
+
+static PTN_UNUSED PtnArray *ptn_runtime_array_cursor_variable(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *variable_name
+) {
+    PtnValue value;
+    if (ptn_symbols_get(&runtime->symbols, variable_name, &value) && value.type == PTN_ARRAY) {
+        return value.as.array;
+    }
+
+    const char *type_name = "null";
+    if (ptn_symbols_get(&runtime->symbols, variable_name, &value)) {
+        type_name = ptn_offset_container_type_name(value);
+    }
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Argument #1 ($array) must be of type array, %s given",
+        function_name,
+        type_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_type_error(&runtime->diagnostics, message);
+    exit(255);
+    return NULL;
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_array_cursor_next(PtnRuntime *runtime, const char *variable_name) {
+    return ptn_array_next_value(ptn_runtime_array_cursor_variable(runtime, "next", variable_name));
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_array_cursor_prev(PtnRuntime *runtime, const char *variable_name) {
+    return ptn_array_prev_value(ptn_runtime_array_cursor_variable(runtime, "prev", variable_name));
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_array_cursor_reset(PtnRuntime *runtime, const char *variable_name) {
+    return ptn_array_reset_value(ptn_runtime_array_cursor_variable(runtime, "reset", variable_name));
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_array_cursor_end(PtnRuntime *runtime, const char *variable_name) {
+    return ptn_array_end_value(ptn_runtime_array_cursor_variable(runtime, "end", variable_name));
+}
+
+static PTN_UNUSED PtnValue ptn_array_cursor_pass_by_reference_error(
+    PtnRuntime *runtime,
+    const char *function_name
+) {
+    (void)runtime;
+    fputs("Fatal error: ", stderr);
+    fputs(function_name, stderr);
+    fputs("(): Argument #1 ($array) cannot be passed by reference\n", stderr);
+    exit(255);
+    return ptn_null();
+}
 /* PTN_DIRECT_INTERNAL_HELPERS_END */
 
 /* PTN_INTERNAL_FUNCTIONS_START */
@@ -297,11 +355,25 @@ static PtnValue ptn_internal_next(PtnRuntime *runtime, size_t argc, const PtnVal
     return ptn_array_next_value(array);
 }
 
+static PtnValue ptn_internal_prev(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "prev", 1, "array", args[0]);
+    return ptn_array_prev_value(array);
+}
+
 static PtnValue ptn_internal_reset(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     (void)line;
     PtnArray *array = ptn_internal_expect_array_arg(runtime, "reset", 1, "array", args[0]);
     return ptn_array_reset_value(array);
+}
+
+static PtnValue ptn_internal_end(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "end", 1, "array", args[0]);
+    return ptn_array_end_value(array);
 }
 
 static PtnValue ptn_internal_strlen(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -1629,6 +1701,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "define", 2, 2, ptn_internal_define },
         { "defined", 1, 1, ptn_internal_defined },
         { "dirname", 1, 1, ptn_internal_dirname },
+        { "end", 1, 1, ptn_internal_end },
         { "error_reporting", 0, 1, ptn_internal_error_reporting },
         { "fdiv", 2, 2, ptn_internal_fdiv },
         { "floor", 1, 1, ptn_internal_floor },
@@ -1661,6 +1734,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "php_sapi_name", 0, 0, ptn_internal_php_sapi_name },
         { "phpversion", 0, 1, ptn_internal_phpversion },
         { "pi", 0, 0, ptn_internal_pi },
+        { "prev", 1, 1, ptn_internal_prev },
         { "print_r", 1, 2, ptn_internal_print_r },
         { "quoted_printable_decode", 1, 1, ptn_internal_quoted_printable_decode },
         { "quotemeta", 1, 1, ptn_internal_quotemeta },

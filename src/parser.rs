@@ -1902,8 +1902,10 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "array_push"
             | "array_shift"
             | "current"
+            | "end"
             | "key"
             | "next"
+            | "prev"
             | "reset"
     )
 }

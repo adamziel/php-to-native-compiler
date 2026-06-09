@@ -12,6 +12,9 @@ expected rows, or one-off outputs.
 
 - Rust crate and `phpc` compiler binary.
 - Boxed C runtime for PHP-like values.
+- Ordered arrays with reads, variable-root mutation, `foreach`, key predicates,
+  and bounded variable-root cursor internals: `current()`, `key()`, `reset()`,
+  `end()`, `next()`, and `prev()`.
 - Native execution tests for parser, IR, backend, runtime, and selected PHP
   behavior.
 - Top-level user functions include scoped `__FUNCTION__` and `__METHOD__`
