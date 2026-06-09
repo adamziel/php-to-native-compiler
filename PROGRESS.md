@@ -2247,3 +2247,27 @@ No new PHP surface is claimed by this performance slice. Binary-safe string
 storage, references/copy-on-write, array/object/resource concatenation parity
 beyond the current warning boundary, and exact string-conversion diagnostics
 remain outside the current boxed runtime boundary.
+
+Added generated native `PtnValue` destruction boundaries for owned runtime
+payloads:
+
+- `PtnValue` now tracks whether string and array payloads are owned or borrowed.
+  Owned strings and arrays are recursively destroyed through a shared
+  `ptn_value_destroy()` path, while runtime reads expose borrowed views.
+- Runtime symbol and constant tables still clone values into slots, but now
+  destroy overwritten slot payloads and all remaining slot values during
+  `ptn_runtime_free()`. Array entries clone stored values, destroy replacements,
+  and recursively release keys and values when arrays are destroyed.
+- Generated C now destroys boxed temporaries after stores, constant definitions,
+  echoes, discarded expression and internal-call statements, call arguments,
+  array literal inputs, array reads, concat/binary/comparison operands,
+  condition predicates, switch subjects/cases, and `foreach` key/value/iterable
+  temporaries, including active `foreach` iterables before return jumps.
+  User-function returns are cloned before frame teardown so local slot
+  destruction cannot invalidate returned strings or arrays.
+- Native tests prove destructor emission at the generated-C/runtime boundaries
+  and exercise repeated owned string/array overwrites without changing output.
+
+No new PHP surface is claimed by this ownership slice. Recursive arrays,
+references/copy-on-write, object/resource destructors, and cleanup across every
+future exception/finally edge remain outside the current runtime boundary.

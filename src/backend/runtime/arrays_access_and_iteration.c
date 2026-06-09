@@ -511,7 +511,7 @@ static PTN_UNUSED PtnValue ptn_array_next_value(PtnArray *array) {
         return ptn_bool(0);
     }
     array->current_index++;
-    return array->entries[array->current_index].value;
+    return ptn_value_clone(array->entries[array->current_index].value);
 }
 
 static PTN_UNUSED PtnValue ptn_array_reset_value(PtnArray *array) {

@@ -4571,6 +4571,34 @@ fn compile_foreach_evaluates_iterable_once_to_native_binary() {
 }
 
 #[test]
+fn compile_foreach_return_releases_iterable_before_frame_teardown() {
+    let root = temp_dir("ptn-native-foreach-return-cleanup");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("foreach-return-cleanup.php");
+    let output = root.join("foreach-return-cleanup-bin");
+    fs::write(
+        &input,
+        "<?php
+function first_label() {
+    foreach ([str_rot13(\"sbb\")] as $value) {
+        return $value . \"!\";
+    }
+    return \"missing\";
+}
+echo first_label(), \"\\n\";
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "foo!\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_foreach_break_and_continue_to_native_binary() {
     let root = temp_dir("ptn-native-foreach-break-continue");
     fs::create_dir_all(&root).unwrap();
@@ -5897,6 +5925,74 @@ fn compile_variable_overwrite_to_native_binary() {
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "new");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn generated_c_destroys_owned_values_at_cleanup_boundaries() {
+    let root = temp_dir("ptn-native-owned-cleanup-shape");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("owned-cleanup-shape.php");
+    let output = root.join("owned-cleanup-shape-bin");
+    fs::write(
+        &input,
+        "<?php
+function make_label($suffix) {
+    return str_rot13(\"uryyb\") . $suffix;
+}
+$value = str_rot13(\"byq\");
+$value = make_label(\"!\");
+$array = [str_rot13(\"bar\"), [\"nested\" => str_rot13(\"onm\")]];
+$array = [str_rot13(\"sbb\")];
+strlen(str_rot13(\"qvfpneq\"));
+echo $value, \" \", $array[0], \"\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "hello! foo\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("static PTN_UNUSED void ptn_value_destroy(PtnValue *value)"));
+    assert!(c_source.contains("ptn_value_destroy(&symbols->items[index].value);"));
+    assert!(c_source.contains("ptn_value_destroy(&symbols->items[i].value);"));
+    assert!(c_source.contains("ptn_array_free(value->as.array);"));
+    assert!(c_source.contains("ptn_return_value = ptn_value_clone("));
+    assert!(c_source.contains("ptn_value_destroy(&ptn_tmp_"));
+}
+
+#[test]
+fn compile_repeated_owned_value_overwrites_to_native_binary() {
+    let root = temp_dir("ptn-native-owned-overwrite-stress");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("owned-overwrite-stress.php");
+    let output = root.join("owned-overwrite-stress-bin");
+    fs::write(
+        &input,
+        "<?php
+for ($i = 0; $i < 200; $i++) {
+    $value = str_rot13(\"n\") . $i;
+    $array = [$value, str_rot13(\"o\") . $i, [\"inner\" => str_rot13(\"p\") . $i]];
+    strlen($value . $array[1] . $array[2][\"inner\"]);
+}
+echo $value, \" \", $array[1], \" \", $array[2][\"inner\"], \"\\n\";
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "a199 b199 c199\n"
+    );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 

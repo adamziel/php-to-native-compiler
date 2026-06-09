@@ -39,12 +39,14 @@ pub fn emit_c(module: &Module) -> String {
     }
     let mut values = ValueEmitter::new(&module.source_file, &module.source_dir, &module.functions);
     let mut control_targets = Vec::new();
+    let mut return_cleanups = Vec::new();
     for instruction in &module.instructions {
         emit_instruction(
             &mut out,
             &mut values,
             instruction,
             &mut control_targets,
+            &mut return_cleanups,
             &module.source_file,
             None,
         );
@@ -146,6 +148,7 @@ fn emit_user_functions(
         }
         let mut values = ValueEmitter::new(source_file, source_dir, functions);
         let mut break_targets = Vec::new();
+        let mut return_cleanups = Vec::new();
         let return_label = values.next_label("ptn_function_return");
         for instruction in &function.body {
             emit_instruction(
@@ -153,6 +156,7 @@ fn emit_user_functions(
                 &mut values,
                 instruction,
                 &mut break_targets,
+                &mut return_cleanups,
                 source_file,
                 Some(&return_label),
             );
@@ -234,6 +238,7 @@ fn emit_instruction(
     values: &mut ValueEmitter,
     instruction: &Instruction,
     control_targets: &mut Vec<ControlTarget>,
+    return_cleanups: &mut Vec<String>,
     source_path: &str,
     return_target: Option<&str>,
 ) {
@@ -357,6 +362,7 @@ fn emit_instruction(
                 } else {
                     out.push_str("    ptn_return_value = ptn_null();\n");
                 }
+                emit_active_value_cleanups(out, return_cleanups);
                 out.push_str("    goto ");
                 out.push_str(target);
                 out.push_str(";\n");
@@ -369,6 +375,7 @@ fn emit_instruction(
                     out.push_str(";\n");
                     emit_value_cleanup(out, "    ", &return_temp);
                 }
+                emit_active_value_cleanups(out, return_cleanups);
                 out.push_str("    ptn_runtime_free(&runtime);\n");
                 out.push_str("    return 0;\n");
             }
@@ -388,6 +395,7 @@ fn emit_instruction(
                     values,
                     body_instruction,
                     control_targets,
+                    return_cleanups,
                     source_path,
                     return_target,
                 );
@@ -400,6 +408,7 @@ fn emit_instruction(
                         values,
                         body_instruction,
                         control_targets,
+                        return_cleanups,
                         source_path,
                         return_target,
                     );
@@ -435,6 +444,7 @@ fn emit_instruction(
                     values,
                     body_instruction,
                     control_targets,
+                    return_cleanups,
                     source_path,
                     return_target,
                 );
@@ -461,6 +471,7 @@ fn emit_instruction(
                     values,
                     body_instruction,
                     control_targets,
+                    return_cleanups,
                     source_path,
                     return_target,
                 );
@@ -497,6 +508,7 @@ fn emit_instruction(
                     values,
                     initializer,
                     control_targets,
+                    return_cleanups,
                     source_path,
                     return_target,
                 );
@@ -525,6 +537,7 @@ fn emit_instruction(
                     values,
                     body_instruction,
                     control_targets,
+                    return_cleanups,
                     source_path,
                     return_target,
                 );
@@ -541,6 +554,7 @@ fn emit_instruction(
                     values,
                     update,
                     control_targets,
+                    return_cleanups,
                     source_path,
                     return_target,
                 );
@@ -603,16 +617,19 @@ fn emit_instruction(
                 end_label.clone(),
                 continue_label.clone(),
             ));
+            return_cleanups.push(iterable_temp.clone());
             for body_instruction in body {
                 emit_instruction(
                     out,
                     values,
                     body_instruction,
                     control_targets,
+                    return_cleanups,
                     source_path,
                     return_target,
                 );
             }
+            return_cleanups.pop();
             control_targets.pop();
             emit_label_reference(out, &continue_label);
             out.push_str("    ");
@@ -636,6 +653,7 @@ fn emit_instruction(
                 expression,
                 cases,
                 control_targets,
+                return_cleanups,
                 source_path,
                 return_target,
             );
@@ -943,6 +961,7 @@ fn emit_switch(
     expression: &ValueExpr,
     cases: &[crate::ir::SwitchCase],
     control_targets: &mut Vec<ControlTarget>,
+    return_cleanups: &mut Vec<String>,
     source_path: &str,
     return_target: Option<&str>,
 ) {
@@ -1004,6 +1023,7 @@ fn emit_switch(
                 values,
                 body_instruction,
                 control_targets,
+                return_cleanups,
                 source_path,
                 return_target,
             );
@@ -1028,6 +1048,12 @@ fn emit_value_cleanup(out: &mut String, indent: &str, value: &str) {
     out.push_str("ptn_value_destroy(&");
     out.push_str(value);
     out.push_str(");\n");
+}
+
+fn emit_active_value_cleanups(out: &mut String, values: &[String]) {
+    for value in values.iter().rev() {
+        emit_value_cleanup(out, "    ", value);
+    }
 }
 
 pub fn compile_c(c_source: &str, output: &Path) -> Result<()> {
