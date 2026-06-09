@@ -86,6 +86,7 @@ struct PtnArray {
     PtnArrayIndexSlot *index_slots;
     size_t index_capacity;
     int64_t next_auto_key;
+    size_t current_index;
 };
 
 typedef struct {
@@ -382,6 +383,24 @@ static PTN_UNUSED void ptn_array_index_init(PtnArray *array, size_t expected_ent
     array->index_capacity = capacity;
 }
 
+static PTN_UNUSED size_t ptn_array_index_slot_for_key(PtnArray *array, PtnArrayKey key, uint64_t hash);
+
+static PTN_UNUSED void ptn_array_rebuild_index(PtnArray *array) {
+    free(array->index_slots);
+    ptn_array_index_init(array, array->len);
+    if (array->index_capacity == 0) {
+        return;
+    }
+    for (size_t i = 0; i < array->len; i++) {
+        uint64_t hash = ptn_array_key_hash(array->entries[i].key);
+        size_t slot_index = ptn_array_index_slot_for_key(array, array->entries[i].key, hash);
+        PtnArrayIndexSlot *slot = &array->index_slots[slot_index];
+        slot->occupied = 1;
+        slot->hash = hash;
+        slot->entry_index = i;
+    }
+}
+
 static PTN_UNUSED size_t ptn_array_linear_find_key(PtnArray *array, PtnArrayKey key) {
     for (size_t i = 0; i < array->len; i++) {
         if (ptn_array_keys_equal(array->entries[i].key, key)) {
@@ -409,6 +428,13 @@ static PTN_UNUSED void ptn_array_update_next_auto_key(PtnArray *array, PtnArrayK
         key.as.integer >= array->next_auto_key &&
         key.as.integer < INT64_MAX) {
         array->next_auto_key = key.as.integer + 1;
+    }
+}
+
+static PTN_UNUSED void ptn_array_recompute_next_auto_key(PtnArray *array) {
+    array->next_auto_key = 0;
+    for (size_t i = 0; i < array->len; i++) {
+        ptn_array_update_next_auto_key(array, array->entries[i].key);
     }
 }
 
@@ -445,7 +471,16 @@ static PTN_UNUSED void ptn_array_set_entry(PtnArray *array, PtnArrayKey key, Ptn
         return;
     }
     if (array->len == array->capacity) {
-        ptn_abort_out_of_memory();
+        size_t new_capacity = array->capacity == 0 ? 8 : array->capacity * 2;
+        if (new_capacity < array->capacity) {
+            ptn_abort_out_of_memory();
+        }
+        PtnArrayEntry *new_entries = realloc(array->entries, new_capacity * sizeof(PtnArrayEntry));
+        if (new_entries == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        array->entries = new_entries;
+        array->capacity = new_capacity;
     }
     size_t entry_index = array->len;
     array->entries[entry_index].key = key;
@@ -465,6 +500,7 @@ static PTN_UNUSED PtnValue ptn_array_from_literal_entries(size_t entry_count, co
     array->index_slots = NULL;
     array->index_capacity = 0;
     array->next_auto_key = 0;
+    array->current_index = 0;
     if (entry_count != 0) {
         array->entries = malloc(entry_count * sizeof(PtnArrayEntry));
         if (array->entries == NULL) {
@@ -480,6 +516,58 @@ static PTN_UNUSED PtnValue ptn_array_from_literal_entries(size_t entry_count, co
         ptn_array_set_entry(array, key, entries[i].value);
     }
     return ptn_array(array);
+}
+
+static PTN_UNUSED PtnArrayKey ptn_array_key_clone(PtnArrayKey key) {
+    if (key.type == PTN_ARRAY_KEY_INT) {
+        return ptn_array_int_key(key.as.integer);
+    }
+    return ptn_array_string_key(key.as.string);
+}
+
+static PTN_UNUSED PtnValue ptn_value_clone(PtnValue value);
+
+static PTN_UNUSED PtnArray *ptn_array_clone(PtnArray *source) {
+    PtnArray *array = malloc(sizeof(PtnArray));
+    if (array == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    array->len = 0;
+    array->capacity = source->len;
+    array->entries = NULL;
+    array->index_slots = NULL;
+    array->index_capacity = 0;
+    array->next_auto_key = 0;
+    array->current_index = source->current_index <= source->len ? source->current_index : source->len;
+    if (source->len != 0) {
+        array->entries = malloc(source->len * sizeof(PtnArrayEntry));
+        if (array->entries == NULL) {
+            ptn_abort_out_of_memory();
+        }
+    }
+    ptn_array_index_init(array, source->len);
+    for (size_t i = 0; i < source->len; i++) {
+        PtnArrayKey key = ptn_array_key_clone(source->entries[i].key);
+        PtnValue value = ptn_value_clone(source->entries[i].value);
+        ptn_array_set_entry(array, key, value);
+    }
+    array->next_auto_key = source->next_auto_key;
+    return array;
+}
+
+static PTN_UNUSED PtnValue ptn_value_clone(PtnValue value) {
+    switch (value.type) {
+        case PTN_STRING:
+            return ptn_owned_string(ptn_duplicate_string(value.as.string));
+        case PTN_ARRAY:
+            return ptn_array(ptn_array_clone(value.as.array));
+        case PTN_NULL:
+        case PTN_BOOL:
+        case PTN_INT:
+        case PTN_FLOAT:
+            return value;
+    }
+    return value;
 }
 
 static void ptn_symbols_init(PtnSymbolTable *symbols) {
@@ -595,10 +683,11 @@ static size_t ptn_symbols_find(PtnSymbolTable *symbols, const char *name) {
 }
 
 static PTN_UNUSED void ptn_symbols_set(PtnSymbolTable *symbols, const char *name, PtnValue value) {
+    PtnValue stored_value = ptn_value_clone(value);
     ptn_symbols_ensure_index(symbols, symbols->len + 1);
     size_t index = ptn_symbols_find(symbols, name);
     if (index < symbols->len) {
-        symbols->items[index].value = value;
+        symbols->items[index].value = stored_value;
         return;
     }
     if (symbols->len == symbols->capacity) {
@@ -612,7 +701,7 @@ static PTN_UNUSED void ptn_symbols_set(PtnSymbolTable *symbols, const char *name
     }
     size_t symbol_index = symbols->len;
     symbols->items[symbol_index].name = ptn_duplicate_string(name);
-    symbols->items[symbol_index].value = value;
+    symbols->items[symbol_index].value = stored_value;
     symbols->len++;
     ptn_symbol_index_insert(symbols, name, symbol_index);
 }
@@ -1515,6 +1604,94 @@ static PTN_UNUSED int ptn_offset_is_empty(PtnRuntime *runtime, PtnValue containe
     int result = entry == NULL || !ptn_is_truthy(entry->value);
     ptn_array_key_free(key);
     return result;
+}
+
+static PTN_UNUSED PtnValue ptn_array_key_value(PtnArrayKey key) {
+    if (key.type == PTN_ARRAY_KEY_INT) {
+        return ptn_int(key.as.integer);
+    }
+    return ptn_string(key.as.string);
+}
+
+static PTN_UNUSED PtnValue ptn_array_current_value(PtnArray *array) {
+    if (array->current_index >= array->len) {
+        return ptn_bool(0);
+    }
+    return array->entries[array->current_index].value;
+}
+
+static PTN_UNUSED PtnValue ptn_array_current_key_value(PtnArray *array) {
+    if (array->current_index >= array->len) {
+        return ptn_null();
+    }
+    return ptn_array_key_value(array->entries[array->current_index].key);
+}
+
+static PTN_UNUSED PtnValue ptn_array_next_value(PtnArray *array) {
+    if (array->len == 0 || array->current_index + 1 >= array->len) {
+        array->current_index = array->len;
+        return ptn_bool(0);
+    }
+    array->current_index++;
+    return array->entries[array->current_index].value;
+}
+
+static PTN_UNUSED PtnValue ptn_array_reset_value(PtnArray *array) {
+    array->current_index = 0;
+    return ptn_array_current_value(array);
+}
+
+static PTN_UNUSED PtnValue ptn_array_pop_value(PtnArray *array) {
+    if (array->len == 0) {
+        array->current_index = 0;
+        return ptn_null();
+    }
+
+    size_t removed_index = array->len - 1;
+    PtnValue removed = array->entries[removed_index].value;
+    ptn_array_key_free(array->entries[removed_index].key);
+    array->len--;
+    array->current_index = 0;
+    ptn_array_recompute_next_auto_key(array);
+    ptn_array_rebuild_index(array);
+    return removed;
+}
+
+static PTN_UNUSED PtnValue ptn_array_shift_value(PtnArray *array) {
+    if (array->len == 0) {
+        array->current_index = 0;
+        return ptn_null();
+    }
+
+    PtnValue removed = array->entries[0].value;
+    ptn_array_key_free(array->entries[0].key);
+    for (size_t i = 1; i < array->len; i++) {
+        array->entries[i - 1] = array->entries[i];
+    }
+    array->len--;
+
+    int64_t next_integer_key = 0;
+    for (size_t i = 0; i < array->len; i++) {
+        if (array->entries[i].key.type == PTN_ARRAY_KEY_INT) {
+            array->entries[i].key.as.integer = next_integer_key;
+            if (next_integer_key < INT64_MAX) {
+                next_integer_key++;
+            }
+        }
+    }
+
+    array->current_index = 0;
+    ptn_array_recompute_next_auto_key(array);
+    ptn_array_rebuild_index(array);
+    return removed;
+}
+
+static PTN_UNUSED int64_t ptn_array_push_values(PtnArray *array, size_t argc, const PtnValue *values) {
+    for (size_t i = 0; i < argc; i++) {
+        PtnArrayKey key = ptn_array_int_key(array->next_auto_key);
+        ptn_array_set_entry(array, key, ptn_value_clone(values[i]));
+    }
+    return (int64_t)array->len;
 }
 
 static PTN_UNUSED int ptn_compare_arrays_equal(PtnArray *left, PtnArray *right) {
@@ -2704,6 +2881,83 @@ static PtnValue ptn_internal_var_dump(PtnRuntime *runtime, size_t argc, const Pt
         ptn_var_dump_value(args[i]);
     }
     return ptn_null();
+}
+
+static PtnArray *ptn_internal_expect_array_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value
+) {
+    if (value.type == PTN_ARRAY) {
+        return value.as.array;
+    }
+
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Argument #%zu ($%s) must be of type array, %s given",
+        function_name,
+        position,
+        argument_name,
+        ptn_offset_container_type_name(value)
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_type_error(&runtime->diagnostics, message);
+    exit(255);
+    return NULL;
+}
+
+static PtnValue ptn_internal_array_pop(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_pop", 1, "array", args[0]);
+    return ptn_array_pop_value(array);
+}
+
+static PtnValue ptn_internal_array_push(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_push", 1, "array", args[0]);
+    return ptn_int(ptn_array_push_values(array, argc - 1, args + 1));
+}
+
+static PtnValue ptn_internal_array_shift(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_shift", 1, "array", args[0]);
+    return ptn_array_shift_value(array);
+}
+
+static PtnValue ptn_internal_current(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "current", 1, "array", args[0]);
+    return ptn_array_current_value(array);
+}
+
+static PtnValue ptn_internal_key(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "key", 1, "array", args[0]);
+    return ptn_array_current_key_value(array);
+}
+
+static PtnValue ptn_internal_next(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "next", 1, "array", args[0]);
+    return ptn_array_next_value(array);
+}
+
+static PtnValue ptn_internal_reset(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnArray *array = ptn_internal_expect_array_arg(runtime, "reset", 1, "array", args[0]);
+    return ptn_array_reset_value(array);
 }
 
 static PtnValue ptn_internal_strlen(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -3989,6 +4243,9 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
     static const PtnInternalFunction functions[] = {
         { "abs", 1, 1, ptn_internal_abs },
         { "array_key_exists", 2, 2, ptn_internal_array_key_exists },
+        { "array_pop", 1, 1, ptn_internal_array_pop },
+        { "array_push", 1, PTN_VARIADIC_ARGS, ptn_internal_array_push },
+        { "array_shift", 1, 1, ptn_internal_array_shift },
         { "bin2hex", 1, 1, ptn_internal_bin2hex },
         { "bindec", 1, 1, ptn_internal_bindec },
         { "ceil", 1, 1, ptn_internal_ceil },
@@ -3996,6 +4253,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "chunk_split", 1, 3, ptn_internal_chunk_split },
         { "constant", 1, 1, ptn_internal_constant },
         { "count", 1, 1, ptn_internal_count },
+        { "current", 1, 1, ptn_internal_current },
         { "define", 2, 2, ptn_internal_define },
         { "defined", 1, 1, ptn_internal_defined },
         { "dirname", 1, 1, ptn_internal_dirname },
@@ -4022,7 +4280,9 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "is_null", 1, 1, ptn_internal_is_null },
         { "is_scalar", 1, 1, ptn_internal_is_scalar },
         { "is_string", 1, 1, ptn_internal_is_string },
+        { "key", 1, 1, ptn_internal_key },
         { "md5", 1, 2, ptn_internal_md5 },
+        { "next", 1, 1, ptn_internal_next },
         { "octdec", 1, 1, ptn_internal_octdec },
         { "ord", 1, 1, ptn_internal_ord },
         { "php_sapi_name", 0, 0, ptn_internal_php_sapi_name },
@@ -4030,6 +4290,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "pi", 0, 0, ptn_internal_pi },
         { "quoted_printable_decode", 1, 1, ptn_internal_quoted_printable_decode },
         { "quotemeta", 1, 1, ptn_internal_quotemeta },
+        { "reset", 1, 1, ptn_internal_reset },
         { "sha1", 1, 2, ptn_internal_sha1 },
         { "soundex", 1, 1, ptn_internal_soundex },
         { "sqrt", 1, 1, ptn_internal_sqrt },

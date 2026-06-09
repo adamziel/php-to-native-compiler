@@ -4630,6 +4630,53 @@ var_dump(empty($missing));",
 }
 
 #[test]
+fn compile_array_pointer_and_mutation_internals_to_native_binary() {
+    let root = temp_dir("ptn-native-array-pointer-mutation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-pointer-mutation.php");
+    let output = root.join("array-pointer-mutation-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$items = [\"a\" => \"apple\", \"b\" => \"book\", \"c\" => \"cook\"];\n\
+var_dump(current($items));\n\
+var_dump(key($items));\n\
+var_dump(next($items));\n\
+var_dump(key($items));\n\
+var_dump(reset($items));\n\
+var_dump(key($items));\n\
+$numbers = [1, 2, 3];\n\
+var_dump(array_pop($numbers));\n\
+var_dump(array_push($numbers, 4, 5));\n\
+var_dump($numbers);\n\
+$assoc_numbers = [\"3\" => \"foo\", \"4\" => \"bar\", \"5\" => \"fubar\"];\n\
+var_dump(array_pop($assoc_numbers));\n\
+var_dump($assoc_numbers);\n\
+$mixed = [\"x\" => \"ex\", 4 => \"four\", 9 => \"nine\", \"z\" => \"zed\"];\n\
+var_dump(array_shift($mixed));\n\
+var_dump($mixed);\n\
+$copy_source = [[10, 20], [30, 40]];\n\
+$copy = $copy_source[0];\n\
+var_dump(array_shift($copy));\n\
+var_dump($copy_source[0]);\n\
+foreach ($copy_source as $sub) { array_shift($sub); }\n\
+var_dump($copy_source[1]);\n\
+var_dump(function_exists(\"ARRAY_POP\"), function_exists(\"current\"), function_exists(\"reset\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(5) \"apple\"\nstring(1) \"a\"\nstring(4) \"book\"\nstring(1) \"b\"\nstring(5) \"apple\"\nstring(1) \"a\"\nint(3)\nint(4)\narray(4) {\n  [0]=>\n  int(1)\n  [1]=>\n  int(2)\n  [2]=>\n  int(4)\n  [3]=>\n  int(5)\n}\nstring(5) \"fubar\"\narray(2) {\n  [3]=>\n  string(3) \"foo\"\n  [4]=>\n  string(3) \"bar\"\n}\nstring(2) \"ex\"\narray(3) {\n  [0]=>\n  string(4) \"four\"\n  [1]=>\n  string(4) \"nine\"\n  [\"z\"]=>\n  string(3) \"zed\"\n}\nint(10)\narray(2) {\n  [0]=>\n  int(10)\n  [1]=>\n  int(20)\n}\narray(2) {\n  [0]=>\n  int(30)\n  [1]=>\n  int(40)\n}\nbool(true)\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_large_ordered_array_lookup_to_native_binary() {
     let root = temp_dir("ptn-native-large-array-lookup");
     fs::create_dir_all(&root).unwrap();
