@@ -2278,9 +2278,20 @@ static PTN_UNUSED PtnStringOperand ptn_value_to_string_operand(PtnValue value) {
     return ptn_string_operand_owned(ptn_duplicate_string(buffer));
 }
 
-static PTN_UNUSED PtnValue ptn_concat(PtnValue left, PtnValue right) {
-    PtnStringOperand left_string = ptn_value_to_string_operand(left);
-    PtnStringOperand right_string = ptn_value_to_string_operand(right);
+static PTN_UNUSED PtnStringOperand ptn_concat_string_operand(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t line
+) {
+    if (value.type == PTN_ARRAY) {
+        ptn_emit_warning(&runtime->diagnostics, "Array to string conversion", line);
+    }
+    return ptn_value_to_string_operand(value);
+}
+
+static PTN_UNUSED PtnValue ptn_concat(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line) {
+    PtnStringOperand left_string = ptn_concat_string_operand(runtime, left, line);
+    PtnStringOperand right_string = ptn_concat_string_operand(runtime, right, line);
     if (left_string.len > SIZE_MAX - right_string.len) {
         ptn_abort_out_of_memory();
     }

@@ -1067,7 +1067,12 @@ impl ValueEmitter {
 
     fn emit_value(&mut self, out: &mut String, value: &ValueExpr) -> String {
         match value {
-            ValueExpr::Binary { op, left, right } => self.emit_binary(out, *op, left, right),
+            ValueExpr::Binary {
+                op,
+                left,
+                right,
+                line,
+            } => self.emit_binary(out, *op, left, right, *line),
             ValueExpr::Unary { op, expr, line } => {
                 let expr_temp = self.emit_materialized_value(out, expr);
                 let result_temp = self.next_temp();
@@ -1221,7 +1226,9 @@ impl ValueEmitter {
                 let predicate = self.emit_condition(out, expr);
                 format!("!({predicate})")
             }
-            ValueExpr::Binary { op, left, right } => match op {
+            ValueExpr::Binary {
+                op, left, right, ..
+            } => match op {
                 BinaryOp::Equal
                 | BinaryOp::NotEqual
                 | BinaryOp::Identical
@@ -1252,6 +1259,7 @@ impl ValueEmitter {
         op: BinaryOp,
         left: &ValueExpr,
         right: &ValueExpr,
+        line: usize,
     ) -> String {
         match op {
             BinaryOp::Add
@@ -1265,7 +1273,7 @@ impl ValueEmitter {
             | BinaryOp::BitwiseXor
             | BinaryOp::BitwiseOr
             | BinaryOp::ShiftLeft
-            | BinaryOp::ShiftRight => self.emit_runtime_binary(out, op, left, right),
+            | BinaryOp::ShiftRight => self.emit_runtime_binary(out, op, left, right, line),
             BinaryOp::Equal
             | BinaryOp::NotEqual
             | BinaryOp::Identical
@@ -1286,6 +1294,7 @@ impl ValueEmitter {
         op: BinaryOp,
         left: &ValueExpr,
         right: &ValueExpr,
+        line: usize,
     ) -> String {
         let left_temp = self.emit_materialized_value(out, left);
         let right_temp = self.emit_materialized_value(out, right);
@@ -1300,18 +1309,25 @@ impl ValueEmitter {
             BinaryOp::Power => "ptn_power",
             BinaryOp::Divide => "ptn_divide",
             BinaryOp::Modulo => "ptn_modulo",
-            BinaryOp::Concat => "ptn_concat",
             BinaryOp::BitwiseAnd => "ptn_bitwise_and",
             BinaryOp::BitwiseXor => "ptn_bitwise_xor",
             BinaryOp::BitwiseOr => "ptn_bitwise_or",
             BinaryOp::ShiftLeft => "ptn_shift_left",
             BinaryOp::ShiftRight => "ptn_shift_right",
+            BinaryOp::Concat => "ptn_concat",
             _ => unreachable!(),
         });
         out.push('(');
+        if matches!(op, BinaryOp::Concat) {
+            out.push_str("&runtime, ");
+        }
         out.push_str(&left_temp);
         out.push_str(", ");
         out.push_str(&right_temp);
+        if matches!(op, BinaryOp::Concat) {
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+        }
         out.push_str(");\n");
         result_temp
     }

@@ -159,6 +159,7 @@ pub enum ValueExpr {
         op: BinaryOp,
         left: Box<ValueExpr>,
         right: Box<ValueExpr>,
+        line: usize,
     },
 }
 
@@ -477,13 +478,14 @@ fn lower_compound_assignment(name: &str, line: usize, op: BinaryOp, right: Value
             line,
         }),
         right: Box::new(right),
+        line,
     }
 }
 
 fn lower_expr(expr: &Expr) -> ValueExpr {
     match expr {
         Expr::String(value, _) => ValueExpr::String(value.clone()),
-        Expr::InterpolatedString(parts, _) => lower_interpolated_string(parts),
+        Expr::InterpolatedString(parts, span) => lower_interpolated_string(parts, span.line),
         Expr::Int(value, _) => ValueExpr::Int(*value),
         Expr::Float(value, _) => ValueExpr::Float(*value),
         Expr::Bool(value, _) => ValueExpr::Bool(*value),
@@ -531,11 +533,15 @@ fn lower_expr(expr: &Expr) -> ValueExpr {
             line: span.line,
         },
         Expr::Binary {
-            op, left, right, ..
+            op,
+            left,
+            right,
+            span,
         } => ValueExpr::Binary {
             op: lower_binary_op(*op),
             left: Box::new(lower_expr(left)),
             right: Box::new(lower_expr(right)),
+            line: span.line,
         },
         Expr::Grouped { expr, .. } => lower_expr(expr),
     }
@@ -548,7 +554,7 @@ fn lower_array_element(element: &AstArrayElement) -> ArrayElement {
     }
 }
 
-fn lower_interpolated_string(parts: &[AstStringPart]) -> ValueExpr {
+fn lower_interpolated_string(parts: &[AstStringPart], line: usize) -> ValueExpr {
     let mut values = parts.iter().filter_map(|part| match part {
         AstStringPart::Literal(value) if value.is_empty() => None,
         AstStringPart::Literal(value) => Some(ValueExpr::String(value.clone())),
@@ -556,9 +562,9 @@ fn lower_interpolated_string(parts: &[AstStringPart]) -> ValueExpr {
             kind: CastKind::String,
             expr: Box::new(ValueExpr::Load {
                 name: name.clone(),
-                line: 0,
+                line,
             }),
-            line: 0,
+            line,
         }),
     });
 
@@ -571,6 +577,7 @@ fn lower_interpolated_string(parts: &[AstStringPart]) -> ValueExpr {
             op: BinaryOp::Concat,
             left: Box::new(expr),
             right: Box::new(next),
+            line,
         };
     }
     expr

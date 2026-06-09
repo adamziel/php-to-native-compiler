@@ -5767,6 +5767,41 @@ echo strlen($chain), \" \", strlen($compound), \"\\n\";
 }
 
 #[test]
+fn compile_array_concat_emits_string_conversion_warnings_to_native_binary() {
+    let root = temp_dir("ptn-native-array-concat-warnings");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-concat-warnings.php");
+    let output = root.join("array-concat-warnings-bin");
+    fs::write(
+        &input,
+        "<?php
+$a = [1, 2];
+var_dump($a . \"x\");
+var_dump(\"x\" . $a);
+$a .= [3];
+var_dump($a);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Warning: Array to string conversion in ptn on line 3\n\
+string(6) \"Arrayx\"\n\
+Warning: Array to string conversion in ptn on line 4\n\
+string(6) \"xArray\"\n\
+Warning: Array to string conversion in ptn on line 5\n\
+Warning: Array to string conversion in ptn on line 5\n\
+string(10) \"ArrayArray\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_numeric_string_and_float_addition_to_native_binary() {
     let root = temp_dir("ptn-native-addition-conversions");
     fs::create_dir_all(&root).unwrap();
