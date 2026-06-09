@@ -19,8 +19,10 @@ static PTN_UNUSED char *ptn_duplicate_string_len(const char *string, size_t len)
 }
 
 static PTN_UNUSED PtnValue ptn_value_borrow(PtnValue value);
+static PTN_UNUSED PtnValue ptn_value_share(PtnValue value);
 static PTN_UNUSED PtnValue ptn_value_clone(PtnValue value);
 static PTN_UNUSED void ptn_value_destroy(PtnValue *value);
+static PTN_UNUSED void ptn_value_drop(PtnValue *value);
 static PTN_UNUSED void ptn_array_free(PtnArray *array);
 
 static PTN_UNUSED PtnArrayKey ptn_array_int_key(int64_t integer) {
@@ -328,7 +330,7 @@ static PTN_UNUSED PtnValue ptn_array_from_literal_entries(size_t entry_count, co
         PtnArrayKey key = entries[i].has_key
             ? ptn_array_key_from_value(entries[i].key)
             : ptn_array_int_key(array->next_auto_key);
-        ptn_array_set_entry(array, key, ptn_value_clone(entries[i].value));
+        ptn_array_set_entry(array, key, ptn_value_share(entries[i].value));
     }
     return ptn_array(array);
 }
@@ -362,7 +364,7 @@ static PTN_UNUSED PtnArray *ptn_array_clone(PtnArray *source) {
     ptn_array_index_init(array, source->len);
     for (size_t i = 0; i < source->len; i++) {
         PtnArrayKey key = ptn_array_key_clone(source->entries[i].key);
-        PtnValue value = ptn_value_clone(source->entries[i].value);
+        PtnValue value = ptn_value_share(source->entries[i].value);
         ptn_array_set_entry(array, key, value);
     }
     array->next_auto_key = source->next_auto_key;
@@ -379,22 +381,26 @@ static PTN_UNUSED void ptn_array_retain(PtnArray *array) {
     array->refcount++;
 }
 
-static PTN_UNUSED PtnArray *ptn_array_detach_value(PtnValue *value) {
-    if (value == NULL || !value->owned || value->type != PTN_ARRAY || value->as.array == NULL) {
-        return NULL;
-    }
-    PtnArray *array = value->as.array;
-    if (array->refcount <= 1) {
+static PTN_UNUSED PtnArray *ptn_array_detach(PtnArray *array) {
+    if (array == NULL || array->refcount <= 1) {
         return array;
     }
-
-    PtnArray *detached = ptn_array_clone(array);
-    ptn_value_destroy(value);
-    *value = ptn_array(detached);
-    return detached;
+    array->refcount--;
+    return ptn_array_clone(array);
 }
 
-static PTN_UNUSED PtnValue ptn_value_clone(PtnValue value) {
+static PTN_UNUSED PtnArray *ptn_array_detach_value(PtnValue *value) {
+    if (value == NULL || value->type != PTN_ARRAY || value->as.array == NULL) {
+        return NULL;
+    }
+    PtnArray *detached = ptn_array_detach(value->as.array);
+    if (detached != value->as.array) {
+        *value = ptn_array(detached);
+    }
+    return value->as.array;
+}
+
+static PTN_UNUSED PtnValue ptn_value_share(PtnValue value) {
     switch (value.type) {
         case PTN_STRING:
             if (value.as.string.owned != NULL && value.as.string.refcount != NULL) {

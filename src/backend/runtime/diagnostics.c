@@ -17,7 +17,7 @@ static size_t ptn_symbols_find(PtnSymbolTable *symbols, const char *name) {
 }
 
 static PTN_UNUSED void ptn_symbols_set(PtnSymbolTable *symbols, const char *name, PtnValue value) {
-    PtnValue stored_value = ptn_value_clone(value);
+    PtnValue stored_value = ptn_value_share(value);
     ptn_symbols_ensure_index(symbols, symbols->len + 1);
     size_t index = ptn_symbols_find(symbols, name);
     if (index < symbols->len) {
@@ -53,6 +53,10 @@ static int ptn_symbols_get(PtnSymbolTable *symbols, const char *name, PtnValue *
 static PTN_UNUSED PtnValue *ptn_symbols_value_slot(PtnSymbolTable *symbols, const char *name) {
     size_t index = ptn_symbols_find(symbols, name);
     return index < symbols->len ? &symbols->items[index].value : NULL;
+}
+
+static PTN_UNUSED PtnValue *ptn_symbols_get_slot(PtnSymbolTable *symbols, const char *name) {
+    return ptn_symbols_value_slot(symbols, name);
 }
 
 static PTN_UNUSED void ptn_symbols_unset(PtnSymbolTable *symbols, const char *name) {

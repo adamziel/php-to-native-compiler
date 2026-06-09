@@ -524,7 +524,7 @@ static PTN_UNUSED PtnLookupResult ptn_offset_lookup(PtnRuntime *runtime, PtnValu
         ptn_array_key_free(key);
         return ptn_lookup_missing();
     }
-    PtnValue value = ptn_value_clone(entry->value);
+    PtnValue value = ptn_value_share(entry->value);
     ptn_array_key_free(key);
     return ptn_lookup_found(value);
 }
@@ -977,7 +977,7 @@ static PTN_UNUSED PtnValue ptn_array_current_value(PtnArray *array) {
     if (array->current_index >= array->len) {
         return ptn_bool(0);
     }
-    return ptn_value_clone(array->entries[array->current_index].value);
+    return ptn_value_share(array->entries[array->current_index].value);
 }
 
 static PTN_UNUSED PtnValue ptn_array_current_key_value(PtnArray *array) {
@@ -993,7 +993,7 @@ static PTN_UNUSED PtnValue ptn_array_next_value(PtnArray *array) {
         return ptn_bool(0);
     }
     array->current_index++;
-    return ptn_value_clone(array->entries[array->current_index].value);
+    return ptn_value_share(array->entries[array->current_index].value);
 }
 
 static PTN_UNUSED PtnValue ptn_array_reset_value(PtnArray *array) {

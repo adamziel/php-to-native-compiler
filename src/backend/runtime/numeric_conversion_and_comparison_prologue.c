@@ -50,6 +50,23 @@ static PTN_UNUSED PtnValue ptn_runtime_read_variable(
     return ptn_null();
 }
 
+static PTN_UNUSED PtnValue ptn_runtime_read_variable_for_array_mutation(
+    PtnRuntime *runtime,
+    const char *name,
+    const char *path,
+    size_t line
+) {
+    PtnValue *slot = ptn_symbols_get_slot(&runtime->symbols, name);
+    if (slot == NULL) {
+        ptn_emit_undefined_variable_warning(&runtime->diagnostics, name, path, line);
+        return ptn_null();
+    }
+    if (slot->type == PTN_ARRAY) {
+        (void)ptn_value_detach_array(slot);
+    }
+    return ptn_value_borrow(*slot);
+}
+
 static PTN_UNUSED PtnLookupResult ptn_runtime_read_variable_quiet(PtnRuntime *runtime, const char *name) {
     PtnValue value;
     if (ptn_symbols_get(&runtime->symbols, name, &value)) {

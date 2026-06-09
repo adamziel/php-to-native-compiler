@@ -1784,11 +1784,11 @@ static PtnValue ptn_call_frame_arg_value(PtnRuntime *runtime, PtnCallFrame *fram
     if (position < frame->parameter_count) {
         PtnValue value;
         if (ptn_symbols_get(&runtime->symbols, frame->parameter_names[position], &value)) {
-            return ptn_value_clone(value);
+            return ptn_value_share(value);
         }
         return ptn_null();
     }
-    return ptn_value_clone(frame->args[position]);
+    return ptn_value_share(frame->args[position]);
 }
 
 static PtnValue ptn_internal_func_num_args(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {

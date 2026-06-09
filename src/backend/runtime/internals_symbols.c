@@ -1,7 +1,13 @@
-            return ptn_owned_string_len(
-                ptn_duplicate_string_len((const char *)value.as.string.data, value.as.string.len),
-                value.as.string.len
-            );
+            if (value.as.string.refcount != NULL) {
+                if (*value.as.string.refcount == SIZE_MAX) {
+                    ptn_abort_out_of_memory();
+                }
+                (*value.as.string.refcount)++;
+                value.owned = 1;
+            } else {
+                value.owned = 0;
+            }
+            return value;
         case PTN_ARRAY:
             ptn_array_retain(value.as.array);
             return ptn_array(value.as.array);
@@ -21,6 +27,14 @@
             return value;
     }
     return value;
+}
+
+static PTN_UNUSED PtnValue ptn_value_clone(PtnValue value) {
+    return ptn_value_share(value);
+}
+
+static PTN_UNUSED PtnArray *ptn_value_detach_array(PtnValue *value) {
+    return ptn_array_detach_value(value);
 }
 
 static PTN_UNUSED void ptn_exception_free(PtnException *exception) {
@@ -48,25 +62,29 @@ static PTN_UNUSED void ptn_array_free(PtnArray *array) {
     free(array);
 }
 
-static PTN_UNUSED void ptn_value_destroy(PtnValue *value) {
+static PTN_UNUSED void ptn_value_drop(PtnValue *value) {
     if (value == NULL || !value->owned) {
         return;
     }
     switch (value->type) {
         case PTN_STRING:
-            if (value->as.string.owned != NULL && value->as.string.refcount != NULL) {
+            if (value->as.string.refcount != NULL) {
                 if (*value->as.string.refcount > 1) {
                     (*value->as.string.refcount)--;
-                } else {
-                    free(value->as.string.owned);
-                    free(value->as.string.refcount);
+                    break;
                 }
-            } else {
-                free(value->as.string.owned);
+                free(value->as.string.refcount);
             }
+            free(value->as.string.owned);
             break;
         case PTN_ARRAY:
-            ptn_array_free(value->as.array);
+            if (value->as.array != NULL) {
+                if (value->as.array->refcount > 1) {
+                    value->as.array->refcount--;
+                    break;
+                }
+                ptn_array_free(value->as.array);
+            }
             break;
         case PTN_EXCEPTION:
             ptn_exception_free(value->as.exception);
@@ -78,6 +96,10 @@ static PTN_UNUSED void ptn_value_destroy(PtnValue *value) {
             break;
     }
     *value = ptn_null();
+}
+
+static PTN_UNUSED void ptn_value_destroy(PtnValue *value) {
+    ptn_value_drop(value);
 }
 
 static PTN_UNUSED PtnValue ptn_value_borrow(PtnValue value) {

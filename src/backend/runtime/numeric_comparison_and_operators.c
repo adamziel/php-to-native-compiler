@@ -1,6 +1,6 @@
     for (size_t i = 0; i < argc; i++) {
         PtnArrayKey key = ptn_array_int_key(array->next_auto_key);
-        ptn_array_set_entry(array, key, ptn_value_clone(values[i]));
+        ptn_array_set_entry(array, key, ptn_value_share(values[i]));
     }
     return (int64_t)array->len;
 }

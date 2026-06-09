@@ -251,6 +251,17 @@ static PTN_UNUSED PtnValue ptn_float(double floating) {
     return value;
 }
 
+static void ptn_abort_out_of_memory(void);
+
+static PTN_UNUSED size_t *ptn_refcount_new(void) {
+    size_t *refcount = malloc(sizeof(size_t));
+    if (refcount == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    *refcount = 1;
+    return refcount;
+}
+
 static PTN_UNUSED PtnValue ptn_string_literal(const char *string, size_t len) {
     PtnValue value;
     value.type = PTN_STRING;
