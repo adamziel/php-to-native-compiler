@@ -62,7 +62,10 @@ fn emit_instruction(out: &mut String, values: &mut ValueEmitter, instruction: &I
             out.push_str(");\n");
         }
         Instruction::InternalCall { name, arguments } => {
-            values.emit_internal_call(out, name, arguments);
+            let result_temp = values.emit_internal_call(out, name, arguments);
+            out.push_str("    (void)");
+            out.push_str(&result_temp);
+            out.push_str(";\n");
         }
         Instruction::Branch {
             condition,
@@ -190,6 +193,9 @@ impl ValueEmitter {
                 "ptn_runtime_read_variable(&runtime, \"{}\")",
                 c_string(name)
             ),
+            ValueExpr::InternalCall { name, arguments } => {
+                self.emit_internal_call(out, name, arguments)
+            }
         }
     }
 
@@ -331,7 +337,10 @@ impl ValueEmitter {
     fn emit_materialized_value(&mut self, out: &mut String, value: &ValueExpr) -> String {
         if matches!(
             value,
-            ValueExpr::Binary { .. } | ValueExpr::Unary { .. } | ValueExpr::Cast { .. }
+            ValueExpr::Binary { .. }
+                | ValueExpr::InternalCall { .. }
+                | ValueExpr::Unary { .. }
+                | ValueExpr::Cast { .. }
         ) {
             return self.emit_value(out, value);
         }
@@ -346,12 +355,20 @@ impl ValueEmitter {
         temp
     }
 
-    fn emit_internal_call(&mut self, out: &mut String, name: &str, arguments: &[ValueExpr]) {
+    fn emit_internal_call(
+        &mut self,
+        out: &mut String,
+        name: &str,
+        arguments: &[ValueExpr],
+    ) -> String {
+        let result_temp = self.next_temp();
         if arguments.is_empty() {
-            out.push_str("    ptn_call_internal(&runtime, \"");
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_call_internal(&runtime, \"");
             out.push_str(&c_string(name));
             out.push_str("\", 0, NULL);\n");
-            return;
+            return result_temp;
         }
 
         let mut temps = Vec::with_capacity(arguments.len());
@@ -365,13 +382,16 @@ impl ValueEmitter {
         out.push_str("[] = { ");
         out.push_str(&temps.join(", "));
         out.push_str(" };\n");
-        out.push_str("    ptn_call_internal(&runtime, \"");
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_call_internal(&runtime, \"");
         out.push_str(&c_string(name));
         out.push_str("\", ");
         out.push_str(&arguments.len().to_string());
         out.push_str(", ");
         out.push_str(&args_temp);
         out.push_str(");\n");
+        result_temp
     }
 
     fn next_temp(&mut self) -> String {
@@ -463,7 +483,7 @@ typedef struct {
     PtnDiagnosticSink diagnostics;
 } PtnRuntime;
 
-typedef void (*PtnInternalFunctionHandler)(PtnRuntime *runtime, size_t argc, const PtnValue *args);
+typedef PtnValue (*PtnInternalFunctionHandler)(PtnRuntime *runtime, size_t argc, const PtnValue *args);
 
 typedef struct {
     const char *name;
@@ -1155,16 +1175,27 @@ static void ptn_var_dump_value(PtnValue value) {
     }
 }
 
-static void ptn_internal_var_dump(PtnRuntime *runtime, size_t argc, const PtnValue *args) {
+static PtnValue ptn_internal_var_dump(PtnRuntime *runtime, size_t argc, const PtnValue *args) {
     (void)runtime;
     for (size_t i = 0; i < argc; i++) {
         ptn_var_dump_value(args[i]);
     }
+    return ptn_null();
 }
 
-static PTN_UNUSED void ptn_call_internal(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args) {
+static PtnValue ptn_internal_strlen(PtnRuntime *runtime, size_t argc, const PtnValue *args) {
+    (void)runtime;
+    (void)argc;
+    char *string = ptn_value_to_string(args[0]);
+    size_t len = strlen(string);
+    free(string);
+    return ptn_int((int64_t)len);
+}
+
+static PTN_UNUSED PtnValue ptn_call_internal(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args) {
     static const PtnInternalFunction functions[] = {
         { "var_dump", 1, ptn_internal_var_dump },
+        { "strlen", 1, ptn_internal_strlen },
     };
 
     for (size_t i = 0; i < sizeof(functions) / sizeof(functions[0]); i++) {
@@ -1174,12 +1205,12 @@ static PTN_UNUSED void ptn_call_internal(PtnRuntime *runtime, const char *name, 
                 ptn_emit_argument_count_error(&runtime->diagnostics, name, function->min_args, argc);
                 exit(255);
             }
-            function->handler(runtime, argc, args);
-            return;
+            return function->handler(runtime, argc, args);
         }
     }
 
     ptn_emit_undefined_function_error(&runtime->diagnostics, name);
     exit(255);
+    return ptn_null();
 }
 "#;

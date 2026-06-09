@@ -231,6 +231,25 @@ fn parser_accepts_internal_call_statements_and_inline_html() {
 }
 
 #[test]
+fn parser_accepts_internal_call_expressions() {
+    let program = parser::parse("<?php echo strlen(\"abc\"), strlen((string)42) + 1;").unwrap();
+    let Statement::Echo { expressions, .. } = &program.statements[0] else {
+        panic!("expected echo statement");
+    };
+    assert!(matches!(
+        &expressions[0],
+        Expr::Call { name, arguments, .. } if name == "strlen" && arguments.len() == 1
+    ));
+    assert!(matches!(
+        &expressions[1],
+        Expr::Binary {
+            op: BinaryOp::Add,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn parser_accepts_parenthesized_unary_and_cast_expressions() {
     let program =
         parser::parse("<?php echo +(2 + 3), -(2 + 3), !(\"0\"), (int)\"42\", (string)true;")
@@ -583,6 +602,61 @@ fn compile_internal_call_arguments_evaluate_left_to_right_to_native_binary() {
         String::from_utf8(execution.stderr).unwrap(),
         "Warning: Undefined variable $left\nWarning: Undefined variable $right\n"
     );
+}
+
+#[test]
+fn compile_strlen_expression_to_native_binary() {
+    let root = temp_dir("ptn-native-strlen-expression");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("strlen-expression.php");
+    let output = root.join("strlen-expression-bin");
+    fs::write(
+        &input,
+        "<?php echo strlen(\"abcdef\"), \" \", strlen((string)42) + 1, \" \", strlen(false), \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "6 3 0\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_internal_call_expression_arguments_evaluate_left_to_right() {
+    let root = temp_dir("ptn-native-call-expression-left-to-right");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("call-expression-left-to-right.php");
+    let output = root.join("call-expression-left-to-right-bin");
+    fs::write(&input, "<?php echo strlen($left . $right), \"\\n\";").unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "0\n");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        "Warning: Undefined variable $left\nWarning: Undefined variable $right\n"
+    );
+}
+
+#[test]
+fn compile_statement_call_discards_internal_return_value() {
+    let root = temp_dir("ptn-native-call-statement-discard");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("call-statement-discard.php");
+    let output = root.join("call-statement-discard-bin");
+    fs::write(&input, "<?php strlen(\"abcdef\"); echo \"done\\n\";").unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "done\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
@@ -1210,7 +1284,6 @@ fn var_dump_complex_edges_remain_unsupported_before_codegen() {
     for source in [
         "<?php var_dump([]);",
         "<?php var_dump(new stdClass);",
-        "<?php var_dump(fopen('php://memory', 'r'));",
         "<?php $array = []; $array[] = &$array; var_dump($array);",
         "<?php $value = 1; $ref =& $value; var_dump($ref);",
         "<?php var_dump(1e-5);",
@@ -1220,6 +1293,25 @@ fn var_dump_complex_edges_remain_unsupported_before_codegen() {
             "expected unsupported var_dump edge to fail before codegen: {source}"
         );
     }
+}
+
+#[test]
+fn unsupported_internal_functions_fail_in_generated_runtime() {
+    let root = temp_dir("ptn-native-unsupported-internal-function");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("unsupported-internal-function.php");
+    let output = root.join("unsupported-internal-function-bin");
+    fs::write(&input, "<?php var_dump(fopen('php://memory', 'r'));").unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        "Fatal error: Call to undefined function fopen()\n"
+    );
 }
 
 #[test]

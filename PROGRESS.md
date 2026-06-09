@@ -329,3 +329,24 @@ Still unsupported after this strict-comparison slice: `<=>`, keyword boolean
 operators `and`/`or`, arrays, objects, resources, references, complete
 comparison parity for unsupported value types, and PHP-exact chained comparison
 parse errors.
+
+Added expression-form internal calls and scalar `strlen()`:
+
+- Parser/AST/IR support for named internal calls as value expressions, so calls
+  can appear in echo operands, assignments, binary operands, and branch/loop
+  conditions.
+- Statement-form calls continue to lower through the same internal-call path
+  and discard the boxed return value.
+- Generated C internal-function dispatch now returns `PtnValue` from handlers
+  while preserving left-to-right argument materialization.
+- Registered `strlen()` as the second scalar internal function. It returns the
+  byte length of the current boxed scalar string-conversion result.
+- Native tests prove `strlen()` in expression contexts, left-to-right argument
+  evaluation through call expressions, and statement-call return-value discard.
+- Focused public PHPT telemetry through `phpc` passes
+  `tests/func/001.phpt`.
+
+Still unsupported for internal calls: functions other than `var_dump()` and
+`strlen()`, arrays, objects, resources, references, embedded NUL byte string
+length parity, PHP-exact argument parsing and diagnostics, and user-defined
+functions.

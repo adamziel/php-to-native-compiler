@@ -42,11 +42,16 @@ supports in generated native binaries.
   and `>=`. Strict scalar identity compares type and value without coercion.
 - Boxed scalar boolean operators `&&` and `||`, with short-circuit evaluation
   over PHP truthiness for the currently supported scalar values.
-- Simple statement-form internal calls such as `var_dump(expr, ...)`.
+- Simple statement-form internal calls such as `var_dump(expr, ...)` and
+  `strlen(expr);`.
+- Expression-form internal calls for the currently registered scalar functions,
+  including `strlen(expr)` in echo operands, assignments, binary operands, and
+  branch/loop conditions.
 - Internal-call arguments are materialized left-to-right before generated C
   runtime dispatch.
 - `var_dump()` output for current boxed scalar values: `NULL`, `bool(...)`,
   `int(...)`, `float(...)`, and `string(length) "value"`.
+- `strlen()` over current boxed scalar values after scalar string conversion.
 - A minimal `phpc` runner for supported PHPT rows. It compiles scripts or `-r`
   snippets to temporary native binaries through the normal compiler pipeline.
 - Braced `if`, `elseif`, and `else` statements whose conditions and bodies use
@@ -78,11 +83,12 @@ supports in generated native binaries.
 - PHP-exact increment/decrement semantics for strings, booleans, arrays,
   objects, references, copy-on-write, overflow edge cases, and diagnostics.
 - Inline HTML before `<?php` or between PHP blocks.
-- Internal functions other than `var_dump()`.
+- Internal functions other than `var_dump()` and `strlen()`.
 - Arrays, objects, resources, recursive structures, references, and
   `var_dump()` reference identity output.
-- Embedded NUL strings in `var_dump()` string length/output.
-- Full PHP float precision and formatting edge cases for `var_dump()`.
+- Embedded NUL strings in `var_dump()` string length/output or `strlen()`.
+- Full PHP float precision and formatting edge cases for `var_dump()` or
+  `strlen()` input conversion.
 - Complete PHP CLI and PHPT runner option parity for `phpc`.
 - Doc comment retention for reflection or metadata. Comments are skipped today.
 - Compound assignment operators other than `+=`, `-=`, `*=`, `/=`, `%=`, and

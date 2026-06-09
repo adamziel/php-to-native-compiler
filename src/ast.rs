@@ -73,6 +73,11 @@ pub enum Expr {
     Bool(bool, SourceSpan),
     Null(SourceSpan),
     Variable(String, SourceSpan),
+    Call {
+        name: String,
+        arguments: Vec<Expr>,
+        span: SourceSpan,
+    },
     Unary {
         op: UnaryOp,
         expr: Box<Expr>,
@@ -139,6 +144,7 @@ impl Expr {
             | Expr::Bool(_, span)
             | Expr::Null(span)
             | Expr::Variable(_, span) => *span,
+            Expr::Call { span, .. } => *span,
             Expr::Unary { span, .. } | Expr::Cast { span, .. } => *span,
             Expr::Binary { span, .. } | Expr::Grouped { span, .. } => *span,
         }

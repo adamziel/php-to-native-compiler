@@ -42,6 +42,10 @@ pub enum ValueExpr {
     Bool(bool),
     Null,
     Load(String),
+    InternalCall {
+        name: String,
+        arguments: Vec<ValueExpr>,
+    },
     Unary {
         op: UnaryOp,
         expr: Box<ValueExpr>,
@@ -195,6 +199,12 @@ fn lower_expr(expr: &Expr) -> ValueExpr {
         Expr::Bool(value, _) => ValueExpr::Bool(*value),
         Expr::Null(_) => ValueExpr::Null,
         Expr::Variable(name, _) => ValueExpr::Load(name.clone()),
+        Expr::Call {
+            name, arguments, ..
+        } => ValueExpr::InternalCall {
+            name: name.clone(),
+            arguments: arguments.iter().map(lower_expr).collect(),
+        },
         Expr::Unary { op, expr, .. } => ValueExpr::Unary {
             op: lower_unary_op(*op),
             expr: Box::new(lower_expr(expr)),

@@ -22,10 +22,12 @@ Supported today:
 - `echo` statements.
 - Statement-form `print expr;` for the same scalar expression subset as
   `echo`; emitted native code uses the same boxed output conversion path.
-- Simple statement-form internal calls such as `var_dump(expr, ...)`, lowered
-  through an IR internal-call node and generated C runtime dispatch.
+- Simple internal calls such as `var_dump(expr, ...)` and `strlen(expr)`,
+  lowered through IR internal-call nodes and generated C runtime dispatch.
 - `var_dump()` output for the current boxed scalar `PtnValue` types: `null`,
   booleans, integers, floats, and strings.
+- `strlen()` as an expression returning the byte length of the current boxed
+  scalar string-conversion result.
 - String, integer, float, boolean, and null literals.
 - Direct variable assignment and reads for scalar values through the generated
   native runtime symbol table.
@@ -72,9 +74,9 @@ Unsupported today:
   decrement semantics for strings/booleans and other edge values, complete
   overflow parity, exact scalar cast overflow behavior, PHP-exact warning
   text/file/line/error-handler behavior, inline HTML before `<?php` or between
-  PHP blocks, internal functions other than `var_dump()`, arrays, objects,
+  PHP blocks, internal functions other than `var_dump()` and `strlen()`, arrays, objects,
   resources, recursion, references, embedded NUL string handling, and full PHP
-  precision/formatting edge cases for `var_dump()`, doc comment retention,
+  precision/formatting edge cases for `var_dump()`/`strlen()`, doc comment retention,
   variable variables, and dynamic fallback. These are architecture targets, not
   excuses for exact-shape hacks.
 

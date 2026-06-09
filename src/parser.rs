@@ -157,16 +157,7 @@ impl Parser {
         let TokenKind::Identifier(name) = token.kind else {
             return Err(Diagnostic::new("expected function name", Some(token.span)));
         };
-        self.expect_left_paren()?;
-        let mut arguments = Vec::new();
-        if !matches!(self.peek().kind, TokenKind::RightParen) {
-            arguments.push(self.parse_expr()?);
-            while matches!(self.peek().kind, TokenKind::Comma) {
-                self.advance();
-                arguments.push(self.parse_expr()?);
-            }
-        }
-        self.expect_right_paren()?;
+        let (arguments, _) = self.parse_call_arguments()?;
         self.expect_statement_terminator()?;
         Ok(Statement::Call {
             name: name.to_ascii_lowercase(),
@@ -279,6 +270,14 @@ impl Parser {
             TokenKind::False => Ok(Expr::Bool(false, token.span)),
             TokenKind::Null => Ok(Expr::Null(token.span)),
             TokenKind::Variable(name) => Ok(Expr::Variable(name, token.span)),
+            TokenKind::Identifier(name) => {
+                let (arguments, right_span) = self.parse_call_arguments()?;
+                Ok(Expr::Call {
+                    name: name.to_ascii_lowercase(),
+                    arguments,
+                    span: combine_spans(token.span, right_span),
+                })
+            }
             TokenKind::LeftParen => {
                 let expr = self.parse_expr()?;
                 let right_span = self.expect_right_paren()?;
@@ -289,6 +288,20 @@ impl Parser {
             }
             _ => Err(Diagnostic::new("expected expression", Some(token.span))),
         }
+    }
+
+    fn parse_call_arguments(&mut self) -> Result<(Vec<Expr>, SourceSpan)> {
+        self.expect_left_paren()?;
+        let mut arguments = Vec::new();
+        if !matches!(self.peek().kind, TokenKind::RightParen) {
+            arguments.push(self.parse_expr()?);
+            while matches!(self.peek().kind, TokenKind::Comma) {
+                self.advance();
+                arguments.push(self.parse_expr()?);
+            }
+        }
+        let right_span = self.expect_right_paren()?;
+        Ok((arguments, right_span))
     }
 
     fn try_parse_cast_prefix(&mut self) -> Result<Option<(CastKind, SourceSpan)>> {

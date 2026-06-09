@@ -55,11 +55,12 @@ Current runtime/compiler slices:
   and `>=` use one scalar ordering path. Strict scalar identity uses a separate
   helper that compares boxed type and value without numeric-string or boolean
   coercion.
-- Simple statement-form calls lower to IR internal-call instructions carrying a
+- Simple calls lower to IR internal-call value expressions carrying a
   normalized function name and lowered arguments. The generated C backend
   materializes arguments left-to-right and dispatches through a small internal
-  function registry. `var_dump` is currently the only registered internal
-  function, and it formats the boxed scalar runtime values directly.
+  function registry. Statement-form calls discard the returned boxed value.
+  `var_dump` formats boxed scalar runtime values and returns `null`; `strlen`
+  returns the byte length of the current boxed scalar string conversion.
 - Braced `if`, `elseif`, and `else` statements lower to structured IR branch
   instructions. Conditions remain boxed value expressions, and the C backend
   emits native branches that call the shared scalar truthiness helper.
@@ -92,7 +93,7 @@ Near-term architecture targets:
   unsupported scalar edge cases.
 - A broader internal-function module system with shared argument parsing,
   metadata, unsupported array/object/resource/reference diagnostics, and
-  PHP-exact `var_dump` precision/formatting behavior.
+  PHP-exact `var_dump` precision/formatting and `strlen` byte-string behavior.
 - Broader control flow: unbraced and alternate syntax, `do while`, `for`,
   `foreach`, `switch`, `break`, `continue`, and exception/finally edges.
 - Full PHP increment/decrement semantics, including expression result values,
