@@ -3,6 +3,7 @@ use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use ptn::ast::{BinaryOp, Expr, Statement};
+use ptn::lexer::{self, TokenKind};
 use ptn::{compile_file, parser, CompileOptions};
 
 #[test]
@@ -74,6 +75,41 @@ fn parser_rejects_print_expression_contexts() {
 }
 
 #[test]
+fn lexer_skips_php_comments_and_preserves_following_span() {
+    let tokens =
+        lexer::lex("<?php\n// first\n# second\n/* block\ncomment */\nprint \"ok\";").unwrap();
+    let print = tokens
+        .iter()
+        .find(|token| matches!(token.kind, TokenKind::Print))
+        .expect("expected print token");
+
+    assert_eq!(print.span.line, 6);
+    assert_eq!(print.span.column, 1);
+}
+
+#[test]
+fn parser_accepts_shebang_comments_and_trailing_close_tag() {
+    let program = parser::parse(
+        "#!/usr/bin/env php\n<?php\n// prepare\n$name = \"PTN\";\n# emit\n/* done */\nprint $name\n?>\n",
+    )
+    .unwrap();
+
+    assert_eq!(program.statements.len(), 2);
+}
+
+#[test]
+fn parser_rejects_inline_html_before_open_tag() {
+    let error = parser::parse("# not a shebang\n<?php print \"ok\";").unwrap_err();
+    assert!(error.message.contains("expected <?php open tag"));
+}
+
+#[test]
+fn parser_rejects_inline_html_after_close_tag() {
+    let error = parser::parse("<?php print \"ok\"; ?> html").unwrap_err();
+    assert!(error.message.contains("inline HTML after close tag"));
+}
+
+#[test]
 fn compile_echo_program_to_native_binary() {
     let root = temp_dir("ptn-native-echo");
     fs::create_dir_all(&root).unwrap();
@@ -88,6 +124,26 @@ fn compile_echo_program_to_native_binary() {
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "Hello 42\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_comments_shebang_and_trailing_close_tag_to_native_binary() {
+    let root = temp_dir("ptn-native-comments-tags-after-print");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("comments-tags.php");
+    let output = root.join("comments-tags-bin");
+    fs::write(
+        &input,
+        "#!/usr/bin/env php\n<?php\n// line comment\n$name = \"PTN\";\n# hash comment\n/* block\ncomment */\necho \"Hello \"; print $name . \"\\n\"\n?>\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "Hello PTN\n");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 

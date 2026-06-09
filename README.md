@@ -15,6 +15,9 @@ The current first integrated slice is intentionally small but real:
 Supported today:
 
 - `<?php` open tag.
+- A Unix shebang at the start of the file before `<?php`.
+- PHP `//`, `#`, and `/* ... */` comments inside PHP code.
+- A trailing `?>` close tag when only whitespace follows it.
 - `echo` statements.
 - Statement-form `print expr;` for the same scalar expression subset as
   `echo`; emitted native code uses the same boxed output conversion path.
@@ -34,8 +37,10 @@ Unsupported today:
   resources, exceptions, compound assignment, `print` as an expression returning
   `1`, parenthesized `print(...)` syntax, full PHP numeric-string and
   non-numeric string arithmetic diagnostics, overflow parity, PHP-exact warning
-  text/file/line/error-handler behavior, variable variables, and dynamic
-  fallback. These are architecture targets, not excuses for exact-shape hacks.
+  text/file/line/error-handler behavior, inline HTML before `<?php`, between
+  PHP blocks, or after a closing PHP tag, doc comment retention, variable
+  variables, and dynamic fallback. These are architecture targets, not excuses
+  for exact-shape hacks.
 
 ## Build
 

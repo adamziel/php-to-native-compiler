@@ -20,6 +20,10 @@ model grows toward full PHP semantics.
 
 Current runtime/compiler slices:
 
+- The lexer recognizes the supported PHP code envelope: optional byte-zero
+  Unix shebang, required `<?php`, PHP comments inside the code region, and a
+  trailing `?>` only when the remainder is whitespace. General inline HTML and
+  multi-block PHP/HTML mode switching remain unsupported.
 - Direct variables lower to generated C `PtnRuntime` symbol-table load/store
   calls.
 - Direct variable reads pass through a runtime helper that emits a generic

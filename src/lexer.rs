@@ -3,6 +3,7 @@ use crate::diagnostic::{Diagnostic, Result, SourceSpan};
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {
     OpenTag,
+    CloseTag,
     Echo,
     Print,
     String(String),
@@ -36,6 +37,8 @@ struct Lexer<'a> {
     line: usize,
     column: usize,
     tokens: Vec<Token>,
+    seen_open_tag: bool,
+    closed_php: bool,
 }
 
 impl<'a> Lexer<'a> {
@@ -46,13 +49,46 @@ impl<'a> Lexer<'a> {
             line: 1,
             column: 1,
             tokens: Vec::new(),
+            seen_open_tag: false,
+            closed_php: false,
         }
     }
 
     fn lex(mut self) -> Result<Vec<Token>> {
         while let Some(ch) = self.peek_char() {
+            if self.closed_php {
+                if ch.is_whitespace() {
+                    self.bump_char();
+                    continue;
+                }
+
+                return Err(Diagnostic::new(
+                    "inline HTML after close tag is unsupported",
+                    Some(self.current_char_span()),
+                ));
+            }
+
+            if !self.seen_open_tag {
+                if self.cursor == 0 && self.rest().starts_with("#!") {
+                    self.skip_line();
+                    continue;
+                }
+                if self.rest().starts_with("<?php") {
+                    self.push_open_tag();
+                    continue;
+                }
+
+                return Err(Diagnostic::new(
+                    "expected <?php open tag",
+                    Some(self.current_char_span()),
+                ));
+            }
+
             match ch {
-                '<' if self.rest().starts_with("<?php") => self.push_fixed(TokenKind::OpenTag, 5),
+                '?' if self.rest().starts_with("?>") => self.push_close_tag(),
+                '/' if self.rest().starts_with("//") => self.skip_line_comment(),
+                '/' if self.rest().starts_with("/*") => self.skip_block_comment()?,
+                '#' => self.skip_line_comment(),
                 c if c.is_whitespace() => self.bump_char(),
                 ';' => self.push_fixed(TokenKind::Semicolon, 1),
                 ',' => self.push_fixed(TokenKind::Comma, 1),
@@ -66,7 +102,7 @@ impl<'a> Lexer<'a> {
                 _ => {
                     return Err(Diagnostic::new(
                         format!("unsupported PHP token {:?}", ch),
-                        Some(self.current_span(1)),
+                        Some(self.current_char_span()),
                     ))
                 }
             }
@@ -76,6 +112,39 @@ impl<'a> Lexer<'a> {
             span: self.current_span(0),
         });
         Ok(self.tokens)
+    }
+
+    fn skip_line_comment(&mut self) {
+        while let Some(ch) = self.peek_char() {
+            if ch == '\n' || self.rest().starts_with("?>") {
+                break;
+            }
+            self.bump_char();
+        }
+    }
+
+    fn skip_block_comment(&mut self) -> Result<()> {
+        let start = self.current_span(0);
+        self.bump_char();
+        self.bump_char();
+        while self.peek_char().is_some() {
+            if self.rest().starts_with("*/") {
+                self.bump_char();
+                self.bump_char();
+                return Ok(());
+            }
+            self.bump_char();
+        }
+        Err(Diagnostic::new("unterminated comment", Some(start)))
+    }
+
+    fn skip_line(&mut self) {
+        while let Some(ch) = self.peek_char() {
+            self.bump_char();
+            if ch == '\n' {
+                break;
+            }
+        }
     }
 
     fn lex_string(&mut self, quote: char) -> Result<()> {
@@ -226,8 +295,23 @@ impl<'a> Lexer<'a> {
         self.tokens.push(Token { kind, span });
     }
 
+    fn push_open_tag(&mut self) {
+        self.push_fixed(TokenKind::OpenTag, 5);
+        self.seen_open_tag = true;
+    }
+
+    fn push_close_tag(&mut self) {
+        self.push_fixed(TokenKind::CloseTag, 2);
+        self.closed_php = true;
+    }
+
     fn current_span(&self, width: usize) -> SourceSpan {
         SourceSpan::new(self.cursor, self.cursor + width, self.line, self.column)
+    }
+
+    fn current_char_span(&self) -> SourceSpan {
+        let width = self.peek_char().map(char::len_utf8).unwrap_or(0);
+        self.current_span(width)
     }
 
     fn rest(&self) -> &'a str {

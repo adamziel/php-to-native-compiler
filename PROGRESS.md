@@ -93,3 +93,19 @@ Implemented statement-form `print` for the current supported expression subset:
 Still unsupported for print: expression contexts such as
 `$result = print "value";`, `echo print "value";`, return value `1` semantics,
 and parenthesized `print(...)` syntax.
+
+Rebased the lexer/parser source-compatibility slice for comments and PHP tags
+onto the print-enabled tree:
+
+- PHP `//`, `#`, and `/* ... */` comments are skipped while preserving source
+  span progression for following tokens.
+- A Unix shebang is accepted only at the start of a file before `<?php`.
+- The parser requires the supported `<?php` code envelope and accepts a
+  trailing `?>` close tag when only whitespace follows it.
+- Native tests prove comments, shebang, trailing close tags, echo, and
+  statement-form print together through the compiled binary path without
+  changing expression semantics.
+
+Still unsupported for PHP tag handling: inline HTML before `<?php`, between PHP
+blocks, or after a close tag; short open tags; doc comment retention; and full
+PHP/HTML mode switching.

@@ -6,6 +6,10 @@ supports in generated native binaries.
 ## Supported
 
 - `<?php` open tag.
+- A Unix shebang at byte 0 before `<?php`.
+- PHP `//`, `#`, and `/* ... */` comments inside PHP code. One-line
+  comments end at a newline or at a trailing `?>` close tag.
+- A trailing `?>` close tag when only whitespace follows it.
 - `echo` statements.
 - Statement-form `print expr;` for the same scalar expression subset as echo.
 - String, integer, float, boolean, and null literals.
@@ -27,6 +31,8 @@ supports in generated native binaries.
   arithmetic diagnostics, and complete overflow parity.
 - `print` as an expression returning `1`, including contexts such as assignment,
   echo operands, binary operands, and parenthesized `print(...)` syntax.
+- Inline HTML before `<?php`, between PHP blocks, or after a closing PHP tag.
+- Doc comment retention for reflection or metadata. Comments are skipped today.
 - Arrays, references, copy-on-write, globals, superglobals, compound assignment,
   functions, classes, objects, resources, exceptions, variable variables,
   includes, and dynamic fallback.

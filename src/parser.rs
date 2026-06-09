@@ -14,12 +14,13 @@ struct Parser {
 
 impl Parser {
     fn parse_program(&mut self) -> Result<Program> {
-        if matches!(self.peek().kind, TokenKind::OpenTag) {
-            self.advance();
-        }
+        self.expect_open_tag()?;
         let mut statements = Vec::new();
-        while !matches!(self.peek().kind, TokenKind::Eof) {
+        while !matches!(self.peek().kind, TokenKind::CloseTag | TokenKind::Eof) {
             statements.push(self.parse_statement()?);
+        }
+        if matches!(self.peek().kind, TokenKind::CloseTag) {
+            self.advance();
         }
         Ok(Program { statements })
     }
@@ -43,7 +44,7 @@ impl Parser {
         };
         self.expect_equal()?;
         let value = self.parse_expr()?;
-        self.expect_semicolon()?;
+        self.expect_statement_terminator()?;
         Ok(Statement::Assign {
             name,
             value,
@@ -58,14 +59,14 @@ impl Parser {
             self.advance();
             expressions.push(self.parse_expr()?);
         }
-        self.expect_semicolon()?;
+        self.expect_statement_terminator()?;
         Ok(Statement::Echo { expressions, span })
     }
 
     fn parse_print(&mut self) -> Result<Statement> {
         let span = self.expect_print()?;
         let expression = self.parse_expr()?;
-        self.expect_semicolon()?;
+        self.expect_statement_terminator()?;
         Ok(Statement::Print { expression, span })
     }
 
@@ -133,6 +134,15 @@ impl Parser {
         }
     }
 
+    fn expect_open_tag(&mut self) -> Result<()> {
+        let token = self.advance();
+        if matches!(token.kind, TokenKind::OpenTag) {
+            Ok(())
+        } else {
+            Err(Diagnostic::new("expected <?php open tag", Some(token.span)))
+        }
+    }
+
     fn expect_equal(&mut self) -> Result<()> {
         let token = self.advance();
         if matches!(token.kind, TokenKind::Equal) {
@@ -142,12 +152,17 @@ impl Parser {
         }
     }
 
-    fn expect_semicolon(&mut self) -> Result<()> {
-        let token = self.advance();
-        if matches!(token.kind, TokenKind::Semicolon) {
-            Ok(())
-        } else {
-            Err(Diagnostic::new("expected semicolon", Some(token.span)))
+    fn expect_statement_terminator(&mut self) -> Result<()> {
+        match self.peek().kind {
+            TokenKind::Semicolon => {
+                self.advance();
+                Ok(())
+            }
+            TokenKind::CloseTag => Ok(()),
+            _ => Err(Diagnostic::new(
+                "expected semicolon",
+                Some(self.peek().span),
+            )),
         }
     }
 
