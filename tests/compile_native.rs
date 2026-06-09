@@ -1331,6 +1331,111 @@ var_dump(function_exists(\"sqrt\"), function_exists(\"SQRT\"));\n\
 }
 
 #[test]
+fn compile_getrandmax_basic_phpt_shape_to_native_binary() {
+    let root = temp_dir("ptn-native-getrandmax-basic-phpt-shape");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("getrandmax-basic.php");
+    let output = root.join("getrandmax-basic-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$biggest_int = getrandmax();\n\
+var_dump($biggest_int);\n\
+?>",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(2147483647)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_getrandmax_registry_to_native_binary() {
+    let root = temp_dir("ptn-native-getrandmax-registry");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("getrandmax-registry.php");
+    let output = root.join("getrandmax-registry-bin");
+    fs::write(
+        &input,
+        "<?php var_dump(function_exists(\"getrandmax\"), function_exists(\"GETRANDMAX\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_getmypid_basic_phpt_shape_to_native_binary() {
+    let root = temp_dir("ptn-native-getmypid-basic-phpt-shape");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("getmypid-basic.php");
+    let output = root.join("getmypid-basic-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+echo \"Simple testcase for getmypid() function\\n\";\n\
+\n\
+var_dump(getmypid());\n\
+\n\
+echo \"Done\\n\";\n\
+?>",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(lines.len(), 3);
+    assert_eq!(lines[0], "Simple testcase for getmypid() function");
+    assert!(lines[1].starts_with("int(") && lines[1].ends_with(')'));
+    let pid: i64 = lines[1][4..lines[1].len() - 1].parse().unwrap();
+    assert!(pid > 0);
+    assert_eq!(lines[2], "Done");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_getmypid_registry_to_native_binary() {
+    let root = temp_dir("ptn-native-getmypid-registry");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("getmypid-registry.php");
+    let output = root.join("getmypid-registry-bin");
+    fs::write(
+        &input,
+        "<?php var_dump(function_exists(\"getmypid\"), function_exists(\"GETMYPID\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_symbol_existence_internal_functions_to_native_binary() {
     let root = temp_dir("ptn-native-symbol-existence-functions");
     fs::create_dir_all(&root).unwrap();

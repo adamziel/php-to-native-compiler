@@ -84,7 +84,9 @@ Current runtime/compiler slices:
   path; `bin2hex` returns lowercase hexadecimal bytes for that same string
   conversion; `ceil` and `floor` return boxed floats after the current scalar
   numeric-conversion path; `sqrt` returns a boxed float after that same numeric
-  conversion path; `pi` returns the boxed `M_PI` math constant;
+  conversion path; `pi` returns the boxed `M_PI` math constant; `getrandmax`
+  returns the modeled maximum random integer; `getmypid` returns the generated
+  native process id;
   `bindec`, `hexdec`, and `octdec` parse scalar string-conversion results
   through shared base-conversion helpers with prefix handling and line-aware
   deprecation diagnostics; `chr` constructs one-byte strings from scalar
@@ -145,7 +147,9 @@ Near-term architecture targets:
   PHP-exact `var_dump` precision/formatting beyond the current scalar
   round-trip float path plus `strlen`/`bin2hex`
   byte-string behavior, `strcmp` binary-string parity, scalar math
-  diagnostic/type parity, and base-conversion precision/range parity.
+  diagnostic/type parity, base-conversion precision/range parity, and
+  PHP-exact `getmypid` process model parity across SAPIs and unsupported
+  platforms.
 - User-defined functions, classes/methods, constants beyond the currently
   modeled `E_ERROR`, `PHP_EOL`, `PHP_INT_MIN`, `PHP_INT_MAX`, `PHP_INT_SIZE`,
   `INF`, `NAN`, `M_PI`, and modeled PHP math `M_*` constants, namespaced

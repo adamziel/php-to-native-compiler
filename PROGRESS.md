@@ -844,3 +844,23 @@ Still unsupported after this math-constants slice: user-defined or extension
 constants beyond the modeled scalar constant registry, full PHP float
 precision/formatting parity outside the current scalar `var_dump()` path, and
 array/object/resource/reference output semantics.
+
+Added scalar `getrandmax()` and `getmypid()` internals:
+
+- Registered `getrandmax()` and `getmypid()` through the generated C
+  internal-function registry, so normal calls and `function_exists()` share the
+  same case-insensitive lookup table.
+- `getrandmax()` returns the modeled maximum random integer as a boxed scalar
+  integer.
+- `getmypid()` returns the generated native process id through `_getpid()` on
+  Windows and `getpid()` elsewhere.
+- Native tests prove both public PHPT source shapes plus case-insensitive
+  registry exposure for each function.
+- Focused public PHPT telemetry through `phpc` passes
+  `ext/standard/tests/math/getrandmax_basic.phpt` and
+  `ext/standard/tests/general_functions/getmypid_basic.phpt`.
+
+Still unsupported after this `getrandmax()`/`getmypid()` slice: random-number
+generation state, seeding, platform-specific RNG range variation, other random
+APIs, PHP-exact SAPI/process-control interactions, and unavailable-platform
+diagnostics.

@@ -61,14 +61,15 @@ supports in generated native binaries.
 - Simple statement-form internal calls such as `var_dump(expr, ...)`,
   `strlen(expr);`, `str_rot13(expr);`, `strcmp(expr, expr);`,
   `bin2hex(expr);`, `ceil(expr);`, `floor(expr);`, `sqrt(expr);`,
-  `bindec(expr);`, `hexdec(expr);`, `octdec(expr);`, `pi();`, `chr(expr);`,
-  `ord(expr);`, `is_finite(expr);`, `is_infinite(expr);`, `is_nan(expr);`, and
+  `bindec(expr);`, `hexdec(expr);`, `octdec(expr);`, `pi();`,
+  `getrandmax();`, `getmypid();`, `chr(expr);`, `ord(expr);`,
+  `is_finite(expr);`, `is_infinite(expr);`, `is_nan(expr);`, and
   `error_reporting(expr);`.
 - Expression-form internal calls for the currently registered scalar functions,
   including `strlen(expr)`, `str_rot13(expr)`, `strcmp(expr, expr)`,
   `bin2hex(expr)`, `ceil(expr)`, `floor(expr)`, `sqrt(expr)`, `bindec(expr)`,
-  `hexdec(expr)`, `octdec(expr)`, `pi()`, `chr(expr)`, `ord(expr)`,
-  `is_finite(expr)`, `is_infinite(expr)`, `is_nan(expr)`,
+  `hexdec(expr)`, `octdec(expr)`, `pi()`, `getrandmax()`, `getmypid()`,
+  `chr(expr)`, `ord(expr)`, `is_finite(expr)`, `is_infinite(expr)`, `is_nan(expr)`,
   `error_reporting(expr)`, `gettype(expr)`, and scalar `is_*` type predicates
   in echo operands, assignments, binary operands, and branch/loop conditions.
 - Internal-call arguments are materialized left-to-right before generated C
@@ -90,6 +91,8 @@ supports in generated native binaries.
 - `sqrt()` over current boxed scalar values after scalar numeric conversion,
   returning a boxed float.
 - `pi()` returns the modeled boxed float value of the `M_PI` constant.
+- `getrandmax()` returns the modeled maximum random integer.
+- `getmypid()` returns the generated native process id.
 - `bindec()`, `hexdec()`, and `octdec()` over current boxed scalar values after
   scalar string conversion. The runtime accepts matching `0b`, `0x`, and `0o`
   prefixes, ignores invalid base digits with a deprecation boundary, and
@@ -199,6 +202,8 @@ supports in generated native binaries.
 - Complete PHP CLI and PHPT runner option parity for `phpc`.
 - Doc comment retention for reflection or metadata. Comments are skipped today.
 - PHP-exact `error_reporting()` configuration/filtering behavior.
+- PHP-exact `getmypid()` process model parity across SAPIs and unsupported
+  platforms.
 - PHP-exact file names, line numbers, error-handler routing, and overflow
   parity for bitwise integer-conversion diagnostics, including shift
   diagnostics.

@@ -603,6 +603,11 @@ const RUNTIME_C: &str = r#"#include <ctype.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#if defined(_WIN32)
+#include <process.h>
+#else
+#include <unistd.h>
+#endif
 
 #if defined(__GNUC__) || defined(__clang__)
 #define PTN_UNUSED __attribute__((unused))
@@ -1958,6 +1963,26 @@ static PtnValue ptn_internal_pi(PtnRuntime *runtime, size_t argc, const PtnValue
     return ptn_float(3.14159265358979323846264338327950288);
 }
 
+static PtnValue ptn_internal_getrandmax(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_int(2147483647);
+}
+
+static PtnValue ptn_internal_getmypid(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+#if defined(_WIN32)
+    return ptn_int((int64_t)_getpid());
+#else
+    return ptn_int((int64_t)getpid());
+#endif
+}
+
 static int ptn_digit_value_for_base(unsigned char byte, int base) {
     int value = -1;
     if (byte >= '0' && byte <= '9') {
@@ -2116,6 +2141,8 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "floor", 1, 1, ptn_internal_floor },
         { "sqrt", 1, 1, ptn_internal_sqrt },
         { "pi", 0, 0, ptn_internal_pi },
+        { "getrandmax", 0, 0, ptn_internal_getrandmax },
+        { "getmypid", 0, 0, ptn_internal_getmypid },
         { "bindec", 1, 1, ptn_internal_bindec },
         { "hexdec", 1, 1, ptn_internal_hexdec },
         { "octdec", 1, 1, ptn_internal_octdec },

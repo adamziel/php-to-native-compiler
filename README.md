@@ -25,9 +25,10 @@ Supported today:
 - Simple internal calls such as `var_dump(expr, ...)`, `strlen(expr)`,
   `str_rot13(expr)`, `strcmp(expr, expr)`, `bin2hex(expr)`, `ceil(expr)`,
   `floor(expr)`, `sqrt(expr)`, `bindec(expr)`, `hexdec(expr)`, `octdec(expr)`,
-  `pi()`, `chr(expr)`, `ord(expr)`, `error_reporting(expr)`, `gettype(expr)`,
-  scalar `is_*` type predicates, non-finite predicates such as
-  `is_finite(expr)`, `is_infinite(expr)`, and `is_nan(expr)`,
+  `pi()`, `getrandmax()`, `getmypid()`, `chr(expr)`, `ord(expr)`,
+  `error_reporting(expr)`, `gettype(expr)`, scalar `is_*` type predicates,
+  non-finite predicates such as `is_finite(expr)`, `is_infinite(expr)`, and
+  `is_nan(expr)`,
   `defined(expr)`, and `function_exists(expr)`, lowered through IR
   internal-call nodes and generated C runtime dispatch.
 - `var_dump()` output for the current boxed scalar `PtnValue` types: `null`,
@@ -47,6 +48,8 @@ Supported today:
 - `sqrt()` as an expression returning a boxed float after the current boxed
   scalar numeric-conversion result.
 - `pi()` as an expression returning the modeled boxed float value of `M_PI`.
+- `getrandmax()` as an expression returning the modeled maximum random integer.
+- `getmypid()` as an expression returning the generated native process id.
 - `bindec()`, `hexdec()`, and `octdec()` as expressions over the current boxed
   scalar string-conversion result, accepting the matching PHP base prefix and
   returning integers or floats based on native integer range.
@@ -153,8 +156,9 @@ Unsupported today:
   binary-string parity, exact `chr()` deprecation diagnostics, exact `ord()`
   argument type diagnostics, exact `ceil()`/`floor()`
   null/string/unsupported type diagnostics, exact `sqrt()` negative/non-finite
-  edge parity, exact `error_reporting()` configuration/filtering behavior, and
-  full PHP precision/formatting edge cases for
+  edge parity, exact `getmypid()` process model parity across SAPIs and
+  unsupported platforms, exact `error_reporting()` configuration/filtering
+  behavior, and full PHP precision/formatting edge cases for
   `var_dump()`/`strlen()`/`bin2hex()`/base-conversion internals, doc comment
   retention, variable variables, and dynamic fallback. These are architecture
   targets, not excuses for exact-shape hacks.
