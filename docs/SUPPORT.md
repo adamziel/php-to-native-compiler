@@ -60,18 +60,21 @@ supports in generated native binaries.
   converted to integers through the current bitwise integer-conversion path.
 - Simple statement-form internal calls such as `var_dump(expr, ...)`,
   `strlen(expr);`, `str_rot13(expr);`, `strcmp(expr, expr);`,
-  `bin2hex(expr);`, `ceil(expr);`, `floor(expr);`, `sqrt(expr);`,
+  `bin2hex(expr);`, `hex2bin(expr);`, `ceil(expr);`, `floor(expr);`,
+  `sqrt(expr);`,
   `bindec(expr);`, `hexdec(expr);`, `octdec(expr);`, `pi();`,
   `getrandmax();`, `getmypid();`, `chr(expr);`, `ord(expr);`,
   `is_finite(expr);`, `is_infinite(expr);`, `is_nan(expr);`, and
   `error_reporting(expr);`.
 - Expression-form internal calls for the currently registered scalar functions,
   including `strlen(expr)`, `str_rot13(expr)`, `strcmp(expr, expr)`,
-  `bin2hex(expr)`, `ceil(expr)`, `floor(expr)`, `sqrt(expr)`, `bindec(expr)`,
-  `hexdec(expr)`, `octdec(expr)`, `pi()`, `getrandmax()`, `getmypid()`,
-  `chr(expr)`, `ord(expr)`, `is_finite(expr)`, `is_infinite(expr)`, `is_nan(expr)`,
-  `error_reporting(expr)`, `gettype(expr)`, and scalar `is_*` type predicates
-  in echo operands, assignments, binary operands, and branch/loop conditions.
+  `bin2hex(expr)`, `hex2bin(expr)`, `ceil(expr)`, `floor(expr)`,
+  `sqrt(expr)`, `bindec(expr)`, `hexdec(expr)`, `octdec(expr)`, `pi()`,
+  `getrandmax()`, `getmypid()`, `chr(expr)`, `ord(expr)`,
+  `is_finite(expr)`, `is_infinite(expr)`, `is_nan(expr)`,
+  `error_reporting(expr)`, `gettype(expr)`, and scalar `is_*` type
+  predicates in echo operands, assignments, binary operands, and branch/loop
+  conditions.
 - Internal-call arguments are materialized left-to-right before generated C
   runtime dispatch.
 - `var_dump()` output for current boxed scalar values: `NULL`, `bool(...)`,
@@ -86,6 +89,9 @@ supports in generated native binaries.
   comparison of the current C-string-backed values.
 - `bin2hex()` over current boxed scalar values after scalar string conversion,
   returning lowercase hexadecimal byte output.
+- `hex2bin()` over current boxed scalar values after scalar string conversion,
+  decoding hexadecimal byte pairs and returning `false` with a warning boundary
+  for odd-length or non-hexadecimal input.
 - `ceil()` and `floor()` over current boxed scalar values after scalar numeric
   conversion, returning boxed floats.
 - `sqrt()` over current boxed scalar values after scalar numeric conversion,
@@ -183,7 +189,7 @@ supports in generated native binaries.
   `var_dump()` reference identity output.
 - Embedded NUL strings in runtime string values, `var_dump()` string
   length/output, `strlen()`, `str_rot13()`, `strcmp()`, `bin2hex()`, `chr()`,
-  `ord()`, or bitwise string results.
+  `hex2bin()`, `ord()`, or bitwise string results.
 - Exact `strcmp()` binary-string behavior for embedded NUL bytes and
   unsupported array/object/resource/reference operands.
 - Exact `chr()` diagnostics for out-of-range integers or float-to-int precision
@@ -194,6 +200,8 @@ supports in generated native binaries.
 - Exact `sqrt()` diagnostics and complete negative/non-finite float parity.
 - Exact diagnostics and full precision/range parity for `bindec()`, `hexdec()`,
   and `octdec()` on very large or unsupported values.
+- Exact `hex2bin()` warning text/file-name parity and unsupported
+  array/object/resource/reference diagnostics.
 - Exact non-finite formatting outside current scalar `var_dump()` output and
   complete non-finite comparison parity for unsupported arrays, objects,
   resources, and references.

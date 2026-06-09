@@ -877,3 +877,20 @@ Added modeled directory/path separator constants:
 Still unsupported after this directory-constant slice: other directory
 extension constants and PHP-exact constant availability differences across
 SAPIs or unusual target platforms.
+
+Added scalar `hex2bin()`:
+
+- Registered `hex2bin()` through the generated C internal-function registry,
+  so normal calls and `function_exists()` share the same case-insensitive
+  lookup table.
+- `hex2bin()` decodes hexadecimal byte pairs from the current boxed scalar
+  string-conversion path.
+- Odd-length or non-hexadecimal input returns `false` with a warning boundary.
+- Native tests prove the public `hex2bin_basic.phpt` source shape, nested
+  `bin2hex(hex2bin(...))`, registry exposure, and invalid-input warnings.
+- Focused public PHPT telemetry through `phpc` passes
+  `ext/standard/tests/strings/hex2bin_basic.phpt`.
+
+Still unsupported after this `hex2bin()` slice: embedded-NUL decoded output
+parity from the current C-string-backed runtime, exact warning file names and
+line text, and unsupported array/object/resource/reference diagnostics.

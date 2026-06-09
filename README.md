@@ -23,9 +23,10 @@ Supported today:
 - Statement-form `print expr;` for the same scalar expression subset as
   `echo`; emitted native code uses the same boxed output conversion path.
 - Simple internal calls such as `var_dump(expr, ...)`, `strlen(expr)`,
-  `str_rot13(expr)`, `strcmp(expr, expr)`, `bin2hex(expr)`, `ceil(expr)`,
-  `floor(expr)`, `sqrt(expr)`, `bindec(expr)`, `hexdec(expr)`, `octdec(expr)`,
-  `pi()`, `getrandmax()`, `getmypid()`, `chr(expr)`, `ord(expr)`,
+  `str_rot13(expr)`, `strcmp(expr, expr)`, `bin2hex(expr)`, `hex2bin(expr)`,
+  `ceil(expr)`, `floor(expr)`, `sqrt(expr)`, `bindec(expr)`, `hexdec(expr)`,
+  `octdec(expr)`, `pi()`, `getrandmax()`, `getmypid()`, `chr(expr)`,
+  `ord(expr)`,
   `error_reporting(expr)`, `gettype(expr)`, scalar `is_*` type predicates,
   non-finite predicates such as `is_finite(expr)`, `is_infinite(expr)`, and
   `is_nan(expr)`,
@@ -43,6 +44,9 @@ Supported today:
   results over the current boxed scalar string-conversion results.
 - `bin2hex()` as an expression returning lowercase hexadecimal bytes for the
   current boxed scalar string-conversion result.
+- `hex2bin()` as an expression decoding hexadecimal pairs from the current
+  boxed scalar string-conversion result, returning `false` with a warning
+  boundary for odd-length or non-hexadecimal input.
 - `ceil()` and `floor()` as expressions returning boxed floats after the
   current boxed scalar numeric-conversion result.
 - `sqrt()` as an expression returning a boxed float after the current boxed
@@ -154,15 +158,16 @@ Unsupported today:
   references,
   embedded NUL string handling, complex/braced interpolation, interpolation of
   arrays/objects/offsets/properties/variable variables, exact `strcmp()`
-  binary-string parity, exact `chr()` deprecation diagnostics, exact `ord()`
-  argument type diagnostics, exact `ceil()`/`floor()`
+  binary-string parity, exact `hex2bin()` embedded-NUL output parity and
+  warning text/file-name parity, exact `chr()` deprecation diagnostics, exact
+  `ord()` argument type diagnostics, exact `ceil()`/`floor()`
   null/string/unsupported type diagnostics, exact `sqrt()` negative/non-finite
   edge parity, exact `getmypid()` process model parity across SAPIs and
   unsupported platforms, exact `error_reporting()` configuration/filtering
   behavior, and full PHP precision/formatting edge cases for
-  `var_dump()`/`strlen()`/`bin2hex()`/base-conversion internals, doc comment
-  retention, variable variables, and dynamic fallback. These are architecture
-  targets, not excuses for exact-shape hacks.
+  `var_dump()`/`strlen()`/`bin2hex()`/`hex2bin()`/base-conversion internals,
+  doc comment retention, variable variables, and dynamic fallback. These are
+  architecture targets, not excuses for exact-shape hacks.
 
 ## Build
 

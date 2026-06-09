@@ -861,6 +861,15 @@ static void ptn_emit_deprecation(PtnDiagnosticSink *diagnostics, const char *mes
     fputc('\n', stdout);
 }
 
+static void ptn_emit_warning(PtnDiagnosticSink *diagnostics, const char *message, size_t line) {
+    (void)diagnostics;
+    fputs("Warning: ", stdout);
+    fputs(message, stdout);
+    fputs(" in ptn on line ", stdout);
+    fprintf(stdout, "%zu", line);
+    fputc('\n', stdout);
+}
+
 static void ptn_runtime_init(PtnRuntime *runtime) {
     ptn_symbols_init(&runtime->symbols);
     ptn_diagnostics_init(&runtime->diagnostics, stderr);
@@ -1945,6 +1954,59 @@ static PtnValue ptn_internal_bin2hex(PtnRuntime *runtime, size_t argc, const Ptn
     return ptn_owned_string(hex);
 }
 
+static int ptn_hex_nibble(unsigned char byte) {
+    if (byte >= '0' && byte <= '9') {
+        return (int)(byte - '0');
+    }
+    if (byte >= 'a' && byte <= 'f') {
+        return 10 + (int)(byte - 'a');
+    }
+    if (byte >= 'A' && byte <= 'F') {
+        return 10 + (int)(byte - 'A');
+    }
+    return -1;
+}
+
+static PtnValue ptn_internal_hex2bin(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    char *hex = ptn_value_to_string(args[0]);
+    size_t len = strlen(hex);
+    if ((len % 2) != 0) {
+        ptn_emit_warning(
+            &runtime->diagnostics,
+            "hex2bin(): Hexadecimal input string must have an even length",
+            line
+        );
+        free(hex);
+        return ptn_bool(0);
+    }
+
+    char *binary = malloc((len / 2) + 1);
+    if (binary == NULL) {
+        ptn_abort_out_of_memory();
+    }
+
+    size_t output_len = 0;
+    for (size_t i = 0; i < len; i += 2) {
+        int high = ptn_hex_nibble((unsigned char)hex[i]);
+        int low = ptn_hex_nibble((unsigned char)hex[i + 1]);
+        if (high < 0 || low < 0) {
+            ptn_emit_warning(
+                &runtime->diagnostics,
+                "hex2bin(): Input string must be hexadecimal string",
+                line
+            );
+            free(binary);
+            free(hex);
+            return ptn_bool(0);
+        }
+        binary[output_len++] = (char)((high << 4) | low);
+    }
+    binary[output_len] = '\0';
+    free(hex);
+    return ptn_owned_string(binary);
+}
+
 static double ptn_value_to_double(PtnValue value) {
     PtnNumber number = ptn_to_number(value);
     return number.floating;
@@ -2153,6 +2215,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "str_rot13", 1, 1, ptn_internal_str_rot13 },
         { "strcmp", 2, 2, ptn_internal_strcmp },
         { "bin2hex", 1, 1, ptn_internal_bin2hex },
+        { "hex2bin", 1, 1, ptn_internal_hex2bin },
         { "ceil", 1, 1, ptn_internal_ceil },
         { "floor", 1, 1, ptn_internal_floor },
         { "sqrt", 1, 1, ptn_internal_sqrt },

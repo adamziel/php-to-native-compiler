@@ -82,7 +82,9 @@ Current runtime/compiler slices:
   returns ASCII ROT13 output for that string conversion; `strcmp` compares two
   scalar string-conversion results through the current C-string-backed bytewise
   path; `bin2hex` returns lowercase hexadecimal bytes for that same string
-  conversion; `ceil` and `floor` return boxed floats after the current scalar
+  conversion; `hex2bin` decodes hexadecimal byte pairs from the current scalar
+  string conversion and returns `false` with a warning boundary for invalid
+  input; `ceil` and `floor` return boxed floats after the current scalar
   numeric-conversion path; `sqrt` returns a boxed float after that same numeric
   conversion path; `pi` returns the boxed `M_PI` math constant; `getrandmax`
   returns the modeled maximum random integer; `getmypid` returns the generated
@@ -145,11 +147,10 @@ Near-term architecture targets:
 - A broader internal-function module system with shared argument parsing,
   metadata, unsupported array/object/resource/reference diagnostics, and
   PHP-exact `var_dump` precision/formatting beyond the current scalar
-  round-trip float path plus `strlen`/`bin2hex`
-  byte-string behavior, `strcmp` binary-string parity, scalar math
-  diagnostic/type parity, base-conversion precision/range parity, and
-  PHP-exact `getmypid` process model parity across SAPIs and unsupported
-  platforms.
+  round-trip float path plus `strlen`/`bin2hex`/`hex2bin` byte-string behavior,
+  `strcmp` binary-string parity, scalar math diagnostic/type parity,
+  base-conversion precision/range parity, and PHP-exact `getmypid` process
+  model parity across SAPIs and unsupported platforms.
 - User-defined functions, classes/methods, constants beyond the currently
   modeled `E_ERROR`, `PHP_EOL`, `PHP_INT_MIN`, `PHP_INT_MAX`, `PHP_INT_SIZE`,
   `INF`, `NAN`, `M_PI`, and modeled PHP math `M_*` constants, namespaced

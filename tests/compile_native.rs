@@ -975,6 +975,60 @@ var_dump(function_exists(\"str_rot13\"), function_exists(\"STRCMP\"));\n\
 }
 
 #[test]
+fn compile_hex2bin_basic_phpt_shape_to_native_binary() {
+    let root = temp_dir("ptn-native-hex2bin-basic-phpt-shape");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("hex2bin-basic.php");
+    let output = root.join("hex2bin-basic-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+\n\
+var_dump(bin2hex(hex2bin('012345')) == '012345');\n\
+var_dump(bin2hex(hex2bin('abc123')) == 'abc123');\n\
+var_dump(bin2hex(hex2bin('123abc')) == '123abc');\n\
+var_dump(bin2hex(hex2bin('FFFFFF')) == 'ffffff');\n\
+var_dump(function_exists(\"hex2bin\"), function_exists(\"HEX2BIN\"));\n\
+\n\
+?>",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_hex2bin_invalid_input_to_native_binary() {
+    let root = temp_dir("ptn-native-hex2bin-invalid-input");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("hex2bin-invalid.php");
+    let output = root.join("hex2bin-invalid-bin");
+    fs::write(
+        &input,
+        "<?php var_dump(hex2bin('f')); var_dump(hex2bin('zz'));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Warning: hex2bin(): Hexadecimal input string must have an even length in ptn on line 1\nbool(false)\nWarning: hex2bin(): Input string must be hexadecimal string in ptn on line 1\nbool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_internal_call_expression_arguments_evaluate_left_to_right() {
     let root = temp_dir("ptn-native-call-expression-left-to-right");
     fs::create_dir_all(&root).unwrap();
