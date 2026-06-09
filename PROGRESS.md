@@ -6,6 +6,14 @@
 - Latest: 2026-06-09T18:20Z array-aware type predicate slice adds
   `is_array()` through the generic internal registry, with native scalar and
   ordered-array predicate coverage plus focused differential telemetry.
+- Prior: 2026-06-09T16:30Z `count()` non-array operands now raise
+  catchable `TypeError` through the shared runtime helper instead of exiting
+  directly. Native tests cover array counts, null/scalar caught diagnostics,
+  uncaught scalar failure, and generated direct-helper shape. Focused PHPT
+  evidence: `ext/standard/tests/array/count_invalid.phpt` still fails on the
+  unsupported `(object) []` cast, but the non-object row body run through
+  `phpc -r` matches the first five expected `count()` messages including
+  `true given` and `false given`.
 - Prior: 2026-06-09T16:07Z focused array-lvalue telemetry passes
   `tests/basic/array_null_offset_deprecation.phpt` and
   `Zend/tests/assign_dim_op_undef.phpt`; `Zend/tests/offset_assign.phpt`

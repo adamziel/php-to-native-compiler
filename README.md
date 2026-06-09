@@ -139,7 +139,10 @@ Supported today:
 - `ord()` as an expression returning the first byte of the current boxed scalar
   string-conversion result, including PHP-like deprecation diagnostics for
   empty and multi-byte strings.
-- `count()` as an expression returning the length of current boxed arrays.
+- `count()` as an expression returning the length of current boxed arrays and
+  raising catchable `TypeError` diagnostics for non-array operands in the
+  current boxed value domain, including PHP-style `true`/`false` boolean
+  operand names.
 - `error_reporting()` accepts zero or one argument and returns the current
   placeholder reporting level. Runtime error filtering is not modeled yet.
 - `gettype()` and type predicates for the current boxed scalar and ordered-array
@@ -376,7 +379,7 @@ Unsupported today:
   `chr()` deprecation diagnostics, exact `ord()` argument type diagnostics,
   exact `ceil()`/`floor()` null/string/unsupported type diagnostics, exact
   `abs()` diagnostics for unsupported operands and complete overflow parity,
-  `count()` support for `Countable` objects and exact non-array diagnostics,
+  `count()` support for `Countable` objects and object-specific diagnostics,
   exact `sqrt()` negative/non-finite
   edge parity, exact `fdiv()` unsupported operand diagnostics, exact
   `intdiv()` catchable exception behavior for zero divisors, `PHP_INT_MIN / -1`,

@@ -40,14 +40,29 @@ static PTN_UNUSED void ptn_echo(PtnValue value) {
 }
 
 /* PTN_DIRECT_INTERNAL_HELPERS_START */
-static PTN_UNUSED PtnValue ptn_count_value(PtnValue value) {
+static PTN_UNUSED const char *ptn_count_operand_type_name(PtnValue value) {
+    if (value.type == PTN_BOOL) {
+        return value.as.boolean ? "true" : "false";
+    }
+    return ptn_offset_container_type_name(value);
+}
+
+static PTN_UNUSED PtnValue ptn_count_value(PtnRuntime *runtime, PtnValue value) {
     if (value.type == PTN_ARRAY) {
         return ptn_int((int64_t)value.as.array->len);
     }
-    fputs("Fatal error: count(): Argument #1 ($value) must be of type Countable|array, ", stderr);
-    fputs(ptn_offset_container_type_name(value), stderr);
-    fputs(" given\n", stderr);
-    exit(255);
+
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "count(): Argument #1 ($value) must be of type Countable|array, %s given",
+        ptn_count_operand_type_name(value)
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "TypeError", message);
     return ptn_null();
 }
 
@@ -1553,10 +1568,9 @@ static PtnValue ptn_internal_ord(PtnRuntime *runtime, size_t argc, const PtnValu
 }
 
 static PtnValue ptn_internal_count(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
     (void)line;
-    return ptn_count_value(args[0]);
+    return ptn_count_value(runtime, args[0]);
 }
 
 static PtnValue ptn_internal_error_reporting(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
