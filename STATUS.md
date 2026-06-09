@@ -1,7 +1,7 @@
 # PTN Status
 
-Last refresh: 2026-06-09T17:54Z
-Measured base: `ptn-cqu.47.11` rebased after `ptn-cqu.47.6`
+Last refresh: 2026-06-09T18:53Z
+Measured base: `ptn-cqu.47.15` rebased after `ptn-cqu.47.16`
 
 ## Operating Goal
 
@@ -10,21 +10,25 @@ COW correctness or COW evidence.
 
 ## Current Signal
 
-Source unit tests: 3/3. Native compiled snippets: 287/287. Parsed bounded PHPT
-rows: 121/171. COW-focused native tests: 5/5. Focused PHPT COW manifest: 2/29.
+Source unit tests: 4/4. Native compiled snippets: 309/309. Bounded PHPT
+manifest: 145/200. COW-focused native tests: 12/12. Focused PHPT COW manifest:
+7/29.
 
 ## Active Buckets
 
 | Bucket | Count |
 | --- | ---: |
-| Source unit tests | 3/3 |
-| Native compiled snippets | 287/287 |
-| PHPT Zend rows | 60/76 |
-| PHPT ext/standard rows | 44/77 |
-| PHPT tests/basic+func+lang | 17/18 |
-| COW contract spec tests | 5/5 |
-| COW-focused native tests | 5/5 |
-| PHPT COW manifest | 2/29 |
+| Source unit tests | 4/4 |
+| Native compiled snippets | 309/309 |
+| PHPT bounded manifest | 145/200 |
+| PHPT Zend rows | 63/76 |
+| PHPT ext/standard rows | 47/77 |
+| PHPT tests/basic+func+lang | 33/45 |
+| PHPT other rows | 2/2 |
+| COW contract spec tests | 7/7 |
+| COW-focused native tests | 12/12 |
+| COW reducers/oracle/internals | 59/60 |
+| PHPT COW manifest | 7/29 |
 
 ## Rules
 
