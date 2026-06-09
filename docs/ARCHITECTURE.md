@@ -58,9 +58,10 @@ Current runtime/compiler slices:
   shape. Comparisons emit boxed booleans through runtime helpers, while `&&`
   and `||` emit native C branches that short-circuit over boxed PHP truthiness.
   The ordered comparison helpers share `ptn_compare_order`, so `<`, `<=`, `>`,
-  and `>=` use one scalar ordering path. Strict scalar identity uses a separate
-  helper that compares boxed type and value without numeric-string or boolean
-  coercion.
+  and `>=` use one scalar ordering path. Numeric scalar comparisons involving
+  `NAN` report an unordered result so equality and ordered comparisons return
+  false. Strict scalar identity uses a separate helper that compares boxed type
+  and value without numeric-string or boolean coercion.
 - Simple calls lower to IR internal-call value expressions carrying a
   normalized function name, lowered arguments, and the source line for current
   internal diagnostic boundaries. The generated C backend materializes

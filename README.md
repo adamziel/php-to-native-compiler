@@ -77,8 +77,10 @@ Supported today:
   calls over `PtnValue` operands.
 - Boxed scalar comparison and boolean expressions: `==`, `!=`, `===`, `!==`,
   `<`, `<=`, `>`, `>=`, `&&`, and `||`. Strict identity compares scalar type
-  and value without coercion; boolean operators short-circuit over boxed PHP
-  truthiness for the currently supported scalar value types.
+  and value without coercion; numeric scalar comparisons involving `NAN`
+  evaluate as unordered so equality and ordered comparisons return false;
+  boolean operators short-circuit over boxed PHP truthiness for the currently
+  supported scalar value types.
 - Boxed scalar bitwise `&`, `^`, `|`, and unary `~` expressions.
   String/string binary operands and string unary `~` operands use PHP bytewise
   string results for non-NUL strings; other supported scalar operands are

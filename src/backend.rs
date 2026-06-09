@@ -1057,14 +1057,24 @@ static PTN_UNUSED int ptn_comparison_numeric_value(PtnValue value, double *numbe
     return 0;
 }
 
+enum {
+    PTN_COMPARE_LESS = -1,
+    PTN_COMPARE_EQUAL = 0,
+    PTN_COMPARE_GREATER = 1,
+    PTN_COMPARE_UNORDERED = 2
+};
+
 static PTN_UNUSED int ptn_compare_numbers(double left, double right) {
+    if (isnan(left) || isnan(right)) {
+        return PTN_COMPARE_UNORDERED;
+    }
     if (left < right) {
-        return -1;
+        return PTN_COMPARE_LESS;
     }
     if (left > right) {
-        return 1;
+        return PTN_COMPARE_GREATER;
     }
-    return 0;
+    return PTN_COMPARE_EQUAL;
 }
 
 static PTN_UNUSED int ptn_compare_strings(const char *left, const char *right) {
@@ -1114,7 +1124,7 @@ static PTN_UNUSED int ptn_compare_equal(PtnValue left, PtnValue right) {
     double right_number = 0.0;
     if (ptn_comparison_numeric_value(left, &left_number) &&
         ptn_comparison_numeric_value(right, &right_number)) {
-        return ptn_compare_numbers(left_number, right_number) == 0;
+        return ptn_compare_numbers(left_number, right_number) == PTN_COMPARE_EQUAL;
     }
     if (left.type == PTN_STRING && right.type == PTN_STRING) {
         return strcmp(left.as.string, right.as.string) == 0;
@@ -1141,6 +1151,10 @@ static PTN_UNUSED int ptn_compare_identical(PtnValue left, PtnValue right) {
     return 0;
 }
 
+static PTN_UNUSED int ptn_value_is_nan(PtnValue value) {
+    return value.type == PTN_FLOAT && isnan(value.as.floating);
+}
+
 static PTN_UNUSED int ptn_compare_order(PtnValue left, PtnValue right) {
     if (left.type == PTN_BOOL || right.type == PTN_BOOL) {
         return ptn_compare_numbers((double)ptn_is_truthy(left), (double)ptn_is_truthy(right));
@@ -1149,6 +1163,9 @@ static PTN_UNUSED int ptn_compare_order(PtnValue left, PtnValue right) {
         return 0;
     }
     if (left.type == PTN_NULL) {
+        if (ptn_value_is_nan(right)) {
+            return ptn_compare_numbers((double)ptn_is_truthy(left), (double)ptn_is_truthy(right));
+        }
         if (ptn_is_number_type(right)) {
             double right_number = right.type == PTN_INT ? (double)right.as.integer : right.as.floating;
             return ptn_compare_numbers(0.0, right_number);
@@ -1158,6 +1175,9 @@ static PTN_UNUSED int ptn_compare_order(PtnValue left, PtnValue right) {
         }
     }
     if (right.type == PTN_NULL) {
+        if (ptn_value_is_nan(left)) {
+            return ptn_compare_numbers((double)ptn_is_truthy(left), (double)ptn_is_truthy(right));
+        }
         if (ptn_is_number_type(left)) {
             double left_number = left.type == PTN_INT ? (double)left.as.integer : left.as.floating;
             return ptn_compare_numbers(left_number, 0.0);
@@ -1177,28 +1197,36 @@ static PTN_UNUSED int ptn_compare_order(PtnValue left, PtnValue right) {
         return ptn_compare_strings(left.as.string, right.as.string);
     }
     if (ptn_is_number_type(left) && right.type == PTN_STRING) {
+        if (ptn_value_is_nan(left)) {
+            return PTN_COMPARE_UNORDERED;
+        }
         return ptn_compare_number_and_string(left, right.as.string, 1);
     }
     if (left.type == PTN_STRING && ptn_is_number_type(right)) {
+        if (ptn_value_is_nan(right)) {
+            return PTN_COMPARE_UNORDERED;
+        }
         return ptn_compare_number_and_string(right, left.as.string, 0);
     }
     return ptn_compare_numbers((double)ptn_is_truthy(left), (double)ptn_is_truthy(right));
 }
 
 static PTN_UNUSED int ptn_compare_less(PtnValue left, PtnValue right) {
-    return ptn_compare_order(left, right) < 0;
+    return ptn_compare_order(left, right) == PTN_COMPARE_LESS;
 }
 
 static PTN_UNUSED int ptn_compare_less_equal(PtnValue left, PtnValue right) {
-    return ptn_compare_order(left, right) <= 0;
+    int compared = ptn_compare_order(left, right);
+    return compared == PTN_COMPARE_LESS || compared == PTN_COMPARE_EQUAL;
 }
 
 static PTN_UNUSED int ptn_compare_greater(PtnValue left, PtnValue right) {
-    return ptn_compare_order(left, right) > 0;
+    return ptn_compare_order(left, right) == PTN_COMPARE_GREATER;
 }
 
 static PTN_UNUSED int ptn_compare_greater_equal(PtnValue left, PtnValue right) {
-    return ptn_compare_order(left, right) >= 0;
+    int compared = ptn_compare_order(left, right);
+    return compared == PTN_COMPARE_GREATER || compared == PTN_COMPARE_EQUAL;
 }
 
 static PTN_UNUSED PtnValue ptn_add(PtnValue left, PtnValue right) {

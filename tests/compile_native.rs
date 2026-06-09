@@ -1259,6 +1259,29 @@ fn compile_less_equal_greater_equal_edges_to_native_binary() {
 }
 
 #[test]
+fn compile_nan_scalar_comparisons_to_native_binary() {
+    let root = temp_dir("ptn-native-nan-scalar-comparisons");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("nan-scalar-comparisons.php");
+    let output = root.join("nan-scalar-comparisons-bin");
+    fs::write(
+        &input,
+        "<?php echo \"** CONST\\n\"; var_dump(0 < NAN); var_dump(0 <= NAN); var_dump(0 > NAN); var_dump(0 >= NAN); echo \"** VAR\\n\"; $nan = NAN; var_dump(0 < $nan); var_dump(0 <= $nan); var_dump(0 > $nan); var_dump(0 >= $nan); var_dump(NAN == NAN); var_dump(NAN != NAN); var_dump(NAN === NAN); var_dump(NAN !== NAN); var_dump(false < NAN); var_dump(true <= NAN); var_dump(null < NAN); var_dump(NAN > null); var_dump(\"0\" <= NAN); var_dump(NAN >= \"NAN\");",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "** CONST\nbool(false)\nbool(false)\nbool(false)\nbool(false)\n** VAR\nbool(false)\nbool(false)\nbool(false)\nbool(false)\nbool(false)\nbool(true)\nbool(false)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(false)\nbool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_loose_scalar_comparison_edges_to_native_binary() {
     let root = temp_dir("ptn-native-comparison-edges");
     fs::create_dir_all(&root).unwrap();

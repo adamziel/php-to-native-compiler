@@ -707,3 +707,23 @@ Added scalar PHP integer limit constants:
 Still unsupported after this constant slice: user-defined constants,
 namespace-sensitive constants, dynamic `constant()`, and built-in or extension
 constants beyond the currently modeled scalar registry entries.
+
+Added NaN-aware scalar comparison ordering:
+
+- The boxed scalar numeric comparison helper now reports unordered results when
+  either numeric operand is `NAN` instead of collapsing the comparison to
+  equality.
+- Loose equality and ordered operators map unordered numeric comparisons to
+  PHP-style false results, while `!=`/`!==` remain true through the existing
+  comparison emission.
+- Mixed scalar comparison branches for booleans, null, and strings stay on the
+  existing PHP-shaped paths instead of treating every `NAN` operand alike.
+- Native tests prove the public `nan-comparison-false.phpt` source shape plus
+  nearby bool/null/string `NAN` comparison behavior.
+- Focused public PHPT telemetry through `phpc` passes
+  `tests/lang/operators/nan-comparison-false.phpt`.
+
+Still unsupported after this NaN comparison slice: exact `NAN`/`INF`
+formatting, arrays, objects, resources, references, copy-on-write behavior,
+spaceship comparison, and complete comparison parity for unsupported value
+types.

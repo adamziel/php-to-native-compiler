@@ -43,6 +43,8 @@ supports in generated native binaries.
   scalar values.
 - Boxed scalar comparison operators `==`, `!=`, `===`, `!==`, `<`, `<=`, `>`,
   and `>=`. Strict scalar identity compares type and value without coercion.
+  Numeric comparisons involving `NAN` are treated as unordered, so equality and
+  ordered comparisons return false while `!=`/`!==` return true.
 - Boxed scalar boolean operators `&&` and `||`, with short-circuit evaluation
   over PHP truthiness for the currently supported scalar values.
 - Boxed scalar bitwise `&`, `^`, and `|` operators. When both operands are strings,
@@ -161,8 +163,8 @@ supports in generated native binaries.
   diagnostics, and complete special-float parity.
 - Exact diagnostics and full precision/range parity for `bindec()`, `hexdec()`,
   and `octdec()` on very large or unsupported values.
-- Exact `NAN`/`INF` formatting and complete comparison parity for non-finite
-  float values outside the current predicate helpers.
+- Exact `NAN`/`INF` formatting and complete non-finite comparison parity for
+  unsupported arrays, objects, resources, and references.
 - Full PHP float precision and formatting edge cases for `var_dump()` or
   `strlen()` input conversion.
 - Complete PHP CLI and PHPT runner option parity for `phpc`.
