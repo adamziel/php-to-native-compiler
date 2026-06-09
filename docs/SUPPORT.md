@@ -81,6 +81,10 @@ supports in generated native binaries.
 - Braced `do { statements } while (expr);` loops where the body and condition
   use the currently supported scalar expression and statement subset. The body
   executes once before the first condition check.
+- Braced `for (init; condition; update) { statements }` loops where init and
+  update clauses use direct variable assignment, direct increment/decrement, or
+  simple internal-call statements, and conditions use the currently supported
+  scalar expression subset. Missing conditions are treated as true.
 - Braced `switch (expr) { case expr: ... default: ... }` statements over the
   currently supported scalar expression and statement subset. The generated
   native code evaluates the switch expression once, compares case expressions
@@ -104,9 +108,10 @@ supports in generated native binaries.
 - Comparison operator `<=>`, keyword boolean operators `and`/`or`, PHP-exact
   chained comparison parse errors, and complete comparison parity for
   unsupported value types.
-- Unbraced control-flow statements, alternate control-flow syntax, `for`,
-  `foreach`, `break` with an explicit level such as `break 2`, `continue`,
-  branch-condition assignments, and exception/finally control-flow edges.
+- Unbraced control-flow statements, alternate control-flow syntax, `foreach`,
+  `break` with an explicit level such as `break 2`, `continue`,
+  branch-condition assignments, for-loop comma expressions and
+  non-direct-variable clause lvalues, and exception/finally control-flow edges.
 - Switch alternate syntax, multiple `default` runtime diagnostic parity, and
   switch behavior for arrays, objects, references, copy-on-write, and
   exceptions.

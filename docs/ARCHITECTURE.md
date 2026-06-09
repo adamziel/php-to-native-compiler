@@ -86,6 +86,10 @@ Current runtime/compiler slices:
   the same boxed condition and nested statement representation as `while`. The
   C backend emits the body before materializing the condition and breaking on
   falsey boxed truthiness.
+- Braced `for` statements lower to structured IR loop instructions with
+  initializer, optional condition, update, and body instruction lists. The C
+  backend emits initializers once, checks boxed scalar truthiness before each
+  iteration when a condition is present, emits the body, then emits updates.
 - Statement-form direct variable increment/decrement lowers to a runtime read,
   boxed numeric increment/decrement helper, and runtime write. Expression-value
   semantics for pre/post increment remain outside this slice.

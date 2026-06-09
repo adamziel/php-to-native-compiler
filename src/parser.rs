@@ -35,6 +35,7 @@ impl Parser {
             TokenKind::If => self.parse_if(),
             TokenKind::Do => self.parse_do_while(),
             TokenKind::While => self.parse_while(),
+            TokenKind::For => self.parse_for(),
             TokenKind::Switch => self.parse_switch(),
             TokenKind::Break => self.parse_break(),
             TokenKind::PlusPlus | TokenKind::MinusMinus => self.parse_prefix_increment_statement(),
@@ -169,6 +170,128 @@ impl Parser {
             body,
             condition,
             span,
+        })
+    }
+
+    fn parse_for(&mut self) -> Result<Statement> {
+        let span = self.expect_for()?;
+        self.expect_left_paren()?;
+
+        let initializers = if matches!(self.peek().kind, TokenKind::Semicolon) {
+            Vec::new()
+        } else {
+            self.parse_for_clause_list()?
+        };
+        self.expect_semicolon()?;
+
+        let condition = if matches!(self.peek().kind, TokenKind::Semicolon) {
+            None
+        } else {
+            Some(self.parse_expr()?)
+        };
+        self.expect_semicolon()?;
+
+        let updates = if matches!(self.peek().kind, TokenKind::RightParen) {
+            Vec::new()
+        } else {
+            self.parse_for_clause_list()?
+        };
+        self.expect_right_paren()?;
+        let body = self.parse_block()?;
+
+        Ok(Statement::For {
+            initializers,
+            condition,
+            updates,
+            body,
+            span,
+        })
+    }
+
+    fn parse_for_clause_list(&mut self) -> Result<Vec<Statement>> {
+        let mut clauses = vec![self.parse_for_clause()?];
+        while matches!(self.peek().kind, TokenKind::Comma) {
+            self.advance();
+            clauses.push(self.parse_for_clause()?);
+        }
+        Ok(clauses)
+    }
+
+    fn parse_for_clause(&mut self) -> Result<Statement> {
+        match self.peek().kind {
+            TokenKind::PlusPlus | TokenKind::MinusMinus => self.parse_prefix_increment_clause(),
+            TokenKind::Identifier(_) => self.parse_call_clause(),
+            TokenKind::Variable(_) => self.parse_variable_clause(),
+            _ => Err(Diagnostic::new(
+                "expected for clause",
+                Some(self.peek().span),
+            )),
+        }
+    }
+
+    fn parse_variable_clause(&mut self) -> Result<Statement> {
+        let token = self.advance().clone();
+        let TokenKind::Variable(name) = token.kind else {
+            return Err(Diagnostic::new("expected variable", Some(token.span)));
+        };
+        match self.peek().kind {
+            TokenKind::PlusPlus => {
+                self.advance();
+                Ok(Statement::Increment {
+                    name,
+                    op: IncDecOp::Increment,
+                    span: token.span,
+                })
+            }
+            TokenKind::MinusMinus => {
+                self.advance();
+                Ok(Statement::Increment {
+                    name,
+                    op: IncDecOp::Decrement,
+                    span: token.span,
+                })
+            }
+            _ => {
+                let op = self.expect_assignment_op()?;
+                let value = self.parse_expr()?;
+                Ok(Statement::Assign {
+                    name,
+                    op,
+                    value,
+                    span: token.span,
+                })
+            }
+        }
+    }
+
+    fn parse_prefix_increment_clause(&mut self) -> Result<Statement> {
+        let op_token = self.advance().clone();
+        let op = match op_token.kind {
+            TokenKind::PlusPlus => IncDecOp::Increment,
+            TokenKind::MinusMinus => IncDecOp::Decrement,
+            _ => return Err(Diagnostic::new("expected increment", Some(op_token.span))),
+        };
+        let variable = self.advance().clone();
+        let TokenKind::Variable(name) = variable.kind else {
+            return Err(Diagnostic::new("expected variable", Some(variable.span)));
+        };
+        Ok(Statement::Increment {
+            name,
+            op,
+            span: op_token.span,
+        })
+    }
+
+    fn parse_call_clause(&mut self) -> Result<Statement> {
+        let token = self.advance().clone();
+        let TokenKind::Identifier(name) = token.kind else {
+            return Err(Diagnostic::new("expected function name", Some(token.span)));
+        };
+        let (arguments, _) = self.parse_call_arguments()?;
+        Ok(Statement::Call {
+            name: name.to_ascii_lowercase(),
+            arguments,
+            span: token.span,
         })
     }
 
@@ -487,6 +610,15 @@ impl Parser {
         }
     }
 
+    fn expect_for(&mut self) -> Result<SourceSpan> {
+        let token = self.advance();
+        if matches!(token.kind, TokenKind::For) {
+            Ok(token.span)
+        } else {
+            Err(Diagnostic::new("expected for", Some(token.span)))
+        }
+    }
+
     fn expect_do(&mut self) -> Result<SourceSpan> {
         let token = self.advance();
         if matches!(token.kind, TokenKind::Do) {
@@ -551,6 +683,15 @@ impl Parser {
                 "expected semicolon",
                 Some(self.peek().span),
             )),
+        }
+    }
+
+    fn expect_semicolon(&mut self) -> Result<SourceSpan> {
+        let token = self.advance();
+        if matches!(token.kind, TokenKind::Semicolon) {
+            Ok(token.span)
+        } else {
+            Err(Diagnostic::new("expected semicolon", Some(token.span)))
         }
     }
 

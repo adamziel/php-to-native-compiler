@@ -134,6 +134,37 @@ fn emit_instruction(
             out.push_str("        }\n");
             out.push_str("    }\n");
         }
+        Instruction::For {
+            initializers,
+            condition,
+            updates,
+            body,
+        } => {
+            for initializer in initializers {
+                emit_instruction(out, values, initializer, break_target);
+            }
+            out.push_str("    while (1) {\n");
+            if let Some(condition) = condition {
+                let condition_temp = values.emit_materialized_value(out, condition);
+                out.push_str("        if (!ptn_is_truthy(");
+                out.push_str(&condition_temp);
+                out.push_str(")) {\n");
+                out.push_str("            break;\n");
+                out.push_str("        }\n");
+            }
+            for body_instruction in body {
+                emit_instruction(
+                    out,
+                    values,
+                    body_instruction,
+                    Some(BreakTarget::NativeBreak),
+                );
+            }
+            for update in updates {
+                emit_instruction(out, values, update, Some(BreakTarget::NativeBreak));
+            }
+            out.push_str("    }\n");
+        }
         Instruction::Switch { expression, cases } => {
             emit_switch(out, values, expression, cases);
         }

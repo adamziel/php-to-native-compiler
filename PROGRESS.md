@@ -519,3 +519,26 @@ Still unsupported after this bitwise-not slice: bit shifts, compound `<<=` and
 diagnostics, bitwise integer overflow parity, embedded NUL bytes in runtime
 strings and string bitwise results, arrays, objects, references, and
 copy-on-write behavior.
+
+Added a bounded braced `for` loop slice:
+
+- Lexer/parser/AST support for `for (init; condition; update) { statements }`
+  with recursive braced statement bodies.
+- For-loop initializer and update clauses reuse the existing direct assignment,
+  direct increment/decrement, and simple internal-call statement forms rather
+  than introducing a separate mutation path.
+- IR support for structured for-loop instructions carrying initializer,
+  optional condition, update, and body instruction lists.
+- Generated C emits initializers once, checks the boxed scalar condition before
+  each iteration when present, emits the body, then emits updates. Simple
+  `break;` exits the loop before updates, matching the existing loop control
+  boundary.
+- Native tests prove prefix/postfix update forms and break/update ordering.
+- Focused public PHPT telemetry through `phpc` passes
+  `Zend/tests/concat/concat_002.phpt`.
+
+Still unsupported after this for-loop slice: unbraced and alternate syntax,
+`foreach`, `continue`, explicit-level `break` such as `break 2`, comma
+expressions in conditions, non-direct-variable clause lvalues, increment/
+decrement expression result values, references, copy-on-write, and
+exception/finally loop edges.

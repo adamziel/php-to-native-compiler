@@ -47,6 +47,13 @@ pub enum Statement {
         condition: Expr,
         span: SourceSpan,
     },
+    For {
+        initializers: Vec<Statement>,
+        condition: Option<Expr>,
+        updates: Vec<Statement>,
+        body: Vec<Statement>,
+        span: SourceSpan,
+    },
     Switch {
         expression: Expr,
         cases: Vec<SwitchCase>,

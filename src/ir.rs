@@ -36,6 +36,12 @@ pub enum Instruction {
         body: Vec<Instruction>,
         condition: ValueExpr,
     },
+    For {
+        initializers: Vec<Instruction>,
+        condition: Option<ValueExpr>,
+        updates: Vec<Instruction>,
+        body: Vec<Instruction>,
+    },
     Switch {
         expression: ValueExpr,
         cases: Vec<SwitchCase>,
@@ -190,6 +196,20 @@ fn lower_statements(statements: &[Statement]) -> Vec<Instruction> {
                 instructions.push(Instruction::DoWhile {
                     body: lower_statements(body),
                     condition: lower_expr(condition),
+                });
+            }
+            Statement::For {
+                initializers,
+                condition,
+                updates,
+                body,
+                ..
+            } => {
+                instructions.push(Instruction::For {
+                    initializers: lower_statements(initializers),
+                    condition: condition.as_ref().map(lower_expr),
+                    updates: lower_statements(updates),
+                    body: lower_statements(body),
                 });
             }
             Statement::Switch {

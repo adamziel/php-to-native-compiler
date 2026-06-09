@@ -185,6 +185,44 @@ fn parser_accepts_braced_do_while_statements() {
 }
 
 #[test]
+fn parser_accepts_braced_for_statements() {
+    let program = parser::parse("<?php for ($i = 0; $i < 3; ++$i) { echo $i; }").unwrap();
+    let Statement::For {
+        initializers,
+        condition,
+        updates,
+        body,
+        ..
+    } = &program.statements[0]
+    else {
+        panic!("expected for statement");
+    };
+    assert_eq!(initializers.len(), 1);
+    assert!(matches!(
+        &initializers[0],
+        Statement::Assign {
+            op: AssignmentOp::Assign,
+            ..
+        }
+    ));
+    assert!(matches!(
+        condition,
+        Some(Expr::Binary {
+            op: BinaryOp::Less,
+            ..
+        })
+    ));
+    assert!(matches!(
+        &updates[0],
+        Statement::Increment {
+            op: IncDecOp::Increment,
+            ..
+        }
+    ));
+    assert_eq!(body.len(), 1);
+}
+
+#[test]
 fn parser_rejects_print_expression_contexts() {
     let error = parser::parse("<?php $result = print \"hello\";").unwrap_err();
     assert!(error.message.contains("expected expression"));
@@ -1263,6 +1301,46 @@ fn compile_do_while_countdown_to_native_binary() {
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "321\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_braced_for_loop_to_native_binary() {
+    let root = temp_dir("ptn-native-for-loop");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("for-loop.php");
+    let output = root.join("for-loop-bin");
+    fs::write(
+        &input,
+        "<?php for ($i = 0; $i < 4; ++$i) { echo $i; } echo \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "0123\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_for_break_skips_update_to_native_binary() {
+    let root = temp_dir("ptn-native-for-break");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("for-break.php");
+    let output = root.join("for-break-bin");
+    fs::write(
+        &input,
+        "<?php $after = 0; for ($i = 0; $i < 5; $i++) { echo $i; break; } echo \":\", $i, \":\", $after, \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "0:0:0\n");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 

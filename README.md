@@ -74,6 +74,10 @@ Supported today:
 - Braced `do { statements } while (expr);` loops over the currently supported
   scalar expression and statement subset. The body executes before the
   condition is checked.
+- Braced `for (init; condition; update) { statements }` loops where init and
+  update clauses use direct variable assignment, direct increment/decrement, or
+  simple internal-call statements, and conditions use the currently supported
+  scalar expression subset. Missing conditions are treated as true.
 - Braced `switch (expr) { case expr: ... default: ... }` statements over the
   currently supported scalar expression and statement subset, including
   source-order case matching with boxed loose comparison, PHP-style fallthrough,
@@ -92,10 +96,11 @@ Unsupported today:
   division/modulo-by-zero exception behavior, complete comparison parity for
   unsupported types, spaceship comparison operator, shifts,
   keyword boolean operators, chained comparison parse errors, unbraced and alternate
-  control-flow syntax, `for`, `foreach`, explicit-level `break`
+  control-flow syntax, `foreach`, explicit-level `break`
   such as `break 2`, `continue`, full switch parity for unsupported value
   types and alternate syntax, increment/decrement as expressions, PHP-exact
   increment/decrement semantics for strings/booleans and other edge values,
+  for-loop comma expressions and non-direct-variable clause lvalues,
   complete overflow parity, exact scalar cast overflow behavior, PHP-exact
   warning text/file/line/error-handler behavior, inline HTML before `<?php` or
   between PHP blocks, internal functions outside the registered scalar subset,
