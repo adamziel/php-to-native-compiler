@@ -129,7 +129,7 @@ static PTN_UNUSED char *ptn_value_to_string(PtnValue value) {
             written = snprintf(buffer, sizeof(buffer), "%.14g", value.as.floating);
             break;
         case PTN_STRING:
-            return ptn_duplicate_string(value.as.string);
+            return ptn_duplicate_string_len((const char *)value.as.string.data, value.as.string.len);
         case PTN_ARRAY:
             return ptn_duplicate_string("Array");
         case PTN_EXCEPTION:
@@ -142,20 +142,28 @@ static PTN_UNUSED char *ptn_value_to_string(PtnValue value) {
     return ptn_duplicate_string(buffer);
 }
 
-static PTN_UNUSED PtnStringOperand ptn_string_operand_borrowed(const char *data) {
+static PTN_UNUSED PtnStringOperand ptn_string_operand_borrowed_len(const char *data, size_t len) {
     PtnStringOperand operand;
     operand.data = data;
     operand.owned = NULL;
-    operand.len = strlen(data);
+    operand.len = len;
+    return operand;
+}
+
+static PTN_UNUSED PtnStringOperand ptn_string_operand_borrowed(const char *data) {
+    return ptn_string_operand_borrowed_len(data, strlen(data));
+}
+
+static PTN_UNUSED PtnStringOperand ptn_string_operand_owned_len(char *data, size_t len) {
+    PtnStringOperand operand;
+    operand.data = data;
+    operand.owned = data;
+    operand.len = len;
     return operand;
 }
 
 static PTN_UNUSED PtnStringOperand ptn_string_operand_owned(char *data) {
-    PtnStringOperand operand;
-    operand.data = data;
-    operand.owned = data;
-    operand.len = strlen(data);
-    return operand;
+    return ptn_string_operand_owned_len(data, strlen(data));
 }
 
 static PTN_UNUSED void ptn_string_operand_free(PtnStringOperand operand) {
@@ -178,7 +186,7 @@ static PTN_UNUSED PtnStringOperand ptn_value_to_string_operand(PtnValue value) {
             written = snprintf(buffer, sizeof(buffer), "%.14g", value.as.floating);
             break;
         case PTN_STRING:
-            return ptn_string_operand_borrowed(value.as.string);
+            return ptn_string_operand_borrowed_len((const char *)value.as.string.data, value.as.string.len);
         case PTN_ARRAY:
             return ptn_string_operand_borrowed("Array");
         case PTN_EXCEPTION:
@@ -188,7 +196,7 @@ static PTN_UNUSED PtnStringOperand ptn_value_to_string_operand(PtnValue value) {
     if (written < 0 || (size_t)written >= sizeof(buffer)) {
         ptn_abort_out_of_memory();
     }
-    return ptn_string_operand_owned(ptn_duplicate_string(buffer));
+    return ptn_string_operand_owned_len(ptn_duplicate_string_len(buffer, (size_t)written), (size_t)written);
 }
 
 static PTN_UNUSED PtnStringOperand ptn_concat_string_operand(
@@ -236,7 +244,7 @@ static PTN_UNUSED PtnValue ptn_concat_many(
     for (size_t i = 0; i < count; i++) {
         ptn_string_operand_free(strings[i]);
     }
-    return ptn_owned_string(joined);
+    return ptn_owned_string_len(joined, joined_len);
 }
 
 static PTN_UNUSED PtnValue ptn_concat(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line) {
@@ -246,7 +254,11 @@ static PTN_UNUSED PtnValue ptn_concat(PtnRuntime *runtime, PtnValue left, PtnVal
 }
 
 static PTN_UNUSED PtnValue ptn_cast_string(PtnValue value) {
-    return ptn_owned_string(ptn_value_to_string(value));
+    PtnStringOperand string = ptn_value_to_string_operand(value);
+    char *copy = ptn_duplicate_string_len(string.data, string.len);
+    size_t len = string.len;
+    ptn_string_operand_free(string);
+    return ptn_owned_string_len(copy, len);
 }
 
 static PTN_UNUSED PtnValue ptn_cast_bool(PtnValue value) {
